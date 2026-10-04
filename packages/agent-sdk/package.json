@@ -1,0 +1,56 @@
+{
+  "name": "@vestra/agent-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./engine": {
+      "types": "./dist/engine/index.d.ts",
+      "default": "./dist/engine/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "default": "./dist/tools/index.js"
+    },
+    "./transports": {
+      "types": "./dist/transports/index.d.ts",
+      "default": "./dist/transports/index.js"
+    },
+    "./query": {
+      "types": "./dist/query/index.d.ts",
+      "default": "./dist/query/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc -p bench/tsconfig.json",
+    "lint:secrets": "node scripts/lint-journal-secrets.mjs",
+    "test": "node scripts/lint-journal-secrets.mjs && vitest run",
+    "test:coverage": "node scripts/lint-journal-secrets.mjs && KERNEL_COVERAGE=1 vitest run --coverage",
+    "test:watch": "vitest",
+    "bench": "tsx bench/run.ts",
+    "bench:live": "tsx bench/live/run-live.ts",
+    "bench:compare": "tsx bench/compare.ts",
+    "race": "tsx bench/race/race.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.93.0",
+    "openai": "^6.39.1",
+    "undici": "7.30.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@vitest/coverage-v8": "^4.0.17",
+    "tsx": "^4.21.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.17"
+  }
+}
