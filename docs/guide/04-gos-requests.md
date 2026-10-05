@@ -79,8 +79,8 @@ The rest of this page shows only the `params` and the `result` of each method. `
 Good to know:
 - The server signed the socket once, when it opened it (see [Connecting](02-the-socket.md#connecting)). The frames on it carry no signature.
 - Answer every request with the `id` of the frame it came in, even when the same `id` arrives twice.
-- go-brain may send several requests before the first is answered, and the answers may go back in any order. The `id` matches each answer to its request.
-- More than one server instance may have a socket open. go-brain sends each request on one of them, so every instance must be able to answer any request from the shared database.
+- Go may send several requests before the first is answered, and the answers may go back in any order. The `id` matches each answer to its request.
+- More than one server instance may have a socket open. Go sends each request on one of them, so every instance must be able to answer any request from the shared database.
 
 ## Rules for every request
 
@@ -99,17 +99,17 @@ An error is a `SocketError` frame. `error.code` is the number in the table, `err
 
 Good to know:
 - The server answers every request within 2 seconds. When it cannot, it answers `429` `rate_limited`, `500` `internal` or `503` `unavailable`. With a `429`, put how many seconds Go should wait in `error.data.retry_after_seconds`.
-- go-brain sends a request again after a timeout, a `500` or a `503`, up to three times, after 0.5, 2 and 5 seconds, because someone in the room is waiting. After a `429` it waits `retry_after_seconds` first.
+- Go sends a request again after a timeout, a `500` or a `503`, up to three times, after 0.5, 2 and 5 seconds, because someone in the room is waiting. After a `429` it waits `retry_after_seconds` first.
 - Ignore fields you do not know, and treat `null` the same as a missing field.
 - A person who left the trip is no longer "in the trip" for these rules.
 - A method you have not built yet answers `-32601`. Go skips that request, which is also how a method added later in version 1 stays safe. Go cannot work in a room without `read_trip`, `read_messages`, `post_message` and `typing`, so build those first.
 
 ## Doing each write once
 
-Every write carries a `request_id` that go-brain makes, so the server can do the write once even when the request arrives twice. go-brain makes a new `request_id` for every new write, and sends the same one again only when it sends that same write again. That happens in two ways:
+Every write carries a `request_id` that Go makes, so the server can do the write once even when the request arrives twice. Go makes a new `request_id` for every new write, and sends the same one again only when it sends that same write again. That happens in two ways:
 
-- go-brain got no answer in time, or an error worth retrying, and sends the write again with the same `request_id`.
-- The socket closed before the answer arrived. After the reconnect, go-brain sends the same request again, with the same JSON-RPC `id` and the same `request_id` (see [When the socket drops](02-the-socket.md#when-the-socket-drops)).
+- Go got no answer in time, or an error worth retrying, and sends the write again with the same `request_id`.
+- The socket closed before the answer arrived. After the reconnect, Go sends the same request again, with the same JSON-RPC `id` and the same `request_id` (see [When the socket drops](02-the-socket.md#when-the-socket-drops)).
 
 The reads (`read_trip` and `read_messages`), `replace_card` and `typing` have no `request_id`, because doing them twice does no harm.
 
@@ -122,7 +122,7 @@ The server must do three things:
 The simplest way is one table for every write:
 
 ```sql
-create table brain_requests (
+create table go_requests (
   trip_id    text not null,
   request_id text not null,
   answer     jsonb not null,
@@ -141,7 +141,7 @@ import pg from 'pg';
 
 export const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-const READ = 'select answer from brain_requests where trip_id = $1 and request_id = $2';
+const READ = 'select answer from go_requests where trip_id = $1 and request_id = $2';
 
 /** Does a write once per (trip_id, request_id). A repeat gets the first answer back. */
 export async function once<T>(tripId: string, requestId: string, work: (db: pg.PoolClient) => Promise<T>): Promise<T> {
@@ -154,7 +154,7 @@ export async function once<T>(tripId: string, requestId: string, work: (db: pg.P
       return seen.rows[0].answer as T;
     }
     const answer = await work(db);
-    await db.query('insert into brain_requests (trip_id, request_id, answer) values ($1, $2, $3)', [tripId, requestId, answer]);
+    await db.query('insert into go_requests (trip_id, request_id, answer) values ($1, $2, $3)', [tripId, requestId, answer]);
     await db.query('commit');
     return answer;
   } catch (err) {
@@ -182,7 +182,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-READ = "select answer from brain_requests where trip_id = %s and request_id = %s"
+READ = "select answer from go_requests where trip_id = %s and request_id = %s"
 
 
 async def once(
@@ -197,7 +197,7 @@ async def once(
                 return seen[0]
             answer = await work(conn)
             await conn.execute(
-                "insert into brain_requests (trip_id, request_id, answer) values (%s, %s, %s)",
+                "insert into go_requests (trip_id, request_id, answer) values (%s, %s, %s)",
                 (trip_id, request_id, Jsonb(answer)),
             )
             return answer
@@ -212,12 +212,12 @@ async def once(
 
 Good to know:
 - Only successful answers are stored. A write that was refused rolled back and left nothing behind, so a repeat of it is checked again.
-- A denied spend approval is a successful answer (a `result` with `"status": "denied"`), so a repeat gets the same denial. go-brain uses a new `request_id` when it asks again.
+- A denied spend approval is a successful answer (a `result` with `"status": "denied"`), so a repeat gets the same denial. Go uses a new `request_id` when it asks again.
 - Two copies can arrive at the same moment, for example when a request sent again after a reconnect reaches a second server instance while the first is still working on it. The second copy waits on the trip's row lock (taken when the change number goes up), then hits the unique index after the first commits. Its change number goes back with the rollback, so no number is skipped.
 
 ## What each write answers, and its event
 
-Every write that changes the trip adds one to the trip's change number, answers with that new `seq`, and sends the event for the change with the same `seq`. Go's own writes come back to go-brain as events (`send_event` requests), exactly like the changes people make, so go-brain sees every change in `seq` order. How the server sends events is in [Events](03-events.md).
+Every write that changes the trip adds one to the trip's change number, answers with that new `seq`, and sends the event for the change with the same `seq`. Go's own writes come back to it as events (`send_event` requests), exactly like the changes people make, so Go sees every change in `seq` order. How the server sends events is in [Events](03-events.md).
 
 | Method | Result | Event the server sends |
 |---|---|---|
@@ -668,7 +668,7 @@ Good to know:
 - `record` holds every line, including done and undone ones, so Go does not write again a line someone undid.
 - Messages are not in the snapshot. Go reads them with `read_messages`.
 - Go reads every active trip once a minute, so keep this request cheap.
-- go-brain's fake server answers with this snapshot (see [Build and test](10-build-and-test.md)).
+- The fake server that Go (Keshav's team) tests with answers with this snapshot (see [Build and test](10-build-and-test.md)).
 
 ### `read_messages`: read the messages posted or changed after a change number
 
@@ -741,7 +741,7 @@ How the server fills the page:
 | `after_seq` is given and is a whole number, 0 or more. | `422` `invalid` |
 | `limit`, if given, is a whole number from 1 to 200. | `422` `invalid` |
 
-This is how go-brain reads everything after a change number, one page at a time. `request` sends one request on the socket and resolves with its result:
+This is how Go reads everything after a change number, one page at a time. `request` sends one request on the socket and resolves with its result:
 
 **TypeScript**
 
@@ -898,7 +898,7 @@ Good to know:
 - There is no `request_id`. Sending the same card twice leaves the same card, so sending it again is safe.
 - Go sends the updates for one card one at a time and waits for each answer, so an older version never lands after a newer one.
 - Go keeps the card's `kind`. Something new is a new message.
-- The `BrainSocket` client checks the params before it calls your handler: `parseParams('replace_card', params)` in TypeScript and `METHODS["replace_card"].params.model_validate(params)` in Python. In Python, the checked `card` is the right card class for its `kind`.
+- The `GoSocket` client checks the params before it calls your handler: `parseParams('replace_card', params)` in TypeScript and `METHODS["replace_card"].params.model_validate(params)` in Python. In Python, the checked `card` is the right card class for its `kind`.
 - Store the new card as one JSON value, exactly as it arrived in the frame (`raw.card`), as for `post_message`.
 - On a record card, only `for_person_ids` and `fallback_text` change what people see, because the server draws the rest from its own rows.
 
@@ -934,7 +934,7 @@ A notification is never answered, so a broken one gets no error frame. The serve
 
 Good to know:
 - There is no `request_id`. Showing the indicator twice does no harm.
-- Notifications are best effort and are never sent again after a reconnect. If one is lost, or go-brain stops sending it (for example, because it restarted), the indicator goes away by itself after 10 seconds.
+- Notifications are best effort and are never sent again after a reconnect. If one is lost, or Go stops sending it (for example, because it restarted), the indicator goes away by itself after 10 seconds.
 
 ## Reacting to messages
 
@@ -989,7 +989,7 @@ What the server does:
 Good to know:
 - Go's ✅ and Rahul's ✅ on the same message are two reactions, one per author.
 - Go's reaction appears in the message's `reactions`, in `read_messages` and in message events, as `{"emoji": "✅", "person_id": null}`.
-- go-brain never counts Go's own reaction as anyone agreeing.
+- Go never counts its own reaction as anyone agreeing.
 
 ### `remove_reaction`: take Go's reaction back
 
@@ -1008,7 +1008,7 @@ The result is a `WriteResult` with the new change number. The server removes Go'
 | Go has a reaction with this emoji on this message. | `409` `conflict` |
 
 Good to know:
-- Go removes only its own reactions. People's reactions are theirs, and go-brain learns about them from `reaction.added` and `reaction.removed`.
+- Go removes only its own reactions. People's reactions are theirs, and Go learns about them from `reaction.added` and `reaction.removed`.
 
 ## Changing the trip details
 
@@ -1185,7 +1185,7 @@ What the server does:
 | The vote is open. Closing a vote that is closed or cancelled is refused. | `409` `conflict` (the error frame in [A request and its answer](#a-request-and-its-answer)) |
 
 Good to know:
-- There is no method for Go to call off a vote. People do that in the app, and go-brain gets `decision.cancelled`.
+- There is no method for Go to call off a vote. People do that in the app, and Go gets `decision.cancelled`.
 
 ### `set_mandate`: set what the group allowed
 
@@ -1276,7 +1276,7 @@ The server stores the line with `status` `active` and `source` `go`, and sends `
 | Every person id, in `person_ids` and in `proof`, is in the trip. | `422` `invalid` |
 
 Good to know:
-- People can undo any line in the app. go-brain then gets `record.changed` with change `undone`, `by` that person. Go never undoes a line.
+- People can undo any line in the app. Go then gets `record.changed` with change `undone`, `by` that person. Go never undoes a line.
 - `due_at` is for a line with a deadline, such as an open question that must be settled by the end of the week.
 
 ### `update_record_line`: change a line or mark it done
@@ -1429,8 +1429,8 @@ The server stores the expense with no `added_by_person_id` (Go added it), works 
 
 Good to know:
 - The server does all the money maths: shares, totals and the fewest transfers. Go reads the result from `money` in the snapshot and never works it out itself.
-- People add expenses in the app too, like Kabir's airport cab (`e_cab`). go-brain gets those as `expense.changed` with `by` that person.
-- Go cannot remove an expense. People can, in the app, and go-brain then gets `expense.changed` with change `removed`.
+- People add expenses in the app too, like Kabir's airport cab (`e_cab`). Go gets those as `expense.changed` with `by` that person.
+- Go cannot remove an expense. People can, in the app, and Go then gets `expense.changed` with change `removed`.
 
 ## Spend approvals
 
@@ -1480,7 +1480,7 @@ When every check passes, the server answers with the spend approval:
 {
   "status": "approved",
   "approval_id": "ap_01JA7Q3V8Z",
-  "approval": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.4IgC3Z2cNbWalezid833WDOIBoZoLeAuZhSbErpEFpE8qk-TI_yNIcyNcpX-UeHs856OFBbN6len1I9928SqDQ",
+  "approval": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.vJiOht3CipQjv-ytsJTJQKlH6ijfrEBs5B9E_yOwNerCZnsMw7NcQIiQv1IiY_ZFRcaVVvpasK1PSpJEKjJgBg",
   "expires_at": "2026-10-05T09:10:00Z"
 }
 ```
@@ -1488,12 +1488,12 @@ When every check passes, the server answers with the spend approval:
 | Field | What it is |
 |---|---|
 | `approval_id` | The approval's id (the token's `jti`). Go puts it on the pay card and sends it back on `add_booking`. |
-| `approval` | The signed token. go-brain hands it to the vault, which checks it before paying. |
+| `approval` | The signed token. Go hands it to the vault, which checks it before paying. |
 | `expires_at` | When the approval stops working: the token's `exp`, at most 10 minutes after it was signed. |
 
 To make the approval, the server:
 1. Makes a new approval id of 8 to 64 characters.
-2. Signs these claims with `GO_SPEND_PRIVATE_KEY`: `iss` `"server"`, `aud` `"go-brain-vault"`, `jti` (the new approval id), `trip_id`, `decision_id`, `payer_person_id` (always the mandate's payer), `amount_minor`, `currency`, `merchant`, `purpose`, `refundable_until`, `iat` (now, in Unix seconds) and `exp` (at most `iat` plus 600).
+2. Signs these claims with `GO_SPEND_PRIVATE_KEY`: `iss` `"server"`, `aud` `"go-vault"`, `jti` (the new approval id), `trip_id`, `decision_id`, `payer_person_id` (always the mandate's payer), `amount_minor`, `currency`, `merchant`, `purpose`, `refundable_until`, `iat` (now, in Unix seconds) and `exp` (at most `iat` plus 600).
 3. Stores the approval: its id, the trip, the vote, the payer, the amount and currency, when it expires, and that it is neither used nor cancelled yet.
 4. Answers with `approved`.
 
@@ -1530,7 +1530,7 @@ Every other failed check is a `denied` result, not an error. What Go tells the r
 
 Good to know:
 - An approval is not a change to the trip, so this request adds no change number and sends no event.
-- A repeat of the same `request_id` gets the same result, approved or denied, with the same token. After a denial, go-brain uses a new `request_id` when it asks again.
+- A repeat of the same `request_id` gets the same result, approved or denied, with the same token. After a denial, Go uses a new `request_id` when it asks again.
 - While one approval for a vote is outstanding, asking again is denied with `approval_outstanding`. That clears when the approval is used, cancelled, or expires (at most 10 minutes later).
 - The payer in the token is always the mandate's payer. The request cannot choose who pays.
 - An approval is used once. The vault refuses a second payment with the same `jti`, and the server marks it used when Go records the booking.
@@ -1570,11 +1570,11 @@ The server stores the time on the approval (`cancelled_at`). From then on, a boo
 Good to know:
 - Cancelling is not a change to the trip, so it adds no change number and sends no event.
 - Cancelling an approval that is already used, cancelled or expired still answers `{"ok": true}` and changes nothing, so sending it again is always safe.
-- A cancelled approval can never be used again. The server refuses a booking that names it, and go-brain's vault refuses it too.
+- A cancelled approval can never be used again. The server refuses a booking that names it, and Go's vault refuses it too.
 
 ## A minimal server
 
-This section shows the smallest server that answers two of Go's requests correctly: `post_message` and `open_vote`. Use it as the starting shape for all of them. It plugs into the `BrainSocket` client from [The socket](02-the-socket.md#a-complete-client-for-the-server), which the server keeps connected to go-brain. You give the client a `handlers` table that maps each of Go's methods to a function.
+This section shows the smallest server that answers two of Go's requests correctly: `post_message` and `open_vote`. Use it as the starting shape for all of them. It plugs into the `GoSocket` client from [The socket](02-the-socket.md#a-complete-client-for-the-server), which the server keeps connected to Go. You give the client a `handlers` table that maps each of Go's methods to a function.
 
 For every request frame, the client does the same four things:
 
@@ -1585,9 +1585,9 @@ For every request frame, the client does the same four things:
 
 Read and check everything through `params`. Use `raw` only to store a card exactly as Go sent it, because the check drops fields your copy of the contract does not know yet.
 
-Each handler below runs its rules, does the write once per `request_id`, and in one transaction adds one to the trip's change number, writes the change and writes the event to the outbox. The sender that sends those events to go-brain as `send_event` requests is in [Events](03-events.md).
+Each handler below runs its rules, does the write once per `request_id`, and in one transaction adds one to the trip's change number, writes the change and writes the event to the outbox. The sender that sends those events to Go as `send_event` requests is in [Events](03-events.md).
 
-The examples use Postgres: `pg` in TypeScript and `psycopg` in Python. Any database with transactions and unique indexes works. Besides `brain_requests` from [Doing each write once](#doing-each-write-once) and the `outbox` table from [Events](03-events.md), the skeleton needs these tables (a real server has more columns):
+The examples use Postgres: `pg` in TypeScript and `psycopg` in Python. Any database with transactions and unique indexes works. Besides `go_requests` from [Doing each write once](#doing-each-write-once) and the `outbox` table from [Events](03-events.md), the skeleton needs these tables (a real server has more columns):
 
 ```sql
 create table trips (
@@ -1633,12 +1633,12 @@ create table decisions (
 **TypeScript**
 
 ```ts
-// brain.ts: the one socket the server keeps open to go-brain, answering two of Go's requests.
+// go.ts: the one socket the server keeps open to Go, answering two of Go's requests.
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import type { z } from 'zod';
 import { Event, SOCKET_ERROR_CODES, SOCKET_PATH, type EventType, type OpenDecision, type PostMessage } from '@go/contract';
-import { BrainSocket, SocketCallError } from './brain-socket.js';
+import { GoSocket, SocketCallError } from './go-socket.js';
 import { once } from './once.js';
 
 type Code = 'not_found' | 'invalid' | 'conflict';
@@ -1718,18 +1718,18 @@ async function openVote(p: z.infer<typeof OpenDecision>) {
   });
 }
 
-export const brain = new BrainSocket({
-  url: process.env.BRAIN_URL!.replace(/^http/, 'ws') + SOCKET_PATH, // wss://brain.go.example/v1/socket
+export const go = new GoSocket({
+  url: process.env.GO_URL!.replace(/^http/, 'ws') + SOCKET_PATH, // wss://brain.go.example/v1/socket
   secret: process.env.GO_SIGNING_SECRET!,
   handlers: { post_message: postMessage, open_vote: openVote },
 });
-brain.start();
+go.start();
 ```
 
 **Python**
 
 ```python
-# brain.py: the one socket the server keeps open to go-brain, answering two of Go's requests.
+# go.py: the one socket the server keeps open to Go, answering two of Go's requests.
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -1738,7 +1738,7 @@ import psycopg
 from go_contract import models
 from psycopg.types.json import Jsonb
 
-from brain_socket import BrainSocket, SocketCallError
+from go_socket import GoSocket, SocketCallError
 from once import once
 
 CODES = {"not_found": 404, "invalid": 422, "conflict": 409}
@@ -1846,13 +1846,13 @@ async def open_vote(p: models.OpenDecision, raw: dict) -> dict:
     return await once(p.trip_id, p.request_id, work)
 
 
-brain = BrainSocket(
-    os.environ["BRAIN_URL"].replace("http", "ws", 1) + "/v1/socket",  # wss://brain.go.example/v1/socket
+go = GoSocket(
+    os.environ["GO_URL"].replace("http", "ws", 1) + "/v1/socket",  # wss://brain.go.example/v1/socket
     os.environ["GO_SIGNING_SECRET"],
     {"post_message": post_message, "open_vote": open_vote},
 )
 
-# At startup: asyncio.create_task(brain.run())
+# At startup: asyncio.create_task(go.run())
 ```
 
 For the `post_message` request in [A request and its answer](#a-request-and-its-answer), the client calls `post_message` with the checked params and the raw params, and writes back `{"jsonrpc": "2.0", "id": "go_2251", "result": {"message_id": "m_0158", "seq": 73}}`. When a handler throws `fail('conflict', ...)`, the client writes the error frame instead, with `"code": 409` and `"data": {"code": "conflict"}`. When the same request arrives again after a reconnect, `once` returns the first answer and the client sends it with the repeated `id`.
@@ -1863,4 +1863,4 @@ Good to know:
 - The other writes have the same shape: run the rules, `once`, add one to `seq`, write the change, write the event, return the result. The two reads need no `once` and no change number. The `typing` handler shows or hides the indicator and returns nothing, because a notification gets no answer.
 - The card is stored from `raw.card`, exactly as Go sent it, because the checked `params` leave out any field your copy of the contract does not know yet. A card field Go adds later in version 1 then reaches the app with no server update. Everything else, including every rule, reads `params`.
 - Send pushes and the live update to the app after the transaction commits, from the committed rows (the outbox is a good place), so a repeated request never pushes twice.
-- Keep the handlers quick. go-brain waits at most 2 seconds for each answer, and someone in the room is usually waiting too.
+- Keep the handlers quick. Go waits at most 2 seconds for each answer, and someone in the room is usually waiting too.

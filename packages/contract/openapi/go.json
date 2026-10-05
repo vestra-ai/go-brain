@@ -3,7 +3,7 @@
   "info": {
     "title": "The Go brain API",
     "version": "1.0.0",
-    "description": "go-brain is Go, the AI member of every trip group. The server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain."
+    "description": "Go is the AI member of every trip group. The server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain."
   },
   "paths": {
     "/v1/socket": {
@@ -6245,7 +6245,7 @@
           },
           "aud": {
             "type": "string",
-            "const": "go-brain-vault"
+            "const": "go-vault"
           },
           "jti": {
             "type": "string",

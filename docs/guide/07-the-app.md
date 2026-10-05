@@ -1,24 +1,24 @@
 # The app
 
-This page explains what go-app and the server must do so that Go feels like a live member of the room: what the app's live connection carries (including typing and reactions, Go's and everyone's), how to draw Go's messages and cards, the "needs you" strip, pushes, catch-up, "Ask Go about this", the You screen, and opening go-brain pages. It is for Saket's team, who build go-app, and Nishanth's team, who build the server.
+This page explains what the app and the server must do so that Go feels like a live member of the room: what the app's live connection carries (including typing and reactions, Go's and everyone's), how to draw Go's messages and cards, the "needs you" strip, pushes, catch-up, "Ask Go about this", the You screen, and opening Go pages. It is for Saket's team, who build the app, and Nishanth's team, who build the server.
 
-The app's own API and its live connection belong to the Go team, so the shapes on this page between the app and the server are recommendations and CI does not check them. What the contract does fix is the data that travels through them: the `Message` and card JSON, and the requests the server sends go-brain on the socket for the app.
+The app's own API and its live connection belong to the app and server teams (Saket's and Nishanth's), so the shapes on this page between the app and the server are recommendations and CI does not check them. What the contract does fix is the data that travels through them: the `Message` and card JSON, and the requests the server sends Go on the socket for the app.
 
 ## What the app talks to
 
-The app talks only to the server. The server stores everything the app shows, and it sends every request to go-brain on the app's behalf, on the one socket it keeps open to go-brain (see [The socket](02-the-socket.md)). The server opened that socket with a signature made from a secret the app never sees.
+The app talks only to the server. The server stores everything the app shows, and it sends every request to Go on the app's behalf, on the one socket it keeps open to Go (see [The socket](02-the-socket.md)). The server opened that socket with a signature made from a secret the app never sees.
 
-There is one exception. A few things happen on go-brain's own pages: the vault, where a person adds a card or approves a payment, and the page where someone watches Go work on a website. The app opens those pages from a short-lived link in the system browser sheet (see [Opening go-brain pages](#opening-go-brain-pages)).
+There is one exception. A few things happen on Go's own pages: the vault, where a person adds a card or approves a payment, and the page where someone watches Go work on a website. The app opens those pages from a short-lived link in the system browser sheet (see [Opening Go pages](#opening-go-pages)).
 
 Good to know:
-- The app never connects to go-brain's socket and never holds `GO_SIGNING_SECRET`. Anyone who downloads an app can read a secret inside it.
-- The app never needs go-brain's address. Every link it opens comes from the server, ready to use.
+- The app never connects to Go's socket and never holds `GO_SIGNING_SECRET`. Anyone who downloads an app can read a secret inside it.
+- The app never needs Go's address. Every link it opens comes from the server, ready to use.
 
 ## The live connection
 
 The live connection sends each change in a trip to every phone that has the trip open, so people see new messages, reactions, who is typing and votes moving without pulling to refresh. The server chooses how to do it: Supabase Realtime, a WebSocket or server-sent events all work. Open it when the person opens a trip's room or Trip screens, and close it when they leave. Pushes cover the rest (see [Pushes](#pushes)).
 
-We recommend four kinds of message from the server to the app. The shapes below are only a recommendation: the Go team owns them, can change them, and CI does not check them.
+We recommend four kinds of message from the server to the app. The shapes below are only a recommendation: the app and server teams own them, can change them, and CI does not check them.
 
 **A new or changed message.** Send the whole `Message` from the contract, unchanged, including Go's card. Send it again whenever the message changes: an edit, a delete, or a reaction added or taken back. The app replaces the message that has the same `message_id`. The message's `seq` is the change number when it was posted, and its `updated_seq` is the change number of its latest change. Here Meher has just put a thumbs-up on Arjun's message, so `updated_seq` moved from 48 to 49.
 
@@ -104,7 +104,7 @@ This is the `typing` notification Go sent for it. It has no answer:
 { "trip_id": "t_goa", "on": true }
 ```
 
-People's typing is between the app and the server only. If you show it, use the same kind of message with `"who": { "kind": "person", "person_id": "p_priya" }`, and decide yourselves how often the app sends it and when a person's line runs out. The server does not send people's typing to go-brain. Go does not need it: after a message for Go, Go waits about 2 seconds in case the same person sends more, and checks for anything new just before it answers (see [Events](03-events.md)).
+People's typing is between the app and the server only. If you show it, use the same kind of message with `"who": { "kind": "person", "person_id": "p_priya" }`, and decide yourselves how often the app sends it and when a person's line runs out. The server does not send people's typing to Go. Go does not need it: after a message for it, Go waits about 2 seconds in case the same person sends more, and checks for anything new just before it answers (see [Events](03-events.md)).
 
 **The trip changed.** Send this for every change to the trip that is not a message: a vote cast or closed, a mandate, a trip record line added or undone, a booking, an expense, someone joining or leaving. It carries the trip's new change number. When `seq` is higher than the one the app holds, the app reads what it is showing again from the server. Record cards in the room, such as a vote's tally or a ticket, redraw from that fresh data.
 
@@ -113,11 +113,11 @@ People's typing is between the app and the server only. If you show it, use the 
 ```
 
 Good to know:
-- The server already writes one event per change for go-brain (see [Events](03-events.md)). Sending the app's message from the same place, after the change is committed, keeps the app and go-brain in step.
+- The server already writes one event per change for Go (see [Events](03-events.md)). Sending the app's message from the same place, after the change is committed, keeps the app and Go in step.
 - Keep the highest change number the app has seen: a message's `updated_seq`, or the `seq` of a "trip changed" message. After a reconnect, or when the number jumps by more than one, read the messages and the trip from the server again before trusting the socket. Sockets drop and phones sleep.
 - Typing and card updates carry no `seq`, because they are not changes to the trip. A reaction, Go's included, is a change: it moves the message's `updated_seq`.
 - Show a person's own message straight away as "sending", then replace it when the server sends it back with its `message_id` and `seq`.
-- `withheld` is only for go-brain. When a person pauses Go, the rest of the room still sees their messages in full, so the server always sends the app the text.
+- `withheld` is only for Go. When a person pauses Go, the rest of the room still sees their messages in full, so the server always sends the app the text.
 
 ## Drawing Go's messages
 
@@ -228,7 +228,7 @@ Cards come in two families, and the app draws them differently. [Cards](06-cards
 | Family | Kinds | What the card carries | Where the app gets what it shows | Who owns the buttons |
 |---|---|---|---|---|
 | Record cards | `vote`, `mandate`, `ticket`, `expense`, `settle_up`, `day`, `plan`, `budget` | An id, such as `decision_id` or `booking_id` | The server's own rows, so the room and the Trip screens always agree | server |
-| Go cards | `options`, `working`, `call`, `pay`, `notice` | Everything to show, plus `actions` | The card itself | go-brain, through the server (see [Buttons on Go cards](#buttons-on-go-cards)) |
+| Go cards | `options`, `working`, `call`, `pay`, `notice` | Everything to show, plus `actions` | The card itself | Go, through the server (see [Buttons on Go cards](#buttons-on-go-cards)) |
 
 Good to know:
 - When the app does not know a card's `kind`, it shows the card's `fallback_text` as plain text. An older app build stays usable after Go learns a new kind of card.
@@ -238,31 +238,31 @@ Good to know:
 
 ## Buttons on Go cards
 
-A tap on a Go card's button goes from the app to the server, which asks go-brain what to do and passes the answer back. Use this for every button in a Go card's `actions`. Buttons on record cards (voting, "Yes, book it", settling up) belong to the server and never reach go-brain this way.
+A tap on a Go card's button goes from the app to the server, which asks Go what to do and passes the answer back. Use this for every button in a Go card's `actions`. Buttons on record cards (voting, "Yes, book it", settling up) belong to the server and never reach Go this way.
 
 1. The app sends the server the card, the `action_id`, the `option_id` when the button was on one option, and its own id for this press.
 2. The server checks that the person is in the trip and gives the tap a `tap_id`. It uses the app's id for the press when there is one, so that a double tap that gets through is still one tap, and otherwise makes a new id.
-3. The server sends go-brain a `card_tap` request on the socket with the `tap_id`, the trip, the card, the `action_id`, the person's id and, when there is one, the `option_id`. go-brain acts on each `tap_id` once, even if the tap arrives twice.
-4. go-brain answers within 3 seconds with one of three results, and the server passes it back to the app:
+3. The server sends Go a `card_tap` request on the socket with the `tap_id`, the trip, the card, the `action_id`, the person's id and, when there is one, the `option_id`. Go acts on each `tap_id` once, even if the tap arrives twice.
+4. Go answers within 3 seconds with one of three results, and the server passes it back to the app:
    - `done`: show the toast, if there is one. Go follows up in the room.
    - `open`: open the URL in the system browser sheet (see the next section).
    - `refused`: show the toast.
 
-When Rahul taps Approve on the pay card for the villa, the server sends go-brain this `card_tap`:
+When Rahul taps Approve on the pay card for the villa, the server sends Go this `card_tap`:
 
 <!-- schema: CardTap -->
 ```json
 { "tap_id": "tap_0457", "trip_id": "t_goa", "card_id": "c_villa_pay", "action_id": "approve", "person_id": "p_rahul" }
 ```
 
-and go-brain answers with the vault page to open:
+and Go answers with the vault page to open:
 
 <!-- schema: ActionOpen -->
 ```json
 { "result": "open", "url": "https://brain.go.example/vault/approve?link=lk_4Rt8Zp2Lq", "expires_at": "2026-10-05T09:06:30Z" }
 ```
 
-Here is the server side. `brain` is the one `BrainSocket` that the server keeps open to go-brain (see [The socket](02-the-socket.md)), and the other snippets on this page use it too. The `/app/...` paths are examples: the app's API is yours to design.
+Here is the server side. `go` is the one `GoSocket` that the server keeps open to Go (see [The socket](02-the-socket.md)), and the other snippets on this page use it too. The `/app/...` paths are examples: the app's API is yours to design.
 
 **TypeScript**
 
@@ -270,7 +270,7 @@ Here is the server side. `brain` is the one `BrainSocket` that the server keeps 
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import { CardActionResult, CardTap } from '@go/contract';
-import { brain } from './brain.js'; // the one BrainSocket the server keeps open, from The socket
+import { go } from './go.js'; // the one GoSocket the server keeps open, from The socket
 import { signedInPerson } from './auth.js'; // your own session check
 
 const app = Fastify();
@@ -289,7 +289,7 @@ app.post<{ Params: { tripId: string; cardId: string }; Body: { action_id: string
     });
     if (!tap.success) return reply.code(422).send({ error: 'not a tap on a Go card' });
     try {
-      return CardActionResult.parse(await brain.request('card_tap', tap.data, { timeoutMs: 3_500 })); // 3 s plus the network
+      return CardActionResult.parse(await go.request('card_tap', tap.data, { timeoutMs: 3_500 })); // 3 s plus the network
     } catch {
       return { result: 'refused', toast: "Go didn't answer. Try again." };
     }
@@ -308,8 +308,8 @@ from go_contract import METHODS
 from pydantic import BaseModel, Field
 
 from auth import signed_in_person  # your own session check
-from brain import brain  # the one BrainSocket the server keeps open, from The socket
-from brain_socket import SocketCallError
+from go import go  # the one GoSocket the server keeps open, from The socket
+from go_socket import SocketCallError
 
 app = FastAPI()
 CARD_TAP = METHODS["card_tap"]
@@ -333,7 +333,7 @@ async def tap_card(trip_id: str, card_id: str, tap: Tap, person_id: str = Depend
         "person_id": person_id,
     })
     try:
-        answer = await brain.request("card_tap", params.model_dump(mode="json", exclude_none=True), timeout=3.5)  # 3 s plus the network
+        answer = await go.request("card_tap", params.model_dump(mode="json", exclude_none=True), timeout=3.5)  # 3 s plus the network
     except (SocketCallError, asyncio.TimeoutError):
         return {"result": "refused", "toast": "Go didn't answer. Try again."}
     return CARD_TAP.result.model_validate(answer).root
@@ -342,15 +342,15 @@ async def tap_card(trip_id: str, card_id: str, tap: Tap, person_id: str = Depend
 Good to know:
 - Disable the button while the tap is on its way, so a double tap sends one request. Also give each press its own id (a new UUID) and send it with the tap, so a double tap that still gets through reaches Go as one `tap_id`.
 - Do not retry a tap on your own. The first one may already have started something. If the person taps again after a toast, that is a new press with a new id.
-- The `tap_id` only stops a tap from being acted on twice. go-brain still checks who tapped, from `person_id`, which the server takes from the signed-in session.
-- go-brain checks `only_for_person_ids` too, and answers `refused` to anyone else, but hiding the button is what keeps the room clear.
+- The `tap_id` only stops a tap from being acted on twice. Go still checks who tapped, from `person_id`, which the server takes from the signed-in session.
+- Go checks `only_for_person_ids` too, and answers `refused` to anyone else, but hiding the button is what keeps the room clear.
 
-## Opening go-brain pages
+## Opening Go pages
 
-go-brain's pages, the vault and watching Go work, open in the system browser sheet from a link that the server hands the app. Use this whenever a card action answers `open`, and when the person opens their vault from the You screen.
+Go's pages, the vault and watching Go work, open in the system browser sheet from a link that the server hands the app. Use this whenever a card action answers `open`, and when the person opens their vault from the You screen.
 
 - Open the link with Flutter's `url_launcher` in `LaunchMode.inAppBrowserView`. On iOS that is SFSafariViewController and on Android it is Chrome Custom Tabs. The page slides up over the app and the person returns with one tap.
-- Never open these pages in `webview_flutter`. Passkeys (Face ID) do not work inside a plain WebView, so the vault could not ask the payer for Face ID and the payment could not happen. The system sheet supports passkeys and also shows the page's real address, so the person can see it is go-brain's page.
+- Never open these pages in `webview_flutter`. Passkeys (Face ID) do not work inside a plain WebView, so the vault could not ask the payer for Face ID and the payment could not happen. The system sheet supports passkeys and also shows the page's real address, so the person can see it is Go's page.
 - Links expire 5 minutes after they are made (`expires_at`). Ask the server for a link only when the person taps, and open it straight away. Never fetch links ahead of time, keep them for later, or put them in a push.
 
 **Dart**
@@ -379,7 +379,7 @@ When the sheet closes, the app does nothing special. Whatever happened on the pa
 
 Good to know:
 - A link is made for the person who tapped. It is not for sharing.
-- The vault link on the You screen comes from go-brain's answer to a `vault_link` request, which the server sends for the person (see the code in [Pausing Go, "what Go knows about you" and "forget me"](#pausing-go-what-go-knows-about-you-and-forget-me)).
+- The vault link on the You screen comes from Go's answer to a `vault_link` request, which the server sends for the person (see the code in [Pausing Go, "what Go knows about you" and "forget me"](#pausing-go-what-go-knows-about-you-and-forget-me)).
 
 ## The "needs you" strip
 
@@ -414,16 +414,16 @@ Good to know:
 
 ## Catch-up
 
-Catch-up tells one person, in a few lines, what happened while they were away. The server asks go-brain for it when someone opens the room after a while, and the app shows it above the room for that person only. It is never posted in the room.
+Catch-up tells one person, in a few lines, what happened while they were away. The server asks Go for it when someone opens the room after a while, and the app shows it above the room for that person only. It is never posted in the room.
 
-We suggest asking when the person has been away for 3 hours or more, or has 15 or more unread messages. The server sends go-brain a `catch_up` request with the trip, the person and the time they last looked at the room:
+We suggest asking when the person has been away for 3 hours or more, or has 15 or more unread messages. The server sends Go a `catch_up` request with the trip, the person and the time they last looked at the room:
 
 <!-- schema: CatchUpRequest -->
 ```json
 { "trip_id": "t_goa", "person_id": "p_meher", "since": "2026-10-05T03:30:00Z" }
 ```
 
-go-brain answers within 3 seconds:
+Go answers within 3 seconds:
 
 <!-- schema: CatchUp -->
 ```json
@@ -448,16 +448,16 @@ Draw `summary` as one line in Go's voice, then the items, at most five. A tap on
 
 ```ts
 import { CatchUp } from '@go/contract';
-import { brain } from './brain.js'; // the one BrainSocket the server keeps open, from The socket
+import { go } from './go.js'; // the one GoSocket the server keeps open, from The socket
 
 const AWAY_MS = 3 * 60 * 60 * 1000;
 
-/** What a person missed, or null when they were not away long or go-brain did not answer. */
+/** What a person missed, or null when they were not away long or Go did not answer. */
 export async function catchUpFor(tripId: string, personId: string, lastSeenAt: Date, unread: number) {
   if (Date.now() - lastSeenAt.getTime() < AWAY_MS && unread < 15) return null;
   try {
     const params = { trip_id: tripId, person_id: personId, since: lastSeenAt.toISOString() };
-    return CatchUp.parse(await brain.request('catch_up', params, { timeoutMs: 3_500 })); // 3 s plus the network
+    return CatchUp.parse(await go.request('catch_up', params, { timeoutMs: 3_500 })); // 3 s plus the network
   } catch {
     return null; // show the room without it
   }
@@ -472,26 +472,26 @@ from datetime import datetime, timedelta, timezone
 
 from go_contract import models
 
-from brain import brain  # the one BrainSocket the server keeps open, from The socket
-from brain_socket import SocketCallError
+from go import go  # the one GoSocket the server keeps open, from The socket
+from go_socket import SocketCallError
 
 AWAY = timedelta(hours=3)
 
 
 async def catch_up_for(trip_id: str, person_id: str, last_seen_at: datetime, unread: int) -> models.CatchUp | None:
-    """What a person missed, or None when they were not away long or go-brain did not answer."""
+    """What a person missed, or None when they were not away long or Go did not answer."""
     if datetime.now(timezone.utc) - last_seen_at < AWAY and unread < 15:
         return None
     params = {"trip_id": trip_id, "person_id": person_id, "since": last_seen_at.isoformat()}
     try:
-        answer = await brain.request("catch_up", params, timeout=3.5)  # 3 s plus the network
+        answer = await go.request("catch_up", params, timeout=3.5)  # 3 s plus the network
     except (SocketCallError, asyncio.TimeoutError):
         return None  # show the room without it
     return models.CatchUp.model_validate(answer)
 ```
 
 Good to know:
-- Never hold the room back for catch-up. Show the room at once and slide the catch-up in when it arrives. If go-brain fails or takes longer than 3 seconds, skip it.
+- Never hold the room back for catch-up. Show the room at once and slide the catch-up in when it arrives. If Go fails or takes longer than 3 seconds, skip it.
 - Let the person dismiss it with a tap.
 
 ## "Ask Go about this"
@@ -529,11 +529,11 @@ Good to know:
 
 ## Pausing Go, "what Go knows about you" and "forget me"
 
-These controls on the You screen let each person decide what Go sees and keeps about them. The app calls the server for all of them. The server checks who is signed in and then sends go-brain a request on the socket for that person. The app never talks to go-brain directly.
+These controls on the You screen let each person decide what Go sees and keeps about them. The app calls the server for all of them. The server checks who is signed in and then sends Go a request on the socket for that person. The app never talks to Go directly.
 
-| Control | What the server does | Request to go-brain |
+| Control | What the server does | Request to Go |
 |---|---|---|
-| Pause Go in this trip | Sets `go_paused` on the person and sends a `person.updated` event with `changed: ["go_paused"]`. While Go is paused, the person's messages still reach go-brain as `message.created`, with `withheld: true` and no text or attachments. | None: go-brain learns it from the event |
+| Pause Go in this trip | Sets `go_paused` on the person and sends a `person.updated` event with `changed: ["go_paused"]`. While Go is paused, the person's messages still reach Go as `message.created`, with `withheld: true` and no text or attachments. | None: Go learns it from the event |
 | What Go knows about you | Shows the person's facts, each with its topic, its trip and where it came from | `get_person` |
 | Delete one fact | Removes one fact from the list | `delete_fact` |
 | Remember me in my next trips (carry-over, off by default) | Turns carry-over on or off | `update_person` |
@@ -541,7 +541,7 @@ These controls on the You screen let each person decide what Go sees and keeps a
 | Forget me everywhere | Deletes what Go learned about the person in every trip | `forget_person` without `trip_id` |
 | My vault | Gets a vault link and opens it in the system browser sheet | `vault_link` |
 
-"Forget me" deletes the person's facts in go-brain and checks that none are left, so the answer always has `remaining_facts: 0`. The server then clears the person's join answers (`from_city`, `earliest_leave`, `know`) in the same trips and sends `person.updated`, so Go cannot learn them again. Show the person how many things were forgotten. The room's messages stay, because the rest of the group can still see them.
+"Forget me" deletes the person's facts in Go and checks that none are left, so the answer always has `remaining_facts: 0`. The server then clears the person's join answers (`from_city`, `earliest_leave`, `know`) in the same trips and sends `person.updated`, so Go cannot learn them again. Show the person how many things were forgotten. The room's messages stay, because the rest of the group can still see them.
 
 On "What Go knows about you", show each fact so the person can trust it: its text, its topic, and where it came from. A fact with a `message_id` opens that message when tapped. A fact without one came from the person's join answers.
 
@@ -550,7 +550,7 @@ On "What Go knows about you", show each fact so the person can trust it: its tex
 ```ts
 import Fastify from 'fastify';
 import { ForgetResult, Link, PersonPage } from '@go/contract';
-import { brain } from './brain.js'; // the one BrainSocket the server keeps open, from The socket
+import { go } from './go.js'; // the one GoSocket the server keeps open, from The socket
 import { signedInPerson } from './auth.js'; // your own session check
 
 const app = Fastify();
@@ -559,21 +559,21 @@ const TWO_SECONDS = { timeoutMs: 2000 };
 // What Go knows about you
 app.get('/app/me/go', async (req) => {
   const me = await signedInPerson(req);
-  return PersonPage.parse(await brain.request('get_person', { person_id: me }, TWO_SECONDS));
+  return PersonPage.parse(await go.request('get_person', { person_id: me }, TWO_SECONDS));
 });
 
 // Forget me: in one trip with ?trip_id=t_goa, or everywhere without it
 app.delete<{ Querystring: { trip_id?: string } }>('/app/me/go', async (req) => {
   const me = await signedInPerson(req);
   const params = req.query.trip_id ? { person_id: me, trip_id: req.query.trip_id } : { person_id: me };
-  return ForgetResult.parse(await brain.request('forget_person', params, TWO_SECONDS));
+  return ForgetResult.parse(await go.request('forget_person', params, TWO_SECONDS));
 });
 
 // My vault: ask only when the person taps, because the link expires after 5 minutes
 app.post<{ Body: { start?: 'home' | 'add_card' | 'add_login' } }>('/app/me/vault-link', async (req) => {
   const me = await signedInPerson(req);
   const params = { kind: 'vault', person_id: me, start: req.body?.start ?? 'home' };
-  return Link.parse(await brain.request('vault_link', params, TWO_SECONDS));
+  return Link.parse(await go.request('vault_link', params, TWO_SECONDS));
 });
 ```
 
@@ -587,21 +587,21 @@ from go_contract import models
 from pydantic import BaseModel
 
 from auth import signed_in_person  # your own session check
-from brain import brain  # the one BrainSocket the server keeps open, from The socket
+from go import go  # the one GoSocket the server keeps open, from The socket
 
 app = FastAPI()
 
 
 @app.get("/app/me/go")
 async def what_go_knows(me: str = Depends(signed_in_person)) -> models.PersonPage:
-    answer = await brain.request("get_person", {"person_id": me}, timeout=2.0)
+    answer = await go.request("get_person", {"person_id": me}, timeout=2.0)
     return models.PersonPage.model_validate(answer)
 
 
 @app.delete("/app/me/go")
 async def forget_me(trip_id: str | None = None, me: str = Depends(signed_in_person)) -> models.ForgetResult:
     params = {"person_id": me, "trip_id": trip_id} if trip_id else {"person_id": me}
-    answer = await brain.request("forget_person", params, timeout=2.0)
+    answer = await go.request("forget_person", params, timeout=2.0)
     return models.ForgetResult.model_validate(answer)
 
 
@@ -611,7 +611,7 @@ class VaultLinkAsk(BaseModel):
 
 @app.post("/app/me/vault-link")
 async def vault_link(ask: VaultLinkAsk, me: str = Depends(signed_in_person)) -> models.Link:
-    answer = await brain.request("vault_link", {"kind": "vault", "person_id": me, "start": ask.start}, timeout=2.0)
+    answer = await go.request("vault_link", {"kind": "vault", "person_id": me, "start": ask.start}, timeout=2.0)
     return models.Link.model_validate(answer)
 ```
 

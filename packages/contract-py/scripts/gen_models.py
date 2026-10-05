@@ -3,7 +3,7 @@
 The zod schemas in packages/contract are the source of truth. This script reads the OpenAPI file
 generated from them, relaxes a few constraints that would otherwise turn plain strings and numbers
 into wrapper classes in Python (string lengths inside lists, and limits on fields that may be null), and
-runs datamodel-code-generator. go-brain still checks every constraint on its side.
+runs datamodel-code-generator. Go still checks every constraint on its side.
 
 Run from packages/contract-py:  python scripts/gen_models.py
 CI runs it and fails if models.py changed.
@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
-SOURCE = HERE.parent / "contract" / "openapi" / "go-brain.json"
+SOURCE = HERE.parent / "contract" / "openapi" / "go.json"
 METHODS = HERE.parent / "contract" / "socket" / "methods.json"
 METHODS_OUT = HERE / "go_contract" / "socket_methods.py"
 OUT = HERE / "go_contract" / "models.py"
@@ -85,7 +85,7 @@ def main() -> None:
                 "--use-field-description",
                 "--collapse-root-models",
                 "--formatters", "black", "isort",
-                "--custom-file-header", "# Generated from packages/contract/openapi/go-brain.json by scripts/gen_models.py. Do not edit.",
+                "--custom-file-header", "# Generated from packages/contract/openapi/go.json by scripts/gen_models.py. Do not edit.",
             ],
             check=True,
         )
@@ -101,7 +101,7 @@ def main() -> None:
         "",
         "class Method(NamedTuple):",
         "    name: str",
-        "    direction: str  # to_brain: the server sends it. to_server: Go sends it and the server answers.",
+        "    direction: str  # to_go: the server sends it. to_server: Go sends it and the server answers.",
         "    params: type",
         "    result: type | None",
         "    answer_within_seconds: int | None",

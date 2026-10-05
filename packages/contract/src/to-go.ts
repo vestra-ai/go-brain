@@ -2,14 +2,14 @@ import { z } from 'zod';
 import { HttpUrl, Id, IsoDateTime } from './common.js';
 
 /**
- * Your requests: what the server asks go-brain over the socket. Events tell go-brain what happened;
+ * Your requests: what the server asks Go over the socket. Events tell Go what happened;
  * the rest are questions that need an answer straight away, within the time limits in the guide.
  */
 
 export const EventAccepted = z
   .object({
     accepted: z.literal(true),
-    /** True when go-brain had already seen this event_id. Still a success. */
+    /** True when Go had already seen this event_id. Still a success. */
     duplicate: z.boolean(),
   })
   .meta({ id: 'EventAccepted' });
@@ -93,12 +93,12 @@ export const Ok = z.object({ ok: z.literal(true) }).meta({ id: 'Ok' });
 export const ForgetResult = z
   .object({
     deleted_facts: z.int().nonnegative(),
-    /** Always 0: go-brain checks that nothing is left before it answers. */
+    /** Always 0: Go checks that nothing is left before it answers. */
     remaining_facts: z.literal(0),
   })
   .meta({ id: 'ForgetResult' });
 
-/** A short-lived link to one of go-brain's pages, opened from the app's You screen. */
+/** A short-lived link to one of Go's pages, opened from the app's You screen. */
 export const CreateLink = z
   .object({
     kind: z.enum(['vault']),

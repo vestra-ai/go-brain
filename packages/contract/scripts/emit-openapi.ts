@@ -1,9 +1,9 @@
 /**
  * Writes the machine-readable contract from the zod schemas (the source of truth):
- *  - openapi/go-brain.json   OpenAPI 3.1: go-brain's two HTTP routes, and every schema under components
+ *  - openapi/go.json   OpenAPI 3.1: Go's two HTTP routes, and every schema under components
  *  - asyncapi/socket.json    AsyncAPI 3.0: the socket, every method in both directions
  *  - socket/methods.json     the method table in plain JSON (name, direction, params, result, time limit)
- * The Python models are generated from openapi/go-brain.json. CI fails if any of these is stale.
+ * The Python models are generated from openapi/go.json. CI fails if any of these is stale.
  */
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -64,10 +64,10 @@ for (const r of HTTP_ROUTES) {
     },
   };
 }
-write('openapi/go-brain.json', {
+write('openapi/go.json', {
   openapi: '3.1.0',
   info: { title: 'The Go brain API', version: CONTRACT_VERSION,
-    description: 'go-brain is Go, the AI member of every trip group. The server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain.' },
+    description: 'Go is the AI member of every trip group. The server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain.' },
   paths,
   components: { schemas },
 });
@@ -80,7 +80,7 @@ const table = SOCKET_METHODS.map((x) => ({
 }));
 write('socket/methods.json', { contract: CONTRACT_VERSION, path: SOCKET_PATH, protocol: 'JSON-RPC 2.0 over WebSocket', methods: table });
 
-// ── AsyncAPI 3.0: the socket, described from go-brain's side ──
+// ── AsyncAPI 3.0: the socket, described from Go's side ──
 const messages: Record<string, unknown> = {};
 const operations: Record<string, unknown> = {};
 for (const x of SOCKET_METHODS) {
@@ -94,7 +94,7 @@ for (const x of SOCKET_METHODS) {
         result: { $ref: `#/components/schemas/${idOf(x.result)}` } } }, { $ref: '#/components/schemas/SocketError' }] } };
   }
   operations[x.name] = {
-    action: x.direction === 'to_brain' ? 'receive' : 'send',
+    action: x.direction === 'to_go' ? 'receive' : 'send',
     channel: { $ref: '#/channels/socket' },
     summary: x.summary,
     messages: [{ $ref: `#/channels/socket/messages/${x.name}` }],
@@ -104,10 +104,10 @@ for (const x of SOCKET_METHODS) {
 write('asyncapi/socket.json', {
   asyncapi: '3.0.0',
   info: { title: 'The Go brain socket', version: CONTRACT_VERSION,
-    description: 'Described from go-brain\'s side: "receive" methods are sent by the server, "send" methods are sent by Go. Frames are JSON-RPC 2.0.' },
+    description: 'Described from Go\'s side: "receive" methods are sent by the server, "send" methods are sent by Go. Frames are JSON-RPC 2.0.' },
   servers: { staging: { host: 'brain.go.example', protocol: 'wss', pathname: SOCKET_PATH } },
   channels: { socket: { address: SOCKET_PATH, messages } },
   operations,
   components: { schemas },
 });
-console.log(`wrote openapi/go-brain.json, asyncapi/socket.json and socket/methods.json: ${SOCKET_METHODS.length} socket methods, ${Object.keys(schemas).length} schemas`);
+console.log(`wrote openapi/go.json, asyncapi/socket.json and socket/methods.json: ${SOCKET_METHODS.length} socket methods, ${Object.keys(schemas).length} schemas`);

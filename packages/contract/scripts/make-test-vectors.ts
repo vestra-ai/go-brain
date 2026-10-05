@@ -32,7 +32,7 @@ const priv = createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
 const privatePem = priv.export({ format: 'pem', type: 'pkcs8' }).toString();
 const publicPem = createPublicKey(priv).export({ format: 'pem', type: 'spki' }).toString();
 const claims: SpendApprovalClaims = {
-  iss: 'server', aud: 'go-brain-vault', jti: 'ap_01JA7Q3V8Z', trip_id: 't_goa', decision_id: 'd_villa',
+  iss: 'server', aud: 'go-vault', jti: 'ap_01JA7Q3V8Z', trip_id: 't_goa', decision_id: 'd_villa',
   payer_person_id: 'p_rahul', amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol, Anjuna',
   purpose: 'Villa Sol, 3 nights, 6 to 9 Nov', refundable_until: '2026-11-01T18:29:59Z', iat: t, exp: t + 600,
 };

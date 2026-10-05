@@ -5,7 +5,7 @@
   "methods": [
     {
       "name": "send_event",
-      "direction": "to_brain",
+      "direction": "to_go",
       "summary": "Something changed in a trip. One event per change, in change-number order for each trip.",
       "params": "Event",
       "result": "EventAccepted",
@@ -14,7 +14,7 @@
     },
     {
       "name": "card_tap",
-      "direction": "to_brain",
+      "direction": "to_go",
       "summary": "Someone tapped a button on one of Go's cards. Go answers what the app should do.",
       "params": "CardTap",
       "result": "CardActionResult",
@@ -23,7 +23,7 @@
     },
     {
       "name": "catch_up",
-      "direction": "to_brain",
+      "direction": "to_go",
       "summary": "Someone came back to the room after a while. Go answers what they missed.",
       "params": "CatchUpRequest",
       "result": "CatchUp",
@@ -32,7 +32,7 @@
     },
     {
       "name": "get_person",
-      "direction": "to_brain",
+      "direction": "to_go",
       "summary": "What Go knows about a person, with where each fact came from.",
       "params": "GetPerson",
       "result": "PersonPage",
@@ -41,7 +41,7 @@
     },
     {
       "name": "update_person",
-      "direction": "to_brain",
+      "direction": "to_go",
       "summary": "Turn carry-over on or off for a person.",
       "params": "UpdatePerson",
       "result": "Ok",
@@ -50,7 +50,7 @@
     },
     {
       "name": "delete_fact",
-      "direction": "to_brain",
+      "direction": "to_go",
       "summary": "Remove one thing Go knows about a person.",
       "params": "DeleteFact",
       "result": "Ok",
@@ -59,7 +59,7 @@
     },
     {
       "name": "forget_person",
-      "direction": "to_brain",
+      "direction": "to_go",
       "summary": "Forget me: in one trip, or everywhere.",
       "params": "ForgetPerson",
       "result": "ForgetResult",
@@ -68,7 +68,7 @@
     },
     {
       "name": "vault_link",
-      "direction": "to_brain",
+      "direction": "to_go",
       "summary": "A short-lived link to the person's vault page, to open in the browser sheet.",
       "params": "CreateLink",
       "result": "Link",

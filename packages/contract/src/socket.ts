@@ -5,7 +5,7 @@ import { MessagesPage, GoTyping, PostMessage, PostMessageResult, ReplaceCard, Re
 import {
   CardActionResult, CardTap, CatchUp, CatchUpRequest, CreateLink, DeleteFact, EventAccepted, ForgetPerson, ForgetResult, GetPerson,
   Link, Ok, PersonPage, UpdatePerson,
-} from './to-brain.js';
+} from './to-go.js';
 import {
   AddBooking, AddBookingResult, AddExpense, AddExpenseResult, AddReaction, AddRecordLine, AddRecordLineResult, CancelSpendApproval,
   CloseDecision, CloseDecisionResult, OpenDecision, OpenDecisionResult, ReadMessages, ReadTrip, RemoveReaction, RequestSpendApproval,
@@ -14,21 +14,21 @@ import {
 import { TripSnapshot } from './trip.js';
 
 /**
- * The brain's socket. The server opens one WebSocket to go-brain and keeps it open. Everything between
- * the server and go-brain travels on it, in both directions, as JSON-RPC 2.0 text frames:
+ * Go's socket. The server opens one WebSocket to Go and keeps it open. Everything between
+ * the server and Go travels on it, in both directions, as JSON-RPC 2.0 text frames:
  *
  *  - a request has an `id` and always gets exactly one answer: a result or an error;
  *  - a notification has no `id` and gets no answer (Go's typing).
  *
  * The server connects to wss://<brain>/v1/socket with the x-go-signature header on the upgrade request
- * (method GET, target /v1/socket, empty body). See signing.ts. go-brain accepts each signature once.
+ * (method GET, target /v1/socket, empty body). See signing.ts. Go accepts each signature once.
  *
  * After a reconnect, a request that got no answer is sent again with the same id. Requests that change
  * something carry their own id (event_id, request_id, tap_id), so the receiver does each one once even
  * when it arrives twice. The others only read, or are safe to repeat.
  */
 export const SOCKET_PATH = '/v1/socket';
-/** go-brain pings every 20 seconds. A side that hears nothing for 40 seconds closes the socket. */
+/** Go pings every 20 seconds. A side that hears nothing for 40 seconds closes the socket. */
 export const PING_INTERVAL_SECONDS = 20;
 export const IDLE_CLOSE_SECONDS = 40;
 /** How long the server waits before reconnecting, in order, then 30 seconds each time. */
@@ -79,11 +79,11 @@ export const SocketError = z
   })
   .meta({ id: 'SocketError', description: 'The answer to a request that did not work.' });
 
-export type Direction = 'to_brain' | 'to_server';
+export type Direction = 'to_go' | 'to_server';
 
 export interface SocketMethod {
   name: string;
-  /** to_brain: the server sends it and go-brain answers. to_server: go-brain (Go) sends it and the server answers. */
+  /** to_go: the server sends it and Go answers. to_server: Go sends it and the server answers. */
   direction: Direction;
   summary: string;
   params: z.ZodType;
@@ -99,21 +99,21 @@ const m = (name: string, direction: Direction, summary: string, params: z.ZodTyp
   ({ name, direction, summary, params, result, answer_within, ...(sends_event ? { sends_event } : {}) });
 
 /**
- * What the server sends go-brain. go-brain answers send_event with { accepted: true } for an event type it
+ * What the server sends Go. Go answers send_event with { accepted: true } for an event type it
  * does not know yet, before checking the event, so the server can add event types within version 1.
  */
-export const TO_BRAIN: readonly SocketMethod[] = [
-  m('send_event', 'to_brain', 'Something changed in a trip. One event per change, in change-number order for each trip.', Event, EventAccepted, 2),
-  m('card_tap', 'to_brain', 'Someone tapped a button on one of Go\'s cards. Go answers what the app should do.', CardTap, CardActionResult, 3),
-  m('catch_up', 'to_brain', 'Someone came back to the room after a while. Go answers what they missed.', CatchUpRequest, CatchUp, 3),
-  m('get_person', 'to_brain', 'What Go knows about a person, with where each fact came from.', GetPerson, PersonPage, 2),
-  m('update_person', 'to_brain', 'Turn carry-over on or off for a person.', UpdatePerson, Ok, 2),
-  m('delete_fact', 'to_brain', 'Remove one thing Go knows about a person.', DeleteFact, Ok, 2),
-  m('forget_person', 'to_brain', 'Forget me: in one trip, or everywhere.', ForgetPerson, ForgetResult, 2),
-  m('vault_link', 'to_brain', 'A short-lived link to the person\'s vault page, to open in the browser sheet.', CreateLink, Link, 2),
+export const TO_GO: readonly SocketMethod[] = [
+  m('send_event', 'to_go', 'Something changed in a trip. One event per change, in change-number order for each trip.', Event, EventAccepted, 2),
+  m('card_tap', 'to_go', 'Someone tapped a button on one of Go\'s cards. Go answers what the app should do.', CardTap, CardActionResult, 3),
+  m('catch_up', 'to_go', 'Someone came back to the room after a while. Go answers what they missed.', CatchUpRequest, CatchUp, 3),
+  m('get_person', 'to_go', 'What Go knows about a person, with where each fact came from.', GetPerson, PersonPage, 2),
+  m('update_person', 'to_go', 'Turn carry-over on or off for a person.', UpdatePerson, Ok, 2),
+  m('delete_fact', 'to_go', 'Remove one thing Go knows about a person.', DeleteFact, Ok, 2),
+  m('forget_person', 'to_go', 'Forget me: in one trip, or everywhere.', ForgetPerson, ForgetResult, 2),
+  m('vault_link', 'to_go', 'A short-lived link to the person\'s vault page, to open in the browser sheet.', CreateLink, Link, 2),
 ];
 
-/** What go-brain (Go) sends the server. */
+/** What Go sends the server. */
 export const TO_SERVER: readonly SocketMethod[] = [
   m('read_trip', 'to_server', 'Read the whole trip as Go may see it, at its current change number.', ReadTrip, TripSnapshot, 2),
   m('read_messages', 'to_server', 'Read messages posted or changed after a change number. Used to catch up after a gap or a restart.', ReadMessages, MessagesPage, 2),
@@ -135,7 +135,7 @@ export const TO_SERVER: readonly SocketMethod[] = [
   m('cancel_spend_approval', 'to_server', 'Release an approval Go will not use. Not a change to the trip: no event.', CancelSpendApproval, Ok, 2),
 ];
 
-export const SOCKET_METHODS: readonly SocketMethod[] = [...TO_BRAIN, ...TO_SERVER];
+export const SOCKET_METHODS: readonly SocketMethod[] = [...TO_GO, ...TO_SERVER];
 export const methodByName = (name: string): SocketMethod | undefined => SOCKET_METHODS.find((x) => x.name === name);
 
 /** Check a request's params against its method. Unknown methods answer -32601; bad params answer 422. */

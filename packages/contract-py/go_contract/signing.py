@@ -1,4 +1,4 @@
-"""Sign and check the request that opens the socket from the server to go-brain.
+"""Sign and check the request that opens the socket from the server to Go.
 
 The server signs GET /v1/socket with this header. Everything after that travels on the open socket
 and is not signed again:
@@ -11,7 +11,7 @@ The signing string is four parts joined by a newline:
 
 METHOD is upper case. target is the path plus the query string exactly as sent. raw body is the
 exact bytes sent, or nothing when there is no body (the socket has none). The signature is good for
-300 seconds, and go-brain accepts each one once. Both sides share one secret, GO_SIGNING_SECRET.
+300 seconds, and Go accepts each one once. Both sides share one secret, GO_SIGNING_SECRET.
 """
 
 from __future__ import annotations

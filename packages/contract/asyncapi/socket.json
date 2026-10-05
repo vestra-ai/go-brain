@@ -3,7 +3,7 @@
   "info": {
     "title": "The Go brain socket",
     "version": "1.0.0",
-    "description": "Described from go-brain's side: \"receive\" methods are sent by the server, \"send\" methods are sent by Go. Frames are JSON-RPC 2.0."
+    "description": "Described from Go's side: \"receive\" methods are sent by the server, \"send\" methods are sent by Go. Frames are JSON-RPC 2.0."
   },
   "servers": {
     "staging": {
@@ -8251,7 +8251,7 @@
           },
           "aud": {
             "type": "string",
-            "const": "go-brain-vault"
+            "const": "go-vault"
           },
           "jti": {
             "type": "string",

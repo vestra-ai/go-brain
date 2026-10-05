@@ -3,7 +3,7 @@ import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Jou
 import { BookingKind, Day, Decision, DecisionOption, Proof } from './trip.js';
 
 /**
- * Go's requests: what go-brain asks the server over the socket, to read the trip or act in it.
+ * Go's requests: what Go asks the server over the socket, to read the trip or act in it.
  * The server answers each one. Every request names its trip. Every write carries `request_id`:
  * The server must do the write once even if the same request arrives twice, and answer the repeat
  * with the first answer.

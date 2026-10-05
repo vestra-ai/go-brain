@@ -1,4 +1,4 @@
-# Generated from packages/contract/openapi/go-brain.json by scripts/gen_models.py. Do not edit.
+# Generated from packages/contract/openapi/go.json by scripts/gen_models.py. Do not edit.
 
 from __future__ import annotations
 
@@ -1498,7 +1498,7 @@ class SpendApprovalClaims(BaseModel):
     """
 
     iss: Literal["server"]
-    aud: Literal["go-brain-vault"]
+    aud: Literal["go-vault"]
     jti: Annotated[str, Field(max_length=64, min_length=8)]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     decision_id: Annotated[str, Field(max_length=64, min_length=1)]

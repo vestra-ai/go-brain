@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { Card } from './cards.js';
 import { Actor, HttpUrl, Id, IsoDateTime, Seq } from './common.js';
 
-/** Photo and file URLs must stay fetchable for at least an hour; go-brain copies what it keeps. */
+/** Photo and file URLs must stay fetchable for at least an hour; Go copies what it keeps. */
 export const Attachment = z
   .discriminatedUnion('kind', [
     z.object({

@@ -1,10 +1,10 @@
 import type { z } from 'zod';
-import { Health } from './to-brain.js';
+import { Health } from './to-go.js';
 import { SOCKET_PATH } from './socket.js';
 
 /**
- * go-brain's HTTP routes. Almost everything travels on the socket (socket.ts); HTTP is left for the
- * health check and for opening the socket itself. go-brain's pages (the vault, watching Go work) are
+ * Go's HTTP routes. Almost everything travels on the socket (socket.ts); HTTP is left for the
+ * health check and for opening the socket itself. Go's pages (the vault, watching Go work) are
  * web pages the app opens from short-lived links, not API routes.
  */
 export interface HttpRoute {

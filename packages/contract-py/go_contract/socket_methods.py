@@ -8,7 +8,7 @@ from . import models
 
 class Method(NamedTuple):
     name: str
-    direction: str  # to_brain: the server sends it. to_server: Go sends it and the server answers.
+    direction: str  # to_go: the server sends it. to_server: Go sends it and the server answers.
     params: type
     result: type | None
     answer_within_seconds: int | None
@@ -17,14 +17,14 @@ class Method(NamedTuple):
 
 PATH = '/v1/socket'
 METHODS: dict[str, Method] = {
-    'send_event': Method('send_event', 'to_brain', models.Event, models.EventAccepted, 2, None),
-    'card_tap': Method('card_tap', 'to_brain', models.CardTap, models.CardActionResult, 3, None),
-    'catch_up': Method('catch_up', 'to_brain', models.CatchUpRequest, models.CatchUp, 3, None),
-    'get_person': Method('get_person', 'to_brain', models.GetPerson, models.PersonPage, 2, None),
-    'update_person': Method('update_person', 'to_brain', models.UpdatePerson, models.Ok, 2, None),
-    'delete_fact': Method('delete_fact', 'to_brain', models.DeleteFact, models.Ok, 2, None),
-    'forget_person': Method('forget_person', 'to_brain', models.ForgetPerson, models.ForgetResult, 2, None),
-    'vault_link': Method('vault_link', 'to_brain', models.CreateLink, models.Link, 2, None),
+    'send_event': Method('send_event', 'to_go', models.Event, models.EventAccepted, 2, None),
+    'card_tap': Method('card_tap', 'to_go', models.CardTap, models.CardActionResult, 3, None),
+    'catch_up': Method('catch_up', 'to_go', models.CatchUpRequest, models.CatchUp, 3, None),
+    'get_person': Method('get_person', 'to_go', models.GetPerson, models.PersonPage, 2, None),
+    'update_person': Method('update_person', 'to_go', models.UpdatePerson, models.Ok, 2, None),
+    'delete_fact': Method('delete_fact', 'to_go', models.DeleteFact, models.Ok, 2, None),
+    'forget_person': Method('forget_person', 'to_go', models.ForgetPerson, models.ForgetResult, 2, None),
+    'vault_link': Method('vault_link', 'to_go', models.CreateLink, models.Link, 2, None),
     'read_trip': Method('read_trip', 'to_server', models.ReadTrip, models.TripSnapshot, 2, None),
     'read_messages': Method('read_messages', 'to_server', models.ReadMessages, models.MessagesPage, 2, None),
     'post_message': Method('post_message', 'to_server', models.PostMessage, models.PostMessageResult, 2, 'message.created'),

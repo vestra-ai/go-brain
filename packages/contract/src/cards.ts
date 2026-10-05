@@ -2,14 +2,14 @@ import { z } from 'zod';
 import { AmountMinor, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place } from './common.js';
 
 /**
- * Cards are the rich things Go posts in the room. The same JSON travels from go-brain through
+ * Cards are the rich things Go posts in the room. The same JSON travels from Go through
  * the server to the app, unchanged.
  *
  * Two families:
  *  - Record cards carry only an id. The server draws them from its own rows (a vote, a ticket, an
  *    expense), so the room and the Trip screens never disagree. The server owns their buttons.
  *  - Go cards carry their content (options, live work, a call, a payment, a notice). Their buttons
- *    are `actions`: a tap is sent to go-brain, which answers (see the card action call).
+ *    are `actions`: a tap is sent to Go, which answers (see the card action call).
  *
  * Every card has `fallback_text`: plain words an older app build shows if it cannot draw the kind.
  */

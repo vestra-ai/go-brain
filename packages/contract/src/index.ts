@@ -8,7 +8,7 @@ export * from './room.js';
 export * from './trip.js';
 export * from './events.js';
 export * from './to-server.js';
-export * from './to-brain.js';
+export * from './to-go.js';
 export * from './socket.js';
 export * from './errors.js';
 export * from './signing.js';

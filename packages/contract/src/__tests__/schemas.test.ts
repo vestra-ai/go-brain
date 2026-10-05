@@ -59,7 +59,7 @@ describe('contract schemas', () => {
     expect(SocketError.safeParse({ ...busy, error: { ...busy.error, data: { code: 'rate_limited', retry_after_seconds: 0 } } }).success).toBe(false);
   });
   it('the emitted frame schemas keep their id property, so the Python models can read it', () => {
-    const doc = JSON.parse(readFileSync(new URL('../../openapi/go-brain.json', import.meta.url), 'utf8'));
+    const doc = JSON.parse(readFileSync(new URL('../../openapi/go.json', import.meta.url), 'utf8'));
     for (const name of ['SocketRequest', 'SocketResult', 'SocketError']) {
       expect(doc.components.schemas[name].properties.id, name).toBeTruthy();
     }

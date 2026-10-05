@@ -20,9 +20,9 @@ A card is something richer than text that Go posts in the room inside one of its
 
 ## How a card travels
 
-Go posts a card as the `card` of one of its messages, by sending the server a `post_message` request on the socket (see [Go's requests](04-gos-requests.md)). The same JSON travels unchanged from go-brain through the server to the app. The server stores the card on the message exactly as it arrived and sends it to the app the same way. It never rewrites a card, so a field added to a card later in version 1 reaches the app without any change in the server.
+Go posts a card as the `card` of one of its messages, by sending the server a `post_message` request on the socket (see [Go's requests](04-gos-requests.md)). The same JSON travels unchanged from Go through the server to the app. The server stores the card on the message exactly as it arrived and sends it to the app the same way. It never rewrites a card, so a field added to a card later in version 1 reaches the app without any change in the server.
 
-To do that, a `post_message` handler stores `raw.card` as one JSON value (for example a `jsonb` column), not the card from the checked params. Every handler gets two arguments, `(params, raw)` (see [The socket](02-the-socket.md)). `params` has been checked against the contract, and checking leaves out any field your copy of the contract does not know yet. `raw` is the frame's params exactly as they arrived, so `raw.card` still has every field Go sent. The card also comes back to go-brain inside the `message.created` event, like every other message.
+To do that, a `post_message` handler stores `raw.card` as one JSON value (for example a `jsonb` column), not the card from the checked params. Every handler gets two arguments, `(params, raw)` (see [The socket](02-the-socket.md)). `params` has been checked against the contract, and checking leaves out any field your copy of the contract does not know yet. `raw` is the frame's params exactly as they arrived, so `raw.card` still has every field Go sent. The card also comes back to Go inside the `message.created` event, like every other message.
 
 ## Two families of cards
 
@@ -33,7 +33,7 @@ Every card belongs to one of two families. The family decides where the app gets
 | Kinds | `vote`, `mandate`, `ticket`, `expense`, `settle_up`, `day`, `plan`, `budget` | `options`, `working`, `call`, `pay`, `notice` |
 | What the card carries | Its kind and an id (such as `decision_id` or `booking_id`), plus the fields every card has | Everything to show, plus its buttons in `actions` |
 | What the app draws from | The server's own rows: the vote, the booking, the expense, the trip's money and itinerary | The card itself |
-| Who handles the buttons | server | go-brain, through the server |
+| Who handles the buttons | server | Go, through the server |
 | How it changes | It always shows the row as it is now. When a vote comes in, the vote card in the room shows the new tally without a new message. | Go replaces it in place with a `replace_card` request. |
 
 Record cards are drawn from the server's rows so that the room and the Trip screens never disagree. A ticket in the room and the same booking on the Trip screen are the same row.
@@ -57,7 +57,7 @@ Good to know:
 
 ## Buttons on Go cards
 
-Go cards carry their buttons in `actions`, at most three per card. A tap goes from the app to the server, which sends it to go-brain as a `card_tap` request on the socket and returns go-brain's answer to the app. Buttons on record cards never reach go-brain: the server handles them itself.
+Go cards carry their buttons in `actions`, at most three per card. A tap goes from the app to the server, which sends it to Go as a `card_tap` request on the socket and returns Go's answer to the app. Buttons on record cards never reach Go: the server handles them itself.
 
 | Field | What it is |
 |---|---|
@@ -70,20 +70,20 @@ Go cards carry their buttons in `actions`, at most three per card. A tap goes fr
 When someone taps a button:
 
 1. The app sends the server the card, the `action_id`, and the `option_id` when the button was on one option.
-2. The server sends go-brain a `card_tap` request with a new `tap_id` for this tap, the trip, the card, the `action_id`, the person who tapped and, when there is one, the `option_id`. go-brain acts on each `tap_id` once, even if the tap arrives twice.
-3. go-brain answers within 3 seconds with one of three results, and the server passes it to the app:
+2. The server sends Go a `card_tap` request with a new `tap_id` for this tap, the trip, the card, the `action_id`, the person who tapped and, when there is one, the `option_id`. Go acts on each `tap_id` once, even if the tap arrives twice.
+3. Go answers within 3 seconds with one of three results, and the server passes it to the app:
    - `done`: show the `toast`, if there is one. Go follows up in the room, or updates the card in place.
    - `open`: open the `url` straight away in the system browser sheet, never in a WebView. This is how the vault page and the page for watching Go work open.
    - `refused`: show the `toast`. Nothing changed.
 
-Kabir taps "I'll take this" on the IndiGo 6E 2134 flight, so the server sends go-brain this `card_tap`:
+Kabir taps "I'll take this" on the IndiGo 6E 2134 flight, so the server sends Go this `card_tap`:
 
 <!-- schema: CardTap -->
 ```json
 { "tap_id": "tap_0413", "trip_id": "t_goa", "card_id": "c_flights_1", "action_id": "pick", "person_id": "p_kabir", "option_id": "opt_flight_1" }
 ```
 
-and go-brain answers:
+and Go answers:
 
 <!-- schema: ActionDone -->
 ```json
@@ -106,7 +106,7 @@ These are the buttons Go usually puts on its cards:
 
 Good to know:
 - Disable a button while its tap is on the way, so a double tap sends one request.
-- go-brain still checks who may use a button. It refuses an `approve` from anyone but the payer, even though the app shows that button only to the payer.
+- Go still checks who may use a button. It refuses an `approve` from anyone but the payer, even though the app shows that button only to the payer.
 
 ## Updating a card in place
 
@@ -142,7 +142,7 @@ Here Go finished its search for villas, so it replaces the working card from [Wo
 
 ## Images
 
-Every image on a card (`image_url`, `logo_url`, `screenshot_url` and a place's `photo_url`) is an `https` URL served from go-brain's image cache, such as `https://brain.go.example/img/villa-sol.jpg`. An image URL never changes what it shows, so the app can cache it for the life of the trip. A new screenshot of Go's work always has a new URL.
+Every image on a card (`image_url`, `logo_url`, `screenshot_url` and a place's `photo_url`) is an `https` URL served from Go's image cache, such as `https://brain.go.example/img/villa-sol.jpg`. An image URL never changes what it shows, so the app can cache it for the life of the trip. A new screenshot of Go's work always has a new URL.
 
 People's photos are not on cards. They come from the server, on each person (`https://cdn.go.example/people/p_rahul.jpg`).
 
@@ -263,7 +263,7 @@ A settle up card shows who pays whom right now so that everyone is square. Go po
 
 The server draws it from the trip's money (`money.transfers`): one row per payment, with both faces and the amount, such as "Priya pays Rahul ₹11,520". It always shows the transfers as they are now, so it changes as expenses are added or removed. When there are no transfers, it shows "Everyone is square".
 
-**Buttons.** Each row has a UPI button, owned by the server and shown to the person who pays, when the person being paid has a UPI id saved. It opens the payer's UPI app with the amount and the UPI id that the server holds. go-brain never sees UPI ids.
+**Buttons.** Each row has a UPI button, owned by the server and shown to the person who pays, when the person being paid has a UPI id saved. It opens the payer's UPI app with the amount and the UPI id that the server holds. Go never sees UPI ids.
 
 <!-- schema: SettleUpCard -->
 ```json

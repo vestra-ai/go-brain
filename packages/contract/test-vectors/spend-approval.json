@@ -4,7 +4,7 @@
   "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=\n-----END PUBLIC KEY-----\n",
   "claims": {
     "iss": "server",
-    "aud": "go-brain-vault",
+    "aud": "go-vault",
     "jti": "ap_01JA7Q3V8Z",
     "trip_id": "t_goa",
     "decision_id": "d_villa",
@@ -17,6 +17,6 @@
     "iat": 1791190800,
     "exp": 1791191400
   },
-  "token": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.4IgC3Z2cNbWalezid833WDOIBoZoLeAuZhSbErpEFpE8qk-TI_yNIcyNcpX-UeHs856OFBbN6len1I9928SqDQ",
+  "token": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.vJiOht3CipQjv-ytsJTJQKlH6ijfrEBs5B9E_yOwNerCZnsMw7NcQIiQv1IiY_ZFRcaVVvpasK1PSpJEKjJgBg",
   "verify_at": 1791190860
 }

@@ -5,7 +5,7 @@ import { Currency, Id, IsoDateTime, PositiveAmountMinor } from './common.js';
 /**
  * The signed spend approval: the server's half of the two keys.
  *
- * The server runs the spend check and signs this with its Ed25519 private key. The vault in go-brain
+ * The server runs the spend check and signs this with its Ed25519 private key. Go's vault
  * pays only with a valid, unexpired, unused approval AND the payer's own passkey (Face ID). Neither
  * key is the model's word. One use: the vault records `jti` and refuses it a second time, and
  * The server marks it used when Go records the booking.
@@ -21,7 +21,7 @@ const HEADER = { alg: 'EdDSA', typ: 'go-spend+jws' } as const;
 export const SpendApprovalClaims = z
   .object({
     iss: z.literal('server'),
-    aud: z.literal('go-brain-vault'),
+    aud: z.literal('go-vault'),
     jti: z.string().min(8).max(64),
     trip_id: Id,
     decision_id: Id,

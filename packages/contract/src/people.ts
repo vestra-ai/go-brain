@@ -6,7 +6,7 @@ import { AmountMinor, Currency, HttpUrl, Id, IsoDateTime } from './common.js';
  * trip they join, so Go can recognise them next time (if they allow it). There is no separate
  * per-trip member id.
  *
- * go-brain never receives contact details (phone, email) or anyone's own budget answer.
+ * Go never receives contact details (phone, email) or anyone's own budget answer.
  */
 export const Person = z
   .object({

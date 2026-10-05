@@ -3,7 +3,7 @@ import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Jou
 import { BudgetSummary, Person } from './people.js';
 
 /**
- * The trip as the server holds it. The server is the source of truth for everything here; go-brain
+ * The trip as the server holds it. The server is the source of truth for everything here; Go
  * keeps only a copy it refreshes by change number (`seq`).
  */
 

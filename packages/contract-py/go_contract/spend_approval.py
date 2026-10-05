@@ -1,7 +1,7 @@
 """The signed spend approval: the server's half of the two keys.
 
-The server runs the spend check and signs the claims with its Ed25519 private key. The vault in
-go-brain pays only with a valid, unexpired, unused approval and the payer's own passkey.
+The server runs the spend check and signs the claims with its Ed25519 private key. Go's vault
+pays only with a valid, unexpired, unused approval and the payer's own passkey.
 
 Wire format (a compact JWS):
     base64url(header JSON) "." base64url(claims JSON) "." base64url(Ed25519 signature over the first two parts)

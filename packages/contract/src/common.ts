@@ -2,13 +2,13 @@ import { z } from 'zod';
 
 /**
  * Ids are opaque strings. The server mints trip, person, message, decision, booking, expense and
- * record line ids. go-brain mints card, task, call, approval-request and fact ids.
+ * record line ids. Go mints card, task, call, approval-request and fact ids.
  */
 export const Id = z.string().min(1).max(64);
 
 /**
  * The trip's change number. The server adds one for every change it makes to a trip (a message, a
- * reaction, a vote, a booking...) and stamps it on the event it sends. go-brain uses it to notice
+ * reaction, a vote, a booking...) and stamps it on the event it sends. Go uses it to notice
  * a missed event: if it holds 41 and receives 43, it reads the trip again.
  */
 export const Seq = z.int().positive();

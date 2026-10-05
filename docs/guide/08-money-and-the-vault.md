@@ -1,6 +1,6 @@
 # Money and the vault
 
-This page explains how Go pays for something safely: the two separate approvals every payment needs, the spend check the server runs, the signed spend approval, and the vault where the payer confirms with Face ID. Everyone building Go should read it, because the server, go-brain and the app each check part of every payment.
+This page explains how Go pays for something safely: the two separate approvals every payment needs, the spend check the server runs, the signed spend approval, and the vault where the payer confirms with Face ID. Everyone building Go should read it, because the server, Go and the app each check part of every payment.
 
 ## Why a payment needs two separate approvals
 
@@ -23,7 +23,7 @@ This is the whole path of one payment, from the vote closing to the ticket in th
 6. Go asks for a spend approval with a `request_spend_approval` request.
 7. The server runs the spend check, signs a one-use spend approval that lasts at most 10 minutes, stores it, and answers with it.
 8. Go posts a pay card (`c_villa_pay`) for Rahul with `post_message`, with Approve and Decline buttons that only he sees.
-9. Rahul taps Approve. The server sends the tap to go-brain as a `card_tap` request, and go-brain answers `open` with a link to the vault page. The app opens it in the system browser sheet.
+9. Rahul taps Approve. The server sends the tap to Go as a `card_tap` request, and Go answers `open` with a link to the vault page. The app opens it in the system browser sheet.
 10. The vault page shows the amount, the merchant, the refundable-until date and Rahul's card. Rahul confirms with Face ID, then types the card's CVV and his bank's one-time code on that page. Neither is stored.
 11. The vault checks the spend approval (the signature, the expiry, that it was never used, the payer and the amount), pays ixigo once, and forgets the card details.
 12. Go records the booking with an `add_booking` request, including the `approval_id`. The server checks the approval and marks it used.
@@ -33,30 +33,30 @@ This is the whole path of one payment, from the vote closing to the ticket in th
 sequenceDiagram
   autonumber
   actor Rahul as Rahul (payer)
-  participant app as go-app
+  participant app as app
   participant server as server
-  participant brain as go-brain
-  participant vault as go-brain vault page
+  participant go as Go
+  participant vault as vault page
   participant ixigo
-  server->>brain: send_event (decision.closed, d_villa, Villa Sol won 4 to 1)
-  brain->>server: set_mandate (d_villa, cap ₹55,000, refundable only, payer Rahul)
-  server-->>brain: answer: seq 72
-  server->>brain: send_event (mandate.set, seq 72)
-  brain->>server: post_message (mandate card c_villa_mandate)
+  server->>go: send_event (decision.closed, d_villa, Villa Sol won 4 to 1)
+  go->>server: set_mandate (d_villa, cap ₹55,000, refundable only, payer Rahul)
+  server-->>go: answer: seq 72
+  server->>go: send_event (mandate.set, seq 72)
+  go->>server: post_message (mandate card c_villa_mandate)
   server->>app: the mandate card, with "Yes, book it" for Rahul only
   Rahul->>app: taps "Yes, book it"
   app->>server: Yes, book it
-  server->>brain: send_event (mandate.confirmed)
-  brain->>ixigo: check the price again (₹54,200, refundable until 1 Nov)
-  brain->>server: request_spend_approval (d_villa, ₹54,200)
+  server->>go: send_event (mandate.confirmed)
+  go->>ixigo: check the price again (₹54,200, refundable until 1 Nov)
+  go->>server: request_spend_approval (d_villa, ₹54,200)
   Note over server: the spend check, then sign<br/>(one use, 10 minutes at most)
-  server-->>brain: answer: approved (ap_01JA7Q3V8Z and the signed token)
-  brain->>server: post_message (pay card c_villa_pay for Rahul)
+  server-->>go: answer: approved (ap_01JA7Q3V8Z and the signed token)
+  go->>server: post_message (pay card c_villa_pay for Rahul)
   server->>app: the pay card, and a push to Rahul
   Rahul->>app: taps Approve
   app->>server: the tap
-  server->>brain: card_tap (tap_0457, c_villa_pay, approve, p_rahul)
-  brain-->>server: answer: open (vault link, valid 5 minutes)
+  server->>go: card_tap (tap_0457, c_villa_pay, approve, p_rahul)
+  go-->>server: answer: open (vault link, valid 5 minutes)
   server-->>app: open this link
   app->>vault: opens it in the system browser sheet
   vault->>Rahul: amount, merchant, refundable until, the card
@@ -64,12 +64,12 @@ sequenceDiagram
   Note over vault: checks the token, pays once, forgets the card details
   vault->>ixigo: pays ₹54,200
   ixigo-->>vault: booked, ref IXG-7Q2K9
-  brain->>server: add_booking (b_villa, approval_id ap_01JA7Q3V8Z)
+  go->>server: add_booking (b_villa, approval_id ap_01JA7Q3V8Z)
   Note over server: checks the approval and marks it used
-  server-->>brain: answer: booking_id b_villa, seq 76
-  brain->>server: add_expense (Rahul paid, split between all five)
-  brain->>server: post_message (ticket card c_villa_ticket)
-  brain->>server: replace_card (c_villa_pay, paid)
+  server-->>go: answer: booking_id b_villa, seq 76
+  go->>server: add_expense (Rahul paid, split between all five)
+  go->>server: post_message (ticket card c_villa_ticket)
+  go->>server: replace_card (c_villa_pay, paid)
   server->>app: the ticket, and the pay card shows paid
 ```
 
@@ -98,14 +98,14 @@ Here is the pay card Go posts in step 8. The Approve and Decline buttons show on
 }
 ```
 
-In step 9, the server sends go-brain Rahul's tap on Approve:
+In step 9, the server sends Go Rahul's tap on Approve:
 
 <!-- schema: CardTap -->
 ```json
 { "tap_id": "tap_0457", "trip_id": "t_goa", "card_id": "c_villa_pay", "action_id": "approve", "person_id": "p_rahul" }
 ```
 
-go-brain checks that Rahul is the payer and answers with the vault page to open, within 3 seconds:
+Go checks that Rahul is the payer and answers with the vault page to open, within 3 seconds:
 
 <!-- schema: ActionOpen -->
 ```json
@@ -114,7 +114,7 @@ go-brain checks that Rahul is the payer and answers with the vault page to open,
 
 ## The spend check
 
-The spend check is how the server decides whether a payment may happen. The server runs it every time go-brain sends a `request_spend_approval` request, and signs a spend approval only when every rule passes. It reads only the server's own rows, never anything Go says. It answers within 2 seconds, like every request Go sends.
+The spend check is how the server decides whether a payment may happen. The server runs it every time Go sends a `request_spend_approval` request, and signs a spend approval only when every rule passes. It reads only the server's own rows, never anything Go says. It answers within 2 seconds, like every request Go sends.
 
 Go's request names the vote and what it wants to pay:
 
@@ -173,7 +173,7 @@ When every rule passes, the server answers with the approval. `approval` is the 
 {
   "status": "approved",
   "approval_id": "ap_01JA7Q3V8Z",
-  "approval": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.4IgC3Z2cNbWalezid833WDOIBoZoLeAuZhSbErpEFpE8qk-TI_yNIcyNcpX-UeHs856OFBbN6len1I9928SqDQ",
+  "approval": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.vJiOht3CipQjv-ytsJTJQKlH6ijfrEBs5B9E_yOwNerCZnsMw7NcQIiQv1IiY_ZFRcaVVvpasK1PSpJEKjJgBg",
   "expires_at": "2026-10-05T09:10:00Z"
 }
 ```
@@ -184,7 +184,7 @@ Each `SpendDenialReason` value means something different for the group, so Go ha
 
 | Reason | What it usually means | What Go does |
 |---|---|---|
-| `decision_not_found` | Go sent a wrong vote id. This is a bug. | Says nothing in the room. go-brain logs it and reads the trip again. |
+| `decision_not_found` | Go sent a wrong vote id. This is a bug. | Says nothing in the room. Go logs it and reads the trip again. |
 | `decision_not_closed` | Go asked before the vote closed. | Waits for the vote to close. If someone asked Go to book, it says when the vote closes and that it will book the winner then. |
 | `no_mandate` | Go has not set the mandate yet. | Sets the mandate, posts the mandate card, and waits for the payer. |
 | `payer_declined` | The payer tapped "Not now". | Holds off and says so once, such as "Holding off on Villa Sol for now." It does not ask again unless someone asks it to. |
@@ -200,7 +200,7 @@ When the spend check passes, the server makes an approval id, signs the claims w
 
 The server's handler for `request_spend_approval` does five things:
 
-1. Check the params against the contract, with `parseParams('request_spend_approval', params)` in TypeScript or `METHODS["request_spend_approval"].params.model_validate(params)` in Python. If they do not match, answer a `422 invalid` error. The `BrainSocket` client in [The socket](02-the-socket.md) does this before it calls your handler.
+1. Check the params against the contract, with `parseParams('request_spend_approval', params)` in TypeScript or `METHODS["request_spend_approval"].params.model_validate(params)` in Python. If they do not match, answer a `422 invalid` error. The `GoSocket` client in [The socket](02-the-socket.md) does this before it calls your handler.
 2. If this trip already has an approval with this `request_id`, answer with that same approval again. A repeated request must never be denied as `approval_outstanding` because of its own first copy.
 3. Open a database transaction and lock the vote's row (`select ... for update`), so two requests for the same vote at the same moment cannot both pass the last rule.
 4. Run the spend check. If a rule fails, answer `denied` with its reason.
@@ -211,7 +211,7 @@ These are the claims the server signs:
 | Claim | Value |
 |---|---|
 | `iss` | Always `"server"` |
-| `aud` | Always `"go-brain-vault"` |
+| `aud` | Always `"go-vault"` |
 | `jti` | The new approval id: unique, 8 to 64 characters |
 | `trip_id` | This trip |
 | `decision_id` | The vote |
@@ -267,7 +267,7 @@ export function issueApproval(tripId: string, decision: Decision, req: SpendRequ
   const token = signSpendApproval(
     {
       iss: 'server',
-      aud: 'go-brain-vault',
+      aud: 'go-vault',
       jti: approvalId,
       trip_id: tripId,
       decision_id: decision.decision_id,
@@ -357,7 +357,7 @@ def issue_approval(trip_id: str, decision: models.Decision, req: models.RequestS
     sent = req.model_dump(mode="json")  # refundable_until as an ISO string
     claims = {  # signed in this key order, so keep the order
         "iss": "server",
-        "aud": "go-brain-vault",
+        "aud": "go-vault",
         "jti": approval_id,
         "trip_id": trip_id,
         "decision_id": decision.decision_id,
@@ -408,8 +408,8 @@ Good to know:
 - The payer always comes from the mandate. `RequestSpendApproval` has no payer field, so Go cannot name a different payer.
 - `jti` must be 8 to 64 characters, which is stricter than other ids. Make it random, so nobody can guess another approval's id.
 - `sign_spend_approval` in Python signs the claims in the dict's own key order. Build the dict in the order of the table above. The TypeScript helper always uses that order.
-- The token goes only to go-brain. The server never shows it in the app.
-- `GO_SPEND_PRIVATE_KEY` never leaves the server. go-brain holds only the public key, so it can check approvals but never make one.
+- The token goes only to Go. The server never shows it in the app.
+- `GO_SPEND_PRIVATE_KEY` never leaves the server. Go holds only the public key, so it can check approvals but never make one.
 
 ## The token format
 
@@ -434,7 +434,7 @@ Ed25519 signatures are deterministic: the same claims and the same key always gi
 ```json
 {
   "iss": "server",
-  "aud": "go-brain-vault",
+  "aud": "go-vault",
   "jti": "ap_01JA7Q3V8Z",
   "trip_id": "t_goa",
   "decision_id": "d_villa",
@@ -452,7 +452,7 @@ Ed25519 signatures are deterministic: the same claims and the same key always gi
 The token these claims must produce:
 
 ```
-eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.4IgC3Z2cNbWalezid833WDOIBoZoLeAuZhSbErpEFpE8qk-TI_yNIcyNcpX-UeHs856OFBbN6len1I9928SqDQ
+eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.vJiOht3CipQjv-ytsJTJQKlH6ijfrEBs5B9E_yOwNerCZnsMw7NcQIiQv1IiY_ZFRcaVVvpasK1PSpJEKjJgBg
 ```
 
 `iat` is 2026-10-05 09:00:00 UTC and `exp` is ten minutes later. The file's `verify_at` (one minute after `iat`) is a time when the token is valid, for testing the checking side.
@@ -607,7 +607,7 @@ Good to know:
 
 ## The vault
 
-The vault is each person's own store for cards and logins, inside go-brain. It is how Go pays for a booking without Go itself ever holding a card. Each person uses it twice: once to add a card, and then each time they approve a payment.
+The vault is each person's own store for cards and logins. Go (Keshav's team) runs it, kept apart from the AI model. It is how Go pays for a booking without the AI ever holding a card. Each person uses it twice: once to add a card, and then each time they approve a payment.
 
 ### Whose it is
 
@@ -624,8 +624,8 @@ The vault is each person's own store for cards and logins, inside go-brain. It i
 ### How a card gets in
 
 1. On the app's You screen, the person taps "Add a card".
-2. The server asks go-brain for a vault link with a `vault_link` request, and the app opens it in the system browser sheet (see [The app](07-the-app.md#opening-go-brain-pages)).
-3. The person types their card on go-brain's page. The card goes from their phone straight to go-brain. It never passes through the app's API or the server.
+2. The server asks Go for a vault link with a `vault_link` request, and the app opens it in the system browser sheet (see [The app](07-the-app.md#opening-go-pages)).
+3. The person types their card on Go's page. The card goes from their phone straight to Go's vault. It never passes through the app's API or the server.
 4. The first time, the page creates the person's passkey.
 
 The `vault_link` request that the server sends for this:
@@ -635,7 +635,7 @@ The `vault_link` request that the server sends for this:
 { "kind": "vault", "person_id": "p_rahul", "start": "add_card" }
 ```
 
-and go-brain's answer, valid for 5 minutes:
+and Go's answer, valid for 5 minutes:
 
 <!-- schema: Link -->
 ```json
@@ -650,7 +650,7 @@ When the payer taps Approve on a pay card, the app opens the vault page for that
 2. It shows them with the card that will pay.
 3. The payer confirms with Face ID (their passkey).
 4. The payer types the card's CVV and, when the bank asks, the bank's one-time code on the same page. Neither is ever stored.
-5. The vault checks the spend approval: the signature with `GO_SPEND_PUBLIC_KEY`, that `aud` is `go-brain-vault`, that it has not expired, that its `jti` was never used, that `payer_person_id` is the person whose passkey just unlocked the vault, and that the checkout total is at most `amount_minor` in `currency`.
+5. The vault checks the spend approval: the signature with `GO_SPEND_PUBLIC_KEY`, that `aud` is `go-vault`, that it has not expired, that its `jti` was never used, that `payer_person_id` is the person whose passkey just unlocked the vault, and that the checkout total is at most `amount_minor` in `currency`.
 6. It records the `jti`, pays once, and forgets the card details. They fill that one payment and are not kept anywhere else.
 
 **TypeScript**
