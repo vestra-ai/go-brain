@@ -8,11 +8,12 @@ import type { Duplex } from 'node:stream';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
-  CONTRACT_VERSION, Event, IDLE_CLOSE_SECONDS, MAX_FRAME_BYTES, PING_INTERVAL_SECONDS, SIGNATURE_HEADER, SOCKET_PATH, TO_GO, parseParams,
+  CONTRACT_VERSION, Event, IDLE_CLOSE_SECONDS, MAX_FRAME_BYTES, PING_INTERVAL_SECONDS, SIGNATURE_HEADER, SOCKET_PATH, SocketNotification,
+  SocketRequest, TO_GO, parseParams,
 } from '@go/contract';
 import { SocketCallError } from '@go/sim';
 import { FrameLog, renderFrames } from './frames.js';
-import { Link } from './link.js';
+import { Link, oneLine } from './link.js';
 import { SignatureGuard } from './signature-guard.js';
 
 /** Answers one of the Server's requests other than send_event. Throw SocketCallError to answer with an error. */
@@ -127,6 +128,14 @@ export function buildFakeGo(opts: FakeGoOptions): FakeGo {
     }
     const f = frame as { id?: unknown; method?: unknown; params?: unknown; result?: unknown; error?: unknown };
     if (typeof f.method !== 'string') return link.settle(f, instance); // the answer to one of Go's requests
+    // A request needs "jsonrpc": "2.0", a string id of 1 to 64 characters and object params; a notification is the
+    // same without the id. Anything else is answered -32700 with id null: its id cannot be trusted to answer by.
+    const shape = f.id === undefined ? SocketNotification.safeParse(frame) : SocketRequest.safeParse(frame);
+    if (!shape.success) {
+      const message = `cannot read the frame: ${oneLine(shape.error)}`.slice(0, 500);
+      link.send(ws, { jsonrpc: '2.0', id: null, error: { code: -32700, message } });
+      return;
+    }
     if (f.id === undefined) return; // the Server sends no notifications; a stray one gets no answer
     const id = f.id;
     try {

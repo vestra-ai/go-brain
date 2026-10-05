@@ -36,7 +36,8 @@ export class AnswerProblemError extends Error {
 /** JSON-RPC's own two errors carry no data.code. Every other error needs one. */
 const NO_DATA_CODE: ReadonlySet<number> = new Set([-32700, -32601]);
 
-const oneLine = (err: z.ZodError): string => z.prettifyError(err).replace(/\s*\n\s*/g, ' ');
+/** A zod error on one line, for a frame or a problem row. */
+export const oneLine = (err: z.ZodError): string => z.prettifyError(err).replace(/\s*\n\s*/g, ' ');
 
 export interface RequestOptions {
   /** The socket the event came on. When it has closed, the newest open socket is used instead. */

@@ -243,6 +243,23 @@ describe("the Server's other requests", () => {
     await until(() => frames.length === 2);
     for (const f of frames) expect(f).toEqual({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'cannot read the frame' } });
   });
+
+  it('answers -32700 with id null for a request that is not a well-formed JSON-RPC request', async () => {
+    const port = await start({ behaviour: () => ({ handlers: { get_person: async (p) => ({ person_id: p.person_id, carry_over: false, facts: [] }) } }) });
+    const { ws, frames } = await openRaw(port, 'malformed');
+    const params = { person_id: 'p_kabir' };
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'get_person', params })); // a numeric id
+    ws.send(JSON.stringify({ id: 'gs_no_version', method: 'get_person', params })); // no "jsonrpc"
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: `gs_${'x'.repeat(62)}`, method: 'get_person', params })); // an id of 65 characters
+    await until(() => frames.length === 3);
+    for (const f of frames) {
+      expect(f).toMatchObject({ jsonrpc: '2.0', id: null, error: { code: -32700 } });
+      expect(f.error.message).toMatch(/^cannot read the frame: /);
+    }
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'gs_fine', method: 'get_person', params }));
+    await until(() => frames.length === 4);
+    expect(frames[3]).toEqual({ jsonrpc: '2.0', id: 'gs_fine', result: { person_id: 'p_kabir', carry_over: false, facts: [] } });
+  });
 });
 
 describe("Go's requests to the Server", () => {
