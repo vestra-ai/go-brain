@@ -5,12 +5,12 @@ import { Message, Reaction } from './room.js';
 import { Booking, Decision, Expense, Mandate, RecordLine, TripSnapshot } from './trip.js';
 
 /**
- * Events: go-server tells go-brain what happened in a trip, one POST per event to /v1/events.
+ * Events: go-server tells go-brain what happened in a trip, one send_event request per event on the socket.
  *
  * go-server sends an event for every change it makes to a trip, whoever made it (a person, Go, or
  * go-server itself), and stamps it with the trip's next change number (`seq`). Go's own changes
  * come back too: that is how go-brain learns their change numbers. The one exception: updating a
- * Go card in place (PUT) is not a change and sends no event.
+ * Go card in place (replace_card) is not a change and sends no event.
  */
 
 const envelope = {

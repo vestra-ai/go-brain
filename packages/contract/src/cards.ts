@@ -15,7 +15,7 @@ import { AmountMinor, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Plac
  */
 
 const base = {
-  /** Go's id for the card. Send a card with the same id again (PUT) to update it in place. */
+  /** Go's id for the card. Go sends replace_card with the same id to update it in place. */
   card_id: Id,
   fallback_text: z.string().min(1).max(300),
   /**
