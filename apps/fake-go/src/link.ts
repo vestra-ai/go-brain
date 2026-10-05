@@ -2,8 +2,12 @@
 // instance that sent the event hears about it; with no such socket it goes out on the newest open one. If its
 // socket closes before the answer, the request goes out again on the newest open socket with the same JSON-RPC id
 // (and so the same request_id inside), and the Server answers a repeat with its first answer.
+// Every answer is checked against the contract. An answer that breaks it, or one that never comes, fails the
+// request and leaves a problem row on the frames page, so the Server team sees what to fix.
 import { randomUUID } from 'node:crypto';
 import type { WebSocket } from 'ws';
+import { z } from 'zod';
+import { SocketError, SocketResult, methodByName } from '@go/contract';
 import { SocketCallError, SocketTimeoutError } from '@go/sim';
 import type { FrameLog } from './frames.js';
 
@@ -13,6 +17,7 @@ interface Conn {
 }
 
 interface Pending {
+  method: string;
   frame: string;
   /** The socket it went out on, or null while no socket is open. */
   on: Conn | null;
@@ -20,11 +25,18 @@ interface Pending {
   reject: (err: Error) => void;
 }
 
-interface ErrorField {
-  code?: unknown;
-  message?: unknown;
-  data?: { code?: string; retry_after_seconds?: number | null } | null;
+/** The Server's answer broke the contract. The frames page shows the same words in a problem row. */
+export class AnswerProblemError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AnswerProblemError';
+  }
 }
+
+/** JSON-RPC's own two errors carry no data.code. Every other error needs one. */
+const NO_DATA_CODE: ReadonlySet<number> = new Set([-32700, -32601]);
+
+const oneLine = (err: z.ZodError): string => z.prettifyError(err).replace(/\s*\n\s*/g, ' ');
 
 export interface RequestOptions {
   /** The socket the event came on. When it has closed, the newest open socket is used instead. */
@@ -73,7 +85,9 @@ export class Link {
     const frame = JSON.stringify({ jsonrpc: '2.0', id, method, params });
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
+        const waiting = this.pending.get(id);
         this.pending.delete(id);
+        this.problem(waiting?.on?.instance ?? 'no socket', `${method}: no answer within ${timeoutMs} ms`);
         reject(new SocketTimeoutError(`${method}: no answer within ${timeoutMs} ms`));
       }, timeoutMs);
       const settle = (): void => {
@@ -82,6 +96,7 @@ export class Link {
       };
       const conn = this.pick(via);
       this.pending.set(id, {
+        method,
         frame,
         on: conn,
         resolve: (r) => { settle(); resolve(r); },
@@ -97,22 +112,43 @@ export class Link {
     if (conn) this.write(conn, JSON.stringify({ jsonrpc: '2.0', method, params }));
   }
 
-  /** Matches an answer frame to the request it answers. An answer nobody waits for is dropped. */
-  settle(frame: { id?: unknown; result?: unknown; error?: unknown }): void {
+  /**
+   * Matches an answer frame to the request it answers, and checks it: the frame's shape, data.code on every error
+   * but -32700 and -32601, and the result against the method's result in the contract. A frame with no `result`
+   * is a problem, never an empty result. An answer nobody waits for is dropped.
+   */
+  settle(frame: { id?: unknown; result?: unknown; error?: unknown }, instance: string): void {
     const p = typeof frame.id === 'string' ? this.pending.get(frame.id) : undefined;
     if (!p) return;
-    const error = frame.error as ErrorField | undefined;
-    if (error) {
-      p.reject(new SocketCallError(Number(error.code), String(error.message ?? ''), error.data?.code ?? undefined, error.data?.retry_after_seconds ?? undefined));
-      return;
+    if (frame.error !== undefined) {
+      const answer = SocketError.safeParse(frame);
+      if (!answer.success) return this.fail(p, instance, `${p.method}: the error answer does not pass the contract: ${oneLine(answer.error)}`);
+      const { code, message, data } = answer.data.error;
+      if (!data?.code && !NO_DATA_CODE.has(code)) {
+        this.problem(instance, `${p.method}: error ${code} has no data.code. Every error but -32700 and -32601 needs one.`);
+      }
+      return p.reject(new SocketCallError(code, message, data?.code ?? undefined, data?.retry_after_seconds ?? undefined));
     }
-    p.resolve((frame.result ?? {}) as Record<string, unknown>);
+    const answer = SocketResult.safeParse(frame);
+    if (!answer.success) return this.fail(p, instance, `${p.method}: the answer does not pass the contract: ${oneLine(answer.error)}`);
+    const result = methodByName(p.method)?.result?.safeParse(answer.data.result);
+    if (result && !result.success) return this.fail(p, instance, `${p.method}: the result does not pass the contract: ${oneLine(result.error)}`);
+    p.resolve(answer.data.result);
   }
 
   /** Sends one frame (an answer) on the socket it belongs to. */
   send(ws: WebSocket, body: object): void {
     const conn = this.conns.find((c) => c.ws === ws) ?? { ws, instance: 'closed' };
     this.write(conn, JSON.stringify(body));
+  }
+
+  private fail(p: Pending, instance: string, problem: string): void {
+    this.problem(instance, problem);
+    p.reject(new AnswerProblemError(problem));
+  }
+
+  private problem(instance: string, text: string): void {
+    this.frames.add('problem', instance, text);
   }
 
   /** `via` while it is still open, otherwise the newest open socket. */

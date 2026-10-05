@@ -126,7 +126,7 @@ export function buildFakeGo(opts: FakeGoOptions): FakeGo {
       return;
     }
     const f = frame as { id?: unknown; method?: unknown; params?: unknown; result?: unknown; error?: unknown };
-    if (typeof f.method !== 'string') return link.settle(f); // the answer to one of Go's requests
+    if (typeof f.method !== 'string') return link.settle(f, instance); // the answer to one of Go's requests
     if (f.id === undefined) return; // the Server sends no notifications; a stray one gets no answer
     const id = f.id;
     try {

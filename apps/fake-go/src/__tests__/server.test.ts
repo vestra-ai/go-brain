@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { ErrorBody, Health, signRequest } from '@go/contract';
-import { GoSocket, SocketCallError, type Handler } from '@go/sim';
+import { GOA_SNAPSHOT, GoSocket, SocketCallError, goaFreshTrip, type Handler } from '@go/sim';
 import { KNOWN_EVENT_TYPES, buildFakeGo, type FakeGo, type FakeGoOptions } from '../server.js';
 
 const secret = 'fake-go-test-secret-0123456789abcdef';
@@ -234,11 +234,26 @@ describe("the Server's other requests", () => {
 describe("Go's requests to the Server", () => {
   it('go out with go_ ids and resolve with the answer; both frames land in the frames log', async () => {
     const port = await start();
-    await serverSide(port, 'reads', { read_trip: async (p) => ({ trip_id: p.trip_id, seen: true }) });
-    expect(await fake!.link.request('read_trip', { trip_id: 't_goa' })).toEqual({ trip_id: 't_goa', seen: true });
+    await serverSide(port, 'reads', { read_trip: async () => GOA_SNAPSHOT });
+    expect(await fake!.link.request('read_trip', { trip_id: 't_goa' })).toEqual(GOA_SNAPSHOT);
     const out = fake!.frames.list().find((f) => f.direction === 'out' && f.text.includes('read_trip'));
     expect(JSON.parse(out!.text).id).toMatch(/^go_/);
-    expect(fake!.frames.list().some((f) => f.direction === 'in' && f.text.includes('"seen":true'))).toBe(true);
+    expect(fake!.frames.list().some((f) => f.direction === 'in' && f.text.includes('"seq":113'))).toBe(true);
+    expect(fake!.frames.list().some((f) => f.direction === 'problem')).toBe(false);
+  });
+
+  it('fail, with a problem row on the frames page, when the answer breaks the contract', async () => {
+    const port = await start();
+    await serverSide(port, 'careless', { post_message: async () => ({}) });
+    const err = await fake!.link.request('post_message', { request_id: 'rq_fake_1', trip_id: 't_goa', text: 'hi' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('post_message');
+    const problem = fake!.frames.list().find((f) => f.direction === 'problem');
+    expect(problem).toMatchObject({ instance: 'careless' });
+    expect(problem!.text).toContain('post_message');
+    expect(problem!.text).toContain('message_id');
+    const page = await fake!.app.inject({ method: 'GET', url: `/frames?token=${adminToken}` });
+    expect(page.body).toContain('Problem');
   });
 
   it('go again on the next socket, with the same id, when their socket drops before the answer', async () => {
@@ -251,8 +266,9 @@ describe("Go's requests to the Server", () => {
     const second = await openRaw(port, 'two');
     await until(() => second.frames.length === 1);
     expect(second.frames[0]).toEqual(sent);
-    second.ws.send(JSON.stringify({ jsonrpc: '2.0', id: sent.id, result: { trip_id: 't_goa' } }));
-    await expect(answer).resolves.toEqual({ trip_id: 't_goa' });
+    const trip = goaFreshTrip();
+    second.ws.send(JSON.stringify({ jsonrpc: '2.0', id: sent.id, result: trip }));
+    await expect(answer).resolves.toEqual(trip);
   });
 });
 
