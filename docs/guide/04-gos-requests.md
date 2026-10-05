@@ -833,7 +833,7 @@ What the server does:
 2. Sends `message.created` with the whole message.
 3. Shows the message in the room over the app's live connection. It appears whole: Go's replies are never streamed.
 4. Hides "Go is typing...", because Go's message has landed.
-5. Pushes the people in `mentions`, with Go's text. Pushes the people in the card's `for_person_ids`, with the card's `fallback_text`, and pins the card in their "needs you" strip (see [The app](07-the-app.md#the-needs-you-strip)).
+5. Pushes the people in `mentions`, with Go's text. Pushes the people in the card's `for_person_ids`, with the card's `fallback_text`, and pins the card in their "needs you" strip (see [The App](07-the-app.md#the-needs-you-strip)).
 
 | Rule | If it fails |
 |---|---|

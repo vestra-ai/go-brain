@@ -23,7 +23,7 @@ Here is Priya's question from [the front page](README.md#one-message-start-to-fi
 
 ```mermaid
 sequenceDiagram
-  participant S as server
+  participant S as Server
   participant G as Go
   S->>G: open the socket (GET /v1/socket, signed)
   S->>G: send_event: message.created, change 57
@@ -213,7 +213,7 @@ Good to know:
 
 Every method has a name, a params schema and, unless it is a notification, a result schema and a time limit for the answer. `packages/contract/socket/methods.json` has the same table in JSON, and `SOCKET_METHODS` (TypeScript) and `go_contract.METHODS` (Python) have it in code.
 
-### Your requests: server sends, Go answers
+### Your requests: Server sends, Go answers
 
 | Method | Params | Result | Answer within | What it is for |
 |---|---|---|---|---|
@@ -226,7 +226,7 @@ Every method has a name, a params schema and, unless it is a notification, a res
 | [`forget_person`](05-your-requests.md) | `ForgetPerson` | `ForgetResult` | 2 seconds | Forget me, in one trip or everywhere. |
 | [`vault_link`](05-your-requests.md) | `CreateLink` | `Link` | 2 seconds | A short-lived link to the person's vault page, to open in the system browser sheet. |
 
-### Go's requests: Go sends, server answers
+### Go's requests: Go sends, Server answers
 
 Every one of Go's requests names its trip with `trip_id`, and every write carries a `request_id` (see [Basics](01-basics.md#doing-things-once)). The last column is the event the server sends after it does the write, like it would for a change made by anyone else.
 

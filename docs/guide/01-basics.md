@@ -6,7 +6,7 @@ This page covers the rules that every frame between the server and Go follows: t
 
 The server needs Go's address and the signing secret, so it can open the socket. Go needs only the signing secret, to check the socket's signature. The server also holds the private key it signs spend approvals with, and Go holds the matching public key.
 
-| Setting | server | Go | What it is |
+| Setting | Server | Go | What it is |
 |---|---|---|---|
 | `GO_URL` | yes | | Go's base URL, such as `https://brain.go.example`, with no path and no trailing slash. The socket is at the same host: `wss://brain.go.example/v1/socket`. |
 | `GO_SIGNING_SECRET` | yes | yes | The shared secret for the signature that opens the socket. 32 random bytes as hex. |
@@ -37,7 +37,7 @@ Ids are opaque strings of 1 to 64 characters. Do not parse them or guess their f
 
 | Who makes the id | Ids |
 |---|---|
-| server | `trip_id`, `person_id`, `message_id`, `decision_id`, `booking_id`, `expense_id`, `line_id`, `event_id`, `approval_id`, `tap_id`, and the JSON-RPC `id` of every request the server sends |
+| Server | `trip_id`, `person_id`, `message_id`, `decision_id`, `booking_id`, `expense_id`, `line_id`, `event_id`, `approval_id`, `tap_id`, and the JSON-RPC `id` of every request the server sends |
 | Go | `card_id`, `task_id`, `call_id`, `option_id`, `fact_id`, `request_id`, and the JSON-RPC `id` of every request Go sends |
 
 `person_id` is the same person in every trip they join. Go uses it to remember someone between trips, but only if they turn that on.

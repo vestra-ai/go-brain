@@ -107,7 +107,7 @@ Arjun taps Stop on the call card (`c_villa_call`) just after the call to Villa S
 { "result": "refused", "toast": "The call has already ended." }
 ```
 
-The app opens an `open` URL with Flutter's `url_launcher` in `LaunchMode.inAppBrowserView`, which is SFSafariViewController on iOS and Chrome Custom Tabs on Android. Never open it in `webview_flutter`: passkeys (Face ID) do not work inside a plain WebView, so the payer could not pay there. A link expires 5 minutes after Go makes it, so the app opens it at once and never keeps it for later. [The app](07-the-app.md#opening-go-pages) has the details.
+The app opens an `open` URL with Flutter's `url_launcher` in `LaunchMode.inAppBrowserView`, which is SFSafariViewController on iOS and Chrome Custom Tabs on Android. Never open it in `webview_flutter`: passkeys (Face ID) do not work inside a plain WebView, so the payer could not pay there. A link expires 5 minutes after Go makes it, so the app opens it at once and never keeps it for later. [The App](07-the-app.md#opening-go-pages) has the details.
 
 ### If Go does not answer
 
@@ -250,7 +250,7 @@ Go answers within 3 seconds with a `summary` and up to five `items`:
 
 When `summary` is `null` and `items` is empty, show nothing.
 
-If Go fails or takes longer than 3 seconds, hide the catch-up. Never hold the room back for it: show the room at once, send `catch_up` at the same time, and slide the catch-up in when it arrives. [The app](07-the-app.md#catch-up) has the server code.
+If Go fails or takes longer than 3 seconds, hide the catch-up. Never hold the room back for it: show the room at once, send `catch_up` at the same time, and slide the catch-up in when it arrives. [The App](07-the-app.md#catch-up) has the server code.
 
 ## What Go knows about a person
 

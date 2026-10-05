@@ -1,4 +1,4 @@
-# The app
+# The App
 
 This page explains what the app and the server must do so that Go feels like a live member of the room: what the app's live connection carries (including typing and reactions, Go's and everyone's), how to draw Go's messages and cards, the "needs you" strip, pushes, catch-up, "Ask Go about this", the You screen, and opening Go pages. It is for Saket's team, who build the app, and Nishanth's team, who build the server.
 
@@ -227,7 +227,7 @@ Cards come in two families, and the app draws them differently. [Cards](06-cards
 
 | Family | Kinds | What the card carries | Where the app gets what it shows | Who owns the buttons |
 |---|---|---|---|---|
-| Record cards | `vote`, `mandate`, `ticket`, `expense`, `settle_up`, `day`, `plan`, `budget` | An id, such as `decision_id` or `booking_id` | The server's own rows, so the room and the Trip screens always agree | server |
+| Record cards | `vote`, `mandate`, `ticket`, `expense`, `settle_up`, `day`, `plan`, `budget` | An id, such as `decision_id` or `booking_id` | The server's own rows, so the room and the Trip screens always agree | Server |
 | Go cards | `options`, `working`, `call`, `pay`, `notice` | Everything to show, plus `actions` | The card itself | Go, through the server (see [Buttons on Go cards](#buttons-on-go-cards)) |
 
 Good to know:

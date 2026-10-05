@@ -33,7 +33,7 @@ Every card belongs to one of two families. The family decides where the app gets
 | Kinds | `vote`, `mandate`, `ticket`, `expense`, `settle_up`, `day`, `plan`, `budget` | `options`, `working`, `call`, `pay`, `notice` |
 | What the card carries | Its kind and an id (such as `decision_id` or `booking_id`), plus the fields every card has | Everything to show, plus its buttons in `actions` |
 | What the app draws from | The server's own rows: the vote, the booking, the expense, the trip's money and itinerary | The card itself |
-| Who handles the buttons | server | Go, through the server |
+| Who handles the buttons | Server | Go, through the server |
 | How it changes | It always shows the row as it is now. When a vote comes in, the vote card in the room shows the new tally without a new message. | Go replaces it in place with a `replace_card` request. |
 
 Record cards are drawn from the server's rows so that the room and the Trip screens never disagree. A ticket in the room and the same booking on the Trip screen are the same row.
@@ -49,7 +49,7 @@ Every card, in both families, has these fields.
 | `fallback_text` | Plain words that say what the card says, 1 to 300 characters. | Uses it as the push text when it pushes the card's `for_person_ids`. |
 | `for_person_ids` | The people who need to act on the card, if any. | Pushes each of them when the card is new, and pins the card in their "needs you" strip while their id stays in the list. |
 
-Go removes people from `for_person_ids` with `replace_card` once they have nothing left to do, which takes the card out of their strip. [The app](07-the-app.md#the-needs-you-strip) explains the strip.
+Go removes people from `for_person_ids` with `replace_card` once they have nothing left to do, which takes the card out of their strip. [The App](07-the-app.md#the-needs-you-strip) explains the strip.
 
 Good to know:
 - Go leaves `for_person_ids` out of vote and mandate cards. The server already pins an open vote for everyone who has not voted, and a mandate for its payer until they answer, from its own rows.
@@ -90,7 +90,7 @@ and Go answers:
 { "result": "done", "toast": "Noted. Go will reply in the room." }
 ```
 
-[Your requests](05-your-requests.md) describes `card_tap` in full, and [The app](07-the-app.md#buttons-on-go-cards) shows how the app opens links.
+[Your requests](05-your-requests.md) describes `card_tap` in full, and [The App](07-the-app.md#buttons-on-go-cards) shows how the app opens links.
 
 These are the buttons Go usually puts on its cards:
 

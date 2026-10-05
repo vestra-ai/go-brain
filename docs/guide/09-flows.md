@@ -16,8 +16,8 @@ This is the most common flow: someone asks Go for something in the room, and Go 
 sequenceDiagram
   autonumber
   actor Priya
-  participant app as app
-  participant server as server
+  participant app as App
+  participant server as Server
   participant go as Go
   Priya->>app: "@Go flights on Friday from Delhi, under 6k?"
   app->>server: send the message
@@ -52,8 +52,8 @@ sequenceDiagram
   autonumber
   actor Rahul
   actor Priya
-  participant app as app
-  participant server as server
+  participant app as App
+  participant server as Server
   participant go as Go
   Rahul->>app: creates the trip "Goa 🌴"
   app->>server: create the trip
@@ -86,8 +86,8 @@ sequenceDiagram
   actor Arjun
   actor Rahul
   actor Kabir
-  participant app as app
-  participant server as server
+  participant app as App
+  participant server as Server
   participant go as Go
   Priya->>app: "Let's do North Goa, not South. Better beaches for us."
   app->>server: send
@@ -126,8 +126,8 @@ This flow takes the villa vote all the way to a paid booking. Every check in it 
 sequenceDiagram
   autonumber
   actor Rahul as Rahul (payer)
-  participant app as app
-  participant server as server
+  participant app as App
+  participant server as Server
   participant go as Go
   participant vault as vault page
   participant ixigo
@@ -171,8 +171,8 @@ This flow shows Go calling a business for the group: it says who it will call, g
 sequenceDiagram
   autonumber
   actor Arjun
-  participant app as app
-  participant server as server
+  participant app as App
+  participant server as Server
   participant go as Go
   participant villa as Villa Sol front desk
   Arjun->>app: "@Go I land late on the 6th. Can you check with Villa Sol that an 11 pm check-in is ok?"
@@ -201,8 +201,8 @@ This flow shows catch-up: a short summary, for one person only, of what happened
 sequenceDiagram
   autonumber
   actor Meher
-  participant app as app
-  participant server as server
+  participant app as App
+  participant server as Server
   participant go as Go
   Meher->>app: opens the Goa room after 6 hours away (23 unread)
   app->>server: open the room
@@ -223,8 +223,8 @@ This flow shows a person seeing what Go knows about them and asking Go to forget
 sequenceDiagram
   autonumber
   actor Kabir
-  participant app as app
-  participant server as server
+  participant app as App
+  participant server as Server
   participant go as Go
   Kabir->>app: opens "What Go knows about you"
   app->>server: what Go knows about me
@@ -248,7 +248,7 @@ This flow shows how Go notices a missed event from the change numbers and catche
 ```mermaid
 sequenceDiagram
   autonumber
-  participant server as server
+  participant server as Server
   participant go as Go
   Note over go: has handled every change in t_goa up to seq 101
   server-xbrain: event seq 102 never arrives (the server gave up on it)

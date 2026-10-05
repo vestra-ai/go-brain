@@ -13,8 +13,8 @@ Go is the AI member of a trip group. Friends plan a trip in a group chat inside 
 | Part | Who builds it | What it does |
 |---|---|---|
 | **Go** | Keshav's team, with Bash and Nami | The AI member itself: reading the room, deciding when to speak, memory about people, searching and booking, phone calls, and the vault that holds cards. It exposes this contract. |
-| **server** | Nishanth's team | The app's backend and its database. It owns everything about a trip: people, messages, votes, bookings, expenses, the trip record and the spend check. It connects to Go and builds on this contract. |
-| **app** | Saket's team | The Flutter app people use: the trip room (the group chat), the Trip screens, joining by link, push notifications. It talks to the server. |
+| **Server** | Nishanth's team | The app's backend and its database. It owns everything about a trip: people, messages, votes, bookings, expenses, the trip record and the spend check. It connects to Go and builds on this contract. |
+| **App** | Saket's team | The Flutter app people use: the trip room (the group chat), the Trip screens, joining by link, push notifications. It talks to the server. |
 
 All three teams are the Vestra team.
 
@@ -33,7 +33,7 @@ Payments never go through the computer: the composer pays through Go's vault, wi
 
 ```mermaid
 flowchart LR
-  app["app<br/>(Saket's team)"] <-- "their own API and live connection" --> server["server and its database<br/>(Nishanth's team)"]
+  app["App<br/>(Saket's team)"] <-- "their own API and live connection" --> server["Server and its database<br/>(Nishanth's team)"]
   server <-- "ONE socket, opened by the server<br/>to Go: what happened, questions<br/>to the server: Go's messages, typing, reactions,<br/>and Go's requests to read or change the trip" --> go["Go<br/>(Keshav's team)"]
   app -. "opens Go's pages from a short-lived link<br/>(the vault, watching Go work)" .-> go
 ```
@@ -85,12 +85,12 @@ Here is what happens when Priya asks Go for flights. Every step between the serv
 | Page | What it covers | Who needs it |
 |---|---|---|
 | [Basics](01-basics.md) | Addresses and secrets, ids, money, time, doing things once, errors, time limits and retries, versions | Everyone building the server or Go |
-| [The socket](02-the-socket.md) | Opening the socket with a signature, the four kinds of frame, every method in both directions, keeping it alive, reconnecting, and a complete client | server, Go |
-| [Events](03-events.md) | Every event the server sends with `send_event`, and how to send them reliably from an outbox | server, Go |
-| [Go's requests](04-gos-requests.md) | Every request Go sends the server to read the trip or change it, and the rules the server enforces when it answers | server, Go |
-| [Your requests](05-your-requests.md) | The requests the server sends Go besides events: card taps, catch-up, people pages, forget me and vault links | server, Go |
-| [Cards](06-cards.md) | Every card Go posts, how to draw it, and its buttons | app, server, Go |
-| [The app](07-the-app.md) | What the app must show live, opening Go's pages, pushes and the "needs you" strip | app, server |
+| [The socket](02-the-socket.md) | Opening the socket with a signature, the four kinds of frame, every method in both directions, keeping it alive, reconnecting, and a complete client | Server, Go |
+| [Events](03-events.md) | Every event the server sends with `send_event`, and how to send them reliably from an outbox | Server, Go |
+| [Go's requests](04-gos-requests.md) | Every request Go sends the server to read the trip or change it, and the rules the server enforces when it answers | Server, Go |
+| [Your requests](05-your-requests.md) | The requests the server sends Go besides events: card taps, catch-up, people pages, forget me and vault links | Server, Go |
+| [Cards](06-cards.md) | Every card Go posts, how to draw it, and its buttons | App, Server, Go |
+| [The App](07-the-app.md) | What the app must show live, opening Go's pages, pushes and the "needs you" strip | App, Server |
 | [Money and the vault](08-money-and-the-vault.md) | The spend check, spend approvals, the payer's Face ID, and what each side checks | Everyone |
 | [Flows](09-flows.md) | Step-by-step diagrams of the big moments | Everyone |
 | [Build and test](10-build-and-test.md) | Setting up, proving your signing code, connecting by hand, the fake Go, and what done means | Everyone |

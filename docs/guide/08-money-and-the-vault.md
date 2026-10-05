@@ -33,8 +33,8 @@ This is the whole path of one payment, from the vote closing to the ticket in th
 sequenceDiagram
   autonumber
   actor Rahul as Rahul (payer)
-  participant app as app
-  participant server as server
+  participant app as App
+  participant server as Server
   participant go as Go
   participant vault as vault page
   participant ixigo
@@ -624,7 +624,7 @@ The vault is each person's own store for cards and logins. Go (Keshav's team) ru
 ### How a card gets in
 
 1. On the app's You screen, the person taps "Add a card".
-2. The server asks Go for a vault link with a `vault_link` request, and the app opens it in the system browser sheet (see [The app](07-the-app.md#opening-go-pages)).
+2. The server asks Go for a vault link with a `vault_link` request, and the app opens it in the system browser sheet (see [The App](07-the-app.md#opening-go-pages)).
 3. The person types their card on Go's page. The card goes from their phone straight to Go's vault. It never passes through the app's API or the server.
 4. The first time, the page creates the person's passkey.
 
@@ -723,8 +723,8 @@ Each part of a payment is checked by someone who does not depend on Go's word. T
 
 | Who | What they check | When |
 |---|---|---|
-| server | The spend check: the vote is in this trip, closed, a choice vote with a mandate. The payer said yes and has not declined since. The currency matches, the amount is within the cap, it is refundable when the group asked for that, and no other approval for the vote is waiting. | Before it signs a spend approval |
-| server | The approval is this trip's and for this vote, has not been used, and covers the booking's amount. | When Go records the booking |
+| Server | The spend check: the vote is in this trip, closed, a choice vote with a mandate. The payer said yes and has not declined since. The currency matches, the amount is within the cap, it is refundable when the group asked for that, and no other approval for the vote is waiting. | Before it signs a spend approval |
+| Server | The approval is this trip's and for this vote, has not been used, and covers the booking's amount. | When Go records the booking |
 | The vault | The token's signature, audience and expiry. Its `jti` was never used. The payer is the person who unlocked the vault. The checkout total is within the approved amount. | When the payer approves, before it pays |
 | The payer | The amount, the merchant, the refundable-until date and the card. | On the vault page, before Face ID |
 

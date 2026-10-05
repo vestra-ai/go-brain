@@ -97,7 +97,7 @@ Each team can build and test its part before the other part is ready, against a 
 
 ## What done means
 
-**server (Nishanth's team)**
+**Server (Nishanth's team)**
 - Opens one socket to Go with a fresh signature on every connect (each instance with its own `?instance=` name), keeps it open, and reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds.
 - Sends an event for every change to a trip with `send_event`, from an outbox, in change-number order per trip, waiting for each answer, with the retry schedule in [Basics](01-basics.md#time-limits-and-retries).
 - Answers all of Go's requests in [Go's requests](04-gos-requests.md) within 2 seconds, checks their params, does each write once per `request_id`, answers `-32601` for a method it does not handle, and shows or hides "Go is typing..." for the `typing` notification. Sends `read_messages` pages under the 1 MB frame limit, with `has_more: true` when it sent fewer.
@@ -105,9 +105,9 @@ Each team can build and test its part before the other part is ready, against a 
 - Lets any of its instances answer any of Go's requests, from the shared database.
 - Runs the spend check and signs spend approvals that verify against Go's public key. Its code reproduces the token in the test vector.
 - Sends card taps (each with its own `tap_id`), catch-up, people pages, "forget me" and vault links to Go on the socket, and never lets the app talk to Go except to open Go's pages.
-- Sends pushes only in the cases listed in [The app](07-the-app.md).
+- Sends pushes only in the cases listed in [The App](07-the-app.md).
 
-**app (Saket's team)**
+**App (Saket's team)**
 - Draws all 13 card kinds, and shows `fallback_text` for any kind it does not know.
 - Shows "Go is typing...", Go's messages as Go (never as a person), Go's reactions on messages, and the "needs you" strip.
 - Opens Go's pages in the system browser sheet, never in a WebView.

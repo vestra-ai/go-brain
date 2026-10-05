@@ -117,9 +117,9 @@ The server must never lose an event, never send one for a change that did not ha
 
 ```mermaid
 sequenceDiagram
-  participant API as server API
-  participant DB as server database
-  participant S as server sender
+  participant API as Server API
+  participant DB as Server database
+  participant S as Server sender
   participant B as Go
   API->>DB: one transaction with the reaction, change 50 and its outbox row
   S->>DB: read the oldest unsent event of each trip
