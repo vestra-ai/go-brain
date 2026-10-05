@@ -63,6 +63,7 @@ sequenceDiagram
   Note over server: stores t_goa with Rahul as organizer<br/>and the invite link go.example/j/8fK2xQ
   server->>brain: send_event (trip.created, seq 1, the whole trip)
   brain-->>server: answer: accepted
+  Note over brain: sets the trip up: Go's memory, a page per person,<br/>its queue and conversation, and starts the trip's computer
   brain->>server: open_vote (When do we go? three date options)
   server-->>brain: answer: decision_id d_when, seq 2
   server->>brain: send_event (decision.opened, d_when, seq 2)
@@ -75,7 +76,7 @@ sequenceDiagram
   Note over brain: notes what Priya told Go and stays quiet
 ```
 
-`trip.created` carries the whole trip, so Go can start without reading anything else. Go says hello and opens the first vote. Here it asks about the dates, which are not set yet. It could instead open a yes/no "Who's in?" vote. Opening a vote takes two requests: `open_vote` creates the vote, then `post_message` with a vote card shows it in the room. As friends join through the invite link, go-server sends `person.joined` for each of them. Go keeps what they said about themselves and does not post a welcome for every person. When the vote `d_when` closes, go-server writes the decided line "6 to 9 Nov" (`r_dates`) itself.
+`trip.created` carries the whole trip, so Go can start without reading anything else. go-brain answers at once, then sets the trip up: Go's memory, a page for each person, its queue and its conversation take a few seconds, and the trip's own computer starts in the background so it is ready for the first task (see [How go-brain sets Go up for a new trip](03-events.md#how-go-brain-sets-go-up-for-a-new-trip)). Go says hello and opens the first vote. Here it asks about the dates, which are not set yet. It could instead open a yes/no "Who's in?" vote. Opening a vote takes two requests: `open_vote` creates the vote, then `post_message` with a vote card shows it in the room. As friends join through the invite link, go-server sends `person.joined` for each of them. Go keeps what they said about themselves and does not post a welcome for every person. When the vote `d_when` closes, go-server writes the decided line "6 to 9 Nov" (`r_dates`) itself.
 
 ## 3. The group agrees in the chat without a vote
 

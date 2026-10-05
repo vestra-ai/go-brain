@@ -12,16 +12,18 @@ Go is the AI member of a trip group. Friends plan a trip in a group chat inside 
 
 | Part | Who builds it | What it does |
 |---|---|---|
-| **go-brain** | The Vestra team (Keshav), with Bash and Nami | Go itself: reading the room, deciding when to speak, memory about people, searching and booking, phone calls, and the vault that holds cards. It exposes this contract. |
+| **go-brain** | Keshav's team, with Bash and Nami | Go itself: reading the room, deciding when to speak, memory about people, searching and booking, phone calls, and the vault that holds cards. It exposes this contract. |
 | **go-server** | Nishanth's team | The app's backend and its database. It owns everything about a trip: people, messages, votes, bookings, expenses, the trip record and the spend check. It connects to go-brain and builds on this contract. |
 | **go-app** | Saket's team | The Flutter app people use: the trip room (the group chat), the Trip screens, joining by link, push notifications. It talks to go-server. |
+
+All three teams are the Vestra team.
 
 ## How the parts talk
 
 ```mermaid
 flowchart LR
   app["go-app<br/>(Saket's team)"] <-- "their own API and live connection" --> server["go-server and its database<br/>(Nishanth's team)"]
-  server <-- "ONE socket, opened by go-server<br/>to go-brain: what happened, questions<br/>to go-server: Go's messages, typing, reactions,<br/>and Go's requests to read or change the trip" --> brain["go-brain, which is Go<br/>(the Vestra team)"]
+  server <-- "ONE socket, opened by go-server<br/>to go-brain: what happened, questions<br/>to go-server: Go's messages, typing, reactions,<br/>and Go's requests to read or change the trip" --> brain["go-brain, which is Go<br/>(Keshav's team)"]
   app -. "opens go-brain pages from a short-lived link<br/>(the vault, watching Go work)" .-> brain
 ```
 
@@ -81,7 +83,6 @@ Here is what happens when Priya asks Go for flights. Every step between the two 
 | [Money and the vault](08-money-and-the-vault.md) | The spend check, spend approvals, the payer's Face ID, and what each side checks | Everyone |
 | [Flows](09-flows.md) | Step-by-step diagrams of the big moments | Everyone |
 | [Build and test](10-build-and-test.md) | Setting up, proving your signing code, connecting by hand, the fake go-brain, and what done means | Everyone |
-| [What changed](changes.md) | What changed from the first draft of the contract, and the move to the socket, with the reasons | Anyone who read an earlier version |
 
 ## Where the contract lives in this repo
 

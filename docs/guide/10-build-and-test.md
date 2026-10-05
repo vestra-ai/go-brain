@@ -86,7 +86,7 @@ It checks every marked example against the contract and lists any event, card, m
 
 Each team can build and test its part before the other part is ready, against a fake of the other side that speaks the same socket.
 
-- **The fake go-brain.** The Vestra team is building a small fake go-brain next, so go-server and the app can be built before the real one is ready. It speaks the same socket as the real one:
+- **The fake go-brain.** Keshav's team is building a small fake go-brain next, so go-server and the app can be built before the real one is ready. It speaks the same socket as the real one:
   - It checks the signature on the upgrade and pings every 20 seconds.
   - It answers every `send_event` with `{ "accepted": true, "duplicate": false }`, and with `"duplicate": true` for an `event_id` it has seen.
   - When a `message.created` event mentions Go, it sends a `typing` notification, sends `read_trip`, adds a ✅ to the message with `add_reaction`, and then sends `post_message` with a reply and one of Go's own cards (`options`, `working`, `call`, `pay` or `notice`), a different kind each time.
@@ -115,7 +115,7 @@ Each team can build and test its part before the other part is ready, against a 
 - Opens go-brain pages in the system browser sheet, never in a WebView.
 - Lets people pause Go, see what Go knows about them, and ask Go to forget them.
 
-**go-brain (the Vestra team)**
+**go-brain (Keshav's team)**
 - Accepts the socket only with a valid signature that has not been used before, pings every 20 seconds, and closes a socket that has been silent for 40 seconds.
 - Answers every `send_event` within 2 seconds (`accepted: true` even for an event type it does not know yet), ignores repeated `event_id`s, and catches up with `read_trip` and `read_messages` after a gap in change numbers.
 - Answers `card_tap` and `catch_up` within 3 seconds and every other request within 2 seconds, acts on each `tap_id` once, answers `-32601` for a method it does not know, and sends `retry_after_seconds` with every `429`.

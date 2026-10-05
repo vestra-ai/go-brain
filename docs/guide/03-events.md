@@ -439,7 +439,7 @@ Go does not announce each line it writes. Instead, it may add a quiet ✅ reacti
 | `person.joined` | Someone joins the trip. | Saves their join answers as facts. |
 | `person.updated` | Someone changes their details, or pauses or unpauses Go. | Updates what it knows. Stops learning from someone who paused it. |
 | `person.left` | Someone leaves the trip. | Stops treating them as part of the group. |
-| `trip.created` | Someone creates a trip. | Greets the group and starts. |
+| `trip.created` | Someone creates a trip. | Sets the trip up (memory, people, its queue, and its own computer in the background), then greets the group and starts. |
 | `trip.updated` | The title, destination, dates, vibe, stay, itinerary, status or budget changes. | Reads the trip and warns the room about a clash. |
 | `decision.opened` | A vote opens. | Notes the vote and when it closes. |
 | `decision.voted` | Someone votes or changes their vote. | Keeps the count, quietly. |
@@ -899,6 +899,19 @@ Rahul has just created "Goa 🌴". He is the only person in it so far, nobody ha
   }
 }
 ```
+
+#### How go-brain sets Go up for a new trip
+
+`trip.created` is the moment Go joins a trip. go-brain answers `accepted` at once and does the setting up after it has answered, so setting up never holds up go-server:
+
+1. **Go's side of the trip, in a few seconds.** go-brain makes the trip's home: Go's memory for this trip, a page for each person (someone who was in an earlier trip keeps their page), the queue of things Go has to do, and Go's conversation for this trip. Then Go says hello and opens the first vote.
+2. **Go's computer for the trip, in about a minute, in the background.** Each trip gets its own computer: a Bash from Vestra, which Go uses for longer jobs such as searching many sites, filling in forms or watching a fare. go-brain asks for it as soon as the trip exists and starts it, so it is ready before anyone asks for a task.
+
+Nobody waits for the computer. Go says hello before it is ready, and a task someone asks for in the first minute starts as soon as it is up.
+
+Setting up is safe to repeat, and go-brain does not depend on this one event. If any event arrives for a trip go-brain has not set up (because `trip.created` never arrived, or go-brain was restored from a backup), Go reads the trip with `read_trip` and sets it up then. A regular check also finishes any setup that stopped halfway.
+
+go-server has nothing extra to do: send `trip.created` first (it is change number 1), and show the room without waiting for Go.
 
 ### trip.updated
 
