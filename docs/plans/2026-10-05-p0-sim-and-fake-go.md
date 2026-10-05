@@ -28,7 +28,7 @@ Master §7 applies to every task. Specific to this plan:
 
 ## Review Focus
 
-1. **The socket drops while a request waits** (master §10 line 1): the Server's client resends with the same JSON-RPC id after a reconnect (Task 1), the fake Go resends its own unanswered requests on the next socket with the same id (Task 3), and the `FakeServer` answers a repeated `request_id` with its first answer while `countWrites()` shows both arrivals and `applied` shows one change (Tasks 6 and 9).
+1. **The socket drops while a request waits** (master §10 line 1): the Server's client resends with the same JSON-RPC id after a reconnect (Task 1), the fake Go resends its own unanswered requests on the next socket with the same id (Task 3), the `FakeServer` answers a repeated `request_id` with its first answer while `countWrites()` shows both arrivals and `applied` shows one change (Tasks 6 and 9), and its `reconnect()` gives tests a real drop and a fresh, signed socket with the trip kept (Task 9).
 2. **A signature used twice, or signed without the query string**: refused with `401` and the contract's `ErrorBody` before the upgrade completes; the client signs fresh on every connect (Tasks 1 and 3).
 3. **An event type Go does not know, a known event that is broken, and an `event_id` seen before**: accepted before validation, `422 invalid`, and `duplicate: true` with no second piece of work, even under a new JSON-RPC id (Task 3; the mention script runs once in Task 4).
 4. **Card taps that arrive twice or from the wrong person**: a repeated `tap_id` gets its first answer back; `approve` from anyone but the pay card's payer is `refused` with a toast (Task 4).
@@ -4840,7 +4840,7 @@ Expected: `records.test.ts` (3 tests) and `money.test.ts` (9 tests) pass, includ
 
 The simulated Server that P1's end-to-end tests and the dev room drive. It dials Go with `GoSocket` (signed, `?instance=sim`), keeps trips in `TripState`s, answers all 18 of Go's methods, and sends each trip's events one at a time in change-number order, waiting for Go's answer before the next one and sending an unanswered event again with the same `event_id` (a short retry: after 200 ms, 1 s and 5 s by default, never for `422`). A write's events go out after its answer, as a real outbox does after its commit. Every Go write is recorded with its `request_id`: `countWrites(id)` counts every arrival, and `applied` marks the one that changed the trip (master §10 line 1).
 
-Test helpers play the people: `createTrip`, `say`, `react`, `edit`, `delete`, `tap`, `vote`, `closeVoteByTime`, `confirmMandate`, `declineMandate`, `askGo` (any of the Server's requests), `waitFor`. `createTrip` always sends `trip.created` as change 1, even for the mid-planning `GOA_SNAPSHOT` (whose snapshot says 113): the sim starts its count there.
+Test helpers play the people: `createTrip`, `say`, `react`, `edit`, `delete`, `tap`, `vote`, `closeVoteByTime`, `confirmMandate`, `declineMandate`, `askGo` (any of the Server's requests), `waitFor`. `createTrip` always sends `trip.created` as change 1, even for the mid-planning `GOA_SNAPSHOT` (whose snapshot says 113): the sim starts its count there. `reconnect` plays the Server dropping its socket and dialling again (P1 Task 18, master §10 line 1): a new socket signed fresh, every trip, write and event kept, and a request still waiting sent again on the new socket (an event keeps its `event_id`). `requests` holds every request and typing notification Go sent, with its arrival time, so tests can time "Go is typing".
 
 **Files:**
 - Create: `packages/sim/src/fake-server.ts`
@@ -4854,7 +4854,7 @@ Test helpers play the people: `createTrip`, `say`, `react`, `edit`, `delete`, `t
   - `function socketUrl(goUrl: string, instance: string): string`
   - `interface FakeServerOptions { goUrl; secret; instance?; now?; spendPrivateKeyPem?; eventTimeoutMs?; eventRetryMs?; maxPageBytes?; backoffSeconds?; log? }`
   - `interface WriteRecord { method; request_id; trip_id; params; applied: boolean; error?: { code: number; message: string }; at }`, `interface GoRequest { method; params; at }`, `interface SentEvent { event: Event; answer?; error? }`, `type TapResult`
-  - `class FakeServer { readonly writes: WriteRecord[]; readonly requests: GoRequest[]; readonly events: SentEvent[]; start(timeoutMs?: number): Promise<void>; stop(): void; isOpen(): boolean; createTrip(snapshot: TripSnapshot): Promise<SentEvent>; say(personId: string, text: string, opts?: SayOptions & { tripId?: string }): Promise<Message>; react(personId, messageId, emoji): Promise<void>; edit(personId, messageId, text): Promise<Message>; delete(personId, messageId): Promise<void>; tap(cardId, actionId, personId, optionId?): Promise<TapResult>; vote(decisionId, personId, optionIndex): Promise<void>; closeVoteByTime(decisionId): Promise<void>; confirmMandate(decisionId): Promise<void>; declineMandate(decisionId): Promise<void>; askGo(method: string, params: object, timeoutMs?: number): Promise<Record<string, unknown>>; waitFor<T>(check: () => T | null | undefined | false, timeoutMs?: number): Promise<T>; countWrites(requestId: string): number; tripIds(): string[]; trip(tripId?): TripSnapshot; messages(tripId?): Message[]; typingOn(tripId?): boolean; needsYou(personId, tripId?): NeedsItem[]; onChange(fn: () => void): () => void }`
+  - `class FakeServer { readonly writes: WriteRecord[]; readonly requests: GoRequest[]; readonly events: SentEvent[]; start(timeoutMs?: number): Promise<void>; stop(): void; isOpen(): boolean; reconnect(o?: { downMs?: number; timeoutMs?: number }): Promise<void>; createTrip(snapshot: TripSnapshot): Promise<SentEvent>; say(personId: string, text: string, opts?: SayOptions & { tripId?: string }): Promise<Message>; react(personId, messageId, emoji): Promise<void>; edit(personId, messageId, text): Promise<Message>; delete(personId, messageId): Promise<void>; tap(cardId, actionId, personId, optionId?): Promise<TapResult>; vote(decisionId, personId, optionIndex): Promise<void>; closeVoteByTime(decisionId): Promise<void>; confirmMandate(decisionId): Promise<void>; declineMandate(decisionId): Promise<void>; askGo(method: string, params: object, timeoutMs?: number): Promise<Record<string, unknown>>; waitFor<T>(check: () => T | null | undefined | false, timeoutMs?: number): Promise<T>; countWrites(requestId: string): number; tripIds(): string[]; trip(tripId?): TripSnapshot; messages(tripId?): Message[]; typingOn(tripId?): boolean; needsYou(personId, tripId?): NeedsItem[]; onChange(fn: () => void): () => void }`
   - `startTestGo(secret)` (tests only): a tiny Go that checks the signature, answers `send_event` and `card_tap`, records frames, and lets a test send Go's requests.
 
 - [ ] **Step 1: Write the failing test**
@@ -5019,6 +5019,29 @@ describe('connecting and the trip', () => {
     await f.delete('p_arjun', m.message_id);
     expect(g.events.slice(-3).map((e) => e.type)).toEqual(['reaction.added', 'message.edited', 'message.deleted']);
   });
+
+  it('reconnects on a new socket signed fresh, keeps the trip and the write log, and sends a waiting event again with its event_id', async () => {
+    const { go: g, fake: f } = await setUp();
+    await g.call('post_message', { request_id: 'rq_before', trip_id: 't_goa', text: 'Before the drop' });
+    await f.waitFor(() => f.events.length === 2 && f.events.every((e) => e.answer !== undefined));
+    g.mode = 'silent-once';
+    const said = f.say('p_rahul', 'are you still there?');
+    await f.waitFor(() => g.events.length === 3);
+    // Away for 1.1 s: a new second, so the new upgrade signature differs from the old one.
+    await f.reconnect({ downMs: 1_100 });
+    expect(f.isOpen()).toBe(true);
+    expect(g.signatures).toHaveLength(2);
+    expect(g.signatures[1]).not.toBe(g.signatures[0]);
+    expect(g.targets[1]).toBe('/v1/socket?instance=sim');
+    const msg = await said;
+    expect(g.events.filter((e) => e.event_id === g.events[2].event_id)).toHaveLength(2);
+    expect(f.events.at(-1)).toMatchObject({ event: { seq: msg.seq }, answer: { accepted: true, duplicate: false } });
+    // The same write again on the new socket: answered, counted, not applied twice.
+    await g.call('post_message', { request_id: 'rq_before', trip_id: 't_goa', text: 'Before the drop' });
+    expect(f.countWrites('rq_before')).toBe(2);
+    expect(f.writes.filter((w) => w.request_id === 'rq_before' && w.applied)).toHaveLength(1);
+    expect(f.trip().seq).toBe(3);
+  });
 });
 
 describe("answering Go's requests", () => {
@@ -5106,6 +5129,10 @@ describe("answering Go's requests", () => {
     const { go: g, fake: f } = await setUp({ now: () => new Date(t) });
     g.notify('typing', { trip_id: 't_goa', on: true });
     await f.waitFor(() => f.typingOn());
+    // Every typing notification is in requests with its arrival time, so a test can time "Go is typing".
+    expect(f.requests.filter((r) => r.method === 'typing')).toEqual([
+      { method: 'typing', params: { trip_id: 't_goa', on: true }, at: '2026-10-05T07:00:00.000Z' },
+    ]);
     t += 11_000;
     expect(f.typingOn()).toBe(false);
     g.notify('typing', { trip_id: 't_nope', on: true });
@@ -5247,7 +5274,8 @@ export class FakeServer {
   private readonly order: string[] = [];
   private readonly queues = new Map<string, Promise<unknown>>();
   private readonly listeners = new Set<() => void>();
-  private readonly socket: GoSocket;
+  private readonly handlers: Record<string, Handler>;
+  private socket: GoSocket;
   private readonly now: () => Date;
   private readonly log: (line: string) => void;
   private n = 0;
@@ -5257,31 +5285,39 @@ export class FakeServer {
   constructor(private readonly o: FakeServerOptions) {
     this.now = o.now ?? (() => new Date());
     this.log = o.log ?? (() => {});
-    const handlers: Record<string, Handler> = {
+    this.handlers = {
       read_trip: (p, raw) => this.answer('read_trip', raw, p.trip_id, (s) => s.readTrip()),
       read_messages: (p, raw) => this.answer('read_messages', raw, p.trip_id, (s) => s.readMessages(p)),
       replace_card: (p, raw) => this.answer('replace_card', raw, p.trip_id, (s) => s.replaceCard(p, raw)),
       // A notification: GoSocket never answers it, even when the trip is unknown.
       typing: (p, raw) => this.answer('typing', raw, p.trip_id, (s) => s.typing(p.on)),
     };
-    for (const method of Object.keys(WRITES)) handlers[method] = (p, raw) => this.write(method, p, raw);
-    this.socket = new GoSocket({
-      url: socketUrl(o.goUrl, o.instance ?? 'sim'),
-      secret: o.secret,
-      handlers,
-      ...(o.backoffSeconds ? { backoffSeconds: o.backoffSeconds } : {}),
+    for (const method of Object.keys(WRITES)) this.handlers[method] = (p, raw) => this.write(method, p, raw);
+    this.socket = this.newSocket();
+  }
+
+  /** A socket to Go, signed fresh on every connect. Only the current socket's open and close change isOpen(). */
+  private newSocket(): GoSocket {
+    const sock: GoSocket = new GoSocket({
+      url: socketUrl(this.o.goUrl, this.o.instance ?? 'sim'),
+      secret: this.o.secret,
+      handlers: this.handlers,
+      ...(this.o.backoffSeconds ? { backoffSeconds: this.o.backoffSeconds } : {}),
       onOpen: () => {
+        if (sock !== this.socket) return;
         this.open = true;
         this.log('socket to Go open');
         this.changed();
       },
       onClose: () => {
+        if (sock !== this.socket) return;
         this.open = false;
         this.log('socket to Go closed');
         this.changed();
       },
       onError: (err) => this.log(`socket to Go: ${err.message}`),
     });
+    return sock;
   }
 
   /** Opens the socket to Go and resolves once it is open (and, with a time limit, fails after it). */
@@ -5297,6 +5333,23 @@ export class FakeServer {
 
   isOpen(): boolean {
     return this.open;
+  }
+
+  /**
+   * The Server drops its socket and dials Go again on a new one, signed fresh. Trips, writes, requests and events are
+   * kept; a request still waiting goes again on the new socket (an event keeps its event_id). `downMs` is how long the
+   * Server stays away: Go accepts each signature once and a signature names its second, so tests wait at least 1,100 ms.
+   */
+  async reconnect(o: { downMs?: number; timeoutMs?: number } = {}): Promise<void> {
+    if (this.stopped) throw new Error('this FakeServer was stopped');
+    const old = this.socket;
+    this.socket = this.newSocket();
+    this.open = false;
+    old.close(); // its waiting requests fail at once; sendOne sends a waiting event again on the new socket
+    this.changed();
+    if (o.downMs) await sleep(o.downMs);
+    this.socket.start();
+    await this.waitFor(() => this.open, o.timeoutMs ?? 5000);
   }
 
   // ── trips and people ──
@@ -5556,7 +5609,7 @@ git commit -m "feat(sim): the FakeServer, which dials Go, answers its 18 methods
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `fake-server.test.ts` passes (12 tests); every earlier sim test still passes. This is the point P1's end-to-end tests can start using `@go/sim` (Tue 10:00).
+Expected: `fake-server.test.ts` passes (13 tests); every earlier sim test still passes. This is the point P1's end-to-end tests can start using `@go/sim` (Tue 10:00).
 
 ---
 ### Task 10: The dev room and the `room` command (`dev-room/`, `cli.ts`)
@@ -6294,7 +6347,7 @@ Expected: `dev-room.test.ts` passes (5 tests); every sim and fake Go test still 
 
 P0 changes no shared name in master §6. These are the points other plans should know, and two small asks.
 
-1. **P1's end-to-end tests use `@go/sim`.** Add `"@go/sim": "workspace:*"` to `apps/brain`'s devDependencies and drive Go with `new FakeServer({ goUrl, secret })`, `start()`, `createTrip(goaFreshTrip())`, `say()`, `tap()`, `vote()`, `confirmMandate()`, `askGo()`, `waitFor()`. For master §10 line 1 (a reconnect mid-turn), assert on `fake.writes` (`applied` marks the arrival that changed the trip) and `fake.countWrites(request_id)` (every arrival, repeats included). `fake.requests` lists every request and `typing` notification Go sent, in order, which P3's bench can use for "time to typing".
+1. **P1's end-to-end tests use `@go/sim`.** Add `"@go/sim": "workspace:*"` to `apps/brain`'s devDependencies and drive Go with `new FakeServer({ goUrl, secret })`, `start()`, `createTrip(goaFreshTrip())`, `say()`, `tap()`, `vote()`, `confirmMandate()`, `askGo()`, `waitFor()`. For master §10 line 1 (a reconnect mid-turn), `reconnect({ downMs: 1_100 })` drops the socket and dials again signed fresh, keeping every trip, write and event; assert on `fake.writes` (`applied` marks the arrival that changed the trip: done once is one applied arrival per `request_id`) and `fake.countWrites(request_id)` (every arrival, repeats included). `fake.requests` lists every request and `typing` notification Go sent, in order, with its arrival time, which P1's typing checks and P3's bench use for "time to typing". `reconnect` and the typing-in-`requests` check were added for P1 Task 18 and Task 16.
 2. **`trip.created` is always change 1 in the sim**, also for the mid-planning `GOA_SNAPSHOT` (whose own `seq` is 113): the sim restarts the count, so P1's gap logic sees no gap. Use `goaFreshTrip()` for a trip from scratch.
 3. **The sim's `mentions_go` rule is its own** (`@Go` in any case, the word `Go` with a capital G, or a reply to Go). The real Server decides this its own way; P1 should rely only on the flag, and tests on `@Go`.
 4. **Decisions on the guide's open points, which P1 should match:** a repeated `tap_id` gets its first answer back (master §6.3 `TapRouter` already says this); an unknown event type's `event_id` is remembered, so its repeat answers `duplicate: true`.
@@ -6346,7 +6399,7 @@ Where the research notes say something is unknown, this plan assumes the followi
 
 | Review Focus line | Test |
 |---|---|
-| 1. The socket drops while a request waits | Task 1 "sends an unanswered request again after a reconnect, with the same id"; Task 3 "go again on the next socket, with the same id"; Task 6 "does a write once per request_id"; Task 9 "does each write once per request_id: both arrivals are counted, one is applied" |
+| 1. The socket drops while a request waits | Task 1 "sends an unanswered request again after a reconnect, with the same id"; Task 3 "go again on the next socket, with the same id"; Task 6 "does a write once per request_id"; Task 9 "does each write once per request_id: both arrivals are counted, one is applied" and "reconnects on a new socket signed fresh, keeps the trip and the write log, and sends a waiting event again with its event_id" |
 | 2. A signature used twice, or signed without the query | Task 1 "signs every connect fresh, with the query string in the target"; Task 3 "accepts a signature once...", "needs the query string signed...", "refuses a missing, malformed, stale or wrong signature" |
 | 3. Unknown event types, broken events, repeated event_ids | Task 3 "accepts an event type it does not know before checking anything else", "refuses a broken event of a known type with 422 invalid", "does each event once"; Task 4 "stays quiet for repeats..." |
 | 4. Taps twice or from the wrong person | Task 4 "answers each tap_id once, and lets only the payer approve" |

@@ -13,7 +13,7 @@
 **Lane / gate:** Lanes A (proactive, Tasks 1 to 8) then C (watches already in Tasks 7 and 8; calls, Tasks 9 to 14). Gate **G5 "Go speaks first, and calls", Thu 23:00**: timers, watches, the proactive bar and budget pass in CI; one real call to a teammate's phone with the live card and the outcome. Demo beats served (master §1): **3:00 "the call"** and **3:40 "proactive and safe"** (the labelled simulated watch: the flight is 2 hours late and Arjun's cab is at 9; Go suggests moving it, pinned to Arjun).
 
 **Depends on:**
-- P1: `Brain`, `RegisterLane` (`apps/brain/src/app.ts`); `Desk.put`, `DeskItem`, `DeskKind` (`desk/desk.ts`); `Context.addNow`, `Context.addWake`, `NowProvider` (`composer/context.ts`); `Tools.register`, `QuickTool`, `TurnCtx`, `TurnOutcome` (`composer/tools.ts`); `MessageHooks.onRead` (`trips/hooks.ts`); `TripLog.onEvent` (`trips/log.ts`); `Packs.get`, `TripPack` (`trips/pack.ts`); `TapRouter.on('call', 'stop', ...)` (`door/taps.ts`); `ServerLink.request`, `newRequestId()` (`door/server-link.ts`); `Message`, `Trip`, `TripEvent`, `CardTapParams`, `CardTapResult` (`door/methods.ts`); `Switches.get('CALLS_MODE')` (`admin/switches.ts`); `withSchema()` (`db/test-db.ts`); the `trips` table (`trip_id`, `last_seq`, `tz`) and `trip_events.received_at`; `Env` with `GO_PUBLIC_URL`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `OPENAI_API_KEY`, `CALLS_MODE`, `CALLS_ALLOWLIST`, `ADMIN_TOKEN` (all optional strings).
+- P1: `Brain`, `RegisterLane` (`apps/brain/src/app.ts`); `Desk.put`, `DeskItem`, `DeskKind` (`desk/desk.ts`); `Context.addNow`, `Context.addWake`, `NowProvider` (`composer/context.ts`); `Tools.register`, `QuickTool`, `TurnCtx`, `TurnOutcome` (`composer/tools.ts`); `MessageHooks.onRead` (`trips/hooks.ts`); `TripLog.onEvent` (`trips/log.ts`); `Packs.get`, `TripPack` (`trips/pack.ts`); `TapRouter.on('call', 'stop', ...)` (`door/taps.ts`); `ServerLink.request` (`door/server-link.ts`); `TurnCtx.cards`, `TurnCtx.stableId(prefix)` (crash-safe ids for a quick tool's writes and cards); `Message`, `Trip`, `TripEvent`, `CardTapParams`, `CardTapResult` (`door/methods.ts`); `Switches.get('CALLS_MODE')` (`admin/switches.ts`); `withSchema()` (`db/test-db.ts`); the `trips` table (`trip_id`, `last_seq`, `tz` defaulting to `Asia/Kolkata`, `created_at`); `LANES` in `main.ts`; `Env` with `GO_PUBLIC_URL`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `OPENAI_API_KEY`, `CALLS_MODE`, `CALLS_ALLOWLIST`, `ADMIN_TOKEN` (all optional strings).
 - P2: `ReflexRead` with `opening: Sure<boolean>` and `forGo: Sure<boolean>` (`reflex/reflex.ts`; P1's stub until P2 lands); the quick tools named `react`, `record`, `trip`, `person`, `recall`; P1's `stay_silent`.
 - P4: `Travel.status(q: StatusQuery): Promise<StatusResult>` (`travel/travel.ts`); P6 builds and reads those shapes in one file, `watches/port.ts` (see the interface notes).
 - `@go/contract`: `TripSnapshot`, `Message`, `Event`, `NoticeCard`, `CallCard`.
@@ -30,7 +30,7 @@ Master §7 applies to every task. Specific to this plan:
 - Night is 22:00 to 08:00 in the trip's time zone (`trips.tz`, default `Asia/Kolkata`).
 - At most 3 unprompted posts (a pinned notice or a message to everyone) per trip per local day (`DAILY_POSTS = 3`).
 - Every card from a simulated watch carries `source: { name: "Simulated for the demo" }`.
-- Every call write uses a deterministic `request_id`: `go_<call_id>_<step>` (`announce`, `card`, `cancel`, `off`, `outcome`, `record`, `fail`), so a crash and re-run never doubles a post.
+- A quick tool's writes and cards take their ids from `ctx.stableId(...)` (`c_notice`, `call`); every call write outside a turn uses `go_<call_id>_<step>` (`announce`, `card`, `cancel`, `off`, `outcome`, `record`, `fail`), so a crash and re-run never doubles a post. Proactive desk items are `<source>:<trip>:<dedupe key>`.
 - Audio is never recorded or stored; only the transcript (at most 300 lines) is kept, on the call card and in `calls.transcript`.
 - `ADMIN_TOKEN` guards `POST /admin/watch/fire`; without it the route answers 404.
 
@@ -88,8 +88,9 @@ Master §7 applies to every task. Specific to this plan:
 - `apps/brain/src/calls/card-updater.test.ts`, `apps/brain/src/calls/service.test.ts`: tests.
 - `apps/brain/src/calls/register.ts`: `startCalls(brain)`, `registerCalls(brain)`: routes, media socket, tap, hooks, the `calls` "right now" block.
 - `apps/brain/src/calls/register.test.ts`: the whole call end to end.
-- `apps/brain/src/main.ts` (modify): call `registerProactive` and `registerCalls`.
-- `apps/brain/scripts/calls-day-one.mjs`: the day-one check for Twilio, India dialing and the realtime model.
+- `apps/brain/src/main.ts` (modify): add `registerProactive` and `registerCalls` to `LANES`.
+- `apps/brain/src/__tests__/e2e/proactive.e2e.test.ts`: G5, the 3:40 beat through the simulator and the real composer.
+- `apps/brain/scripts/calls-day-one.mjs`: the day-one check for Twilio, India dialing, the media socket and the realtime model.
 
 ---
 
@@ -628,7 +629,7 @@ Expected: `policy.test.ts` passes (clock, score, bars, decide, decideBatch).
 **Interfaces:**
 - Consumes: `Candidate`, `Action`, `Source`, `ACTIONS` (Task 1); `DEFAULT_TZ`, `isValidTz` (Task 1); `withSchema()` (P1); `Brain` (P1 `app.ts`); `DeskItem` (P1); `QuickTool`, `TurnCtx` (P1); `NowProvider` (P1); `ServerLink` (P1); `TripPack` (P1); `Message`, `Trip`, `TripEvent`, `CardTapParams`, `CardTapResult` (P1 `door/methods.ts`); `ReflexRead` (P1 stub / P2); `TripSnapshot`, `Message`, `Card`, `NoticeCard` from `@go/contract`.
 - Produces:
-  - `store.ts`: `type NoticeIn = z.input<typeof NoticeCard>`; `interface Signals { postsToday; lastProactivePostAt: Date | null; hushCount; lastHushAt: Date | null; ignoredCount }`; `interface SavedNotice { tripId; cardId; messageId; card: NoticeIn }`; `interface ToCheck { tripId; dedupeKey; decidedAt: Date; postedMessageId: string | null }`; `class ProactiveStore` with `add(c): Promise<'added' | 'exists'>`, `plan(c): Promise<void>`, `dropUnplanned(tripId, keep: string[], now): Promise<number>`, `due(now, limit?): Promise<Candidate[]>`, `promote(c, d: { allowed: Action[]; forPersonIds: string[]; counted: boolean; localDay: string }, now): Promise<void>`, `defer(c, until, reason): Promise<void>`, `drop(c, reason, now): Promise<void>`, `status(tripId, key): Promise<{ status: string; reason: string | null; allowed: Action[] | null; counted: boolean; dueAt: Date; postedMessageId: string | null } | null>`, `signals(tripId, localDay): Promise<Signals>`, `tripTz(tripId): Promise<string>`, `tripExists(tripId): Promise<boolean>`, `hush(tripId, now)`, `ignored(tripId, now)`, `resetBudget(tripId, localDay): Promise<number>`, `posted(tripId, key, messageId)`, `toCheckForIgnored(before, limit?): Promise<ToCheck[]>`, `ignoreChecked(tripId, key, now)`, `saveNotice(n: SavedNotice)`, `notice(tripId, cardId): Promise<SavedNotice | null>`.
+  - `store.ts`: `type NoticeIn = z.input<typeof NoticeCard>`; `interface Signals { postsToday; lastProactivePostAt: Date | null; hushCount; lastHushAt: Date | null; ignoredCount }`; `interface SavedNotice { tripId; cardId; messageId: string | null; card: NoticeIn }`; `interface ToCheck { tripId; dedupeKey; decidedAt: Date }`; `class ProactiveStore` with `add(c): Promise<'added' | 'exists'>`, `plan(c): Promise<void>`, `dropUnplanned(tripId, keep: string[], now): Promise<number>`, `due(now, limit?): Promise<Candidate[]>`, `promote(c, d: { allowed: Action[]; forPersonIds: string[]; counted: boolean; localDay: string }, now): Promise<void>`, `defer(c, until, reason): Promise<void>`, `drop(c, reason, now): Promise<void>`, `status(tripId, key): Promise<{ status: string; reason: string | null; allowed: Action[] | null; counted: boolean; dueAt: Date } | null>`, `signals(tripId, localDay): Promise<Signals>`, `tripTz(tripId): Promise<string>`, `tripExists(tripId): Promise<boolean>`, `hush(tripId, now)`, `ignored(tripId, now)`, `resetBudget(tripId, localDay): Promise<number>`, `toCheckForIgnored(before, limit?): Promise<ToCheck[]>`, `ignoreChecked(tripId, key, now)`, `saveNotice(n: SavedNotice)`, `notice(tripId, cardId): Promise<SavedNotice | null>`.
   - `fakes.ts` (tests only): `GOA_TZ`, `goaTrip(over?)`, `msg(o)`, `goaPack(o?)`, `fakePacks(...packs)`, `fakeLink(o?)`, `fakeDesk()`, `manualTime(startIso)`, `waitFor(check, ms?)`, `candidate(over?)`, `unsureRead(over?)`, `turnCtx(o)`, `seedTrip(pool, tripId, tz?)`, `fakeBrain(o)` returning `{ brain, app, reg, link, desk, packs, switches }`.
 
 A candidate's primary key is `(trip_id, dedupe_key)`. `add` never revives a key it has seen, whatever happened to it; that is "never repeat a nudge" by construction. `plan` (timers only) may move a pending timer to a new time, and may revive a timer only if it was dropped by re-planning (the dates moved away and came back).
@@ -737,21 +738,20 @@ describe('ProactiveStore', () => {
     expect(await store.tripExists('t_nowhere')).toBe(false);
   });
 
-  it('remembers what Go posted and which nudges still need the ignored check', async () => {
+  it('lists the unprompted posts that still need the ignored check', async () => {
     const c = candidate({ dedupeKey: 'ign:1' });
     await store.add(c);
     await store.promote(c, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-06' }, NOON);
-    await store.posted('t_goa', 'ign:1', 'm_go_1');
     const rows = await store.toCheckForIgnored(new Date(NOON.getTime() + 1000));
-    expect(rows).toContainEqual({ tripId: 't_goa', dedupeKey: 'ign:1', decidedAt: NOON, postedMessageId: 'm_go_1' });
+    expect(rows).toContainEqual({ tripId: 't_goa', dedupeKey: 'ign:1', decidedAt: NOON });
     await store.ignoreChecked('t_goa', 'ign:1', NOON);
     expect((await store.toCheckForIgnored(new Date(NOON.getTime() + 1000))).map((r) => r.dedupeKey)).not.toContain('ign:1');
   });
 
   it('saves and reads back a notice card', async () => {
     const card = { card_id: 'c_notice_1', kind: 'notice' as const, fallback_text: 'Heads up', tone: 'heads_up' as const, title: 'Heads up', body: 'Your flight is late.' };
-    await store.saveNotice({ tripId: 't_goa', cardId: 'c_notice_1', messageId: 'm_go_9', card });
-    expect(await store.notice('t_goa', 'c_notice_1')).toEqual({ tripId: 't_goa', cardId: 'c_notice_1', messageId: 'm_go_9', card });
+    await store.saveNotice({ tripId: 't_goa', cardId: 'c_notice_1', messageId: null, card });
+    expect(await store.notice('t_goa', 'c_notice_1')).toEqual({ tripId: 't_goa', cardId: 'c_notice_1', messageId: null, card });
     expect(await store.notice('t_goa', 'c_missing')).toBeNull();
   });
 });
@@ -788,7 +788,6 @@ create table proactive_candidates (
   counted boolean not null default false,
   decided_at timestamptz,
   local_day text,
-  posted_message_id text,
   ignore_checked_at timestamptz,
   created_at timestamptz not null default now(),
   primary key (trip_id, dedupe_key)
@@ -807,7 +806,8 @@ create table proactive_trips (
 create table proactive_notices (
   trip_id text not null,
   card_id text not null,
-  message_id text not null,
+  -- Null while the card rides with the turn's message (P1 posts it); kept for the record only.
+  message_id text,
   card jsonb not null,
   created_at timestamptz not null default now(),
   primary key (trip_id, card_id)
@@ -833,8 +833,8 @@ export interface Signals {
   lastHushAt: Date | null;
   ignoredCount: number;
 }
-export interface SavedNotice { tripId: string; cardId: string; messageId: string; card: NoticeIn }
-export interface ToCheck { tripId: string; dedupeKey: string; decidedAt: Date; postedMessageId: string | null }
+export interface SavedNotice { tripId: string; cardId: string; messageId: string | null; card: NoticeIn }
+export interface ToCheck { tripId: string; dedupeKey: string; decidedAt: Date }
 
 type CandidateRow = {
   trip_id: string;
@@ -948,9 +948,9 @@ export class ProactiveStore {
     );
   }
 
-  async status(tripId: string, key: string): Promise<{ status: string; reason: string | null; allowed: Action[] | null; counted: boolean; dueAt: Date; postedMessageId: string | null } | null> {
-    const r = await this.pool.query<{ status: string; reason: string | null; allowed: string[] | null; counted: boolean; due_at: Date; posted_message_id: string | null }>(
-      `select status, reason, allowed, counted, due_at, posted_message_id from proactive_candidates where trip_id = $1 and dedupe_key = $2`,
+  async status(tripId: string, key: string): Promise<{ status: string; reason: string | null; allowed: Action[] | null; counted: boolean; dueAt: Date } | null> {
+    const r = await this.pool.query<{ status: string; reason: string | null; allowed: string[] | null; counted: boolean; due_at: Date }>(
+      `select status, reason, allowed, counted, due_at from proactive_candidates where trip_id = $1 and dedupe_key = $2`,
       [tripId, key],
     );
     const row = r.rows[0];
@@ -961,7 +961,6 @@ export class ProactiveStore {
       allowed: row.allowed ? row.allowed.filter(isAction) : null,
       counted: row.counted,
       dueAt: row.due_at,
-      postedMessageId: row.posted_message_id,
     };
   }
 
@@ -1025,21 +1024,14 @@ export class ProactiveStore {
     return r.rowCount ?? 0;
   }
 
-  async posted(tripId: string, key: string, messageId: string): Promise<void> {
-    await this.pool.query(
-      `update proactive_candidates set posted_message_id = coalesce(posted_message_id, $3) where trip_id = $1 and dedupe_key = $2`,
-      [tripId, key, messageId],
-    );
-  }
-
   async toCheckForIgnored(before: Date, limit = 100): Promise<ToCheck[]> {
-    const r = await this.pool.query<{ trip_id: string; dedupe_key: string; decided_at: Date; posted_message_id: string | null }>(
-      `select trip_id, dedupe_key, decided_at, posted_message_id from proactive_candidates
+    const r = await this.pool.query<{ trip_id: string; dedupe_key: string; decided_at: Date }>(
+      `select trip_id, dedupe_key, decided_at from proactive_candidates
        where status = 'promoted' and counted and ignore_checked_at is null and decided_at < $1
        order by decided_at limit $2`,
       [before, limit],
     );
-    return r.rows.map((x) => ({ tripId: x.trip_id, dedupeKey: x.dedupe_key, decidedAt: x.decided_at, postedMessageId: x.posted_message_id }));
+    return r.rows.map((x) => ({ tripId: x.trip_id, dedupeKey: x.dedupe_key, decidedAt: x.decided_at }));
   }
 
   async ignoreChecked(tripId: string, key: string, now: Date): Promise<void> {
@@ -1055,7 +1047,7 @@ export class ProactiveStore {
   }
 
   async notice(tripId: string, cardId: string): Promise<SavedNotice | null> {
-    const r = await this.pool.query<{ message_id: string; card: NoticeIn }>(
+    const r = await this.pool.query<{ message_id: string | null; card: NoticeIn }>(
       `select message_id, card from proactive_notices where trip_id = $1 and card_id = $2`,
       [tripId, cardId],
     );
@@ -1329,14 +1321,24 @@ export function unsureRead(over: Partial<ReflexRead> = {}): ReflexRead {
   return { forGo: u, complete: u, size: u, taskId: u, fact: u, recordKind: u, reaction: u, risky: u, opening: u, ...over };
 }
 
-export function turnCtx(o: { link: ServerLink; pack: TripPack; wake: DeskItem[] }): TurnCtx {
+/** A turn context like P1's makeTurnCtx: stableId(prefix) gives `<prefix>_<turnId>_<n>`, the same on a rerun. */
+export function turnCtx(o: { link: ServerLink; pack: TripPack; wake: DeskItem[]; turnId?: string }): TurnCtx {
+  const turnId = o.turnId ?? 'turn_test';
+  const counts = new Map<string, number>();
   return {
     tripId: o.pack.trip.trip_id,
-    turnId: 'turn_test',
+    turnId,
     link: o.link,
     pack: o.pack,
     outcome: { spoke: false, silent: false, reactions: 0, posts: [] as string[] },
     wake: o.wake,
+    cards: [] as Card[],
+    stableId(prefix: string): string {
+      const n = (counts.get(prefix) ?? 0) + 1;
+      counts.set(prefix, n);
+      return `${prefix}_${turnId}_${n}`;
+    },
+    signal: new AbortController().signal,
   } as TurnCtx;
 }
 
@@ -1422,7 +1424,7 @@ Expected: `store.test.ts` passes against the CI Postgres; earlier tests stay gre
 - Consumes: `Candidate` (Task 1); `addDays`, `zonedTime` (Task 1); `ProactiveStore.plan`, `ProactiveStore.dropUnplanned` (Task 2); `Trip` (P1 `door/methods.ts`); `TripPack` (P1).
 - Produces: `VOTE_REMINDER_BEFORE_MS`, `FREE_CANCEL_BEFORE_MS`, `PAYER_WAIT_MS`, `TRAVEL_DAY_HOUR = 19`, `SETTLE_UP_HOUR = 11`; `nonVoters(trip: Trip, decisionId: string): string[]`; `dateClashes(trip: Trip): Array<{ booking_id: string; title: string; starts_at: string; ends_at: string | null }>`; `planTimers(trip: Trip, tz: string, now: Date): Candidate[]`; `replanTimers(store: ProactiveStore, trip: Trip, tz: string, now: Date): Promise<number>`; `type Check = { ok: true; personIds: string[] } | { ok: false }`; `stillTrue(c: Candidate, pack: TripPack): Check`.
 
-Decision: timers are candidates in `proactive_candidates` with a future `due_at`, not desk items with a future due time. The desk has no gate before a turn, so a timer put straight on the desk would always cost a model turn and could not be held for the morning or for the budget. The promoter (Task 4) puts the desk item, with a stable id (`pro:<trip>:<dedupe key>`), only when the bar passes. Each timer's dedupe key carries the moment it is about (`vote_closing:d_villa:<closes_at>`), so moving a vote's closing time plans a new reminder and drops the old one.
+Decision: timers are candidates in `proactive_candidates` with a future `due_at`, not desk items with a future due time. The desk has no gate before a turn, so a timer put straight on the desk would always cost a model turn and could not be held for the morning or for the budget. The promoter (Task 4) puts the desk item, with a stable lane-prefixed id (`timer:<trip>:<dedupe key>`), only when the bar passes. Each timer's dedupe key carries the moment it is about (`vote_closing:d_villa:<closes_at>`), so moving a vote's closing time plans a new reminder and drops the old one.
 
 The five timers, from spec §8 "Time":
 
@@ -1806,7 +1808,7 @@ Expected: `timers.test.ts` passes; earlier tests stay green.
 **Interfaces:**
 - Consumes: `ACTIONS`, `Candidate`, `Decision`, `TripMood`, `decideBatch` (Task 1); `localDay` (Task 1); `ProactiveStore`, `Signals` (Task 2); `stillTrue` (Task 3); `Desk.put`, `DeskItem` (P1); `Packs.get`, `TripPack` (P1).
 - Produces:
-  - `payload.ts`: `PROACTIVE_KINDS = ['timer', 'watch', 'opening'] as const`; `ProactivePayload` (zod) and its type `{ candidate: { ...Candidate with ISO strings }; allowed: Action[]; forPersonIds: string[]; tz: string }`; `toPayload(c: Candidate, d: Extract<Decision, { kind: 'go' }>, tz: string): ProactivePayload`; `fromPayload(p: ProactivePayload['candidate']): Candidate`; `proactiveOf(item: DeskItem): ProactivePayload | null`; `deskId(c: Pick<Candidate, 'tripId' | 'dedupeKey'>): string` (`pro:<trip>:<key>`).
+  - `payload.ts`: `PROACTIVE_KINDS = ['timer', 'watch', 'opening'] as const`; `ProactivePayload` (zod) and its type `{ candidate: { ...Candidate with ISO strings }; allowed: Action[]; forPersonIds: string[]; tz: string }`; `toPayload(c: Candidate, d: Extract<Decision, { kind: 'go' }>, tz: string): ProactivePayload`; `fromPayload(p: ProactivePayload['candidate']): Candidate`; `proactiveOf(item: DeskItem): ProactivePayload | null`; `deskId(c: Pick<Candidate, 'source' | 'tripId' | 'dedupeKey'>): string` (`<source>:<trip>:<key>`, e.g. `watch:t_goa:flight:t_goa:b_flight:delay:120`).
   - `promoter.ts`: `moodFrom(sig: Signals, pack: TripPack, tz: string): TripMood`; `interface PromoterDeps { store; desk: Pick<Desk, 'put'>; packs: Pick<Packs, 'get'>; now: () => Date; log: { warn(obj: object, msg: string): void } }`; `createPromoter(deps): { tick(): Promise<number> }` (returns how many candidates went onto the desk).
 
 The order inside a pass is crash safe: the desk item is put first (its id is stable, so a repeat put is a no-op), then the candidate is marked promoted. A crash between the two puts the same item again on the next pass and then marks it. A failure for one trip is logged and leaves that trip's candidates due for the next pass.
@@ -1873,7 +1875,7 @@ describe('createPromoter', () => {
     expect(await p.tick()).toBe(0);
     expect(desk.items).toHaveLength(1);
     const item = desk.items[0]!;
-    expect(item).toMatchObject({ id: 'pro:t_goa:delay:1', tripId: 't_goa', kind: 'watch', ref: 'pro:t_goa:delay:1' });
+    expect(item).toMatchObject({ id: 'watch:t_goa:delay:1', tripId: 't_goa', kind: 'watch', ref: 'watch:t_goa:delay:1' });
     expect(item.dueAt.toISOString()).toBe('2026-10-06T06:30:00.000Z');
     expect(proactiveOf(item)).toMatchObject({ allowed: ['pin'], forPersonIds: ['p_arjun'], tz: 'Asia/Kolkata' });
     expect(await store.status('t_goa', 'delay:1')).toMatchObject({ status: 'promoted', counted: true, allowed: ['pin'] });
@@ -1924,7 +1926,7 @@ describe('createPromoter', () => {
     await store.add(candidate({ dedupeKey: 'join:1', personIds: [], useful: ['react'], dueAt: new Date(Date.parse(NOON) - 1000) }));
     const [a, b] = await Promise.all([p.tick(), p.tick()]);
     expect(a).toBe(b);
-    expect(desk.items.filter((i) => i.id === 'pro:t_goa:join:1')).toHaveLength(1);
+    expect(desk.items.filter((i) => i.id === 'watch:t_goa:join:1')).toHaveLength(1);
   });
 
   it('keeps a trip due when its pack cannot be read', async () => {
@@ -1999,7 +2001,8 @@ export function proactiveOf(item: DeskItem): ProactivePayload | null {
   return r.success ? r.data : null;
 }
 
-export const deskId = (c: Pick<Candidate, 'tripId' | 'dedupeKey'>): string => `pro:${c.tripId}:${c.dedupeKey}`;
+/** Lane-prefixed and stable: `timer:<trip>:<key>`, `watch:<trip>:<key>`, `opening:<trip>:<key>`. */
+export const deskId = (c: Pick<Candidate, 'source' | 'tripId' | 'dedupeKey'>): string => `${c.source}:${c.tripId}:${c.dedupeKey}`;
 ```
 
 ```ts
@@ -2121,14 +2124,14 @@ Expected: `promoter.test.ts` passes; earlier tests stay green.
 - Test: `apps/brain/src/proactive/notice-tools.test.ts`
 
 **Interfaces:**
-- Consumes: `Action`, `Candidate` (Task 1); `localWhen` (Task 1); `ProactiveStore`, `NoticeIn` (Task 2); `ProactivePayload`, `proactiveOf`, `fromPayload`, `toPayload`, `deskId` (Task 4); `DeskItem` (P1); `NowProvider` (P1); `QuickTool`, `TurnCtx` (P1); `newRequestId()` (P1); `TripPack` (P1); `NoticeCard` (`@go/contract`).
+- Consumes: `Action`, `Candidate` (Task 1); `localWhen` (Task 1); `ProactiveStore`, `NoticeIn` (Task 2); `ProactivePayload`, `proactiveOf`, `fromPayload`, `toPayload`, `deskId` (Task 4); `DeskItem` (P1); `NowProvider` (P1); `QuickTool`, `TurnCtx` with `cards`, `stableId(prefix)` (P1); `TripPack` (P1); `NoticeCard` (`@go/contract`).
 - Produces:
   - `words.ts`: `plain(text): string`; `clip(text, max): string`; `quote(text, max?): string`; `rupees(minor): string`; `namesOf(ids, people): string`.
   - `allowed.ts`: `TOOLS_FOR: Record<Action, readonly string[]>`; `ALWAYS: readonly string[]` (`stay_silent`, `trip`, `person`, `recall`); `interface TurnRules { allowed: Action[]; tools: string[]; mayPostText: boolean; pinOnlyFor: string[] | null; dedupeKeys: string[] }`; `rulesForTurn(wake: DeskItem[]): TurnRules | null` (null when anything other than Go's own noticing woke the turn); `simulatedIn(wake: DeskItem[]): boolean`.
   - `wake.ts`: `describeNoticed(c, pack, tz, now): string`; `renderWake(item, pack, now): string`; `OPENINGS_ORDER = 60`; `openingsNow(): NowProvider` (name `openings`).
   - `notice-tools.ts`: `SIMULATED_SOURCE = 'Simulated for the demo'`; `interface NoticeToolDeps { store: ProactiveStore; now: () => Date; onPosted?: (p: ProactivePayload, cardId: string) => Promise<void> }`; `noticeTools(deps): [QuickTool<PostNoticeArgs>, QuickTool<UpdateNoticeArgs>]` (tools `post_notice`, `update_notice`).
 
-How the limits are enforced today, without changing P1: (1) the wake text names exactly what is allowed; (2) the `openings` block lists the tools this turn may use and whether a text message is allowed; (3) `post_notice` and `update_notice` refuse anything the bar did not allow, keep pins to the people the bar named, strip anyone who paused Go, and force the "Simulated for the demo" source whenever a simulated item is in the turn, even when a person's message woke the same turn. The composer's own tools and plain text are limited only by (1) and (2) until P1 adds `TurnCtx.allowedTools` (see the interface notes); `rulesForTurn` is the function P1 calls for it.
+How the limits are enforced today, without changing P1: (1) the wake text names exactly what is allowed; (2) the `openings` block lists the tools this turn may use and whether a text message is allowed; (3) `post_notice` (which adds its card to `ctx.cards`, so it rides after the turn's text with P1's stable request ids; its card id is `ctx.stableId('c_notice')`) and `update_notice` refuse anything the bar did not allow, keep pins to the people the bar named, strip anyone who paused Go, and force the "Simulated for the demo" source whenever a simulated item is in the turn, even when a person's message woke the same turn. The composer's own tools and plain text are limited only by (1) and (2) until P1 adds `TurnCtx.allowedTools` (see the interface notes); `rulesForTurn` is the function P1 calls for it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2293,33 +2296,31 @@ describe('post_notice', () => {
       post.input.parse({ tone: 'heads_up', title: 'Your flight is 2 hours late — cab at 9', body: 'Your cab is at 9 pm but you now land at 10:45. Want me to move it to 11?', for_person_ids: ['p_rahul', 'p_arjun'], source_name: 'ixigo' }),
       ctx,
     );
-    expect(out).toMatchObject({ posted: true, pinned_for: ['p_arjun'] });
-    const [sent] = link.of('post_message');
-    const card = sent?.card as Record<string, unknown>;
-    expect(card).toMatchObject({ kind: 'notice', tone: 'heads_up', for_person_ids: ['p_arjun'], source: { name: SIMULATED_SOURCE } });
+    expect(out).toMatchObject({ posted: true, card_id: 'c_notice_turn_test_1', pinned_for: ['p_arjun'] });
+    expect(link.calls).toHaveLength(0); // P1 posts ctx.cards with the turn's message
+    const card = ctx.cards[0] as Record<string, unknown>;
+    expect(card).toMatchObject({ card_id: 'c_notice_turn_test_1', kind: 'notice', tone: 'heads_up', for_person_ids: ['p_arjun'], source: { name: SIMULATED_SOURCE } });
     expect(String(card.title)).not.toContain('—');
-    expect(String(sent?.request_id)).toMatch(/^go_/);
-    expect(ctx.outcome.spoke).toBe(true);
-    expect((await store.status('t_goa', 'sim:flight_status:1'))?.postedMessageId).toBe('m_go_1');
-    expect(await store.notice('t_goa', String(card.card_id))).not.toBeNull();
-    expect(posted.at(-1)?.cardId).toBe(card.card_id);
+    expect(await store.notice('t_goa', 'c_notice_turn_test_1')).not.toBeNull();
+    expect(posted.at(-1)?.cardId).toBe('c_notice_turn_test_1');
   });
 
   it('pins to the people the bar named when the model forgets to', async () => {
     const c = candidate({ dedupeKey: 'free:1', source: 'timer', topic: 'free_cancel', personIds: ['p_rahul'] });
     const [post] = tools();
-    const link = fakeLink();
-    await post.run(post.input.parse({ tone: 'heads_up', title: 'Free cancellation ends tomorrow', body: 'Villa Sol is free to cancel until Sunday night.' }), turnCtx({ link, pack: goaPack(), wake: [proItem(c, ['pin'], ['p_rahul'])] }));
-    expect((link.of('post_message')[0]?.card as Record<string, unknown>).for_person_ids).toEqual(['p_rahul']);
+    const ctx = turnCtx({ link: fakeLink(), pack: goaPack(), wake: [proItem(c, ['pin'], ['p_rahul'])], turnId: 'turn_free' });
+    await post.run(post.input.parse({ tone: 'heads_up', title: 'Free cancellation ends tomorrow', body: 'Villa Sol is free to cancel until Sunday night.' }), ctx);
+    expect((ctx.cards[0] as Record<string, unknown>).for_person_ids).toEqual(['p_rahul']);
   });
 
   it('refuses when the bar allowed only quiet actions', async () => {
     const c = candidate({ dedupeKey: 'quiet:1', source: 'opening', topic: 'chat', personIds: [] });
     const [post] = tools();
     const link = fakeLink();
-    const out = await post.run(post.input.parse({ tone: 'info', title: 'Hi', body: 'Hello' }), turnCtx({ link, pack: goaPack(), wake: [proItem(c, ['react'])] }));
+    const ctx = turnCtx({ link, pack: goaPack(), wake: [proItem(c, ['react'])] });
+    const out = await post.run(post.input.parse({ tone: 'info', title: 'Hi', body: 'Hello' }), ctx);
     expect(out).toHaveProperty('refused');
-    expect(link.calls).toHaveLength(0);
+    expect(ctx.cards).toHaveLength(0);
   });
 
   it('never pins someone who paused Go', async () => {
@@ -2328,9 +2329,10 @@ describe('post_notice', () => {
     const c = candidate({ dedupeKey: 'paused:1' });
     const [post] = tools();
     const link = fakeLink();
-    const out = await post.run(post.input.parse({ tone: 'heads_up', title: 'Late', body: 'Late flight' }), turnCtx({ link, pack: goaPack({ trip }), wake: [proItem(c, ['pin'], ['p_arjun'])] }));
+    const ctx = turnCtx({ link, pack: goaPack({ trip }), wake: [proItem(c, ['pin'], ['p_arjun'])] });
+    const out = await post.run(post.input.parse({ tone: 'heads_up', title: 'Late', body: 'Late flight' }), ctx);
     expect(out).toHaveProperty('refused');
-    expect(link.calls).toHaveLength(0);
+    expect(ctx.cards).toHaveLength(0);
   });
 
   it('labels a simulated item even in a turn a person woke, and strips paused people there too', async () => {
@@ -2338,12 +2340,9 @@ describe('post_notice', () => {
     const trip = goaTrip({ people: base.people.map((p) => (p.person_id === 'p_meher' ? { ...p, go_paused: true } : p)) });
     const delay = candidate({ dedupeKey: 'sim:flight_status:2', simulated: true });
     const [post] = tools();
-    const link = fakeLink();
-    await post.run(
-      post.input.parse({ tone: 'heads_up', title: 'Late flight', body: 'Two hours late.', for_person_ids: ['p_arjun', 'p_meher'] }),
-      turnCtx({ link, pack: goaPack({ trip }), wake: [messageItem, proItem(delay, ['pin'], ['p_arjun'])] }),
-    );
-    const card = link.of('post_message')[0]?.card as Record<string, unknown>;
+    const ctx = turnCtx({ link: fakeLink(), pack: goaPack({ trip }), wake: [messageItem, proItem(delay, ['pin'], ['p_arjun'])], turnId: 'turn_mixed' });
+    await post.run(post.input.parse({ tone: 'heads_up', title: 'Late flight', body: 'Two hours late.', for_person_ids: ['p_arjun', 'p_meher'] }), ctx);
+    const card = ctx.cards[0] as Record<string, unknown>;
     expect(card.source).toEqual({ name: SIMULATED_SOURCE });
     expect(card.for_person_ids).toEqual(['p_arjun']);
   });
@@ -2354,7 +2353,7 @@ describe('update_notice', () => {
     const delay = candidate({ dedupeKey: 'sim:flight_status:3', simulated: true });
     const [post, update] = tools();
     const link = fakeLink();
-    const ctx = turnCtx({ link, pack: goaPack(), wake: [proItem(delay, ['pin'], ['p_arjun'])] });
+    const ctx = turnCtx({ link, pack: goaPack(), wake: [proItem(delay, ['pin'], ['p_arjun'])], turnId: 'turn_update' });
     const out = (await post.run(post.input.parse({ tone: 'heads_up', title: 'Late flight', body: 'Two hours late.' }), ctx)) as { card_id: string };
     const ctx2 = turnCtx({ link, pack: goaPack(), wake: [proItem({ ...delay, dedupeKey: 'sim:flight_status:4' }, ['update_card'])] });
     expect(await update.run(update.input.parse({ card_id: out.card_id, body: 'Three hours late now.' }), ctx2)).toMatchObject({ updated: true });
@@ -2624,10 +2623,8 @@ export function openingsNow(): NowProvider {
 // apps/brain/src/proactive/notice-tools.ts
 // post_notice and update_notice: Go's quick tools for a notice card. They enforce what the bar allowed,
 // keep pins to the right people, never ping someone who paused Go, and label simulated news.
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../composer/tools.js';
-import { newRequestId } from '../door/server-link.js';
 import { rulesForTurn, simulatedIn } from './allowed.js';
 import { proactiveOf, type ProactivePayload } from './payload.js';
 import type { NoticeIn, ProactiveStore } from './store.js';
@@ -2656,7 +2653,7 @@ type UpdateNoticeArgs = z.infer<typeof UpdateNoticeArgs>;
 export interface NoticeToolDeps {
   store: ProactiveStore;
   now: () => Date;
-  /** Called once per proactive item in the turn after a notice is posted (watches remember the card). */
+  /** Called once per proactive item in the turn when a notice is queued (watches remember the card). */
   onPosted?: (p: ProactivePayload, cardId: string) => Promise<void>;
 }
 
@@ -2685,7 +2682,7 @@ export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, Q
         ? { name: SIMULATED_SOURCE }
         : args.source_name ? { name: clip(plain(args.source_name), 60) } : null;
       const card: NoticeIn = {
-        card_id: `c_notice_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+        card_id: ctx.stableId('c_notice'),
         kind: 'notice',
         fallback_text: clip(`${title}. ${body}`, 300),
         tone: args.tone,
@@ -2696,16 +2693,13 @@ export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, Q
         ...(source ? { source } : {}),
         ...(args.deadline_at ? { deadline_at: args.deadline_at } : {}),
       };
-      const res = await ctx.link.request('post_message', { request_id: newRequestId(), trip_id: ctx.tripId, card });
-      await deps.store.saveNotice({ tripId: ctx.tripId, cardId: card.card_id, messageId: res.message_id, card });
+      // The card rides with the turn's message (P1 posts ctx.cards after the text, with stable request ids).
+      ctx.cards.push(card);
+      await deps.store.saveNotice({ tripId: ctx.tripId, cardId: card.card_id, messageId: null, card });
       for (const item of ctx.wake) {
         const p = proactiveOf(item);
-        if (!p) continue;
-        await deps.store.posted(ctx.tripId, p.candidate.dedupeKey, res.message_id);
-        await deps.onPosted?.(p, card.card_id);
+        if (p) await deps.onPosted?.(p, card.card_id);
       }
-      ctx.outcome.spoke = true;
-      ctx.outcome.posts.push(res.message_id);
       return { posted: true, card_id: card.card_id, pinned_for: pins };
     },
   };
@@ -2759,13 +2753,13 @@ Expected: `wake.test.ts` and `notice-tools.test.ts` pass; earlier tests stay gre
 
 **Interfaces:**
 - Consumes: `Candidate` (Task 1); `ProactiveStore.add`, `.hush`, `.ignored`, `.toCheckForIgnored`, `.ignoreChecked` (Task 2); `dateClashes` (Task 3); `Message`, `Trip`, `TripEvent` (P1); `ReflexRead` (P1 stub / P2); `Packs.get`, `TripPack` (P1).
-- Produces: `HUSH_RE`; `CHAT_WAIT_MS = 15_000`; `CHAT_EXPIRES_MS`; `IGNORED_AFTER_MS = 6 h`; `REPLAN_ON: ReadonlySet<string>`; `talksToGo(msg, pack): boolean`; `isHush(msg, pack): boolean`; `chatOpening(msg, read, now, tripId): Candidate | null`; `tripChangeOpenings(ev: TripEvent, trip: Trip, now: Date): Candidate[]`; `wasEngaged(pack, decidedAt, postedMessageId, windowMs): boolean`; `interface OpeningsDeps { store; packs: Pick<Packs, 'get'>; readTrip(tripId): Promise<Trip>; replan(tripId: string, trip: Trip): Promise<void>; now: () => Date }`; `createOpenings(deps): { onRead(msg, read, pack): Promise<void>; onEvent(ev): Promise<void>; checkIgnored(): Promise<number> }`.
+- Produces: `HUSH_RE`; `CHAT_WAIT_MS = 15_000`; `CHAT_EXPIRES_MS`; `IGNORED_AFTER_MS = 6 h`; `REPLAN_ON: ReadonlySet<string>`; `talksToGo(msg, pack): boolean`; `isHush(msg, pack): boolean`; `chatOpening(msg, read, now, tripId): Candidate | null`; `tripChangeOpenings(ev: TripEvent, trip: Trip, now: Date): Candidate[]`; `wasEngaged(pack, decidedAt, windowMs): boolean`; `interface OpeningsDeps { store; packs: Pick<Packs, 'get'>; readTrip(tripId): Promise<Trip>; replan(tripId: string, trip: Trip): Promise<void>; now: () => Date }`; `createOpenings(deps): { onRead(msg, read, pack): Promise<void>; onEvent(ev): Promise<void>; checkIgnored(): Promise<number> }`.
 
 Sources (spec §8):
 - **The chat.** When the reflex is sure there is an opening (`read.opening` sure true) and the message is not already for Go, a `chat` candidate is due in 15 s (so a friend who answers first is seen by the turn) and expires after 10 minutes. Useful: a reaction, a record line, or one message; the policy narrows that.
 - **Trip changes.** A vote a person closed (not Go, `reason !== 'closed_by_go'`), a booking someone else cancelled, and new dates (or a new booking) that clash with a confirmed booking. `trip.updated` carries no values, so Go reads the trip with `read_trip` before checking dates. Every trip change also re-plans timers and watches through `deps.replan`.
 - **Hush.** A message to Go (it mentions Go or replies to Go) that says hush, shush, be quiet, shut up, chup, chup kar, bas kar, stop pinging or too many messages raises the bar for that trip (Task 1).
-- **Ignored.** Six hours after an unprompted post, if no person reacted to it, replied to it or spoke to Go since, it counts as ignored and raises the bar a little.
+- **Ignored.** Six hours after an unprompted post (Go's messages in the two minutes after the promotion), if no person reacted to them, replied to them or spoke to Go since, it counts as ignored and raises the bar a little.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2840,14 +2834,14 @@ describe('wasEngaged', () => {
   const six = 6 * 3600_000;
   it('counts a reaction, a reply or a word to Go as engagement', () => {
     const goMsg = msg({ id: 'm_go_1', by: 'go', sentAt: '2026-10-06T06:30:05Z' });
-    expect(wasEngaged(goaPack({ messages: [goMsg] }), at, 'm_go_1', six)).toBe(false);
+    expect(wasEngaged(goaPack({ messages: [goMsg] }), at, six)).toBe(false);
     const reacted = msg({ id: 'm_go_1', by: 'go', sentAt: '2026-10-06T06:30:05Z', reactions: [{ emoji: '👍', person_id: 'p_arjun' }] });
-    expect(wasEngaged(goaPack({ messages: [reacted] }), at, 'm_go_1', six)).toBe(true);
+    expect(wasEngaged(goaPack({ messages: [reacted] }), at, six)).toBe(true);
     const reply = msg({ by: 'p_arjun', replyTo: 'm_go_1', sentAt: '2026-10-06T07:00:00Z' });
-    expect(wasEngaged(goaPack({ messages: [goMsg, reply] }), at, 'm_go_1', six)).toBe(true);
+    expect(wasEngaged(goaPack({ messages: [goMsg, reply] }), at, six)).toBe(true);
   });
   it('treats a nudge that posted nothing as nothing to ignore', () => {
-    expect(wasEngaged(goaPack(), at, null, six)).toBe(true);
+    expect(wasEngaged(goaPack(), at, six)).toBe(true);
   });
 });
 
@@ -2895,7 +2889,6 @@ describe('createOpenings', () => {
     await store.add(c);
     const posted = new Date(NOW.getTime() - 7 * 3600_000);
     await store.promote(c, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-05' }, posted);
-    await store.posted('t_goa', 'ign:9', 'm_go_77');
     const pack = goaPack({ messages: [msg({ id: 'm_go_77', by: 'go', sentAt: posted.toISOString() })] });
     expect(await make(fakePacks(pack)).checkIgnored()).toBe(1);
     expect((await store.signals('t_goa', '2026-10-06')).ignoredCount).toBe(1);
@@ -3018,12 +3011,14 @@ export function tripChangeOpenings(ev: TripEvent, trip: Trip, now: Date): Candid
   }
 }
 
-/** Did anyone react to, reply to, or talk to Go after an unprompted post? A post of nothing is never ignored. */
-export function wasEngaged(pack: TripPack, decidedAt: Date, postedMessageId: string | null, windowMs: number): boolean {
+/**
+ * Did anyone react to, reply to, or talk to Go after an unprompted post? The post is Go's messages in the
+ * two minutes after the promotion. A nudge that posted nothing is never "ignored".
+ */
+export function wasEngaged(pack: TripPack, decidedAt: Date, windowMs: number): boolean {
   const from = decidedAt.getTime();
   const until = from + windowMs;
   const goIds = new Set<string>();
-  if (postedMessageId) goIds.add(postedMessageId);
   for (const m of pack.messages) {
     const t = Date.parse(m.sent_at);
     if (m.author.kind === 'go' && t >= from && t <= from + 120_000) goIds.add(m.message_id);
@@ -3071,7 +3066,7 @@ export function createOpenings(d: OpeningsDeps) {
       let ignored = 0;
       for (const row of await d.store.toCheckForIgnored(new Date(now.getTime() - IGNORED_AFTER_MS))) {
         const pack = await d.packs.get(row.tripId);
-        if (!wasEngaged(pack, row.decidedAt, row.postedMessageId, IGNORED_AFTER_MS)) {
+        if (!wasEngaged(pack, row.decidedAt, IGNORED_AFTER_MS)) {
           await d.store.ignored(row.tripId, now);
           ignored += 1;
         }
@@ -3521,7 +3516,7 @@ Expected: `watches.test.ts` passes; earlier tests stay green.
 - Create: `apps/brain/src/watches/runner.ts`
 - Create: `apps/brain/src/watches/admin.ts`
 - Create: `apps/brain/src/proactive/register.ts`
-- Modify: `apps/brain/src/main.ts` (one import and one `await registerProactive(brain)` line after `registerMoney`)
+- Modify: `apps/brain/src/main.ts` (add `registerProactive` to `LANES`, after the lanes before it)
 - Test: `apps/brain/src/watches/runner.test.ts`
 - Test: `apps/brain/src/proactive/register.test.ts`
 
@@ -3685,8 +3680,9 @@ describe('startProactive', () => {
     expect(wakeText).toContain('running 120 minutes late');
 
     const post = reg.tools.find((t) => t.name === 'post_notice')!;
-    await post.run(post.input.parse({ tone: 'heads_up', title: 'Your flight is 2 hours late', body: 'You now land at 10:45 pm, but your cab is at 9. Want me to move it to 11?' }), turnCtx({ link, pack: goaPack(), wake: [item] }));
-    const card = link.of('post_message').at(-1)?.card as Record<string, unknown>;
+    const ctx = turnCtx({ link, pack: goaPack(), wake: [item] });
+    await post.run(post.input.parse({ tone: 'heads_up', title: 'Your flight is 2 hours late', body: 'You now land at 10:45 pm, but your cab is at 9. Want me to move it to 11?' }), ctx);
+    const card = ctx.cards[0] as Record<string, unknown>;
     expect(card).toMatchObject({ kind: 'notice', for_person_ids: ['p_arjun'], source: { name: 'Simulated for the demo' } });
 
     // A second fire straight after is "two in a row": it waits. A rehearsal resets the budget first.
@@ -4034,11 +4030,9 @@ export const registerProactive: RegisterLane = async (brain) => {
 };
 ```
 
+Edit `apps/brain/src/main.ts`: add the import below with the other lane imports, then insert `registerProactive` into the `LANES` array in master §6.3 order (after `registerMoney` when it is there, otherwise after the last lane in the array; always before `registerCalls` and `registerAdmin`):
 ```ts
-// apps/brain/src/main.ts (modify: add the import with the other lane imports, and the call after registerMoney)
 import { registerProactive } from './proactive/register.js';
-// ...
-await registerProactive(brain);
 ```
 
 - [ ] **Step 4: Commit, push, read CI**
@@ -5330,10 +5324,10 @@ Expected: `bridge.test.ts` passes (audio both ways, barge-in, transcript, outcom
 - Test: `apps/brain/src/calls/service.test.ts`
 
 **Interfaces:**
-- Consumes: `Schedule` (Task 1); `clip`, `plain` (Task 5); `CallsConfig`, `findCallee`, `loadCallsConfig`, `mediaUrl`, `statusUrl`, `maskPhone`, `CALL_WINDOW_MS`, `CARD_GAP_MS`, `RING_TIMEOUT_S`, `TWILIO_TIME_LIMIT_S` (Task 9); `saysStop` (Task 9); `CallStore`, `CallRow`, `CallLine` (Task 9); `TwilioClient`, `streamTwiml`, `twilioOutcome` (Task 10); `CallBrief`, `ReportedOutcome` (Task 11); `EndReason` (Task 11); `ServerLink` (P1); `Switches.get('CALLS_MODE')` (P1); `Packs.get`, `TripPack` (P1); `Message`, `CardTapParams`, `CardTapResult` (P1); `QuickTool`, `TurnCtx` (P1); `CallCard` (`@go/contract`).
+- Consumes: `TurnCtx.stableId` (P1, for the call id); `Schedule` (Task 1); `clip`, `plain` (Task 5); `CallsConfig`, `findCallee`, `loadCallsConfig`, `mediaUrl`, `statusUrl`, `maskPhone`, `CALL_WINDOW_MS`, `CARD_GAP_MS`, `RING_TIMEOUT_S`, `TWILIO_TIME_LIMIT_S` (Task 9); `saysStop` (Task 9); `CallStore`, `CallRow`, `CallLine` (Task 9); `TwilioClient`, `streamTwiml`, `twilioOutcome` (Task 10); `CallBrief`, `ReportedOutcome` (Task 11); `EndReason` (Task 11); `ServerLink` (P1); `Switches.get('CALLS_MODE')` (P1); `Packs.get`, `TripPack` (P1); `Message`, `CardTapParams`, `CardTapResult` (P1); `QuickTool`, `TurnCtx` (P1); `CallCard` (`@go/contract`).
 - Produces:
   - `card-updater.ts`: `class CardUpdater<C> { constructor(send: (card: C) => Promise<void>, o: { now; schedule; minGapMs; log }); update(card: C): void; final(card: C): Promise<void> }`.
-  - `service.ts`: `type CallCardIn = z.input<typeof CallCard>`; `STOP_LINE`; `ORPHAN_AFTER_MS = 15_000`; `NO_MEDIA_AFTER_MS = 90_000`; `CLOSE_OUT_AFTER_MS = 10_000`; `interface CallRequest { business; phone?: string | undefined; goal; announce: string; factsAllowed: string[] }`; `type CallRequestResult`; `interface CallServiceDeps { store; link; packs; switches; config; twilio: TwilioClient | null; now; schedule; log }`; `forWhom(pack): string`; `class CallService` with `mode()`, `callable(): string[]`, `liveFor(tripId)`, `recentlyCancelled(tripId)`, `request(tripId, pack, r)`, `onMessage(msg, pack)`, `tick()`, `claim(callId, token)`, `talking(callId)`, `line(callId, line)`, `outcome(callId, o)`, `ended(callId, reason)`, `hangUp(callId)`, `stopTap(tap)`, `onTwilioStatus(callId, status)`, `fail(callId, why)`.
+  - `service.ts`: `type CallCardIn = z.input<typeof CallCard>`; `STOP_LINE`; `ORPHAN_AFTER_MS = 15_000`; `NO_MEDIA_AFTER_MS = 90_000`; `CLOSE_OUT_AFTER_MS = 10_000`; `interface CallRequest { callId: string; business; phone?: string | undefined; goal; announce: string; factsAllowed: string[] }`; `type CallRequestResult`; `interface CallServiceDeps { store; link; packs; switches; config; twilio: TwilioClient | null; now; schedule; log }`; `forWhom(pack): string`; `class CallService` with `mode()`, `callable(): string[]`, `liveFor(tripId)`, `recentlyCancelled(tripId)`, `request(tripId, pack, r)`, `onMessage(msg, pack)`, `tick()`, `claim(callId, token)`, `talking(callId)`, `line(callId, line)`, `outcome(callId, o)`, `ended(callId, reason)`, `hangUp(callId)`, `stopTap(tap)`, `onTwilioStatus(callId, status)`, `fail(callId, why)`.
   - `tool.ts`: `CallBusinessArgs` (zod) and its type; `callTool(service: CallService): QuickTool<CallBusinessArgs>` (name `call_business`).
 
 The room behaviour follows spec §14 and the guide's flow (`docs/guide/09-flows.md` §5) exactly:
@@ -5344,7 +5338,7 @@ The room behaviour follows spec §14 and the guide's flow (`docs/guide/09-flows.
 5. The end: the outcome as a reply to the person who asked; if the outcome settles something, `add_record_line` with `proof` = the call card's message (decision: P6 writes the line directly instead of going through P2's `record` tool, because the proof is Go's own card message, not a person's message, and the call ends outside any composer turn). An `open` line asks the organizer and names them.
 6. Failures: busy, no answer, failed or a Twilio refusal turn the card to `failed` and say one line. The tick closes out a call left talking by a restart (after 15 s), a call that never got media (after 90 s), and any ended call whose close-out did not finish.
 
-Every write uses `request_id = go_<call_id>_<step>`, so a re-run after a crash repeats nothing.
+The call id comes from the turn: `ctx.stableId('call')` (for example `call_turn_01JB..._1`), so a rerun of the same turn finds its own call and posts nothing twice. Every later write happens outside a turn and uses `request_id = go_<call_id>_<step>` (`announce`, `cancel`, `off`, `card`, `outcome`, `record`, `fail`), the card id is `c_<call_id>`, and updates to the one call card stay sequential (`replace_card` has no request id), so a re-run after a crash repeats nothing.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -5414,7 +5408,7 @@ import { withSchema } from '../db/test-db.js';
 import { fakeLink, fakePacks, goaPack, goaTrip, manualTime, msg, waitFor } from '../proactive/fakes.js';
 import type { TripPack } from '../trips/pack.js';
 import { loadCallsConfig } from './config.js';
-import { CallService, STOP_LINE } from './service.js';
+import { CallService, STOP_LINE, type CallRequest } from './service.js';
 import { CallStore } from './store.js';
 import { TwilioError, type CreateCall, type TwilioClient } from './twilio.js';
 
@@ -5426,7 +5420,7 @@ const env = {
   OPENAI_API_KEY: 'sk-test',
   CALLS_ALLOWLIST: 'Villa Sol=+919800000001',
 };
-const req = {
+const base = {
   business: 'Villa Sol',
   goal: 'Ask if we can check in at 10 am on 6 Nov',
   announce: "I'll call Villa Sol about early check-in — 10 am on the 6th.",
@@ -5466,12 +5460,15 @@ function make(tripId: string, o: { mode?: string; twilioFails?: boolean } = {}) 
     store, link, packs: fakePacks(pack), switches: { get: (n: string) => values[n] ?? '' }, config: loadCallsConfig(env), twilio,
     now: time.now, schedule: time.schedule, log: { info: () => {}, warn: () => {} },
   });
-  return { time, link, values, twilioCalls, hangUps, service, pack };
+  let n = 0;
+  /** As the tool does: a fresh call id per new request (the turn's stableId('call')). */
+  const request = (over: Partial<CallRequest> = {}) => service.request(tripId, pack, { ...base, callId: `call_${tripId}_${++n}`, ...over });
+  return { time, link, values, twilioCalls, hangUps, service, pack, request };
 }
 
 async function dialed(tripId: string) {
   const m = make(tripId);
-  const r = await m.service.request(tripId, m.pack, req);
+  const r = await m.request();
   if (!('ok' in r)) throw new Error('refused');
   m.time.advance(30_000);
   await m.service.tick();
@@ -5482,41 +5479,48 @@ async function dialed(tripId: string) {
 describe('request', () => {
   it('refuses when calls are off', async () => {
     const m = make('t_off', { mode: 'off' });
-    expect(await m.service.request('t_off', m.pack, req)).toEqual({ refused: 'Calls are switched off right now.' });
+    expect(await m.request()).toEqual({ refused: 'Calls are switched off right now.' });
     expect(m.link.calls).toHaveLength(0);
   });
 
   it('refuses a number or a business that is not on the allowlist', async () => {
     const m = make('t_list');
-    expect(await m.service.request('t_list', m.pack, { ...req, phone: '+919999999999' })).toHaveProperty('refused');
-    expect(await m.service.request('t_list', m.pack, { ...req, business: 'Casa Azul' })).toHaveProperty('refused');
+    expect(await m.request({ phone: '+919999999999' })).toHaveProperty('refused');
+    expect(await m.request({ business: 'Casa Azul' })).toHaveProperty('refused');
     expect(m.link.calls).toHaveLength(0);
   });
 
   it('refuses card, bank and login details, so a call can never pay', async () => {
     const m = make('t_pay');
-    expect(await m.service.request('t_pay', m.pack, { ...req, factsAllowed: ["Rahul's card 4111 1111 1111 1111"] })).toHaveProperty('refused');
-    expect(await m.service.request('t_pay', m.pack, { ...req, goal: 'Pay the deposit by UPI' })).toHaveProperty('refused');
+    expect(await m.request({ factsAllowed: ["Rahul's card 4111 1111 1111 1111"] })).toHaveProperty('refused');
+    expect(await m.request({ goal: 'Pay the deposit by UPI' })).toHaveProperty('refused');
     expect(m.link.calls).toHaveLength(0);
   });
 
   it('says who and why with the stop line, waits 30 s, and allows one call at a time', async () => {
     const m = make('t_announce');
-    const r = await m.service.request('t_announce', m.pack, req);
-    expect(r).toMatchObject({ ok: true, dialAt: '2026-10-06T10:00:30.000Z' });
-    const callId = 'callId' in r ? r.callId : '';
+    const r = await m.request();
+    expect(r).toEqual({ ok: true, callId: 'call_t_announce_1', dialAt: '2026-10-06T10:00:30.000Z' });
     const [announce] = m.link.of('post_message');
-    expect(announce).toMatchObject({ request_id: `go_${callId}_announce`, trip_id: 't_announce', text: `I'll call Villa Sol about early check-in, 10 am on the 6th. ${STOP_LINE}` });
+    expect(announce).toMatchObject({ request_id: 'go_call_t_announce_1_announce', trip_id: 't_announce', text: `I'll call Villa Sol about early check-in, 10 am on the 6th. ${STOP_LINE}` });
     expect(String(announce?.text)).not.toContain('—');
     expect(m.twilioCalls).toHaveLength(0);
-    expect(await m.service.request('t_announce', m.pack, req)).toEqual({ refused: 'Go is already on a call for this trip. One at a time.' });
+    expect(await m.request()).toEqual({ refused: 'Go is already on a call for this trip. One at a time.' });
+  });
+
+  it('repeats nothing when a rerun of the same turn asks again with the same call id', async () => {
+    const m = make('t_rerun');
+    await m.request();
+    const again = await m.service.request('t_rerun', m.pack, { ...base, callId: 'call_t_rerun_1' });
+    expect(again).toMatchObject({ ok: true, callId: 'call_t_rerun_1' });
+    expect(m.link.of('post_message')).toHaveLength(1);
   });
 });
 
 describe('the stop window', () => {
   it('a Hinglish stop cancels the call before it dials', async () => {
     const m = make('t_ruko');
-    await m.service.request('t_ruko', m.pack, req);
+    await m.request();
     await m.service.onMessage(msg({ id: 'm_stop', seq: 1002, by: 'p_priya', text: 'ruk jao, mat karo abhi' }), m.pack);
     expect(m.link.of('post_message').at(-1)).toMatchObject({ text: "Okay, I won't call Villa Sol.", reply_to: 'm_stop' });
     m.time.advance(30_000);
@@ -5526,7 +5530,7 @@ describe('the stop window', () => {
 
   it('takes a bare "nahi" only as a reply to the call line', async () => {
     const m = make('t_nahi');
-    await m.service.request('t_nahi', m.pack, req);
+    await m.request();
     await m.service.onMessage(msg({ seq: 1002, by: 'p_kabir', text: 'nahi' }), m.pack);
     expect((await m.service.liveFor('t_nahi'))?.state).toBe('waiting');
     await m.service.onMessage(msg({ seq: 1003, by: 'p_kabir', text: 'nahi', replyTo: 'm_go_1' }), m.pack);
@@ -5535,14 +5539,14 @@ describe('the stop window', () => {
 
   it('a stop said before Go spoke does not count', async () => {
     const m = make('t_before');
-    await m.service.request('t_before', m.pack, req);
+    await m.request();
     await m.service.onMessage(msg({ seq: 900, by: 'p_priya', text: 'stop' }), m.pack);
     expect((await m.service.liveFor('t_before'))?.state).toBe('waiting');
   });
 
   it('switching calls off inside the window means no call', async () => {
     const m = make('t_flip');
-    await m.service.request('t_flip', m.pack, req);
+    await m.request();
     m.values.CALLS_MODE = 'off';
     m.time.advance(30_000);
     await m.service.tick();
@@ -5555,7 +5559,7 @@ describe('dialing', () => {
   it('posts the dialing card and calls through Twilio with a one-use token', async () => {
     const m = await dialed('t_dial');
     const card = m.link.of('post_message').at(-1);
-    expect(card).toMatchObject({ request_id: `go_${m.callId}_card`, card: { kind: 'call', call_id: m.callId, business: 'Villa Sol', state: 'dialing', actions: [{ action_id: 'stop', label: 'Stop the call', style: 'secondary' }] } });
+    expect(card).toMatchObject({ request_id: `go_${m.callId}_card`, card: { card_id: `c_${m.callId}`, kind: 'call', call_id: m.callId, business: 'Villa Sol', state: 'dialing', actions: [{ action_id: 'stop', label: 'Stop the call', style: 'secondary' }] } });
     const call = m.twilioCalls[0]!;
     expect(call).toMatchObject({ to: '+919800000001', from: '+14155550100', statusCallback: `https://brain.test/calls/twilio/status/${m.callId}`, timeLimitS: 255, ringTimeoutS: 30 });
     expect(call.twiml).toContain(`<Stream url="wss://brain.test/calls/media/${m.callId}">`);
@@ -5567,7 +5571,7 @@ describe('dialing', () => {
 
   it('turns a Twilio refusal into a failed card and one line', async () => {
     const m = make('t_refused', { twilioFails: true });
-    await m.service.request('t_refused', m.pack, req);
+    await m.request();
     m.time.advance(30_000);
     await m.service.tick();
     expect(m.link.of('replace_card').at(-1)).toMatchObject({ card: { state: 'failed', outcome: "Couldn't connect the call." } });
@@ -5715,7 +5719,7 @@ export class CardUpdater<C> {
 // The call service: the stop window, dialing, the live card, the outcome in the room and the record, and
 // failures. Starting a call needs no thinking, so the 30 second window lives in the calls table and this
 // service's tick, not on the desk.
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { CallCard } from '@go/contract';
 import type { z } from 'zod';
 import type { Switches } from '../admin/switches.js';
@@ -5776,7 +5780,15 @@ export function forWhom(pack: TripPack): string {
   return n > 1 ? `a group of ${n} friends travelling together` : 'a traveller';
 }
 
-export interface CallRequest { business: string; phone?: string | undefined; goal: string; announce: string; factsAllowed: string[] }
+export interface CallRequest {
+  /** From the turn's ctx.stableId('call'): a rerun of the same turn finds its own call and repeats nothing. */
+  callId: string;
+  business: string;
+  phone?: string | undefined;
+  goal: string;
+  announce: string;
+  factsAllowed: string[];
+}
 export type CallRequestResult = { ok: true; callId: string; dialAt: string } | { refused: string };
 
 export interface CallServiceDeps {
@@ -5826,48 +5838,51 @@ export class CallService {
   }
 
   async request(tripId: string, pack: TripPack, r: CallRequest): Promise<CallRequestResult> {
-    if (this.mode() === 'off') return { refused: 'Calls are switched off right now.' };
-    if (!this.d.twilio || this.d.config.missing.length > 0) return { refused: 'Calls are not set up yet.' };
-    if ([r.goal, ...r.factsAllowed].some((t) => NOT_ON_A_CALL.test(t) || LONG_DIGITS.test(t))) {
-      return { refused: 'Calls never pay or share card, bank, OTP or login details. Leave those out.' };
-    }
-    const callee = findCallee(this.d.config, { business: r.business, phone: r.phone });
-    if (!callee) return { refused: `${r.business} is not on the list of numbers Go may call this week.` };
-    if (await this.d.store.liveFor(tripId)) return { refused: 'Go is already on a call for this trip. One at a time.' };
-
-    const now = this.d.now();
-    const callId = `call_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
-    let asker: Message | null = null;
-    for (const m of pack.messages) if (m.author.kind === 'person' && m.mentions_go && !m.deleted) asker = m;
-    const row = await this.d.store.create({
-      callId,
-      tripId,
-      business: clip(plain(r.business), 80),
-      phone: callee.phone,
-      goal: clip(plain(r.goal), 160),
-      factsAllowed: r.factsAllowed.map((f) => clip(f, 200)),
-      forWhom: forWhom(pack),
-      askedByPersonId: asker && asker.author.kind === 'person' ? asker.author.person_id : null,
-      askedMessageId: asker ? asker.message_id : null,
-      cardId: `c_${callId}`,
-      dialAt: new Date(now.getTime() + CALL_WINDOW_MS),
-    });
-    try {
-      const posted = await this.d.link.request('post_message', {
-        request_id: rid(callId, 'announce'),
-        trip_id: tripId,
-        text: clip(`${plain(r.announce)} ${STOP_LINE}`, 2000),
+    let row = await this.d.store.get(r.callId);
+    if (row && row.tripId !== tripId) return { refused: 'That call belongs to another trip.' };
+    if (!row) {
+      if (this.mode() === 'off') return { refused: 'Calls are switched off right now.' };
+      if (!this.d.twilio || this.d.config.missing.length > 0) return { refused: 'Calls are not set up yet.' };
+      if ([r.goal, ...r.factsAllowed].some((t) => NOT_ON_A_CALL.test(t) || LONG_DIGITS.test(t))) {
+        return { refused: 'Calls never pay or share card, bank, OTP or login details. Leave those out.' };
+      }
+      const callee = findCallee(this.d.config, { business: r.business, phone: r.phone });
+      if (!callee) return { refused: `${r.business} is not on the list of numbers Go may call this week.` };
+      if (await this.d.store.liveFor(tripId)) return { refused: 'Go is already on a call for this trip. One at a time.' };
+      let asker: Message | null = null;
+      for (const m of pack.messages) if (m.author.kind === 'person' && m.mentions_go && !m.deleted) asker = m;
+      row = await this.d.store.create({
+        callId: r.callId,
+        tripId,
+        business: clip(plain(r.business), 80),
+        phone: callee.phone,
+        goal: clip(plain(r.goal), 160),
+        factsAllowed: r.factsAllowed.map((f) => clip(f, 200)),
+        forWhom: forWhom(pack),
+        askedByPersonId: asker && asker.author.kind === 'person' ? asker.author.person_id : null,
+        askedMessageId: asker ? asker.message_id : null,
+        cardId: `c_${r.callId}`,
+        dialAt: new Date(this.d.now().getTime() + CALL_WINDOW_MS),
       });
-      await this.d.store.announced(callId, posted.message_id, posted.seq);
-    } catch (err) {
-      await this.d.store.cancel(callId, 'announce_failed', now);
-      throw err;
     }
-    this.d.log.info({ callId, tripId, to: maskPhone(callee.phone) }, 'calls: announced; dialing in 30 s unless someone says stop');
-    this.d.schedule(() => {
-      this.tick().catch((err: unknown) => this.d.log.warn({ err }, 'calls: tick failed'));
-    }, CALL_WINDOW_MS);
-    return { ok: true, callId, dialAt: row.dialAt.toISOString() };
+    if (row.state === 'waiting' && row.announceMessageId === null) {
+      try {
+        const posted = await this.d.link.request('post_message', {
+          request_id: rid(row.callId, 'announce'),
+          trip_id: tripId,
+          text: clip(`${plain(r.announce)} ${STOP_LINE}`, 2000),
+        });
+        await this.d.store.announced(row.callId, posted.message_id, posted.seq);
+      } catch (err) {
+        await this.d.store.cancel(row.callId, 'announce_failed', this.d.now());
+        throw err;
+      }
+      this.d.log.info({ callId: row.callId, tripId, to: maskPhone(row.phone) }, 'calls: announced; dialing in 30 s unless someone says stop');
+      this.d.schedule(() => {
+        this.tick().catch((err: unknown) => this.d.log.warn({ err }, 'calls: tick failed'));
+      }, Math.max(0, row.dialAt.getTime() - this.d.now().getTime()));
+    }
+    return { ok: true, callId: row.callId, dialAt: row.dialAt.toISOString() };
   }
 
   /** In the window, a person's stop (or a bare "no" in reply to Go's line) cancels the call. */
@@ -6135,6 +6150,7 @@ export function callTool(service: CallService): QuickTool<CallBusinessArgs> {
     input: CallBusinessArgs,
     async run(args: CallBusinessArgs, ctx: TurnCtx): Promise<unknown> {
       const r = await service.request(ctx.tripId, ctx.pack, {
+        callId: ctx.stableId('call'),
         business: args.business,
         phone: args.phone,
         goal: args.goal,
@@ -6142,8 +6158,7 @@ export function callTool(service: CallService): QuickTool<CallBusinessArgs> {
         factsAllowed: args.facts_allowed,
       });
       if ('refused' in r) return r;
-      ctx.outcome.spoke = true;
-      return { ok: true, call_id: r.callId, note: 'Posted the call line. Say nothing more about the call now.' };
+      return { ok: true, call_id: r.callId, note: 'Posted the call line. Say nothing more about the call now: end the turn with no text.' };
     },
   };
 }
@@ -6159,3 +6174,732 @@ Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
 Expected: `card-updater.test.ts` and `service.test.ts` pass; earlier tests stay green.
+
+### Task 13: Wiring calls into Go (routes, the media socket, the Stop button, "Go can phone")
+
+**Files:**
+- Create: `apps/brain/src/calls/register.ts`
+- Modify: `apps/brain/src/main.ts` (add `registerCalls` to `LANES`, right after `registerProactive`)
+- Test: `apps/brain/src/calls/register.test.ts`
+
+**Interfaces:**
+- Consumes: Tasks 9 to 12; `Brain`, `RegisterLane` (P1); `brain.http` (Fastify), `brain.http.server` (the Node HTTP server, for the upgrade); `brain.tools.register`, `brain.hooks.onRead`, `brain.taps.on('call', 'stop', ...)`, `brain.context.addNow` (P1); `realSchedule`, `Schedule` (Task 1).
+- Produces: `CALLS_ORDER = 70`; `callsNow(service: CallService): NowProvider` (name `calls`); `interface CallsHandles { service: CallService; tick(): Promise<void>; stop(): void }`; `interface StartCallsOpts { intervals?: boolean; fetch?: typeof fetch; openRealtime?: () => WebSocket; schedule?: Schedule }`; `startCalls(brain, opts?): Promise<CallsHandles>`; `registerCalls: RegisterLane`.
+
+What it adds to the service:
+- `POST /calls/twilio/status/:callId`: Twilio's status callback, form-encoded, checked against `X-Twilio-Signature` for the URL Go built from `GO_PUBLIC_URL`; 403 when the signature is wrong, 204 otherwise.
+- The media socket `GET /calls/media/:callId` (WebSocket upgrade) handled with a `noServer` `WebSocketServer`. P1's door answers every upgrade and refuses any path but `/v1/socket` with 404, so the media path is handed to the door through `Door.onUpgrade(path, handler)` (interface note 1, a small P1 change); until the door has it, the code listens on `brain.http.server` directly, which is what the tests use. The day-one check (Task 14) proves a real media connection gets through.
+- The `calls` "right now" block: the names Go may phone (never numbers), a call waiting or live for this trip, and a call someone just stopped (so the composer does not answer the "stop" a second time).
+- A 1 s tick for the stop window and the sweeps.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// apps/brain/src/calls/register.test.ts
+import { createHmac } from 'node:crypto';
+import type { AddressInfo } from 'node:net';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import WebSocket, { WebSocketServer } from 'ws';
+import { withSchema } from '../db/test-db.js';
+import { fakeBrain, goaPack, manualTime, msg, turnCtx, waitFor } from '../proactive/fakes.js';
+import { startCalls } from './register.js';
+
+const env = {
+  GO_PUBLIC_URL: 'https://brain.test',
+  TWILIO_ACCOUNT_SID: 'AC_test',
+  TWILIO_AUTH_TOKEN: 'tok_test',
+  TWILIO_FROM: '+14155550100',
+  OPENAI_API_KEY: 'sk-test',
+  CALLS_ALLOWLIST: 'Villa Sol=+919800000001',
+};
+const silence = Buffer.alloc(160, 0xff).toString('base64'); // one 20 ms frame of μ-law silence
+
+let db: Awaited<ReturnType<typeof withSchema>>;
+beforeAll(async () => {
+  db = await withSchema();
+});
+afterAll(async () => {
+  await db.drop();
+});
+
+function fakeModel() {
+  const server = new WebSocketServer({ port: 0 });
+  server.on('connection', (ws) => {
+    ws.on('message', (data) => {
+      const ev = JSON.parse(data.toString()) as { type: string; item?: { type?: string } };
+      if (ev.type === 'session.update') {
+        ws.send(JSON.stringify({ type: 'response.output_audio_transcript.done', item_id: 'i1', transcript: 'Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together.' }));
+        ws.send(JSON.stringify({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'i2', transcript: 'Yes, check-in at 10 am is fine.' }));
+        ws.send(JSON.stringify({
+          type: 'response.function_call_arguments.done', call_id: 'fc_1', name: 'report_outcome',
+          arguments: JSON.stringify({ outcome: 'Check-in at 10 am on 6 Nov is fine.', answered: true, record: { kind: 'agreed', text: 'Villa Sol: check-in at 10 am on 6 Nov is fine' } }),
+        }));
+      }
+      if (ev.type === 'conversation.item.create' && ev.item?.type === 'function_call_output') {
+        ws.send(JSON.stringify({ type: 'response.created', response: { id: 'resp_bye' } }));
+        ws.send(JSON.stringify({ type: 'response.done', response: { id: 'resp_bye' } }));
+      }
+    });
+  });
+  return { server, url: () => `ws://127.0.0.1:${(server.address() as AddressInfo).port}` };
+}
+
+describe('startCalls', () => {
+  it('registers the tool, the stop hook, the Stop button and the "Go can phone" block', async () => {
+    const time = manualTime('2026-10-06T10:00:00Z');
+    const { brain, reg } = fakeBrain({ pool: db.pool, now: time.now, env, switches: { CALLS_MODE: 'allowlist' } });
+    const h = await startCalls(brain, { intervals: false, schedule: time.schedule });
+    expect(reg.tools.map((t) => t.name)).toEqual(['call_business']);
+    expect(reg.onRead).toHaveLength(1);
+    expect(reg.taps.has('call:stop')).toBe(true);
+    const block = await reg.nows.find((n) => n.name === 'calls')!.render('t_goa', []);
+    expect(block).toContain('Go can phone (call_business with the name): Villa Sol.');
+    expect(block).not.toContain('+91');
+    h.stop();
+  });
+
+  it('runs a whole call: the line, the wait, the dial, the live card, the outcome and the record', async () => {
+    const time = manualTime('2026-10-06T10:00:00Z');
+    const pack = goaPack({ messages: [msg({ id: 'm_300', seq: 300, by: 'p_arjun', text: '@Go ask the villa if we can check in at 10', mentionsGo: true })] });
+    const { brain, app, reg, link } = fakeBrain({ pool: db.pool, now: time.now, env, switches: { CALLS_MODE: 'allowlist' }, pack });
+    const model = fakeModel();
+    const twilioReqs: Array<{ url: string; form: URLSearchParams }> = [];
+    const fetchFake = (async (url: string | URL | Request, init?: RequestInit) => {
+      twilioReqs.push({ url: String(url), form: new URLSearchParams(String(init?.body ?? '')) });
+      return new Response(JSON.stringify({ sid: 'CA_e2e', status: 'queued' }), { status: 201, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    const h = await startCalls(brain, { intervals: false, fetch: fetchFake, openRealtime: () => new WebSocket(model.url()), schedule: time.schedule });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as AddressInfo).port;
+
+    // 1. The composer calls the tool; Go says who and why.
+    const tool = reg.tools.find((t) => t.name === 'call_business')!;
+    const out = (await tool.run(
+      tool.input.parse({ business: 'Villa Sol', goal: 'Ask if we can check in at 10 am on 6 Nov', announce: "I'll call Villa Sol about early check-in.", facts_allowed: ['Group of five', 'Staying 6 to 9 November'] }),
+      turnCtx({ link, pack, wake: [] }),
+    )) as { ok: boolean; call_id: string };
+    expect(out.ok).toBe(true);
+    const callId = out.call_id;
+    expect(link.of('post_message')[0]?.text).toBe("I'll call Villa Sol about early check-in. Say stop in the next 30 seconds if you'd rather I didn't.");
+    expect(await reg.nows.find((n) => n.name === 'calls')!.render('t_goa', [])).toContain('waiting 30 seconds');
+
+    // 2. Nobody says stop: after 30 s Go dials.
+    time.advance(30_000);
+    await h.tick();
+    expect(twilioReqs[0]?.url).toBe('https://api.twilio.com/2010-04-01/Accounts/AC_test/Calls.json');
+    const token = /name="token" value="([^"]+)"/.exec(twilioReqs[0]?.form.get('Twiml') ?? '')?.[1] ?? '';
+
+    // 3. Twilio connects the media stream; the voice model talks; the card goes live.
+    const twilio = new WebSocket(`ws://127.0.0.1:${port}/calls/media/${callId}`);
+    await new Promise((resolve) => twilio.once('open', resolve));
+    twilio.send(JSON.stringify({ event: 'connected', protocol: 'Call', version: '1.0.0' }));
+    twilio.send(JSON.stringify({ event: 'start', streamSid: 'MZ_e2e', start: { streamSid: 'MZ_e2e', callSid: 'CA_e2e', customParameters: { token } } }));
+    twilio.send(JSON.stringify({ event: 'media', streamSid: 'MZ_e2e', media: { timestamp: '0', payload: silence } }));
+    await waitFor(() => link.of('replace_card').some((p) => (p.card as { state?: string }).state === 'talking'));
+
+    // 4. After report_outcome and the goodbye, Go hangs up through Twilio; Twilio closes the stream.
+    await waitFor(() => {
+      time.advance(500);
+      return twilioReqs.some((r) => r.url.endsWith('/Calls/CA_e2e.json'));
+    });
+    expect(twilioReqs.find((r) => r.url.endsWith('/Calls/CA_e2e.json'))?.form.get('Status')).toBe('completed');
+    twilio.close();
+
+    // 5. The final card, the outcome in the chat, the record line with the call card as proof.
+    await waitFor(() => link.of('add_record_line').length === 1);
+    const final = link.of('replace_card').at(-1)?.card as Record<string, unknown>;
+    expect(final).toMatchObject({ call_id: callId, state: 'ended', outcome: 'Check-in at 10 am on 6 Nov is fine.' });
+    expect(final.transcript).toEqual([
+      { who: 'go', text: 'Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together.' },
+      { who: 'them', text: 'Yes, check-in at 10 am is fine.' },
+    ]);
+    expect(link.of('post_message').at(-1)).toMatchObject({ text: 'Check-in at 10 am on 6 Nov is fine.', reply_to: 'm_300' });
+    const cardPost = link.calls.findIndex((c) => c.method === 'post_message' && (c.params.card as { kind?: string } | undefined)?.kind === 'call');
+    expect(cardPost).toBeGreaterThan(-1);
+    expect(link.of('add_record_line')[0]).toMatchObject({ kind: 'agreed', text: 'Villa Sol: check-in at 10 am on 6 Nov is fine', person_ids: [] });
+
+    // 6. Twilio's status callback is accepted only with Twilio's signature.
+    const url = `https://brain.test/calls/twilio/status/${callId}`;
+    const params = { AccountSid: 'AC_test', CallSid: 'CA_e2e', CallStatus: 'completed', CallDuration: '41' };
+    const sig = createHmac('sha1', 'tok_test').update(Object.keys(params).sort().reduce((acc, k) => acc + k + params[k as keyof typeof params], url)).digest('base64');
+    const post = (signature: string) => app.inject({
+      method: 'POST',
+      url: `/calls/twilio/status/${callId}`,
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-twilio-signature': signature },
+      payload: new URLSearchParams(params).toString(),
+    });
+    expect((await post(sig)).statusCode).toBe(204);
+    expect((await post('forged')).statusCode).toBe(403);
+
+    h.stop();
+    model.server.close();
+    await app.close();
+  });
+});
+```
+
+- [ ] **Step 2: Push the test and see it fail**
+
+Red is certain: the module does not exist yet. Go to Step 3.
+
+- [ ] **Step 3: Write the implementation**
+
+```ts
+// apps/brain/src/calls/register.ts
+// Wires calls into Go: the call_business tool, the stop words, the Stop button, the "Go can phone" block,
+// Twilio's status callback and the media socket.
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
+import WebSocket, { WebSocketServer } from 'ws';
+import type { Brain, RegisterLane } from '../app.js';
+import type { NowProvider } from '../composer/context.js';
+import { realSchedule, type Schedule } from '../proactive/clock.js';
+import { attachBridge } from './bridge.js';
+import { CALL_CAP_MS, REALTIME_MODEL, REALTIME_URL, REALTIME_VOICE, TRANSCRIBE_MODEL, loadCallsConfig, statusUrl } from './config.js';
+import { openRealtime } from './realtime.js';
+import { CallService } from './service.js';
+import { CallStore } from './store.js';
+import { callTool } from './tool.js';
+import { twilioClient, verifyTwilioSignature } from './twilio.js';
+
+export const CALLS_ORDER = 70;
+const MEDIA_PATH = /^\/calls\/media\/(call_[A-Za-z0-9_-]{1,58})$/;
+
+export function callsNow(service: CallService): NowProvider {
+  return {
+    name: 'calls',
+    order: CALLS_ORDER,
+    async render(tripId: string): Promise<string | null> {
+      if (service.mode() === 'off') return null;
+      const lines: string[] = [];
+      const names = service.callable();
+      if (names.length > 0) lines.push(`Go can phone (call_business with the name): ${names.join(', ')}.`);
+      const live = await service.liveFor(tripId);
+      if (live?.state === 'waiting') lines.push(`Go said it will call ${live.business} and is waiting 30 seconds for anyone to say stop.`);
+      else if (live) lines.push(`Go is on a call to ${live.business} now (${live.state}). The call card shows it live.`);
+      const stopped = await service.recentlyCancelled(tripId);
+      if (stopped) lines.push(`The call to ${stopped.business} was called off because someone said stop, and Go already replied. Say nothing more about it.`);
+      return lines.length > 0 ? lines.join('\n') : null;
+    },
+  };
+}
+
+export interface CallsHandles {
+  service: CallService;
+  tick(): Promise<void>;
+  stop(): void;
+}
+
+export interface StartCallsOpts {
+  /** Tests pass false and drive the tick by hand. */
+  intervals?: boolean;
+  fetch?: typeof fetch;
+  openRealtime?: () => WebSocket;
+  schedule?: Schedule;
+}
+
+export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<CallsHandles> {
+  const config = loadCallsConfig(brain.env);
+  const schedule = o.schedule ?? realSchedule;
+  const twilio = config.accountSid && config.authToken
+    ? twilioClient({ accountSid: config.accountSid, authToken: config.authToken, ...(o.fetch ? { fetch: o.fetch } : {}) })
+    : null;
+  const service = new CallService({
+    store: new CallStore(brain.pool),
+    link: brain.door.link,
+    packs: brain.packs,
+    switches: brain.switches,
+    config,
+    twilio,
+    now: brain.now,
+    schedule,
+    log: brain.log,
+  });
+
+  brain.tools.register(callTool(service));
+  brain.hooks.onRead((msg, _read, pack) => service.onMessage(msg, pack));
+  brain.taps.on('call', 'stop', (tap) => service.stopTap(tap));
+  brain.context.addNow(callsNow(service));
+
+  await brain.http.register(async (scope) => {
+    if (!scope.hasContentTypeParser('application/x-www-form-urlencoded')) {
+      scope.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
+        done(null, Object.fromEntries(new URLSearchParams(String(body))));
+      });
+    }
+    scope.post<{ Params: { callId: string }; Body: Record<string, string> }>('/calls/twilio/status/:callId', async (req, reply) => {
+      const params = req.body ?? {};
+      const signed = config.publicUrl !== null
+        && verifyTwilioSignature(config.authToken, statusUrl(config.publicUrl, req.params.callId), params, req.headers['x-twilio-signature']);
+      if (!signed) return reply.code(403).send({ error: { code: 'bad_signature', message: 'not signed by Twilio' } });
+      await service.onTwilioStatus(req.params.callId, params.CallStatus ?? '');
+      return reply.code(204).send();
+    });
+  });
+
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 1_048_576 });
+  const openModel = o.openRealtime ?? (() => openRealtime({ url: REALTIME_URL, model: REALTIME_MODEL, apiKey: config.openaiKey ?? '' }));
+  const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    const path = (req.url ?? '').split('?')[0] ?? '';
+    const match = MEDIA_PATH.exec(path);
+    if (!match) return; // not ours: the door answers /v1/socket
+    const callId = match[1] ?? '';
+    wss.handleUpgrade(req, socket, head, (ws) =>
+      attachBridge(ws, callId, {
+        claim: (id, token) => service.claim(id, token),
+        openRealtime: openModel,
+        hangUp: (id) => service.hangUp(id),
+        hooks: {
+          talking: (id) => service.talking(id),
+          line: (id, line) => service.line(id, line),
+          outcome: (id, oc) => service.outcome(id, oc),
+          ended: (id, reason) => service.ended(id, reason),
+        },
+        schedule,
+        capMs: CALL_CAP_MS,
+        session: { model: REALTIME_MODEL, voice: REALTIME_VOICE, transcribeModel: TRANSCRIBE_MODEL },
+        log: brain.log,
+      }),
+    );
+  };
+  // P1's door refuses every upgrade path but /v1/socket, so the media path must be handed to it (interface
+  // note 1: Door.onUpgrade). Until the door has it, listen on the server directly (tests, and P1 builds without it).
+  const door = brain.door as typeof brain.door & { onUpgrade?: (path: RegExp, fn: typeof onUpgrade) => void };
+  if (door.onUpgrade) door.onUpgrade(MEDIA_PATH, onUpgrade);
+  else brain.http.server.on('upgrade', onUpgrade);
+
+  const handles: NodeJS.Timeout[] = [];
+  if (o.intervals !== false) {
+    const h = setInterval(() => {
+      service.tick().catch((err: unknown) => brain.log.warn({ err }, 'calls: tick failed'));
+    }, 1000);
+    h.unref();
+    handles.push(h);
+  }
+  if (config.missing.length > 0) brain.log.info({ missing: config.missing }, 'calls: not set up yet; call_business will refuse');
+
+  return {
+    service,
+    tick: () => service.tick(),
+    stop: () => {
+      for (const h of handles) clearInterval(h);
+      brain.http.server.off('upgrade', onUpgrade);
+      wss.close();
+    },
+  };
+}
+
+export const registerCalls: RegisterLane = async (brain) => {
+  await startCalls(brain);
+};
+```
+
+Edit `apps/brain/src/main.ts`: add the import below with the other lane imports, then insert `registerCalls` into the `LANES` array right after `registerProactive` (before `registerAdmin` when it is there):
+```ts
+import { registerCalls } from './calls/register.js';
+```
+
+- [ ] **Step 4: Commit, push, read CI**
+
+```bash
+git add apps/brain/src/calls/register.ts apps/brain/src/main.ts apps/brain/src/calls/register.test.ts
+git commit -m "feat(calls): wire calls into Go, the status callback, the media socket, the Stop button and who Go can phone
+
+Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
+git push && gh run watch --exit-status || gh run view --log-failed
+```
+Expected: `register.test.ts` passes (the whole call end to end against a fake Twilio and a scripted voice model); every earlier test stays green.
+
+### Task 14: Gate G5: the 3:40 beat through the simulator, the day-one check, the first real call
+
+**Files:**
+- Create: `apps/brain/src/__tests__/e2e/proactive.e2e.test.ts`
+- Create: `apps/brain/scripts/calls-day-one.mjs`
+
+**Interfaces:**
+- Consumes: P1's end-to-end pieces (`buildBrain`, `Built`, `loadEnv`, `registerRoom`, `withSchema`, `fakeAnthropic`, `Reply`, and from `__tests__/e2e/harness.ts`: `SECRET`, `TEST_TIMINGS`, `rightNow`, `afterTools`); P0's `@go/sim` (`FakeServer` with `new FakeServer({ goUrl, secret, instance })`, `start()`, `stop()`, `createTrip(snapshot)`, `writes: WriteRecord[]`, `waitFor(check, timeoutMs?)`; `goaFreshTrip()`); `startProactive` (Task 8).
+- Produces: the G5 evidence: a CI run of the proactive beat through the real composer, a green day-one report, and the first real call.
+
+This task waits for P1 Task 16 (the end-to-end harness) and P0 Task 9 (the FakeServer) to be on `build`; everything before it is green without them.
+
+- [ ] **Step 1: Write the end-to-end test (the 3:40 beat through the real composer)**
+
+```ts
+// apps/brain/src/__tests__/e2e/proactive.e2e.test.ts
+// G5, the 3:40 demo beat: a labelled simulated watch fires; the bar lets one pin through; the real composer
+// (with a scripted model) posts one notice pinned to Arjun, labelled "Simulated for the demo".
+import { FakeServer, goaFreshTrip } from '@go/sim';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { buildBrain, type Built } from '../../app.js';
+import { withSchema } from '../../db/test-db.js';
+import { loadEnv } from '../../env.js';
+import { startProactive } from '../../proactive/register.js';
+import { registerRoom } from '../../room.js';
+import { fakeAnthropic, type Reply } from '../fixtures/fake-anthropic.js';
+import { SECRET, TEST_TIMINGS, afterTools, rightNow } from './harness.js';
+
+const ADMIN = 'admin-token-for-the-e2e-test';
+
+function script(body: any): Reply {
+  if (rightNow(body).includes('Simulated for the demo') && !afterTools(body)) {
+    return {
+      tools: [{
+        name: 'post_notice',
+        input: { tone: 'heads_up', title: 'Your flight is 2 hours late', body: 'You now land at 10:45 pm but your cab is at 9. Want me to move it to 11?', for_person_ids: ['p_arjun'] },
+      }],
+    };
+  }
+  return { tools: [{ name: 'stay_silent', input: { reason: 'nothing to add' } }] };
+}
+
+const isNotice = (w: { method: string; params: unknown }): boolean =>
+  w.method === 'post_message' && (w.params as { card?: { kind?: string } }).card?.kind === 'notice';
+
+let db: Awaited<ReturnType<typeof withSchema>>;
+let built: Built;
+let server: FakeServer;
+let port = 0;
+const trip = goaFreshTrip();
+
+beforeAll(async () => {
+  db = await withSchema();
+  const env = loadEnv({
+    PORT: '0', DATABASE_URL: process.env.DATABASE_URL, GO_SIGNING_SECRET: SECRET, GO_PUBLIC_URL: 'http://127.0.0.1',
+    ANTHROPIC_API_KEY: 'test-key', LOG_LEVEL: 'silent', ADMIN_TOKEN: ADMIN,
+  });
+  built = await buildBrain(env, { pool: db.pool, anthropic: fakeAnthropic(script).client, logger: false, timings: TEST_TIMINGS });
+  await registerRoom(built.brain);
+  await startProactive(built.brain, { intervals: false, port: null });
+  ({ port } = await built.start());
+  server = new FakeServer({ goUrl: `http://127.0.0.1:${port}`, secret: SECRET, instance: 'sim-p6' });
+  await server.start();
+  await server.createTrip(trip);
+}, 30_000);
+
+afterAll(async () => {
+  server.stop();
+  await built.stop();
+  await db.drop();
+});
+
+async function fire(extra: Record<string, unknown> = {}): Promise<Response> {
+  const body = JSON.stringify({
+    trip_id: trip.trip_id, label: 'IndiGo 6E 2134', person_ids: ['p_arjun'], delay_minutes: 120,
+    arrive_at: '2026-11-06T22:45:00+05:30', note: "Arjun's airport cab is booked for 9 pm", ...extra,
+  });
+  // Setup writes the trip row just after trip.created is answered; try for a few seconds.
+  for (let i = 0; i < 50; i += 1) {
+    const res = await fetch(`http://127.0.0.1:${port}/admin/watch/fire`, {
+      method: 'POST', headers: { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' }, body,
+    });
+    if (res.status !== 404) return res;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('the trip never appeared');
+}
+
+describe('G5: Go speaks first', () => {
+  it('3:40: the simulated delay reaches Arjun as one pinned, labelled notice', async () => {
+    const res = await fire();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, promoted: 1 });
+    const write = await server.waitFor(() => server.writes.find(isNotice), 10_000);
+    expect((write.params as { card: unknown }).card).toMatchObject({
+      kind: 'notice', for_person_ids: ['p_arjun'], source: { name: 'Simulated for the demo' },
+    });
+  });
+
+  it('never two unprompted posts in a row: a second fire waits', async () => {
+    const res = await fire();
+    expect(await res.json()).toMatchObject({ promoted: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    expect(server.writes.filter(isNotice)).toHaveLength(1);
+  });
+});
+```
+
+- [ ] **Step 2: Write the day-one check**
+
+```js
+#!/usr/bin/env node
+// apps/brain/scripts/calls-day-one.mjs
+// Day-one check for Go's phone calls. It never places a call. Run it from apps/brain with the brain
+// service's environment, giving the teammate's number that will play the villa:
+//   railway run --service brain node scripts/calls-day-one.mjs +919800000001
+// It checks the Twilio account and caller number, that India is open for outbound calls, that a trial
+// account has the number verified, the allowlist and the switch, that Go's media socket is reachable
+// from outside, and that the realtime voice model accepts a mu-law session. Exit code 1 if anything fails.
+import WebSocket from 'ws';
+
+// Keep these three the same as apps/brain/src/calls/config.ts.
+const REALTIME_MODEL = 'gpt-realtime-2.1';
+const REALTIME_VOICE = 'marin';
+const TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
+
+const env = process.env;
+const target = (process.argv[2] ?? '').replace(/[\s\-().]/g, '');
+const results = [];
+const pass = (name, detail) => results.push({ ok: true, name, detail });
+const fail = (name, detail, fix) => results.push({ ok: false, name, detail, fix });
+
+async function twilioGet(url) {
+  const auth = `Basic ${Buffer.from(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`).toString('base64')}`;
+  const res = await fetch(url, { headers: { authorization: auth }, signal: AbortSignal.timeout(10_000) });
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body };
+}
+
+async function checkTwilio() {
+  const sid = env.TWILIO_ACCOUNT_SID;
+  if (!sid || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM) {
+    fail('Twilio settings', 'TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN or TWILIO_FROM is missing', 'Set all three on the brain service in Railway.');
+    return;
+  }
+  const base = `https://api.twilio.com/2010-04-01/Accounts/${sid}`;
+  const account = await twilioGet(`${base}.json`);
+  if (account.status !== 200) {
+    fail('Twilio account', `HTTP ${account.status}`, 'Check the account SID and auth token.');
+    return;
+  }
+  const trial = account.body.type === 'Trial';
+  pass('Twilio account', `${account.body.friendly_name} (${account.body.type}, ${account.body.status})`);
+
+  const numbers = await twilioGet(`${base}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(env.TWILIO_FROM)}`);
+  const number = numbers.body.incoming_phone_numbers?.[0];
+  if (!number) fail('Caller number', `${env.TWILIO_FROM} is not a number on this account`, 'Buy a voice number, or set TWILIO_FROM to one this account owns.');
+  else if (!number.capabilities?.voice) fail('Caller number', `${env.TWILIO_FROM} cannot make voice calls`, 'Pick a number with voice capability.');
+  else pass('Caller number', `${env.TWILIO_FROM} can make voice calls`);
+
+  const geo = await twilioGet('https://voice.twilio.com/v1/DialingPermissions/Countries/IN');
+  if (geo.status !== 200) fail('India dialing', `could not read the geo permission (HTTP ${geo.status})`, 'Check Console > Voice > Settings > Geo permissions > India by hand.');
+  else if (!geo.body.low_risk_numbers_enabled) fail('India dialing', 'India is not enabled for outbound calls', 'Enable India in Console > Voice > Settings > Geo permissions.');
+  else pass('India dialing', 'enabled');
+
+  if (trial && target) {
+    const ids = await twilioGet(`${base}/OutgoingCallerIds.json?PhoneNumber=${encodeURIComponent(target)}`);
+    if ((ids.body.outgoing_caller_ids ?? []).length === 0) {
+      fail('Trial account', `${target} is not verified`, "A trial account calls only verified numbers: verify the teammate's phone in the Console, or upgrade the account.");
+    } else pass('Trial account', `${target} is verified`);
+  }
+}
+
+function checkSettings() {
+  const entries = (env.CALLS_ALLOWLIST ?? '').split(',').map((e) => e.trim()).filter(Boolean);
+  const numbers = entries.map((e) => e.slice(e.lastIndexOf('=') + 1).replace(/[\s\-().]/g, ''));
+  if (entries.length === 0) fail('Allowlist', 'CALLS_ALLOWLIST is empty', 'Set it, e.g. "Villa Sol=+919800000001".');
+  else if (target && !numbers.includes(target)) fail('Allowlist', `${target} is not on CALLS_ALLOWLIST`, 'Add it as "Villa Sol=<number>".');
+  else pass('Allowlist', `${entries.length} entries`);
+  if ((env.CALLS_MODE ?? 'off') !== 'allowlist') fail('CALLS_MODE', `is "${env.CALLS_MODE ?? 'off'}" in the environment`, 'Set CALLS_MODE=allowlist, or flip the switch on the admin page.');
+  else pass('CALLS_MODE', 'allowlist');
+  if (!env.OPENAI_API_KEY) fail('OPENAI_API_KEY', 'missing', 'Set it on the brain service in Railway.');
+}
+
+function checkMediaSocket() {
+  return new Promise((resolve) => {
+    if (!env.GO_PUBLIC_URL?.startsWith('https://')) {
+      fail('Media socket', 'GO_PUBLIC_URL is not an https URL', "Set GO_PUBLIC_URL to the brain service's public https URL.");
+      resolve();
+      return;
+    }
+    const url = `wss://${new URL(env.GO_PUBLIC_URL).host}/calls/media/call_dayone_check`;
+    const ws = new WebSocket(url);
+    const timer = setTimeout(() => {
+      fail('Media socket', 'no answer in 10 s', 'Check the brain service is up and reachable.');
+      ws.terminate();
+      resolve();
+    }, 10_000);
+    ws.on('open', () => ws.send(JSON.stringify({ event: 'start', streamSid: 'MZ_check', start: { streamSid: 'MZ_check', customParameters: { token: 'not-a-real-token' } } })));
+    ws.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 1008) pass('Media socket', 'reachable, and a wrong token is refused');
+      else fail('Media socket', `closed with ${code}`, 'Expected 1008 for a wrong token.');
+      resolve();
+    });
+    ws.on('unexpected-response', (_req, res) => {
+      clearTimeout(timer);
+      fail('Media socket', `upgrade answered HTTP ${res.statusCode}`, "The door refuses the media path: P1 needs Door.onUpgrade (P6's interface note 1).");
+      resolve();
+    });
+    ws.on('error', () => undefined);
+  });
+}
+
+function checkVoiceModel() {
+  return new Promise((resolve) => {
+    if (!env.OPENAI_API_KEY) {
+      resolve();
+      return;
+    }
+    const ws = new WebSocket(`wss://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`, { headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` } });
+    const done = () => {
+      clearTimeout(timer);
+      ws.close();
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      fail('Voice model', 'no session in 10 s', 'Check the key and the network.');
+      done();
+    }, 10_000);
+    ws.on('open', () =>
+      ws.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          type: 'realtime', model: REALTIME_MODEL, output_modalities: ['audio'],
+          audio: {
+            input: { format: { type: 'audio/pcmu' }, transcription: { model: TRANSCRIBE_MODEL }, turn_detection: { type: 'server_vad' } },
+            output: { format: { type: 'audio/pcmu' }, voice: REALTIME_VOICE },
+          },
+        },
+      })),
+    );
+    ws.on('message', (data) => {
+      const ev = JSON.parse(String(data));
+      if (ev.type === 'session.updated') {
+        const out = ev.session?.audio?.output?.format?.type;
+        if (out === 'audio/pcmu') pass('Voice model', `${REALTIME_MODEL} accepts mu-law in and out`);
+        else fail('Voice model', `session output format is ${out}`, 'The model did not take audio/pcmu: check the model id and the realtime docs.');
+        done();
+      } else if (ev.type === 'error') {
+        fail('Voice model', ev.error?.message ?? 'error', `Check that ${REALTIME_MODEL} exists for this key; change REALTIME_MODEL in calls/config.ts if not.`);
+        done();
+      }
+    });
+    ws.on('unexpected-response', (_req, res) => {
+      fail('Voice model', `HTTP ${res.statusCode}`, 'Check the key and the model id.');
+      done();
+    });
+    ws.on('error', () => undefined);
+  });
+}
+
+await checkTwilio();
+checkSettings();
+await checkMediaSocket();
+await checkVoiceModel();
+
+for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}: ${r.detail}${r.ok ? '' : `\n      fix: ${r.fix}`}`);
+const twilioIndiaFailed = results.some((r) => !r.ok && (r.name === 'India dialing' || r.name === 'Caller number' || r.name === 'Twilio account'));
+if (twilioIndiaFailed) {
+  console.log('\nIf Twilio cannot call Indian numbers from this account, the fallback order is:');
+  console.log('  1. Exotel or Plivo India (an Indian caller id; a second TwilioClient-shaped client in calls/, the bridge stays).');
+  console.log("  2. OpenAI's own phone line (SIP), if the org has it: the call is accepted on OpenAI's side and Go drives it from a sideband socket.");
+  console.log('  3. Vapi (about an hour to set up), driven by its API.');
+}
+process.exit(results.every((r) => r.ok) ? 0 : 1);
+```
+
+- [ ] **Step 3: Commit, push, read CI**
+
+```bash
+git add apps/brain/src/__tests__/e2e/proactive.e2e.test.ts apps/brain/scripts/calls-day-one.mjs
+git commit -m "test(proactive): the 3:40 beat through the simulator, and a day-one check for calls
+
+Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
+git push && gh run watch --exit-status || gh run view --log-failed
+```
+Expected: `proactive.e2e.test.ts` passes in CI (one notice, pinned to Arjun, labelled; a second fire waits). The script is not run in CI.
+
+- [ ] **Step 4: Day one (Wednesday, once Keshav has the Twilio account and the OpenAI key)**
+
+1. Keshav sets on the `brain` service in Railway: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `OPENAI_API_KEY`, `CALLS_ALLOWLIST="Villa Sol=+91<teammate's number>"`, `CALLS_MODE=allowlist` (or the admin switch).
+2. Run `railway run --service brain node scripts/calls-day-one.mjs +91<teammate's number>` from `apps/brain`. Every line must say PASS. A FAIL prints the fix.
+3. In OpenAI's platform settings, look for the phone line (SIP) option for the org and write down whether it is there; it is fallback 2 and removes the media bridge if Twilio's audio is poor.
+4. If Twilio cannot call India from the account, stop here and pick the fallback in the order the script prints (Exotel or Plivo India; then OpenAI's phone line; then Vapi). Only `calls/twilio.ts` and `calls/register.ts` change for fallback 1; `service.ts`, the card and the room behaviour stay.
+
+- [ ] **Step 5: The first real call (G5)**
+
+In the dev room (or the App) on the Goa trip, with the teammate holding the allowlisted phone and playing the villa:
+1. Arjun types: "@Go ask Villa Sol if we can check in at 10 am on the 6th". Expected: Go's line ending "Say stop in the next 30 seconds if you'd rather I didn't." within about 2 s.
+2. Nobody says stop. At 30 s the call card appears ("Calling Villa Sol..."), and the teammate's phone rings.
+3. The teammate answers "Villa Sol, hello?". Expected: "Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together", then the question. The card turns to talking and shows the latest line, updating every few seconds.
+4. The teammate interrupts Go once mid-sentence. Expected: Go stops talking at once (barge-in).
+5. The teammate says "Yes, 10 am is fine." Expected: Go thanks them and hangs up; the card shows the outcome and the transcript; Go replies to Arjun with the outcome; a record line appears with the call card as its proof.
+6. Run it again and type "ruko" inside the 30 s: no ring, and Go says "Okay, I won't call Villa Sol."
+7. Run it a third time and let it ring out: the card says it could not get through, and Go says "Villa Sol didn't pick up. Want me to try again later?"
+8. Write down: time from Go's line to the ring, from "hello" to Go's first word, how barge-in felt, and anything that sounded wrong. Keep the transcript. This is the G5 evidence for calls; the stage call (3:00) is rehearsed by P7 with the same teammate.
+
+---
+
+## Interface notes for the conductor
+
+1. **`Door.onUpgrade` (blocks real calls; small P1 change).** P1's door answers every WebSocket upgrade and refuses any path but `/v1/socket` with a 404, and Node runs every `upgrade` listener, so Twilio's media socket at `/calls/media/<call_id>` would be refused. Proposed change in P1's `door/door.ts`:
+   ```ts
+   export type UpgradeHandler = (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
+   // Door gains: onUpgrade(path: RegExp, handle: UpgradeHandler): void;
+   const laneUpgrades: Array<{ path: RegExp; handle: UpgradeHandler }> = [];
+   // At the top of onUpgrade(req, socket, head), before the /v1/socket check:
+   const lanePath = (req.url ?? '').split('?')[0] ?? '';
+   const lane = laneUpgrades.find((u) => u.path.test(lanePath));
+   if (lane) {
+     lane.handle(req, socket, head);
+     return;
+   }
+   // On the returned door object:
+   onUpgrade(path: RegExp, handle: UpgradeHandler): void { laneUpgrades.push({ path, handle }); },
+   ```
+   P6 Task 13 already calls `brain.door.onUpgrade(MEDIA_PATH, handler)` when it exists, and falls back to `brain.http.server.on('upgrade')` (tests) when it does not. The day-one check (Task 14) reports "The door refuses the media path" if the change is missing.
+
+2. **Per-turn tool limits for proactive turns.** `TurnCtx` has no way to limit tools. Proposed, in P1:
+   - `composer/tools.ts`: `TurnCtx.allowedTools?: string[]` and `TurnCtx.mayPostText?: boolean`.
+   - `composer/context.ts`: `Context.addTurnRules(fn: (wake: DeskItem[]) => { allowedTools: string[]; mayPostText: boolean } | null): void` and `Context.turnRules(wake): { allowedTools: string[]; mayPostText: boolean } | null` (the first non-null answer).
+   - The turn (`runTurn`), right after `makeTurnCtx(...)`:
+     ```ts
+     const rules = d.context.turnRules(t.items);
+     if (rules) {
+       ctx.allowedTools = rules.allowedTools;
+       ctx.mayPostText = rules.mayPostText;
+     }
+     // The conductor's version: filter the definitions sent to the model.
+     const tools = ctx.allowedTools ? d.tools.list().filter((tool) => ctx.allowedTools?.includes(tool.name)) : d.tools.list();
+     // Where the text is chosen:
+     const text = r.silent || ctx.mayPostText === false ? null : r.text.trim() || null;
+     ```
+   - Recommended instead of filtering the definitions: keep `tools: d.tools.list()` (the tool definitions sit under cache breakpoint 1, so a filtered list misses the 1-hour cache on every proactive turn) and refuse in `composer/loop.ts`'s `runTool`, after the `if (!tool)` line:
+     ```ts
+     if (i.ctx.allowedTools && !i.ctx.allowedTools.includes(call.name)) {
+       return result(`${call.name} is not allowed in this turn. Use one of: ${i.ctx.allowedTools.join(', ')}.`, true);
+     }
+     ```
+   - P6 then adds one line in `proactive/register.ts`: `brain.context.addTurnRules((wake) => { const r = rulesForTurn(wake); return r ? { allowedTools: r.tools, mayPostText: r.mayPostText } : null; });`. Until then the limits ride in the wake text and the `openings` block, and P6's own notice tools enforce them by construction.
+
+3. **P4's status shapes.** P1 leaves `StatusQuery` and `StatusResult` as open records. P6 sends `{ kind: 'flight', carrierCode, number, date }`, `{ kind: 'fare', optionRef, priceMinor, currency }` and `{ kind: 'availability', optionRef }`, and reads back `{ checkedAt, status: 'scheduled' | 'delayed' | 'cancelled' | 'departed' | 'landed', departAt, arriveAt, delayMinutes }`, `{ checkedAt, priceMinor, currency }` and `{ checkedAt, available, left: number | null }`. If P4 picks other names, only `apps/brain/src/watches/port.ts` changes.
+
+4. **No desk gate is needed.** Timers, watch changes and openings wait in `proactive_candidates`; the promoter puts a desk item (`timer:<trip>:<key>`, `watch:<trip>:<key>`, `opening:<trip>:<key>`) only when the bar passes, so a refused nudge never costs a model turn.
+
+5. **Ids for calls.** The call id is the turn's `ctx.stableId('call')`; every later write is outside a turn and uses `go_<call_id>_<step>`; the card id is `c_<call_id>`. This assumes P1's `turnId` stays under about 40 characters so `go_call_<turnId>_<n>_announce` fits the contract's 64-character `Id`.
+
+6. **The media token rides as a `<Parameter>`**, not `?token=` on the stream URL: Twilio's `<Stream url>` does not pass a query string to the socket. The path still names the call.
+
+7. **The call card appears when dialing starts**, as `docs/guide/09-flows.md` §5 shows; during the 30 s window there is only Go's line, and a stop there is a message.
+
+8. **`CALLS_ALLOWLIST` entries may carry a name** (`Villa Sol=+919800000001`) so the composer can call by name without seeing numbers; plain numbers still work. P1's comment in `calls/env.ts` ("comma-separated phone numbers") and `.env.example` could mention the `Name=` form. P6 does not edit `calls/env.ts`.
+
+9. **P0 and P1 disagree on the FakeServer's names** (`{ url } + connect()` in P1 Task 16's harness, `{ goUrl } + start()` in P0 Task 9). P6 Task 14 uses P0's names, as the conductor gave them.
+
+10. **The sweep finds active trips by `trips.created_at`** (last 90 days) and re-reads each with `read_trip` every 10 minutes; fine at hackweek scale.
+
+## Self-review
+
+| Spec / master section | Where |
+|---|---|
+| §8 sources: the chat (Jev question 9) | Task 6 (`chatOpening`, the `onRead` hook) |
+| §8 sources: trip changes (vote closed, booking cancelled, dates clash, payer waiting) | Task 6 (`tripChangeOpenings`), Task 3 (`payer_waiting`) |
+| §8 sources: time (vote closing, free cancellation, travel day, settle-up) and §5 timers | Tasks 3 and 4 |
+| §8 sources: the world (fare, delay, rooms left) and §12 status | Tasks 7 and 8 |
+| §8 guardrail 1: the quietest useful action first | Task 1 (`decide`), Task 5 (wake text, `rulesForTurn`, `post_notice` pins) |
+| §8 guardrail 2: the bar, stricter at night in the trip's zone, never repeat a nudge | Task 1, Task 2 (`add` never re-adds a key), Task 4 |
+| §8 guardrail 3: about 3 a day, never two in a row, small things batched | Task 1 (`DAILY_POSTS`, `lastWordIsGos`, `decideBatch`), Tasks 2 and 4 |
+| §8 guardrail 4: suggest, never act | Task 5 (wake text, `openings` block, tools allowed exclude spending, tasks and calls), interface note 2 |
+| §8 guardrail 5: pause, hush, ignored | Task 1, Task 5 (paused stripped), Task 6 (hush, ignored) |
+| §14 calls: say who and why, 30 s for stop, then call | Tasks 9, 12, 13 |
+| §14 calls: a live card updated in place; the outcome in the chat and the record; calls never pay | Tasks 11, 12, 13 |
+| Master §1 3:00 "the call" | Tasks 12, 13, 14 (first real call) |
+| Master §1 3:40 "proactive and safe" | Tasks 8 and 14 |
+| Master §7: allowlist only; no em dashes; never the vendor's name | Tasks 9 and 12; Task 5 (`plain`) and the call tests; Task 11 (instructions test) |
+| Master §9: `CALLS_MODE` switch, admin "fire a watch" | Task 12 (read at request and again before dialing), Task 8 |
+| research/hands.md §4: μ-law both ways, barge-in, no second speech-to-text, Twilio signature, day-one check, fallbacks | Tasks 10, 11, 14 |
+| Gate G5 | Tasks 1 to 13 in CI, Task 14 (simulator run, day-one check, the real call) |
+
+Review Focus lines and their tests: (1) wrong moment: Task 1 `decide` tests, Task 4 night and budget tests, Task 6 hush test; (2) repeats: Task 2 "never adds the same nudge twice", Task 3 replan test, Task 4 "no longer true", Task 8 runner "never twice"; (3) calls that must not happen: Task 9 `saysStop`, Task 12 request and stop-window tests; (4) the call card telling the truth: Task 11 wrong token, cap and drop tests, Task 12 tap, no-answer and restart tests, Task 13 end to end; (5) the simulated watch: Task 5 label tests, Task 8 demo-beat test, Task 14 simulator run.
+
+Placeholder scan: no TBD, TODO or "similar to"; every code step is complete. Names consumed from master §6.3 and P1 (`Brain`, `RegisterLane`, `Desk.put`, `Context.addNow`, `Context.addWake`, `MessageHooks.onRead`, `TripLog.onEvent`, `TapRouter.on`, `TurnCtx.cards`, `TurnCtx.stableId`, `Switches.get`, `Travel.status`, `withSchema`, `LANES`) match.

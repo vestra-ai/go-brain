@@ -106,6 +106,23 @@ Order inside a lane is the order of its tasks. Across lanes, a sub-plan only dep
 | Wed | The real trip: where, when, who, who pays. |
 | Thu | An iPhone and an Android phone for the passkey tests; the App team's build on both. |
 
+**Keshav's calls.** Each has a default, so no builder waits; a word from Keshav overrides it.
+
+| # | Call | Default until Keshav says otherwise |
+|---|---|---|
+| 1 | ixigo access: MCP address, auth, tool list (spec §19.1) | Fake ixigo behind the same interface; real tools mapped the hour access arrives (P4 checklist task). |
+| 2 | Idle trips: after how many quiet days a trip gives its computer back (§19.2) | 7 days, then `PATCH /v1/users/{id} status: disabled`. |
+| 3 | Chattiness: one default or a per-trip setting (§19.3) | One default; no contract change. |
+| 4 | The App: Flutter or a PWA (§19.4) | No change for Go: the vault page is plain web opened in the system browser sheet. The App team's pick is needed by Wednesday for the iPhone passkey test. |
+| 5 | OK for the two Bash PRs (§19.5, section 8) | Asked Tuesday evening; tasks run without them if needed. |
+| 6 | Demo day | Assumed Mon 12 Oct; freeze Fri 18:00 either way. |
+| 7 | The real trip: where, when, who, who pays | Needed Wednesday. |
+| 8 | The composer model | Picked by the live bench on Tuesday night (Sonnet 5.5 with thinking off against Haiku 4.5). |
+| 9 | Region for Go and the Server | `us-west2`, agreed with Nishanth. |
+| 10 | The hotel's words on the call card | Off: his ruling is no second speech-to-text beside the voice model, so the card shows Go's lines and the outcome while the room hears the hotel on the speaker. Turning it on needs his explicit OK (or `gpt-live-1`, whose own transcript is allowed, after the day-one A/B). |
+| 11 | Guide wording (PR #1) | Ready to change on his OK: the vault keeps only the processor's token and the payer never types a CVV (guide 08); the PWA path and "passkey" wording (guide 07 and 08); one line that Go may speak unprompted; two fixes to the guide's TypeScript client (a handler that returns nothing must still answer `{}`; a frame that is not a JSON object gets -32700). |
+| 12 | Repo secrets for the live bench | `ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`, `GO_BOARD_URL`, `GO_BOARD_TOKEN` in `vestra-ai/go-brain`. |
+
 ---
 
 ## 5. Dependencies on the other teams and outside
@@ -156,6 +173,7 @@ packages/
 | `proactive/` | A (P6) | Openings, the bar, the budget, the quietest action. |
 | `watches/`, `calls/` | C (P6) | Scheduled checks; the call service. |
 | `admin/` | P1 (`switches.ts`), P7 (the page) | Demo switches and the admin page. |
+| `testing/` | P1 | The shared test harness (`start-room.ts`, `watch.ts`): Go on a real port with every landed lane and P0's FakeServer. Built into `dist`, so later lanes and the bench reuse it. |
 
 ### 6.3 The interfaces lanes share
 
@@ -204,6 +222,8 @@ A unit test in P1 checks that `TO_SERVER_SCHEMAS` and `TO_GO_SCHEMAS` name exact
 // registerProactive, registerCalls, registerAdmin. A lane that has not landed yet is simply not called.
 export interface Brain {
   env: Env; pool: pg.Pool; log: FastifyBaseLogger; now: () => Date; http: FastifyInstance;
+  anthropic: AnthropicLike;  // the model client buildBrain was given; every lane's side model uses it (so tests and the bench inject a fake)
+  onStop(fn: () => Promise<void> | void): void; // lanes stop their timers, streams and sockets here; `built.stop()` runs them in reverse order
   door: Door; taps: TapRouter; tripLog: TripLog; packs: Packs; setup: Setup; desk: Desk;
   tools: Tools; context: Context; hooks: MessageHooks; switches: Switches;
   reflex: Reflex;            // P1 sets an all-unsure stub; P2 replaces it
@@ -239,6 +259,8 @@ export function newRequestId(): string; // "go_" + ULID; the same value is reuse
 export type ToGoHandler<M extends ToGoMethod> = (params: ToGoParams<M>, meta: { instance: string; frameId: string }) => Promise<ToGoResult<M>>;
 export interface Door {
   handle<M extends ToGoMethod>(method: M, handler: ToGoHandler<M>): void; // one handler per method; P1 registers send_event
+  /** Other WebSocket paths on Go's port (P6: Twilio's media stream at /calls/media/:callId). Checked before the /v1/socket rule. */
+  onUpgrade(path: RegExp, handle: (req: IncomingMessage, socket: Duplex, head: Buffer) => void): void;
   link: ServerLink;
 }
 // P1 registers send_event (log, pack, reflex, desk) and card_tap (dispatches through TapRouter, below).
@@ -296,6 +318,10 @@ export interface TurnCtx {
    *  so a rerun of the same turn repeats the same ids and the Server does each write once. Never newRequestId() inside a turn. */
   stableId(prefix: string): string;
   signal: AbortSignal;        // the turn's 20 s limit; pass it to anything that waits
+  /** Set from Context.addTurnRules (P6's proactive bar). The loop refuses a call to any other tool with an error result;
+   *  the tool definitions themselves never change, so the 1h cache holds. */
+  allowedTools?: string[];
+  mayPostText?: boolean;      // false: the turn's final text is not posted (cards and reactions still go)
 }
 export interface TurnOutcome { spoke: boolean; silent: boolean; reactions: number; posts: string[] }
 export interface Tools { register(t: QuickTool<any>): void; list(): QuickTool<any>[] }
@@ -309,7 +335,13 @@ export interface NowProvider {
 export interface Context {
   addNow(p: NowProvider): void;
   /** How a desk item of this kind reads in "why Go woke". P1 renders 'message', 'trip_change' and 'setup'; each lane renders its own kinds. */
-  addWake(kind: DeskKind, render: (item: DeskItem, pack: TripPack) => string): void;
+  /** Several lanes may render one kind (P4, P5 and P6 all render 'tap'): renderers run in registration order and the first
+   *  non-null string wins; P1's generic line is the fallback. */
+  addWake(kind: DeskKind, render: (item: DeskItem, pack: TripPack) => string | null): void;
+  /** P2's fold: the story block sits right before the chat chunks (inside the data fence), and the chat starts at chatFromSeq. */
+  setStory(p: { get(tripId: string): Promise<{ story: string | null; chatFromSeq: number; foldedToSeq: number; tokens: number }> }): void;
+  /** P6's proactive bar: limits for a turn Go woke for on its own; null means no limits. */
+  addTurnRules(fn: (wake: DeskItem[]) => { tools: string[]; mayPostText: boolean } | null): void;
 }
 
 // ── trips/hooks.ts (P1) ── lanes see each person's message once the reflex has read it.
@@ -340,11 +372,15 @@ export interface Memory {
 export interface Travel {
   search(kind: 'flights' | 'trains' | 'buses' | 'stays', q: TravelQuery): Promise<{ results: TravelOption[]; checkedAt: string }>;
   status(q: StatusQuery): Promise<StatusResult>;
+  /** The offer behind an options card's option_id (which is also a vote option's option_ref); offerId null when the option came
+   *  from a task's web browsing (P5 refuses to book those). */
+  offer(optionId: string): Promise<{ offerId: string | null; title: string; priceMinor: number | null; currency: string | null } | null>;
   /** Booking is two steps so card details only ever travel between the vault and the rail. Composer and P5 only. */
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
+  /** Safe to repeat: the same hold confirmed twice gives the same answer. */
   confirm(holdId: string, paid: { approvalId: string; railRef: string }): Promise<Confirmed>;
 }
-export interface Hold { holdId: string; amountMinor: number; currency: string; merchant: string; expiresAt: string;
+export interface Hold { holdId: string; amountMinor: number; currency: string; merchant: string; expiresAt: string; refundableUntil?: string;
   payment: { kind: 'fake' } | { kind: 'stripe_test' } | { kind: 'ixigo'; token: string } }
 export interface Confirmed { ref: string; vendor: string; title: string; kind: C.Booking['kind']; startsAt?: string; endsAt?: string;
   refundableUntil?: string; imageUrl?: string; place?: C.Place; journey?: C.Journey }
@@ -355,13 +391,15 @@ export interface Tasks {
   message(taskId: string, text: string): Promise<void>;
   stop(taskId: string): Promise<void>;
   running(tripId: string): Promise<Array<{ id: string; brief: string; state: string }>>;
+  /** A person answered a job's hand-off (a code, a choice) or it expired. */
+  handoff(taskId: string, outcome: { answer: string } | { expired: true }): Promise<void>;
 }
 
 // ── money/pay.ts (P5) ── the only path to spending. Flow: hold → request_spend_approval → pay card →
 // payer taps Approve → vault page → passkey → vault checks the approval and pays the hold's rail → vault calls Go back →
 // confirm → add_booking (with approval_id) → add_expense → cards. Any failure: cancel_spend_approval and say so.
 export interface Pay {
-  askToPay(tripId: string, o: { decisionId: string; offerId: string; purpose: string }): Promise<{ cardId: string } | { refused: string }>;
+  askToPay(tripId: string, o: { decisionId: string; optionRef: string; purpose: string }): Promise<{ cardId: string } | { refused: string }>;
   /** apps/vault calls POST /internal/vault/paid (signed with VAULT_SHARED_SECRET); P5 finishes the booking. */
   onPaid(fn: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>): void;
 }
@@ -372,6 +410,9 @@ export interface Pay {
 - P1 creates type-only seam files (`memory/memory.ts`, `travel/travel.ts`, `tasks/tasks.ts`, `money/pay.ts`) with the declarations above so `Brain` compiles; the owning lane takes its file over and only adds.
 - `send_event` and `card_tap` are registered inside `buildBrain` (P1). Desk item ids carry a lane prefix (P1 uses `msg:`, `change:`, `setup:`), so `Desk.put` stays idempotent.
 - `withSchema()` returns `{ pool, schema, drop }`.
+- Votes carry the offer: `open_vote` passes every `DecisionOption` field through (`label`, `image_url`, `price_minor`, `currency`, `option_ref`, `note`), and a vote made from an options card sets each option's `option_ref` to that card option's `option_id`. Nobody reads meaning into an `option_ref` string: P5 and P6 resolve it with `travel.offer(option_ref)`, which answers the offer (or `offerId: null` for an option found by browsing, which P5 refuses to book).
+- People's text is screened at the door: P1's intake runs `maskSecrets` (P2 Task 1, `reflex/secrets.ts`, no dependencies, built by the P1 builder right after P1's trip-log task) on every message before it is written anywhere, so a card number, CVV or one-time code never reaches the trip log, the messages table, the pack or a prompt.
+- P1 creates every lane's `env.ts` stub (reflex, memory, stats, travel, tasks, money, proactive, watches, calls, admin) and merges them all, so a lane's variables are never dropped by `loadEnv`. A lane takes its stub over (never creates a second file) and adds each variable to `apps/brain/.env.example` too, because P1's deploy test checks every key.
 
 ### 6.4 The flow of one message (the order every lane can rely on)
 
@@ -500,6 +541,7 @@ If either is not merged by Wednesday noon, tasks still run (the deployment's ins
 | The Server or the App late | medium | The simulator and dev room are a full stand-in, and the integration test runs against the Server's staging the moment it is up. |
 | Passkey quirks in Flutter or a PWA on iPhone | medium | Test on a real iPhone Wednesday, not Thursday; the vault page is plain web, opened in the system browser sheet. |
 | `/v1` limits (20 streams per key) | low this week | Key pool of three. |
+| `/v1` has no route to send a new message into a running job | medium | Go answers a job's open question or hand-off directly; otherwise it sends a new message (`hand_off: 'auto'`) naming the job. Checked on staging Wednesday morning (P4); if it misbehaves, Go stops the job and starts a fresh one with the new detail. |
 | Venue Wi-Fi on demo day | medium | Phones on a hotspot; the backup video. |
 
 **The cut line.** If we fall behind, cut in this order (first cut first): (1) calls become a recorded segment; (2) watches become the one admin-fired trigger; (3) Jev questions 4 to 9 stay in shadow (1 to 3 and 8 stay live); (4) the fold (demo chats stay under 60k tokens anyway); (5) booking through ixigo becomes `PAY_RAIL=stripe_test` with fake ixigo booking. **Never cut:** typing under 0.5 s and reply speed, staying quiet, two keys, the working card with Watch, memory with proof, the proof board.
@@ -524,8 +566,8 @@ Inputs the spec implies but no single feature test covers; each one has a test i
 
 | When | Slot 1 | Slot 2 | Slot 3 | Slot 4 |
 |---|---|---|---|---|
-| Mon 20:00 to night | P0 (fake Go first, then the simulator) | P1 Tasks 1 to 3 (the shared types, the database, the door) | | |
-| Tue morning | P1 (trips, desk, composer, deploy) to **G1 14:00** | P0 finish (dev room), then P3 | P2 (reflex first, then memory) | P4 travel (fake ixigo, search tools) |
+| Mon 20:00 to night | P0 (fake Go first, then the simulator) | P1 Tasks 1 to 6, then P2 Task 1 (the secrets screen, which P1's intake needs), then P1 on | | |
+| Tue morning | P1 (trips, desk, composer, deploy) to **G1 14:00** | P0 finish (dev room), then P3 | P2 from Task 2 (reflex first, then memory) | P4 travel (fake ixigo, search tools) |
 | Tue afternoon to night | P1 finish; the composer model picked by the live bench | P3 to **G2 23:00** | P2 to **G2 23:00** | P4 tasks (`/v1` client, computer, MCP server) |
 | Wed | P6 proactive (timers, openings, policy) | P5 vault | P5 Go side | P4 to **G3 23:00**, the two Bash PRs |
 | Thu | P6 calls to **G5 23:00** | P5 to **G4 15:00** | P2 questions 4 to 9 live | fixes from the real trip and the bench |
