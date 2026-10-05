@@ -64,9 +64,12 @@ export function buildFakeGo(opts: FakeGoOptions): FakeGo {
 
   app.get('/v1/health', async () => ({ ok: true as const, contract: CONTRACT_VERSION }));
 
-  // People's messages travel in the frames, so the page needs the admin token.
+  // People's messages travel in the frames, so the page needs the admin token (Authorization: Bearer, or ?token=),
+  // is never cached, and never sends its address (with the token in it) to another site.
   app.get<{ Querystring: { token?: string } }>('/frames', async (req, reply) => {
-    if (!sameToken(req.query.token ?? '', opts.adminToken)) {
+    reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer');
+    const bearer = /^Bearer\s+(\S+)\s*$/i.exec(req.headers.authorization ?? '')?.[1];
+    if (!sameToken(bearer ?? req.query.token ?? '', opts.adminToken)) {
       return reply.code(401).send({ error: { code: 'bad_signature', message: 'wrong or missing token' } });
     }
     return reply.type('text/html; charset=utf-8').send(renderFrames(frames.list()));

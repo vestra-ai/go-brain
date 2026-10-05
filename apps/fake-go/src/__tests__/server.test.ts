@@ -157,6 +157,19 @@ describe('health and pages', () => {
     expect(page.body).not.toContain('\u2014');
   });
 
+  it('takes the token as a Bearer header too, and is never cached or sent on as a referrer', async () => {
+    await start();
+    const wrong = await fake!.app.inject({ method: 'GET', url: '/frames', headers: { authorization: 'Bearer wrong' } });
+    expect(wrong.statusCode).toBe(401);
+    const page = await fake!.app.inject({ method: 'GET', url: '/frames', headers: { authorization: `Bearer ${adminToken}` } });
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain('No frames yet.');
+    for (const res of [wrong, page]) {
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['referrer-policy']).toBe('no-referrer');
+    }
+  });
+
   it('serves the pages its watch and vault links open', async () => {
     await start();
     for (const kind of ['watch', 'vault']) {
