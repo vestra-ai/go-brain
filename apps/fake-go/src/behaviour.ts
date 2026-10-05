@@ -4,6 +4,7 @@
 //  - it answers card_tap, catch_up, the people requests and vault_link with fixed answers.
 // A repeated tap_id gets its first answer back. Only a pay card's payer can approve it.
 import { randomUUID } from 'node:crypto';
+import type { WebSocket } from 'ws';
 import type { z } from 'zod';
 import { TripSnapshot, type CardActionResult, type CardTap, type Event } from '@go/contract';
 import { FAKE_CARD_KINDS, fakeCard, type FakeCardKind } from './cards.js';
@@ -52,25 +53,26 @@ export function fakeGoBehaviour(link: Link, o: BehaviourOptions): Behaviour {
     `${o.publicUrl}/fake/page/${kind}?${new URLSearchParams(query).toString()}`;
 
   /** Sends one request; a failure is logged and the script goes on, so the Server team sees every request kind. */
-  const ask = async (method: string, params: object): Promise<Record<string, unknown> | null> => {
+  const ask = async (method: string, params: object, via: WebSocket): Promise<Record<string, unknown> | null> => {
     try {
-      return await link.request(method, params);
+      return await link.request(method, params, { via });
     } catch (err) {
       log(`${method} failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   };
 
-  const answerMention = async (ev: MessageCreated): Promise<void> => {
+  /** Everything Go sends about the event goes back on `from`, the socket the event came on. */
+  const answerMention = async (ev: MessageCreated, from: WebSocket): Promise<void> => {
     const msg = ev.data.message;
     const authorId = msg.author.kind === 'person' ? msg.author.person_id : undefined;
-    link.notify('typing', { trip_id: ev.trip_id, on: true });
+    link.notify('typing', { trip_id: ev.trip_id, on: true }, from);
     try {
-      const read = TripSnapshot.safeParse(await ask('read_trip', { trip_id: ev.trip_id }));
+      const read = TripSnapshot.safeParse(await ask('read_trip', { trip_id: ev.trip_id }, from));
       const trip = read.success ? read.data : undefined;
       const name = trip?.people.find((p) => p.person_id === authorId)?.name;
       const payerId = trip?.organizer_person_id ?? authorId ?? 'p_unknown';
-      await ask('add_reaction', { request_id: newRequestId(), trip_id: ev.trip_id, message_id: msg.message_id, emoji: '✅' });
+      await ask('add_reaction', { request_id: newRequestId(), trip_id: ev.trip_id, message_id: msg.message_id, emoji: '✅' }, from);
       const kind = FAKE_CARD_KINDS[posted % FAKE_CARD_KINDS.length] ?? 'notice';
       posted += 1;
       const card = fakeCard(kind, { n: posted, payerId, publicUrl: o.publicUrl, now: now() });
@@ -83,9 +85,9 @@ export function fakeGoBehaviour(link: Link, o: BehaviourOptions): Behaviour {
         reply_to: msg.message_id,
         ...(authorId ? { mentions: [authorId] } : {}),
         card,
-      });
+      }, from);
     } finally {
-      link.notify('typing', { trip_id: ev.trip_id, on: false });
+      link.notify('typing', { trip_id: ev.trip_id, on: false }, from);
     }
   };
 
@@ -112,11 +114,11 @@ export function fakeGoBehaviour(link: Link, o: BehaviourOptions): Behaviour {
   };
 
   return {
-    onEvent: async (ev) => {
+    onEvent: async (ev, from) => {
       if (ev.type !== 'message.created') return;
       const m = ev.data.message;
       if (!m.mentions_go || m.author.kind === 'go' || m.withheld || m.deleted) return;
-      await answerMention(ev);
+      await answerMention(ev, from);
     },
     handlers: {
       card_tap: async (tap: Tap) => {

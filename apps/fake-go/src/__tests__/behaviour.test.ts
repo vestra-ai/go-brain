@@ -12,35 +12,44 @@ const at = '2026-10-05T06:49:00Z';
 const publicBase = 'https://fake-go.test';
 
 let fake: FakeGo | undefined;
-let sock: GoSocket | undefined;
+const sockets: GoSocket[] = [];
 afterEach(async () => {
-  sock?.close();
-  sock = undefined;
+  for (const s of sockets.splice(0)) s.close();
   await fake?.close();
   fake = undefined;
 });
 
 interface Seen { method: string; params: any }
 
-/** Starts the fake Go with its behaviour, and the Server's end with handlers that record each request Go sends. */
-async function setUp(overrides: Record<string, Handler> = {}) {
-  fake = buildFakeGo({ secret, adminToken: 'admin-token-for-tests-0001', behaviour: (link) => fakeGoBehaviour(link, { publicUrl: publicBase }) });
-  await fake.app.listen({ port: 0, host: '127.0.0.1' });
-  const port = (fake.app.server.address() as AddressInfo).port;
-  const seen: Seen[] = [];
+/** Handlers for the Server's end that record each request Go sends, and answer it the way the contract asks. */
+function recorder(seen: Seen[]): Record<string, Handler> {
   let seq = 100;
-  const handlers: Record<string, Handler> = {
+  return {
     read_trip: async (p) => { seen.push({ method: 'read_trip', params: p }); return goaFreshTrip(); },
     add_reaction: async (p) => { seen.push({ method: 'add_reaction', params: p }); return { seq: ++seq }; },
     post_message: async (_p, raw) => { seen.push({ method: 'post_message', params: raw }); return { message_id: `m_go_${seq}`, seq: ++seq }; },
     typing: async (p) => { seen.push({ method: 'typing', params: p }); },
-    ...overrides,
   };
+}
+
+/** Opens one Server socket to the running fake Go, as the given instance. */
+async function connect(instance: string, handlers: Record<string, Handler>): Promise<GoSocket> {
+  const port = (fake!.app.server.address() as AddressInfo).port;
   let opened!: () => void;
   const ready = new Promise<void>((r) => (opened = r));
-  sock = new GoSocket({ url: `ws://127.0.0.1:${port}/v1/socket?instance=behaviour`, secret, handlers, onOpen: () => opened() });
-  sock.start();
+  const s = new GoSocket({ url: `ws://127.0.0.1:${port}/v1/socket?instance=${instance}`, secret, handlers, onOpen: () => opened() });
+  sockets.push(s);
+  s.start();
   await ready;
+  return s;
+}
+
+/** Starts the fake Go with its behaviour, and the Server's end with handlers that record each request Go sends. */
+async function setUp(overrides: Record<string, Handler> = {}) {
+  fake = buildFakeGo({ secret, adminToken: 'admin-token-for-tests-0001', behaviour: (link) => fakeGoBehaviour(link, { publicUrl: publicBase }) });
+  await fake.app.listen({ port: 0, host: '127.0.0.1' });
+  const seen: Seen[] = [];
+  const sock = await connect('behaviour', { ...recorder(seen), ...overrides });
   return { seen, sock };
 }
 
@@ -130,6 +139,16 @@ describe('a message that mentions Go', () => {
     expect(seen.map(label)).toEqual(['typing on', 'add_reaction', 'post_message', 'typing off']);
     expect(post.text).toBe('This is the fake Go. Here is an options card to test with.');
     expect(post.mentions).toEqual(['p_priya']);
+  });
+
+  it('sends everything about an event on the socket the event came on, never on another instance', async () => {
+    const { seen, sock: a } = await setUp();
+    const seenOnB: Seen[] = [];
+    await connect('second', recorder(seenOnB)); // the newest socket now belongs to another instance
+    await mention(a, seen);
+    expect(seen.map(label)).toEqual(['typing on', 'read_trip', 'add_reaction', 'post_message', 'typing off']);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(seenOnB).toEqual([]);
   });
 });
 

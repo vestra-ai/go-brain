@@ -244,7 +244,7 @@ describe("Go's requests to the Server", () => {
   it('go again on the next socket, with the same id, when their socket drops before the answer', async () => {
     const port = await start();
     const first = await openRaw(port, 'one');
-    const answer = fake!.link.request('read_trip', { trip_id: 't_goa' }, 5000);
+    const answer = fake!.link.request('read_trip', { trip_id: 't_goa' }, { timeoutMs: 5000 });
     await until(() => first.frames.length === 1);
     const sent = first.frames[0];
     first.ws.terminate();

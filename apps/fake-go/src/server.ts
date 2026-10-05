@@ -21,8 +21,11 @@ export type ToGoHandler = (params: any, meta: { instance: string }) => Promise<o
 /** What the fake Go does on top of the socket: its answers, and its work after an event. */
 export interface Behaviour {
   handlers: Partial<Record<string, ToGoHandler>>;
-  /** Runs after Go has answered a new event of a known type. Never for a repeat. */
-  onEvent?: (event: Event) => void | Promise<void>;
+  /**
+   * Runs after Go has answered a new event of a known type. Never for a repeat. `from` is the socket the event
+   * came on: Go sends its requests about the event back on that socket.
+   */
+  onEvent?: (event: Event, from: WebSocket) => void | Promise<void>;
 }
 
 export interface FakeGoOptions {
@@ -79,7 +82,7 @@ export function buildFakeGo(opts: FakeGoOptions): FakeGo {
     if (seenEvents.size > SEEN_EVENTS_KEPT) seenEvents.delete(seenEvents.values().next().value as string);
   };
 
-  const sendEvent = (params: unknown): { accepted: true; duplicate: boolean } => {
+  const sendEvent = (params: unknown, from: WebSocket): { accepted: true; duplicate: boolean } => {
     const p = (typeof params === 'object' && params !== null ? params : {}) as { type?: unknown; event_id?: unknown };
     const eventId = typeof p.event_id === 'string' ? p.event_id : undefined;
     // A type Go does not know is accepted before anything else is checked: the Server may add types within version 1.
@@ -96,7 +99,7 @@ export function buildFakeGo(opts: FakeGoOptions): FakeGo {
     // Answer first; the work happens after.
     setImmediate(() => {
       Promise.resolve()
-        .then(() => behaviour.onEvent?.(event))
+        .then(() => behaviour.onEvent?.(event, from))
         .catch((err: unknown) => log(`work after ${event.type} failed: ${String(err)}`));
     });
     return { accepted: true, duplicate: false };
@@ -127,7 +130,7 @@ export function buildFakeGo(opts: FakeGoOptions): FakeGo {
     if (f.id === undefined) return; // the Server sends no notifications; a stray one gets no answer
     const id = f.id;
     try {
-      const result = f.method === 'send_event' ? sendEvent(f.params) : await callHandler(f.method, f.params, instance);
+      const result = f.method === 'send_event' ? sendEvent(f.params, ws) : await callHandler(f.method, f.params, instance);
       link.send(ws, { jsonrpc: '2.0', id, result });
     } catch (err) {
       link.send(ws, { jsonrpc: '2.0', id, error: errorOf(err) });

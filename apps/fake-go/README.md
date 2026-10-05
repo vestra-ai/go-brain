@@ -8,6 +8,7 @@ The fake Go is a small stand-in for Go that speaks the real socket. The Server t
 - Pings every 20 seconds, and closes a socket that has been silent for 40 seconds.
 - Answers every `send_event` straight away: `{"accepted":true,"duplicate":false}`, or `"duplicate":true` for an `event_id` it has seen. An event type it does not know is accepted too. A broken event of a known type gets `422`.
 - When a `message.created` event has `mentions_go: true`, and is not Go's own, withheld or deleted, it sends `typing` (on), `read_trip`, `add_reaction` with ✅ on that message, `post_message` with a reply and one of Go's cards, and `typing` (off). The card changes each time: `options`, `working`, `call`, `pay`, `notice`, then round again.
+- Sends its requests about an event on the socket that event came on, so with several Server instances connected, the instance that sent the event gets them. If that socket closes first, they go on the newest open socket, with the same JSON-RPC id.
 - Answers `card_tap`, `catch_up`, `get_person`, `update_person`, `delete_fact`, `forget_person` and `vault_link` with fixed answers taken from the guide's examples. A repeated `tap_id` gets its first answer back. `approve` on a pay card works only for that card's payer; anyone else gets `refused` with a toast.
 - Answers `-32601` for any other method, and `-32700` with `id: null` for a frame it cannot read.
 - Answers `GET /v1/health` with `{"ok":true,"contract":"1.0.0"}`.

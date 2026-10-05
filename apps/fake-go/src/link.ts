@@ -1,6 +1,7 @@
-// Go's requests to the Server. Each one goes out on the newest open socket. If that socket closes before the
-// answer, the request goes out again on the next open socket with the same JSON-RPC id (and so the same
-// request_id inside), and the Server answers a repeat with its first answer.
+// Go's requests to the Server. A request about an event goes out on the socket that event came on, so the Server
+// instance that sent the event hears about it; with no such socket it goes out on the newest open one. If its
+// socket closes before the answer, the request goes out again on the newest open socket with the same JSON-RPC id
+// (and so the same request_id inside), and the Server answers a repeat with its first answer.
 import { randomUUID } from 'node:crypto';
 import type { WebSocket } from 'ws';
 import { SocketCallError, SocketTimeoutError } from '@go/sim';
@@ -23,6 +24,12 @@ interface ErrorField {
   code?: unknown;
   message?: unknown;
   data?: { code?: string; retry_after_seconds?: number | null } | null;
+}
+
+export interface RequestOptions {
+  /** The socket the event came on. When it has closed, the newest open socket is used instead. */
+  via?: WebSocket | undefined;
+  timeoutMs?: number | undefined;
 }
 
 export class Link {
@@ -61,7 +68,7 @@ export class Link {
     return this.conns.map((c) => c.instance);
   }
 
-  request(method: string, params: object, timeoutMs = 2000): Promise<Record<string, unknown>> {
+  request(method: string, params: object, { via, timeoutMs = 2000 }: RequestOptions = {}): Promise<Record<string, unknown>> {
     const id = `go_${randomUUID()}`;
     const frame = JSON.stringify({ jsonrpc: '2.0', id, method, params });
     return new Promise((resolve, reject) => {
@@ -73,7 +80,7 @@ export class Link {
         clearTimeout(timer);
         this.pending.delete(id);
       };
-      const conn = this.newest();
+      const conn = this.pick(via);
       this.pending.set(id, {
         frame,
         on: conn,
@@ -84,9 +91,9 @@ export class Link {
     });
   }
 
-  /** A notification (Go's typing): dropped when no socket is open, never sent again. */
-  notify(method: string, params: object): void {
-    const conn = this.newest();
+  /** A notification (Go's typing), on `via` while it is open: dropped when no socket is open, never sent again. */
+  notify(method: string, params: object, via?: WebSocket): void {
+    const conn = this.pick(via);
     if (conn) this.write(conn, JSON.stringify({ jsonrpc: '2.0', method, params }));
   }
 
@@ -106,6 +113,11 @@ export class Link {
   send(ws: WebSocket, body: object): void {
     const conn = this.conns.find((c) => c.ws === ws) ?? { ws, instance: 'closed' };
     this.write(conn, JSON.stringify(body));
+  }
+
+  /** `via` while it is still open, otherwise the newest open socket. */
+  private pick(via: WebSocket | undefined): Conn | null {
+    return this.conns.find((c) => c.ws === via) ?? this.newest();
   }
 
   private newest(): Conn | null {
