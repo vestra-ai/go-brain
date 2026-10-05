@@ -202,10 +202,38 @@ describe('the cards and the environment', () => {
   it('makes every card kind valid, with no em dash anywhere', () => {
     const now = new Date('2026-10-05T07:00:00Z');
     for (const kind of FAKE_CARD_KINDS) {
-      const card = fakeCard(kind, { n: 7, payerId: 'p_rahul', publicUrl: publicBase, now });
+      const card = fakeCard(kind, { bootId: '0a1b2c3d', n: 7, payerId: 'p_rahul', publicUrl: publicBase, now });
       expect(Card.parse(card).kind).toBe(kind);
+      expect(card.card_id).toBe(`c_fake_0a1b2c3d_0007_${kind}`);
       expect(JSON.stringify(card)).not.toContain('\u2014');
     }
+    const ids = (kind: 'pay' | 'working' | 'call') => fakeCard(kind, { bootId: '0a1b2c3d', n: 7, payerId: 'p_rahul', publicUrl: publicBase, now }) as any;
+    expect(ids('pay').approval_id).toBe('ap_fake_0a1b2c3d_0007');
+    expect(ids('working').task_id).toBe('task_fake_0a1b2c3d_0007');
+    expect(ids('call').call_id).toBe('call_fake_0a1b2c3d_0007');
+  });
+
+  it('gives cards new ids after a restart, though the running number starts at 1 again', async () => {
+    /** One start of the fake Go: the first card it posts, through a stand-in for the socket. */
+    const firstCardAfterBoot = async (): Promise<any> => {
+      const sent: any[] = [];
+      const link = {
+        request: async (method: string, params: any) => {
+          if (method === 'post_message') sent.push(params);
+          return method === 'read_trip' ? goaFreshTrip() : { seq: 2, message_id: 'm_go_1' };
+        },
+        notify: () => {},
+      } as unknown as Parameters<typeof fakeGoBehaviour>[0];
+      const behaviour = fakeGoBehaviour(link, { publicUrl: publicBase });
+      await behaviour.onEvent!(message() as any, {} as any);
+      return sent[0].card;
+    };
+    const first = await firstCardAfterBoot();
+    const second = await firstCardAfterBoot();
+    expect(first.card_id).toMatch(/^c_fake_[0-9a-f]{8}_0001_options$/);
+    expect(second.card_id).toMatch(/^c_fake_[0-9a-f]{8}_0001_options$/);
+    expect(second.card_id).not.toBe(first.card_id);
+    expect(second.options[0].option_id).not.toBe(first.options[0].option_id);
   });
 
   it('needs a real secret and token, and finds its public URL', () => {

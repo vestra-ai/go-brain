@@ -3,7 +3,7 @@
 //    post_message with a reply and one of Go's own cards, a different kind each time, then typing off;
 //  - it answers card_tap, catch_up, the people requests and vault_link with fixed answers.
 // A repeated tap_id gets its first answer back. Only a pay card's payer can approve it.
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { WebSocket } from 'ws';
 import type { z } from 'zod';
 import { TripSnapshot, type CardActionResult, type CardTap, type Event } from '@go/contract';
@@ -46,6 +46,7 @@ export function fakeGoBehaviour(link: Link, o: BehaviourOptions): Behaviour {
   const log = o.log ?? (() => {});
   const cards = new Map<string, { kind: FakeCardKind; payerId: string }>();
   const taps = new Map<string, TapAnswer>();
+  const bootId = randomBytes(4).toString('hex');
   let posted = 0;
 
   const inFiveMinutes = (): string => new Date(now().getTime() + 5 * 60_000).toISOString();
@@ -75,7 +76,7 @@ export function fakeGoBehaviour(link: Link, o: BehaviourOptions): Behaviour {
       await ask('add_reaction', { request_id: newRequestId(), trip_id: ev.trip_id, message_id: msg.message_id, emoji: '✅' }, from);
       const kind = FAKE_CARD_KINDS[posted % FAKE_CARD_KINDS.length] ?? 'notice';
       posted += 1;
-      const card = fakeCard(kind, { n: posted, payerId, publicUrl: o.publicUrl, now: now() });
+      const card = fakeCard(kind, { bootId, n: posted, payerId, publicUrl: o.publicUrl, now: now() });
       cards.set(card.card_id, { kind, payerId });
       const greeting = name ? `Hi ${name}, this` : 'This';
       await ask('post_message', {

@@ -7,6 +7,8 @@ export const FAKE_CARD_KINDS = ['options', 'working', 'call', 'pay', 'notice'] a
 export type FakeCardKind = (typeof FAKE_CARD_KINDS)[number];
 
 export interface CardContext {
+  /** Random for each start of the fake Go, so a restart, which starts `n` again at 1, never repeats an id. */
+  bootId: string;
   /** A running number, so every card_id is new. */
   n: number;
   payerId: string;
@@ -15,7 +17,8 @@ export interface CardContext {
 }
 
 export function fakeCard(kind: FakeCardKind, c: CardContext): Card {
-  const n = String(c.n).padStart(4, '0');
+  // Every id on the card (card_id, option, task, call and approval ids) carries the boot and the running number.
+  const n = `${c.bootId}_${String(c.n).padStart(4, '0')}`;
   const at = c.now.toISOString();
   const card_id = `c_fake_${n}_${kind}`;
   switch (kind) {
