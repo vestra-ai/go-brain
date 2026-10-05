@@ -3,7 +3,7 @@ import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Jou
 import { BudgetSummary, Person } from './people.js';
 
 /**
- * The trip as go-server holds it. go-server is the source of truth for everything here; go-brain
+ * The trip as the server holds it. The server is the source of truth for everything here; go-brain
  * keeps only a copy it refreshes by change number (`seq`).
  */
 
@@ -119,7 +119,7 @@ export const Transfer = z
   .object({ from_person_id: Id, to_person_id: Id, amount_minor: AmountMinor, currency: Currency })
   .meta({ id: 'Transfer' });
 
-/** go-server does all the money maths. Go reads it from here. A trip has one currency: every amount in it uses `currency`. */
+/** The server does all the money maths. Go reads it from here. A trip has one currency: every amount in it uses `currency`. */
 export const Money = z
   .object({
     currency: Currency,
@@ -155,8 +155,8 @@ export const Proof = z.object({ message_id: Id, person_id: Id.nullish() }).meta(
 
 /**
  * The trip record: the trip's shared memory, one line per thing the group settled or still has to.
- *  - decided: a vote closed (go-server writes it from the decision)
- *  - booked: something is booked (go-server writes it from the booking)
+ *  - decided: a vote closed (the server writes it from the decision)
+ *  - booked: something is booked (the server writes it from the booking)
  *  - agreed: the group agreed in the chat without a vote (Go writes it, with the messages as proof)
  *  - open: a question still to settle, and who is asked (Go writes it)
  *  - doing: someone said they will sort something (Go writes it)

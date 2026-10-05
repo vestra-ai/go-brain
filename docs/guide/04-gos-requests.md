@@ -1,20 +1,20 @@
 # Go's requests
 
-These are the requests Go sends go-server over the socket to read the trip or act in it. go-server answers each one from its database, which stays the source of truth: the trip lives in go-server, and Go never changes it any other way.
+These are the requests Go sends the server over the socket to read the trip or act in it. The server answers each one from its database, which stays the source of truth: the trip lives in the server, and Go never changes it any other way.
 
-Go uses these requests for everything it does in a trip: reading the trip and the room, speaking, showing "Go is typing...", reacting to messages, opening and closing votes, writing the trip record, recording bookings and expenses, and asking for a spend approval. This is the page go-server's team builds from. It lists every method, the params it takes, the result it answers with, and the rules go-server enforces, with the error to answer when a rule fails. How the socket opens, what a frame looks like, heartbeats and reconnecting are in [The socket](02-the-socket.md). The same methods are listed in `packages/contract/socket/methods.json` and described in `packages/contract/asyncapi/socket.json`.
+Go uses these requests for everything it does in a trip: reading the trip and the room, speaking, showing "Go is typing...", reacting to messages, opening and closing votes, writing the trip record, recording bookings and expenses, and asking for a spend approval. This is the page the server's team builds from. It lists every method, the params it takes, the result it answers with, and the rules the server enforces, with the error to answer when a rule fails. How the socket opens, what a frame looks like, heartbeats and reconnecting are in [The socket](02-the-socket.md). The same methods are listed in `packages/contract/socket/methods.json` and described in `packages/contract/asyncapi/socket.json`.
 
 ## The methods
 
 Go sends 18 methods. Every one names its trip with `trip_id`.
 
-| Method | What it does | Result | Event go-server then sends |
+| Method | What it does | Result | Event the server then sends |
 |---|---|---|---|
 | `read_trip` | Reads the whole trip as Go may see it, at its current change number. | `TripSnapshot` | None |
 | `read_messages` | Reads the messages posted or changed after a change number, in `updated_seq` order, up to 200 at a time. | `MessagesPage` | None |
 | `post_message` | Posts Go's message in the room: text, a card, or both. | `PostMessageResult` | `message.created` |
 | `replace_card` | Replaces a card Go posted earlier, in place. | `ReplaceCardResult` | None. Replacing a card is not a change to the trip. |
-| `typing` | Shows or hides "Go is typing..." in the room. It is a notification, so go-server sends no answer. | None | None |
+| `typing` | Shows or hides "Go is typing..." in the room. It is a notification, so the server sends no answer. | None | None |
 | `add_reaction` | Adds Go's reaction to a message. | `WriteResult` | `reaction.added` |
 | `remove_reaction` | Takes Go's reaction back. | `WriteResult` | `reaction.removed` |
 | `update_trip` | Changes the title, destination, dates, vibe, stay or the itinerary. | `WriteResult` | `trip.updated` |
@@ -33,7 +33,7 @@ Each method's section below names the schema of its params, such as `OpenDecisio
 
 ## A request and its answer
 
-Each request is one JSON-RPC 2.0 text frame with an `id`, the `method` and its `params`. go-server answers it once, on the same socket, with a frame that has the same `id` and either a `result` or an `error`. Here Go posts the result of the villa vote:
+Each request is one JSON-RPC 2.0 text frame with an `id`, the `method` and its `params`. The server answers it once, on the same socket, with a frame that has the same `id` and either a `result` or an `error`. Here Go posts the result of the villa vote:
 
 <!-- schema: SocketRequest -->
 ```json
@@ -56,14 +56,14 @@ Each request is one JSON-RPC 2.0 text frame with an `id`, the `method` and its `
 }
 ```
 
-go-server stores the message and answers with its id and change number:
+The server stores the message and answers with its id and change number:
 
 <!-- schema: SocketResult -->
 ```json
 { "jsonrpc": "2.0", "id": "go_2251", "result": { "message_id": "m_0158", "seq": 73 } }
 ```
 
-When a rule fails, go-server answers with an error frame instead. Here Go asked to close the dates vote after it had already closed:
+When a rule fails, the server answers with an error frame instead. Here Go asked to close the dates vote after it had already closed:
 
 <!-- schema: SocketError -->
 ```json
@@ -74,13 +74,13 @@ When a rule fails, go-server answers with an error frame instead. Here Go asked 
 }
 ```
 
-The rest of this page shows only the `params` and the `result` of each method. `typing` is the only notification on the socket, in either direction: it has no `id`, and go-server sends nothing back (see [`typing`](#typing-show-go-is-typing)).
+The rest of this page shows only the `params` and the `result` of each method. `typing` is the only notification on the socket, in either direction: it has no `id`, and the server sends nothing back (see [`typing`](#typing-show-go-is-typing)).
 
 Good to know:
-- go-server signed the socket once, when it opened it (see [Connecting](02-the-socket.md#connecting)). The frames on it carry no signature.
+- The server signed the socket once, when it opened it (see [Connecting](02-the-socket.md#connecting)). The frames on it carry no signature.
 - Answer every request with the `id` of the frame it came in, even when the same `id` arrives twice.
 - go-brain may send several requests before the first is answered, and the answers may go back in any order. The `id` matches each answer to its request.
-- More than one go-server instance may have a socket open. go-brain sends each request on one of them, so every instance must be able to answer any request from the shared database.
+- More than one server instance may have a socket open. go-brain sends each request on one of them, so every instance must be able to answer any request from the shared database.
 
 ## Rules for every request
 
@@ -88,7 +88,7 @@ These rules apply to all 18 methods. Each method's own section adds the rules th
 
 | Rule | If it fails |
 |---|---|
-| go-server knows the method. | `-32601` (unknown method). Go skips that request. |
+| The server knows the method. | `-32601` (unknown method). Go skips that request. |
 | The params match the contract. The error message names the field. | `422` `invalid` |
 | The trip exists. The thing the request acts on (the vote to close, the line or booking to change, the card to replace, the message to react to, the approval to cancel) exists in this trip. | `404` `not_found` |
 | Every other id in the params belongs to this trip: a person who is in the trip now, or a message, vote or booking of this trip. The error message names the field. | `422` `invalid` |
@@ -98,7 +98,7 @@ These rules apply to all 18 methods. Each method's own section adds the rules th
 An error is a `SocketError` frame. `error.code` is the number in the table, `error.data.code` is its name (`not_found`, `invalid`, `conflict`), and `error.message` says what went wrong in plain words, up to 500 characters. The [error table in Basics](01-basics.md#errors) lists every code and whether it is worth sending the request again.
 
 Good to know:
-- go-server answers every request within 2 seconds. When it cannot, it answers `429` `rate_limited`, `500` `internal` or `503` `unavailable`. With a `429`, put how many seconds Go should wait in `error.data.retry_after_seconds`.
+- The server answers every request within 2 seconds. When it cannot, it answers `429` `rate_limited`, `500` `internal` or `503` `unavailable`. With a `429`, put how many seconds Go should wait in `error.data.retry_after_seconds`.
 - go-brain sends a request again after a timeout, a `500` or a `503`, up to three times, after 0.5, 2 and 5 seconds, because someone in the room is waiting. After a `429` it waits `retry_after_seconds` first.
 - Ignore fields you do not know, and treat `null` the same as a missing field.
 - A person who left the trip is no longer "in the trip" for these rules.
@@ -106,14 +106,14 @@ Good to know:
 
 ## Doing each write once
 
-Every write carries a `request_id` that go-brain makes, so go-server can do the write once even when the request arrives twice. go-brain makes a new `request_id` for every new write, and sends the same one again only when it sends that same write again. That happens in two ways:
+Every write carries a `request_id` that go-brain makes, so the server can do the write once even when the request arrives twice. go-brain makes a new `request_id` for every new write, and sends the same one again only when it sends that same write again. That happens in two ways:
 
 - go-brain got no answer in time, or an error worth retrying, and sends the write again with the same `request_id`.
 - The socket closed before the answer arrived. After the reconnect, go-brain sends the same request again, with the same JSON-RPC `id` and the same `request_id` (see [When the socket drops](02-the-socket.md#when-the-socket-drops)).
 
 The reads (`read_trip` and `read_messages`), `replace_card` and `typing` have no `request_id`, because doing them twice does no harm.
 
-go-server must do three things:
+The server must do three things:
 
 1. Store the `request_id` in the same transaction as the change, with a unique index on `(trip_id, request_id)`, together with the answer it sent.
 2. When a `request_id` arrives that it already has, do nothing new and answer with the stored answer, including the same ids and the same `seq`.
@@ -131,7 +131,7 @@ create table brain_requests (
 );
 ```
 
-This helper runs a write in one transaction, stores its answer, and answers a repeat with the first answer. The minimal go-server at the end of this page uses it.
+This helper runs a write in one transaction, stores its answer, and answers a repeat with the first answer. The minimal server at the end of this page uses it.
 
 **TypeScript**
 
@@ -213,13 +213,13 @@ async def once(
 Good to know:
 - Only successful answers are stored. A write that was refused rolled back and left nothing behind, so a repeat of it is checked again.
 - A denied spend approval is a successful answer (a `result` with `"status": "denied"`), so a repeat gets the same denial. go-brain uses a new `request_id` when it asks again.
-- Two copies can arrive at the same moment, for example when a request sent again after a reconnect reaches a second go-server instance while the first is still working on it. The second copy waits on the trip's row lock (taken when the change number goes up), then hits the unique index after the first commits. Its change number goes back with the rollback, so no number is skipped.
+- Two copies can arrive at the same moment, for example when a request sent again after a reconnect reaches a second server instance while the first is still working on it. The second copy waits on the trip's row lock (taken when the change number goes up), then hits the unique index after the first commits. Its change number goes back with the rollback, so no number is skipped.
 
 ## What each write answers, and its event
 
-Every write that changes the trip adds one to the trip's change number, answers with that new `seq`, and sends the event for the change with the same `seq`. Go's own writes come back to go-brain as events (`send_event` requests), exactly like the changes people make, so go-brain sees every change in `seq` order. How go-server sends events is in [Events](03-events.md).
+Every write that changes the trip adds one to the trip's change number, answers with that new `seq`, and sends the event for the change with the same `seq`. Go's own writes come back to go-brain as events (`send_event` requests), exactly like the changes people make, so go-brain sees every change in `seq` order. How the server sends events is in [Events](03-events.md).
 
-| Method | Result | Event go-server sends |
+| Method | Result | Event the server sends |
 |---|---|---|
 | `read_trip`, `read_messages` | `TripSnapshot`, `MessagesPage` | None. A read changes nothing. |
 | `post_message` | `PostMessageResult` | `message.created` |
@@ -653,7 +653,7 @@ The result is the trip snapshot. Here is the Goa trip in the middle of planning,
 }
 ```
 
-What go-server leaves out of the snapshot:
+What the server leaves out of the snapshot:
 - **Budget answers.** `budget` holds only the lowest band anyone picked and how many people answered. Never anyone's own answer, and never who picked what.
 - **Contact details.** No phone numbers, emails or UPI ids. `has_upi` says only whether someone has a UPI id saved, so Go can suggest paying them back by UPI.
 - **Who voted for what in an anonymous vote.** An anonymous vote has no `votes` list, only `voted`, `of` and `tally`.
@@ -668,7 +668,7 @@ Good to know:
 - `record` holds every line, including done and undone ones, so Go does not write again a line someone undid.
 - Messages are not in the snapshot. Go reads them with `read_messages`.
 - Go reads every active trip once a minute, so keep this request cheap.
-- go-brain's fake go-server answers with this snapshot (see [Build and test](10-build-and-test.md)).
+- go-brain's fake server answers with this snapshot (see [Build and test](10-build-and-test.md)).
 
 ### `read_messages`: read the messages posted or changed after a change number
 
@@ -728,7 +728,7 @@ Here Priya posted at change 47 and Arjun at change 48. Meher then put a 👍 on 
 }
 ```
 
-How go-server fills the page:
+How the server fills the page:
 - It returns the messages whose `updated_seq` is greater than `after_seq`, sorted by `updated_seq`, each one as it is now. In SQL: `select ... from messages where trip_id = $1 and updated_seq > $2 order by updated_seq limit $3 + 1`, where the one extra row tells you whether there are more.
 - Go's own messages are included, and so are Go's reactions, with `person_id` null.
 - A message from someone who paused Go is included with `"withheld": true`, no text, no attachments, `mentions_go` false, no `mentions` and no `about_message_id`.
@@ -828,7 +828,7 @@ The result:
 | `reply_to` | The message Go is answering, if any. |
 | `mentions` | People Go names in the text. Each one gets a push. |
 
-What go-server does:
+What the server does:
 1. Stores the message with Go as the author (`{"kind": "go"}`), the next change number as both `seq` and `updated_seq`, and the card exactly as it arrived.
 2. Sends `message.created` with the whole message.
 3. Shows the message in the room over the app's live connection. It appears whole: Go's replies are never streamed.
@@ -845,10 +845,10 @@ What go-server does:
 | The `card_id` is not already in this trip's room. To change a card, Go sends `replace_card`. | `409` `conflict` |
 
 Good to know:
-- Store the card as one JSON value, exactly as it arrived in the frame (`raw.card`, see [A minimal go-server](#a-minimal-go-server)), not rebuilt from your own columns or from the checked params. Then a field Go adds to a card later in version 1 reaches the app with no change to go-server.
+- Store the card as one JSON value, exactly as it arrived in the frame (`raw.card`, see [A minimal server](#a-minimal-server)), not rebuilt from your own columns or from the checked params. Then a field Go adds to a card later in version 1 reaches the app with no change to the server.
 - Send the pushes and the live update once, after the transaction commits, and not again for a repeated `request_id`.
 - `mentions_go` is `false` on Go's own messages.
-- go-server pins an open vote and a mandate waiting for its payer from its own rows, so Go leaves `for_person_ids` out of vote and mandate cards.
+- The server pins an open vote and a mandate waiting for its payer from its own rows, so Go leaves `for_person_ids` out of vote and mandate cards.
 
 ### `replace_card`: replace a card in place
 
@@ -884,7 +884,7 @@ The result names the message the card is on:
 { "message_id": "m_0161" }
 ```
 
-What go-server does:
+What the server does:
 - Finds Go's message that carries a card with this `card_id`, replaces the card on it, and shows the new version in the room over the app's live connection. The message keeps its place in the room.
 - Updates the "needs you" strip: people who are no longer in `for_person_ids` are unpinned, and people newly added are pinned. A replaced card is not a new card, so it sends no push.
 - Adds no change number and sends no event. Replacing a card is not a change to the trip.
@@ -900,11 +900,11 @@ Good to know:
 - Go keeps the card's `kind`. Something new is a new message.
 - The `BrainSocket` client checks the params before it calls your handler: `parseParams('replace_card', params)` in TypeScript and `METHODS["replace_card"].params.model_validate(params)` in Python. In Python, the checked `card` is the right card class for its `kind`.
 - Store the new card as one JSON value, exactly as it arrived in the frame (`raw.card`), as for `post_message`.
-- On a record card, only `for_person_ids` and `fallback_text` change what people see, because go-server draws the rest from its own rows.
+- On a record card, only `for_person_ids` and `fallback_text` change what people see, because the server draws the rest from its own rows.
 
 ### `typing`: show "Go is typing..."
 
-`typing` shows or hides "Go is typing..." in the room. Go turns it on when it starts working on an answer, and sends it again every 5 seconds while it works. It is a notification: the frame has no `id`, and go-server sends nothing back, not even an error.
+`typing` shows or hides "Go is typing..." in the room. Go turns it on when it starts working on an answer, and sends it again every 5 seconds while it works. It is a notification: the frame has no `id`, and the server sends nothing back, not even an error.
 
 The whole frame:
 
@@ -920,12 +920,12 @@ The params are a `GoTyping`:
 { "trip_id": "t_goa", "on": true }
 ```
 
-What go-server does:
+What the server does:
 - `"on": true` shows "Go is typing..." to everyone in the room for up to 10 seconds, or until Go's next message lands, whichever comes first.
 - `"on": false` hides it at once.
 - Stores nothing, adds no change number and sends no event.
 
-A notification is never answered, so a broken one gets no error frame. go-server drops it and logs it instead:
+A notification is never answered, so a broken one gets no error frame. The server drops it and logs it instead:
 
 | Rule | If it fails |
 |---|---|
@@ -938,7 +938,7 @@ Good to know:
 
 ## Reacting to messages
 
-Go reacts to a message the way a person does, with the author Go. A reaction from Go is a change to the trip like any other: it takes the trip's next change number, and go-server sends `reaction.added` or `reaction.removed` with the reaction's `person_id` null. Each author has at most one reaction per emoji on a message, and Go counts as one author.
+Go reacts to a message the way a person does, with the author Go. A reaction from Go is a change to the trip like any other: it takes the trip's next change number, and the server sends `reaction.added` or `reaction.removed` with the reaction's `person_id` null. Each author has at most one reaction per emoji on a message, and Go counts as one author.
 
 ### `add_reaction`: react to a message
 
@@ -958,7 +958,7 @@ The result is a `WriteResult`:
 { "seq": 53 }
 ```
 
-go-server then sends this event. The reaction's `person_id` is null, because Go reacted:
+The server then sends this event. The reaction's `person_id` is null, because Go reacted:
 
 <!-- schema: ReactionAdded -->
 ```json
@@ -975,7 +975,7 @@ go-server then sends this event. The reaction's `person_id` is null, because Go 
 }
 ```
 
-What go-server does:
+What the server does:
 1. Stores the reaction on the message with `person_id` null (Go reacted), and sets the message's `updated_seq` to the new change number.
 2. Sends `reaction.added` with the reaction.
 3. Shows the reaction in the room over the app's live connection, from Go. It sends no push.
@@ -1000,7 +1000,7 @@ Good to know:
 { "request_id": "rq_8e20b5", "trip_id": "t_goa", "message_id": "m_0122", "emoji": "✅" }
 ```
 
-The result is a `WriteResult` with the new change number. go-server removes Go's reaction, sets the message's `updated_seq` to the new change number, and sends `reaction.removed` with the reaction `{"emoji": "✅", "person_id": null}`.
+The result is a `WriteResult` with the new change number. The server removes Go's reaction, sets the message's `updated_seq` to the new change number, and sends `reaction.removed` with the reaction `{"emoji": "✅", "person_id": null}`.
 
 | Rule | If it fails |
 |---|---|
@@ -1032,7 +1032,7 @@ The params are an `UpdateTrip`. Only the fields sent change:
 }
 ```
 
-The result is a `WriteResult`, here `{"seq": 52}`. go-server sends `trip.updated` with `"changed": ["destination"]` and `"by": {"kind": "go"}`.
+The result is a `WriteResult`, here `{"seq": 52}`. The server sends `trip.updated` with `"changed": ["destination"]` and `"by": {"kind": "go"}`.
 
 | Rule | If it fails |
 |---|---|
@@ -1042,7 +1042,7 @@ The result is a `WriteResult`, here `{"seq": 52}`. go-server sends `trip.updated
 
 Good to know:
 - `itinerary` replaces the whole itinerary. To change one item, Go reads the trip, changes that item and sends every day back.
-- The trip's `status` and `budget` are not Go's to change, so they are not in these params. When someone answers the budget question, go-server sends `trip.updated` with `"changed": ["budget"]` and `by` system, never the person, so nobody's answer can be traced to them.
+- The trip's `status` and `budget` are not Go's to change, so they are not in these params. When someone answers the budget question, the server sends `trip.updated` with `"changed": ["budget"]` and `by` system, never the person, so nobody's answer can be traced to them.
 
 ## Votes and mandates
 
@@ -1114,7 +1114,7 @@ Then Go shows the vote in the room with `post_message`:
 }
 ```
 
-What go-server does:
+What the server does:
 1. Creates the vote with `status` `open`, no `opened_by_person_id` (Go opened it), `voted` 0, `of` set to the number of people in the trip, and a `tally` of zeros.
 2. Sends `decision.opened` with the vote and `"by": {"kind": "go"}`.
 3. Does not show the vote in the room yet. Go posts the message with the vote card next.
@@ -1128,7 +1128,7 @@ What go-server does:
 
 Good to know:
 - An anonymous vote shows totals only. Nobody sees who voted for what, including Go: `decision.voted` events and the snapshot leave out `person_id`, `option_index` and `votes`.
-- `option_ref` is Go's own reference for an option (such as an ixigo offer), so it can book the winner. go-server stores it and gives it back unchanged.
+- `option_ref` is Go's own reference for an option (such as an ixigo offer), so it can book the winner. The server stores it and gives it back unchanged.
 
 ### `close_vote`: close a vote now
 
@@ -1174,7 +1174,7 @@ The result is the vote as it is now:
 }
 ```
 
-What go-server does:
+What the server does:
 1. Sets `status` to `closed`, `closed_at` to now, and `result_index` to the option with the most votes. When nobody voted, or the top options tied, `result_index` stays empty and no decided line is written: Go asks the group to settle it, usually with a new vote between the tied options.
 2. Sends `decision.closed` with reason `closed_by_go`. The result's `seq` is this change.
 3. Writes a decided line in the trip record, with the winning option's label as its text ("6 to 9 Nov"), the vote's `decision_id`, and `source` `vote`. This is a second change, with its own `seq` (here 46) and its own `record.changed` event, `by` system.
@@ -1209,13 +1209,13 @@ The params are a `SetMandate`:
 
 The result is a `WriteResult`, here `{"seq": 72}`.
 
-What go-server does:
+What the server does:
 1. Stores the mandate on the vote, with `set_at` set to now.
 2. When the vote already had a mandate, replaces it and clears the payer's earlier yes or no (`confirmed_at` and `declined_at`). The payer must answer again.
 3. Sends `mandate.set` with the new mandate.
 4. Pins the mandate in the payer's "needs you" strip until they answer.
 
-The mandate card's "Yes, book it" and "Not now" buttons belong to go-server, because they are part of the spend check. go-server shows them to the payer only. When the payer taps one, go-server records `confirmed_at` or `declined_at` and sends `mandate.confirmed` or `mandate.declined`.
+The mandate card's "Yes, book it" and "Not now" buttons belong to the server, because they are part of the spend check. The server shows them to the payer only. When the payer taps one, the server records `confirmed_at` or `declined_at` and sends `mandate.confirmed` or `mandate.declined`.
 
 | Rule | If it fails |
 |---|---|
@@ -1227,7 +1227,7 @@ The mandate card's "Yes, book it" and "Not now" buttons belong to go-server, bec
 | `cap_minor` is more than zero. | `422` `invalid` |
 
 Good to know:
-- `choice_index` is usually the winning option, but go-server does not require it.
+- `choice_index` is usually the winning option, but the server does not require it.
 - Go replaces a mandate when the group allows something new, for example a higher cap after the price went up.
 
 ## The trip record
@@ -1266,7 +1266,7 @@ The result:
 { "line_id": "r_north", "seq": 51 }
 ```
 
-go-server stores the line with `status` `active` and `source` `go`, and sends `record.changed` with change `added` and `"by": {"kind": "go"}`.
+The server stores the line with `status` `active` and `source` `go`, and sends `record.changed` with change `added` and `"by": {"kind": "go"}`.
 
 | Rule | If it fails |
 |---|---|
@@ -1290,7 +1290,7 @@ The params are an `UpdateRecordLine`. Only the fields sent change:
 { "request_id": "rq_9d4c17", "trip_id": "t_goa", "line_id": "r_cab", "status": "done" }
 ```
 
-The result is a `WriteResult`, here `{"seq": 113}`. go-server sends `record.changed` with change `done`, because `status` became `done`. Any other change sends change `updated`.
+The result is a `WriteResult`, here `{"seq": 113}`. The server sends `record.changed` with change `done`, because `status` became `done`. Any other change sends change `updated`.
 
 | Rule | If it fails |
 |---|---|
@@ -1347,11 +1347,11 @@ The result:
 { "booking_id": "b_villa", "seq": 76 }
 ```
 
-What go-server does:
+What the server does:
 1. With an `approval_id`, checks the spend approval (see the rules below) and marks it used, in the same transaction as the booking.
 2. Stores the booking with `status` `confirmed` and no `added_by_person_id` (Go added it).
 3. Sends `booking.changed` with change `added` and `"by": {"kind": "go"}`. The result's `seq` is this change.
-4. Writes the booked line in the trip record, with the booking's title as its text, its `booking_id`, and `source` `booking`. When the booking has a `decision_id` and that vote already has a decided line, go-server turns that line into the booked line (same `line_id`) instead of adding a second one. This is a second change, with its own `seq` (here 77) and its own `record.changed` event, `by` system.
+4. Writes the booked line in the trip record, with the booking's title as its text, its `booking_id`, and `source` `booking`. When the booking has a `decision_id` and that vote already has a decided line, the server turns that line into the booked line (same `line_id`) instead of adding a second one. This is a second change, with its own `seq` (here 77) and its own `record.changed` event, `by` system.
 
 After this, Go records the expense with `add_expense`, posts a ticket card, and replaces the pay card with its paid version.
 
@@ -1365,7 +1365,7 @@ After this, Go records the expense with `add_expense`, posts a ticket card, and 
 | With an `approval_id`: `amount_minor` is no more than the approved amount, in the same currency. | `409` `conflict` |
 
 Good to know:
-- go-server does not refuse a booking because its approval has expired since. The vault checked the expiry before paying, and recording the booking can come a little later.
+- The server does not refuse a booking because its approval has expired since. The vault checked the expiry before paying, and recording the booking can come a little later.
 - A repeated `request_id` gets the first answer before any rule runs, so a repeat after the approval was marked used still gets `b_villa` back.
 - [Money and the vault](08-money-and-the-vault.md#marking-an-approval-used) has the code for these checks.
 
@@ -1380,7 +1380,7 @@ The params are an `UpdateBooking`. Only the fields sent change:
 { "request_id": "rq_b37f08", "trip_id": "t_goa", "booking_id": "b_villa", "ends_at": "2026-11-09T13:00:00+05:30" }
 ```
 
-The result is a `WriteResult`, here `{"seq": 117}`. go-server sends `booking.changed` with change `cancelled` when `status` is `cancelled`, and change `updated` otherwise.
+The result is a `WriteResult`, here `{"seq": 117}`. The server sends `booking.changed` with change `cancelled` when `status` is `cancelled`, and change `updated` otherwise.
 
 | Rule | If it fails |
 |---|---|
@@ -1419,7 +1419,7 @@ The result:
 { "expense_id": "e_villa", "seq": 78 }
 ```
 
-go-server stores the expense with no `added_by_person_id` (Go added it), works out the trip's money again (what was spent, by category, and the transfers that square everyone up), and sends `expense.changed` with change `added` and `"by": {"kind": "go"}`.
+The server stores the expense with no `added_by_person_id` (Go added it), works out the trip's money again (what was spent, by category, and the transfers that square everyone up), and sends `expense.changed` with change `added` and `"by": {"kind": "go"}`.
 
 | Rule | If it fails |
 |---|---|
@@ -1428,7 +1428,7 @@ go-server stores the expense with no `added_by_person_id` (Go added it), works o
 | `amount_minor` is more than zero. | `422` `invalid` |
 
 Good to know:
-- go-server does all the money maths: shares, totals and the fewest transfers. Go reads the result from `money` in the snapshot and never works it out itself.
+- The server does all the money maths: shares, totals and the fewest transfers. Go reads the result from `money` in the snapshot and never works it out itself.
 - People add expenses in the app too, like Kabir's airport cab (`e_cab`). go-brain gets those as `expense.changed` with `by` that person.
 - Go cannot remove an expense. People can, in the app, and go-brain then gets `expense.changed` with change `removed`.
 
@@ -1436,16 +1436,16 @@ Good to know:
 
 ### `request_spend_approval`: ask whether a payment may happen
 
-`request_spend_approval` asks go-server whether a payment may happen. go-server runs the spend check, and answers with either a signed, one-use spend approval for the vault or the reason it said no. Go sends it after the payer taps "Yes, book it" on the mandate card and Go has checked the price again, just before it asks the payer to approve the payment.
+`request_spend_approval` asks the server whether a payment may happen. The server runs the spend check, and answers with either a signed, one-use spend approval for the vault or the reason it said no. Go sends it after the payer taps "Yes, book it" on the mandate card and Go has checked the price again, just before it asks the payer to approve the payment.
 
 This is where the request sits in a payment:
 
 1. A vote closes. Go sets the mandate and posts a mandate card.
-2. The payer taps "Yes, book it". go-server sends `mandate.confirmed`.
+2. The payer taps "Yes, book it". The server sends `mandate.confirmed`.
 3. Go checks the price again and sends `request_spend_approval`.
-4. go-server runs the spend check, signs a spend approval that expires within 10 minutes, and answers.
+4. The server runs the spend check, signs a spend approval that expires within 10 minutes, and answers.
 5. Go posts a pay card for the payer. The payer taps Approve, opens the vault page, and confirms with Face ID. The vault checks the spend approval and pays once.
-6. Go records the booking with the `approval_id` (go-server marks the approval used), records the expense, posts a ticket card, and replaces the pay card with its paid version.
+6. Go records the booking with the `approval_id` (the server marks the approval used), records the expense, posts a ticket card, and replaces the pay card with its paid version.
 
 The params are a `RequestSpendApproval`:
 
@@ -1473,14 +1473,14 @@ The params are a `RequestSpendApproval`:
 
 #### The approved result
 
-When every check passes, go-server answers with the spend approval:
+When every check passes, the server answers with the spend approval:
 
 <!-- schema: SpendApproved -->
 ```json
 {
   "status": "approved",
   "approval_id": "ap_01JA7Q3V8Z",
-  "approval": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJnby1zZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.uOn0wEqlkBkyNufXJyg3Ot6Kds-8Srk-mouvt-br3IK_k7AxFro7k-Q0WgqocuAtYFEvo4c9L9Az-Yzo7U5KBQ",
+  "approval": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.4IgC3Z2cNbWalezid833WDOIBoZoLeAuZhSbErpEFpE8qk-TI_yNIcyNcpX-UeHs856OFBbN6len1I9928SqDQ",
   "expires_at": "2026-10-05T09:10:00Z"
 }
 ```
@@ -1491,9 +1491,9 @@ When every check passes, go-server answers with the spend approval:
 | `approval` | The signed token. go-brain hands it to the vault, which checks it before paying. |
 | `expires_at` | When the approval stops working: the token's `exp`, at most 10 minutes after it was signed. |
 
-To make the approval, go-server:
+To make the approval, the server:
 1. Makes a new approval id of 8 to 64 characters.
-2. Signs these claims with `GO_SPEND_PRIVATE_KEY`: `iss` `"go-server"`, `aud` `"go-brain-vault"`, `jti` (the new approval id), `trip_id`, `decision_id`, `payer_person_id` (always the mandate's payer), `amount_minor`, `currency`, `merchant`, `purpose`, `refundable_until`, `iat` (now, in Unix seconds) and `exp` (at most `iat` plus 600).
+2. Signs these claims with `GO_SPEND_PRIVATE_KEY`: `iss` `"server"`, `aud` `"go-brain-vault"`, `jti` (the new approval id), `trip_id`, `decision_id`, `payer_person_id` (always the mandate's payer), `amount_minor`, `currency`, `merchant`, `purpose`, `refundable_until`, `iat` (now, in Unix seconds) and `exp` (at most `iat` plus 600).
 3. Stores the approval: its id, the trip, the vote, the payer, the amount and currency, when it expires, and that it is neither used nor cancelled yet.
 4. Answers with `approved`.
 
@@ -1501,14 +1501,14 @@ To make the approval, go-server:
 
 #### The denied result
 
-When a check fails, go-server answers with a result, not an error, that gives the reason. It signs nothing:
+When a check fails, the server answers with a result, not an error, that gives the reason. It signs nothing:
 
 <!-- schema: SpendDenied -->
 ```json
 { "status": "denied", "reason": "over_cap", "detail": "5640000 INR is above the cap of 5500000 INR" }
 ```
 
-go-server runs the checks in this order and answers with the first one that fails. `detail` is optional plain words for the logs, up to 200 characters.
+The server runs the checks in this order and answers with the first one that fails. `detail` is optional plain words for the logs, up to 200 characters.
 
 | `reason` | What it means |
 |---|---|
@@ -1533,7 +1533,7 @@ Good to know:
 - A repeat of the same `request_id` gets the same result, approved or denied, with the same token. After a denial, go-brain uses a new `request_id` when it asks again.
 - While one approval for a vote is outstanding, asking again is denied with `approval_outstanding`. That clears when the approval is used, cancelled, or expires (at most 10 minutes later).
 - The payer in the token is always the mandate's payer. The request cannot choose who pays.
-- An approval is used once. The vault refuses a second payment with the same `jti`, and go-server marks it used when Go records the booking.
+- An approval is used once. The vault refuses a second payment with the same `jti`, and the server marks it used when Go records the booking.
 
 ### `cancel_spend_approval`: release an approval Go will not use
 
@@ -1561,7 +1561,7 @@ The result:
 { "ok": true }
 ```
 
-go-server stores the time on the approval (`cancelled_at`). From then on, a booking that names the approval is refused with `409` `conflict`, and the spend check no longer counts it as outstanding.
+The server stores the time on the approval (`cancelled_at`). From then on, a booking that names the approval is refused with `409` `conflict`, and the spend check no longer counts it as outstanding.
 
 | Rule | If it fails |
 |---|---|
@@ -1570,11 +1570,11 @@ go-server stores the time on the approval (`cancelled_at`). From then on, a book
 Good to know:
 - Cancelling is not a change to the trip, so it adds no change number and sends no event.
 - Cancelling an approval that is already used, cancelled or expired still answers `{"ok": true}` and changes nothing, so sending it again is always safe.
-- A cancelled approval can never be used again. go-server refuses a booking that names it, and go-brain's vault refuses it too.
+- A cancelled approval can never be used again. The server refuses a booking that names it, and go-brain's vault refuses it too.
 
-## A minimal go-server
+## A minimal server
 
-This section shows the smallest go-server that answers two of Go's requests correctly: `post_message` and `open_vote`. Use it as the starting shape for all of them. It plugs into the `BrainSocket` client from [The socket](02-the-socket.md#a-complete-client-for-go-server), which go-server keeps connected to go-brain. You give the client a `handlers` table that maps each of Go's methods to a function.
+This section shows the smallest server that answers two of Go's requests correctly: `post_message` and `open_vote`. Use it as the starting shape for all of them. It plugs into the `BrainSocket` client from [The socket](02-the-socket.md#a-complete-client-for-the-server), which the server keeps connected to go-brain. You give the client a `handlers` table that maps each of Go's methods to a function.
 
 For every request frame, the client does the same four things:
 
@@ -1587,7 +1587,7 @@ Read and check everything through `params`. Use `raw` only to store a card exact
 
 Each handler below runs its rules, does the write once per `request_id`, and in one transaction adds one to the trip's change number, writes the change and writes the event to the outbox. The sender that sends those events to go-brain as `send_event` requests is in [Events](03-events.md).
 
-The examples use Postgres: `pg` in TypeScript and `psycopg` in Python. Any database with transactions and unique indexes works. Besides `brain_requests` from [Doing each write once](#doing-each-write-once) and the `outbox` table from [Events](03-events.md), the skeleton needs these tables (a real go-server has more columns):
+The examples use Postgres: `pg` in TypeScript and `psycopg` in Python. Any database with transactions and unique indexes works. Besides `brain_requests` from [Doing each write once](#doing-each-write-once) and the `outbox` table from [Events](03-events.md), the skeleton needs these tables (a real server has more columns):
 
 ```sql
 create table trips (
@@ -1633,7 +1633,7 @@ create table decisions (
 **TypeScript**
 
 ```ts
-// brain.ts: the one socket go-server keeps open to go-brain, answering two of Go's requests.
+// brain.ts: the one socket the server keeps open to go-brain, answering two of Go's requests.
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import type { z } from 'zod';
@@ -1729,7 +1729,7 @@ brain.start();
 **Python**
 
 ```python
-# brain.py: the one socket go-server keeps open to go-brain, answering two of Go's requests.
+# brain.py: the one socket the server keeps open to go-brain, answering two of Go's requests.
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -1861,6 +1861,6 @@ Good to know:
 - Add one to `seq` first in every write. The update locks the trip's row until the transaction commits, so every rule checked after it sees a trip nobody else is changing, and one trip's changes commit in `seq` order.
 - If any rule fails, the error rolls back the whole transaction: the change, the new `seq`, the event and the stored answer.
 - The other writes have the same shape: run the rules, `once`, add one to `seq`, write the change, write the event, return the result. The two reads need no `once` and no change number. The `typing` handler shows or hides the indicator and returns nothing, because a notification gets no answer.
-- The card is stored from `raw.card`, exactly as Go sent it, because the checked `params` leave out any field your copy of the contract does not know yet. A card field Go adds later in version 1 then reaches the app with no go-server update. Everything else, including every rule, reads `params`.
+- The card is stored from `raw.card`, exactly as Go sent it, because the checked `params` leave out any field your copy of the contract does not know yet. A card field Go adds later in version 1 then reaches the app with no server update. Everything else, including every rule, reads `params`.
 - Send pushes and the live update to the app after the transaction commits, from the committed rows (the outbox is a good place), so a repeated request never pushes twice.
 - Keep the handlers quick. go-brain waits at most 2 seconds for each answer, and someone in the room is usually waiting too.

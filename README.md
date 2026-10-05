@@ -7,14 +7,14 @@ Three repos, one product:
 | Repo | Who | What |
 |---|---|---|
 | **go-brain** (this one) | Keshav's team | Go itself: its brain, memory, hands, bookings and the vault. It publishes the contract below. |
-| go-server | Nishanth's team | Everything about a trip and its database: people, the room, votes, the trip record, bookings, money, the spend check. |
+| server | Nishanth's team | Everything about a trip and its database: people, the room, votes, the trip record, bookings, money, the spend check. |
 | go-app | Saket's team | The app people use. |
 
 All three teams are the Vestra team.
 
 ## What lives here
 
-- `docs/guide`: **start here.** The guide to the contract between the app, go-server and go-brain, in plain
+- `docs/guide`: **start here.** The guide to the contract between the app, the server and go-brain, in plain
   words, with TypeScript and Python for every piece.
 - `packages/contract`: the contract in zod (the source of truth), with `openapi/go-brain.json`,
   `asyncapi/socket.json` and `socket/methods.json` generated from it, the socket signing and spend approval

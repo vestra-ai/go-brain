@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
 /**
- * Ids are opaque strings. go-server mints trip, person, message, decision, booking, expense and
+ * Ids are opaque strings. The server mints trip, person, message, decision, booking, expense and
  * record line ids. go-brain mints card, task, call, approval-request and fact ids.
  */
 export const Id = z.string().min(1).max(64);
 
 /**
- * The trip's change number. go-server adds one for every change it makes to a trip (a message, a
+ * The trip's change number. The server adds one for every change it makes to a trip (a message, a
  * reaction, a vote, a booking...) and stamps it on the event it sends. go-brain uses it to notice
  * a missed event: if it holds 41 and receives 43, it reads the trip again.
  */
@@ -31,14 +31,14 @@ export const Category = z
   .enum(['stay', 'food', 'getting_around', 'activities', 'other'])
   .meta({ id: 'Category', description: 'The spending category. The app colours: stay blue, food orange, getting around green, activities yellow.' });
 
-/** Who did something: a person, Go, or go-server itself. */
+/** Who did something: a person, Go, or the server itself. */
 export const Actor = z
   .discriminatedUnion('kind', [
     z.object({ kind: z.literal('person'), person_id: Id }).meta({ id: 'PersonActor' }),
     z.object({ kind: z.literal('go') }).meta({ id: 'GoActor' }),
     z.object({ kind: z.literal('system') }).meta({ id: 'SystemActor' }),
   ])
-  .meta({ id: 'Actor', discriminator: { propertyName: 'kind' }, description: 'Who did it: a person, Go, or go-server itself (system).' });
+  .meta({ id: 'Actor', discriminator: { propertyName: 'kind' }, description: 'Who did it: a person, Go, or the server itself (system).' });
 export type Actor = z.infer<typeof Actor>;
 
 /** A place, as Go found it. `place_id` is a Google Places id when Go has one. */

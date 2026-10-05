@@ -1,6 +1,6 @@
 # Cards
 
-A card is something richer than text that Go posts in the room inside one of its messages: a vote, flights with prices, a ticket, a live phone call, a payment to approve. This page describes all 13 kinds of card, what the app draws for each one, and its buttons. The app team needs it to draw cards, and the go-server team needs it to store cards, draw record cards from its own rows, and handle their buttons.
+A card is something richer than text that Go posts in the room inside one of its messages: a vote, flights with prices, a ticket, a live phone call, a payment to approve. This page describes all 13 kinds of card, what the app draws for each one, and its buttons. The app team needs it to draw cards, and the server team needs it to store cards, draw record cards from its own rows, and handle their buttons.
 
 | Kind | Family | What it shows |
 |---|---|---|
@@ -20,7 +20,7 @@ A card is something richer than text that Go posts in the room inside one of its
 
 ## How a card travels
 
-Go posts a card as the `card` of one of its messages, by sending go-server a `post_message` request on the socket (see [Go's requests](04-gos-requests.md)). The same JSON travels unchanged from go-brain through go-server to the app. go-server stores the card on the message exactly as it arrived and sends it to the app the same way. It never rewrites a card, so a field added to a card later in version 1 reaches the app without any change in go-server.
+Go posts a card as the `card` of one of its messages, by sending the server a `post_message` request on the socket (see [Go's requests](04-gos-requests.md)). The same JSON travels unchanged from go-brain through the server to the app. The server stores the card on the message exactly as it arrived and sends it to the app the same way. It never rewrites a card, so a field added to a card later in version 1 reaches the app without any change in the server.
 
 To do that, a `post_message` handler stores `raw.card` as one JSON value (for example a `jsonb` column), not the card from the checked params. Every handler gets two arguments, `(params, raw)` (see [The socket](02-the-socket.md)). `params` has been checked against the contract, and checking leaves out any field your copy of the contract does not know yet. `raw` is the frame's params exactly as they arrived, so `raw.card` still has every field Go sent. The card also comes back to go-brain inside the `message.created` event, like every other message.
 
@@ -32,17 +32,17 @@ Every card belongs to one of two families. The family decides where the app gets
 |---|---|---|
 | Kinds | `vote`, `mandate`, `ticket`, `expense`, `settle_up`, `day`, `plan`, `budget` | `options`, `working`, `call`, `pay`, `notice` |
 | What the card carries | Its kind and an id (such as `decision_id` or `booking_id`), plus the fields every card has | Everything to show, plus its buttons in `actions` |
-| What the app draws from | go-server's own rows: the vote, the booking, the expense, the trip's money and itinerary | The card itself |
-| Who handles the buttons | go-server | go-brain, through go-server |
+| What the app draws from | The server's own rows: the vote, the booking, the expense, the trip's money and itinerary | The card itself |
+| Who handles the buttons | server | go-brain, through the server |
 | How it changes | It always shows the row as it is now. When a vote comes in, the vote card in the room shows the new tally without a new message. | Go replaces it in place with a `replace_card` request. |
 
-Record cards are drawn from go-server's rows so that the room and the Trip screens never disagree. A ticket in the room and the same booking on the Trip screen are the same row.
+Record cards are drawn from the server's rows so that the room and the Trip screens never disagree. A ticket in the room and the same booking on the Trip screen are the same row.
 
 ## Fields every card has
 
 Every card, in both families, has these fields.
 
-| Field | What it is | What go-server does with it |
+| Field | What it is | What the server does with it |
 |---|---|---|
 | `card_id` | Go's id for the card, unique within the trip's room. | Stores it with the message. `replace_card` finds the card by this id. |
 | `kind` | One of the 13 kinds on this page. | Nothing. The app uses it to choose how to draw the card. |
@@ -52,12 +52,12 @@ Every card, in both families, has these fields.
 Go removes people from `for_person_ids` with `replace_card` once they have nothing left to do, which takes the card out of their strip. [The app](07-the-app.md#the-needs-you-strip) explains the strip.
 
 Good to know:
-- Go leaves `for_person_ids` out of vote and mandate cards. go-server already pins an open vote for everyone who has not voted, and a mandate for its payer until they answer, from its own rows.
+- Go leaves `for_person_ids` out of vote and mandate cards. The server already pins an open vote for everyone who has not voted, and a mandate for its payer until they answer, from its own rows.
 - Write `fallback_text` so it works on its own as a push: who, what, and what to do.
 
 ## Buttons on Go cards
 
-Go cards carry their buttons in `actions`, at most three per card. A tap goes from the app to go-server, which sends it to go-brain as a `card_tap` request on the socket and returns go-brain's answer to the app. Buttons on record cards never reach go-brain: go-server handles them itself.
+Go cards carry their buttons in `actions`, at most three per card. A tap goes from the app to the server, which sends it to go-brain as a `card_tap` request on the socket and returns go-brain's answer to the app. Buttons on record cards never reach go-brain: the server handles them itself.
 
 | Field | What it is |
 |---|---|
@@ -69,14 +69,14 @@ Go cards carry their buttons in `actions`, at most three per card. A tap goes fr
 
 When someone taps a button:
 
-1. The app sends go-server the card, the `action_id`, and the `option_id` when the button was on one option.
-2. go-server sends go-brain a `card_tap` request with a new `tap_id` for this tap, the trip, the card, the `action_id`, the person who tapped and, when there is one, the `option_id`. go-brain acts on each `tap_id` once, even if the tap arrives twice.
-3. go-brain answers within 3 seconds with one of three results, and go-server passes it to the app:
+1. The app sends the server the card, the `action_id`, and the `option_id` when the button was on one option.
+2. The server sends go-brain a `card_tap` request with a new `tap_id` for this tap, the trip, the card, the `action_id`, the person who tapped and, when there is one, the `option_id`. go-brain acts on each `tap_id` once, even if the tap arrives twice.
+3. go-brain answers within 3 seconds with one of three results, and the server passes it to the app:
    - `done`: show the `toast`, if there is one. Go follows up in the room, or updates the card in place.
    - `open`: open the `url` straight away in the system browser sheet, never in a WebView. This is how the vault page and the page for watching Go work open.
    - `refused`: show the `toast`. Nothing changed.
 
-Kabir taps "I'll take this" on the IndiGo 6E 2134 flight, so go-server sends go-brain this `card_tap`:
+Kabir taps "I'll take this" on the IndiGo 6E 2134 flight, so the server sends go-brain this `card_tap`:
 
 <!-- schema: CardTap -->
 ```json
@@ -110,7 +110,7 @@ Good to know:
 
 ## Updating a card in place
 
-Go updates a card by sending go-server a `replace_card` request with the trip and the whole new card, with the same `card_id`. go-server swaps the card on its message for `raw.card`, the new card exactly as it arrived, and sends it to the app over the live connection. The app replaces the card and leaves the message where it is in the room.
+Go updates a card by sending the server a `replace_card` request with the trip and the whole new card, with the same `card_id`. The server swaps the card on its message for `raw.card`, the new card exactly as it arrived, and sends it to the app over the live connection. The app replaces the card and leaves the message where it is in the room.
 
 Go updates a live call as it moves from dialing to talking to ended, a working task as its steps finish, and a pay card as it moves to paid. It also uses `replace_card` to take people out of `for_person_ids`. A card update is not a change to the trip: it takes no change number, sends no event and sends no push. [Go's requests](04-gos-requests.md) has the rules.
 
@@ -144,7 +144,7 @@ Here Go finished its search for villas, so it replaces the working card from [Wo
 
 Every image on a card (`image_url`, `logo_url`, `screenshot_url` and a place's `photo_url`) is an `https` URL served from go-brain's image cache, such as `https://brain.go.example/img/villa-sol.jpg`. An image URL never changes what it shows, so the app can cache it for the life of the trip. A new screenshot of Go's work always has a new URL.
 
-People's photos are not on cards. They come from go-server, on each person (`https://cdn.go.example/people/p_rahul.jpg`).
+People's photos are not on cards. They come from the server, on each person (`https://cdn.go.example/people/p_rahul.jpg`).
 
 ## A card kind the app does not know
 
@@ -164,13 +164,13 @@ The itinerary, expenses and the budget share one set of spending categories. Dra
 
 ## Record cards
 
-go-server draws these eight kinds from its own rows. The card carries only the id of the row, so the examples are short.
+The server draws these eight kinds from its own rows. The card carries only the id of the row, so the examples are short.
 
 ### Vote
 
 A vote card shows a vote and lets people vote on it. Go posts one with `post_message` right after it opens the vote with `open_vote`.
 
-go-server draws it from the vote's row:
+The server draws it from the vote's row:
 - The question at the top, and when it closes ("Closes at 6 pm", or "Closes in 2 h" near the end).
 - One row per option, with its photo (`image_url`) when there is one, its label, its price with the currency when there is one, and its note.
 - Under each option, a bar for its share of the tally, and the faces of the people who voted for it.
@@ -178,7 +178,7 @@ go-server draws it from the vote's row:
 
 For an anonymous vote, show the totals only, never faces, to anyone. When the vote closes, highlight the winner with the result ("Villa Sol won, 4 to 1") and remove the vote buttons. When it was called off, show it greyed out as "Called off".
 
-**Buttons.** Each option is a vote button, owned by go-server. A tap records the person's vote (a tap on another option changes it), and go-server sends `decision.voted`. The buttons go away when the vote closes or is called off.
+**Buttons.** Each option is a vote button, owned by the server. A tap records the person's vote (a tap on another option changes it), and the server sends `decision.voted`. The buttons go away when the vote closes or is called off.
 
 <!-- schema: VoteCard -->
 ```json
@@ -194,13 +194,13 @@ For an anonymous vote, show the totals only, never faces, to anyone. When the vo
 
 A mandate card shows what the group allowed for a spend after a vote, and asks the payer to say yes. Go posts it with the vote's result, right after it sets the mandate.
 
-go-server draws it from the vote's mandate:
+The server draws it from the vote's mandate:
 - The chosen option (`options[choice_index]`), with its photo and label: "Villa Sol".
 - The cap: "Up to ₹55,000".
 - "Refundable only", when `refundable_only` is true.
 - Who pays, with their face: "Rahul pays".
 
-**Buttons.** "Yes, book it" (primary) and "Not now" (secondary), shown to the payer only and owned by go-server, because they are part of the spend check. Everyone else sees "Waiting for Rahul" instead. When the payer taps one, go-server records `confirmed_at` or `declined_at` and sends `mandate.confirmed` or `mandate.declined`. After the answer, the card shows it ("Rahul said yes") in place of the buttons. When Go sets a new mandate on the same vote, both answers are cleared and the buttons come back. [Money and the vault](08-money-and-the-vault.md) explains the whole payment.
+**Buttons.** "Yes, book it" (primary) and "Not now" (secondary), shown to the payer only and owned by the server, because they are part of the spend check. Everyone else sees "Waiting for Rahul" instead. When the payer taps one, the server records `confirmed_at` or `declined_at` and sends `mandate.confirmed` or `mandate.declined`. After the answer, the card shows it ("Rahul said yes") in place of the buttons. When Go sets a new mandate on the same vote, both answers are cleared and the buttons come back. [Money and the vault](08-money-and-the-vault.md) explains the whole payment.
 
 <!-- schema: MandateCard -->
 ```json
@@ -216,7 +216,7 @@ go-server draws it from the vote's mandate:
 
 A ticket card shows a booking. Go posts one after it records a booking, and the same card works for bookings people add themselves.
 
-go-server draws it from the booking's row, in one of three shapes depending on the booking's `kind`:
+The server draws it from the booking's row, in one of three shapes depending on the booking's `kind`:
 
 | `kind` | Drawn as | What it shows |
 |---|---|---|
@@ -227,7 +227,7 @@ go-server draws it from the booking's row, in one of three shapes depending on t
 
 Every ticket also shows who it is for (their faces), the amount and who paid ("Rahul paid ₹54,200"), and "Free cancellation until Sun 1 Nov, 11:59 pm" when `refundable_until` is set and still ahead. A cancelled booking is drawn with a "Cancelled" stamp. Show times with the offset they carry, which is local time at the place.
 
-**Buttons.** The contract asks for none. go-server may add its own, such as opening the booking on the Trip screens.
+**Buttons.** The contract asks for none. The server may add its own, such as opening the booking on the Trip screens.
 
 <!-- schema: TicketCard -->
 ```json
@@ -243,7 +243,7 @@ Every ticket also shows who it is for (their faces), the amount and who paid ("R
 
 An expense card shows one thing someone paid for and how it is split. Go posts one when someone asks about an expense, such as Meher asking what she owes for the cab.
 
-go-server draws it from the expense's row: the note ("Airport cab") with a dot in the category's colour, the amount and who paid ("Kabir paid ₹3,400"), the faces of the people it is split between, and each person's share ("₹680 each").
+The server draws it from the expense's row: the note ("Airport cab") with a dot in the category's colour, the amount and who paid ("Kabir paid ₹3,400"), the faces of the people it is split between, and each person's share ("₹680 each").
 
 **Buttons.** The contract asks for none.
 
@@ -261,9 +261,9 @@ go-server draws it from the expense's row: the note ("Airport cab") with a dot i
 
 A settle up card shows who pays whom right now so that everyone is square. Go posts one when someone asks who owes what, or near the end of the trip.
 
-go-server draws it from the trip's money (`money.transfers`): one row per payment, with both faces and the amount, such as "Priya pays Rahul ₹11,520". It always shows the transfers as they are now, so it changes as expenses are added or removed. When there are no transfers, it shows "Everyone is square".
+The server draws it from the trip's money (`money.transfers`): one row per payment, with both faces and the amount, such as "Priya pays Rahul ₹11,520". It always shows the transfers as they are now, so it changes as expenses are added or removed. When there are no transfers, it shows "Everyone is square".
 
-**Buttons.** Each row has a UPI button, owned by go-server and shown to the person who pays, when the person being paid has a UPI id saved. It opens the payer's UPI app with the amount and the UPI id that go-server holds. go-brain never sees UPI ids.
+**Buttons.** Each row has a UPI button, owned by the server and shown to the person who pays, when the person being paid has a UPI id saved. It opens the payer's UPI app with the amount and the UPI id that the server holds. go-brain never sees UPI ids.
 
 <!-- schema: SettleUpCard -->
 ```json
@@ -278,7 +278,7 @@ go-server draws it from the trip's money (`money.transfers`): one row per paymen
 
 A day card shows one day of the itinerary. Go posts one when someone asks what is on for a day, or the evening before.
 
-go-server draws it from the itinerary day with the card's `date`:
+The server draws it from the itinerary day with the card's `date`:
 - The date ("Sat 7 Nov") and the day's title ("Meher's birthday").
 - The items in time order, each with its time, title, a dot in its category's colour, its place, and its note.
 - Each item's status: `booked` with a tick, `planned` as normal, and `idea` lighter, with an "idea" tag.
@@ -301,7 +301,7 @@ A tap on an item with a `booking_id` opens that booking's ticket. When the itine
 
 A plan card shows the whole itinerary, day by day. Go posts one when someone asks for the plan, or after Go changes several days at once.
 
-go-server draws it from the trip's itinerary: each day as a heading with its date and title, and under it each item's time, title and category colour, more compact than a day card. For a long trip, show the first days and a "See the whole plan" link to the Trip screens.
+The server draws it from the trip's itinerary: each day as a heading with its date and title, and under it each item's time, title and category colour, more compact than a day card. For a long trip, show the first days and a "See the whole plan" link to the Trip screens.
 
 **Buttons.** The contract asks for none.
 
@@ -318,7 +318,7 @@ go-server draws it from the trip's itinerary: each day as a heading with its dat
 
 A budget card shows what the group has spent against its plan, by category. Go posts one when someone asks how the money is going.
 
-go-server draws it from the trip's money:
+The server draws it from the trip's money:
 - A bar of what was spent (`spent_minor`) against the plan (`plan_minor`), split into the category colours from `by_category`.
 - The totals: "₹57,600 of ₹75,000".
 - One line per category, with its colour and amount.
@@ -528,7 +528,7 @@ And the same card once the call has ended:
 
 ### Pay
 
-A pay card shows a payment waiting for the payer to approve it. Go posts it after go-server signs a spend approval, and updates it in place when the payment is made, declined, expires or fails.
+A pay card shows a payment waiting for the payer to approve it. Go posts it after the server signs a spend approval, and updates it in place when the payment is made, declined, expires or fails.
 
 Draw it like this:
 - The amount, large: "₹54,200".

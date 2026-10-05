@@ -1,19 +1,19 @@
 # Basics
 
-This page covers the rules that every frame between go-server and go-brain follows: the settings each server needs, how ids, money and time are written, how each request is done only once, what errors look like, how long to wait for an answer, and when to send a request again. Read it before you write the first line of either server. [The socket](02-the-socket.md) builds on it.
+This page covers the rules that every frame between the server and go-brain follows: the settings each server needs, how ids, money and time are written, how each request is done only once, what errors look like, how long to wait for an answer, and when to send a request again. Read it before you write the first line of either server. [The socket](02-the-socket.md) builds on it.
 
 ## Addresses and secrets
 
-go-server needs go-brain's address and the signing secret, so it can open the socket. go-brain needs only the signing secret, to check the socket's signature. go-server also holds the private key it signs spend approvals with, and go-brain holds the matching public key.
+The server needs go-brain's address and the signing secret, so it can open the socket. go-brain needs only the signing secret, to check the socket's signature. The server also holds the private key it signs spend approvals with, and go-brain holds the matching public key.
 
-| Setting | go-server | go-brain | What it is |
+| Setting | server | go-brain | What it is |
 |---|---|---|---|
 | `BRAIN_URL` | yes | | go-brain's base URL, such as `https://brain.go.example`, with no path and no trailing slash. The socket is at the same host: `wss://brain.go.example/v1/socket`. |
 | `GO_SIGNING_SECRET` | yes | yes | The shared secret for the signature that opens the socket. 32 random bytes as hex. |
-| `GO_SPEND_PRIVATE_KEY` | yes | | go-server's Ed25519 private key (PEM), for signing spend approvals |
+| `GO_SPEND_PRIVATE_KEY` | yes | | The server's Ed25519 private key (PEM), for signing spend approvals |
 | `GO_SPEND_PUBLIC_KEY` | | yes | The matching public key (PEM), for checking them |
 
-go-brain has no setting for go-server's address, because it never calls go-server. Everything Go asks go-server travels on the socket that go-server opened.
+go-brain has no setting for the server's address, because it never calls the server. Everything Go asks the server travels on the socket that the server opened.
 
 Make the secret and the key pair like this:
 
@@ -29,7 +29,7 @@ Good to know:
 
 ## Signing
 
-go-server signs one request: the WebSocket upgrade that opens the socket (`GET /v1/socket`). It puts an `x-go-signature` header on it, made with `GO_SIGNING_SECRET` from the time, the method, the path and the (empty) body, and go-brain refuses the upgrade with `401` if the header is wrong or has been used before (go-brain accepts each signature once). Frames on the open socket are not signed one by one, because the socket itself was opened with the signature. [The socket](02-the-socket.md#connecting) shows how to make the header, with code, and [Proving your signing code](02-the-socket.md#proving-your-signing-code) has the test vectors. Spend approvals carry a signature of their own, made with the Ed25519 key, as [Money and the vault](08-money-and-the-vault.md) explains.
+The server signs one request: the WebSocket upgrade that opens the socket (`GET /v1/socket`). It puts an `x-go-signature` header on it, made with `GO_SIGNING_SECRET` from the time, the method, the path and the (empty) body, and go-brain refuses the upgrade with `401` if the header is wrong or has been used before (go-brain accepts each signature once). Frames on the open socket are not signed one by one, because the socket itself was opened with the signature. [The socket](02-the-socket.md#connecting) shows how to make the header, with code, and [Proving your signing code](02-the-socket.md#proving-your-signing-code) has the test vectors. Spend approvals carry a signature of their own, made with the Ed25519 key, as [Money and the vault](08-money-and-the-vault.md) explains.
 
 ## Ids
 
@@ -37,7 +37,7 @@ Ids are opaque strings of 1 to 64 characters. Do not parse them or guess their f
 
 | Who makes the id | Ids |
 |---|---|
-| go-server | `trip_id`, `person_id`, `message_id`, `decision_id`, `booking_id`, `expense_id`, `line_id`, `event_id`, `approval_id`, `tap_id`, and the JSON-RPC `id` of every request go-server sends |
+| server | `trip_id`, `person_id`, `message_id`, `decision_id`, `booking_id`, `expense_id`, `line_id`, `event_id`, `approval_id`, `tap_id`, and the JSON-RPC `id` of every request the server sends |
 | go-brain | `card_id`, `task_id`, `call_id`, `option_id`, `fact_id`, `request_id`, and the JSON-RPC `id` of every request Go sends |
 
 `person_id` is the same person in every trip they join. Go uses it to remember someone between trips, but only if they turn that on.
@@ -69,11 +69,11 @@ The Python models check the shape of every value and most of its limits. A few l
 A request can arrive twice: the socket may drop before the answer comes back, and the sender then sends it again. Requests that change something carry their own id, so the receiver does each one once.
 
 - **`event_id`** on every event. go-brain remembers the ones it has seen and answers a repeat with `{ "accepted": true, "duplicate": true }` without doing anything.
-- **`request_id`** on every write Go sends to go-server (a message, a reaction, a vote, a booking...). go-server must store it with the row it creates, with a unique index on `(trip_id, request_id)`. When the same `request_id` arrives again, go-server does nothing new and answers with the first answer, including the same ids. [Go's requests](04-gos-requests.md) shows how.
-- **`tap_id`** on every card tap. go-server makes one for each tap. Go acts on each `tap_id` once, so a resend or a double tap does not pick an option or start a payment twice.
+- **`request_id`** on every write Go sends to the server (a message, a reaction, a vote, a booking...). The server must store it with the row it creates, with a unique index on `(trip_id, request_id)`. When the same `request_id` arrives again, the server does nothing new and answers with the first answer, including the same ids. [Go's requests](04-gos-requests.md) shows how.
+- **`tap_id`** on every card tap. The server makes one for each tap. Go acts on each `tap_id` once, so a resend or a double tap does not pick an option or start a payment twice.
 - **The JSON-RPC `id`** on every request frame. It matches an answer to its request. When the socket drops before the answer arrives, the sender sends the same request again after reconnecting, with the same `id` and the same `event_id`, `request_id` or `tap_id`.
 
-The JSON-RPC `id` alone does not make a request happen once. The `event_id`, `request_id` and `tap_id` do. After a restart, for example, go-server's outbox sends an event again in a new frame with a new `id`, and go-brain still recognises the `event_id`. The requests that carry none of these ids only read (such as `read_trip` or `get_person`) or are safe to repeat (such as `replace_card` with the same card, or `forget_person`), so doing them twice is harmless.
+The JSON-RPC `id` alone does not make a request happen once. The `event_id`, `request_id` and `tap_id` do. After a restart, for example, the server's outbox sends an event again in a new frame with a new `id`, and go-brain still recognises the `event_id`. The requests that carry none of these ids only read (such as `read_trip` or `get_person`) or are safe to repeat (such as `replace_card` with the same card, or `forget_person`), so doing them twice is harmless.
 
 ## Errors
 
@@ -113,20 +113,20 @@ Each side answers quickly, so the other is never stuck waiting. A notification g
 |---|---|
 | `send_event` | 2 seconds (go-brain stores the event, answers, and does the work afterwards) |
 | `card_tap` and `catch_up` | 3 seconds |
-| Every other request go-server sends | 2 seconds |
+| Every other request the server sends | 2 seconds |
 | Every request Go sends | 2 seconds |
 
 `packages/contract/socket/methods.json` has the time limit of every method, and `METHODS[name].answer_within_seconds` (Python) and `methodByName(name).answer_within` (TypeScript) have it in code.
 
 When a request fails with something worth sending again:
 
-- **go-server sending events** waits 1 second, 5 seconds, 30 seconds, 2 minutes and 10 minutes, then every 10 minutes, and gives up after 24 hours. It keeps the events of one trip in order (see [Events](03-events.md)).
-- **go-server's other requests** (card taps, catch-up, people pages, forget me, vault links) are not sent again on their own. A person is waiting, so show them that it did not work and let them try again.
+- **When the server sends events,** it waits 1 second, 5 seconds, 30 seconds, 2 minutes and 10 minutes, then every 10 minutes, and gives up after 24 hours. It keeps the events of one trip in order (see [Events](03-events.md)).
+- **The server's other requests** (card taps, catch-up, people pages, forget me, vault links) are not sent again on their own. A person is waiting, so show them that it did not work and let them try again.
 - **Go's requests** are sent again 3 times, after 0.5, 2 and 5 seconds, with the same `request_id`, because someone in the room is waiting. After that, Go tells the room it could not finish and tries again later.
 
 When the socket itself drops:
 
-- **go-server reconnects** after 1, 2, 5 and 10 seconds, then every 30 seconds, until it is back. After a connect that works, the next wait starts from 1 second again.
+- **The server reconnects** after 1, 2, 5 and 10 seconds, then every 30 seconds, until it is back. After a connect that works, the next wait starts from 1 second again.
 - **Unanswered requests go again.** After reconnecting, each side sends every request that had no answer when the socket closed, with the same JSON-RPC `id` and the same `event_id` or `request_id`. Notifications are not sent again.
 
 [The socket](02-the-socket.md#when-the-socket-drops) explains what happens in each case.

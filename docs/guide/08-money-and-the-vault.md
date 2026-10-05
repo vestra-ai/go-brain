@@ -1,32 +1,32 @@
 # Money and the vault
 
-This page explains how Go pays for something safely: the two separate approvals every payment needs, the spend check go-server runs, the signed spend approval, and the vault where the payer confirms with Face ID. Everyone building Go should read it, because go-server, go-brain and the app each check part of every payment.
+This page explains how Go pays for something safely: the two separate approvals every payment needs, the spend check the server runs, the signed spend approval, and the vault where the payer confirms with Face ID. Everyone building Go should read it, because the server, go-brain and the app each check part of every payment.
 
 ## Why a payment needs two separate approvals
 
 Every payment needs two separate approvals, and Go produces neither of them. Use this rule to judge any change to the payment path: if a change lets one approval stand in for the other, or lets anything Go says count as one, the change is wrong.
 
-1. **A spend approval from go-server.** go-server signs it only when its own rows show that the group voted, the price is within the cap the group allowed, and the payer tapped "Yes, book it". It signs with a private key that only go-server holds.
+1. **A spend approval from the server.** The server signs it only when its own rows show that the group voted, the price is within the cap the group allowed, and the payer tapped "Yes, book it". It signs with a private key that only the server holds.
 2. **The payer's own Face ID in the vault.** The payer sees the amount, the merchant and the card on the vault page, and confirms with their passkey on their own phone.
 
-Go is an AI reading a group chat. Someone could try to talk it into paying, or it could misread a message. That cannot lead to a payment, because neither approval is the model's word. The first comes from votes and buttons that people tapped, checked by go-server. The second comes from the payer's own Face ID.
+Go is an AI reading a group chat. Someone could try to talk it into paying, or it could misread a message. That cannot lead to a payment, because neither approval is the model's word. The first comes from votes and buttons that people tapped, checked by the server. The second comes from the payer's own Face ID.
 
 ## A payment, step by step
 
 This is the whole path of one payment, from the vote closing to the ticket in the room. The example is the villa for the Goa trip: Villa Sol won the vote `d_villa` 4 to 1, the group allowed up to ₹55,000, refundable only, and Rahul pays.
 
-1. The vote closes. go-server sends `decision.closed` for `d_villa`.
-2. Go sets the mandate with a `set_mandate` request: choice 0 (Villa Sol), a cap of `5500000`, refundable only, payer Rahul. go-server sends `mandate.set`.
-3. Go posts a mandate card (`c_villa_mandate`) with `post_message`. go-server draws it and shows "Yes, book it" and "Not now" to Rahul only.
-4. Rahul taps "Yes, book it". go-server stores the time on the mandate (`confirmed_at`) and sends `mandate.confirmed`.
+1. The vote closes. The server sends `decision.closed` for `d_villa`.
+2. Go sets the mandate with a `set_mandate` request: choice 0 (Villa Sol), a cap of `5500000`, refundable only, payer Rahul. The server sends `mandate.set`.
+3. Go posts a mandate card (`c_villa_mandate`) with `post_message`. The server draws it and shows "Yes, book it" and "Not now" to Rahul only.
+4. Rahul taps "Yes, book it". The server stores the time on the mandate (`confirmed_at`) and sends `mandate.confirmed`.
 5. Go checks the price with ixigo again: ₹54,200 for 3 nights, with free cancellation until 1 November.
 6. Go asks for a spend approval with a `request_spend_approval` request.
-7. go-server runs the spend check, signs a one-use spend approval that lasts at most 10 minutes, stores it, and answers with it.
+7. The server runs the spend check, signs a one-use spend approval that lasts at most 10 minutes, stores it, and answers with it.
 8. Go posts a pay card (`c_villa_pay`) for Rahul with `post_message`, with Approve and Decline buttons that only he sees.
-9. Rahul taps Approve. go-server sends the tap to go-brain as a `card_tap` request, and go-brain answers `open` with a link to the vault page. The app opens it in the system browser sheet.
+9. Rahul taps Approve. The server sends the tap to go-brain as a `card_tap` request, and go-brain answers `open` with a link to the vault page. The app opens it in the system browser sheet.
 10. The vault page shows the amount, the merchant, the refundable-until date and Rahul's card. Rahul confirms with Face ID, then types the card's CVV and his bank's one-time code on that page. Neither is stored.
 11. The vault checks the spend approval (the signature, the expiry, that it was never used, the payer and the amount), pays ixigo once, and forgets the card details.
-12. Go records the booking with an `add_booking` request, including the `approval_id`. go-server checks the approval and marks it used.
+12. Go records the booking with an `add_booking` request, including the `approval_id`. The server checks the approval and marks it used.
 13. Go records the expense with `add_expense` (Rahul paid, split between all five), posts a ticket card with `post_message`, and updates the pay card to `paid` in place with `replace_card`.
 
 ```mermaid
@@ -34,7 +34,7 @@ sequenceDiagram
   autonumber
   actor Rahul as Rahul (payer)
   participant app as go-app
-  participant server as go-server
+  participant server as server
   participant brain as go-brain
   participant vault as go-brain vault page
   participant ixigo
@@ -98,7 +98,7 @@ Here is the pay card Go posts in step 8. The Approve and Decline buttons show on
 }
 ```
 
-In step 9, go-server sends go-brain Rahul's tap on Approve:
+In step 9, the server sends go-brain Rahul's tap on Approve:
 
 <!-- schema: CardTap -->
 ```json
@@ -114,7 +114,7 @@ go-brain checks that Rahul is the payer and answers with the vault page to open,
 
 ## The spend check
 
-The spend check is how go-server decides whether a payment may happen. go-server runs it every time go-brain sends a `request_spend_approval` request, and signs a spend approval only when every rule passes. It reads only go-server's own rows, never anything Go says. It answers within 2 seconds, like every request Go sends.
+The spend check is how the server decides whether a payment may happen. The server runs it every time go-brain sends a `request_spend_approval` request, and signs a spend approval only when every rule passes. It reads only the server's own rows, never anything Go says. It answers within 2 seconds, like every request Go sends.
 
 Go's request names the vote and what it wants to pay:
 
@@ -132,7 +132,7 @@ Go's request names the vote and what it wants to pay:
 }
 ```
 
-go-server checks these rules in this order. The first rule that fails gives the denial reason.
+The server checks these rules in this order. The first rule that fails gives the denial reason.
 
 | Rule | Reason when it fails |
 |---|---|
@@ -153,7 +153,7 @@ A denial is a normal result, not an error:
 { "status": "denied", "reason": "over_cap", "detail": "5640000 INR is above the cap of 5500000 INR" }
 ```
 
-On the socket, go-server sends it back in an ordinary result frame, with the `id` of Go's request:
+On the socket, the server sends it back in an ordinary result frame, with the `id` of Go's request:
 
 <!-- schema: SocketResult -->
 ```json
@@ -166,14 +166,14 @@ On the socket, go-server sends it back in an ordinary result frame, with the `id
 
 Keep error frames for requests that cannot be answered at all, such as params that do not match the contract (`422 invalid`).
 
-When every rule passes, go-server answers with the approval. `approval` is the signed token, and `approval_id` is its `jti`, which Go sends back when it records the booking.
+When every rule passes, the server answers with the approval. `approval` is the signed token, and `approval_id` is its `jti`, which Go sends back when it records the booking.
 
 <!-- schema: SpendApproved -->
 ```json
 {
   "status": "approved",
   "approval_id": "ap_01JA7Q3V8Z",
-  "approval": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJnby1zZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.uOn0wEqlkBkyNufXJyg3Ot6Kds-8Srk-mouvt-br3IK_k7AxFro7k-Q0WgqocuAtYFEvo4c9L9Az-Yzo7U5KBQ",
+  "approval": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.4IgC3Z2cNbWalezid833WDOIBoZoLeAuZhSbErpEFpE8qk-TI_yNIcyNcpX-UeHs856OFBbN6len1I9928SqDQ",
   "expires_at": "2026-10-05T09:10:00Z"
 }
 ```
@@ -196,9 +196,9 @@ Each `SpendDenialReason` value means something different for the group, so Go ha
 
 ## Signing the spend approval
 
-When the spend check passes, go-server makes an approval id, signs the claims with its Ed25519 private key (`GO_SPEND_PRIVATE_KEY`), stores the approval, and answers. Use the helpers from the contract package: `signSpendApproval` in TypeScript and `sign_spend_approval` in Python.
+When the spend check passes, the server makes an approval id, signs the claims with its Ed25519 private key (`GO_SPEND_PRIVATE_KEY`), stores the approval, and answers. Use the helpers from the contract package: `signSpendApproval` in TypeScript and `sign_spend_approval` in Python.
 
-go-server's handler for `request_spend_approval` does five things:
+The server's handler for `request_spend_approval` does five things:
 
 1. Check the params against the contract, with `parseParams('request_spend_approval', params)` in TypeScript or `METHODS["request_spend_approval"].params.model_validate(params)` in Python. If they do not match, answer a `422 invalid` error. The `BrainSocket` client in [The socket](02-the-socket.md) does this before it calls your handler.
 2. If this trip already has an approval with this `request_id`, answer with that same approval again. A repeated request must never be denied as `approval_outstanding` because of its own first copy.
@@ -206,11 +206,11 @@ go-server's handler for `request_spend_approval` does five things:
 4. Run the spend check. If a rule fails, answer `denied` with its reason.
 5. Make the approval id, sign the claims, store the approval row, commit, and answer `approved`.
 
-These are the claims go-server signs:
+These are the claims the server signs:
 
 | Claim | Value |
 |---|---|
-| `iss` | Always `"go-server"` |
+| `iss` | Always `"server"` |
 | `aud` | Always `"go-brain-vault"` |
 | `jti` | The new approval id: unique, 8 to 64 characters |
 | `trip_id` | This trip |
@@ -266,7 +266,7 @@ export function issueApproval(tripId: string, decision: Decision, req: SpendRequ
   const approvalId = `ap_${randomBytes(8).toString('hex')}`;
   const token = signSpendApproval(
     {
-      iss: 'go-server',
+      iss: 'server',
       aud: 'go-brain-vault',
       jti: approvalId,
       trip_id: tripId,
@@ -356,7 +356,7 @@ def issue_approval(trip_id: str, decision: models.Decision, req: models.RequestS
     approval_id = "ap_" + secrets.token_hex(8)
     sent = req.model_dump(mode="json")  # refundable_until as an ISO string
     claims = {  # signed in this key order, so keep the order
-        "iss": "go-server",
+        "iss": "server",
         "aud": "go-brain-vault",
         "jti": approval_id,
         "trip_id": trip_id,
@@ -391,7 +391,7 @@ def issue_approval(trip_id: str, decision: models.Decision, req: models.RequestS
     return row, answer
 ```
 
-The approval row keeps what go-server needs later:
+The approval row keeps what the server needs later:
 
 | Column | What it holds |
 |---|---|
@@ -408,8 +408,8 @@ Good to know:
 - The payer always comes from the mandate. `RequestSpendApproval` has no payer field, so Go cannot name a different payer.
 - `jti` must be 8 to 64 characters, which is stricter than other ids. Make it random, so nobody can guess another approval's id.
 - `sign_spend_approval` in Python signs the claims in the dict's own key order. Build the dict in the order of the table above. The TypeScript helper always uses that order.
-- The token goes only to go-brain. go-server never shows it in the app.
-- `GO_SPEND_PRIVATE_KEY` never leaves go-server. go-brain holds only the public key, so it can check approvals but never make one.
+- The token goes only to go-brain. The server never shows it in the app.
+- `GO_SPEND_PRIVATE_KEY` never leaves the server. go-brain holds only the public key, so it can check approvals but never make one.
 
 ## The token format
 
@@ -433,7 +433,7 @@ Ed25519 signatures are deterministic: the same claims and the same key always gi
 <!-- schema: SpendApprovalClaims -->
 ```json
 {
-  "iss": "go-server",
+  "iss": "server",
   "aud": "go-brain-vault",
   "jti": "ap_01JA7Q3V8Z",
   "trip_id": "t_goa",
@@ -452,7 +452,7 @@ Ed25519 signatures are deterministic: the same claims and the same key always gi
 The token these claims must produce:
 
 ```
-eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJnby1zZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.uOn0wEqlkBkyNufXJyg3Ot6Kds-8Srk-mouvt-br3IK_k7AxFro7k-Q0WgqocuAtYFEvo4c9L9Az-Yzo7U5KBQ
+eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJzZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.4IgC3Z2cNbWalezid833WDOIBoZoLeAuZhSbErpEFpE8qk-TI_yNIcyNcpX-UeHs856OFBbN6len1I9928SqDQ
 ```
 
 `iat` is 2026-10-05 09:00:00 UTC and `exp` is ten minutes later. The file's `verify_at` (one minute after `iat`) is a time when the token is valid, for testing the checking side.
@@ -488,7 +488,7 @@ The TypeScript and Python helpers in this repo are checked against the same file
 
 ## Marking an approval used
 
-When Go records a booking it paid for through the vault, it sends the approval's id with the booking, and go-server marks the approval used. This is how go-server knows the approval is finished, and why one approval can never back two bookings.
+When Go records a booking it paid for through the vault, it sends the approval's id with the booking, and the server marks the approval used. This is how the server knows the approval is finished, and why one approval can never back two bookings.
 
 Go sends the booking with an `add_booking` request:
 
@@ -513,14 +513,14 @@ Go sends the booking with an `add_booking` request:
 }
 ```
 
-go-server checks the approval in the same transaction as it stores the booking:
+The server checks the approval in the same transaction as it stores the booking:
 
 1. The approval belongs to this trip.
 2. It is for the same vote: the booking's `decision_id` is the approval's `decision_id`.
 3. It has not been used or cancelled.
 4. The booking's amount is at most the approved amount, in the same currency.
 
-When all four pass, go-server sets `used_at` and `booking_id` on the approval with a condition that `used_at` is still empty, stores the booking, answers with the new booking's id and change number, and sends `booking.changed`:
+When all four pass, the server sets `used_at` and `booking_id` on the approval with a condition that `used_at` is still empty, stores the booking, answers with the new booking's id and change number, and sends `booking.changed`:
 
 <!-- schema: AddBookingResult -->
 ```json
@@ -581,7 +581,7 @@ def approval_problem(trip_id: str, booking: models.AddBooking, row: dict | None)
 ```
 
 Good to know:
-- go-server does not check the expiry here. The vault checked it before paying, and the booking can arrive a little after the approval has expired.
+- The server does not check the expiry here. The vault checked it before paying, and the booking can arrive a little after the approval has expired.
 - A booking Go records without paying through the vault, such as a cab someone booked themselves, has no `approval_id`, and none of these checks apply.
 
 ## Releasing an approval Go will not use
@@ -593,7 +593,7 @@ When Go knows it will not use a spend approval, it releases it straight away, so
 { "request_id": "rq_villa_cancel_1", "trip_id": "t_goa", "approval_id": "ap_01JA7Q3V8Z", "reason": "payment_failed" }
 ```
 
-go-server stores the time in the approval row's `cancelled_at` and answers:
+The server stores the time in the approval row's `cancelled_at` and answers:
 
 <!-- schema: Ok -->
 ```json
@@ -601,7 +601,7 @@ go-server stores the time in the approval row's `cancelled_at` and answers:
 ```
 
 Good to know:
-- A cancelled approval can never be used again. go-server refuses a booking that names it, and the vault has already refused it on its side.
+- A cancelled approval can never be used again. The server refuses a booking that names it, and the vault has already refused it on its side.
 - Cancelling is not a change to the trip, so it takes no change number and sends no event.
 - Cancelling an approval that is already used, cancelled or expired still answers `{ "ok": true }`, so a retry is always safe.
 
@@ -619,16 +619,16 @@ The vault is each person's own store for cards and logins, inside go-brain. It i
 
 - Cards: the number, the expiry and the name on the card. Never the CVV.
 - Logins: the site, the username and the password, such as the person's ixigo account.
-- None of it ever reaches the AI model, a chat transcript, the computer Go uses to work on websites, or go-server.
+- None of it ever reaches the AI model, a chat transcript, the computer Go uses to work on websites, or the server.
 
 ### How a card gets in
 
 1. On the app's You screen, the person taps "Add a card".
-2. go-server asks go-brain for a vault link with a `vault_link` request, and the app opens it in the system browser sheet (see [The app](07-the-app.md#opening-go-brain-pages)).
-3. The person types their card on go-brain's page. The card goes from their phone straight to go-brain. It never passes through the app's API or go-server.
+2. The server asks go-brain for a vault link with a `vault_link` request, and the app opens it in the system browser sheet (see [The app](07-the-app.md#opening-go-brain-pages)).
+3. The person types their card on go-brain's page. The card goes from their phone straight to go-brain. It never passes through the app's API or the server.
 4. The first time, the page creates the person's passkey.
 
-The `vault_link` request that go-server sends for this:
+The `vault_link` request that the server sends for this:
 
 <!-- schema: CreateLink -->
 ```json
@@ -646,7 +646,7 @@ and go-brain's answer, valid for 5 minutes:
 
 When the payer taps Approve on a pay card, the app opens the vault page for that payment, and the vault does the following.
 
-1. It reads the amount, the merchant and the refundable-until date from the signed spend approval itself, so what the payer sees is exactly what go-server approved.
+1. It reads the amount, the merchant and the refundable-until date from the signed spend approval itself, so what the payer sees is exactly what the server approved.
 2. It shows them with the card that will pay.
 3. The payer confirms with Face ID (their passkey).
 4. The payer types the card's CVV and, when the bank asks, the bank's one-time code on the same page. Neither is ever stored.
@@ -723,8 +723,8 @@ Each part of a payment is checked by someone who does not depend on Go's word. T
 
 | Who | What they check | When |
 |---|---|---|
-| go-server | The spend check: the vote is in this trip, closed, a choice vote with a mandate. The payer said yes and has not declined since. The currency matches, the amount is within the cap, it is refundable when the group asked for that, and no other approval for the vote is waiting. | Before it signs a spend approval |
-| go-server | The approval is this trip's and for this vote, has not been used, and covers the booking's amount. | When Go records the booking |
+| server | The spend check: the vote is in this trip, closed, a choice vote with a mandate. The payer said yes and has not declined since. The currency matches, the amount is within the cap, it is refundable when the group asked for that, and no other approval for the vote is waiting. | Before it signs a spend approval |
+| server | The approval is this trip's and for this vote, has not been used, and covers the booking's amount. | When Go records the booking |
 | The vault | The token's signature, audience and expiry. Its `jti` was never used. The payer is the person who unlocked the vault. The checkout total is within the approved amount. | When the payer approves, before it pays |
 | The payer | The amount, the merchant, the refundable-until date and the card. | On the vault page, before Face ID |
 
@@ -732,13 +732,13 @@ Each part of a payment is checked by someone who does not depend on Go's word. T
 
 These are the usual ways a payment does not go through, and what each part does about it. In every case nothing is paid twice and nothing is booked above the cap.
 
-**The approval expires before the payer approves.** A spend approval lasts at most 10 minutes, and the vault refuses it after that. Go updates the pay card to `expired` and asks again: it asks go-server for a new spend approval and posts a new pay card for Rahul, which sends him a new push. The spend check runs again, so anything that changed in the meantime is caught.
+**The approval expires before the payer approves.** A spend approval lasts at most 10 minutes, and the vault refuses it after that. Go updates the pay card to `expired` and asks again: it asks the server for a new spend approval and posts a new pay card for Rahul, which sends him a new push. The spend check runs again, so anything that changed in the meantime is caught.
 
-**The price went up above the cap.** Go may see this when it checks the price again, or go-server answers `over_cap`, or the vault refuses a checkout total above the approved amount. Go tells the group the new price and asks whether to raise the cap or pick another option. If the group agrees to a higher cap, Go sets a new mandate on `d_villa`. A new mandate clears the payer's earlier "Yes, book it", so Rahul taps it again before Go asks for a new spend approval.
+**The price went up above the cap.** Go may see this when it checks the price again, or the server answers `over_cap`, or the vault refuses a checkout total above the approved amount. Go tells the group the new price and asks whether to raise the cap or pick another option. If the group agrees to a higher cap, Go sets a new mandate on `d_villa`. A new mandate clears the payer's earlier "Yes, book it", so Rahul taps it again before Go asks for a new spend approval.
 
-**The payer taps "Not now".** go-server stores the time on the mandate (`declined_at`) and sends `mandate.declined`. Go does not ask for a spend approval, because the spend check would answer `payer_declined`. Go says once that it is holding off and does not nag. If Rahul taps "Yes, book it" later, the check passes again, because only a "Not now" after the last yes blocks it. If Rahul taps Decline on a pay card instead, Go updates the card to `declined` and releases the approval with the reason `payer_declined`.
+**The payer taps "Not now".** The server stores the time on the mandate (`declined_at`) and sends `mandate.declined`. Go does not ask for a spend approval, because the spend check would answer `payer_declined`. Go says once that it is holding off and does not nag. If Rahul taps "Yes, book it" later, the check passes again, because only a "Not now" after the last yes blocks it. If Rahul taps Decline on a pay card instead, Go updates the card to `declined` and releases the approval with the reason `payer_declined`.
 
-**The payment fails.** The bank may decline the card, the one-time code may be wrong, or ixigo's checkout may fail. Nothing is booked. Go updates the pay card to `failed` and tells Rahul in the room what happened, in plain words and without any card details. The vault has already recorded that approval's `jti`, so it cannot be used again, and Go releases it on go-server with `cancel_spend_approval` and the reason `payment_failed`. When Rahul is ready to try again, Go asks for a new spend approval and posts a new pay card.
+**The payment fails.** The bank may decline the card, the one-time code may be wrong, or ixigo's checkout may fail. Nothing is booked. Go updates the pay card to `failed` and tells Rahul in the room what happened, in plain words and without any card details. The vault has already recorded that approval's `jti`, so it cannot be used again, and Go releases it on the server with `cancel_spend_approval` and the reason `payment_failed`. When Rahul is ready to try again, Go asks for a new spend approval and posts a new pay card.
 
 Good to know:
 - Go never retries a payment on its own with the same approval. Every new attempt goes through the spend check and the payer's Face ID again.

@@ -18,7 +18,7 @@ export interface HttpRoute {
 
 export const HTTP_ROUTES: readonly HttpRoute[] = [
   { id: 'openSocket', method: 'GET', path: SOCKET_PATH, signed: true, response: null,
-    summary: 'Open the socket. A WebSocket upgrade, signed with x-go-signature (method GET, this path, empty body). go-server keeps it open.' },
+    summary: 'Open the socket. A WebSocket upgrade, signed with x-go-signature (method GET, this path, empty body). The server keeps it open.' },
   { id: 'health', method: 'GET', path: '/v1/health', signed: false, response: Health,
     summary: 'Up, and which contract version it speaks. Not signed.' },
 ];

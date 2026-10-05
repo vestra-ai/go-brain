@@ -13,9 +13,9 @@
     {
       "name": "opening the socket with a query string",
       "method": "GET",
-      "target": "/v1/socket?instance=go-server-1",
+      "target": "/v1/socket?instance=server-1",
       "body": "",
-      "header": "t=1791190800,v1=793c1c6b2f7ac3c0ed5c8cb040cb5db48d99b0bd5b0c0e78bf80a54c0c1b9a0c"
+      "header": "t=1791190800,v1=fd126f95bd19b1a4960d706be82bd124094f933567416108822dc8c958955d1f"
     },
     {
       "name": "a body with non-ASCII characters (sign the UTF-8 bytes)",

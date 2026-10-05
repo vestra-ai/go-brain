@@ -3,12 +3,12 @@ import { z } from 'zod';
 import { Currency, Id, IsoDateTime, PositiveAmountMinor } from './common.js';
 
 /**
- * The signed spend approval: go-server's half of the two keys.
+ * The signed spend approval: the server's half of the two keys.
  *
- * go-server runs the spend check and signs this with its Ed25519 private key. The vault in go-brain
+ * The server runs the spend check and signs this with its Ed25519 private key. The vault in go-brain
  * pays only with a valid, unexpired, unused approval AND the payer's own passkey (Face ID). Neither
  * key is the model's word. One use: the vault records `jti` and refuses it a second time, and
- * go-server marks it used when Go records the booking.
+ * The server marks it used when Go records the booking.
  *
  * Wire format (a compact JWS):
  *   base64url(header JSON) "." base64url(claims JSON) "." base64url(Ed25519 signature over the first two parts)
@@ -20,7 +20,7 @@ const HEADER = { alg: 'EdDSA', typ: 'go-spend+jws' } as const;
 
 export const SpendApprovalClaims = z
   .object({
-    iss: z.literal('go-server'),
+    iss: z.literal('server'),
     aud: z.literal('go-brain-vault'),
     jti: z.string().min(8).max(64),
     trip_id: Id,
@@ -39,7 +39,7 @@ export const SpendApprovalClaims = z
   .refine((c) => c.exp > c.iat && c.exp - c.iat <= MAX_APPROVAL_TTL_SECONDS, {
     message: `exp must be after iat and at most ${MAX_APPROVAL_TTL_SECONDS} seconds later`,
   })
-  .meta({ id: 'SpendApprovalClaims', description: 'What go-server signs. exp is at most 600 seconds after iat.' });
+  .meta({ id: 'SpendApprovalClaims', description: 'What the server signs. exp is at most 600 seconds after iat.' });
 export type SpendApprovalClaims = z.infer<typeof SpendApprovalClaims>;
 
 const b64 = (v: string | Buffer): string => Buffer.from(v).toString('base64url');

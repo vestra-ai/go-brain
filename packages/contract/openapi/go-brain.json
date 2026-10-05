@@ -3,13 +3,13 @@
   "info": {
     "title": "The Go brain API",
     "version": "1.0.0",
-    "description": "go-brain is Go, the AI member of every trip group. go-server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain."
+    "description": "go-brain is Go, the AI member of every trip group. The server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain."
   },
   "paths": {
     "/v1/socket": {
       "get": {
         "operationId": "openSocket",
-        "summary": "Open the socket. A WebSocket upgrade, signed with x-go-signature (method GET, this path, empty body). go-server keeps it open.",
+        "summary": "Open the socket. A WebSocket upgrade, signed with x-go-signature (method GET, this path, empty body). The server keeps it open.",
         "parameters": [
           {
             "name": "x-go-signature",
@@ -121,7 +121,7 @@
         "discriminator": {
           "propertyName": "kind"
         },
-        "description": "Who did it: a person, Go, or go-server itself (system)."
+        "description": "Who did it: a person, Go, or the server itself (system)."
       },
       "Place": {
         "type": "object",
@@ -565,7 +565,7 @@
           "kind",
           "decision_id"
         ],
-        "description": "A vote. go-server draws the options, the tally and the vote buttons."
+        "description": "A vote. The server draws the options, the tally and the vote buttons."
       },
       "MandateCard": {
         "type": "object",
@@ -612,7 +612,7 @@
           "kind",
           "decision_id"
         ],
-        "description": "Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). go-server shows \"Yes, book it\" and \"Not now\" to the payer only."
+        "description": "Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The server shows \"Yes, book it\" and \"Not now\" to the payer only."
       },
       "TicketCard": {
         "type": "object",
@@ -4485,7 +4485,7 @@
           "trip_id",
           "after_seq"
         ],
-        "description": "Up to 200 at a time; 200 when limit is left out. go-server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit."
+        "description": "Up to 200 at a time; 200 when limit is left out. The server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit."
       },
       "WriteResult": {
         "type": "object",
@@ -6241,7 +6241,7 @@
         "properties": {
           "iss": {
             "type": "string",
-            "const": "go-server"
+            "const": "server"
           },
           "aud": {
             "type": "string",
@@ -6322,7 +6322,7 @@
           "iat",
           "exp"
         ],
-        "description": "What go-server signs. exp is at most 600 seconds after iat."
+        "description": "What the server signs. exp is at most 600 seconds after iat."
       }
     }
   }

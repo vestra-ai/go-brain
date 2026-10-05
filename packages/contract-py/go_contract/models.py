@@ -88,7 +88,7 @@ class CardAction(BaseModel):
 
 class VoteCard(BaseModel):
     """
-    A vote. go-server draws the options, the tally and the vote buttons.
+    A vote. The server draws the options, the tally and the vote buttons.
     """
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -100,7 +100,7 @@ class VoteCard(BaseModel):
 
 class MandateCard(BaseModel):
     """
-    Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). go-server shows "Yes, book it" and "Not now" to the payer only.
+    Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The server shows "Yes, book it" and "Not now" to the payer only.
     """
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -337,7 +337,7 @@ class Message(BaseModel):
     updated_seq: Annotated[int, Field(gt=0)]
     author: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or go-server itself (system).
+    Who did it: a person, Go, or the server itself (system).
     """
     text: str | None = None
     attachments: Annotated[
@@ -784,7 +784,7 @@ class TripCreated(BaseModel):
 class TripUpdatedData(BaseModel):
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or go-server itself (system).
+    Who did it: a person, Go, or the server itself (system).
     """
     changed: Annotated[
         list[
@@ -820,7 +820,7 @@ class DecisionOpenedData(BaseModel):
     decision: Decision
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or go-server itself (system).
+    Who did it: a person, Go, or the server itself (system).
     """
 
 
@@ -881,7 +881,7 @@ class DecisionCancelledData(BaseModel):
     decision_id: Annotated[str, Field(max_length=64, min_length=1)]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or go-server itself (system).
+    Who did it: a person, Go, or the server itself (system).
     """
 
 
@@ -957,7 +957,7 @@ class RecordChangedData(BaseModel):
     change: Literal["added", "updated", "done", "undone"]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or go-server itself (system).
+    Who did it: a person, Go, or the server itself (system).
     """
 
 
@@ -979,7 +979,7 @@ class BookingChangedData(BaseModel):
     change: Literal["added", "updated", "cancelled"]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or go-server itself (system).
+    Who did it: a person, Go, or the server itself (system).
     """
 
 
@@ -1001,7 +1001,7 @@ class ExpenseChangedData(BaseModel):
     change: Literal["added", "removed"]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or go-server itself (system).
+    Who did it: a person, Go, or the server itself (system).
     """
 
 
@@ -1073,7 +1073,7 @@ class ReadTrip(BaseModel):
 
 class ReadMessages(BaseModel):
     """
-    Up to 200 at a time; 200 when limit is left out. go-server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit.
+    Up to 200 at a time; 200 when limit is left out. The server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit.
     """
 
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -1494,10 +1494,10 @@ class SocketError(BaseModel):
 
 class SpendApprovalClaims(BaseModel):
     """
-    What go-server signs. exp is at most 600 seconds after iat.
+    What the server signs. exp is at most 600 seconds after iat.
     """
 
-    iss: Literal["go-server"]
+    iss: Literal["server"]
     aud: Literal["go-brain-vault"]
     jti: Annotated[str, Field(max_length=64, min_length=8)]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]

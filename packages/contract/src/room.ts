@@ -26,7 +26,7 @@ export const Attachment = z
 export const Reaction = z.object({ emoji: z.string().min(1).max(16), person_id: Id.nullish() }).meta({ id: 'Reaction' });
 
 /**
- * One message in a trip room, as go-server stores it, in its current state.
+ * One message in a trip room, as the server stores it, in its current state.
  *
  * A withheld message (its author paused Go) has `text` null, no attachments, `mentions_go` false,
  * no `mentions` and no `about_message_id`.
@@ -68,7 +68,7 @@ export const MessagesPage = z
 /** Go says something in the room: text, a card, or both. */
 export const PostMessage = z
   .object({
-    /** Go's id for this request. go-server must do it once even if it arrives twice. */
+    /** Go's id for this request. The server must do it once even if it arrives twice. */
     request_id: Id,
     trip_id: Id,
     text: z.string().min(1).max(2000).nullish(),

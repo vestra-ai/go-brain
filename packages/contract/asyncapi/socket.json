@@ -3,7 +3,7 @@
   "info": {
     "title": "The Go brain socket",
     "version": "1.0.0",
-    "description": "Described from go-brain's side: \"receive\" methods are sent by go-server, \"send\" methods are sent by Go. Frames are JSON-RPC 2.0."
+    "description": "Described from go-brain's side: \"receive\" methods are sent by the server, \"send\" methods are sent by Go. Frames are JSON-RPC 2.0."
   },
   "servers": {
     "staging": {
@@ -2127,7 +2127,7 @@
         "discriminator": {
           "propertyName": "kind"
         },
-        "description": "Who did it: a person, Go, or go-server itself (system)."
+        "description": "Who did it: a person, Go, or the server itself (system)."
       },
       "Place": {
         "type": "object",
@@ -2571,7 +2571,7 @@
           "kind",
           "decision_id"
         ],
-        "description": "A vote. go-server draws the options, the tally and the vote buttons."
+        "description": "A vote. The server draws the options, the tally and the vote buttons."
       },
       "MandateCard": {
         "type": "object",
@@ -2618,7 +2618,7 @@
           "kind",
           "decision_id"
         ],
-        "description": "Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). go-server shows \"Yes, book it\" and \"Not now\" to the payer only."
+        "description": "Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The server shows \"Yes, book it\" and \"Not now\" to the payer only."
       },
       "TicketCard": {
         "type": "object",
@@ -6491,7 +6491,7 @@
           "trip_id",
           "after_seq"
         ],
-        "description": "Up to 200 at a time; 200 when limit is left out. go-server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit."
+        "description": "Up to 200 at a time; 200 when limit is left out. The server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit."
       },
       "WriteResult": {
         "type": "object",
@@ -8247,7 +8247,7 @@
         "properties": {
           "iss": {
             "type": "string",
-            "const": "go-server"
+            "const": "server"
           },
           "aud": {
             "type": "string",
@@ -8328,7 +8328,7 @@
           "iat",
           "exp"
         ],
-        "description": "What go-server signs. exp is at most 600 seconds after iat."
+        "description": "What the server signs. exp is at most 600 seconds after iat."
       }
     }
   }

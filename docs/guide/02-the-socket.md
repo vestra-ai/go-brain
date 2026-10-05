@@ -1,29 +1,29 @@
 # The socket
 
-go-server and go-brain talk over one WebSocket that go-server opens to go-brain and keeps open. This page explains how to open it with a signature, the four kinds of frame that travel on it, every method in both directions, how to keep it alive and reconnect, and what happens when it drops. It ends with a complete client for go-server in TypeScript and Python, and the test vectors that prove your signing code.
+The server and go-brain talk over one WebSocket that the server opens to go-brain and keeps open. This page explains how to open it with a signature, the four kinds of frame that travel on it, every method in both directions, how to keep it alive and reconnect, and what happens when it drops. It ends with a complete client for the server in TypeScript and Python, and the test vectors that prove your signing code.
 
 Read [Basics](01-basics.md) first: it covers the ids, money, time, errors and time limits that every frame on the socket follows.
 
 ## What the socket is
 
-The socket is the only connection between the two servers. go-server opens it to `wss://brain.go.example/v1/socket` and keeps it open. Everything the two servers say to each other travels on it, in both directions, as JSON-RPC 2.0 text frames:
+The socket is the only connection between the two servers. The server opens it to `wss://brain.go.example/v1/socket` and keeps it open. Everything the two servers say to each other travels on it, in both directions, as JSON-RPC 2.0 text frames:
 
-- **go-server to go-brain:** what happened in a trip (events, sent with `send_event`), and questions that need an answer straight away, such as a tap on one of Go's cards.
-- **go-brain to go-server:** Go's messages, typing and reactions, and Go's requests to read the trip or change it. go-server answers each one from its own database.
+- **The server to go-brain:** what happened in a trip (events, sent with `send_event`), and questions that need an answer straight away, such as a tap on one of Go's cards.
+- **go-brain to the server:** Go's messages, typing and reactions, and Go's requests to read the trip or change it. The server answers each one from its own database.
 
 There is one socket, not one in each direction, for three reasons:
 
-1. **The contract is go-brain's.** go-brain exposes it, and go-server builds on it. go-server serves no routes for go-brain, and go-brain never calls go-server over HTTP. go-brain has no setting for go-server's address at all.
-2. **The trip still lives in go-server's database.** When Go needs the trip, it sends `read_trip` on the socket and go-server answers from its database. Nothing about the trip moves to go-brain.
-3. **Both sides can speak at any moment.** go-server sends each change the moment it happens, and Go can show "Go is typing...", react to a message or post a reply the moment it is ready, all without polling.
+1. **The contract is go-brain's.** go-brain exposes it, and the server builds on it. The server serves no routes for go-brain, and go-brain never calls the server over HTTP. go-brain has no setting for the server's address at all.
+2. **The trip still lives in the server's database.** When Go needs the trip, it sends `read_trip` on the socket and the server answers from its database. Nothing about the trip moves to go-brain.
+3. **Both sides can speak at any moment.** The server sends each change the moment it happens, and Go can show "Go is typing...", react to a message or post a reply the moment it is ready, all without polling.
 
-A side effect: go-server dials out, so a go-server running on a laptop needs no tunnel to work with go-brain.
+A side effect: the server dials out, so a server running on a laptop needs no tunnel to work with go-brain.
 
 Here is Priya's question from [the front page](README.md#one-message-start-to-finish) as it travels on the socket. Solid arrows are requests, dashed arrows are answers, and open arrows are notifications, which get no answer.
 
 ```mermaid
 sequenceDiagram
-  participant S as go-server
+  participant S as server
   participant B as go-brain (Go)
   S->>B: open the socket (GET /v1/socket, signed)
   S->>B: send_event: message.created, change 57
@@ -39,7 +39,7 @@ sequenceDiagram
 
 ## Connecting
 
-go-server opens the socket with a WebSocket upgrade request, `GET /v1/socket`, that carries an `x-go-signature` header. go-brain checks the header before it upgrades. If the header is missing, malformed, stale or wrong, go-brain answers `401` and the socket does not open: check the secret and the clock.
+The server opens the socket with a WebSocket upgrade request, `GET /v1/socket`, that carries an `x-go-signature` header. go-brain checks the header before it upgrades. If the header is missing, malformed, stale or wrong, go-brain answers `401` and the socket does not open: check the secret and the clock.
 
 The header looks like this:
 
@@ -57,7 +57,7 @@ GET
 ```
 
 - The method is `GET`.
-- `target` is the path plus the query string, exactly as sent: `/v1/socket`, or `/v1/socket?instance=go-server-1` if you add a query string.
+- `target` is the path plus the query string, exactly as sent: `/v1/socket`, or `/v1/socket?instance=server-1` if you add a query string.
 - The upgrade has no body, so the raw body is empty and the string ends with the newline after the target.
 
 go-brain refuses a signature more than 300 seconds old or ahead, so keep your server's clock synced (every cloud host does this for you). go-brain also accepts each signature only once: a second upgrade with the same `t` and `v1` is refused with `401`, even within the 300 seconds. So make a new signature every time you connect. A header made when the process started does not work for the next reconnect.
@@ -113,13 +113,13 @@ asyncio.run(main())
 Good to know:
 - `BRAIN_URL` is go-brain's `https://` base URL. The socket is on the same host with `wss://` (or `ws://` for `http://localhost`), plus `/v1/socket`.
 - The TypeScript examples use the [`ws`](https://www.npmjs.com/package/ws) package. The Python examples use [`websockets`](https://websockets.readthedocs.io/) 14 or later. On older versions of `websockets`, the argument is `extra_headers=` instead of `additional_headers=`.
-- If you add a query string, sign the full target with it. A signature for `/v1/socket` does not work for `/v1/socket?instance=go-server-1`.
-- Two go-server instances that connect in the same second with the same target make the same signature, and go-brain refuses the second one. Give each instance its own query string, such as `?instance=go-server-1`, so their signatures differ (see [More than one go-server instance](#more-than-one-go-server-instance)).
+- If you add a query string, sign the full target with it. A signature for `/v1/socket` does not work for `/v1/socket?instance=server-1`.
+- Two server instances that connect in the same second with the same target make the same signature, and go-brain refuses the second one. Give each instance its own query string, such as `?instance=server-1`, so their signatures differ (see [More than one server instance](#more-than-one-server-instance)).
 - Treat the header like the secret: do not log it. Because each signature works only once, a header copied from a log cannot open a second socket.
 
 ## The frames
 
-Every frame is one JSON object sent as one WebSocket text frame. Neither side sends a frame larger than 1 MB (1,048,576 bytes). The one answer that could grow past that is `read_messages`: when 200 messages with their cards would not fit, go-server sends fewer, with `has_more: true`, and Go asks again from where the page ended. There are four kinds of frame, and you can tell them apart by their fields.
+Every frame is one JSON object sent as one WebSocket text frame. Neither side sends a frame larger than 1 MB (1,048,576 bytes). The one answer that could grow past that is `read_messages`: when 200 messages with their cards would not fit, the server sends fewer, with `has_more: true`, and Go asks again from where the page ended. There are four kinds of frame, and you can tell them apart by their fields.
 
 | Frame | Fields | Sent by | Answered? |
 |---|---|---|---|
@@ -128,7 +128,7 @@ Every frame is one JSON object sent as one WebSocket text frame. Neither side se
 | Error | `jsonrpc`, `id`, `error` | The side that received the request, when it did not work | No |
 | Notification | `jsonrpc`, `method`, `params` (no `id`) | go-brain, only for Go's typing | Never |
 
-`jsonrpc` is always `"2.0"`. `params` and `result` are always JSON objects. In this guide, the ids of go-server's requests start with `gs_` and the ids of Go's requests start with `go_`, only to make examples easy to read. Any string of 1 to 64 characters works.
+`jsonrpc` is always `"2.0"`. `params` and `result` are always JSON objects. In this guide, the ids of the server's requests start with `gs_` and the ids of Go's requests start with `go_`, only to make examples easy to read. Any string of 1 to 64 characters works.
 
 ### Request
 
@@ -148,14 +148,14 @@ A request asks the other side to do something and answer. Here Go adds a quiet â
 
 ### Result
 
-A result answers a request that worked. It has the request's `id`, and `result` is one value of the method's result schema. go-server stored Go's reaction as change 53 and answers:
+A result answers a request that worked. It has the request's `id`, and `result` is one value of the method's result schema. The server stored Go's reaction as change 53 and answers:
 
 <!-- schema: SocketResult -->
 ```json
 { "jsonrpc": "2.0", "id": "go_2207", "result": { "seq": 53 } }
 ```
 
-Then go-server sends the matching `reaction.added` event for change 53, as it does for every change Go makes.
+Then the server sends the matching `reaction.added` event for change 53, as it does for every change Go makes.
 
 ### Error
 
@@ -172,7 +172,7 @@ Here Go asked to close the villa vote, but someone had already closed it:
 }
 ```
 
-A `429` also says how long to wait, in `error.data.retry_after_seconds`. Here go-brain asks go-server to wait 5 seconds before asking for Meher's catch-up again:
+A `429` also says how long to wait, in `error.data.retry_after_seconds`. Here go-brain asks the server to wait 5 seconds before asking for Meher's catch-up again:
 
 <!-- schema: SocketError -->
 ```json
@@ -199,9 +199,9 @@ A notification tells the other side something and gets no answer. Notifications 
 { "jsonrpc": "2.0", "method": "typing", "params": { "trip_id": "t_goa", "on": true } }
 ```
 
-An "on" lasts 10 seconds. Go sends it again every 5 seconds while it works, and sends `"on": false` when it stops. go-server also hides it as soon as Go's next message lands. A lost "off" just runs out after 10 seconds.
+An "on" lasts 10 seconds. Go sends it again every 5 seconds while it works, and sends `"on": false` when it stops. The server also hides it as soon as Go's next message lands. A lost "off" just runs out after 10 seconds.
 
-go-server does not tell Go when people are typing. Go handles that on its own: after a message for Go, it waits about 2 seconds in case the same person sends more, and just before it posts, it checks for anything new for it in the room and answers that too.
+The server does not tell Go when people are typing. Go handles that on its own: after a message for Go, it waits about 2 seconds in case the same person sends more, and just before it posts, it checks for anything new for it in the room and answers that too.
 
 Good to know:
 - A frame with `result` or `error` is always the answer to a request you sent. Match it to your request by `id`.
@@ -213,7 +213,7 @@ Good to know:
 
 Every method has a name, a params schema and, unless it is a notification, a result schema and a time limit for the answer. `packages/contract/socket/methods.json` has the same table in JSON, and `SOCKET_METHODS` (TypeScript) and `go_contract.METHODS` (Python) have it in code.
 
-### Your requests: go-server sends, go-brain answers
+### Your requests: server sends, go-brain answers
 
 | Method | Params | Result | Answer within | What it is for |
 |---|---|---|---|---|
@@ -226,11 +226,11 @@ Every method has a name, a params schema and, unless it is a notification, a res
 | [`forget_person`](05-your-requests.md) | `ForgetPerson` | `ForgetResult` | 2 seconds | Forget me, in one trip or everywhere. |
 | [`vault_link`](05-your-requests.md) | `CreateLink` | `Link` | 2 seconds | A short-lived link to the person's vault page, to open in the system browser sheet. |
 
-### Go's requests: go-brain sends, go-server answers
+### Go's requests: go-brain sends, server answers
 
-Every one of Go's requests names its trip with `trip_id`, and every write carries a `request_id` (see [Basics](01-basics.md#doing-things-once)). The last column is the event go-server sends after it does the write, like it would for a change made by anyone else.
+Every one of Go's requests names its trip with `trip_id`, and every write carries a `request_id` (see [Basics](01-basics.md#doing-things-once)). The last column is the event the server sends after it does the write, like it would for a change made by anyone else.
 
-| Method | Params | Result | Answer within | Event go-server then sends |
+| Method | Params | Result | Answer within | Event the server then sends |
 |---|---|---|---|---|
 | [`read_trip`](04-gos-requests.md) | `ReadTrip` | `TripSnapshot` | 2 seconds | none |
 | [`read_messages`](04-gos-requests.md) | `ReadMessages` | `MessagesPage` | 2 seconds | none |
@@ -255,8 +255,8 @@ Every one of Go's requests names its trip with `trip_id`, and every write carrie
 
 Within version 1, new methods and new event types can be added, and either side may ship one before the other supports it. Two rules keep that safe:
 
-- **A method the receiver does not know** is answered with the error `-32601`. The sender skips what it wanted to do. For example, if Go sends a new method that go-server does not handle yet, Go carries on without it.
-- **An event type go-brain does not know** is still answered `{ "accepted": true, "duplicate": false }`, before go-brain checks the rest of the event, and go-brain skips it. go-server marks it sent and moves on to the trip's next event.
+- **A method the receiver does not know** is answered with the error `-32601`. The sender skips what it wanted to do. For example, if Go sends a new method that the server does not handle yet, Go carries on without it.
+- **An event type go-brain does not know** is still answered `{ "accepted": true, "duplicate": false }`, before go-brain checks the rest of the event, and go-brain skips it. The server marks it sent and moves on to the trip's next event.
 
 ## Keeping it alive
 
@@ -264,18 +264,18 @@ The socket stays open for as long as both servers run, so each side needs to not
 
 1. **go-brain pings every 20 seconds.** These are WebSocket ping control frames, not JSON-RPC frames. Both `ws` and `websockets` answer a ping with a pong by themselves, so your code does nothing for it.
 2. **Either side closes the socket after 40 seconds of silence.** Silence means no frame, ping or pong from the other side. A socket that stays silent that long is dead even if the network has not said so yet.
-3. **go-server reconnects with a growing wait.** After the socket closes or a connect fails, go-server waits 1 second, then 2, 5 and 10 seconds, then 30 seconds before every later try, until it is connected again. After a connect that works, the next wait starts from 1 second again.
+3. **The server reconnects with a growing wait.** After the socket closes or a connect fails, the server waits 1 second, then 2, 5 and 10 seconds, then 30 seconds before every later try, until it is connected again. After a connect that works, the next wait starts from 1 second again.
 
 Good to know:
-- A go-brain deploy closes the socket. go-server reconnects within a second or two, and the requests that were waiting go out again (see [When the socket drops](#when-the-socket-drops)).
+- A go-brain deploy closes the socket. The server reconnects within a second or two, and the requests that were waiting go out again (see [When the socket drops](#when-the-socket-drops)).
 - `RECONNECT_BACKOFF_SECONDS`, `PING_INTERVAL_SECONDS`, `IDLE_CLOSE_SECONDS` and `MAX_FRAME_BYTES` in `@go/contract` hold these numbers.
 
 ## Answering Go's requests
 
-go-server answers every request Go sends, on the socket it arrived on, within 2 seconds. A request always gets exactly one answer: a result when it worked, an error when it did not. Handle each request in this order:
+The server answers every request Go sends, on the socket it arrived on, within 2 seconds. A request always gets exactly one answer: a result when it worked, an error when it did not. Handle each request in this order:
 
 1. **Read the frame.** If it is not JSON, or not a JSON-RPC frame, answer `-32700` with an `id` of `null`.
-2. **Find the method.** If you do not handle that method, answer `-32601`. Go then skips what it wanted to do, which is how a new method can arrive within version 1 before go-server supports it.
+2. **Find the method.** If you do not handle that method, answer `-32601`. Go then skips what it wanted to do, which is how a new method can arrive within version 1 before the server supports it.
 3. **Check the params** against the method's params schema: `parseParams(method, params)` in TypeScript, `METHODS[method].params.model_validate(params)` in Python. If they do not match, answer `422` with the data code `invalid`, and say which field in the message.
 4. **Do the work once.** A write with a `request_id` you have already done gets the first answer again, with the same ids (see [Doing each write once](04-gos-requests.md)).
 5. **Answer** with a result frame, or with an error frame from the [error table](01-basics.md#errors), such as `404` when the trip does not exist or `409` when the request clashes with the trip as it is now.
@@ -284,34 +284,34 @@ A notification (`typing`) gets none of this. Show or hide "Go is typing..." and 
 
 Good to know:
 - When your own code fails, still answer: `500` with the data code `internal`. A request with no answer leaves Go waiting until its time limit.
-- After a write, send the event in the last column of [the table above](#gos-requests-go-brain-sends-go-server-answers) from your outbox, as for any other change (see [Events](03-events.md)).
+- After a write, send the event in the last column of [the table above](#gos-requests-go-brain-sends-server-answers) from your outbox, as for any other change (see [Events](03-events.md)).
 - go-brain checks the result you send against the method's result schema, just as you check Go's params.
-- Checking the params drops fields the contract does not know yet. Store a card from the params exactly as they arrived, not from the checked copy, so a card field Go adds later reaches the app (see [the client below](#a-complete-client-for-go-server)).
+- Checking the params drops fields the contract does not know yet. Store a card from the params exactly as they arrived, not from the checked copy, so a card field Go adds later reaches the app (see [the client below](#a-complete-client-for-the-server)).
 
 ## Sending your requests
 
-go-server sends a request when it has something to tell go-brain or a question to ask. Each request gets a new `id`, waits for the answer with that `id`, and gives up after the method's time limit.
+The server sends a request when it has something to tell go-brain or a question to ask. Each request gets a new `id`, waits for the answer with that `id`, and gives up after the method's time limit.
 
 - **Time limits.** go-brain answers `card_tap` and `catch_up` within 3 seconds, and every other request within 2 seconds. Wait a little longer for the network, then treat the request as unanswered.
 - **Matching answers.** Keep each request until its answer arrives. An answer with an `id` you are no longer waiting for belongs to a request you gave up on: ignore it.
 - **Errors.** [Basics](01-basics.md#errors) says which errors are worth sending again. After a `429`, wait at least `retry_after_seconds`. `send_event` follows the outbox's retry schedule in [Events](03-events.md). The other requests are not sent again on their own, because a person is waiting: show them it did not work and let them try again.
-- **Card taps.** Give every tap its own `tap_id` when the app sends it to go-server, and keep that id if you send the tap again. Go acts on each `tap_id` once, so a resend after a reconnect or a double tap does nothing twice.
+- **Card taps.** Give every tap its own `tap_id` when the app sends it to the server, and keep that id if you send the tap again. Go acts on each `tap_id` once, so a resend after a reconnect or a double tap does nothing twice.
 
 ## When the socket drops
 
 A socket can close at any moment: a deploy, a network change, 40 seconds of silence. These rules make sure nothing is lost or done twice.
 
-- **Unanswered requests are sent again.** After reconnecting, each side sends again every request that had no answer when the socket closed, with the same JSON-RPC `id`. Requests that change something carry their own id (`event_id`, `request_id` or `tap_id`), so the receiver does each one once: go-brain ignores an `event_id` or `tap_id` it has already seen, and go-server answers a repeated `request_id` with its first answer. The other requests only read or are safe to repeat, so they are simply answered again.
+- **Unanswered requests are sent again.** After reconnecting, each side sends again every request that had no answer when the socket closed, with the same JSON-RPC `id`. Requests that change something carry their own id (`event_id`, `request_id` or `tap_id`), so the receiver does each one once: go-brain ignores an `event_id` or `tap_id` it has already seen, and the server answers a repeated `request_id` with its first answer. The other requests only read or are safe to repeat, so they are simply answered again.
 - **Lost answers are fine.** If the request arrived but the answer was lost, the request comes again and gets the same answer.
 - **Notifications are dropped.** Go's typing is never sent again after a reconnect. An "on" runs out after 10 seconds on its own, so a lost "off" does no harm.
 - **Events keep their order.** The outbox sender sends a trip's next event only after go-brain has answered the one before it. While the socket is down, events wait in the outbox. When it is back, the sender carries on from the oldest unsent event of each trip.
 - **go-brain also catches up on its own.** If it holds change 61 and receives change 63, it sends `read_trip` and `read_messages` to fill the gap. It also reads every active trip again once a minute, as a safety net.
 
-What makes a request happen once is its `event_id`, `request_id` or `tap_id`, not its JSON-RPC `id`. If go-server restarts, its outbox sends the event again in a new frame with a new `id`, and go-brain still recognises the `event_id`.
+What makes a request happen once is its `event_id`, `request_id` or `tap_id`, not its JSON-RPC `id`. If the server restarts, its outbox sends the event again in a new frame with a new `id`, and go-brain still recognises the `event_id`.
 
-## More than one go-server instance
+## More than one server instance
 
-go-server may run as several instances, and each one opens its own socket to go-brain with its own signature. go-brain sends each of Go's requests on one of the open sockets, so every instance must be able to answer any of Go's requests, for any trip.
+The server may run as several instances, and each one opens its own socket to go-brain with its own signature. go-brain sends each of Go's requests on one of the open sockets, so every instance must be able to answer any of Go's requests, for any trip.
 
 In practice this means:
 
@@ -321,23 +321,23 @@ In practice this means:
 - Send each trip's events from one sender at a time, in change-number order, whichever instance's socket carries them. [Events](03-events.md) shows a sender that does this.
 
 Good to know:
-- Name each instance in the query string, such as `/v1/socket?instance=go-server-1`. go-brain accepts each signature once, so two instances that connect in the same second need different targets to get different signatures. Sign the full target.
+- Name each instance in the query string, such as `/v1/socket?instance=server-1`. go-brain accepts each signature once, so two instances that connect in the same second need different targets to get different signatures. Sign the full target.
 
-## A complete client for go-server
+## A complete client for the server
 
-This is a complete client for go-server's end of the socket, in about a hundred lines of each language. It connects with a fresh signature, reconnects with the waits above, answers Go's requests through a table of handlers, and sends your own requests with `request(method, params)`, which waits for the answer up to a time limit. Copy it into your go-server. The other pages of this guide use it as `brain-socket.ts` and `brain_socket.py`.
+This is a complete client for the server's end of the socket, in about a hundred lines of each language. It connects with a fresh signature, reconnects with the waits above, answers Go's requests through a table of handlers, and sends your own requests with `request(method, params)`, which waits for the answer up to a time limit. Copy it into your server. The other pages of this guide use it as `brain-socket.ts` and `brain_socket.py`.
 
 What it does:
 
 - `request(method, params)` sends a request and gives you the `result` object. On an error frame it fails with `SocketCallError`, which has `code`, `message`, the data code (`dataCode` / `data_code`) and, after a `429`, the wait (`retryAfterSeconds` / `retry_after_seconds`). When no answer arrives in time, it fails with `SocketTimeoutError` in TypeScript and `asyncio.TimeoutError` in Python. The time limit is 2 seconds unless you pass another.
 - If the socket drops while a request waits, the request stays waiting. The client sends it again with the same `id` as soon as it reconnects, so the caller just keeps waiting until the answer or its time limit.
-- `notify(method, params)` sends a notification, and drops it while the socket is down. go-server sends no notifications today. It is there for notifications added later in version 1.
+- `notify(method, params)` sends a notification, and drops it while the socket is down. The server sends no notifications today. It is there for notifications added later in version 1.
 - `handlers` maps each of Go's methods to an async function, `handler(params, raw)`. `params` is the checked params (a pydantic model in Python), and `raw` is the frame's `params` object exactly as it arrived. A handler returns the result. To answer with an error, it throws (or raises) `SocketCallError(code, message, dataCode, retryAfterSeconds)`. The last two are optional. A method with no handler is answered with `-32601`, and anything else that goes wrong is answered with `500`.
 
 **TypeScript**
 
 ```ts
-// brain-socket.ts: go-server's end of the socket to go-brain.
+// brain-socket.ts: the server's end of the socket to go-brain.
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { IDLE_CLOSE_SECONDS, MAX_FRAME_BYTES, RECONNECT_BACKOFF_SECONDS, SIGNATURE_HEADER, parseParams, signRequest } from '@go/contract';
@@ -447,7 +447,7 @@ export class BrainSocket {
 **Python**
 
 ```python
-# brain_socket.py: go-server's end of the socket to go-brain.
+# brain_socket.py: the server's end of the socket to go-brain.
 import asyncio
 import contextlib
 import json
@@ -568,14 +568,14 @@ class BrainSocket:
             await ws.send(json.dumps(frame))
 ```
 
-go-server keeps one `BrainSocket` for the whole process and starts it once. The other pages import it from `brain.ts` and `brain.py`. The handlers below show three of Go's methods. A Python handler gets the params as a checked pydantic model and returns a plain `dict`, so dump a model with `model_dump(mode="json", exclude_none=True)` before returning it.
+The server keeps one `BrainSocket` for the whole process and starts it once. The other pages import it from `brain.ts` and `brain.py`. The handlers below show three of Go's methods. A Python handler gets the params as a checked pydantic model and returns a plain `dict`, so dump a model with `model_dump(mode="json", exclude_none=True)` before returning it.
 
-Store the card from `raw`, not from `params`. Checking the params drops any field the contract does not know yet, so a card rebuilt from `params` would lose a field Go adds later in version 1. go-server stores `raw.card` as one JSON value (a `jsonb` column, for example) and sends it to the app unchanged. That way a new card field reaches the app without a go-server update. Use `params` for everything go-server reads itself, such as `request_id` and `trip_id`.
+Store the card from `raw`, not from `params`. Checking the params drops any field the contract does not know yet, so a card rebuilt from `params` would lose a field Go adds later in version 1. The server stores `raw.card` as one JSON value (a `jsonb` column, for example) and sends it to the app unchanged. That way a new card field reaches the app without a server update. Use `params` for everything the server reads itself, such as `request_id` and `trip_id`.
 
 **TypeScript**
 
 ```ts
-// brain.ts: the one socket go-server keeps open to go-brain.
+// brain.ts: the one socket the server keeps open to go-brain.
 import { SOCKET_PATH } from '@go/contract';
 import { BrainSocket } from './brain-socket.js';
 import { postGoMessage, readTripSnapshot, showGoTyping } from './trips.js'; // your own code
@@ -593,7 +593,7 @@ export const brain = new BrainSocket({
 });
 brain.start();
 
-// Anywhere in go-server:
+// Anywhere in the server:
 //   const accepted = await brain.request('send_event', event);
 //   const answer = await brain.request('card_tap', tap, { timeoutMs: 3500 });
 ```
@@ -601,7 +601,7 @@ brain.start();
 **Python**
 
 ```python
-# brain.py: the one socket go-server keeps open to go-brain.
+# brain.py: the one socket the server keeps open to go-brain.
 import os
 
 from brain_socket import BrainSocket
@@ -628,7 +628,7 @@ brain = BrainSocket(
 )
 
 # At startup:          asyncio.create_task(brain.run())
-# Anywhere in go-server:
+# Anywhere in the server:
 #   accepted = await brain.request("send_event", event)
 #   answer = await brain.request("card_tap", tap, timeout=3.5)
 ```
@@ -646,7 +646,7 @@ Good to know:
 | Case | Method | Target | Body |
 |---|---|---|---|
 | Opening the socket | `GET` | `/v1/socket` | empty |
-| Opening the socket with a query string | `GET` | `/v1/socket?instance=go-server-1` | empty |
+| Opening the socket with a query string | `GET` | `/v1/socket` with a query string | empty |
 | A body with non-ASCII characters | `POST` | `/v1/example` | JSON with `â‚¹` and an emoji |
 
 The socket upgrade never has a body. The third case is there to prove that your code signs the body's UTF-8 bytes, so the same code works for any signed request with a body.

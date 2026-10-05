@@ -3,11 +3,11 @@ import { AmountMinor, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Plac
 
 /**
  * Cards are the rich things Go posts in the room. The same JSON travels from go-brain through
- * go-server to the app, unchanged.
+ * the server to the app, unchanged.
  *
  * Two families:
- *  - Record cards carry only an id. go-server draws them from its own rows (a vote, a ticket, an
- *    expense), so the room and the Trip screens never disagree. go-server owns their buttons.
+ *  - Record cards carry only an id. The server draws them from its own rows (a vote, a ticket, an
+ *    expense), so the room and the Trip screens never disagree. The server owns their buttons.
  *  - Go cards carry their content (options, live work, a call, a payment, a notice). Their buttons
  *    are `actions`: a tap is sent to go-brain, which answers (see the card action call).
  *
@@ -19,7 +19,7 @@ const base = {
   card_id: Id,
   fallback_text: z.string().min(1).max(300),
   /**
-   * People who need to act on this card. go-server sends them a push and pins the card for them
+   * People who need to act on this card. The server sends them a push and pins the card for them
    * until it is settled.
    */
   for_person_ids: z.array(Id).max(30).nullish(),
@@ -41,17 +41,17 @@ export type CardAction = z.infer<typeof CardAction>;
 
 const actions = z.array(CardAction).max(3).nullish();
 
-// ── record cards (go-server draws them from its rows) ──
+// ── record cards (the server draws them from its rows) ──
 
 export const VoteCard = z
   .object({ ...base, kind: z.literal('vote'), decision_id: Id })
-  .meta({ id: 'VoteCard', description: 'A vote. go-server draws the options, the tally and the vote buttons.' });
+  .meta({ id: 'VoteCard', description: 'A vote. The server draws the options, the tally and the vote buttons.' });
 export const MandateCard = z
   .object({ ...base, kind: z.literal('mandate'), decision_id: Id })
   .meta({
     id: 'MandateCard',
     description:
-      'Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). go-server shows "Yes, book it" and "Not now" to the payer only.',
+      'Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The server shows "Yes, book it" and "Not now" to the payer only.',
   });
 export const TicketCard = z
   .object({ ...base, kind: z.literal('ticket'), booking_id: Id })

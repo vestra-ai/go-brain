@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { HttpUrl, Id, IsoDateTime } from './common.js';
 
 /**
- * Your requests: what go-server asks go-brain over the socket. Events tell go-brain what happened;
+ * Your requests: what the server asks go-brain over the socket. Events tell go-brain what happened;
  * the rest are questions that need an answer straight away, within the time limits in the guide.
  */
 
@@ -17,7 +17,7 @@ export const EventAccepted = z
 /** Someone tapped a button on a Go card. */
 export const CardTap = z
   .object({
-    /** go-server's id for this tap. Go acts on each tap once, even if it arrives twice (a resend after a reconnect, or a double tap). */
+    /** The server's id for this tap. Go acts on each tap once, even if it arrives twice (a resend after a reconnect, or a double tap). */
     tap_id: Id,
     trip_id: Id,
     card_id: Id,

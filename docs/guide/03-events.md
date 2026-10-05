@@ -1,20 +1,20 @@
 # Events
 
-go-server sends go-brain an event every time something changes in a trip, so that Go knows what happened in the room and on the Trip screens. This page explains what an event is, how go-server sends events so that none are lost and each trip's events arrive in order, and what go-brain does with each of the 20 event types.
+The server sends go-brain an event every time something changes in a trip, so that Go knows what happened in the room and on the Trip screens. This page explains what an event is, how the server sends events so that none are lost and each trip's events arrive in order, and what go-brain does with each of the 20 event types.
 
-go-server sends every event as a `send_event` request on the socket it keeps open to go-brain (see [The socket](02-the-socket.md)). The event is the request's `params`, and go-brain answers each one.
+The server sends every event as a `send_event` request on the socket it keeps open to go-brain (see [The socket](02-the-socket.md)). The event is the request's `params`, and go-brain answers each one.
 
 ## What an event is
 
-An event tells go-brain about one change to one trip. go-server sends one event per change, whoever made it: a person, Go, or go-server itself. Each change takes the trip's next change number (`seq`), and the event carries that number.
+An event tells go-brain about one change to one trip. The server sends one event per change, whoever made it: a person, Go, or the server itself. Each change takes the trip's next change number (`seq`), and the event carries that number.
 
-Go's own changes come back as events too. When Go posts a message, reacts to a message or records a booking, go-server sends the matching `message.created`, `reaction.added` or `booking.changed` like it would for anyone else. This way go-brain sees every change number of the trip, in order, from one place. A reaction Go made has no `person_id`, because no person made it.
+Go's own changes come back as events too. When Go posts a message, reacts to a message or records a booking, the server sends the matching `message.created`, `reaction.added` or `booking.changed` like it would for anyone else. This way go-brain sees every change number of the trip, in order, from one place. A reaction Go made has no `person_id`, because no person made it.
 
-There is one exception. When Go replaces one of its cards in place (`replace_card`, for example for a live call that moved from dialing to talking), nothing new happened in the trip. go-server takes no change number for it and sends no event.
+There is one exception. When Go replaces one of its cards in place (`replace_card`, for example for a live call that moved from dialing to talking), nothing new happened in the trip. The server takes no change number for it and sends no event.
 
-Typing is not an event either. Go's own "Go is typing..." travels from go-brain to go-server as the `typing` notification, which takes no change number and is not sent again if the socket drops. People's typing never reaches go-brain, so go-server sends nothing to go-brain while someone types.
+Typing is not an event either. Go's own "Go is typing..." travels from go-brain to the server as the `typing` notification, which takes no change number and is not sent again if the socket drops. People's typing never reaches go-brain, so the server sends nothing to go-brain while someone types.
 
-When a person has paused Go, go-server still sends their messages as `message.created`, so the change numbers stay in order. It sets `withheld` to `true` and leaves out the text and the attachments. Go learns that a message was posted, but not what it says.
+When a person has paused Go, the server still sends their messages as `message.created`, so the change numbers stay in order. It sets `withheld` to `true` and leaves out the text and the attachments. Go learns that a message was posted, but not what it says.
 
 ## The envelope
 
@@ -22,20 +22,20 @@ Every event has the same six fields. Only `data` is different for each type.
 
 | Field | What it is |
 |---|---|
-| `event_id` | go-server's id for this event, 1 to 64 characters. It stays the same every time the event is sent again. go-brain ignores an `event_id` it has already seen. |
+| `event_id` | The server's id for this event, 1 to 64 characters. It stays the same every time the event is sent again. go-brain ignores an `event_id` it has already seen. |
 | `trip_id` | The trip that changed. |
 | `seq` | The trip's change number for this change. Each event of a trip has a number one higher than the event before it. |
 | `occurred_at` | When the change happened, in ISO 8601 with an offset. A retry keeps the original time. |
 | `type` | What kind of change it was, such as `message.created`. The [table of event types](#all-event-types) lists all 20. |
 | `data` | The details of the change. Its fields depend on `type`. |
 
-Every example further down this page is one whole event, exactly as go-server puts it in the `params` of a `send_event` request.
+Every example further down this page is one whole event, exactly as the server puts it in the `params` of a `send_event` request.
 
 ## What go-brain answers
 
-go-brain stores the event and answers the `send_event` request within 2 seconds. It does the real work (reading the message, replying, saving what it learned) after it has answered, so go-server never waits for Go to think.
+go-brain stores the event and answers the `send_event` request within 2 seconds. It does the real work (reading the message, replying, saving what it learned) after it has answered, so the server never waits for Go to think.
 
-Here is one whole request frame. It carries Rahul's 👍 on Priya's message, which is change 50. The `id` is the JSON-RPC id that go-server's socket client chose for this request:
+Here is one whole request frame. It carries Rahul's 👍 on Priya's message, which is change 50. The `id` is the JSON-RPC id that the server's socket client chose for this request:
 
 <!-- schema: SocketRequest -->
 ```json
@@ -78,11 +78,11 @@ When go-brain has already seen the `event_id`, it does nothing more and answers:
 { "accepted": true, "duplicate": true }
 ```
 
-Both answers are a success, and go-server marks the event sent in both cases.
+Both answers are a success, and the server marks the event sent in both cases.
 
-go-brain also answers `{"accepted": true}` to an event type it does not know, and skips it. It looks at `type` before it checks the rest of the event, so an unknown type is never answered `422 invalid`. That way go-server can add a new event type within version 1 before go-brain uses it, and go-server has nothing special to do.
+go-brain also answers `{"accepted": true}` to an event type it does not know, and skips it. It looks at `type` before it checks the rest of the event, so an unknown type is never answered `422 invalid`. That way the server can add a new event type within version 1 before go-brain uses it, and the server has nothing special to do.
 
-When go-brain cannot take the event, it answers with an error frame instead (see [The socket](02-the-socket.md)). `422 invalid` means the event does not match the contract, and the message names the field. go-server does not send that event again (see the next section). `503 unavailable` means go-brain is restarting, and `429 rate_limited` means go-server is sending too fast. go-server sends the event again later in both cases, and for a `429` it waits as many seconds as `data.retry_after_seconds` says.
+When go-brain cannot take the event, it answers with an error frame instead (see [The socket](02-the-socket.md)). `422 invalid` means the event does not match the contract, and the message names the field. The server does not send that event again (see the next section). `503 unavailable` means go-brain is restarting, and `429 rate_limited` means the server is sending too fast. The server sends the event again later in both cases, and for a `429` it waits as many seconds as `data.retry_after_seconds` says.
 
 <!-- schema: SocketError -->
 ```json
@@ -106,7 +106,7 @@ A `429` answer says how long to wait:
 
 ## Sending events reliably
 
-go-server must never lose an event, never send one for a change that did not happen, and always send each trip's events in change-number order. The outbox pattern does all three. go-server writes each event into an `outbox` table together with the change, and a separate sender sends the table's rows to go-brain as `send_event` requests on the socket.
+The server must never lose an event, never send one for a change that did not happen, and always send each trip's events in change-number order. The outbox pattern does all three. The server writes each event into an `outbox` table together with the change, and a separate sender sends the table's rows to go-brain as `send_event` requests on the socket.
 
 1. **Write the event in the same transaction as the change.** Take the trip's next change number, store the change, and insert the event into the outbox, all in one database transaction. If the transaction rolls back, there is no change, no change number and no event.
 2. **Take the change number from a counter on the trip row.** `update trips set seq = seq + 1 where trip_id = $1 returning seq` gives the next number. It also locks the trip row until the transaction ends, so two changes to the same trip always commit in change-number order.
@@ -117,9 +117,9 @@ go-server must never lose an event, never send one for a change that did not hap
 
 ```mermaid
 sequenceDiagram
-  participant API as go-server API
-  participant DB as go-server database
-  participant S as go-server sender
+  participant API as server API
+  participant DB as server database
+  participant S as server sender
   participant B as go-brain
   API->>DB: one transaction with the reaction, change 50 and its outbox row
   S->>DB: read the oldest unsent event of each trip
@@ -156,7 +156,7 @@ create index outbox_pending on outbox (trip_id, seq) where status = 'pending';
 
 ### Writing the event with the change
 
-This example stores a reaction and its `reaction.added` event in one transaction. Every change in go-server follows the same three steps: take the next change number, store the change, insert the event. A change to a message (an edit, a delete or a reaction) also sets that message's `updated_seq` to the new change number, so `read_messages` can bring it back after a gap. When Go reacts (`add_reaction`), go-server runs the same code with no person: `person_id` is `null`.
+This example stores a reaction and its `reaction.added` event in one transaction. Every change in the server follows the same three steps: take the next change number, store the change, insert the event. A change to a message (an edit, a delete or a reaction) also sets that message's `updated_seq` to the new change number, so `read_messages` can bring it back after a gap. When Go reacts (`add_reaction`), the server runs the same code with no person: `person_id` is `null`.
 
 **TypeScript**
 
@@ -237,13 +237,13 @@ def add_reaction(conn: psycopg.Connection, trip_id: str, message_id: str, person
 
 ### The sender
 
-The sender runs on its own, next to go-server's API. Every 200 milliseconds it reads the oldest unsent event of each trip whose turn has come, skips trips that already have an event on the way, and sends each of those events without waiting for the others. It sends them with `brain.request('send_event', event)`, using the `BrainSocket` client from [The socket](02-the-socket.md), which go-server keeps connected to go-brain.
+The sender runs on its own, next to the server's API. Every 200 milliseconds it reads the oldest unsent event of each trip whose turn has come, skips trips that already have an event on the way, and sends each of those events without waiting for the others. It sends them with `brain.request('send_event', event)`, using the `BrainSocket` client from [The socket](02-the-socket.md), which the server keeps connected to go-brain.
 
 **TypeScript**
 
 ```ts
 import { db } from './outbox.js';
-import { brain } from './brain.js'; // the one BrainSocket go-server keeps open, from The socket
+import { brain } from './brain.js'; // the one BrainSocket the server keeps open, from The socket
 import { SocketCallError } from './brain-socket.js';
 
 const RETRY_AFTER_SECONDS = [1, 5, 30, 120, 600]; // then every 10 minutes
@@ -314,7 +314,7 @@ from datetime import datetime, timedelta, timezone
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from brain import brain  # the one BrainSocket go-server keeps open, from The socket
+from brain import brain  # the one BrainSocket the server keeps open, from The socket
 from brain_socket import SocketCallError
 
 RETRY_AFTER_SECONDS = [1, 5, 30, 120, 600]  # then every 10 minutes
@@ -377,9 +377,9 @@ The Python sender needs `pip install "psycopg[binary,pool]"`, plus `websockets` 
 Good to know:
 - Send one event per `send_event` request. Never put two events in one frame.
 - A retry sends the same event with the same `event_id`, `seq` and `occurred_at`. After a timeout, the retry is a new request with a new JSON-RPC `id`, and go-brain still handles the event once, because the `event_id` is the same.
-- Requests on the socket are not signed one by one. go-server signed once, when it opened the socket.
+- Requests on the socket are not signed one by one. The server signed once, when it opened the socket.
 - A frame is at most 1 MB. The biggest event, `trip.created`, carries the whole trip and stays well under that.
-- Run one sender, even when several go-server instances keep a socket open to go-brain. If you run more than one sender, split the trips between them, so that one trip's events are always sent by the same sender.
+- Run one sender, even when several server instances keep a socket open to go-brain. If you run more than one sender, split the trips between them, so that one trip's events are always sent by the same sender.
 - To send sooner than the next 200 millisecond check, wake the sender with Postgres `NOTIFY` after each commit.
 - Alert on failed events. A failed event means a bug on one side, and the person who fixes it needs the log line.
 
@@ -389,7 +389,7 @@ go-brain handles each trip's events one at a time, in change-number order, and u
 
 1. It checks the `event_id`. A repeat gets `{"accepted": true, "duplicate": true}`, and nothing else happens.
 2. It answers `accepted` and puts the event in that trip's queue.
-3. It compares the event's `seq` with the last change number it holds for the trip. If it holds 41 and receives 43, change 42 is missing. go-brain then sends go-server two requests on the same socket: `read_trip` for the whole trip, and `read_messages` with `after_seq` 41 for every message posted or changed after change 41 (which also brings back edits, deletes and reactions). Then it carries on from there.
+3. It compares the event's `seq` with the last change number it holds for the trip. If it holds 41 and receives 43, change 42 is missing. go-brain then sends the server two requests on the same socket: `read_trip` for the whole trip, and `read_messages` with `after_seq` 41 for every message posted or changed after change 41 (which also brings back edits, deletes and reactions). Then it carries on from there.
 4. Once a minute it reads every active trip again with `read_trip`, as a safety net for anything both sides missed.
 5. It answers `{"accepted": true}` to an event type it does not know, without checking the rest of the event, and skips it.
 
@@ -405,7 +405,7 @@ These are the two requests go-brain sends to catch up after the gap in step 3:
 { "trip_id": "t_goa", "after_seq": 41 }
 ```
 
-go-server answers them from its database. [Go's requests](04-gos-requests.md) shows both answers.
+The server answers them from its database. [Go's requests](04-gos-requests.md) shows both answers.
 
 ## When Go speaks and what it saves
 
@@ -418,18 +418,18 @@ Most events change what Go knows without making it speak. Go speaks in the room 
 
 Otherwise Go stays quiet and takes notes. In each trip, Go speaks without being asked at most once every 30 minutes.
 
-After a message for Go, Go waits about 2 seconds in case the same person sends more. Just before it posts its answer, it checks for anything new for it in the room (events that arrived while it worked) and answers that too. This is go-brain's own behaviour, and go-server has nothing to do for it. While it works, Go shows "Go is typing..." by sending the `typing` notification, and repeats it every 5 seconds.
+After a message for Go, Go waits about 2 seconds in case the same person sends more. Just before it posts its answer, it checks for anything new for it in the room (events that arrived while it worked) and answers that too. This is go-brain's own behaviour, and the server has nothing to do for it. While it works, Go shows "Go is typing..." by sending the `typing` notification, and repeats it every 5 seconds.
 
 After it replies, or after a message it only took notes on, Go saves what it learned in two places:
 
 - **Facts about people** go into go-brain, one current fact per topic for each person, with the message as proof.
-- **Agreed, open and doing lines** go into the trip record, through go-server (`add_record_line`). An agreed line needs two people saying yes (a 👍 reaction counts) or the organizer saying yes, and nobody objecting. Without that, Go writes an open line instead.
+- **Agreed, open and doing lines** go into the trip record, through the server (`add_record_line`). An agreed line needs two people saying yes (a 👍 reaction counts) or the organizer saying yes, and nobody objecting. Without that, Go writes an open line instead.
 
-Go does not announce each line it writes. Instead, it may add a quiet ✅ reaction to the message the line came from (`add_reaction`), so the room can see that Go noted it. People can undo a line in the app, and Go never undoes one. go-server writes the decided and booked lines itself, from votes and bookings.
+Go does not announce each line it writes. Instead, it may add a quiet ✅ reaction to the message the line came from (`add_reaction`), so the room can see that Go noted it. People can undo a line in the app, and Go never undoes one. The server writes the decided and booked lines itself, from votes and bookings.
 
 ## All event types
 
-| Type | go-server sends it when | What Go does with it |
+| Type | The server sends it when | What Go does with it |
 |---|---|---|
 | `message.created` | Anyone posts in the room, Go included. A paused person's message comes withheld. | Answers if it is asked, otherwise takes notes. |
 | `message.edited` | Someone edits a message. | Reads the new text and updates what it saved from the old one. |
@@ -450,7 +450,7 @@ Go does not announce each line it writes. Instead, it may add a quiet ✅ reacti
 | `mandate.declined` | The payer taps "Not now". | Does not ask for a spend approval. |
 | `record.changed` | A trip record line is added, changed, done or undone. | Keeps its copy of the record. Treats an undone line as no longer settled. |
 | `booking.changed` | A booking is added, changed or cancelled. | Checks it against the plan and warns about a clash. |
-| `expense.changed` | An expense is added or removed. | Takes note. go-server does the money maths. |
+| `expense.changed` | An expense is added or removed. | Takes note. The server does the money maths. |
 
 The rest of this page shows each event type with an example from the Goa trip.
 
@@ -460,7 +460,7 @@ These five events cover everything people and Go say in the room, and how people
 
 ### message.created
 
-go-server sends `message.created` when anyone posts in the room: a person, Go, or go-server itself (a message with the author `system`). If the message mentions or names Go, or replies to one of Go's messages, `mentions_go` is `true` and Go answers. Otherwise Go reads the message and saves anything worth keeping.
+The server sends `message.created` when anyone posts in the room: a person, Go, or the server itself (a message with the author `system`). If the message mentions or names Go, or replies to one of Go's messages, `mentions_go` is `true` and Go answers. Otherwise Go reads the message and saves anything worth keeping.
 
 Priya asks Go for flights. This is change 57, the message from [the front page](README.md):
 
@@ -639,7 +639,7 @@ Good to know:
 
 ### message.edited
 
-go-server sends `message.edited` when someone edits a message. It carries the message as it is now, with `edited_at` set. Go reads the new text and updates anything it saved from the old one.
+The server sends `message.edited` when someone edits a message. It carries the message as it is now, with `edited_at` set. Go reads the new text and updates anything it saved from the old one.
 
 Arjun corrects when he lands, so Go replaces what it saved about his arrival:
 
@@ -676,7 +676,7 @@ Arjun corrects when he lands, so Go replaces what it saved about his arrival:
 
 ### message.deleted
 
-go-server sends `message.deleted` when someone deletes a message. It carries only the `message_id`. Go drops every fact it saved from that message.
+The server sends `message.deleted` when someone deletes a message. It carries only the `message_id`. Go drops every fact it saved from that message.
 
 Kabir deleted a message he sent by mistake:
 
@@ -694,7 +694,7 @@ Kabir deleted a message he sent by mistake:
 
 ### reaction.added
 
-go-server sends `reaction.added` when someone reacts to a message, and when Go does. Go counts a 👍 from a person as that person agreeing with the message.
+The server sends `reaction.added` when someone reacts to a message, and when Go does. Go counts a 👍 from a person as that person agreeing with the message.
 
 Priya said "North Goa, not South" and Arjun agreed. Rahul, the organizer, adds his 👍 to Priya's message. Nobody objected, so Go writes the agreed line "North Goa, not South" in the trip record:
 
@@ -732,11 +732,11 @@ Go's own reactions come back the same way. After writing the agreed line, and af
 
 Good to know:
 - A reaction with `person_id` left out or `null` is Go's. go-brain never counts Go's own reaction as anyone agreeing. It uses the event to keep its place in the change numbers.
-- When Go takes a reaction back (`remove_reaction`), go-server sends `reaction.removed`, again with no `person_id`.
+- When Go takes a reaction back (`remove_reaction`), the server sends `reaction.removed`, again with no `person_id`.
 
 ### reaction.removed
 
-go-server sends `reaction.removed` when someone takes a reaction back. Go stops counting it. If Go already wrote a line partly because of that reaction, the line stays, because only people undo lines.
+The server sends `reaction.removed` when someone takes a reaction back. Go stops counting it. If Go already wrote a line partly because of that reaction, the line stays, because only people undo lines.
 
 Kabir takes back his 👍 on the message about scuba on Saturday, so Go keeps "Scuba on Saturday?" as an open question for Meher and Kabir:
 
@@ -761,7 +761,7 @@ These three events tell go-brain who is in the trip and how they want Go to trea
 
 ### person.joined
 
-go-server sends `person.joined` when someone joins the trip, with their join answers: where they travel from, the earliest they can leave, and anything Go should know. It never includes their budget answer, phone number, email or UPI id. Go saves the answers as facts about the person and stays quiet.
+The server sends `person.joined` when someone joins the trip, with their join answers: where they travel from, the earliest they can leave, and anything Go should know. It never includes their budget answer, phone number, email or UPI id. Go saves the answers as facts about the person and stays quiet.
 
 Kabir joins from the invite link:
 
@@ -792,7 +792,7 @@ Kabir joins from the invite link:
 
 ### person.updated
 
-go-server sends `person.updated` when someone changes their details, or pauses or unpauses Go. It carries the whole person as they are now, and `changed` lists the fields that changed. When `go_paused` becomes `true`, go-server starts withholding that person's messages and Go stops learning from them. When it becomes `false` again, Go reads their new messages as usual.
+The server sends `person.updated` when someone changes their details, or pauses or unpauses Go. It carries the whole person as they are now, and `changed` lists the fields that changed. When `go_paused` becomes `true`, the server starts withholding that person's messages and Go stops learning from them. When it becomes `false` again, Go reads their new messages as usual.
 
 Kabir pauses Go:
 
@@ -823,13 +823,13 @@ Kabir pauses Go:
 ```
 
 Good to know:
-- `has_upi` says only whether someone saved a UPI id. When it changes, go-server sends `changed: ["has_upi"]`. The id itself never leaves go-server.
+- `has_upi` says only whether someone saved a UPI id. When it changes, the server sends `changed: ["has_upi"]`. The id itself never leaves the server.
 
 ### person.left
 
-go-server sends `person.left` when someone leaves the trip. It carries only the `person_id`. Go stops treating them as part of the group.
+The server sends `person.left` when someone leaves the trip. It carries only the `person_id`. Go stops treating them as part of the group.
 
-If Kabir left the trip, go-server would send:
+If Kabir left the trip, the server would send:
 
 <!-- schema: PersonLeft -->
 ```json
@@ -849,7 +849,7 @@ These two events tell go-brain that a trip exists and when its details change.
 
 ### trip.created
 
-go-server sends `trip.created` when someone creates a trip. It carries the whole trip, so Go can greet the group and start without reading the trip first.
+The server sends `trip.created` when someone creates a trip. It carries the whole trip, so Go can greet the group and start without reading the trip first.
 
 Rahul has just created "Goa 🌴". He is the only person in it so far, nobody has answered the budget question yet, and there are no votes or bookings:
 
@@ -902,7 +902,7 @@ Rahul has just created "Goa 🌴". He is the only person in it so far, nobody ha
 
 #### How go-brain sets Go up for a new trip
 
-`trip.created` is the moment Go joins a trip. go-brain answers `accepted` at once and does the setting up after it has answered, so setting up never holds up go-server:
+`trip.created` is the moment Go joins a trip. go-brain answers `accepted` at once and does the setting up after it has answered, so setting up never holds up the server:
 
 1. **Go's side of the trip, in a few seconds.** go-brain makes the trip's home: Go's memory for this trip, a page for each person (someone who was in an earlier trip keeps their page), the queue of things Go has to do, and Go's conversation for this trip. Then Go says hello and opens the first vote.
 2. **Go's computer for the trip, in about a minute, in the background.** Each trip gets its own computer: a Bash from Vestra, which Go uses for longer jobs such as searching many sites, filling in forms or watching a fare. go-brain asks for it as soon as the trip exists and starts it, so it is ready before anyone asks for a task.
@@ -911,11 +911,11 @@ Nobody waits for the computer. Go says hello before it is ready, and a task some
 
 Setting up is safe to repeat, and go-brain does not depend on this one event. If any event arrives for a trip go-brain has not set up (because `trip.created` never arrived, or go-brain was restored from a backup), Go reads the trip with `read_trip` and sets it up then. A regular check also finishes any setup that stopped halfway.
 
-go-server has nothing extra to do: send `trip.created` first (it is change number 1), and show the room without waiting for Go.
+The server has nothing extra to do: send `trip.created` first (it is change number 1), and show the room without waiting for Go.
 
 ### trip.updated
 
-go-server sends `trip.updated` when the trip's title, destination, dates, vibe, stay, itinerary, status or budget changes. It carries who made the change (`by`) and which fields changed, but not the new values, so Go reads the trip to see them. Go then checks the change against the plan and warns the room if something clashes, such as new dates that no longer match a booking.
+The server sends `trip.updated` when the trip's title, destination, dates, vibe, stay, itinerary, status or budget changes. It carries who made the change (`by`) and which fields changed, but not the new values, so Go reads the trip to see them. Go then checks the change against the plan and warns the room if something clashes, such as new dates that no longer match a booking.
 
 The group agreed on North Goa, so Go changed the destination from "Goa" to "North Goa":
 
@@ -943,7 +943,7 @@ These four events follow a vote from the moment it opens until it closes or is c
 
 ### decision.opened
 
-go-server sends `decision.opened` when a vote opens, whether Go or a person opened it. It carries the whole vote and who opened it. Go notes the question, the options and the closing time, and waits for the result.
+The server sends `decision.opened` when a vote opens, whether Go or a person opened it. It carries the whole vote and who opened it. Go notes the question, the options and the closing time, and waits for the result.
 
 Go opened "Where do we stay?" with the three villas it found:
 
@@ -1006,7 +1006,7 @@ Go opened "Where do we stay?" with the three villas it found:
 
 ### decision.voted
 
-go-server sends `decision.voted` when someone votes or changes their vote. It carries how many have voted (`voted` of `of`) and the `tally` per option, in option order. Go keeps the count and stays quiet.
+The server sends `decision.voted` when someone votes or changes their vote. It carries how many have voted (`voted` of `of`) and the `tally` per option, in option order. Go keeps the count and stays quiet.
 
 Priya votes for Villa Sol, the third of five votes:
 
@@ -1030,11 +1030,11 @@ Priya votes for Villa Sol, the third of five votes:
 ```
 
 Good to know:
-- In an anonymous vote, go-server leaves out `person_id` and `option_index`, so nobody learns who voted for what, Go included.
+- In an anonymous vote, the server leaves out `person_id` and `option_index`, so nobody learns who voted for what, Go included.
 
 ### decision.closed
 
-go-server sends `decision.closed` when a vote closes, with the vote as it ended and the `reason`: the time ran out (`time`), everyone voted (`everyone_voted`), a person closed it (`closed_by_person`), or Go closed it (`closed_by_go`). Go announces the result in the room. When the vote was about something to book, Go then sets the mandate (`set_mandate`) and posts a mandate card for the payer (`post_message`).
+The server sends `decision.closed` when a vote closes, with the vote as it ended and the `reason`: the time ran out (`time`), everyone voted (`everyone_voted`), a person closed it (`closed_by_person`), or Go closed it (`closed_by_go`). Go announces the result in the room. When the vote was about something to book, Go then sets the mandate (`set_mandate`) and posts a mandate card for the payer (`post_message`).
 
 Everyone has voted on the villa, and Villa Sol won 4 to 1:
 
@@ -1102,11 +1102,11 @@ Everyone has voted on the villa, and Villa Sol won 4 to 1:
 ```
 
 Good to know:
-- go-server also writes a decided line for the result in the trip record. That line arrives as its own `record.changed` event.
+- The server also writes a decided line for the result in the trip record. That line arrives as its own `record.changed` event.
 
 ### decision.cancelled
 
-go-server sends `decision.cancelled` when a vote is called off before it closes. It carries the vote's id and who called it off. Go stops waiting on that vote: it will not announce a result or set a mandate for it.
+The server sends `decision.cancelled` when a vote is called off before it closes. It carries the vote's id and who called it off. Go stops waiting on that vote: it will not announce a result or set a mandate for it.
 
 Rahul called off a vote he had opened about which beach to spend Sunday on:
 
@@ -1131,7 +1131,7 @@ These three events cover what the group allowed for a spend and the payer's answ
 
 ### mandate.set
 
-go-server sends `mandate.set` after Go sets what the group allowed for a spend: the choice, the cap, whether it must be refundable, and who pays. It is Go's own change coming back, so go-brain only records the change number. Go posts the mandate card for the payer right after it sets the mandate.
+The server sends `mandate.set` after Go sets what the group allowed for a spend: the choice, the cap, whether it must be refundable, and who pays. It is Go's own change coming back, so go-brain only records the change number. Go posts the mandate card for the payer right after it sets the mandate.
 
 Go allowed Villa Sol for up to ₹55,000, refundable only, with Rahul paying:
 
@@ -1164,7 +1164,7 @@ Good to know:
 
 ### mandate.confirmed
 
-go-server sends `mandate.confirmed` when the payer taps "Yes, book it" on the mandate card. Those buttons belong to go-server, which records the time as the mandate's `confirmed_at`. Go re-checks the price, asks go-server for a spend approval (`request_spend_approval`), and then posts a pay card for the payer.
+The server sends `mandate.confirmed` when the payer taps "Yes, book it" on the mandate card. Those buttons belong to the server, which records the time as the mandate's `confirmed_at`. Go re-checks the price, asks the server for a spend approval (`request_spend_approval`), and then posts a pay card for the payer.
 
 Rahul says yes to the villa:
 
@@ -1182,9 +1182,9 @@ Rahul says yes to the villa:
 
 ### mandate.declined
 
-go-server sends `mandate.declined` when the payer taps "Not now" on the mandate card. go-server records the time as the mandate's `declined_at`. Go does not ask for a spend approval, and go-server's spend check would refuse one with the reason `payer_declined`.
+The server sends `mandate.declined` when the payer taps "Not now" on the mandate card. The server records the time as the mandate's `declined_at`. Go does not ask for a spend approval, and the server's spend check would refuse one with the reason `payer_declined`.
 
-If Rahul had tapped "Not now" instead, go-server would have sent:
+If Rahul had tapped "Not now" instead, the server would have sent:
 
 <!-- schema: MandateDeclined -->
 ```json
@@ -1204,7 +1204,7 @@ These three events cover the trip's shared memory and what the group booked and 
 
 ### record.changed
 
-go-server sends `record.changed` when a trip record line is added, changed, marked done or undone, by anyone. Go's own lines come back this way, and so do the decided and booked lines go-server writes from votes and bookings. When a person undoes a line, Go treats it as no longer settled. Go never undoes a line itself.
+The server sends `record.changed` when a trip record line is added, changed, marked done or undone, by anyone. Go's own lines come back this way, and so do the decided and booked lines the server writes from votes and bookings. When a person undoes a line, Go treats it as no longer settled. Go never undoes a line itself.
 
 Go wrote the agreed line "North Goa, not South", with Priya's and Arjun's messages as proof:
 
@@ -1242,7 +1242,7 @@ Go wrote the agreed line "North Goa, not South", with Priya's and Arjun's messag
 
 ### booking.changed
 
-go-server sends `booking.changed` when a booking is added, changed or cancelled. Go's own bookings come back this way, with the `approval_id` when Go paid through the vault, and so do bookings people add in the app. Go checks a new or changed booking against the plan and speaks only if something clashes, such as a flight that lands after the stay's check-in closes. When a booking is cancelled, Go warns the room about anything that depended on it.
+The server sends `booking.changed` when a booking is added, changed or cancelled. Go's own bookings come back this way, with the `approval_id` when Go paid through the vault, and so do bookings people add in the app. Go checks a new or changed booking against the plan and speaks only if something clashes, such as a flight that lands after the stay's check-in closes. When a booking is cancelled, Go warns the room about anything that depended on it.
 
 Go booked Villa Sol after Rahul approved the payment:
 
@@ -1289,7 +1289,7 @@ Go booked Villa Sol after Rahul approved the payment:
 
 ### expense.changed
 
-go-server sends `expense.changed` when an expense is added or removed. go-server does all the money maths, so when Go needs to know who owes whom, it reads `money` from the trip. Go takes note and stays quiet.
+The server sends `expense.changed` when an expense is added or removed. The server does all the money maths, so when Go needs to know who owes whom, it reads `money` from the trip. Go takes note and stays quiet.
 
 Kabir paid ₹3,400 for the airport cab and split it between all five:
 

@@ -11,7 +11,7 @@ pnpm install                                   # the TypeScript contract (@go/co
 pip install -e 'packages/contract-py[dev]'     # the Python contract (go_contract)
 ```
 
-From your own repo, use the packages as described in [the guide's front page](README.md#using-the-contract-from-your-code). For the socket, go-server also needs a WebSocket client: `ws` in TypeScript, or `websockets` (14 or later) in Python.
+From your own repo, use the packages as described in [the guide's front page](README.md#using-the-contract-from-your-code). For the socket, the server also needs a WebSocket client: `ws` in TypeScript, or `websockets` (14 or later) in Python.
 
 ## Prove your signing code first
 
@@ -24,7 +24,7 @@ If you use the helpers in `@go/contract` or `go_contract`, they already pass bot
 
 ## Connect by hand
 
-You can open the socket from a terminal to see it work before you write go-server's client. The signature has to be made by code, so make it with the Python helper.
+You can open the socket from a terminal to see it work before you write the server's client. The signature has to be made by code, so make it with the Python helper.
 
 This short Python script opens the socket, prints every frame go-brain sends, and sends one request (it asks for what Go knows about Kabir):
 
@@ -70,7 +70,7 @@ Good to know:
 - go-brain accepts each signature once, so make a new one (run the `SIG=` line again) every time you connect.
 - `401` means the secret or your clock is wrong, or the signature was used before.
 - If you leave the socket idle, go-brain's pings keep it open. Both scripts answer pings by themselves.
-- A go-server on your laptop needs no tunnel: it dials out to go-brain, and go-brain never calls it.
+- A server on your laptop needs no tunnel: it dials out to go-brain, and go-brain never calls it.
 
 ## Check your examples
 
@@ -86,18 +86,18 @@ It checks every marked example against the contract and lists any event, card, m
 
 Each team can build and test its part before the other part is ready, against a fake of the other side that speaks the same socket.
 
-- **The fake go-brain.** Keshav's team is building a small fake go-brain next, so go-server and the app can be built before the real one is ready. It speaks the same socket as the real one:
+- **The fake go-brain.** Keshav's team is building a small fake go-brain next, so the server and the app can be built before the real one is ready. It speaks the same socket as the real one:
   - It checks the signature on the upgrade and pings every 20 seconds.
   - It answers every `send_event` with `{ "accepted": true, "duplicate": false }`, and with `"duplicate": true` for an `event_id` it has seen.
   - When a `message.created` event mentions Go, it sends a `typing` notification, sends `read_trip`, adds a ✅ to the message with `add_reaction`, and then sends `post_message` with a reply and one of Go's own cards (`options`, `working`, `call`, `pay` or `notice`), a different kind each time.
   - It answers `card_tap`, `catch_up`, the people requests and `vault_link` with fixed answers.
 
-  Until it is up, go-server can test its signing code with the test vectors, and its answers to Go's requests with the examples in this guide.
-- **The fake go-server.** go-brain is tested against a small fake go-server that opens the socket, sends the Goa trip's events, answers Go's requests from the Goa trip in [Go's requests](04-gos-requests.md), and records every write.
+  Until it is up, the server can test its signing code with the test vectors, and its answers to Go's requests with the examples in this guide.
+- **The fake server.** go-brain is tested against a small fake server that opens the socket, sends the Goa trip's events, answers Go's requests from the Goa trip in [Go's requests](04-gos-requests.md), and records every write.
 
 ## What done means
 
-**go-server (Nishanth's team)**
+**server (Nishanth's team)**
 - Opens one socket to go-brain with a fresh signature on every connect (each instance with its own `?instance=` name), keeps it open, and reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds.
 - Sends an event for every change to a trip with `send_event`, from an outbox, in change-number order per trip, waiting for each answer, with the retry schedule in [Basics](01-basics.md#time-limits-and-retries).
 - Answers all of Go's requests in [Go's requests](04-gos-requests.md) within 2 seconds, checks their params, does each write once per `request_id`, answers `-32601` for a method it does not handle, and shows or hides "Go is typing..." for the `typing` notification. Sends `read_messages` pages under the 1 MB frame limit, with `has_more: true` when it sent fewer.
@@ -128,4 +128,4 @@ Each team can build and test its part before the other part is ready, against a 
 These are still being worked out. Each one changes only what happens inside go-brain, so nobody needs to wait on them.
 
 - What ixigo's tools can do this week (search, book, pay, test mode). This decides how Go books, not what the room sees.
-- The staging URL for go-brain. It goes into go-server's `BRAIN_URL` once go-brain is deployed. go-brain needs no address for go-server.
+- The staging URL for go-brain. It goes into the server's `BRAIN_URL` once go-brain is deployed. go-brain needs no address for the server.

@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /**
- * go-server signs the request that opens the socket to go-brain (GET /v1/socket) with this header.
+ * The server signs the request that opens the socket to go-brain (GET /v1/socket) with this header.
  * Everything after that travels on the open socket and is not signed again.
  *
  *   x-go-signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, signing string)>
@@ -11,7 +11,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  *   <t>\n<METHOD>\n<target>\n<raw body>
  *
  * - METHOD is upper case: GET for the socket.
- * - target is the path plus the query string exactly as sent, e.g. /v1/socket or /v1/socket?instance=go-server-1
+ * - target is the path plus the query string exactly as sent, e.g. /v1/socket or /v1/socket?instance=server-1
  * - raw body is the exact bytes sent, or nothing for a request without a body (the socket has none).
  *
  * The signature is good for 300 seconds, and go-brain accepts each one once: a second upgrade with

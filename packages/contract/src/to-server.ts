@@ -3,9 +3,9 @@ import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Jou
 import { BookingKind, Day, Decision, DecisionOption, Proof } from './trip.js';
 
 /**
- * Go's requests: what go-brain asks go-server over the socket, to read the trip or act in it.
- * go-server answers each one. Every request names its trip. Every write carries `request_id`:
- * go-server must do the write once even if the same request arrives twice, and answer the repeat
+ * Go's requests: what go-brain asks the server over the socket, to read the trip or act in it.
+ * The server answers each one. Every request names its trip. Every write carries `request_id`:
+ * The server must do the write once even if the same request arrives twice, and answer the repeat
  * with the first answer.
  */
 
@@ -18,7 +18,7 @@ export const ReadTrip = z.object({ trip_id }).meta({ id: 'ReadTrip' });
 /** Messages posted or changed after a change number (updated_seq > after_seq), oldest change first. */
 export const ReadMessages = z
   .object({ trip_id, after_seq: z.int().nonnegative(), limit: z.int().min(1).max(200).nullish() })
-  .meta({ id: 'ReadMessages', description: 'Up to 200 at a time; 200 when limit is left out. go-server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit.' });
+  .meta({ id: 'ReadMessages', description: 'Up to 200 at a time; 200 when limit is left out. The server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit.' });
 
 /** What every write answers with, plus any new id. */
 export const WriteResult = z.object({ seq: Seq }).meta({ id: 'WriteResult' });
@@ -119,7 +119,7 @@ export const AddBooking = z
     place: Place.nullish(),
     image_url: HttpUrl.nullish(),
     decision_id: Id.nullish(),
-    /** Required when Go paid through the vault. go-server marks that approval used. */
+    /** Required when Go paid through the vault. The server marks that approval used. */
     approval_id: Id.nullish(),
   })
   .meta({ id: 'AddBooking' });
@@ -153,7 +153,7 @@ export const AddExpense = z
   .meta({ id: 'AddExpense' });
 export const AddExpenseResult = z.object({ expense_id: Id, seq: Seq }).meta({ id: 'AddExpenseResult' });
 
-/** Go asks go-server whether a payment may happen. go-server runs the spend check. */
+/** Go asks the server whether a payment may happen. The server runs the spend check. */
 export const RequestSpendApproval = z
   .object({
     request_id,

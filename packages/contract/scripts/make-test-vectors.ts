@@ -16,7 +16,7 @@ const secret = 'test-only-go-signing-secret';
 const t = 1791190800; // 2026-10-05T07:00:00Z
 const requests = [
   { name: 'opening the socket: GET, no body', method: 'GET', target: '/v1/socket', body: '' },
-  { name: 'opening the socket with a query string', method: 'GET', target: '/v1/socket?instance=go-server-1', body: '' },
+  { name: 'opening the socket with a query string', method: 'GET', target: '/v1/socket?instance=server-1', body: '' },
   { name: 'a body with non-ASCII characters (sign the UTF-8 bytes)', method: 'POST', target: '/v1/example',
     body: '{"request_id":"rq_7","text":"Villa Sol, ₹54,200 for 3 nights 🌴"}' },
 ];
@@ -32,7 +32,7 @@ const priv = createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
 const privatePem = priv.export({ format: 'pem', type: 'pkcs8' }).toString();
 const publicPem = createPublicKey(priv).export({ format: 'pem', type: 'spki' }).toString();
 const claims: SpendApprovalClaims = {
-  iss: 'go-server', aud: 'go-brain-vault', jti: 'ap_01JA7Q3V8Z', trip_id: 't_goa', decision_id: 'd_villa',
+  iss: 'server', aud: 'go-brain-vault', jti: 'ap_01JA7Q3V8Z', trip_id: 't_goa', decision_id: 'd_villa',
   payer_person_id: 'p_rahul', amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol, Anjuna',
   purpose: 'Villa Sol, 3 nights, 6 to 9 Nov', refundable_until: '2026-11-01T18:29:59Z', iat: t, exp: t + 600,
 };

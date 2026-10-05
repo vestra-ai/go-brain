@@ -14,13 +14,13 @@ import {
 import { TripSnapshot } from './trip.js';
 
 /**
- * The brain's socket. go-server opens one WebSocket to go-brain and keeps it open. Everything between
+ * The brain's socket. The server opens one WebSocket to go-brain and keeps it open. Everything between
  * the two servers travels on it, in both directions, as JSON-RPC 2.0 text frames:
  *
  *  - a request has an `id` and always gets exactly one answer: a result or an error;
  *  - a notification has no `id` and gets no answer (Go's typing).
  *
- * go-server connects to wss://<brain>/v1/socket with the x-go-signature header on the upgrade request
+ * The server connects to wss://<brain>/v1/socket with the x-go-signature header on the upgrade request
  * (method GET, target /v1/socket, empty body). See signing.ts. go-brain accepts each signature once.
  *
  * After a reconnect, a request that got no answer is sent again with the same id. Requests that change
@@ -31,7 +31,7 @@ export const SOCKET_PATH = '/v1/socket';
 /** go-brain pings every 20 seconds. A side that hears nothing for 40 seconds closes the socket. */
 export const PING_INTERVAL_SECONDS = 20;
 export const IDLE_CLOSE_SECONDS = 40;
-/** How long go-server waits before reconnecting, in order, then 30 seconds each time. */
+/** How long the server waits before reconnecting, in order, then 30 seconds each time. */
 export const RECONNECT_BACKOFF_SECONDS = [1, 2, 5, 10, 30] as const;
 /** The largest frame either side sends. */
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -83,7 +83,7 @@ export type Direction = 'to_brain' | 'to_server';
 
 export interface SocketMethod {
   name: string;
-  /** to_brain: go-server sends it and go-brain answers. to_server: go-brain (Go) sends it and go-server answers. */
+  /** to_brain: the server sends it and go-brain answers. to_server: go-brain (Go) sends it and the server answers. */
   direction: Direction;
   summary: string;
   params: z.ZodType;
@@ -91,7 +91,7 @@ export interface SocketMethod {
   result: z.ZodType | null;
   /** The answer must arrive within this many seconds. */
   answer_within: number | null;
-  /** The trip event go-server sends after it does this, if any. */
+  /** The trip event the server sends after it does this, if any. */
   sends_event?: string;
 }
 
@@ -99,8 +99,8 @@ const m = (name: string, direction: Direction, summary: string, params: z.ZodTyp
   ({ name, direction, summary, params, result, answer_within, ...(sends_event ? { sends_event } : {}) });
 
 /**
- * What go-server sends go-brain. go-brain answers send_event with { accepted: true } for an event type it
- * does not know yet, before checking the event, so go-server can add event types within version 1.
+ * What the server sends go-brain. go-brain answers send_event with { accepted: true } for an event type it
+ * does not know yet, before checking the event, so the server can add event types within version 1.
  */
 export const TO_BRAIN: readonly SocketMethod[] = [
   m('send_event', 'to_brain', 'Something changed in a trip. One event per change, in change-number order for each trip.', Event, EventAccepted, 2),
@@ -113,7 +113,7 @@ export const TO_BRAIN: readonly SocketMethod[] = [
   m('vault_link', 'to_brain', 'A short-lived link to the person\'s vault page, to open in the browser sheet.', CreateLink, Link, 2),
 ];
 
-/** What go-brain (Go) sends go-server. */
+/** What go-brain (Go) sends the server. */
 export const TO_SERVER: readonly SocketMethod[] = [
   m('read_trip', 'to_server', 'Read the whole trip as Go may see it, at its current change number.', ReadTrip, TripSnapshot, 2),
   m('read_messages', 'to_server', 'Read messages posted or changed after a change number. Used to catch up after a gap or a restart.', ReadMessages, MessagesPage, 2),
