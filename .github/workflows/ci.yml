@@ -31,3 +31,17 @@ jobs:
       - run: pytest -q packages/contract-py/tests
       # models.py is generated from the OpenAPI file; fail if it is stale.
       - run: cd packages/contract-py && python scripts/gen_models.py && git diff --exit-code go_contract/models.py go_contract/socket_methods.py
+
+  fake-go-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Builds the image Railway builds, so a broken Dockerfile fails here and not on a deploy. Nothing is pushed.
+      - run: docker build -f apps/fake-go/Dockerfile -t fake-go .
+      # Boots it with throwaway values made on the runner, and checks that /v1/health answers.
+      - run: |
+          docker run -d --name fake-go -p 8080:8080 \
+            -e GO_SIGNING_SECRET="$(openssl rand -hex 32)" -e FAKE_GO_ADMIN_TOKEN="$(openssl rand -hex 16)" fake-go
+          curl --fail --silent --show-error --retry 15 --retry-delay 1 --retry-all-errors http://localhost:8080/v1/health
+      - if: failure()
+        run: docker logs fake-go || true
