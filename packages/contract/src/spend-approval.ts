@@ -32,7 +32,7 @@ export const SpendApprovalClaims = z
     merchant: z.string().min(1).max(120),
     purpose: z.string().min(1).max(200),
     /** When free cancellation ends, if it does. */
-    refundable_until: IsoDateTime.optional(),
+    refundable_until: IsoDateTime.nullish(),
     iat: z.int(),
     exp: z.int(),
   })

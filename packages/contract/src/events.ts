@@ -51,9 +51,9 @@ export const DecisionVoted = ev('decision.voted',
   z.object({
     decision_id: Id,
     /** Left out when the vote is anonymous. */
-    person_id: Id.optional(),
+    person_id: Id.nullish(),
     /** Left out when the vote is anonymous. */
-    option_index: z.int().nonnegative().optional(),
+    option_index: z.int().nonnegative().nullish(),
     voted: z.int().nonnegative(),
     of: z.int().nonnegative(),
     tally: z.array(z.int().nonnegative()).max(10),

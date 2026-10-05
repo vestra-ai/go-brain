@@ -12,13 +12,13 @@ export const Person = z
   .object({
     person_id: Id,
     name: z.string().min(1).max(80),
-    photo_url: HttpUrl.optional(),
+    photo_url: HttpUrl.nullish(),
     role: z.enum(['organizer', 'member']),
     joined_at: IsoDateTime,
     /** Where they travel from, in their words or a city chip, e.g. "Delhi". */
-    from_city: z.string().max(60).optional(),
+    from_city: z.string().max(60).nullish(),
     /** The earliest they can leave, in their words or a chip, e.g. "Fri after 6 pm". */
-    earliest_leave: z.string().max(60).optional(),
+    earliest_leave: z.string().max(60).nullish(),
     /** Their "anything Go should know" answers, as plain words. The group can see these. */
     know: z.array(z.string().min(1).max(80)).max(20),
     /** True when they have a UPI id saved, so friends can pay them back. The id itself stays in go-server. */
@@ -34,7 +34,7 @@ export type Person = z.infer<typeof Person>;
 
 /** A spending band. `max_minor` is null for an open top band such as "25k+". */
 export const BudgetBand = z
-  .object({ min_minor: AmountMinor, max_minor: AmountMinor.nullable(), currency: Currency })
+  .object({ min_minor: AmountMinor, max_minor: AmountMinor.nullish(), currency: Currency })
   .meta({ id: 'BudgetBand' });
 export type BudgetBand = z.infer<typeof BudgetBand>;
 
@@ -45,7 +45,7 @@ export type BudgetBand = z.infer<typeof BudgetBand>;
 export const BudgetSummary = z
   .object({
     /** Per person, stay plus food, flights separate. Null until someone answers. */
-    lowest: BudgetBand.nullable(),
+    lowest: BudgetBand.nullish(),
     answered: z.int().nonnegative(),
     of: z.int().nonnegative(),
   })

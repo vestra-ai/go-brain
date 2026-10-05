@@ -12,14 +12,17 @@ Three repos, one product:
 
 ## What lives here
 
-- `packages/contract`: the contract between go-server and go-brain. Zod schemas are the source of truth;
-  `packages/contract/openapi.json` is generated from them for the Go team. Message in, message out, the
-  trip API, the signed spend approval, and request signing.
+- `docs/guide`: **start here.** The guide to the contract between the app, go-server and go-brain, in plain
+  words, with TypeScript and Python for every piece.
+- `packages/contract`: the contract in zod (the source of truth), with `openapi/go-server.json` and
+  `openapi/go-brain.json` generated from it, the request signing and spend approval helpers, and shared test
+  vectors.
+- `packages/contract-py`: the same contract for Python (pydantic models, signing, spend approvals).
 - `packages/agent-sdk`: the agent loop, copied from the Bash monorepo (see its `PROVENANCE.md`).
 - `apps/brain`: the service. The `go` channel, Go in group mode, memory, Go's tools, bookings through
   ixigo, the call service and the vault.
 
 Nothing here touches the Bash or Vestra servers, databases or deploys.
 
-Design: the team site https://vestrago.vercel.app and the spec in `vestra-ai/bash` on branch
-`docs/go-hackweek-spec` (`docs/superpowers/specs/2026-10-03-go-hackweek-design.md`).
+Design: the team site https://vestrago.vercel.app, the go-brain map (`mockups/go-brain-map-2026-10-04.html`) and
+the spec in `vestra-ai/bash` on branch `docs/go-hackweek-spec`. Where they differ from `docs/guide`, the guide wins.

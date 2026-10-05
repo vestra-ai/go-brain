@@ -16,13 +16,13 @@ export const WriteResult = z.object({ seq: Seq }).meta({ id: 'WriteResult' });
 export const UpdateTrip = z
   .object({
     request_id,
-    title: z.string().min(1).max(80).optional(),
-    destination: Place.optional(),
-    dates: z.object({ start: IsoDate, end: IsoDate }).optional(),
-    vibe: z.array(z.string().min(1).max(40)).max(12).optional(),
-    stay: z.string().max(60).optional(),
+    title: z.string().min(1).max(80).nullish(),
+    destination: Place.nullish(),
+    dates: z.object({ start: IsoDate, end: IsoDate }).nullish(),
+    vibe: z.array(z.string().min(1).max(40)).max(12).nullish(),
+    stay: z.string().max(60).nullish(),
     /** Replaces the whole itinerary. */
-    itinerary: z.array(Day).max(30).optional(),
+    itinerary: z.array(Day).max(30).nullish(),
   })
   .meta({ id: 'UpdateTrip', description: 'Only the fields sent change.' });
 
@@ -33,7 +33,7 @@ export const OpenDecision = z
     kind: z.enum(['choice', 'yesno']),
     anonymous: z.boolean(),
     options: z.array(DecisionOption).min(2).max(10),
-    closes_at: IsoDateTime.optional(),
+    closes_at: IsoDateTime.nullish(),
   })
   .meta({ id: 'OpenDecision', description: 'Opens a vote. Go then posts a message with a vote card to show it in the room.' });
 export const OpenDecisionResult = z.object({ decision_id: Id, seq: Seq }).meta({ id: 'OpenDecisionResult' });
@@ -64,7 +64,7 @@ export const AddRecordLine = z
     /** The messages this came from. An agreed line needs at least one. */
     proof: z.array(Proof).max(10),
     person_ids: z.array(Id).max(30),
-    due_at: IsoDateTime.optional(),
+    due_at: IsoDateTime.nullish(),
   })
   .meta({ id: 'AddRecordLine' });
 export const AddRecordLineResult = z.object({ line_id: Id, seq: Seq }).meta({ id: 'AddRecordLineResult' });
@@ -73,13 +73,13 @@ export const UpdateRecordLine = z
   .object({
     request_id,
     /** E.g. an open question that got settled becomes agreed. */
-    kind: z.enum(['agreed', 'open', 'doing']).optional(),
-    text: z.string().min(1).max(200).optional(),
-    status: z.enum(['active', 'done']).optional(),
+    kind: z.enum(['agreed', 'open', 'doing']).nullish(),
+    text: z.string().min(1).max(200).nullish(),
+    status: z.enum(['active', 'done']).nullish(),
     /** Replaces the proof list. */
-    proof: z.array(Proof).max(10).optional(),
-    person_ids: z.array(Id).max(30).optional(),
-    due_at: IsoDateTime.optional(),
+    proof: z.array(Proof).max(10).nullish(),
+    person_ids: z.array(Id).max(30).nullish(),
+    due_at: IsoDateTime.nullish(),
   })
   .meta({ id: 'UpdateRecordLine', description: 'Only the fields sent change. Go cannot undo a line; only people can.' });
 
@@ -94,15 +94,15 @@ export const AddBooking = z
     currency: Currency,
     payer_person_id: Id,
     for_person_ids: z.array(Id).min(1).max(30),
-    refundable_until: IsoDateTime.optional(),
-    starts_at: IsoDateTime.optional(),
-    ends_at: IsoDateTime.optional(),
-    journey: Journey.optional(),
-    place: Place.optional(),
-    image_url: HttpUrl.optional(),
-    decision_id: Id.optional(),
+    refundable_until: IsoDateTime.nullish(),
+    starts_at: IsoDateTime.nullish(),
+    ends_at: IsoDateTime.nullish(),
+    journey: Journey.nullish(),
+    place: Place.nullish(),
+    image_url: HttpUrl.nullish(),
+    decision_id: Id.nullish(),
     /** Required when Go paid through the vault. go-server marks that approval used. */
-    approval_id: Id.optional(),
+    approval_id: Id.nullish(),
   })
   .meta({ id: 'AddBooking' });
 export const AddBookingResult = z.object({ booking_id: Id, seq: Seq }).meta({ id: 'AddBookingResult' });
@@ -110,11 +110,11 @@ export const AddBookingResult = z.object({ booking_id: Id, seq: Seq }).meta({ id
 export const UpdateBooking = z
   .object({
     request_id,
-    status: z.literal('cancelled').optional(),
-    ref: z.string().min(1).max(80).optional(),
-    refundable_until: IsoDateTime.optional(),
-    starts_at: IsoDateTime.optional(),
-    ends_at: IsoDateTime.optional(),
+    status: z.literal('cancelled').nullish(),
+    ref: z.string().min(1).max(80).nullish(),
+    refundable_until: IsoDateTime.nullish(),
+    starts_at: IsoDateTime.nullish(),
+    ends_at: IsoDateTime.nullish(),
   })
   .meta({ id: 'UpdateBooking', description: 'Only the fields sent change.' });
 
@@ -127,7 +127,7 @@ export const AddExpense = z
     note: z.string().min(1).max(120),
     category: Category,
     split_person_ids: z.array(Id).min(1).max(30),
-    booking_id: Id.optional(),
+    booking_id: Id.nullish(),
   })
   .meta({ id: 'AddExpense' });
 export const AddExpenseResult = z.object({ expense_id: Id, seq: Seq }).meta({ id: 'AddExpenseResult' });
@@ -143,7 +143,7 @@ export const RequestSpendApproval = z
     merchant: z.string().min(1).max(120),
     purpose: z.string().min(1).max(200),
     /** When free cancellation ends. Required when the mandate is refundable only. */
-    refundable_until: IsoDateTime.optional(),
+    refundable_until: IsoDateTime.nullish(),
   })
   .meta({ id: 'RequestSpendApproval' });
 
@@ -171,6 +171,6 @@ export const SpendApprovalResult = z
       approval: z.string().min(1).max(4096),
       expires_at: IsoDateTime,
     }).meta({ id: 'SpendApproved' }),
-    z.object({ status: z.literal('denied'), reason: SpendDenialReason, detail: z.string().max(200).optional() }).meta({ id: 'SpendDenied' }),
+    z.object({ status: z.literal('denied'), reason: SpendDenialReason, detail: z.string().max(200).nullish() }).meta({ id: 'SpendDenied' }),
   ])
   .meta({ id: 'SpendApprovalResult', discriminator: { propertyName: 'status' } });

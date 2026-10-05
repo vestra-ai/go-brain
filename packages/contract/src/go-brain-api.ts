@@ -21,14 +21,14 @@ export const CardActionRequest = z
     action_id: z.string().regex(/^[a-z][a-z_]{0,31}$/),
     person_id: Id,
     /** Set when the button was on one option of an options card. */
-    option_id: Id.optional(),
+    option_id: Id.nullish(),
   })
   .meta({ id: 'CardActionRequest' });
 
 export const CardActionResult = z
   .discriminatedUnion('result', [
     /** Done. Show the toast, if any. Go follows up in the room. */
-    z.object({ result: z.literal('done'), toast: z.string().max(120).optional() }).meta({ id: 'ActionDone' }),
+    z.object({ result: z.literal('done'), toast: z.string().max(120).nullish() }).meta({ id: 'ActionDone' }),
     /** Open this page in the system browser sheet (the vault, or watching Go work). */
     z.object({ result: z.literal('open'), url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'ActionOpen' }),
     /** Not allowed or no longer possible. Show the toast. */
@@ -41,15 +41,15 @@ export const CatchUpRequest = z.object({ person_id: Id, since: IsoDateTime }).me
 export const CatchUp = z
   .object({
     /** One sentence in Go's voice, or null when nothing much happened. */
-    summary: z.string().max(200).nullable(),
+    summary: z.string().max(200).nullish(),
     items: z
       .array(
         z.object({
           kind: z.enum(['decided', 'booked', 'needs_you', 'open', 'news']),
           text: z.string().min(1).max(140),
-          image_url: HttpUrl.optional(),
+          image_url: HttpUrl.nullish(),
           /** Jump to this message when tapped. */
-          message_id: Id.optional(),
+          message_id: Id.nullish(),
         }),
       )
       .max(5),
@@ -67,7 +67,7 @@ export const Fact = z
     audience: z.enum(['group', 'only_go']),
     trip_id: Id,
     /** The message it came from. Null when it came from a join answer. */
-    message_id: Id.nullable(),
+    message_id: Id.nullish(),
     said_at: IsoDateTime,
   })
   .meta({ id: 'Fact' });
@@ -99,7 +99,7 @@ export const CreateLink = z
     kind: z.enum(['vault']),
     person_id: Id,
     /** Which part of the vault to open. */
-    start: z.enum(['home', 'add_card', 'add_login']).optional(),
+    start: z.enum(['home', 'add_card', 'add_login']).nullish(),
   })
   .meta({ id: 'CreateLink' });
 export const Link = z.object({ url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'Link' });

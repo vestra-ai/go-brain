@@ -10,12 +10,12 @@ import { BudgetSummary, Person } from './people.js';
 export const DecisionOption = z
   .object({
     label: z.string().min(1).max(120),
-    image_url: HttpUrl.optional(),
-    price_minor: AmountMinor.optional(),
-    currency: Currency.optional(),
+    image_url: HttpUrl.nullish(),
+    price_minor: AmountMinor.nullish(),
+    currency: Currency.nullish(),
     /** Go's own reference for this option (e.g. an ixigo offer), so it can book the winner. */
-    option_ref: z.string().max(200).optional(),
-    note: z.string().max(120).optional(),
+    option_ref: z.string().max(200).nullish(),
+    note: z.string().max(120).nullish(),
   })
   .meta({ id: 'DecisionOption' });
 
@@ -29,9 +29,9 @@ export const Mandate = z
     payer_person_id: Id,
     set_at: IsoDateTime,
     /** When the payer tapped "Yes, book it". */
-    confirmed_at: IsoDateTime.optional(),
+    confirmed_at: IsoDateTime.nullish(),
     /** When the payer tapped "Not now". A new mandate clears it. */
-    declined_at: IsoDateTime.optional(),
+    declined_at: IsoDateTime.nullish(),
   })
   .meta({ id: 'Mandate' });
 export type Mandate = z.infer<typeof Mandate>;
@@ -45,20 +45,20 @@ export const Decision = z
     anonymous: z.boolean(),
     status: z.enum(['open', 'closed', 'cancelled']),
     /** Null when Go opened it. */
-    opened_by_person_id: Id.nullable(),
+    opened_by_person_id: Id.nullish(),
     options: z.array(DecisionOption).min(2).max(10),
-    closes_at: IsoDateTime.optional(),
+    closes_at: IsoDateTime.nullish(),
     voted: z.int().nonnegative(),
     of: z.int().nonnegative(),
     /** Votes per option, in option order. */
     tally: z.array(z.int().nonnegative()).max(10),
     /** Who voted for what. Left out when the vote is anonymous. */
-    votes: z.array(z.object({ person_id: Id, option_index: z.int().nonnegative() })).max(30).optional(),
+    votes: z.array(z.object({ person_id: Id, option_index: z.int().nonnegative() })).max(30).nullish(),
     /** The winning option, once closed. */
-    result_index: z.int().nonnegative().optional(),
-    mandate: Mandate.optional(),
+    result_index: z.int().nonnegative().nullish(),
+    mandate: Mandate.nullish(),
     opened_at: IsoDateTime,
-    closed_at: IsoDateTime.optional(),
+    closed_at: IsoDateTime.nullish(),
   })
   .meta({ id: 'Decision' });
 export type Decision = z.infer<typeof Decision>;
@@ -81,17 +81,17 @@ export const Booking = z
     payer_person_id: Id,
     /** Who this booking covers. */
     for_person_ids: z.array(Id).min(1).max(30),
-    refundable_until: IsoDateTime.optional(),
-    starts_at: IsoDateTime.optional(),
-    ends_at: IsoDateTime.optional(),
-    journey: Journey.optional(),
-    place: Place.optional(),
-    image_url: HttpUrl.optional(),
-    decision_id: Id.optional(),
+    refundable_until: IsoDateTime.nullish(),
+    starts_at: IsoDateTime.nullish(),
+    ends_at: IsoDateTime.nullish(),
+    journey: Journey.nullish(),
+    place: Place.nullish(),
+    image_url: HttpUrl.nullish(),
+    decision_id: Id.nullish(),
     /** The spend approval it was paid with, when Go paid through the vault. */
-    approval_id: Id.optional(),
+    approval_id: Id.nullish(),
     /** Null when Go added it. */
-    added_by_person_id: Id.nullable(),
+    added_by_person_id: Id.nullish(),
     created_at: IsoDateTime,
   })
   .meta({ id: 'Booking' });
@@ -107,9 +107,9 @@ export const Expense = z
     category: Category,
     /** Who shares this cost, equally. */
     split_person_ids: z.array(Id).min(1).max(30),
-    booking_id: Id.optional(),
+    booking_id: Id.nullish(),
     /** Null when Go added it. */
-    added_by_person_id: Id.nullable(),
+    added_by_person_id: Id.nullish(),
     created_at: IsoDateTime,
   })
   .meta({ id: 'Expense' });
@@ -124,7 +124,7 @@ export const Money = z
   .object({
     currency: Currency,
     /** The trip's plan in total, if the organizer set one. */
-    plan_minor: AmountMinor.optional(),
+    plan_minor: AmountMinor.nullish(),
     spent_minor: AmountMinor,
     by_category: z.array(z.object({ category: Category, amount_minor: AmountMinor })).max(5),
     /** The fewest payments that square everyone up right now. */
@@ -134,24 +134,24 @@ export const Money = z
 
 export const ItineraryItem = z
   .object({
-    item_id: Id.optional(),
+    item_id: Id.nullish(),
     /** Local time at the destination, "HH:MM". */
-    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullish(),
     title: z.string().min(1).max(120),
     category: Category,
-    place: Place.optional(),
-    booking_id: Id.optional(),
+    place: Place.nullish(),
+    booking_id: Id.nullish(),
     status: z.enum(['booked', 'planned', 'idea']),
-    note: z.string().max(200).optional(),
+    note: z.string().max(200).nullish(),
   })
   .meta({ id: 'ItineraryItem' });
 
 export const Day = z
-  .object({ date: IsoDate, title: z.string().max(80).optional(), items: z.array(ItineraryItem).max(20) })
+  .object({ date: IsoDate, title: z.string().max(80).nullish(), items: z.array(ItineraryItem).max(20) })
   .meta({ id: 'Day' });
 
 /** A message a record line came from, and who said it. */
-export const Proof = z.object({ message_id: Id, person_id: Id.optional() }).meta({ id: 'Proof' });
+export const Proof = z.object({ message_id: Id, person_id: Id.nullish() }).meta({ id: 'Proof' });
 
 /**
  * The trip record: the trip's shared memory, one line per thing the group settled or still has to.
@@ -171,11 +171,11 @@ export const RecordLine = z
     proof: z.array(Proof).max(10),
     /** agreed: who agreed. open: who is asked. doing: who is on it. */
     person_ids: z.array(Id).max(30),
-    due_at: IsoDateTime.optional(),
+    due_at: IsoDateTime.nullish(),
     /** Set on decided lines. */
-    decision_id: Id.optional(),
+    decision_id: Id.nullish(),
     /** Set on booked lines. */
-    booking_id: Id.optional(),
+    booking_id: Id.nullish(),
     source: z.enum(['go', 'person', 'vote', 'booking']),
     created_at: IsoDateTime,
     updated_at: IsoDateTime,
@@ -193,10 +193,10 @@ export const TripSnapshot = z
     created_at: IsoDateTime,
     organizer_person_id: Id,
     invite_url: HttpUrl,
-    destination: Place.optional(),
-    dates: z.object({ start: IsoDate, end: IsoDate }).optional(),
+    destination: Place.nullish(),
+    dates: z.object({ start: IsoDate, end: IsoDate }).nullish(),
     vibe: z.array(z.string().min(1).max(40)).max(12),
-    stay: z.string().max(60).optional(),
+    stay: z.string().max(60).nullish(),
     budget: BudgetSummary,
     people: z.array(Person).max(30),
     decisions: z.array(Decision).max(100),

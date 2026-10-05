@@ -22,7 +22,7 @@ const base = {
    * People who need to act on this card. go-server sends them a push and pins the card for them
    * until it is settled.
    */
-  for_person_ids: z.array(Id).max(30).optional(),
+  for_person_ids: z.array(Id).max(30).nullish(),
 };
 
 export const CardAction = z
@@ -32,14 +32,14 @@ export const CardAction = z
     label: z.string().min(1).max(24),
     style: z.enum(['primary', 'secondary']),
     /** Only these people see the button. Everyone sees it when absent. */
-    only_for_person_ids: z.array(Id).max(30).optional(),
+    only_for_person_ids: z.array(Id).max(30).nullish(),
     /** On an options card: show this button on every option and send that option's id with the tap. */
-    per_option: z.boolean().optional(),
+    per_option: z.boolean().nullish(),
   })
   .meta({ id: 'CardAction' });
 export type CardAction = z.infer<typeof CardAction>;
 
-const actions = z.array(CardAction).max(3).optional();
+const actions = z.array(CardAction).max(3).nullish();
 
 // ── record cards (go-server draws them from its rows) ──
 
@@ -79,19 +79,19 @@ export const Option = z
     /** Go's id for this option, sent back when someone taps a per-option button. */
     option_id: Id,
     title: z.string().min(1).max(80),
-    subtitle: z.string().max(120).optional(),
-    image_url: HttpUrl.optional(),
-    logo_url: HttpUrl.optional(),
-    price_minor: AmountMinor.optional(),
-    currency: z.string().regex(/^[A-Z]{3}$/).optional(),
+    subtitle: z.string().max(120).nullish(),
+    image_url: HttpUrl.nullish(),
+    logo_url: HttpUrl.nullish(),
+    price_minor: AmountMinor.nullish(),
+    currency: z.string().regex(/^[A-Z]{3}$/).nullish(),
     /** What the price covers, e.g. "per person" or "3 nights". */
-    price_note: z.string().max(40).optional(),
+    price_note: z.string().max(40).nullish(),
     /** Up to four short highlights, e.g. "Pool", "15 min to the beach". */
     highlights: z.array(z.string().min(1).max(40)).max(4),
-    journey: Journey.optional(),
-    place: Place.optional(),
-    rating: z.number().min(0).max(5).optional(),
-    refundable_until: IsoDateTime.optional(),
+    journey: Journey.nullish(),
+    place: Place.nullish(),
+    rating: z.number().min(0).max(5).nullish(),
+    refundable_until: IsoDateTime.nullish(),
   })
   .meta({ id: 'Option' });
 
@@ -117,7 +117,7 @@ export const WorkingCard = z
     state: z.enum(['running', 'needs_you', 'done', 'failed']),
     steps: z.array(z.object({ text: z.string().min(1).max(80), state: z.enum(['todo', 'doing', 'done', 'failed']) })).max(8),
     /** The latest picture of Go's screen while it works, if any. */
-    screenshot_url: HttpUrl.optional(),
+    screenshot_url: HttpUrl.nullish(),
     updated_at: IsoDateTime,
     actions,
   })
@@ -133,13 +133,13 @@ export const CallCard = z
     business: z.string().min(1).max(80),
     goal: z.string().min(1).max(160),
     state: z.enum(['dialing', 'talking', 'ended', 'failed']),
-    started_at: IsoDateTime.optional(),
-    ended_at: IsoDateTime.optional(),
-    last_line: CallLine.optional(),
+    started_at: IsoDateTime.nullish(),
+    ended_at: IsoDateTime.nullish(),
+    last_line: CallLine.nullish(),
     /** What came of it, once the call ends. */
-    outcome: z.string().max(500).optional(),
+    outcome: z.string().max(500).nullish(),
     /** The full transcript, once the call ends. This card is the call's record. */
-    transcript: z.array(CallLine).max(300).optional(),
+    transcript: z.array(CallLine).max(300).nullish(),
     actions,
   })
   .meta({ id: 'CallCard', description: 'Go on a phone call to a business. Updated in place while it runs; the final version is the record.' });
@@ -155,7 +155,7 @@ export const PayCard = z
     currency: Currency,
     merchant: z.string().min(1).max(120),
     purpose: z.string().min(1).max(200),
-    refundable_until: IsoDateTime.optional(),
+    refundable_until: IsoDateTime.nullish(),
     expires_at: IsoDateTime,
     state: z.enum(['waiting', 'paid', 'declined', 'expired', 'failed']),
     actions,
@@ -172,11 +172,11 @@ export const NoticeCard = z
     tone: z.enum(['info', 'heads_up']),
     title: z.string().min(1).max(80),
     body: z.string().min(1).max(500),
-    image_url: HttpUrl.optional(),
-    source: z.object({ name: z.string().min(1).max(60), url: HttpUrl.optional() }).optional(),
-    checked_at: IsoDateTime.optional(),
+    image_url: HttpUrl.nullish(),
+    source: z.object({ name: z.string().min(1).max(60), url: HttpUrl.nullish() }).nullish(),
+    checked_at: IsoDateTime.nullish(),
     /** For a heads-up with a deadline, e.g. free cancellation ends. */
-    deadline_at: IsoDateTime.optional(),
+    deadline_at: IsoDateTime.nullish(),
     actions,
   })
   .meta({ id: 'NoticeCard', description: 'Good to know (with its source) or a heads-up (a deadline, a price change, a clash).' });

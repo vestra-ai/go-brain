@@ -2,7 +2,7 @@
 
 The zod schemas in packages/contract are the source of truth. This script reads the OpenAPI file
 generated from them, relaxes a few constraints that would otherwise turn plain strings and numbers
-into wrapper classes in Python (string lengths inside lists, and on fields that may be null), and
+into wrapper classes in Python (string lengths inside lists, and limits on fields that may be null), and
 runs datamodel-code-generator. go-brain still checks every constraint on its side.
 
 Run from packages/contract-py:  python scripts/gen_models.py
@@ -26,6 +26,14 @@ def is_plain(node: dict) -> bool:
     return not any(k in node for k in ("$ref", "properties", "anyOf", "oneOf", "items"))
 
 
+def _loosen(branch: dict) -> dict:
+    if is_plain(branch):
+        return {k: v for k, v in branch.items() if k in KEEP}
+    if branch.get("type") == "array":
+        return {k: v for k, v in branch.items() if k in KEEP | {"items"}}
+    return branch
+
+
 def relax(node):
     if isinstance(node, list):
         for item in node:
@@ -40,9 +48,7 @@ def relax(node):
         node["items"] = {k: v for k, v in items.items() if k in KEEP}
     any_of = node.get("anyOf")
     if isinstance(any_of, list) and len(any_of) == 2 and {"type": "null"} in any_of:
-        node["anyOf"] = [
-            {k: v for k, v in branch.items() if k in KEEP} if is_plain(branch) else branch for branch in any_of
-        ]
+        node["anyOf"] = [_loosen(branch) for branch in any_of]
     for value in node.values():
         relax(value)
 

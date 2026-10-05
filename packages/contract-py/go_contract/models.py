@@ -23,21 +23,21 @@ class SystemActor(BaseModel):
 
 class Place(BaseModel):
     name: Annotated[str, Field(max_length=120, min_length=1)]
-    place_id: Annotated[str | None, Field(max_length=256)] = None
-    address: Annotated[str | None, Field(max_length=200)] = None
-    lat: Annotated[float | None, Field(ge=-90.0, le=90.0)] = None
-    lng: Annotated[float | None, Field(ge=-180.0, le=180.0)] = None
+    place_id: str | None = None
+    address: str | None = None
+    lat: float | None = None
+    lng: float | None = None
     photo_url: AnyUrl | None = None
 
 
 class From(BaseModel):
     name: Annotated[str, Field(max_length=80, min_length=1)]
-    code: Annotated[str | None, Field(max_length=8)] = None
+    code: str | None = None
 
 
 class To(BaseModel):
     name: Annotated[str, Field(max_length=80, min_length=1)]
-    code: Annotated[str | None, Field(max_length=8)] = None
+    code: str | None = None
 
 
 class Journey(BaseModel):
@@ -46,11 +46,11 @@ class Journey(BaseModel):
     to: To
     depart_at: AwareDatetime
     arrive_at: AwareDatetime
-    carrier_name: Annotated[str | None, Field(max_length=60)] = None
-    carrier_code: Annotated[str | None, Field(max_length=8)] = None
-    number: Annotated[str | None, Field(max_length=20)] = None
+    carrier_name: str | None = None
+    carrier_code: str | None = None
+    number: str | None = None
     logo_url: AnyUrl | None = None
-    stops: Annotated[int | None, Field(ge=0)] = None
+    stops: int | None = None
 
 
 class Person(BaseModel):
@@ -59,8 +59,8 @@ class Person(BaseModel):
     photo_url: AnyUrl | None = None
     role: Literal["organizer", "member"]
     joined_at: AwareDatetime
-    from_city: Annotated[str | None, Field(max_length=60)] = None
-    earliest_leave: Annotated[str | None, Field(max_length=60)] = None
+    from_city: str | None = None
+    earliest_leave: str | None = None
     know: Annotated[list[str], Field(max_length=20)]
     has_upi: bool
     go_paused: bool
@@ -68,12 +68,12 @@ class Person(BaseModel):
 
 class BudgetBand(BaseModel):
     min_minor: Annotated[int, Field(ge=0)]
-    max_minor: int | None
+    max_minor: int | None = None
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
 
 
 class BudgetSummary(BaseModel):
-    lowest: BudgetBand | None
+    lowest: BudgetBand | None = None
     answered: Annotated[int, Field(ge=0)]
     of: Annotated[int, Field(ge=0)]
 
@@ -82,7 +82,7 @@ class CardAction(BaseModel):
     action_id: Annotated[str, Field(pattern="^[a-z][a-z_]{0,31}$")]
     label: Annotated[str, Field(max_length=24, min_length=1)]
     style: Literal["primary", "secondary"]
-    only_for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    only_for_person_ids: list[str] | None = None
     per_option: bool | None = None
 
 
@@ -93,7 +93,7 @@ class VoteCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["vote"]
     decision_id: Annotated[str, Field(max_length=64, min_length=1)]
 
@@ -105,7 +105,7 @@ class MandateCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["mandate"]
     decision_id: Annotated[str, Field(max_length=64, min_length=1)]
 
@@ -117,7 +117,7 @@ class TicketCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["ticket"]
     booking_id: Annotated[str, Field(max_length=64, min_length=1)]
 
@@ -129,7 +129,7 @@ class ExpenseCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["expense"]
     expense_id: Annotated[str, Field(max_length=64, min_length=1)]
 
@@ -141,7 +141,7 @@ class SettleUpCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["settle_up"]
 
 
@@ -152,7 +152,7 @@ class DayCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["day"]
     date: date_aliased
 
@@ -164,7 +164,7 @@ class PlanCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["plan"]
 
 
@@ -175,23 +175,23 @@ class BudgetCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["budget"]
 
 
 class Option(BaseModel):
     option_id: Annotated[str, Field(max_length=64, min_length=1)]
     title: Annotated[str, Field(max_length=80, min_length=1)]
-    subtitle: Annotated[str | None, Field(max_length=120)] = None
+    subtitle: str | None = None
     image_url: AnyUrl | None = None
     logo_url: AnyUrl | None = None
-    price_minor: Annotated[int | None, Field(ge=0)] = None
-    currency: Annotated[str | None, Field(pattern="^[A-Z]{3}$")] = None
-    price_note: Annotated[str | None, Field(max_length=40)] = None
+    price_minor: int | None = None
+    currency: str | None = None
+    price_note: str | None = None
     highlights: Annotated[list[str], Field(max_length=4)]
     journey: Journey | None = None
     place: Place | None = None
-    rating: Annotated[float | None, Field(ge=0.0, le=5.0)] = None
+    rating: float | None = None
     refundable_until: AwareDatetime | None = None
 
 
@@ -202,13 +202,13 @@ class OptionsCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["options"]
     title: Annotated[str, Field(max_length=80, min_length=1)]
     option_kind: Literal["stay", "flight", "train", "bus", "place", "food", "activity"]
     checked_at: AwareDatetime
     options: Annotated[list[Option], Field(max_length=5, min_length=1)]
-    actions: Annotated[list[CardAction] | None, Field(max_length=3)] = None
+    actions: list[CardAction] | None = None
 
 
 class Step(BaseModel):
@@ -223,7 +223,7 @@ class WorkingCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["working"]
     task_id: Annotated[str, Field(max_length=64, min_length=1)]
     title: Annotated[str, Field(max_length=80, min_length=1)]
@@ -231,7 +231,7 @@ class WorkingCard(BaseModel):
     steps: Annotated[list[Step], Field(max_length=8)]
     screenshot_url: AnyUrl | None = None
     updated_at: AwareDatetime
-    actions: Annotated[list[CardAction] | None, Field(max_length=3)] = None
+    actions: list[CardAction] | None = None
 
 
 class LastLine(BaseModel):
@@ -251,7 +251,7 @@ class CallCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["call"]
     call_id: Annotated[str, Field(max_length=64, min_length=1)]
     business: Annotated[str, Field(max_length=80, min_length=1)]
@@ -260,9 +260,9 @@ class CallCard(BaseModel):
     started_at: AwareDatetime | None = None
     ended_at: AwareDatetime | None = None
     last_line: LastLine | None = None
-    outcome: Annotated[str | None, Field(max_length=500)] = None
-    transcript: Annotated[list[TranscriptItem] | None, Field(max_length=300)] = None
-    actions: Annotated[list[CardAction] | None, Field(max_length=3)] = None
+    outcome: str | None = None
+    transcript: list[TranscriptItem] | None = None
+    actions: list[CardAction] | None = None
 
 
 class PayCard(BaseModel):
@@ -272,7 +272,7 @@ class PayCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["pay"]
     approval_id: Annotated[str, Field(max_length=64, min_length=1)]
     payer_person_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -283,7 +283,7 @@ class PayCard(BaseModel):
     refundable_until: AwareDatetime | None = None
     expires_at: AwareDatetime
     state: Literal["waiting", "paid", "declined", "expired", "failed"]
-    actions: Annotated[list[CardAction] | None, Field(max_length=3)] = None
+    actions: list[CardAction] | None = None
 
 
 class Source(BaseModel):
@@ -298,7 +298,7 @@ class NoticeCard(BaseModel):
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
-    for_person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    for_person_ids: list[str] | None = None
     kind: Literal["notice"]
     tone: Literal["info", "heads_up"]
     title: Annotated[str, Field(max_length=80, min_length=1)]
@@ -307,15 +307,15 @@ class NoticeCard(BaseModel):
     source: Source | None = None
     checked_at: AwareDatetime | None = None
     deadline_at: AwareDatetime | None = None
-    actions: Annotated[list[CardAction] | None, Field(max_length=3)] = None
+    actions: list[CardAction] | None = None
 
 
 class PhotoAttachment(BaseModel):
     kind: Literal["photo"]
     url: AnyUrl
-    width: Annotated[int | None, Field(gt=0)] = None
-    height: Annotated[int | None, Field(gt=0)] = None
-    caption: Annotated[str | None, Field(max_length=500)] = None
+    width: int | None = None
+    height: int | None = None
+    caption: str | None = None
 
 
 class FileAttachment(BaseModel):
@@ -338,17 +338,17 @@ class Message(BaseModel):
     """
     Who did it: a person, Go, or go-server itself (system).
     """
-    text: str | None
+    text: str | None = None
     attachments: Annotated[
         list[Annotated[PhotoAttachment | FileAttachment, Field(discriminator="kind")]],
         Field(max_length=10),
     ]
-    reply_to: Annotated[str | None, Field(max_length=64, min_length=1)] = None
-    about_message_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
+    reply_to: str | None = None
+    about_message_id: str | None = None
     mentions_go: bool
     mentions: Annotated[list[str], Field(max_length=30)]
     reactions: Annotated[list[Reaction], Field(max_length=100)]
-    card: Annotated[
+    card: (
         VoteCard
         | MandateCard
         | TicketCard
@@ -362,9 +362,8 @@ class Message(BaseModel):
         | CallCard
         | PayCard
         | NoticeCard
-        | None,
-        Field(discriminator="kind"),
-    ] = None
+        | None
+    ) = None
     withheld: bool
     deleted: bool
     edited_at: AwareDatetime | None = None
@@ -382,8 +381,8 @@ class PostMessage(BaseModel):
     """
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
-    text: Annotated[str | None, Field(max_length=2000, min_length=1)] = None
-    card: Annotated[
+    text: str | None = None
+    card: (
         VoteCard
         | MandateCard
         | TicketCard
@@ -397,11 +396,10 @@ class PostMessage(BaseModel):
         | CallCard
         | PayCard
         | NoticeCard
-        | None,
-        Field(discriminator="kind"),
-    ] = None
-    reply_to: Annotated[str | None, Field(max_length=64, min_length=1)] = None
-    mentions: Annotated[list[str] | None, Field(max_length=30)] = None
+        | None
+    ) = None
+    reply_to: str | None = None
+    mentions: list[str] | None = None
 
 
 class PostMessageResult(BaseModel):
@@ -420,10 +418,10 @@ class SetTyping(BaseModel):
 class DecisionOption(BaseModel):
     label: Annotated[str, Field(max_length=120, min_length=1)]
     image_url: AnyUrl | None = None
-    price_minor: Annotated[int | None, Field(ge=0)] = None
-    currency: Annotated[str | None, Field(pattern="^[A-Z]{3}$")] = None
-    option_ref: Annotated[str | None, Field(max_length=200)] = None
-    note: Annotated[str | None, Field(max_length=120)] = None
+    price_minor: int | None = None
+    currency: str | None = None
+    option_ref: str | None = None
+    note: str | None = None
 
 
 class Mandate(BaseModel):
@@ -448,14 +446,14 @@ class Decision(BaseModel):
     kind: Literal["choice", "yesno"]
     anonymous: bool
     status: Literal["open", "closed", "cancelled"]
-    opened_by_person_id: str | None
+    opened_by_person_id: str | None = None
     options: Annotated[list[DecisionOption], Field(max_length=10, min_length=2)]
     closes_at: AwareDatetime | None = None
     voted: Annotated[int, Field(ge=0)]
     of: Annotated[int, Field(ge=0)]
     tally: Annotated[list[int], Field(max_length=10)]
-    votes: Annotated[list[Vote] | None, Field(max_length=30)] = None
-    result_index: Annotated[int | None, Field(ge=0)] = None
+    votes: list[Vote] | None = None
+    result_index: int | None = None
     mandate: Mandate | None = None
     opened_at: AwareDatetime
     closed_at: AwareDatetime | None = None
@@ -478,9 +476,9 @@ class Booking(BaseModel):
     journey: Journey | None = None
     place: Place | None = None
     image_url: AnyUrl | None = None
-    decision_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
-    approval_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
-    added_by_person_id: str | None
+    decision_id: str | None = None
+    approval_id: str | None = None
+    added_by_person_id: str | None = None
     created_at: AwareDatetime
 
 
@@ -495,8 +493,8 @@ class Expense(BaseModel):
     The spending category. The app colours: stay blue, food orange, getting around green, activities yellow.
     """
     split_person_ids: Annotated[list[str], Field(max_length=30, min_length=1)]
-    booking_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
-    added_by_person_id: str | None
+    booking_id: str | None = None
+    added_by_person_id: str | None = None
     created_at: AwareDatetime
 
 
@@ -517,35 +515,35 @@ class ByCategoryItem(BaseModel):
 
 class Money(BaseModel):
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
-    plan_minor: Annotated[int | None, Field(ge=0)] = None
+    plan_minor: int | None = None
     spent_minor: Annotated[int, Field(ge=0)]
     by_category: Annotated[list[ByCategoryItem], Field(max_length=5)]
     transfers: Annotated[list[Transfer], Field(max_length=60)]
 
 
 class ItineraryItem(BaseModel):
-    item_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
-    time: Annotated[str | None, Field(pattern="^([01]\\d|2[0-3]):[0-5]\\d$")] = None
+    item_id: str | None = None
+    time: str | None = None
     title: Annotated[str, Field(max_length=120, min_length=1)]
     category: Literal["stay", "food", "getting_around", "activities", "other"]
     """
     The spending category. The app colours: stay blue, food orange, getting around green, activities yellow.
     """
     place: Place | None = None
-    booking_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
+    booking_id: str | None = None
     status: Literal["booked", "planned", "idea"]
-    note: Annotated[str | None, Field(max_length=200)] = None
+    note: str | None = None
 
 
 class Day(BaseModel):
     date: date_aliased
-    title: Annotated[str | None, Field(max_length=80)] = None
+    title: str | None = None
     items: Annotated[list[ItineraryItem], Field(max_length=20)]
 
 
 class Proof(BaseModel):
     message_id: Annotated[str, Field(max_length=64, min_length=1)]
-    person_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
+    person_id: str | None = None
 
 
 class RecordLine(BaseModel):
@@ -556,8 +554,8 @@ class RecordLine(BaseModel):
     proof: Annotated[list[Proof], Field(max_length=10)]
     person_ids: Annotated[list[str], Field(max_length=30)]
     due_at: AwareDatetime | None = None
-    decision_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
-    booking_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
+    decision_id: str | None = None
+    booking_id: str | None = None
     source: Literal["go", "person", "vote", "booking"]
     created_at: AwareDatetime
     updated_at: AwareDatetime
@@ -579,7 +577,7 @@ class TripSnapshot(BaseModel):
     destination: Place | None = None
     dates: Dates | None = None
     vibe: Annotated[list[str], Field(max_length=12)]
-    stay: Annotated[str | None, Field(max_length=60)] = None
+    stay: str | None = None
     budget: BudgetSummary
     people: Annotated[list[Person], Field(max_length=30)]
     decisions: Annotated[list[Decision], Field(max_length=100)]
@@ -818,8 +816,8 @@ class DecisionOpened(BaseModel):
 
 class DecisionVotedData(BaseModel):
     decision_id: Annotated[str, Field(max_length=64, min_length=1)]
-    person_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
-    option_index: Annotated[int | None, Field(ge=0)] = None
+    person_id: str | None = None
+    option_index: int | None = None
     voted: Annotated[int, Field(ge=0)]
     of: Annotated[int, Field(ge=0)]
     tally: Annotated[list[int], Field(max_length=10)]
@@ -1056,12 +1054,12 @@ class UpdateTrip(BaseModel):
     """
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
-    title: Annotated[str | None, Field(max_length=80, min_length=1)] = None
+    title: str | None = None
     destination: Place | None = None
     dates: Dates | None = None
-    vibe: Annotated[list[str] | None, Field(max_length=12)] = None
-    stay: Annotated[str | None, Field(max_length=60)] = None
-    itinerary: Annotated[list[Day] | None, Field(max_length=30)] = None
+    vibe: list[str] | None = None
+    stay: str | None = None
+    itinerary: list[Day] | None = None
 
 
 class OpenDecision(BaseModel):
@@ -1125,10 +1123,10 @@ class UpdateRecordLine(BaseModel):
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
     kind: Literal["agreed", "open", "doing"] | None = None
-    text: Annotated[str | None, Field(max_length=200, min_length=1)] = None
+    text: str | None = None
     status: Literal["active", "done"] | None = None
-    proof: Annotated[list[Proof] | None, Field(max_length=10)] = None
-    person_ids: Annotated[list[str] | None, Field(max_length=30)] = None
+    proof: list[Proof] | None = None
+    person_ids: list[str] | None = None
     due_at: AwareDatetime | None = None
 
 
@@ -1148,8 +1146,8 @@ class AddBooking(BaseModel):
     journey: Journey | None = None
     place: Place | None = None
     image_url: AnyUrl | None = None
-    decision_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
-    approval_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
+    decision_id: str | None = None
+    approval_id: str | None = None
 
 
 class AddBookingResult(BaseModel):
@@ -1164,7 +1162,7 @@ class UpdateBooking(BaseModel):
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
     status: Literal["cancelled"] | None = None
-    ref: Annotated[str | None, Field(max_length=80, min_length=1)] = None
+    ref: str | None = None
     refundable_until: AwareDatetime | None = None
     starts_at: AwareDatetime | None = None
     ends_at: AwareDatetime | None = None
@@ -1181,7 +1179,7 @@ class AddExpense(BaseModel):
     The spending category. The app colours: stay blue, food orange, getting around green, activities yellow.
     """
     split_person_ids: Annotated[list[str], Field(max_length=30, min_length=1)]
-    booking_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
+    booking_id: str | None = None
 
 
 class AddExpenseResult(BaseModel):
@@ -1219,7 +1217,7 @@ class SpendDenied(BaseModel):
         "not_refundable",
         "approval_outstanding",
     ]
-    detail: Annotated[str | None, Field(max_length=200)] = None
+    detail: str | None = None
 
 
 class SpendApprovalResult(RootModel[SpendApproved | SpendDenied]):
@@ -1234,12 +1232,12 @@ class EventAccepted(BaseModel):
 class CardActionRequest(BaseModel):
     action_id: Annotated[str, Field(pattern="^[a-z][a-z_]{0,31}$")]
     person_id: Annotated[str, Field(max_length=64, min_length=1)]
-    option_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
+    option_id: str | None = None
 
 
 class ActionDone(BaseModel):
     result: Literal["done"]
-    toast: Annotated[str | None, Field(max_length=120)] = None
+    toast: str | None = None
 
 
 class ActionOpen(BaseModel):
@@ -1268,7 +1266,7 @@ class Item(BaseModel):
     kind: Literal["decided", "booked", "needs_you", "open", "news"]
     text: Annotated[str, Field(max_length=140, min_length=1)]
     image_url: AnyUrl | None = None
-    message_id: Annotated[str | None, Field(max_length=64, min_length=1)] = None
+    message_id: str | None = None
 
 
 class CatchUp(BaseModel):
@@ -1276,7 +1274,7 @@ class CatchUp(BaseModel):
     For one person only. Shown above the room, never posted in it.
     """
 
-    summary: str | None
+    summary: str | None = None
     items: Annotated[list[Item], Field(max_length=5)]
 
 
@@ -1286,7 +1284,7 @@ class Fact(BaseModel):
     text: Annotated[str, Field(max_length=200, min_length=1)]
     audience: Literal["group", "only_go"]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
-    message_id: str | None
+    message_id: str | None = None
     said_at: AwareDatetime
 
 

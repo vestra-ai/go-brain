@@ -8,9 +8,9 @@ export const Attachment = z
     z.object({
       kind: z.literal('photo'),
       url: HttpUrl,
-      width: z.int().positive().optional(),
-      height: z.int().positive().optional(),
-      caption: z.string().max(500).optional(),
+      width: z.int().positive().nullish(),
+      height: z.int().positive().nullish(),
+      caption: z.string().max(500).nullish(),
     }).meta({ id: 'PhotoAttachment' }),
     z.object({
       kind: z.literal('file'),
@@ -31,22 +31,22 @@ export const Message = z
     seq: Seq,
     author: Actor,
     /** Null when the message was deleted, or its author paused Go (`withheld`). */
-    text: z.string().max(4000).nullable(),
+    text: z.string().max(4000).nullish(),
     attachments: z.array(Attachment).max(10),
-    reply_to: Id.optional(),
+    reply_to: Id.nullish(),
     /** Set when someone long-pressed a message and chose "Ask Go about this". */
-    about_message_id: Id.optional(),
+    about_message_id: Id.nullish(),
     /** True when the text @mentions Go, names Go, or replies to one of Go's messages. */
     mentions_go: z.boolean(),
     /** People @mentioned in the text. */
     mentions: z.array(Id).max(30),
     reactions: z.array(Reaction).max(100),
     /** Only on Go's messages. */
-    card: Card.optional(),
+    card: Card.nullish(),
     /** True when the author paused Go: the text and attachments are left out on purpose. */
     withheld: z.boolean(),
     deleted: z.boolean(),
-    edited_at: IsoDateTime.optional(),
+    edited_at: IsoDateTime.nullish(),
     sent_at: IsoDateTime,
   })
   .meta({ id: 'Message' });
@@ -61,13 +61,13 @@ export const PostMessage = z
   .object({
     /** Go's id for this request. go-server must do it once even if it arrives twice. */
     request_id: Id,
-    text: z.string().min(1).max(2000).optional(),
-    card: Card.optional(),
-    reply_to: Id.optional(),
+    text: z.string().min(1).max(2000).nullish(),
+    card: Card.nullish(),
+    reply_to: Id.nullish(),
     /** People Go names in the text. They get a push. */
-    mentions: z.array(Id).max(30).optional(),
+    mentions: z.array(Id).max(30).nullish(),
   })
-  .refine((m) => m.text !== undefined || m.card !== undefined, { message: 'a message needs text, a card, or both' })
+  .refine((m) => m.text != null || m.card != null, { message: 'a message needs text, a card, or both' })
   .meta({ id: 'PostMessage', description: 'Needs text, a card, or both.' });
 export type PostMessage = z.infer<typeof PostMessage>;
 

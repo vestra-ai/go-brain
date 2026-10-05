@@ -43,11 +43,11 @@ export type Actor = z.infer<typeof Actor>;
 export const Place = z
   .object({
     name: z.string().min(1).max(120),
-    place_id: z.string().max(256).optional(),
-    address: z.string().max(200).optional(),
-    lat: z.number().min(-90).max(90).optional(),
-    lng: z.number().min(-180).max(180).optional(),
-    photo_url: HttpUrl.optional(),
+    place_id: z.string().max(256).nullish(),
+    address: z.string().max(200).nullish(),
+    lat: z.number().min(-90).max(90).nullish(),
+    lng: z.number().min(-180).max(180).nullish(),
+    photo_url: HttpUrl.nullish(),
   })
   .meta({ id: 'Place' });
 export type Place = z.infer<typeof Place>;
@@ -56,16 +56,16 @@ export type Place = z.infer<typeof Place>;
 export const Journey = z
   .object({
     mode: z.enum(['flight', 'train', 'bus', 'cab']),
-    from: z.object({ name: z.string().min(1).max(80), code: z.string().max(8).optional() }),
-    to: z.object({ name: z.string().min(1).max(80), code: z.string().max(8).optional() }),
+    from: z.object({ name: z.string().min(1).max(80), code: z.string().max(8).nullish() }),
+    to: z.object({ name: z.string().min(1).max(80), code: z.string().max(8).nullish() }),
     depart_at: IsoDateTime,
     arrive_at: IsoDateTime,
-    carrier_name: z.string().max(60).optional(),
-    carrier_code: z.string().max(8).optional(),
+    carrier_name: z.string().max(60).nullish(),
+    carrier_code: z.string().max(8).nullish(),
     /** Flight, train or bus number, e.g. 6E 2134. */
-    number: z.string().max(20).optional(),
-    logo_url: HttpUrl.optional(),
-    stops: z.int().nonnegative().optional(),
+    number: z.string().max(20).nullish(),
+    logo_url: HttpUrl.nullish(),
+    stops: z.int().nonnegative().nullish(),
   })
   .meta({ id: 'Journey' });
 export type Journey = z.infer<typeof Journey>;
