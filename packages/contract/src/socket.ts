@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ErrorCode } from './errors.js';
 import { Event } from './events.js';
-import { MessagesPage, PersonTyping, GoTyping, PostMessage, PostMessageResult, ReplaceCard, ReplaceCardResult } from './room.js';
+import { MessagesPage, GoTyping, PostMessage, PostMessageResult, ReplaceCard, ReplaceCardResult } from './room.js';
 import {
   CardActionResult, CardTap, CatchUp, CatchUpRequest, CreateLink, DeleteFact, EventAccepted, ForgetPerson, ForgetResult, GetPerson,
   Link, Ok, PersonPage, UpdatePerson,
@@ -18,7 +18,7 @@ import { TripSnapshot } from './trip.js';
  * the two servers travels on it, in both directions, as JSON-RPC 2.0 text frames:
  *
  *  - a request has an `id` and always gets exactly one answer: a result or an error;
- *  - a notification has no `id` and gets no answer (typing).
+ *  - a notification has no `id` and gets no answer (Go's typing).
  *
  * go-server connects to wss://<brain>/v1/socket with the x-go-signature header on the upgrade request
  * (method GET, target /v1/socket, empty body). See signing.ts. go-brain accepts each signature once.
@@ -45,7 +45,7 @@ export const SocketRequest = z
 
 export const SocketNotification = z
   .object({ jsonrpc, method: z.string().min(1).max(64), params: z.record(z.string(), z.unknown()) })
-  .meta({ id: 'SocketNotification', description: 'A notification: no id, no answer. Used only for typing.' });
+  .meta({ id: 'SocketNotification', description: 'A notification: no id, no answer. Used only for Go\'s typing.' });
 
 export const SocketResult = z
   .object({ jsonrpc, id: RequestId, result: z.record(z.string(), z.unknown()) })
@@ -104,7 +104,6 @@ const m = (name: string, direction: Direction, summary: string, params: z.ZodTyp
  */
 export const TO_BRAIN: readonly SocketMethod[] = [
   m('send_event', 'to_brain', 'Something changed in a trip. One event per change, in change-number order for each trip.', Event, EventAccepted, 2),
-  m('person_typing', 'to_brain', 'Someone in the room started or stopped typing. Go waits for them to finish before it answers.', PersonTyping, null, null),
   m('card_tap', 'to_brain', 'Someone tapped a button on one of Go\'s cards. Go answers what the app should do.', CardTap, CardActionResult, 3),
   m('catch_up', 'to_brain', 'Someone came back to the room after a while. Go answers what they missed.', CatchUpRequest, CatchUp, 3),
   m('get_person', 'to_brain', 'What Go knows about a person, with where each fact came from.', GetPerson, PersonPage, 2),

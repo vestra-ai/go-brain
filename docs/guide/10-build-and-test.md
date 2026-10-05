@@ -103,7 +103,6 @@ Each team can build and test its part before the other part is ready, against a 
 - Answers all of Go's requests in [Go's requests](04-gos-requests.md) within 2 seconds, checks their params, does each write once per `request_id`, answers `-32601` for a method it does not handle, and shows or hides "Go is typing..." for the `typing` notification. Sends `read_messages` pages under the 1 MB frame limit, with `has_more: true` when it sent fewer.
 - Sends an unanswered request again after reconnecting, with the same JSON-RPC `id`.
 - Lets any of its instances answer any of Go's requests, from the shared database.
-- Forwards everyone's typing to go-brain as `person_typing`: "on" again every 5 seconds while they type, "off" when they stop or send.
 - Runs the spend check and signs spend approvals that verify against go-brain's public key. Its code reproduces the token in the test vector.
 - Sends card taps (each with its own `tap_id`), catch-up, people pages, "forget me" and vault links to go-brain on the socket, and never lets the app talk to go-brain except to open go-brain pages.
 - Sends pushes only in the cases listed in [The app](07-the-app.md).
@@ -111,7 +110,6 @@ Each team can build and test its part before the other part is ready, against a 
 **go-app (Saket's team)**
 - Draws all 13 card kinds, and shows `fallback_text` for any kind it does not know.
 - Shows "Go is typing...", Go's messages as Go (never as a person), Go's reactions on messages, and the "needs you" strip.
-- Tells go-server when the person starts and stops typing, so go-server can pass it on to Go.
 - Opens go-brain pages in the system browser sheet, never in a WebView.
 - Lets people pause Go, see what Go knows about them, and ask Go to forget them.
 
@@ -120,7 +118,8 @@ Each team can build and test its part before the other part is ready, against a 
 - Answers every `send_event` within 2 seconds (`accepted: true` even for an event type it does not know yet), ignores repeated `event_id`s, and catches up with `read_trip` and `read_messages` after a gap in change numbers.
 - Answers `card_tap` and `catch_up` within 3 seconds and every other request within 2 seconds, acts on each `tap_id` once, answers `-32601` for a method it does not know, and sends `retry_after_seconds` with every `429`.
 - Sends each of Go's requests on one open socket, and sends unanswered ones again after a reconnect with the same JSON-RPC `id` and `request_id`.
-- Shows "Go is typing..." while it works, waits for people who are typing (except people who paused Go), and reacts quietly when it notes something without speaking.
+- Shows "Go is typing..." while it works. After a message for Go, it waits about 2 seconds in case the same person sends more, and just before it posts, it checks for anything new for it in the room and answers that too.
+- Reacts quietly when it notes something without speaking.
 - Serves people pages, carry-over, deleting a fact and "forget me", and checks nothing is left after a forget.
 - Only pays with a valid spend approval and the payer's passkey, and records the booking with its `approval_id`.
 

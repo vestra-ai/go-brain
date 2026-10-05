@@ -12,7 +12,7 @@ Go's own changes come back as events too. When Go posts a message, reacts to a m
 
 There is one exception. When Go replaces one of its cards in place (`replace_card`, for example for a live call that moved from dialing to talking), nothing new happened in the trip. go-server takes no change number for it and sends no event.
 
-Typing is not an event either. While someone in the room is typing, go-server sends go-brain a `person_typing` notification, so that Go waits for them to finish before it answers. Go's own "Go is typing..." travels the other way, as the `typing` notification. Typing takes no change number, never goes into the outbox, and is not sent again if the socket drops.
+Typing is not an event either. Go's own "Go is typing..." travels from go-brain to go-server as the `typing` notification, which takes no change number and is not sent again if the socket drops. People's typing never reaches go-brain, so go-server sends nothing to go-brain while someone types.
 
 When a person has paused Go, go-server still sends their messages as `message.created`, so the change numbers stay in order. It sets `withheld` to `true` and leaves out the text and the attachments. Go learns that a message was posted, but not what it says.
 
@@ -418,7 +418,7 @@ Most events change what Go knows without making it speak. Go speaks in the room 
 
 Otherwise Go stays quiet and takes notes. In each trip, Go speaks without being asked at most once every 30 minutes.
 
-When someone mentions Go, Go waits about 1.5 seconds for follow-up lines before it answers. If someone in the room is typing, Go waits until they stop. go-server tells it with `person_typing` notifications: an `on: true` lasts 10 seconds, go-server sends it again every 5 seconds while the person keeps typing, and it sends `on: false` when they stop or send. A lost `on: false` simply runs out after 10 seconds. go-server sends typing for everyone in the room, and Go ignores the typing of people who paused it. While it works, Go shows "Go is typing..." by sending the `typing` notification, and repeats it every 5 seconds.
+After a message for Go, Go waits about 2 seconds in case the same person sends more. Just before it posts its answer, it checks for anything new for it in the room (events that arrived while it worked) and answers that too. This is go-brain's own behaviour, and go-server has nothing to do for it. While it works, Go shows "Go is typing..." by sending the `typing` notification, and repeats it every 5 seconds.
 
 After it replies, or after a message it only took notes on, Go saves what it learned in two places:
 
@@ -462,7 +462,7 @@ These five events cover everything people and Go say in the room, and how people
 
 go-server sends `message.created` when anyone posts in the room: a person, Go, or go-server itself (a message with the author `system`). If the message mentions or names Go, or replies to one of Go's messages, `mentions_go` is `true` and Go answers. Otherwise Go reads the message and saves anything worth keeping.
 
-Priya asks Go for flights. This is change 57, the message from [the front page](README.md). While she was typing it, go-server sent go-brain `person_typing` notifications, which are not events and take no change number:
+Priya asks Go for flights. This is change 57, the message from [the front page](README.md):
 
 <!-- schema: MessageCreated -->
 ```json

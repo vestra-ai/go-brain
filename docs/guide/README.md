@@ -46,7 +46,7 @@ These words have one meaning everywhere in the guide.
 | **Person** | A human in a trip. `person_id` is go-server's id for that human and stays the same across every trip they join. There is no separate member id. |
 | **Go** | The AI member of the room. Go's messages have the author `{ "kind": "go" }`. |
 | **Socket** | The one WebSocket between go-server and go-brain. go-server opens it to `wss://brain.go.example/v1/socket` and keeps it open. See [The socket](02-the-socket.md). |
-| **Request / notification** | The two kinds of message sent on the socket. A request names a method (such as `read_trip`) and always gets exactly one answer: a result or an error. A notification gets no answer. Only typing is sent this way. |
+| **Request / notification** | The two kinds of message sent on the socket. A request names a method (such as `read_trip`) and always gets exactly one answer: a result or an error. A notification gets no answer. Notifications are used only for Go's typing ("Go is typing..."). |
 | **Card** | Something richer than text that Go posts in the room: a vote, options with prices, a ticket, a live call. See [Cards](06-cards.md). |
 | **Event** | A note from go-server to go-brain that something changed in a trip, such as a new message or a closed vote. go-server sends each one as a `send_event` request. See [Events](03-events.md). |
 | **Change number** (`seq`) | A counter per trip. go-server adds one for every change to the trip and puts it on the event. go-brain uses it to notice a missed event. |
@@ -62,9 +62,9 @@ Here is what happens when Priya asks Go for flights. Every step between the two 
 
 1. Priya types "@Go flights on Friday from Delhi, under 6k?" in the room. The app sends it to go-server.
 2. go-server stores the message as change 57 of the trip and shows it to everyone in the room. It sends go-brain a `send_event` request carrying the `message.created` event, and go-brain answers `{ "accepted": true, "duplicate": false }` straight away.
-3. go-brain sees that the message mentions Go. It waits about a second and a half for follow-up lines (and longer if go-server has said with `person_typing` that someone is still typing). Then it sends a `typing` notification, and go-server shows "Go is typing..." in the room.
+3. go-brain sees that the message mentions Go. It waits about 2 seconds in case Priya sends more. Then it sends a `typing` notification, and go-server shows "Go is typing..." in the room.
 4. Go sends `read_trip`, and go-server answers with the trip as it is now, from its database. Go searches flights and picks three.
-5. Go sends `post_message` with a line of text and an `options` card with the three flights. go-server stores Go's message as change 58 and answers with its `message_id` and `seq`.
+5. Just before it posts, Go checks for anything new for it in the room, so it can answer that too. Then it sends `post_message` with a line of text and an `options` card with the three flights. go-server stores Go's message as change 58 and answers with its `message_id` and `seq`.
 6. go-server shows Go's message in the room over the app's live connection, and sends a push to Priya because Go named her in `mentions`. It also sends the `message.created` event for change 58 back to go-brain, because Go's own changes come back as events too.
 
 [The socket](02-the-socket.md) shows these frames as a diagram, and [Flows](09-flows.md) walks through the bigger moments the same way: a vote, a booking with payment, a phone call, and "forget me".
@@ -77,7 +77,7 @@ Here is what happens when Priya asks Go for flights. Every step between the two 
 | [The socket](02-the-socket.md) | Opening the socket with a signature, the four kinds of frame, every method in both directions, keeping it alive, reconnecting, and a complete client | go-server, go-brain |
 | [Events](03-events.md) | Every event go-server sends with `send_event`, and how to send them reliably from an outbox | go-server, go-brain |
 | [Go's requests](04-gos-requests.md) | Every request Go sends go-server to read the trip or change it, and the rules go-server enforces when it answers | go-server, go-brain |
-| [Your requests](05-your-requests.md) | The requests go-server sends go-brain besides events: card taps, catch-up, people pages, forget me, vault links and typing | go-server, go-brain |
+| [Your requests](05-your-requests.md) | The requests go-server sends go-brain besides events: card taps, catch-up, people pages, forget me and vault links | go-server, go-brain |
 | [Cards](06-cards.md) | Every card Go posts, how to draw it, and its buttons | go-app, go-server, go-brain |
 | [The app](07-the-app.md) | What the app must show live, opening go-brain pages, pushes and the "needs you" strip | go-app, go-server |
 | [Money and the vault](08-money-and-the-vault.md) | The spend check, spend approvals, the payer's Face ID, and what each side checks | Everyone |

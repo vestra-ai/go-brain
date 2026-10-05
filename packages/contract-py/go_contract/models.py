@@ -438,12 +438,6 @@ class GoTyping(BaseModel):
     on: bool
 
 
-class PersonTyping(BaseModel):
-    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
-    person_id: Annotated[str, Field(max_length=64, min_length=1)]
-    on: bool
-
-
 class DecisionOption(BaseModel):
     label: Annotated[str, Field(max_length=120, min_length=1)]
     image_url: str | None = None
@@ -1451,7 +1445,7 @@ class SocketRequest(BaseModel):
 
 class SocketNotification(BaseModel):
     """
-    A notification: no id, no answer. Used only for typing.
+    A notification: no id, no answer. Used only for Go's typing.
     """
 
     jsonrpc: Literal["2.0"]

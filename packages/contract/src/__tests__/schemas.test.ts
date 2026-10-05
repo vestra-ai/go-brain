@@ -38,9 +38,9 @@ describe('contract schemas', () => {
   it('every socket method has named params and result schemas, so the docs and the Python models get real names', () => {
     for (const x of SOCKET_METHODS) for (const s of [x.params, x.result]) if (s) expect(z.globalRegistry.get(s)?.id, x.name).toBeTruthy();
   });
-  it('method names are unique, and only typing is a notification', () => {
+  it('method names are unique, and only Go\'s typing is a notification', () => {
     expect(new Set(SOCKET_METHODS.map((x) => x.name)).size).toBe(SOCKET_METHODS.length);
-    expect(SOCKET_METHODS.filter((x) => x.result === null).map((x) => x.name).sort()).toEqual(['person_typing', 'typing']);
+    expect(SOCKET_METHODS.filter((x) => x.result === null).map((x) => x.name).sort()).toEqual(['typing']);
   });
   it('checks params by method: unknown methods and bad params are refused', () => {
     expect(parseParams('open_vote', { request_id: 'rq', trip_id: 't', question: 'Where?', kind: 'choice', anonymous: false,

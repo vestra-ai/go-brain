@@ -18,7 +18,6 @@ class Method(NamedTuple):
 PATH = '/v1/socket'
 METHODS: dict[str, Method] = {
     'send_event': Method('send_event', 'to_brain', models.Event, models.EventAccepted, 2, None),
-    'person_typing': Method('person_typing', 'to_brain', models.PersonTyping, None, None, None),
     'card_tap': Method('card_tap', 'to_brain', models.CardTap, models.CardActionResult, 3, None),
     'catch_up': Method('catch_up', 'to_brain', models.CatchUpRequest, models.CatchUp, 3, None),
     'get_person': Method('get_person', 'to_brain', models.GetPerson, models.PersonPage, 2, None),

@@ -4,7 +4,7 @@ This page walks through the big moments of a trip, step by step, as sequence dia
 
 Every flow uses the Goa trip (`t_goa`). The participants are the people in the room, go-app, go-server, go-brain and, where they take part, the vault or a business.
 
-Every arrow between go-server and go-brain is a frame on the one socket that go-server keeps open to go-brain (see [The socket](02-the-socket.md)). A request, such as `send_event`, `read_trip` or `post_message`, is drawn as a solid arrow, and always gets one answer with the same id, drawn as a dashed arrow back and labelled "answer". `typing` and `person_typing` are notifications, drawn as open arrows, and get no answer.
+Every arrow between go-server and go-brain is a frame on the one socket that go-server keeps open to go-brain (see [The socket](02-the-socket.md)). A request, such as `send_event`, `read_trip` or `post_message`, is drawn as a solid arrow, and always gets one answer with the same id, drawn as a dashed arrow back and labelled "answer". `typing`, which shows "Go is typing...", is a notification, drawn as an open arrow, and gets no answer.
 
 Every change Go makes (a message, a reaction, a vote, a record line, a booking) comes back from go-server as an event with its own change number. That is how go-brain learns the change numbers of its own writes. The diagrams show this once, in the first flow, and leave it out after that to stay readable. They also leave out most of go-brain's answers to `send_event`, which always say `accepted`.
 
@@ -19,17 +19,13 @@ sequenceDiagram
   participant app as go-app
   participant server as go-server
   participant brain as go-brain
-  Priya->>app: starts typing
-  app->>server: Priya is typing
-  server-)brain: person_typing (p_priya, on)
   Priya->>app: "@Go flights on Friday from Delhi, under 6k?"
   app->>server: send the message
   Note over server: stores m_0132 as change 57
   server->>app: the message, to everyone in the room
-  server-)brain: person_typing (p_priya, off)
   server->>brain: send_event (message.created, seq 57, mentions_go true)
   brain-->>server: answer: accepted
-  Note over brain: waits about 1.5 seconds for follow-up lines,<br/>and longer while anyone is typing
+  Note over brain: waits 2 s in case Priya adds more
   brain-)server: typing (on)
   server->>app: "Go is typing..."
   brain->>server: read_trip (t_goa)
@@ -37,6 +33,7 @@ sequenceDiagram
   loop every 5 seconds while Go searches
     brain-)server: typing (on)
   end
+  Note over brain: checks for anything new for it in the room
   brain->>server: post_message (text, options card c_flights_1, mentions Priya)
   server-->>brain: answer: message_id m_0133, seq 58
   server->>app: Go's message (typing ends), and a push to Priya
@@ -44,7 +41,7 @@ sequenceDiagram
   brain-->>server: answer: accepted
 ```
 
-While Priya types, the app tells go-server, and go-server forwards it to Go as `person_typing` notifications: an "on" every 5 seconds while she types (each lasts 10 seconds), and an "off" when she sends. Her message mentions Go, so Go answers. go-brain answers the `send_event` at once and does the work afterwards. Go waits about 1.5 seconds in case Priya adds a line, and keeps waiting while anyone in the room is typing. Then it sends the `typing` notification, so the room shows "Go is typing...", and repeats it every 5 seconds. It reads the trip with `read_trip` to learn the dates and who flies from Delhi, searches, and posts one message with `post_message`: a line of text and an options card with three flights. go-server answers with the new message's id and change number, pushes Priya because Go named her, and sends Go's message back to go-brain as an event with that change number.
+Priya's message mentions Go, so Go answers. go-brain answers the `send_event` at once and does the work afterwards. Go waits about 2 seconds in case Priya sends more. Then it sends the `typing` notification, so the room shows "Go is typing...", and repeats it every 5 seconds. It reads the trip with `read_trip` to learn the dates and who flies from Delhi, and searches. Just before it posts, it checks for anything new for it in the room, so a follow-up from Priya or someone else gets answered in the same reply. Then it posts one message with `post_message`: a line of text and an options card with three flights. go-server answers with the new message's id and change number, pushes Priya because Go named her, and sends Go's message back to go-brain as an event with that change number.
 
 ## 2. A trip starts
 

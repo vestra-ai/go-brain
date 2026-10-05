@@ -8,14 +8,14 @@ Read [Basics](01-basics.md) first: it covers the ids, money, time, errors and ti
 
 The socket is the only connection between the two servers. go-server opens it to `wss://brain.go.example/v1/socket` and keeps it open. Everything the two servers say to each other travels on it, in both directions, as JSON-RPC 2.0 text frames:
 
-- **go-server to go-brain:** what happened in a trip (events, sent with `send_event`), people typing, and questions that need an answer straight away, such as a tap on one of Go's cards.
+- **go-server to go-brain:** what happened in a trip (events, sent with `send_event`), and questions that need an answer straight away, such as a tap on one of Go's cards.
 - **go-brain to go-server:** Go's messages, typing and reactions, and Go's requests to read the trip or change it. go-server answers each one from its own database.
 
 There is one socket, not one in each direction, for three reasons:
 
 1. **The contract is go-brain's.** go-brain exposes it, and go-server builds on it. go-server serves no routes for go-brain, and go-brain never calls go-server over HTTP. go-brain has no setting for go-server's address at all.
 2. **The trip still lives in go-server's database.** When Go needs the trip, it sends `read_trip` on the socket and go-server answers from its database. Nothing about the trip moves to go-brain.
-3. **Both sides can speak at any moment.** Go can show "Go is typing...", react to a message or post a reply the moment it is ready, and go-server can tell Go that someone started typing, all without polling.
+3. **Both sides can speak at any moment.** go-server sends each change the moment it happens, and Go can show "Go is typing...", react to a message or post a reply the moment it is ready, all without polling.
 
 A side effect: go-server dials out, so a go-server running on a laptop needs no tunnel to work with go-brain.
 
@@ -126,7 +126,7 @@ Every frame is one JSON object sent as one WebSocket text frame. Neither side se
 | Request | `jsonrpc`, `id`, `method`, `params` | Either side | Always, exactly once, with a result or an error that has the same `id` |
 | Result | `jsonrpc`, `id`, `result` | The side that received the request, when it worked | No |
 | Error | `jsonrpc`, `id`, `error` | The side that received the request, when it did not work | No |
-| Notification | `jsonrpc`, `method`, `params` (no `id`) | Either side, only for typing | Never |
+| Notification | `jsonrpc`, `method`, `params` (no `id`) | go-brain, only for Go's typing | Never |
 
 `jsonrpc` is always `"2.0"`. `params` and `result` are always JSON objects. In this guide, the ids of go-server's requests start with `gs_` and the ids of Go's requests start with `go_`, only to make examples easy to read. Any string of 1 to 64 characters works.
 
@@ -192,21 +192,16 @@ Two codes come from JSON-RPC itself and have no `data`. A frame that cannot be r
 
 ### Notification
 
-A notification tells the other side something and gets no answer. Only the two typing methods are notifications. Go shows "Go is typing..." in the Goa room:
+A notification tells the other side something and gets no answer. Notifications are used only for Go's typing: the `typing` method, which go-brain sends to show or hide "Go is typing..." in a room. Go shows it in the Goa room:
 
 <!-- schema: SocketNotification -->
 ```json
 { "jsonrpc": "2.0", "method": "typing", "params": { "trip_id": "t_goa", "on": true } }
 ```
 
-And go-server tells Go that Arjun is typing, so Go waits for him to finish before it answers:
+An "on" lasts 10 seconds. Go sends it again every 5 seconds while it works, and sends `"on": false` when it stops. go-server also hides it as soon as Go's next message lands. A lost "off" just runs out after 10 seconds.
 
-<!-- schema: SocketNotification -->
-```json
-{ "jsonrpc": "2.0", "method": "person_typing", "params": { "trip_id": "t_goa", "person_id": "p_arjun", "on": true } }
-```
-
-Both kinds of typing work the same way. An "on" lasts 10 seconds. The sender sends it again every 5 seconds while the typing goes on, and sends "off" when it stops (or, for a person, when they send the message). A lost "off" just runs out after 10 seconds.
+go-server does not tell Go when people are typing. Go handles that on its own: after a message for Go, it waits about 2 seconds in case the same person sends more, and just before it posts, it checks for anything new for it in the room and answers that too.
 
 Good to know:
 - A frame with `result` or `error` is always the answer to a request you sent. Match it to your request by `id`.
@@ -223,7 +218,6 @@ Every method has a name, a params schema and, unless it is a notification, a res
 | Method | Params | Result | Answer within | What it is for |
 |---|---|---|---|---|
 | [`send_event`](03-events.md) | `Event` (`MessageCreated`, `DecisionClosed` and the other 18) | `EventAccepted` | 2 seconds | Something changed in a trip. One event per change, in change-number order for each trip. |
-| [`person_typing`](05-your-requests.md) (notification) | `PersonTyping` | none | no answer | Someone in the room started or stopped typing. Go waits for them to finish before it answers. |
 | [`card_tap`](05-your-requests.md) | `CardTap` | `CardActionResult` (`ActionDone`, `ActionOpen` or `ActionRefused`) | 3 seconds | Someone tapped a button on one of Go's cards. Go answers what the app should do. |
 | [`catch_up`](05-your-requests.md) | `CatchUpRequest` | `CatchUp` | 3 seconds | Someone came back to the room after a while. Go answers what they missed. |
 | [`get_person`](05-your-requests.md) | `GetPerson` | `PersonPage` | 2 seconds | What Go knows about a person, with where each fact came from. |
@@ -302,7 +296,6 @@ go-server sends a request when it has something to tell go-brain or a question t
 - **Matching answers.** Keep each request until its answer arrives. An answer with an `id` you are no longer waiting for belongs to a request you gave up on: ignore it.
 - **Errors.** [Basics](01-basics.md#errors) says which errors are worth sending again. After a `429`, wait at least `retry_after_seconds`. `send_event` follows the outbox's retry schedule in [Events](03-events.md). The other requests are not sent again on their own, because a person is waiting: show them it did not work and let them try again.
 - **Card taps.** Give every tap its own `tap_id` when the app sends it to go-server, and keep that id if you send the tap again. Go acts on each `tap_id` once, so a resend after a reconnect or a double tap does nothing twice.
-- **Typing.** Send `person_typing` with `on: true` when someone starts typing in the room, again every 5 seconds while they keep typing, and with `on: false` when they stop or send. Send it for everyone in the room, including people who paused Go: go-brain ignores the ones who paused it. It is a notification, so it is not answered, and it is dropped while the socket is down.
 
 ## When the socket drops
 
@@ -310,7 +303,7 @@ A socket can close at any moment: a deploy, a network change, 40 seconds of sile
 
 - **Unanswered requests are sent again.** After reconnecting, each side sends again every request that had no answer when the socket closed, with the same JSON-RPC `id`. Requests that change something carry their own id (`event_id`, `request_id` or `tap_id`), so the receiver does each one once: go-brain ignores an `event_id` or `tap_id` it has already seen, and go-server answers a repeated `request_id` with its first answer. The other requests only read or are safe to repeat, so they are simply answered again.
 - **Lost answers are fine.** If the request arrived but the answer was lost, the request comes again and gets the same answer.
-- **Notifications are dropped.** Typing is never sent again after a reconnect. An "on" runs out after 10 seconds on its own, so a lost "off" does no harm.
+- **Notifications are dropped.** Go's typing is never sent again after a reconnect. An "on" runs out after 10 seconds on its own, so a lost "off" does no harm.
 - **Events keep their order.** The outbox sender sends a trip's next event only after go-brain has answered the one before it. While the socket is down, events wait in the outbox. When it is back, the sender carries on from the oldest unsent event of each trip.
 - **go-brain also catches up on its own.** If it holds change 61 and receives change 63, it sends `read_trip` and `read_messages` to fill the gap. It also reads every active trip again once a minute, as a safety net.
 
@@ -338,7 +331,7 @@ What it does:
 
 - `request(method, params)` sends a request and gives you the `result` object. On an error frame it fails with `SocketCallError`, which has `code`, `message`, the data code (`dataCode` / `data_code`) and, after a `429`, the wait (`retryAfterSeconds` / `retry_after_seconds`). When no answer arrives in time, it fails with `SocketTimeoutError` in TypeScript and `asyncio.TimeoutError` in Python. The time limit is 2 seconds unless you pass another.
 - If the socket drops while a request waits, the request stays waiting. The client sends it again with the same `id` as soon as it reconnects, so the caller just keeps waiting until the answer or its time limit.
-- `notify(method, params)` sends a notification. It is dropped while the socket is down.
+- `notify(method, params)` sends a notification, and drops it while the socket is down. go-server sends no notifications today. It is there for notifications added later in version 1.
 - `handlers` maps each of Go's methods to an async function, `handler(params, raw)`. `params` is the checked params (a pydantic model in Python), and `raw` is the frame's `params` object exactly as it arrived. A handler returns the result. To answer with an error, it throws (or raises) `SocketCallError(code, message, dataCode, retryAfterSeconds)`. The last two are optional. A method with no handler is answered with `-32601`, and anything else that goes wrong is answered with `500`.
 
 **TypeScript**
@@ -603,7 +596,6 @@ brain.start();
 // Anywhere in go-server:
 //   const accepted = await brain.request('send_event', event);
 //   const answer = await brain.request('card_tap', tap, { timeoutMs: 3500 });
-//   brain.notify('person_typing', { trip_id: 't_goa', person_id: 'p_arjun', on: true });
 ```
 
 **Python**
@@ -639,7 +631,6 @@ brain = BrainSocket(
 # Anywhere in go-server:
 #   accepted = await brain.request("send_event", event)
 #   answer = await brain.request("card_tap", tap, timeout=3.5)
-#   await brain.notify("person_typing", {"trip_id": "t_goa", "person_id": "p_arjun", "on": True})
 ```
 
 Good to know:

@@ -74,30 +74,6 @@
             ]
           }
         },
-        "person_typing": {
-          "name": "person_typing",
-          "title": "person_typing",
-          "summary": "Someone in the room started or stopped typing. Go waits for them to finish before it answers.",
-          "payload": {
-            "type": "object",
-            "required": [
-              "jsonrpc",
-              "method",
-              "params"
-            ],
-            "properties": {
-              "jsonrpc": {
-                "const": "2.0"
-              },
-              "method": {
-                "const": "person_typing"
-              },
-              "params": {
-                "$ref": "#/components/schemas/PersonTyping"
-              }
-            }
-          }
-        },
         "card_tap": {
           "name": "card_tap",
           "title": "card_tap",
@@ -1539,18 +1515,6 @@
           }
         ]
       }
-    },
-    "person_typing": {
-      "action": "receive",
-      "channel": {
-        "$ref": "#/channels/socket"
-      },
-      "summary": "Someone in the room started or stopped typing. Go waits for them to finish before it answers.",
-      "messages": [
-        {
-          "$ref": "#/channels/socket/messages/person_typing"
-        }
-      ]
     },
     "card_tap": {
       "action": "receive",
@@ -4150,29 +4114,6 @@
         },
         "required": [
           "trip_id",
-          "on"
-        ]
-      },
-      "PersonTyping": {
-        "type": "object",
-        "properties": {
-          "trip_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "person_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "on": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "trip_id",
-          "person_id",
           "on"
         ]
       },
@@ -8197,7 +8138,7 @@
           "method",
           "params"
         ],
-        "description": "A notification: no id, no answer. Used only for typing."
+        "description": "A notification: no id, no answer. Used only for Go's typing."
       },
       "SocketResult": {
         "type": "object",

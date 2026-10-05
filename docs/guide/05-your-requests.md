@@ -1,15 +1,14 @@
 # Your requests
 
-These are the requests go-server sends go-brain over the socket, and go-brain answers each one. They tell Go what changed in a trip and who is typing, and they ask the questions that need an answer straight away: someone tapped a button on a Go card, someone came back to the room, someone wants to see or change what Go knows about them, or someone wants to open their vault. This page lists each request, when go-server sends it, what go-brain answers, and what the app shows when go-brain does not answer in time. The one HTTP route left on go-brain, `GET /v1/health`, is at the end.
+These are the requests go-server sends go-brain over the socket, and go-brain answers each one. They tell Go what changed in a trip, and they ask the questions that need an answer straight away: someone tapped a button on a Go card, someone came back to the room, someone wants to see or change what Go knows about them, or someone wants to open their vault. This page lists each request, when go-server sends it, what go-brain answers, and what the app shows when go-brain does not answer in time. The one HTTP route left on go-brain, `GET /v1/health`, is at the end.
 
-go-server sends these requests with `brain.request(method, params)` on the `BrainSocket` client from [The socket](02-the-socket.md#a-complete-client-for-go-server), and the typing notification with `brain.notify(method, params)`. The app never talks to go-brain for any of them. It asks go-server, and go-server sends the request for the person who is signed in.
+go-server sends all 8 of these requests with `brain.request(method, params)` on the `BrainSocket` client from [The socket](02-the-socket.md#a-complete-client-for-go-server). Each one gets an answer: none of them is a notification. The app never talks to go-brain for any of them. It asks go-server, and go-server sends the request for the person who is signed in.
 
 ## The requests
 
 | Method | Params | Result | Answer within | go-server sends it when |
 |---|---|---|---|---|
 | `send_event` | An event, such as `MessageCreated` | `EventAccepted` | 2 seconds | Anything changes in a trip |
-| `person_typing` | `PersonTyping` | None (a notification) | No answer | Someone in the room starts or stops typing |
 | `card_tap` | `CardTap` | `ActionDone`, `ActionOpen` or `ActionRefused` | 3 seconds | Someone taps a button on a Go card |
 | `catch_up` | `CatchUpRequest` | `CatchUp` | 3 seconds | Someone opens the room after a while |
 | `get_person` | `GetPerson` | `PersonPage` | 2 seconds | Someone opens "What Go knows about you" |
@@ -30,69 +29,7 @@ Good to know:
 
 go-server tells go-brain about every change to a trip with a `send_event` request, whoever made the change: a person, Go or go-server itself. Its params are the whole event (a `MessageCreated`, a `DecisionClosed` and so on), and go-brain answers `{"accepted": true, "duplicate": false}` within 2 seconds, then does the real work afterwards. go-server sends each trip's events one at a time, in change-number order, from an outbox written in the same transaction as the change, and it sends a failed event again on a fixed schedule. Every event type, the outbox and the sender are on their own page: [Events](03-events.md).
 
-## Someone is typing: `person_typing`
-
-`person_typing` tells Go that someone in the room started or stopped typing, so Go waits for them to finish before it answers. When someone mentions Go, Go waits about 1.5 seconds for follow-up lines, and longer while that person is still typing, so it answers the whole thought and not only its first line.
-
-Forward it for everyone in the room, including people who paused Go. go-brain ignores the typing of people who paused it, so go-server does not need to check.
-
-It is a notification: the frame has no `id`, go-brain sends nothing back, and it is dropped while the socket is down. Here Arjun has started typing in the Goa room:
-
-<!-- schema: PersonTyping -->
-```json
-{ "trip_id": "t_goa", "person_id": "p_arjun", "on": true }
-```
-
-When to send it:
-- **`"on": true` when the person starts typing.** An `"on"` lasts 10 seconds on go-brain's side, like "Go is typing..." in the room. While the person keeps typing, send it again every 5 seconds, and never more than once every 5 seconds for that person: if the app tells go-server more often, drop the extra ones.
-- **`"on": false` as soon as they stop typing or send their message.** Do not hold this one back.
-
-**TypeScript**
-
-```ts
-import { brain } from './brain.js'; // the one BrainSocket go-server keeps open, from The socket
-
-const lastOn = new Map<string, number>(); // `${trip_id} ${person_id}` -> when "on" was last sent to Go
-
-/** Call this every time the app says a person is typing (on) or stopped (off). */
-export function forwardTyping(tripId: string, personId: string, on: boolean): void {
-  const key = `${tripId} ${personId}`;
-  if (on) {
-    if (Date.now() - (lastOn.get(key) ?? 0) < 5_000) return; // at most one "on" every 5 seconds per person
-    lastOn.set(key, Date.now());
-  } else {
-    lastOn.delete(key);
-  }
-  brain.notify('person_typing', { trip_id: tripId, person_id: personId, on });
-}
-```
-
-**Python**
-
-```python
-import time
-
-from brain import brain  # the one BrainSocket go-server keeps open, from The socket
-
-last_on: dict[tuple[str, str], float] = {}  # (trip_id, person_id) -> when "on" was last sent to Go
-
-
-async def forward_typing(trip_id: str, person_id: str, on: bool) -> None:
-    """Call this every time the app says a person is typing (on) or stopped (off)."""
-    key = (trip_id, person_id)
-    if on:
-        last = last_on.get(key)
-        if last is not None and time.monotonic() - last < 5:
-            return  # at most one "on" every 5 seconds per person
-        last_on[key] = time.monotonic()
-    else:
-        last_on.pop(key, None)
-    await brain.notify("person_typing", {"trip_id": trip_id, "person_id": person_id, "on": on})
-```
-
-Good to know:
-- Go never shows anyone's typing in the room. Showing "Priya is typing..." to the others is go-server's and the app's job (see [The app](07-the-app.md#the-live-connection)).
-- A lost notification does no harm. If an `"off"` is lost, for example because the person's phone went to sleep, the last `"on"` runs out after 10 seconds and Go stops waiting.
+When a message for Go arrives (someone mentions Go, names it, or replies to it), Go waits about 2 seconds in case the same person sends more. Just before it posts its answer, it checks the room for anything new for it and answers that too. This is go-brain's own behaviour: go-server has nothing to send for it.
 
 ## Card taps: `card_tap`
 

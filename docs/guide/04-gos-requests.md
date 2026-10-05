@@ -74,7 +74,7 @@ When a rule fails, go-server answers with an error frame instead. Here Go asked 
 }
 ```
 
-The rest of this page shows only the `params` and the `result` of each method. `typing` is the one notification Go sends: it has no `id`, and go-server sends nothing back (see [`typing`](#typing-show-go-is-typing)).
+The rest of this page shows only the `params` and the `result` of each method. `typing` is the only notification on the socket, in either direction: it has no `id`, and go-server sends nothing back (see [`typing`](#typing-show-go-is-typing)).
 
 Good to know:
 - go-server signed the socket once, when it opened it (see [Connecting](02-the-socket.md#connecting)). The frames on it carry no signature.
@@ -935,7 +935,6 @@ A notification is never answered, so a broken one gets no error frame. go-server
 Good to know:
 - There is no `request_id`. Showing the indicator twice does no harm.
 - Notifications are best effort and are never sent again after a reconnect. If one is lost, or go-brain stops sending it (for example, because it restarted), the indicator goes away by itself after 10 seconds.
-- Typing in the other direction, from people to Go, is the `person_typing` notification (see [Your requests](05-your-requests.md#someone-is-typing-person_typing)).
 
 ## Reacting to messages
 

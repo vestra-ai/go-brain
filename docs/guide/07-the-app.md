@@ -18,7 +18,7 @@ Good to know:
 
 The live connection sends each change in a trip to every phone that has the trip open, so people see new messages, reactions, who is typing and votes moving without pulling to refresh. go-server chooses how to do it: Supabase Realtime, a WebSocket or server-sent events all work. Open it when the person opens a trip's room or Trip screens, and close it when they leave. Pushes cover the rest (see [Pushes](#pushes)).
 
-We recommend four kinds of message from go-server to the app, plus one from the app to go-server for typing. The shapes below are only a recommendation: the Go team owns them, can change them, and CI does not check them.
+We recommend four kinds of message from go-server to the app. The shapes below are only a recommendation: the Go team owns them, can change them, and CI does not check them.
 
 **A new or changed message.** Send the whole `Message` from the contract, unchanged, including Go's card. Send it again whenever the message changes: an edit, a delete, or a reaction added or taken back. The app replaces the message that has the same `message_id`. The message's `seq` is the change number when it was posted, and its `updated_seq` is the change number of its latest change. Here Meher has just put a thumbs-up on Arjun's message, so `updated_seq` moved from 48 to 49.
 
@@ -104,29 +104,7 @@ This is the `typing` notification Go sent for it. It has no answer:
 { "trip_id": "t_goa", "on": true }
 ```
 
-People's typing goes the other way too. While a person types, the app tells go-server, and go-server shows it to everyone else in the room as the same kind of message, with `"who": { "kind": "person", "person_id": "p_priya" }`. We suggest the app sends this when the person starts typing, again every 5 seconds while they keep typing, and with `"on": false` when they stop or send:
-
-```json
-{ "type": "typing", "trip_id": "t_goa", "on": true }
-```
-
-go-server forwards people's typing to go-brain as `person_typing` notifications, so Go waits for the person to finish before it answers. The contract sets these rules for it:
-
-- go-server forwards typing for everyone in the room, including people who paused Go. Go ignores the typing of people who paused it.
-- An `"on": true` lasts 10 seconds. go-server sends it again every 5 seconds while the person keeps typing.
-- go-server sends `"on": false` when the person stops typing or sends their message. If that notification is lost, the last `"on": true` simply runs out after 10 seconds, so Go never waits for someone whose phone went quiet.
-
-Here are the params of one `person_typing` notification, and the whole frame on the socket:
-
-<!-- schema: PersonTyping -->
-```json
-{ "trip_id": "t_goa", "person_id": "p_priya", "on": true }
-```
-
-<!-- schema: SocketNotification -->
-```json
-{ "jsonrpc": "2.0", "method": "person_typing", "params": { "trip_id": "t_goa", "person_id": "p_priya", "on": true } }
-```
+People's typing is between the app and go-server only. If you show it, use the same kind of message with `"who": { "kind": "person", "person_id": "p_priya" }`, and decide yourselves how often the app sends it and when a person's line runs out. go-server does not send people's typing to go-brain. Go does not need it: after a message for Go, Go waits about 2 seconds in case the same person sends more, and checks for anything new just before it answers (see [Events](03-events.md)).
 
 **The trip changed.** Send this for every change to the trip that is not a message: a vote cast or closed, a mandate, a trip record line added or undone, a booking, an expense, someone joining or leaving. It carries the trip's new change number. When `seq` is higher than the one the app holds, the app reads what it is showing again from go-server. Record cards in the room, such as a vote's tally or a ticket, redraw from that fresh data.
 
@@ -138,7 +116,6 @@ Good to know:
 - go-server already writes one event per change for go-brain (see [Events](03-events.md)). Sending the app's message from the same place, after the change is committed, keeps the app and go-brain in step.
 - Keep the highest change number the app has seen: a message's `updated_seq`, or the `seq` of a "trip changed" message. After a reconnect, or when the number jumps by more than one, read the messages and the trip from go-server again before trusting the socket. Sockets drop and phones sleep.
 - Typing and card updates carry no `seq`, because they are not changes to the trip. A reaction, Go's included, is a change: it moves the message's `updated_seq`.
-- Hide a person's typing line in the app after 10 seconds without a new `"on": true`, the same way Go's line runs out.
 - Show a person's own message straight away as "sending", then replace it when go-server sends it back with its `message_id` and `seq`.
 - `withheld` is only for go-brain. When a person pauses Go, the rest of the room still sees their messages in full, so go-server always sends the app the text.
 

@@ -2111,29 +2111,6 @@
           "on"
         ]
       },
-      "PersonTyping": {
-        "type": "object",
-        "properties": {
-          "trip_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "person_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "on": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "trip_id",
-          "person_id",
-          "on"
-        ]
-      },
       "DecisionOption": {
         "type": "object",
         "properties": {
@@ -6155,7 +6132,7 @@
           "method",
           "params"
         ],
-        "description": "A notification: no id, no answer. Used only for typing."
+        "description": "A notification: no id, no answer. Used only for Go's typing."
       },
       "SocketResult": {
         "type": "object",

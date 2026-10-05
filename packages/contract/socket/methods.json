@@ -13,15 +13,6 @@
       "sends_event": null
     },
     {
-      "name": "person_typing",
-      "direction": "to_brain",
-      "summary": "Someone in the room started or stopped typing. Go waits for them to finish before it answers.",
-      "params": "PersonTyping",
-      "result": null,
-      "answer_within_seconds": null,
-      "sends_event": null
-    },
-    {
       "name": "card_tap",
       "direction": "to_brain",
       "summary": "Someone tapped a button on one of Go's cards. Go answers what the app should do.",
