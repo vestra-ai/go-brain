@@ -328,7 +328,7 @@ class FileAttachment(BaseModel):
 
 class Reaction(BaseModel):
     emoji: Annotated[str, Field(max_length=16, min_length=1)]
-    person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    person_id: str | None = None
 
 
 class Message(BaseModel):

@@ -22,7 +22,8 @@ export const Attachment = z
   ])
   .meta({ id: 'Attachment', discriminator: { propertyName: 'kind' } });
 
-export const Reaction = z.object({ emoji: z.string().min(1).max(16), person_id: Id }).meta({ id: 'Reaction' });
+/** A reaction on a message. `person_id` is null when Go reacted (Go's own reactions come back as events too). */
+export const Reaction = z.object({ emoji: z.string().min(1).max(16), person_id: Id.nullish() }).meta({ id: 'Reaction' });
 
 /**
  * One message in a trip room, as go-server stores it, in its current state.

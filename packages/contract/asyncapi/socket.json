@@ -3854,14 +3854,20 @@
             "maxLength": 16
           },
           "person_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
-          "emoji",
-          "person_id"
+          "emoji"
         ]
       },
       "Message": {
