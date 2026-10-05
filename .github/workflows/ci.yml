@@ -16,9 +16,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
-      # The OpenAPI files are generated from the zod schemas; fail if someone edited the schemas
-      # without regenerating them (the Go team builds from those files).
-      - run: pnpm --filter @go/contract emit-openapi && git diff --exit-code packages/contract/openapi
+      # The OpenAPI, AsyncAPI and method files are generated from the zod schemas; fail if someone
+      # edited the schemas without regenerating them (the Go team builds from those files).
+      - run: pnpm --filter @go/contract emit-openapi && git diff --exit-code packages/contract/openapi packages/contract/asyncapi packages/contract/socket
 
   contract-python:
     runs-on: ubuntu-latest
@@ -30,4 +30,4 @@ jobs:
       - run: pip install -e 'packages/contract-py[dev]'
       - run: pytest -q packages/contract-py/tests
       # models.py is generated from the OpenAPI file; fail if it is stale.
-      - run: cd packages/contract-py && python scripts/gen_models.py && git diff --exit-code go_contract/models.py
+      - run: cd packages/contract-py && python scripts/gen_models.py && git diff --exit-code go_contract/models.py go_contract/socket_methods.py

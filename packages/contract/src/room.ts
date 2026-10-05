@@ -69,6 +69,7 @@ export const PostMessage = z
   .object({
     /** Go's id for this request. go-server must do it once even if it arrives twice. */
     request_id: Id,
+    trip_id: Id,
     text: z.string().min(1).max(2000).nullish(),
     card: Card.nullish(),
     reply_to: Id.nullish(),
@@ -81,8 +82,12 @@ export type PostMessage = z.infer<typeof PostMessage>;
 
 export const PostMessageResult = z.object({ message_id: Id, seq: Seq }).meta({ id: 'PostMessageResult' });
 
-/** Replace a card Go posted earlier (same `card_id`), e.g. a call that moved from dialing to talking. */
-export const PutCardResult = z.object({ message_id: Id }).meta({ id: 'PutCardResult' });
+/** Replace a card Go posted earlier, in place (same `card_id`), e.g. a call that moved from dialing to talking. */
+export const ReplaceCard = z.object({ trip_id: Id, card: Card }).meta({ id: 'ReplaceCard' });
+export const ReplaceCardResult = z.object({ message_id: Id }).meta({ id: 'ReplaceCardResult' });
 
-/** "Go is typing...". Shown for up to 10 seconds, or until Go's next message lands. Go repeats it while it works. */
-export const SetTyping = z.object({ on: z.boolean() }).meta({ id: 'SetTyping' });
+/** "Go is typing...". Shown for up to 10 seconds, or until Go's next message lands. Go repeats it every 5 seconds while it works. */
+export const GoTyping = z.object({ trip_id: Id, on: z.boolean() }).meta({ id: 'GoTyping' });
+
+/** Someone in the room is typing. go-server forwards it so Go waits for them to finish before it answers. */
+export const PersonTyping = z.object({ trip_id: Id, person_id: Id, on: z.boolean() }).meta({ id: 'PersonTyping' });

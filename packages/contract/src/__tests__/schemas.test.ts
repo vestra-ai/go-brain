@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { Card, Event, Message, PostMessage, ROUTES, SpendApprovalResult, TripSnapshot } from '../index.js';
+import { Card, Event, Message, PostMessage, SOCKET_METHODS, SpendApprovalResult, TripSnapshot, parseParams } from '../index.js';
 
 const at = '2026-10-05T07:00:00Z';
 
 describe('contract schemas', () => {
   it('a message from Go needs text, a card, or both', () => {
-    expect(PostMessage.safeParse({ request_id: 'rq_1' }).success).toBe(false);
-    expect(PostMessage.safeParse({ request_id: 'rq_1', text: 'Booked.' }).success).toBe(true);
-    expect(PostMessage.safeParse({ request_id: 'rq_1', card: { card_id: 'c_1', kind: 'plan', fallback_text: 'The plan' } }).success).toBe(true);
+    expect(PostMessage.safeParse({ request_id: 'rq_1', trip_id: 't_goa' }).success).toBe(false);
+    expect(PostMessage.safeParse({ request_id: 'rq_1', trip_id: 't_goa', text: 'Booked.' }).success).toBe(true);
+    expect(PostMessage.safeParse({ request_id: 'rq_1', trip_id: 't_goa', card: { card_id: 'c_1', kind: 'plan', fallback_text: 'The plan' } }).success).toBe(true);
   });
   it('every card needs fallback text', () => {
     expect(Card.safeParse({ card_id: 'c_1', kind: 'ticket', booking_id: 'b_1' }).success).toBe(false);
@@ -34,7 +34,17 @@ describe('contract schemas', () => {
   it('the trip snapshot never carries who picked which budget', () => {
     expect(Object.keys(TripSnapshot.shape.budget.shape).sort()).toEqual(['answered', 'lowest', 'of']);
   });
-  it('every route body is a named schema, so OpenAPI and the Python models get real names', () => {
-    for (const r of ROUTES) for (const s of [r.request, r.response]) if (s) expect(z.globalRegistry.get(s)?.id, r.id).toBeTruthy();
+  it('every socket method has named params and result schemas, so the docs and the Python models get real names', () => {
+    for (const x of SOCKET_METHODS) for (const s of [x.params, x.result]) if (s) expect(z.globalRegistry.get(s)?.id, x.name).toBeTruthy();
+  });
+  it('method names are unique, and only typing is a notification', () => {
+    expect(new Set(SOCKET_METHODS.map((x) => x.name)).size).toBe(SOCKET_METHODS.length);
+    expect(SOCKET_METHODS.filter((x) => x.result === null).map((x) => x.name).sort()).toEqual(['person_typing', 'typing']);
+  });
+  it('checks params by method: unknown methods and bad params are refused', () => {
+    expect(parseParams('open_vote', { request_id: 'rq', trip_id: 't', question: 'Where?', kind: 'choice', anonymous: false,
+      options: [{ label: 'A' }, { label: 'B' }] }).ok).toBe(true);
+    expect(parseParams('open_vote', { trip_id: 't' })).toMatchObject({ ok: false, code: 422 });
+    expect(parseParams('launch_rockets', {})).toMatchObject({ ok: false, code: -32601 });
   });
 });

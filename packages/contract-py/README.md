@@ -18,6 +18,6 @@ The models check the shape of every body and most limits. A few limits are only 
 contract (lengths and link rules on fields that may be empty, and a message needing text or a card);
 go-brain checks those on its side.
 
-`go_contract/models.py` is generated from `packages/contract/openapi/go-server.json`
+`go_contract/models.py` is generated from `packages/contract/openapi/go-brain.json`
 (`python scripts/gen_models.py`). Do not edit it by hand: change the zod schemas in
 `packages/contract`, run `pnpm --filter @go/contract emit-openapi`, then regenerate.

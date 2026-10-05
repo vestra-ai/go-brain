@@ -30,6 +30,8 @@
   },
   "files": [
     "dist",
-    "openapi"
+    "openapi",
+    "asyncapi",
+    "socket"
   ]
 }

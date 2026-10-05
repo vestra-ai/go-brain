@@ -1,832 +1,15 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Go contract: what go-brain serves",
+    "title": "The Go brain API",
     "version": "1.0.0",
-    "description": "Events in, and the questions go-server asks go-brain. Guide: docs/guide in vestra-ai/go-brain."
+    "description": "go-brain is Go, the AI member of every trip group. go-server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain."
   },
   "paths": {
-    "/v1/events": {
-      "post": {
-        "operationId": "postEvent",
-        "summary": "Something happened in a trip. One event per call. go-brain answers fast and does the work afterwards.",
-        "parameters": [
-          {
-            "name": "x-go-signature",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\n<METHOD>\\n<path?query>\\n<raw body>\")>"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Event"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Accepted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EventAccepted"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, stale or wrong signature",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Clashes with the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body did not match the contract",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "A bug on the server",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Down for a moment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/trips/{trip_id}/cards/{card_id}/actions": {
-      "post": {
-        "operationId": "cardAction",
-        "summary": "Someone tapped a button on a Go card. Answers within 3 seconds: done, open a page, or refused.",
-        "parameters": [
-          {
-            "name": "trip_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            }
-          },
-          {
-            "name": "card_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            }
-          },
-          {
-            "name": "x-go-signature",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\n<METHOD>\\n<path?query>\\n<raw body>\")>"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CardActionRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CardActionResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, stale or wrong signature",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Clashes with the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body did not match the contract",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "A bug on the server",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Down for a moment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/trips/{trip_id}/catch-up": {
-      "post": {
-        "operationId": "catchUp",
-        "summary": "What one person missed since they last looked. Answers within 3 seconds.",
-        "parameters": [
-          {
-            "name": "trip_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            }
-          },
-          {
-            "name": "x-go-signature",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\n<METHOD>\\n<path?query>\\n<raw body>\")>"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CatchUpRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CatchUp"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, stale or wrong signature",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Clashes with the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body did not match the contract",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "A bug on the server",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Down for a moment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/people/{person_id}": {
+    "/v1/socket": {
       "get": {
-        "operationId": "getPerson",
-        "summary": "What Go knows about a person, with where each fact came from.",
-        "parameters": [
-          {
-            "name": "person_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            }
-          },
-          {
-            "name": "x-go-signature",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\n<METHOD>\\n<path?query>\\n<raw body>\")>"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PersonPage"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, stale or wrong signature",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Clashes with the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body did not match the contract",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "A bug on the server",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Down for a moment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "operationId": "updatePerson",
-        "summary": "Turn carry-over on or off.",
-        "parameters": [
-          {
-            "name": "person_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            }
-          },
-          {
-            "name": "x-go-signature",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\n<METHOD>\\n<path?query>\\n<raw body>\")>"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdatePerson"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Ok"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, stale or wrong signature",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Clashes with the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body did not match the contract",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "A bug on the server",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Down for a moment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "forgetPerson",
-        "summary": "Forget me. With trip_id: what Go learned in that trip. Without: everything, in every trip. go-server also clears the person's join answers (from_city, earliest_leave, know) in those trips so Go cannot learn them again.",
-        "parameters": [
-          {
-            "name": "person_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            }
-          },
-          {
-            "name": "trip_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "x-go-signature",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\n<METHOD>\\n<path?query>\\n<raw body>\")>"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ForgetResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, stale or wrong signature",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Clashes with the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body did not match the contract",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "A bug on the server",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Down for a moment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/people/{person_id}/facts/{fact_id}": {
-      "delete": {
-        "operationId": "deleteFact",
-        "summary": "Remove one fact.",
-        "parameters": [
-          {
-            "name": "person_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            }
-          },
-          {
-            "name": "fact_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64
-            }
-          },
-          {
-            "name": "x-go-signature",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\n<METHOD>\\n<path?query>\\n<raw body>\")>"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Ok"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, stale or wrong signature",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Clashes with the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body did not match the contract",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "A bug on the server",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Down for a moment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/links": {
-      "post": {
-        "operationId": "createLink",
-        "summary": "A short-lived link to a go-brain page (the vault), to open in the system browser sheet.",
+        "operationId": "openSocket",
+        "summary": "Open the socket. A WebSocket upgrade, signed with x-go-signature (method GET, this path, empty body). go-server keeps it open.",
         "parameters": [
           {
             "name": "x-go-signature",
@@ -835,99 +18,15 @@
             "schema": {
               "type": "string"
             },
-            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\n<METHOD>\\n<path?query>\\n<raw body>\")>"
+            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\nGET\\n/v1/socket\\n\")>"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateLink"
-              }
-            }
-          }
-        },
         "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Link"
-                }
-              }
-            }
+          "101": {
+            "description": "Switching to the WebSocket. Every frame after this is JSON-RPC 2.0; see asyncapi/socket.json."
           },
           "401": {
-            "description": "Missing, stale or wrong signature",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Clashes with the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body did not match the contract",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "A bug on the server",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Down for a moment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
+            "description": "Missing, stale or wrong signature"
           }
         }
       }
@@ -944,66 +43,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Health"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown id",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Clashes with the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body did not match the contract",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "A bug on the server",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Down for a moment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -2938,6 +1977,11 @@
             "minLength": 1,
             "maxLength": 64
           },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "text": {
             "anyOf": [
               {
@@ -2990,7 +2034,8 @@
           }
         },
         "required": [
-          "request_id"
+          "request_id",
+          "trip_id"
         ],
         "description": "Needs text, a card, or both."
       },
@@ -3013,7 +2058,24 @@
           "seq"
         ]
       },
-      "PutCardResult": {
+      "ReplaceCard": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "card": {
+            "$ref": "#/components/schemas/Card"
+          }
+        },
+        "required": [
+          "trip_id",
+          "card"
+        ]
+      },
+      "ReplaceCardResult": {
         "type": "object",
         "properties": {
           "message_id": {
@@ -3026,14 +2088,43 @@
           "message_id"
         ]
       },
-      "SetTyping": {
+      "GoTyping": {
         "type": "object",
         "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "on": {
             "type": "boolean"
           }
         },
         "required": [
+          "trip_id",
+          "on"
+        ]
+      },
+      "PersonTyping": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "trip_id",
+          "person_id",
           "on"
         ]
       },
@@ -5368,6 +4459,51 @@
           "propertyName": "type"
         }
       },
+      "ReadTrip": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "trip_id"
+        ]
+      },
+      "ReadMessages": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "after_seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "trip_id",
+          "after_seq"
+        ],
+        "description": "Up to 200 at a time; 200 when limit is left out."
+      },
       "WriteResult": {
         "type": "object",
         "properties": {
@@ -5385,6 +4521,11 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -5478,7 +4619,8 @@
           }
         },
         "required": [
-          "request_id"
+          "request_id",
+          "trip_id"
         ],
         "description": "Only the fields sent change."
       },
@@ -5486,6 +4628,11 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -5527,6 +4674,7 @@
         },
         "required": [
           "request_id",
+          "trip_id",
           "question",
           "kind",
           "anonymous",
@@ -5560,10 +4708,22 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
           }
         },
         "required": [
-          "request_id"
+          "request_id",
+          "trip_id",
+          "decision_id"
         ]
       },
       "CloseDecisionResult": {
@@ -5587,6 +4747,16 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "decision_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -5616,6 +4786,8 @@
         },
         "required": [
           "request_id",
+          "trip_id",
+          "decision_id",
           "choice_index",
           "cap_minor",
           "currency",
@@ -5628,6 +4800,11 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -5675,6 +4852,7 @@
         },
         "required": [
           "request_id",
+          "trip_id",
           "kind",
           "text",
           "proof",
@@ -5704,6 +4882,16 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "line_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -5792,7 +4980,9 @@
           }
         },
         "required": [
-          "request_id"
+          "request_id",
+          "trip_id",
+          "line_id"
         ],
         "description": "Only the fields sent change. Go cannot undo a line; only people can."
       },
@@ -5800,6 +4990,11 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -5937,6 +5132,7 @@
         },
         "required": [
           "request_id",
+          "trip_id",
           "kind",
           "title",
           "vendor",
@@ -5970,6 +5166,16 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "booking_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -6032,7 +5238,9 @@
           }
         },
         "required": [
-          "request_id"
+          "request_id",
+          "trip_id",
+          "booking_id"
         ],
         "description": "Only the fields sent change."
       },
@@ -6040,6 +5248,11 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -6091,6 +5304,7 @@
         },
         "required": [
           "request_id",
+          "trip_id",
           "paid_by_person_id",
           "amount_minor",
           "currency",
@@ -6122,6 +5336,11 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -6164,6 +5383,7 @@
         },
         "required": [
           "request_id",
+          "trip_id",
           "decision_id",
           "amount_minor",
           "currency",
@@ -6175,6 +5395,16 @@
         "type": "object",
         "properties": {
           "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "approval_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -6192,6 +5422,8 @@
         },
         "required": [
           "request_id",
+          "trip_id",
+          "approval_id",
           "reason"
         ]
       },
@@ -6278,6 +5510,68 @@
           "propertyName": "status"
         }
       },
+      "AddReaction": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "message_id",
+          "emoji"
+        ]
+      },
+      "RemoveReaction": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "message_id",
+          "emoji"
+        ]
+      },
       "EventAccepted": {
         "type": "object",
         "properties": {
@@ -6294,9 +5588,19 @@
           "duplicate"
         ]
       },
-      "CardActionRequest": {
+      "CardTap": {
         "type": "object",
         "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "action_id": {
             "type": "string",
             "pattern": "^[a-z][a-z_]{0,31}$"
@@ -6320,6 +5624,8 @@
           }
         },
         "required": [
+          "trip_id",
+          "card_id",
           "action_id",
           "person_id"
         ]
@@ -6406,6 +5712,11 @@
       "CatchUpRequest": {
         "type": "object",
         "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "person_id": {
             "type": "string",
             "minLength": 1,
@@ -6417,6 +5728,7 @@
           }
         },
         "required": [
+          "trip_id",
           "person_id",
           "since"
         ]
@@ -6565,15 +5877,78 @@
           "facts"
         ]
       },
+      "GetPerson": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
       "UpdatePerson": {
         "type": "object",
         "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "carry_over": {
             "type": "boolean"
           }
         },
         "required": [
+          "person_id",
           "carry_over"
+        ]
+      },
+      "DeleteFact": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "person_id",
+          "fact_id"
+        ]
+      },
+      "ForgetPerson": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "person_id"
         ]
       },
       "Ok": {
@@ -6709,6 +6084,134 @@
         "required": [
           "error"
         ]
+      },
+      "SocketRequest": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "A request. The other side answers it once, with a result or an error, using the same id."
+      },
+      "SocketNotification": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "method",
+          "params"
+        ],
+        "description": "A notification: no id, no answer. Used only for typing."
+      },
+      "SocketResult": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "result": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "id",
+          "result"
+        ],
+        "description": "The answer to a request that worked."
+      },
+      "SocketError": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "data": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "$ref": "#/components/schemas/ErrorCode"
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "id",
+          "error"
+        ],
+        "description": "The answer to a request that did not work."
       },
       "SpendApprovalClaims": {
         "type": "object",

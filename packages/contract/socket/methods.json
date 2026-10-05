@@ -1,0 +1,250 @@
+{
+  "contract": "1.0.0",
+  "path": "/v1/socket",
+  "protocol": "JSON-RPC 2.0 over WebSocket",
+  "methods": [
+    {
+      "name": "send_event",
+      "direction": "to_brain",
+      "summary": "Something changed in a trip. One event per change, in change-number order for each trip.",
+      "params": "Event",
+      "result": "EventAccepted",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "person_typing",
+      "direction": "to_brain",
+      "summary": "Someone in the room started or stopped typing. Go waits for them to finish before it answers.",
+      "params": "PersonTyping",
+      "result": null,
+      "answer_within_seconds": null,
+      "sends_event": null
+    },
+    {
+      "name": "card_tap",
+      "direction": "to_brain",
+      "summary": "Someone tapped a button on one of Go's cards. Go answers what the app should do.",
+      "params": "CardTap",
+      "result": "CardActionResult",
+      "answer_within_seconds": 3,
+      "sends_event": null
+    },
+    {
+      "name": "catch_up",
+      "direction": "to_brain",
+      "summary": "Someone came back to the room after a while. Go answers what they missed.",
+      "params": "CatchUpRequest",
+      "result": "CatchUp",
+      "answer_within_seconds": 3,
+      "sends_event": null
+    },
+    {
+      "name": "get_person",
+      "direction": "to_brain",
+      "summary": "What Go knows about a person, with where each fact came from.",
+      "params": "GetPerson",
+      "result": "PersonPage",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "update_person",
+      "direction": "to_brain",
+      "summary": "Turn carry-over on or off for a person.",
+      "params": "UpdatePerson",
+      "result": "Ok",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "delete_fact",
+      "direction": "to_brain",
+      "summary": "Remove one thing Go knows about a person.",
+      "params": "DeleteFact",
+      "result": "Ok",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "forget_person",
+      "direction": "to_brain",
+      "summary": "Forget me: in one trip, or everywhere.",
+      "params": "ForgetPerson",
+      "result": "ForgetResult",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "vault_link",
+      "direction": "to_brain",
+      "summary": "A short-lived link to the person's vault page, to open in the browser sheet.",
+      "params": "CreateLink",
+      "result": "Link",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "read_trip",
+      "direction": "to_server",
+      "summary": "Read the whole trip as Go may see it, at its current change number.",
+      "params": "ReadTrip",
+      "result": "TripSnapshot",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "read_messages",
+      "direction": "to_server",
+      "summary": "Read messages posted or changed after a change number. Used to catch up after a gap or a restart.",
+      "params": "ReadMessages",
+      "result": "MessagesPage",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "post_message",
+      "direction": "to_server",
+      "summary": "Go says something in the room: text, a card, or both.",
+      "params": "PostMessage",
+      "result": "PostMessageResult",
+      "answer_within_seconds": 2,
+      "sends_event": "message.created"
+    },
+    {
+      "name": "replace_card",
+      "direction": "to_server",
+      "summary": "Replace a card Go posted earlier, in place. Not a change to the trip: no event.",
+      "params": "ReplaceCard",
+      "result": "ReplaceCardResult",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "typing",
+      "direction": "to_server",
+      "summary": "Show or hide \"Go is typing...\" in the room.",
+      "params": "GoTyping",
+      "result": null,
+      "answer_within_seconds": null,
+      "sends_event": null
+    },
+    {
+      "name": "add_reaction",
+      "direction": "to_server",
+      "summary": "Go reacts to a message.",
+      "params": "AddReaction",
+      "result": "WriteResult",
+      "answer_within_seconds": 2,
+      "sends_event": "reaction.added"
+    },
+    {
+      "name": "remove_reaction",
+      "direction": "to_server",
+      "summary": "Go takes its reaction back.",
+      "params": "RemoveReaction",
+      "result": "WriteResult",
+      "answer_within_seconds": 2,
+      "sends_event": "reaction.removed"
+    },
+    {
+      "name": "update_trip",
+      "direction": "to_server",
+      "summary": "Change the title, destination, dates, vibe, stay or the itinerary.",
+      "params": "UpdateTrip",
+      "result": "WriteResult",
+      "answer_within_seconds": 2,
+      "sends_event": "trip.updated"
+    },
+    {
+      "name": "open_vote",
+      "direction": "to_server",
+      "summary": "Open a vote.",
+      "params": "OpenDecision",
+      "result": "OpenDecisionResult",
+      "answer_within_seconds": 2,
+      "sends_event": "decision.opened"
+    },
+    {
+      "name": "close_vote",
+      "direction": "to_server",
+      "summary": "Close a vote now and get the result.",
+      "params": "CloseDecision",
+      "result": "CloseDecisionResult",
+      "answer_within_seconds": 2,
+      "sends_event": "decision.closed"
+    },
+    {
+      "name": "set_mandate",
+      "direction": "to_server",
+      "summary": "Set what the group allowed for a closed choice vote: the choice, the cap, refundable only, and who pays.",
+      "params": "SetMandate",
+      "result": "WriteResult",
+      "answer_within_seconds": 2,
+      "sends_event": "mandate.set"
+    },
+    {
+      "name": "add_record_line",
+      "direction": "to_server",
+      "summary": "Add an agreed, open or doing line to the trip record.",
+      "params": "AddRecordLine",
+      "result": "AddRecordLineResult",
+      "answer_within_seconds": 2,
+      "sends_event": "record.changed"
+    },
+    {
+      "name": "update_record_line",
+      "direction": "to_server",
+      "summary": "Change a line Go wrote, or mark it done.",
+      "params": "UpdateRecordLine",
+      "result": "WriteResult",
+      "answer_within_seconds": 2,
+      "sends_event": "record.changed"
+    },
+    {
+      "name": "add_booking",
+      "direction": "to_server",
+      "summary": "Record a confirmed booking.",
+      "params": "AddBooking",
+      "result": "AddBookingResult",
+      "answer_within_seconds": 2,
+      "sends_event": "booking.changed"
+    },
+    {
+      "name": "update_booking",
+      "direction": "to_server",
+      "summary": "Change or cancel a booking.",
+      "params": "UpdateBooking",
+      "result": "WriteResult",
+      "answer_within_seconds": 2,
+      "sends_event": "booking.changed"
+    },
+    {
+      "name": "add_expense",
+      "direction": "to_server",
+      "summary": "Record something someone paid for, split between people.",
+      "params": "AddExpense",
+      "result": "AddExpenseResult",
+      "answer_within_seconds": 2,
+      "sends_event": "expense.changed"
+    },
+    {
+      "name": "request_spend_approval",
+      "direction": "to_server",
+      "summary": "Run the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not.",
+      "params": "RequestSpendApproval",
+      "result": "SpendApprovalResult",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "cancel_spend_approval",
+      "direction": "to_server",
+      "summary": "Release an approval Go will not use. Not a change to the trip: no event.",
+      "params": "CancelSpendApproval",
+      "result": "Ok",
+      "answer_within_seconds": 2,
+      "sends_event": null
+    }
+  ]
+}

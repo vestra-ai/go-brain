@@ -16,7 +16,9 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
-SOURCE = HERE.parent / "contract" / "openapi" / "go-server.json"
+SOURCE = HERE.parent / "contract" / "openapi" / "go-brain.json"
+METHODS = HERE.parent / "contract" / "socket" / "methods.json"
+METHODS_OUT = HERE / "go_contract" / "socket_methods.py"
 OUT = HERE / "go_contract" / "models.py"
 KEEP = {"type", "format", "const", "enum", "description"}
 JS_MAX_SAFE = 9007199254740991
@@ -83,11 +85,41 @@ def main() -> None:
                 "--use-field-description",
                 "--collapse-root-models",
                 "--formatters", "black", "isort",
-                "--custom-file-header", "# Generated from packages/contract/openapi/go-server.json by scripts/gen_models.py. Do not edit.",
+                "--custom-file-header", "# Generated from packages/contract/openapi/go-brain.json by scripts/gen_models.py. Do not edit.",
             ],
             check=True,
         )
-    print(f"wrote {OUT}", file=sys.stderr)
+    table = json.loads(METHODS.read_text())
+    lines = [
+        "# Generated from packages/contract/socket/methods.json by scripts/gen_models.py. Do not edit.",
+        '"""Every socket method: who sends it, its params model and its result model (None for a notification)."""',
+        "",
+        "from typing import NamedTuple",
+        "",
+        "from . import models",
+        "",
+        "",
+        "class Method(NamedTuple):",
+        "    name: str",
+        "    direction: str  # to_brain: go-server sends it. to_server: Go sends it and go-server answers.",
+        "    params: type",
+        "    result: type | None",
+        "    answer_within_seconds: int | None",
+        "    sends_event: str | None",
+        "",
+        "",
+        f"PATH = {table['path']!r}",
+        "METHODS: dict[str, Method] = {",
+    ]
+    for x in table["methods"]:
+        result = f"models.{x['result']}" if x["result"] else "None"
+        lines.append(
+            f"    {x['name']!r}: Method({x['name']!r}, {x['direction']!r}, models.{x['params']}, {result}, "
+            f"{x['answer_within_seconds']!r}, {x['sends_event']!r}),"
+        )
+    lines.append("}")
+    METHODS_OUT.write_text("\n".join(lines) + "\n")
+    print(f"wrote {OUT} and {METHODS_OUT}", file=sys.stderr)
 
 
 if __name__ == "__main__":

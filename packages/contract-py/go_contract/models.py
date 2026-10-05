@@ -1,9 +1,9 @@
-# Generated from packages/contract/openapi/go-server.json by scripts/gen_models.py. Do not edit.
+# Generated from packages/contract/openapi/go-brain.json by scripts/gen_models.py. Do not edit.
 
 from __future__ import annotations
 
 from datetime import date as date_aliased
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, Field, RootModel
 
@@ -382,6 +382,7 @@ class PostMessage(BaseModel):
     """
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     text: str | None = None
     card: (
         VoteCard
@@ -408,11 +409,38 @@ class PostMessageResult(BaseModel):
     seq: Annotated[int, Field(gt=0)]
 
 
-class PutCardResult(BaseModel):
+class ReplaceCard(BaseModel):
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    card: Annotated[
+        VoteCard
+        | MandateCard
+        | TicketCard
+        | ExpenseCard
+        | SettleUpCard
+        | DayCard
+        | PlanCard
+        | BudgetCard
+        | OptionsCard
+        | WorkingCard
+        | CallCard
+        | PayCard
+        | NoticeCard,
+        Field(discriminator="kind"),
+    ]
+
+
+class ReplaceCardResult(BaseModel):
     message_id: Annotated[str, Field(max_length=64, min_length=1)]
 
 
-class SetTyping(BaseModel):
+class GoTyping(BaseModel):
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    on: bool
+
+
+class PersonTyping(BaseModel):
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
     on: bool
 
 
@@ -1045,6 +1073,20 @@ class Event(
     ]
 
 
+class ReadTrip(BaseModel):
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+
+
+class ReadMessages(BaseModel):
+    """
+    Up to 200 at a time; 200 when limit is left out.
+    """
+
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    after_seq: Annotated[int, Field(ge=0)]
+    limit: int | None = None
+
+
 class WriteResult(BaseModel):
     seq: Annotated[int, Field(gt=0)]
 
@@ -1055,6 +1097,7 @@ class UpdateTrip(BaseModel):
     """
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     title: str | None = None
     destination: Place | None = None
     dates: Dates | None = None
@@ -1069,6 +1112,7 @@ class OpenDecision(BaseModel):
     """
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     question: Annotated[str, Field(max_length=200, min_length=1)]
     kind: Literal["choice", "yesno"]
     anonymous: bool
@@ -1083,6 +1127,8 @@ class OpenDecisionResult(BaseModel):
 
 class CloseDecision(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    decision_id: Annotated[str, Field(max_length=64, min_length=1)]
 
 
 class CloseDecisionResult(BaseModel):
@@ -1096,6 +1142,8 @@ class SetMandate(BaseModel):
     """
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    decision_id: Annotated[str, Field(max_length=64, min_length=1)]
     choice_index: Annotated[int, Field(ge=0)]
     cap_minor: Annotated[int, Field(gt=0)]
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
@@ -1105,6 +1153,7 @@ class SetMandate(BaseModel):
 
 class AddRecordLine(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     kind: Literal["agreed", "open", "doing"]
     text: Annotated[str, Field(max_length=200, min_length=1)]
     proof: Annotated[list[Proof], Field(max_length=10)]
@@ -1123,6 +1172,8 @@ class UpdateRecordLine(BaseModel):
     """
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    line_id: Annotated[str, Field(max_length=64, min_length=1)]
     kind: Literal["agreed", "open", "doing"] | None = None
     text: str | None = None
     status: Literal["active", "done"] | None = None
@@ -1133,6 +1184,7 @@ class UpdateRecordLine(BaseModel):
 
 class AddBooking(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     kind: Literal["stay", "flight", "train", "bus", "cab", "table", "activity", "other"]
     title: Annotated[str, Field(max_length=120, min_length=1)]
     vendor: Annotated[str, Field(max_length=80, min_length=1)]
@@ -1162,6 +1214,8 @@ class UpdateBooking(BaseModel):
     """
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    booking_id: Annotated[str, Field(max_length=64, min_length=1)]
     status: Literal["cancelled"] | None = None
     ref: str | None = None
     refundable_until: AwareDatetime | None = None
@@ -1171,6 +1225,7 @@ class UpdateBooking(BaseModel):
 
 class AddExpense(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     paid_by_person_id: Annotated[str, Field(max_length=64, min_length=1)]
     amount_minor: Annotated[int, Field(gt=0)]
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
@@ -1190,6 +1245,7 @@ class AddExpenseResult(BaseModel):
 
 class RequestSpendApproval(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     decision_id: Annotated[str, Field(max_length=64, min_length=1)]
     amount_minor: Annotated[int, Field(gt=0)]
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
@@ -1200,6 +1256,8 @@ class RequestSpendApproval(BaseModel):
 
 class CancelSpendApproval(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    approval_id: Annotated[str, Field(max_length=64, min_length=1)]
     reason: Literal[
         "payment_failed", "payer_declined", "price_changed", "expired", "other"
     ]
@@ -1232,12 +1290,28 @@ class SpendApprovalResult(RootModel[SpendApproved | SpendDenied]):
     root: Annotated[SpendApproved | SpendDenied, Field(discriminator="status")]
 
 
+class AddReaction(BaseModel):
+    request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    message_id: Annotated[str, Field(max_length=64, min_length=1)]
+    emoji: Annotated[str, Field(max_length=16, min_length=1)]
+
+
+class RemoveReaction(BaseModel):
+    request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    message_id: Annotated[str, Field(max_length=64, min_length=1)]
+    emoji: Annotated[str, Field(max_length=16, min_length=1)]
+
+
 class EventAccepted(BaseModel):
     accepted: Literal[True]
     duplicate: bool
 
 
-class CardActionRequest(BaseModel):
+class CardTap(BaseModel):
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    card_id: Annotated[str, Field(max_length=64, min_length=1)]
     action_id: Annotated[str, Field(pattern="^[a-z][a-z_]{0,31}$")]
     person_id: Annotated[str, Field(max_length=64, min_length=1)]
     option_id: str | None = None
@@ -1266,6 +1340,7 @@ class CardActionResult(RootModel[ActionDone | ActionOpen | ActionRefused]):
 
 
 class CatchUpRequest(BaseModel):
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     person_id: Annotated[str, Field(max_length=64, min_length=1)]
     since: AwareDatetime
 
@@ -1301,8 +1376,23 @@ class PersonPage(BaseModel):
     facts: Annotated[list[Fact], Field(max_length=500)]
 
 
+class GetPerson(BaseModel):
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
+
+
 class UpdatePerson(BaseModel):
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
     carry_over: bool
+
+
+class DeleteFact(BaseModel):
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    fact_id: Annotated[str, Field(max_length=64, min_length=1)]
+
+
+class ForgetPerson(BaseModel):
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: str | None = None
 
 
 class Ok(BaseModel):
@@ -1345,6 +1435,62 @@ class Error(BaseModel):
 
 class ErrorBody(BaseModel):
     error: Error
+
+
+class SocketRequest(BaseModel):
+    """
+    A request. The other side answers it once, with a result or an error, using the same id.
+    """
+
+    jsonrpc: Literal["2.0"]
+    method: Annotated[str, Field(max_length=64, min_length=1)]
+    params: dict[str, Any]
+
+
+class SocketNotification(BaseModel):
+    """
+    A notification: no id, no answer. Used only for typing.
+    """
+
+    jsonrpc: Literal["2.0"]
+    method: Annotated[str, Field(max_length=64, min_length=1)]
+    params: dict[str, Any]
+
+
+class SocketResult(BaseModel):
+    """
+    The answer to a request that worked.
+    """
+
+    jsonrpc: Literal["2.0"]
+    result: dict[str, Any]
+
+
+class Data(BaseModel):
+    code: Literal[
+        "bad_signature",
+        "not_found",
+        "invalid",
+        "conflict",
+        "rate_limited",
+        "internal",
+        "unavailable",
+    ]
+
+
+class Error1(BaseModel):
+    code: Annotated[int, Field(ge=-9007199254740991)]
+    message: Annotated[str, Field(max_length=500)]
+    data: Data | None = None
+
+
+class SocketError(BaseModel):
+    """
+    The answer to a request that did not work.
+    """
+
+    jsonrpc: Literal["2.0"]
+    error: Error1
 
 
 class SpendApprovalClaims(BaseModel):

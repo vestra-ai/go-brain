@@ -10,7 +10,8 @@ import { z } from 'zod';
 import * as C from '../src/index.js';
 import { Card } from '../src/cards.js';
 import { Event } from '../src/events.js';
-import { ROUTES } from '../src/routes.js';
+import { SOCKET_METHODS } from '../src/socket.js';
+import { HTTP_ROUTES } from '../src/routes.js';
 
 export const GUIDE_DIR = fileURLToPath(new URL('../../../docs/guide/', import.meta.url));
 const MARKER = /<!--\s*schema:\s*([A-Za-z]+)\s*-->\s*```json\n([\s\S]*?)```/g;
@@ -18,10 +19,11 @@ const MARKER = /<!--\s*schema:\s*([A-Za-z]+)\s*-->\s*```json\n([\s\S]*?)```/g;
 const idOf = (s: z.ZodType): string => z.globalRegistry.get(s)?.id ?? '';
 
 export function requiredExamples(): Set<string> {
-  const need = new Set<string>(['ErrorBody', 'SpendApprovalClaims']);
+  const need = new Set<string>(['SpendApprovalClaims', 'SocketRequest', 'SocketResult', 'SocketError', 'SocketNotification']);
   for (const o of Event.options) need.add(idOf(o));
   for (const o of Card.options) need.add(idOf(o));
-  for (const r of ROUTES) for (const s of [r.request, r.response]) if (s) need.add(idOf(s));
+  for (const x of SOCKET_METHODS) for (const s of [x.params, x.result]) if (s) need.add(idOf(s));
+  for (const r of HTTP_ROUTES) if (r.response) need.add(idOf(r.response));
   need.delete('Event');
   need.delete('Card');
   need.delete('');

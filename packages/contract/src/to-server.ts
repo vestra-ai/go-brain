@@ -3,12 +3,22 @@ import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Jou
 import { BookingKind, Day, Decision, DecisionOption, Proof } from './trip.js';
 
 /**
- * The bodies of the calls go-brain makes to go-server (go-server serves them under /brain/v1).
- * Every write carries `request_id`: go-server must do the write once even if the same request
- * arrives twice, and answer the repeat with the first answer.
+ * Go's requests: what go-brain asks go-server over the socket, to read the trip or act in it.
+ * go-server answers each one. Every request names its trip. Every write carries `request_id`:
+ * go-server must do the write once even if the same request arrives twice, and answer the repeat
+ * with the first answer.
  */
 
 const request_id = Id;
+const trip_id = Id;
+
+/** Read the whole trip as Go may see it. */
+export const ReadTrip = z.object({ trip_id }).meta({ id: 'ReadTrip' });
+
+/** Messages posted or changed after a change number (updated_seq > after_seq), oldest change first. */
+export const ReadMessages = z
+  .object({ trip_id, after_seq: z.int().nonnegative(), limit: z.int().min(1).max(200).nullish() })
+  .meta({ id: 'ReadMessages', description: 'Up to 200 at a time; 200 when limit is left out.' });
 
 /** What every write answers with, plus any new id. */
 export const WriteResult = z.object({ seq: Seq }).meta({ id: 'WriteResult' });
@@ -16,6 +26,7 @@ export const WriteResult = z.object({ seq: Seq }).meta({ id: 'WriteResult' });
 export const UpdateTrip = z
   .object({
     request_id,
+    trip_id,
     title: z.string().min(1).max(80).nullish(),
     destination: Place.nullish(),
     dates: z.object({ start: IsoDate, end: IsoDate }).nullish(),
@@ -29,6 +40,7 @@ export const UpdateTrip = z
 export const OpenDecision = z
   .object({
     request_id,
+    trip_id,
     question: z.string().min(1).max(200),
     kind: z.enum(['choice', 'yesno']),
     anonymous: z.boolean(),
@@ -38,12 +50,14 @@ export const OpenDecision = z
   .meta({ id: 'OpenDecision', description: 'Opens a vote. Go then posts a message with a vote card to show it in the room.' });
 export const OpenDecisionResult = z.object({ decision_id: Id, seq: Seq }).meta({ id: 'OpenDecisionResult' });
 
-export const CloseDecision = z.object({ request_id }).meta({ id: 'CloseDecision' });
+export const CloseDecision = z.object({ request_id, trip_id, decision_id: Id }).meta({ id: 'CloseDecision' });
 export const CloseDecisionResult = z.object({ decision: Decision, seq: Seq }).meta({ id: 'CloseDecisionResult' });
 
 export const SetMandate = z
   .object({
     request_id,
+    trip_id,
+    decision_id: Id,
     choice_index: z.int().nonnegative(),
     cap_minor: PositiveAmountMinor,
     currency: Currency,
@@ -58,6 +72,7 @@ export const SetMandate = z
 export const AddRecordLine = z
   .object({
     request_id,
+    trip_id,
     /** Go writes only these three kinds. Decided and booked lines come from votes and bookings. */
     kind: z.enum(['agreed', 'open', 'doing']),
     text: z.string().min(1).max(200),
@@ -72,6 +87,8 @@ export const AddRecordLineResult = z.object({ line_id: Id, seq: Seq }).meta({ id
 export const UpdateRecordLine = z
   .object({
     request_id,
+    trip_id,
+    line_id: Id,
     /** E.g. an open question that got settled becomes agreed. */
     kind: z.enum(['agreed', 'open', 'doing']).nullish(),
     text: z.string().min(1).max(200).nullish(),
@@ -86,6 +103,7 @@ export const UpdateRecordLine = z
 export const AddBooking = z
   .object({
     request_id,
+    trip_id,
     kind: BookingKind,
     title: z.string().min(1).max(120),
     vendor: z.string().min(1).max(80),
@@ -110,6 +128,8 @@ export const AddBookingResult = z.object({ booking_id: Id, seq: Seq }).meta({ id
 export const UpdateBooking = z
   .object({
     request_id,
+    trip_id,
+    booking_id: Id,
     status: z.literal('cancelled').nullish(),
     ref: z.string().min(1).max(80).nullish(),
     refundable_until: IsoDateTime.nullish(),
@@ -121,6 +141,7 @@ export const UpdateBooking = z
 export const AddExpense = z
   .object({
     request_id,
+    trip_id,
     paid_by_person_id: Id,
     amount_minor: PositiveAmountMinor,
     currency: Currency,
@@ -136,6 +157,7 @@ export const AddExpenseResult = z.object({ expense_id: Id, seq: Seq }).meta({ id
 export const RequestSpendApproval = z
   .object({
     request_id,
+    trip_id,
     decision_id: Id,
     /** The most this payment may be. The vault refuses a checkout above it. */
     amount_minor: PositiveAmountMinor,
@@ -151,6 +173,8 @@ export const RequestSpendApproval = z
 export const CancelSpendApproval = z
   .object({
     request_id,
+    trip_id,
+    approval_id: Id,
     reason: z.enum(['payment_failed', 'payer_declined', 'price_changed', 'expired', 'other']),
   })
   .meta({ id: 'CancelSpendApproval' });
@@ -186,3 +210,12 @@ export const SpendDenied = z
 export const SpendApprovalResult = z
   .discriminatedUnion('status', [SpendApproved, SpendDenied])
   .meta({ id: 'SpendApprovalResult', discriminator: { propertyName: 'status' } });
+
+/** Go reacts to a message, for example a quiet ✅ when it noted something without saying anything. */
+export const AddReaction = z
+  .object({ request_id, trip_id, message_id: Id, emoji: z.string().min(1).max(16) })
+  .meta({ id: 'AddReaction' });
+/** Go takes its reaction back. */
+export const RemoveReaction = z
+  .object({ request_id, trip_id, message_id: Id, emoji: z.string().min(1).max(16) })
+  .meta({ id: 'RemoveReaction' });

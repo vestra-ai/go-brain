@@ -1,0 +1,135 @@
+import { z } from 'zod';
+import { ErrorCode } from './errors.js';
+import { Event } from './events.js';
+import { MessagesPage, PersonTyping, GoTyping, PostMessage, PostMessageResult, ReplaceCard, ReplaceCardResult } from './room.js';
+import {
+  CardActionResult, CardTap, CatchUp, CatchUpRequest, CreateLink, DeleteFact, EventAccepted, ForgetPerson, ForgetResult, GetPerson,
+  Link, Ok, PersonPage, UpdatePerson,
+} from './to-brain.js';
+import {
+  AddBooking, AddBookingResult, AddExpense, AddExpenseResult, AddReaction, AddRecordLine, AddRecordLineResult, CancelSpendApproval,
+  CloseDecision, CloseDecisionResult, OpenDecision, OpenDecisionResult, ReadMessages, ReadTrip, RemoveReaction, RequestSpendApproval,
+  SetMandate, SpendApprovalResult, UpdateBooking, UpdateRecordLine, UpdateTrip, WriteResult,
+} from './to-server.js';
+import { TripSnapshot } from './trip.js';
+
+/**
+ * The brain's socket. go-server opens one WebSocket to go-brain and keeps it open. Everything between
+ * the two servers travels on it, in both directions, as JSON-RPC 2.0 text frames:
+ *
+ *  - a request has an `id` and always gets exactly one answer: a result or an error;
+ *  - a notification has no `id` and gets no answer (typing).
+ *
+ * go-server connects to wss://<brain>/v1/socket with the x-go-signature header on the upgrade request
+ * (method GET, target /v1/socket, empty body). See signing.ts.
+ */
+export const SOCKET_PATH = '/v1/socket';
+/** go-brain pings every 20 seconds. A side that hears nothing for 40 seconds closes the socket. */
+export const PING_INTERVAL_SECONDS = 20;
+export const IDLE_CLOSE_SECONDS = 40;
+/** How long go-server waits before reconnecting, in order, then 30 seconds each time. */
+export const RECONNECT_BACKOFF_SECONDS = [1, 2, 5, 10, 30] as const;
+/** The largest frame either side sends. */
+export const MAX_FRAME_BYTES = 1_048_576;
+
+const jsonrpc = z.literal('2.0');
+const RequestId = z.string().min(1).max(64);
+
+export const SocketRequest = z
+  .object({ jsonrpc, id: RequestId, method: z.string().min(1).max(64), params: z.record(z.string(), z.unknown()) })
+  .meta({ id: 'SocketRequest', description: 'A request. The other side answers it once, with a result or an error, using the same id.' });
+
+export const SocketNotification = z
+  .object({ jsonrpc, method: z.string().min(1).max(64), params: z.record(z.string(), z.unknown()) })
+  .meta({ id: 'SocketNotification', description: 'A notification: no id, no answer. Used only for typing.' });
+
+export const SocketResult = z
+  .object({ jsonrpc, id: RequestId, result: z.record(z.string(), z.unknown()) })
+  .meta({ id: 'SocketResult', description: 'The answer to a request that worked.' });
+
+/**
+ * Error codes are the HTTP statuses everyone knows, plus JSON-RPC's own two for frames that cannot
+ * be read (-32700) and methods the other side does not know (-32601).
+ */
+export const SOCKET_ERROR_CODES = {
+  not_found: 404, invalid: 422, conflict: 409, rate_limited: 429, internal: 500, unavailable: 503,
+  parse_error: -32700, unknown_method: -32601,
+} as const;
+
+export const SocketError = z
+  .object({
+    jsonrpc,
+    /** Null only when the request could not be read at all. */
+    id: RequestId.nullable(),
+    error: z.object({
+      code: z.int(),
+      message: z.string().max(500),
+      data: z.object({ code: ErrorCode }).nullish(),
+    }),
+  })
+  .meta({ id: 'SocketError', description: 'The answer to a request that did not work.' });
+
+export type Direction = 'to_brain' | 'to_server';
+
+export interface SocketMethod {
+  name: string;
+  /** to_brain: go-server sends it and go-brain answers. to_server: go-brain (Go) sends it and go-server answers. */
+  direction: Direction;
+  summary: string;
+  params: z.ZodType;
+  /** Null for a notification. */
+  result: z.ZodType | null;
+  /** The answer must arrive within this many seconds. */
+  answer_within: number | null;
+  /** The trip event go-server sends after it does this, if any. */
+  sends_event?: string;
+}
+
+const m = (name: string, direction: Direction, summary: string, params: z.ZodType, result: z.ZodType | null, answer_within: number | null, sends_event?: string): SocketMethod =>
+  ({ name, direction, summary, params, result, answer_within, ...(sends_event ? { sends_event } : {}) });
+
+/** What go-server sends go-brain. */
+export const TO_BRAIN: readonly SocketMethod[] = [
+  m('send_event', 'to_brain', 'Something changed in a trip. One event per change, in change-number order for each trip.', Event, EventAccepted, 2),
+  m('person_typing', 'to_brain', 'Someone in the room started or stopped typing. Go waits for them to finish before it answers.', PersonTyping, null, null),
+  m('card_tap', 'to_brain', 'Someone tapped a button on one of Go\'s cards. Go answers what the app should do.', CardTap, CardActionResult, 3),
+  m('catch_up', 'to_brain', 'Someone came back to the room after a while. Go answers what they missed.', CatchUpRequest, CatchUp, 3),
+  m('get_person', 'to_brain', 'What Go knows about a person, with where each fact came from.', GetPerson, PersonPage, 2),
+  m('update_person', 'to_brain', 'Turn carry-over on or off for a person.', UpdatePerson, Ok, 2),
+  m('delete_fact', 'to_brain', 'Remove one thing Go knows about a person.', DeleteFact, Ok, 2),
+  m('forget_person', 'to_brain', 'Forget me: in one trip, or everywhere.', ForgetPerson, ForgetResult, 2),
+  m('vault_link', 'to_brain', 'A short-lived link to the person\'s vault page, to open in the browser sheet.', CreateLink, Link, 2),
+];
+
+/** What go-brain (Go) sends go-server. */
+export const TO_SERVER: readonly SocketMethod[] = [
+  m('read_trip', 'to_server', 'Read the whole trip as Go may see it, at its current change number.', ReadTrip, TripSnapshot, 2),
+  m('read_messages', 'to_server', 'Read messages posted or changed after a change number. Used to catch up after a gap or a restart.', ReadMessages, MessagesPage, 2),
+  m('post_message', 'to_server', 'Go says something in the room: text, a card, or both.', PostMessage, PostMessageResult, 2, 'message.created'),
+  m('replace_card', 'to_server', 'Replace a card Go posted earlier, in place. Not a change to the trip: no event.', ReplaceCard, ReplaceCardResult, 2),
+  m('typing', 'to_server', 'Show or hide "Go is typing..." in the room.', GoTyping, null, null),
+  m('add_reaction', 'to_server', 'Go reacts to a message.', AddReaction, WriteResult, 2, 'reaction.added'),
+  m('remove_reaction', 'to_server', 'Go takes its reaction back.', RemoveReaction, WriteResult, 2, 'reaction.removed'),
+  m('update_trip', 'to_server', 'Change the title, destination, dates, vibe, stay or the itinerary.', UpdateTrip, WriteResult, 2, 'trip.updated'),
+  m('open_vote', 'to_server', 'Open a vote.', OpenDecision, OpenDecisionResult, 2, 'decision.opened'),
+  m('close_vote', 'to_server', 'Close a vote now and get the result.', CloseDecision, CloseDecisionResult, 2, 'decision.closed'),
+  m('set_mandate', 'to_server', 'Set what the group allowed for a closed choice vote: the choice, the cap, refundable only, and who pays.', SetMandate, WriteResult, 2, 'mandate.set'),
+  m('add_record_line', 'to_server', 'Add an agreed, open or doing line to the trip record.', AddRecordLine, AddRecordLineResult, 2, 'record.changed'),
+  m('update_record_line', 'to_server', 'Change a line Go wrote, or mark it done.', UpdateRecordLine, WriteResult, 2, 'record.changed'),
+  m('add_booking', 'to_server', 'Record a confirmed booking.', AddBooking, AddBookingResult, 2, 'booking.changed'),
+  m('update_booking', 'to_server', 'Change or cancel a booking.', UpdateBooking, WriteResult, 2, 'booking.changed'),
+  m('add_expense', 'to_server', 'Record something someone paid for, split between people.', AddExpense, AddExpenseResult, 2, 'expense.changed'),
+  m('request_spend_approval', 'to_server', 'Run the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not.', RequestSpendApproval, SpendApprovalResult, 2),
+  m('cancel_spend_approval', 'to_server', 'Release an approval Go will not use. Not a change to the trip: no event.', CancelSpendApproval, Ok, 2),
+];
+
+export const SOCKET_METHODS: readonly SocketMethod[] = [...TO_BRAIN, ...TO_SERVER];
+export const methodByName = (name: string): SocketMethod | undefined => SOCKET_METHODS.find((x) => x.name === name);
+
+/** Check a request's params against its method. Unknown methods answer -32601; bad params answer 422. */
+export function parseParams(method: string, params: unknown) {
+  const def = methodByName(method);
+  if (!def) return { ok: false as const, code: SOCKET_ERROR_CODES.unknown_method, message: `unknown method ${method}` };
+  const r = def.params.safeParse(params);
+  return r.success ? { ok: true as const, params: r.data, method: def } : { ok: false as const, code: SOCKET_ERROR_CODES.invalid, message: z.prettifyError(r.error) };
+}

@@ -1,27 +1,31 @@
 /**
- * Writes openapi/go-server.json (what go-server serves) and openapi/go-brain.json (what go-brain
- * serves) from the zod schemas, which are the source of truth. Both files carry every schema under
- * components, so either one is enough to generate models (the Python models come from go-server.json).
- * CI fails if these files are stale.
+ * Writes the machine-readable contract from the zod schemas (the source of truth):
+ *  - openapi/go-brain.json   OpenAPI 3.1: go-brain's two HTTP routes, and every schema under components
+ *  - asyncapi/socket.json    AsyncAPI 3.0: the socket, every method in both directions
+ *  - socket/methods.json     the method table in plain JSON (name, direction, params, result, time limit)
+ * The Python models are generated from openapi/go-brain.json. CI fails if any of these is stale.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { CONTRACT_VERSION } from '../src/index.js';
-import { GO_BRAIN_ROUTES, GO_SERVER_ROUTES, type Route } from '../src/routes.js';
+import { HTTP_ROUTES } from '../src/routes.js';
 import { SIGNATURE_HEADER } from '../src/signing.js';
+import { SOCKET_METHODS, SOCKET_PATH } from '../src/socket.js';
 
-const ref = (s: z.ZodType): { $ref: string } => {
+const idOf = (s: z.ZodType): string => {
   const id = z.globalRegistry.get(s)?.id;
-  if (!id) throw new Error('every route body must be a named schema (.meta({ id }))');
-  return { $ref: `#/components/schemas/${id}` };
+  if (!id) throw new Error('every params and result schema must be named (.meta({ id }))');
+  return id;
 };
+const ref = (s: z.ZodType) => ({ $ref: `#/components/schemas/${idOf(s)}` });
 
 const { schemas } = z.toJSONSchema(z.globalRegistry, {
   uri: (id) => `#/components/schemas/${id}`,
   io: 'input',
   unrepresentable: 'any',
 }) as { schemas: Record<string, Record<string, unknown>> };
+
 /** Drop generator noise: the registry id, and the long date regexes (the format already says it). */
 function tidy(node: unknown): void {
   if (Array.isArray(node)) return node.forEach(tidy);
@@ -35,64 +39,75 @@ function tidy(node: unknown): void {
 }
 tidy(schemas);
 
-const errorResponse = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorBody' } } },
-});
+const root = fileURLToPath(new URL('../', import.meta.url));
+const write = (path: string, value: unknown) => {
+  mkdirSync(root + path.split('/').slice(0, -1).join('/'), { recursive: true });
+  writeFileSync(root + path, JSON.stringify(value, null, 2) + '\n');
+};
+rmSync(root + 'openapi/go-server.json', { force: true });
 
-function paths(routes: readonly Route[]) {
-  const out: Record<string, Record<string, unknown>> = {};
-  for (const r of routes) {
-    const pathParams = [...r.path.matchAll(/\{(\w+)\}/g)].map((m) => ({
-      name: m[1], in: 'path', required: true, schema: { type: 'string', minLength: 1, maxLength: 64 },
-    }));
-    const queryParams = Object.entries(r.query?.shape ?? {}).map(([name, field]) => ({
-      name, in: 'query', required: !(field as z.ZodType).safeParse(undefined).success,
-      schema: { type: name === 'trip_id' ? 'string' : 'integer' },
-    }));
-    const signed = r.id !== 'health';
-    out[r.path] ??= {};
-    out[r.path]![r.method.toLowerCase()] = {
+// ── OpenAPI: the HTTP routes and every schema ──
+const paths: Record<string, unknown> = {};
+for (const r of HTTP_ROUTES) {
+  paths[r.path] = {
+    get: {
       operationId: r.id,
       summary: r.summary,
-      parameters: [
-        ...pathParams,
-        ...queryParams,
-        ...(signed
-          ? [{ name: SIGNATURE_HEADER, in: 'header', required: true, schema: { type: 'string' },
-              description: 't=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, "<t>\\n<METHOD>\\n<path?query>\\n<raw body>")>' }]
-          : []),
-      ],
-      ...(r.request ? { requestBody: { required: true, content: { 'application/json': { schema: ref(r.request) } } } } : {}),
-      responses: {
-        [String(r.status)]: { description: r.status === 202 ? 'Accepted' : 'OK', content: { 'application/json': { schema: ref(r.response) } } },
-        ...(signed ? { '401': errorResponse('Missing, stale or wrong signature') } : {}),
-        '404': errorResponse('Unknown id'),
-        '409': errorResponse('Clashes with the current state'),
-        '422': errorResponse('The body did not match the contract'),
-        '429': errorResponse('Too many requests'),
-        '500': errorResponse('A bug on the server'),
-        '503': errorResponse('Down for a moment'),
-      },
-    };
-  }
-  return out;
-}
-
-function doc(server: 'go-server' | 'go-brain', routes: readonly Route[], description: string) {
-  return {
-    openapi: '3.1.0',
-    info: { title: `Go contract: what ${server} serves`, version: CONTRACT_VERSION, description },
-    paths: paths(routes),
-    components: { schemas },
+      parameters: r.signed
+        ? [{ name: SIGNATURE_HEADER, in: 'header', required: true, schema: { type: 'string' },
+            description: 't=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, "<t>\\nGET\\n/v1/socket\\n")>' }]
+        : [],
+      responses: r.response
+        ? { '200': { description: 'OK', content: { 'application/json': { schema: ref(r.response) } } } }
+        : { '101': { description: 'Switching to the WebSocket. Every frame after this is JSON-RPC 2.0; see asyncapi/socket.json.' },
+            '401': { description: 'Missing, stale or wrong signature' } },
+    },
   };
 }
+write('openapi/go-brain.json', {
+  openapi: '3.1.0',
+  info: { title: 'The Go brain API', version: CONTRACT_VERSION,
+    description: 'go-brain is Go, the AI member of every trip group. go-server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain.' },
+  paths,
+  components: { schemas },
+});
 
-const dir = fileURLToPath(new URL('../openapi/', import.meta.url));
-mkdirSync(dir, { recursive: true });
-const write = (name: string, value: unknown) => writeFileSync(`${dir}${name}`, JSON.stringify(value, null, 2) + '\n');
-write('go-server.json', doc('go-server', GO_SERVER_ROUTES,
-  'The trip API. go-brain calls these to read the trip and act in it. Money is in whole minor units. Guide: docs/guide in vestra-ai/go-brain.'));
-write('go-brain.json', doc('go-brain', GO_BRAIN_ROUTES,
-  'Events in, and the questions go-server asks go-brain. Guide: docs/guide in vestra-ai/go-brain.'));
-console.log(`wrote ${dir}go-server.json (${GO_SERVER_ROUTES.length} routes) and go-brain.json (${GO_BRAIN_ROUTES.length} routes), ${Object.keys(schemas).length} schemas`);
+// ── the method table ──
+const table = SOCKET_METHODS.map((x) => ({
+  name: x.name, direction: x.direction, summary: x.summary,
+  params: idOf(x.params), result: x.result ? idOf(x.result) : null,
+  answer_within_seconds: x.answer_within, sends_event: x.sends_event ?? null,
+}));
+write('socket/methods.json', { contract: CONTRACT_VERSION, path: SOCKET_PATH, protocol: 'JSON-RPC 2.0 over WebSocket', methods: table });
+
+// ── AsyncAPI 3.0: the socket, described from go-brain's side ──
+const messages: Record<string, unknown> = {};
+const operations: Record<string, unknown> = {};
+for (const x of SOCKET_METHODS) {
+  messages[x.name] = { name: x.name, title: x.name, summary: x.summary, payload: {
+    type: 'object', required: x.result ? ['jsonrpc', 'id', 'method', 'params'] : ['jsonrpc', 'method', 'params'],
+    properties: { jsonrpc: { const: '2.0' }, ...(x.result ? { id: { type: 'string' } } : {}), method: { const: x.name },
+      params: { $ref: `#/components/schemas/${idOf(x.params)}` } } } };
+  if (x.result) {
+    messages[`${x.name}_result`] = { name: `${x.name}_result`, title: `${x.name} answer`, payload: {
+      oneOf: [{ type: 'object', required: ['jsonrpc', 'id', 'result'], properties: { jsonrpc: { const: '2.0' }, id: { type: 'string' },
+        result: { $ref: `#/components/schemas/${idOf(x.result)}` } } }, { $ref: '#/components/schemas/SocketError' }] } };
+  }
+  operations[x.name] = {
+    action: x.direction === 'to_brain' ? 'receive' : 'send',
+    channel: { $ref: '#/channels/socket' },
+    summary: x.summary,
+    messages: [{ $ref: `#/channels/socket/messages/${x.name}` }],
+    ...(x.result ? { reply: { channel: { $ref: '#/channels/socket' }, messages: [{ $ref: `#/channels/socket/messages/${x.name}_result` }] } } : {}),
+  };
+}
+write('asyncapi/socket.json', {
+  asyncapi: '3.0.0',
+  info: { title: 'The Go brain socket', version: CONTRACT_VERSION,
+    description: 'Described from go-brain\'s side: "receive" methods are sent by go-server, "send" methods are sent by Go. Frames are JSON-RPC 2.0.' },
+  servers: { staging: { host: 'brain.go.example', protocol: 'wss', pathname: SOCKET_PATH } },
+  channels: { socket: { address: SOCKET_PATH, messages } },
+  operations,
+  components: { schemas },
+});
+console.log(`wrote openapi/go-brain.json, asyncapi/socket.json and socket/methods.json: ${SOCKET_METHODS.length} socket methods, ${Object.keys(schemas).length} schemas`);

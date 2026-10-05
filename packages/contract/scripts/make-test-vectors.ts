@@ -15,10 +15,9 @@ mkdirSync(dir, { recursive: true });
 const secret = 'test-only-go-signing-secret';
 const t = 1791190800; // 2026-10-05T07:00:00Z
 const requests = [
-  { name: 'event with a JSON body', method: 'POST', target: '/v1/events',
-    body: '{"event_id":"ev_01","trip_id":"t_goa","seq":42,"occurred_at":"2026-10-05T07:00:00Z","type":"person.left","data":{"person_id":"p_kabir"}}' },
-  { name: 'GET with a query string and no body', method: 'GET', target: '/brain/v1/trips/t_goa/messages?after_seq=40&limit=50', body: '' },
-  { name: 'body with non-ASCII characters (sign the UTF-8 bytes)', method: 'POST', target: '/brain/v1/trips/t_goa/messages',
+  { name: 'opening the socket: GET, no body', method: 'GET', target: '/v1/socket', body: '' },
+  { name: 'opening the socket with a query string', method: 'GET', target: '/v1/socket?instance=go-server-1', body: '' },
+  { name: 'a body with non-ASCII characters (sign the UTF-8 bytes)', method: 'POST', target: '/v1/example',
     body: '{"request_id":"rq_7","text":"Villa Sol, ₹54,200 for 3 nights 🌴"}' },
 ];
 writeFileSync(`${dir}signing.json`, JSON.stringify({
