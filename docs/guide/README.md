@@ -30,7 +30,7 @@ flowchart LR
 There are five rules behind this picture.
 
 1. **The server's database is the source of truth for anything shown on a screen.** Trips, people, messages, votes, bookings, expenses and the trip record live in the server's database. go-brain keeps only what Go knows about people and its own working state. When Go needs the trip, it asks the server, and the server answers from its database.
-2. **The two servers talk over one socket, in both directions.** The server opens one WebSocket to go-brain and keeps it open. The server sends what happened and asks its questions on it, and Go sends its messages and its requests to read or change the trip on the same socket. go-brain never calls the server any other way.
+2. **The server and go-brain talk over one socket, in both directions.** The server opens one WebSocket to go-brain and keeps it open. The server sends what happened and asks its questions on it, and Go sends its messages and its requests to read or change the trip on the same socket. go-brain never calls the server any other way.
 3. **The app talks only to the server.** The one exception is a go-brain page (the vault, or watching Go work), which the app opens from a short-lived link in the system browser sheet.
 4. **Go never pays on its own word.** A payment needs two separate approvals: a signed spend approval from the server (the group voted, the price is within the cap, the payer said yes) and the payer's own Face ID in the vault.
 5. **go-brain never receives contact details or anyone's own budget answer.** It does not see phone numbers, emails or UPI ids. For budgets it gets only the lowest band anyone picked.
@@ -58,7 +58,7 @@ These words have one meaning everywhere in the guide.
 
 ## One message, start to finish
 
-Here is what happens when Priya asks Go for flights. Every step between the two servers is a frame on the socket.
+Here is what happens when Priya asks Go for flights. Every step between the server and go-brain is a frame on the socket.
 
 1. Priya types "@Go flights on Friday from Delhi, under 6k?" in the room. The app sends it to the server.
 2. The server stores the message as change 57 of the trip and shows it to everyone in the room. It sends go-brain a `send_event` request carrying the `message.created` event, and go-brain answers `{ "accepted": true, "duplicate": false }` straight away.

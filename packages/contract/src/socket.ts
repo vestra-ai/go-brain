@@ -15,7 +15,7 @@ import { TripSnapshot } from './trip.js';
 
 /**
  * The brain's socket. The server opens one WebSocket to go-brain and keeps it open. Everything between
- * the two servers travels on it, in both directions, as JSON-RPC 2.0 text frames:
+ * the server and go-brain travels on it, in both directions, as JSON-RPC 2.0 text frames:
  *
  *  - a request has an `id` and always gets exactly one answer: a result or an error;
  *  - a notification has no `id` and gets no answer (Go's typing).

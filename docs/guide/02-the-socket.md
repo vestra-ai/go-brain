@@ -6,7 +6,7 @@ Read [Basics](01-basics.md) first: it covers the ids, money, time, errors and ti
 
 ## What the socket is
 
-The socket is the only connection between the two servers. The server opens it to `wss://brain.go.example/v1/socket` and keeps it open. Everything the two servers say to each other travels on it, in both directions, as JSON-RPC 2.0 text frames:
+The socket is the only connection between the server and go-brain. The server opens it to `wss://brain.go.example/v1/socket` and keeps it open. Everything the server and go-brain say to each other travels on it, in both directions, as JSON-RPC 2.0 text frames:
 
 - **The server to go-brain:** what happened in a trip (events, sent with `send_event`), and questions that need an answer straight away, such as a tap on one of Go's cards.
 - **go-brain to the server:** Go's messages, typing and reactions, and Go's requests to read the trip or change it. The server answers each one from its own database.
@@ -260,7 +260,7 @@ Within version 1, new methods and new event types can be added, and either side 
 
 ## Keeping it alive
 
-The socket stays open for as long as both servers run, so each side needs to notice when the other has gone quiet. Three rules do that.
+The socket stays open for as long as both sides run, so each side needs to notice when the other has gone quiet. Three rules do that.
 
 1. **go-brain pings every 20 seconds.** These are WebSocket ping control frames, not JSON-RPC frames. Both `ws` and `websockets` answer a ping with a pong by themselves, so your code does nothing for it.
 2. **Either side closes the socket after 40 seconds of silence.** Silence means no frame, ping or pong from the other side. A socket that stays silent that long is dead even if the network has not said so yet.

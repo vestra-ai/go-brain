@@ -1,6 +1,6 @@
 # Basics
 
-This page covers the rules that every frame between the server and go-brain follows: the settings each server needs, how ids, money and time are written, how each request is done only once, what errors look like, how long to wait for an answer, and when to send a request again. Read it before you write the first line of either server. [The socket](02-the-socket.md) builds on it.
+This page covers the rules that every frame between the server and go-brain follows: the settings each side needs, how ids, money and time are written, how each request is done only once, what errors look like, how long to wait for an answer, and when to send a request again. Read it before you write the first line of either server. [The socket](02-the-socket.md) builds on it.
 
 ## Addresses and secrets
 
