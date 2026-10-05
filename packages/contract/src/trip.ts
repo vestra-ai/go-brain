@@ -54,7 +54,7 @@ export const Decision = z
     tally: z.array(z.int().nonnegative()).max(10),
     /** Who voted for what. Left out when the vote is anonymous. */
     votes: z.array(z.object({ person_id: Id, option_index: z.int().nonnegative() })).max(30).nullish(),
-    /** The winning option, once closed. */
+    /** The winning option, once closed. Null when nobody voted or the top options tied: Go then asks the group. */
     result_index: z.int().nonnegative().nullish(),
     mandate: Mandate.nullish(),
     opened_at: IsoDateTime,
@@ -119,7 +119,7 @@ export const Transfer = z
   .object({ from_person_id: Id, to_person_id: Id, amount_minor: AmountMinor, currency: Currency })
   .meta({ id: 'Transfer' });
 
-/** go-server does all the money maths. Go reads it from here. */
+/** go-server does all the money maths. Go reads it from here. A trip has one currency: every amount in it uses `currency`. */
 export const Money = z
   .object({
     currency: Currency,

@@ -24,11 +24,19 @@ export const Attachment = z
 
 export const Reaction = z.object({ emoji: z.string().min(1).max(16), person_id: Id }).meta({ id: 'Reaction' });
 
-/** One message in a trip room, as go-server stores it. */
+/**
+ * One message in a trip room, as go-server stores it, in its current state.
+ *
+ * A withheld message (its author paused Go) has `text` null, no attachments, `mentions_go` false,
+ * no `mentions` and no `about_message_id`.
+ */
 export const Message = z
   .object({
     message_id: Id,
+    /** The change number when the message was posted. */
     seq: Seq,
+    /** The change number of the latest change to it (posted, edited, deleted, or a reaction). Equal to `seq` until it changes. */
+    updated_seq: Seq,
     author: Actor,
     /** Null when the message was deleted, or its author paused Go (`withheld`). */
     text: z.string().max(4000).nullish(),

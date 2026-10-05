@@ -15,6 +15,8 @@ export const Seq = z.int().positive();
 
 /** Money is always a whole number in the smallest unit (paise for INR). Never a float. */
 export const AmountMinor = z.int().nonnegative();
+/** An amount that must be more than zero (a cap, a payment, an expense). */
+export const PositiveAmountMinor = z.int().positive();
 export const Currency = z.string().regex(/^[A-Z]{3}$/, 'ISO 4217 code, e.g. INR');
 
 /** Times carry their offset. Send UTC with a Z when you can. */
@@ -56,8 +58,10 @@ export type Place = z.infer<typeof Place>;
 export const Journey = z
   .object({
     mode: z.enum(['flight', 'train', 'bus', 'cab']),
-    from: z.object({ name: z.string().min(1).max(80), code: z.string().max(8).nullish() }),
-    to: z.object({ name: z.string().min(1).max(80), code: z.string().max(8).nullish() }),
+    /** Where it leaves from, e.g. { "name": "Delhi", "code": "DEL" }. */
+    origin: z.object({ name: z.string().min(1).max(80), code: z.string().max(8).nullish() }),
+    /** Where it arrives. */
+    destination: z.object({ name: z.string().min(1).max(80), code: z.string().max(8).nullish() }),
     depart_at: IsoDateTime,
     arrive_at: IsoDateTime,
     carrier_name: z.string().max(60).nullish(),

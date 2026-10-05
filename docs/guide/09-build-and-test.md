@@ -76,7 +76,7 @@ It checks every marked example against the contract and lists any event, card, r
 **go-server**
 - Checks `x-go-signature` on every `/brain/v1` route and answers `401 bad_signature` when it fails.
 - Sends an event for every change to a trip, from an outbox, in change-number order per trip, with the retry schedule in [Basics](01-basics.md#time-limits-and-retries).
-- Serves all 15 trip API routes, each doing its write once per `request_id`.
+- Serves all 16 trip API routes, each doing its write once per `request_id`.
 - Runs the spend check and signs spend approvals that verify against go-brain's public key. Its code reproduces the token in the test vector.
 - Forwards card taps, catch-up, people pages and "forget me" to go-brain, and never lets the app call go-brain directly.
 - Sends pushes only in the cases listed in [The app](06-the-app.md).

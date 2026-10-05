@@ -25,15 +25,15 @@ export const CardActionRequest = z
   })
   .meta({ id: 'CardActionRequest' });
 
+/** Done. Show the toast, if any. Go follows up in the room. */
+export const ActionDone = z.object({ result: z.literal('done'), toast: z.string().max(120).nullish() }).meta({ id: 'ActionDone' });
+/** Open this page in the system browser sheet (the vault, or watching Go work). */
+export const ActionOpen = z.object({ result: z.literal('open'), url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'ActionOpen' });
+/** Not allowed or no longer possible. Show the toast. */
+export const ActionRefused = z.object({ result: z.literal('refused'), toast: z.string().min(1).max(120) }).meta({ id: 'ActionRefused' });
+
 export const CardActionResult = z
-  .discriminatedUnion('result', [
-    /** Done. Show the toast, if any. Go follows up in the room. */
-    z.object({ result: z.literal('done'), toast: z.string().max(120).nullish() }).meta({ id: 'ActionDone' }),
-    /** Open this page in the system browser sheet (the vault, or watching Go work). */
-    z.object({ result: z.literal('open'), url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'ActionOpen' }),
-    /** Not allowed or no longer possible. Show the toast. */
-    z.object({ result: z.literal('refused'), toast: z.string().min(1).max(120) }).meta({ id: 'ActionRefused' }),
-  ])
+  .discriminatedUnion('result', [ActionDone, ActionOpen, ActionRefused])
   .meta({ id: 'CardActionResult', discriminator: { propertyName: 'result' } });
 
 /** Someone opened the room after a while. What did they miss? */
@@ -63,8 +63,6 @@ export const Fact = z
     /** What it is about, e.g. "food", "flights", "sleep". One current fact per topic per person. */
     topic: z.string().min(1).max(40),
     text: z.string().min(1).max(200),
-    /** "group": they said it in the room. "only_go": a private answer only Go sees. */
-    audience: z.enum(['group', 'only_go']),
     trip_id: Id,
     /** The message it came from. Null when it came from a join answer. */
     message_id: Id.nullish(),

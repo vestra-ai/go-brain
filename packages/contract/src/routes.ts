@@ -6,7 +6,7 @@ import {
   PersonPage, UpdatePerson,
 } from './go-brain-api.js';
 import {
-  AddBooking, AddBookingResult, AddExpense, AddExpenseResult, AddRecordLine, AddRecordLineResult, CloseDecision,
+  AddBooking, AddBookingResult, CancelSpendApproval, AddExpense, AddExpenseResult, AddRecordLine, AddRecordLineResult, CloseDecision,
   CloseDecisionResult, OpenDecision, OpenDecisionResult, RequestSpendApproval, SetMandate, SpendApprovalResult,
   UpdateBooking, UpdateRecordLine, UpdateTrip, WriteResult,
 } from './go-server-api.js';
@@ -37,7 +37,7 @@ export const GO_SERVER_ROUTES: readonly Route[] = [
   { id: 'updateTrip', server: 'go-server', method: 'PATCH', path: trip, status: 200,
     summary: 'Change the title, destination, dates, vibe, stay or the itinerary.', request: UpdateTrip, response: WriteResult },
   { id: 'listMessages', server: 'go-server', method: 'GET', path: `${trip}/messages`, status: 200,
-    summary: 'Messages after a change number, oldest first, up to 200 at a time. Used to catch up after a gap or a restart.',
+    summary: 'Messages posted or changed after a change number (updated_seq > after_seq), in updated_seq order, up to 200 at a time. Used to catch up after a gap or a restart.',
     query: z.object({ after_seq: z.coerce.number().int().nonnegative(), limit: z.coerce.number().int().min(1).max(200).optional() }),
     response: MessagesPage },
   { id: 'postMessage', server: 'go-server', method: 'POST', path: `${trip}/messages`, status: 200,
@@ -67,6 +67,9 @@ export const GO_SERVER_ROUTES: readonly Route[] = [
   { id: 'requestSpendApproval', server: 'go-server', method: 'POST', path: `${trip}/spend-approvals`, status: 200,
     summary: 'Run the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not.',
     request: RequestSpendApproval, response: SpendApprovalResult },
+  { id: 'cancelSpendApproval', server: 'go-server', method: 'POST', path: `${trip}/spend-approvals/{approval_id}/cancel`, status: 200,
+    summary: 'Release an approval Go will not use (the payment failed, the payer declined, the price changed). It can never be used after this. Sends no event.',
+    request: CancelSpendApproval, response: Ok },
 ];
 
 /** go-brain serves these. go-server calls them. */
@@ -86,7 +89,7 @@ export const GO_BRAIN_ROUTES: readonly Route[] = [
   { id: 'deleteFact', server: 'go-brain', method: 'DELETE', path: '/v1/people/{person_id}/facts/{fact_id}', status: 200,
     summary: 'Remove one fact.', response: Ok },
   { id: 'forgetPerson', server: 'go-brain', method: 'DELETE', path: '/v1/people/{person_id}', status: 200,
-    summary: 'Forget me. With trip_id: what Go learned in that trip. Without: everything, in every trip.',
+    summary: 'Forget me. With trip_id: what Go learned in that trip. Without: everything, in every trip. go-server also clears the person\'s join answers (from_city, earliest_leave, know) in those trips so Go cannot learn them again.',
     query: z.object({ trip_id: z.string().min(1).max(64).optional() }), response: ForgetResult },
   { id: 'createLink', server: 'go-brain', method: 'POST', path: '/v1/links', status: 200,
     summary: 'A short-lived link to a go-brain page (the vault), to open in the system browser sheet.',

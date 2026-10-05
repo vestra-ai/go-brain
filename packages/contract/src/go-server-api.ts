@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place, Seq } from './common.js';
+import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place, PositiveAmountMinor, Seq } from './common.js';
 import { BookingKind, Day, Decision, DecisionOption, Proof } from './trip.js';
 
 /**
@@ -45,7 +45,7 @@ export const SetMandate = z
   .object({
     request_id,
     choice_index: z.int().nonnegative(),
-    cap_minor: AmountMinor.refine((n) => n > 0, 'must be more than zero'),
+    cap_minor: PositiveAmountMinor,
     currency: Currency,
     refundable_only: z.boolean(),
     payer_person_id: Id,
@@ -122,7 +122,7 @@ export const AddExpense = z
   .object({
     request_id,
     paid_by_person_id: Id,
-    amount_minor: AmountMinor.refine((n) => n > 0, 'must be more than zero'),
+    amount_minor: PositiveAmountMinor,
     currency: Currency,
     note: z.string().min(1).max(120),
     category: Category,
@@ -138,7 +138,7 @@ export const RequestSpendApproval = z
     request_id,
     decision_id: Id,
     /** The most this payment may be. The vault refuses a checkout above it. */
-    amount_minor: AmountMinor.refine((n) => n > 0, 'must be more than zero'),
+    amount_minor: PositiveAmountMinor,
     currency: Currency,
     merchant: z.string().min(1).max(120),
     purpose: z.string().min(1).max(200),
@@ -146,6 +146,14 @@ export const RequestSpendApproval = z
     refundable_until: IsoDateTime.nullish(),
   })
   .meta({ id: 'RequestSpendApproval' });
+
+/** Go releases an approval it will not use, so the next one is not refused as outstanding. */
+export const CancelSpendApproval = z
+  .object({
+    request_id,
+    reason: z.enum(['payment_failed', 'payer_declined', 'price_changed', 'expired', 'other']),
+  })
+  .meta({ id: 'CancelSpendApproval' });
 
 export const SpendDenialReason = z
   .enum([
@@ -161,16 +169,20 @@ export const SpendDenialReason = z
   ])
   .meta({ id: 'SpendDenialReason' });
 
+export const SpendApproved = z
+  .object({
+    status: z.literal('approved'),
+    /** The approval's `jti`. Send it back on the booking. */
+    approval_id: Id,
+    /** The signed token for the vault. */
+    approval: z.string().min(1).max(4096),
+    expires_at: IsoDateTime,
+  })
+  .meta({ id: 'SpendApproved' });
+export const SpendDenied = z
+  .object({ status: z.literal('denied'), reason: SpendDenialReason, detail: z.string().max(200).nullish() })
+  .meta({ id: 'SpendDenied' });
+
 export const SpendApprovalResult = z
-  .discriminatedUnion('status', [
-    z.object({
-      status: z.literal('approved'),
-      /** The approval's `jti`. Send it back on the booking. */
-      approval_id: Id,
-      /** The signed token for the vault. */
-      approval: z.string().min(1).max(4096),
-      expires_at: IsoDateTime,
-    }).meta({ id: 'SpendApproved' }),
-    z.object({ status: z.literal('denied'), reason: SpendDenialReason, detail: z.string().max(200).nullish() }).meta({ id: 'SpendDenied' }),
-  ])
+  .discriminatedUnion('status', [SpendApproved, SpendDenied])
   .meta({ id: 'SpendApprovalResult', discriminator: { propertyName: 'status' } });

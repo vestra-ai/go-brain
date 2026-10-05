@@ -1,6 +1,6 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { z } from 'zod';
-import { AmountMinor, Currency, Id, IsoDateTime } from './common.js';
+import { Currency, Id, IsoDateTime, PositiveAmountMinor } from './common.js';
 
 /**
  * The signed spend approval: go-server's half of the two keys.
@@ -27,7 +27,7 @@ export const SpendApprovalClaims = z
     decision_id: Id,
     payer_person_id: Id,
     /** The most this payment may be. */
-    amount_minor: AmountMinor.refine((n) => n > 0, 'must be more than zero'),
+    amount_minor: PositiveAmountMinor,
     currency: Currency,
     merchant: z.string().min(1).max(120),
     purpose: z.string().min(1).max(200),

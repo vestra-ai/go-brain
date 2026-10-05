@@ -28,7 +28,7 @@ def is_plain(node: dict) -> bool:
 
 def _loosen(branch: dict) -> dict:
     if is_plain(branch):
-        return {k: v for k, v in branch.items() if k in KEEP}
+        return {k: v for k, v in branch.items() if k in KEEP and not (k == "format" and v == "uri")}
     if branch.get("type") == "array":
         return {k: v for k, v in branch.items() if k in KEEP | {"items"}}
     return branch
@@ -43,6 +43,11 @@ def relax(node):
         return
     if node.get("maximum") == JS_MAX_SAFE:
         del node["maximum"]
+    if node.get("format") == "uri":
+        # Links stay plain strings in Python (http or https only), not pydantic URL objects.
+        del node["format"]
+        node["pattern"] = "^https?://"
+
     items = node.get("items")
     if isinstance(items, dict) and is_plain(items):
         node["items"] = {k: v for k, v in items.items() if k in KEEP}

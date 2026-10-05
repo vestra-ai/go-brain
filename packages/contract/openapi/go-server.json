@@ -235,7 +235,7 @@
     "/brain/v1/trips/{trip_id}/messages": {
       "get": {
         "operationId": "listMessages",
-        "summary": "Messages after a change number, oldest first, up to 200 at a time. Used to catch up after a gap or a restart.",
+        "summary": "Messages posted or changed after a change number (updated_seq > after_seq), in updated_seq order, up to 200 at a time. Used to catch up after a gap or a restart.",
         "parameters": [
           {
             "name": "trip_id",
@@ -1832,6 +1832,135 @@
           }
         }
       }
+    },
+    "/brain/v1/trips/{trip_id}/spend-approvals/{approval_id}/cancel": {
+      "post": {
+        "operationId": "cancelSpendApproval",
+        "summary": "Release an approval Go will not use (the payment failed, the payer declined, the price changed). It can never be used after this. Sends no event.",
+        "parameters": [
+          {
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "x-go-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\n<METHOD>\\n<path?query>\\n<raw body>\")>"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelSpendApproval"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, stale or wrong signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Clashes with the current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body did not match the contract",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "A bug on the server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Down for a moment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1988,7 +2117,7 @@
               "cab"
             ]
           },
-          "from": {
+          "origin": {
             "type": "object",
             "properties": {
               "name": {
@@ -2012,7 +2141,7 @@
               "name"
             ]
           },
-          "to": {
+          "destination": {
             "type": "object",
             "properties": {
               "name": {
@@ -2103,8 +2232,8 @@
         },
         "required": [
           "mode",
-          "from",
-          "to",
+          "origin",
+          "destination",
           "depart_at",
           "arrive_at"
         ]
@@ -3618,6 +3747,11 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
+          "updated_seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
           "author": {
             "$ref": "#/components/schemas/Actor"
           },
@@ -3717,6 +3851,7 @@
         "required": [
           "message_id",
           "seq",
+          "updated_seq",
           "author",
           "attachments",
           "mentions_go",
@@ -6414,7 +6549,7 @@
           },
           "cap_minor": {
             "type": "integer",
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
           "currency": {
@@ -6867,7 +7002,7 @@
           },
           "amount_minor": {
             "type": "integer",
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
           "currency": {
@@ -6949,7 +7084,7 @@
           },
           "amount_minor": {
             "type": "integer",
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
           "currency": {
@@ -6985,6 +7120,30 @@
           "currency",
           "merchant",
           "purpose"
+        ]
+      },
+      "CancelSpendApproval": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "payment_failed",
+              "payer_declined",
+              "price_changed",
+              "expired",
+              "other"
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "reason"
         ]
       },
       "SpendDenialReason": {
@@ -7302,13 +7461,6 @@
             "minLength": 1,
             "maxLength": 200
           },
-          "audience": {
-            "type": "string",
-            "enum": [
-              "group",
-              "only_go"
-            ]
-          },
           "trip_id": {
             "type": "string",
             "minLength": 1,
@@ -7335,7 +7487,6 @@
           "fact_id",
           "topic",
           "text",
-          "audience",
           "trip_id",
           "said_at"
         ]
@@ -7543,7 +7694,7 @@
           },
           "amount_minor": {
             "type": "integer",
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
           "currency": {

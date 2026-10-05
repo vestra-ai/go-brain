@@ -2,7 +2,7 @@
 
 This guide explains how the three parts of Go talk to each other: the app, go-server and go-brain. It is the contract between the Go team and the Vestra team. If you build any part of Go, start here, then read the pages for your part.
 
-Everything in this guide is checked by CI. Every JSON example is validated against the contract, and the TypeScript and Python helpers must reproduce the same signatures.
+CI checks the guide's examples: every JSON example is validated against the contract in TypeScript and in Python, and the TypeScript and Python helpers must produce the same signatures.
 
 ## What Go is
 

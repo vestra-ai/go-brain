@@ -5,6 +5,7 @@
 """
 
 from . import models
+from .card import Card
 from .signing import MAX_SKEW_SECONDS, SIGNATURE_HEADER, Verified, sign_request, verify_request
 from .spend_approval import (
     MAX_APPROVAL_TTL_SECONDS,
@@ -17,6 +18,7 @@ CONTRACT_VERSION = "1.0.0"
 
 __all__ = [
     "CONTRACT_VERSION",
+    "Card",
     "MAX_APPROVAL_TTL_SECONDS",
     "MAX_SKEW_SECONDS",
     "SIGNATURE_HEADER",

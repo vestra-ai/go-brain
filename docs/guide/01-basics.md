@@ -98,6 +98,8 @@ def call_brain(method: str, path: str, body: dict | None = None) -> httpx.Respon
 
 To send a pydantic model, use `model.model_dump_json(exclude_none=True).encode("utf-8")` as the raw body.
 
+The Python models check the shape of every body and most of its limits. A few limits are checked only by the TypeScript contract: lengths and link rules on fields that may be empty, and a message needing text or a card. go-brain checks all of them on everything it sends and receives.
+
 Good to know:
 - Sign the exact bytes you send. Serialize the body once, sign that string, and send that same string. If you sign one serialization and your HTTP library sends another, the signature fails.
 - `path` is what the receiver sees. If a base URL ever carries a path prefix, include the prefix in the signed target.

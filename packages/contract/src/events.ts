@@ -42,6 +42,7 @@ export const PersonUpdated = ev('person.updated',
 export const PersonLeft = ev('person.left', z.object({ person_id: Id }), 'PersonLeft', 'Someone left the trip.');
 export const TripCreated = ev('trip.created', z.object({ trip: TripSnapshot }), 'TripCreated',
   'A new trip room. Carries the whole trip, so Go can greet the group and start.');
+/** A budget change always has `by: { kind: "system" }`, so nobody's answer can be traced to them. */
 export const TripUpdated = ev('trip.updated',
   z.object({ by: Actor, changed: z.array(z.enum(['title', 'destination', 'dates', 'vibe', 'stay', 'itinerary', 'status', 'budget'])).min(1) }),
   'TripUpdated', 'Trip details changed. Read the trip to see the new values.');

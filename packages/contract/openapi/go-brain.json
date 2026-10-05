@@ -590,7 +590,7 @@
       },
       "delete": {
         "operationId": "forgetPerson",
-        "summary": "Forget me. With trip_id: what Go learned in that trip. Without: everything, in every trip.",
+        "summary": "Forget me. With trip_id: what Go learned in that trip. Without: everything, in every trip. go-server also clears the person's join answers (from_city, earliest_leave, know) in those trips so Go cannot learn them again.",
         "parameters": [
           {
             "name": "person_id",
@@ -1166,7 +1166,7 @@
               "cab"
             ]
           },
-          "from": {
+          "origin": {
             "type": "object",
             "properties": {
               "name": {
@@ -1190,7 +1190,7 @@
               "name"
             ]
           },
-          "to": {
+          "destination": {
             "type": "object",
             "properties": {
               "name": {
@@ -1281,8 +1281,8 @@
         },
         "required": [
           "mode",
-          "from",
-          "to",
+          "origin",
+          "destination",
           "depart_at",
           "arrive_at"
         ]
@@ -2796,6 +2796,11 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
+          "updated_seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
           "author": {
             "$ref": "#/components/schemas/Actor"
           },
@@ -2895,6 +2900,7 @@
         "required": [
           "message_id",
           "seq",
+          "updated_seq",
           "author",
           "attachments",
           "mentions_go",
@@ -5592,7 +5598,7 @@
           },
           "cap_minor": {
             "type": "integer",
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
           "currency": {
@@ -6045,7 +6051,7 @@
           },
           "amount_minor": {
             "type": "integer",
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
           "currency": {
@@ -6127,7 +6133,7 @@
           },
           "amount_minor": {
             "type": "integer",
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
           "currency": {
@@ -6163,6 +6169,30 @@
           "currency",
           "merchant",
           "purpose"
+        ]
+      },
+      "CancelSpendApproval": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "payment_failed",
+              "payer_declined",
+              "price_changed",
+              "expired",
+              "other"
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "reason"
         ]
       },
       "SpendDenialReason": {
@@ -6480,13 +6510,6 @@
             "minLength": 1,
             "maxLength": 200
           },
-          "audience": {
-            "type": "string",
-            "enum": [
-              "group",
-              "only_go"
-            ]
-          },
           "trip_id": {
             "type": "string",
             "minLength": 1,
@@ -6513,7 +6536,6 @@
           "fact_id",
           "topic",
           "text",
-          "audience",
           "trip_id",
           "said_at"
         ]
@@ -6721,7 +6743,7 @@
           },
           "amount_minor": {
             "type": "integer",
-            "minimum": 0,
+            "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
           "currency": {

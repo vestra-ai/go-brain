@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date as date_aliased
 from typing import Annotated, Literal
 
-from pydantic import AnyUrl, AwareDatetime, BaseModel, Field, RootModel
+from pydantic import AwareDatetime, BaseModel, Field, RootModel
 
 
 class PersonActor(BaseModel):
@@ -27,36 +27,36 @@ class Place(BaseModel):
     address: str | None = None
     lat: float | None = None
     lng: float | None = None
-    photo_url: AnyUrl | None = None
+    photo_url: str | None = None
 
 
-class From(BaseModel):
+class Origin(BaseModel):
     name: Annotated[str, Field(max_length=80, min_length=1)]
     code: str | None = None
 
 
-class To(BaseModel):
+class Destination(BaseModel):
     name: Annotated[str, Field(max_length=80, min_length=1)]
     code: str | None = None
 
 
 class Journey(BaseModel):
     mode: Literal["flight", "train", "bus", "cab"]
-    from_: Annotated[From, Field(alias="from")]
-    to: To
+    origin: Origin
+    destination: Destination
     depart_at: AwareDatetime
     arrive_at: AwareDatetime
     carrier_name: str | None = None
     carrier_code: str | None = None
     number: str | None = None
-    logo_url: AnyUrl | None = None
+    logo_url: str | None = None
     stops: int | None = None
 
 
 class Person(BaseModel):
     person_id: Annotated[str, Field(max_length=64, min_length=1)]
     name: Annotated[str, Field(max_length=80, min_length=1)]
-    photo_url: AnyUrl | None = None
+    photo_url: str | None = None
     role: Literal["organizer", "member"]
     joined_at: AwareDatetime
     from_city: str | None = None
@@ -183,8 +183,8 @@ class Option(BaseModel):
     option_id: Annotated[str, Field(max_length=64, min_length=1)]
     title: Annotated[str, Field(max_length=80, min_length=1)]
     subtitle: str | None = None
-    image_url: AnyUrl | None = None
-    logo_url: AnyUrl | None = None
+    image_url: str | None = None
+    logo_url: str | None = None
     price_minor: int | None = None
     currency: str | None = None
     price_note: str | None = None
@@ -229,7 +229,7 @@ class WorkingCard(BaseModel):
     title: Annotated[str, Field(max_length=80, min_length=1)]
     state: Literal["running", "needs_you", "done", "failed"]
     steps: Annotated[list[Step], Field(max_length=8)]
-    screenshot_url: AnyUrl | None = None
+    screenshot_url: str | None = None
     updated_at: AwareDatetime
     actions: list[CardAction] | None = None
 
@@ -288,7 +288,7 @@ class PayCard(BaseModel):
 
 class Source(BaseModel):
     name: Annotated[str, Field(max_length=60, min_length=1)]
-    url: AnyUrl | None = None
+    url: str | None = None
 
 
 class NoticeCard(BaseModel):
@@ -303,7 +303,7 @@ class NoticeCard(BaseModel):
     tone: Literal["info", "heads_up"]
     title: Annotated[str, Field(max_length=80, min_length=1)]
     body: Annotated[str, Field(max_length=500, min_length=1)]
-    image_url: AnyUrl | None = None
+    image_url: str | None = None
     source: Source | None = None
     checked_at: AwareDatetime | None = None
     deadline_at: AwareDatetime | None = None
@@ -312,7 +312,7 @@ class NoticeCard(BaseModel):
 
 class PhotoAttachment(BaseModel):
     kind: Literal["photo"]
-    url: AnyUrl
+    url: Annotated[str, Field(pattern="^https?://")]
     width: int | None = None
     height: int | None = None
     caption: str | None = None
@@ -320,7 +320,7 @@ class PhotoAttachment(BaseModel):
 
 class FileAttachment(BaseModel):
     kind: Literal["file"]
-    url: AnyUrl
+    url: Annotated[str, Field(pattern="^https?://")]
     name: Annotated[str, Field(max_length=200, min_length=1)]
     mime: Annotated[str, Field(max_length=100, min_length=1)]
     size_bytes: Annotated[int, Field(ge=0)]
@@ -334,6 +334,7 @@ class Reaction(BaseModel):
 class Message(BaseModel):
     message_id: Annotated[str, Field(max_length=64, min_length=1)]
     seq: Annotated[int, Field(gt=0)]
+    updated_seq: Annotated[int, Field(gt=0)]
     author: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
     Who did it: a person, Go, or go-server itself (system).
@@ -417,7 +418,7 @@ class SetTyping(BaseModel):
 
 class DecisionOption(BaseModel):
     label: Annotated[str, Field(max_length=120, min_length=1)]
-    image_url: AnyUrl | None = None
+    image_url: str | None = None
     price_minor: int | None = None
     currency: str | None = None
     option_ref: str | None = None
@@ -475,7 +476,7 @@ class Booking(BaseModel):
     ends_at: AwareDatetime | None = None
     journey: Journey | None = None
     place: Place | None = None
-    image_url: AnyUrl | None = None
+    image_url: str | None = None
     decision_id: str | None = None
     approval_id: str | None = None
     added_by_person_id: str | None = None
@@ -573,7 +574,7 @@ class TripSnapshot(BaseModel):
     status: Literal["planning", "booked", "on_trip", "over"]
     created_at: AwareDatetime
     organizer_person_id: Annotated[str, Field(max_length=64, min_length=1)]
-    invite_url: AnyUrl
+    invite_url: Annotated[str, Field(pattern="^https?://")]
     destination: Place | None = None
     dates: Dates | None = None
     vibe: Annotated[list[str], Field(max_length=12)]
@@ -1096,7 +1097,7 @@ class SetMandate(BaseModel):
 
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
     choice_index: Annotated[int, Field(ge=0)]
-    cap_minor: Annotated[int, Field(ge=0)]
+    cap_minor: Annotated[int, Field(gt=0)]
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
     refundable_only: bool
     payer_person_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -1145,7 +1146,7 @@ class AddBooking(BaseModel):
     ends_at: AwareDatetime | None = None
     journey: Journey | None = None
     place: Place | None = None
-    image_url: AnyUrl | None = None
+    image_url: str | None = None
     decision_id: str | None = None
     approval_id: str | None = None
 
@@ -1171,7 +1172,7 @@ class UpdateBooking(BaseModel):
 class AddExpense(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
     paid_by_person_id: Annotated[str, Field(max_length=64, min_length=1)]
-    amount_minor: Annotated[int, Field(ge=0)]
+    amount_minor: Annotated[int, Field(gt=0)]
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
     note: Annotated[str, Field(max_length=120, min_length=1)]
     category: Literal["stay", "food", "getting_around", "activities", "other"]
@@ -1190,11 +1191,18 @@ class AddExpenseResult(BaseModel):
 class RequestSpendApproval(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
     decision_id: Annotated[str, Field(max_length=64, min_length=1)]
-    amount_minor: Annotated[int, Field(ge=0)]
+    amount_minor: Annotated[int, Field(gt=0)]
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
     merchant: Annotated[str, Field(max_length=120, min_length=1)]
     purpose: Annotated[str, Field(max_length=200, min_length=1)]
     refundable_until: AwareDatetime | None = None
+
+
+class CancelSpendApproval(BaseModel):
+    request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    reason: Literal[
+        "payment_failed", "payer_declined", "price_changed", "expired", "other"
+    ]
 
 
 class SpendApproved(BaseModel):
@@ -1242,7 +1250,7 @@ class ActionDone(BaseModel):
 
 class ActionOpen(BaseModel):
     result: Literal["open"]
-    url: AnyUrl
+    url: Annotated[str, Field(pattern="^https?://")]
     expires_at: AwareDatetime
 
 
@@ -1265,7 +1273,7 @@ class CatchUpRequest(BaseModel):
 class Item(BaseModel):
     kind: Literal["decided", "booked", "needs_you", "open", "news"]
     text: Annotated[str, Field(max_length=140, min_length=1)]
-    image_url: AnyUrl | None = None
+    image_url: str | None = None
     message_id: str | None = None
 
 
@@ -1282,7 +1290,6 @@ class Fact(BaseModel):
     fact_id: Annotated[str, Field(max_length=64, min_length=1)]
     topic: Annotated[str, Field(max_length=40, min_length=1)]
     text: Annotated[str, Field(max_length=200, min_length=1)]
-    audience: Literal["group", "only_go"]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     message_id: str | None = None
     said_at: AwareDatetime
@@ -1314,7 +1321,7 @@ class CreateLink(BaseModel):
 
 
 class Link(BaseModel):
-    url: AnyUrl
+    url: Annotated[str, Field(pattern="^https?://")]
     expires_at: AwareDatetime
 
 
@@ -1351,7 +1358,7 @@ class SpendApprovalClaims(BaseModel):
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     decision_id: Annotated[str, Field(max_length=64, min_length=1)]
     payer_person_id: Annotated[str, Field(max_length=64, min_length=1)]
-    amount_minor: Annotated[int, Field(ge=0)]
+    amount_minor: Annotated[int, Field(gt=0)]
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
     merchant: Annotated[str, Field(max_length=120, min_length=1)]
     purpose: Annotated[str, Field(max_length=200, min_length=1)]
