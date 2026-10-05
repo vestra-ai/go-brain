@@ -5616,6 +5616,8 @@ Expected: `fake-server.test.ts` passes (13 tests); every earlier sim test still 
 
 The dev room is a one-page App for the simulator, and the emergency demo surface (`DEMO_ROOM=sim`, master §9). One self-contained HTML page (no build step, no outside scripts, system fonts) talks to `serveDevRoom` over a small WebSocket: the server pushes the room's state after every change (a burst is one update, plus a redraw every second so "Go is typing..." runs out), and the page sends what people do. It shows the room with Go's messages as Go (a sky-blue circle with "Go"), reactions (Go's included), "Go is typing...", a person switcher for the five Goa people, a text box, the "needs you" list for the chosen person, and all 13 card kinds drawn simply with their buttons: taps go to Go as `card_tap`, an `open` answer opens the URL in a new tab, vote buttons vote, and the payer sees "Yes, book it" and "Not now". People's text is escaped everywhere, and only http(s) links are ever used.
 
+The page is laid out for a phone, because it is the emergency stage surface: if the App is not ready, a teammate opens it in a phone's Safari (`--host 0.0.0.0`) and that phone is mirrored on the screen. Everything sits in one centred column at most 430 px wide (on a laptop it is the same column), every button and the person switcher are at least 44 px tall, the text box uses a 16 px font so iPhone Safari does not zoom in on focus, and the message box sticks to the bottom of the screen above the keyboard, with the safe-area insets of a notched phone.
+
 The page's script is plain ES5 with string concatenation: it lives inside a TypeScript template literal, so it has no backticks, no `${` and no backslashes. A test checks that it parses.
 
 **Files:**
@@ -5706,6 +5708,15 @@ describe('the dev room page', () => {
     for (const kind of KINDS) expect(script).toContain(`${kind}: function`);
     expect((await fetch(`${r.url}nope`)).status).toBe(404);
   });
+
+  it('is laid out for a phone: one 430 px column, a sticky message box, 44 px tap targets, no zoom on focus', () => {
+    expect(PAGE_HTML).toContain('viewport-fit=cover');
+    expect(PAGE_HTML).toContain('--column: 430px');
+    expect(PAGE_HTML).toMatch(/footer \{ position: sticky; bottom: 0;/);
+    expect(PAGE_HTML).toContain('min-height: 44px');
+    expect(PAGE_HTML).toMatch(/input\[type=text\] \{[^}]*font-size: 16px/);
+    expect(PAGE_HTML).toContain('<div class="app">');
+  });
 });
 
 describe('the live socket', () => {
@@ -5771,26 +5782,28 @@ export const PAGE_HTML = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Go dev room</title>
 <style>
-:root { --bg: #f6f7f9; --panel: #ffffff; --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --go: #38bdf8; --go-ink: #0369a1; --accent: #0f172a; --warn: #b45309; }
+:root { --bg: #f6f7f9; --panel: #ffffff; --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --go: #38bdf8; --go-ink: #0369a1; --accent: #0f172a; --warn: #b45309; --column: 430px; }
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); font-size: 15px; line-height: 1.45; }
-header { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #e9ecf1; color: var(--ink); font-size: 15px; line-height: 1.45; }
+.app { max-width: var(--column); margin: 0 auto; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); }
+header { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 8px; }
 .title { font-weight: 650; font-size: 17px; }
 .title small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
-.people { display: flex; gap: 6px; flex-wrap: wrap; }
-.person { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 10px 4px 4px; display: flex; gap: 6px; align-items: center; cursor: pointer; font: inherit; color: inherit; }
+.people { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.person { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; min-height: 44px; padding: 6px 12px 6px 6px; display: flex; flex: none; gap: 6px; align-items: center; cursor: pointer; font: inherit; color: inherit; touch-action: manipulation; }
 .person.me { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 650; font-size: 12px; flex: none; }
 .avatar.go { background: var(--go); }
-main { max-width: 760px; margin: 0 auto; padding: 16px 16px 140px; }
+main { flex: 1; padding: 12px 12px 16px; }
 .needs { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 14px; padding: 10px 14px; margin-bottom: 16px; }
 .needs h2 { font-size: 12px; margin: 0 0 6px; color: var(--warn); text-transform: uppercase; letter-spacing: .04em; }
 .needs div { padding: 3px 0; }
-.msg { display: flex; gap: 10px; margin: 14px 0; }
-.bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 10px 14px; min-width: 0; flex: 1; }
+.msg { display: flex; gap: 8px; margin: 12px 0; }
+.bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 10px 12px; min-width: 0; flex: 1; }
 .msg.go .bubble { border-color: #bae6fd; background: #f0f9ff; }
 .who { font-weight: 650; font-size: 13px; margin-bottom: 2px; }
 .who span { font-weight: 400; color: var(--muted); margin-left: 6px; }
@@ -5799,9 +5812,9 @@ main { max-width: 760px; margin: 0 auto; padding: 16px 16px 140px; }
 .muted { color: var(--muted); font-style: italic; }
 .reactions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
 .chip { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font-size: 13px; background: var(--panel); margin: 2px 2px 0 0; }
-.react { border: 0; background: none; cursor: pointer; opacity: .45; font-size: 14px; padding: 0 4px; }
+.react { border: 0; background: none; cursor: pointer; opacity: .45; font-size: 16px; min-width: 44px; min-height: 44px; padding: 0; touch-action: manipulation; }
 .react:hover { opacity: 1; }
-.card { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 12px 14px; }
+.card { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 12px; }
 .card h3 { margin: 0 0 4px; font-size: 15px; }
 .meta { color: var(--muted); font-size: 12px; }
 .tag { display: inline-block; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
@@ -5813,18 +5826,19 @@ main { max-width: 760px; margin: 0 auto; padding: 16px 16px 140px; }
 .bar i { display: block; height: 100%; background: var(--go); }
 .steps div { padding: 2px 0; }
 .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-button.act { font: inherit; font-size: 14px; border-radius: 10px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--accent); margin-top: 4px; }
+button.act { font: inherit; font-size: 15px; border-radius: 12px; min-height: 44px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--accent); margin-top: 4px; touch-action: manipulation; }
 button.primary { background: var(--accent); color: #fff; }
 button.secondary { background: var(--panel); color: var(--accent); }
-.typing { color: var(--go-ink); font-size: 13px; min-height: 20px; margin: 4px 0 0 38px; }
-footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 12px 16px; }
-form { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
-input[type=text] { flex: 1; font: inherit; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
-.toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 14px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
+.typing { color: var(--go-ink); font-size: 13px; min-height: 20px; margin: 4px 0 0 36px; }
+footer { position: sticky; bottom: 0; z-index: 2; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+form { display: flex; gap: 8px; }
+input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 14px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(var(--column) - 32px); width: max-content; }
 .toast.show { opacity: 1; }
 </style>
 </head>
 <body>
+<div class="app">
 <header>
   <div class="title" id="title">Go dev room<small>connecting</small></div>
   <div class="people" id="people"></div>
@@ -5835,8 +5849,9 @@ input[type=text] { flex: 1; font: inherit; border: 1px solid var(--line); border
   <div class="typing" id="typing"></div>
 </main>
 <footer>
-  <form id="composer"><input type="text" id="text" autocomplete="off" placeholder="Message the group. Start with @Go to ask Go."><button class="act primary" type="submit">Send</button></form>
+  <form id="composer"><input type="text" id="text" autocomplete="off" enterkeyhint="send" placeholder="Message the group. Start with @Go to ask Go."><button class="act primary" type="submit">Send</button></form>
 </footer>
+</div>
 <div class="toast" id="toast"></div>
 <script>
 (function () {
@@ -6338,9 +6353,9 @@ git commit -m "feat(sim): the dev room, a one-page App for the simulator, and th
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `dev-room.test.ts` passes (5 tests); every sim and fake Go test still passes.
+Expected: `dev-room.test.ts` passes (6 tests, the phone layout check among them); every sim and fake Go test still passes.
 
-- [ ] **Step 5: Look at it once by hand (not a test run).** Once P1's Go runs locally, or against the deployed fake Go (`--go https://<fake-go domain>` with its secret), run `pnpm --filter @go/sim room -- --go <url> --secret "$GO_SIGNING_SECRET" --seed` and open the printed URL. Switch to Priya, send "@Go flights on Friday?", and check: "Go is typing..." shows, Go's ✅ lands, Go's reply shows as Go with its card, and its buttons answer with a toast or open a tab. Report a screenshot to the conductor.
+- [ ] **Step 5: Look at it once by hand (not a test run).** Once P1's Go runs locally, or against the deployed fake Go (`--go https://<fake-go domain>` with its secret), run `pnpm --filter @go/sim room -- --go <url> --secret "$GO_SIGNING_SECRET" --seed` and open the printed URL. Switch to Priya, send "@Go flights on Friday?", and check: "Go is typing..." shows, Go's ✅ lands, Go's reply shows as Go with its card, and its buttons answer with a toast or open a tab. Then open the same URL on a phone's Safari (start the command with `--host 0.0.0.0` and use the laptop's address on the same Wi-Fi): the room fills the screen in one column, the person chips scroll sideways, the buttons are easy to hit with a thumb, tapping the text box does not zoom the page, and the message box stays above the keyboard. Report a screenshot of each to the conductor.
 
 ---
 ## Interface notes for the conductor
@@ -6381,6 +6396,7 @@ Where the research notes say something is unknown, this plan assumes the followi
 | Master §2: the simulator ready for P1's end-to-end tests (Tue 10:00) | 6, 7, 8, 9 |
 | Master §6.1: `packages/sim` and `apps/fake-go` | 1, 3 |
 | Master §9: `DEMO_ROOM=sim`, the dev room draws every card | 10 |
+| Master §9 and §11: the dev room at phone width (one 430 px column, 44 px tap targets, a sticky message box, no zoom on focus), so a phone's Safari can be mirrored as the emergency stage surface | 10 ("is laid out for a phone", Step 5 by hand) |
 | Master §10 line 1: a reconnect mid-request, done once, counted per `request_id` | 1, 3, 6, 9 |
 | Guide 02: the reference client (`GoSocket`), fixed | 1 |
 | Guide 04: the Server's rules for all 18 of Go's methods, the second change on `close_vote` and `add_booking`, `read_messages` paging under 1 MB | 6, 7, 8, 9 |

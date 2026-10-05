@@ -4,7 +4,7 @@
 
 **Goal:** Prove with numbers, on every push and live on stage, that Go is fast, quiet, cache-first and remembers: a replay bench that runs recorded group chats through the real Go in CI, a live bench with the real models, and a proof board that shows the numbers from real turns.
 
-**Architecture:** `packages/bench` (`@go/bench`) holds the recorded chats (JSONL, one line per message, with labels), a seeded generator for the long chats, a cache estimator that reads the exact request bodies Go sends and computes the hit rate the provider would give, a scripted policy model and a label reflex so the fast bench needs no keys, a scorer, the bars and a report. The fast bench builds Go in-process with P1's `buildBrain()` and every lane in `LANES` against the CI Postgres, drives it with P0's `FakeServer`, replays each chat with idle time cut, and fails CI on a regression. `apps/brain/src/stats/` computes the board numbers from `turns` (plus a small source registry other lanes add to) and serves `/stats.json` and `/board`.
+**Architecture:** `packages/bench` (`@go/bench`) holds the recorded chats (JSONL, one line per message, with labels), a seeded generator for the long chats, a cache estimator that reads the exact request bodies Go sends and computes the hit rate the provider would give, a scripted policy model and a label reflex so the fast bench needs no keys, a scorer, the bars and a report. The fast bench starts Go in-process with P1's shared harness `startRoom()` (P1 Task 16: `buildBrain()` with every lane in `LANES` on its own CI Postgres schema, with P0's `FakeServer` connected), replays each chat with idle time cut, and fails CI on a regression. `apps/brain/src/stats/` computes the board numbers from `turns` (plus a small source registry other lanes add to) and serves `/stats.json` and `/board`.
 
 **Tech Stack:** Node 22, TypeScript strict (`exactOptionalPropertyTypes`), zod 4.3.6, vitest 4, Fastify 5, `pg` 8 (Postgres 16), `@anthropic-ai/sdk` 0.93.0 (live bench only), `@vestra/agent-sdk` (`computeAnthropicCostUsd`), `@go/contract`, `@go/sim` (P0), `@go/brain` (P1), GitHub Actions.
 
@@ -15,10 +15,10 @@
 **Depends on:**
 - P1's tables in `1000_core.sql` (P1 Task 1): `turns` (`turn_id`, `trip_id`, `woke_for text[]`, `started_at` (when the desk began the turn), `typing_at`, `posted_at`, `model`, `rounds`, `input_tokens` (neither read from nor written to the cache), `cached_tokens`, `cache_write_tokens`, `cost_usd`, `outcome`), `desk_items` (`ref` is the message id for `message` items, `turn_id`, `due_at`, `done_at`), `trip_events` (`payload` is the whole event, `received_at`), `go_requests` (`params jsonb`, `error jsonb`, `answered_at`), `trips`.
 - Master §6.3 / P1 Task 15 `Brain` (`env`, `pool`, `http`, `now`, `log`, `reflex`, `memory?`), `RegisterLane`, `Reflex.read`, `ReflexRead`, `Memory.recall(tripId, question, audience)`.
-- P1 Task 15: `buildBrain(env, o?: BuildOptions): Promise<Built>` (`BuildOptions { pool?; anthropic?; now?; logger?; wrapTurn?; timings? }`, `Built { brain; start(): Promise<{ port }>; stop() }`) in `apps/brain/src/app.ts`; `LANES: RegisterLane[]` in `apps/brain/src/main.ts`; P1 Task 2 `loadEnv(src)` in `apps/brain/src/env.ts`; P1 Task 1 `withSchema(): Promise<{ pool; schema; drop }>` in `apps/brain/src/db/test-db.ts`. The bench imports them from `@go/brain/dist/...` (the package has no `exports` map, so deep imports work; Interface notes 1).
+- P1 Task 16 (the shared harness, built into `dist`): `startRoom(o: RoomOptions): Promise<Room>` with `RoomOptions { anthropic; lanes?; wrapTurn?; instance?; env?; timings? }` and `Room { fake; built; db; stop() }`, and `SECRET`, in `apps/brain/src/testing/start-room.ts`. It makes a fresh schema with `withSchema()`, runs `loadEnv` with `o.env` on top of its own test values, `buildBrain(env, { pool, anthropic, logger: false, timings })`, registers every lane in `LANES`, `start()`s on port 0, and connects a `FakeServer` signed with `SECRET`; `room.stop()` stops the fake, runs `built.stop()` (every lane's `brain.onStop` stopper) and drops the schema. P1 Task 15: `DEFAULT_TIMINGS` and `Built { brain; start(): Promise<{ port }>; stop() }` in `apps/brain/src/app.ts`. The bench imports them from `@go/brain/dist/...` (the package has no `exports` map, so deep imports work; Interface notes 1).
 - P1 Tasks 10, 12 and 13, the prompt and the loop: `GO_RULES` on the system block with `ttl: '1h'`; the chat as a heading block and then data blocks of 25 lines, the `ttl: '1h'` marker on the last full one; chat lines `#seq Name: text`, Go's own named `Go (you)`, a reply starting `(reply to #N)`; `AnthropicLike.messages.stream(body, { signal })` read as an async iterable then `finalMessage()`; `stay_silent` ends a turn locally; the model's final text is the post (there is no reply tool); the pre-post check is one more round with the new lines in a last user message.
-- P0 Task 9 (`@go/sim`): `FakeServer` (`new FakeServer({ goUrl, secret, instance })`, `start(timeoutMs)`, `stop()`, `createTrip(snapshot)`, `say(personId, text, { tripId, replyTo?, attachments? })`, `edit(personId, messageId, text)`, `delete(personId, messageId)`, `react(personId, messageId, emoji)`, `requests: GoRequest[]` with `at` as an ISO time) and `goaFreshTrip()`. Only `packages/bench/src/sim-port.ts` touches it.
-- P2 (optional at G2, required at G5 by Task 12): `registerReflex` and `registerMemory` in `LANES`, `brain.memory.recall`, the fold (`FOLD_AT_TOKENS`, `FOLD_RULES`'s JSON story), `REFLEX_LIVE` (`off` or `q1,q2,...`), and a side model that can be given the client `buildBrain` got (Interface notes 3).
+- P0 Task 9 (`@go/sim`): on the `FakeServer` that `startRoom` creates and connects (`room.fake`): `createTrip(snapshot)`, `say(personId, text, { tripId, replyTo?, attachments? })`, `edit(personId, messageId, text)`, `delete(personId, messageId)`, `react(personId, messageId, emoji)`, `requests: GoRequest[]` with `at` as an ISO time; and `goaFreshTrip()`. Only `packages/bench/src/sim-port.ts` calls them.
+- P2 (optional at G2, required at G5 by Task 12): `registerReflex` and `registerMemory` in `LANES`, `brain.memory.recall`, the fold (`FOLD_AT_TOKENS`, `FOLD_RULES`'s JSON story), `REFLEX_LIVE` (`off` or `q1,q2,...`, P1's switch accepts both), and its side model built from `brain.anthropic`, the client `startRoom` hands `buildBrain` (master §6.3; Interface notes 3, settled).
 
 **Parallel work:** Tasks 8 and 9 (`apps/brain/src/stats/`) share no file with Tasks 1 to 7 (`packages/bench/`). A second builder may take them at the same time. Task 10 needs both.
 
@@ -73,7 +73,7 @@ All of master §7 applies. Plan-specific, one line each:
 - `src/compare.ts`: loads `bars.json`, judges fast and live results, picks a model.
 - `src/report-md.ts`: the markdown summary and report writer.
 - `src/sim-port.ts`: the only file that knows `@go/sim`'s `FakeServer` API.
-- `src/replay.ts`: `planReplay` and `replayChat` (builds Go with every lane, replays, waits for quiet, runs recall probes).
+- `src/replay.ts`: `planReplay` and `replayChat` (starts Go with P1's `startRoom`, every lane registered, replays, waits for quiet, runs recall probes).
 - `src/run-fast.ts`: the fast bench (function and command line).
 - `src/run-live.ts`: the live bench (command line).
 - `src/__tests__/chat.test.ts`, `goa-50.test.ts`, `generate.test.ts`, `cache-estimate.test.ts`, `stand-ins.test.ts`, `score.test.ts`, `compare.test.ts`, `replay.test.ts`, `fast-bench.test.ts`, `live.test.ts`.
@@ -140,6 +140,15 @@ describe('recorded chats', () => {
       lines: 7, messages: 4, peopleMessages: 4, goLines: 0, edits: 1, deletes: 1, reactions: 1, photos: 1,
       asks: 1, either: 0, probes: 1, people: ['p_kabir', 'p_meher', 'p_priya', 'p_rahul'],
     });
+  });
+
+  it("keeps the message number a trip export writes on a line, and refuses one that is not a positive whole number", () => {
+    const chat = parseChat('exported', [say(0, 0, 'p_rahul', 'Goa is on', { seq: 12 }), say(1, 4, 'p_priya', 'yes!')].join('\n'));
+    const [first, second] = chat.lines;
+    expect(first).toMatchObject({ kind: 'say', seq: 12 });
+    expect(second).not.toHaveProperty('seq');
+    expect(() => parseChat('bad', say(0, 0, 'p_rahul', 'hi', { seq: 0 }))).toThrow(/bad:1:/);
+    expect(() => parseChat('bad', say(0, 0, 'p_rahul', 'hi', { seq: 2.5 }))).toThrow(/bad:1:/);
   });
 
   it('names the row that is not JSON', () => {
@@ -317,6 +326,11 @@ export const SayLine = z.object({
   reflex: ReflexLabel.optional(),
   /** Why the line is labelled the way it is, for reviewers. */
   note: z.string().max(200).optional(),
+  /**
+   * The message's number (seq) in the real trip it came from. P7's export-trip writes it, so hand labels and recall
+   * probes follow their message when the file is exported again. A replay ignores it and numbers messages afresh.
+   */
+  seq: z.int().positive().optional(),
 });
 export const EditLine = z.object({ i: index, at, kind: z.literal('edit'), of: z.int().nonnegative(), text: z.string().min(1).max(4000) });
 export const DeleteLine = z.object({ i: index, at, kind: z.literal('delete'), of: z.int().nonnegative() });
@@ -454,7 +468,7 @@ git commit -m "feat(bench): the recorded chat format, its loader and its checks
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `chat.test.ts` passes (9 tests); the rest of CI is unchanged.
+Expected: `chat.test.ts` passes (10 tests); the rest of CI is unchanged.
 
 ---
 
@@ -4317,18 +4331,18 @@ Expected: `routes.test.ts` passes (7 tests); P1's boot tests still pass with `re
 
 **Interfaces:**
 - Consumes:
-  - P1 (Task 15, Task 1, Task 2): `buildBrain(env: Env, o?: BuildOptions): Promise<Built>` with `BuildOptions { pool?; anthropic?: AnthropicLike; now?; logger?; wrapTurn?; timings? }` and `Built { brain: Brain; start(): Promise<{ port: number }>; stop(): Promise<void> }` from `@go/brain/dist/app.js`; `LANES: RegisterLane[]` from `@go/brain/dist/main.js` (every lane that has landed, in boot order); `loadEnv(src)` from `@go/brain/dist/env.js`; `withSchema(): Promise<{ pool; schema; drop }>` from `@go/brain/dist/db/test-db.js`; the `desk_items` table (`trip_id`, `due_at`, `done_at`); the intake reads `brain.reflex` on every person's message (`reflex: () => brain.reflex`), so the replay can put its own reflex there after the lanes ran; `brain.memory?.recall(tripId, question, 'group')`.
-  - P0 (Task 9) from `@go/sim`: `new FakeServer({ goUrl, secret, instance })`, `start(timeoutMs)`, `stop()`, `createTrip(snapshot)`, `say(personId, text, { tripId, replyTo?, attachments? })` resolving with the `Message` once Go answered its event, `edit(personId, messageId, text)`, `delete(personId, messageId)`, `react(personId, messageId, emoji)`, the `requests: GoRequest[]` array (every request and notification Go sent, `typing` included, `at` an ISO time on the sim's clock, which is the wall clock unless `now` is passed), and `goaFreshTrip()`. Only `sim-port.ts` touches them.
+  - P1 Task 16 (the shared harness): `startRoom(o: RoomOptions): Promise<Room>`, `RoomOptions { anthropic: AnthropicLike; lanes?; wrapTurn?; instance?; env?: Record<string, string>; timings?: Partial<Timings> }`, `Room { fake: FakeServer; built: Built; db: { pool; schema; drop }; stop(): Promise<void> }` from `@go/brain/dist/testing/start-room.js` (Go built with every lane in `LANES` on a fresh schema, started on port 0, the `FakeServer` connected and signed with the harness's own `SECRET`; `room.stop()` stops the fake, runs `built.stop()` and drops the schema). P1 Task 15: `DEFAULT_TIMINGS` (production timings: the 2 s wait, the 1 s desk poll) and `Built { brain: Brain; start(); stop() }` from `@go/brain/dist/app.js`; `brain.http.server.address()` for the port. The `desk_items` table (`trip_id`, `due_at`, `done_at`); the intake reads `brain.reflex` on every person's message (`reflex: () => brain.reflex`), so the replay can put its own reflex there after `startRoom` and before the first trip exists; `brain.memory?.recall(tripId, question, 'group')`.
+  - P0 (Task 9) from `@go/sim`, on `room.fake`: `createTrip(snapshot)`, `say(personId, text, { tripId, replyTo?, attachments? })` resolving with the `Message` once Go answered its event, `edit(personId, messageId, text)`, `delete(personId, messageId)`, `react(personId, messageId, emoji)`, the `requests: GoRequest[]` array (every request and notification Go sent, `typing` included, `at` an ISO time on the sim's clock, which is the wall clock unless `now` is passed), and `goaFreshTrip()`. Only `sim-port.ts` calls them.
   - Tasks 1 to 7: `Chat`, `ChatLine`, `SayLine`, `loadChat`; `RequestLog`; `PolicyModel`; `BenchReflex`, `countingReflex`, `lineKey`, `loadRecording`, `CountingReflex`, `ReflexRead`; `scoreReplay`, `assertWallClock`, `Delivered`, `GoFrame`, `RecallRun`, `ReplayRecord`, `ChatScore`; `compareFast`, `loadBars`; `writeReport`, `BenchReport`.
-- Produces: `SimPort`, `openSim(o)`; `SimClock`, `ReplaySettings`, `DEFAULT_SETTINGS`, `planReplay(chat, burstWindowS): ReplayStep[]`, `replayChat(o: ReplayOptions): Promise<ReplayOutcome>`; `FAST_ENV`, `FAST_CHATS`, `runFastChat(c, databaseUrl)`, `fastReport(scores, boards)`, `commitSha()`, `OUT_DIR`; `packages/bench/out/bench-report.json` and `bench-report.md` on every CI run.
+- Produces: `SimPort`, `simPort(fake: FakeServer): SimPort`; `SimClock`, `ReplaySettings`, `DEFAULT_SETTINGS`, `planReplay(chat, burstWindowS): ReplayStep[]`, `replayChat(o: ReplayOptions): Promise<ReplayOutcome>`; `FAST_ENV`, `FAST_CHATS`, `runFastChat(c, databaseUrl)`, `fastReport(scores, boards)`, `commitSha()`, `OUT_DIR`; `packages/bench/out/bench-report.json` and `bench-report.md` on every CI run.
 
 How a replay runs:
-1. A fresh schema from `withSchema()`. Go is built with `buildBrain(env, { pool, anthropic, logger: false })` on that pool, with production timings (the 2 s wait, the 1 s desk poll), then every lane in `LANES` registers, then `start()` listens on a free port (`PORT=0`).
-2. The replay puts its own reflex on `brain.reflex`: the bench reflex in the fast bench, a counting wrapper around the real one in the live bench. The fast bench sets `REFLEX_LIVE=off`, so P2's reflex lane makes no Jev call.
-3. The simulator connects to Go's socket, creates the fresh Goa trip and waits until Go is quiet (the greeting).
+1. P1's `startRoom({ anthropic, env, timings: DEFAULT_TIMINGS, instance: 'bench' })`: a fresh schema from `withSchema()`, Go built with `buildBrain` on that pool with production timings (the 2 s wait, the 1 s desk poll), every lane in `LANES` registered, `start()` on a free port, and the simulator connected to Go's socket. The bench reuses the harness every lane's end-to-end tests use, so the bench boots Go exactly as they do; it signs with the harness's `SECRET`, so the bench's env carries no `GO_SIGNING_SECRET`.
+2. The replay puts its own reflex on `brain.reflex` before any trip exists: the bench reflex in the fast bench, a counting wrapper around the real one in the live bench. The fast bench sets `REFLEX_LIVE=off`, so P2's reflex lane makes no Jev call.
+3. The simulator creates the fresh Goa trip and the replay waits until Go is quiet (the greeting).
 4. Each line goes in order. A gap of 3 s or less is slept in real time; a longer gap becomes "wait until Go is quiet". Quiet means: the reflex has read every person's line (a line unread for 3 s is counted in `unreadByReflex` and no longer waited for), no desk item for the trip is due within 5 s, and no frame from Go for `settleMs`. Chat time (`SimClock`) jumps to each line's `at`, which the cache estimate uses for the TTL. A photo goes as a photo attachment with its caption; an edit, a delete or a reaction is made by the line's person (the original author for edits and deletes).
 5. After a line with recall probes, the replay waits for quiet and asks `brain.memory.recall(tripId, question, 'group')` (null results while the memory lane is not registered).
-6. At the end it checks every frame was stamped on the wall clock, reads `/stats.json` from the same Go (so Task 9's board is checked against the bench), and tears everything down.
+6. At the end it checks every frame was stamped on the wall clock, reads `/stats.json` from the same Go (so Task 9's board is checked against the bench), and tears everything down with `room.stop()`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4412,11 +4426,11 @@ In `packages/bench/package.json`, replace the `dependencies` block with:
 ```ts
 // packages/bench/src/sim-port.ts
 /**
- * The only file that knows @go/sim's FakeServer. The replay talks to this small port; if the
- * FakeServer changes a name, only this file changes.
+ * The only file that calls @go/sim's FakeServer. P1's startRoom creates, connects and stops it; the replay
+ * talks to this small port over it; if the FakeServer changes a name, only this file changes.
  */
 import type { TripSnapshot } from '@go/contract';
-import { FakeServer, goaFreshTrip } from '@go/sim';
+import { goaFreshTrip, type FakeServer } from '@go/sim';
 import type { GoFrame } from './score.js';
 
 /** Photos in a replay point here; Go only reads their captions. */
@@ -4433,12 +4447,10 @@ export interface SimPort {
   frames(tripId: string): GoFrame[];
   /** Wall clock of Go's latest frame for this trip, 0 before any. */
   lastFrameAt(tripId: string): number;
-  close(): Promise<void>;
 }
 
-export async function openSim(o: { goUrl: string; secret: string }): Promise<SimPort> {
-  const fs = new FakeServer({ goUrl: o.goUrl, secret: o.secret, instance: 'bench' });
-  await fs.start(10_000);
+/** Wraps the FakeServer startRoom already connected (room.fake); room.stop() stops it. */
+export function simPort(fs: FakeServer): SimPort {
   const frames = (tripId: string): GoFrame[] =>
     fs.requests.filter((r) => r.params['trip_id'] === tripId).map((r) => ({ method: r.method, params: r.params, at: Date.parse(r.at) }));
   return {
@@ -4465,9 +4477,6 @@ export async function openSim(o: { goUrl: string; secret: string }): Promise<Sim
     },
     frames,
     lastFrameAt: (tripId) => frames(tripId).reduce((latest, f) => Math.max(latest, f.at), 0),
-    close: async () => {
-      fs.stop();
-    },
   };
 }
 ```
@@ -4475,20 +4484,18 @@ export async function openSim(o: { goUrl: string; secret: string }): Promise<Sim
 ```ts
 // packages/bench/src/replay.ts
 /**
- * Replays a recorded chat through the real Go: builds it in-process on its own schema with every
- * lane that has landed, plays the Server with the simulator, cuts idle time, and records what Go
- * sent. Latencies are measured on the wall clock at both ends; the chat's own time is kept on
+ * Replays a recorded chat through the real Go: starts it in-process with P1's shared harness
+ * (startRoom: its own schema, every lane that has landed, the simulator connected), plays the Server,
+ * cuts idle time, and records what Go sent. Latencies are measured on the wall clock at both ends; the chat's own time is kept on
  * SimClock for the cache TTL.
  */
-import { buildBrain, type BuildOptions } from '@go/brain/dist/app.js';
-import { withSchema } from '@go/brain/dist/db/test-db.js';
-import { loadEnv } from '@go/brain/dist/env.js';
-import { LANES } from '@go/brain/dist/main.js';
+import { DEFAULT_TIMINGS } from '@go/brain/dist/app.js';
+import { startRoom, type RoomOptions } from '@go/brain/dist/testing/start-room.js';
 import { BenchReflex, countingReflex, lineKey, type CountingReflex, type ReflexRead } from './bench-reflex.js';
 import type { Chat, ChatLine, SayLine } from './chat.js';
 import type { RequestLog } from './requests.js';
 import { assertWallClock, type Delivered, type RecallRun, type ReplayRecord } from './score.js';
-import { openSim } from './sim-port.js';
+import { simPort } from './sim-port.js';
 
 /** Chat time in seconds. The model stand-in and the recorder read it for the cache TTL. */
 export class SimClock {
@@ -4522,7 +4529,7 @@ export function planReplay(chat: Chat, burstWindowS: number): ReplayStep[] {
 export interface ReplayOptions {
   chat: Chat;
   mode: 'fast' | 'live';
-  /** Go's environment for loadEnv; must hold DATABASE_URL and GO_SIGNING_SECRET. */
+  /** Go's environment, laid over the harness's test values; must hold DATABASE_URL and no GO_SIGNING_SECRET (the harness signs with its own). */
   rawEnv: Record<string, string>;
   /** The model client Go gets: the policy model's, or the recorder around the real one. */
   client: unknown;
@@ -4551,127 +4558,121 @@ async function fetchBoard(url: string, token: string | undefined): Promise<unkno
 
 export async function replayChat(o: ReplayOptions): Promise<ReplayOutcome> {
   const set: ReplaySettings = { ...DEFAULT_SETTINGS, ...o.settings };
-  const secret = o.rawEnv['GO_SIGNING_SECRET'];
-  if (o.rawEnv['DATABASE_URL'] === undefined || secret === undefined) throw new Error('replayChat needs DATABASE_URL and GO_SIGNING_SECRET');
-  const db = await withSchema();
+  if (o.rawEnv['DATABASE_URL'] === undefined) throw new Error('replayChat needs DATABASE_URL');
+  // startRoom signs the socket with its own SECRET; another secret here would make Go refuse the simulator.
+  if (o.rawEnv['GO_SIGNING_SECRET'] !== undefined) throw new Error('replayChat takes no GO_SIGNING_SECRET: the harness signs with its own');
+  // P1's shared harness, with production timings: a fresh schema, every lane in LANES, Go started, the simulator connected.
+  const room = await startRoom({ anthropic: o.client as RoomOptions['anthropic'], env: o.rawEnv, timings: DEFAULT_TIMINGS, instance: 'bench' });
   try {
-    const env = loadEnv({ ...o.rawEnv, PORT: '0' });
-    const built = await buildBrain(env, { pool: db.pool, anthropic: o.client as NonNullable<BuildOptions['anthropic']>, logger: false });
-    try {
-      for (const lane of LANES) await lane(built.brain);
-      const live = o.reflex.kind === 'live' ? countingReflex(built.brain.reflex) : null;
-      const counter: CountingReflex = live ?? new BenchReflex(o.chat.lines, o.reflex.kind === 'bench' && o.reflex.recorded !== null ? o.reflex.recorded : undefined);
-      built.brain.reflex = counter;
-      const { port } = await built.start();
-      const goUrl = `http://127.0.0.1:${port}`;
+    const { built, db } = room;
+    // No trip exists yet, so swapping the reflex now is the same as before start(): the intake reads brain.reflex per message.
+    const live = o.reflex.kind === 'live' ? countingReflex(built.brain.reflex) : null;
+    const counter: CountingReflex = live ?? new BenchReflex(o.chat.lines, o.reflex.kind === 'bench' && o.reflex.recorded !== null ? o.reflex.recorded : undefined);
+    built.brain.reflex = counter;
+    const addr = built.brain.http.server.address();
+    if (addr === null || typeof addr === 'string') throw new Error('Go is not listening on a port');
+    const goUrl = `http://127.0.0.1:${addr.port}`;
+    const sim = simPort(room.fake);
 
-      const sim = await openSim({ goUrl, secret });
-      try {
-        const trip = sim.trip();
-        const tripId = trip.trip_id;
-        const ids = new Map<number, string>();
-        const idOf = (i: number): string => {
-          const id = ids.get(i);
-          if (id === undefined) throw new Error(`${o.chat.name}: line ${i} was never delivered`);
-          return id;
-        };
-        const authorOf = (i: number): string => (o.chat.lines[i] as SayLine).person;
-        const delivered: Delivered[] = [];
-        const recall: RecallRun[] = [];
-        const expected = new Map<string, { n: number; lastMs: number }>();
-        const waived = new Map<string, number>();
-        let unreadByReflex = 0;
-        let lastDeliveryMs = Date.now();
+    const trip = sim.trip();
+    const tripId = trip.trip_id;
+    const ids = new Map<number, string>();
+    const idOf = (i: number): string => {
+      const id = ids.get(i);
+      if (id === undefined) throw new Error(`${o.chat.name}: line ${i} was never delivered`);
+      return id;
+    };
+    const authorOf = (i: number): string => (o.chat.lines[i] as SayLine).person;
+    const delivered: Delivered[] = [];
+    const recall: RecallRun[] = [];
+    const expected = new Map<string, { n: number; lastMs: number }>();
+    const waived = new Map<string, number>();
+    let unreadByReflex = 0;
+    let lastDeliveryMs = Date.now();
 
-        const pendingReads = (): number => {
-          let pending = 0;
-          for (const [key, e] of expected) {
-            const done = (counter.reads.get(key) ?? 0) + (waived.get(key) ?? 0);
-            if (done >= e.n) continue;
-            if (Date.now() - e.lastMs > set.unreadAfterMs) {
-              waived.set(key, (waived.get(key) ?? 0) + (e.n - done));
-              unreadByReflex += e.n - done;
-              continue;
-            }
-            pending++;
-          }
-          return pending;
-        };
-        const waitQuiet = async (): Promise<void> => {
-          const deadline = Date.now() + set.quietTimeoutMs;
-          for (;;) {
-            const unread = pendingReads();
-            const due = (await db.pool.query<{ n: number }>(
-              'select count(*)::int as n from desk_items where trip_id = $1 and done_at is null and due_at <= $2',
-              [tripId, new Date(Date.now() + 5_000)],
-            )).rows[0]?.n ?? 0;
-            const lastActivity = Math.max(lastDeliveryMs, sim.lastFrameAt(tripId));
-            if (unread === 0 && due === 0 && Date.now() - lastActivity >= set.settleMs) return;
-            if (Date.now() > deadline) throw new Error(`${o.chat.name}: Go did not go quiet within ${set.quietTimeoutMs} ms (${due} desk items due, ${unread} lines not read yet)`);
-            await sleep(20);
-          }
-        };
-
-        o.clock.s = o.chat.lines[0]?.at ?? 0;
-        const startedMs = Date.now();
-        await sim.createTrip(trip);
-        await waitQuiet();
-
-        for (const step of planReplay(o.chat, set.burstWindowS)) {
-          if (step.wait.kind === 'real') await sleep(step.wait.ms);
-          else if (step.wait.kind === 'quiet') await waitQuiet();
-          o.clock.s = step.simS;
-          const l = step.line;
-          const t0 = Date.now();
-          if (l.kind === 'say') {
-            if (l.person === 'go') continue;
-            const key = lineKey(l);
-            expected.set(key, { n: (expected.get(key)?.n ?? 0) + 1, lastMs: t0 });
-            const m = await sim.say(tripId, l.person, l.text, {
-              ...(l.photo !== undefined ? { photoCaption: l.photo.caption } : {}),
-              ...(l.reply_to !== undefined ? { replyTo: idOf(l.reply_to) } : {}),
-            });
-            lastDeliveryMs = t0;
-            ids.set(l.i, m.messageId);
-            delivered.push({ i: l.i, realMs: t0, simS: step.simS, messageId: m.messageId, seq: m.seq });
-            if (l.recall !== undefined) {
-              await waitQuiet();
-              for (const probe of l.recall) {
-                const memory = built.brain.memory;
-                recall.push({ probe, afterLine: l.i, realMs: Date.now(), results: memory === undefined ? null : await memory.recall(tripId, probe.question, 'group') });
-              }
-            }
-          } else {
-            if (l.kind === 'edit') await sim.edit(authorOf(l.of), idOf(l.of), l.text);
-            else if (l.kind === 'delete') await sim.remove(authorOf(l.of), idOf(l.of));
-            else await sim.react(l.person, idOf(l.of), l.emoji);
-            lastDeliveryMs = t0;
-            delivered.push({ i: l.i, realMs: t0, simS: step.simS });
-          }
-          if (l.i > 0 && l.i % 250 === 0) o.progress?.(`${o.chat.name}: ${l.i} of ${o.chat.lines.length} lines`);
+    const pendingReads = (): number => {
+      let pending = 0;
+      for (const [key, e] of expected) {
+        const done = (counter.reads.get(key) ?? 0) + (waived.get(key) ?? 0);
+        if (done >= e.n) continue;
+        if (Date.now() - e.lastMs > set.unreadAfterMs) {
+          waived.set(key, (waived.get(key) ?? 0) + (e.n - done));
+          unreadByReflex += e.n - done;
+          continue;
         }
-        await waitQuiet();
-        const endedMs = Date.now();
-        const frames = sim.frames(tripId);
-        assertWallClock(frames, startedMs, endedMs);
-        const board = await fetchBoard(goUrl, o.rawEnv['ADMIN_TOKEN']);
-        return {
-          record: {
-            chat: o.chat, mode: o.mode, composerModel: o.log.composerModel,
-            reflexSource: o.reflex.kind === 'live' ? 'live' : o.reflex.recorded !== null ? 'recorded' : 'labels',
-            startedMs, endedMs, delivered, frames, requests: o.log.requests, recall, unreadByReflex,
-          },
-          board,
-          recorded: live?.recorded ?? null,
-        };
-      } finally {
-        await sim.close();
+        pending++;
       }
-    } finally {
-      await built.stop();
+      return pending;
+    };
+    const waitQuiet = async (): Promise<void> => {
+      const deadline = Date.now() + set.quietTimeoutMs;
+      for (;;) {
+        const unread = pendingReads();
+        const due = (await db.pool.query<{ n: number }>(
+          'select count(*)::int as n from desk_items where trip_id = $1 and done_at is null and due_at <= $2',
+          [tripId, new Date(Date.now() + 5_000)],
+        )).rows[0]?.n ?? 0;
+        const lastActivity = Math.max(lastDeliveryMs, sim.lastFrameAt(tripId));
+        if (unread === 0 && due === 0 && Date.now() - lastActivity >= set.settleMs) return;
+        if (Date.now() > deadline) throw new Error(`${o.chat.name}: Go did not go quiet within ${set.quietTimeoutMs} ms (${due} desk items due, ${unread} lines not read yet)`);
+        await sleep(20);
+      }
+    };
+
+    o.clock.s = o.chat.lines[0]?.at ?? 0;
+    const startedMs = Date.now();
+    await sim.createTrip(trip);
+    await waitQuiet();
+
+    for (const step of planReplay(o.chat, set.burstWindowS)) {
+      if (step.wait.kind === 'real') await sleep(step.wait.ms);
+      else if (step.wait.kind === 'quiet') await waitQuiet();
+      o.clock.s = step.simS;
+      const l = step.line;
+      const t0 = Date.now();
+      if (l.kind === 'say') {
+        if (l.person === 'go') continue;
+        const key = lineKey(l);
+        expected.set(key, { n: (expected.get(key)?.n ?? 0) + 1, lastMs: t0 });
+        const m = await sim.say(tripId, l.person, l.text, {
+          ...(l.photo !== undefined ? { photoCaption: l.photo.caption } : {}),
+          ...(l.reply_to !== undefined ? { replyTo: idOf(l.reply_to) } : {}),
+        });
+        lastDeliveryMs = t0;
+        ids.set(l.i, m.messageId);
+        delivered.push({ i: l.i, realMs: t0, simS: step.simS, messageId: m.messageId, seq: m.seq });
+        if (l.recall !== undefined) {
+          await waitQuiet();
+          for (const probe of l.recall) {
+            const memory = built.brain.memory;
+            recall.push({ probe, afterLine: l.i, realMs: Date.now(), results: memory === undefined ? null : await memory.recall(tripId, probe.question, 'group') });
+          }
+        }
+      } else {
+        if (l.kind === 'edit') await sim.edit(authorOf(l.of), idOf(l.of), l.text);
+        else if (l.kind === 'delete') await sim.remove(authorOf(l.of), idOf(l.of));
+        else await sim.react(l.person, idOf(l.of), l.emoji);
+        lastDeliveryMs = t0;
+        delivered.push({ i: l.i, realMs: t0, simS: step.simS });
+      }
+      if (l.i > 0 && l.i % 250 === 0) o.progress?.(`${o.chat.name}: ${l.i} of ${o.chat.lines.length} lines`);
     }
+    await waitQuiet();
+    const endedMs = Date.now();
+    const frames = sim.frames(tripId);
+    assertWallClock(frames, startedMs, endedMs);
+    const board = await fetchBoard(goUrl, o.rawEnv['ADMIN_TOKEN']);
+    return {
+      record: {
+        chat: o.chat, mode: o.mode, composerModel: o.log.composerModel,
+        reflexSource: o.reflex.kind === 'live' ? 'live' : o.reflex.recorded !== null ? 'recorded' : 'labels',
+        startedMs, endedMs, delivered, frames, requests: o.log.requests, recall, unreadByReflex,
+      },
+      board,
+      recorded: live?.recorded ?? null,
+    };
   } finally {
-    await db.drop();
+    await room.stop();
   }
 }
 ```
@@ -4693,9 +4694,11 @@ import { replayChat, SimClock, type ReplaySettings } from './replay.js';
 import { writeReport, type BenchReport } from './report-md.js';
 import { scoreReplay, type ChatScore } from './score.js';
 
-/** Go's environment in the fast bench. No real key anywhere: the model and the reflex are stand-ins, and Jev is off. */
+/**
+ * Go's environment in the fast bench, laid over startRoom's test values. No real key anywhere: the model and the
+ * reflex are stand-ins, and Jev is off. No GO_SIGNING_SECRET: the harness signs the socket with its own.
+ */
 export const FAST_ENV: Readonly<Record<string, string>> = {
-  GO_SIGNING_SECRET: 'bench-only-signing-secret-for-a-local-socket',
   GO_PUBLIC_URL: 'http://127.0.0.1',
   ANTHROPIC_API_KEY: 'bench-no-key',
   COMPOSER_MODEL: 'claude-sonnet-5-5',
@@ -4869,14 +4872,14 @@ describe('the live bench', () => {
     expect(parseArgs(['--gate-model', 'claude-haiku-4-5']).gateModel).toBe('claude-haiku-4-5');
   });
 
-  it('builds Go\'s environment from the real keys, with fresh local secrets', () => {
+  it('builds Go\'s environment from the real keys, with a fresh board token and no signing secret (the harness signs)', () => {
     const base = { DATABASE_URL: 'postgres://localhost/go', ANTHROPIC_API_KEY: 'k1', TYPESAFE_API_KEY: 'k2' };
     expect(() => liveEnv({ DATABASE_URL: 'postgres://localhost/go', ANTHROPIC_API_KEY: 'k1' }, 'claude-sonnet-5-5')).toThrow(/TYPESAFE_API_KEY is required/);
     const env = liveEnv(base, 'claude-haiku-4-5');
     expect(env).toMatchObject({ COMPOSER_MODEL: 'claude-haiku-4-5', REFLEX_LIVE: 'q1,q2,q3', JEV_MODEL: 'jev-1.13.0', SIDE_MODEL: 'claude-haiku-4-5', CALLS_MODE: 'off' });
-    expect(env['GO_SIGNING_SECRET']?.length).toBe(64);
+    expect(env).not.toHaveProperty('GO_SIGNING_SECRET');
     expect(env['ADMIN_TOKEN']?.length).toBe(32);
-    expect(liveEnv(base, 'claude-haiku-4-5')['GO_SIGNING_SECRET']).not.toBe(env['GO_SIGNING_SECRET']);
+    expect(liveEnv(base, 'claude-haiku-4-5')['ADMIN_TOKEN']).not.toBe(env['ADMIN_TOKEN']);
   });
 
   it('sends the board a summary it accepts, with the provider\'s own cache number', () => {
@@ -4980,7 +4983,7 @@ export function liveEnv(env: EnvSource, model: string): Record<string, string> {
     REFLEX_LIVE: env['REFLEX_LIVE'] || 'q1,q2,q3',
     COMPOSER_MODEL: model,
     SIDE_MODEL: env['SIDE_MODEL'] || 'claude-haiku-4-5',
-    GO_SIGNING_SECRET: randomBytes(32).toString('hex'),
+    // No GO_SIGNING_SECRET: P1's startRoom signs the socket with its own SECRET.
     GO_PUBLIC_URL: 'http://127.0.0.1',
     CALLS_MODE: 'off',
     LOG_LEVEL: 'warn',
@@ -5252,10 +5255,10 @@ Expected: "All N checks pass." for the chosen model: typing p90 under 0.5 s, rep
 
 ## Interface notes for the conductor
 
-1. **Deep imports into `@go/brain`.** P1's `apps/brain/package.json` has `"main": "dist/main.js"` and no `exports` map, so the bench imports `@go/brain/dist/app.js` (`buildBrain`, `BuildOptions`, `Brain`), `@go/brain/dist/main.js` (`LANES`), `@go/brain/dist/env.js` (`loadEnv`), `@go/brain/dist/db/test-db.js` (`withSchema`) and `@go/brain/dist/stats/index.js` (`BenchSummary`, in a test). If P1 adds an `exports` map later, it must keep these paths (for example `"./dist/*": "./dist/*"`), and `src/db/test-db.ts` must stay in the build (today only `__tests__` is excluded).
-2. **The reflex seam.** The bench replaces `built.brain.reflex` after `LANES` ran and before `start()`. This works because P1's intake reads `reflex: () => brain.reflex` on every message; please keep it a getter.
-3. **The side model must use the client `buildBrain` was given (P1 and P2).** P2's `anthropicSideModel(client, model, log)` calls `client.messages.create`, and nothing in P1's `Brain` hands a lane the client from `BuildOptions.anthropic`. Without that, the fast bench's side passes (notes, fold) go to the real API with the placeholder key and fail, so the 2,000 chat never folds and Task 12 cannot turn `requireMemory` on; the live bench also cannot record side-pass cost. Proposed: `Brain` gains `anthropic: AnthropicLike` (set to `o.anthropic ?? anthropicClient(env.ANTHROPIC_API_KEY)` in `buildBrain`), `AnthropicLike.messages` gains `create` (the real SDK client already has it), and P2's `registerMemory` builds its side model from `brain.anthropic`. `PolicyModel.client` and `recordingClient` already implement both `stream` and `create`.
-4. **`FOLD_AT_TOKENS` must reach P2 through `loadEnv`.** P1's `Env` merges Room, Reflex, Travel, Tasks, Money, Calls and Admin, but not Memory. P2's `memory/env.ts` has to be merged into `Env` (an `env.ts` edit P2 owns with P1's OK), or the bench's `FOLD_AT_TOKENS=12000` for the 2,000 chat is dropped by zod.
+1. **Deep imports into `@go/brain`.** P1's `apps/brain/package.json` has `"main": "dist/main.js"` and no `exports` map, so the bench imports `@go/brain/dist/testing/start-room.js` (`startRoom`, `RoomOptions`, P1 Task 16), `@go/brain/dist/app.js` (`DEFAULT_TIMINGS`, `Brain`) and `@go/brain/dist/stats/index.js` (`BenchSummary`, in a test). If P1 adds an `exports` map later, it must keep these paths (for example `"./dist/*": "./dist/*"`), and `src/testing/` and `src/db/test-db.ts` must stay in the build (today only `__tests__` is excluded). Settled: the bench boots Go through P1's shared harness instead of its own `buildBrain` + `LANES` + `withSchema` boot, so it starts Go exactly as every lane's end-to-end tests do; the harness gives everything the replay needs (production timings through `timings: DEFAULT_TIMINGS`, the bench's env through `env`, `room.db.pool` for the desk check, the port from `brain.http.server.address()`); the one change is that the bench signs with the harness's `SECRET`, so `FAST_ENV` and `liveEnv` carry no `GO_SIGNING_SECRET`.
+2. **The reflex seam.** The bench replaces `built.brain.reflex` right after `startRoom` returns: the lanes have run and Go has started, but no trip exists until the replay creates one, so no message has been read yet. This works because P1's intake reads `reflex: () => brain.reflex` on every message; please keep it a getter.
+3. **The side model uses the client `buildBrain` was given. Settled in master §6.3.** `Brain.anthropic: AnthropicLike` (with `messages.create`) is the client `startRoom` passes as `anthropic`, and P2's `registerMemory` builds its side model from it (P2 Task 15), so the fast bench's side passes (notes, fold) reach `PolicyModel.client` and the live bench's reach the recorder. `PolicyModel.client` and `recordingClient` implement both `stream` and `create`.
+4. **`FOLD_AT_TOKENS` reaches P2 through `loadEnv`. Settled by P1's `LANE_ENVS` (P1 Task 2).** P1 creates `memory/env.ts` as a stub and merges every lane's env into `Env`; P2 Task 15 declares `FOLD_AT_TOKENS` there, so the bench's `FOLD_AT_TOKENS=12000` for the 2,000 chat (passed through `startRoom`'s `env`) is kept. P3 declares no Go variable of its own: `stats/env.ts` stays P1's empty stub (the board reads P7's `ADMIN_TOKEN`; `GO_BOARD_URL` and `GO_BOARD_TOKEN` are the live bench's CI secrets, not Go's), so P3 adds nothing to `apps/brain/.env.example`.
 5. **The fold's stand-in answer.** The bench answers P2's fold with one story line citing the first and last message numbers in the prompt (`{"lines":[{"text":"...","refs":[a,b],"people":[]}]}`), which passes P2's checks as written (`FOLD_RULES`, `StoryOut`, refs must be shown messages). If P2 changes the fold's output format, `storyReply` in `packages/bench/src/policy-model.ts` changes with it.
 6. **A shared scripted model.** P1's `fakeAnthropic` lives in `apps/brain/src/__tests__/fixtures` and is not built into `dist`, so the bench has its own, `PolicyModel` (exported from `@go/bench`), with the same stream shape plus `create`, cache-estimated usage and the policy. Other lanes' end-to-end tests may use it.
 7. **What the board measures from.** P1's `turns.started_at` is when the desk began a turn (after the 2 s wait), so the board measures typing and replies from the waking message's `trip_events.received_at`, found through `desk_items.turn_id` and `desk_items.ref` (the message id). If P1 changes either column's meaning, Task 8's tests (seeded with P1's row shapes) and Task 10's board check go red together. The cache number is `cached_tokens / (input_tokens + cached_tokens + cache_write_tokens)` over turns with `rounds > 0`; Task 10 checks it against the bench's own estimate within 2 points.
@@ -5264,6 +5267,8 @@ Expected: "All N checks pass." for the chosen model: typing p90 under 0.5 s, rep
 10. **P0's recording.** The bench reads `FakeServer.requests` (every request and notification, `typing` included) and requires `at` on the wall clock; it never passes `now`. `assertWallClock` fails the run if a frame's time is outside the run.
 11. **CI time.** The fast bench adds a few minutes to `build-and-test` (the 2,000 chat is most of it). If that slows the team down, move `goa-2000` into its own job in `ci.yml` with the same Postgres service; nothing in the bench changes.
 12. **A known honest miss.** `goa-300` spans four days; the first turn after each night misses the chat part of the cache (reason `ttl`, the rules still read). If the 300 chat sits just under 85% for that reason alone, the report shows it plainly; the fix is product-side, not a looser bar.
+13. **No server timers in `stats/`.** `registerStats` starts no interval or timeout (the board's 5 s refresh runs in the viewer's browser), so it registers nothing with `brain.onStop`; a later stats timer must register its stop there and be `unref()`ed (master §6.3).
+14. **`SayLine.seq` for P7's trip export.** Settled. `SayLine` has an optional `seq` (a positive whole number, Task 1): the message's number in the real trip, written by P7's `export-trip` so hand labels and recall probes follow their message across re-exports. Nothing in the bench reads it; a replay numbers messages afresh.
 
 ## What was assumed because the research said it was unknown
 
@@ -5289,10 +5294,11 @@ Expected: "All N checks pass." for the chosen model: typing p90 under 0.5 s, rep
 | §17 | Memory checked after folds with the right message number | 6, 10, 12 |
 | §17 | A change that breaks caching or memory turns CI red | 7 (drift, rules changed, leaks, recall), 10, 12 |
 | Master §0, §1 (4:30) | The proof board, live numbers labelled honestly | 8, 9 |
+| P7 note (trip export) | A recorded line keeps the real trip's message number (`SayLine.seq`, optional, positive) | 1 (`keeps the message number a trip export writes...`) |
 | §7 (model choice) | COMPOSER_MODEL picked by measurement on Tuesday night | 11 |
 
 Review Focus, each with its tests: (1) a delete inside the cached part: Task 4 `a delete inside the cached part...`, Task 6 `deleted text in a later prompt is a leak...`, the `goa-300` late delete replayed in Task 10; (2) compressed time and clock skew: Task 4 `a quiet gap past the TTL...`, Task 10 `replays short gaps in real time...`, Task 6 `fails loudly when a frame was stamped by another clock`; (3) not cacheable yet: Task 4 `below the minimum on Haiku 4.5...`, Task 7 `says "not cacheable yet"...`, Task 8 `says not cacheable yet...`; (4) nothing to count: Task 6 `scores a chat with only Go's lines without a single NaN`, Task 8 `reads "no turns yet" in an empty window...`, Task 9 `says "No turns yet" before any turn...`, Task 7 `the summary ... never prints NaN`; (5) bursts and double posts: Task 6 `a resend with the same request_id is one post`, `the same text twice ... is a duplicate`, Task 2 (the burst in `goa-50`), Task 10 (the replay judges it).
 
 Placeholder scan: no TBD, TODO or "similar to"; every code step is complete; the only hand steps are running the generator (Task 3), the Tuesday model pick (Task 11) and the G5 run (Task 12), each with exact commands.
 
-Names: every name consumed from P0, P1 and P2 matches their plans as written on 5 October (`buildBrain`, `BuildOptions`, `Built`, `LANES`, `loadEnv`, `withSchema` with `schema`, `FakeServer.start/stop/createTrip/say/edit/delete/react/requests`, `goaFreshTrip`, `REFLEX_LIVE`, `FOLD_AT_TOKENS`, `FOLD_RULES`, the `turns` columns); names P3 defines are used the same way in every task.
+Names: every name consumed from P0, P1 and P2 matches their plans as written on 5 October (`startRoom`, `RoomOptions`, `Room`, `DEFAULT_TIMINGS`, `Built`, `LANES`, `withSchema` with `schema`, `Brain.onStop`, `FakeServer.createTrip/say/edit/delete/react/requests`, `goaFreshTrip`, `REFLEX_LIVE`, `FOLD_AT_TOKENS`, `FOLD_RULES`, the `turns` columns); names P3 defines are used the same way in every task.

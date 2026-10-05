@@ -4,18 +4,18 @@
 
 **Goal:** Go speaks up on its own when it truly helps (timers, watches, openings in the chat), always through one bar, one budget and the quietest useful action, and Go phones a business for the group live, with a 30 second chance to stop it, a call card updated in place and the outcome in the chat and the record.
 
-**Architecture:** Everything Go notices on its own (a timer coming due, a watch that saw a change, an opening in the chat or a trip change) becomes a row in `proactive_candidates` keyed by a stable dedupe key, so a nudge can never repeat. A promoter, every 15 seconds, runs due candidates through the pure policy (`proactive/policy.ts`: importance × confidence × urgency against bars that rise at night in the trip's time zone, after a hush and after ignored nudges; about 3 unprompted posts per trip per day; never two in a row without a person speaking; small things batched) and only a candidate that passes is put on the desk (kind `timer`, `watch` or `opening`) with the actions the bar allowed. The composer still picks the words; the wake text, the `openings` "right now" block and P6's own notice tools enforce what is allowed. Calls are their own service: `call_business` posts one line and waits 30 seconds in the `calls` table, then dials through Twilio's REST API with a `<Connect><Stream>` to Go's media socket, which bridges Twilio's μ-law frames to the realtime voice model over a plain WebSocket (`audio/pcmu` both ways), keeps the call card live (at most one update every 3 seconds), and closes out with the outcome message and, when it settles something, an `add_record_line` whose proof is the call card's message.
+**Architecture:** Everything Go notices on its own (a timer coming due, a watch that saw a change, an opening in the chat or a trip change) becomes a row in `proactive_candidates` keyed by a stable dedupe key, so a nudge can never repeat. A promoter, every 15 seconds, runs due candidates through the pure policy (`proactive/policy.ts`: importance × confidence × urgency against bars that rise at night in the trip's time zone, after a hush and after ignored nudges; about 3 unprompted posts per trip per day; never two in a row without a person speaking; small things batched) and only a candidate that passes is put on the desk (kind `timer`, `watch` or `opening`) with the actions the bar allowed. The composer still picks the words; P1's turn enforces what is allowed through `Context.addTurnRules` (any other tool is refused, and the text is dropped when a message is not allowed), and the wake text, the `openings` "right now" block and P6's own notice tools say it and keep pins to the right people. Calls are their own service: `call_business` posts one line and waits 30 seconds in the `calls` table, then dials through Twilio's REST API with a `<Connect><Stream>` to Go's media socket (handed over by P1's `Door.onUpgrade`), which bridges Twilio's μ-law frames to the voice model over a plain WebSocket (`audio/pcmu` both ways, no separate transcriber), keeps the call card live with Go's side of the call (at most one update every 3 seconds), and closes out with the outcome message and, when it settles something, an `add_record_line` whose proof is the call card's message.
 
-**Tech Stack:** Node 22, TypeScript strict (`exactOptionalPropertyTypes`), zod 4.3.6, Fastify 5, `ws` 8 (Go's media socket and the client socket to the realtime model; no `openai` SDK because the repo pins `openai` 6.39.1 for the copied agent loop), `pg` 8, `@go/contract` 1.0.0, vitest 4 with the CI Postgres service, Twilio Programmable Voice REST + Media Streams over `fetch` (no `twilio` SDK), the realtime voice model `gpt-realtime-2.1` over `wss://api.openai.com/v1/realtime`.
+**Tech Stack:** Node 22, TypeScript strict (`exactOptionalPropertyTypes`), zod 4.3.6, Fastify 5, `ws` 8 (Go's media socket and the client socket to the voice model; no `openai` SDK because the repo pins `openai` 6.39.1 for the copied agent loop), `pg` 8, `@go/contract` 1.0.0, vitest 4 with the CI Postgres service, Twilio Programmable Voice REST + Media Streams over `fetch` (no `twilio` SDK), the voice model picked by `CALLS_VOICE_MODEL`: `gpt-realtime-2.1` over `wss://api.openai.com/v1/realtime` by default, or `gpt-live-1` behind the same bridge for the day-one A/B, never with a separate speech-to-text model.
 
 **Spec:** `docs/spec/2026-10-05-go-design.md` §5 (timers), §8 (being proactive), §12 (status for watches), §14 (calls), §2 (watches, calls) and `docs/plans/2026-10-05-go-the-week.md` (master plan; sections 6 and 7 are binding). Cards: `docs/guide/06-cards.md` (call, notice); the call flow: `docs/guide/09-flows.md` §5.
 
-**Lane / gate:** Lanes A (proactive, Tasks 1 to 8) then C (watches already in Tasks 7 and 8; calls, Tasks 9 to 14). Gate **G5 "Go speaks first, and calls", Thu 23:00**: timers, watches, the proactive bar and budget pass in CI; one real call to a teammate's phone with the live card and the outcome. Demo beats served (master §1): **3:00 "the call"** and **3:40 "proactive and safe"** (the labelled simulated watch: the flight is 2 hours late and Arjun's cab is at 9; Go suggests moving it, pinned to Arjun).
+**Lane / gate:** Lanes A (proactive, Tasks 1 to 8) then C (watches already in Tasks 7 and 8; calls, Tasks 9 to 14). Gate **G5 "Go speaks first, and calls", Thu 23:00**: timers, watches, the proactive bar and budget pass in CI; one real call to a teammate's phone with the live card and the outcome. Demo beats served (master §1): **1:00 "the call"** and **3:40 "proactive and safe"** (the labelled simulated watch, fired with `force: true`: the flight is 2 hours late and Arjun's cab is at 9; Go suggests moving it, pinned to Arjun).
 
 **Depends on:**
-- P1: `Brain`, `RegisterLane` (`apps/brain/src/app.ts`); `Desk.put`, `DeskItem`, `DeskKind` (`desk/desk.ts`); `Context.addNow`, `Context.addWake`, `NowProvider` (`composer/context.ts`); `Tools.register`, `QuickTool`, `TurnCtx`, `TurnOutcome` (`composer/tools.ts`); `MessageHooks.onRead` (`trips/hooks.ts`); `TripLog.onEvent` (`trips/log.ts`); `Packs.get`, `TripPack` (`trips/pack.ts`); `TapRouter.on('call', 'stop', ...)` (`door/taps.ts`); `ServerLink.request` (`door/server-link.ts`); `TurnCtx.cards`, `TurnCtx.stableId(prefix)` (crash-safe ids for a quick tool's writes and cards); `Message`, `Trip`, `TripEvent`, `CardTapParams`, `CardTapResult` (`door/methods.ts`); `Switches.get('CALLS_MODE')` (`admin/switches.ts`); `withSchema()` (`db/test-db.ts`); the `trips` table (`trip_id`, `last_seq`, `tz` defaulting to `Asia/Kolkata`, `created_at`); `LANES` in `main.ts`; `Env` with `GO_PUBLIC_URL`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `OPENAI_API_KEY`, `CALLS_MODE`, `CALLS_ALLOWLIST`, `ADMIN_TOKEN` (all optional strings).
+- P1: `Brain` (with `onStop(fn)`, where each lane stops its timers), `RegisterLane` (`apps/brain/src/app.ts`); `Desk.put`, `DeskItem`, `DeskKind` (`desk/desk.ts`); `Context.addNow`, `Context.addWake`, `Context.addTurnRules(fn: (wake) => TurnLimits | null)` with `TurnLimits { tools; mayPostText }`, `NowProvider` (`composer/context.ts`); `Tools.register`, `QuickTool`, `TurnCtx` (with `allowedTools` and `mayPostText`, set from `addTurnRules`), `TurnOutcome` (`composer/tools.ts`); `MessageHooks.onRead` (`trips/hooks.ts`); `TripLog.onEvent` (`trips/log.ts`); `Packs.get`, `TripPack` (`trips/pack.ts`); `TapRouter.on('call', 'stop', ...)` (`door/taps.ts`); `Door.onUpgrade(path: RegExp, handle: UpgradeHandler)` (Twilio's media socket; `door/handlers.ts`) and `ServerLink.request` (`door/server-link.ts`); `TurnCtx.cards`, `TurnCtx.stableId(prefix)` (crash-safe ids for a quick tool's writes and cards); `Message`, `Trip`, `TripEvent`, `CardTapParams`, `CardTapResult` (`door/methods.ts`); `Switches.get('CALLS_MODE')` (`admin/switches.ts`); `withSchema()` (`db/test-db.ts`); the `trips` table (`trip_id`, `last_seq`, `tz` defaulting to `Asia/Kolkata`, `created_at`); `LANES` in `main.ts`; `Env` with `GO_PUBLIC_URL`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `OPENAI_API_KEY`, `CALLS_MODE`, `CALLS_ALLOWLIST`, `ADMIN_TOKEN` (all optional strings); P1's `calls/env.ts` stub, where Task 9 adds `CALLS_VOICE_MODEL`. The hooks are settled in master §6.3; `startProactive` and `startCalls` fail at boot with one clear error line if `addTurnRules` or `onUpgrade` is missing.
 - P2: `ReflexRead` with `opening: Sure<boolean>` and `forGo: Sure<boolean>` (`reflex/reflex.ts`; P1's stub until P2 lands); the quick tools named `react`, `record`, `trip`, `person`, `recall`; P1's `stay_silent`.
-- P4: `Travel.status(q: StatusQuery): Promise<StatusResult>` (`travel/travel.ts`); P6 builds and reads those shapes in one file, `watches/port.ts` (see the interface notes).
+- P4: `Travel.status(q: StatusQuery): Promise<StatusResult>` (`travel/travel.ts`), used as it is: `StatusQuery` is `{ kind: 'flight'; carrierCode; number; date }` or `{ kind: 'pnr'; pnr }`, and `StatusResult` is `{ kind: 'flight'; state; scheduledDepartAt; expectedDepartAt; delayMinutes; checkedAt }` or `{ kind: 'pnr'; state; detail; checkedAt }` (interface note 3, settled).
 - `@go/contract`: `TripSnapshot`, `Message`, `Event`, `NoticeCard`, `CallCard`.
 
 ## Global Constraints
@@ -24,23 +24,25 @@ Master §7 applies to every task. Specific to this plan:
 - Calls go only to numbers in `CALLS_ALLOWLIST` (comma separated, each `+E164` or `Name=+E164`), and only while the `CALLS_MODE` switch reads `allowlist`; it is read again just before dialing.
 - The stop window is exactly 30 s (`CALL_WINDOW_MS = 30_000`); a call is hung up at 4 minutes (`CALL_CAP_MS = 240_000`); Twilio's own `TimeLimit` is 255 s as a backstop.
 - The call card is updated at most once every 3 s (`CARD_GAP_MS = 3_000`); the final card always lands.
-- The voice model hears the business itself; the business's lines come from the same realtime session's own input transcription. No separate speech-to-text service (Keshav's ruling).
+- **No second ear (Keshav's ruling, `feedback-no-second-ear-on-the-call`):** Go hears the business with the voice model's own ears only. The bridge never turns on the realtime session's input transcription (`audio.input.transcription`, `gpt-4o-mini-transcribe` or any other) and never calls a separate speech-to-text service. The call card's `last_line` and `transcript` carry Go's own lines (`who: 'go'`, from the model's own output transcript) and the `outcome` from the model's report; the room hears the business on the speaker. Showing the business's words on the card needs Keshav's explicit OK.
+- `CALLS_VOICE_MODEL` picks the voice model: `gpt-realtime-2.1` (the default, no input transcription) or `gpt-live-1` for the day-one A/B (its input transcript is the model's own, which the ruling allows, but Go still shows only its own lines). `gpt-live-1` has no "caller started speaking" event, so barge-in there uses Twilio `mark` events and an energy check on the business's audio.
 - The call never pays: the session instructions forbid paying and sharing card, bank or UPI details, and `call_business` refuses a goal or fact that carries card, bank, OTP or password words or a long run of digits.
 - On the call Go says it is an AI assistant in its first line and never names the model or its vendor; every string Go posts passes `plain()` (no em dashes, vendor names replaced with "Go").
 - Night is 22:00 to 08:00 in the trip's time zone (`trips.tz`, default `Asia/Kolkata`).
 - At most 3 unprompted posts (a pinned notice or a message to everyone) per trip per local day (`DAILY_POSTS = 3`).
 - Every card from a simulated watch carries `source: { name: "Simulated for the demo" }`.
 - A quick tool's writes and cards take their ids from `ctx.stableId(...)` (`c_notice`, `call`); every call write outside a turn uses `go_<call_id>_<step>` (`announce`, `card`, `cancel`, `off`, `outcome`, `record`, `fail`), so a crash and re-run never doubles a post. Proactive desk items are `<source>:<trip>:<dedupe key>`.
-- Audio is never recorded or stored; only the transcript (at most 300 lines) is kept, on the call card and in `calls.transcript`.
+- Audio is never recorded or stored; only Go's own lines (at most 300) are kept, on the call card and in `calls.transcript`.
 - `ADMIN_TOKEN` guards `POST /admin/watch/fire`; without it the route answers 404.
+- `force: true` on `POST /admin/watch/fire` (the stage, master §1 3:40 and §9) skips the bar, night, the daily budget, "two in a row", the hush raise and the ignored-nudge raise for that one candidate only. It never skips the "Simulated for the demo" label, the pins to the named people, a person who paused Go, expiry, or the double-click guard (the same body in the same or previous minute posts once).
 
 ## Review Focus
 
 1. **Go speaks up at the wrong moment**: at 23:30 in Goa, a fourth time in a day, twice in a row with nobody speaking in between, after a "Go chup kar", or pinging someone who paused Go. (Task 1 policy tests; Task 4 promoter tests for night and budget through the database; Task 6 hush test.)
 2. **A nudge repeats**: the same timer re-planned on every event, the same flight delay read twice by a watch, a vote reminder after the vote already closed. (Task 2 "never re-added"; Task 3 replan tests; Task 4 stale-candidate drop; Task 8 runner dedupe.)
 3. **Go calls when it must not** (includes master §10.3, someone steering Go): a number off the allowlist, `CALLS_MODE` flipped to `off` inside the window, "ruk jao", "band karo", "stop" or a "nahi" reply inside the window, a second call while one is live, "call the villa and give them Rahul's card 4111 1111 1111 1111". (Task 9 stop words; Task 12 service tests.)
-4. **The call card lies**: stuck on talking after the business hangs up, a crash mid-call, the 4 minute cap, a Stop tap after the end (must answer "The call has already ended."), a media connection with a wrong token (must end nothing). (Task 11 bridge tests; Task 12 sweep and tap tests; Task 13 end to end.)
-5. **The demo's simulated watch looks real or never lands**: the notice must say "Simulated for the demo", be pinned to Arjun only, and arrive within a second of the admin tap; the route must refuse without the admin token. (Task 5 notice tool tests; Task 8 admin and demo-beat test.)
+4. **The call card lies or says too much**: stuck on talking after the business hangs up, a crash mid-call, the 4 minute cap, a Stop tap after the end (must answer "The call has already ended."), a media connection with a wrong token (must end nothing), or the business's words on the card (it carries Go's lines only, and no transcriber is ever turned on). (Task 11 bridge tests for both voice models; Task 12 sweep, tap and "Go's lines only" tests; Task 13 end to end; Task 14's day-one check fails if input transcription is on.)
+5. **The demo's simulated watch looks real, never lands, or lands twice**: the notice must say "Simulated for the demo", be pinned to Arjun only, and arrive within a second of the admin tap, even when the real trip's daily budget is spent and a hush is on (the stage sends `force: true`); a double click posts once; the route must refuse without the admin token. (Task 1 forced-decision tests; Task 5 notice tool tests; Task 8 admin, demo-beat and forced stage-fire tests; Task 14 through the simulator.)
 
 ## File Structure
 
@@ -49,7 +51,7 @@ Master §7 applies to every task. Specific to this plan:
 - `apps/brain/src/proactive/policy.test.ts`: policy and clock tests.
 - `apps/brain/src/db/migrations/5000_proactive.sql`: `proactive_candidates`, `proactive_trips`, `proactive_notices`.
 - `apps/brain/src/proactive/store.ts`: candidates, the trip's signals (posts today, hushes, ignored nudges), saved notices.
-- `apps/brain/src/proactive/fakes.ts`: test fakes (the Goa trip, packs, a recording server link, a desk, a hand-moved clock, a fake `Brain`).
+- `apps/brain/src/proactive/fakes.ts`: test fakes (the Goa trip, packs, a recording server link, a desk, a hand-moved clock, a fake `Brain` that records turn rules and lane upgrades and routes upgrades like P1's door).
 - `apps/brain/src/proactive/store.test.ts`: store tests.
 - `apps/brain/src/proactive/timers.ts`: timer planning, re-planning, date clashes, the "still true" check.
 - `apps/brain/src/proactive/timers.test.ts`: timer tests.
@@ -57,40 +59,41 @@ Master §7 applies to every task. Specific to this plan:
 - `apps/brain/src/proactive/promoter.ts`: due candidates through the policy onto the desk.
 - `apps/brain/src/proactive/promoter.test.ts`: promoter tests.
 - `apps/brain/src/proactive/words.ts`: `plain()`, `clip()`, `quote()`, `rupees()`, `namesOf()`.
-- `apps/brain/src/proactive/allowed.ts`: the tools a proactive turn may use.
+- `apps/brain/src/proactive/allowed.ts`: the tools a proactive turn may use, and `composerRules` for P1's `Context.addTurnRules`.
 - `apps/brain/src/proactive/wake.ts`: wake renderers for `timer`, `watch`, `opening`; the `openings` "right now" block.
 - `apps/brain/src/proactive/notice-tools.ts`: quick tools `post_notice` and `update_notice`.
 - `apps/brain/src/proactive/wake.test.ts`, `apps/brain/src/proactive/notice-tools.test.ts`: tests.
 - `apps/brain/src/proactive/openings.ts`: openings from the chat and from trip changes, hush, ignored nudges.
 - `apps/brain/src/proactive/openings.test.ts`: tests.
 - `apps/brain/src/db/migrations/5100_watches.sql`: `watches`.
-- `apps/brain/src/watches/port.ts`: the normalised status reading and the adapter over `Travel.status`.
-- `apps/brain/src/watches/diff.ts`: which change in a reading is worth a nudge.
-- `apps/brain/src/watches/plan.ts`: which watches a trip needs; syncing them.
-- `apps/brain/src/watches/watches.test.ts`: port, diff and plan tests.
-- `apps/brain/src/watches/runner.ts`: scheduled checks.
+- `apps/brain/src/watches/diff.ts`: which change between two of P4's `StatusResult` readings is worth a nudge.
+- `apps/brain/src/watches/plan.ts`: which watches a trip needs (booked flights by number, booked trains by PNR, each stored as P4's `StatusQuery`); syncing them.
+- `apps/brain/src/watches/watches.test.ts`: diff and plan tests.
+- `apps/brain/src/watches/runner.ts`: scheduled checks through `Travel.status`.
 - `apps/brain/src/watches/admin.ts`: `POST /admin/watch/fire`.
-- `apps/brain/src/proactive/register.ts`: `startProactive(brain)` and `registerProactive(brain)`; also wires watches.
+- `apps/brain/src/proactive/register.ts`: `startProactive(brain)` and `registerProactive(brain)`; also wires watches and the turn rules.
 - `apps/brain/src/watches/runner.test.ts`, `apps/brain/src/proactive/register.test.ts`: tests, including the 3:40 demo beat.
 - `apps/brain/src/db/migrations/5200_calls.sql`: `calls`.
-- `apps/brain/src/calls/config.ts`: settings, allowlist, phone numbers, URLs, fixed numbers.
+- `apps/brain/src/calls/env.ts` (modify P1's stub): `CALLS_VOICE_MODEL`, and the allowlist's `Name=+E164` form in its comment.
+- `apps/brain/src/calls/config.ts`: settings, allowlist, phone numbers, URLs, the voice model, fixed numbers.
 - `apps/brain/src/calls/stop-words.ts`: "stop" in English and Hinglish.
 - `apps/brain/src/calls/store.ts`: the call row and its state changes.
 - `apps/brain/src/calls/foundation.test.ts`: config, stop words and store tests.
 - `apps/brain/src/calls/twilio.ts`: Twilio REST client, TwiML, signature check, status words.
 - `apps/brain/src/calls/twilio.test.ts`: tests.
-- `apps/brain/src/calls/realtime.ts`: the call's instructions, the session, `report_outcome`.
-- `apps/brain/src/calls/bridge.ts`: Twilio media socket to the realtime model and back.
-- `apps/brain/src/calls/bridge.test.ts`: tests with a scripted local realtime server.
+- `apps/brain/src/calls/realtime.ts`: the call's instructions and greeting, `report_outcome`, opening the voice model's socket.
+- `apps/brain/src/calls/voice-wire.ts`: the two voice models behind one shape (`gpt-realtime-2.1` and `gpt-live-1`), neither with input transcription.
+- `apps/brain/src/calls/bridge.ts`: Twilio media socket to the voice model and back; Go's lines only; barge-in by the model's speech event, or by Twilio marks and an energy check.
+- `apps/brain/src/calls/bridge.test.ts`: tests with a scripted local voice model, for both wires.
 - `apps/brain/src/calls/card-updater.ts`: one card update every 3 s at most, the final one always.
 - `apps/brain/src/calls/service.ts`: `CallService`: request, stop window, dial, live card, outcome, failures, sweep.
 - `apps/brain/src/calls/tool.ts`: the `call_business` quick tool.
 - `apps/brain/src/calls/card-updater.test.ts`, `apps/brain/src/calls/service.test.ts`: tests.
-- `apps/brain/src/calls/register.ts`: `startCalls(brain)`, `registerCalls(brain)`: routes, media socket, tap, hooks, the `calls` "right now" block.
+- `apps/brain/src/calls/register.ts`: `startCalls(brain)`, `registerCalls(brain)`: routes, the media socket through `Door.onUpgrade`, tap, hooks, the `calls` "right now" block.
 - `apps/brain/src/calls/register.test.ts`: the whole call end to end.
 - `apps/brain/src/main.ts` (modify): add `registerProactive` and `registerCalls` to `LANES`.
 - `apps/brain/src/__tests__/e2e/proactive.e2e.test.ts`: G5, the 3:40 beat through the simulator and the real composer.
-- `apps/brain/scripts/calls-day-one.mjs`: the day-one check for Twilio, India dialing, the media socket and the realtime model.
+- `apps/brain/scripts/calls-day-one.mjs`: the day-one check for Twilio, India dialing, the media socket, and both voice models (mu-law, no input transcription).
 
 ---
 
@@ -105,9 +108,11 @@ Master §7 applies to every task. Specific to this plan:
 - Consumes: nothing outside this task.
 - Produces:
   - `clock.ts`: `DEFAULT_TZ = 'Asia/Kolkata'`; `type Schedule = (fn: () => void, ms: number) => () => void`; `realSchedule: Schedule`; `localHour(at: Date, tz: string): number`; `localDay(at: Date, tz: string): string` (YYYY-MM-DD); `offsetMinutes(at: Date, tz: string): number`; `zonedTime(day: string, hour: number, minute: number, tz: string): Date`; `addDays(day: string, n: number): string`; `isNight(at: Date, tz: string): boolean`; `nextMorning(at: Date, tz: string): Date`; `tomorrowMorning(at: Date, tz: string): Date`; `localWhen(at: Date, tz: string): string`; `isValidTz(tz: string): boolean`.
-  - `policy.ts`: `ACTIONS = ['react','record','update_card','pin','message'] as const`; `type Action`; `type Source = 'timer' | 'watch' | 'opening'`; `isPost(a: Action): boolean`; `interface Candidate { tripId; dedupeKey; source: Source; topic: string; dueAt: Date; expiresAt: Date | null; importance; confidence; urgency: number; useful: Action[]; personIds: string[]; facts: Record<string, unknown>; simulated: boolean; small: boolean }`; `interface TripMood { tz; postsToday; lastProactivePostAt: Date | null; lastPersonMessageAt: Date | null; hushCount; lastHushAt: Date | null; ignoredCount; pausedPersonIds: string[] }`; `BARS`, `NIGHT_RAISE`, `HUSH_RAISE`, `HUSH_CAP`, `HUSH_LASTS_MS`, `IGNORED_RAISE`, `IGNORED_CAP`, `DAILY_POSTS`, `SMALL_HOLD_MS`, `RECHECK_MS`; `score(c): number`; `barRaise(m, now): { night: number; mood: number }`; `lastWordIsGos(m): boolean`; `type Decision`; `decide(c, m, now): Decision`; `decideBatch(cands, m, now): Array<{ candidate: Candidate; decision: Decision }>`.
+  - `policy.ts`: `ACTIONS = ['react','record','update_card','pin','message'] as const`; `type Action`; `type Source = 'timer' | 'watch' | 'opening'`; `isPost(a: Action): boolean`; `interface Candidate { tripId; dedupeKey; source: Source; topic: string; dueAt: Date; expiresAt: Date | null; importance; confidence; urgency: number; useful: Action[]; personIds: string[]; facts: Record<string, unknown>; simulated: boolean; small: boolean; forced?: boolean }` (`forced` is set only by the stage's `POST /admin/watch/fire` with `force: true`, Task 8); `interface TripMood { tz; postsToday; lastProactivePostAt: Date | null; lastPersonMessageAt: Date | null; hushCount; lastHushAt: Date | null; ignoredCount; pausedPersonIds: string[] }`; `BARS`, `NIGHT_RAISE`, `HUSH_RAISE`, `HUSH_CAP`, `HUSH_LASTS_MS`, `IGNORED_RAISE`, `IGNORED_CAP`, `DAILY_POSTS`, `SMALL_HOLD_MS`, `RECHECK_MS`; `score(c): number`; `barRaise(m, now): { night: number; mood: number }`; `lastWordIsGos(m): boolean`; `type Decision`; `decide(c, m, now): Decision`; `decideBatch(cands, m, now): Array<{ candidate: Candidate; decision: Decision }>`.
 
 The rules, in plain words. Each candidate says which actions would be useful (`useful`). The quiet actions (a reaction, a record line, updating a notice Go posted earlier) are allowed when the score clears their bar. Of the two posts, only the quietest one that applies is ever allowed: a pin when the nudge concerns particular people who have not paused Go, otherwise a message to everyone. Posts also need budget left today and a person to have spoken since Go's last unprompted post. Bars rise by 0.25 at night, by 0.15 per hush (for 72 hours, at most 0.45) and by 0.05 per ignored nudge (at most 0.2). Bars rise with loudness, so if the quietest useful action fails its bar, every louder one fails too.
+
+The stage fire (master §1 3:40 and §9) is the one exception, and only for its own candidate: a candidate marked `forced` skips the score bar, the night raise, the daily budget, "two in a row", the hush raise and the ignored-nudge raise. Everything else still holds for it: an expired candidate is dropped, someone who paused Go is never pinged (all of them paused: dropped), and the post is still the quietest one that applies (a pin to the named people when there are any). It still counts as a post of the day, so real nudges after it wait their turn.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -294,6 +299,32 @@ describe('decide', () => {
     const sim = cand({ simulated: true, dedupeKey: 'sim:flight_status:ab12cd34', expiresAt: new Date(NOON.getTime() + 2 * 3600_000) });
     expect(decide(sim, mood(), NOON)).toMatchObject({ kind: 'go', allowed: ['pin'], forPersonIds: ['p_arjun'] });
   });
+
+  it('lets the forced stage fire past the bar, night, the spent budget, two in a row, a hush and ignored nudges, for that candidate only', () => {
+    const tired = mood({
+      postsToday: DAILY_POSTS,
+      lastProactivePostAt: new Date('2026-10-06T06:10:00Z'),
+      lastPersonMessageAt: new Date('2026-10-06T06:00:00Z'),
+      hushCount: 3,
+      lastHushAt: NOON,
+      ignoredCount: 4,
+    });
+    const stage = cand({ simulated: true, forced: true, importance: 0.1, dedupeKey: 'sim:flight_status:stage' });
+    expect(decide(stage, tired, NOON)).toMatchObject({ kind: 'go', allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true });
+    expect(decide(stage, tired, LATE)).toMatchObject({ kind: 'go', allowed: ['pin'], forPersonIds: ['p_arjun'] });
+    // The same nudge without force is held back by the same mood.
+    expect(decide({ ...stage, forced: false }, tired, NOON)).toEqual({ kind: 'drop', reason: 'below_bar' });
+    expect(decide(cand({ useful: ['pin'] }), tired, NOON).kind).not.toBe('go');
+  });
+
+  it('still never pings a paused person, still drops what expired, and pins only the named people, even when forced', () => {
+    const stage = cand({ simulated: true, forced: true });
+    expect(decide(stage, mood({ pausedPersonIds: ['p_arjun'] }), NOON)).toEqual({ kind: 'drop', reason: 'paused' });
+    expect(decide({ ...stage, expiresAt: NOON }, mood(), NOON)).toEqual({ kind: 'drop', reason: 'expired' });
+    const two = decide({ ...stage, personIds: ['p_arjun', 'p_meher'] }, mood({ pausedPersonIds: ['p_meher'] }), NOON);
+    expect(two).toMatchObject({ kind: 'go', allowed: ['pin'], forPersonIds: ['p_arjun'] });
+    expect(decide({ ...stage, personIds: [], useful: ['pin'] }, mood(), NOON)).toEqual({ kind: 'drop', reason: 'nothing_useful' });
+  });
 });
 
 describe('decideBatch', () => {
@@ -472,6 +503,8 @@ export interface Candidate {
   facts: Record<string, unknown>;
   simulated: boolean;
   small: boolean;
+  /** The stage's fire with force: true (Task 8). Skips the bar, night, the budget, "two in a row", hush and ignored raises. */
+  forced?: boolean;
 }
 
 /** What the bar knows about the trip right now. */
@@ -525,6 +558,18 @@ export type Decision =
 
 const beforeExpiry = (until: Date, expiresAt: Date | null): boolean => expiresAt === null || until.getTime() < expiresAt.getTime();
 
+/**
+ * The stage fire (force: true): no score bar, no night, no budget, no "two in a row", no hush or ignored raise, for this
+ * candidate only. The caller has already dropped it if it expired or everyone it names paused Go. The post is still the
+ * quietest that applies, pinned to the people it names who have not paused Go.
+ */
+function decideForced(c: Candidate, targets: string[], s: number): Decision {
+  const quiet = ACTIONS.filter((a) => !isPost(a) && c.useful.includes(a));
+  const post: Action | null = c.useful.includes('pin') && targets.length > 0 ? 'pin' : c.useful.includes('message') ? 'message' : null;
+  if (post === null && quiet.length === 0) return { kind: 'drop', reason: 'nothing_useful' };
+  return { kind: 'go', allowed: post !== null ? [...quiet, post] : quiet, forPersonIds: post === 'pin' ? targets : [], counted: post !== null, score: s, bar: 0 };
+}
+
 export function decide(c: Candidate, m: TripMood, now: Date): Decision {
   if (c.expiresAt !== null && now.getTime() >= c.expiresAt.getTime()) return { kind: 'drop', reason: 'expired' };
   const paused = new Set(m.pausedPersonIds);
@@ -532,6 +577,7 @@ export function decide(c: Candidate, m: TripMood, now: Date): Decision {
   if (c.personIds.length > 0 && targets.length === 0) return { kind: 'drop', reason: 'paused' };
 
   const s = score(c);
+  if (c.forced === true) return decideForced(c, targets, s);
   const raise = barRaise(m, now);
   const quiet: Action[] = [];
   let post: Action | null = null;
@@ -627,10 +673,10 @@ Expected: `policy.test.ts` passes (clock, score, bars, decide, decideBatch).
 - Test: `apps/brain/src/proactive/store.test.ts`
 
 **Interfaces:**
-- Consumes: `Candidate`, `Action`, `Source`, `ACTIONS` (Task 1); `DEFAULT_TZ`, `isValidTz` (Task 1); `withSchema()` (P1); `Brain` (P1 `app.ts`); `DeskItem` (P1); `QuickTool`, `TurnCtx` (P1); `NowProvider` (P1); `ServerLink` (P1); `TripPack` (P1); `Message`, `Trip`, `TripEvent`, `CardTapParams`, `CardTapResult` (P1 `door/methods.ts`); `ReflexRead` (P1 stub / P2); `TripSnapshot`, `Message`, `Card`, `NoticeCard` from `@go/contract`.
+- Consumes: `Candidate`, `Action`, `Source`, `ACTIONS` (Task 1); `DEFAULT_TZ`, `isValidTz` (Task 1); `withSchema()` (P1); `Brain` (P1 `app.ts`); `DeskItem` (P1); `QuickTool`, `TurnCtx` (P1); `NowProvider`, `TurnLimits` (P1 `composer/context.ts`); `UpgradeHandler` (P1 `door/handlers.ts`); `ServerLink` (P1); `TripPack` (P1); `Message`, `Trip`, `TripEvent`, `CardTapParams`, `CardTapResult` (P1 `door/methods.ts`); `ReflexRead` (P1 stub / P2); `TripSnapshot`, `Message`, `Card`, `NoticeCard` from `@go/contract`.
 - Produces:
   - `store.ts`: `type NoticeIn = z.input<typeof NoticeCard>`; `interface Signals { postsToday; lastProactivePostAt: Date | null; hushCount; lastHushAt: Date | null; ignoredCount }`; `interface SavedNotice { tripId; cardId; messageId: string | null; card: NoticeIn }`; `interface ToCheck { tripId; dedupeKey; decidedAt: Date }`; `class ProactiveStore` with `add(c): Promise<'added' | 'exists'>`, `plan(c): Promise<void>`, `dropUnplanned(tripId, keep: string[], now): Promise<number>`, `due(now, limit?): Promise<Candidate[]>`, `promote(c, d: { allowed: Action[]; forPersonIds: string[]; counted: boolean; localDay: string }, now): Promise<void>`, `defer(c, until, reason): Promise<void>`, `drop(c, reason, now): Promise<void>`, `status(tripId, key): Promise<{ status: string; reason: string | null; allowed: Action[] | null; counted: boolean; dueAt: Date } | null>`, `signals(tripId, localDay): Promise<Signals>`, `tripTz(tripId): Promise<string>`, `tripExists(tripId): Promise<boolean>`, `hush(tripId, now)`, `ignored(tripId, now)`, `resetBudget(tripId, localDay): Promise<number>`, `toCheckForIgnored(before, limit?): Promise<ToCheck[]>`, `ignoreChecked(tripId, key, now)`, `saveNotice(n: SavedNotice)`, `notice(tripId, cardId): Promise<SavedNotice | null>`.
-  - `fakes.ts` (tests only): `GOA_TZ`, `goaTrip(over?)`, `msg(o)`, `goaPack(o?)`, `fakePacks(...packs)`, `fakeLink(o?)`, `fakeDesk()`, `manualTime(startIso)`, `waitFor(check, ms?)`, `candidate(over?)`, `unsureRead(over?)`, `turnCtx(o)`, `seedTrip(pool, tripId, tz?)`, `fakeBrain(o)` returning `{ brain, app, reg, link, desk, packs, switches }`.
+  - `fakes.ts` (tests only): `GOA_TZ`, `goaTrip(over?)`, `msg(o)`, `goaPack(o?)`, `fakePacks(...packs)`, `fakeLink(o?)`, `fakeDesk()`, `manualTime(startIso)`, `waitFor(check, ms?)`, `candidate(over?)`, `unsureRead(over?)`, `turnCtx(o)`, `seedTrip(pool, tripId, tz?)`, `fakeBrain(o)` returning `{ brain, app, reg, link, desk, packs, switches }`. `fakeBrain` has P1's master §6.3 hooks: `context.addTurnRules` records into `reg.turnRules`, and `door.onUpgrade` records into `reg.upgrades`; `onStop` records into `reg.stops`; its Fastify server hands an upgrade on a registered path to that lane and refuses any other, as P1's door does.
 
 A candidate's primary key is `(trip_id, dedupe_key)`. `add` never revives a key it has seen, whatever happened to it; that is "never repeat a nudge" by construction. `plan` (timers only) may move a pending timer to a new time, and may revive a timer only if it was dropped by re-planning (the dates moved away and came back).
 
@@ -676,6 +722,13 @@ describe('ProactiveStore', () => {
     expect(keys).not.toContain('due:2');
     const got = (await store.due(NOON)).find((c) => c.dedupeKey === 'due:1');
     expect(got).toMatchObject({ tripId: 't_goa', source: 'watch', useful: ['pin', 'message'], personIds: ['p_arjun'], importance: 0.9 });
+    expect(got).not.toHaveProperty('forced');
+  });
+
+  it('keeps the stage fire marked forced', async () => {
+    await store.add(candidate({ dedupeKey: 'sim:forced:1', simulated: true, forced: true, dueAt: new Date(NOON.getTime() - 1000) }));
+    expect((await store.due(NOON)).find((c) => c.dedupeKey === 'sim:forced:1')).toMatchObject({ simulated: true, forced: true });
+    await store.drop(candidate({ dedupeKey: 'sim:forced:1' }), 'test_done', NOON);
   });
 
   it('moves a pending timer, leaves a decided one alone, and revives one dropped by re-planning', async () => {
@@ -781,6 +834,8 @@ create table proactive_candidates (
   facts jsonb not null default '{}',
   simulated boolean not null default false,
   small boolean not null default false,
+  -- Only the stage's fire with force: true sets it (Task 8).
+  forced boolean not null default false,
   status text not null default 'pending' check (status in ('pending', 'promoted', 'dropped')),
   reason text,
   allowed text[],
@@ -851,6 +906,7 @@ type CandidateRow = {
   facts: Record<string, unknown>;
   simulated: boolean;
   small: boolean;
+  forced: boolean;
 };
 
 const isAction = (a: string): a is Action => (ACTIONS as readonly string[]).includes(a);
@@ -871,14 +927,15 @@ function toCandidate(r: CandidateRow): Candidate {
     facts: r.facts,
     simulated: r.simulated,
     small: r.small,
+    ...(r.forced ? { forced: true } : {}),
   };
 }
 
-const COLS = 'trip_id, dedupe_key, source, topic, due_at, expires_at, importance, confidence, urgency, useful, person_ids, facts, simulated, small';
-const PLACES = '$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14';
+const COLS = 'trip_id, dedupe_key, source, topic, due_at, expires_at, importance, confidence, urgency, useful, person_ids, facts, simulated, small, forced';
+const PLACES = '$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15';
 const values = (c: Candidate): unknown[] => [
   c.tripId, c.dedupeKey, c.source, c.topic, c.dueAt, c.expiresAt, c.importance, c.confidence, c.urgency,
-  c.useful, c.personIds, JSON.stringify(c.facts), c.simulated, c.small,
+  c.useful, c.personIds, JSON.stringify(c.facts), c.simulated, c.small, c.forced === true,
 ];
 
 export class ProactiveStore {
@@ -1062,13 +1119,16 @@ export class ProactiveStore {
 // Test fakes shared by the proactive, watches and calls tests: the Goa trip from the guide, a pack, a
 // server link that records every request, a desk that keeps what it is given, a clock whose timers move by
 // hand, and a fake Brain that records what a lane registers. Nothing here runs in production.
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { Message as MessageSchema, TripSnapshot, type Card } from '@go/contract';
 import Fastify from 'fastify';
 import type pg from 'pg';
 import type { Brain } from '../app.js';
-import type { NowProvider } from '../composer/context.js';
+import type { NowProvider, TurnLimits } from '../composer/context.js';
 import type { QuickTool, TurnCtx } from '../composer/tools.js';
 import type { DeskItem } from '../desk/desk.js';
+import type { UpgradeHandler } from '../door/handlers.js';
 import type { CardTapParams, CardTapResult, Message, Trip, TripEvent } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { ReflexRead } from '../reflex/reflex.js';
@@ -1104,8 +1164,8 @@ export function goaTrip(over: Partial<Trip> = {}): Trip {
         anonymous: false,
         status: 'open',
         options: [
-          { label: 'Villa Sol', price_minor: 5420000, currency: 'INR', option_ref: 'ixigo:stay:villa-sol-anjuna' },
-          { label: 'Casa Azul', price_minor: 6180000, currency: 'INR', option_ref: 'ixigo:stay:casa-azul-assagao' },
+          { label: 'Villa Sol', price_minor: 5420000, currency: 'INR', option_ref: 'opt_villa_sol' },
+          { label: 'Casa Azul', price_minor: 6180000, currency: 'INR', option_ref: 'opt_casa_azul' },
         ],
         closes_at: '2026-10-06T12:30:00Z',
         voted: 3,
@@ -1349,6 +1409,7 @@ export async function seedTrip(pool: pg.Pool, tripId: string, tz = GOA_TZ): Prom
 type ReadHook = (msg: Message, read: ReflexRead, pack: TripPack) => Promise<void>;
 type EventHook = (ev: TripEvent) => void | Promise<void>;
 type TapHook = (tap: CardTapParams, card: Card) => Promise<CardTapResult>;
+type TurnRulesFn = (wake: DeskItem[]) => TurnLimits | null;
 
 export interface Registered {
   tools: Array<QuickTool<any>>;
@@ -1357,12 +1418,22 @@ export interface Registered {
   onRead: ReadHook[];
   onEvent: EventHook[];
   taps: Map<string, TapHook>;
+  turnRules: TurnRulesFn[];
+  upgrades: Array<{ path: RegExp; handle: UpgradeHandler }>;
+  stops: Array<() => Promise<void> | void>;
 }
 
 /** A Brain whose parts record what a lane registers. `http` is a real Fastify instance (not listening). */
 export function fakeBrain(o: { pool: pg.Pool; now: () => Date; env?: Record<string, string>; switches?: Record<string, string>; pack?: TripPack }) {
   const app = Fastify();
-  const reg: Registered = { tools: [], wakes: new Map(), nows: [], onRead: [], onEvent: [], taps: new Map() };
+  const reg: Registered = { tools: [], wakes: new Map(), nows: [], onRead: [], onEvent: [], taps: new Map(), turnRules: [], upgrades: [], stops: [] };
+  // Like P1's door: an upgrade on a lane's path goes to that lane; any other path is refused.
+  app.server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    const path = (req.url ?? '').split('?')[0] ?? '';
+    const lane = reg.upgrades.find((u) => u.path.test(path));
+    if (lane) lane.handle(req, socket, head);
+    else socket.destroy();
+  });
   const link = fakeLink();
   const desk = fakeDesk();
   const packs = fakePacks(o.pack ?? goaPack());
@@ -1380,7 +1451,12 @@ export function fakeBrain(o: { pool: pg.Pool; now: () => Date; env?: Record<stri
     log: app.log,
     now: o.now,
     http: app,
-    door: { link, handle: (): void => {} },
+    onStop: (fn: () => Promise<void> | void): void => { reg.stops.push(fn); },
+    door: {
+      link,
+      handle: (): void => {},
+      onUpgrade: (path: RegExp, handle: UpgradeHandler): void => { reg.upgrades.push({ path, handle }); },
+    },
     taps: { on: (kind: string, action: string, h: TapHook): void => { reg.taps.set(`${kind}:${action}`, h); } },
     tripLog: {
       onEvent: (fn: EventHook): void => { reg.onEvent.push(fn); },
@@ -1394,6 +1470,7 @@ export function fakeBrain(o: { pool: pg.Pool; now: () => Date; env?: Record<stri
     context: {
       addNow: (p: NowProvider): void => { reg.nows.push(p); },
       addWake: (kind: string, render: (item: DeskItem, pack: TripPack) => string): void => { reg.wakes.set(kind, render); },
+      addTurnRules: (fn: TurnRulesFn): void => { reg.turnRules.push(fn); },
     },
     hooks: { onRead: (fn: ReadHook): void => { reg.onRead.push(fn); } },
     switches,
@@ -1808,7 +1885,7 @@ Expected: `timers.test.ts` passes; earlier tests stay green.
 **Interfaces:**
 - Consumes: `ACTIONS`, `Candidate`, `Decision`, `TripMood`, `decideBatch` (Task 1); `localDay` (Task 1); `ProactiveStore`, `Signals` (Task 2); `stillTrue` (Task 3); `Desk.put`, `DeskItem` (P1); `Packs.get`, `TripPack` (P1).
 - Produces:
-  - `payload.ts`: `PROACTIVE_KINDS = ['timer', 'watch', 'opening'] as const`; `ProactivePayload` (zod) and its type `{ candidate: { ...Candidate with ISO strings }; allowed: Action[]; forPersonIds: string[]; tz: string }`; `toPayload(c: Candidate, d: Extract<Decision, { kind: 'go' }>, tz: string): ProactivePayload`; `fromPayload(p: ProactivePayload['candidate']): Candidate`; `proactiveOf(item: DeskItem): ProactivePayload | null`; `deskId(c: Pick<Candidate, 'source' | 'tripId' | 'dedupeKey'>): string` (`<source>:<trip>:<key>`, e.g. `watch:t_goa:flight:t_goa:b_flight:delay:120`).
+  - `payload.ts`: `PROACTIVE_KINDS = ['timer', 'watch', 'opening'] as const`; `ProactivePayload` (zod) and its type `{ candidate: { ...Candidate with ISO strings, forced: boolean }; allowed: Action[]; forPersonIds: string[]; tz: string }`; `toPayload(c: Candidate, d: Extract<Decision, { kind: 'go' }>, tz: string): ProactivePayload`; `fromPayload(p: ProactivePayload['candidate']): Candidate`; `proactiveOf(item: DeskItem): ProactivePayload | null`; `deskId(c: Pick<Candidate, 'source' | 'tripId' | 'dedupeKey'>): string` (`<source>:<trip>:<key>`, e.g. `watch:t_goa:flight:t_goa:b_flight:delay:120`).
   - `promoter.ts`: `moodFrom(sig: Signals, pack: TripPack, tz: string): TripMood`; `interface PromoterDeps { store; desk: Pick<Desk, 'put'>; packs: Pick<Packs, 'get'>; now: () => Date; log: { warn(obj: object, msg: string): void } }`; `createPromoter(deps): { tick(): Promise<number> }` (returns how many candidates went onto the desk).
 
 The order inside a pass is crash safe: the desk item is put first (its id is stable, so a repeat put is a no-op), then the candidate is marked promoted. A crash between the two puts the same item again on the next pass and then marks it. A failure for one trip is logged and leaves that trip's candidates due for the next pass.
@@ -1974,6 +2051,7 @@ export const ProactivePayload = z.object({
     facts: z.record(z.string(), z.unknown()),
     simulated: z.boolean(),
     small: z.boolean(),
+    forced: z.boolean().default(false),
   }),
   allowed: z.array(z.enum(ACTIONS)).min(1),
   forPersonIds: z.array(z.string()),
@@ -1983,7 +2061,7 @@ export type ProactivePayload = z.infer<typeof ProactivePayload>;
 
 export function toPayload(c: Candidate, d: Extract<Decision, { kind: 'go' }>, tz: string): ProactivePayload {
   return {
-    candidate: { ...c, dueAt: c.dueAt.toISOString(), expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null },
+    candidate: { ...c, forced: c.forced === true, dueAt: c.dueAt.toISOString(), expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null },
     allowed: d.allowed,
     forPersonIds: d.forPersonIds,
     tz,
@@ -2124,14 +2202,14 @@ Expected: `promoter.test.ts` passes; earlier tests stay green.
 - Test: `apps/brain/src/proactive/notice-tools.test.ts`
 
 **Interfaces:**
-- Consumes: `Action`, `Candidate` (Task 1); `localWhen` (Task 1); `ProactiveStore`, `NoticeIn` (Task 2); `ProactivePayload`, `proactiveOf`, `fromPayload`, `toPayload`, `deskId` (Task 4); `DeskItem` (P1); `NowProvider` (P1); `QuickTool`, `TurnCtx` with `cards`, `stableId(prefix)` (P1); `TripPack` (P1); `NoticeCard` (`@go/contract`).
+- Consumes: `Action`, `Candidate` (Task 1); `localWhen` (Task 1); `ProactiveStore`, `NoticeIn` (Task 2); `ProactivePayload`, `proactiveOf`, `fromPayload`, `toPayload`, `deskId` (Task 4); `DeskItem` (P1); `NowProvider`, `TurnLimits` (P1); `QuickTool`, `TurnCtx` with `cards`, `stableId(prefix)` (P1); `TripPack` (P1); `NoticeCard` (`@go/contract`).
 - Produces:
   - `words.ts`: `plain(text): string`; `clip(text, max): string`; `quote(text, max?): string`; `rupees(minor): string`; `namesOf(ids, people): string`.
-  - `allowed.ts`: `TOOLS_FOR: Record<Action, readonly string[]>`; `ALWAYS: readonly string[]` (`stay_silent`, `trip`, `person`, `recall`); `interface TurnRules { allowed: Action[]; tools: string[]; mayPostText: boolean; pinOnlyFor: string[] | null; dedupeKeys: string[] }`; `rulesForTurn(wake: DeskItem[]): TurnRules | null` (null when anything other than Go's own noticing woke the turn); `simulatedIn(wake: DeskItem[]): boolean`.
+  - `allowed.ts`: `TOOLS_FOR: Record<Action, readonly string[]>`; `ALWAYS: readonly string[]` (`stay_silent`, `trip`, `person`, `recall`); `interface TurnRules { allowed: Action[]; tools: string[]; mayPostText: boolean; pinOnlyFor: string[] | null; dedupeKeys: string[] }`; `rulesForTurn(wake: DeskItem[]): TurnRules | null` (null when anything other than Go's own noticing woke the turn); `composerRules(wake: DeskItem[]): TurnLimits | null` (P1's `TurnLimits { tools: string[]; mayPostText: boolean }`, exactly what `Context.addTurnRules` takes, master §6.3; P1's loop always lets `stay_silent` through); `simulatedIn(wake: DeskItem[]): boolean`.
   - `wake.ts`: `describeNoticed(c, pack, tz, now): string`; `renderWake(item, pack, now): string`; `OPENINGS_ORDER = 60`; `openingsNow(): NowProvider` (name `openings`).
   - `notice-tools.ts`: `SIMULATED_SOURCE = 'Simulated for the demo'`; `interface NoticeToolDeps { store: ProactiveStore; now: () => Date; onPosted?: (p: ProactivePayload, cardId: string) => Promise<void> }`; `noticeTools(deps): [QuickTool<PostNoticeArgs>, QuickTool<UpdateNoticeArgs>]` (tools `post_notice`, `update_notice`).
 
-How the limits are enforced today, without changing P1: (1) the wake text names exactly what is allowed; (2) the `openings` block lists the tools this turn may use and whether a text message is allowed; (3) `post_notice` (which adds its card to `ctx.cards`, so it rides after the turn's text with P1's stable request ids; its card id is `ctx.stableId('c_notice')`) and `update_notice` refuse anything the bar did not allow, keep pins to the people the bar named, strip anyone who paused Go, and force the "Simulated for the demo" source whenever a simulated item is in the turn, even when a person's message woke the same turn. The composer's own tools and plain text are limited only by (1) and (2) until P1 adds `TurnCtx.allowedTools` (see the interface notes); `rulesForTurn` is the function P1 calls for it.
+How the limits are enforced (master §6.3, settled): P1's turn asks every `Context.addTurnRules` function for the turn's rules, and Task 8 registers `composerRules` from this task. For a turn woken only by things Go noticed itself, it answers the tools the bar allowed (plus reading and `stay_silent`) and whether a text message may be posted; P1's loop then refuses a call to any other tool with an error result (the tool definitions never change, so the 1 h cache holds) and drops the turn's final text when `mayPostText` is false. For any turn a person, a tap or a task woke, it answers null and the normal rules apply. On top of that: (1) the wake text names exactly what is allowed and (2) the `openings` block lists the tools this turn may use and whether a text message is allowed, so the model does not spend a round on a refused call; (3) `post_notice` (which adds its card to `ctx.cards`, so it rides after the turn's text with P1's stable request ids; its card id is `ctx.stableId('c_notice')`) and `update_notice` refuse anything the bar did not allow, keep pins to the people the bar named, strip anyone who paused Go, and force the "Simulated for the demo" source whenever a simulated item is in the turn, even when a person's message woke the same turn.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2139,7 +2217,7 @@ How the limits are enforced today, without changing P1: (1) the wake text names 
 // apps/brain/src/proactive/wake.test.ts
 import { describe, expect, it } from 'vitest';
 import type { DeskItem } from '../desk/desk.js';
-import { ALWAYS, rulesForTurn, simulatedIn } from './allowed.js';
+import { ALWAYS, composerRules, rulesForTurn, simulatedIn } from './allowed.js';
 import { candidate, goaPack, goaTrip } from './fakes.js';
 import { deskId, toPayload } from './payload.js';
 import type { Action, Candidate } from './policy.js';
@@ -2158,7 +2236,7 @@ const messageItem: DeskItem = { id: 'msg:1', tripId: 't_goa', kind: 'message', r
 const delay = candidate({
   dedupeKey: 'sim:flight_status:ab12',
   simulated: true,
-  facts: { label: 'IndiGo 6E 2134', status: 'delayed', delayMinutes: 120, arriveAt: '2026-11-06T22:45:00+05:30', note: "Arjun's airport cab is booked for 9 pm", simulated: true },
+  facts: { label: 'IndiGo 6E 2134', state: 'delayed', delayMinutes: 120, arriveAt: '2026-11-06T22:45:00+05:30', note: "Arjun's airport cab is booked for 9 pm", simulated: true },
 });
 const chat = candidate({ dedupeKey: 'chat:m_9', source: 'opening', topic: 'chat', personIds: [], useful: ['react', 'record', 'message'], facts: { message_id: 'm_9', seq: 9 } });
 
@@ -2206,6 +2284,16 @@ describe('rulesForTurn', () => {
     expect(simulatedIn([messageItem, proItem(delay, ['pin'], ['p_arjun'])])).toBe(true);
     expect(simulatedIn([messageItem])).toBe(false);
   });
+
+  it('hands P1 exactly the tools and the text rule, and nothing for a turn a person woke', () => {
+    expect(composerRules([messageItem, proItem(delay, ['pin'], ['p_arjun'])])).toBeNull();
+    const r = composerRules([proItem(delay, ['pin'], ['p_arjun'])]);
+    expect(Object.keys(r ?? {}).sort()).toEqual(['mayPostText', 'tools']);
+    expect(r?.mayPostText).toBe(false);
+    expect(r?.tools).toEqual(expect.arrayContaining(['post_notice', 'stay_silent', 'trip', 'person', 'recall']));
+    expect(r?.tools).not.toContain('call_business');
+    expect(r?.tools).not.toContain('start_task');
+  });
 });
 
 describe('the wake text', () => {
@@ -2231,6 +2319,19 @@ describe('the wake text', () => {
   it('says how much is at stake when free cancellation ends', () => {
     const c = candidate({ source: 'timer', topic: 'free_cancel', personIds: ['p_rahul'], facts: { booking_id: 'b_villa', refundable_until: '2026-11-01T18:29:59Z' } });
     expect(describeNoticed(c, goaPack(), 'Asia/Kolkata', NOW)).toContain('₹54,200');
+  });
+
+  it('reads a watched flight and a train ticket from P4 status words, with how old the check is', () => {
+    const late = candidate({
+      topic: 'flight_status', personIds: ['p_rahul'],
+      facts: { label: 'IndiGo 6E 2134', state: 'delayed', delayMinutes: 45, expectedDepartAt: '2026-11-06T13:30:00Z', checkedAt: '2026-10-06T06:27:00Z' },
+    });
+    const flightText = describeNoticed(late, goaPack(), 'Asia/Kolkata', NOW);
+    expect(flightText).toContain('"IndiGo 6E 2134" is running 45 minutes late, now leaving');
+    expect(flightText).toContain('(checked 3 min ago)');
+    expect(flightText).toContain('It concerns Rahul.');
+    const ticket = candidate({ topic: 'pnr_status', personIds: ['p_meher', 'p_arjun'], facts: { label: 'Mandovi Express', state: 'confirmed', detail: 'CNF B2 34', checkedAt: NOW.toISOString() } });
+    expect(describeNoticed(ticket, goaPack(), 'Asia/Kolkata', NOW)).toBe('The train ticket "Mandovi Express" is now confirmed ("CNF B2 34") (checked just now). It concerns Meher and Arjun.');
   });
 });
 
@@ -2420,6 +2521,7 @@ export function namesOf(ids: string[], people: ReadonlyArray<{ person_id: string
 // apps/brain/src/proactive/allowed.ts
 // The tools a proactive turn may use. A turn woken only by things Go noticed itself gets the actions the
 // bar allowed and nothing else. A turn a person (or a tap, or a task) woke follows the normal rules: null.
+import type { TurnLimits } from '../composer/context.js';
 import type { DeskItem } from '../desk/desk.js';
 import { proactiveOf } from './payload.js';
 import { ACTIONS, type Action } from './policy.js';
@@ -2470,6 +2572,12 @@ export function rulesForTurn(wake: DeskItem[]): TurnRules | null {
 
 export function simulatedIn(wake: DeskItem[]): boolean {
   return wake.some((item) => proactiveOf(item)?.candidate.simulated === true);
+}
+
+/** What P1's turn takes through Context.addTurnRules (master §6.3, P1's TurnLimits): the tools this turn may call and whether its text is posted. */
+export function composerRules(wake: DeskItem[]): TurnLimits | null {
+  const r = rulesForTurn(wake);
+  return r ? { tools: r.tools, mayPostText: r.mayPostText } : null;
 }
 ```
 
@@ -2535,25 +2643,28 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
     case 'settle_up':
       return `The trip is over and ${trip.money.transfers.length} payments are still open in settle-up.`;
     case 'flight_status': {
+      // Facts use P4's status words (state, delayMinutes, expectedDepartAt); the demo's fire adds arriveAt and a note.
       const delay = num('delayMinutes');
-      const state = str('status') === 'cancelled'
+      const cancelled = str('state') === 'cancelled';
+      const state = cancelled
         ? 'is cancelled'
         : delay !== null && delay > 0 ? `is running ${delay} minutes late` : 'is back on time';
-      const arrive = at('arriveAt');
+      const leaves = cancelled ? null : at('expectedDepartAt');
+      const lands = cancelled ? null : at('arriveAt');
+      const when = `${leaves ? `, now leaving ${localWhen(leaves, tz)}` : ''}${lands ? `, now landing ${localWhen(lands, tz)}` : ''}`;
+      const checked = str('checkedAt') ? ` (checked ${ago(str('checkedAt'), now)})` : '';
       const note = str('note') ? ` Also: ${quote(str('note'), 200)}` : '';
       const concerns = c.personIds.length > 0 ? ` It concerns ${who(c.personIds)}.` : '';
-      return `${quote(str('label') || 'A flight')} ${state}${arrive ? `, now landing ${localWhen(arrive, tz)}` : ''}.${note}${concerns}`;
+      return `${quote(str('label') || 'A flight')} ${state}${when}${checked}.${note}${concerns}`;
     }
-    case 'fare': {
-      const before = num('beforeMinor');
-      const after = num('priceMinor');
-      const checked = str('checkedAt');
-      return `The price of ${quote(str('label') || 'an option')} moved${before !== null ? ` from ${rupees(before)}` : ''}${after !== null ? ` to ${rupees(after)}` : ''}${checked ? ` (checked ${ago(checked, now)})` : ''}.`;
+    case 'pnr_status': {
+      const what = str('label') ? ` ${quote(str('label'))}` : '';
+      const state = str('state') === 'cancelled' ? 'is cancelled' : str('state') === 'confirmed' ? 'is now confirmed' : `is ${str('state') || 'changed'}`;
+      const detail = str('detail') ? ` (${quote(str('detail'), 80)})` : '';
+      const checked = str('checkedAt') ? ` (checked ${ago(str('checkedAt'), now)})` : '';
+      const concerns = c.personIds.length > 0 ? ` It concerns ${who(c.personIds)}.` : '';
+      return `The train ticket${what} ${state}${detail}${checked}.${concerns}`;
     }
-    case 'availability':
-      return f.available === false
-        ? `${quote(str('label') || 'A stay')} is no longer available.`
-        : `${quote(str('label') || 'A stay')} has only ${num('left') ?? 'a few'} left.`;
     case 'chat':
       return `Message #${num('seq') ?? '?'} may be a moment to help without being asked: a question to the group Go can answer, a plan clash, or someone asking for help.`;
     case 'vote_closed': {
@@ -3093,26 +3204,22 @@ Expected: `openings.test.ts` passes; earlier tests stay green.
 
 **Files:**
 - Create: `apps/brain/src/db/migrations/5100_watches.sql`
-- Create: `apps/brain/src/watches/port.ts`
 - Create: `apps/brain/src/watches/diff.ts`
 - Create: `apps/brain/src/watches/plan.ts`
 - Test: `apps/brain/src/watches/watches.test.ts`
 
 **Interfaces:**
-- Consumes: `Action` (Task 1); `Travel` (P4 `travel/travel.ts`, only `status`); `Trip` (P1); `withSchema()` (P1).
+- Consumes: `Action` (Task 1); `goaTrip` (Task 2); `StatusQuery`, `StatusResult` (P4 `travel/travel.ts`); `Trip` (P1); `withSchema()` (P1).
 - Produces:
-  - `port.ts`: `WATCH_KINDS = ['flight_status', 'fare', 'availability'] as const`; `type WatchKind`; `Reading` (zod discriminated union on `kind`: `flight_status { checkedAt, status, departAt, arriveAt, delayMinutes }`, `fare { checkedAt, priceMinor, currency }`, `availability { checkedAt, available, left: number | null }`); `interface StatusPort { read(kind: WatchKind, query: Record<string, unknown>): Promise<Reading> }`; `travelStatusPort(travel: Pick<Travel, 'status'>): StatusPort`.
-  - `diff.ts`: `interface WatchInfo { watchId; kind: WatchKind; label; query: Record<string, unknown>; hasNotice: boolean; hasPeople: boolean }`; `interface WatchChange { changeKey; importance; confidence; urgency; small; useful: Action[]; facts: Record<string, unknown> }`; `diffReading(w, before: Reading | null, after: Reading, now: Date): WatchChange | null`.
-  - `plan.ts`: `interface WatchPlan { watchId; tripId; kind; query; personIds; label; startAt: Date; endsAt: Date }`; `planWatches(trip, now): WatchPlan[]`; `syncWatches(pool, trip, now): Promise<void>`; `noteWatchNotice(pool, watchId, cardId): Promise<void>`.
+  - `diff.ts`: `type WatchKind = StatusQuery['kind']` (`'flight' | 'pnr'`); `interface WatchInfo { watchId; kind: WatchKind; label; hasNotice: boolean; hasPeople: boolean; endsAt: Date }`; `interface WatchChange { changeKey; importance; confidence; urgency; small; useful: Action[]; facts: Record<string, unknown> }`; `diffReading(w, before: StatusResult | null, after: StatusResult, now: Date): WatchChange | null`.
+  - `plan.ts`: `interface WatchPlan { watchId; tripId; query: StatusQuery; personIds; label; startAt: Date; endsAt: Date }`; `planWatches(trip, now): WatchPlan[]`; `syncWatches(pool, trip, now): Promise<void>`; `noteWatchNotice(pool, watchId, cardId): Promise<void>`.
 
-The watches a trip gets (spec §8 "The world", §12 "Status"):
-- **Flight status** for each confirmed flight booking with a carrier code and number: checks start 24 h before departure and stop an hour after arrival. A change matters when the delay crosses into a new 15-minute step at 30 minutes or more, or the flight is cancelled; once Go posted a notice, a later change may update it in place, and "back on time" only ever updates it.
-- **Fare** for each priced option of an open vote, against the price it was shortlisted at: 10% or more is worth a message; 5 to 10% is a small thing that waits to be batched; under 5% is nothing.
-- **Availability** for each stay option of an open vote: gone, or 2 or fewer left.
+Watches read P4's `Travel.status` as it is, with no adapter: a watch stores the `StatusQuery` it sends and the last `StatusResult` it got, so a shape change in P4 is a compile error here, not a surprise at run time. The watches a trip gets (spec §8 "The world", §12 "Status"):
+- **Flight status** for each confirmed flight booking with a carrier code and number (`{ kind: 'flight', carrierCode, number, date }`): checks start 24 h before departure and stop an hour after arrival. A change matters when the delay crosses into a new 15-minute step at 30 minutes or more, or the flight is cancelled; once Go posted a notice, a later change may update it in place, and "back on time" only ever updates it. Urgency counts to the scheduled departure, the time people planned around.
+- **Train ticket status** for each confirmed train booking that has not left yet, by its PNR (`{ kind: 'pnr', pnr: booking.ref }`): checks from now until departure. A change matters when a waitlisted ticket is confirmed, or the ticket is cancelled. `not_found` says nothing (a fresh PNR may not be in the system yet).
+- **Fares and rooms left are not watched this week**: P4's `StatusQuery` has no kind for them (interface note 3 says what P4 would add).
 
-Each change has a change key (`<watch_id>:delay:120`, `<watch_id>:down:<price bucket>`), which is the candidate's dedupe key, so the same change is never nudged twice.
-
-`port.ts` is the only file that touches P4's `StatusQuery` and `StatusResult`. It sends `{ kind: 'flight' | 'fare' | 'availability', ...query }` and reads the answer through `Reading`, so a shape mismatch fails loudly in one place (see the interface notes for the shapes P6 expects).
+Each change has a change key (`<watch_id>:delay:120`, `<watch_id>:confirmed`), which is the candidate's dedupe key, so the same change is never nudged twice.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3121,36 +3228,39 @@ Each change has a change key (`<watch_id>:delay:120`, `<watch_id>:down:<price bu
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../db/test-db.js';
 import { goaTrip } from '../proactive/fakes.js';
+import type { StatusResult } from '../travel/travel.js';
 import { diffReading, type WatchInfo } from './diff.js';
 import { noteWatchNotice, planWatches, syncWatches } from './plan.js';
-import { travelStatusPort, type Reading } from './port.js';
 
 const NOW = new Date('2026-11-06T07:00:00Z'); // travel day, under 6 hours before the 12:45Z departure
-const flight = (delayMinutes: number, status: 'scheduled' | 'delayed' | 'cancelled' = delayMinutes > 0 ? 'delayed' : 'scheduled'): Reading => ({
-  kind: 'flight_status', checkedAt: NOW.toISOString(), status, departAt: '2026-11-06T18:15:00+05:30', arriveAt: '2026-11-06T20:45:00+05:30', delayMinutes,
+const SCHEDULED = '2026-11-06T18:15:00+05:30';
+const flight = (delayMinutes: number, state: 'scheduled' | 'delayed' | 'cancelled' = delayMinutes > 0 ? 'delayed' : 'scheduled'): StatusResult => ({
+  kind: 'flight',
+  state,
+  scheduledDepartAt: SCHEDULED,
+  expectedDepartAt: new Date(Date.parse(SCHEDULED) + delayMinutes * 60_000).toISOString(),
+  delayMinutes,
+  checkedAt: NOW.toISOString(),
 });
-const info = (over: Partial<WatchInfo> = {}): WatchInfo => ({ watchId: 'flight:t_goa:b_flight', kind: 'flight_status', label: 'IndiGo 6E 2134', query: {}, hasNotice: false, hasPeople: true, ...over });
+const pnr = (state: 'confirmed' | 'waitlisted' | 'cancelled' | 'not_found', detail = ''): StatusResult => ({ kind: 'pnr', state, detail, checkedAt: NOW.toISOString() });
+const info = (over: Partial<WatchInfo> = {}): WatchInfo => ({
+  watchId: 'flight:t_goa:b_flight', kind: 'flight', label: 'IndiGo 6E 2134', hasNotice: false, hasPeople: true, endsAt: new Date('2026-11-06T16:15:00Z'), ...over,
+});
 
-describe('travelStatusPort', () => {
-  it('asks P4 for the kind and reads the answer through one schema', async () => {
-    const asked: unknown[] = [];
-    const travel = {
-      status: async (q: unknown) => {
-        asked.push(q);
-        return { kind: 'flight', checkedAt: NOW.toISOString(), status: 'delayed', departAt: '2026-11-06T18:15:00+05:30', arriveAt: '2026-11-06T22:45:00+05:30', delayMinutes: 120 };
+/** The Goa trip with a train booked for Meher and Arjun, so its PNR is watched too. */
+function withTrain(status: 'confirmed' | 'cancelled' = 'confirmed') {
+  const base = goaTrip();
+  return goaTrip({
+    bookings: [
+      ...base.bookings,
+      {
+        booking_id: 'b_train', kind: 'train', status, title: 'Mandovi Express, Mumbai to Madgaon', vendor: 'ixigo', ref: '8524117390',
+        amount_minor: 210000, currency: 'INR', payer_person_id: 'p_meher', for_person_ids: ['p_meher', 'p_arjun'],
+        starts_at: '2026-11-05T07:10:00+05:30', ends_at: '2026-11-05T19:00:00+05:30', created_at: '2026-10-05T11:00:00Z',
       },
-    };
-    const port = travelStatusPort(travel as never);
-    const r = await port.read('flight_status', { carrierCode: '6E', number: '2134', date: '2026-11-06' });
-    expect(asked[0]).toEqual({ kind: 'flight', carrierCode: '6E', number: '2134', date: '2026-11-06' });
-    expect(r).toMatchObject({ kind: 'flight_status', delayMinutes: 120 });
+    ],
   });
-
-  it('fails loudly when P4 answers a different shape', async () => {
-    const port = travelStatusPort({ status: async () => ({ kind: 'flight', delay: 'two hours' }) } as never);
-    await expect(port.read('flight_status', {})).rejects.toThrow();
-  });
-});
+}
 
 describe('diffReading: flights', () => {
   it('says nothing about a flight on time', () => {
@@ -3158,9 +3268,15 @@ describe('diffReading: flights', () => {
     expect(diffReading(info(), flight(0), flight(10), NOW)).toBeNull();
   });
 
-  it('flags a delay of 30 minutes or more, once per 15-minute step', () => {
+  it('flags a delay of 30 minutes or more, once per 15-minute step, in P4 status words', () => {
     const c = diffReading(info(), flight(0), flight(120), NOW);
-    expect(c).toMatchObject({ changeKey: 'flight:t_goa:b_flight:delay:120', importance: 0.9, urgency: 0.9, useful: ['pin', 'message'] });
+    expect(c).toMatchObject({
+      changeKey: 'flight:t_goa:b_flight:delay:120',
+      importance: 0.9,
+      urgency: 0.9,
+      useful: ['pin', 'message'],
+      facts: { state: 'delayed', delayMinutes: 120, scheduledDepartAt: SCHEDULED, expectedDepartAt: '2026-11-06T14:45:00.000Z', beforeDelayMinutes: 0 },
+    });
     expect(diffReading(info(), flight(120), flight(125), NOW)).toBeNull();
     expect(diffReading(info(), flight(120), flight(135), NOW)?.changeKey).toBe('flight:t_goa:b_flight:delay:135');
   });
@@ -3177,36 +3293,40 @@ describe('diffReading: flights', () => {
   });
 });
 
-describe('diffReading: fares and availability', () => {
-  const fareInfo = info({ watchId: 'fare:t_goa:d_villa:0', kind: 'fare', label: 'Villa Sol', query: { optionRef: 'ixigo:stay:villa-sol-anjuna', priceMinor: 5420000, currency: 'INR' }, hasPeople: false });
-  const fare = (priceMinor: number): Reading => ({ kind: 'fare', checkedAt: NOW.toISOString(), priceMinor, currency: 'INR' });
-  it('measures against the shortlisted price', () => {
-    expect(diffReading(fareInfo, null, fare(5500000), NOW)).toBeNull(); // +1.5%
-    expect(diffReading(fareInfo, null, fare(5100000), NOW)).toMatchObject({ small: true, useful: ['message'] }); // -5.9%
-    expect(diffReading(fareInfo, null, fare(4800000), NOW)).toMatchObject({ small: false, importance: 0.7, facts: { beforeMinor: 5420000, priceMinor: 4800000, pct: -11 } });
-  });
-  const availInfo = info({ watchId: 'avail:t_goa:d_villa:0', kind: 'availability', label: 'Villa Sol', hasPeople: false });
-  const avail = (available: boolean, left: number | null): Reading => ({ kind: 'availability', checkedAt: NOW.toISOString(), available, left });
-  it('flags a stay that is going or gone', () => {
-    expect(diffReading(availInfo, avail(true, 5), avail(true, 2), NOW)?.changeKey).toBe('avail:t_goa:d_villa:0:left:2');
-    expect(diffReading(availInfo, avail(true, 2), avail(true, 1), NOW)).toBeNull();
-    expect(diffReading(availInfo, avail(true, 1), avail(false, 0), NOW)?.changeKey).toBe('avail:t_goa:d_villa:0:gone');
+describe('diffReading: train tickets by PNR', () => {
+  const BEFORE_TRAIN = new Date('2026-11-04T10:00:00Z');
+  const ticket = info({ watchId: 'pnr:t_goa:b_train', kind: 'pnr', label: 'Mandovi Express, Mumbai to Madgaon', endsAt: new Date('2026-11-05T01:40:00Z') });
+
+  it('flags a waitlisted ticket that is confirmed, and a cancellation, once each', () => {
+    expect(diffReading(ticket, null, pnr('confirmed', 'CNF B2 34'), BEFORE_TRAIN)).toBeNull();
+    expect(diffReading(ticket, null, pnr('waitlisted', 'WL 12'), BEFORE_TRAIN)).toBeNull();
+    expect(diffReading(ticket, pnr('waitlisted', 'WL 12'), pnr('waitlisted', 'WL 4'), BEFORE_TRAIN)).toBeNull();
+    expect(diffReading(ticket, pnr('waitlisted', 'WL 4'), pnr('confirmed', 'CNF B2 34'), BEFORE_TRAIN)).toMatchObject({
+      changeKey: 'pnr:t_goa:b_train:confirmed',
+      importance: 0.6,
+      urgency: 0.7,
+      useful: ['pin', 'message'],
+      facts: { state: 'confirmed', detail: 'CNF B2 34', beforeState: 'waitlisted' },
+    });
+    expect(diffReading(ticket, pnr('confirmed'), pnr('cancelled'), BEFORE_TRAIN)).toMatchObject({ changeKey: 'pnr:t_goa:b_train:cancelled', importance: 1 });
+    expect(diffReading(ticket, pnr('cancelled'), pnr('cancelled'), BEFORE_TRAIN)).toBeNull();
+    expect(diffReading(ticket, pnr('waitlisted'), pnr('not_found'), BEFORE_TRAIN)).toBeNull();
   });
 });
 
 describe('planWatches and syncWatches', () => {
-  it('watches the booked flight and the open vote options', () => {
-    const plans = planWatches(goaTrip(), new Date('2026-10-06T06:30:00Z'));
-    const ids = plans.map((p) => p.watchId);
-    expect(ids).toEqual([
-      'flight:t_goa:b_flight',
-      'fare:t_goa:d_villa:0', 'avail:t_goa:d_villa:0',
-      'fare:t_goa:d_villa:1', 'avail:t_goa:d_villa:1',
-    ]);
-    const f = plans[0]!;
-    expect(f).toMatchObject({ kind: 'flight_status', personIds: ['p_rahul', 'p_priya', 'p_kabir'], label: 'IndiGo 6E 2134', query: { carrierCode: '6E', number: '2134', date: '2026-11-06' } });
-    expect(f.startAt.toISOString()).toBe('2026-11-05T12:45:00.000Z');
-    expect(f.endsAt.toISOString()).toBe('2026-11-06T16:15:00.000Z');
+  it('watches the booked flight by its number and the booked train by its PNR, as P4 status queries', () => {
+    const plans = planWatches(withTrain(), new Date('2026-10-06T06:30:00Z'));
+    expect(plans.map((p) => p.watchId)).toEqual(['flight:t_goa:b_flight', 'pnr:t_goa:b_train']);
+    const [f, t] = plans;
+    expect(f).toMatchObject({ personIds: ['p_rahul', 'p_priya', 'p_kabir'], label: 'IndiGo 6E 2134', query: { kind: 'flight', carrierCode: '6E', number: '2134', date: '2026-11-06' } });
+    expect(f?.startAt.toISOString()).toBe('2026-11-05T12:45:00.000Z');
+    expect(f?.endsAt.toISOString()).toBe('2026-11-06T16:15:00.000Z');
+    expect(t).toMatchObject({ personIds: ['p_meher', 'p_arjun'], label: 'Mandovi Express, Mumbai to Madgaon', query: { kind: 'pnr', pnr: '8524117390' } });
+    expect(t?.startAt.toISOString()).toBe('2026-10-06T06:30:00.000Z');
+    expect(t?.endsAt.toISOString()).toBe('2026-11-05T01:40:00.000Z');
+    // Once the train has left, only the flight is watched.
+    expect(planWatches(withTrain(), new Date('2026-11-05T02:00:00Z')).map((p) => p.watchId)).toEqual(['flight:t_goa:b_flight']);
   });
 
   let db: Awaited<ReturnType<typeof withSchema>>;
@@ -3219,13 +3339,15 @@ describe('planWatches and syncWatches', () => {
 
   it('keeps the table in step with the trip, safe to repeat', async () => {
     const now = new Date('2026-10-06T06:30:00Z');
-    await syncWatches(db.pool, goaTrip(), now);
-    await syncWatches(db.pool, goaTrip(), now);
-    const active = await db.pool.query(`select watch_id from watches where active order by watch_id`);
-    expect(active.rows).toHaveLength(5);
+    await syncWatches(db.pool, withTrain(), now);
+    await syncWatches(db.pool, withTrain(), now);
+    const active = await db.pool.query<{ watch_id: string; kind: string; query: unknown }>(`select watch_id, kind, query from watches where active order by watch_id`);
+    expect(active.rows).toEqual([
+      { watch_id: 'flight:t_goa:b_flight', kind: 'flight', query: { kind: 'flight', carrierCode: '6E', number: '2134', date: '2026-11-06' } },
+      { watch_id: 'pnr:t_goa:b_train', kind: 'pnr', query: { kind: 'pnr', pnr: '8524117390' } },
+    ]);
 
-    const base = goaTrip();
-    await syncWatches(db.pool, goaTrip({ decisions: [{ ...base.decisions[0]!, status: 'closed' }] }), now);
+    await syncWatches(db.pool, withTrain('cancelled'), now);
     const left = await db.pool.query<{ watch_id: string }>(`select watch_id from watches where active`);
     expect(left.rows.map((r) => r.watch_id)).toEqual(['flight:t_goa:b_flight']);
 
@@ -3244,11 +3366,12 @@ Red is certain: the modules do not exist yet. Go to Step 3.
 
 ```sql
 -- apps/brain/src/db/migrations/5100_watches.sql
--- Cheap scheduled checks (flight status, fares, availability) for things a trip has booked or shortlisted.
+-- Cheap scheduled checks through P4's Travel.status, for things a trip has booked: a flight by its number,
+-- a train ticket by its PNR. `query` is the StatusQuery sent as it is; `last_reading` is the last StatusResult.
 create table watches (
   watch_id text primary key,
   trip_id text not null,
-  kind text not null check (kind in ('flight_status', 'fare', 'availability')),
+  kind text not null check (kind in ('flight', 'pnr')),
   query jsonb not null,
   person_ids text[] not null default '{}',
   label text not null,
@@ -3267,64 +3390,25 @@ create index watches_trip on watches (trip_id);
 ```
 
 ```ts
-// apps/brain/src/watches/port.ts
-// One reading of something Go watches, and the adapter over the travel layer's status call. This is the
-// only file that builds a P4 StatusQuery or reads a StatusResult.
-import { z } from 'zod';
-import type { Travel } from '../travel/travel.js';
-
-export const WATCH_KINDS = ['flight_status', 'fare', 'availability'] as const;
-export type WatchKind = (typeof WATCH_KINDS)[number];
-
-const When = z.string().refine((s) => !Number.isNaN(Date.parse(s)), 'a date');
-
-export const Reading = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('flight_status'),
-    checkedAt: When,
-    status: z.enum(['scheduled', 'delayed', 'cancelled', 'departed', 'landed']),
-    departAt: When,
-    arriveAt: When,
-    delayMinutes: z.int().min(0),
-  }),
-  z.object({ kind: z.literal('fare'), checkedAt: When, priceMinor: z.int().nonnegative(), currency: z.string().regex(/^[A-Z]{3}$/) }),
-  z.object({ kind: z.literal('availability'), checkedAt: When, available: z.boolean(), left: z.int().min(0).nullable() }),
-]);
-export type Reading = z.infer<typeof Reading>;
-
-export interface StatusPort {
-  read(kind: WatchKind, query: Record<string, unknown>): Promise<Reading>;
-}
-
-const P4_KIND: Readonly<Record<WatchKind, string>> = { flight_status: 'flight', fare: 'fare', availability: 'availability' };
-
-export function travelStatusPort(travel: Pick<Travel, 'status'>): StatusPort {
-  return {
-    async read(kind, query) {
-      // P4 owns StatusQuery; P6 sends its kind plus the watch's stored query (see the interface notes).
-      const q = { kind: P4_KIND[kind], ...query } as unknown as Parameters<Travel['status']>[0];
-      const result: unknown = await travel.status(q);
-      return Reading.parse({ ...(result as Record<string, unknown>), kind });
-    },
-  };
-}
-```
-
-```ts
 // apps/brain/src/watches/diff.ts
-// Which change between two readings is worth a nudge. Each change has a key: the same change is nudged once.
+// Which change between two status readings is worth a nudge. Readings are P4's StatusResult as they are.
+// Each change has a key: the same change is nudged once.
 import type { Action } from '../proactive/policy.js';
-import type { Reading, WatchKind } from './port.js';
+import type { StatusQuery, StatusResult } from '../travel/travel.js';
+
+/** What a watch checks: P4's status kinds, a flight by its number or a train ticket by its PNR. */
+export type WatchKind = StatusQuery['kind'];
 
 export interface WatchInfo {
   watchId: string;
   kind: WatchKind;
   label: string;
-  query: Record<string, unknown>;
   /** Go already posted a notice for this watch, so a change can update it in place. */
   hasNotice: boolean;
-  /** The watch concerns particular people (a flight's travellers), so a pin can reach just them. */
+  /** The watch concerns particular people (the booking's travellers), so a pin can reach just them. */
   hasPeople: boolean;
+  /** When the watch stops: an hour after a flight lands, or when a train leaves. */
+  endsAt: Date;
 }
 
 export interface WatchChange {
@@ -3339,24 +3423,26 @@ export interface WatchChange {
 
 const DELAY_STEP = 15;
 const DELAY_FLAG = 30;
+const H = 3600_000;
 
-type Flight = Extract<Reading, { kind: 'flight_status' }>;
-type Fare = Extract<Reading, { kind: 'fare' }>;
-type Availability = Extract<Reading, { kind: 'availability' }>;
+type Flight = Extract<StatusResult, { kind: 'flight' }>;
+type Pnr = Extract<StatusResult, { kind: 'pnr' }>;
+
+const urgencyIn = (hoursToGo: number): number => (hoursToGo <= 6 ? 0.9 : hoursToGo <= 24 ? 0.7 : 0.4);
 
 function flightChange(w: WatchInfo, before: Flight | null, after: Flight, now: Date): WatchChange | null {
-  const hoursToGo = (Date.parse(after.departAt) - now.getTime()) / 3600_000;
-  const urgency = hoursToGo <= 6 ? 0.9 : hoursToGo <= 24 ? 0.7 : 0.4;
+  // People act before the time they planned around, so urgency counts to the scheduled departure.
+  const urgency = urgencyIn((Date.parse(after.scheduledDepartAt) - now.getTime()) / H);
   const posts: Action[] = w.hasPeople ? ['pin', 'message'] : ['message'];
   const facts: Record<string, unknown> = {
-    status: after.status,
+    state: after.state,
     delayMinutes: after.delayMinutes,
-    departAt: after.departAt,
-    arriveAt: after.arriveAt,
-    ...(before ? { beforeDelayMinutes: before.delayMinutes, beforeStatus: before.status } : {}),
+    scheduledDepartAt: after.scheduledDepartAt,
+    expectedDepartAt: after.expectedDepartAt,
+    ...(before ? { beforeDelayMinutes: before.delayMinutes, beforeState: before.state } : {}),
   };
-  if (after.status === 'cancelled') {
-    if (before?.status === 'cancelled') return null;
+  if (after.state === 'cancelled') {
+    if (before?.state === 'cancelled') return null;
     return { changeKey: `${w.watchId}:cancelled`, importance: 1, confidence: 0.95, urgency, small: false, useful: posts, facts };
   }
   const step = Math.floor(after.delayMinutes / DELAY_STEP) * DELAY_STEP;
@@ -3366,49 +3452,31 @@ function flightChange(w: WatchInfo, before: Flight | null, after: Flight, now: D
     return { changeKey: `${w.watchId}:delay:${step}`, importance: step >= 60 ? 0.9 : 0.7, confidence: 0.95, urgency, small: false, useful, facts };
   }
   if (step < DELAY_FLAG && was >= DELAY_FLAG && w.hasNotice) {
-    return { changeKey: `${w.watchId}:ontime:${after.departAt}`, importance: 0.6, confidence: 0.95, urgency, small: false, useful: ['update_card'], facts };
+    return { changeKey: `${w.watchId}:ontime:${after.expectedDepartAt}`, importance: 0.6, confidence: 0.95, urgency, small: false, useful: ['update_card'], facts };
   }
   return null;
 }
 
-function fareChange(w: WatchInfo, before: Fare | null, after: Fare): WatchChange | null {
-  const shortlisted = typeof w.query.priceMinor === 'number' ? w.query.priceMinor : null;
-  const base = shortlisted ?? before?.priceMinor ?? null;
-  if (base === null || base <= 0) return null;
-  const pct = (after.priceMinor - base) / base;
-  if (Math.abs(pct) < 0.05) return null;
-  const big = Math.abs(pct) >= 0.1;
-  return {
-    changeKey: `${w.watchId}:${pct < 0 ? 'down' : 'up'}:${Math.round(after.priceMinor / 50_000)}`,
-    importance: big ? 0.7 : 0.5,
-    confidence: 0.9,
-    urgency: 0.8,
-    small: !big,
-    useful: ['message'],
-    facts: { priceMinor: after.priceMinor, beforeMinor: base, currency: after.currency, pct: Math.round(pct * 100) },
-  };
-}
-
-function availabilityChange(w: WatchInfo, before: Availability | null, after: Availability): WatchChange | null {
-  if (!after.available && (before === null || before.available)) {
-    return { changeKey: `${w.watchId}:gone`, importance: 0.8, confidence: 0.9, urgency: 0.9, small: false, useful: ['message'], facts: { available: false } };
+function pnrChange(w: WatchInfo, before: Pnr | null, after: Pnr, now: Date): WatchChange | null {
+  if (after.state === 'not_found' || after.state === before?.state) return null;
+  const urgency = urgencyIn((w.endsAt.getTime() - now.getTime()) / H);
+  const posts: Action[] = w.hasPeople ? ['pin', 'message'] : ['message'];
+  const facts: Record<string, unknown> = { state: after.state, detail: after.detail, ...(before ? { beforeState: before.state } : {}) };
+  if (after.state === 'cancelled') {
+    return { changeKey: `${w.watchId}:cancelled`, importance: 1, confidence: 0.95, urgency, small: false, useful: posts, facts };
   }
-  const fewNow = after.available && after.left !== null && after.left <= 2;
-  const fewBefore = before !== null && before.left !== null && before.left <= 2;
-  if (fewNow && !fewBefore) {
-    return { changeKey: `${w.watchId}:left:${after.left}`, importance: 0.6, confidence: 0.9, urgency: 0.9, small: false, useful: ['message'], facts: { available: true, left: after.left } };
+  if (after.state === 'confirmed' && before?.state === 'waitlisted') {
+    return { changeKey: `${w.watchId}:confirmed`, importance: 0.6, confidence: 0.95, urgency, small: false, useful: posts, facts };
   }
   return null;
 }
 
-export function diffReading(w: WatchInfo, before: Reading | null, after: Reading, now: Date): WatchChange | null {
+export function diffReading(w: WatchInfo, before: StatusResult | null, after: StatusResult, now: Date): WatchChange | null {
   switch (after.kind) {
-    case 'flight_status':
-      return flightChange(w, before?.kind === 'flight_status' ? before : null, after, now);
-    case 'fare':
-      return fareChange(w, before?.kind === 'fare' ? before : null, after);
-    case 'availability':
-      return availabilityChange(w, before?.kind === 'availability' ? before : null, after);
+    case 'flight':
+      return flightChange(w, before?.kind === 'flight' ? before : null, after, now);
+    case 'pnr':
+      return pnrChange(w, before?.kind === 'pnr' ? before : null, after, now);
   }
 }
 ```
@@ -3416,15 +3484,15 @@ export function diffReading(w: WatchInfo, before: Reading | null, after: Reading
 ```ts
 // apps/brain/src/watches/plan.ts
 // Which watches a trip needs right now, kept in step with the trip on every change (level-triggered).
+// A watch's query is P4's StatusQuery as it is.
 import type pg from 'pg';
 import type { Trip } from '../door/methods.js';
-import type { WatchKind } from './port.js';
+import type { StatusQuery } from '../travel/travel.js';
 
 export interface WatchPlan {
   watchId: string;
   tripId: string;
-  kind: WatchKind;
-  query: Record<string, unknown>;
+  query: StatusQuery;
   personIds: string[];
   label: string;
   startAt: Date;
@@ -3437,42 +3505,35 @@ export function planWatches(trip: Trip, now: Date): WatchPlan[] {
   const out: WatchPlan[] = [];
   const t = now.getTime();
   for (const b of trip.bookings) {
+    if (b.status !== 'confirmed') continue;
     const j = b.journey;
-    if (b.status !== 'confirmed' || b.kind !== 'flight' || !j || !j.carrier_code || !j.number) continue;
-    const depart = Date.parse(j.depart_at);
-    const arrive = Date.parse(j.arrive_at);
-    if (arrive + H <= t) continue;
-    out.push({
-      watchId: `flight:${trip.trip_id}:${b.booking_id}`,
-      tripId: trip.trip_id,
-      kind: 'flight_status',
-      query: { carrierCode: j.carrier_code, number: j.number, date: j.depart_at.slice(0, 10) },
-      personIds: b.for_person_ids,
-      label: `${j.carrier_name ? `${j.carrier_name} ` : ''}${j.carrier_code} ${j.number}`,
-      startAt: new Date(Math.max(t, depart - 24 * H)),
-      endsAt: new Date(arrive + H),
-    });
-  }
-  for (const d of trip.decisions) {
-    if (d.status !== 'open') continue;
-    const endsAt = d.closes_at ? new Date(Date.parse(d.closes_at)) : new Date(t + 72 * H);
-    if (endsAt.getTime() <= t) continue;
-    d.options.forEach((o, i) => {
-      if (!o.option_ref) return;
-      if (o.price_minor != null && o.currency) {
-        out.push({
-          watchId: `fare:${trip.trip_id}:${d.decision_id}:${i}`, tripId: trip.trip_id, kind: 'fare',
-          query: { optionRef: o.option_ref, priceMinor: o.price_minor, currency: o.currency },
-          personIds: [], label: o.label, startAt: now, endsAt,
-        });
-      }
-      if (o.option_ref.startsWith('ixigo:stay:')) {
-        out.push({
-          watchId: `avail:${trip.trip_id}:${d.decision_id}:${i}`, tripId: trip.trip_id, kind: 'availability',
-          query: { optionRef: o.option_ref }, personIds: [], label: o.label, startAt: now, endsAt,
-        });
-      }
-    });
+    if (b.kind === 'flight') {
+      if (!j || !j.carrier_code || !j.number) continue;
+      const depart = Date.parse(j.depart_at);
+      const arrive = Date.parse(j.arrive_at);
+      if (arrive + H <= t) continue;
+      out.push({
+        watchId: `flight:${trip.trip_id}:${b.booking_id}`,
+        tripId: trip.trip_id,
+        query: { kind: 'flight', carrierCode: j.carrier_code, number: j.number, date: j.depart_at.slice(0, 10) },
+        personIds: b.for_person_ids,
+        label: `${j.carrier_name ? `${j.carrier_name} ` : ''}${j.carrier_code} ${j.number}`,
+        startAt: new Date(Math.max(t, depart - 24 * H)),
+        endsAt: new Date(arrive + H),
+      });
+    } else if (b.kind === 'train') {
+      const leaves = Date.parse(j?.depart_at ?? b.starts_at ?? '');
+      if (Number.isNaN(leaves) || leaves <= t) continue;
+      out.push({
+        watchId: `pnr:${trip.trip_id}:${b.booking_id}`,
+        tripId: trip.trip_id,
+        query: { kind: 'pnr', pnr: b.ref },
+        personIds: b.for_person_ids,
+        label: b.title,
+        startAt: now,
+        endsAt: new Date(leaves),
+      });
+    }
   }
   return out;
 }
@@ -3485,7 +3546,7 @@ export async function syncWatches(pool: pg.Pool, trip: Trip, now: Date): Promise
        values ($1, $2, $3, $4, $5, $6, $7, $8)
        on conflict (watch_id) do update set query = excluded.query, person_ids = excluded.person_ids,
          label = excluded.label, ends_at = excluded.ends_at, active = true`,
-      [p.watchId, p.tripId, p.kind, JSON.stringify(p.query), p.personIds, p.label, p.startAt, p.endsAt],
+      [p.watchId, p.tripId, p.query.kind, JSON.stringify(p.query), p.personIds, p.label, p.startAt, p.endsAt],
     );
   }
   await pool.query(
@@ -3502,8 +3563,8 @@ export async function noteWatchNotice(pool: pg.Pool, watchId: string, cardId: st
 - [ ] **Step 4: Commit, push, read CI**
 
 ```bash
-git add apps/brain/src/db/migrations/5100_watches.sql apps/brain/src/watches/port.ts apps/brain/src/watches/diff.ts apps/brain/src/watches/plan.ts apps/brain/src/watches/watches.test.ts
-git commit -m "feat(watches): what a trip watches (flights, fares, stays) and which change is worth a nudge
+git add apps/brain/src/db/migrations/5100_watches.sql apps/brain/src/watches/diff.ts apps/brain/src/watches/plan.ts apps/brain/src/watches/watches.test.ts
+git commit -m "feat(watches): what a trip watches (booked flights and train tickets) and which change is worth a nudge
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
@@ -3521,15 +3582,19 @@ Expected: `watches.test.ts` passes; earlier tests stay green.
 - Test: `apps/brain/src/proactive/register.test.ts`
 
 **Interfaces:**
-- Consumes: everything from Tasks 1 to 7; `Brain`, `RegisterLane` (P1); `brain.travel?.status` (P4); `brain.door.link.request('read_trip')` (P1); `brain.env.ADMIN_TOKEN` (P7's variable, declared by P1).
+- Consumes: everything from Tasks 1 to 7; `Brain`, `RegisterLane` (P1); `Context.addTurnRules` and `Brain.onStop` (P1, master §6.3); `brain.travel?.status` with P4's `StatusQuery` and `StatusResult` (`travel/travel.ts`); `brain.door.link.request('read_trip')` (P1); `brain.env.ADMIN_TOKEN` (P7's variable, declared by P1).
 - Produces:
-  - `runner.ts`: `nextCheckIn(kind, reading, now): number` (ms); `backoffMs(errors): number`; `interface WatchRunnerDeps { pool; port: StatusPort | null; store: ProactiveStore; now; log }`; `createWatchRunner(deps): { tick(): Promise<number> }` (returns how many changes became candidates).
-  - `admin.ts`: `FireWatchBody` (zod); `interface FireDeps { adminToken: string | undefined; store: ProactiveStore; now: () => Date; promote: () => Promise<number> }`; `registerFireRoute(app: FastifyInstance, deps: FireDeps): void` (`POST /admin/watch/fire`).
-  - `register.ts`: `PROMOTE_EVERY_MS = 15_000`, `WATCH_EVERY_MS = 30_000`, `SWEEP_EVERY_MS = 600_000`, `ACTIVE_TRIP_DAYS = 90`; `interface ProactiveHandles { store; promote(): Promise<number>; checkWatches(): Promise<number>; sweep(): Promise<void>; stop(): void }`; `startProactive(brain, opts?: { intervals?: boolean; port?: StatusPort | null }): Promise<ProactiveHandles>`; `registerProactive: RegisterLane`.
+  - `runner.ts`: `nextCheckIn(reading: StatusResult, endsAt: Date, now: Date): number` (ms); `backoffMs(errors): number`; `interface WatchRunnerDeps { pool; travel: Pick<Travel, 'status'> | null; store: ProactiveStore; now; log }`; `createWatchRunner(deps): { tick(): Promise<number> }` (returns how many changes became candidates). Candidate topics: `flight_status` and `pnr_status`.
+  - `admin.ts`: `FireWatchBody` (zod, with `force` and `reset_budget`); `FIRE_WINDOW_MS = 60_000`; `fireKey(body, minute: number): string`; `interface FireDeps { adminToken: string | undefined; store: ProactiveStore; now: () => Date; promote: () => Promise<number> }`; `registerFireRoute(app: FastifyInstance, deps: FireDeps): void` (`POST /admin/watch/fire`, answering `{ ok, dedupe_key, promoted }`, plus `duplicate: true` for a repeat).
+  - `register.ts`: `PROMOTE_EVERY_MS = 15_000`, `WATCH_EVERY_MS = 30_000`, `SWEEP_EVERY_MS = 600_000`, `ACTIVE_TRIP_DAYS = 90`; `interface ProactiveHandles { store; promote(): Promise<number>; checkWatches(): Promise<number>; sweep(): Promise<void>; stop(): void }`; `startProactive(brain, opts?: { intervals?: boolean; travel?: Pick<Travel, 'status'> | null }): Promise<ProactiveHandles>` (registers `composerRules` through `brain.context.addTurnRules` and its interval timers' stop through `brain.onStop`, the timers also `unref()`ed; logs one error line and throws at boot when P1 has no `addTurnRules`, before anything is registered); `registerProactive: RegisterLane`.
 
 Decision: watches are registered by `registerProactive` (the master's boot order has `registerProactive` and `registerCalls`, no `registerWatches`, and watches only feed the proactive candidates). The code stays in `watches/`.
 
-The demo's simulated watch (master §1 3:40 and §9): P7's admin page calls `POST /admin/watch/fire` with `Authorization: Bearer <ADMIN_TOKEN>` and a body such as `{ "trip_id": "t_goa", "label": "IndiGo 6E 2134", "person_ids": ["p_arjun"], "delay_minutes": 120, "arrive_at": "2026-11-06T22:45:00+05:30", "note": "Arjun's airport cab is booked for 9 pm" }`. It adds a `watch` candidate with `simulated: true` and runs the promoter at once, so the nudge reaches the desk within a second; it goes through the same bar as any watch. `reset_budget: true` (for rehearsals) first stops today's earlier unprompted posts counting, which also clears "two in a row".
+The demo's simulated watch (master §1 3:40 and §9): P7's admin page calls `POST /admin/watch/fire` with `Authorization: Bearer <ADMIN_TOKEN>` and a body such as `{ "trip_id": "t_goa", "label": "IndiGo 6E 2134", "person_ids": ["p_arjun"], "delay_minutes": 120, "arrive_at": "2026-11-06T22:45:00+05:30", "note": "Arjun's airport cab is booked for 9 pm" }` (`state` defaults to `delayed`, P4's word). It adds a `watch` candidate with `simulated: true` and runs the promoter at once, so the nudge reaches the desk within a second; without `force` it goes through the same bar as any watch. `reset_budget: true` (for rehearsals) first stops today's earlier unprompted posts counting, which also clears "two in a row".
+
+On stage the admin page sends `force: true` (master §1 3:40 and §9): the real trip's earlier nudges, its daily budget and its hushes must not hold the beat back. `force` marks this one candidate `forced` (Task 1): it skips the bar, night, the daily budget, "two in a row", the hush raise and the ignored-nudge raise, and nothing else. The card still says "Simulated for the demo" (the candidate is `simulated`), it is still pinned only to the people named (never one who paused Go), and it still counts as a post of the day. A double click posts once: the candidate's key is made from the body (everything but `reset_budget`) and the minute it arrived, and the same body in that minute or the minute before answers `{ ok: true, duplicate: true, promoted: 0 }` without adding anything; the desk item's id comes from the key, so even two clicks at the same moment add one row (`add` is `on conflict do nothing`) and one desk item.
+
+Decision (P4's `Travel.simulate`): the route keeps its own simulated candidate and does not call P4's `brain.travel.simulate.setFlightDelay(...)`. `simulate` exists only while the fake ixigo runs, and the stage may search on real ixigo; the beat is about Arjun's 9 pm cab, which no status reading carries, and Arjun is not on the Goa trip's booked flight (`b_flight` covers Rahul, Priya and Kabir); and the route's candidate is `simulated: true` by construction, so the notice always says "Simulated for the demo", while a delay set on the fake would reach the runner as an unlabelled real change. Without `force` the route goes through the same bar and budget as a real watch; with or without it, through the same promoter, wake text and notice tools. A builder can check the runner end to end on P4's fake (`setFlightDelay`, then `checkWatches()`); that path is for tests, never the stage.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3539,14 +3604,19 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../db/test-db.js';
 import { goaTrip, seedTrip } from '../proactive/fakes.js';
 import { ProactiveStore } from '../proactive/store.js';
+import type { StatusQuery, StatusResult } from '../travel/travel.js';
 import { syncWatches } from './plan.js';
-import type { Reading } from './port.js';
 import { backoffMs, createWatchRunner, nextCheckIn } from './runner.js';
 
 const START = new Date('2026-11-06T07:00:00Z'); // 5 h 45 min before the flight leaves
-const flight = (delayMinutes: number): Reading => ({
-  kind: 'flight_status', checkedAt: START.toISOString(), status: delayMinutes > 0 ? 'delayed' : 'scheduled',
-  departAt: '2026-11-06T18:15:00+05:30', arriveAt: '2026-11-06T20:45:00+05:30', delayMinutes,
+const SCHEDULED = '2026-11-06T18:15:00+05:30';
+const flight = (delayMinutes: number): StatusResult => ({
+  kind: 'flight',
+  state: delayMinutes > 0 ? 'delayed' : 'scheduled',
+  scheduledDepartAt: SCHEDULED,
+  expectedDepartAt: new Date(Date.parse(SCHEDULED) + delayMinutes * 60_000).toISOString(),
+  delayMinutes,
+  checkedAt: START.toISOString(),
 });
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -3555,44 +3625,57 @@ beforeAll(async () => {
   db = await withSchema();
   store = new ProactiveStore(db.pool);
   await seedTrip(db.pool, 't_goa');
-  await syncWatches(db.pool, goaTrip(), START); // the vote has closed by then: only the flight is watched
+  await syncWatches(db.pool, goaTrip(), START); // the Goa trip books one flight and no train: one watch
 });
 afterAll(async () => {
   await db.drop();
 });
 
 describe('timing', () => {
-  it('checks a flight more often as it gets close', () => {
-    expect(nextCheckIn('flight_status', flight(0), START)).toBe(20 * 60_000);
-    expect(nextCheckIn('flight_status', flight(0), new Date('2026-11-06T10:00:00Z'))).toBe(5 * 60_000);
-    expect(nextCheckIn('fare', { kind: 'fare', checkedAt: START.toISOString(), priceMinor: 1, currency: 'INR' }, START)).toBe(360 * 60_000);
+  it('checks a flight more often as it gets close, and a train ticket by how soon the train leaves', () => {
+    const lands = new Date('2026-11-06T16:15:00Z');
+    expect(nextCheckIn(flight(0), lands, START)).toBe(20 * 60_000);
+    expect(nextCheckIn(flight(0), lands, new Date('2026-11-06T10:00:00Z'))).toBe(5 * 60_000);
+    const ticket: StatusResult = { kind: 'pnr', state: 'waitlisted', detail: 'WL 4', checkedAt: START.toISOString() };
+    const leaves = new Date('2026-11-05T01:40:00Z');
+    expect(nextCheckIn(ticket, leaves, new Date('2026-11-01T00:00:00Z'))).toBe(360 * 60_000);
+    expect(nextCheckIn(ticket, leaves, new Date('2026-11-04T10:00:00Z'))).toBe(120 * 60_000);
+    expect(nextCheckIn(ticket, leaves, new Date('2026-11-04T22:00:00Z'))).toBe(30 * 60_000);
     expect(backoffMs(1)).toBe(2 * 60_000);
     expect(backoffMs(10)).toBe(60 * 60_000);
   });
 });
 
 describe('createWatchRunner', () => {
-  it('turns a new delay into one candidate, never twice, and backs off on errors', async () => {
+  it('sends the stored P4 query as it is, turns a new delay into one candidate, never twice, and backs off on errors', async () => {
     let now = START;
-    const readings: Array<Reading | Error> = [flight(0), flight(120), flight(120), new Error('ixigo is down')];
-    const port = {
-      read: async (): Promise<Reading> => {
+    const asked: StatusQuery[] = [];
+    const readings: Array<StatusResult | Error> = [flight(0), flight(120), flight(120), new Error('ixigo is down')];
+    const travel = {
+      status: async (q: StatusQuery): Promise<StatusResult> => {
+        asked.push(q);
         const next = readings.shift();
         if (!next || next instanceof Error) throw next ?? new Error('no reading');
         return next;
       },
     };
-    const runner = createWatchRunner({ pool: db.pool, port, store, now: () => now, log: { warn: () => {} } });
+    const runner = createWatchRunner({ pool: db.pool, travel, store, now: () => now, log: { warn: () => {} } });
 
     expect(await runner.tick()).toBe(0); // on time: nothing
+    expect(asked[0]).toEqual({ kind: 'flight', carrierCode: '6E', number: '2134', date: '2026-11-06' });
     now = new Date(START.getTime() + 20 * 60_000);
     expect(await runner.tick()).toBe(1); // 2 h late
     const c = await store.status('t_goa', 'flight:t_goa:b_flight:delay:120');
     expect(c?.status).toBe('pending');
-    const facts = await db.pool.query<{ facts: Record<string, unknown>; person_ids: string[]; useful: string[] }>(
-      `select facts, person_ids, useful from proactive_candidates where dedupe_key = 'flight:t_goa:b_flight:delay:120'`,
+    const facts = await db.pool.query<{ topic: string; facts: Record<string, unknown>; person_ids: string[]; useful: string[] }>(
+      `select topic, facts, person_ids, useful from proactive_candidates where dedupe_key = 'flight:t_goa:b_flight:delay:120'`,
     );
-    expect(facts.rows[0]).toMatchObject({ person_ids: ['p_rahul', 'p_priya', 'p_kabir'], useful: ['pin', 'message'], facts: { watchId: 'flight:t_goa:b_flight', label: 'IndiGo 6E 2134', delayMinutes: 120 } });
+    expect(facts.rows[0]).toMatchObject({
+      topic: 'flight_status',
+      person_ids: ['p_rahul', 'p_priya', 'p_kabir'],
+      useful: ['pin', 'message'],
+      facts: { watchId: 'flight:t_goa:b_flight', label: 'IndiGo 6E 2134', state: 'delayed', delayMinutes: 120, checkedAt: START.toISOString() },
+    });
 
     now = new Date(now.getTime() + 20 * 60_000);
     expect(await runner.tick()).toBe(0); // the same delay again: nothing new
@@ -3607,11 +3690,11 @@ describe('createWatchRunner', () => {
   it('stops a watch whose time is over, and does nothing without a travel layer', async () => {
     const late = new Date('2026-11-07T00:00:00Z');
     await db.pool.query(`update watches set next_check_at = $1 where watch_id = 'flight:t_goa:b_flight'`, [late]);
-    const runner = createWatchRunner({ pool: db.pool, port: { read: async () => flight(0) }, store, now: () => late, log: { warn: () => {} } });
+    const runner = createWatchRunner({ pool: db.pool, travel: { status: async () => flight(0) }, store, now: () => late, log: { warn: () => {} } });
     await runner.tick();
     const w = await db.pool.query<{ active: boolean }>(`select active from watches where watch_id = 'flight:t_goa:b_flight'`);
     expect(w.rows[0]?.active).toBe(false);
-    expect(await createWatchRunner({ pool: db.pool, port: null, store, now: () => late, log: { warn: () => {} } }).tick()).toBe(0);
+    expect(await createWatchRunner({ pool: db.pool, travel: null, store, now: () => late, log: { warn: () => {} } }).tick()).toBe(0);
   });
 });
 ```
@@ -3621,7 +3704,7 @@ describe('createWatchRunner', () => {
 import { Event } from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../db/test-db.js';
-import { fakeBrain, goaPack, manualTime, seedTrip, turnCtx } from './fakes.js';
+import { candidate, fakeBrain, goaPack, goaTrip, manualTime, seedTrip, turnCtx } from './fakes.js';
 import { proactiveOf } from './payload.js';
 import { startProactive } from './register.js';
 
@@ -3645,22 +3728,33 @@ afterAll(async () => {
 });
 
 describe('startProactive', () => {
-  it('registers its hooks, wake renderers, the openings block and the notice tools', async () => {
+  it('registers its hooks, the turn rules, wake renderers, the openings block and the notice tools', async () => {
     const time = manualTime('2026-10-06T06:30:00Z');
     const { brain, reg } = fakeBrain({ pool: db.pool, now: time.now, env: { ADMIN_TOKEN: TOKEN } });
-    const h = await startProactive(brain, { intervals: false, port: null });
+    const h = await startProactive(brain, { intervals: false, travel: null });
     expect(reg.tools.map((t) => t.name)).toEqual(['post_notice', 'update_notice']);
     expect([...reg.wakes.keys()]).toEqual(['timer', 'watch', 'opening']);
     expect(reg.nows.map((n) => n.name)).toEqual(['openings']);
+    expect(reg.turnRules).toHaveLength(1);
+    expect(reg.stops).toHaveLength(1); // its timers stop when Go stops
     expect(reg.onRead).toHaveLength(1);
     expect(reg.onEvent).toHaveLength(1);
     h.stop();
   });
 
+  it('refuses to start, loudly, when P1 cannot limit a proactive turn', async () => {
+    const time = manualTime('2026-10-06T06:30:00Z');
+    const { brain, reg } = fakeBrain({ pool: db.pool, now: time.now });
+    delete (brain.context as { addTurnRules?: unknown }).addTurnRules;
+    await expect(startProactive(brain, { intervals: false, travel: null })).rejects.toThrow(/addTurnRules/);
+    expect(reg.tools).toEqual([]);
+    expect(reg.onRead).toEqual([]);
+  });
+
   it('plays the 3:40 demo beat: a simulated delay pinned to Arjun, labelled, within one pass', async () => {
     const time = manualTime('2026-10-06T06:30:00Z');
     const { brain, app, reg, desk, link } = fakeBrain({ pool: db.pool, now: time.now, env: { ADMIN_TOKEN: TOKEN } });
-    await startProactive(brain, { intervals: false, port: null });
+    await startProactive(brain, { intervals: false, travel: null });
 
     expect((await app.inject({ method: 'POST', url: '/admin/watch/fire', payload: fire })).statusCode).toBe(401);
     expect((await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: { authorization: 'Bearer nope' }, payload: fire })).statusCode).toBe(401);
@@ -3675,6 +3769,9 @@ describe('startProactive', () => {
     const item = desk.items.at(-1)!;
     expect(item.kind).toBe('watch');
     expect(proactiveOf(item)).toMatchObject({ allowed: ['pin'], forPersonIds: ['p_arjun'], candidate: { simulated: true } });
+    // What P1's turn gets for this item: a pin through post_notice, reading, stay_silent, and no text message.
+    expect(reg.turnRules[0]!([item])).toEqual({ tools: expect.arrayContaining(['post_notice', 'stay_silent']), mayPostText: false });
+    expect(reg.turnRules[0]!([item])?.tools).not.toContain('call_business');
     const wakeText = reg.wakes.get('watch')!(item, goaPack());
     expect(wakeText).toContain('Simulated for the demo');
     expect(wakeText).toContain('running 120 minutes late');
@@ -3685,15 +3782,58 @@ describe('startProactive', () => {
     const card = ctx.cards[0] as Record<string, unknown>;
     expect(card).toMatchObject({ kind: 'notice', for_person_ids: ['p_arjun'], source: { name: 'Simulated for the demo' } });
 
-    // A second fire straight after is "two in a row": it waits. A rehearsal resets the budget first.
-    expect((await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: fire })).json()).toMatchObject({ promoted: 0 });
-    expect((await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: { ...fire, reset_budget: true } })).json()).toMatchObject({ promoted: 1 });
+    // A double click sends the same fire again: it posts once.
+    const again = (await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: fire })).json();
+    expect(again).toMatchObject({ ok: true, duplicate: true, promoted: 0, dedupe_key: res.json().dedupe_key });
+    // Another nudge three minutes later, with nobody speaking since, is "two in a row": it waits. A rehearsal resets the budget first.
+    time.advance(3 * 60_000);
+    expect((await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: { ...fire, delay_minutes: 150 } })).json()).toMatchObject({ promoted: 0 });
+    expect((await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: { ...fire, delay_minutes: 180, reset_budget: true } })).json()).toMatchObject({ promoted: 1 });
+  });
+
+  it('the stage fire (force: true) reaches the desk once and pins one labelled notice to Arjun, with the budget spent and a hush on; without force it is held', async () => {
+    await seedTrip(db.pool, 't_stage');
+    const time = manualTime('2026-10-06T06:30:00Z');
+    const pack = goaPack({ trip: goaTrip({ trip_id: 't_stage' }) });
+    const { brain, app, reg, desk, link } = fakeBrain({ pool: db.pool, now: time.now, env: { ADMIN_TOKEN: TOKEN }, pack });
+    const h = await startProactive(brain, { intervals: false, travel: null });
+    // The real trip's day so far: three unprompted posts (nobody has spoken since), a hush and an ignored nudge.
+    for (let i = 0; i < 3; i += 1) {
+      const c = candidate({ tripId: 't_stage', dedupeKey: `spent:${i}` });
+      await h.store.add(c);
+      await h.store.promote(c, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-06' }, new Date(time.now().getTime() - (i + 1) * 600_000));
+    }
+    await h.store.hush('t_stage', time.now());
+    await h.store.ignored('t_stage', time.now());
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    const stage = { ...fire, trip_id: 't_stage' };
+
+    const held = (await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: stage })).json();
+    expect(held).toMatchObject({ ok: true, promoted: 0 });
+    expect(await h.store.status('t_stage', held.dedupe_key)).toMatchObject({ status: 'pending', reason: 'budget' });
+    expect(desk.items).toHaveLength(0);
+
+    const forced = (await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: { ...stage, force: true } })).json();
+    expect(forced).toMatchObject({ ok: true, promoted: 1 });
+    expect(forced.dedupe_key).not.toBe(held.dedupe_key);
+    // The operator's double click.
+    expect((await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: { ...stage, force: true } })).json()).toMatchObject({ duplicate: true, promoted: 0 });
+    expect(desk.items).toHaveLength(1);
+
+    const item = desk.items[0]!;
+    expect(proactiveOf(item)).toMatchObject({ allowed: ['pin'], forPersonIds: ['p_arjun'], candidate: { simulated: true, forced: true } });
+    const post = reg.tools.find((t) => t.name === 'post_notice')!;
+    const ctx = turnCtx({ link, pack, wake: [item] });
+    await post.run(post.input.parse({ tone: 'heads_up', title: 'Your flight is 2 hours late', body: 'You now land at 10:45 pm, but your cab is at 9. Want me to move it to 11?' }), ctx);
+    expect(ctx.cards).toHaveLength(1);
+    expect(ctx.cards[0]).toMatchObject({ kind: 'notice', for_person_ids: ['p_arjun'], source: { name: 'Simulated for the demo' } });
+    expect(await h.store.status('t_stage', forced.dedupe_key)).toMatchObject({ status: 'promoted', counted: true });
   });
 
   it('plans timers and watches when a trip is created, and the sweep re-plans them', async () => {
     const time = manualTime('2026-10-06T06:30:00Z');
     const { brain, reg } = fakeBrain({ pool: db.pool, now: time.now });
-    const h = await startProactive(brain, { intervals: false, port: null });
+    const h = await startProactive(brain, { intervals: false, travel: null });
     const created = Event.parse({ event_id: 'ev_1', trip_id: 't_goa', seq: 1, occurred_at: '2026-10-06T06:30:00Z', type: 'trip.created', data: { trip: goaPack().trip } });
     await reg.onEvent[0]!(created);
     const timers = await db.pool.query(`select dedupe_key from proactive_candidates where trip_id = 't_goa' and source = 'timer' and status = 'pending'`);
@@ -3713,22 +3853,23 @@ Red is certain: the modules do not exist yet. Go to Step 3.
 
 ```ts
 // apps/brain/src/watches/runner.ts
-// Scheduled cheap checks. Each due watch is read once, compared with its last reading, and a change worth
-// a nudge becomes a proactive candidate keyed by the change, so the same change is never nudged twice.
+// Scheduled cheap checks. Each due watch sends its stored StatusQuery to P4's Travel.status as it is, compares
+// the answer with its last reading, and a change worth a nudge becomes a proactive candidate keyed by the
+// change, so the same change is never nudged twice.
 import type pg from 'pg';
 import type { Candidate } from '../proactive/policy.js';
 import type { ProactiveStore } from '../proactive/store.js';
-import { diffReading, type WatchChange } from './diff.js';
-import { Reading, type StatusPort, type WatchKind } from './port.js';
+import type { StatusQuery, StatusResult, Travel } from '../travel/travel.js';
+import { diffReading, type WatchChange, type WatchKind } from './diff.js';
 
 type WatchRow = {
   watch_id: string;
   trip_id: string;
   kind: WatchKind;
-  query: Record<string, unknown>;
+  query: StatusQuery;
   person_ids: string[];
   label: string;
-  last_reading: unknown;
+  last_reading: StatusResult | null;
   last_change_key: string | null;
   ends_at: Date;
   errors: number;
@@ -3736,27 +3877,33 @@ type WatchRow = {
 };
 
 const MIN = 60_000;
+/** The proactive topic for each watch kind; the wake text (Task 5) reads these. */
+const TOPIC: Readonly<Record<WatchKind, string>> = { flight: 'flight_status', pnr: 'pnr_status' };
 
-export function nextCheckIn(kind: WatchKind, reading: Reading, now: Date): number {
-  if (reading.kind === 'flight_status') {
-    const hours = (Date.parse(reading.departAt) - now.getTime()) / 3600_000;
+export function nextCheckIn(reading: StatusResult, endsAt: Date, now: Date): number {
+  if (reading.kind === 'flight') {
+    const hours = (Date.parse(reading.expectedDepartAt) - now.getTime()) / 3600_000;
     if (hours <= 3) return 5 * MIN;
     if (hours <= 24) return 20 * MIN;
     return 120 * MIN;
   }
-  return kind === 'fare' ? 360 * MIN : 180 * MIN;
+  // A train ticket's watch ends when the train leaves.
+  const hours = (endsAt.getTime() - now.getTime()) / 3600_000;
+  if (hours <= 6) return 30 * MIN;
+  if (hours <= 48) return 120 * MIN;
+  return 360 * MIN;
 }
 
 export function backoffMs(errors: number): number {
   return Math.min(60, 2 ** errors) * MIN;
 }
 
-function toCandidate(w: WatchRow, change: WatchChange, reading: Reading, now: Date): Candidate {
+function toCandidate(w: WatchRow, change: WatchChange, reading: StatusResult, now: Date): Candidate {
   return {
     tripId: w.trip_id,
     dedupeKey: change.changeKey,
     source: 'watch',
-    topic: w.kind,
+    topic: TOPIC[w.kind],
     dueAt: now,
     expiresAt: w.ends_at,
     importance: change.importance,
@@ -3778,7 +3925,8 @@ function toCandidate(w: WatchRow, change: WatchChange, reading: Reading, now: Da
 
 export interface WatchRunnerDeps {
   pool: pg.Pool;
-  port: StatusPort | null;
+  /** P4's travel layer; null turns watches off. */
+  travel: Pick<Travel, 'status'> | null;
   store: ProactiveStore;
   now: () => Date;
   log: { warn(obj: object, msg: string): void };
@@ -3788,8 +3936,8 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
   let running: Promise<number> | null = null;
 
   async function once(): Promise<number> {
-    const port = d.port;
-    if (!port) return 0;
+    const travel = d.travel;
+    if (!travel) return 0;
     const now = d.now();
     const due = await d.pool.query<WatchRow>(
       `select watch_id, trip_id, kind, query, person_ids, label, last_reading, last_change_key, ends_at, errors, notice_card_id
@@ -3802,9 +3950,9 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
         await d.pool.query(`update watches set active = false where watch_id = $1`, [w.watch_id]);
         continue;
       }
-      let reading: Reading;
+      let reading: StatusResult;
       try {
-        reading = await port.read(w.kind, w.query);
+        reading = await travel.status(w.query);
       } catch (err) {
         const errors = w.errors + 1;
         d.log.warn({ err, watchId: w.watch_id }, 'watches: a check failed; backing off');
@@ -3814,10 +3962,9 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
         );
         continue;
       }
-      const before = w.last_reading ? Reading.safeParse(w.last_reading) : null;
       const change = diffReading(
-        { watchId: w.watch_id, kind: w.kind, label: w.label, query: w.query, hasNotice: w.notice_card_id !== null, hasPeople: w.person_ids.length > 0 },
-        before?.success ? before.data : null,
+        { watchId: w.watch_id, kind: w.kind, label: w.label, hasNotice: w.notice_card_id !== null, hasPeople: w.person_ids.length > 0, endsAt: w.ends_at },
+        w.last_reading,
         reading,
         now,
       );
@@ -3828,7 +3975,7 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
       }
       await d.pool.query(
         `update watches set last_reading = $2, last_change_key = $3, errors = 0, last_error = null, next_check_at = $4 where watch_id = $1`,
-        [w.watch_id, JSON.stringify(reading), lastKey, new Date(now.getTime() + nextCheckIn(w.kind, reading, now))],
+        [w.watch_id, JSON.stringify(reading), lastKey, new Date(now.getTime() + nextCheckIn(reading, w.ends_at, now))],
       );
     }
     return changes;
@@ -3845,20 +3992,25 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
 
 ```ts
 // apps/brain/src/watches/admin.ts
-// POST /admin/watch/fire: the demo's simulated watch. It goes through the same bar as a real one, and every
-// card Go posts from it says "Simulated for the demo".
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+// POST /admin/watch/fire: the demo's simulated watch. Without force it goes through the same bar as a real one; with
+// force (the stage) it skips the bar, the budget, "two in a row" and the hush for this nudge only. Every card Go posts
+// from it says "Simulated for the demo", and a double click posts once.
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { localDay } from '../proactive/clock.js';
 import type { Candidate } from '../proactive/policy.js';
 import type { ProactiveStore } from '../proactive/store.js';
 
+/** The same fire within this window (or the one before) is a double click. */
+export const FIRE_WINDOW_MS = 60_000;
+
 export const FireWatchBody = z.object({
   trip_id: z.string().min(1).max(64),
   label: z.string().min(1).max(80),
   person_ids: z.array(z.string().min(1).max(64)).max(30).default([]),
-  status: z.enum(['scheduled', 'delayed', 'cancelled', 'departed', 'landed']).default('delayed'),
+  /** P4's flight status words. */
+  state: z.enum(['scheduled', 'delayed', 'cancelled', 'departed', 'landed']).default('delayed'),
   delay_minutes: z.int().min(0).max(1440).default(120),
   arrive_at: z.iso.datetime({ offset: true }).optional(),
   note: z.string().min(1).max(200).optional(),
@@ -3866,7 +4018,16 @@ export const FireWatchBody = z.object({
   urgency: z.number().min(0).max(1).default(0.9),
   /** Rehearsals: today's earlier unprompted posts stop counting first. */
   reset_budget: z.boolean().default(false),
+  /** The stage: this nudge skips the bar, the budget, "two in a row", hush and ignored raises. Still labelled and pinned. */
+  force: z.boolean().default(false),
 });
+type FireWatch = z.infer<typeof FireWatchBody>;
+
+/** The candidate's key: the body (all but reset_budget) and the minute it arrived, so a double click maps to one key. */
+export function fireKey(b: FireWatch, minute: number): string {
+  const what = JSON.stringify([b.trip_id, b.label, b.person_ids, b.state, b.delay_minutes, b.arrive_at ?? null, b.note ?? null, b.importance, b.urgency, b.force]);
+  return `sim:flight_status:${createHash('sha256').update(what).digest('hex').slice(0, 12)}:${minute}`;
+}
 
 export interface FireDeps {
   adminToken: string | undefined;
@@ -3894,8 +4055,13 @@ export function registerFireRoute(app: FastifyInstance, d: FireDeps): void {
     if (!(await d.store.tripExists(b.trip_id))) return reply.code(404).send(errorBody('not_found', 'no such trip'));
 
     const now = d.now();
+    const minute = Math.floor(now.getTime() / FIRE_WINDOW_MS);
+    const dedupeKey = fireKey(b, minute);
+    // A double click that straddles a minute: the same fire a moment ago is in the minute before.
+    const earlier = fireKey(b, minute - 1);
+    if (await d.store.status(b.trip_id, earlier)) return reply.send({ ok: true, dedupe_key: earlier, duplicate: true, promoted: 0 });
+    if (await d.store.status(b.trip_id, dedupeKey)) return reply.send({ ok: true, dedupe_key: dedupeKey, duplicate: true, promoted: 0 });
     if (b.reset_budget) await d.store.resetBudget(b.trip_id, localDay(now, await d.store.tripTz(b.trip_id)));
-    const dedupeKey = `sim:flight_status:${randomUUID().replace(/-/g, '').slice(0, 12)}`;
     const c: Candidate = {
       tripId: b.trip_id,
       dedupeKey,
@@ -3910,7 +4076,7 @@ export function registerFireRoute(app: FastifyInstance, d: FireDeps): void {
       personIds: b.person_ids,
       facts: {
         label: b.label,
-        status: b.status,
+        state: b.state,
         delayMinutes: b.delay_minutes,
         simulated: true,
         ...(b.arrive_at ? { arriveAt: b.arrive_at } : {}),
@@ -3918,8 +4084,10 @@ export function registerFireRoute(app: FastifyInstance, d: FireDeps): void {
       },
       simulated: true,
       small: false,
+      ...(b.force ? { forced: true } : {}),
     };
-    await d.store.add(c);
+    // Two clicks at the same moment: one insert wins, the other is the double click.
+    if ((await d.store.add(c)) === 'exists') return reply.send({ ok: true, dedupe_key: dedupeKey, duplicate: true, promoted: 0 });
     const promoted = await d.promote();
     return reply.send({ ok: true, dedupe_key: dedupeKey, promoted });
   });
@@ -3932,10 +4100,11 @@ export function registerFireRoute(app: FastifyInstance, d: FireDeps): void {
 // promoter, the wake text, the openings block, the notice tools and the demo's "fire a watch".
 import type { Brain, RegisterLane } from '../app.js';
 import type { Trip } from '../door/methods.js';
+import type { Travel } from '../travel/travel.js';
 import { registerFireRoute } from '../watches/admin.js';
 import { noteWatchNotice, syncWatches } from '../watches/plan.js';
-import { travelStatusPort, type StatusPort } from '../watches/port.js';
 import { createWatchRunner } from '../watches/runner.js';
+import { composerRules } from './allowed.js';
 import { noticeTools } from './notice-tools.js';
 import { createOpenings } from './openings.js';
 import { PROACTIVE_KINDS, type ProactivePayload } from './payload.js';
@@ -3960,16 +4129,23 @@ export interface ProactiveHandles {
 export interface StartProactiveOpts {
   /** Tests pass false and drive the passes by hand. */
   intervals?: boolean;
-  /** Overrides the status port built from `brain.travel`; null turns watches off. */
-  port?: StatusPort | null;
+  /** Overrides `brain.travel` for the watches; null turns watches off. */
+  travel?: Pick<Travel, 'status'> | null;
 }
 
 export async function startProactive(brain: Brain, opts: StartProactiveOpts = {}): Promise<ProactiveHandles> {
+  // The bar's limits are enforced by P1's turn (master §6.3: Context.addTurnRules). Without it a proactive
+  // turn could post or act beyond what the bar allowed, so refuse to start, before anything is registered.
+  if (typeof brain.context.addTurnRules !== 'function') {
+    const why = 'proactive: P1 has no Context.addTurnRules (master §6.3), so the bar cannot limit proactive turns; not starting';
+    brain.log.error(why);
+    throw new Error(why);
+  }
   const store = new ProactiveStore(brain.pool);
   const log = brain.log;
   const promoter = createPromoter({ store, desk: brain.desk, packs: brain.packs, now: brain.now, log });
-  const port = opts.port !== undefined ? opts.port : brain.travel ? travelStatusPort(brain.travel) : null;
-  const watches = createWatchRunner({ pool: brain.pool, port, store, now: brain.now, log });
+  const travel = opts.travel !== undefined ? opts.travel : (brain.travel ?? null);
+  const watches = createWatchRunner({ pool: brain.pool, travel, store, now: brain.now, log });
   const readTrip = (tripId: string): Promise<Trip> => brain.door.link.request('read_trip', { trip_id: tripId });
   const replan = async (tripId: string, trip: Trip): Promise<void> => {
     await replanTimers(store, trip, await store.tripTz(tripId), brain.now());
@@ -3981,6 +4157,7 @@ export async function startProactive(brain: Brain, opts: StartProactiveOpts = {}
   brain.tripLog.onEvent((ev) => openings.onEvent(ev));
   for (const kind of PROACTIVE_KINDS) brain.context.addWake(kind, (item, pack) => renderWake(item, pack, brain.now()));
   brain.context.addNow(openingsNow());
+  brain.context.addTurnRules(composerRules);
   const onPosted = async (p: ProactivePayload, cardId: string): Promise<void> => {
     const watchId = p.candidate.facts.watchId;
     if (typeof watchId === 'string') await noteWatchNotice(brain.pool, watchId, cardId);
@@ -4016,12 +4193,18 @@ export async function startProactive(brain: Brain, opts: StartProactiveOpts = {}
     every(SWEEP_EVERY_MS, 'sweep', sweep);
   }
 
+  const stop = (): void => {
+    for (const h of handles.splice(0)) clearInterval(h);
+  };
+  // When Go stops (master §6.3: Brain.onStop), the promoter, the watch checks and the sweep stop with it.
+  brain.onStop(stop);
+
   return {
     store,
     promote: () => promoter.tick(),
     checkWatches: () => watches.tick(),
     sweep,
-    stop: () => handles.forEach((h) => clearInterval(h)),
+    stop,
   };
 }
 
@@ -4044,21 +4227,26 @@ git commit -m "feat(proactive): watch checks, the demo's simulated watch, and pr
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `runner.test.ts` and `register.test.ts` pass (including the 3:40 demo beat); earlier tests stay green.
+Expected: `runner.test.ts` and `register.test.ts` pass (including the 3:40 demo beat, the double click, and the forced stage fire past a spent budget and a hush); earlier tests stay green.
 
 ### Task 9: Call foundations (settings, the allowlist, "stop" in Hinglish, the call row)
 
 **Files:**
 - Create: `apps/brain/src/db/migrations/5200_calls.sql`
 - Create: `apps/brain/src/calls/config.ts`
+- Modify: `apps/brain/src/calls/env.ts` (P1's stub, taken over: adds `CALLS_VOICE_MODEL`; the allowlist comment names the `Name=+E164` form)
+- Modify: `apps/brain/.env.example` (the P6 block gains `CALLS_VOICE_MODEL`; P1 Task 17's test checks that every key of `Env` is named there)
 - Create: `apps/brain/src/calls/stop-words.ts`
 - Create: `apps/brain/src/calls/store.ts`
 - Test: `apps/brain/src/calls/foundation.test.ts`
 
+P6 adds no proactive or watch variables, so P1's `proactive/env.ts` and `watches/env.ts` stubs stay empty; P6 takes over `calls/env.ts` and creates no new env file.
+
 **Interfaces:**
-- Consumes: `withSchema()` (P1); `Env` fields `GO_PUBLIC_URL`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `OPENAI_API_KEY`, `CALLS_ALLOWLIST` (P1 declares them optional in `calls/env.ts`; this plan reads them through `brain.env` and does not edit that file).
+- Consumes: `withSchema()` (P1); `Env` fields `GO_PUBLIC_URL`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `OPENAI_API_KEY`, `CALLS_ALLOWLIST` (P1 declares them optional in `calls/env.ts`). This task adds `CALLS_VOICE_MODEL` to that file; the lane reads them all through `brain.env`.
 - Produces:
-  - `config.ts`: `CALL_WINDOW_MS = 30_000`, `CALL_CAP_MS = 240_000`, `RING_TIMEOUT_S = 30`, `TWILIO_TIME_LIMIT_S = 255`, `CARD_GAP_MS = 3_000`, `REALTIME_URL`, `REALTIME_MODEL = 'gpt-realtime-2.1'`, `REALTIME_VOICE = 'marin'`, `TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe'`, `E164`; `interface Callee { name: string | null; phone: string }`; `interface CallsEnvInput`; `interface CallsConfig { publicUrl; accountSid; authToken; from; openaiKey: string | null; allowlist: Callee[]; missing: string[] }`; `normalisePhone(raw): string | null`; `parseAllowlist(raw): Callee[]`; `loadCallsConfig(env): CallsConfig`; `findCallee(cfg, { business, phone? }): Callee | null`; `statusUrl(publicUrl, callId)`; `mediaUrl(publicUrl, callId)`; `maskPhone(phone)`.
+  - `config.ts`: `CALL_WINDOW_MS = 30_000`, `CALL_CAP_MS = 240_000`, `RING_TIMEOUT_S = 30`, `TWILIO_TIME_LIMIT_S = 255`, `CARD_GAP_MS = 3_000`, `REALTIME_URL`, `LIVE_URL`, `REALTIME_MODEL = 'gpt-realtime-2.1'` (the default voice model), `REALTIME_VOICE = 'marin'` (a voice both models have), `VOICE_MODEL`, `isVoiceModel(model): boolean` (a `gpt-realtime` or `gpt-live` model, never a transcriber), `type VoiceKind = 'realtime' | 'live'`, `voiceKind(model): VoiceKind`, `E164`; `interface Callee { name: string | null; phone: string }`; `interface CallsEnvInput`; `interface CallsConfig { publicUrl; accountSid; authToken; from; openaiKey: string | null; voiceModel: string; allowlist: Callee[]; missing: string[] }`; `normalisePhone(raw): string | null`; `parseAllowlist(raw): Callee[]`; `loadCallsConfig(env): CallsConfig`; `findCallee(cfg, { business, phone? }): Callee | null`; `statusUrl(publicUrl, callId)`; `mediaUrl(publicUrl, callId)`; `maskPhone(phone)`. There is no transcription model anywhere in calls.
+  - `env.ts`: `CallsEnv` gains `CALLS_VOICE_MODEL` (optional; refused at boot unless `isVoiceModel`).
   - `stop-words.ts`: `saysStop(text, repliesToCallLine: boolean): boolean`.
   - `store.ts`: `type CallState = 'waiting' | 'cancelled' | 'dialing' | 'talking' | 'ended' | 'failed'`; `interface CallLine { who: 'go' | 'them'; text: string }`; `interface RecordAsk { kind: 'agreed' | 'open'; text: string }`; `interface CallRow` (camelCase of the table); `interface NewCall`; `class CallStore` with `create`, `get`, `byCard`, `liveFor`, `recentlyCancelled`, `announced`, `cancel`, `dueToDial`, `startDialing`, `dialInfo`, `claimMedia`, `talking`, `end`, `inCall`, `toCloseOut`, `closedOut`.
 
@@ -4070,7 +4258,8 @@ Expected: `runner.test.ts` and `register.test.ts` pass (including the 3:40 demo 
 // apps/brain/src/calls/foundation.test.ts
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../db/test-db.js';
-import { findCallee, loadCallsConfig, maskPhone, mediaUrl, normalisePhone, parseAllowlist, statusUrl } from './config.js';
+import { findCallee, loadCallsConfig, maskPhone, mediaUrl, normalisePhone, parseAllowlist, statusUrl, voiceKind } from './config.js';
+import { CallsEnv } from './env.js';
 import { saysStop } from './stop-words.js';
 import { CallStore, type NewCall } from './store.js';
 
@@ -4106,6 +4295,19 @@ describe('config', () => {
     expect(statusUrl('https://brain.test', 'call_1')).toBe('https://brain.test/calls/twilio/status/call_1');
     expect(mediaUrl('https://brain.test', 'call_1')).toBe('wss://brain.test/calls/media/call_1');
     expect(maskPhone('+919800000001')).toBe('+91***001');
+  });
+
+  it('picks the voice model: gpt-realtime-2.1 unless the day-one A/B says gpt-live-1, and never a transcriber', () => {
+    expect(loadCallsConfig({}).voiceModel).toBe('gpt-realtime-2.1');
+    expect(loadCallsConfig({ CALLS_VOICE_MODEL: 'gpt-live-1' }).voiceModel).toBe('gpt-live-1');
+    expect(loadCallsConfig({ CALLS_VOICE_MODEL: 'gpt-4o-mini-transcribe' }).voiceModel).toBe('gpt-realtime-2.1');
+    expect(voiceKind('gpt-realtime-2.1')).toBe('realtime');
+    expect(voiceKind('gpt-live-1')).toBe('live');
+    expect(CallsEnv.safeParse({ CALLS_VOICE_MODEL: 'gpt-live-1' }).success).toBe(true);
+    expect(CallsEnv.safeParse({ CALLS_VOICE_MODEL: 'gpt-realtime-2.1-mini' }).success).toBe(true);
+    for (const m of ['gpt-4o-mini-transcribe', 'gpt-realtime-transcribe', 'whisper-1']) {
+      expect(CallsEnv.safeParse({ CALLS_VOICE_MODEL: m }).success, m).toBe(false);
+    }
   });
 });
 
@@ -4168,8 +4370,8 @@ describe('CallStore', () => {
 
     expect((await store.talking('call_1', at))?.state).toBe('talking');
     expect((await store.inCall()).map((r) => r.callId)).toEqual(['call_1']);
-    const ended = await store.end('call_1', { state: 'ended', at, outcome: '10 am is fine.', reported: true, record: { kind: 'agreed', text: 'Check-in at 10 am is fine' }, transcript: [{ who: 'them', text: 'Yes, 10 is fine.' }], reason: 'hangup' });
-    expect(ended).toMatchObject({ state: 'ended', reported: true, record: { kind: 'agreed' }, transcript: [{ who: 'them', text: 'Yes, 10 is fine.' }] });
+    const ended = await store.end('call_1', { state: 'ended', at, outcome: '10 am is fine.', reported: true, record: { kind: 'agreed', text: 'Check-in at 10 am is fine' }, transcript: [{ who: 'go', text: 'So, check-in at 10 am is fine. Thank you!' }], reason: 'hangup' });
+    expect(ended).toMatchObject({ state: 'ended', reported: true, record: { kind: 'agreed' }, transcript: [{ who: 'go', text: 'So, check-in at 10 am is fine. Thank you!' }] });
     expect(await store.end('call_1', { state: 'failed', at, outcome: 'x', reported: false, record: null, transcript: [], reason: 'busy' })).toBeNull();
 
     expect((await store.toCloseOut(new Date(at.getTime() + 1000))).map((r) => r.callId)).toEqual(['call_1']);
@@ -4196,7 +4398,7 @@ Red is certain: the modules do not exist yet. Go to Step 3.
 
 ```sql
 -- apps/brain/src/db/migrations/5200_calls.sql
--- Phone calls Go makes for a trip. Only the transcript is kept; audio never is.
+-- Phone calls Go makes for a trip. Only Go's own lines are kept as the transcript; audio never is.
 create table calls (
   call_id text primary key,
   trip_id text not null,
@@ -4234,7 +4436,7 @@ create index calls_due on calls (dial_at) where state = 'waiting';
 
 ```ts
 // apps/brain/src/calls/config.ts
-// Calls: the settings, the allowlist, phone numbers, the public URLs and the fixed numbers.
+// Calls: the settings, the allowlist, phone numbers, the public URLs, the voice model and the fixed numbers.
 export const CALL_WINDOW_MS = 30_000;
 export const CALL_CAP_MS = 240_000;
 export const RING_TIMEOUT_S = 30;
@@ -4242,10 +4444,17 @@ export const RING_TIMEOUT_S = 30;
 export const TWILIO_TIME_LIMIT_S = 255;
 export const CARD_GAP_MS = 3_000;
 export const REALTIME_URL = 'wss://api.openai.com/v1/realtime';
+/** gpt-live-1 over a plain WebSocket. Bash runs Live over WebRTC with a sideband, so the day-one check proves this URL. */
+export const LIVE_URL = 'wss://api.openai.com/v1/live';
+/** The default voice model: it has the "caller started speaking" event barge-in needs, and function tools. */
 export const REALTIME_MODEL = 'gpt-realtime-2.1';
+/** A voice both models have. */
 export const REALTIME_VOICE = 'marin';
-/** The realtime session's own input transcription (no separate speech-to-text service). */
-export const TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
+export const VOICE_MODEL = /^gpt-(realtime|live)(-[a-z0-9.]+)*$/;
+/** A voice model, never a transcriber: Go hears with the voice model's own ears only (Keshav's ruling). */
+export const isVoiceModel = (model: string): boolean => VOICE_MODEL.test(model) && !/transcri/i.test(model);
+export type VoiceKind = 'realtime' | 'live';
+export const voiceKind = (model: string): VoiceKind => (model.startsWith('gpt-live') ? 'live' : 'realtime');
 export const E164 = /^\+[1-9]\d{6,14}$/;
 
 export interface Callee { name: string | null; phone: string }
@@ -4257,6 +4466,7 @@ export interface CallsEnvInput {
   TWILIO_FROM?: string | undefined;
   OPENAI_API_KEY?: string | undefined;
   CALLS_ALLOWLIST?: string | undefined;
+  CALLS_VOICE_MODEL?: string | undefined;
 }
 
 export interface CallsConfig {
@@ -4265,6 +4475,8 @@ export interface CallsConfig {
   authToken: string | null;
   from: string | null;
   openaiKey: string | null;
+  /** CALLS_VOICE_MODEL when it names a voice model, else gpt-realtime-2.1. */
+  voiceModel: string;
   allowlist: Callee[];
   /** Names of settings that are not set; calls refuse to start while any is missing. */
   missing: string[];
@@ -4294,6 +4506,7 @@ export function loadCallsConfig(env: CallsEnvInput): CallsConfig {
   const v = (s: string | undefined): string | null => (s && s.trim() ? s.trim() : null);
   const publicUrl = v(env.GO_PUBLIC_URL)?.replace(/\/+$/, '') ?? null;
   const from = env.TWILIO_FROM ? normalisePhone(env.TWILIO_FROM) : null;
+  const model = v(env.CALLS_VOICE_MODEL);
   const set: Record<string, string | null> = {
     GO_PUBLIC_URL: publicUrl,
     TWILIO_ACCOUNT_SID: v(env.TWILIO_ACCOUNT_SID),
@@ -4307,6 +4520,7 @@ export function loadCallsConfig(env: CallsEnvInput): CallsConfig {
     authToken: set.TWILIO_AUTH_TOKEN ?? null,
     from,
     openaiKey: set.OPENAI_API_KEY ?? null,
+    voiceModel: model && isVoiceModel(model) ? model : REALTIME_MODEL,
     allowlist: parseAllowlist(env.CALLS_ALLOWLIST),
     missing: Object.entries(set).filter(([, value]) => value === null).map(([key]) => key),
   };
@@ -4326,6 +4540,37 @@ export const statusUrl = (publicUrl: string, callId: string): string => `${publi
 export const mediaUrl = (publicUrl: string, callId: string): string => `wss://${new URL(publicUrl).host}/calls/media/${callId}`;
 /** For logs: never a whole phone number. */
 export const maskPhone = (phone: string): string => (phone.length <= 6 ? '***' : `${phone.slice(0, 3)}***${phone.slice(-3)}`);
+```
+
+```ts
+// apps/brain/src/calls/env.ts (P1 created it with the calls variables optional; P6 adds the voice model)
+import { z } from 'zod';
+import { isVoiceModel } from './config.js';
+
+/** P6: calls. All optional: call_business refuses while a setting is missing, and the room keeps working. */
+export const CallsEnv = z.object({
+  TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
+  TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
+  TWILIO_FROM: z.string().min(1).optional(),
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  CALLS_MODE: z.enum(['off', 'allowlist']).optional(),
+  /** Who Go may call this week: comma-separated `+E164` or `Name=+E164`, e.g. "Villa Sol=+919800000001". */
+  CALLS_ALLOWLIST: z.string().optional(),
+  /** The voice model on a call: gpt-realtime-2.1 when unset, gpt-live-1 for the day-one A/B. Never a transcriber. */
+  CALLS_VOICE_MODEL: z.string().refine(isVoiceModel, 'a gpt-realtime or gpt-live voice model, never a transcriber').optional(),
+});
+```
+
+In `apps/brain/.env.example`, the P6 block becomes:
+```bash
+# P6: calls
+# TWILIO_ACCOUNT_SID=
+# TWILIO_AUTH_TOKEN=
+# TWILIO_FROM=
+# OPENAI_API_KEY=
+# CALLS_MODE=off
+# CALLS_ALLOWLIST=              # e.g. "Villa Sol=+919800000001,+919800000002"; a name lets Go call by name
+# CALLS_VOICE_MODEL=gpt-realtime-2.1   # gpt-live-1 for the day-one A/B; never a transcriber
 ```
 
 ```ts
@@ -4511,13 +4756,13 @@ export class CallStore {
 - [ ] **Step 4: Commit, push, read CI**
 
 ```bash
-git add apps/brain/src/db/migrations/5200_calls.sql apps/brain/src/calls/config.ts apps/brain/src/calls/stop-words.ts apps/brain/src/calls/store.ts apps/brain/src/calls/foundation.test.ts
+git add apps/brain/src/db/migrations/5200_calls.sql apps/brain/src/calls/config.ts apps/brain/src/calls/env.ts apps/brain/.env.example apps/brain/src/calls/stop-words.ts apps/brain/src/calls/store.ts apps/brain/src/calls/foundation.test.ts
 git commit -m "feat(calls): the allowlist, stop in English and Hinglish, and a call row that ends once
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `foundation.test.ts` passes; earlier tests stay green.
+Expected: `foundation.test.ts` passes; P1's `env-example.test.ts` stays green with `CALLS_VOICE_MODEL` named in `.env.example`; earlier tests stay green.
 
 ### Task 10: Twilio over its REST API (place a call, hang up, TwiML, the signature check)
 
@@ -4773,30 +5018,32 @@ git push && gh run watch --exit-status || gh run view --log-failed
 ```
 Expected: `twilio.test.ts` passes; earlier tests stay green.
 
-### Task 11: The live call (Twilio media socket to the realtime voice model)
+### Task 11: The live call (Twilio media socket to the voice model)
 
 **Files:**
 - Create: `apps/brain/src/calls/realtime.ts`
+- Create: `apps/brain/src/calls/voice-wire.ts`
 - Create: `apps/brain/src/calls/bridge.ts`
 - Test: `apps/brain/src/calls/bridge.test.ts`
 
 **Interfaces:**
-- Consumes: `Schedule` (Task 1); `CallLine` (Task 9); `manualTime`, `waitFor` (Task 2).
+- Consumes: `Schedule` (Task 1); `manualTime`, `waitFor` (Task 2); `CallLine` (Task 9); `REALTIME_URL`, `LIVE_URL`, `voiceKind`, `VoiceKind` (Task 9).
 - Produces:
-  - `realtime.ts`: `interface CallBrief { business; goal; factsAllowed: string[]; forWhom: string }`; `interface SessionSettings { model; voice; transcribeModel: string }`; `callInstructions(b): string`; `REPORT_OUTCOME_TOOL`; `ReportedOutcome` (zod: `{ outcome: string 1..500; answered: boolean; record?: { kind: 'agreed' | 'open'; text: string 1..200 } | null }`) and its type; `sessionUpdate(b, o): Record<string, unknown>`; `openRealtime(o: { url; model; apiKey }): WebSocket`.
-  - `bridge.ts`: `type EndReason = 'hangup' | 'cap' | 'error'`; `interface BridgeHooks { talking(callId): Promise<void>; line(callId, line: CallLine): void; outcome(callId, o: ReportedOutcome): void; ended(callId, reason: EndReason): Promise<void> }`; `interface BridgeDeps { claim(callId, token): Promise<CallBrief | null>; openRealtime(): WebSocket; hangUp(callId): Promise<void>; hooks: BridgeHooks; schedule: Schedule; capMs: number; session: SessionSettings; log }`; `GREET_AFTER_MS = 4_000`, `WRAP_UP_BEFORE_MS = 20_000`, `HANG_UP_AFTER_GOODBYE_MS = 2_500`, `HANG_UP_AFTER_REPORT_MS = 15_000`; `attachBridge(twilio: WebSocket, callId: string, deps: BridgeDeps): void`.
+  - `realtime.ts`: `interface CallBrief { business; goal; factsAllowed: string[]; forWhom: string }`; `interface SessionSettings { model: string; voice: string }` (no transcription setting exists); `greeting(b): string`; `callInstructions(b, kind: VoiceKind): string`; `REPORT_OUTCOME_TOOL`; `ReportedOutcome` (zod: `{ outcome: string 1..500; answered: boolean; record?: { kind: 'agreed' | 'open'; text: string 1..200 } | null }`) and its type; `openVoice(o: { model; apiKey }): WebSocket`.
+  - `voice-wire.ts`: `type VoiceEvent` (`audio`, `go_line`, `caller_started`, `report`, `response_started`, `response_done`, `error`); `interface VoiceWire { kind; bargeIn: 'model' | 'energy'; start(b, s); appendAudio(audio); speakFirst(b); truncate(itemId, playedMs); answerReport(ref, ok); wrapUp(); read(ev): VoiceEvent[]; flush(): VoiceEvent[] }`; `realtimeWire(): VoiceWire`; `liveWire(): VoiceWire`; `wireFor(model): VoiceWire` (a fresh wire per call).
+  - `bridge.ts`: `type EndReason = 'hangup' | 'cap' | 'error'`; `interface BridgeHooks { talking(callId): Promise<void>; line(callId, line: CallLine): void /* Go's lines only */; outcome(callId, o: ReportedOutcome): void; ended(callId, reason: EndReason): Promise<void> }`; `interface BridgeDeps { claim(callId, token): Promise<CallBrief | null>; openVoice(): WebSocket; hangUp(callId): Promise<void>; hooks: BridgeHooks; schedule: Schedule; capMs: number; session: SessionSettings; log }`; `GREET_AFTER_MS = 4_000`, `WRAP_UP_BEFORE_MS = 20_000`, `HANG_UP_AFTER_GOODBYE_MS = 2_500`, `HANG_UP_AFTER_REPORT_MS = 15_000`, `BARGE_IN_LEVEL = 1_500`, `BARGE_IN_FRAMES = 3`; `frameLevel(payload): number`; `attachBridge(twilio: WebSocket, callId: string, deps: BridgeDeps): void`.
 
-How a call runs (research/hands.md §4c, §4d):
+How a call runs (research/hands.md §4c, §4d; Keshav's "no second ear" ruling):
 1. Twilio connects to `/calls/media/<call_id>` and sends `connected`, then `start` with `customParameters.token`. Nothing else happens until `claim` accepts the one-use token; a wrong token closes the socket with 1008 and ends nothing (an attacker who guesses a call id cannot end a real call).
-2. The bridge opens the realtime socket and sends `session.update` with `audio/pcmu` in and out (Twilio's 8 kHz μ-law passes through byte for byte), server voice activity detection, the session's own input transcription, Go's instructions and the `report_outcome` tool.
-3. Go waits for the business to say hello; if nobody speaks in 4 s, Go speaks first (`response.create`).
-4. Twilio `media` frames go to `input_audio_buffer.append`; model audio deltas go back as Twilio `media` frames.
-5. **Barge-in:** on `input_audio_buffer.speech_started`, the bridge sends Twilio `clear` (drop Go's queued audio) and the model `conversation.item.truncate` at the milliseconds already played (Twilio's media timestamps).
-6. Go's lines (`response.output_audio_transcript.done`) and the business's lines (`conversation.item.input_audio_transcription.completed`) go to `hooks.line`.
-7. `report_outcome` is answered with "Noted. Now thank them and say goodbye.", and the goodbye response's end hangs up 2.5 s later (15 s at the latest).
-8. At 3:40 the model is told to wrap up; at 4:00 the bridge hangs up whatever happens. A dropped model socket hangs up too.
+2. The bridge opens the voice model's socket (`CALLS_VOICE_MODEL`, Task 9) and starts the session with `audio/pcmu` in and out (Twilio's 8 kHz μ-law passes through byte for byte) and Go's instructions. **No input transcription is turned on and no speech-to-text service is called**: Go hears with the voice model's own ears only. On `gpt-realtime-2.1` (the default) that is a `session.update` with server voice activity detection and the `report_outcome` tool, and no `audio.input.transcription`. On `gpt-live-1` (the day-one A/B) it is a `session.start` with `delegation: { type: 'client' }`: the Live model has no function tools and hands off instead.
+3. Go waits for the business to say hello; if nobody speaks in 4 s, Go speaks first (realtime: `response.create`; Live: Go's greeting as `session.commentary.append`).
+4. Twilio `media` frames go to the model (`input_audio_buffer.append` or `session.input_audio.append`); model audio deltas go back as Twilio `media` frames.
+5. **Barge-in.** Realtime: on `input_audio_buffer.speech_started` (voice activity detection, which needs no transcription), the bridge sends Twilio `clear` (drop Go's queued audio) and the model `conversation.item.truncate` at the milliseconds already played (Twilio's media timestamps). Live has no "caller started speaking" event, so the bridge sends a Twilio `mark` after each chunk of Go's audio (Twilio echoes a mark once the audio before it has played, and echoes all pending marks after a `clear`); when three 20 ms frames in a row from the business are loud (`BARGE_IN_LEVEL`, root mean square of the decoded samples) while a mark is still pending, it sends Twilio `clear`. The Live model hears the business itself and yields. The level is tuned on day one (a speakerphone that leaks Go's own voice back could trip it).
+6. **The card shows Go's side.** Go's lines come from the model's own output transcript (realtime `response.output_audio_transcript.done`; Live `session.output_transcript.delta` words, a line ending when the business starts talking, at a hand-off, or at the end of the call) and go to `hooks.line` as `who: 'go'`. The business's words never reach the card or `calls.transcript`: realtime has no transcript of them, and the Live wire reads its own input transcript only as "Go's line is over", never its text. The room hears the business on the speaker; the outcome comes from the model's report. Showing the business's words would need Keshav's explicit OK (and would only be possible on `gpt-live-1`, whose input transcript is the model's own; on realtime it would need a transcriber, which the ruling forbids).
+7. **The outcome.** Realtime: `report_outcome` is answered "Noted. Now thank them and say goodbye.", and the goodbye response's end hangs up 2.5 s later. Live: Go says the answer back in one sentence that starts "So," and hands off; the bridge takes that line as the outcome (`answered: true`, no record line on this model), answers the hand-off quietly (`session.thinking.append`), and hangs up 2.5 s after Twilio has echoed the goodbye's last mark. Every report and every hand-off gets an answer (an unanswered Live hand-off leaves the voice improvising), and a hand-off that is not a read-back is answered "carry on". Either model: 15 s after the report at the latest.
+8. At 3:40 the model is told to wrap up (realtime: a system item and `response.create`; Live: `session.instructions.append`); at 4:00 the bridge hangs up whatever happens. A dropped model socket hangs up too.
 
-Event names are the GA realtime ones, with the older beta names (`response.audio.delta`, `response.audio_transcript.done`) accepted as well; the day-one check (Task 14) confirms which the account gets. The model id is `gpt-realtime-2.1` because it has the "caller started speaking" event barge-in needs (`gpt-live-1` does not).
+Event names: the GA realtime ones, with the older beta names (`response.audio.delta`, `response.audio_transcript.done`) accepted as well. The Live names are the ones Bash's live line uses in production (`session.output_transcript.delta`, `session.input_transcript.delta`, `session.delegation.created`, `session.thinking.append`, `session.instructions.append`, `session.commentary.append`), plus `session.start`, `session.input_audio.append` and `session.output_audio.delta` for the primary socket (research/hands.md §4c, read from the SDK's types). Two Live facts are unconfirmed and are what the day-one check (Task 14) proves before the A/B: the socket URL (`LIVE_URL`) and that `session.start` takes `audio.format: { type: 'audio/pcmu', rate: 8000 }`. Realtime stays the default because it has the speech-started event and function tools; the A/B on day one decides, and the choice is Keshav's.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4806,7 +5053,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { manualTime, waitFor } from '../proactive/fakes.js';
-import { attachBridge, type EndReason } from './bridge.js';
+import { attachBridge, BARGE_IN_LEVEL, frameLevel, type EndReason } from './bridge.js';
 import type { CallBrief, ReportedOutcome } from './realtime.js';
 import type { CallLine } from './store.js';
 
@@ -4827,6 +5074,7 @@ function toneFrame(n: number): string {
   for (let i = 0; i < 160; i += 1) buf[i] = muLaw(Math.round(8000 * Math.sin((2 * Math.PI * 440 * (n * 160 + i)) / 8000)));
   return buf.toString('base64');
 }
+const quiet = Buffer.alloc(160, 0xff).toString('base64'); // one 20 ms frame of μ-law silence
 
 const brief: CallBrief = { business: 'Villa Sol', goal: 'Ask if we can check in at 10 am on 6 Nov', factsAllowed: ['Group of five', 'Staying 6 to 9 November'], forWhom: 'a group of 5 friends travelling together' };
 const startFrame = (token: string) => ({ event: 'start', sequenceNumber: '1', streamSid: 'MZ1', start: { streamSid: 'MZ1', callSid: 'CA1', customParameters: { token }, mediaFormat: { encoding: 'audio/x-mulaw', sampleRate: 8000, channels: 1 } } });
@@ -4836,23 +5084,23 @@ afterEach(() => {
   while (cleanups.length) cleanups.pop()?.();
 });
 
-async function setup() {
+async function setup(model = 'gpt-realtime-2.1') {
   const time = manualTime('2026-10-06T10:00:00Z');
-  const model = new WebSocketServer({ port: 0 });
+  const voice = new WebSocketServer({ port: 0 });
   const modelGot: Array<Record<string, any>> = [];
   let modelSocket: WebSocket | null = null;
-  model.on('connection', (ws) => {
+  voice.on('connection', (ws) => {
     modelSocket = ws;
     ws.on('message', (data) => modelGot.push(JSON.parse(data.toString()) as Record<string, any>));
   });
-  const modelUrl = `ws://127.0.0.1:${(model.address() as AddressInfo).port}`;
+  const voiceUrl = `ws://127.0.0.1:${(voice.address() as AddressInfo).port}`;
   const seen = { talking: [] as string[], lines: [] as CallLine[], outcomes: [] as ReportedOutcome[], ended: [] as EndReason[], hangUps: [] as string[] };
 
   const bridgeServer = new WebSocketServer({ port: 0 });
   bridgeServer.on('connection', (ws) =>
     attachBridge(ws, 'call_1', {
       claim: async (_id, token) => (token === 'tok' ? brief : null),
-      openRealtime: () => new WebSocket(modelUrl),
+      openVoice: () => new WebSocket(voiceUrl),
       hangUp: async (id) => { seen.hangUps.push(id); },
       hooks: {
         talking: async (id) => { seen.talking.push(id); },
@@ -4862,7 +5110,7 @@ async function setup() {
       },
       schedule: time.schedule,
       capMs: 240_000,
-      session: { model: 'gpt-realtime-2.1', voice: 'marin', transcribeModel: 'gpt-4o-mini-transcribe' },
+      session: { model, voice: 'marin' },
       log: { warn: () => {} },
     }),
   );
@@ -4872,7 +5120,7 @@ async function setup() {
   twilio.on('message', (data) => twilioGot.push(JSON.parse(data.toString()) as Record<string, any>));
   twilio.on('close', (code) => { closedWith = code; });
   await new Promise((resolve) => twilio.once('open', resolve));
-  cleanups.push(() => { twilio.terminate(); model.close(); bridgeServer.close(); });
+  cleanups.push(() => { twilio.terminate(); voice.close(); bridgeServer.close(); });
   return {
     time, seen, modelGot, twilioGot,
     send: (frame: object) => twilio.send(JSON.stringify(frame)),
@@ -4882,16 +5130,26 @@ async function setup() {
   };
 }
 
-describe('attachBridge', () => {
-  it('bridges μ-law both ways, clears on barge-in, keeps the transcript and hangs up after the goodbye', async () => {
+describe('frameLevel', () => {
+  it('reads silence as 0 and a spoken-level tone well above the barge-in level', () => {
+    expect(frameLevel(quiet)).toBe(0);
+    expect(frameLevel(toneFrame(0))).toBeGreaterThan(BARGE_IN_LEVEL * 2);
+  });
+});
+
+describe('attachBridge on gpt-realtime-2.1 (the default)', () => {
+  it('bridges μ-law both ways with no transcriber, clears on barge-in, keeps Go\'s lines only and hangs up after the goodbye', async () => {
     const s = await setup();
     s.send({ event: 'connected', protocol: 'Call', version: '1.0.0' });
     s.send(startFrame('tok'));
     await waitFor(() => s.seen.talking.length === 1 && s.modelGot.some((e) => e.type === 'session.update'));
     const update = s.modelGot.find((e) => e.type === 'session.update')!;
+    expect(update.session.model).toBe('gpt-realtime-2.1');
     expect(update.session.audio.input.format).toEqual({ type: 'audio/pcmu' });
     expect(update.session.audio.output.format).toEqual({ type: 'audio/pcmu' });
-    expect(update.session.audio.input.transcription).toEqual({ model: 'gpt-4o-mini-transcribe' });
+    // No second ear: the session never asks for a transcript of the business.
+    expect(update.session.audio.input).not.toHaveProperty('transcription');
+    expect(JSON.stringify(update)).not.toMatch(/transcri/i);
     expect(update.session.tools[0].name).toBe('report_outcome');
     expect(update.session.instructions).toContain('an AI assistant');
     expect(update.session.instructions).toContain('Never pay');
@@ -4901,6 +5159,7 @@ describe('attachBridge', () => {
     s.fromModel({ type: 'response.output_audio.delta', response_id: 'resp_1', item_id: 'item_1', delta: toneFrame(0) });
     await waitFor(() => s.twilioGot.some((f) => f.event === 'media'));
     expect(s.twilioGot.find((f) => f.event === 'media')).toEqual({ event: 'media', streamSid: 'MZ1', media: { payload: toneFrame(0) } });
+    expect(s.twilioGot.some((f) => f.event === 'mark')).toBe(false); // marks are for the Live wire only
 
     const frames = [10, 11, 12].map(toneFrame);
     frames.forEach((payload, i) => s.send({ event: 'media', sequenceNumber: String(i + 2), streamSid: 'MZ1', media: { track: 'inbound', chunk: String(i + 1), timestamp: String(i * 20), payload } }));
@@ -4913,12 +5172,9 @@ describe('attachBridge', () => {
     expect(s.modelGot.find((e) => e.type === 'conversation.item.truncate')).toMatchObject({ item_id: 'item_1', content_index: 0, audio_end_ms: 40 });
 
     s.fromModel({ type: 'response.output_audio_transcript.done', item_id: 'item_1', transcript: 'Hi, this is Go, an AI assistant calling for a group of five.' });
+    // Even if an account sent a transcript of the business, it would never reach the card.
     s.fromModel({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'item_2', transcript: 'Yes, check-in at 10 is fine.' });
-    await waitFor(() => s.seen.lines.length === 2);
-    expect(s.seen.lines).toEqual([
-      { who: 'go', text: 'Hi, this is Go, an AI assistant calling for a group of five.' },
-      { who: 'them', text: 'Yes, check-in at 10 is fine.' },
-    ]);
+    await waitFor(() => s.seen.lines.length === 1);
 
     s.fromModel({
       type: 'response.function_call_arguments.done', response_id: 'resp_3', item_id: 'item_3', call_id: 'fc_1', name: 'report_outcome',
@@ -4927,6 +5183,7 @@ describe('attachBridge', () => {
     await waitFor(() => s.seen.outcomes.length === 1 && s.modelGot.some((e) => e.type === 'conversation.item.create'));
     expect(s.modelGot.find((e) => e.type === 'conversation.item.create')).toMatchObject({ item: { type: 'function_call_output', call_id: 'fc_1' } });
     expect(s.seen.outcomes[0]).toMatchObject({ outcome: 'Check-in at 10 am is fine.', record: { kind: 'agreed' } });
+    expect(s.seen.lines).toEqual([{ who: 'go', text: 'Hi, this is Go, an AI assistant calling for a group of five.' }]);
 
     s.fromModel({ type: 'response.done', response: { id: 'resp_3' } });
     s.fromModel({ type: 'response.created', response: { id: 'resp_4' } });
@@ -4983,6 +5240,92 @@ describe('attachBridge', () => {
     expect(s.seen.hangUps).toEqual(['call_1']);
   });
 });
+
+describe('attachBridge on gpt-live-1 (the day-one A/B)', () => {
+  it('starts a Live session with no transcriber, clears Go on loud audio while it still plays, and keeps Go\'s lines only', async () => {
+    const s = await setup('gpt-live-1');
+    s.send(startFrame('tok'));
+    await waitFor(() => s.modelGot.some((e) => e.type === 'session.start'));
+    const start = s.modelGot.find((e) => e.type === 'session.start')!;
+    expect(start.session).toMatchObject({ model: 'gpt-live-1', audio: { format: { type: 'audio/pcmu', rate: 8000 }, output: { voice: 'marin' } }, delegation: { type: 'client' } });
+    expect(JSON.stringify(start)).not.toMatch(/transcri/i);
+    expect(start.session.instructions).toContain('starts with "So,"');
+    expect(start.session.instructions).not.toMatch(/openai|gpt/i);
+
+    // Go speaks: each chunk of its audio goes to Twilio followed by a mark.
+    s.fromModel({ type: 'session.output_transcript.delta', delta: 'Hi, this is Go, ' });
+    s.fromModel({ type: 'session.output_transcript.delta', delta: 'an AI assistant calling for a group of five.' });
+    s.fromModel({ type: 'session.output_audio.delta', delta: toneFrame(0) });
+    await waitFor(() => s.twilioGot.some((f) => f.event === 'mark'));
+    expect(s.twilioGot).toEqual([
+      { event: 'media', streamSid: 'MZ1', media: { payload: toneFrame(0) } },
+      { event: 'mark', streamSid: 'MZ1', mark: { name: 'go_1' } },
+    ]);
+
+    // Quiet frames from the business clear nothing; three loud ones while Go's audio still plays clear it.
+    [quiet, quiet, quiet].forEach((payload, i) => s.send({ event: 'media', streamSid: 'MZ1', media: { timestamp: String(i * 20), payload } }));
+    await waitFor(() => s.modelGot.filter((e) => e.type === 'session.input_audio.append').length === 3);
+    expect(s.twilioGot.some((f) => f.event === 'clear')).toBe(false);
+    [10, 11, 12].map(toneFrame).forEach((payload, i) => s.send({ event: 'media', streamSid: 'MZ1', media: { timestamp: String(60 + i * 20), payload } }));
+    await waitFor(() => s.twilioGot.some((f) => f.event === 'clear'));
+    expect(s.twilioGot.at(-1)).toEqual({ event: 'clear', streamSid: 'MZ1' });
+    await waitFor(() => s.modelGot.filter((e) => e.type === 'session.input_audio.append').length === 6);
+
+    // The business talks: Go's line is over and kept; their words are not.
+    s.fromModel({ type: 'session.input_transcript.delta', delta: 'Yes, 10 is fine.', start_ms: 3000, end_ms: 4200 });
+    await waitFor(() => s.seen.lines.length === 1);
+    expect(s.seen.lines).toEqual([{ who: 'go', text: 'Hi, this is Go, an AI assistant calling for a group of five.' }]);
+  });
+
+  it('takes Go\'s read-back as the outcome, answers every hand-off, and hangs up once the goodbye has played', async () => {
+    const s = await setup('gpt-live-1');
+    s.send(startFrame('tok'));
+    await waitFor(() => s.modelGot.some((e) => e.type === 'session.start'));
+
+    // A hand-off that is not a read-back is answered, and is not an outcome.
+    s.fromModel({ type: 'session.output_transcript.delta', delta: 'Could you hold on a moment?' });
+    s.fromModel({ type: 'session.delegation.created', delegation: { id: 'dl_1', target: 'client' }, offset_ms: 5000 });
+    await waitFor(() => s.modelGot.some((e) => e.type === 'session.thinking.append'));
+    expect(s.modelGot.find((e) => e.type === 'session.thinking.append')).toMatchObject({ delegation_id: 'dl_1' });
+    expect(s.seen.outcomes).toEqual([]);
+
+    s.fromModel({ type: 'session.output_transcript.delta', delta: 'So, check-in at 10 am ' });
+    s.fromModel({ type: 'session.output_transcript.delta', delta: 'on the 6th is fine.' });
+    s.fromModel({ type: 'session.delegation.created', delegation: { id: 'dl_2', target: 'client' }, offset_ms: 9000 });
+    await waitFor(() => s.seen.outcomes.length === 1 && s.modelGot.filter((e) => e.type === 'session.thinking.append').length === 2);
+    expect(s.seen.outcomes[0]).toEqual({ outcome: 'Check-in at 10 am on the 6th is fine.', answered: true, record: null });
+    expect(s.modelGot.filter((e) => e.type === 'session.thinking.append').at(-1)).toMatchObject({ delegation_id: 'dl_2', content: 'Noted. Now thank them and say goodbye.' });
+
+    // The goodbye plays; once Twilio echoes its mark, Go hangs up 2.5 s later.
+    s.fromModel({ type: 'session.output_transcript.delta', delta: 'Thank you so much, goodbye!' });
+    s.fromModel({ type: 'session.output_audio.delta', delta: toneFrame(1) });
+    await waitFor(() => s.twilioGot.some((f) => f.event === 'mark'));
+    const mark = s.twilioGot.find((f) => f.event === 'mark')!;
+    s.send({ event: 'mark', streamSid: 'MZ1', mark: mark.mark });
+    await waitFor(() => s.time.pending() === 5); // greet, wrap-up, cap, report fallback, goodbye
+    s.time.advance(2_500);
+    expect(s.seen.hangUps).toEqual(['call_1']);
+    await waitFor(() => s.seen.ended.length === 1);
+    expect(s.seen.ended).toEqual(['hangup']);
+    expect(s.seen.lines).toEqual([
+      { who: 'go', text: 'Could you hold on a moment?' },
+      { who: 'go', text: 'So, check-in at 10 am on the 6th is fine.' },
+      { who: 'go', text: 'Thank you so much, goodbye!' },
+    ]);
+  });
+
+  it('says its greeting first when nobody says hello', async () => {
+    const s = await setup('gpt-live-1');
+    s.send(startFrame('tok'));
+    await waitFor(() => s.modelGot.some((e) => e.type === 'session.start'));
+    s.time.advance(4_000);
+    await waitFor(() => s.modelGot.some((e) => e.type === 'session.commentary.append'));
+    expect(s.modelGot.find((e) => e.type === 'session.commentary.append')).toMatchObject({
+      delegation_id: null,
+      content: 'Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together.',
+    });
+  });
+});
 ```
 
 - [ ] **Step 2: Push the test and see it fail**
@@ -4993,18 +5336,28 @@ Red is certain: the modules do not exist yet. Go to Step 3.
 
 ```ts
 // apps/brain/src/calls/realtime.ts
-// What the voice model is told on a call, the session it runs with, and the one tool it has.
+// What the voice model is told on a call, the one tool it has on gpt-realtime, and the socket to it.
 import WebSocket from 'ws';
 import { z } from 'zod';
+import { LIVE_URL, REALTIME_URL, voiceKind, type VoiceKind } from './config.js';
 
 export interface CallBrief { business: string; goal: string; factsAllowed: string[]; forWhom: string }
-export interface SessionSettings { model: string; voice: string; transcribeModel: string }
+/** The voice model and its voice. There is no transcription setting: Go hears with the voice model's own ears only. */
+export interface SessionSettings { model: string; voice: string }
 
-export function callInstructions(b: CallBrief): string {
+/** Go's first line on every call: it says it is an AI assistant. */
+export function greeting(b: CallBrief): string {
+  return `Hi, this is Go, an AI assistant calling for ${b.forWhom}.`;
+}
+
+export function callInstructions(b: CallBrief, kind: VoiceKind): string {
   const facts = b.factsAllowed.length > 0 ? b.factsAllowed.map((f) => `- ${f}`).join('\n') : '- Nothing beyond the question itself.';
+  const report = kind === 'realtime'
+    ? '- As soon as you have the answer, or it is clear you cannot get it, call report_outcome with the outcome in one or two plain sentences. Then thank them and say goodbye.'
+    : '- As soon as you have the answer, or it is clear you cannot get it, say it back to them in one short sentence that starts with "So," (for example "So, check-in at 10 am is fine."), then hand off (delegate). When you are told to, thank them and say goodbye.';
   return [
     `You are Go, an AI assistant, on a phone call to ${b.business} on behalf of ${b.forWhom}.`,
-    `When they answer, say first: "Hi, this is Go, an AI assistant calling for ${b.forWhom}." Then ask your question.`,
+    `When they answer, say first: "${greeting(b)}" Then ask your question.`,
     `Your goal: ${b.goal}`,
     'Facts you may share if they help, and nothing else about the group:',
     facts,
@@ -5014,7 +5367,7 @@ export function callInstructions(b: CallBrief): string {
     '- Never say which company made you or which model you are. You are Go.',
     '- Be brief and polite. Short sentences. Speak English; if they answer in Hindi, speak Hindi.',
     '- If they ask you to hold, wait quietly.',
-    '- As soon as you have the answer, or it is clear you cannot get it, call report_outcome with the outcome in one or two plain sentences. Then thank them and say goodbye.',
+    report,
   ].join('\n');
 }
 
@@ -5048,49 +5401,240 @@ export const ReportedOutcome = z.object({
 });
 export type ReportedOutcome = z.infer<typeof ReportedOutcome>;
 
-export function sessionUpdate(b: CallBrief, o: SessionSettings): Record<string, unknown> {
+/** A plain WebSocket to the voice model (no SDK: the repo pins an older SDK for the copied agent loop). */
+export function openVoice(o: { model: string; apiKey: string }): WebSocket {
+  const headers = { Authorization: `Bearer ${o.apiKey}` };
+  return voiceKind(o.model) === 'live'
+    ? new WebSocket(LIVE_URL, { headers })
+    : new WebSocket(`${REALTIME_URL}?model=${encodeURIComponent(o.model)}`, { headers });
+}
+```
+
+```ts
+// apps/brain/src/calls/voice-wire.ts
+// The two voice models a call can use, behind one shape. A wire turns the bridge's few needs into the model's
+// own events, and the model's events back into the few the bridge acts on. Neither wire turns on input
+// transcription, and neither passes on the business's words: Go hears with the voice model's own ears only and
+// the card shows Go's side (Keshav's ruling). One wire per call: the Live wire keeps Go's words between events.
+import { voiceKind, type VoiceKind } from './config.js';
+import { REPORT_OUTCOME_TOOL, callInstructions, greeting, type CallBrief, type SessionSettings } from './realtime.js';
+
+/** What the bridge reads from the voice model. */
+export type VoiceEvent =
+  | { kind: 'audio'; itemId: string; audio: string }
+  | { kind: 'go_line'; text: string }
+  | { kind: 'caller_started' }
+  | { kind: 'report'; ref: string; args: unknown }
+  | { kind: 'response_started'; id: string }
+  | { kind: 'response_done'; id: string }
+  | { kind: 'error'; error: unknown };
+
+export interface VoiceWire {
+  kind: VoiceKind;
+  /** 'model': the model says when the caller starts talking. 'energy': it does not, so the bridge uses Twilio marks and loudness. */
+  bargeIn: 'model' | 'energy';
+  start(b: CallBrief, s: SessionSettings): object;
+  appendAudio(audio: string): object;
+  speakFirst(b: CallBrief): object[];
+  truncate(itemId: string, playedMs: number): object[];
+  /** Every report or hand-off gets an answer; `ok` says whether its outcome was read. */
+  answerReport(ref: string, ok: boolean): object[];
+  wrapUp(): object[];
+  read(ev: Record<string, unknown>): VoiceEvent[];
+  /** Go's last unfinished line, at the end of the call. */
+  flush(): VoiceEvent[];
+}
+
+const NOTED = 'Noted. Now thank them and say goodbye.';
+
+function field(ev: Record<string, unknown>, key: string): string {
+  const v = ev[key];
+  return typeof v === 'string' ? v : '';
+}
+
+function responseId(ev: Record<string, unknown>): string {
+  const r = ev.response as { id?: unknown } | undefined;
+  return typeof r?.id === 'string' ? r.id : '';
+}
+
+function parseJson(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+/** gpt-realtime-2.1 (the default): server voice activity detection, function tools, no input transcription. */
+export function realtimeWire(): VoiceWire {
   return {
-    type: 'session.update',
-    session: {
-      type: 'realtime',
-      model: o.model,
-      instructions: callInstructions(b),
-      output_modalities: ['audio'],
-      audio: {
-        input: {
-          format: { type: 'audio/pcmu' },
-          transcription: { model: o.transcribeModel },
-          turn_detection: { type: 'server_vad', silence_duration_ms: 500 },
+    kind: 'realtime',
+    bargeIn: 'model',
+    start: (b, s) => ({
+      type: 'session.update',
+      session: {
+        type: 'realtime',
+        model: s.model,
+        instructions: callInstructions(b, 'realtime'),
+        output_modalities: ['audio'],
+        audio: {
+          // No `transcription` key, on purpose: voice activity detection needs none, and Go keeps no second ear.
+          input: { format: { type: 'audio/pcmu' }, turn_detection: { type: 'server_vad', silence_duration_ms: 500 } },
+          output: { format: { type: 'audio/pcmu' }, voice: s.voice },
         },
-        output: { format: { type: 'audio/pcmu' }, voice: o.voice },
+        tools: [REPORT_OUTCOME_TOOL],
+        tool_choice: 'auto',
       },
-      tools: [REPORT_OUTCOME_TOOL],
-      tool_choice: 'auto',
+    }),
+    appendAudio: (audio) => ({ type: 'input_audio_buffer.append', audio }),
+    speakFirst: () => [{ type: 'response.create' }],
+    truncate: (itemId, playedMs) => [{ type: 'conversation.item.truncate', item_id: itemId, content_index: 0, audio_end_ms: playedMs }],
+    answerReport: (ref, ok) => [
+      {
+        type: 'conversation.item.create',
+        item: { type: 'function_call_output', call_id: ref, output: ok ? NOTED : 'That outcome could not be read. Call report_outcome again with a short outcome.' },
+      },
+      { type: 'response.create' },
+    ],
+    wrapUp: () => [
+      {
+        type: 'conversation.item.create',
+        item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: 'Time is nearly up. Wrap up now: call report_outcome, then thank them and say goodbye.' }] },
+      },
+      { type: 'response.create' },
+    ],
+    read(ev) {
+      switch (field(ev, 'type')) {
+        case 'response.output_audio.delta':
+        case 'response.audio.delta':
+          return [{ kind: 'audio', itemId: field(ev, 'item_id'), audio: field(ev, 'delta') }];
+        case 'input_audio_buffer.speech_started':
+          return [{ kind: 'caller_started' }];
+        case 'response.output_audio_transcript.done':
+        case 'response.audio_transcript.done': {
+          const line = field(ev, 'transcript').trim();
+          return line ? [{ kind: 'go_line', text: line }] : [];
+        }
+        case 'response.function_call_arguments.done':
+          return field(ev, 'name') === 'report_outcome' ? [{ kind: 'report', ref: field(ev, 'call_id'), args: parseJson(field(ev, 'arguments')) }] : [];
+        case 'response.created':
+          return [{ kind: 'response_started', id: responseId(ev) }];
+        case 'response.done':
+          return [{ kind: 'response_done', id: responseId(ev) }];
+        case 'error':
+          return [{ kind: 'error', error: ev.error }];
+        default:
+          // Everything else, including a transcript of the business should an account ever send one: never kept.
+          return [];
+      }
     },
+    flush: () => [],
   };
 }
 
-/** A plain WebSocket to the realtime API (no SDK: the repo pins an older SDK for the copied agent loop). */
-export function openRealtime(o: { url: string; model: string; apiKey: string }): WebSocket {
-  return new WebSocket(`${o.url}?model=${encodeURIComponent(o.model)}`, { headers: { Authorization: `Bearer ${o.apiKey}` } });
+/** gpt-live-1 (the day-one A/B): no function tools (it hands off instead), no speech-started event, and its
+ *  transcripts are its own. Event names are the ones Bash's live line uses; the socket URL is proven on day one. */
+export function liveWire(): VoiceWire {
+  let words = '';
+  let lastLine = '';
+  let n = 0;
+  const eventId = (tag: string): string => {
+    n += 1;
+    return `go_${tag}_${n}`;
+  };
+  const endLine = (): VoiceEvent[] => {
+    const line = words.replace(/\s+/g, ' ').trim();
+    words = '';
+    if (!line) return [];
+    lastLine = line;
+    return [{ kind: 'go_line', text: line }];
+  };
+  /** Go says the answer back as "So, ..." just before it hands off; that line, without the "So,", is the outcome. */
+  const readBack = (): string => {
+    if (!/^so\b/i.test(lastLine)) return '';
+    const said = lastLine.replace(/^so\b[,\s]*/i, '');
+    return said.charAt(0).toUpperCase() + said.slice(1);
+  };
+  return {
+    kind: 'live',
+    bargeIn: 'energy',
+    start: (b, s) => ({
+      type: 'session.start',
+      session: {
+        model: s.model,
+        instructions: callInstructions(b, 'live'),
+        audio: { format: { type: 'audio/pcmu', rate: 8000 }, output: { voice: s.voice } },
+        delegation: { type: 'client' },
+        store: false,
+      },
+    }),
+    appendAudio: (audio) => ({ type: 'session.input_audio.append', audio }),
+    speakFirst: (b) => [{ type: 'session.commentary.append', event_id: eventId('hello'), delegation_id: null, content: greeting(b) }],
+    truncate: () => [],
+    answerReport: (ref, ok) => [
+      {
+        type: 'session.thinking.append',
+        event_id: eventId('noted'),
+        delegation_id: ref,
+        content: ok ? NOTED : 'If you have the answer, say it back to them in one sentence that starts with "So," and hand off again. If not, carry on with the goal.',
+      },
+    ],
+    wrapUp: () => [
+      {
+        type: 'session.instructions.append',
+        event_id: eventId('wrap'),
+        delegation_id: null,
+        content: 'Time is nearly up. Wrap up now: say the answer back in one sentence that starts with "So,", hand off, then thank them and say goodbye.',
+      },
+    ],
+    read(ev) {
+      switch (field(ev, 'type')) {
+        case 'session.output_audio.delta':
+          return [{ kind: 'audio', itemId: 'live', audio: field(ev, 'delta') }];
+        case 'session.output_transcript.delta':
+          words += field(ev, 'delta');
+          return [];
+        case 'session.input_transcript.delta':
+          // The business is talking, so Go's line is over. Their words themselves are never kept.
+          return endLine();
+        case 'session.delegation.created': {
+          const d = ev.delegation as { id?: unknown; target?: unknown } | undefined;
+          if (typeof d?.id !== 'string' || d.target !== 'client') return [];
+          const line = endLine();
+          return [...line, { kind: 'report', ref: d.id, args: { outcome: readBack(), answered: true, record: null } }];
+        }
+        case 'error':
+          return [{ kind: 'error', error: ev.error }];
+        default:
+          return [];
+      }
+    },
+    flush: endLine,
+  };
+}
+
+export function wireFor(model: string): VoiceWire {
+  return voiceKind(model) === 'live' ? liveWire() : realtimeWire();
 }
 ```
 
 ```ts
 // apps/brain/src/calls/bridge.ts
-// The live call: Twilio's media socket on one side, the realtime voice model on the other. μ-law audio
-// passes through untouched both ways. Lines become the transcript; report_outcome ends the call politely;
-// the cap ends it regardless.
+// The live call: Twilio's media socket on one side, the voice model on the other. μ-law audio passes through
+// untouched both ways. Go's own lines become the card's transcript; the model's report ends the call politely;
+// the cap ends it regardless. Nothing here transcribes the business or keeps their words (Keshav's ruling).
 import WebSocket, { type RawData } from 'ws';
 import { z } from 'zod';
 import type { Schedule } from '../proactive/clock.js';
-import { ReportedOutcome, sessionUpdate, type CallBrief, type SessionSettings } from './realtime.js';
+import { ReportedOutcome, type CallBrief, type SessionSettings } from './realtime.js';
 import type { CallLine } from './store.js';
+import { wireFor, type VoiceEvent } from './voice-wire.js';
 
 export type EndReason = 'hangup' | 'cap' | 'error';
 
 export interface BridgeHooks {
   talking(callId: string): Promise<void>;
+  /** Go's own lines only. */
   line(callId: string, line: CallLine): void;
   outcome(callId: string, o: ReportedOutcome): void;
   ended(callId: string, reason: EndReason): Promise<void>;
@@ -5099,11 +5643,12 @@ export interface BridgeHooks {
 export interface BridgeDeps {
   /** Checks the one-use token; null refuses the connection. */
   claim(callId: string, token: string): Promise<CallBrief | null>;
-  openRealtime(): WebSocket;
+  openVoice(): WebSocket;
   hangUp(callId: string): Promise<void>;
   hooks: BridgeHooks;
   schedule: Schedule;
   capMs: number;
+  /** The voice model (it picks the wire) and its voice. */
   session: SessionSettings;
   log: { warn(obj: object, msg: string): void };
 }
@@ -5112,7 +5657,9 @@ export const GREET_AFTER_MS = 4_000;
 export const WRAP_UP_BEFORE_MS = 20_000;
 export const HANG_UP_AFTER_GOODBYE_MS = 2_500;
 export const HANG_UP_AFTER_REPORT_MS = 15_000;
-const WRAP_UP = 'Time is nearly up. Wrap up now: call report_outcome, then thank them and say goodbye.';
+/** Barge-in without a speech event (gpt-live-1): this loud for this many 20 ms frames while Go's audio plays. Tuned on day one. */
+export const BARGE_IN_LEVEL = 1_500;
+export const BARGE_IN_FRAMES = 3;
 
 const TwilioFrame = z.object({
   event: z.string(),
@@ -5120,9 +5667,30 @@ const TwilioFrame = z.object({
     .object({ streamSid: z.string(), callSid: z.string().optional(), customParameters: z.record(z.string(), z.string()).optional() })
     .optional(),
   media: z.object({ payload: z.string(), timestamp: z.union([z.string(), z.number()]).optional() }).optional(),
+  mark: z.object({ name: z.string() }).optional(),
 });
 
+/** One G.711 μ-law byte as a 16-bit sample. */
+function linear(u: number): number {
+  const x = ~u & 0xff;
+  const magnitude = ((((x & 0x0f) << 3) + 0x84) << ((x >> 4) & 0x07)) - 0x84;
+  return x & 0x80 ? -magnitude : magnitude;
+}
+
+/** How loud one Twilio frame is: the root mean square of its samples, 0 for silence. */
+export function frameLevel(payload: string): number {
+  const bytes = Buffer.from(payload, 'base64');
+  if (bytes.length === 0) return 0;
+  let sum = 0;
+  for (const b of bytes) {
+    const s = linear(b);
+    sum += s * s;
+  }
+  return Math.sqrt(sum / bytes.length);
+}
+
 export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): void {
+  const wire = wireFor(d.session.model);
   let rt: WebSocket | null = null;
   let streamSid = '';
   let started = false;
@@ -5135,6 +5703,12 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
   let goSpoke = false;
   let reported = false;
   let goodbyeId: string | null = null;
+  // Barge-in by loudness (an 'energy' wire): Go's audio chunks sent to Twilio and not yet played.
+  const playing = new Set<string>();
+  let marks = 0;
+  let loudFrames = 0;
+  let spokeAfterReport = false;
+  let goodbye: (() => void) | null = null;
   const cancels: Array<() => void> = [];
 
   const toTwilio = (frame: object): void => {
@@ -5143,11 +5717,22 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
   const toModel = (event: object): void => {
     if (rt && rt.readyState === WebSocket.OPEN) rt.send(JSON.stringify(event));
   };
+  const toModelAll = (events: object[]): void => {
+    for (const event of events) toModel(event);
+  };
+  const cancelGoodbye = (): void => {
+    goodbye?.();
+    goodbye = null;
+  };
 
   async function end(reason: EndReason): Promise<void> {
     if (ended) return;
     ended = true;
     for (const cancel of cancels) cancel();
+    cancelGoodbye();
+    if (started) {
+      for (const e of wire.flush()) if (e.kind === 'go_line') d.hooks.line(callId, { who: 'go', text: e.text });
+    }
     if (rt && rt.readyState !== WebSocket.CLOSED) rt.close();
     if (twilio.readyState === WebSocket.OPEN) twilio.close();
     if (started) await d.hooks.ended(callId, reason);
@@ -5162,88 +5747,85 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
     finish(reason);
   };
 
-  function onModel(ev: Record<string, unknown>): void {
-    const str = (k: string): string => (typeof ev[k] === 'string' ? (ev[k] as string) : '');
-    const responseId = (): string => {
-      const r = ev.response as { id?: unknown } | undefined;
-      return typeof r?.id === 'string' ? r.id : '';
-    };
-    switch (str('type')) {
-      case 'response.output_audio.delta':
-      case 'response.audio.delta': {
-        const item = str('item_id');
-        if (item && item !== lastItem) {
-          lastItem = item;
+  /** After the report, once Twilio has played every chunk of the goodbye, hang up shortly after (energy wires). */
+  function afterPlayed(): void {
+    if (!reported || !spokeAfterReport || playing.size > 0 || goodbye) return;
+    goodbye = d.schedule(() => hangUp('hangup'), HANG_UP_AFTER_GOODBYE_MS);
+  }
+
+  /** No speech event (gpt-live-1): a short run of loud frames from the business while Go's audio still plays clears it. */
+  function listen(payload: string): void {
+    loudFrames = frameLevel(payload) >= BARGE_IN_LEVEL ? loudFrames + 1 : 0;
+    if (loudFrames < BARGE_IN_FRAMES) return;
+    loudFrames = 0;
+    heardThem = true;
+    if (playing.size === 0) return;
+    playing.clear();
+    toTwilio({ event: 'clear', streamSid });
+  }
+
+  function onVoice(e: VoiceEvent): void {
+    switch (e.kind) {
+      case 'audio': {
+        if (e.itemId !== lastItem) {
+          lastItem = e.itemId;
           responseStartTs = latestTs;
         }
         goSpoke = true;
-        toTwilio({ event: 'media', streamSid, media: { payload: str('delta') } });
+        toTwilio({ event: 'media', streamSid, media: { payload: e.audio } });
+        if (wire.bargeIn === 'energy') {
+          marks += 1;
+          const name = `go_${marks}`;
+          playing.add(name);
+          toTwilio({ event: 'mark', streamSid, mark: { name } });
+          if (reported) {
+            spokeAfterReport = true;
+            cancelGoodbye();
+          }
+        }
         return;
       }
-      case 'input_audio_buffer.speech_started': {
+      case 'caller_started':
         heardThem = true;
         if (lastItem !== null && responseStartTs !== null) {
           toTwilio({ event: 'clear', streamSid });
-          toModel({ type: 'conversation.item.truncate', item_id: lastItem, content_index: 0, audio_end_ms: Math.max(0, latestTs - responseStartTs) });
+          toModelAll(wire.truncate(lastItem, Math.max(0, latestTs - responseStartTs)));
         }
         lastItem = null;
         responseStartTs = null;
         return;
-      }
-      case 'response.output_audio_transcript.done':
-      case 'response.audio_transcript.done': {
-        const text = str('transcript').trim();
-        if (text) d.hooks.line(callId, { who: 'go', text });
+      case 'go_line':
+        d.hooks.line(callId, { who: 'go', text: e.text });
         return;
-      }
-      case 'conversation.item.input_audio_transcription.completed': {
-        const text = str('transcript').trim();
-        if (text) d.hooks.line(callId, { who: 'them', text });
-        return;
-      }
-      case 'response.function_call_arguments.done': {
-        if (str('name') !== 'report_outcome' || reported) return;
-        let args: unknown = null;
-        try {
-          args = JSON.parse(str('arguments'));
-        } catch {
-          args = null;
+      case 'report': {
+        if (reported) {
+          toModelAll(wire.answerReport(e.ref, true));
+          return;
         }
-        const parsed = ReportedOutcome.safeParse(args);
-        toModel({
-          type: 'conversation.item.create',
-          item: {
-            type: 'function_call_output',
-            call_id: str('call_id'),
-            output: parsed.success ? 'Noted. Now thank them and say goodbye.' : 'That outcome could not be read. Call report_outcome again with a short outcome.',
-          },
-        });
-        toModel({ type: 'response.create' });
-        if (parsed.success) {
-          reported = true;
-          d.hooks.outcome(callId, parsed.data);
-          cancels.push(d.schedule(() => hangUp('hangup'), HANG_UP_AFTER_REPORT_MS));
-        }
+        const parsed = ReportedOutcome.safeParse(e.args);
+        toModelAll(wire.answerReport(e.ref, parsed.success));
+        if (!parsed.success) return;
+        reported = true;
+        d.hooks.outcome(callId, parsed.data);
+        cancels.push(d.schedule(() => hangUp('hangup'), HANG_UP_AFTER_REPORT_MS));
         return;
       }
-      case 'response.created':
-        if (reported && goodbyeId === null) goodbyeId = responseId();
+      case 'response_started':
+        if (reported && goodbyeId === null) goodbyeId = e.id;
         return;
-      case 'response.done':
-        if (goodbyeId !== null && responseId() === goodbyeId) cancels.push(d.schedule(() => hangUp('hangup'), HANG_UP_AFTER_GOODBYE_MS));
+      case 'response_done':
+        if (goodbyeId !== null && e.id === goodbyeId) cancels.push(d.schedule(() => hangUp('hangup'), HANG_UP_AFTER_GOODBYE_MS));
         return;
       case 'error':
-        d.log.warn({ callId, error: ev.error }, 'calls: the voice model reported an error');
-        return;
-      default:
+        d.log.warn({ callId, error: e.error }, 'calls: the voice model reported an error');
         return;
     }
   }
 
   function openModel(brief: CallBrief): void {
-    const socket = d.openRealtime();
+    const socket = d.openVoice();
     rt = socket;
-    socket.on('open', () => toModel(sessionUpdate(brief, d.session)));
+    socket.on('open', () => toModel(wire.start(brief, d.session)));
     socket.on('message', (data: RawData) => {
       let ev: Record<string, unknown>;
       try {
@@ -5251,7 +5833,7 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
       } catch {
         return;
       }
-      onModel(ev);
+      for (const e of wire.read(ev)) onVoice(e);
     });
     socket.on('close', () => {
       if (!ended) hangUp('error');
@@ -5277,19 +5859,22 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
       await d.hooks.talking(callId);
       openModel(brief);
       cancels.push(d.schedule(() => {
-        if (!heardThem && !goSpoke) toModel({ type: 'response.create' });
+        if (!heardThem && !goSpoke) toModelAll(wire.speakFirst(brief));
       }, GREET_AFTER_MS));
-      cancels.push(d.schedule(() => {
-        toModel({ type: 'conversation.item.create', item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: WRAP_UP }] } });
-        toModel({ type: 'response.create' });
-      }, d.capMs - WRAP_UP_BEFORE_MS));
+      cancels.push(d.schedule(() => toModelAll(wire.wrapUp()), d.capMs - WRAP_UP_BEFORE_MS));
       cancels.push(d.schedule(() => hangUp('cap'), d.capMs));
       return;
     }
     if (!started) return;
     if (frame.event === 'media' && frame.media) {
       if (frame.media.timestamp !== undefined) latestTs = Number(frame.media.timestamp);
-      toModel({ type: 'input_audio_buffer.append', audio: frame.media.payload });
+      toModel(wire.appendAudio(frame.media.payload));
+      if (wire.bargeIn === 'energy') listen(frame.media.payload);
+      return;
+    }
+    if (frame.event === 'mark' && frame.mark) {
+      playing.delete(frame.mark.name);
+      afterPlayed();
       return;
     }
     if (frame.event === 'stop') finish('hangup');
@@ -5306,13 +5891,13 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
 - [ ] **Step 4: Commit, push, read CI**
 
 ```bash
-git add apps/brain/src/calls/realtime.ts apps/brain/src/calls/bridge.ts apps/brain/src/calls/bridge.test.ts
-git commit -m "feat(calls): the live call, Twilio's mu-law straight to the voice model and back, with barge-in and a 4 minute cap
+git add apps/brain/src/calls/realtime.ts apps/brain/src/calls/voice-wire.ts apps/brain/src/calls/bridge.ts apps/brain/src/calls/bridge.test.ts
+git commit -m "feat(calls): the live call, Twilio's mu-law straight to the voice model and back, Go's own lines only, barge-in and a 4 minute cap
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `bridge.test.ts` passes (audio both ways, barge-in, transcript, outcome, wrong token, cap, hang-ups); earlier tests stay green.
+Expected: `bridge.test.ts` passes (no transcriber on either model, audio both ways, barge-in by speech event and by marks and loudness, Go's lines only, outcome by report and by read-back, wrong token, cap, hang-ups); earlier tests stay green.
 
 ### Task 12: The call service and `call_business` (window, dial, live card, outcome, failures)
 
@@ -5334,7 +5919,7 @@ The room behaviour follows spec §14 and the guide's flow (`docs/guide/09-flows.
 1. `call_business` checks the switch (`CALLS_MODE` must read `allowlist`), the settings, the allowlist (by number, or by a listed name), refuses card, bank, OTP or login words and long digit runs in the goal or the facts, and refuses a second live call for the trip. Then it posts one line, the composer's own words plus "Say stop in the next 30 seconds if you'd rather I didn't.", and stores the call with `dial_at = now + 30 s`. The call card is posted when dialing starts, as the guide's flow does.
 2. In the window, any person's message after Go's line that says stop (Task 9's words), or a bare "no"/"nahi" in reply to Go's line, cancels the call; Go replies "Okay, I won't call Villa Sol." The `calls` "right now" block (Task 13) tells the composer it already replied.
 3. At 30 s the tick reads the switch again (flipped to `off` means "Calls are switched off right now, so I didn't call Villa Sol."), posts the call card (`dialing`, a "Stop the call" button), stores the token's hash and places the Twilio call.
-4. While talking, the card is replaced at most every 3 s with the latest line (`last_line`); the final card (state `ended`, `outcome`, `transcript`, `ended_at`, no buttons) always lands.
+4. While talking, the card is replaced at most every 3 s with Go's latest line (`last_line`, always `who: 'go'`); the final card (state `ended`, `outcome`, Go's lines as `transcript`, `ended_at`, no buttons) always lands. `line()` drops anything that is not Go's own line, so the business's words can never reach the card even if a voice model sent them (Keshav's ruling; showing them needs his explicit OK).
 5. The end: the outcome as a reply to the person who asked; if the outcome settles something, `add_record_line` with `proof` = the call card's message (decision: P6 writes the line directly instead of going through P2's `record` tool, because the proof is Go's own card message, not a person's message, and the call ends outside any composer turn). An `open` line asks the organizer and names them.
 6. Failures: busy, no answer, failed or a Twilio refusal turn the card to `failed` and say one line. The tick closes out a call left talking by a restart (after 15 s), a call that never got media (after 90 s), and any ended call whose close-out did not finish.
 
@@ -5587,20 +6172,22 @@ describe('a call that connects', () => {
     await flush();
     expect(m.link.of('replace_card').at(-1)).toMatchObject({ card: { state: 'talking', started_at: '2026-10-06T10:00:30.000Z' } });
     m.service.line(m.callId, { who: 'go', text: 'Hi, this is Go, an AI assistant calling for a group of 5 friends.' });
-    m.service.line(m.callId, { who: 'them', text: 'Yes, 10 am check-in is fine — and ₹2,000 off for the deposit this week.' });
+    m.service.line(m.callId, { who: 'go', text: 'So, 10 am check-in is fine — and ₹2,000 off for the deposit this week.' });
+    // The card carries Go's side only (Keshav's ruling): a line from the business is dropped.
+    m.service.line(m.callId, { who: 'them', text: 'Yes, that is right.' });
     await flush();
     expect(m.link.of('replace_card')).toHaveLength(1);
     m.time.advance(3000);
     await flush();
     expect(m.link.of('replace_card')).toHaveLength(2);
-    expect(m.link.of('replace_card').at(-1)).toMatchObject({ card: { state: 'talking', last_line: { who: 'them', text: 'Yes, 10 am check-in is fine, and ₹2,000 off for the deposit this week.' } } });
+    expect(m.link.of('replace_card').at(-1)).toMatchObject({ card: { state: 'talking', last_line: { who: 'go', text: 'So, 10 am check-in is fine, and ₹2,000 off for the deposit this week.' } } });
 
     m.service.outcome(m.callId, { outcome: '10 am check-in is fine. They offered ₹2,000 off if we pay the deposit this week.', answered: true, record: { kind: 'open', text: '₹2,000 off at Villa Sol if we pay the deposit this week?' } });
     await m.service.ended(m.callId, 'hangup');
 
     const final = m.link.of('replace_card').at(-1)?.card as Record<string, unknown>;
     expect(final).toMatchObject({ state: 'ended', outcome: '10 am check-in is fine. They offered ₹2,000 off if we pay the deposit this week.' });
-    expect(final.transcript).toHaveLength(2);
+    expect((final.transcript as Array<{ who: string }>).map((l) => l.who)).toEqual(['go', 'go']);
     expect(final.actions).toBeUndefined();
     expect(m.link.of('post_message').at(-1)).toMatchObject({
       request_id: `go_${m.callId}_outcome`,
@@ -5976,10 +6563,12 @@ export class CallService {
     updater.update(this.card(row, { state: 'talking', startedAt: now }));
   }
 
+  /** Go's own lines only: the card never shows the business's words (Keshav's ruling; showing them needs his explicit OK). */
   line(callId: string, line: CallLine): void {
+    if (line.who !== 'go') return;
     const live = this.live.get(callId);
     if (!live) return;
-    const l: CallLine = { who: line.who, text: clip(plain(line.text), 500) };
+    const l: CallLine = { who: 'go', text: clip(plain(line.text), 500) };
     live.lines.push(l);
     if (live.lines.length > 300) live.lines.shift();
     live.updater.update(this.card(live.row, { state: 'talking', startedAt: live.startedAt, lastLine: l }));
@@ -6183,14 +6772,15 @@ Expected: `card-updater.test.ts` and `service.test.ts` pass; earlier tests stay 
 - Test: `apps/brain/src/calls/register.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 9 to 12; `Brain`, `RegisterLane` (P1); `brain.http` (Fastify), `brain.http.server` (the Node HTTP server, for the upgrade); `brain.tools.register`, `brain.hooks.onRead`, `brain.taps.on('call', 'stop', ...)`, `brain.context.addNow` (P1); `realSchedule`, `Schedule` (Task 1).
-- Produces: `CALLS_ORDER = 70`; `callsNow(service: CallService): NowProvider` (name `calls`); `interface CallsHandles { service: CallService; tick(): Promise<void>; stop(): void }`; `interface StartCallsOpts { intervals?: boolean; fetch?: typeof fetch; openRealtime?: () => WebSocket; schedule?: Schedule }`; `startCalls(brain, opts?): Promise<CallsHandles>`; `registerCalls: RegisterLane`.
+- Consumes: Tasks 9 to 12; `Brain`, `RegisterLane` (P1); `brain.http` (Fastify); `brain.door.onUpgrade(path: RegExp, handle: UpgradeHandler)` and `brain.onStop(fn)` (P1, master §6.3); `brain.tools.register`, `brain.hooks.onRead`, `brain.taps.on('call', 'stop', ...)`, `brain.context.addNow` (P1); `realSchedule`, `Schedule` (Task 1); `openVoice`, `REALTIME_VOICE`, `CallsConfig.voiceModel` (Tasks 9 and 11).
+- Produces: `CALLS_ORDER = 70`; `MEDIA_PATH`; `callsNow(service: CallService): NowProvider` (name `calls`); `interface CallsHandles { service: CallService; tick(): Promise<void>; stop(): void }`; `interface StartCallsOpts { intervals?: boolean; fetch?: typeof fetch; openVoice?: () => WebSocket; schedule?: Schedule }`; `startCalls(brain, opts?): Promise<CallsHandles>` (logs one error line and throws at boot when the door has no `onUpgrade`, before anything is registered); `registerCalls: RegisterLane`.
 
 What it adds to the service:
 - `POST /calls/twilio/status/:callId`: Twilio's status callback, form-encoded, checked against `X-Twilio-Signature` for the URL Go built from `GO_PUBLIC_URL`; 403 when the signature is wrong, 204 otherwise.
-- The media socket `GET /calls/media/:callId` (WebSocket upgrade) handled with a `noServer` `WebSocketServer`. P1's door answers every upgrade and refuses any path but `/v1/socket` with 404, so the media path is handed to the door through `Door.onUpgrade(path, handler)` (interface note 1, a small P1 change); until the door has it, the code listens on `brain.http.server` directly, which is what the tests use. The day-one check (Task 14) proves a real media connection gets through.
+- The media socket `GET /calls/media/:callId` (WebSocket upgrade), handed over by P1's door with `brain.door.onUpgrade(MEDIA_PATH, handler)` (master §6.3: checked before the `/v1/socket` rule, no signature check by the door; the bridge checks the call's one-use token itself) and served by a `noServer` `WebSocketServer`. There is no second listener on `brain.http.server`: if the door has no `onUpgrade`, `startCalls` logs one error line and throws at boot, so a missing hook is loud instead of hidden. The day-one check (Task 14) proves a real media connection gets through.
+- The voice model is `CALLS_VOICE_MODEL` (Task 9; `gpt-realtime-2.1` when unset), passed to the bridge as `session.model`, which picks the wire (Task 11). Neither model is ever given input transcription.
 - The `calls` "right now" block: the names Go may phone (never numbers), a call waiting or live for this trip, and a call someone just stopped (so the composer does not answer the "stop" a second time).
-- A 1 s tick for the stop window and the sweeps.
+- A 1 s tick for the stop window and the sweeps, `unref()`ed and stopped through `brain.onStop` with the media handler (which then refuses new media sockets). A call still live when Go stops is closed out by the next start's sweep (Task 12).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -6222,14 +6812,16 @@ afterAll(async () => {
   await db.drop();
 });
 
+/** A scripted gpt-realtime-2.1: Go greets, then reports the outcome. It never sends a transcript of the business. */
 function fakeModel() {
   const server = new WebSocketServer({ port: 0 });
+  const got: Array<Record<string, any>> = [];
   server.on('connection', (ws) => {
     ws.on('message', (data) => {
       const ev = JSON.parse(data.toString()) as { type: string; item?: { type?: string } };
+      got.push(ev);
       if (ev.type === 'session.update') {
         ws.send(JSON.stringify({ type: 'response.output_audio_transcript.done', item_id: 'i1', transcript: 'Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together.' }));
-        ws.send(JSON.stringify({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'i2', transcript: 'Yes, check-in at 10 am is fine.' }));
         ws.send(JSON.stringify({
           type: 'response.function_call_arguments.done', call_id: 'fc_1', name: 'report_outcome',
           arguments: JSON.stringify({ outcome: 'Check-in at 10 am on 6 Nov is fine.', answered: true, record: { kind: 'agreed', text: 'Villa Sol: check-in at 10 am on 6 Nov is fine' } }),
@@ -6241,24 +6833,37 @@ function fakeModel() {
       }
     });
   });
-  return { server, url: () => `ws://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  return { server, got, url: () => `ws://127.0.0.1:${(server.address() as AddressInfo).port}` };
 }
 
 describe('startCalls', () => {
-  it('registers the tool, the stop hook, the Stop button and the "Go can phone" block', async () => {
+  it('registers the tool, the stop hook, the Stop button, the media path with the door and the "Go can phone" block', async () => {
     const time = manualTime('2026-10-06T10:00:00Z');
     const { brain, reg } = fakeBrain({ pool: db.pool, now: time.now, env, switches: { CALLS_MODE: 'allowlist' } });
     const h = await startCalls(brain, { intervals: false, schedule: time.schedule });
     expect(reg.tools.map((t) => t.name)).toEqual(['call_business']);
     expect(reg.onRead).toHaveLength(1);
     expect(reg.taps.has('call:stop')).toBe(true);
+    expect(reg.upgrades).toHaveLength(1);
+    expect(reg.upgrades[0]!.path.test('/calls/media/call_turn_1_1')).toBe(true);
+    expect(reg.upgrades[0]!.path.test('/v1/socket')).toBe(false);
+    expect(reg.stops).toHaveLength(1); // the tick stops when Go stops
     const block = await reg.nows.find((n) => n.name === 'calls')!.render('t_goa', []);
     expect(block).toContain('Go can phone (call_business with the name): Villa Sol.');
     expect(block).not.toContain('+91');
     h.stop();
   });
 
-  it('runs a whole call: the line, the wait, the dial, the live card, the outcome and the record', async () => {
+  it('refuses to start, loudly, when the door cannot hand it the media socket', async () => {
+    const time = manualTime('2026-10-06T10:00:00Z');
+    const { brain, reg } = fakeBrain({ pool: db.pool, now: time.now, env, switches: { CALLS_MODE: 'allowlist' } });
+    delete (brain.door as { onUpgrade?: unknown }).onUpgrade;
+    await expect(startCalls(brain, { intervals: false, schedule: time.schedule })).rejects.toThrow(/onUpgrade/);
+    expect(reg.tools).toEqual([]);
+    expect(reg.taps.size).toBe(0);
+  });
+
+  it('runs a whole call: the line, the wait, the dial, the live card with Go\'s side, the outcome and the record', async () => {
     const time = manualTime('2026-10-06T10:00:00Z');
     const pack = goaPack({ messages: [msg({ id: 'm_300', seq: 300, by: 'p_arjun', text: '@Go ask the villa if we can check in at 10', mentionsGo: true })] });
     const { brain, app, reg, link } = fakeBrain({ pool: db.pool, now: time.now, env, switches: { CALLS_MODE: 'allowlist' }, pack });
@@ -6268,7 +6873,7 @@ describe('startCalls', () => {
       twilioReqs.push({ url: String(url), form: new URLSearchParams(String(init?.body ?? '')) });
       return new Response(JSON.stringify({ sid: 'CA_e2e', status: 'queued' }), { status: 201, headers: { 'content-type': 'application/json' } });
     }) as typeof fetch;
-    const h = await startCalls(brain, { intervals: false, fetch: fetchFake, openRealtime: () => new WebSocket(model.url()), schedule: time.schedule });
+    const h = await startCalls(brain, { intervals: false, fetch: fetchFake, openVoice: () => new WebSocket(model.url()), schedule: time.schedule });
     await app.listen({ port: 0, host: '127.0.0.1' });
     const port = (app.server.address() as AddressInfo).port;
 
@@ -6289,13 +6894,18 @@ describe('startCalls', () => {
     expect(twilioReqs[0]?.url).toBe('https://api.twilio.com/2010-04-01/Accounts/AC_test/Calls.json');
     const token = /name="token" value="([^"]+)"/.exec(twilioReqs[0]?.form.get('Twiml') ?? '')?.[1] ?? '';
 
-    // 3. Twilio connects the media stream; the voice model talks; the card goes live.
+    // 3. Twilio connects the media stream through the door; the voice model talks; the card goes live.
     const twilio = new WebSocket(`ws://127.0.0.1:${port}/calls/media/${callId}`);
     await new Promise((resolve) => twilio.once('open', resolve));
     twilio.send(JSON.stringify({ event: 'connected', protocol: 'Call', version: '1.0.0' }));
     twilio.send(JSON.stringify({ event: 'start', streamSid: 'MZ_e2e', start: { streamSid: 'MZ_e2e', callSid: 'CA_e2e', customParameters: { token } } }));
     twilio.send(JSON.stringify({ event: 'media', streamSid: 'MZ_e2e', media: { timestamp: '0', payload: silence } }));
     await waitFor(() => link.of('replace_card').some((p) => (p.card as { state?: string }).state === 'talking'));
+    // The default voice model, and no transcriber on it.
+    await waitFor(() => model.got.some((e) => e.type === 'session.update'));
+    const update = model.got.find((e) => e.type === 'session.update')!;
+    expect(update.session.model).toBe('gpt-realtime-2.1');
+    expect(JSON.stringify(update)).not.toMatch(/transcri/i);
 
     // 4. After report_outcome and the goodbye, Go hangs up through Twilio; Twilio closes the stream.
     await waitFor(() => {
@@ -6305,14 +6915,11 @@ describe('startCalls', () => {
     expect(twilioReqs.find((r) => r.url.endsWith('/Calls/CA_e2e.json'))?.form.get('Status')).toBe('completed');
     twilio.close();
 
-    // 5. The final card, the outcome in the chat, the record line with the call card as proof.
+    // 5. The final card holds Go's side and the outcome; the outcome in the chat; the record line with the call card as proof.
     await waitFor(() => link.of('add_record_line').length === 1);
     const final = link.of('replace_card').at(-1)?.card as Record<string, unknown>;
     expect(final).toMatchObject({ call_id: callId, state: 'ended', outcome: 'Check-in at 10 am on 6 Nov is fine.' });
-    expect(final.transcript).toEqual([
-      { who: 'go', text: 'Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together.' },
-      { who: 'them', text: 'Yes, check-in at 10 am is fine.' },
-    ]);
+    expect(final.transcript).toEqual([{ who: 'go', text: 'Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together.' }]);
     expect(link.of('post_message').at(-1)).toMatchObject({ text: 'Check-in at 10 am on 6 Nov is fine.', reply_to: 'm_300' });
     const cardPost = link.calls.findIndex((c) => c.method === 'post_message' && (c.params.card as { kind?: string } | undefined)?.kind === 'call');
     expect(cardPost).toBeGreaterThan(-1);
@@ -6347,7 +6954,7 @@ Red is certain: the module does not exist yet. Go to Step 3.
 ```ts
 // apps/brain/src/calls/register.ts
 // Wires calls into Go: the call_business tool, the stop words, the Stop button, the "Go can phone" block,
-// Twilio's status callback and the media socket.
+// Twilio's status callback and the media socket, which P1's door hands over.
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import WebSocket, { WebSocketServer } from 'ws';
@@ -6355,15 +6962,15 @@ import type { Brain, RegisterLane } from '../app.js';
 import type { NowProvider } from '../composer/context.js';
 import { realSchedule, type Schedule } from '../proactive/clock.js';
 import { attachBridge } from './bridge.js';
-import { CALL_CAP_MS, REALTIME_MODEL, REALTIME_URL, REALTIME_VOICE, TRANSCRIBE_MODEL, loadCallsConfig, statusUrl } from './config.js';
-import { openRealtime } from './realtime.js';
+import { CALL_CAP_MS, REALTIME_VOICE, loadCallsConfig, statusUrl } from './config.js';
+import { openVoice } from './realtime.js';
 import { CallService } from './service.js';
 import { CallStore } from './store.js';
 import { callTool } from './tool.js';
 import { twilioClient, verifyTwilioSignature } from './twilio.js';
 
 export const CALLS_ORDER = 70;
-const MEDIA_PATH = /^\/calls\/media\/(call_[A-Za-z0-9_-]{1,58})$/;
+export const MEDIA_PATH = /^\/calls\/media\/(call_[A-Za-z0-9_-]{1,58})$/;
 
 export function callsNow(service: CallService): NowProvider {
   return {
@@ -6394,11 +7001,18 @@ export interface StartCallsOpts {
   /** Tests pass false and drive the tick by hand. */
   intervals?: boolean;
   fetch?: typeof fetch;
-  openRealtime?: () => WebSocket;
+  openVoice?: () => WebSocket;
   schedule?: Schedule;
 }
 
 export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<CallsHandles> {
+  // Twilio's media socket reaches Go only through the door (master §6.3: Door.onUpgrade). Without it every call
+  // would ring and then sit in silence, so refuse to start, loudly, before anything is registered.
+  if (typeof brain.door.onUpgrade !== 'function') {
+    const why = 'calls: the door has no onUpgrade (master §6.3), so Twilio media cannot reach Go; calls not started';
+    brain.log.error(why);
+    throw new Error(why);
+  }
   const config = loadCallsConfig(brain.env);
   const schedule = o.schedule ?? realSchedule;
   const twilio = config.accountSid && config.authToken
@@ -6438,16 +7052,18 @@ export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<
   });
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1_048_576 });
-  const openModel = o.openRealtime ?? (() => openRealtime({ url: REALTIME_URL, model: REALTIME_MODEL, apiKey: config.openaiKey ?? '' }));
-  const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
-    const path = (req.url ?? '').split('?')[0] ?? '';
-    const match = MEDIA_PATH.exec(path);
-    if (!match) return; // not ours: the door answers /v1/socket
-    const callId = match[1] ?? '';
+  const openModel = o.openVoice ?? (() => openVoice({ model: config.voiceModel, apiKey: config.openaiKey ?? '' }));
+  let stopped = false;
+  const onMedia = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    const callId = MEDIA_PATH.exec((req.url ?? '').split('?')[0] ?? '')?.[1];
+    if (stopped || !callId) {
+      socket.destroy();
+      return;
+    }
     wss.handleUpgrade(req, socket, head, (ws) =>
       attachBridge(ws, callId, {
         claim: (id, token) => service.claim(id, token),
-        openRealtime: openModel,
+        openVoice: openModel,
         hangUp: (id) => service.hangUp(id),
         hooks: {
           talking: (id) => service.talking(id),
@@ -6457,16 +7073,12 @@ export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<
         },
         schedule,
         capMs: CALL_CAP_MS,
-        session: { model: REALTIME_MODEL, voice: REALTIME_VOICE, transcribeModel: TRANSCRIBE_MODEL },
+        session: { model: config.voiceModel, voice: REALTIME_VOICE },
         log: brain.log,
       }),
     );
   };
-  // P1's door refuses every upgrade path but /v1/socket, so the media path must be handed to it (interface
-  // note 1: Door.onUpgrade). Until the door has it, listen on the server directly (tests, and P1 builds without it).
-  const door = brain.door as typeof brain.door & { onUpgrade?: (path: RegExp, fn: typeof onUpgrade) => void };
-  if (door.onUpgrade) door.onUpgrade(MEDIA_PATH, onUpgrade);
-  else brain.http.server.on('upgrade', onUpgrade);
+  brain.door.onUpgrade(MEDIA_PATH, onMedia);
 
   const handles: NodeJS.Timeout[] = [];
   if (o.intervals !== false) {
@@ -6476,17 +7088,17 @@ export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<
     h.unref();
     handles.push(h);
   }
-  if (config.missing.length > 0) brain.log.info({ missing: config.missing }, 'calls: not set up yet; call_business will refuse');
+  brain.log.info({ voiceModel: config.voiceModel, missing: config.missing }, config.missing.length > 0 ? 'calls: not set up yet; call_business will refuse' : 'calls: ready');
 
-  return {
-    service,
-    tick: () => service.tick(),
-    stop: () => {
-      for (const h of handles) clearInterval(h);
-      brain.http.server.off('upgrade', onUpgrade);
-      wss.close();
-    },
+  const stop = (): void => {
+    stopped = true;
+    for (const h of handles.splice(0)) clearInterval(h);
+    wss.close();
   };
+  // When Go stops (master §6.3: Brain.onStop), the tick stops and no new media socket is taken.
+  brain.onStop(stop);
+
+  return { service, tick: () => service.tick(), stop };
 }
 
 export const registerCalls: RegisterLane = async (brain) => {
@@ -6503,12 +7115,12 @@ import { registerCalls } from './calls/register.js';
 
 ```bash
 git add apps/brain/src/calls/register.ts apps/brain/src/main.ts apps/brain/src/calls/register.test.ts
-git commit -m "feat(calls): wire calls into Go, the status callback, the media socket, the Stop button and who Go can phone
+git commit -m "feat(calls): wire calls into Go, the status callback, the media socket through the door, the Stop button and who Go can phone
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `register.test.ts` passes (the whole call end to end against a fake Twilio and a scripted voice model); every earlier test stays green.
+Expected: `register.test.ts` passes (the whole call end to end against a fake Twilio and a scripted voice model, through the door's upgrade hook, with Go's side only on the card; and a loud refusal without `onUpgrade`); every earlier test stays green.
 
 ### Task 14: Gate G5: the 3:40 beat through the simulator, the day-one check, the first real call
 
@@ -6569,7 +7181,7 @@ beforeAll(async () => {
   });
   built = await buildBrain(env, { pool: db.pool, anthropic: fakeAnthropic(script).client, logger: false, timings: TEST_TIMINGS });
   await registerRoom(built.brain);
-  await startProactive(built.brain, { intervals: false, port: null });
+  await startProactive(built.brain, { intervals: false, travel: null });
   ({ port } = await built.start());
   server = new FakeServer({ goUrl: `http://127.0.0.1:${port}`, secret: SECRET, instance: 'sim-p6' });
   await server.start();
@@ -6609,11 +7221,24 @@ describe('G5: Go speaks first', () => {
     });
   });
 
-  it('never two unprompted posts in a row: a second fire waits', async () => {
-    const res = await fire();
-    expect(await res.json()).toMatchObject({ promoted: 0 });
+  it('a double click posts once, and another nudge waits while nobody has spoken (never two in a row)', async () => {
+    expect(await (await fire()).json()).toMatchObject({ duplicate: true, promoted: 0 });
+    expect(await (await fire({ delay_minutes: 150 })).json()).toMatchObject({ promoted: 0 });
     await new Promise((resolve) => setTimeout(resolve, 1_000));
     expect(server.writes.filter(isNotice)).toHaveLength(1);
+  });
+
+  it('the stage fire (force: true) gets past "two in a row", and two clicks at once post one labelled notice for Arjun', async () => {
+    const [a, b] = await Promise.all([fire({ delay_minutes: 180, force: true }), fire({ delay_minutes: 180, force: true })]);
+    const answers = [await a.json(), await b.json()] as Array<{ promoted: number; duplicate?: boolean }>;
+    expect(answers.filter((x) => x.promoted === 1)).toHaveLength(1);
+    expect(answers.filter((x) => x.duplicate === true)).toHaveLength(1);
+    const second = await server.waitFor(() => server.writes.filter(isNotice)[1], 10_000);
+    expect((second.params as { card: unknown }).card).toMatchObject({
+      kind: 'notice', for_person_ids: ['p_arjun'], source: { name: 'Simulated for the demo' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    expect(server.writes.filter(isNotice)).toHaveLength(2);
   });
 });
 ```
@@ -6628,19 +7253,25 @@ describe('G5: Go speaks first', () => {
 //   railway run --service brain node scripts/calls-day-one.mjs +919800000001
 // It checks the Twilio account and caller number, that India is open for outbound calls, that a trial
 // account has the number verified, the allowlist and the switch, that Go's media socket is reachable
-// from outside, and that the realtime voice model accepts a mu-law session. Exit code 1 if anything fails.
+// from outside, and that both voice models accept a mu-law session with no input transcription (the one
+// CALLS_VOICE_MODEL picks must pass; the other is the day-one A/B and only warns). Exit code 1 if anything fails.
 import WebSocket from 'ws';
 
-// Keep these three the same as apps/brain/src/calls/config.ts.
+// Keep these the same as apps/brain/src/calls/config.ts.
+const REALTIME_URL = 'wss://api.openai.com/v1/realtime';
+const LIVE_URL = 'wss://api.openai.com/v1/live';
 const REALTIME_MODEL = 'gpt-realtime-2.1';
-const REALTIME_VOICE = 'marin';
-const TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
+const LIVE_MODEL = 'gpt-live-1';
+const VOICE = 'marin';
 
 const env = process.env;
 const target = (process.argv[2] ?? '').replace(/[\s\-().]/g, '');
+const chosen = env.CALLS_VOICE_MODEL?.trim() || REALTIME_MODEL;
 const results = [];
 const pass = (name, detail) => results.push({ ok: true, name, detail });
 const fail = (name, detail, fix) => results.push({ ok: false, name, detail, fix });
+/** Only for the A/B: reported, never fails the run. */
+const warn = (name, detail, fix) => results.push({ ok: true, warn: true, name, detail, fix });
 
 async function twilioGet(url) {
   const auth = `Basic ${Buffer.from(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`).toString('base64')}`;
@@ -6692,6 +7323,9 @@ function checkSettings() {
   if ((env.CALLS_MODE ?? 'off') !== 'allowlist') fail('CALLS_MODE', `is "${env.CALLS_MODE ?? 'off'}" in the environment`, 'Set CALLS_MODE=allowlist, or flip the switch on the admin page.');
   else pass('CALLS_MODE', 'allowlist');
   if (!env.OPENAI_API_KEY) fail('OPENAI_API_KEY', 'missing', 'Set it on the brain service in Railway.');
+  if (!/^gpt-(realtime|live)/.test(chosen) || /transcri/i.test(chosen)) {
+    fail('CALLS_VOICE_MODEL', `is "${chosen}"`, 'Leave it unset (gpt-realtime-2.1) or set gpt-live-1 for the A/B. Never a transcription model.');
+  } else pass('CALLS_VOICE_MODEL', env.CALLS_VOICE_MODEL ? chosen : `${chosen} (unset, the default)`);
 }
 
 function checkMediaSocket() {
@@ -6717,55 +7351,79 @@ function checkMediaSocket() {
     });
     ws.on('unexpected-response', (_req, res) => {
       clearTimeout(timer);
-      fail('Media socket', `upgrade answered HTTP ${res.statusCode}`, "The door refuses the media path: P1 needs Door.onUpgrade (P6's interface note 1).");
+      fail('Media socket', `upgrade answered HTTP ${res.statusCode}`, "The door refuses the media path: check that registerCalls ran (it registers through Door.onUpgrade, master §6.3) and the service logged no 'calls: the door has no onUpgrade' error.");
       resolve();
     });
     ws.on('error', () => undefined);
   });
 }
 
-function checkVoiceModel() {
+/** Opens one voice model the way the bridge does (Task 11), with no input transcription, and reads its answer.
+ *  The model CALLS_VOICE_MODEL picks must pass; the other one is the day-one A/B and only warns. */
+function checkVoice(model, required) {
+  const name = `Voice model ${model}${required ? '' : ' (A/B)'}`;
+  const bad = (detail, fix) => (required ? fail : warn)(name, detail, fix);
+  const live = model.startsWith('gpt-live');
   return new Promise((resolve) => {
     if (!env.OPENAI_API_KEY) {
       resolve();
       return;
     }
-    const ws = new WebSocket(`wss://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`, { headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` } });
+    const headers = { Authorization: `Bearer ${env.OPENAI_API_KEY}` };
+    const ws = live ? new WebSocket(LIVE_URL, { headers }) : new WebSocket(`${REALTIME_URL}?model=${model}`, { headers });
     const done = () => {
       clearTimeout(timer);
       ws.close();
       resolve();
     };
     const timer = setTimeout(() => {
-      fail('Voice model', 'no session in 10 s', 'Check the key and the network.');
+      bad('no session in 10 s', 'Check the key and the network.');
       done();
     }, 10_000);
     ws.on('open', () =>
-      ws.send(JSON.stringify({
-        type: 'session.update',
-        session: {
-          type: 'realtime', model: REALTIME_MODEL, output_modalities: ['audio'],
-          audio: {
-            input: { format: { type: 'audio/pcmu' }, transcription: { model: TRANSCRIBE_MODEL }, turn_detection: { type: 'server_vad' } },
-            output: { format: { type: 'audio/pcmu' }, voice: REALTIME_VOICE },
-          },
-        },
-      })),
+      ws.send(JSON.stringify(live
+        ? {
+            type: 'session.start',
+            session: {
+              model, instructions: 'Day-one check. Say nothing.', delegation: { type: 'client' }, store: false,
+              audio: { format: { type: 'audio/pcmu', rate: 8000 }, output: { voice: VOICE } },
+            },
+          }
+        : {
+            type: 'session.update',
+            session: {
+              type: 'realtime', model, output_modalities: ['audio'],
+              audio: {
+                input: { format: { type: 'audio/pcmu' }, turn_detection: { type: 'server_vad' } },
+                output: { format: { type: 'audio/pcmu' }, voice: VOICE },
+              },
+            },
+          })),
     );
     ws.on('message', (data) => {
       const ev = JSON.parse(String(data));
-      if (ev.type === 'session.updated') {
+      if (!live && ev.type === 'session.updated') {
         const out = ev.session?.audio?.output?.format?.type;
-        if (out === 'audio/pcmu') pass('Voice model', `${REALTIME_MODEL} accepts mu-law in and out`);
-        else fail('Voice model', `session output format is ${out}`, 'The model did not take audio/pcmu: check the model id and the realtime docs.');
+        if (ev.session?.audio?.input?.transcription) {
+          bad('input transcription is on', "Go hears with the voice model's own ears only (Keshav's ruling): the session must carry no audio.input.transcription.");
+        } else if (out !== 'audio/pcmu') {
+          bad(`session output format is ${out}`, 'The model did not take audio/pcmu: check the model id and the realtime docs.');
+        } else pass(name, 'mu-law in and out, no input transcription');
+        done();
+      } else if (live && ev.type === 'session.started') {
+        const format = ev.session?.audio?.format?.type;
+        if (format && format !== 'audio/pcmu') bad(`session audio format is ${format}`, 'Live did not take audio/pcmu over this socket: keep gpt-realtime-2.1.');
+        else pass(name, `a Live session started over ${LIVE_URL}${format ? ', mu-law' : ''}`);
         done();
       } else if (ev.type === 'error') {
-        fail('Voice model', ev.error?.message ?? 'error', `Check that ${REALTIME_MODEL} exists for this key; change REALTIME_MODEL in calls/config.ts if not.`);
+        bad(ev.error?.message ?? 'error', live
+          ? 'Check LIVE_URL and the session.start shape against the SDK (openai 7.15, resources/live/ws); fix them in calls/config.ts and calls/voice-wire.ts.'
+          : `Check that ${model} exists for this key; change REALTIME_MODEL in calls/config.ts if not.`);
         done();
       }
     });
     ws.on('unexpected-response', (_req, res) => {
-      fail('Voice model', `HTTP ${res.statusCode}`, 'Check the key and the model id.');
+      bad(`HTTP ${res.statusCode}`, live ? `Check LIVE_URL (${LIVE_URL}): Bash runs Live over WebRTC, so this socket address is unproven.` : 'Check the key and the model id.');
       done();
     });
     ws.on('error', () => undefined);
@@ -6775,9 +7433,13 @@ function checkVoiceModel() {
 await checkTwilio();
 checkSettings();
 await checkMediaSocket();
-await checkVoiceModel();
+await checkVoice(chosen, true);
+await checkVoice(chosen.startsWith('gpt-live') ? REALTIME_MODEL : LIVE_MODEL, false);
 
-for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}: ${r.detail}${r.ok ? '' : `\n      fix: ${r.fix}`}`);
+for (const r of results) {
+  const word = r.warn ? 'WARN' : r.ok ? 'PASS' : 'FAIL';
+  console.log(`${word}  ${r.name}: ${r.detail}${r.ok && !r.warn ? '' : `\n      fix: ${r.fix}`}`);
+}
 const twilioIndiaFailed = results.some((r) => !r.ok && (r.name === 'India dialing' || r.name === 'Caller number' || r.name === 'Twilio account'));
 if (twilioIndiaFailed) {
   console.log('\nIf Twilio cannot call Indian numbers from this account, the fallback order is:');
@@ -6797,86 +7459,58 @@ git commit -m "test(proactive): the 3:40 beat through the simulator, and a day-o
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `proactive.e2e.test.ts` passes in CI (one notice, pinned to Arjun, labelled; a second fire waits). The script is not run in CI.
+Expected: `proactive.e2e.test.ts` passes in CI (one notice, pinned to Arjun, labelled; a double click posts nothing more; another unforced fire waits; the forced stage fire posts exactly one more notice, labelled and pinned to Arjun). The script is not run in CI.
 
 - [ ] **Step 4: Day one (Wednesday, once Keshav has the Twilio account and the OpenAI key)**
 
-1. Keshav sets on the `brain` service in Railway: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `OPENAI_API_KEY`, `CALLS_ALLOWLIST="Villa Sol=+91<teammate's number>"`, `CALLS_MODE=allowlist` (or the admin switch).
-2. Run `railway run --service brain node scripts/calls-day-one.mjs +91<teammate's number>` from `apps/brain`. Every line must say PASS. A FAIL prints the fix.
+1. Keshav sets on the `brain` service in Railway: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `OPENAI_API_KEY`, `CALLS_ALLOWLIST="Villa Sol=+91<teammate's number>"`, `CALLS_MODE=allowlist` (or the admin switch). `CALLS_VOICE_MODEL` stays unset (`gpt-realtime-2.1`).
+2. Run `railway run --service brain node scripts/calls-day-one.mjs +91<teammate's number>` from `apps/brain`. Every line must say PASS. A FAIL prints the fix. The `gpt-live-1 (A/B)` line may say WARN; it only decides whether step 5.9 runs.
 3. In OpenAI's platform settings, look for the phone line (SIP) option for the org and write down whether it is there; it is fallback 2 and removes the media bridge if Twilio's audio is poor.
 4. If Twilio cannot call India from the account, stop here and pick the fallback in the order the script prints (Exotel or Plivo India; then OpenAI's phone line; then Vapi). Only `calls/twilio.ts` and `calls/register.ts` change for fallback 1; `service.ts`, the card and the room behaviour stay.
 
 - [ ] **Step 5: The first real call (G5)**
 
-In the dev room (or the App) on the Goa trip, with the teammate holding the allowlisted phone and playing the villa:
+In the dev room (or the App) on the Goa trip, with the teammate holding the allowlisted phone on speaker and playing the villa:
 1. Arjun types: "@Go ask Villa Sol if we can check in at 10 am on the 6th". Expected: Go's line ending "Say stop in the next 30 seconds if you'd rather I didn't." within about 2 s.
 2. Nobody says stop. At 30 s the call card appears ("Calling Villa Sol..."), and the teammate's phone rings.
-3. The teammate answers "Villa Sol, hello?". Expected: "Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together", then the question. The card turns to talking and shows the latest line, updating every few seconds.
+3. The teammate answers "Villa Sol, hello?". Expected: "Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together", then the question. The card turns to talking and shows Go's latest line, updating every few seconds; the room hears the villa on the speaker.
 4. The teammate interrupts Go once mid-sentence. Expected: Go stops talking at once (barge-in).
-5. The teammate says "Yes, 10 am is fine." Expected: Go thanks them and hangs up; the card shows the outcome and the transcript; Go replies to Arjun with the outcome; a record line appears with the call card as its proof.
+5. The teammate says "Yes, 10 am is fine." Expected: Go thanks them and hangs up; the card shows the outcome and Go's side of the call (never the villa's words); Go replies to Arjun with the outcome; a record line appears with the call card as its proof.
 6. Run it again and type "ruko" inside the 30 s: no ring, and Go says "Okay, I won't call Villa Sol."
 7. Run it a third time and let it ring out: the card says it could not get through, and Go says "Villa Sol didn't pick up. Want me to try again later?"
-8. Write down: time from Go's line to the ring, from "hello" to Go's first word, how barge-in felt, and anything that sounded wrong. Keep the transcript. This is the G5 evidence for calls; the stage call (3:00) is rehearsed by P7 with the same teammate.
+8. Write down: time from Go's line to the ring, from "hello" to Go's first word, how barge-in felt, and anything that sounded wrong. Keep the card (Go's side and the outcome). This is the G5 evidence for calls; the stage call (1:00) is rehearsed by P7 with the same teammate.
+9. The A/B, only if step 4.2's Live line passed: set `CALLS_VOICE_MODEL=gpt-live-1` on the service (it restarts, so do it between calls), run 1 to 5 once more, and write down the same numbers, plus how barge-in felt (Twilio marks and loudness instead of the model's speech event; raise `BARGE_IN_LEVEL` if the speakerphone's echo of Go trips it) and whether Go's "So, ..." read-back made a clean outcome. On `gpt-live-1` the call writes no record line. Set it back afterwards; which model the stage uses is Keshav's call.
+10. On both models the card never shows the villa's words. Showing them needs Keshav's explicit OK (and would only be possible on `gpt-live-1`, whose input transcript is the model's own).
 
 ---
 
 ## Interface notes for the conductor
 
-1. **`Door.onUpgrade` (blocks real calls; small P1 change).** P1's door answers every WebSocket upgrade and refuses any path but `/v1/socket` with a 404, and Node runs every `upgrade` listener, so Twilio's media socket at `/calls/media/<call_id>` would be refused. Proposed change in P1's `door/door.ts`:
-   ```ts
-   export type UpgradeHandler = (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
-   // Door gains: onUpgrade(path: RegExp, handle: UpgradeHandler): void;
-   const laneUpgrades: Array<{ path: RegExp; handle: UpgradeHandler }> = [];
-   // At the top of onUpgrade(req, socket, head), before the /v1/socket check:
-   const lanePath = (req.url ?? '').split('?')[0] ?? '';
-   const lane = laneUpgrades.find((u) => u.path.test(lanePath));
-   if (lane) {
-     lane.handle(req, socket, head);
-     return;
-   }
-   // On the returned door object:
-   onUpgrade(path: RegExp, handle: UpgradeHandler): void { laneUpgrades.push({ path, handle }); },
-   ```
-   P6 Task 13 already calls `brain.door.onUpgrade(MEDIA_PATH, handler)` when it exists, and falls back to `brain.http.server.on('upgrade')` (tests) when it does not. The day-one check (Task 14) reports "The door refuses the media path" if the change is missing.
+1. **`Door.onUpgrade`: settled in master §6.3 (P1 Task 5).** P1's door hands an upgrade whose path matches a lane's pattern to that lane before its `/v1/socket` rule, checks no signature for it, and refuses a pattern that would match `/v1/socket`. Task 13 registers `brain.door.onUpgrade(MEDIA_PATH, handler)` (`/^\/calls\/media\/(call_[A-Za-z0-9_-]{1,58})$/`, which never matches `/v1/socket`); the media token is checked by the bridge itself. The fallback that listened on `brain.http.server` is gone: if the door has no `onUpgrade`, `startCalls` logs one error line and throws at boot before anything is registered (Task 13 test). The day-one check (Task 14) still proves a real media connection gets through.
 
-2. **Per-turn tool limits for proactive turns.** `TurnCtx` has no way to limit tools. Proposed, in P1:
-   - `composer/tools.ts`: `TurnCtx.allowedTools?: string[]` and `TurnCtx.mayPostText?: boolean`.
-   - `composer/context.ts`: `Context.addTurnRules(fn: (wake: DeskItem[]) => { allowedTools: string[]; mayPostText: boolean } | null): void` and `Context.turnRules(wake): { allowedTools: string[]; mayPostText: boolean } | null` (the first non-null answer).
-   - The turn (`runTurn`), right after `makeTurnCtx(...)`:
-     ```ts
-     const rules = d.context.turnRules(t.items);
-     if (rules) {
-       ctx.allowedTools = rules.allowedTools;
-       ctx.mayPostText = rules.mayPostText;
-     }
-     // The conductor's version: filter the definitions sent to the model.
-     const tools = ctx.allowedTools ? d.tools.list().filter((tool) => ctx.allowedTools?.includes(tool.name)) : d.tools.list();
-     // Where the text is chosen:
-     const text = r.silent || ctx.mayPostText === false ? null : r.text.trim() || null;
-     ```
-   - Recommended instead of filtering the definitions: keep `tools: d.tools.list()` (the tool definitions sit under cache breakpoint 1, so a filtered list misses the 1-hour cache on every proactive turn) and refuse in `composer/loop.ts`'s `runTool`, after the `if (!tool)` line:
-     ```ts
-     if (i.ctx.allowedTools && !i.ctx.allowedTools.includes(call.name)) {
-       return result(`${call.name} is not allowed in this turn. Use one of: ${i.ctx.allowedTools.join(', ')}.`, true);
-     }
-     ```
-   - P6 then adds one line in `proactive/register.ts`: `brain.context.addTurnRules((wake) => { const r = rulesForTurn(wake); return r ? { allowedTools: r.tools, mayPostText: r.mayPostText } : null; });`. Until then the limits ride in the wake text and the `openings` block, and P6's own notice tools enforce them by construction.
+2. **Per-turn tool limits: settled in master §6.3 (P1 Tasks 10 to 13).** Task 8 registers `brain.context.addTurnRules(composerRules)`; `composerRules` (Task 5) returns P1's `TurnLimits` (`{ tools, mayPostText }`, the master's names, never `allowedTools`) or null for a turn a person, a tap or a task woke. P1 puts the answer on `TurnCtx.allowedTools` and `mayPostText`; its loop refuses any other tool except `stay_silent` (the definitions never change, so the 1 h cache holds) and drops the text when `mayPostText` is false, while `ctx.cards` still go. If P1 has no `addTurnRules`, `startProactive` logs one error line and throws at boot before anything is registered (Task 8 test). The wake text, the `openings` block and the notice tools stay: they tell the model the rules so it does not spend a round on a refused call, and keep pins to the right people.
 
-3. **P4's status shapes.** P1 leaves `StatusQuery` and `StatusResult` as open records. P6 sends `{ kind: 'flight', carrierCode, number, date }`, `{ kind: 'fare', optionRef, priceMinor, currency }` and `{ kind: 'availability', optionRef }`, and reads back `{ checkedAt, status: 'scheduled' | 'delayed' | 'cancelled' | 'departed' | 'landed', departAt, arriveAt, delayMinutes }`, `{ checkedAt, priceMinor, currency }` and `{ checkedAt, available, left: number | null }`. If P4 picks other names, only `apps/brain/src/watches/port.ts` changes.
+3. **P4's status shapes: settled.** Watches use P4's `StatusQuery` and `StatusResult` (`travel/travel.ts`) as they are, with no adapter (`watches/port.ts` is gone): a watch stores the `StatusQuery` it sends (`{ kind: 'flight', carrierCode, number, date }` or `{ kind: 'pnr', pnr }`) and the last `StatusResult` it got, so a shape change is a compile error in `watches/`. Booked flights and booked train tickets (by PNR) are watched. Fares and rooms left are not, because P4's `StatusQuery` has no kind for them; bringing them back needs one more P4 kind, for example `{ kind: 'offer'; optionId }` answered with `{ kind: 'offer'; priceMinor; currency; available; left: number | null; checkedAt }`, plus a fare and a rooms-left case in `watches/diff.ts`. Such a watch would start from a vote option's `option_ref`, which is opaque (F24: an options card's `option_id`, never an offer id) and would be resolved with `await brain.travel.offer(option_ref)`; whether it is a stay would come from what the offer lookup or that status answer says, never from the shape of the id. P6 no longer reads `option_ref` anywhere, and its fixture uses `opt_villa_sol` and `opt_casa_azul`. The demo's "fire a watch" keeps its own simulated candidate rather than P4's `simulate.setFlightDelay` (Task 8 says why). The notice card carries no image, so P4's image cache (`travel/images.ts`) is not used.
 
 4. **No desk gate is needed.** Timers, watch changes and openings wait in `proactive_candidates`; the promoter puts a desk item (`timer:<trip>:<key>`, `watch:<trip>:<key>`, `opening:<trip>:<key>`) only when the bar passes, so a refused nudge never costs a model turn.
 
-5. **Ids for calls.** The call id is the turn's `ctx.stableId('call')`; every later write is outside a turn and uses `go_<call_id>_<step>`; the card id is `c_<call_id>`. This assumes P1's `turnId` stays under about 40 characters so `go_call_<turnId>_<n>_announce` fits the contract's 64-character `Id`.
+5. **Ids for calls: settled.** The call id is the turn's `ctx.stableId('call')`; every later write is outside a turn and uses `go_<call_id>_<step>`; the card id is `c_<call_id>`. P1's turn ids are `turn_<ULID>` (31 characters), so `go_call_turn_<ULID>_<n>_announce` is about 50 characters, inside the contract's 64-character `Id`.
 
 6. **The media token rides as a `<Parameter>`**, not `?token=` on the stream URL: Twilio's `<Stream url>` does not pass a query string to the socket. The path still names the call.
 
 7. **The call card appears when dialing starts**, as `docs/guide/09-flows.md` §5 shows; during the 30 s window there is only Go's line, and a stop there is a message.
 
-8. **`CALLS_ALLOWLIST` entries may carry a name** (`Villa Sol=+919800000001`) so the composer can call by name without seeing numbers; plain numbers still work. P1's comment in `calls/env.ts` ("comma-separated phone numbers") and `.env.example` could mention the `Name=` form. P6 does not edit `calls/env.ts`.
+8. **`CALLS_ALLOWLIST` entries may carry a name: settled.** `Villa Sol=+919800000001` lets the composer call by name without seeing numbers; plain numbers still work. Task 9 takes over P1's `calls/env.ts` and says the `Name=` form in its comment and in `.env.example`.
 
-9. **P0 and P1 disagree on the FakeServer's names** (`{ url } + connect()` in P1 Task 16's harness, `{ goUrl } + start()` in P0 Task 9). P6 Task 14 uses P0's names, as the conductor gave them.
+9. **FakeServer names: settled (F1).** P1 now uses P0's `new FakeServer({ goUrl, secret, instance })` and `start()`, as P6 Task 14 does.
 
 10. **The sweep finds active trips by `trips.created_at`** (last 90 days) and re-reads each with `read_trip` every 10 minutes; fine at hackweek scale.
+
+11. **No second ear on calls (Keshav's ruling; F9).** Neither voice model is ever given input transcription, and nothing in `calls/` calls a speech-to-text service. The call card's `last_line` and `transcript`, and `calls.transcript`, carry Go's own lines only (`who: 'go'`, from the model's own output transcript); the `outcome` comes from the model's report; the room hears the business on the speaker. Three places enforce it: the session settings (Task 11; Task 14's day-one check fails if the account turns transcription on), the wires never emit the business's words (Task 11), and `CallService.line()` drops any line that is not Go's (Task 12). Showing the business's words needs Keshav's explicit OK, and would only be possible on `gpt-live-1`, whose input transcript is the model's own. Open for the conductor: the guide's call card example (`docs/guide/06-cards.md`, `last_line` and `transcript` with `who: 'them'` lines) and its call flow (`09-flows.md` §5, "the transcript") show the business's lines. The contract still allows them, so nothing breaks, but the docs describe a card Go will not send this week; a guide edit or a note is Keshav's call.
+
+12. **`CALLS_VOICE_MODEL` (P6's one new variable).** In `calls/env.ts` (refused at boot unless it is a `gpt-realtime` or `gpt-live` model, never a transcriber) and in `apps/brain/.env.example`; master §6.7's P6 row could list it beside `CALLS_MODE`. Default `gpt-realtime-2.1`. `gpt-live-1` is the day-one A/B behind the same bridge: it has no speech-started event (barge-in uses Twilio `mark` events and an energy check on the business's audio), no function tools (Go says the outcome back as "So, ..." and hands off, so a Live call writes no record line), and two unconfirmed facts the day-one check proves first: the socket URL `LIVE_URL` (Bash runs Live over WebRTC with a sideband, never over a primary WebSocket) and `session.start` taking `audio/pcmu` at 8 kHz. Which model the stage uses belongs on Keshav's list (master §4).
+
+13. **Lane timers stop with Go (master §6.3 `Brain.onStop`).** `startProactive` registers the stop of its three interval timers (promote 15 s, watch checks 30 s, sweep 10 min) and `startCalls` the stop of its 1 s tick and media handler, all through `brain.onStop`; every timer is also `unref()`ed (`realSchedule`'s one-shot timers already are). A call still live when Go stops is closed out by the next start's sweep (Task 12).
 
 ## Self-review
 
@@ -6885,21 +7519,26 @@ In the dev room (or the App) on the Goa trip, with the teammate holding the allo
 | §8 sources: the chat (Jev question 9) | Task 6 (`chatOpening`, the `onRead` hook) |
 | §8 sources: trip changes (vote closed, booking cancelled, dates clash, payer waiting) | Task 6 (`tripChangeOpenings`), Task 3 (`payer_waiting`) |
 | §8 sources: time (vote closing, free cancellation, travel day, settle-up) and §5 timers | Tasks 3 and 4 |
-| §8 sources: the world (fare, delay, rooms left) and §12 status | Tasks 7 and 8 |
-| §8 guardrail 1: the quietest useful action first | Task 1 (`decide`), Task 5 (wake text, `rulesForTurn`, `post_notice` pins) |
+| §8 sources: the world and §12 status: a flight's delay or cancellation, a train ticket confirmed or cancelled, through P4's `Travel.status` as it is | Tasks 7 and 8; fares and rooms left wait for a P4 status kind (interface note 3) |
+| §8 guardrail 1: the quietest useful action first | Task 1 (`decide`), Task 5 (wake text, `rulesForTurn`, `composerRules`, `post_notice` pins) |
 | §8 guardrail 2: the bar, stricter at night in the trip's zone, never repeat a nudge | Task 1, Task 2 (`add` never re-adds a key), Task 4 |
 | §8 guardrail 3: about 3 a day, never two in a row, small things batched | Task 1 (`DAILY_POSTS`, `lastWordIsGos`, `decideBatch`), Tasks 2 and 4 |
-| §8 guardrail 4: suggest, never act | Task 5 (wake text, `openings` block, tools allowed exclude spending, tasks and calls), interface note 2 |
+| §8 guardrail 4: suggest, never act | Task 5 (wake text, `openings` block, tools allowed exclude spending, tasks and calls), Task 8 (`addTurnRules`: P1 refuses any other tool and drops text that is not allowed) |
 | §8 guardrail 5: pause, hush, ignored | Task 1, Task 5 (paused stripped), Task 6 (hush, ignored) |
 | §14 calls: say who and why, 30 s for stop, then call | Tasks 9, 12, 13 |
 | §14 calls: a live card updated in place; the outcome in the chat and the record; calls never pay | Tasks 11, 12, 13 |
-| Master §1 3:00 "the call" | Tasks 12, 13, 14 (first real call) |
+| Keshav's ruling "no second ear" (F9): no transcriber; the card carries Go's side and the outcome | Task 9 (`isVoiceModel`, env refuses a transcriber), Task 11 (no `transcription` in either session; the business's words never reach `hooks.line`), Task 12 (`line()` keeps Go's lines only), Task 13 (end to end), Task 14 (the day-one check fails if transcription is on) |
+| `CALLS_VOICE_MODEL` A/B: `gpt-realtime-2.1` by default, `gpt-live-1` behind the same bridge, barge-in by marks and loudness on Live | Task 9 (env, config, `.env.example`), Task 11 (`voice-wire.ts`, Live tests), Task 13 (`session.model`), Task 14 (both models checked; step 5.9) |
+| Master §6.3 `Door.onUpgrade`, `Context.addTurnRules` / `TurnLimits`, `TurnCtx.allowedTools` / `mayPostText`, `Brain.onStop` | Task 13 and Task 8 (registered; boot fails loudly without the hooks; timers stopped through `onStop`), Task 5 (`composerRules`), Task 2 (`fakeBrain` mirrors all four) |
+| P4's `StatusQuery` / `StatusResult` (F8) and opaque `option_ref` (F24) | Task 7 (stored and diffed as they are), Task 8 (runner sends the stored query; admin fire decision), Task 2 (fixture option ids), interface note 3 |
+| Master §1 1:00 "the call" | Tasks 12, 13, 14 (first real call) |
 | Master §1 3:40 "proactive and safe" | Tasks 8 and 14 |
-| Master §7: allowlist only; no em dashes; never the vendor's name | Tasks 9 and 12; Task 5 (`plain`) and the call tests; Task 11 (instructions test) |
+| Master §7: allowlist only; no em dashes; never the vendor's name | Tasks 9 and 12; Task 5 (`plain`) and the call tests; Task 11 (instructions tests on both models) |
 | Master §9: `CALLS_MODE` switch, admin "fire a watch" | Task 12 (read at request and again before dialing), Task 8 |
+| Master §1 3:40 and §9: the stage fire with `force: true` (past the bar, the budget, "two in a row", hush and ignored raises, for that candidate only; still labelled, pinned to the named people, never to a paused person; a double click posts once) | Task 1 (`decideForced`, forced tests), Task 2 (`forced` column), Task 4 (payload carries it), Task 8 (`force`, `fireKey`, the forced stage-fire test), Task 14 (forced fire through the simulator) |
 | research/hands.md §4: μ-law both ways, barge-in, no second speech-to-text, Twilio signature, day-one check, fallbacks | Tasks 10, 11, 14 |
 | Gate G5 | Tasks 1 to 13 in CI, Task 14 (simulator run, day-one check, the real call) |
 
-Review Focus lines and their tests: (1) wrong moment: Task 1 `decide` tests, Task 4 night and budget tests, Task 6 hush test; (2) repeats: Task 2 "never adds the same nudge twice", Task 3 replan test, Task 4 "no longer true", Task 8 runner "never twice"; (3) calls that must not happen: Task 9 `saysStop`, Task 12 request and stop-window tests; (4) the call card telling the truth: Task 11 wrong token, cap and drop tests, Task 12 tap, no-answer and restart tests, Task 13 end to end; (5) the simulated watch: Task 5 label tests, Task 8 demo-beat test, Task 14 simulator run.
+Review Focus lines and their tests: (1) wrong moment: Task 1 `decide` tests, Task 4 night and budget tests, Task 6 hush test; (2) repeats: Task 2 "never adds the same nudge twice", Task 3 replan test, Task 4 "no longer true", Task 7 "once per 15-minute step" and "once each" for a ticket, Task 8 runner "never twice"; (3) calls that must not happen: Task 9 `saysStop`, Task 12 request and stop-window tests; (4) the call card telling the truth and no more: Task 11 wrong token, cap, drop and "Go's lines only" tests on both models, Task 12 tap, no-answer, restart and "a line from the business is dropped" tests, Task 13 end to end, Task 14 day-one transcription check; (5) the simulated watch: Task 1 "lets the forced stage fire past ..." and "still never pings a paused person ... even when forced", Task 5 label tests, Task 8 demo-beat test (with the turn rules P1 gets and the double click) and "the stage fire (force: true) reaches the desk once ...", Task 14 simulator run (double click, forced fire).
 
-Placeholder scan: no TBD, TODO or "similar to"; every code step is complete. Names consumed from master §6.3 and P1 (`Brain`, `RegisterLane`, `Desk.put`, `Context.addNow`, `Context.addWake`, `MessageHooks.onRead`, `TripLog.onEvent`, `TapRouter.on`, `TurnCtx.cards`, `TurnCtx.stableId`, `Switches.get`, `Travel.status`, `withSchema`, `LANES`) match.
+Placeholder scan: no TBD, TODO or "similar to"; every code step is complete. Names consumed from master §6.3, P1 and P4 (`Brain`, `Brain.onStop`, `RegisterLane`, `Desk.put`, `Context.addNow`, `Context.addWake`, `Context.addTurnRules`, `TurnLimits`, `TurnCtx.allowedTools`, `TurnCtx.mayPostText`, `Door.onUpgrade`, `UpgradeHandler`, `MessageHooks.onRead`, `TripLog.onEvent`, `TapRouter.on`, `TurnCtx.cards`, `TurnCtx.stableId`, `Switches.get`, `Travel.status`, `StatusQuery`, `StatusResult`, `withSchema`, `LANES`, `CallsEnv`) match.

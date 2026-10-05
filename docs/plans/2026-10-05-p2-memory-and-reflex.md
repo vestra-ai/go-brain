@@ -10,9 +10,9 @@
 
 **Spec:** `docs/spec/2026-10-05-go-design.md` §6 (the reflex), §9 rules 4 to 6 and 8 (the fold, nothing lost, deletes, the safety net), §11 (memory), and the contract's people methods and `catch_up` (`docs/guide/05-your-requests.md`); `docs/plans/2026-10-05-go-the-week.md` (master plan; sections 6 and 7 are binding).
 
-**Lane / gate:** Lane B. **G2, Tue 23:00** (facts with proof, pages, record lines; Jev questions 1 to 3 live, 4 to 9 in shadow; context with a fold): Tasks 1 to 15 (Task 1 is built by the P1 builder right after P1 Task 6, because P1's intake needs it; the P2 builder starts at Task 2). **G5, Thu 23:00** (questions 4 to 9 live where their test sets pass): Task 16. Task 17 (prefetch) is an optional stretch.
+**Lane / gate:** Lane B. **G2, Tue 23:00** (facts with proof, pages, record lines; Jev questions 1, 2, 3, 5 and 7 live where their test sets pass, the rest in shadow, so the demo's quiet ✅ comes from Q5 and Q7 at once; context with a fold): Tasks 1 to 12, 14 and 15 (Task 1 is built by the P1 builder right after P1 Task 6, because P1's intake needs it; the P2 builder starts at Task 2). **Task 13 (catch-up) is a stretch built after G2**; until it lands, Task 12's `emptyCatchUp` answers `catch_up` with a valid empty result, so the Server never gets -32601. **G5, Thu 23:00** (questions 4, 6, 8 and 9, and 5 or 7 if they missed G2, live where their test sets pass): Task 16. Task 17 (prefetch) is cut this week (master §9).
 
-**Depends on:** from P1 (master §6.3 and P1's plan, exact names): `Brain`, `RegisterLane` (`app.ts`), `LANES` (`main.ts`); `Brain.anthropic: AnthropicLike` (`composer/anthropic.ts`, P1 Tasks 12 and 15: the model client `buildBrain` was given, with `messages.create`); `Context.setStory(p)` (`composer/context.ts`, P1 Task 10, shape in master §6.3); P1 Task 14's intake calls this plan's `maskSecrets` (Task 1) on every message before it is stored; `Door.handle`, `ToGoHandler` (`door/handlers.ts`); `ServerLink` (`door/server-link.ts`); `SocketCallError` (`door/rpc.ts`, constructor `(code, message, dataCode?, retryAfterSeconds?)`); `ToGoParams`, `ToGoResult`, `ToServerParams`, `Message`, `Trip`, `TripEvent` (`door/methods.ts`); `TripLog.onEvent` (`trips/log.ts`); `TripPack`, `Packs` (`trips/pack.ts`; the pack applies reactions, edits and deletes); `MessageHooks.onRead` (`trips/hooks.ts`); `plainlyNamesGo(m, pack)` (`trips/names-go.ts`); `DeskItem` (`desk/desk.ts`); `QuickTool`, `TurnCtx` (with `cards`, `stableId(prefix)`, `signal`), `Tools` (`composer/tools.ts`); `NowProvider`, `Context.addNow` (`composer/context.ts`; P1's own `trip` block is order 10); `Switches`, `SWITCH_RULES` (`admin/switches.ts`); `Log`, `silentLog` (`log.ts`); `Env`, `loadEnv` (`env.ts`, merges each lane's env object); `ReflexEnv` (`reflex/env.ts`, P1's stub with optional variables, P2 takes it over); `Reflex`, `ReflexRead`, `Sure` (`reflex/reflex.ts`, P1's stub file, P2 takes it over); `Memory` (`memory/memory.ts`, P1's type-only seam, P2 takes it over and only adds); `withSchema(): { pool, schema, drop }` (`db/test-db.ts`; the pool's search_path is the test schema only); P1's `messages` table (`trip_id`, `message_id`, `seq`, `updated_seq`, `person_id`, `text`, `reply_to`, `deleted_at`, `payload`; Go's and the system's messages have `person_id` null). From P4 (Task 17 only): `Travel.search`.
+**Depends on:** from P1 (master §6.3 and P1's plan, exact names): `Brain`, `RegisterLane` (`app.ts`), `LANES` (`main.ts`); `Brain.onStop(fn)` (P1 Task 15: `built.stop()` runs every lane's stopper, newest first); `Brain.anthropic: AnthropicLike` (`composer/anthropic.ts`, P1 Tasks 12 and 15: the model client `buildBrain` was given, with `messages.create`); `Context.setStory(p)` (`composer/context.ts`, P1 Task 10, shape in master §6.3); P1 Task 14's intake calls this plan's `maskSecrets` (Task 1) on every message before it is stored; `Door.handle`, `ToGoHandler` (`door/handlers.ts`); `ServerLink` (`door/server-link.ts`); `SocketCallError` (`door/rpc.ts`, constructor `(code, message, dataCode?, retryAfterSeconds?)`); `ToGoParams`, `ToGoResult`, `ToServerParams`, `Message`, `Trip`, `TripEvent` (`door/methods.ts`); `TripLog.onEvent` (`trips/log.ts`); `TripPack`, `Packs` (`trips/pack.ts`; the pack applies reactions, edits and deletes); `MessageHooks.onRead` (`trips/hooks.ts`); `plainlyNamesGo(m, pack)` (`trips/names-go.ts`); `DeskItem` (`desk/desk.ts`); `QuickTool`, `TurnCtx` (with `cards`, `stableId(prefix)`, `signal`), `Tools` (`composer/tools.ts`); `NowProvider`, `Context.addNow` (`composer/context.ts`; P1's own `trip` block is order 10); `Switches`, `SWITCH_RULES` (`admin/switches.ts`; `REFLEX_LIVE` already accepts `off`, `q1,q2,...` or empty); `Log`, `silentLog` (`log.ts`); `Env`, `loadEnv`, `LANE_ENVS` (`env.ts`, merges every lane's env object, `memory` included); `ReflexEnv` (`reflex/env.ts`, P1's stub with optional variables, P2 takes it over); `MemoryEnv` (`memory/env.ts`, P1's empty stub, P2 takes it over); `apps/brain/.env.example` (P1 Task 17; its test checks every key of `Env`); `Reflex`, `ReflexRead`, `Sure` (`reflex/reflex.ts`, P1's stub file, P2 takes it over); `Memory` (`memory/memory.ts`, P1's type-only seam, P2 takes it over and only adds); `withSchema(): { pool, schema, drop }` (`db/test-db.ts`; the pool's search_path is the test schema only); P1's `messages` table (`trip_id`, `message_id`, `seq`, `updated_seq`, `person_id`, `text`, `reply_to`, `deleted_at`, `payload`; Go's and the system's messages have `person_id` null). From P4 (Task 17 only): `Travel.search`.
 
 ## Global Constraints
 
@@ -28,6 +28,8 @@ Master §7 applies to every task. Specific to this plan:
 - Facts: stored one current fact per person, topic and trip; topic 1 to 40 characters `[a-z0-9_]`; text 1 to 200 characters; a fact's proof is a message written by that same person; history kept through `superseded_by`. `get_person` answers one current fact per topic, the newest across trips (guide 05: "A person has one current fact per topic"); `Memory.page(tripId, ...)` shows this trip's fact for a topic, else the newest from another trip when the person's carry-over is on.
 - Side model (`SIDE_MODEL`, e.g. `claude-haiku-4-5`) is called only off the reply path: notes 15 s timeout and `max_tokens` 1,500; the fold 60 s and 7,000; it is built from `brain.anthropic` (master §6.3), never `new Anthropic()`, so tests and the bench inject their fake there; unit tests of the passes use a scripted fake.
 - The fold: chat budget `FOLD_AT_TOKENS` 60,000 (characters / 4), story cap `STORY_TOKENS` 5,000, safety net `CHAT_HARD_CAP_TOKENS` 90,000; folds move whole 25-message chunks.
+- Every timer P2 starts (the Jev keep-warm pings, the 5-minute memory sweep, the quiet and after-post timers) is `unref()`ed and stops through `brain.onStop` (master §6.3), so `built.stop()` leaves nothing running.
+- Every variable P2 declares goes into `apps/brain/.env.example` in the same task (master §6.3 notes; P1 Task 17's test checks every key of `Env`).
 - Recall: this trip only, at most 8 hits, `simple` text search plus `pg_trgm`, every query parameterised.
 - Answers to the Server validate against the contract (`C.PersonPage`, `C.Ok`, `C.ForgetResult`, `C.CatchUp`) before they leave; `forget_person` answers only after queries show nothing is left.
 
@@ -43,7 +45,8 @@ Master §7 applies to every task. Specific to this plan:
 
 - `apps/brain/package.json` (modify): add `undici` 7.30.0, dev `tsx` ^4.21.0, script `jev:record`.
 - `apps/brain/src/reflex/secrets.ts`: code screen for card numbers (Luhn), CVVs, codes, PINs, passwords; `maskSecrets`, `hasSecret`, `secretKinds`. Built early by the P1 builder (Task 1), because P1's intake calls it.
-- `apps/brain/src/reflex/env.ts` (modify): Jev variables with defaults.
+- `apps/brain/src/reflex/env.ts` (modify P1's stub): Jev variables with defaults.
+- `apps/brain/.env.example` (modify P1 Task 17's file): every variable P2 declares, in the task that declares it (Task 2: the Jev block; Task 15: the memory block).
 - `apps/brain/src/reflex/jev.ts`: Bash's Jev client, copied: undici keep-alive pool, warm-up pings, typed faults, injectable fetch.
 - `apps/brain/src/reflex/questions.ts`: the nine questions (Hinglish in criteria), the fenced state, minted task keys, wording versions.
 - `apps/brain/src/reflex/thresholds.ts`: every bar, with where it came from.
@@ -53,7 +56,7 @@ Master §7 applies to every task. Specific to this plan:
 - `apps/brain/src/reflex/live.ts`: parses `REFLEX_LIVE` and intersects it with the gate.
 - `apps/brain/src/reflex/live-gate.ts`: `PASSED_SETS`, the questions whose test sets passed.
 - `apps/brain/src/reflex/jev-reflex.ts`: the `Reflex` implementation: one call, shadow per question, `reflex_reads`.
-- `apps/brain/src/reflex/register.ts`: `registerReflex(brain)`.
+- `apps/brain/src/reflex/register.ts`: `registerReflex(brain)`; the Jev keep-warm pings stop through `brain.onStop`.
 - `apps/brain/src/reflex/testset.ts`: test-set rows, recorded answers, the scorer, gates and sweeps.
 - `apps/brain/src/reflex/testsets/chat.jsonl`: labelled chat lines, English and Hinglish.
 - `apps/brain/src/reflex/testsets/recorded/jev-1.13.0.json`: real Jev answers, recorded by hand, committed.
@@ -74,7 +77,7 @@ Master §7 applies to every task. Specific to this plan:
 - `apps/brain/src/memory/side-model.ts`: the side model seam, built on the client P1 hands every lane (`brain.anthropic`).
 - `apps/brain/src/memory/fence.ts`: chat lines for side prompts, fenced and masked.
 - `apps/brain/src/memory/reactions.ts`: one quiet reaction per message and emoji, sent once.
-- `apps/brain/src/memory/schedule.ts`: per-trip debounce with a longest wait.
+- `apps/brain/src/memory/schedule.ts`: per-trip debounce with a longest wait, and `cancelAll()` for shutdown.
 - `apps/brain/src/memory/notes.ts`: the notes pass (after a turn, after a quiet spell, or at once on a sure fact).
 - `apps/brain/src/memory/fold.ts`: the fold, the story provider, the safety net, story redaction.
 - `apps/brain/src/memory/people.ts`: `get_person`, `update_person`, `delete_fact`, `forget_person`.
@@ -83,10 +86,8 @@ Master §7 applies to every task. Specific to this plan:
 - `apps/brain/src/memory/tools.ts`: quick tools `trip`, `person`, `recall`, `record`.
 - `apps/brain/src/memory/now.ts`: right-now blocks `record` and `people`.
 - `apps/brain/src/memory/join-facts.ts`: join answers saved as facts.
-- `apps/brain/src/memory/env.ts`: fold and notes variables (`MemoryEnv`).
-- `apps/brain/src/env.ts` (modify): merge `MemoryEnv` into `Env` (one import, one line).
-- `apps/brain/src/admin/switches.ts` (modify): the `REFLEX_LIVE` rule also accepts `off`.
-- `apps/brain/src/memory/register.ts`: `registerMemory(brain)` and `wireMemory`.
+- `apps/brain/src/memory/env.ts` (modify P1's empty stub): fold and notes variables (`MemoryEnv`). P1's `env.ts` already merges it through `LANE_ENVS`, so P2 never edits `env.ts`; P1's `SWITCH_RULES.REFLEX_LIVE` already accepts `off`, so P2 never edits `admin/switches.ts`.
+- `apps/brain/src/memory/register.ts`: `registerMemory(brain)` and `wireMemory`; the 5-minute sweep and the quiet timers stop through `brain.onStop`.
 - `apps/brain/src/main.ts` (modify): `registerReflex` and `registerMemory` in `LANES`.
 - `apps/brain/src/reflex/reflex.ts` and `apps/brain/src/memory/memory.ts`: P1's stub and seam files; P2 takes them over (only `ReflexRead` gains two optional fields).
 - Tests: `apps/brain/src/reflex/__tests__/*.test.ts` and `apps/brain/src/memory/__tests__/*.test.ts` (P1's vitest runs `src/**/__tests__/**/*.test.ts`; the build leaves `__tests__` out).
@@ -94,6 +95,8 @@ Master §7 applies to every task. Specific to this plan:
 ---
 
 ### Task 1: The secrets screen (code, never Jev)
+
+**P2 builder: skip this task.** The P1 builder builds it; check that `apps/brain/src/reflex/secrets.ts` is on `build`, then start at Task 2.
 
 **Who builds it, and when:** the P1 builder, right after P1 Task 6 (the trip log), because P1 Task 14's intake calls `maskSecrets` on every message before it writes `trip_events`, `messages` or the pack (master §6.3, §11). So this task must stay standalone: it imports nothing, not even another file of this plan, and nothing in it waits on the rest of P2. The P2 builder starts at Task 2 when this task is already on `build`.
 
@@ -319,7 +322,8 @@ Expected: `secrets.test.ts` passes (10 tests). P1 Task 14 imports `maskSecrets` 
 
 **Files:**
 - Create: `apps/brain/src/reflex/jev.ts`
-- Modify: `apps/brain/src/reflex/env.ts` (replace the whole file: defaults and two new variables)
+- Modify: `apps/brain/src/reflex/env.ts` (P1 Task 2's stub; replace the whole file: defaults and two new variables. Never a second file, and no edit to `env.ts`: P1 already merges `ReflexEnv`)
+- Modify: `apps/brain/.env.example` (the `# Lane B (P2): Jev` block gains `JEV_DEADLINE_MS` and `JEV_DAILY_CALLS_PER_TRIP`)
 - Modify: `apps/brain/package.json` (add `"undici": "7.30.0"` to `dependencies`; add `"tsx": "^4.21.0"` to `devDependencies`; add the script `"jev:record": "tsx scripts/record-jev-answers.ts"`; then run `pnpm install` so `pnpm-lock.yaml` changes in the same commit)
 - Test: `apps/brain/src/reflex/__tests__/jev.test.ts`
 
@@ -462,14 +466,28 @@ export const ReflexEnv = z.object({
   TYPESAFE_BASE_URL: z.url().default('https://api.typesafe.ai'),
   /** Pinned. A new version is a deliberate PR that re-records the test sets. */
   JEV_MODEL: z.string().min(1).default('jev-1.13.0'),
-  /** Which questions act live, "q1,q2,q3" (the switch's format); the rest run in shadow. "off" makes no Jev call at all. */
-  REFLEX_LIVE: z.string().regex(/^(off|q[1-9](,q[1-9])*)?$/).default('q1,q2,q3'),
+  /**
+   * Which questions act live, "q1,q2,q3,q5,q7" (the switch's format); the rest run in shadow. A question named here acts
+   * live only once its test set passes (reflex/live-gate.ts). "off" makes no Jev call at all.
+   */
+  REFLEX_LIVE: z.string().regex(/^(off|q[1-9](,q[1-9])*)?$/).default('q1,q2,q3,q5,q7'),
   /** How long a message waits for Jev before every question reads "unsure". */
   JEV_DEADLINE_MS: z.coerce.number().int().min(100).max(5_000).default(450),
   /** Calls per trip per UTC day before the reflex stops asking (0 means no cap). */
   JEV_DAILY_CALLS_PER_TRIP: z.coerce.number().int().min(0).default(5_000),
 });
 export type ReflexEnv = z.infer<typeof ReflexEnv>;
+```
+
+In `apps/brain/.env.example`, replace the `# Lane B (P2): Jev` block with the one below (P1 Task 17's `env-example.test.ts` checks that every key of `Env` is named there, so the two new variables must be; the key stays empty). If P1 Task 17 is not on `build` yet, skip this edit and leave the file out of `git add`: P1 Task 17 writes these lines when it lands.
+```bash
+# Lane B (P2): Jev
+# TYPESAFE_API_KEY=
+# TYPESAFE_BASE_URL=https://api.typesafe.ai
+# JEV_MODEL=jev-1.13.0
+# REFLEX_LIVE=q1,q2,q3,q5,q7    # live only where the test set passed; or off: no Jev call at all
+# JEV_DEADLINE_MS=450
+# JEV_DAILY_CALLS_PER_TRIP=5000
 ```
 
 ```ts
@@ -622,13 +640,13 @@ export function createJev(cfg: JevConfig, fetchImpl: JevFetch = poolFetch, clock
 ```
 - [ ] **Step 4: Commit, push, read CI**
 ```bash
-git add apps/brain/src/reflex/jev.ts apps/brain/src/reflex/__tests__/jev.test.ts apps/brain/src/reflex/env.ts apps/brain/package.json pnpm-lock.yaml
+git add apps/brain/src/reflex/jev.ts apps/brain/src/reflex/__tests__/jev.test.ts apps/brain/src/reflex/env.ts apps/brain/.env.example apps/brain/package.json pnpm-lock.yaml
 git commit -m "feat(reflex): the Jev client from Bash, with a warm pool and typed faults
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `jev.test.ts` passes (9 tests); the rest of the suite stays green.
+Expected: `jev.test.ts` passes (9 tests); P1's `env.test.ts` and `env-example.test.ts` stay green with the two new keys; the rest of the suite stays green.
 
 ### Task 3: The nine questions, their readers and their bars
 
@@ -1505,19 +1523,23 @@ Expected: `questions.test.ts` (10 tests) and `read.test.ts` (15 tests) pass; P1'
 - Create: `apps/brain/src/reflex/register.ts`
 - Create: `apps/brain/src/db/migrations/2000_reflex_reads.sql`
 - Modify: `apps/brain/src/main.ts` (add `import { registerReflex } from './reflex/register.js';` and put `registerReflex` right after `registerRoom` in `LANES`; nothing else)
-- Modify: `apps/brain/src/admin/switches.ts` (the `REFLEX_LIVE` rule in `SWITCH_RULES` also accepts `off`; nothing else)
 - Test: `apps/brain/src/reflex/__tests__/live.test.ts`, `apps/brain/src/reflex/__tests__/jev-reflex.test.ts`
 
+No edit to `apps/brain/src/admin/switches.ts`: P1 Task 2's `SWITCH_RULES.REFLEX_LIVE` already accepts `off` (the reflex's kill switch), `q1,q2,...` or empty; `live.test.ts` below checks it.
+
 **Interfaces:**
-- Consumes: `Brain`, `RegisterLane` (`app.ts`); `brain.switches.get('REFLEX_LIVE')`; `Message` (`door/methods.ts`); `TripPack` (`trips/pack.ts`); `Reflex`, `ReflexRead` (`reflex/reflex.ts`); `withSchema()` (`db/test-db.ts`); Tasks 1 to 3 (from Task 1: `secretKinds`, because the message reaches the reflex already masked by P1's intake).
-- Produces: `PASSED_SETS: readonly number[]` (starts empty); `parseLive(value, passed?): { call: boolean; live: ReadonlySet<QuestionName> }`; `codeFacts(msg, pack, runningTasks): CodeFacts`; `createJevReflex(deps): Reflex & { settled(): Promise<void> }`; `registerReflex: RegisterLane` (sets `brain.reflex`, starts the keep-warm); table `reflex_reads`.
+- Consumes: `Brain`, `RegisterLane`, `Brain.onStop` (`app.ts`); `brain.switches.get('REFLEX_LIVE')`; `SWITCH_RULES` (`admin/switches.ts`, P1); `Message` (`door/methods.ts`); `TripPack` (`trips/pack.ts`); `Reflex`, `ReflexRead` (`reflex/reflex.ts`); `withSchema()` (`db/test-db.ts`); Tasks 1 to 3 (from Task 1: `secretKinds`, because the message reaches the reflex already masked by P1's intake).
+- Produces: `PASSED_SETS: readonly number[]` (starts empty); `parseLive(value, passed?): { call: boolean; live: ReadonlySet<QuestionName> }`; `codeFacts(msg, pack, runningTasks): CodeFacts`; `createJevReflex(deps): Reflex & { settled(): Promise<void> }`; `registerReflex: RegisterLane` (sets `brain.reflex`, starts the keep-warm and hands `jev.stopKeepWarm` to `brain.onStop`); table `reflex_reads`.
 
 - [ ] **Step 1: Write the failing tests**
 ```ts
 // apps/brain/src/reflex/__tests__/live.test.ts
 import { describe, expect, it } from 'vitest';
 import { SWITCH_RULES } from '../../admin/switches.js';
+import type { Brain } from '../../app.js';
+import { silentLog } from '../../log.js';
 import { parseLive } from '../live.js';
+import { registerReflex } from '../register.js';
 
 describe('parseLive', () => {
   it('reads numbers or names and keeps only questions whose test set passed', () => {
@@ -1533,6 +1555,29 @@ describe('parseLive', () => {
     expect(SWITCH_RULES.REFLEX_LIVE.valid('off')).toBe(true);
     expect(SWITCH_RULES.REFLEX_LIVE.valid('q1,q2,q3')).toBe(true);
     expect(SWITCH_RULES.REFLEX_LIVE.valid('all')).toBe(false);
+  });
+});
+
+describe('registerReflex', () => {
+  it('replaces the stub and hands its keep-warm stop to brain.onStop', async () => {
+    const stops: Array<() => Promise<void> | void> = [];
+    // No TYPESAFE_API_KEY: the client makes no request and starts no timer, so the test stays offline.
+    const brain = {
+      env: { TYPESAFE_BASE_URL: 'https://jev.example', JEV_MODEL: 'jev-1.13.0', JEV_DEADLINE_MS: 450, JEV_DAILY_CALLS_PER_TRIP: 0 },
+      pool: {},
+      switches: { get: () => 'off', set: async () => undefined },
+      now: () => new Date('2026-10-07T10:00:00Z'),
+      log: silentLog,
+      reflex: null,
+      hooks: { onRead: () => undefined }, // Task 17 (prefetch) adds an onRead hook here
+      onStop: (fn: () => Promise<void> | void) => {
+        stops.push(fn);
+      },
+    } as unknown as Brain;
+    await registerReflex(brain);
+    expect(brain.reflex).not.toBeNull();
+    expect(stops).toHaveLength(1);
+    await stops[0]!();
   });
 });
 ```
@@ -1900,10 +1945,11 @@ import type { RegisterLane } from '../app.js';
 import { createJev } from './jev.js';
 import { createJevReflex } from './jev-reflex.js';
 
-/** Replaces P1's all-unsure stub with Jev, and keeps the connection pool warm. */
+/** Replaces P1's all-unsure stub with Jev, and keeps the connection pool warm until Go stops. */
 export const registerReflex: RegisterLane = (brain) => {
   const jev = createJev({ apiKey: brain.env.TYPESAFE_API_KEY, baseUrl: brain.env.TYPESAFE_BASE_URL, model: brain.env.JEV_MODEL });
-  jev.startKeepWarm();
+  jev.startKeepWarm(); // its interval is unref()ed in jev.ts
+  brain.onStop(() => jev.stopKeepWarm());
   brain.reflex = createJevReflex({
     jev,
     pool: brain.pool,
@@ -1917,28 +1963,24 @@ export const registerReflex: RegisterLane = (brain) => {
 ```
 Then edit `apps/brain/src/main.ts`: add `import { registerReflex } from './reflex/register.js';` next to `import { registerRoom } from './room.js';`, and make the list `export const LANES: RegisterLane[] = [registerRoom, registerReflex];`.
 
-In `apps/brain/src/admin/switches.ts`, change one line of `SWITCH_RULES` so "off" (no Jev call at all, the reflex's kill switch) is a value the switch can hold:
-```ts
-  REFLEX_LIVE: { valid: (v) => /^(off|q[1-9](,q[1-9])*)?$/.test(v), fallback: '' },
-```
 - [ ] **Step 4: Commit, push, read CI**
 ```bash
-git add apps/brain/src/admin/switches.ts apps/brain/src/reflex/live-gate.ts apps/brain/src/reflex/live.ts apps/brain/src/reflex/jev-reflex.ts apps/brain/src/reflex/register.ts apps/brain/src/db/migrations/2000_reflex_reads.sql apps/brain/src/main.ts apps/brain/src/reflex/__tests__/live.test.ts apps/brain/src/reflex/__tests__/jev-reflex.test.ts
+git add apps/brain/src/reflex/live-gate.ts apps/brain/src/reflex/live.ts apps/brain/src/reflex/jev-reflex.ts apps/brain/src/reflex/register.ts apps/brain/src/db/migrations/2000_reflex_reads.sql apps/brain/src/main.ts apps/brain/src/reflex/__tests__/live.test.ts apps/brain/src/reflex/__tests__/jev-reflex.test.ts
 git commit -m "feat(reflex): Jev reads every message once, shadow per question, every read logged without words
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `live.test.ts` (2 tests) and `jev-reflex.test.ts` (13 tests) pass; P1's room tests stay green (with `PASSED_SETS` empty every Jev question is in shadow, so behaviour equals the stub until Task 5's recording).
+Expected: `live.test.ts` (3 tests) and `jev-reflex.test.ts` (13 tests) pass; P1's room tests stay green (with `PASSED_SETS` empty every Jev question is in shadow, so behaviour equals the stub until Task 5's recording).
 
-### Task 5: Test sets, the offline scorer, and questions 1 to 3 going live
+### Task 5: Test sets, the offline scorer, and questions 1, 2, 3, 5 and 7 going live
 
 **Files:**
 - Create: `apps/brain/src/reflex/testsets/chat.jsonl`
 - Create: `apps/brain/src/reflex/testset.ts`
 - Create: `apps/brain/scripts/record-jev-answers.ts`
 - Create (Step 5, by hand, needs the key): `apps/brain/src/reflex/testsets/recorded/jev-1.13.0.json`
-- Modify (Step 6): `apps/brain/src/reflex/live-gate.ts` (`PASSED_SETS` lists the questions that passed); `apps/brain/src/reflex/thresholds.ts` only if the sweep moves a bar
+- Modify (Step 6): `apps/brain/src/reflex/live-gate.ts` (`PASSED_SETS` lists the questions of 1, 2, 3, 5 and 7 that passed); `apps/brain/src/reflex/thresholds.ts` only if the sweep moves a bar
 - Test: `apps/brain/src/reflex/__tests__/testset.test.ts`
 
 **Interfaces:**
@@ -2361,26 +2403,26 @@ cd apps/brain && TYPESAFE_API_KEY="$GO_JEV_EVAL_KEY" pnpm jev:record
 ```
 Expected: `wrote .../testsets/recorded/jev-1.13.0.json`, then one `PASS`/`FAIL` line per question and the sweep lines. The key lives only in the shell; it is never written to a file.
 
-- [ ] **Step 6: Make questions 1 to 3 live**
+- [ ] **Step 6: Make questions 1, 2, 3, 5 and 7 live where their sets pass**
 
-For each of `for_go`, `complete`, `size`: if its line says `FAIL` only because of recall or wrong answers, pick from the sweep the bar value with `wrong=0` and the best recall that reaches the gate, and set that one value in `apps/brain/src/reflex/thresholds.ts` (bars are not part of the wording version, so no new recording is needed). Then set the gate to the questions whose lines say `PASS`:
+Questions 5 (a fact worth saving) and 7 (a quiet reaction) go live with 1 to 3 because the demo's 0:15 beat needs them: the ✅ under "I'm veg btw" comes from Q5 and Q7 at once, inside the message hook (Task 15), and the notes pass is only the fallback. For each of `for_go`, `complete`, `size`, `fact` and `reaction`: if its line says `FAIL` only because of recall or wrong answers, pick from the sweep the bar value with `wrong=0` and the best recall that reaches the gate, and set that one value in `apps/brain/src/reflex/thresholds.ts` (bars are not part of the wording version, so no new recording is needed). Then set the gate to the questions whose lines say `PASS`:
 ```ts
 // apps/brain/src/reflex/live-gate.ts
 /**
  * The questions whose test set passed on recorded Jev answers. The scorer test (Task 5) re-checks
  * every number here in CI. A question acts live only when REFLEX_LIVE names it and it is listed here.
  */
-export const PASSED_SETS: readonly number[] = [1, 2, 3];
+export const PASSED_SETS: readonly number[] = [1, 2, 3, 5, 7];
 ```
-Leave out any of 1, 2, 3 whose line still says `FAIL`, and say which in the PR body. Then:
+Leave out any of 1, 2, 3, 5 and 7 whose line still says `FAIL`, and say which in the PR body (a question left out stays in shadow; for 5 or 7 that means the ✅ waits for the notes pass, and Task 16 tries it again on the real trip's rows). Then:
 ```bash
 git add apps/brain/src/reflex/testsets/recorded/jev-1.13.0.json apps/brain/src/reflex/live-gate.ts apps/brain/src/reflex/thresholds.ts
-git commit -m "feat(reflex): questions 1 to 3 go live on recorded answers that pass their gates
+git commit -m "feat(reflex): questions 1, 2, 3, 5 and 7 go live on recorded answers that pass their gates
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: the live-gate test now checks 1, 2 and 3 against the recording and passes. `REFLEX_LIVE` defaults to `q1,q2,q3` (Task 2), so these act on the next deploy.
+Expected: the live-gate test now checks every number in `PASSED_SETS` against the recording and passes. `REFLEX_LIVE` defaults to `q1,q2,q3,q5,q7` (Task 2), so the questions that passed act on the next deploy.
 
 ### Task 6: Facts with proof and history, carry-over, forgotten marks
 
@@ -3736,7 +3778,7 @@ Expected: `pages-recall.test.ts` passes (11 tests).
   - `test-kit.ts` (appended): `scriptedClient(answers): SideClient & { requests: Array<{ body: SideBody; signal: AbortSignal | undefined }>; prompts: Array<{ model; system; user; maxTokens }> }`, a fake shaped like `brain.anthropic` that answers `messages.create` from a script and throws on `messages.stream`.
   - `fence.ts`: `FENCE_RULE`, `fenceText(s)`, `nameLabel(name)`, `chatLine(m, pack, hidden): string` (`#seq [person Name | p_id]: text`, `#seq [Go]: text`), `peopleLegend(pack): string`, `isForgotten(m, forgotten): boolean`.
   - `reactions.ts`: `reactionRequestId(tripId, messageId, emoji)`, `reactOnce(pool, link, tripId, message, emoji): Promise<'sent' | 'skipped' | 'failed'>`.
-  - `schedule.ts`: `interface Timers`, `realTimers`, `interface Debouncer { after(key, ms, fn, maxWaitMs?); cancel(key); pending(key) }`, `createDebouncer(timers, now)`.
+  - `schedule.ts`: `interface Timers`, `realTimers` (every timer `unref()`ed), `interface Debouncer { after(key, ms, fn, maxWaitMs?); cancel(key); cancelAll(); pending(key) }` (`cancelAll` is what Task 15 hands to `brain.onStop`), `createDebouncer(timers, now)`.
   - `notes.ts`: `NOTES_RULES`, `NotesOutput` (zod), `parseNotes(raw)`, `interface NotesResult { facts; lines; reacted; refused: string[]; skipped?; more? }`, `createNotes(deps): { run(tripId, opts?: { only?: string[] }): Promise<NotesResult> }`.
   - Tables `notes_cursor`, `go_reactions`.
 
@@ -3800,6 +3842,19 @@ describe('createDebouncer', () => {
     d.cancel('k');
     t.advance(5_000);
     expect(runs).toBe(0);
+  });
+
+  it('cancels every key at once when Go stops', () => {
+    const t = manualTimers();
+    const d = createDebouncer(t.timers, t.now);
+    let runs = 0;
+    d.after('notes:t1', 20_000, () => { runs += 1; });
+    d.after('fold:t1', 60_000, () => { runs += 1; });
+    d.after('notes:t2', 2_000, () => { runs += 1; });
+    d.cancelAll();
+    t.advance(120_000);
+    expect(runs).toBe(0);
+    expect(d.pending('notes:t1') || d.pending('fold:t1') || d.pending('notes:t2')).toBe(false);
   });
 });
 ```
@@ -4176,6 +4231,8 @@ export const realTimers: Timers = {
 export interface Debouncer {
   after(key: string, ms: number, fn: () => void, maxWaitMs?: number): void;
   cancel(key: string): void;
+  /** Clears every waiting timer; registerMemory hands this to brain.onStop. */
+  cancelAll(): void;
   pending(key: string): boolean;
 }
 
@@ -4198,6 +4255,10 @@ export function createDebouncer(timers: Timers, now: () => number): Debouncer {
       if (!had) return;
       timers.clear(had.handle);
       slots.delete(key);
+    },
+    cancelAll() {
+      for (const s of slots.values()) timers.clear(s.handle);
+      slots.clear();
     },
     pending(key) {
       return slots.has(key);
@@ -4479,7 +4540,7 @@ git commit -m "feat(memory): the notes pass proposes facts and record lines, cod
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `schedule.test.ts` (3 tests), `notes.test.ts` (6 tests) and `side-model.test.ts` (2 tests) pass.
+Expected: `schedule.test.ts` (4 tests), `notes.test.ts` (6 tests) and `side-model.test.ts` (2 tests) pass.
 
 ### Task 11: The fold: "the story so far", the safety net, and deletes
 
@@ -4969,15 +5030,15 @@ git push && gh run watch --exit-status || gh run view --log-failed
 ```
 Expected: `fold.test.ts` passes (10 tests).
 
-### Task 12: The people methods: get, carry-over, delete a fact, forget me
+### Task 12: The people methods: get, carry-over, delete a fact, forget me (and an empty catch-up until Task 13)
 
 **Files:**
 - Create: `apps/brain/src/memory/people.ts`
 - Test: `apps/brain/src/memory/__tests__/people.test.ts`
 
 **Interfaces:**
-- Consumes: `C.PersonPage`, `C.Ok`, `C.ForgetResult` (`@go/contract`); `ToGoHandler` (`door/handlers.ts`); `SocketCallError` (`door/server-link.ts`); `Packs` (`trips/pack.ts`); `Log`, `silentLog` (`log.ts`, P1); `currentFacts` (newest first), `FactRow`, `getCarryOver`, `setCarryOver`, `deleteFactChain`, `forgetFacts`, `countFacts`, `markForgotten`, `forgottenUpTo`, `withTx`, `saveFact` (Task 6); `Fold` (`redactPerson`, `storyMentions`, Task 11); `drawPage` (Task 9), `recall` (Task 9), `checkFact` (Task 7) in tests.
-- Produces: `interface PeopleDeps { pool; packs; fold: Pick<Fold, 'redactPerson' | 'storyMentions'>; now; log }`; `newestPerTopic(facts: FactRow[]): FactRow[]`; `peopleHandlers(deps): { get_person: ToGoHandler<'get_person'>; update_person: ToGoHandler<'update_person'>; delete_fact: ToGoHandler<'delete_fact'>; forget_person: ToGoHandler<'forget_person'> }`. `get_person` answers one current fact per topic, the newest across trips (guide 05: "A person has one current fact per topic"); storage stays per person, topic and trip, so `delete_fact` removes exactly the row its `fact_id` names (with that row's history), and pages (Task 9) still show each trip's own fact.
+- Consumes: `C.PersonPage`, `C.Ok`, `C.ForgetResult`, `C.CatchUp` (`@go/contract`); `ToGoHandler` (`door/handlers.ts`); `SocketCallError` (`door/server-link.ts`); `Packs` (`trips/pack.ts`); `Log`, `silentLog` (`log.ts`, P1); `currentFacts` (newest first), `FactRow`, `getCarryOver`, `setCarryOver`, `deleteFactChain`, `forgetFacts`, `countFacts`, `markForgotten`, `forgottenUpTo`, `withTx`, `saveFact` (Task 6); `Fold` (`redactPerson`, `storyMentions`, Task 11); `drawPage` (Task 9), `recall` (Task 9), `checkFact` (Task 7) in tests.
+- Produces: `interface PeopleDeps { pool; packs; fold: Pick<Fold, 'redactPerson' | 'storyMentions'>; now; log }`; `newestPerTopic(facts: FactRow[]): FactRow[]`; `peopleHandlers(deps): { get_person: ToGoHandler<'get_person'>; update_person: ToGoHandler<'update_person'>; delete_fact: ToGoHandler<'delete_fact'>; forget_person: ToGoHandler<'forget_person'> }`; `emptyCatchUp(): ToGoHandler<'catch_up'>` (answers `{ items: [] }` at once, valid against `C.CatchUp`; Task 15 registers it and the stretch Task 13 replaces it). `get_person` answers one current fact per topic, the newest across trips (guide 05: "A person has one current fact per topic"); storage stays per person, topic and trip, so `delete_fact` removes exactly the row its `fact_id` names (with that row's history), and pages (Task 9) still show each trip's own fact.
 
 - [ ] **Step 1: Write the failing test**
 ```ts
@@ -4993,7 +5054,7 @@ import { checkFact } from '../checker.js';
 import { countFacts, forgottenUpTo, saveFact, type NewFact } from '../facts.js';
 import { createFold } from '../fold.js';
 import { drawPage } from '../pages.js';
-import { peopleHandlers } from '../people.js';
+import { emptyCatchUp, peopleHandlers } from '../people.js';
 import { recall } from '../recall.js';
 import { scriptedSide, seedMessages } from './test-kit.js';
 
@@ -5151,6 +5212,16 @@ describe('forget_person (master §10 item 5)', () => {
     expect(await countFacts(db.pool, 'p_arjun', 't_goa')).toBe(1);
   });
 });
+
+describe('catch_up until Task 13 lands', () => {
+  it('answers a valid, empty catch-up at once, so the Server never gets -32601', async () => {
+    const started = Date.now();
+    const res = await emptyCatchUp()({ trip_id: 't_goa', person_id: 'p_meher', since: '2026-10-05T05:00:00Z' }, meta);
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(C.CatchUp.safeParse(res).success).toBe(true);
+    expect(res).toEqual({ items: [] });
+  });
+});
 ```
 - [ ] **Step 2: Push the test and see it fail.** Red is certain: the module does not exist yet. Skip to Step 3.
 - [ ] **Step 3: Write the implementation**
@@ -5172,6 +5243,14 @@ import {
   countFacts, currentFacts, deleteFactChain, forgetFacts, getCarryOver, markForgotten, setCarryOver, withTx, type Db, type FactRow,
 } from './facts.js';
 import type { Fold } from './fold.js';
+
+/**
+ * catch_up before the real one (Task 13, a stretch built after G2) lands: a valid answer with nothing in it, at once.
+ * The person simply sees no "while you were away" above the room; the Server never gets -32601.
+ */
+export function emptyCatchUp(): ToGoHandler<'catch_up'> {
+  return async () => C.CatchUp.parse({ items: [] });
+}
 
 /**
  * A person has one current fact per topic (guide 05). Facts are kept per trip, so the person's page
@@ -5285,21 +5364,25 @@ export function peopleHandlers(d: PeopleDeps): {
 - [ ] **Step 4: Commit, push, read CI**
 ```bash
 git add apps/brain/src/memory/people.ts apps/brain/src/memory/__tests__/people.test.ts
-git commit -m "feat(memory): people pages, carry-over, delete a fact, and a forget checked by queries
+git commit -m "feat(memory): people pages, carry-over, delete a fact, a forget checked by queries, and an empty catch-up
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `people.test.ts` passes (10 tests).
+Expected: `people.test.ts` passes (11 tests).
 
-### Task 13: Catch-up for someone who was away
+### Task 13 (stretch: build after G2): Catch-up for someone who was away
+
+Build this after G2, once Tasks 14 and 15 are merged (master §9 "Stretch"). Until then Task 15 registers Task 12's `emptyCatchUp`, which answers a valid empty catch-up; this task replaces those two lines in `memory/register.ts` (the comment and the `catch_up` registration) with the real handler.
 
 **Files:**
 - Create: `apps/brain/src/memory/catch-up.ts`
+- Modify: `apps/brain/src/memory/register.ts` (`catch_up` gets `catchUpHandler` instead of `emptyCatchUp`)
 - Test: `apps/brain/src/memory/__tests__/catch-up.test.ts`
+- Modify: `apps/brain/src/memory/__tests__/register.test.ts` (one test: the registered `catch_up` is the real one)
 
 **Interfaces:**
-- Consumes: `C.CatchUp`, `C.HttpUrl`, `C.RecordLine`, `C.Card` (`@go/contract`); `ToGoHandler` (`door/handlers.ts`); `Packs`, `TripPack` (`trips/pack.ts`); `JevClient`, `JevQuestion` (Task 2); `FENCE` (Task 3); `noulP` (Task 3); `maskSecrets` (Task 1); `Log`, `silentLog` (`log.ts`, P1); `mirrorSnapshot`, `recordLines` (Task 8).
+- Consumes: `C.CatchUp`, `C.HttpUrl`, `C.RecordLine`, `C.Card` (`@go/contract`); `ToGoHandler` (`door/handlers.ts`); `Packs`, `TripPack` (`trips/pack.ts`); `JevClient`, `JevQuestion` (Task 2); `FENCE` (Task 3); `noulP` (Task 3); `maskSecrets` (Task 1); `Log`, `silentLog` (`log.ts`, P1); `mirrorSnapshot`, `recordLines` (Task 8); `wireMemory`, `WireDeps` and the `setup()` helper of `register.test.ts` (Task 15).
 - Produces: `type CatchKind`; `interface CatchItem { kind; text; imageUrl?; messageId?; at: number; must: boolean }`; `candidates(pack, lines, personId, since): CatchItem[]`; `summaryOf(items): string | null`; `rankQuestions(personName, items): { state; questions }`; `catchUpHandler(deps: { pool; packs; jev; log }): ToGoHandler<'catch_up'>` (answers within 3 s: Jev gets 1,000 ms).
 
 - [ ] **Step 1: Write the failing test**
@@ -5416,7 +5499,23 @@ describe('catch_up', () => {
   });
 });
 ```
-- [ ] **Step 2: Push the test and see it fail.** Red is certain: the module does not exist yet. Skip to Step 3.
+In `apps/brain/src/memory/__tests__/register.test.ts` (Task 15), add this import with the others:
+```ts
+import type { ToGoHandler } from '../../door/handlers.js';
+```
+and this block at the end of the file:
+```ts
+describe('catch_up once Task 13 lands', () => {
+  it('answers what the person missed, not the empty answer Task 12 left in its place', async () => {
+    const mention = msg(171, 'p_priya', 'Meher are you okay with a 6 am start?', { mentions: ['p_meher'] });
+    const w = setup('t_r12', [mention], []);
+    const catchUp = w.handlers.get('catch_up') as ToGoHandler<'catch_up'>;
+    const res = await catchUp({ trip_id: 't_r12', person_id: 'p_meher', since: '2026-10-05T05:00:00Z' }, { instance: 'server-1', frameId: 'gs_3' });
+    expect(res.items).toEqual([{ kind: 'needs_you', text: 'Priya mentioned you: Meher are you okay with a 6 am start?', message_id: 'm_0171' }]);
+  });
+});
+```
+- [ ] **Step 2: Push the test and see it fail.** Red is certain for `catch-up.test.ts`: the module does not exist yet. The new `register.test.ts` case would fail on its own too (Task 12's empty answer has no items). Skip to Step 3.
 - [ ] **Step 3: Write the implementation**
 ```ts
 // apps/brain/src/memory/catch-up.ts
@@ -5578,15 +5677,29 @@ export function catchUpHandler(d: { pool: Pool; packs: Packs; jev: Pick<JevClien
   };
 }
 ```
+Then, in `apps/brain/src/memory/register.ts` (Task 15), add the import:
+```ts
+import { catchUpHandler } from './catch-up.js';
+```
+change `import { emptyCatchUp, peopleHandlers } from './people.js';` to `import { peopleHandlers } from './people.js';`, and replace the two lines
+```ts
+  // A valid, empty catch-up until the stretch Task 13 lands (it replaces this line), so the Server never gets -32601.
+  brain.door.handle('catch_up', emptyCatchUp());
+```
+with
+```ts
+  brain.door.handle('catch_up', catchUpHandler({ pool: brain.pool, packs: brain.packs, jev: d.jev, log: brain.log }));
+```
+In the file's header comment, drop the parenthesis that says catch-up is an empty answer until the stretch Task 13 (it spans the first two lines). Leave `emptyCatchUp` in `people.ts` (its own test stays), so the empty answer can be put back with one line if catch-up misbehaves on stage.
 - [ ] **Step 4: Commit, push, read CI**
 ```bash
-git add apps/brain/src/memory/catch-up.ts apps/brain/src/memory/__tests__/catch-up.test.ts
+git add apps/brain/src/memory/catch-up.ts apps/brain/src/memory/__tests__/catch-up.test.ts apps/brain/src/memory/register.ts apps/brain/src/memory/__tests__/register.test.ts
 git commit -m "feat(memory): catch-up for one person, what needs them first, Jev ranks the rest
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `catch-up.test.ts` passes (4 tests).
+Expected: `catch-up.test.ts` passes (4 tests) and `register.test.ts` passes (13 tests, the real catch-up among them).
 
 ### Task 14: Memory for the composer: `Memory`, quick tools, right-now blocks
 
@@ -5971,16 +6084,18 @@ Expected: `memory-tools.test.ts` passes (10 tests).
 ### Task 15: Join answers, and wiring memory into Go (`registerMemory`)
 
 **Files:**
-- Create: `apps/brain/src/memory/env.ts`
+- Modify: `apps/brain/src/memory/env.ts` (P1 Task 2's empty stub: replace `z.object({})` with the five variables below. Never a second file, and no edit to `env.ts`: P1's `LANE_ENVS` already merges `MemoryEnv` into `Env`, so `loadEnv` keeps these keys the moment this file declares them)
+- Modify: `apps/brain/.env.example` (add the `# Lane B (P2): memory` block below the Jev block)
 - Create: `apps/brain/src/memory/join-facts.ts`
 - Create: `apps/brain/src/memory/register.ts`
-- Modify: `apps/brain/src/env.ts` (add `import { MemoryEnv } from './memory/env.js';` and `...MemoryEnv.shape,` right after `...ReflexEnv.shape,` in `Env`; nothing else)
 - Modify: `apps/brain/src/main.ts` (add `import { registerMemory } from './memory/register.js';` and make the list `export const LANES: RegisterLane[] = [registerRoom, registerReflex, registerMemory];`)
 - Test: `apps/brain/src/memory/__tests__/register.test.ts`
 
 **Interfaces:**
-- Consumes: `Brain`, `RegisterLane` (`app.ts`); `TripEvent`, `Message` (`door/methods.ts`); `ReflexRead` (`reflex/reflex.ts`); `TripPack` (`trips/pack.ts`); `C.Person`; `createJev`, `JevClient` (Task 2); `hasSecret` (Task 1); `cleanText` (Task 7); `currentFacts`, `saveFact`, `deleteFactRow`, `dropFactsFromMessage` (Task 6); `mirrorLine`, `mirrorSnapshot` (Task 8); `createNotes` (Task 10); `reactOnce` (Task 10); `createDebouncer`, `realTimers`, `Timers` (Task 10); `anthropicSideModel` (Task 10); `scriptedClient` (Task 10, tests); `createFold`, `Fold`, `StoryProvider` (Task 11); `peopleHandlers` (Task 12); `catchUpHandler` (Task 13); `createMemory`, `memoryTools`, `recordNow`, `peopleNow` (Task 14); `brain.anthropic: AnthropicLike` (P1 Task 15, master §6.3: the client `buildBrain` was given, with `messages.create`); `brain.env.SIDE_MODEL` (P1's `Env`); `brain.context.setStory` (P1 Task 10, master §6.3).
-- Produces: `MemoryEnv` (`FOLD_AT_TOKENS` 60,000, `STORY_TOKENS` 5,000, `CHAT_HARD_CAP_TOKENS` 90,000, `NOTES_QUIET_MS` 20,000, `FOLD_QUIET_MS` 60,000); `joinFacts(person): Array<{ topic; text }>`; `syncJoinFacts(pool, tripId, person)`; `interface WireDeps { jev; timers; clock }` (no model: the side model is built inside from `brain.anthropic` and `SIDE_MODEL`); `wireMemory(brain, deps): { onEvent(ev); onRead(msg, read, pack); sweep(): Promise<void> }`; `registerMemory: RegisterLane` (sets `brain.memory`; registers `catch_up`, `get_person`, `update_person`, `delete_fact`, `forget_person`; tools `trip`, `person`, `recall`, `record`; right-now blocks `record` and `people`; the fold handed to `brain.context.setStory` (a context built without it, such as a lane-only test double, gets one warning and the fold still runs); a `TripLog.onEvent` listener; a `MessageHooks.onRead` hook; a 5-minute sweep).
+- Consumes: `Brain`, `RegisterLane`, `Brain.onStop` (`app.ts`); `MemoryEnv` stub and `LANE_ENVS` (P1 Task 2); `TripEvent`, `Message` (`door/methods.ts`); `ReflexRead` (`reflex/reflex.ts`); `TripPack` (`trips/pack.ts`); `C.Person`; `createJev`, `JevClient` (Task 2); `hasSecret` (Task 1); `cleanText` (Task 7); `currentFacts`, `saveFact`, `deleteFactRow`, `dropFactsFromMessage` (Task 6); `mirrorLine`, `mirrorSnapshot` (Task 8); `createNotes` (Task 10); `reactOnce` (Task 10); `createDebouncer` (with `cancelAll`), `realTimers`, `Timers` (Task 10); `anthropicSideModel` (Task 10); `scriptedClient` (Task 10, tests); `createFold`, `Fold`, `StoryProvider` (Task 11); `peopleHandlers`, `emptyCatchUp` (Task 12; the stretch Task 13 later swaps in `catchUpHandler`); `reactionRequestId` (Task 10, tests); `SocketCallError` (`door/rpc.ts`, tests); `createMemory`, `memoryTools`, `recordNow`, `peopleNow` (Task 14); `brain.anthropic: AnthropicLike` (P1 Task 15, master §6.3: the client `buildBrain` was given, with `messages.create`); `brain.env.SIDE_MODEL` (P1's `Env`); `brain.context.setStory` (P1 Task 10, master §6.3).
+- Produces: `MemoryEnv` (`FOLD_AT_TOKENS` 60,000, `STORY_TOKENS` 5,000, `CHAT_HARD_CAP_TOKENS` 90,000, `NOTES_QUIET_MS` 20,000, `FOLD_QUIET_MS` 60,000); `joinFacts(person): Array<{ topic; text }>`; `syncJoinFacts(pool, tripId, person)`; `interface WireDeps { jev; timers; clock }` (no model: the side model is built inside from `brain.anthropic` and `SIDE_MODEL`); `wireMemory(brain, deps): { onEvent(ev); onRead(msg, read, pack); sweep(): Promise<void>; stop(): void }` (`stop` clears every quiet and after-post timer); `registerMemory: RegisterLane` (sets `brain.memory`; registers `catch_up` (Task 12's empty answer until Task 13), `get_person`, `update_person`, `delete_fact`, `forget_person`; tools `trip`, `person`, `recall`, `record`; right-now blocks `record` and `people`; the fold handed to `brain.context.setStory` (a context built without it, such as a lane-only test double, gets one warning and the fold still runs); a `TripLog.onEvent` listener; a `MessageHooks.onRead` hook; a 5-minute sweep, `unref()`ed; one `brain.onStop` stopper that clears the sweep and calls `wired.stop()`).
+
+**The instant ✅ (master §1 0:15).** When the reflex is sure a person's message holds a fact worth saving (Q5) and sure of a quiet ✅ (Q7), `onRead` sends the ✅ inside the hook, before anything else: one `add_reaction` with the request id `go_react_<24 hex of trip, message and emoji>` (Task 10's `reactOnce`), then it starts the fact check (the notes pass) at once. The notes pass stays the fallback for every message the reflex was not sure about, and it never doubles the reaction: `reactOnce` finds the `go_reactions` row already done, and a 409 from the Server (someone, or P1's `react` tool, already put the same ✅) counts as done. When only one of the two is sure, the ✅ waits for the notes pass, as before.
 
 - [ ] **Step 1: Write the failing test**
 ```ts
@@ -5995,14 +6110,16 @@ import { withSchema } from '../../db/test-db.js';
 import type { Message, TripEvent } from '../../door/methods.js';
 import { silentLog } from '../../log.js';
 import { fakePacks, goaPeople, goaTrip, msg, packOf } from '../../reflex/goa.fixture.js';
+import { SocketCallError } from '../../door/rpc.js';
 import { codeOnly, sure } from '../../reflex/read.js';
 import type { ReflexRead } from '../../reflex/reflex.js';
 import type { TripPack } from '../../trips/pack.js';
 import { currentFacts, saveFact } from '../facts.js';
 import type { StoryProvider } from '../fold.js';
 import { joinFacts } from '../join-facts.js';
+import { reactionRequestId } from '../reactions.js';
 import { recordLines } from '../record.js';
-import { wireMemory } from '../register.js';
+import { registerMemory, wireMemory } from '../register.js';
 import type { Timers } from '../schedule.js';
 import { fakeLink, scriptedClient } from './test-kit.js';
 
@@ -6031,21 +6148,26 @@ function manualTimers() {
 const ev = (tripId: string, seq: number, type: string, data: unknown): TripEvent =>
   ({ event_id: `ev_${tripId}_${seq}`, trip_id: tripId, seq, occurred_at: '2026-10-07T10:00:00Z', type, data }) as unknown as TripEvent;
 
-function setup(tripId: string, messages: Message[], answers: string[], o: { story?: boolean } = {}) {
+function setup(tripId: string, messages: Message[], answers: string[], o: { story?: boolean; fail?: (method: string) => Error | null } = {}) {
   const pack: TripPack = packOf(messages, goaTrip({ trip_id: tripId }));
   const handlers = new Map<string, unknown>();
   const tools: QuickTool<any>[] = [];
   const nows: NowProvider[] = [];
   const warnings: string[] = [];
+  const stops: Array<() => Promise<void> | void> = [];
   let story: StoryProvider | undefined;
-  const link = fakeLink();
+  const link = fakeLink(o.fail ? { fail: o.fail } : {});
   // The fake model goes where buildBrain puts the real one: brain.anthropic.
   const model = scriptedClient(answers);
   const t = manualTimers();
   const context: Record<string, unknown> = { addNow: (p: NowProvider) => nows.push(p), addWake: () => undefined };
   if (o.story !== false) context.setStory = (p: StoryProvider) => { story = p; };
   const brain = {
-    env: { SIDE_MODEL: 'side-test', FOLD_AT_TOKENS: 60_000, STORY_TOKENS: 5_000, CHAT_HARD_CAP_TOKENS: 90_000, NOTES_QUIET_MS: 20_000, FOLD_QUIET_MS: 60_000 },
+    env: {
+      SIDE_MODEL: 'side-test', FOLD_AT_TOKENS: 60_000, STORY_TOKENS: 5_000, CHAT_HARD_CAP_TOKENS: 90_000, NOTES_QUIET_MS: 20_000, FOLD_QUIET_MS: 60_000,
+      // registerMemory builds its own Jev client for catch-up; no key, so it never calls out.
+      TYPESAFE_BASE_URL: 'https://jev.example', JEV_MODEL: 'jev-1.13.0',
+    },
     anthropic: model,
     pool: db.pool,
     log: { ...silentLog, warn: (_o: object, m?: string) => { warnings.push(m ?? ''); } },
@@ -6057,10 +6179,13 @@ function setup(tripId: string, messages: Message[], answers: string[], o: { stor
     tools: { register: (x: QuickTool<any>) => tools.push(x), list: () => tools },
     context,
     switches: { get: () => '', set: async () => undefined },
+    onStop: (fn: () => Promise<void> | void) => {
+      stops.push(fn);
+    },
   } as unknown as Brain;
   const jev = { ask: async () => ({ ok: false as const, fault: 'timeout' as const, totalMs: 1 }) };
   const wired = wireMemory(brain, { jev, timers: t.timers, clock: t.clock });
-  return { brain, pack, handlers, tools, nows, warnings, link, model, t, wired, story: () => story };
+  return { brain, pack, handlers, tools, nows, warnings, stops, link, model, t, wired, story: () => story };
 }
 const read = (over: Partial<ReflexRead>): ReflexRead => ({ ...codeOnly({ namesGo: false, secretKinds: [], hasTasks: false }), ...over });
 
@@ -6134,6 +6259,34 @@ describe('wireMemory', () => {
     expect(w.model.prompts).toHaveLength(0);
   });
 
+  it('a sure fact + sure ✅ reacts within the hook, before any notes-pass timer, and the notes pass never doubles it', async () => {
+    const m = msg(50, 'p_meher', "I'm veg btw");
+    const answer = JSON.stringify({ facts: [{ person_id: 'p_meher', topic: 'food', text: 'Vegetarian', message: 50 }], lines: [] });
+    const w = setup('t_r10', [m], [answer]);
+    await w.wired.onRead(m, read({ fact: sure(true), reaction: sure('✅') }), w.pack);
+    // Already sent when the hook returns: no timer moved, and no model answer was needed for it.
+    const sent = () => w.link.calls.filter((c) => c.method === 'add_reaction');
+    expect(sent()).toHaveLength(1);
+    expect(sent()[0]!.params).toMatchObject({ trip_id: 't_r10', message_id: 'm_0050', emoji: '✅', request_id: reactionRequestId('t_r10', 'm_0050', '✅') });
+    // The fact check started at once as well; its own ✅ for the same message finds the reaction done and sends nothing.
+    await vi.waitFor(async () => expect((await currentFacts(db.pool, { personId: 'p_meher', tripId: 't_r10' })).map((f) => f.text)).toEqual(['Vegetarian']));
+    await vi.waitFor(async () => expect((await db.pool.query<{ seq: number }>("SELECT seq FROM notes_cursor WHERE trip_id = 't_r10'")).rows[0]?.seq).toBe(50));
+    expect(sent()).toHaveLength(1);
+  });
+
+  it('counts a 409 on the instant ✅ as done: the notes pass never sends it again', async () => {
+    const m = msg(60, 'p_meher', "I'm veg btw");
+    const answer = JSON.stringify({ facts: [{ person_id: 'p_meher', topic: 'food', text: 'Vegetarian', message: 60 }], lines: [] });
+    const conflict = (method: string) => (method === 'add_reaction' ? new SocketCallError(409, 'already reacted', 'conflict') : null);
+    const w = setup('t_r11', [m], [answer], { fail: conflict });
+    await w.wired.onRead(m, read({ fact: sure(true), reaction: sure('✅') }), w.pack);
+    expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toHaveLength(1);
+    // The notes pass saved the fact and reached its own ✅ step, which found the reaction done.
+    await vi.waitFor(async () => expect((await currentFacts(db.pool, { personId: 'p_meher', tripId: 't_r11' })).map((f) => f.text)).toEqual(['Vegetarian']));
+    await vi.waitFor(async () => expect((await db.pool.query<{ seq: number }>("SELECT seq FROM notes_cursor WHERE trip_id = 't_r11'")).rows[0]?.seq).toBe(60));
+    expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toHaveLength(1);
+  });
+
   it('runs the notes pass at once on a sure fact, and only after a quiet spell otherwise', async () => {
     const fact = msg(20, 'p_meher', "I'm veg btw");
     const chatter = msg(21, 'p_arjun', 'hahaha');
@@ -6165,10 +6318,35 @@ describe('wireMemory', () => {
     // The side pass ran on brain.anthropic with SIDE_MODEL, not on a client of its own.
     expect(w.model.prompts[0]!).toMatchObject({ model: 'side-test', maxTokens: 1_500 });
   });
+
+  it('stop() clears every quiet and after-post timer: nothing runs after Go stops', async () => {
+    const m = msg(40, 'p_kabir', 'scuba on Saturday?');
+    const goes = msg(41, 'go', 'Two places do Saturday dives.');
+    const w = setup('t_r8', [m, goes], [JSON.stringify({ facts: [], lines: [] })]);
+    await w.wired.onRead(m, read({}), w.pack);
+    await w.wired.onEvent(ev('t_r8', 41, 'message.created', { message: goes }));
+    w.wired.stop();
+    w.t.advance(120_000);
+    expect(w.model.prompts).toHaveLength(0);
+  });
+});
+
+describe('registerMemory', () => {
+  it('hands brain.onStop one stopper that clears the 5-minute sweep and the quiet timers', async () => {
+    const w = setup('t_r9', [], []);
+    const cleared = vi.spyOn(globalThis, 'clearInterval');
+    await registerMemory(w.brain);
+    expect(w.stops).toHaveLength(1);
+    await w.stops[0]!();
+    expect(cleared).toHaveBeenCalled();
+    cleared.mockRestore();
+  });
 });
 ```
 - [ ] **Step 2: Push the test and see it fail.** Red is certain: the modules do not exist yet. Skip to Step 3.
 - [ ] **Step 3: Write the implementation**
+
+Replace the whole of P1's stub `apps/brain/src/memory/env.ts` (it holds `MemoryEnv = z.object({})`) with:
 ```ts
 // apps/brain/src/memory/env.ts
 import { z } from 'zod';
@@ -6182,7 +6360,17 @@ export const MemoryEnv = z.object({
   FOLD_QUIET_MS: z.coerce.number().int().min(1_000).default(60_000),
 });
 ```
-In `apps/brain/src/env.ts`, add `import { MemoryEnv } from './memory/env.js';` beside the other lane imports and `...MemoryEnv.shape,` right after `...ReflexEnv.shape,` inside `Env`.
+Do not edit `apps/brain/src/env.ts`: P1's `Env` already spreads `MemoryEnv.shape` and lists it in `LANE_ENVS`, so P1's `env.test.ts` case "drops a variable no lane declares, and keeps it once its lane declares it" now reads `FOLD_AT_TOKENS=12000` as `12000`.
+
+In `apps/brain/.env.example`, add this block right after the `# Lane B (P2): Jev` block (P1 Task 17's `env-example.test.ts` checks every key of `Env`):
+```bash
+# Lane B (P2): memory. The fold's budgets in estimated tokens, and the quiet spells before side passes run.
+# FOLD_AT_TOKENS=60000
+# STORY_TOKENS=5000
+# CHAT_HARD_CAP_TOKENS=90000
+# NOTES_QUIET_MS=20000
+# FOLD_QUIET_MS=60000
+```
 ```ts
 // apps/brain/src/memory/join-facts.ts
 /**
@@ -6243,14 +6431,16 @@ export async function syncJoinFacts(pool: Pool, tripId: string, person: C.Person
 ```ts
 // apps/brain/src/memory/register.ts
 /**
- * Memory's wiring into Go: sets brain.memory, answers the Server's people and catch-up requests, gives the
- * composer its tools and right-now blocks, hands P1's context the story so far, keeps the record copy and
- * the facts in step with events, and runs the notes pass and the fold off the reply path:
+ * Memory's wiring into Go: sets brain.memory, answers the Server's people and catch-up requests (catch-up is an
+ * empty answer until the stretch Task 13), gives the composer its tools and right-now blocks, hands P1's context
+ * the story so far, keeps the record copy and the facts in step with events, and runs the notes pass and the fold
+ * off the reply path:
  *  - at once when Jev is sure a message holds a fact or a record line (or would get a ✅);
  *  - 2 s after Go posts (the after-turn pass);
  *  - after a quiet spell (20 s, at most 60 s in a busy chat) for everything else;
  *  - the fold after 60 s of quiet, and a sweep every 5 minutes that finishes anything a restart dropped.
- * A sure 👍 or 🙌 from the reflex is sent with add_reaction without any model.
+ * A sure 👍 or 🙌 from the reflex is sent with add_reaction without any model. A sure ✅ on a message Jev is also
+ * sure holds a fact (Q7 and Q5) is sent inside the hook, before the notes pass, which stays the fallback.
  * The side passes run on brain.anthropic (the client buildBrain was given) with SIDE_MODEL. That client
  * does not retry; a failed pass keeps its cursor and the next quiet spell or sweep runs it again.
  */
@@ -6259,14 +6449,13 @@ import type { Message, TripEvent } from '../door/methods.js';
 import { createJev, type JevClient } from '../reflex/jev.js';
 import type { ReflexRead } from '../reflex/reflex.js';
 import type { TripPack } from '../trips/pack.js';
-import { catchUpHandler } from './catch-up.js';
 import { createMemory } from './create-memory.js';
 import { dropFactsFromMessage } from './facts.js';
 import { createFold } from './fold.js';
 import { syncJoinFacts } from './join-facts.js';
 import { createNotes } from './notes.js';
 import { peopleNow, recordNow } from './now.js';
-import { peopleHandlers } from './people.js';
+import { emptyCatchUp, peopleHandlers } from './people.js';
 import { reactOnce } from './reactions.js';
 import { mirrorLine, mirrorSnapshot } from './record.js';
 import { createDebouncer, realTimers, type Timers } from './schedule.js';
@@ -6275,6 +6464,7 @@ import { memoryTools } from './tools.js';
 
 /** No model here: the side model is built from brain.anthropic, where tests and the bench put their fake. */
 export interface WireDeps {
+  /** Catch-up's ranking client, used once the stretch Task 13 swaps in catchUpHandler. */
   jev: Pick<JevClient, 'ask'>;
   timers: Timers;
   clock: () => number;
@@ -6289,6 +6479,8 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   onEvent(ev: TripEvent): Promise<void>;
   onRead(msg: Message, read: ReflexRead, pack: TripPack): Promise<void>;
   sweep(): Promise<void>;
+  /** Clears every quiet and after-post timer; registerMemory hands it to brain.onStop. */
+  stop(): void;
 } {
   const env = brain.env;
   const memory = createMemory({ pool: brain.pool, packs: brain.packs });
@@ -6315,7 +6507,8 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   brain.door.handle('update_person', people.update_person);
   brain.door.handle('delete_fact', people.delete_fact);
   brain.door.handle('forget_person', people.forget_person);
-  brain.door.handle('catch_up', catchUpHandler({ pool: brain.pool, packs: brain.packs, jev: d.jev, log: brain.log }));
+  // A valid, empty catch-up until the stretch Task 13 lands (it replaces this line), so the Server never gets -32601.
+  brain.door.handle('catch_up', emptyCatchUp());
 
   const runNotes = (tripId: string, only?: string[]): void => {
     notes.run(tripId, only ? { only } : {}).catch((err: unknown) => brain.log.warn({ tripId, err: String(err) }, 'notes pass failed'));
@@ -6367,13 +6560,22 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   async function onRead(msg: Message, read: ReflexRead, pack: TripPack): Promise<void> {
     const tripId = pack.trip.trip_id;
     lastHeard.set(tripId, d.clock());
-    if (read.reaction.sure && (read.reaction.value === '👍' || read.reaction.value === '🙌')) {
+    const sureFact = read.fact.sure && read.fact.value === true;
+    if (sureFact && read.reaction.sure && read.reaction.value === '✅') {
+      // The instant ✅ (Q5 and Q7 both sure): sent here, before the notes pass starts. Its request id comes from the
+      // trip, message and emoji, so the notes pass's own ✅ for this message finds it done (a 409 also counts as done).
+      try {
+        await reactOnce(brain.pool, brain.door.link, tripId, msg, '✅');
+      } catch (err) {
+        brain.log.warn({ tripId, err: String(err) }, 'instant ✅ failed; the notes pass will react');
+      }
+    } else if (read.reaction.sure && (read.reaction.value === '👍' || read.reaction.value === '🙌')) {
       reactOnce(brain.pool, brain.door.link, tripId, msg, read.reaction.value).catch((err: unknown) =>
         brain.log.warn({ tripId, err: String(err) }, 'quiet reaction failed'),
       );
     }
     const noteNow =
-      (read.fact.sure && read.fact.value === true) ||
+      sureFact ||
       (read.recordKind.sure && read.recordKind.value !== null) ||
       (read.reaction.sure && read.reaction.value === '✅');
     if (noteNow) {
@@ -6401,30 +6603,35 @@ export function wireMemory(brain: Brain, d: WireDeps): {
 
   brain.tripLog.onEvent(onEvent);
   brain.hooks.onRead(onRead);
-  return { onEvent, onRead, sweep };
+  return { onEvent, onRead, sweep, stop: () => debounce.cancelAll() };
 }
 
 export const registerMemory: RegisterLane = (brain) => {
+  // Catch-up's ranking client; it never starts a keep-warm (registerReflex keeps the shared pool warm).
   const jev = createJev({ apiKey: brain.env.TYPESAFE_API_KEY, baseUrl: brain.env.TYPESAFE_BASE_URL, model: brain.env.JEV_MODEL });
   const wired = wireMemory(brain, { jev, timers: realTimers, clock: Date.now });
   const t = setInterval(() => {
     wired.sweep().catch((err: unknown) => brain.log.warn({ err: String(err) }, 'memory sweep failed'));
   }, 5 * 60_000);
   t.unref();
+  brain.onStop(() => {
+    clearInterval(t);
+    wired.stop();
+  });
 };
 ```
 Then edit `apps/brain/src/main.ts`: add `import { registerMemory } from './memory/register.js';` and make the list `export const LANES: RegisterLane[] = [registerRoom, registerReflex, registerMemory];`.
 - [ ] **Step 4: Commit, push, read CI**
 ```bash
-git add apps/brain/src/memory/env.ts apps/brain/src/memory/join-facts.ts apps/brain/src/memory/register.ts apps/brain/src/env.ts apps/brain/src/main.ts apps/brain/src/memory/__tests__/register.test.ts
+git add apps/brain/src/memory/env.ts apps/brain/.env.example apps/brain/src/memory/join-facts.ts apps/brain/src/memory/register.ts apps/brain/src/main.ts apps/brain/src/memory/__tests__/register.test.ts
 git commit -m "feat(memory): wire memory into Go: people requests, tools, blocks, join answers and the side passes
 
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `register.test.ts` passes (8 tests); P1's boot test (`app.test.ts`) and end-to-end tests stay green with `registerMemory` in `LANES`. This closes G2 together with Task 5 Step 6.
+Expected: `register.test.ts` passes (12 tests, the instant ✅ and its 409 among them); P1's `env.test.ts` (`FOLD_AT_TOKENS` now kept) and `env-example.test.ts` (the five memory keys named) stay green; P1's boot test (`app.test.ts`) and end-to-end tests stay green with `registerMemory` in `LANES`, and `room.stop()` leaves no memory timer running. This closes G2 together with Task 5 Step 6.
 
-### Task 16: Questions 4 to 9 go live where their test sets pass (G5)
+### Task 16: Questions 4, 6, 8 and 9 (and 5 or 7 if they missed G2) go live where their test sets pass (G5)
 
 **Files:**
 - Modify: `apps/brain/src/reflex/testsets/chat.jsonl` (rows from the real trip, appended)
@@ -6473,7 +6680,7 @@ git commit -m "test(reflex): the G5 gate: question 8 live, default list equals t
 Authored-By: Keshav Musunuri <keshav.led@gmail.com>"
 git push && gh run watch --exit-status || gh run view --log-failed
 ```
-Expected: `live-gate.test.ts` fails on all three tests (`PASSED_SETS` is `[1, 2, 3]`, the default is `q1,q2,q3` but question 8 is missing, and there are no `real-` rows yet).
+Expected: `live-gate.test.ts` fails on the first and third tests (`PASSED_SETS` is what Task 5 set, at most `[1, 2, 3, 5, 7]`, so question 8 is missing, and there are no `real-` rows yet); the second fails too if Task 5 left 5 or 7 out, because the default names `q1,q2,q3,q5,q7`.
 
 - [ ] **Step 3: Add the real-trip rows, record, sweep, and flip the gate**
 
@@ -6483,8 +6690,8 @@ Expected: `live-gate.test.ts` fails on all three tests (`PASSED_SETS` is `[1, 2,
 ```
    Labels are written by a person before recording. The Task 5 tests reject a row that holds a secret or that a question quotes.
 2. Record again (Go's eval key, in the shell only): `cd apps/brain && TYPESAFE_API_KEY="$GO_JEV_EVAL_KEY" pnpm jev:record`.
-3. For each of questions 4 to 9 whose line says `FAIL`, pick from the sweep the bar value with `wrong=0` (question 8: at most 2 false alarms) and the best recall that reaches its gate, and set that value in `apps/brain/src/reflex/thresholds.ts`. Question 8 must pass: if no value of `raiseAt` reaches recall 0.8, lower `raiseAt` (it only adds caution) and say so in the PR body.
-4. Set the gate to every question whose line now says `PASS` (always 1, 2, 3 and 8):
+3. For each of questions 4 to 9 whose line says `FAIL` (5 and 7 are usually live since G2; re-check them on the real-trip rows anyway), pick from the sweep the bar value with `wrong=0` (question 8: at most 2 false alarms) and the best recall that reaches its gate, and set that value in `apps/brain/src/reflex/thresholds.ts`. Question 8 must pass: if no value of `raiseAt` reaches recall 0.8, lower `raiseAt` (it only adds caution) and say so in the PR body.
+4. Set the gate to every question whose line now says `PASS` (always 1, 2, 3 and 8, and 5 and 7 when they still pass):
 ```ts
 // apps/brain/src/reflex/live-gate.ts
 /**
@@ -6507,7 +6714,7 @@ git push && gh run watch --exit-status || gh run view --log-failed
 ```
 Expected: `live-gate.test.ts` (3 tests) and `testset.test.ts` (the live-gate check now covers every passed question) pass. This is G5's reflex part.
 
-### Task 17 (optional stretch): Prefetch a likely search while the composer thinks
+### Task 17 (cut this week, master §9): Prefetch a likely search while the composer thinks
 
 Build this only when Tasks 1 to 16 are merged and P4's `Travel` has landed. A wrong guess costs one cached search and is thrown away.
 
@@ -6647,8 +6854,8 @@ Expected: `prefetch.test.ts` passes (3 tests).
 1. **`Context.setStory(provider: StoryProvider)` (P1, `composer/context.ts`). Settled in master §6.3.** `Context.setStory(p: { get(tripId): Promise<{ story: string | null; chatFromSeq: number; foldedToSeq: number; tokens: number }> })` is in the shared interfaces; P1 Task 10 builds it (the story block inside the data fence right before the chat chunks, the chat from `chatFromSeq`). Task 11's `StoryProvider` is that shape, and Task 15 calls `brain.context.setStory(fold)` directly. The warning branch stays only for a context built without it (a lane-only test double): the fold still runs, but that prompt is not shortened.
 2. **Mask secrets at the door (P1, intake). Settled in master §6.3.** P1 Task 14's intake runs `maskSecrets` (Task 1, `reflex/secrets.ts`) on every message before `trip_events`, `messages` and the pack, and the P1 builder builds Task 1 right after P1 Task 6 (master §11), so Task 1 imports nothing. P2 still masks at every one of its own uses (Jev state, side prompts, facts, story lines, recall answers, catch-up) as a second screen; masking twice changes nothing (Task 1 tests it). Because the reflex now sees masked text, Task 4 reads secrets with `secretKinds`, which also counts the marks the door left, so Q8 still raises on a card typed in the room.
 3. **P1's `messages` table gains a column.** `2003_recall.sql` adds the generated column `messages.text_tsv` with a GIN index and a trigram index on `messages.text` (adding columns only, per master §6.6; the indexes serve the new column). `pg_trgm` is created in schema `public`, and P2's queries call `public.word_similarity` and `OPERATOR(public.<%)` because `withSchema()` sets the search path to the test schema only. The Railway database role must be allowed to create the extension (the default `postgres` role is).
-4. **`memory/env.ts` and `env.ts`.** P1 created no `memory/env.ts`; P2 creates it (`MemoryEnv`) and adds one import and `...MemoryEnv.shape` to `Env` in `env.ts` (Task 15).
-5. **`REFLEX_LIVE` switch rule.** P2 keeps P1's `q1,q2,...` format and adds `off` (no Jev call at all, the reflex's kill switch) to `SWITCH_RULES` (Task 4). `ReflexEnv.REFLEX_LIVE` defaults to `q1,q2,q3` at G2 and to the passed list at G5; a question acts live only if it is also in `PASSED_SETS`, so the switch can never turn on an untested question.
+4. **`memory/env.ts`, `reflex/env.ts` and `.env.example`. Settled in master §6.3 notes and P1 Task 2.** P1 creates both stubs and merges every lane's env through `LANE_ENVS`, so `loadEnv` keeps `FOLD_AT_TOKENS` and the rest. P2 modifies the stubs (Task 2: `reflex/env.ts`; Task 15: `memory/env.ts`), never creates a second file and never edits `env.ts`, and adds each new variable to `apps/brain/.env.example` in the same task (Task 2: `JEV_DEADLINE_MS`, `JEV_DAILY_CALLS_PER_TRIP`; Task 15: `FOLD_AT_TOKENS`, `STORY_TOKENS`, `CHAT_HARD_CAP_TOKENS`, `NOTES_QUIET_MS`, `FOLD_QUIET_MS`). `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `JEV_MODEL` and `REFLEX_LIVE` are already in P1's file; `SIDE_MODEL` is P1's (`RoomEnv`).
+5. **`REFLEX_LIVE` switch rule. Settled in P1 Task 2.** P1's `SWITCH_RULES.REFLEX_LIVE` accepts `off` (no Jev call at all, the reflex's kill switch), `q1,q2,...` or empty; P2 does not touch `admin/switches.ts` (Task 4's `live.test.ts` checks the rule). `ReflexEnv.REFLEX_LIVE` defaults to `q1,q2,q3,q5,q7` at G2 (Q5 and Q7 give the demo's instant ✅) and to the passed list at G5; a question acts live only if it is also in `PASSED_SETS`, so the switch can never turn on an untested question.
 6. **One current fact per topic for the person; stored per trip (decided).** The contract and guide 05 (line ~307) say "A person has one current fact per topic". `get_person` (Task 12) answers exactly that: one current fact per topic, the newest across all the person's trips, with the trip it came from. Storage stays one current fact per person, topic and trip (`facts_one_current` keeps `trip_id`), so a fact Go learns in one trip never overwrites another trip's memory. `Memory.page(tripId, personId, audience)` (Task 9) shows this trip's fact for a topic, else, only when the person's carry-over is on, the newest fact on that topic from another trip. `delete_fact` removes the row its `fact_id` names (with that row's history); if another trip holds a fact on the same topic, that one is the newest and shows up on the next `get_person`, and the person can delete it too.
 7. **Forget and recall.** After "forget me", the person's messages stay in the room (the guide), but recall never returns their messages from before the forget, the notes pass and the fold see them as `[hidden]`, and story lines naming them are deleted. New messages after the forget can teach Go again (the guide). P1's composer still sees recent chat lines word for word, as the room does.
 8. **Request ids.** No `newRequestId()` anywhere in P2: the `record` tool uses `ctx.stableId('go_record')`; the notes pass uses `go_line_<24 hex of the line>`; quiet reactions use `go_react_<24 hex of trip, message and emoji>`. If P1's `react` tool reacted with the same emoji first, P2's send gets 409 and counts it as done.
@@ -6658,6 +6865,7 @@ Expected: `prefetch.test.ts` passes (3 tests).
 12. **For P6 (proactive).** `ReflexRead.opening` sure true is P6's signal; P2 puts no desk items. `ReflexRead` gains two optional fields (`riskWhy`, `readId`).
 13. **More than one copy of the service.** The notes pass runs under an in-process lock per trip; two copies could both run it for one trip. Every write is idempotent (facts by text, record lines by `record_writes` key, reactions by `go_reactions` key), so the cost is one extra side-model call. Story writes take a Postgres advisory lock per trip.
 14. **Events lost in a gap.** The record copy reconciles from `pack.trip.record` on every read (notes, blocks, tools, catch-up), so a missed `record.changed` heals. Join facts come only from `trip.created`, `person.joined` and `person.updated` events; a `person.joined` lost in a gap is picked up at that person's next `person.updated`. P2 does not rebuild join facts from the pack, because right after a forget the pack can still hold answers the Server is about to clear.
+15. **Stopping. Settled in master §6.3 (`Brain.onStop`).** `registerReflex` hands `jev.stopKeepWarm` to `brain.onStop` (Task 4); `registerMemory` hands one stopper that clears the 5-minute sweep and calls `wireMemory(...).stop()`, which is the debouncer's `cancelAll()` (Tasks 10 and 15). Every P2 timer is also `unref()`ed.
 
 ## Self-review
 
@@ -6666,7 +6874,8 @@ Expected: `prefetch.test.ts` passes (3 tests).
 | Spec section | Task |
 |---|---|
 | §6 Q1 for Go, Q2 complete, Q3 size: questions, readers, bars, live at G2 | 3, 4, 5 |
-| §6 Q4 to Q9: asked and logged in shadow at G2, live at G5 where sets pass | 3, 4, 16 |
+| §6 Q5 fact and Q7 reaction live at G2 where their sets pass (master §2 G2, §1 0:15) | 2 (`REFLEX_LIVE` default), 5 (Step 6, `PASSED_SETS`) |
+| §6 Q4, Q6, Q8, Q9: asked and logged in shadow at G2, live at G5 where sets pass (and Q5, Q7 if they missed G2) | 3, 4, 16 |
 | §6 rule 1, never the only path: every fault reads "unsure" | 2, 3, 4 |
 | §6 rule 2, raise only on safety (Q8; secrets by code, also on text the door already masked) | 1 (`secretKinds`), 3, 4 |
 | Master §6.3 / §7: secrets masked at the door (P1 Task 14 calls Task 1's `maskSecrets`; Task 1 built by the P1 builder, no dependencies) | 1, 4 |
@@ -6674,10 +6883,12 @@ Expected: `prefetch.test.ts` passes (3 tests).
 | §6 rule 4, test sets on our chats, Hinglish included | 5, 16 |
 | §6 rule 5, people's text fenced in Jev's input | 3 |
 | §6 rule 6, own key, warm pool, pinned model | 2, 5 (eval key for recording) |
-| §6 catch-up ranking | 13 |
-| §6 prefetch (stretch) | 17 (optional) |
+| §6 catch-up ranking | 13 (stretch, after G2) |
+| §6 prefetch | 17 (cut this week, master §9) |
 | §7 step 4 / §11 saving: the after-turn pass, code checks proof | 7, 10, 15 |
 | Master §6.3 `Brain.anthropic`: the side model (notes, fold) runs on the client `buildBrain` was given, never its own | 10 (`anthropicSideModel` on a given client), 15 (`wireMemory` builds it from `brain.anthropic`; tests inject the fake there) |
+| Master §6.3 `Brain.onStop`: every P2 timer stops with Go | 4 ("hands its keep-warm stop to brain.onStop"), 10 ("cancels every key at once"), 15 ("stop() clears every quiet and after-post timer", "hands brain.onStop one stopper") |
+| Master §6.3 notes: a lane takes its env stub over and adds its keys to `.env.example` | 2 (`reflex/env.ts`, the Jev block), 15 (`memory/env.ts`, the memory block); P1's `env-example.test.ts` checks both |
 | §9 rule 4, the fold into "the story so far" | 11, 15 (quiet trigger, sweep, `brain.context.setStory` per master §6.3) |
 | §9 rule 5, nothing lost: recall finds folded messages | 9, 11 |
 | §9 rule 6, deletes (facts, story lines, recall) | 6, 9, 11, 15 |
@@ -6689,14 +6900,15 @@ Expected: `prefetch.test.ts` passes (3 tests).
 | §11 recall (Postgres words + trigrams) | 9, 14 |
 | §11 the sandbox's window (Memory for P4's MCP server) | 14 |
 | Contract `get_person` (one current fact per topic), `update_person`, `delete_fact` (the row its id names), `forget_person` | 12 |
-| Contract `catch_up` | 13 |
+| Contract `catch_up` | 12 (`emptyCatchUp`, a valid empty answer, registered by 15 until 13 lands), 13 (stretch, after G2: the real one) |
 | Join answers as facts (guide `person.joined`) | 15 |
 | Edited messages (guide `message.edited`) | 15 |
 | Quiet ✅ after a save; 👍 and 🙌 without the model | 10, 15 |
+| The instant ✅ (master §1 0:15): sure Q5 + sure Q7 react inside `MessageHooks.onRead`, one `add_reaction` with a request id from trip, message and emoji, before the notes pass; the notes pass is the fallback and never doubles it (409 counts as done) | 15 ("a sure fact + sure ✅ reacts within the hook ...", "counts a 409 on the instant ✅ as done ...") |
 | Quick tools `trip`, `person`, `recall`, `record`; blocks `record`, `people` | 14 |
 
 **Placeholder scan:** no TBD, TODO, "similar to", "appropriate" or "handle edge cases". The three-dot strings left are content (a truncation suffix, a sample shell line, the guide's own wording), not gaps. Task 16 Step 3 asks for rows from the real trip chat, which does not exist until Wednesday; the row format, counts and labels are fixed and the test enforces them.
 
-**Name consistency:** master names used as written: `Brain` (with `anthropic: AnthropicLike`), `RegisterLane`, `Door.handle`, `ToGoHandler`, `ServerLink`, `TripLog.onEvent`, `Packs`, `TripPack`, `MessageHooks.onRead`, `Tools.register`, `QuickTool`, `TurnCtx` (with `stableId`, `cards`, `signal`), `NowProvider`, `Context.addNow`, `Context.setStory` (its provider is Task 11's `StoryProvider`, field for field), `Switches.get('REFLEX_LIVE')`, `Reflex`, `ReflexRead`, `Sure`, `Memory`, `withSchema()`; P1 names: `SocketCallError` (`door/rpc.ts`), `plainlyNamesGo`, `SWITCH_RULES`, `Log`/`silentLog` (`log.ts`), `ReflexEnv`, `Env` (with `SIDE_MODEL`), `LANES`. P2 names are defined once and used the same way in later tasks (`maskSecrets`/`secretKinds`, `checkFact`/`checkLine`, `saveFact`, `currentFacts` (newest first), `newestPerTopic`, `writeLine(…, requestId)`, `lineRequestId`, `reactOnce`, `anthropicSideModel`, `SideClient`/`SideBody`, `scriptedClient`, `createNotes`, `createFold`, `peopleHandlers`, `catchUpHandler`, `createMemory`, `memoryTools`, `recordNow`, `peopleNow`, `wireMemory`).
+**Name consistency:** master names used as written: `Brain` (with `anthropic: AnthropicLike` and `onStop(fn)`), `RegisterLane`, `Door.handle`, `ToGoHandler`, `ServerLink`, `TripLog.onEvent`, `Packs`, `TripPack`, `MessageHooks.onRead`, `Tools.register`, `QuickTool`, `TurnCtx` (with `stableId`, `cards`, `signal`), `NowProvider`, `Context.addNow`, `Context.setStory` (its provider is Task 11's `StoryProvider`, field for field), `Switches.get('REFLEX_LIVE')`, `Reflex`, `ReflexRead`, `Sure`, `Memory`, `withSchema()`; P1 names: `SocketCallError` (`door/rpc.ts`), `plainlyNamesGo`, `SWITCH_RULES`, `Log`/`silentLog` (`log.ts`), `ReflexEnv`, `Env` (with `SIDE_MODEL`), `LANES`. P2 names are defined once and used the same way in later tasks (`maskSecrets`/`secretKinds`, `checkFact`/`checkLine`, `saveFact`, `currentFacts` (newest first), `newestPerTopic`, `writeLine(…, requestId)`, `lineRequestId`, `reactOnce`, `createDebouncer`/`cancelAll`, `anthropicSideModel`, `SideClient`/`SideBody`, `scriptedClient`, `createNotes`, `createFold`, `peopleHandlers`, `catchUpHandler`, `createMemory`, `memoryTools`, `recordNow`, `peopleNow`, `wireMemory`).
 
 **Review Focus → tests:** 1 steering: `read.test.ts` "never answers sure-safe, over 2,000 random answer sets" (Task 3), `jev-reflex.test.ts` "steering (master §10 item 3)" (Task 4), `notes.test.ts` "fences the chat" (Task 10), `fold.test.ts` fence assertions (Task 11). 2 deletes and forgets: `facts.test.ts` "dropFactsFromMessage" (Task 6), `pages-recall.test.ts` "never returns a deleted message ... forgotten person's old words" (Task 9), `fold.test.ts` "drops story lines that cite a deleted message" and "redacts every line about a person" (Task 11), `people.test.ts` "forget_person (master §10 item 5)" (Task 12). 3 secrets: `secrets.test.ts` (Task 1, including "masking at the door, then again"), `jev-reflex.test.ts` "masks a card number before Jev and the log" and "raises question 8 on a message the door already masked" (Task 4), `notes.test.ts` (Task 10), `checker.test.ts` secret refusals (Task 7); P1 Task 14's intake test covers the door itself. 4 wrong proof: `checker.test.ts` (Task 7), `notes.test.ts` refusals (Task 10). 5 Jev faults: `jev.test.ts` (Task 2), `read.test.ts` missing/NaN (Task 3), `jev-reflex.test.ts` timeout and daily cap (Task 4), `catch-up.test.ts` "still answers in order when Jev is down" (Task 13).

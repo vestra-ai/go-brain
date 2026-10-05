@@ -101,7 +101,7 @@ Order inside a lane is the order of its tasks. Across lanes, a sub-plan only dep
 
 | Needed by | What |
 |---|---|
-| Mon night | Read the master plan (sections 0 to 4) and pick the execution method; create the `build` branch from the plans (the conductor does it on his word); OK to create the Railway project `go` (Postgres + `brain` + `vault` + `fake-go` services); the region, agreed with Nishanth so Go and the Server share it (we propose `us-west2`: Jev answers in about 140 ms there against about 370 ms from Delhi, and the model APIs are close); the Anthropic key for Go; tell Nishanth the fake Go URL once G0 passes. |
+| Mon night | Read the master plan (sections 0 to 4) and pick the execution method; create the `build` branch from the plans (the conductor does it on his word); OK to create the Railway project `go` (Postgres + `brain` + `brain-rehearsal` + `vault` + `fake-go` services); the region, agreed with Nishanth so Go and the Server share it (we propose `us-west2`: Jev answers in about 140 ms there against about 370 ms from Delhi, and the model APIs are close); the Anthropic key for Go; tell Nishanth the fake Go URL once G0 passes. |
 | Tue 10:00 | The Jev key for Go (P2 records real answers to turn Q1 to Q3, Q5 and Q7 live for G2). |
 | Tue noon | Vestra `/v1` on staging: org "Go" with `memory_mode: none`, three API keys (one admin-scoped, because `POST /v1/users` needs it), the wallet topped up; the staging flags `PLATFORM_API_V1`, `ABILITY_MCP_V1` (without it a task cannot reach Go's MCP server at all) and `BROWSER_SHARED_CONTROL` (without it "take over" for a login answers 409) confirmed ON; the Jev key for Go; ixigo MCP address, auth and tool list (or a date). |
 | Tue evening | OK for the two Bash PRs (section 8). |
@@ -258,9 +258,9 @@ export interface ServerLink {
   isOpen(): boolean;
 }
 // Trip affinity: a request for a trip goes on the socket that last delivered that trip's events (any open socket when none
-// has yet, or when that one is gone). Several instances of the one Server can each answer any trip, so this costs nothing;
-// and a rehearsal simulator connected to the same Go never receives the real trip's requests, nor the real Server a
-// rehearsal trip's.
+// has yet, or when that one is gone). Several instances of the one Server can each answer any trip, so this costs nothing,
+// and it keeps two different Servers on one Go (a developer's laptop and staging) from receiving each other's trips.
+// Rehearsals still never share the stage Go (§9).
 export function newRequestId(): string; // "go_" + ULID; the same value is reused on retry
 
 // ── door/handlers.ts (P1) ── how lanes answer the Server's requests.
@@ -401,8 +401,9 @@ export interface Tasks {
   message(taskId: string, text: string): Promise<void>;
   stop(taskId: string): Promise<void>;
   running(tripId: string): Promise<Array<{ id: string; brief: string; state: string }>>;
-  /** A person answered a job's hand-off (a code, a choice) or it expired. */
-  handoff(taskId: string, outcome: { answer: string } | { expired: true }): Promise<void>;
+  /** Settles a job's hand-off (a login, a code, a captcha) the way the person said: done, could not, or not now. A code the
+   *  person typed reaches the job as the interaction's answer, through message(). */
+  handoff(taskId: string, outcome: 'done' | 'could_not' | 'not_now'): Promise<void>;
 }
 
 // ── money/pay.ts (P5) ── the only path to spending. Flow: hold → request_spend_approval → pay card →
@@ -540,7 +541,9 @@ If either is not merged by Wednesday noon, tasks still run (the deployment's ins
 | `PAY_RAIL` | `ixigo` / `stripe_test` / `fake` | ixigo has no payment path this week. Stripe test mode charges a test card through a real processor. |
 | `CALLS_MODE` | `off` / `allowlist` | Calls only to `CALLS_ALLOWLIST`; on stage, a teammate plays the villa unless a real venue agreed in advance. |
 | `DEMO_ROOM` | `app` / `sim` | The App is not ready: the simulator's dev room is the stage surface. |
-| Admin "fire a watch" | button | Proactive beat on stage; the card says "Simulated for the demo". |
+| Admin "fire a watch" | button | Proactive beat on stage, sent with `force: true` so the real trip's daily budget and earlier hushes cannot block it; the card says "Simulated for the demo". |
+
+**Rehearsals never share the stage Go.** The simulator (P0) connects only to a second deployment of the same code, `brain-rehearsal` (its own database, the same keys), where the rehearsal runner (P7 Task 3) drives full runs. The stage Go is warmed by the admin page's health checks (`/admin/health.json?trip=<real trip>`, which warm Jev, `/v1`, ixigo and the trip's computer) and one real message from a phone in a rehearsal trip on the App. Trip affinity (§6.3) makes accidental cross-talk harmless; this rule makes it impossible.
 
 **Top risks**
 
@@ -555,7 +558,7 @@ If either is not merged by Wednesday noon, tasks still run (the deployment's ins
 | `/v1` has no route to send a new message into a running job | medium | Go answers a job's open question or hand-off directly; otherwise it sends a new message (`hand_off: 'auto'`) naming the job. Checked on staging Wednesday morning (P4); if it misbehaves, Go stops the job and starts a fresh one with the new detail. |
 | Venue Wi-Fi on demo day | medium | Phones on a hotspot; the backup video. |
 
-**Cut now (not built this week unless every gate is green early):** vault login storage (no stage value, only liability); fare-drop and rooms-left watches; ixigo prefetch (P2 Task 17).
+**Cut now (not built this week unless every gate is green early):** vault login storage (no stage value, only liability); fare-drop and rooms-left watches; ixigo prefetch (P2 Task 17); booking flights for the whole group (a flight card shows the per-person fare; the demo books the stay).
 
 **Stretch (built after the gates they would slow):** catch-up (P2 Task 13; until then `catch_up` answers an empty, valid result); trains and buses (P4 builds flights and stays first); the 2,000-message chat and the nightly live bench (P3; they exist to test the fold); proactive timers and watches beyond the stage notice (P6 Tasks 3 and 7).
 
