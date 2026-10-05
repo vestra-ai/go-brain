@@ -1,0 +1,28 @@
+{
+  "secret": "test-only-go-signing-secret",
+  "t": 1791190800,
+  "max_skew_seconds": 300,
+  "cases": [
+    {
+      "name": "event with a JSON body",
+      "method": "POST",
+      "target": "/v1/events",
+      "body": "{\"event_id\":\"ev_01\",\"trip_id\":\"t_goa\",\"seq\":42,\"occurred_at\":\"2026-10-05T07:00:00Z\",\"type\":\"person.left\",\"data\":{\"person_id\":\"p_kabir\"}}",
+      "header": "t=1791190800,v1=7850f2c9cf67f315d4cc9680781a147f83ad408b62593fa29860b48a43aa8185"
+    },
+    {
+      "name": "GET with a query string and no body",
+      "method": "GET",
+      "target": "/brain/v1/trips/t_goa/messages?after_seq=40&limit=50",
+      "body": "",
+      "header": "t=1791190800,v1=3fca73d449dd36eb7ca3961dbbf1d37d3024319c7a9588e3fe0c7934f789d985"
+    },
+    {
+      "name": "body with non-ASCII characters (sign the UTF-8 bytes)",
+      "method": "POST",
+      "target": "/brain/v1/trips/t_goa/messages",
+      "body": "{\"request_id\":\"rq_7\",\"text\":\"Villa Sol, ₹54,200 for 3 nights 🌴\"}",
+      "header": "t=1791190800,v1=18fbfcc569147c36bba6ff7f1713953fb4aa91b62bb16db3b2fb4e0d732b9360"
+    }
+  ]
+}

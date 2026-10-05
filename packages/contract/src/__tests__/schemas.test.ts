@@ -1,28 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { MessageIn, MessageOut, SpendApprovalResponse, TripState } from '../index.js';
+import { z } from 'zod';
+import { Card, Event, Message, PostMessage, ROUTES, SpendApprovalResult, TripSnapshot } from '../index.js';
+
+const at = '2026-10-05T07:00:00Z';
 
 describe('contract schemas', () => {
-  it('reads a room message and fills the defaults', () => {
-    const m = MessageIn.parse({ message_id: 'm1', trip_id: 't1', member: { id: 'p', name: 'Priya' }, text: 'scuba sunday?', sent_at: '2026-10-05T10:00:00+05:30' });
-    expect(m.mentions_go).toBe(false);
-    expect(m.attachments).toEqual([]);
+  it('a message from Go needs text, a card, or both', () => {
+    expect(PostMessage.safeParse({ request_id: 'rq_1' }).success).toBe(false);
+    expect(PostMessage.safeParse({ request_id: 'rq_1', text: 'Booked.' }).success).toBe(true);
+    expect(PostMessage.safeParse({ request_id: 'rq_1', card: { card_id: 'c_1', kind: 'plan', fallback_text: 'The plan' } }).success).toBe(true);
   });
-  it('a message from Go needs text or a card', () => {
-    expect(MessageOut.safeParse({ out_id: 'o1', trip_id: 't1', sent_at: '2026-10-05T10:00:00Z' }).success).toBe(false);
-    expect(MessageOut.safeParse({ out_id: 'o1', trip_id: 't1', text: 'Booked.', sent_at: '2026-10-05T10:00:00Z' }).success).toBe(true);
+  it('every card needs fallback text', () => {
+    expect(Card.safeParse({ card_id: 'c_1', kind: 'ticket', booking_id: 'b_1' }).success).toBe(false);
   });
-  it('a live card updates in place', () => {
-    const m = MessageOut.parse({ out_id: 'o2', trip_id: 't1', sent_at: '2026-10-05T10:00:00Z',
-      card: { id: 'c-booking', upsert: true, body: { kind: 'live', title: 'Booking Villa Sol', state: 'running', progress: { done: 3, total: 4 } } } });
-    expect(m.card?.body.kind).toBe('live');
+  it('an unknown card kind or event type is refused here (readers skip what they do not know; writers never send it)', () => {
+    expect(Card.safeParse({ card_id: 'c_1', kind: 'confetti', fallback_text: 'x' }).success).toBe(false);
+    expect(Event.safeParse({ event_id: 'e', trip_id: 't', seq: 1, occurred_at: at, type: 'trip.exploded', data: {} }).success).toBe(false);
   });
-  it('a spend approval answer is either a token or a reason', () => {
-    expect(SpendApprovalResponse.parse({ status: 'denied', reason: 'over_cap' }).status).toBe('denied');
-    expect(SpendApprovalResponse.safeParse({ status: 'approved' }).success).toBe(false);
+  it('unknown fields are ignored, so either side can add fields without breaking the other', () => {
+    const r = Event.parse({ event_id: 'e', trip_id: 't', seq: 1, occurred_at: at, type: 'person.left', data: { person_id: 'p', mood: 'sad' }, extra: 1 });
+    expect(r.type).toBe('person.left');
   });
-  it('trip state never carries who picked which budget', () => {
-    const t = TripState.parse({ id: 't1', title: 'Goa', budget: { lowest: null, answered: 3, of: 5 }, members: [], decisions: [], bookings: [],
-      money: { total_minor: 0, currency: 'INR', each_minor: 0 } });
-    expect(Object.keys(t.budget).sort()).toEqual(['answered', 'lowest', 'of']);
+  it('links must be http or https', () => {
+    const photo = (url: string) => Message.shape.attachments.element.safeParse({ kind: 'photo', url });
+    expect(photo('https://cdn.example.com/a.jpg').success).toBe(true);
+    expect(photo('javascript:alert(1)').success).toBe(false);
+  });
+  it('money is whole minor units, never a float', () => {
+    const r = SpendApprovalResult.safeParse({ status: 'approved', approval_id: 'ap', approval: 'x.y.z', expires_at: at });
+    expect(r.success).toBe(true);
+    expect(TripSnapshot.shape.money.shape.spent_minor.safeParse(10.5).success).toBe(false);
+  });
+  it('the trip snapshot never carries who picked which budget', () => {
+    expect(Object.keys(TripSnapshot.shape.budget.shape).sort()).toEqual(['answered', 'lowest', 'of']);
+  });
+  it('every route body is a named schema, so OpenAPI and the Python models get real names', () => {
+    for (const r of ROUTES) for (const s of [r.request, r.response]) if (s) expect(z.globalRegistry.get(s)?.id, r.id).toBeTruthy();
   });
 });

@@ -1,0 +1,22 @@
+{
+  "note": "TEST KEY ONLY. Claims are listed in the order the signer serialises them (compact JSON, no spaces).",
+  "private_key_pem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH\n-----END PRIVATE KEY-----\n",
+  "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=\n-----END PUBLIC KEY-----\n",
+  "claims": {
+    "iss": "go-server",
+    "aud": "go-brain-vault",
+    "jti": "ap_01JA7Q3V8Z",
+    "trip_id": "t_goa",
+    "decision_id": "d_villa",
+    "payer_person_id": "p_rahul",
+    "amount_minor": 5420000,
+    "currency": "INR",
+    "merchant": "ixigo: Villa Sol, Anjuna",
+    "purpose": "Villa Sol, 3 nights, 6 to 9 Nov",
+    "refundable_until": "2026-11-01T18:29:59Z",
+    "iat": 1791190800,
+    "exp": 1791191400
+  },
+  "token": "eyJhbGciOiJFZERTQSIsInR5cCI6ImdvLXNwZW5kK2p3cyJ9.eyJpc3MiOiJnby1zZXJ2ZXIiLCJhdWQiOiJnby1icmFpbi12YXVsdCIsImp0aSI6ImFwXzAxSkE3UTNWOFoiLCJ0cmlwX2lkIjoidF9nb2EiLCJkZWNpc2lvbl9pZCI6ImRfdmlsbGEiLCJwYXllcl9wZXJzb25faWQiOiJwX3JhaHVsIiwiYW1vdW50X21pbm9yIjo1NDIwMDAwLCJjdXJyZW5jeSI6IklOUiIsIm1lcmNoYW50IjoiaXhpZ286IFZpbGxhIFNvbCwgQW5qdW5hIiwicHVycG9zZSI6IlZpbGxhIFNvbCwgMyBuaWdodHMsIDYgdG8gOSBOb3YiLCJyZWZ1bmRhYmxlX3VudGlsIjoiMjAyNi0xMS0wMVQxODoyOTo1OVoiLCJpYXQiOjE3OTExOTA4MDAsImV4cCI6MTc5MTE5MTQwMH0.uOn0wEqlkBkyNufXJyg3Ot6Kds-8Srk-mouvt-br3IK_k7AxFro7k-Q0WgqocuAtYFEvo4c9L9Az-Yzo7U5KBQ",
+  "verify_at": 1791190860
+}

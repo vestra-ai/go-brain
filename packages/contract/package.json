@@ -1,18 +1,23 @@
 {
   "name": "@go/contract",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "emit-openapi": "tsx scripts/emit-openapi.ts"
+    "emit-openapi": "tsx scripts/emit-openapi.ts",
+    "check-docs": "tsx scripts/docs-examples.ts",
+    "test-vectors": "tsx scripts/make-test-vectors.ts"
   },
   "dependencies": {
     "zod": "^4.0.0"
@@ -22,5 +27,9 @@
     "tsx": "^4.21.0",
     "typescript": "^5.5.0",
     "vitest": "^4.0.17"
-  }
+  },
+  "files": [
+    "dist",
+    "openapi"
+  ]
 }

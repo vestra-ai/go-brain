@@ -1,14 +1,18 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { z } from 'zod';
-import { AmountMinor, Currency, Id } from './common.js';
+import { AmountMinor, Currency, Id, IsoDateTime } from './common.js';
 
 /**
  * The signed spend approval: go-server's half of the two keys.
- * go-server runs the spend check and signs this with its Ed25519 private key; the vault in go-brain
- * fills a card only with a valid, unexpired, unused approval AND the payer's own passkey (Face ID).
- * One use: the vault records `jti` and refuses it a second time (that check lives in go-brain).
  *
- * Wire format: base64url(header) "." base64url(claims JSON) "." base64url(Ed25519 signature over the first two parts).
+ * go-server runs the spend check and signs this with its Ed25519 private key. The vault in go-brain
+ * pays only with a valid, unexpired, unused approval AND the payer's own passkey (Face ID). Neither
+ * key is the model's word. One use: the vault records `jti` and refuses it a second time, and
+ * go-server marks it used when Go records the booking.
+ *
+ * Wire format (a compact JWS):
+ *   base64url(header JSON) "." base64url(claims JSON) "." base64url(Ed25519 signature over the first two parts)
+ * with header exactly {"alg":"EdDSA","typ":"go-spend+jws"}.
  */
 export const MAX_APPROVAL_TTL_SECONDS = 600;
 const ALLOWED_CLOCK_SKEW_SECONDS = 30;
@@ -21,18 +25,21 @@ export const SpendApprovalClaims = z
     jti: z.string().min(8).max(64),
     trip_id: Id,
     decision_id: Id,
-    payer_member_id: Id,
-    payer_vestra_user_id: z.string().min(1).max(64),
+    payer_person_id: Id,
+    /** The most this payment may be. */
     amount_minor: AmountMinor.refine((n) => n > 0, 'must be more than zero'),
     currency: Currency,
     merchant: z.string().min(1).max(120),
     purpose: z.string().min(1).max(200),
+    /** When free cancellation ends, if it does. */
+    refundable_until: IsoDateTime.optional(),
     iat: z.int(),
     exp: z.int(),
   })
   .refine((c) => c.exp > c.iat && c.exp - c.iat <= MAX_APPROVAL_TTL_SECONDS, {
     message: `exp must be after iat and at most ${MAX_APPROVAL_TTL_SECONDS} seconds later`,
-  });
+  })
+  .meta({ id: 'SpendApprovalClaims', description: 'What go-server signs. exp is at most 600 seconds after iat.' });
 export type SpendApprovalClaims = z.infer<typeof SpendApprovalClaims>;
 
 const b64 = (v: string | Buffer): string => Buffer.from(v).toString('base64url');
