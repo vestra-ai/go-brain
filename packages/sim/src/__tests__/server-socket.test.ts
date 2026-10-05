@@ -1,5 +1,7 @@
 import { once } from 'node:events';
+import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { Duplex } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { verifyRequest } from '@go/contract';
@@ -83,6 +85,41 @@ describe('GoSocket: connecting', () => {
     conn.ws.terminate();
     await new Promise((r) => setTimeout(r, 200));
     expect(go.conns.length).toBe(1);
+  });
+
+  it('close() during a connect stops it: the socket never opens and nothing reconnects', async () => {
+    // A server that takes the upgrade request and never answers it, so the connect stays in flight.
+    const server = createServer();
+    const held: Duplex[] = [];
+    server.on('upgrade', (_req, socket: Duplex) => {
+      socket.on('error', () => {});
+      socket.resume(); // keep reading, so the client hanging up shows as 'end'
+      held.push(socket);
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const port = (server.address() as AddressInfo).port;
+    let opened = false;
+    const errors: Error[] = [];
+    const s = new GoSocket({
+      url: `ws://127.0.0.1:${port}/v1/socket`, secret, handlers: {}, backoffSeconds: [0.05],
+      onOpen: () => { opened = true; }, onError: (e) => errors.push(e),
+    });
+    s.start();
+    try {
+      for (let i = 0; i < 200 && held.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(held.length).toBe(1);
+      const dropped = new Promise((r) => { held[0]!.once('end', r); held[0]!.once('close', r); });
+      s.close();
+      await dropped; // the client gave up the connect
+      await new Promise((r) => setTimeout(r, 200));
+      expect(held.length).toBe(1);
+      expect(opened).toBe(false);
+      expect(errors).toEqual([]);
+    } finally {
+      for (const h of held) h.destroy();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 });
 
@@ -177,6 +214,21 @@ describe('GoSocket: answering Go', () => {
 
     const clash = await ask(conn, { jsonrpc: '2.0', id: 'go_7', method: 'close_vote', params: { request_id: 'rq_3', trip_id: 't_goa', decision_id: 'd_when' } });
     expect(clash).toEqual({ jsonrpc: '2.0', id: 'go_7', error: { code: 409, message: 'decision d_when is already closed', data: { code: 'conflict' } } });
+  });
+
+  it('gives an error thrown with only a status its data.code, and keeps retry_after_seconds', async () => {
+    go = await startGo();
+    client({
+      get_person: async () => { throw new SocketCallError(429, 'slow down', undefined, 5); },
+      update_person: async () => { throw new SocketCallError(503, 'deploying'); },
+    });
+    const conn = await go.connected(1);
+    expect(await ask(conn, { jsonrpc: '2.0', id: 'go_10', method: 'get_person', params: { person_id: 'p_kabir' } })).toEqual({
+      jsonrpc: '2.0', id: 'go_10', error: { code: 429, message: 'slow down', data: { code: 'rate_limited', retry_after_seconds: 5 } },
+    });
+    expect(await ask(conn, { jsonrpc: '2.0', id: 'go_11', method: 'update_person', params: { person_id: 'p_kabir', carry_over: true } })).toEqual({
+      jsonrpc: '2.0', id: 'go_11', error: { code: 503, message: 'deploying', data: { code: 'unavailable' } },
+    });
   });
 
   it('answers -32700 with id null for a frame it cannot read', async () => {

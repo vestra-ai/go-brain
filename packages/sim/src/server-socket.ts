@@ -4,17 +4,34 @@
 //  - signs every connect fresh, with the query string in the target (Go accepts each signature once);
 //  - reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds, and starts from 1 again after a good connect;
 //  - closes the socket after 40 seconds of silence (Go pings every 20 seconds, so a live socket is never silent);
-//  - sends your requests with request(), waits for the answer up to a time limit, and sends every unanswered
-//    request again after a reconnect, with the same id;
+//  - sends your requests with request(), waits for the answer up to a time limit (half as long again as the
+//    contract's limit for the method), and sends every unanswered request again after a reconnect, with the same id;
 //  - answers Go's requests through a table of handlers: -32601 for a method with no handler, 422 for params
 //    that do not match the contract, 500 when a handler fails, -32700 for a frame it cannot read, and nothing at
-//    all for a notification (Go's typing).
+//    all for a notification (Go's typing). Every error but -32601 and -32700 carries data.code.
 //
-// It is the client in docs/guide/02-the-socket.md with three fixes: a handler that returns nothing still answers
-// with a result object ({}), a frame that is JSON but not an object is answered -32700, and close() stops it.
+// It is the client in docs/guide/02-the-socket.md, with these differences: a handler that returns nothing still
+// answers with a result object ({}), a frame that is JSON but not an object is answered -32700, an error thrown
+// with only a status (such as 429) still gets its data.code, a connect gives up after 10 seconds, and close()
+// stops it for good, even in the middle of a connect.
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
-import { IDLE_CLOSE_SECONDS, MAX_FRAME_BYTES, RECONNECT_BACKOFF_SECONDS, SIGNATURE_HEADER, parseParams, signRequest } from '@go/contract';
+import {
+  IDLE_CLOSE_SECONDS, MAX_FRAME_BYTES, RECONNECT_BACKOFF_SECONDS, SIGNATURE_HEADER, SOCKET_ERROR_CODES, methodByName, parseParams, signRequest,
+} from '@go/contract';
+
+/** How long a connect may take before it is given up and tried again. */
+const HANDSHAKE_TIMEOUT_MS = 10_000;
+
+/** The error name for each status, so an error thrown with only a status (429) still carries data.code (rate_limited). */
+const DATA_CODE_FOR: ReadonlyMap<number, string> = new Map(
+  Object.entries(SOCKET_ERROR_CODES)
+    .filter(([, status]) => status > 0) // -32700 and -32601 have no data.code
+    .map(([name, status]): [number, string] => [status, name]),
+);
+
+/** request()'s default wait: half as long again as the contract's answer_within, so 3 s for most methods and 4.5 s for card_tap. */
+const defaultTimeoutMs = (method: string): number => (methodByName(method)?.answer_within ?? 2) * 1500;
 
 /** An error answer: Go's answer to one of your requests, or your handler's answer to one of Go's. */
 export class SocketCallError extends Error {
@@ -82,7 +99,10 @@ interface AnswerFrame {
 }
 
 export class GoSocket {
+  /** The open socket, or null while there is none. */
   private ws: WebSocket | null = null;
+  /** The newest socket from its creation on, so close() can stop a connect still in flight. */
+  private current: WebSocket | null = null;
   private attempt = 0;
   private stopped = false;
   private retry: NodeJS.Timeout | undefined;
@@ -97,7 +117,12 @@ export class GoSocket {
     const now = this.opts.nowSeconds ? this.opts.nowSeconds() : Math.floor(Date.now() / 1000);
     // A new signature for every connect: Go refuses a signature it has seen before.
     const signature = signRequest({ method: 'GET', target: pathname + search, body: '' }, this.opts.secret, now);
-    const ws = new WebSocket(this.opts.url, { headers: { [SIGNATURE_HEADER]: signature }, maxPayload: MAX_FRAME_BYTES });
+    const ws = new WebSocket(this.opts.url, {
+      headers: { [SIGNATURE_HEADER]: signature },
+      maxPayload: MAX_FRAME_BYTES,
+      handshakeTimeout: HANDSHAKE_TIMEOUT_MS,
+    });
+    this.current = ws;
     const idleMs = (this.opts.idleCloseSeconds ?? IDLE_CLOSE_SECONDS) * 1000;
     let idle: NodeJS.Timeout | undefined;
     const heard = (): void => {
@@ -105,6 +130,10 @@ export class GoSocket {
       idle = setTimeout(() => ws.terminate(), idleMs);
     };
     ws.on('open', () => {
+      if (this.stopped) {
+        ws.terminate(); // close() came while it was connecting
+        return;
+      }
       this.ws = ws;
       this.attempt = 0;
       heard();
@@ -117,7 +146,9 @@ export class GoSocket {
       heard();
       void this.onFrame(ws, data.toString());
     });
-    ws.on('error', (err) => this.opts.onError?.(err)); // 'close' always follows
+    ws.on('error', (err) => {
+      if (!this.stopped) this.opts.onError?.(err); // 'close' always follows
+    });
     ws.on('close', () => {
       clearTimeout(idle);
       if (this.ws === ws) {
@@ -136,7 +167,9 @@ export class GoSocket {
   close(): void {
     this.stopped = true;
     clearTimeout(this.retry);
-    this.ws?.close();
+    const ws = this.current;
+    if (ws?.readyState === WebSocket.CONNECTING) ws.terminate(); // a connect still in flight never opens
+    else ws?.close();
     for (const p of [...this.pending.values()]) p.reject(new SocketTimeoutError('the socket was closed'));
   }
 
@@ -149,7 +182,7 @@ export class GoSocket {
    * SocketTimeoutError when no answer comes in time. While the socket is down the request waits, and it goes
    * out (again) with the same id as soon as the socket is back.
    */
-  request(method: string, params: object, { timeoutMs = 2000 }: { timeoutMs?: number } = {}): Promise<Record<string, unknown>> {
+  request(method: string, params: object, { timeoutMs = defaultTimeoutMs(method) }: { timeoutMs?: number } = {}): Promise<Record<string, unknown>> {
     const id = `gs_${randomUUID()}`;
     const frame = JSON.stringify({ jsonrpc: '2.0', id, method, params });
     return new Promise((resolve, reject) => {
@@ -227,8 +260,9 @@ export class GoSocket {
       answer({ result: result ?? {} }); // a result is always an object, even when the handler returns nothing
     } catch (err) {
       const e = err instanceof SocketCallError ? err : new SocketCallError(500, 'internal error', 'internal');
-      const data = e.dataCode
-        ? { data: { code: e.dataCode, ...(e.retryAfterSeconds !== undefined ? { retry_after_seconds: e.retryAfterSeconds } : {}) } }
+      const dataCode = e.dataCode ?? DATA_CODE_FOR.get(e.code);
+      const data = dataCode
+        ? { data: { code: dataCode, ...(e.retryAfterSeconds !== undefined ? { retry_after_seconds: e.retryAfterSeconds } : {}) } }
         : {};
       answer({ error: { code: e.code, message: e.message.slice(0, 500), ...data } });
     }
