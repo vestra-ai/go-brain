@@ -1,62 +1,125 @@
-# The trip API
+# Go's requests
 
-The trip API is the set of calls go-brain makes to go-server to read a trip and act on it. Go uses it for everything it does in a trip: reading the trip, speaking in the room, opening votes, writing the trip record, recording bookings and expenses, and asking for a spend approval. go-server serves these routes and stays the source of truth, so Go never changes a trip any other way.
+These are the requests Go sends go-server over the socket to read the trip or act in it. go-server answers each one from its database, which stays the source of truth: the trip lives in go-server, and Go never changes it any other way.
 
-This is the page the go-server team builds from. It lists every route, the body each one takes and returns, and the rules go-server enforces, with the error to answer when a rule fails. The same routes are in `packages/contract/openapi/go-server.json`.
+Go uses these requests for everything it does in a trip: reading the trip and the room, speaking, showing "Go is typing...", reacting to messages, opening and closing votes, writing the trip record, recording bookings and expenses, and asking for a spend approval. This is the page go-server's team builds from. It lists every method, the params it takes, the result it answers with, and the rules go-server enforces, with the error to answer when a rule fails. How the socket opens, what a frame looks like, heartbeats and reconnecting are in [The socket](02-the-socket.md). The same methods are listed in `packages/contract/socket/methods.json` and described in `packages/contract/asyncapi/socket.json`.
 
-## The routes
+## The methods
 
-go-server serves 16 routes, all under `/brain/v1/trips/{trip_id}`.
+Go sends 18 methods. Every one names its trip with `trip_id`.
 
-| Operation | Method | Path | What it does |
+| Method | What it does | Result | Event go-server then sends |
 |---|---|---|---|
-| `getTrip` | `GET` | `/brain/v1/trips/{trip_id}` | Returns the whole trip as Go may see it, at its current change number. |
-| `updateTrip` | `PATCH` | `/brain/v1/trips/{trip_id}` | Changes the title, destination, dates, vibe, stay or the itinerary. |
-| `listMessages` | `GET` | `/brain/v1/trips/{trip_id}/messages?after_seq=&limit=` | Returns the messages posted or changed after a change number, in `updated_seq` order, up to 200 at a time. |
-| `postMessage` | `POST` | `/brain/v1/trips/{trip_id}/messages` | Posts Go's message in the room: text, a card, or both. |
-| `putCard` | `PUT` | `/brain/v1/trips/{trip_id}/cards/{card_id}` | Replaces a card Go posted earlier, in place. Sends no event. |
-| `setTyping` | `POST` | `/brain/v1/trips/{trip_id}/typing` | Shows or hides "Go is typing..." in the room. |
-| `openDecision` | `POST` | `/brain/v1/trips/{trip_id}/decisions` | Opens a vote. |
-| `closeDecision` | `POST` | `/brain/v1/trips/{trip_id}/decisions/{decision_id}/close` | Closes a vote now and returns the result. |
-| `setMandate` | `PUT` | `/brain/v1/trips/{trip_id}/decisions/{decision_id}/mandate` | Sets what the group allowed for a closed choice vote: the choice, the cap, refundable only, and who pays. |
-| `addRecordLine` | `POST` | `/brain/v1/trips/{trip_id}/record` | Adds an agreed, open or doing line to the trip record. |
-| `updateRecordLine` | `PATCH` | `/brain/v1/trips/{trip_id}/record/{line_id}` | Changes a line Go wrote, or marks it done. |
-| `addBooking` | `POST` | `/brain/v1/trips/{trip_id}/bookings` | Records a confirmed booking. |
-| `updateBooking` | `PATCH` | `/brain/v1/trips/{trip_id}/bookings/{booking_id}` | Changes or cancels a booking. |
-| `addExpense` | `POST` | `/brain/v1/trips/{trip_id}/expenses` | Records something someone paid for, split between people. |
-| `requestSpendApproval` | `POST` | `/brain/v1/trips/{trip_id}/spend-approvals` | Runs the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not. |
-| `cancelSpendApproval` | `POST` | `/brain/v1/trips/{trip_id}/spend-approvals/{approval_id}/cancel` | Releases a spend approval Go will not use, so it can never be used. Sends no event. |
+| `read_trip` | Reads the whole trip as Go may see it, at its current change number. | `TripSnapshot` | None |
+| `read_messages` | Reads the messages posted or changed after a change number, in `updated_seq` order, up to 200 at a time. | `MessagesPage` | None |
+| `post_message` | Posts Go's message in the room: text, a card, or both. | `PostMessageResult` | `message.created` |
+| `replace_card` | Replaces a card Go posted earlier, in place. | `ReplaceCardResult` | None. Replacing a card is not a change to the trip. |
+| `typing` | Shows or hides "Go is typing..." in the room. It is a notification, so go-server sends no answer. | None | None |
+| `add_reaction` | Adds Go's reaction to a message. | `WriteResult` | `reaction.added` |
+| `remove_reaction` | Takes Go's reaction back. | `WriteResult` | `reaction.removed` |
+| `update_trip` | Changes the title, destination, dates, vibe, stay or the itinerary. | `WriteResult` | `trip.updated` |
+| `open_vote` | Opens a vote. | `OpenDecisionResult` | `decision.opened` |
+| `close_vote` | Closes a vote now and returns the result. | `CloseDecisionResult` | `decision.closed` |
+| `set_mandate` | Sets what the group allowed for a closed choice vote: the choice, the cap, refundable only, and who pays. | `WriteResult` | `mandate.set` |
+| `add_record_line` | Adds an agreed, open or doing line to the trip record. | `AddRecordLineResult` | `record.changed` |
+| `update_record_line` | Changes a line Go wrote, or marks it done. | `WriteResult` | `record.changed` |
+| `add_booking` | Records a confirmed booking. | `AddBookingResult` | `booking.changed` |
+| `update_booking` | Changes or cancels a booking. | `WriteResult` | `booking.changed` |
+| `add_expense` | Records something someone paid for, split between people. | `AddExpenseResult` | `expense.changed` |
+| `request_spend_approval` | Runs the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not. | `SpendApproved` or `SpendDenied` | None |
+| `cancel_spend_approval` | Releases a spend approval Go will not use, so it can never be used. | `Ok` | None |
 
-## Rules for every route
+Each method's section below names the schema of its params, such as `OpenDecision` for `open_vote`. Every schema is exported by `@go/contract` and by `go_contract.models`, and `go_contract.METHODS` maps each method name to its params and result models.
 
-These rules apply to all 16 routes. Each route's own section adds the rules that are particular to it.
+## A request and its answer
+
+Each request is one JSON-RPC 2.0 text frame with an `id`, the `method` and its `params`. go-server answers it once, on the same socket, with a frame that has the same `id` and either a `result` or an `error`. Here Go posts the result of the villa vote:
+
+<!-- schema: SocketRequest -->
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "go_2251",
+  "method": "post_message",
+  "params": {
+    "request_id": "rq_7e3b44",
+    "trip_id": "t_goa",
+    "text": "Villa Sol wins, 4 to 1! @Rahul, you're paying: tap Yes, book it and I'll book it, up to ₹55,000 and free to cancel.",
+    "mentions": ["p_rahul"],
+    "card": {
+      "card_id": "c_villa_mandate",
+      "kind": "mandate",
+      "decision_id": "d_villa",
+      "fallback_text": "Ready to book Villa Sol: up to ₹55,000, refundable only, Rahul pays. Rahul, open Go to say yes."
+    }
+  }
+}
+```
+
+go-server stores the message and answers with its id and change number:
+
+<!-- schema: SocketResult -->
+```json
+{ "jsonrpc": "2.0", "id": "go_2251", "result": { "message_id": "m_0158", "seq": 73 } }
+```
+
+When a rule fails, go-server answers with an error frame instead. Here Go asked to close the dates vote after it had already closed:
+
+<!-- schema: SocketError -->
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "go_2258",
+  "error": { "code": 409, "message": "decision d_when is already closed", "data": { "code": "conflict" } }
+}
+```
+
+The rest of this page shows only the `params` and the `result` of each method. `typing` is the one notification Go sends: it has no `id`, and go-server sends nothing back (see [`typing`](#typing-show-go-is-typing)).
+
+Good to know:
+- go-server signed the socket once, when it opened it (see [Connecting](02-the-socket.md#connecting)). The frames on it carry no signature.
+- Answer every request with the `id` of the frame it came in, even when the same `id` arrives twice.
+- go-brain may send several requests before the first is answered, and the answers may go back in any order. The `id` matches each answer to its request.
+- More than one go-server instance may have a socket open. go-brain sends each request on one of them, so every instance must be able to answer any request from the shared database.
+
+## Rules for every request
+
+These rules apply to all 18 methods. Each method's own section adds the rules that are particular to it.
 
 | Rule | If it fails |
 |---|---|
-| The `x-go-signature` header is valid (see [Basics](01-basics.md#signing-every-request)). Check it before anything else. | `401 bad_signature` |
-| The trip exists. Any id in the path (a vote, a line, a booking, a card, an approval) exists in this trip. | `404 not_found` |
-| The body matches the contract. The error message names the field. | `422 invalid` |
-| Every id in the body belongs to this trip: a person who is in the trip now, a message, vote or booking of this trip. The error message names the field. | `422 invalid` |
-| Every amount uses the trip's currency (`money.currency` in the trip). A trip has one currency. | `422 invalid` |
-| The request does not clash with the trip's current state, such as closing a vote that is already closed. | `409 conflict` |
+| go-server knows the method. | `-32601` (unknown method). Go skips that request. |
+| The params match the contract. The error message names the field. | `422` `invalid` |
+| The trip exists. The thing the request acts on (the vote to close, the line or booking to change, the card to replace, the message to react to, the approval to cancel) exists in this trip. | `404` `not_found` |
+| Every other id in the params belongs to this trip: a person who is in the trip now, or a message, vote or booking of this trip. The error message names the field. | `422` `invalid` |
+| Every amount uses the trip's currency (`money.currency` in the trip). A trip has one currency. | `422` `invalid` |
+| The request does not clash with the trip's current state, such as closing a vote that is already closed. | `409` `conflict` |
+
+An error is a `SocketError` frame. `error.code` is the number in the table, `error.data.code` is its name (`not_found`, `invalid`, `conflict`), and `error.message` says what went wrong in plain words, up to 500 characters. The [error table in Basics](01-basics.md#errors) lists every code and whether it is worth sending the request again.
 
 Good to know:
-- Errors use the body from [Basics](01-basics.md#errors): `{"error": {"code": "...", "message": "..."}}`.
-- go-server answers every call within 2 seconds. go-brain retries a timeout, `429`, `500` or `503` three times, after 0.5, 2 and 5 seconds.
+- go-server answers every request within 2 seconds. When it cannot, it answers `429` `rate_limited`, `500` `internal` or `503` `unavailable`. With a `429`, put how many seconds Go should wait in `error.data.retry_after_seconds`.
+- go-brain sends a request again after a timeout, a `500` or a `503`, up to three times, after 0.5, 2 and 5 seconds, because someone in the room is waiting. After a `429` it waits `retry_after_seconds` first.
 - Ignore fields you do not know, and treat `null` the same as a missing field.
 - A person who left the trip is no longer "in the trip" for these rules.
+- A method you have not built yet answers `-32601`. Go skips that request, which is also how a method added later in version 1 stays safe. Go cannot work in a room without `read_trip`, `read_messages`, `post_message` and `typing`, so build those first.
 
 ## Doing each write once
 
-Every write carries a `request_id` that go-brain makes, so go-server can do the write once even when the request arrives twice. go-brain makes a new `request_id` for every new write, and sends the same one again only when it retries that same write. `putCard` and `setTyping` have no `request_id`, because sending them twice does no harm.
+Every write carries a `request_id` that go-brain makes, so go-server can do the write once even when the request arrives twice. go-brain makes a new `request_id` for every new write, and sends the same one again only when it sends that same write again. That happens in two ways:
+
+- go-brain got no answer in time, or an error worth retrying, and sends the write again with the same `request_id`.
+- The socket closed before the answer arrived. After the reconnect, go-brain sends the same request again, with the same JSON-RPC `id` and the same `request_id` (see [When the socket drops](02-the-socket.md#when-the-socket-drops)).
+
+The reads (`read_trip` and `read_messages`), `replace_card` and `typing` have no `request_id`, because doing them twice does no harm.
 
 go-server must do three things:
 
 1. Store the `request_id` in the same transaction as the change, with a unique index on `(trip_id, request_id)`, together with the answer it sent.
 2. When a `request_id` arrives that it already has, do nothing new and answer with the stored answer, including the same ids and the same `seq`.
-3. Look for the `request_id` before running any rule. A retried `addBooking` must get its first answer back, not a `409` because its spend approval is now used.
+3. Look for the `request_id` before running any rule. A repeated `add_booking` must get its first answer back, not a `409` because its spend approval is now used.
 
-The simplest way is one table for every route:
+The simplest way is one table for every write:
 
 ```sql
 create table brain_requests (
@@ -68,7 +131,7 @@ create table brain_requests (
 );
 ```
 
-This helper runs a write in one transaction, stores its answer, and answers a repeat with the first answer. The skeleton at the end of this page uses it.
+This helper runs a write in one transaction, stores its answer, and answers a repeat with the first answer. The minimal go-server at the end of this page uses it.
 
 **TypeScript**
 
@@ -97,7 +160,7 @@ export async function once<T>(tripId: string, requestId: string, work: (db: pg.P
   } catch (err) {
     await db.query('rollback');
     // Two copies arrived at the same moment and the other one committed first: answer with its answer.
-    if ((err as { code?: string }).code === '23505') {
+    if ((err as { code?: unknown }).code === '23505') {
       const first = await db.query(READ, [tripId, requestId]);
       if (first.rows.length > 0) return first.rows[0].answer as T;
     }
@@ -113,7 +176,7 @@ export async function once<T>(tripId: string, requestId: string, work: (db: pg.P
 ```python
 # once.py
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -122,24 +185,26 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 READ = "select answer from brain_requests where trip_id = %s and request_id = %s"
 
 
-def once(trip_id: str, request_id: str, work: Callable[[psycopg.Connection], dict]) -> dict:
+async def once(
+    trip_id: str, request_id: str, work: Callable[[psycopg.AsyncConnection], Awaitable[dict]]
+) -> dict:
     """Does a write once per (trip_id, request_id). A repeat gets the first answer back."""
     try:
         # One transaction: it commits when the block ends and rolls back if anything raises.
-        with psycopg.connect(DATABASE_URL) as conn:
-            seen = conn.execute(READ, (trip_id, request_id)).fetchone()
+        async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+            seen = await (await conn.execute(READ, (trip_id, request_id))).fetchone()
             if seen:
                 return seen[0]
-            answer = work(conn)
-            conn.execute(
+            answer = await work(conn)
+            await conn.execute(
                 "insert into brain_requests (trip_id, request_id, answer) values (%s, %s, %s)",
                 (trip_id, request_id, Jsonb(answer)),
             )
             return answer
     except psycopg.errors.UniqueViolation:
         # Two copies arrived at the same moment and the other one committed first: answer with its answer.
-        with psycopg.connect(DATABASE_URL) as conn:
-            first = conn.execute(READ, (trip_id, request_id)).fetchone()
+        async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+            first = await (await conn.execute(READ, (trip_id, request_id))).fetchone()
         if first is None:
             raise
         return first[0]
@@ -147,33 +212,36 @@ def once(trip_id: str, request_id: str, work: Callable[[psycopg.Connection], dic
 
 Good to know:
 - Only successful answers are stored. A write that was refused rolled back and left nothing behind, so a repeat of it is checked again.
-- A denied spend approval is a successful answer (`200` with `"status": "denied"`), so a repeat gets the same denial. go-brain uses a new `request_id` when it asks again.
-- When two copies arrive at the same moment, the second one waits on the trip's row lock (taken when the change number goes up), then hits the unique index after the first commits. Its change number goes back with the rollback, so no number is skipped.
+- A denied spend approval is a successful answer (a `result` with `"status": "denied"`), so a repeat gets the same denial. go-brain uses a new `request_id` when it asks again.
+- Two copies can arrive at the same moment, for example when a request sent again after a reconnect reaches a second go-server instance while the first is still working on it. The second copy waits on the trip's row lock (taken when the change number goes up), then hits the unique index after the first commits. Its change number goes back with the rollback, so no number is skipped.
 
 ## What each write answers, and its event
 
-Every write that changes the trip adds one to the trip's change number, answers with that new `seq`, and sends the event for the change with the same `seq`. Go's own writes come back to go-brain as events, exactly like the changes people make, so go-brain sees every change in `seq` order. How go-server sends events is in [Events](02-events.md).
+Every write that changes the trip adds one to the trip's change number, answers with that new `seq`, and sends the event for the change with the same `seq`. Go's own writes come back to go-brain as events (`send_event` requests), exactly like the changes people make, so go-brain sees every change in `seq` order. How go-server sends events is in [Events](03-events.md).
 
-| Operation | Answer | Event go-server sends |
+| Method | Result | Event go-server sends |
 |---|---|---|
-| `updateTrip` | `WriteResult` | `trip.updated`, with `changed` listing the fields sent and `by` Go |
-| `postMessage` | `PostMessageResult` | `message.created` |
-| `putCard` | `PutCardResult` (no `seq`) | None. Replacing a card is not a change. |
-| `setTyping` | `Ok` (no `seq`) | None |
-| `openDecision` | `OpenDecisionResult` | `decision.opened`, `by` Go |
-| `closeDecision` | `CloseDecisionResult` | `decision.closed` with reason `closed_by_go`, then `record.changed` for the decided line, `by` system |
-| `setMandate` | `WriteResult` | `mandate.set` |
-| `addRecordLine` | `AddRecordLineResult` | `record.changed` with change `added`, `by` Go |
-| `updateRecordLine` | `WriteResult` | `record.changed` with change `done` when `status` becomes `done`, otherwise `updated`, `by` Go |
-| `addBooking` | `AddBookingResult` | `booking.changed` with change `added`, `by` Go, then `record.changed` for the booked line, `by` system |
-| `updateBooking` | `WriteResult` | `booking.changed` with change `cancelled` or `updated`, `by` Go |
-| `addExpense` | `AddExpenseResult` | `expense.changed` with change `added`, `by` Go |
-| `requestSpendApproval` | `SpendApproved` or `SpendDenied` (no `seq`) | None. An approval is not a change anyone sees in the trip. |
-| `cancelSpendApproval` | `Ok` (no `seq`) | None |
+| `read_trip`, `read_messages` | `TripSnapshot`, `MessagesPage` | None. A read changes nothing. |
+| `post_message` | `PostMessageResult` | `message.created` |
+| `replace_card` | `ReplaceCardResult` (no `seq`) | None. Replacing a card is not a change. |
+| `typing` | No answer (a notification) | None |
+| `add_reaction` | `WriteResult` | `reaction.added`, with the reaction's `person_id` null because Go reacted |
+| `remove_reaction` | `WriteResult` | `reaction.removed`, with the reaction's `person_id` null |
+| `update_trip` | `WriteResult` | `trip.updated`, with `changed` listing the fields sent and `by` Go |
+| `open_vote` | `OpenDecisionResult` | `decision.opened`, `by` Go |
+| `close_vote` | `CloseDecisionResult` | `decision.closed` with reason `closed_by_go`, then `record.changed` for the decided line, `by` system |
+| `set_mandate` | `WriteResult` | `mandate.set` |
+| `add_record_line` | `AddRecordLineResult` | `record.changed` with change `added`, `by` Go |
+| `update_record_line` | `WriteResult` | `record.changed` with change `done` when `status` becomes `done`, otherwise `updated`, `by` Go |
+| `add_booking` | `AddBookingResult` | `booking.changed` with change `added`, `by` Go, then `record.changed` for the booked line, `by` system |
+| `update_booking` | `WriteResult` | `booking.changed` with change `cancelled` or `updated`, `by` Go |
+| `add_expense` | `AddExpenseResult` | `expense.changed` with change `added`, `by` Go |
+| `request_spend_approval` | `SpendApproved` or `SpendDenied` (no `seq`) | None. An approval is not a change anyone sees in the trip. |
+| `cancel_spend_approval` | `Ok` (no `seq`) | None |
 
-`by` Go is `{"kind": "go"}` and `by` system is `{"kind": "system"}`. When one call makes two changes (closing a vote and writing its decided line), each change gets its own `seq` and its own event, and the answer carries the `seq` of the first.
+`by` Go is `{"kind": "go"}` and `by` system is `{"kind": "system"}`. When one request makes two changes (closing a vote and writing its decided line), each change gets its own `seq` and its own event, and the result carries the `seq` of the first.
 
-Every write that changes the trip answers with at least the new change number. This is the answer to the `updateTrip` call further down:
+Every write that changes the trip answers with at least the new change number. This is the result of the `update_trip` request further down:
 
 <!-- schema: WriteResult -->
 ```json
@@ -182,11 +250,18 @@ Every write that changes the trip answers with at least the new change number. T
 
 ## Reading the trip
 
-### `getTrip`: read the whole trip
+### `read_trip`: read the whole trip
 
-`getTrip` returns everything about a trip that Go may see, at the trip's current change number. go-brain calls it when it starts working on a trip it does not hold yet, when it sees a gap in change numbers, after a `trip.updated` event (which names what changed but not the new values), and once a minute for every active trip as a safety net.
+`read_trip` returns everything about a trip that Go may see, at the trip's current change number. Go sends it when it starts working on a trip it does not hold yet, when it sees a gap in change numbers, after a `trip.updated` event (which names what changed but not the new values), and once a minute for every active trip as a safety net.
 
-The request is `GET /brain/v1/trips/t_goa`, with no body. The answer is the trip snapshot. Here is the Goa trip in the middle of planning, at change 113: the dates vote is closed, the group agreed on North Goa, Villa Sol won the stay vote and is booked and paid by Rahul, Rahul called off a vote about Sunday's beach, Kabir paid for the airport cab, and Meher's birthday dinner is still an idea.
+The params are a `ReadTrip`, which names the trip:
+
+<!-- schema: ReadTrip -->
+```json
+{ "trip_id": "t_goa" }
+```
+
+The result is the trip snapshot. Here is the Goa trip in the middle of planning, at change 113: the dates vote is closed, the group agreed on North Goa, Villa Sol won the stay vote and is booked and paid by Rahul, Rahul called off a vote about Sunday's beach, Kabir paid for the airport cab, and Meher's birthday dinner is still an idea.
 
 <!-- schema: TripSnapshot -->
 ```json
@@ -586,27 +661,33 @@ What go-server leaves out of the snapshot:
 
 | Rule | If it fails |
 |---|---|
-| The trip exists. | `404 not_found` |
+| The trip exists. | `404` `not_found` |
 
 Good to know:
 - Build the snapshot from one consistent read (one transaction), so `seq` matches the data. A change that commits while you read must be either all in the snapshot or not in it at all.
 - `record` holds every line, including done and undone ones, so Go does not write again a line someone undid.
-- Messages are not in the snapshot. Read them with `listMessages`.
-- go-brain reads every active trip once a minute, so keep this call cheap.
-- go-brain's fake go-server serves this snapshot (see [Build and test](09-build-and-test.md)).
+- Messages are not in the snapshot. Go reads them with `read_messages`.
+- Go reads every active trip once a minute, so keep this request cheap.
+- go-brain's fake go-server answers with this snapshot (see [Build and test](10-build-and-test.md)).
 
-### `listMessages`: read the messages posted or changed after a change number
+### `read_messages`: read the messages posted or changed after a change number
 
-`listMessages` returns every message that was posted or changed after a change number, oldest change first. go-brain calls it to catch up: when it holds change 46 and the next event it sees is 48, and after a restart. Because it also returns messages that were edited, deleted or reacted to, go-brain misses nothing when it skips events.
+`read_messages` returns every message that was posted or changed after a change number, oldest change first. Go sends it to catch up: when it holds change 46 and the next event it sees is 48, and after a restart. Because it also returns messages that were edited, deleted or reacted to, Go misses nothing when it skips events.
 
-The request is `GET /brain/v1/trips/t_goa/messages?after_seq=46&limit=2`, with no body.
+The params are a `ReadMessages`:
 
-| Query | Required | What it is |
+<!-- schema: ReadMessages -->
+```json
+{ "trip_id": "t_goa", "after_seq": 46, "limit": 2 }
+```
+
+| Param | Required | What it is |
 |---|---|---|
-| `after_seq` | Yes | Return messages whose `updated_seq` is greater than this. A whole number, 0 or more. Use `0` to read the room from the start. |
-| `limit` | No | Return at most this many messages, 1 to 200. Leave it out to get up to 200. |
+| `trip_id` | Yes | The trip. |
+| `after_seq` | Yes | Return messages whose `updated_seq` is greater than this. A whole number, 0 or more. Go sends `0` to read the room from the start. |
+| `limit` | No | Return at most this many messages, 1 to 200. Left out, it means up to 200. |
 
-Each message carries two change numbers. `seq` is the change number it got when it was posted. `updated_seq` is the change number of its latest change: posted, edited, deleted, or a reaction added or taken back. It equals `seq` until the message changes.
+Each message carries two change numbers. `seq` is the change number it got when it was posted. `updated_seq` is the change number of its latest change: posted, edited, deleted, or a reaction added or taken back (Go's reactions included). It equals `seq` until the message changes.
 
 Here Priya posted at change 47 and Arjun at change 48. Meher then put a 👍 on Arjun's message (change 49) and Rahul put one on Priya's (change 50). The page comes in `updated_seq` order, so Arjun's message comes first:
 
@@ -648,38 +729,32 @@ Here Priya posted at change 47 and Arjun at change 48. Meher then put a 👍 on 
 ```
 
 How go-server fills the page:
-- It returns the messages whose `updated_seq` is greater than `after_seq`, sorted by `updated_seq`, each one as it is now.
-- Go's own messages are included.
+- It returns the messages whose `updated_seq` is greater than `after_seq`, sorted by `updated_seq`, each one as it is now. In SQL: `select ... from messages where trip_id = $1 and updated_seq > $2 order by updated_seq limit $3 + 1`, where the one extra row tells you whether there are more.
+- Go's own messages are included, and so are Go's reactions, with `person_id` null.
 - A message from someone who paused Go is included with `"withheld": true`, no text, no attachments, `mentions_go` false, no `mentions` and no `about_message_id`.
 - A deleted message is included with `"deleted": true` and no text.
-- `has_more` is `true` when more messages changed after the last one in the page. To read them, call again with `after_seq` set to the `updated_seq` of the last message.
+- `has_more` is `true` when more messages changed after the last one in the page. To read them, Go sends `read_messages` again with `after_seq` set to the `updated_seq` of the last message.
+- A frame is at most 1 MB. When `limit` messages would make the answer bigger than that (long messages, big cards such as a call transcript), send fewer messages with `has_more` set to `true`.
 
 | Rule | If it fails |
 |---|---|
-| `after_seq` is given and is a whole number, 0 or more. | `422 invalid` |
-| `limit`, if given, is a whole number from 1 to 200. | `422 invalid` |
+| `after_seq` is given and is a whole number, 0 or more. | `422` `invalid` |
+| `limit`, if given, is a whole number from 1 to 200. | `422` `invalid` |
 
-This is how go-brain reads everything after a change number, one page at a time:
+This is how go-brain reads everything after a change number, one page at a time. `request` sends one request on the socket and resolves with its result:
 
 **TypeScript**
 
 ```ts
-import { MessagesPage, SIGNATURE_HEADER, signRequest, type Message } from '@go/contract';
+import { MessagesPage, type Message } from '@go/contract';
 
-const GO_SERVER_URL = process.env.GO_SERVER_URL!;
-const SECRET = process.env.GO_SIGNING_SECRET!;
+type Request = (method: string, params: object) => Promise<unknown>;
 
 /** Reads every message posted or changed after a change number, a page at a time. */
-export async function messagesAfter(tripId: string, afterSeq: number): Promise<Message[]> {
+export async function messagesAfter(request: Request, tripId: string, afterSeq: number): Promise<Message[]> {
   const messages: Message[] = [];
   for (let after = afterSeq; ; ) {
-    const target = `/brain/v1/trips/${tripId}/messages?after_seq=${after}&limit=200`;
-    const res = await fetch(GO_SERVER_URL + target, {
-      headers: { [SIGNATURE_HEADER]: signRequest({ method: 'GET', target, body: '' }, SECRET) },
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) throw new Error(`listMessages answered ${res.status}`);
-    const page = MessagesPage.parse(await res.json());
+    const page = MessagesPage.parse(await request('read_messages', { trip_id: tripId, after_seq: after, limit: 200 }));
     messages.push(...page.messages);
     if (!page.has_more || page.messages.length === 0) return messages;
     after = page.messages[page.messages.length - 1]!.updated_seq;
@@ -690,24 +765,19 @@ export async function messagesAfter(tripId: string, afterSeq: number): Promise<M
 **Python**
 
 ```python
-import os
+from collections.abc import Awaitable, Callable
 
-import httpx
-from go_contract import SIGNATURE_HEADER, models, sign_request
+from go_contract import models
 
-GO_SERVER_URL = os.environ["GO_SERVER_URL"]
-SECRET = os.environ["GO_SIGNING_SECRET"]
+Request = Callable[[str, dict], Awaitable[dict]]
 
 
-def messages_after(trip_id: str, after_seq: int) -> list[models.Message]:
+async def messages_after(request: Request, trip_id: str, after_seq: int) -> list[models.Message]:
     """Reads every message posted or changed after a change number, a page at a time."""
     messages: list[models.Message] = []
     while True:
-        target = f"/brain/v1/trips/{trip_id}/messages?after_seq={after_seq}&limit=200"
-        headers = {SIGNATURE_HEADER: sign_request("GET", target, b"", SECRET)}
-        res = httpx.get(GO_SERVER_URL + target, headers=headers, timeout=5)
-        res.raise_for_status()
-        page = models.MessagesPage.model_validate_json(res.content)
+        result = await request("read_messages", {"trip_id": trip_id, "after_seq": after_seq, "limit": 200})
+        page = models.MessagesPage.model_validate(result)
         messages += page.messages
         if not page.has_more or not page.messages:
             return messages
@@ -715,22 +785,22 @@ def messages_after(trip_id: str, after_seq: int) -> list[models.Message]:
 ```
 
 Good to know:
-- Store `updated_seq` on the message row and index `(trip_id, updated_seq)`. Every edit, delete and reaction sets it to that change's `seq`, in the same transaction.
-- The signed target includes the query string exactly as sent (see [Basics](01-basics.md#signing-every-request)).
+- Store `updated_seq` on the message row and index `(trip_id, updated_seq)`. Every edit, delete and reaction (Go's too) sets it to that change's `seq`, in the same transaction.
 - Change numbers have gaps between messages, because votes, record lines and bookings use change numbers too.
 
 ## Speaking in the room
 
-### `postMessage`: post Go's message in the room
+### `post_message`: post Go's message in the room
 
-`postMessage` is how Go says something in the room: a line of text, a card, or both. go-brain calls it whenever Go speaks: when someone mentions Go or replies to it, when work someone asked for is done, when a vote closes or a decision is ready to move, and when something is wrong or at risk.
+`post_message` is how Go says something in the room: a line of text, a card, or both. Go sends it whenever it speaks: when someone mentions Go or replies to it, when work someone asked for is done, when a vote closes or a decision is ready to move, and when something is wrong or at risk.
 
-Here the villa vote has just closed, so Go posts the result with the mandate card and names Rahul, who pays. The request is `POST /brain/v1/trips/t_goa/messages`:
+Here the villa vote has just closed, so Go posts the result with the mandate card and names Rahul, who pays. The params are a `PostMessage` (the whole frame is in [A request and its answer](#a-request-and-its-answer)):
 
 <!-- schema: PostMessage -->
 ```json
 {
   "request_id": "rq_7e3b44",
+  "trip_id": "t_goa",
   "text": "Villa Sol wins, 4 to 1! @Rahul, you're paying: tap Yes, book it and I'll book it, up to ₹55,000 and free to cancel.",
   "mentions": ["p_rahul"],
   "card": {
@@ -742,18 +812,19 @@ Here the villa vote has just closed, so Go posts the result with the mandate car
 }
 ```
 
-The answer:
+The result:
 
 <!-- schema: PostMessageResult -->
 ```json
 { "message_id": "m_0158", "seq": 73 }
 ```
 
-| Field | What it is |
+| Param | What it is |
 |---|---|
 | `request_id` | Go's id for this write. See [Doing each write once](#doing-each-write-once). |
+| `trip_id` | The trip whose room Go speaks in. |
 | `text` | What Go says, 1 to 2,000 characters. |
-| `card` | A card, as described in [Cards](04-cards.md). |
+| `card` | A card, as described in [Cards](06-cards.md). |
 | `reply_to` | The message Go is answering, if any. |
 | `mentions` | People Go names in the text. Each one gets a push. |
 
@@ -762,88 +833,91 @@ What go-server does:
 2. Sends `message.created` with the whole message.
 3. Shows the message in the room over the app's live connection. It appears whole: Go's replies are never streamed.
 4. Hides "Go is typing...", because Go's message has landed.
-5. Pushes the people in `mentions`, with Go's text. Pushes the people in the card's `for_person_ids`, with the card's `fallback_text`, and pins the card in their "needs you" strip (see [The app](06-the-app.md#the-needs-you-strip)).
+5. Pushes the people in `mentions`, with Go's text. Pushes the people in the card's `for_person_ids`, with the card's `fallback_text`, and pins the card in their "needs you" strip (see [The app](07-the-app.md#the-needs-you-strip)).
 
 | Rule | If it fails |
 |---|---|
-| The body has text, a card, or both. | `422 invalid` |
-| Every person in `mentions` is in the trip. | `422 invalid` |
-| `reply_to`, if set, is a message in this trip. | `422 invalid` |
-| A record card's id (`decision_id`, `booking_id` or `expense_id`) is in this trip. | `422 invalid` |
-| A mandate card's vote has a mandate. | `409 conflict` |
-| The `card_id` is not already in this trip's room. To change a card, use `putCard`. | `409 conflict` |
+| The params have text, a card, or both. | `422` `invalid` |
+| Every person in `mentions` is in the trip. | `422` `invalid` |
+| `reply_to`, if set, is a message in this trip. | `422` `invalid` |
+| A record card's id (`decision_id`, `booking_id` or `expense_id`) is in this trip. | `422` `invalid` |
+| A mandate card's vote has a mandate. | `409` `conflict` |
+| The `card_id` is not already in this trip's room. To change a card, Go sends `replace_card`. | `409` `conflict` |
 
 Good to know:
-- Store the card as the JSON you received, not rebuilt from your own columns, so a field added to a card later in version 1 still reaches the app.
+- Store the card as one JSON value, exactly as it arrived in the frame (`raw.card`, see [A minimal go-server](#a-minimal-go-server)), not rebuilt from your own columns or from the checked params. Then a field Go adds to a card later in version 1 reaches the app with no change to go-server.
 - Send the pushes and the live update once, after the transaction commits, and not again for a repeated `request_id`.
 - `mentions_go` is `false` on Go's own messages.
 - go-server pins an open vote and a mandate waiting for its payer from its own rows, so Go leaves `for_person_ids` out of vote and mandate cards.
 
-### `putCard`: replace a card in place
+### `replace_card`: replace a card in place
 
-`putCard` replaces a card Go posted earlier with a new version of it, in the same place in the room. Go uses it for a card that changes: a live call, a working task, a pay card that moves to paid. Go also uses it to take people out of `for_person_ids` once they have nothing left to do on the card.
+`replace_card` replaces a card Go posted earlier with a new version of it, in the same place in the room. Go sends it for a card that changes: a live call, a working task, a pay card that moves to paid. Go also sends it to take people out of `for_person_ids` once they have nothing left to do on the card.
 
-Here Rahul has paid for the villa, so Go moves the pay card to `paid`, removes its buttons, and takes Rahul out of `for_person_ids`. The request is `PUT /brain/v1/trips/t_goa/cards/c_villa_pay`, and the body is the whole new card:
+Here Rahul has paid for the villa, so Go moves the pay card to `paid`, removes its buttons, and takes Rahul out of `for_person_ids`. The params are a `ReplaceCard`, holding the whole new card:
 
-<!-- schema: PayCard -->
+<!-- schema: ReplaceCard -->
 ```json
 {
-  "card_id": "c_villa_pay",
-  "kind": "pay",
-  "fallback_text": "Paid ₹54,200 to ixigo for Villa Sol, 3 nights. Free cancellation until 1 Nov.",
-  "approval_id": "ap_01JA7Q3V8Z",
-  "payer_person_id": "p_rahul",
-  "amount_minor": 5420000,
-  "currency": "INR",
-  "merchant": "ixigo: Villa Sol, Anjuna",
-  "purpose": "Villa Sol, 3 nights, 6 to 9 Nov",
-  "refundable_until": "2026-11-01T18:29:59Z",
-  "expires_at": "2026-10-05T09:10:00Z",
-  "state": "paid"
+  "trip_id": "t_goa",
+  "card": {
+    "card_id": "c_villa_pay",
+    "kind": "pay",
+    "fallback_text": "Paid ₹54,200 to ixigo for Villa Sol, 3 nights. Free cancellation until 1 Nov.",
+    "approval_id": "ap_01JA7Q3V8Z",
+    "payer_person_id": "p_rahul",
+    "amount_minor": 5420000,
+    "currency": "INR",
+    "merchant": "ixigo: Villa Sol, Anjuna",
+    "purpose": "Villa Sol, 3 nights, 6 to 9 Nov",
+    "refundable_until": "2026-11-01T18:29:59Z",
+    "expires_at": "2026-10-05T09:10:00Z",
+    "state": "paid"
+  }
 }
 ```
 
-The answer names the message the card is on:
+The result names the message the card is on:
 
-<!-- schema: PutCardResult -->
+<!-- schema: ReplaceCardResult -->
 ```json
 { "message_id": "m_0161" }
 ```
 
 What go-server does:
-- Replaces the card on its message and shows the new version in the room over the app's live connection. The message keeps its place in the room.
+- Finds Go's message that carries a card with this `card_id`, replaces the card on it, and shows the new version in the room over the app's live connection. The message keeps its place in the room.
 - Updates the "needs you" strip: people who are no longer in `for_person_ids` are unpinned, and people newly added are pinned. A replaced card is not a new card, so it sends no push.
 - Adds no change number and sends no event. Replacing a card is not a change to the trip.
 
 | Rule | If it fails |
 |---|---|
-| The body is a valid card. | `422 invalid` |
-| The `card_id` in the body matches the `card_id` in the path. | `422 invalid` |
-| The card is on one of Go's messages in this trip. Only Go's own cards can be replaced. | `404 not_found` |
+| `card` is a valid card. | `422` `invalid` |
+| The `card_id` is on one of Go's messages in this trip. Only Go's own cards can be replaced. | `404` `not_found` |
 
 Good to know:
-- There is no `request_id`. Sending the same card twice leaves the same card, so a retry is safe.
-- go-brain sends the updates for one card one at a time and waits for each answer, so an older version never lands after a newer one.
+- There is no `request_id`. Sending the same card twice leaves the same card, so sending it again is safe.
+- Go sends the updates for one card one at a time and waits for each answer, so an older version never lands after a newer one.
 - Go keeps the card's `kind`. Something new is a new message.
-- To check the body in Python, use `go_contract.Card.model_validate_json(body).root`, which gives the right card class for its `kind`. In TypeScript, use `Card.parse` from `@go/contract`.
+- The `BrainSocket` client checks the params before it calls your handler: `parseParams('replace_card', params)` in TypeScript and `METHODS["replace_card"].params.model_validate(params)` in Python. In Python, the checked `card` is the right card class for its `kind`.
+- Store the new card as one JSON value, exactly as it arrived in the frame (`raw.card`), as for `post_message`.
 - On a record card, only `for_person_ids` and `fallback_text` change what people see, because go-server draws the rest from its own rows.
 
-### `setTyping`: show "Go is typing..."
+### `typing`: show "Go is typing..."
 
-`setTyping` shows or hides "Go is typing..." in the room. Go turns it on when it starts working on an answer, and sends it again every 5 seconds while it works.
+`typing` shows or hides "Go is typing..." in the room. Go turns it on when it starts working on an answer, and sends it again every 5 seconds while it works. It is a notification: the frame has no `id`, and go-server sends nothing back, not even an error.
 
-The request is `POST /brain/v1/trips/t_goa/typing`:
+The whole frame:
 
-<!-- schema: SetTyping -->
+<!-- schema: SocketNotification -->
 ```json
-{ "on": true }
+{ "jsonrpc": "2.0", "method": "typing", "params": { "trip_id": "t_goa", "on": true } }
 ```
 
-The answer:
+The params are a `GoTyping`:
 
-<!-- schema: Ok -->
+<!-- schema: GoTyping -->
 ```json
-{ "ok": true }
+{ "trip_id": "t_goa", "on": true }
 ```
 
 What go-server does:
@@ -851,26 +925,105 @@ What go-server does:
 - `"on": false` hides it at once.
 - Stores nothing, adds no change number and sends no event.
 
+A notification is never answered, so a broken one gets no error frame. go-server drops it and logs it instead:
+
 | Rule | If it fails |
 |---|---|
-| The trip exists. | `404 not_found` |
+| The params match the contract (`trip_id` and `on`). | Dropped and logged. No answer. |
+| The trip exists. | Dropped and logged. No answer. |
 
 Good to know:
 - There is no `request_id`. Showing the indicator twice does no harm.
-- If go-brain stops sending it (for example, because it restarted), the indicator goes away by itself after 10 seconds.
+- Notifications are best effort and are never sent again after a reconnect. If one is lost, or go-brain stops sending it (for example, because it restarted), the indicator goes away by itself after 10 seconds.
+- Typing in the other direction, from people to Go, is the `person_typing` notification (see [Your requests](05-your-requests.md#someone-is-typing-person_typing)).
+
+## Reacting to messages
+
+Go reacts to a message the way a person does, with the author Go. A reaction from Go is a change to the trip like any other: it takes the trip's next change number, and go-server sends `reaction.added` or `reaction.removed` with the reaction's `person_id` null. Each author has at most one reaction per emoji on a message, and Go counts as one author.
+
+### `add_reaction`: react to a message
+
+`add_reaction` adds Go's reaction to a message. Go uses it to show it noticed something without saying anything, for example a quiet ✅ on a message after it noted what the message said in the trip record.
+
+Here Go has written the agreed line "North Goa, not South" (change 51) and changed the destination to North Goa (change 52). Instead of announcing the line in the room, it puts a quiet ✅ on Priya's message `m_0122`, where the idea came from. The params are an `AddReaction`:
+
+<!-- schema: AddReaction -->
+```json
+{ "request_id": "rq_3c71d2", "trip_id": "t_goa", "message_id": "m_0122", "emoji": "✅" }
+```
+
+The result is a `WriteResult`:
+
+<!-- schema: WriteResult -->
+```json
+{ "seq": 53 }
+```
+
+go-server then sends this event. The reaction's `person_id` is null, because Go reacted:
+
+<!-- schema: ReactionAdded -->
+```json
+{
+  "event_id": "ev_0053",
+  "trip_id": "t_goa",
+  "seq": 53,
+  "occurred_at": "2026-10-05T04:14:40Z",
+  "type": "reaction.added",
+  "data": {
+    "message_id": "m_0122",
+    "reaction": { "emoji": "✅", "person_id": null }
+  }
+}
+```
+
+What go-server does:
+1. Stores the reaction on the message with `person_id` null (Go reacted), and sets the message's `updated_seq` to the new change number.
+2. Sends `reaction.added` with the reaction.
+3. Shows the reaction in the room over the app's live connection, from Go. It sends no push.
+
+| Rule | If it fails |
+|---|---|
+| The message exists in this trip. | `404` `not_found` |
+| The message is not deleted. | `409` `conflict` |
+| Go has not already reacted to this message with this emoji. | `409` `conflict` |
+
+Good to know:
+- Go's ✅ and Rahul's ✅ on the same message are two reactions, one per author.
+- Go's reaction appears in the message's `reactions`, in `read_messages` and in message events, as `{"emoji": "✅", "person_id": null}`.
+- go-brain never counts Go's own reaction as anyone agreeing.
+
+### `remove_reaction`: take Go's reaction back
+
+`remove_reaction` removes a reaction Go added earlier. Go uses it when what it noted no longer holds. If the group had switched to South Goa a few minutes later, Go would take its ✅ off Priya's message. The params are a `RemoveReaction`:
+
+<!-- schema: RemoveReaction -->
+```json
+{ "request_id": "rq_8e20b5", "trip_id": "t_goa", "message_id": "m_0122", "emoji": "✅" }
+```
+
+The result is a `WriteResult` with the new change number. go-server removes Go's reaction, sets the message's `updated_seq` to the new change number, and sends `reaction.removed` with the reaction `{"emoji": "✅", "person_id": null}`.
+
+| Rule | If it fails |
+|---|---|
+| The message exists in this trip. | `404` `not_found` |
+| Go has a reaction with this emoji on this message. | `409` `conflict` |
+
+Good to know:
+- Go removes only its own reactions. People's reactions are theirs, and go-brain learns about them from `reaction.added` and `reaction.removed`.
 
 ## Changing the trip details
 
-### `updateTrip`: change the title, destination, dates, vibe, stay or itinerary
+### `update_trip`: change the title, destination, dates, vibe, stay or itinerary
 
-`updateTrip` changes the trip's details. Go calls it when the group settles one of them, for example when they agree on North Goa, or when Go adds a plan to the itinerary.
+`update_trip` changes the trip's details. Go sends it when the group settles one of them, for example when they agree on North Goa, or when Go adds a plan to the itinerary.
 
-The request is `PATCH /brain/v1/trips/t_goa`. Only the fields sent change:
+The params are an `UpdateTrip`. Only the fields sent change:
 
 <!-- schema: UpdateTrip -->
 ```json
 {
   "request_id": "rq_2d81f0",
+  "trip_id": "t_goa",
   "destination": {
     "name": "North Goa",
     "lat": 15.6,
@@ -880,30 +1033,31 @@ The request is `PATCH /brain/v1/trips/t_goa`. Only the fields sent change:
 }
 ```
 
-The answer is a `WriteResult`, here `{"seq": 52}`. go-server sends `trip.updated` with `"changed": ["destination"]` and `"by": {"kind": "go"}`.
+The result is a `WriteResult`, here `{"seq": 52}`. go-server sends `trip.updated` with `"changed": ["destination"]` and `"by": {"kind": "go"}`.
 
 | Rule | If it fails |
 |---|---|
-| The body has at least one field besides `request_id`. (`trip.updated` must name at least one changed field.) | `422 invalid` |
-| `dates.start` is on or before `dates.end`. | `422 invalid` |
-| Every itinerary item's `booking_id`, if set, is a booking in this trip. | `422 invalid` |
+| The params have at least one field besides `request_id` and `trip_id`. (`trip.updated` must name at least one changed field.) | `422` `invalid` |
+| `dates.start` is on or before `dates.end`. | `422` `invalid` |
+| Every itinerary item's `booking_id`, if set, is a booking in this trip. | `422` `invalid` |
 
 Good to know:
 - `itinerary` replaces the whole itinerary. To change one item, Go reads the trip, changes that item and sends every day back.
-- The trip's `status` and `budget` are not Go's to change, so they are not in this body. When someone answers the budget question, go-server sends `trip.updated` with `"changed": ["budget"]` and `by` system, never the person, so nobody's answer can be traced to them.
+- The trip's `status` and `budget` are not Go's to change, so they are not in these params. When someone answers the budget question, go-server sends `trip.updated` with `"changed": ["budget"]` and `by` system, never the person, so nobody's answer can be traced to them.
 
 ## Votes and mandates
 
-### `openDecision`: open a vote
+### `open_vote`: open a vote
 
-`openDecision` opens a vote. Go calls it when someone asks for a vote, or taps "Put it to a vote" on an options card.
+`open_vote` opens a vote. Go sends it when someone asks for a vote, or taps "Put it to a vote" on an options card.
 
-The request is `POST /brain/v1/trips/t_goa/decisions`:
+The params are an `OpenDecision`:
 
 <!-- schema: OpenDecision -->
 ```json
 {
   "request_id": "rq_4a6f12",
+  "trip_id": "t_goa",
   "question": "Where do we stay?",
   "kind": "choice",
   "anonymous": false,
@@ -937,19 +1091,20 @@ The request is `POST /brain/v1/trips/t_goa/decisions`:
 }
 ```
 
-The answer:
+The result:
 
 <!-- schema: OpenDecisionResult -->
 ```json
 { "decision_id": "d_villa", "seq": 64 }
 ```
 
-Then Go shows the vote in the room with `postMessage`:
+Then Go shows the vote in the room with `post_message`:
 
 <!-- schema: PostMessage -->
 ```json
 {
   "request_id": "rq_5c09a1",
+  "trip_id": "t_goa",
   "text": "Three villas with a pool in North Goa, all free to cancel. Vote by 6 pm?",
   "card": {
     "card_id": "c_villa_vote",
@@ -969,25 +1124,25 @@ What go-server does:
 
 | Rule | If it fails |
 |---|---|
-| The vote has 2 to 10 options. | `422 invalid` |
-| `closes_at`, if set, is in the future. | `422 invalid` |
+| The vote has 2 to 10 options. | `422` `invalid` |
+| `closes_at`, if set, is in the future. | `422` `invalid` |
 
 Good to know:
 - An anonymous vote shows totals only. Nobody sees who voted for what, including Go: `decision.voted` events and the snapshot leave out `person_id`, `option_index` and `votes`.
 - `option_ref` is Go's own reference for an option (such as an ixigo offer), so it can book the winner. go-server stores it and gives it back unchanged.
 
-### `closeDecision`: close a vote now
+### `close_vote`: close a vote now
 
-`closeDecision` closes an open vote at once and returns the result. Go calls it when someone asks Go to close a vote. Here Rahul asks Go to close the dates vote with 4 of 5 votes in, because Kabir has only just joined.
+`close_vote` closes an open vote at once and returns the result. Go sends it when someone asks Go to close a vote. Here Rahul asks Go to close the dates vote with 4 of 5 votes in, because Kabir has only just joined.
 
-The request is `POST /brain/v1/trips/t_goa/decisions/d_when/close`:
+The params are a `CloseDecision`:
 
 <!-- schema: CloseDecision -->
 ```json
-{ "request_id": "rq_1f9c30" }
+{ "request_id": "rq_1f9c30", "trip_id": "t_goa", "decision_id": "d_when" }
 ```
 
-The answer is the vote as it is now:
+The result is the vote as it is now:
 
 <!-- schema: CloseDecisionResult -->
 ```json
@@ -1022,27 +1177,29 @@ The answer is the vote as it is now:
 
 What go-server does:
 1. Sets `status` to `closed`, `closed_at` to now, and `result_index` to the option with the most votes. When nobody voted, or the top options tied, `result_index` stays empty and no decided line is written: Go asks the group to settle it, usually with a new vote between the tied options.
-2. Sends `decision.closed` with reason `closed_by_go`. The answer's `seq` is this change.
+2. Sends `decision.closed` with reason `closed_by_go`. The result's `seq` is this change.
 3. Writes a decided line in the trip record, with the winning option's label as its text ("6 to 9 Nov"), the vote's `decision_id`, and `source` `vote`. This is a second change, with its own `seq` (here 46) and its own `record.changed` event, `by` system.
 
 | Rule | If it fails |
 |---|---|
-| The vote exists in this trip. | `404 not_found` |
-| The vote is open. Closing a vote that is closed or cancelled is refused. | `409 conflict` |
+| The vote exists in this trip. | `404` `not_found` |
+| The vote is open. Closing a vote that is closed or cancelled is refused. | `409` `conflict` (the error frame in [A request and its answer](#a-request-and-its-answer)) |
 
 Good to know:
-- There is no route for Go to call off a vote. People do that in the app, and go-brain gets `decision.cancelled`.
+- There is no method for Go to call off a vote. People do that in the app, and go-brain gets `decision.cancelled`.
 
-### `setMandate`: set what the group allowed
+### `set_mandate`: set what the group allowed
 
-`setMandate` records what the group allowed for a spend after a choice vote: which option, the cap, whether it must be refundable, and who pays. Go calls it when a vote about something to book closes. Then it posts the result with a mandate card (the example in [`postMessage`](#postmessage-post-gos-message-in-the-room)), so the payer can say yes.
+`set_mandate` records what the group allowed for a spend after a choice vote: which option, the cap, whether it must be refundable, and who pays. Go sends it when a vote about something to book closes. Then it posts the result with a mandate card (the example in [`post_message`](#post_message-post-gos-message-in-the-room)), so the payer can say yes.
 
-The request is `PUT /brain/v1/trips/t_goa/decisions/d_villa/mandate`:
+The params are a `SetMandate`:
 
 <!-- schema: SetMandate -->
 ```json
 {
   "request_id": "rq_6b2d85",
+  "trip_id": "t_goa",
+  "decision_id": "d_villa",
   "choice_index": 0,
   "cap_minor": 5500000,
   "currency": "INR",
@@ -1051,7 +1208,7 @@ The request is `PUT /brain/v1/trips/t_goa/decisions/d_villa/mandate`:
 }
 ```
 
-The answer is a `WriteResult`, here `{"seq": 72}`.
+The result is a `WriteResult`, here `{"seq": 72}`.
 
 What go-server does:
 1. Stores the mandate on the vote, with `set_at` set to now.
@@ -1063,12 +1220,12 @@ The mandate card's "Yes, book it" and "Not now" buttons belong to go-server, bec
 
 | Rule | If it fails |
 |---|---|
-| The vote exists in this trip. | `404 not_found` |
-| The vote is a choice vote. | `409 conflict` |
-| The vote is closed. | `409 conflict` |
-| `choice_index` is one of the vote's options (from 0 to the number of options minus 1). | `422 invalid` |
-| `payer_person_id` is in the trip. | `422 invalid` |
-| `cap_minor` is more than zero. | `422 invalid` |
+| The vote exists in this trip. | `404` `not_found` |
+| The vote is a choice vote. | `409` `conflict` |
+| The vote is closed. | `409` `conflict` |
+| `choice_index` is one of the vote's options (from 0 to the number of options minus 1). | `422` `invalid` |
+| `payer_person_id` is in the trip. | `422` `invalid` |
+| `cap_minor` is more than zero. | `422` `invalid` |
 
 Good to know:
 - `choice_index` is usually the winning option, but go-server does not require it.
@@ -1076,9 +1233,9 @@ Good to know:
 
 ## The trip record
 
-### `addRecordLine`: add a line to the trip record
+### `add_record_line`: add a line to the trip record
 
-`addRecordLine` adds an agreed, open or doing line to the trip record. Go calls it after it replies in the room, or after a message it only took notes on, when it saves what the room settled without a vote, a question still to settle, or something someone said they will sort. Go does not announce each line in the room.
+`add_record_line` adds an agreed, open or doing line to the trip record. Go sends it after it replies in the room, or after a message it only took notes on, when it saves what the room settled without a vote, a question still to settle, or something someone said they will sort. Go does not announce each line in the room. It may put a quiet ✅ on the message instead (see [`add_reaction`](#add_reaction-react-to-a-message)).
 
 | `kind` | When Go writes it | `person_ids` |
 |---|---|---|
@@ -1086,12 +1243,13 @@ Good to know:
 | `open` | A question is still to settle, or an agreement did not meet the bar above. | Who is asked |
 | `doing` | Someone said they will sort something. | Who is on it |
 
-Here Priya proposed North Goa, Arjun said yes, Rahul put a 👍 on Priya's message, and nobody objected. The request is `POST /brain/v1/trips/t_goa/record`:
+Here Priya proposed North Goa, Arjun said yes, Rahul put a 👍 on Priya's message, and nobody objected. The params are an `AddRecordLine`:
 
 <!-- schema: AddRecordLine -->
 ```json
 {
   "request_id": "rq_0e7a59",
+  "trip_id": "t_goa",
   "kind": "agreed",
   "text": "North Goa, not South",
   "proof": [
@@ -1102,7 +1260,7 @@ Here Priya proposed North Goa, Arjun said yes, Rahul put a 👍 on Priya's messa
 }
 ```
 
-The answer:
+The result:
 
 <!-- schema: AddRecordLineResult -->
 ```json
@@ -1113,53 +1271,54 @@ go-server stores the line with `status` `active` and `source` `go`, and sends `r
 
 | Rule | If it fails |
 |---|---|
-| `kind` is `agreed`, `open` or `doing`. Decided and booked lines come only from votes and bookings. | `422 invalid` |
-| An agreed line has at least one proof. | `422 invalid` |
-| Every proof's `message_id` is a message in this trip. | `422 invalid` |
-| Every person id, in `person_ids` and in `proof`, is in the trip. | `422 invalid` |
+| `kind` is `agreed`, `open` or `doing`. Decided and booked lines come only from votes and bookings. | `422` `invalid` |
+| An agreed line has at least one proof. | `422` `invalid` |
+| Every proof's `message_id` is a message in this trip. | `422` `invalid` |
+| Every person id, in `person_ids` and in `proof`, is in the trip. | `422` `invalid` |
 
 Good to know:
 - People can undo any line in the app. go-brain then gets `record.changed` with change `undone`, `by` that person. Go never undoes a line.
 - `due_at` is for a line with a deadline, such as an open question that must be settled by the end of the week.
 
-### `updateRecordLine`: change a line or mark it done
+### `update_record_line`: change a line or mark it done
 
-`updateRecordLine` changes a line Go wrote, or marks it done. Go calls it when an open question gets settled (the line becomes agreed), or when someone finishes what they said they would do. Here Kabir has paid for the airport cab, so Go marks his line done.
+`update_record_line` changes a line Go wrote, or marks it done. Go sends it when an open question gets settled (the line becomes agreed), or when someone finishes what they said they would do. Here Kabir has paid for the airport cab, so Go marks his line done.
 
-The request is `PATCH /brain/v1/trips/t_goa/record/r_cab`. Only the fields sent change:
+The params are an `UpdateRecordLine`. Only the fields sent change:
 
 <!-- schema: UpdateRecordLine -->
 ```json
-{ "request_id": "rq_9d4c17", "status": "done" }
+{ "request_id": "rq_9d4c17", "trip_id": "t_goa", "line_id": "r_cab", "status": "done" }
 ```
 
-The answer is a `WriteResult`, here `{"seq": 113}`. go-server sends `record.changed` with change `done`, because `status` became `done`. Any other change sends change `updated`.
+The result is a `WriteResult`, here `{"seq": 113}`. go-server sends `record.changed` with change `done`, because `status` became `done`. Any other change sends change `updated`.
 
 | Rule | If it fails |
 |---|---|
-| The line exists in this trip. | `404 not_found` |
-| Go wrote the line (`source` is `go`). Decided, booked and people's own lines are not Go's to change. | `409 conflict` |
-| The line is not undone. A line someone undid stays undone. If it comes up again, Go adds a new line. | `409 conflict` |
-| `status`, if sent, is `active` or `done`. Go cannot undo a line. | `422 invalid` |
-| The body has at least one field besides `request_id`. | `422 invalid` |
-| After the change, an agreed line still has at least one proof. | `422 invalid` |
-| Every proof message and person id is in this trip. | `422 invalid` |
+| The line exists in this trip. | `404` `not_found` |
+| Go wrote the line (`source` is `go`). Decided, booked and people's own lines are not Go's to change. | `409` `conflict` |
+| The line is not undone. A line someone undid stays undone. If it comes up again, Go adds a new line. | `409` `conflict` |
+| `status`, if sent, is `active` or `done`. Go cannot undo a line. | `422` `invalid` |
+| The params have at least one field besides `request_id`, `trip_id` and `line_id`. | `422` `invalid` |
+| After the change, an agreed line still has at least one proof. | `422` `invalid` |
+| Every proof message and person id is in this trip. | `422` `invalid` |
 
 Good to know:
-- `proof` replaces the whole proof list. To add a proof, send the old ones and the new one.
+- `proof` replaces the whole proof list. To add a proof, Go sends the old ones and the new one.
 
 ## Bookings and expenses
 
-### `addBooking`: record a confirmed booking
+### `add_booking`: record a confirmed booking
 
-`addBooking` records a booking that is confirmed: a stay, a flight, a table and so on. Go calls it after it books something. When Go paid through the vault, Go sends the spend approval's `approval_id` with it. When someone in the group booked something themselves and shared it, Go records it without one.
+`add_booking` records a booking that is confirmed: a stay, a flight, a table and so on. Go sends it after it books something. When Go paid through the vault, Go sends the spend approval's `approval_id` with it. When someone in the group booked something themselves and shared it, Go records it without one.
 
-Here Rahul approved the payment in the vault, ixigo confirmed the villa, and Go records it. The request is `POST /brain/v1/trips/t_goa/bookings`:
+Here Rahul approved the payment in the vault, ixigo confirmed the villa, and Go records it. The params are an `AddBooking`:
 
 <!-- schema: AddBooking -->
 ```json
 {
   "request_id": "rq_book_villa_1",
+  "trip_id": "t_goa",
   "kind": "stay",
   "title": "Villa Sol, 3 nights",
   "vendor": "ixigo",
@@ -1182,7 +1341,7 @@ Here Rahul approved the payment in the vault, ixigo confirmed the villa, and Go 
 }
 ```
 
-The answer:
+The result:
 
 <!-- schema: AddBookingResult -->
 ```json
@@ -1192,57 +1351,58 @@ The answer:
 What go-server does:
 1. With an `approval_id`, checks the spend approval (see the rules below) and marks it used, in the same transaction as the booking.
 2. Stores the booking with `status` `confirmed` and no `added_by_person_id` (Go added it).
-3. Sends `booking.changed` with change `added` and `"by": {"kind": "go"}`. The answer's `seq` is this change.
+3. Sends `booking.changed` with change `added` and `"by": {"kind": "go"}`. The result's `seq` is this change.
 4. Writes the booked line in the trip record, with the booking's title as its text, its `booking_id`, and `source` `booking`. When the booking has a `decision_id` and that vote already has a decided line, go-server turns that line into the booked line (same `line_id`) instead of adding a second one. This is a second change, with its own `seq` (here 77) and its own `record.changed` event, `by` system.
 
-After this, Go records the expense with `addExpense`, posts a ticket card, and updates the pay card to paid.
+After this, Go records the expense with `add_expense`, posts a ticket card, and replaces the pay card with its paid version.
 
 | Rule | If it fails |
 |---|---|
-| `payer_person_id` and every person in `for_person_ids` are in the trip. | `422 invalid` |
-| `decision_id`, if set, is a vote in this trip. | `422 invalid` |
-| With an `approval_id`: the approval belongs to this trip. | `409 conflict` |
-| With an `approval_id`: it is for the same vote (the booking's `decision_id` is the approval's). | `409 conflict` |
-| With an `approval_id`: the approval has not been used or cancelled. | `409 conflict` |
-| With an `approval_id`: `amount_minor` is no more than the approved amount, in the same currency. | `409 conflict` |
+| `payer_person_id` and every person in `for_person_ids` are in the trip. | `422` `invalid` |
+| `decision_id`, if set, is a vote in this trip. | `422` `invalid` |
+| With an `approval_id`: the approval belongs to this trip. | `409` `conflict` |
+| With an `approval_id`: it is for the same vote (the booking's `decision_id` is the approval's). | `409` `conflict` |
+| With an `approval_id`: the approval has not been used or cancelled. | `409` `conflict` |
+| With an `approval_id`: `amount_minor` is no more than the approved amount, in the same currency. | `409` `conflict` |
 
 Good to know:
 - go-server does not refuse a booking because its approval has expired since. The vault checked the expiry before paying, and recording the booking can come a little later.
-- A repeated `request_id` gets the first answer before any rule runs, so a retry after the approval was marked used still gets `b_villa` back.
-- [Money and the vault](07-money-and-the-vault.md#marking-an-approval-used) has the code for these checks.
+- A repeated `request_id` gets the first answer before any rule runs, so a repeat after the approval was marked used still gets `b_villa` back.
+- [Money and the vault](08-money-and-the-vault.md#marking-an-approval-used) has the code for these checks.
 
-### `updateBooking`: change or cancel a booking
+### `update_booking`: change or cancel a booking
 
-`updateBooking` changes a booking or cancels it. Go calls it when a vendor changes a time, a reference or the free cancellation date, and when a booking is cancelled. Here Villa Sol agreed to a 1 pm check-out on the last day.
+`update_booking` changes a booking or cancels it. Go sends it when a vendor changes a time, a reference or the free cancellation date, and when a booking is cancelled. Here Villa Sol agreed to a 1 pm check-out on the last day.
 
-The request is `PATCH /brain/v1/trips/t_goa/bookings/b_villa`. Only the fields sent change:
+The params are an `UpdateBooking`. Only the fields sent change:
 
 <!-- schema: UpdateBooking -->
 ```json
-{ "request_id": "rq_b37f08", "ends_at": "2026-11-09T13:00:00+05:30" }
+{ "request_id": "rq_b37f08", "trip_id": "t_goa", "booking_id": "b_villa", "ends_at": "2026-11-09T13:00:00+05:30" }
 ```
 
-The answer is a `WriteResult`, here `{"seq": 117}`. go-server sends `booking.changed` with change `cancelled` when `status` is `cancelled`, and change `updated` otherwise.
+The result is a `WriteResult`, here `{"seq": 117}`. go-server sends `booking.changed` with change `cancelled` when `status` is `cancelled`, and change `updated` otherwise.
 
 | Rule | If it fails |
 |---|---|
-| The booking exists in this trip. | `404 not_found` |
-| The booking is not cancelled. A cancelled booking cannot change. | `409 conflict` |
-| The body has at least one field besides `request_id`. | `422 invalid` |
+| The booking exists in this trip. | `404` `not_found` |
+| The booking is not cancelled. A cancelled booking cannot change. | `409` `conflict` |
+| The params have at least one field besides `request_id`, `trip_id` and `booking_id`. | `422` `invalid` |
 
 Good to know:
-- `"status": "cancelled"` records that the booking is cancelled. It does not cancel anything with the vendor: Go does that first, then calls this route.
+- `"status": "cancelled"` records that the booking is cancelled. It does not cancel anything with the vendor: Go does that first, then sends this request.
 
-### `addExpense`: record something someone paid for
+### `add_expense`: record something someone paid for
 
-`addExpense` records something someone paid for, split equally between people. Go calls it after every booking Go pays for through the vault, and when someone says in the room that they paid for something.
+`add_expense` records something someone paid for, split equally between people. Go sends it after every booking Go pays for through the vault, and when someone says in the room that they paid for something.
 
-Here Go records the villa Rahul just paid for, split between all five. The request is `POST /brain/v1/trips/t_goa/expenses`:
+Here Go records the villa Rahul just paid for, split between all five. The params are an `AddExpense`:
 
 <!-- schema: AddExpense -->
 ```json
 {
   "request_id": "rq_expense_villa_1",
+  "trip_id": "t_goa",
   "paid_by_person_id": "p_rahul",
   "amount_minor": 5420000,
   "currency": "INR",
@@ -1253,7 +1413,7 @@ Here Go records the villa Rahul just paid for, split between all five. The reque
 }
 ```
 
-The answer:
+The result:
 
 <!-- schema: AddExpenseResult -->
 ```json
@@ -1264,9 +1424,9 @@ go-server stores the expense with no `added_by_person_id` (Go added it), works o
 
 | Rule | If it fails |
 |---|---|
-| `paid_by_person_id` and every person in `split_person_ids` are in the trip. | `422 invalid` |
-| `booking_id`, if set, is a booking in this trip. | `422 invalid` |
-| `amount_minor` is more than zero. | `422 invalid` |
+| `paid_by_person_id` and every person in `split_person_ids` are in the trip. | `422` `invalid` |
+| `booking_id`, if set, is a booking in this trip. | `422` `invalid` |
+| `amount_minor` is more than zero. | `422` `invalid` |
 
 Good to know:
 - go-server does all the money maths: shares, totals and the fewest transfers. Go reads the result from `money` in the snapshot and never works it out itself.
@@ -1275,25 +1435,26 @@ Good to know:
 
 ## Spend approvals
 
-### `requestSpendApproval`: ask whether a payment may happen
+### `request_spend_approval`: ask whether a payment may happen
 
-`requestSpendApproval` asks go-server whether a payment may happen. go-server runs the spend check, and answers with either a signed, one-use spend approval for the vault or the reason it said no. Go calls it after the payer taps "Yes, book it" on the mandate card and Go has checked the price again, just before it asks the payer to approve the payment.
+`request_spend_approval` asks go-server whether a payment may happen. go-server runs the spend check, and answers with either a signed, one-use spend approval for the vault or the reason it said no. Go sends it after the payer taps "Yes, book it" on the mandate card and Go has checked the price again, just before it asks the payer to approve the payment.
 
-This is where the call sits in a payment:
+This is where the request sits in a payment:
 
 1. A vote closes. Go sets the mandate and posts a mandate card.
 2. The payer taps "Yes, book it". go-server sends `mandate.confirmed`.
-3. Go checks the price again and calls `requestSpendApproval`.
+3. Go checks the price again and sends `request_spend_approval`.
 4. go-server runs the spend check, signs a spend approval that expires within 10 minutes, and answers.
 5. Go posts a pay card for the payer. The payer taps Approve, opens the vault page, and confirms with Face ID. The vault checks the spend approval and pays once.
-6. Go records the booking with the `approval_id` (go-server marks the approval used), records the expense, posts a ticket card, and updates the pay card to paid.
+6. Go records the booking with the `approval_id` (go-server marks the approval used), records the expense, posts a ticket card, and replaces the pay card with its paid version.
 
-The request is `POST /brain/v1/trips/t_goa/spend-approvals`:
+The params are a `RequestSpendApproval`:
 
 <!-- schema: RequestSpendApproval -->
 ```json
 {
   "request_id": "rq_spend_villa_1",
+  "trip_id": "t_goa",
   "decision_id": "d_villa",
   "amount_minor": 5420000,
   "currency": "INR",
@@ -1303,7 +1464,7 @@ The request is `POST /brain/v1/trips/t_goa/spend-approvals`:
 }
 ```
 
-| Field | What it is |
+| Param | What it is |
 |---|---|
 | `decision_id` | The vote this payment is for. |
 | `amount_minor`, `currency` | The most this payment may be, more than zero. The vault refuses a checkout above it. |
@@ -1311,7 +1472,7 @@ The request is `POST /brain/v1/trips/t_goa/spend-approvals`:
 | `purpose` | What the payment is for, as the payer will see it in the vault. |
 | `refundable_until` | When free cancellation ends. Required when the mandate is refundable only. |
 
-#### The approved answer
+#### The approved result
 
 When every check passes, go-server answers with the spend approval:
 
@@ -1327,7 +1488,7 @@ When every check passes, go-server answers with the spend approval:
 
 | Field | What it is |
 |---|---|
-| `approval_id` | The approval's id (the token's `jti`). Go puts it on the pay card and sends it back on `addBooking`. |
+| `approval_id` | The approval's id (the token's `jti`). Go puts it on the pay card and sends it back on `add_booking`. |
 | `approval` | The signed token. go-brain hands it to the vault, which checks it before paying. |
 | `expires_at` | When the approval stops working: the token's `exp`, at most 10 minutes after it was signed. |
 
@@ -1337,11 +1498,11 @@ To make the approval, go-server:
 3. Stores the approval: its id, the trip, the vote, the payer, the amount and currency, when it expires, and that it is neither used nor cancelled yet.
 4. Answers with `approved`.
 
-[Money and the vault](07-money-and-the-vault.md#signing-the-spend-approval) shows the signing code (`signSpendApproval` in TypeScript, `sign_spend_approval` in Python) and what the vault checks. The token above is the one in `packages/contract/test-vectors/spend-approval.json`, so your signing code is right when it produces exactly this token from those claims.
+[Money and the vault](08-money-and-the-vault.md#signing-the-spend-approval) shows the signing code (`signSpendApproval` in TypeScript, `sign_spend_approval` in Python) and what the vault checks. The token above is the one in `packages/contract/test-vectors/spend-approval.json`, so your signing code is right when it produces exactly this token from those claims.
 
-#### The denied answer
+#### The denied result
 
-When a check fails, go-server answers `200` with the reason, and signs nothing:
+When a check fails, go-server answers with a result, not an error, that gives the reason. It signs nothing:
 
 <!-- schema: SpendDenied -->
 ```json
@@ -1364,26 +1525,26 @@ go-server runs the checks in this order and answers with the first one that fail
 
 | Rule | If it fails |
 |---|---|
-| The body matches the contract (for example, `amount_minor` is more than zero). | `422 invalid` |
+| The params match the contract (for example, `amount_minor` is more than zero). | `422` `invalid` |
 
-Every other failed check is a `denied` answer, not an error. What Go tells the room for each reason is in [Money and the vault](07-money-and-the-vault.md#what-go-tells-the-room-for-each-reason).
+Every other failed check is a `denied` result, not an error. What Go tells the room for each reason is in [Money and the vault](08-money-and-the-vault.md#what-go-tells-the-room-for-each-reason).
 
 Good to know:
-- An approval is not a change to the trip, so this call adds no change number and sends no event.
-- A repeat of the same `request_id` gets the same answer, approved or denied, with the same token. After a denial, go-brain uses a new `request_id` when it asks again.
+- An approval is not a change to the trip, so this request adds no change number and sends no event.
+- A repeat of the same `request_id` gets the same result, approved or denied, with the same token. After a denial, go-brain uses a new `request_id` when it asks again.
 - While one approval for a vote is outstanding, asking again is denied with `approval_outstanding`. That clears when the approval is used, cancelled, or expires (at most 10 minutes later).
 - The payer in the token is always the mandate's payer. The request cannot choose who pays.
 - An approval is used once. The vault refuses a second payment with the same `jti`, and go-server marks it used when Go records the booking.
 
-### `cancelSpendApproval`: release an approval Go will not use
+### `cancel_spend_approval`: release an approval Go will not use
 
-`cancelSpendApproval` releases a spend approval Go knows it will not use, so it can never be used and the next request for the same vote is not refused as `approval_outstanding`. Go calls it when the payment failed, when the payer tapped Decline on the pay card, when the price changed and Go has to ask the group again, or when the approval expired before the payer approved.
+`cancel_spend_approval` releases a spend approval Go knows it will not use, so it can never be used and the next request for the same vote is not refused as `approval_outstanding`. Go sends it when the payment failed, when the payer tapped Decline on the pay card, when the price changed and Go has to ask the group again, or when the approval expired before the payer approved.
 
-The request is `POST /brain/v1/trips/t_goa/spend-approvals/ap_01JA7Q3V8Z/cancel`. This is what Go would send if the vault's payment to ixigo had failed:
+This is what Go would send if the vault's payment to ixigo had failed. The params are a `CancelSpendApproval`:
 
 <!-- schema: CancelSpendApproval -->
 ```json
-{ "request_id": "rq_villa_cancel_1", "reason": "payment_failed" }
+{ "request_id": "rq_villa_cancel_1", "trip_id": "t_goa", "approval_id": "ap_01JA7Q3V8Z", "reason": "payment_failed" }
 ```
 
 | `reason` | When Go sends it |
@@ -1394,29 +1555,40 @@ The request is `POST /brain/v1/trips/t_goa/spend-approvals/ap_01JA7Q3V8Z/cancel`
 | `expired` | The approval expired before the payer approved. |
 | `other` | Any other reason Go will not use it. |
 
-The answer:
+The result:
 
 <!-- schema: Ok -->
 ```json
 { "ok": true }
 ```
 
-go-server stores the time on the approval (`cancelled_at`). From then on, a booking that names the approval is refused with `409 conflict`, and the spend check no longer counts it as outstanding.
+go-server stores the time on the approval (`cancelled_at`). From then on, a booking that names the approval is refused with `409` `conflict`, and the spend check no longer counts it as outstanding.
 
 | Rule | If it fails |
 |---|---|
-| The approval exists in this trip. | `404 not_found` |
+| The approval exists in this trip. | `404` `not_found` |
 
 Good to know:
 - Cancelling is not a change to the trip, so it adds no change number and sends no event.
-- Cancelling an approval that is already used, cancelled or expired still answers `{"ok": true}` and changes nothing, so a retry is always safe.
+- Cancelling an approval that is already used, cancelled or expired still answers `{"ok": true}` and changes nothing, so sending it again is always safe.
 - A cancelled approval can never be used again. go-server refuses a booking that names it, and go-brain's vault refuses it too.
 
 ## A minimal go-server
 
-This section shows the smallest go-server that serves two trip API routes correctly: `postMessage` and `openDecision`. Use it as the starting shape for all 16 routes. Each route checks the signature, validates the body with the contract package, does the write once per `request_id`, and in one transaction adds one to the trip's change number, writes the change and writes the event to the outbox. The outbox worker that sends the events is described in [Events](02-events.md).
+This section shows the smallest go-server that answers two of Go's requests correctly: `post_message` and `open_vote`. Use it as the starting shape for all of them. It plugs into the `BrainSocket` client from [The socket](02-the-socket.md#a-complete-client-for-go-server), which go-server keeps connected to go-brain. You give the client a `handlers` table that maps each of Go's methods to a function.
 
-The examples use Postgres: `pg` in TypeScript and `psycopg` in Python. Any database with transactions and unique indexes works. Besides `brain_requests` from [Doing each write once](#doing-each-write-once), the skeleton needs these tables (a real go-server has more columns):
+For every request frame, the client does the same four things:
+
+1. Finds the method's handler. A method with no handler is answered `-32601`.
+2. Checks the params against the method in the contract, with `parseParams(method, params)` in TypeScript or `METHODS[method].params.model_validate(params)` in Python. When they do not match, it answers `422` `invalid` itself and never calls the handler.
+3. Calls the handler with two arguments: `params`, the checked params (in Python, the pydantic model), and `raw`, the frame's params exactly as they arrived. It writes what the handler returns as the `result` of the answer frame, with the request's `id`.
+4. Writes an error frame when the handler throws a `SocketCallError`, with its number in `error.code` and its name in `error.data.code`. Anything else that goes wrong is answered `500` `internal`.
+
+Read and check everything through `params`. Use `raw` only to store a card exactly as Go sent it, because the check drops fields your copy of the contract does not know yet.
+
+Each handler below runs its rules, does the write once per `request_id`, and in one transaction adds one to the trip's change number, writes the change and writes the event to the outbox. The sender that sends those events to go-brain as `send_event` requests is in [Events](03-events.md).
+
+The examples use Postgres: `pg` in TypeScript and `psycopg` in Python. Any database with transactions and unique indexes works. Besides `brain_requests` from [Doing each write once](#doing-each-write-once) and the `outbox` table from [Events](03-events.md), the skeleton needs these tables (a real go-server has more columns):
 
 ```sql
 create table trips (
@@ -1431,18 +1603,20 @@ create table trip_people (
 );
 
 create table messages (
-  message_id text primary key,
-  trip_id    text not null references trips,
-  seq        bigint not null,
-  author     jsonb not null,
-  text       text,
-  card       jsonb,
-  card_id    text,
-  reply_to   text,
-  mentions   text[] not null default '{}',
-  sent_at    timestamptz not null,
+  message_id  text primary key,
+  trip_id     text not null references trips,
+  seq         bigint not null,
+  updated_seq bigint not null,
+  author      jsonb not null,
+  text        text,
+  card        jsonb,
+  card_id     text,
+  reply_to    text,
+  mentions    text[] not null default '{}',
+  sent_at     timestamptz not null,
   unique (trip_id, card_id)
 );
+create index messages_changes on messages (trip_id, updated_seq);
 
 create table decisions (
   decision_id text primary key,
@@ -1455,84 +1629,32 @@ create table decisions (
   closes_at   timestamptz,
   opened_at   timestamptz not null
 );
-
-create table outbox (
-  event_id text primary key,
-  trip_id  text not null references trips,
-  seq      bigint not null,
-  body     jsonb not null,
-  sent_at  timestamptz,
-  unique (trip_id, seq)
-);
 ```
 
 **TypeScript**
 
 ```ts
-// server.ts: a minimal go-server with two trip API routes. Run it with: npx tsx server.ts
+// brain.ts: the one socket go-server keeps open to go-brain, answering two of Go's requests.
 import { randomUUID } from 'node:crypto';
-import Fastify from 'fastify';
 import type pg from 'pg';
 import type { z } from 'zod';
-import {
-  Event, HTTP_STATUS_FOR, OpenDecision, PostMessage, SIGNATURE_HEADER, verifyRequest, type EventType,
-} from '@go/contract';
+import { Event, SOCKET_ERROR_CODES, SOCKET_PATH, type EventType, type OpenDecision, type PostMessage } from '@go/contract';
+import { BrainSocket, SocketCallError } from './brain-socket.js';
 import { once } from './once.js';
 
-type Code = keyof typeof HTTP_STATUS_FOR;
+type Code = 'not_found' | 'invalid' | 'conflict';
 
-class ContractError extends Error {
-  constructor(readonly code: Code, message: string) {
-    super(message);
-  }
-}
-
-const SECRET = process.env.GO_SIGNING_SECRET!;
-const app = Fastify({ logger: true });
-
-// Keep the raw body and check the signature before anything else, as in Basics.
-app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
-  (req as { rawBody?: string }).rawBody = body as string;
-  try {
-    done(null, body === '' ? {} : JSON.parse(body as string));
-  } catch {
-    done(new ContractError('invalid', 'the body is not JSON'), undefined);
-  }
-});
-
-app.addHook('preHandler', async (req) => {
-  const check = verifyRequest(
-    { method: req.method, target: req.url, body: (req as { rawBody?: string }).rawBody ?? '' },
-    req.headers[SIGNATURE_HEADER] as string | undefined,
-    SECRET,
-  );
-  if (!check.ok) throw new ContractError('bad_signature', `signature ${check.reason}`);
-});
-
-app.setErrorHandler((err, req, reply) => {
-  if (err instanceof ContractError) {
-    return reply.code(HTTP_STATUS_FOR[err.code]).send({ error: { code: err.code, message: err.message } });
-  }
-  req.log.error(err);
-  return reply.code(500).send({ error: { code: 'internal', message: 'go-server failed, try again' } });
-});
-
-/** Checks a body against the contract. A mismatch is 422 invalid, naming the field. */
-function parse<S extends z.ZodType>(schema: S, body: unknown): z.infer<S> {
-  const result = schema.safeParse(body);
-  if (result.success) return result.data;
-  const issue = result.error.issues[0]!;
-  throw new ContractError('invalid', `${issue.path.join('.') || 'body'}: ${issue.message}`.slice(0, 500));
-}
+/** The error Go gets: the number goes in error.code and the name in error.data.code. */
+const fail = (code: Code, message: string) => new SocketCallError(SOCKET_ERROR_CODES[code], message.slice(0, 500), code);
 
 /** Adds one to the trip's change number. The update also locks the trip's row until commit. */
 async function nextSeq(db: pg.PoolClient, tripId: string): Promise<number> {
   const r = await db.query('update trips set seq = seq + 1 where trip_id = $1 returning seq', [tripId]);
-  if (r.rows.length === 0) throw new ContractError('not_found', `trip ${tripId} does not exist`);
+  if (r.rows.length === 0) throw fail('not_found', `trip ${tripId} does not exist`);
   return Number(r.rows[0].seq);
 }
 
-/** Writes the change's event to the outbox in the same transaction. The outbox worker sends it after commit. */
+/** Writes the change's event to the outbox in the same transaction. The sender sends it after commit. */
 async function addEvent(db: pg.PoolClient, tripId: string, seq: number, type: EventType, data: object): Promise<void> {
   const event = { event_id: `ev_${randomUUID()}`, trip_id: tripId, seq, occurred_at: new Date().toISOString(), type, data };
   Event.parse(event); // never send an event that breaks the contract
@@ -1543,225 +1665,203 @@ async function mustBeInTrip(db: pg.PoolClient, tripId: string, field: string, pe
   const r = await db.query('select person_id from trip_people where trip_id = $1 and person_id = any($2)', [tripId, personIds]);
   const inTrip = new Set(r.rows.map((row) => row.person_id as string));
   const stranger = personIds.find((id) => !inTrip.has(id));
-  if (stranger) throw new ContractError('invalid', `${field}: ${stranger} is not in this trip`);
+  if (stranger) throw fail('invalid', `${field}: ${stranger} is not in this trip`);
 }
 
-// postMessage: Go says something in the room.
-app.post<{ Params: { trip_id: string } }>('/brain/v1/trips/:trip_id/messages', async (req) => {
-  const tripId = req.params.trip_id;
-  const body = parse(PostMessage, req.body);
-  // Store the card exactly as it arrived, so fields added later in version 1 still reach the app.
-  const card = (req.body as { card?: { card_id: string } | null }).card ?? null;
-  return once(tripId, body.request_id, async (db) => {
-    const seq = await nextSeq(db, tripId);
-    await mustBeInTrip(db, tripId, 'mentions', body.mentions ?? []);
+// post_message: Go says something in the room. The client has already checked p against PostMessage.
+async function postMessage(p: z.infer<typeof PostMessage>, raw: Record<string, unknown>) {
+  // Store the card exactly as Go sent it, so a card field added later in version 1 reaches the app.
+  const card = (raw.card ?? null) as { card_id: string } | null;
+  return once(p.trip_id, p.request_id, async (db) => {
+    const seq = await nextSeq(db, p.trip_id);
+    await mustBeInTrip(db, p.trip_id, 'mentions', p.mentions ?? []);
     if (card) {
-      const taken = await db.query('select 1 from messages where trip_id = $1 and card_id = $2', [tripId, card.card_id]);
-      if (taken.rows.length > 0) throw new ContractError('conflict', `card ${card.card_id} is already in the room, use PUT`);
+      const taken = await db.query('select 1 from messages where trip_id = $1 and card_id = $2', [p.trip_id, card.card_id]);
+      if (taken.rows.length > 0) throw fail('conflict', `card ${card.card_id} is already in the room, use replace_card`);
     }
-    // A full server also checks reply_to and a record card's id here (see the postMessage rules).
+    // A full server also checks reply_to and a record card's id here (see the post_message rules).
     const message = {
-      message_id: `m_${randomUUID()}`, seq, author: { kind: 'go' }, text: body.text ?? null, attachments: [],
-      reply_to: body.reply_to ?? null, mentions_go: false, mentions: body.mentions ?? [], reactions: [],
+      message_id: `m_${randomUUID()}`, seq, updated_seq: seq, author: { kind: 'go' }, text: p.text ?? null,
+      attachments: [], reply_to: p.reply_to ?? null, mentions_go: false, mentions: p.mentions ?? [], reactions: [],
       card, withheld: false, deleted: false, sent_at: new Date().toISOString(),
     };
     await db.query(
-      `insert into messages (message_id, trip_id, seq, author, text, card, card_id, reply_to, mentions, sent_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [message.message_id, tripId, seq, message.author, message.text, card, card?.card_id ?? null,
+      `insert into messages (message_id, trip_id, seq, updated_seq, author, text, card, card_id, reply_to, mentions, sent_at)
+       values ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [message.message_id, p.trip_id, seq, message.author, message.text, card, card?.card_id ?? null,
         message.reply_to, message.mentions, message.sent_at],
     );
-    await addEvent(db, tripId, seq, 'message.created', { message });
+    await addEvent(db, p.trip_id, seq, 'message.created', { message });
     return { message_id: message.message_id, seq };
   });
-});
+}
 
-// openDecision: open a vote.
-app.post<{ Params: { trip_id: string } }>('/brain/v1/trips/:trip_id/decisions', async (req) => {
-  const tripId = req.params.trip_id;
-  const body = parse(OpenDecision, req.body);
-  return once(tripId, body.request_id, async (db) => {
-    const seq = await nextSeq(db, tripId);
-    if (body.closes_at && Date.parse(body.closes_at) <= Date.now()) {
-      throw new ContractError('invalid', 'closes_at: must be in the future');
-    }
-    const people = await db.query('select count(*)::int as n from trip_people where trip_id = $1', [tripId]);
+// open_vote: open a vote. The client has already checked p against OpenDecision. It needs nothing from raw.
+async function openVote(p: z.infer<typeof OpenDecision>) {
+  return once(p.trip_id, p.request_id, async (db) => {
+    const seq = await nextSeq(db, p.trip_id);
+    if (p.closes_at && Date.parse(p.closes_at) <= Date.now()) throw fail('invalid', 'closes_at: must be in the future');
+    const people = await db.query('select count(*)::int as n from trip_people where trip_id = $1', [p.trip_id]);
     const decision = {
-      decision_id: `d_${randomUUID()}`, question: body.question, kind: body.kind, anonymous: body.anonymous,
-      status: 'open', options: body.options, closes_at: body.closes_at ?? null, voted: 0, of: people.rows[0].n,
-      tally: body.options.map(() => 0), opened_at: new Date().toISOString(),
+      decision_id: `d_${randomUUID()}`, question: p.question, kind: p.kind, anonymous: p.anonymous,
+      status: 'open', options: p.options, closes_at: p.closes_at ?? null, voted: 0, of: people.rows[0].n,
+      tally: p.options.map(() => 0), opened_at: new Date().toISOString(),
     };
     await db.query(
       `insert into decisions (decision_id, trip_id, question, kind, anonymous, status, options, closes_at, opened_at)
        values ($1, $2, $3, $4, $5, 'open', $6, $7, $8)`,
       // JSON.stringify, because pg would send a JavaScript array as a Postgres array.
-      [decision.decision_id, tripId, body.question, body.kind, body.anonymous, JSON.stringify(body.options),
+      [decision.decision_id, p.trip_id, p.question, p.kind, p.anonymous, JSON.stringify(p.options),
         decision.closes_at, decision.opened_at],
     );
-    await addEvent(db, tripId, seq, 'decision.opened', { decision, by: { kind: 'go' } });
+    await addEvent(db, p.trip_id, seq, 'decision.opened', { decision, by: { kind: 'go' } });
     return { decision_id: decision.decision_id, seq };
   });
-});
+}
 
-await app.listen({ host: '0.0.0.0', port: Number(process.env.PORT ?? 3000) });
+export const brain = new BrainSocket({
+  url: process.env.BRAIN_URL!.replace(/^http/, 'ws') + SOCKET_PATH, // wss://brain.go.example/v1/socket
+  secret: process.env.GO_SIGNING_SECRET!,
+  handlers: { post_message: postMessage, open_vote: openVote },
+});
+brain.start();
 ```
 
 **Python**
 
 ```python
-# server.py: a minimal go-server with two trip API routes. Run it with: uvicorn server:app
-import json
+# brain.py: the one socket go-server keeps open to go-brain, answering two of Go's requests.
 import os
 from datetime import datetime, timezone
-from typing import TypeVar
 from uuid import uuid4
 
 import psycopg
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
-from go_contract import SIGNATURE_HEADER, models, verify_request
+from go_contract import models
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ValidationError
 
+from brain_socket import BrainSocket, SocketCallError
 from once import once
 
-SECRET = os.environ["GO_SIGNING_SECRET"]
-M = TypeVar("M", bound=BaseModel)
+CODES = {"not_found": 404, "invalid": 422, "conflict": 409}
 
 
-class ContractError(Exception):
-    def __init__(self, status: int, code: str, message: str):
-        self.status, self.code, self.message = status, code, message
-
-
-async def signed(request: Request) -> bytes:
-    """Checks the signature before anything else, as in Basics, and gives the route the raw body."""
-    body = await request.body()
-    target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-    check = verify_request(request.method, target, body, request.headers.get(SIGNATURE_HEADER), SECRET)
-    if not check.ok:
-        raise ContractError(401, "bad_signature", f"signature {check.reason}")
-    return body
-
-
-app = FastAPI(dependencies=[Depends(signed)])
-
-
-@app.exception_handler(ContractError)
-async def contract_error(_: Request, exc: ContractError) -> JSONResponse:
-    return JSONResponse({"error": {"code": exc.code, "message": exc.message}}, status_code=exc.status)
-
-
-def parse(model: type[M], raw: bytes) -> M:
-    """Checks a body against the contract. A mismatch is 422 invalid, naming the field."""
-    try:
-        return model.model_validate_json(raw)
-    except ValidationError as e:
-        first = e.errors()[0]
-        where = ".".join(str(p) for p in first["loc"]) or "body"
-        raise ContractError(422, "invalid", f"{where}: {first['msg']}"[:500]) from None
+def fail(code: str, message: str) -> SocketCallError:
+    """The error Go gets: the number goes in error.code and the name in error.data.code."""
+    return SocketCallError(CODES[code], message[:500], code)
 
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def next_seq(conn: psycopg.Connection, trip_id: str) -> int:
+async def next_seq(conn: psycopg.AsyncConnection, trip_id: str) -> int:
     """Adds one to the trip's change number. The update also locks the trip's row until commit."""
-    row = conn.execute("update trips set seq = seq + 1 where trip_id = %s returning seq", (trip_id,)).fetchone()
+    cur = await conn.execute("update trips set seq = seq + 1 where trip_id = %s returning seq", (trip_id,))
+    row = await cur.fetchone()
     if row is None:
-        raise ContractError(404, "not_found", f"trip {trip_id} does not exist")
+        raise fail("not_found", f"trip {trip_id} does not exist")
     return row[0]
 
 
-def add_event(conn: psycopg.Connection, trip_id: str, seq: int, type_: str, data: dict) -> None:
-    """Writes the change's event to the outbox in the same transaction. The outbox worker sends it after commit."""
+async def add_event(conn: psycopg.AsyncConnection, trip_id: str, seq: int, type_: str, data: dict) -> None:
+    """Writes the change's event to the outbox in the same transaction. The sender sends it after commit."""
     event = {"event_id": f"ev_{uuid4().hex}", "trip_id": trip_id, "seq": seq, "occurred_at": now(), "type": type_, "data": data}
     models.Event.model_validate(event)  # never send an event that breaks the contract
-    conn.execute(
+    await conn.execute(
         "insert into outbox (event_id, trip_id, seq, body) values (%s, %s, %s, %s)",
         (event["event_id"], trip_id, seq, Jsonb(event)),
     )
 
 
-def must_be_in_trip(conn: psycopg.Connection, trip_id: str, field: str, person_ids: list[str]) -> None:
-    rows = conn.execute(
+async def must_be_in_trip(conn: psycopg.AsyncConnection, trip_id: str, field: str, person_ids: list[str]) -> None:
+    cur = await conn.execute(
         "select person_id from trip_people where trip_id = %s and person_id = any(%s)", (trip_id, person_ids)
-    ).fetchall()
-    in_trip = {r[0] for r in rows}
+    )
+    in_trip = {r[0] for r in await cur.fetchall()}
     stranger = next((p for p in person_ids if p not in in_trip), None)
     if stranger:
-        raise ContractError(422, "invalid", f"{field}: {stranger} is not in this trip")
+        raise fail("invalid", f"{field}: {stranger} is not in this trip")
 
 
-@app.post("/brain/v1/trips/{trip_id}/messages")
-def post_message(trip_id: str, raw: bytes = Depends(signed)) -> dict:
-    """postMessage: Go says something in the room."""
-    body = parse(models.PostMessage, raw)
-    if body.text is None and body.card is None:  # the Python model does not check this rule by itself
-        raise ContractError(422, "invalid", "a message needs text, a card, or both")
-    # Store the card exactly as it arrived, so fields added later in version 1 still reach the app.
-    card = json.loads(raw).get("card")
+async def post_message(p: models.PostMessage, raw: dict) -> dict:
+    """post_message: Go says something in the room. The client has already checked p."""
+    if p.text is None and p.card is None:  # the Python model does not check this rule by itself
+        raise fail("invalid", "a message needs text, a card, or both")
+    # Store the card exactly as Go sent it, so a card field added later in version 1 reaches the app.
+    card = raw.get("card")
 
-    def work(conn: psycopg.Connection) -> dict:
-        seq = next_seq(conn, trip_id)
-        must_be_in_trip(conn, trip_id, "mentions", body.mentions or [])
-        if card and conn.execute(
-            "select 1 from messages where trip_id = %s and card_id = %s", (trip_id, card["card_id"])
-        ).fetchone():
-            raise ContractError(409, "conflict", f"card {card['card_id']} is already in the room, use PUT")
-        # A full server also checks reply_to and a record card's id here (see the postMessage rules).
+    async def work(conn: psycopg.AsyncConnection) -> dict:
+        seq = await next_seq(conn, p.trip_id)
+        await must_be_in_trip(conn, p.trip_id, "mentions", p.mentions or [])
+        if card:
+            cur = await conn.execute(
+                "select 1 from messages where trip_id = %s and card_id = %s", (p.trip_id, card["card_id"])
+            )
+            if await cur.fetchone():
+                raise fail("conflict", f"card {card['card_id']} is already in the room, use replace_card")
+        # A full server also checks reply_to and a record card's id here (see the post_message rules).
         message = {
-            "message_id": f"m_{uuid4().hex}", "seq": seq, "author": {"kind": "go"}, "text": body.text,
-            "attachments": [], "reply_to": body.reply_to, "mentions_go": False, "mentions": body.mentions or [],
-            "reactions": [], "card": card, "withheld": False, "deleted": False, "sent_at": now(),
+            "message_id": f"m_{uuid4().hex}", "seq": seq, "updated_seq": seq, "author": {"kind": "go"},
+            "text": p.text, "attachments": [], "reply_to": p.reply_to, "mentions_go": False,
+            "mentions": p.mentions or [], "reactions": [], "card": card, "withheld": False, "deleted": False,
+            "sent_at": now(),
         }
-        conn.execute(
-            "insert into messages (message_id, trip_id, seq, author, text, card, card_id, reply_to, mentions, sent_at)"
-            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (message["message_id"], trip_id, seq, Jsonb(message["author"]), body.text,
-             Jsonb(card) if card else None, card["card_id"] if card else None, body.reply_to,
+        await conn.execute(
+            "insert into messages (message_id, trip_id, seq, updated_seq, author, text, card, card_id, reply_to,"
+            " mentions, sent_at) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (message["message_id"], p.trip_id, seq, seq, Jsonb(message["author"]), p.text,
+             Jsonb(card) if card else None, card["card_id"] if card else None, p.reply_to,
              message["mentions"], message["sent_at"]),
         )
-        add_event(conn, trip_id, seq, "message.created", {"message": message})
+        await add_event(conn, p.trip_id, seq, "message.created", {"message": message})
         return {"message_id": message["message_id"], "seq": seq}
 
-    return once(trip_id, body.request_id, work)
+    return await once(p.trip_id, p.request_id, work)
 
 
-@app.post("/brain/v1/trips/{trip_id}/decisions")
-def open_decision(trip_id: str, raw: bytes = Depends(signed)) -> dict:
-    """openDecision: open a vote."""
-    body = parse(models.OpenDecision, raw)
+async def open_vote(p: models.OpenDecision, raw: dict) -> dict:
+    """open_vote: open a vote. The client has already checked p. It needs nothing from raw."""
 
-    def work(conn: psycopg.Connection) -> dict:
-        seq = next_seq(conn, trip_id)
-        if body.closes_at and body.closes_at <= datetime.now(timezone.utc):
-            raise ContractError(422, "invalid", "closes_at: must be in the future")
-        (people,) = conn.execute("select count(*) from trip_people where trip_id = %s", (trip_id,)).fetchone()
-        options = [o.model_dump(mode="json", exclude_none=True) for o in body.options]
+    async def work(conn: psycopg.AsyncConnection) -> dict:
+        seq = await next_seq(conn, p.trip_id)
+        if p.closes_at and p.closes_at <= datetime.now(timezone.utc):
+            raise fail("invalid", "closes_at: must be in the future")
+        cur = await conn.execute("select count(*) from trip_people where trip_id = %s", (p.trip_id,))
+        (people,) = await cur.fetchone()
+        options = [o.model_dump(mode="json", exclude_none=True) for o in p.options]
         decision = {
-            "decision_id": f"d_{uuid4().hex}", "question": body.question, "kind": body.kind,
-            "anonymous": body.anonymous, "status": "open", "options": options,
-            "closes_at": body.closes_at.isoformat() if body.closes_at else None,
+            "decision_id": f"d_{uuid4().hex}", "question": p.question, "kind": p.kind,
+            "anonymous": p.anonymous, "status": "open", "options": options,
+            "closes_at": p.closes_at.isoformat() if p.closes_at else None,
             "voted": 0, "of": people, "tally": [0] * len(options), "opened_at": now(),
         }
-        conn.execute(
-            "insert into decisions (decision_id, trip_id, question, kind, anonymous, status, options, closes_at, opened_at)"
-            " values (%s, %s, %s, %s, %s, 'open', %s, %s, %s)",
-            (decision["decision_id"], trip_id, body.question, body.kind, body.anonymous, Jsonb(options),
-             body.closes_at, decision["opened_at"]),
+        await conn.execute(
+            "insert into decisions (decision_id, trip_id, question, kind, anonymous, status, options, closes_at,"
+            " opened_at) values (%s, %s, %s, %s, %s, 'open', %s, %s, %s)",
+            (decision["decision_id"], p.trip_id, p.question, p.kind, p.anonymous, Jsonb(options),
+             p.closes_at, decision["opened_at"]),
         )
-        add_event(conn, trip_id, seq, "decision.opened", {"decision": decision, "by": {"kind": "go"}})
+        await add_event(conn, p.trip_id, seq, "decision.opened", {"decision": decision, "by": {"kind": "go"}})
         return {"decision_id": decision["decision_id"], "seq": seq}
 
-    return once(trip_id, body.request_id, work)
+    return await once(p.trip_id, p.request_id, work)
+
+
+brain = BrainSocket(
+    os.environ["BRAIN_URL"].replace("http", "ws", 1) + "/v1/socket",  # wss://brain.go.example/v1/socket
+    os.environ["GO_SIGNING_SECRET"],
+    {"post_message": post_message, "open_vote": open_vote},
+)
+
+# At startup: asyncio.create_task(brain.run())
 ```
 
-FastAPI runs a dependency once per request, so `Depends(signed)` in a route gets the same bytes the signature check read.
+For the `post_message` request in [A request and its answer](#a-request-and-its-answer), the client calls `post_message` with the checked params and the raw params, and writes back `{"jsonrpc": "2.0", "id": "go_2251", "result": {"message_id": "m_0158", "seq": 73}}`. When a handler throws `fail('conflict', ...)`, the client writes the error frame instead, with `"code": 409` and `"data": {"code": "conflict"}`. When the same request arrives again after a reconnect, `once` returns the first answer and the client sends it with the repeated `id`.
 
 Good to know:
 - Add one to `seq` first in every write. The update locks the trip's row until the transaction commits, so every rule checked after it sees a trip nobody else is changing, and one trip's changes commit in `seq` order.
 - If any rule fails, the error rolls back the whole transaction: the change, the new `seq`, the event and the stored answer.
-- The other 14 routes have the same shape: parse the body, `once`, add one to `seq`, check the rules, write the change, write the event, answer.
+- The other writes have the same shape: run the rules, `once`, add one to `seq`, write the change, write the event, return the result. The two reads need no `once` and no change number. The `typing` handler shows or hides the indicator and returns nothing, because a notification gets no answer.
+- The card is stored from `raw.card`, exactly as Go sent it, because the checked `params` leave out any field your copy of the contract does not know yet. A card field Go adds later in version 1 then reaches the app with no go-server update. Everything else, including every rule, reads `params`.
 - Send pushes and the live update to the app after the transaction commits, from the committed rows (the outbox is a good place), so a repeated request never pushes twice.
+- Keep the handlers quick. go-brain waits at most 2 seconds for each answer, and someone in the room is usually waiting too.

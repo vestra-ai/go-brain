@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /**
- * Every request between go-server and go-brain carries this header, in both directions:
+ * go-server signs the request that opens the socket to go-brain (GET /v1/socket) with this header.
+ * Everything after that travels on the open socket and is not signed again.
  *
  *   x-go-signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, signing string)>
  *
@@ -9,12 +10,12 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  *
  *   <t>\n<METHOD>\n<target>\n<raw body>
  *
- * - METHOD is upper case (GET, POST, PATCH, PUT, DELETE).
- * - target is the path plus the query string exactly as sent, e.g. /brain/v1/trips/t_1/messages?after_seq=40
- * - raw body is the exact bytes sent, or nothing for a request without a body.
+ * - METHOD is upper case: GET for the socket.
+ * - target is the path plus the query string exactly as sent, e.g. /v1/socket or /v1/socket?instance=go-server-1
+ * - raw body is the exact bytes sent, or nothing for a request without a body (the socket has none).
  *
- * Covering the method and path means a signature made for one route cannot be replayed on another.
- * Both sides share one secret, GO_SIGNING_SECRET.
+ * The signature is good for 300 seconds, and go-brain accepts each one once: a second upgrade with
+ * the same t and v1 is refused. Both sides share one secret, GO_SIGNING_SECRET.
  */
 export const SIGNATURE_HEADER = 'x-go-signature';
 export const MAX_SKEW_SECONDS = 300;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { Card, Event, Message, PostMessage, SOCKET_METHODS, SpendApprovalResult, TripSnapshot, parseParams } from '../index.js';
+import { Card, Event, Message, PostMessage, SOCKET_METHODS, SocketError, SpendApprovalResult, TripSnapshot, parseParams } from '../index.js';
+import { readFileSync } from 'node:fs';
 
 const at = '2026-10-05T07:00:00Z';
 
@@ -46,5 +47,21 @@ describe('contract schemas', () => {
       options: [{ label: 'A' }, { label: 'B' }] }).ok).toBe(true);
     expect(parseParams('open_vote', { trip_id: 't' })).toMatchObject({ ok: false, code: 422 });
     expect(parseParams('launch_rockets', {})).toMatchObject({ ok: false, code: -32601 });
+  });
+  it('a card tap carries its own id, so a resent or doubled tap is done once', () => {
+    const tap = { trip_id: 't', card_id: 'c', action_id: 'yes_book', person_id: 'p' };
+    expect(parseParams('card_tap', tap)).toMatchObject({ ok: false, code: 422 });
+    expect(parseParams('card_tap', { ...tap, tap_id: 'tap_1' }).ok).toBe(true);
+  });
+  it('a 429 can say how long to wait', () => {
+    const busy = { jsonrpc: '2.0', id: 'gs_1', error: { code: 429, message: 'slow down', data: { code: 'rate_limited', retry_after_seconds: 5 } } };
+    expect(SocketError.safeParse(busy).success).toBe(true);
+    expect(SocketError.safeParse({ ...busy, error: { ...busy.error, data: { code: 'rate_limited', retry_after_seconds: 0 } } }).success).toBe(false);
+  });
+  it('the emitted frame schemas keep their id property, so the Python models can read it', () => {
+    const doc = JSON.parse(readFileSync(new URL('../../openapi/go-brain.json', import.meta.url), 'utf8'));
+    for (const name of ['SocketRequest', 'SocketResult', 'SocketError']) {
+      expect(doc.components.schemas[name].properties.id, name).toBeTruthy();
+    }
   });
 });

@@ -17,6 +17,8 @@ export const EventAccepted = z
 /** Someone tapped a button on a Go card. */
 export const CardTap = z
   .object({
+    /** go-server's id for this tap. Go acts on each tap once, even if it arrives twice (a resend after a reconnect, or a double tap). */
+    tap_id: Id,
     trip_id: Id,
     card_id: Id,
     action_id: z.string().regex(/^[a-z][a-z_]{0,31}$/),

@@ -11,50 +11,66 @@ pnpm install                                   # the TypeScript contract (@go/co
 pip install -e 'packages/contract-py[dev]'     # the Python contract (go_contract)
 ```
 
-From your own repo, use the packages as described in [the guide's front page](README.md#using-the-contract-from-your-code).
+From your own repo, use the packages as described in [the guide's front page](README.md#using-the-contract-from-your-code). For the socket, go-server also needs a WebSocket client: `ws` in TypeScript, or `websockets` (14 or later) in Python.
 
 ## Prove your signing code first
 
-Signing is the one thing both sides must get exactly right, so check it before anything else. `packages/contract/test-vectors/signing.json` holds a secret, a time and three requests with the exact header each must produce. `packages/contract/test-vectors/spend-approval.json` holds a test Ed25519 key, a set of claims and the exact token they must produce. If you use the helpers in `@go/contract` or `go_contract`, they already pass both files in CI. If you write your own, make it reproduce every value in them first.
+The signature that opens the socket is the one thing both sides must get exactly right, so check it before anything else. Two files hold the values every implementation must reproduce:
 
-**TypeScript**
+- `packages/contract/test-vectors/signing.json` holds a secret, a time and three requests, including opening the socket (`GET /v1/socket`), with the exact `x-go-signature` header each must produce. [Proving your signing code](02-the-socket.md#proving-your-signing-code) has the script that checks it, in TypeScript and Python.
+- `packages/contract/test-vectors/spend-approval.json` holds a test Ed25519 key, a set of claims and the exact spend approval token they must produce. [Money and the vault](08-money-and-the-vault.md) explains it.
 
-```ts
-import { readFileSync } from 'node:fs';
-import { signRequest } from '@go/contract';
+If you use the helpers in `@go/contract` or `go_contract`, they already pass both files in CI. If you write your own, make it reproduce every value in them first.
 
-const v = JSON.parse(readFileSync('packages/contract/test-vectors/signing.json', 'utf8'));
-for (const c of v.cases) {
-  console.log(signRequest(c, v.secret, v.t) === c.header ? 'ok  ' : 'FAIL', c.name);
-}
-```
+## Connect by hand
 
-**Python**
+You can open the socket from a terminal to see it work before you write go-server's client. The signature has to be made by code, so make it with the Python helper.
+
+This short Python script opens the socket, prints every frame go-brain sends, and sends one request (it asks for what Go knows about Kabir):
 
 ```python
+# connect.py: open the socket by hand. Run it with: python connect.py
+import asyncio
 import json
+import os
 
-from go_contract import sign_request
+import websockets
+from go_contract import SIGNATURE_HEADER, sign_request
 
-v = json.load(open("packages/contract/test-vectors/signing.json"))
-for c in v["cases"]:
-    ok = sign_request(c["method"], c["target"], c["body"], v["secret"], now=v["t"]) == c["header"]
-    print("ok  " if ok else "FAIL", c["name"])
+URL = os.environ["BRAIN_URL"].replace("http", "ws", 1) + "/v1/socket"
+
+
+async def main() -> None:
+    signature = sign_request("GET", "/v1/socket", b"", os.environ["GO_SIGNING_SECRET"])
+    async with websockets.connect(URL, additional_headers={SIGNATURE_HEADER: signature}) as ws:
+        print("connected")
+        await ws.send(json.dumps({"jsonrpc": "2.0", "id": "gs_hand_1", "method": "get_person", "params": {"person_id": "p_kabir"}}))
+        async for frame in ws:
+            print(frame)
+
+
+asyncio.run(main())
 ```
 
-## Send a signed request by hand
-
-`curl` cannot make the signature by itself, so make it with the Python helper and pass it in. This posts a message as Go into a trip on go-server:
+Or use [`wscat`](https://www.npmjs.com/package/wscat) and type frames yourself. Make the header with the Python helper and pass it in:
 
 ```bash
 export GO_SIGNING_SECRET=...   # from your environment, never pasted into chat
-BODY='{"request_id":"rq_hand_1","text":"Hello from Go"}'
-TARGET=/brain/v1/trips/t_goa/messages
-SIG=$(python -c 'import os, sys; from go_contract import sign_request; print(sign_request("POST", sys.argv[1], sys.argv[2], os.environ["GO_SIGNING_SECRET"]))' "$TARGET" "$BODY")
-curl -sS -X POST "$GO_SERVER_URL$TARGET" -H 'content-type: application/json' -H "x-go-signature: $SIG" --data-raw "$BODY"
+SIG=$(python -c 'import os; from go_contract import sign_request; print(sign_request("GET", "/v1/socket", b"", os.environ["GO_SIGNING_SECRET"]))')
+npx wscat -c "wss://brain.go.example/v1/socket" -H "x-go-signature: $SIG"
 ```
 
-To receive events on your laptop, expose your local server with a tunnel (`cloudflared tunnel --url http://localhost:3000` or `ngrok http 3000`) and give that URL to whoever runs the other side.
+Once it says `Connected`, paste a request on one line, such as:
+
+```
+{"jsonrpc":"2.0","id":"gs_hand_2","method":"get_person","params":{"person_id":"p_kabir"}}
+```
+
+Good to know:
+- go-brain accepts each signature once, so make a new one (run the `SIG=` line again) every time you connect.
+- `401` means the secret or your clock is wrong, or the signature was used before.
+- If you leave the socket idle, go-brain's pings keep it open. Both scripts answer pings by themselves.
+- A go-server on your laptop needs no tunnel: it dials out to go-brain, and go-brain never calls it.
 
 ## Check your examples
 
@@ -64,32 +80,47 @@ If you add or change a JSON example in this guide, mark it with `<!-- schema: Na
 pnpm --filter @go/contract check-docs
 ```
 
-It checks every marked example against the contract and lists any event, card, request or response that has no example yet. CI runs the same check in TypeScript and loads every example into the Python models too.
+It checks every marked example against the contract and lists any event, card, method params, method result or frame that has no example yet. CI runs the same check in TypeScript and loads every example into the Python models too.
 
 ## Work without the other side
 
-- **The fake go-brain.** The Vestra team is building a small fake go-brain next, so go-server and the app can be built before the real one is ready. It will check signatures, accept every event, answer card actions, catch-up and people-page calls with fixed answers, and post a Go reply with one card of every kind back to your trip API when someone mentions Go. Until it is up, go-server can test its outgoing calls against `GET /v1/health` and the examples in this guide.
-- **A fake go-server for go-brain.** go-brain is tested against a small fake trip API that serves the Goa trip from [the trip API page](03-trip-api.md) and records every write.
+Each team can build and test its part before the other part is ready, against a fake of the other side that speaks the same socket.
+
+- **The fake go-brain.** The Vestra team is building a small fake go-brain next, so go-server and the app can be built before the real one is ready. It speaks the same socket as the real one:
+  - It checks the signature on the upgrade and pings every 20 seconds.
+  - It answers every `send_event` with `{ "accepted": true, "duplicate": false }`, and with `"duplicate": true` for an `event_id` it has seen.
+  - When a `message.created` event mentions Go, it sends a `typing` notification, sends `read_trip`, adds a ✅ to the message with `add_reaction`, and then sends `post_message` with a reply and one of Go's own cards (`options`, `working`, `call`, `pay` or `notice`), a different kind each time.
+  - It answers `card_tap`, `catch_up`, the people requests and `vault_link` with fixed answers.
+
+  Until it is up, go-server can test its signing code with the test vectors, and its answers to Go's requests with the examples in this guide.
+- **The fake go-server.** go-brain is tested against a small fake go-server that opens the socket, sends the Goa trip's events, answers Go's requests from the Goa trip in [Go's requests](04-gos-requests.md), and records every write.
 
 ## What done means
 
-**go-server**
-- Checks `x-go-signature` on every `/brain/v1` route and answers `401 bad_signature` when it fails.
-- Sends an event for every change to a trip, from an outbox, in change-number order per trip, with the retry schedule in [Basics](01-basics.md#time-limits-and-retries).
-- Serves all 16 trip API routes, each doing its write once per `request_id`.
+**go-server (Nishanth's team)**
+- Opens one socket to go-brain with a fresh signature on every connect (each instance with its own `?instance=` name), keeps it open, and reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds.
+- Sends an event for every change to a trip with `send_event`, from an outbox, in change-number order per trip, waiting for each answer, with the retry schedule in [Basics](01-basics.md#time-limits-and-retries).
+- Answers all of Go's requests in [Go's requests](04-gos-requests.md) within 2 seconds, checks their params, does each write once per `request_id`, answers `-32601` for a method it does not handle, and shows or hides "Go is typing..." for the `typing` notification. Sends `read_messages` pages under the 1 MB frame limit, with `has_more: true` when it sent fewer.
+- Sends an unanswered request again after reconnecting, with the same JSON-RPC `id`.
+- Lets any of its instances answer any of Go's requests, from the shared database.
+- Forwards everyone's typing to go-brain as `person_typing`: "on" again every 5 seconds while they type, "off" when they stop or send.
 - Runs the spend check and signs spend approvals that verify against go-brain's public key. Its code reproduces the token in the test vector.
-- Forwards card taps, catch-up, people pages and "forget me" to go-brain, and never lets the app call go-brain directly.
-- Sends pushes only in the cases listed in [The app](06-the-app.md).
+- Sends card taps (each with its own `tap_id`), catch-up, people pages, "forget me" and vault links to go-brain on the socket, and never lets the app talk to go-brain except to open go-brain pages.
+- Sends pushes only in the cases listed in [The app](07-the-app.md).
 
-**go-app**
+**go-app (Saket's team)**
 - Draws all 13 card kinds, and shows `fallback_text` for any kind it does not know.
-- Shows "Go is typing...", Go's messages as Go (never as a person), and the "needs you" strip.
+- Shows "Go is typing...", Go's messages as Go (never as a person), Go's reactions on messages, and the "needs you" strip.
+- Tells go-server when the person starts and stops typing, so go-server can pass it on to Go.
 - Opens go-brain pages in the system browser sheet, never in a WebView.
 - Lets people pause Go, see what Go knows about them, and ask Go to forget them.
 
 **go-brain (the Vestra team)**
-- Answers every event with `202` within 2 seconds, ignores repeats, and catches up after a gap in change numbers.
-- Answers card actions and catch-up within 3 seconds.
+- Accepts the socket only with a valid signature that has not been used before, pings every 20 seconds, and closes a socket that has been silent for 40 seconds.
+- Answers every `send_event` within 2 seconds (`accepted: true` even for an event type it does not know yet), ignores repeated `event_id`s, and catches up with `read_trip` and `read_messages` after a gap in change numbers.
+- Answers `card_tap` and `catch_up` within 3 seconds and every other request within 2 seconds, acts on each `tap_id` once, answers `-32601` for a method it does not know, and sends `retry_after_seconds` with every `429`.
+- Sends each of Go's requests on one open socket, and sends unanswered ones again after a reconnect with the same JSON-RPC `id` and `request_id`.
+- Shows "Go is typing..." while it works, waits for people who are typing (except people who paused Go), and reacts quietly when it notes something without speaking.
 - Serves people pages, carry-over, deleting a fact and "forget me", and checks nothing is left after a forget.
 - Only pays with a valid spend approval and the payer's passkey, and records the booking with its `approval_id`.
 
@@ -98,4 +129,4 @@ It checks every marked example against the contract and lists any event, card, r
 These are still being worked out. Each one changes only what happens inside go-brain, so nobody needs to wait on them.
 
 - What ixigo's tools can do this week (search, book, pay, test mode). This decides how Go books, not what the room sees.
-- The staging URLs for go-server and go-brain. They go into each side's `GO_SERVER_URL` and `BRAIN_URL` once both are deployed.
+- The staging URL for go-brain. It goes into go-server's `BRAIN_URL` once go-brain is deployed. go-brain needs no address for go-server.

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Every error, from either server, has this body. */
+/** What went wrong. On the socket it is `error.data.code` of a SocketError; over HTTP it is in an ErrorBody. */
 export const ErrorCode = z
   .enum([
     /** 401: the signature header is missing, stale or wrong. Do not retry; check the secret and the clock. */
@@ -11,7 +11,7 @@ export const ErrorCode = z
     'invalid',
     /** 409: the request clashes with the current state, e.g. closing a vote that is already closed. */
     'conflict',
-    /** 429: slow down. Retry after the Retry-After header. */
+    /** 429: slow down. Wait `retry_after_seconds` (on the socket) before trying again. */
     'rate_limited',
     /** 500: a bug on the other side. Retry later. */
     'internal',
@@ -20,6 +20,7 @@ export const ErrorCode = z
   ])
   .meta({ id: 'ErrorCode' });
 
+/** The body of an HTTP error: the socket upgrade's 401, or /v1/health. On the socket, errors are SocketError frames. */
 export const ErrorBody = z
   .object({ error: z.object({ code: ErrorCode, message: z.string().max(500) }) })
   .meta({ id: 'ErrorBody' });

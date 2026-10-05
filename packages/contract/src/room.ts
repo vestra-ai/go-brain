@@ -90,5 +90,9 @@ export const ReplaceCardResult = z.object({ message_id: Id }).meta({ id: 'Replac
 /** "Go is typing...". Shown for up to 10 seconds, or until Go's next message lands. Go repeats it every 5 seconds while it works. */
 export const GoTyping = z.object({ trip_id: Id, on: z.boolean() }).meta({ id: 'GoTyping' });
 
-/** Someone in the room is typing. go-server forwards it so Go waits for them to finish before it answers. */
+/**
+ * Someone in the room is typing. go-server forwards it for everyone, so Go waits for them to finish before
+ * it answers (Go ignores people who paused it). Like Go's own typing, "on" lasts 10 seconds: send it again
+ * every 5 seconds while they keep typing, and "off" when they stop or send. A lost "off" just runs out.
+ */
 export const PersonTyping = z.object({ trip_id: Id, person_id: Id, on: z.boolean() }).meta({ id: 'PersonTyping' });

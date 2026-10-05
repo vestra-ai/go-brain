@@ -2,15 +2,17 @@
 
 go-server sends go-brain an event every time something changes in a trip, so that Go knows what happened in the room and on the Trip screens. This page explains what an event is, how go-server sends events so that none are lost and each trip's events arrive in order, and what go-brain does with each of the 20 event types.
 
-Every event goes to one route on go-brain, `POST /v1/events`, signed as described in [Basics](01-basics.md#signing-every-request).
+go-server sends every event as a `send_event` request on the socket it keeps open to go-brain (see [The socket](02-the-socket.md)). The event is the request's `params`, and go-brain answers each one.
 
 ## What an event is
 
 An event tells go-brain about one change to one trip. go-server sends one event per change, whoever made it: a person, Go, or go-server itself. Each change takes the trip's next change number (`seq`), and the event carries that number.
 
-Go's own changes come back as events too. When Go posts a message or records a booking, go-server sends the matching `message.created` or `booking.changed` like it would for anyone else. This way go-brain sees every change number of the trip, in order, from one place.
+Go's own changes come back as events too. When Go posts a message, reacts to a message or records a booking, go-server sends the matching `message.created`, `reaction.added` or `booking.changed` like it would for anyone else. This way go-brain sees every change number of the trip, in order, from one place. A reaction Go made has no `person_id`, because no person made it.
 
-There is one exception. When Go replaces one of its cards in place (`PUT /brain/v1/trips/{trip_id}/cards/{card_id}`, for example a live call that moved from dialing to talking), nothing new happened in the trip. go-server takes no change number for it and sends no event.
+There is one exception. When Go replaces one of its cards in place (`replace_card`, for example for a live call that moved from dialing to talking), nothing new happened in the trip. go-server takes no change number for it and sends no event.
+
+Typing is not an event either. While someone in the room is typing, go-server sends go-brain a `person_typing` notification, so that Go waits for them to finish before it answers. Go's own "Go is typing..." travels the other way, as the `typing` notification. Typing takes no change number, never goes into the outbox, and is not sent again if the socket drops.
 
 When a person has paused Go, go-server still sends their messages as `message.created`, so the change numbers stay in order. It sets `withheld` to `true` and leaves out the text and the attachments. Go learns that a message was posted, but not what it says.
 
@@ -20,20 +22,49 @@ Every event has the same six fields. Only `data` is different for each type.
 
 | Field | What it is |
 |---|---|
-| `event_id` | go-server's id for this event, 1 to 64 characters. It stays the same on every retry. go-brain ignores an `event_id` it has already seen. |
+| `event_id` | go-server's id for this event, 1 to 64 characters. It stays the same every time the event is sent again. go-brain ignores an `event_id` it has already seen. |
 | `trip_id` | The trip that changed. |
 | `seq` | The trip's change number for this change. Each event of a trip has a number one higher than the event before it. |
 | `occurred_at` | When the change happened, in ISO 8601 with an offset. A retry keeps the original time. |
 | `type` | What kind of change it was, such as `message.created`. The [table of event types](#all-event-types) lists all 20. |
 | `data` | The details of the change. Its fields depend on `type`. |
 
-Every example further down this page is one whole event, exactly as go-server sends it.
+Every example further down this page is one whole event, exactly as go-server puts it in the `params` of a `send_event` request.
 
 ## What go-brain answers
 
-go-brain checks the signature, stores the event and answers `202` within 2 seconds. It does the real work (reading the message, replying, saving what it learned) after it has answered, so go-server never waits for Go to think.
+go-brain stores the event and answers the `send_event` request within 2 seconds. It does the real work (reading the message, replying, saving what it learned) after it has answered, so go-server never waits for Go to think.
 
-The answer is an `EventAccepted` body:
+Here is one whole request frame. It carries Rahul's 👍 on Priya's message, which is change 50. The `id` is the JSON-RPC id that go-server's socket client chose for this request:
+
+<!-- schema: SocketRequest -->
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "gs_1042",
+  "method": "send_event",
+  "params": {
+    "event_id": "ev_0050",
+    "trip_id": "t_goa",
+    "seq": 50,
+    "occurred_at": "2026-10-05T04:13:00Z",
+    "type": "reaction.added",
+    "data": {
+      "message_id": "m_0122",
+      "reaction": { "emoji": "👍", "person_id": "p_rahul" }
+    }
+  }
+}
+```
+
+go-brain answers with a result frame that has the same `id`:
+
+<!-- schema: SocketResult -->
+```json
+{ "jsonrpc": "2.0", "id": "gs_1042", "result": { "accepted": true, "duplicate": false } }
+```
+
+The result is an `EventAccepted`:
 
 <!-- schema: EventAccepted -->
 ```json
@@ -49,19 +80,40 @@ When go-brain has already seen the `event_id`, it does nothing more and answers:
 
 Both answers are a success, and go-server marks the event sent in both cases.
 
-go-brain also answers `202` to an event type it does not know, and skips it. That way go-server can add a new event type within version 1 before go-brain uses it.
+go-brain also answers `{"accepted": true}` to an event type it does not know, and skips it. It looks at `type` before it checks the rest of the event, so an unknown type is never answered `422 invalid`. That way go-server can add a new event type within version 1 before go-brain uses it, and go-server has nothing special to do.
 
-Errors use the error body from [Basics](01-basics.md#errors). `401 bad_signature` means the secret or the clock is wrong. `422 invalid` means the event does not match the contract, and the message names the field. go-server does not retry either of them (see the next section).
+When go-brain cannot take the event, it answers with an error frame instead (see [The socket](02-the-socket.md)). `422 invalid` means the event does not match the contract, and the message names the field. go-server does not send that event again (see the next section). `503 unavailable` means go-brain is restarting, and `429 rate_limited` means go-server is sending too fast. go-server sends the event again later in both cases, and for a `429` it waits as many seconds as `data.retry_after_seconds` says.
+
+<!-- schema: SocketError -->
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "gs_1042",
+  "error": { "code": 422, "message": "data.reaction.emoji must be 1 to 16 characters", "data": { "code": "invalid" } }
+}
+```
+
+A `429` answer says how long to wait:
+
+<!-- schema: SocketError -->
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "gs_1043",
+  "error": { "code": 429, "message": "too many events, slow down", "data": { "code": "rate_limited", "retry_after_seconds": 30 } }
+}
+```
 
 ## Sending events reliably
 
-go-server must never lose an event, never send one for a change that did not happen, and always send each trip's events in change-number order. The outbox pattern does all three. go-server writes each event into an `outbox` table together with the change, and a separate sender sends the table's rows to go-brain.
+go-server must never lose an event, never send one for a change that did not happen, and always send each trip's events in change-number order. The outbox pattern does all three. go-server writes each event into an `outbox` table together with the change, and a separate sender sends the table's rows to go-brain as `send_event` requests on the socket.
 
 1. **Write the event in the same transaction as the change.** Take the trip's next change number, store the change, and insert the event into the outbox, all in one database transaction. If the transaction rolls back, there is no change, no change number and no event.
 2. **Take the change number from a counter on the trip row.** `update trips set seq = seq + 1 where trip_id = $1 returning seq` gives the next number. It also locks the trip row until the transaction ends, so two changes to the same trip always commit in change-number order.
-3. **Send each trip's events in order, one at a time.** The sender sends a trip's next event only after go-brain accepted the one before it. Trips do not wait for each other: a trip whose event is waiting for a retry holds up only its own later events.
-4. **Retry on a fixed schedule.** After a timeout, a dropped connection, a `429` or a `5xx`, wait 1 second, 5 seconds, 30 seconds, 2 minutes and 10 minutes, then every 10 minutes. For a `429`, wait as long as the `Retry-After` header says. Give up after 24 hours.
-5. **Do not retry any other `4xx`.** A `400` to `499` other than `429` means the event or its signature is wrong, and sending it again will not help. Log it, mark the event failed, and move on to the trip's next event. go-brain notices the missing change number and reads the trip to catch up.
+3. **Send each trip's events in order, one at a time.** The sender sends one `send_event` for a trip and waits for go-brain's answer before it sends that trip's next event. Trips do not wait for each other: a trip whose event is waiting for a retry holds up only its own later events.
+4. **Keep waiting across a reconnect.** If the socket drops before the answer arrives, the socket client reconnects and sends the unanswered request again, with the same JSON-RPC `id` and the same event, so the same `event_id`. go-brain handles an `event_id` only once, so the event is never handled twice.
+5. **Retry on a fixed schedule.** When there is no answer within 2 seconds, or go-brain answers `429`, `500` or `503`, send the same event again after 1 second, 5 seconds, 30 seconds, 2 minutes and 10 minutes, then every 10 minutes. For a `429`, wait as many seconds as the error's `data.retry_after_seconds` says instead, and use the schedule only when it is missing. Give up after 24 hours.
+6. **Do not retry any other error.** Any other error, such as `422 invalid`, means the event itself is wrong, and sending it again will not help. Log it, mark the event failed, and move on to the trip's next event. go-brain notices the missing change number and reads the trip to catch up.
 
 ```mermaid
 sequenceDiagram
@@ -71,10 +123,15 @@ sequenceDiagram
   participant B as go-brain
   API->>DB: one transaction with the reaction, change 50 and its outbox row
   S->>DB: read the oldest unsent event of each trip
-  S->>B: POST /v1/events (t_goa, seq 50)
-  B-->>S: 202 accepted
+  S->>B: send_event (t_goa, seq 50)
+  B-->>S: answer: accepted
   S->>DB: mark 50 sent
-  S->>B: POST /v1/events (t_goa, seq 51)
+  S->>B: send_event (t_goa, seq 51)
+  Note over S,B: the socket drops before the answer
+  Note over S: the socket client reconnects
+  S->>B: send_event (t_goa, seq 51), with the same id and event_id
+  B-->>S: answer: accepted
+  S->>DB: mark 51 sent
 ```
 
 The examples below use Postgres, with `pg` in TypeScript and `psycopg` in Python. The trip row holds the counter, and the outbox holds each event exactly as it will be sent:
@@ -99,7 +156,7 @@ create index outbox_pending on outbox (trip_id, seq) where status = 'pending';
 
 ### Writing the event with the change
 
-This example stores a reaction and its `reaction.added` event in one transaction. Every change in go-server follows the same three steps: take the next change number, store the change, insert the event. A change to a message (an edit, a delete or a reaction) also sets that message's `updated_seq` to the new change number, so `listMessages` can bring it back after a gap.
+This example stores a reaction and its `reaction.added` event in one transaction. Every change in go-server follows the same three steps: take the next change number, store the change, insert the event. A change to a message (an edit, a delete or a reaction) also sets that message's `updated_seq` to the new change number, so `read_messages` can bring it back after a gap. When Go reacts (`add_reaction`), go-server runs the same code with no person: `person_id` is `null`.
 
 **TypeScript**
 
@@ -110,7 +167,7 @@ import type { Event } from '@go/contract';
 
 export const db = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-export async function addReaction(tripId: string, messageId: string, personId: string, emoji: string): Promise<void> {
+export async function addReaction(tripId: string, messageId: string, personId: string | null, emoji: string): Promise<void> {
   const tx = await db.connect();
   try {
     await tx.query('begin');
@@ -154,7 +211,7 @@ import psycopg
 from go_contract import models
 
 
-def add_reaction(conn: psycopg.Connection, trip_id: str, message_id: str, person_id: str, emoji: str) -> None:
+def add_reaction(conn: psycopg.Connection, trip_id: str, message_id: str, person_id: str | None, emoji: str) -> None:
     with conn.transaction():
         # The next change number. This also locks the trip row until commit.
         (seq,) = conn.execute("update trips set seq = seq + 1 where trip_id = %s returning seq", (trip_id,)).fetchone()
@@ -180,16 +237,18 @@ def add_reaction(conn: psycopg.Connection, trip_id: str, message_id: str, person
 
 ### The sender
 
-The sender runs on its own, next to go-server's API. Every 200 milliseconds it reads the oldest unsent event of each trip whose turn has come, skips trips that already have an event on the way, and sends each of those events without waiting for the others. The TypeScript version uses `callBrain` from [Basics](01-basics.md#signing-a-request-you-send).
+The sender runs on its own, next to go-server's API. Every 200 milliseconds it reads the oldest unsent event of each trip whose turn has come, skips trips that already have an event on the way, and sends each of those events without waiting for the others. It sends them with `brain.request('send_event', event)`, using the `BrainSocket` client from [The socket](02-the-socket.md), which go-server keeps connected to go-brain.
 
 **TypeScript**
 
 ```ts
 import { db } from './outbox.js';
-import { callBrain } from './brain-client.js';
+import { brain } from './brain.js'; // the one BrainSocket go-server keeps open, from The socket
+import { SocketCallError } from './brain-socket.js';
 
 const RETRY_AFTER_SECONDS = [1, 5, 30, 120, 600]; // then every 10 minutes
 const GIVE_UP_AFTER_MS = 24 * 60 * 60 * 1000;
+const RETRY_CODES = new Set([429, 500, 503]); // a timeout is retried too
 
 // The oldest unsent event of each trip, if it is due, leaving out trips already being sent.
 const DUE = `
@@ -200,7 +259,7 @@ const DUE = `
   ) oldest
   where next_attempt_at <= now() and trip_id <> all($1::text[])`;
 
-interface Row { event_id: string; trip_id: string; body: unknown; attempts: number; created_at: Date }
+interface Row { event_id: string; trip_id: string; body: Record<string, unknown>; attempts: number; created_at: Date }
 
 const sending = new Set<string>(); // trips with an event on the way
 
@@ -216,26 +275,27 @@ export async function runSender(): Promise<never> {
 }
 
 async function sendOne(row: Row): Promise<void> {
-  let res: Response | undefined;
+  let failure: unknown = null;
   try {
-    res = await callBrain('POST', '/v1/events', row.body);
-  } catch {
-    // A timeout or a dropped connection: retry below.
+    // Waits for go-brain's answer. If the socket drops first, the client sends this same request again after it reconnects.
+    await brain.request('send_event', row.body, { timeoutMs: 2000 });
+  } catch (err) {
+    failure = err; // a SocketCallError, or a SocketTimeoutError when there was no answer in time
   }
-  if (res?.ok) {
+  if (failure === null) {
     await db.query(`update outbox set status = 'sent', sent_at = now() where event_id = $1`, [row.event_id]);
     return;
   }
-  const refused = res !== undefined && res.status >= 400 && res.status < 500 && res.status !== 429;
+  const refused = failure instanceof SocketCallError && !RETRY_CODES.has(failure.code);
   if (refused || Date.now() - row.created_at.getTime() > GIVE_UP_AFTER_MS) {
     // Not retried. The trip's next event goes next, and go-brain catches up from the gap.
-    console.error('event not delivered', row.event_id, res?.status, await res?.text());
+    console.error('event not delivered', row.event_id, failure);
     await db.query(`update outbox set status = 'failed' where event_id = $1`, [row.event_id]);
     return;
   }
-  const wait = res?.status === 429
-    ? Number(res.headers.get('retry-after') ?? 60)
-    : RETRY_AFTER_SECONDS[Math.min(row.attempts, RETRY_AFTER_SECONDS.length - 1)];
+  // A 429 says how long to wait. Otherwise, and when it does not say, follow the schedule.
+  const asked = failure instanceof SocketCallError && failure.code === 429 ? failure.retryAfterSeconds : undefined;
+  const wait = asked ?? RETRY_AFTER_SECONDS[Math.min(row.attempts, RETRY_AFTER_SECONDS.length - 1)];
   await db.query(
     'update outbox set attempts = attempts + 1, next_attempt_at = now() + make_interval(secs => $2) where event_id = $1',
     [row.event_id, wait],
@@ -247,19 +307,18 @@ async function sendOne(row: Row): Promise<void> {
 
 ```python
 import asyncio
-import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
 
-import httpx
-from go_contract import SIGNATURE_HEADER, sign_request
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-BRAIN_URL = os.environ["BRAIN_URL"]
-SECRET = os.environ["GO_SIGNING_SECRET"]
+from brain import brain  # the one BrainSocket go-server keeps open, from The socket
+from brain_socket import SocketCallError
+
 RETRY_AFTER_SECONDS = [1, 5, 30, 120, 600]  # then every 10 minutes
+RETRY_CODES = {429, 500, 503}  # a timeout is retried too
 GIVE_UP_AFTER = timedelta(hours=24)
 
 # The oldest unsent event of each trip, if it is due, leaving out trips already being sent.
@@ -278,49 +337,49 @@ sending: dict[str, asyncio.Task] = {}  # trips with an event on the way
 
 async def run_sender() -> None:
     await pool.open()
-    async with httpx.AsyncClient(timeout=5) as client:
-        while True:
-            async with pool.connection() as conn:
-                rows = await (await conn.execute(DUE, (list(sending),))).fetchall()
-            for row in rows:
-                sending[row["trip_id"]] = asyncio.create_task(send_one(client, row))
-                sending[row["trip_id"]].add_done_callback(lambda _, trip_id=row["trip_id"]: sending.pop(trip_id, None))
-            await asyncio.sleep(0.2)
+    while True:
+        async with pool.connection() as conn:
+            rows = await (await conn.execute(DUE, (list(sending),))).fetchall()
+        for row in rows:
+            sending[row["trip_id"]] = asyncio.create_task(send_one(row))
+            sending[row["trip_id"]].add_done_callback(lambda _, trip_id=row["trip_id"]: sending.pop(trip_id, None))
+        await asyncio.sleep(0.2)
 
 
-async def send_one(client: httpx.AsyncClient, row: dict) -> None:
-    raw = json.dumps(row["body"]).encode("utf-8")
-    headers = {"content-type": "application/json", SIGNATURE_HEADER: sign_request("POST", "/v1/events", raw, SECRET)}
+async def send_one(row: dict) -> None:
+    failure: Exception | None = None
     try:
-        res = await client.post(BRAIN_URL + "/v1/events", content=raw, headers=headers)
-    except httpx.HTTPError:
-        res = None  # a timeout or a dropped connection: retry below
+        # Waits for go-brain's answer. If the socket drops first, the client sends this same request again after it reconnects.
+        await brain.request("send_event", row["body"], timeout=2.0)
+    except (SocketCallError, asyncio.TimeoutError) as err:
+        failure = err
     async with pool.connection() as conn:
-        if res is not None and res.is_success:
+        if failure is None:
             await conn.execute("update outbox set status = 'sent', sent_at = now() where event_id = %s", (row["event_id"],))
             return
-        refused = res is not None and 400 <= res.status_code < 500 and res.status_code != 429
+        refused = isinstance(failure, SocketCallError) and failure.code not in RETRY_CODES
         if refused or datetime.now(timezone.utc) - row["created_at"] > GIVE_UP_AFTER:
             # Not retried. The trip's next event goes next, and go-brain catches up from the gap.
-            log.error("event %s not delivered: %s %s", row["event_id"], res and res.status_code, res and res.text)
+            log.error("event %s not delivered: %r", row["event_id"], failure)
             await conn.execute("update outbox set status = 'failed' where event_id = %s", (row["event_id"],))
             return
-        if res is not None and res.status_code == 429:
-            wait = int(res.headers.get("retry-after", "60"))
-        else:
-            wait = RETRY_AFTER_SECONDS[min(row["attempts"], len(RETRY_AFTER_SECONDS) - 1)]
+        # A 429 says how long to wait. Otherwise, and when it does not say, follow the schedule.
+        asked = failure.retry_after_seconds if isinstance(failure, SocketCallError) and failure.code == 429 else None
+        wait = asked or RETRY_AFTER_SECONDS[min(row["attempts"], len(RETRY_AFTER_SECONDS) - 1)]
         await conn.execute(
             "update outbox set attempts = attempts + 1, next_attempt_at = now() + make_interval(secs => %s) where event_id = %s",
             (wait, row["event_id"]),
         )
 ```
 
-The Python sender needs `pip install "psycopg[binary,pool]" httpx`.
+The Python sender needs `pip install "psycopg[binary,pool]"`, plus `websockets` for the socket client.
 
 Good to know:
-- Send one event per request. Never put two events in one body.
-- A retry sends the same event with the same `event_id`, `seq` and `occurred_at`. Sign it again for every try, because the signature carries the time.
-- Run one sender. If you run more than one, split the trips between them, so that one trip's events are always sent by the same sender.
+- Send one event per `send_event` request. Never put two events in one frame.
+- A retry sends the same event with the same `event_id`, `seq` and `occurred_at`. After a timeout, the retry is a new request with a new JSON-RPC `id`, and go-brain still handles the event once, because the `event_id` is the same.
+- Requests on the socket are not signed one by one. go-server signed once, when it opened the socket.
+- A frame is at most 1 MB. The biggest event, `trip.created`, carries the whole trip and stays well under that.
+- Run one sender, even when several go-server instances keep a socket open to go-brain. If you run more than one sender, split the trips between them, so that one trip's events are always sent by the same sender.
 - To send sooner than the next 200 millisecond check, wake the sender with Postgres `NOTIFY` after each commit.
 - Alert on failed events. A failed event means a bug on one side, and the person who fixes it needs the log line.
 
@@ -328,11 +387,25 @@ Good to know:
 
 go-brain handles each trip's events one at a time, in change-number order, and uses the change numbers to notice anything it missed.
 
-1. It checks the signature, then the `event_id`. A repeat gets `{"accepted": true, "duplicate": true}`, and nothing else happens.
-2. It answers `202` and puts the event in that trip's queue.
-3. It compares the event's `seq` with the last change number it holds for the trip. If it holds 41 and receives 43, change 42 is missing. go-brain then reads the whole trip (`GET /brain/v1/trips/t_goa`) and every message posted or changed after 41 (`GET /brain/v1/trips/t_goa/messages?after_seq=41`, which also brings back edits, deletes and reactions), and carries on from there.
-4. Once a minute it reads every active trip again, as a safety net for anything both sides missed.
-5. It skips event types it does not know.
+1. It checks the `event_id`. A repeat gets `{"accepted": true, "duplicate": true}`, and nothing else happens.
+2. It answers `accepted` and puts the event in that trip's queue.
+3. It compares the event's `seq` with the last change number it holds for the trip. If it holds 41 and receives 43, change 42 is missing. go-brain then sends go-server two requests on the same socket: `read_trip` for the whole trip, and `read_messages` with `after_seq` 41 for every message posted or changed after change 41 (which also brings back edits, deletes and reactions). Then it carries on from there.
+4. Once a minute it reads every active trip again with `read_trip`, as a safety net for anything both sides missed.
+5. It answers `{"accepted": true}` to an event type it does not know, without checking the rest of the event, and skips it.
+
+These are the two requests go-brain sends to catch up after the gap in step 3:
+
+<!-- schema: ReadTrip -->
+```json
+{ "trip_id": "t_goa" }
+```
+
+<!-- schema: ReadMessages -->
+```json
+{ "trip_id": "t_goa", "after_seq": 41 }
+```
+
+go-server answers them from its database. [Go's requests](04-gos-requests.md) shows both answers.
 
 ## When Go speaks and what it saves
 
@@ -343,14 +416,16 @@ Most events change what Go knows without making it speak. Go speaks in the room 
 - A vote closed, or a decision is ready to move.
 - Something is wrong or at risk, such as a clash with a booking, a price change, or a deadline coming up.
 
-Otherwise Go stays quiet and takes notes. In each trip, Go speaks without being asked at most once every 30 minutes. When someone mentions Go, it waits about 1.5 seconds for follow-up lines, then answers. While it works, it shows "Go is typing..." (`POST /brain/v1/trips/{trip_id}/typing`) and repeats that every 5 seconds.
+Otherwise Go stays quiet and takes notes. In each trip, Go speaks without being asked at most once every 30 minutes.
+
+When someone mentions Go, Go waits about 1.5 seconds for follow-up lines before it answers. If someone in the room is typing, Go waits until they stop. go-server tells it with `person_typing` notifications: an `on: true` lasts 10 seconds, go-server sends it again every 5 seconds while the person keeps typing, and it sends `on: false` when they stop or send. A lost `on: false` simply runs out after 10 seconds. go-server sends typing for everyone in the room, and Go ignores the typing of people who paused it. While it works, Go shows "Go is typing..." by sending the `typing` notification, and repeats it every 5 seconds.
 
 After it replies, or after a message it only took notes on, Go saves what it learned in two places:
 
 - **Facts about people** go into go-brain, one current fact per topic for each person, with the message as proof.
-- **Agreed, open and doing lines** go into the trip record, through go-server. An agreed line needs two people saying yes (a 👍 reaction counts) or the organizer saying yes, and nobody objecting. Without that, Go writes an open line instead.
+- **Agreed, open and doing lines** go into the trip record, through go-server (`add_record_line`). An agreed line needs two people saying yes (a 👍 reaction counts) or the organizer saying yes, and nobody objecting. Without that, Go writes an open line instead.
 
-Go does not announce each line it writes. People can undo a line in the app, and Go never undoes one. go-server writes the decided and booked lines itself, from votes and bookings.
+Go does not announce each line it writes. Instead, it may add a quiet ✅ reaction to the message the line came from (`add_reaction`), so the room can see that Go noted it. People can undo a line in the app, and Go never undoes one. go-server writes the decided and booked lines itself, from votes and bookings.
 
 ## All event types
 
@@ -359,8 +434,8 @@ Go does not announce each line it writes. People can undo a line in the app, and
 | `message.created` | Anyone posts in the room, Go included. A paused person's message comes withheld. | Answers if it is asked, otherwise takes notes. |
 | `message.edited` | Someone edits a message. | Reads the new text and updates what it saved from the old one. |
 | `message.deleted` | Someone deletes a message. | Drops the facts that came from it. |
-| `reaction.added` | Someone reacts to a message. | Counts a 👍 as agreeing. |
-| `reaction.removed` | Someone takes a reaction back. | Stops counting it. |
+| `reaction.added` | Someone reacts to a message, Go included. | Counts a 👍 from a person as agreeing. Go's own reaction only moves the change number. |
+| `reaction.removed` | Someone takes a reaction back, Go included. | Stops counting it. |
 | `person.joined` | Someone joins the trip. | Saves their join answers as facts. |
 | `person.updated` | Someone changes their details, or pauses or unpauses Go. | Updates what it knows. Stops learning from someone who paused it. |
 | `person.left` | Someone leaves the trip. | Stops treating them as part of the group. |
@@ -387,7 +462,7 @@ These five events cover everything people and Go say in the room, and how people
 
 go-server sends `message.created` when anyone posts in the room: a person, Go, or go-server itself (a message with the author `system`). If the message mentions or names Go, or replies to one of Go's messages, `mentions_go` is `true` and Go answers. Otherwise Go reads the message and saves anything worth keeping.
 
-Priya asks Go for flights. This is change 57, the message from [the front page](README.md#one-message-start-to-finish):
+Priya asks Go for flights. This is change 57, the message from [the front page](README.md). While she was typing it, go-server sent go-brain `person_typing` notifications, which are not events and take no change number:
 
 <!-- schema: MessageCreated -->
 ```json
@@ -571,16 +646,16 @@ Arjun corrects when he lands, so Go replaces what it saved about his arrival:
 <!-- schema: MessageEdited -->
 ```json
 {
-  "event_id": "ev_0054",
+  "event_id": "ev_0055",
   "trip_id": "t_goa",
-  "seq": 54,
+  "seq": 55,
   "occurred_at": "2026-10-05T04:42:00Z",
   "type": "message.edited",
   "data": {
     "message": {
       "message_id": "m_0126",
-      "seq": 53,
-      "updated_seq": 54,
+      "seq": 54,
+      "updated_seq": 55,
       "author": { "kind": "person", "person_id": "p_arjun" },
       "text": "Correction: my flight from Bangalore lands at 10:40 pm, so I'll reach our place around 11",
       "attachments": [],
@@ -608,9 +683,9 @@ Kabir deleted a message he sent by mistake:
 <!-- schema: MessageDeleted -->
 ```json
 {
-  "event_id": "ev_0055",
+  "event_id": "ev_0056",
   "trip_id": "t_goa",
-  "seq": 55,
+  "seq": 56,
   "occurred_at": "2026-10-05T05:00:00Z",
   "type": "message.deleted",
   "data": { "message_id": "m_0129" }
@@ -619,7 +694,7 @@ Kabir deleted a message he sent by mistake:
 
 ### reaction.added
 
-go-server sends `reaction.added` when someone reacts to a message. Go counts a 👍 as that person agreeing with the message.
+go-server sends `reaction.added` when someone reacts to a message, and when Go does. Go counts a 👍 from a person as that person agreeing with the message.
 
 Priya said "North Goa, not South" and Arjun agreed. Rahul, the organizer, adds his 👍 to Priya's message. Nobody objected, so Go writes the agreed line "North Goa, not South" in the trip record:
 
@@ -637,6 +712,27 @@ Priya said "North Goa, not South" and Arjun agreed. Rahul, the organizer, adds h
   }
 }
 ```
+
+Go's own reactions come back the same way. After writing the agreed line, and after changing the destination to North Goa (change 52), Go added a quiet ✅ to Priya's message instead of announcing the line (`add_reaction`). Go made this reaction, so `person_id` is `null`:
+
+<!-- schema: ReactionAdded -->
+```json
+{
+  "event_id": "ev_0053",
+  "trip_id": "t_goa",
+  "seq": 53,
+  "occurred_at": "2026-10-05T04:14:40Z",
+  "type": "reaction.added",
+  "data": {
+    "message_id": "m_0122",
+    "reaction": { "emoji": "✅", "person_id": null }
+  }
+}
+```
+
+Good to know:
+- A reaction with `person_id` left out or `null` is Go's. go-brain never counts Go's own reaction as anyone agreeing. It uses the event to keep its place in the change numbers.
+- When Go takes a reaction back (`remove_reaction`), go-server sends `reaction.removed`, again with no `person_id`.
 
 ### reaction.removed
 
@@ -925,7 +1021,7 @@ Good to know:
 
 ### decision.closed
 
-go-server sends `decision.closed` when a vote closes, with the vote as it ended and the `reason`: the time ran out (`time`), everyone voted (`everyone_voted`), a person closed it (`closed_by_person`), or Go closed it (`closed_by_go`). Go announces the result in the room. When the vote was about something to book, Go then sets the mandate (`PUT /brain/v1/trips/{trip_id}/decisions/{decision_id}/mandate`) and posts a mandate card for the payer.
+go-server sends `decision.closed` when a vote closes, with the vote as it ended and the `reason`: the time ran out (`time`), everyone voted (`everyone_voted`), a person closed it (`closed_by_person`), or Go closed it (`closed_by_go`). Go announces the result in the room. When the vote was about something to book, Go then sets the mandate (`set_mandate`) and posts a mandate card for the payer (`post_message`).
 
 Everyone has voted on the villa, and Villa Sol won 4 to 1:
 
@@ -1018,7 +1114,7 @@ Rahul called off a vote he had opened about which beach to spend Sunday on:
 
 ## The mandate
 
-These three events cover what the group allowed for a spend and the payer's answer. [Money and the vault](07-money-and-the-vault.md) explains the whole payment.
+These three events cover what the group allowed for a spend and the payer's answer. [Money and the vault](08-money-and-the-vault.md) explains the whole payment.
 
 ### mandate.set
 
@@ -1055,7 +1151,7 @@ Good to know:
 
 ### mandate.confirmed
 
-go-server sends `mandate.confirmed` when the payer taps "Yes, book it" on the mandate card. Those buttons belong to go-server, which records the time as the mandate's `confirmed_at`. Go re-checks the price, asks go-server for a spend approval (`POST /brain/v1/trips/{trip_id}/spend-approvals`), and then posts a pay card for the payer.
+go-server sends `mandate.confirmed` when the payer taps "Yes, book it" on the mandate card. Those buttons belong to go-server, which records the time as the mandate's `confirmed_at`. Go re-checks the price, asks go-server for a spend approval (`request_spend_approval`), and then posts a pay card for the payer.
 
 Rahul says yes to the villa:
 

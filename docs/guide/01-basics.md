@@ -1,18 +1,19 @@
 # Basics
 
-This page covers the rules every call between go-server and go-brain follows: where to send it, how to sign it, how ids, money and time are written, what errors look like, and when to retry. Read it before you write the first call.
+This page covers the rules that every frame between go-server and go-brain follows: the settings each server needs, how ids, money and time are written, how each request is done only once, what errors look like, how long to wait for an answer, and when to send a request again. Read it before you write the first line of either server. [The socket](02-the-socket.md) builds on it.
 
 ## Addresses and secrets
 
-Each server knows the other's base URL and shares one signing secret with it. go-server also holds the private key it signs spend approvals with; go-brain holds the matching public key.
+go-server needs go-brain's address and the signing secret, so it can open the socket. go-brain needs only the signing secret, to check the socket's signature. go-server also holds the private key it signs spend approvals with, and go-brain holds the matching public key.
 
 | Setting | go-server | go-brain | What it is |
 |---|---|---|---|
-| `BRAIN_URL` | yes | | go-brain's base URL, such as `https://brain.go.example`, with no path and no trailing slash |
-| `GO_SERVER_URL` | | yes | go-server's base URL, such as `https://api.go.example` |
-| `GO_SIGNING_SECRET` | yes | yes | The shared secret for request signatures. 32 random bytes as hex. |
+| `BRAIN_URL` | yes | | go-brain's base URL, such as `https://brain.go.example`, with no path and no trailing slash. The socket is at the same host: `wss://brain.go.example/v1/socket`. |
+| `GO_SIGNING_SECRET` | yes | yes | The shared secret for the signature that opens the socket. 32 random bytes as hex. |
 | `GO_SPEND_PRIVATE_KEY` | yes | | go-server's Ed25519 private key (PEM), for signing spend approvals |
 | `GO_SPEND_PUBLIC_KEY` | | yes | The matching public key (PEM), for checking them |
+
+go-brain has no setting for go-server's address, because it never calls go-server. Everything Go asks go-server travels on the socket that go-server opened.
 
 Make the secret and the key pair like this:
 
@@ -26,169 +27,18 @@ Good to know:
 - Put secrets only in each platform's environment variables. Never put them in the repo, a chat, a doc or a screenshot. Share them once, through a one-time link.
 - This week there is one shared environment (staging) plus your own machine. Each environment has its own secret and key pair.
 
-## Signing every request
+## Signing
 
-Every request between the two servers, in both directions, carries an `x-go-signature` header. The receiver checks it before doing anything else and answers `401` with the code `bad_signature` if it fails. The only request that is not signed is `GET /v1/health` on go-brain.
-
-The header looks like this:
-
-```
-x-go-signature: t=1791190800,v1=7850f2c9cf67f315d4cc9680781a147f83ad408b62593fa29860b48a43aa8185
-```
-
-`t` is the time in Unix seconds. `v1` is the HMAC-SHA256 of a signing string, made with `GO_SIGNING_SECRET`, written as lowercase hex. The signing string is four parts joined by a newline (`\n`):
-
-```
-<t>
-<METHOD>
-<target>
-<raw body>
-```
-
-- `METHOD` is upper case: `GET`, `POST`, `PATCH`, `PUT` or `DELETE`.
-- `target` is the path plus the query string, exactly as sent: `/brain/v1/trips/t_goa/messages?after_seq=40&limit=50`.
-- `raw body` is the exact bytes of the body. For a request without a body (every `GET` and `DELETE`), it is empty, so the string ends with the newline after the target.
-
-The receiver refuses a signature more than 300 seconds old or ahead, so keep your server's clock synced (every cloud host does this for you).
-
-Signing the method and path as well as the body means a signature made for one route cannot be reused on another. A captured request can be replayed on the same route within the five minutes, which is harmless: events carry an `event_id` and writes carry a `request_id`, and both are done only once.
-
-### Signing a request you send
-
-**TypeScript**
-
-```ts
-import { SIGNATURE_HEADER, signRequest } from '@go/contract';
-
-const BRAIN_URL = process.env.BRAIN_URL!;
-const SECRET = process.env.GO_SIGNING_SECRET!;
-
-export async function callBrain(method: string, path: string, body?: unknown): Promise<Response> {
-  const raw = body === undefined ? '' : JSON.stringify(body);
-  return fetch(`${BRAIN_URL}${path}`, {
-    method,
-    headers: {
-      'content-type': 'application/json',
-      [SIGNATURE_HEADER]: signRequest({ method, target: path, body: raw }, SECRET),
-    },
-    body: raw === '' ? undefined : raw,
-    signal: AbortSignal.timeout(5_000),
-  });
-}
-```
-
-**Python**
-
-```python
-import json
-import os
-
-import httpx
-from go_contract import SIGNATURE_HEADER, sign_request
-
-BRAIN_URL = os.environ["BRAIN_URL"]
-SECRET = os.environ["GO_SIGNING_SECRET"]
-
-
-def call_brain(method: str, path: str, body: dict | None = None) -> httpx.Response:
-    raw = b"" if body is None else json.dumps(body).encode("utf-8")
-    headers = {"content-type": "application/json", SIGNATURE_HEADER: sign_request(method, path, raw, SECRET)}
-    return httpx.request(method, BRAIN_URL + path, content=raw or None, headers=headers, timeout=5)
-```
-
-To send a pydantic model, use `model.model_dump_json(exclude_none=True).encode("utf-8")` as the raw body.
-
-The Python models check the shape of every body and most of its limits. A few limits are checked only by the TypeScript contract: lengths and link rules on fields that may be empty, and a message needing text or a card. go-brain checks all of them on everything it sends and receives.
-
-Good to know:
-- Sign the exact bytes you send. Serialize the body once, sign that string, and send that same string. If you sign one serialization and your HTTP library sends another, the signature fails.
-- `path` is what the receiver sees. If a base URL ever carries a path prefix, include the prefix in the signed target.
-
-### Checking a request you receive
-
-Read the raw body before any JSON parsing, check the signature, then parse.
-
-**TypeScript (Fastify)**
-
-```ts
-import Fastify from 'fastify';
-import { SIGNATURE_HEADER, verifyRequest } from '@go/contract';
-
-const app = Fastify();
-const SECRET = process.env.GO_SIGNING_SECRET!;
-
-// Keep the raw body: the signature covers the exact bytes.
-app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
-  (req as { rawBody?: string }).rawBody = body as string;
-  try {
-    done(null, body === '' ? {} : JSON.parse(body as string));
-  } catch (err) {
-    done(err as Error, undefined);
-  }
-});
-
-app.addHook('preHandler', async (req, reply) => {
-  const check = verifyRequest(
-    { method: req.method, target: req.url, body: (req as { rawBody?: string }).rawBody ?? '' },
-    req.headers[SIGNATURE_HEADER] as string | undefined,
-    SECRET,
-  );
-  if (!check.ok) {
-    return reply.code(401).send({ error: { code: 'bad_signature', message: `signature ${check.reason}` } });
-  }
-});
-```
-
-In Fastify, `req.url` is the path plus the query string as sent, which is exactly the signed target.
-
-**Python (FastAPI)**
-
-```python
-import os
-
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
-from go_contract import SIGNATURE_HEADER, verify_request
-
-SECRET = os.environ["GO_SIGNING_SECRET"]
-
-
-class ContractError(Exception):
-    def __init__(self, status: int, code: str, message: str):
-        self.status, self.code, self.message = status, code, message
-
-
-async def signed(request: Request) -> bytes:
-    body = await request.body()
-    target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-    check = verify_request(request.method, target, body, request.headers.get(SIGNATURE_HEADER), SECRET)
-    if not check.ok:
-        raise ContractError(401, "bad_signature", f"signature {check.reason}")
-    return body
-
-
-app = FastAPI(dependencies=[Depends(signed)])
-
-
-@app.exception_handler(ContractError)
-async def contract_error(_: Request, exc: ContractError) -> JSONResponse:
-    return JSONResponse({"error": {"code": exc.code, "message": exc.message}}, status_code=exc.status)
-```
-
-FastAPI keeps the body after the first read, so a route can still call `await request.body()` or take a model.
-
-### Proving your code is right
-
-`packages/contract/test-vectors/signing.json` has a secret, a time and three requests, each with the exact header it must produce: a POST with a JSON body, a GET with a query string and no body, and a body with `₹` and an emoji in it. Your signing code is right when it reproduces all three headers. The TypeScript and Python helpers in this repo are checked against the same file in CI.
+go-server signs one request: the WebSocket upgrade that opens the socket (`GET /v1/socket`). It puts an `x-go-signature` header on it, made with `GO_SIGNING_SECRET` from the time, the method, the path and the (empty) body, and go-brain refuses the upgrade with `401` if the header is wrong or has been used before (go-brain accepts each signature once). Frames on the open socket are not signed one by one, because the socket itself was opened with the signature. [The socket](02-the-socket.md#connecting) shows how to make the header, with code, and [Proving your signing code](02-the-socket.md#proving-your-signing-code) has the test vectors. Spend approvals carry a signature of their own, made with the Ed25519 key, as [Money and the vault](08-money-and-the-vault.md) explains.
 
 ## Ids
 
-Ids are opaque strings of 1 to 64 characters. Do not parse them or guess their format; the `t_`, `p_` and `m_` prefixes in this guide are only there to make examples readable.
+Ids are opaque strings of 1 to 64 characters. Do not parse them or guess their format. The `t_`, `p_` and `m_` prefixes in this guide are only there to make examples readable.
 
 | Who makes the id | Ids |
 |---|---|
-| go-server | `trip_id`, `person_id`, `message_id`, `decision_id`, `booking_id`, `expense_id`, `line_id`, `event_id`, `approval_id` |
-| go-brain | `card_id`, `task_id`, `call_id`, `option_id`, `fact_id`, `request_id` |
+| go-server | `trip_id`, `person_id`, `message_id`, `decision_id`, `booking_id`, `expense_id`, `line_id`, `event_id`, `approval_id`, `tap_id`, and the JSON-RPC `id` of every request go-server sends |
+| go-brain | `card_id`, `task_id`, `call_id`, `option_id`, `fact_id`, `request_id`, and the JSON-RPC `id` of every request Go sends |
 
 `person_id` is the same person in every trip they join. Go uses it to remember someone between trips, but only if they turn that on.
 
@@ -207,54 +57,80 @@ Times are ISO 8601 with an offset, such as `2026-11-06T18:10:00+05:30` or `2026-
 ## JSON rules
 
 - Field names are `snake_case`.
-- **Null and missing mean the same thing.** Any field that can be empty may be left out or sent as `null`. Python code can always use `model_dump_json(exclude_none=True)`.
-- **Ignore fields you do not know.** Either side may add a field at any time within version 1.
-- **Skip event types and card kinds you do not know.** go-brain answers `202` to an event type it does not know, and the app shows a card kind it does not know as its `fallback_text`.
+- **Null and missing mean the same thing.** Any field that can be empty may be left out or sent as `null`. Python code can always use `model_dump(mode="json", exclude_none=True)`.
+- **Ignore fields you do not know.** Either side may add a field at any time within version 1, in params, results and frames alike.
+- **Skip event types and card kinds you do not know.** go-brain accepts an event type it does not know (`{ "accepted": true, "duplicate": false }`) and skips it, and the app shows a card kind it does not know as its `fallback_text`.
+- **Answer a method you do not know with `-32601`.** The sender then skips it (see [Errors](#errors)).
+
+The Python models check the shape of every value and most of its limits. A few limits are checked only by the TypeScript contract: lengths and link rules on fields that may be empty, and a message needing text or a card. go-brain checks all of them on everything it sends and receives.
 
 ## Doing things once
 
-Networks retry, so every message between the servers may arrive twice. Two fields make that safe.
+A request can arrive twice: the socket may drop before the answer comes back, and the sender then sends it again. Requests that change something carry their own id, so the receiver does each one once.
 
-- **`event_id`** on every event. go-brain remembers the ones it has seen and answers a repeat with `{"accepted": true, "duplicate": true}` without doing anything.
-- **`request_id`** on every write go-brain sends to go-server (a message, a vote, a booking...). go-server must store it with the row it creates, with a unique index on `(trip_id, request_id)`. When the same `request_id` arrives again, go-server does nothing new and answers with the first answer, including the same ids.
+- **`event_id`** on every event. go-brain remembers the ones it has seen and answers a repeat with `{ "accepted": true, "duplicate": true }` without doing anything.
+- **`request_id`** on every write Go sends to go-server (a message, a reaction, a vote, a booking...). go-server must store it with the row it creates, with a unique index on `(trip_id, request_id)`. When the same `request_id` arrives again, go-server does nothing new and answers with the first answer, including the same ids. [Go's requests](04-gos-requests.md) shows how.
+- **`tap_id`** on every card tap. go-server makes one for each tap. Go acts on each `tap_id` once, so a resend or a double tap does not pick an option or start a payment twice.
+- **The JSON-RPC `id`** on every request frame. It matches an answer to its request. When the socket drops before the answer arrives, the sender sends the same request again after reconnecting, with the same `id` and the same `event_id`, `request_id` or `tap_id`.
+
+The JSON-RPC `id` alone does not make a request happen once. The `event_id`, `request_id` and `tap_id` do. After a restart, for example, go-server's outbox sends an event again in a new frame with a new `id`, and go-brain still recognises the `event_id`. The requests that carry none of these ids only read (such as `read_trip` or `get_person`) or are safe to repeat (such as `replace_card` with the same card, or `forget_person`), so doing them twice is harmless.
 
 ## Errors
 
-Both servers answer an error with the right HTTP status and this body:
+A request that did not work is answered with an error frame instead of a result. It has the request's `id`, a numeric `error.code`, a `message` that says what went wrong (at most 500 characters), and the code's name in `error.data.code`:
 
-<!-- schema: ErrorBody -->
+<!-- schema: SocketError -->
 ```json
-{ "error": { "code": "conflict", "message": "decision d_villa is already closed" } }
+{
+  "jsonrpc": "2.0",
+  "id": "go_2214",
+  "error": { "code": 409, "message": "decision d_villa is already closed", "data": { "code": "conflict" } }
+}
 ```
 
-| `code` | Status | What it means | Retry? |
-|---|---|---|---|
-| `bad_signature` | 401 | The signature header is missing, stale or wrong | No. Check the secret and the clock. |
-| `not_found` | 404 | The trip, person or other id does not exist | No |
-| `invalid` | 422 | The body does not match the contract. The message says which field. | No, not with the same body |
-| `conflict` | 409 | The request clashes with the current state, such as closing a vote that is already closed | No. Read the trip and decide again. |
-| `rate_limited` | 429 | Too many requests. The `Retry-After` header says how many seconds to wait. | Yes, after the wait |
-| `internal` | 500 | A bug on the other side | Yes |
-| `unavailable` | 503 | Down for a moment, usually a deploy | Yes |
+The codes are the HTTP statuses everyone knows, plus two from JSON-RPC:
 
-A timeout or a dropped connection counts as "retry".
+| `error.code` | `error.data.code` | What it means | Send it again? |
+|---|---|---|---|
+| `404` | `not_found` | The trip, person, card or other id does not exist | No |
+| `409` | `conflict` | The request clashes with the current state, such as closing a vote that is already closed | No. Read the trip and decide again. |
+| `422` | `invalid` | The params do not match the contract. The message says which field. | No, not with the same params |
+| `429` | `rate_limited` | Too many requests. `error.data.retry_after_seconds` says how long to wait. | Yes, after that wait |
+| `500` | `internal` | A bug on the other side | Yes |
+| `503` | `unavailable` | Down for a moment, usually a deploy | Yes |
+| `-32700` | none | The frame could not be read. The error's `id` is `null`, because the request's `id` could not be read either. | No. Fix the sender. |
+| `-32601` | none | The receiver does not know this method | No. Skip what you wanted to do: the other side does not support it yet. |
+
+No answer within the time limit counts as "send it again", and so does a socket that closed before the answer came.
+
+A wrong signature is not an error frame. go-brain refuses the upgrade with HTTP `401` and an `ErrorBody` with the code `bad_signature`, and the socket does not open. Check the secret and the clock, and make a new signature for every connect.
 
 ## Time limits and retries
 
-Each side answers quickly so the other is never stuck waiting.
+Each side answers quickly, so the other is never stuck waiting. A notification gets no answer, so it has no time limit.
 
-| Call | Answer within |
+| Method | Answer within |
 |---|---|
-| go-brain: `POST /v1/events` | 2 seconds (it answers `202` and does the work afterwards) |
-| go-brain: card actions and catch-up | 3 seconds |
-| go-brain: everything else | 2 seconds |
-| go-server: every trip API call | 2 seconds |
+| `send_event` | 2 seconds (go-brain stores the event, answers, and does the work afterwards) |
+| `card_tap` and `catch_up` | 3 seconds |
+| Every other request go-server sends | 2 seconds |
+| Every request Go sends | 2 seconds |
 
-When a call fails with something worth retrying:
+`packages/contract/socket/methods.json` has the time limit of every method, and `METHODS[name].answer_within_seconds` (Python) and `methodByName(name).answer_within` (TypeScript) have it in code.
 
-- **go-server sending events** waits 1 second, 5 seconds, 30 seconds, 2 minutes and 10 minutes, then every 10 minutes, and gives up after 24 hours. It keeps the events of one trip in order (see [Events](02-events.md)).
-- **go-brain calling the trip API** retries 3 times, after 0.5, 2 and 5 seconds, because someone in the room is waiting. After that, Go tells the room it could not finish and tries again later.
+When a request fails with something worth sending again:
+
+- **go-server sending events** waits 1 second, 5 seconds, 30 seconds, 2 minutes and 10 minutes, then every 10 minutes, and gives up after 24 hours. It keeps the events of one trip in order (see [Events](03-events.md)).
+- **go-server's other requests** (card taps, catch-up, people pages, forget me, vault links) are not sent again on their own. A person is waiting, so show them that it did not work and let them try again.
+- **Go's requests** are sent again 3 times, after 0.5, 2 and 5 seconds, with the same `request_id`, because someone in the room is waiting. After that, Go tells the room it could not finish and tries again later.
+
+When the socket itself drops:
+
+- **go-server reconnects** after 1, 2, 5 and 10 seconds, then every 30 seconds, until it is back. After a connect that works, the next wait starts from 1 second again.
+- **Unanswered requests go again.** After reconnecting, each side sends every request that had no answer when the socket closed, with the same JSON-RPC `id` and the same `event_id` or `request_id`. Notifications are not sent again.
+
+[The socket](02-the-socket.md#when-the-socket-drops) explains what happens in each case.
 
 ## Versions
 
-This is contract version `1.0.0`. go-brain's paths start with `/v1` and go-server's start with `/brain/v1`. `GET /v1/health` on go-brain answers with the version it speaks. Within version 1 things are only added, never renamed or removed. A breaking change would mean `/v2` paths, running next to `/v1` until both sides have moved.
+This is contract version `1.0.0`. go-brain's paths start with `/v1`: the socket is `/v1/socket`, and `GET /v1/health` answers with the version go-brain speaks. Within version 1, things are only added (fields, event types, card kinds, methods), never renamed or removed, and an unknown method is answered with `-32601`. A breaking change would mean a `/v2/socket`, running next to `/v1/socket` until both sides have moved.

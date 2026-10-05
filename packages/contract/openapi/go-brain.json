@@ -4508,7 +4508,7 @@
           "trip_id",
           "after_seq"
         ],
-        "description": "Up to 200 at a time; 200 when limit is left out."
+        "description": "Up to 200 at a time; 200 when limit is left out. go-server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit."
       },
       "WriteResult": {
         "type": "object",
@@ -5597,6 +5597,11 @@
       "CardTap": {
         "type": "object",
         "properties": {
+          "tap_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "trip_id": {
             "type": "string",
             "minLength": 1,
@@ -5630,6 +5635,7 @@
           }
         },
         "required": [
+          "tap_id",
           "trip_id",
           "card_id",
           "action_id",
@@ -6098,6 +6104,11 @@
             "type": "string",
             "const": "2.0"
           },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "method": {
             "type": "string",
             "minLength": 1,
@@ -6153,6 +6164,11 @@
             "type": "string",
             "const": "2.0"
           },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "result": {
             "type": "object",
             "propertyNames": {
@@ -6175,6 +6191,18 @@
             "type": "string",
             "const": "2.0"
           },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "error": {
             "type": "object",
             "properties": {
@@ -6194,6 +6222,18 @@
                     "properties": {
                       "code": {
                         "$ref": "#/components/schemas/ErrorCode"
+                      },
+                      "retry_after_seconds": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 3600
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [

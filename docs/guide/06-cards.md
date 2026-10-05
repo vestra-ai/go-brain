@@ -20,7 +20,9 @@ A card is something richer than text that Go posts in the room inside one of its
 
 ## How a card travels
 
-Go posts a card as the `card` of one of its messages, with `postMessage` (see [The trip API](03-trip-api.md#postmessage-post-gos-message-in-the-room)). The same JSON travels unchanged from go-brain through go-server to the app. go-server stores the card on the message exactly as it arrived and sends it to the app the same way. It never rewrites a card, so a field added to a card later in version 1 reaches the app without any change in go-server. The card also comes back to go-brain inside the `message.created` event, like every other message.
+Go posts a card as the `card` of one of its messages, by sending go-server a `post_message` request on the socket (see [Go's requests](04-gos-requests.md)). The same JSON travels unchanged from go-brain through go-server to the app. go-server stores the card on the message exactly as it arrived and sends it to the app the same way. It never rewrites a card, so a field added to a card later in version 1 reaches the app without any change in go-server.
+
+To do that, a `post_message` handler stores `raw.card` as one JSON value (for example a `jsonb` column), not the card from the checked params. Every handler gets two arguments, `(params, raw)` (see [The socket](02-the-socket.md)). `params` has been checked against the contract, and checking leaves out any field your copy of the contract does not know yet. `raw` is the frame's params exactly as they arrived, so `raw.card` still has every field Go sent. The card also comes back to go-brain inside the `message.created` event, like every other message.
 
 ## Two families of cards
 
@@ -32,7 +34,7 @@ Every card belongs to one of two families. The family decides where the app gets
 | What the card carries | Its kind and an id (such as `decision_id` or `booking_id`), plus the fields every card has | Everything to show, plus its buttons in `actions` |
 | What the app draws from | go-server's own rows: the vote, the booking, the expense, the trip's money and itinerary | The card itself |
 | Who handles the buttons | go-server | go-brain, through go-server |
-| How it changes | It always shows the row as it is now. When a vote comes in, the vote card in the room shows the new tally without a new message. | Go replaces it in place with a `PUT`. |
+| How it changes | It always shows the row as it is now. When a vote comes in, the vote card in the room shows the new tally without a new message. | Go replaces it in place with a `replace_card` request. |
 
 Record cards are drawn from go-server's rows so that the room and the Trip screens never disagree. A ticket in the room and the same booking on the Trip screen are the same row.
 
@@ -42,12 +44,12 @@ Every card, in both families, has these fields.
 
 | Field | What it is | What go-server does with it |
 |---|---|---|
-| `card_id` | Go's id for the card, unique within the trip's room. | Stores it with the message. `putCard` finds the card by this id. |
+| `card_id` | Go's id for the card, unique within the trip's room. | Stores it with the message. `replace_card` finds the card by this id. |
 | `kind` | One of the 13 kinds on this page. | Nothing. The app uses it to choose how to draw the card. |
 | `fallback_text` | Plain words that say what the card says, 1 to 300 characters. | Uses it as the push text when it pushes the card's `for_person_ids`. |
 | `for_person_ids` | The people who need to act on the card, if any. | Pushes each of them when the card is new, and pins the card in their "needs you" strip while their id stays in the list. |
 
-Go removes people from `for_person_ids` with a `PUT` once they have nothing left to do, which takes the card out of their strip. [The app](06-the-app.md#the-needs-you-strip) explains the strip.
+Go removes people from `for_person_ids` with `replace_card` once they have nothing left to do, which takes the card out of their strip. [The app](07-the-app.md#the-needs-you-strip) explains the strip.
 
 Good to know:
 - Go leaves `for_person_ids` out of vote and mandate cards. go-server already pins an open vote for everyone who has not voted, and a mandate for its payer until they answer, from its own rows.
@@ -55,7 +57,7 @@ Good to know:
 
 ## Buttons on Go cards
 
-Go cards carry their buttons in `actions`, at most three per card. A tap goes from the app to go-server, which passes it to go-brain's card action call and returns go-brain's answer to the app. Buttons on record cards never reach go-brain: go-server handles them itself.
+Go cards carry their buttons in `actions`, at most three per card. A tap goes from the app to go-server, which sends it to go-brain as a `card_tap` request on the socket and returns go-brain's answer to the app. Buttons on record cards never reach go-brain: go-server handles them itself.
 
 | Field | What it is |
 |---|---|
@@ -68,13 +70,27 @@ Go cards carry their buttons in `actions`, at most three per card. A tap goes fr
 When someone taps a button:
 
 1. The app sends go-server the card, the `action_id`, and the `option_id` when the button was on one option.
-2. go-server calls `POST /v1/trips/{trip_id}/cards/{card_id}/actions` on go-brain with the person's id.
+2. go-server sends go-brain a `card_tap` request with a new `tap_id` for this tap, the trip, the card, the `action_id`, the person who tapped and, when there is one, the `option_id`. go-brain acts on each `tap_id` once, even if the tap arrives twice.
 3. go-brain answers within 3 seconds with one of three results, and go-server passes it to the app:
    - `done`: show the `toast`, if there is one. Go follows up in the room, or updates the card in place.
    - `open`: open the `url` straight away in the system browser sheet, never in a WebView. This is how the vault page and the page for watching Go work open.
    - `refused`: show the `toast`. Nothing changed.
 
-[The brain API](05-brain-api.md#card-actions) describes this call in full, and [The app](06-the-app.md#buttons-on-go-cards) shows how the app opens links.
+Kabir taps "I'll take this" on the IndiGo 6E 2134 flight, so go-server sends go-brain this `card_tap`:
+
+<!-- schema: CardTap -->
+```json
+{ "tap_id": "tap_0413", "trip_id": "t_goa", "card_id": "c_flights_1", "action_id": "pick", "person_id": "p_kabir", "option_id": "opt_flight_1" }
+```
+
+and go-brain answers:
+
+<!-- schema: ActionDone -->
+```json
+{ "result": "done", "toast": "Noted. Go will reply in the room." }
+```
+
+[Your requests](05-your-requests.md) describes `card_tap` in full, and [The app](07-the-app.md#buttons-on-go-cards) shows how the app opens links.
 
 These are the buttons Go usually puts on its cards:
 
@@ -94,9 +110,35 @@ Good to know:
 
 ## Updating a card in place
 
-Go updates a card by sending the whole new card with the same `card_id` to `PUT /brain/v1/trips/{trip_id}/cards/{card_id}`. go-server swaps the card on its message and sends the new version to the app over the live connection. The app replaces the card and leaves the message where it is in the room.
+Go updates a card by sending go-server a `replace_card` request with the trip and the whole new card, with the same `card_id`. go-server swaps the card on its message for `raw.card`, the new card exactly as it arrived, and sends it to the app over the live connection. The app replaces the card and leaves the message where it is in the room.
 
-Go updates a live call as it moves from dialing to talking to ended, a working task as its steps finish, and a pay card as it moves to paid. It also uses a `PUT` to take people out of `for_person_ids`. A card update is not a change to the trip: it takes no change number, sends no event and sends no push. [The trip API](03-trip-api.md#putcard-replace-a-card-in-place) has the rules.
+Go updates a live call as it moves from dialing to talking to ended, a working task as its steps finish, and a pay card as it moves to paid. It also uses `replace_card` to take people out of `for_person_ids`. A card update is not a change to the trip: it takes no change number, sends no event and sends no push. [Go's requests](04-gos-requests.md) has the rules.
+
+Here Go finished its search for villas, so it replaces the working card from [Working](#working) with its final version, all steps done and no buttons left:
+
+<!-- schema: ReplaceCard -->
+```json
+{
+  "trip_id": "t_goa",
+  "card": {
+    "card_id": "c_villa_search",
+    "kind": "working",
+    "fallback_text": "Go found three villas with a pool in North Goa for 6 to 9 Nov.",
+    "task_id": "task_villas_1",
+    "title": "Finding villas with a pool in North Goa",
+    "state": "done",
+    "steps": [
+      { "text": "Search ixigo for 3 nights, 6 to 9 Nov", "state": "done" },
+      { "text": "Keep villas that sleep 5 and have a pool", "state": "done" },
+      { "text": "Read the reviews of the best 8", "state": "done" },
+      { "text": "Pick three for a vote", "state": "done" }
+    ],
+    "screenshot_url": "https://brain.go.example/img/task-villas-1-0012.jpg",
+    "updated_at": "2026-10-05T07:29:30Z",
+    "actions": []
+  }
+}
+```
 
 ## Images
 
@@ -126,7 +168,7 @@ go-server draws these eight kinds from its own rows. The card carries only the i
 
 ### Vote
 
-A vote card shows a vote and lets people vote on it. Go posts one right after it opens a vote, with `postMessage`.
+A vote card shows a vote and lets people vote on it. Go posts one with `post_message` right after it opens the vote with `open_vote`.
 
 go-server draws it from the vote's row:
 - The question at the top, and when it closes ("Closes at 6 pm", or "Closes in 2 h" near the end).
@@ -158,7 +200,7 @@ go-server draws it from the vote's mandate:
 - "Refundable only", when `refundable_only` is true.
 - Who pays, with their face: "Rahul pays".
 
-**Buttons.** "Yes, book it" (primary) and "Not now" (secondary), shown to the payer only and owned by go-server, because they are part of the spend check. Everyone else sees "Waiting for Rahul" instead. When the payer taps one, go-server records `confirmed_at` or `declined_at` and sends `mandate.confirmed` or `mandate.declined`. After the answer, the card shows it ("Rahul said yes") in place of the buttons. When Go sets a new mandate on the same vote, both answers are cleared and the buttons come back. [Money and the vault](07-money-and-the-vault.md) explains the whole payment.
+**Buttons.** "Yes, book it" (primary) and "Not now" (secondary), shown to the payer only and owned by go-server, because they are part of the spend check. Everyone else sees "Waiting for Rahul" instead. When the payer taps one, go-server records `confirmed_at` or `declined_at` and sends `mandate.confirmed` or `mandate.declined`. After the answer, the card shows it ("Rahul said yes") in place of the buttons. When Go sets a new mandate on the same vote, both answers are cleared and the buttons come back. [Money and the vault](08-money-and-the-vault.md) explains the whole payment.
 
 <!-- schema: MandateCard -->
 ```json
@@ -498,7 +540,7 @@ Draw it like this:
 
 **Buttons.** "Approve" and "Decline", shown to the payer only (`only_for_person_ids`). Everyone else sees "Waiting for Rahul". Approve answers `open` with a link to the vault page, such as `https://brain.go.example/vault/approve?link=lk_4Rt8Zp2Lq`, which expires 5 minutes after it is made. The app opens it at once in the system browser sheet (`url_launcher` with `LaunchMode.inAppBrowserView`), never in `webview_flutter`, because Face ID passkeys do not work inside a plain WebView. On the vault page, the payer sees the amount, the merchant, the refundable-until date and their card, and confirms with Face ID.
 
-This is the pay card for the villa, waiting for Rahul. The paid version is in [The trip API](03-trip-api.md#putcard-replace-a-card-in-place).
+This is the pay card for the villa, waiting for Rahul. The paid version, sent with `replace_card`, is in [Go's requests](04-gos-requests.md).
 
 <!-- schema: PayCard -->
 ```json

@@ -1079,7 +1079,7 @@ class ReadTrip(BaseModel):
 
 class ReadMessages(BaseModel):
     """
-    Up to 200 at a time; 200 when limit is left out.
+    Up to 200 at a time; 200 when limit is left out. go-server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit.
     """
 
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -1310,6 +1310,7 @@ class EventAccepted(BaseModel):
 
 
 class CardTap(BaseModel):
+    tap_id: Annotated[str, Field(max_length=64, min_length=1)]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
     action_id: Annotated[str, Field(pattern="^[a-z][a-z_]{0,31}$")]
@@ -1443,6 +1444,7 @@ class SocketRequest(BaseModel):
     """
 
     jsonrpc: Literal["2.0"]
+    id: Annotated[str, Field(max_length=64, min_length=1)]
     method: Annotated[str, Field(max_length=64, min_length=1)]
     params: dict[str, Any]
 
@@ -1463,6 +1465,7 @@ class SocketResult(BaseModel):
     """
 
     jsonrpc: Literal["2.0"]
+    id: Annotated[str, Field(max_length=64, min_length=1)]
     result: dict[str, Any]
 
 
@@ -1476,6 +1479,7 @@ class Data(BaseModel):
         "internal",
         "unavailable",
     ]
+    retry_after_seconds: int | None = None
 
 
 class Error1(BaseModel):
@@ -1490,6 +1494,7 @@ class SocketError(BaseModel):
     """
 
     jsonrpc: Literal["2.0"]
+    id: str | None
     error: Error1
 
 

@@ -18,7 +18,7 @@ export const ReadTrip = z.object({ trip_id }).meta({ id: 'ReadTrip' });
 /** Messages posted or changed after a change number (updated_seq > after_seq), oldest change first. */
 export const ReadMessages = z
   .object({ trip_id, after_seq: z.int().nonnegative(), limit: z.int().min(1).max(200).nullish() })
-  .meta({ id: 'ReadMessages', description: 'Up to 200 at a time; 200 when limit is left out.' });
+  .meta({ id: 'ReadMessages', description: 'Up to 200 at a time; 200 when limit is left out. go-server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit.' });
 
 /** What every write answers with, plus any new id. */
 export const WriteResult = z.object({ seq: Seq }).meta({ id: 'WriteResult' });

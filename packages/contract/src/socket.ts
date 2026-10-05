@@ -21,7 +21,11 @@ import { TripSnapshot } from './trip.js';
  *  - a notification has no `id` and gets no answer (typing).
  *
  * go-server connects to wss://<brain>/v1/socket with the x-go-signature header on the upgrade request
- * (method GET, target /v1/socket, empty body). See signing.ts.
+ * (method GET, target /v1/socket, empty body). See signing.ts. go-brain accepts each signature once.
+ *
+ * After a reconnect, a request that got no answer is sent again with the same id. Requests that change
+ * something carry their own id (event_id, request_id, tap_id), so the receiver does each one once even
+ * when it arrives twice. The others only read, or are safe to repeat.
  */
 export const SOCKET_PATH = '/v1/socket';
 /** go-brain pings every 20 seconds. A side that hears nothing for 40 seconds closes the socket. */
@@ -64,7 +68,13 @@ export const SocketError = z
     error: z.object({
       code: z.int(),
       message: z.string().max(500),
-      data: z.object({ code: ErrorCode }).nullish(),
+      data: z
+        .object({
+          code: ErrorCode,
+          /** With 429: how long to wait before trying again. */
+          retry_after_seconds: z.int().positive().max(3600).nullish(),
+        })
+        .nullish(),
     }),
   })
   .meta({ id: 'SocketError', description: 'The answer to a request that did not work.' });
@@ -88,7 +98,10 @@ export interface SocketMethod {
 const m = (name: string, direction: Direction, summary: string, params: z.ZodType, result: z.ZodType | null, answer_within: number | null, sends_event?: string): SocketMethod =>
   ({ name, direction, summary, params, result, answer_within, ...(sends_event ? { sends_event } : {}) });
 
-/** What go-server sends go-brain. */
+/**
+ * What go-server sends go-brain. go-brain answers send_event with { accepted: true } for an event type it
+ * does not know yet, before checking the event, so go-server can add event types within version 1.
+ */
 export const TO_BRAIN: readonly SocketMethod[] = [
   m('send_event', 'to_brain', 'Something changed in a trip. One event per change, in change-number order for each trip.', Event, EventAccepted, 2),
   m('person_typing', 'to_brain', 'Someone in the room started or stopped typing. Go waits for them to finish before it answers.', PersonTyping, null, null),

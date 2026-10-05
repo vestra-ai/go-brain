@@ -33,7 +33,8 @@ function tidy(node: unknown): void {
   const o = node as Record<string, unknown>;
   delete o.$schema;
   delete o.$id;
-  delete o.id;
+  // zod's meta id is a string; a property named `id` (a frame's id) is a schema object and stays.
+  if (typeof o.id === 'string') delete o.id;
   if ((o.format === 'date-time' || o.format === 'date') && typeof o.pattern === 'string') delete o.pattern;
   Object.values(o).forEach(tidy);
 }
