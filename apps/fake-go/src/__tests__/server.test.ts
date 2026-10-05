@@ -114,6 +114,20 @@ describe('the upgrade', () => {
     expect(await tryConnect(port, target, { 'x-go-signature': `${vPart},${tPart}` })).toMatchObject({ status: 401 });
   });
 
+  it('knows a used signature by its v1, whatever fields come before it', async () => {
+    const port = await start();
+    const target = '/v1/socket?instance=v1';
+    const used = sign(target);
+    expect('ws' in (await tryConnect(port, target, { 'x-go-signature': used }))).toBe(true);
+    // verifyRequest reads the last t, so this header still verifies; it is the same signature with a decoy in front.
+    const decoy = await tryConnect(port, target, { 'x-go-signature': `t=1,${used}` });
+    expect(decoy).toMatchObject({ status: 401 });
+    if ('status' in decoy) expect(JSON.parse(decoy.body)).toEqual({ error: { code: 'bad_signature', message: 'signature already used' } });
+    const twice = await tryConnect(port, target, { 'x-go-signature': used });
+    expect(twice).toMatchObject({ status: 401 });
+    if ('status' in twice) expect(JSON.parse(twice.body).error.message).toBe('signature already used');
+  });
+
   it('needs the query string signed, and opens nothing on other paths', async () => {
     const port = await start();
     expect(await tryConnect(port, '/v1/socket?instance=x', { 'x-go-signature': sign('/v1/socket') })).toMatchObject({ status: 401 });
