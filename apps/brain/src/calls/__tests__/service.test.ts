@@ -33,7 +33,7 @@ afterAll(async () => {
   await db.drop();
 });
 
-function make(tripId: string, o: { mode?: string; twilioFails?: boolean } = {}) {
+function make(tripId: string, o: { mode?: string; twilioFails?: boolean; placing?: Promise<void> } = {}) {
   const time = manualTime('2026-10-06T10:00:00Z');
   const link = fakeLink();
   const values: Record<string, string> = { CALLS_MODE: o.mode ?? 'allowlist' };
@@ -42,6 +42,7 @@ function make(tripId: string, o: { mode?: string; twilioFails?: boolean } = {}) 
   const twilio: TwilioClient = {
     createCall: async (p) => {
       twilioCalls.push(p);
+      if (o.placing) await o.placing;
       if (o.twilioFails) throw new TwilioError(400, 21215, 'Account not authorized to call +919800000001');
       return { sid: `CA_${tripId}` };
     },
@@ -235,6 +236,24 @@ describe('dialing', () => {
     expect(await m.service.claim(m.callId, 'forged')).toBeNull();
     expect(await m.service.claim(m.callId, m.token)).toMatchObject({ business: 'Villa Sol', forWhom: 'a group of 5 friends travelling together' });
     expect(await m.service.claim(m.callId, m.token)).toBeNull();
+  });
+
+  it('a Stop while Twilio is still placing the call hangs it up as soon as its sid is known', async () => {
+    let placed = (): void => {};
+    const m = make('t_early_stop', { placing: new Promise<void>((resolve) => { placed = resolve; }) });
+    const r = await m.request();
+    if (!('ok' in r)) throw new Error('refused');
+    m.time.advance(30_000);
+    const ticking = m.service.tick();
+    await waitFor(() => m.twilioCalls.some((c) => c.statusCallback.endsWith(`/${r.callId}`)));
+    const tap = { tap_id: 'tap_early', trip_id: 't_early_stop', card_id: `c_${r.callId}`, action_id: 'stop', person_id: 'p_priya' };
+    expect(await m.service.stopTap(tap)).toEqual({ result: 'done', toast: 'Hanging up.' });
+    await waitFor(() => m.link.of('post_message').some((p) => p.text === 'Okay, I hung up on Villa Sol.'));
+    expect(m.hangUps).toEqual([]); // no sid yet
+    placed();
+    await ticking;
+    expect(m.hangUps).toEqual(['CA_t_early_stop']);
+    expect((await store.get(r.callId))?.state).toBe('ended');
   });
 
   it('turns a Twilio refusal into a failed card and one line', async () => {

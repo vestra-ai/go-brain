@@ -263,6 +263,12 @@ export class CallService {
         ringTimeoutS: RING_TIMEOUT_S,
       });
       await this.d.store.dialInfo(row.callId, { twilioSid: sid });
+      const after = await this.d.store.get(row.callId);
+      if (after && after.state !== 'dialing' && after.state !== 'talking') {
+        // Stopped while Twilio was placing the call, before Go knew its sid: hang it up at once.
+        await twilio.hangUp(sid);
+        return;
+      }
       this.d.log.info({ callId: row.callId, to: maskPhone(row.phone) }, 'calls: dialing');
     } catch (err) {
       this.d.log.warn({ err, callId: row.callId }, 'calls: Twilio refused the call');
