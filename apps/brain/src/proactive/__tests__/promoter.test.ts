@@ -58,10 +58,26 @@ describe('createPromoter', () => {
     expect(desk.items).toHaveLength(1);
     const item = desk.items[0]!;
     expect(item).toMatchObject({ id: 'watch:t_goa:delay:1', tripId: 't_goa', kind: 'watch', ref: 'watch:t_goa:delay:1' });
-    expect(item.dueAt.toISOString()).toBe('2026-10-06T06:30:00.000Z');
+    expect(item.dueAt.toISOString()).toBe('2026-10-06T06:30:00.300Z');
     expect(proactiveOf(item)).toMatchObject({ allowed: ['pin'], forPersonIds: ['p_arjun'], tz: 'Asia/Kolkata' });
     expect(await store.status('t_goa', 'delay:1')).toMatchObject({ status: 'promoted', counted: true, allowed: ['pin'] });
     expect((await store.status('t_goa', 'later:1'))?.status).toBe('pending');
+  });
+
+  it('lands nudges let through together in one turn: one shared due time, just ahead', async () => {
+    await seedTrip(db.pool, 't_pair');
+    packs.set(goaPack({ trip: goaTrip({ trip_id: 't_pair' }) }));
+    const desk = fakeDesk();
+    const p = createPromoter({ store, desk, packs, now: manualTime(NOON).now, log });
+    const quiet = { tripId: 't_pair', topic: 'note', personIds: [], useful: ['update_card' as const], dueAt: new Date(Date.parse(NOON) - 1000) };
+    await store.add(candidate({ ...quiet, dedupeKey: 'pair:a' }));
+    await store.add(candidate({ ...quiet, dedupeKey: 'pair:b' }));
+    expect(await p.promoteTrip('t_pair')).toBe(2);
+    const items = desk.items.filter((i) => i.tripId === 't_pair');
+    expect(items).toHaveLength(2);
+    expect(new Set(items.map((i) => i.dueAt.toISOString()))).toEqual(new Set(['2026-10-06T06:30:00.300Z']));
+    expect((await store.status('t_pair', 'pair:a'))?.status).toBe('promoted');
+    expect((await store.status('t_pair', 'pair:b'))?.status).toBe('promoted');
   });
 
   it('drops a candidate that is no longer true', async () => {

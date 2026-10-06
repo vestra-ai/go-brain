@@ -4,7 +4,7 @@ import type { Desk } from '../desk/desk.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import { localDay } from './clock.js';
 import { deskId, toPayload } from './payload.js';
-import { decideBatch, type Candidate, type TripMood } from './policy.js';
+import { decideBatch, type Candidate, type Decision, type TripMood } from './policy.js';
 import type { ProactiveStore, Signals } from './store.js';
 import { stillTrue } from './timers.js';
 
@@ -28,6 +28,9 @@ export function moodFrom(sig: Signals, pack: TripPack, tz: string): TripMood {
     pausedPersonIds: pack.trip.people.filter((p) => p.go_paused).map((p) => p.person_id),
   };
 }
+
+/** How far ahead the nudges of one pass are due, so they all reach the desk before it takes any. */
+export const TOGETHER_MS = 300;
 
 export interface PromoterDeps {
   store: ProactiveStore;
@@ -68,7 +71,7 @@ export function createPromoter(deps: PromoterDeps): Promoter {
       }
       live.push({ ...c, personIds: check.personIds });
     }
-    let promoted = 0;
+    const go: Array<{ candidate: Candidate; decision: Extract<Decision, { kind: 'go' }> }> = [];
     for (const { candidate, decision } of decideBatch(live, mood, now)) {
       if (decision.kind === 'drop') {
         await deps.store.drop(candidate, decision.reason, now);
@@ -78,12 +81,20 @@ export function createPromoter(deps: PromoterDeps): Promoter {
         await deps.store.defer(candidate, decision.until, decision.reason);
         continue;
       }
-      const id = deskId(candidate);
-      await deps.desk.put({ id, tripId, kind: candidate.source, ref: id, dueAt: now, payload: toPayload(candidate, decision, tz) });
-      await deps.store.promote(candidate, { allowed: decision.allowed, forPersonIds: decision.forPersonIds, counted: decision.counted, localDay: day }, now);
-      promoted += 1;
+      go.push({ candidate, decision });
     }
-    return promoted;
+    // Everything let through together lands in one turn: one due time, a moment ahead, so the desk cannot start a
+    // turn between two puts. The items go on the desk before their rows say promoted: after a crash in between, the
+    // next pass puts the same ids again (a no-op) instead of losing a nudge the store already counted.
+    const dueAt = new Date(now.getTime() + TOGETHER_MS);
+    for (const { candidate, decision } of go) {
+      const id = deskId(candidate);
+      await deps.desk.put({ id, tripId, kind: candidate.source, ref: id, dueAt, payload: toPayload(candidate, decision, tz) });
+    }
+    for (const { candidate, decision } of go) {
+      await deps.store.promote(candidate, { allowed: decision.allowed, forPersonIds: decision.forPersonIds, counted: decision.counted, localDay: day }, now);
+    }
+    return go.length;
   }
 
   async function once(): Promise<number> {
