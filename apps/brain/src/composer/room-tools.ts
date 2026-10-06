@@ -1,7 +1,9 @@
 import * as C from '@go/contract';
+import type { Pool } from 'pg';
 import { z } from 'zod';
 import type { Message } from '../door/methods.js';
 import { SocketCallError } from '../door/rpc.js';
+import { reactOnce } from '../memory/reactions.js';
 import type { TripPack } from '../trips/pack.js';
 import { inlineData } from './fence.js';
 import { clip } from './sanitize.js';
@@ -62,7 +64,7 @@ const StaySilentInput = z.object({
 });
 
 /** The room's quick tools. None of them can pay, book or see a card: those are never composer tools in P1. */
-export function roomTools(o: { now: () => Date }): QuickTool<any>[] {
+export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] {
   const react: QuickTool<z.infer<typeof ReactInput>> = {
     name: 'react',
     description:
@@ -72,14 +74,11 @@ export function roomTools(o: { now: () => Date }): QuickTool<any>[] {
     async run(a, ctx) {
       const m = findMessage(ctx.pack, a.message_id);
       if (!m) return { ok: false, error: `There is no message ${a.message_id} in this trip.` };
-      try {
-        await ctx.link.request('add_reaction', {
-          request_id: ctx.stableId('go_react'), trip_id: ctx.tripId, message_id: m.message_id, emoji: a.emoji,
-        });
-      } catch (e) {
-        if (codeOf(e) === 409) return { ok: true, note: 'Already reacted, or the message was deleted.' };
-        throw e;
-      }
+      // The same path as the reflex's quiet ✅: Go's own record of the reactions it sent (go_reactions) and one request
+      // id per message and emoji, so a reaction Go already holds, or is sending right now, is not sent again.
+      const r = await reactOnce(o.pool, ctx.link, ctx.tripId, m, a.emoji);
+      if (r === 'failed') return { ok: false, error: 'The reaction did not go through. Carry on without it.' };
+      if (r === 'skipped') return { ok: true, note: 'Nothing to do: you already hold that reaction, or the message cannot take one.' };
       ctx.outcome.reactions += 1;
       return { ok: true };
     },

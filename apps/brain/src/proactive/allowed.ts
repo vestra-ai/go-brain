@@ -58,6 +58,11 @@ export function rulesForTurn(wake: DeskItem[]): TurnRules | null {
   };
 }
 
+/** Whether a proactive item in the wake (a timer, a watch, an opening) allowed this tool, also in a turn a person woke too. */
+export function allowedByAnItem(wake: DeskItem[], tool: string): boolean {
+  return wake.some((item) => proactiveOf(item)?.allowed.some((a) => TOOLS_FOR[a].includes(tool)) === true);
+}
+
 export function simulatedIn(wake: DeskItem[]): boolean {
   return wake.some((item) => proactiveOf(item)?.candidate.simulated === true);
 }

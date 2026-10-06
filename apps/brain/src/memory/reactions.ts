@@ -1,4 +1,4 @@
-/** Go's quiet reactions outside a turn: at most one per message and emoji, with a request_id derived from them. */
+/** Every reaction Go sends (the reflex, the notes pass, the composer's react tool): at most one per message and emoji, with a request_id derived from them. */
 import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { Message } from '../door/methods.js';
