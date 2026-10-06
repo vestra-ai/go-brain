@@ -1,5 +1,5 @@
 import type { StripeLike } from '../stripe-client.js';
-import type { ChargeInput, ChargeResult, FindResult, Rail, RailFailReason } from './rail.js';
+import type { ChargeInput, ChargeResult, FindQuery, FindResult, Rail, RailFailReason } from './rail.js';
 
 /** Charges a saved test card through Stripe test mode, off session, once per approval. */
 export class StripeTestRail implements Rail {
@@ -36,14 +36,21 @@ export class StripeTestRail implements Rail {
   }
 
   /**
-   * Read only: finds the PaymentIntent charged with this jti by its metadata (set at charge time). Succeeded is the
-   * payment; no PaymentIntent, or one that stopped, means no money went out; anything else cannot be told yet. Stripe's
-   * search can lag behind a fresh payment, so the caller waits before it reads `none` as final.
+   * Read only: lists the person's PaymentIntents since a minute before the attempt and keeps the one whose metadata
+   * carries this jti (set at charge time). Listing reads what was just written, which Stripe's search does not promise
+   * (and search is not offered to accounts in India). Succeeded is the payment; no PaymentIntent, or only ones that
+   * stopped, means no money went out; anything else cannot be told yet.
    */
-  async find(idempotencyKey: string): Promise<FindResult> {
-    if (!SEARCHABLE.test(idempotencyKey)) return { unknown: 'unsearchable_key' };
+  async find(q: FindQuery): Promise<FindResult> {
     try {
-      const found = await this.stripe.findCharges(idempotencyKey);
+      const customerId = await this.customerOf(q.personId);
+      // No Stripe customer: this rail never sent a charge for the person (charge() stops before calling Stripe).
+      if (!customerId) return { none: true };
+      const found = await this.stripe.findCharges({
+        customerId,
+        createdSince: new Date(q.since.getTime() - 60_000),
+        approvalJti: q.idempotencyKey,
+      });
       const paid = found.find((pi) => pi.status === 'succeeded');
       if (paid) return { railRef: paid.id };
       if (found.every((pi) => STOPPED.has(pi.status))) return { none: true };
@@ -55,8 +62,6 @@ export class StripeTestRail implements Rail {
   }
 }
 
-/** A key safe to put in a Stripe search query as it is. Approval ids are made of these. */
-const SEARCHABLE = /^[A-Za-z0-9_.:-]{1,64}$/;
 /** PaymentIntent states in which no money moved and none will. */
 const STOPPED: ReadonlySet<string> = new Set(['canceled', 'requires_payment_method', 'requires_action']);
 

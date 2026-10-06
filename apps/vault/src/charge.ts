@@ -29,6 +29,19 @@ export interface AttemptRow {
   rail: RailKind;
 }
 
+/** How long after its approval runs out a charge may still go to the rail (the same grace as Go's). */
+export const RAIL_GRACE_MS = 120_000;
+/** The unknown reason chargeOnce gives when the deadline has passed: the rail was not called. */
+export const PAST_DEADLINE = 'past_deadline';
+
+/**
+ * The SQL for a charge's deadline: its approval's expiry plus RAIL_GRACE_MS (the grace in seconds is the parameter
+ * named). A row from before approval_expires_at was kept is given the longest an approval lives, 600 s.
+ */
+export function deadlineSql(graceParam: string): string {
+  return `coalesce(approval_expires_at, used_at + interval '600 seconds') + make_interval(secs => ${graceParam})`;
+}
+
 /** Opens the card token in memory, hands it to the rail, and drops it. Nothing here is logged. */
 export async function chargeOnce(d: PayDeps, a: AttemptRow): Promise<ChargeResult> {
   let ref: string;
@@ -37,8 +50,14 @@ export async function chargeOnce(d: PayDeps, a: AttemptRow): Promise<ChargeResul
   } catch {
     return { failed: 'rail_error' };
   }
-  // Stamped before the call: past the deadline, a charge the rail may have seen is never called a failure.
-  await d.pool.query('update used_approvals set rail_called_at = coalesce(rail_called_at, $2) where jti = $1', [a.jti, d.now()]);
+  // Stamped before the call, with the clock as it is now, and only before the deadline: a charge is never sent on an
+  // approval past its expiry and grace, however long a sweep has been running. Past the deadline, a charge the rail may
+  // have seen is never called a failure.
+  const stamped = await d.pool.query(
+    `update used_approvals set rail_called_at = coalesce(rail_called_at, $2) where jti = $1 and ${deadlineSql('$3')} > $2 returning 1`,
+    [a.jti, d.now(), RAIL_GRACE_MS / 1000],
+  );
+  if ((stamped.rowCount ?? 0) === 0) return { unknown: PAST_DEADLINE };
   try {
     return await d.rails[a.rail].charge({
       personId: a.payer_person_id,

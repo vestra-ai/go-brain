@@ -1,4 +1,4 @@
-import type { ChargeInput, ChargeResult, FindResult, Rail, RailFailReason } from './rail.js';
+import type { ChargeInput, ChargeResult, FindQuery, FindResult, Rail, RailFailReason } from './rail.js';
 
 /** A rail that moves no money. Tests use it, and PAY_RAIL=fake uses it on stage when said out loud. */
 export class FakeRail implements Rail {
@@ -7,6 +7,8 @@ export class FakeRail implements Rail {
   readonly charges: ChargeInput[] = [];
   /** The idempotency key of every charge() call, whether or not money moved. */
   readonly asked: string[] = [];
+  /** The idempotency key of every find() call. */
+  readonly finds: string[] = [];
   /** How find() answers: from what was recorded, or a test's 'unknown' or 'throw'. */
   findAnswer: 'record' | 'unknown' | 'throw' = 'record';
   private readonly done = new Map<string, ChargeResult>();
@@ -32,10 +34,11 @@ export class FakeRail implements Rail {
     return result;
   }
 
-  async find(idempotencyKey: string): Promise<FindResult> {
+  async find(q: FindQuery): Promise<FindResult> {
+    this.finds.push(q.idempotencyKey);
     if (this.findAnswer === 'throw') throw new Error('the fake rail could not be reached');
     if (this.findAnswer === 'unknown') return { unknown: 'fake' };
-    const seen = this.done.get(idempotencyKey);
+    const seen = this.done.get(q.idempotencyKey);
     return seen && 'railRef' in seen ? { railRef: seen.railRef } : { none: true };
   }
 }

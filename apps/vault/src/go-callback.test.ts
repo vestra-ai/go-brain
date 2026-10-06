@@ -125,7 +125,7 @@ describe('a charge the rail gave no clear answer for', () => {
     expect(kinds).toEqual(['pay_attempt', 'pay_ok']);
   });
 
-  it('after 20 unclear answers is marked unknown for a person to check, never failed, and Go hears it is being checked', async () => {
+  it('after 20 unclear answers is marked unknown, never failed, and inside the lag Go still hears only that the bank is confirming', async () => {
     const { token, jti } = await f.payLinkFor({ kind: 'stripe_test' });
     f.stripe.nextCharge = { error: { type: 'StripeAPIError', code: 'api_error' } };
     try {
@@ -141,14 +141,13 @@ describe('a charge the rail gave no clear answer for', () => {
       later(0);
     }
     expect(await row(jti)).toMatchObject({ outcome: 'unknown', callback_at: null });
-    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming']);
-    expect(f.goCalls.filter((c) => c.body.approval_id === jti).at(-1)?.body).toEqual({ trip_id: 't_goa', approval_id: jti, checking: true });
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming']);
     expect(f.lines.join('\n')).toContain('marked unknown for a person to check');
     const kinds = (await f.pool.query('select kind from unlock_log where approval_id = $1 order by id', [jti])).rows.map((r) => r.kind);
     expect(kinds).toEqual(['pay_attempt']);
   });
 
-  it('past the approval and its grace, never asks the rail again about a charge it may have seen: unknown, and Go hears it is being checked', async () => {
+  it('past the approval and its grace, never charges again even when the bank would take it, and inside the lag Go hears only confirming', async () => {
     const { token, jti } = await f.payLinkFor({ kind: 'stripe_test' });
     f.stripe.throwOnce = { type: 'StripeConnectionError' };
     expect(await f.approve(token, rahul)).toEqual({ state: 'confirming' });
@@ -160,10 +159,10 @@ describe('a charge the rail gave no clear answer for', () => {
     } finally {
       later(0);
     }
-    expect(await row(jti)).toMatchObject({ outcome: 'unknown' });
+    // Nothing found yet, but the rail's records may still be catching up: the charge stays charging, not checked.
+    expect(await row(jti)).toMatchObject({ outcome: 'charging' });
     expect(f.stripe.charges.filter((c) => c.idempotencyKey === jti)).toEqual([]);
-    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming']);
-    expect(f.goCalls.filter((c) => c.body.approval_id === jti).at(-1)?.body).toEqual({ trip_id: 't_goa', approval_id: jti, checking: true });
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming']);
   });
 
   it('past the approval and its grace, fails a charge the rail was never sent, for sure, and tells Go', async () => {
@@ -245,8 +244,10 @@ describe('a charge settled from what the rail finds, never by charging again', (
     later(pastDeadline);
     try {
       await sweep(f.d);
-      // Inside the 10 minutes, "not found" may be the search lagging: a person is checking, nothing is settled.
-      expect(await row(jti)).toMatchObject({ outcome: 'unknown' });
+      // Inside the 10 minutes, "not found" may be the rail's records catching up: nothing is settled and Go still hears
+      // only that the bank is confirming.
+      expect(await row(jti)).toMatchObject({ outcome: 'charging' });
+      expect(callsFor(jti)).toEqual(['/internal/vault/confirming']);
       later(pastDeadline + 10 * 60_000);
       await sweep(f.d);
     } finally {
@@ -255,23 +256,36 @@ describe('a charge settled from what the rail finds, never by charging again', (
     expect(await row(jti)).toMatchObject({ outcome: 'failed' });
     expect(f.rail.charges.filter((c) => c.idempotencyKey === jti)).toEqual([]);
     expect(f.rail.asked.filter((k) => k === jti)).toHaveLength(1);
-    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming', '/internal/vault/failed']);
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/failed']);
     expect(f.goCalls.filter((c) => c.body.approval_id === jti).at(-1)?.body).toMatchObject({ reason: 'rail_error' });
   });
 
-  it('when find throws or cannot tell, the charge stays unknown and Go hears it is being checked once', async () => {
+  it('when find throws or cannot tell past the lag, the charge stays unknown and Go hears once that a person is checking', async () => {
     const { token, jti } = await f.payLinkFor();
     f.rail.outcome = 'unknown';
     f.rail.findAnswer = 'throw';
+    const stale = () => f.lines.filter((l) => l.includes(jti) && l.includes('a day after its deadline')).length;
     try {
       expect(await f.approve(token, rahul)).toEqual({ state: 'confirming' });
       later(pastDeadline);
       await sweep(f.d);
-      expect(await row(jti)).toMatchObject({ outcome: 'unknown' });
+      // Inside the lag: still charging, and Go still hears only confirming.
+      expect(await row(jti)).toMatchObject({ outcome: 'charging' });
+      expect(callsFor(jti)).toEqual(['/internal/vault/confirming']);
       later(pastDeadline + 30 * 60_000);
       await sweep(f.d);
+      expect(await row(jti)).toMatchObject({ outcome: 'unknown' });
       f.rail.findAnswer = 'unknown';
       await sweep(f.d);
+      // One find per sweep, never two.
+      expect(f.rail.finds.filter((k) => k === jti)).toHaveLength(3);
+      expect(f.lines.some((l) => l.includes(jti) && l.includes('still not settled'))).toBe(true);
+      // A day after the deadline it is no longer looked for, and that is said once.
+      later(pastDeadline + 25 * 3_600_000);
+      await sweep(f.d);
+      await sweep(f.d);
+      expect(f.rail.finds.filter((k) => k === jti)).toHaveLength(3);
+      expect(stale()).toBe(1);
     } finally {
       f.rail.outcome = 'ok';
       f.rail.findAnswer = 'record';
@@ -281,5 +295,44 @@ describe('a charge settled from what the rail finds, never by charging again', (
     expect(f.rail.asked.filter((k) => k === jti)).toHaveLength(1);
     expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming']);
     expect(f.goCalls.filter((c) => c.body.approval_id === jti).at(-1)?.body).toMatchObject({ checking: true });
+  });
+});
+
+describe('the deadline, checked again at each charge', () => {
+  it('a sweep whose clock passes the deadline partway through charges none of the rows that ran out meanwhile', async () => {
+    const card = (await f.pool.query<{ card_id: string }>("select card_id from cards where person_id = 'p_rahul' limit 1")).rows[0];
+    const charging = async (usedAt: string): Promise<string> => {
+      const { jti } = await f.payLinkFor();
+      const link = (await f.pool.query<{ link_id: string }>('select link_id from links where approval_id = $1 limit 1', [jti])).rows[0];
+      await f.pool.query(
+        `insert into used_approvals (jti, approval_id, trip_id, payer_person_id, link_id, card_id, amount_minor, currency, merchant, rail, outcome, used_at,
+           approval_expires_at)
+         values ($1, $1, 't_goa', 'p_rahul', $2, $3, 5420000, 'INR', 'ixigo: Villa Sol, Anjuna', 'fake', 'charging', $4, '2026-10-05T09:10:00Z')`,
+        [jti, link?.link_id, card?.card_id, new Date(usedAt)],
+      );
+      return jti;
+    };
+    // Two charges left half done, both with a 09:12 deadline.
+    const first = await charging('2026-10-05T09:05:00Z');
+    const second = await charging('2026-10-05T09:06:00Z');
+    // The rail is slow: the first charge takes the clock past the deadline.
+    const realCharge = f.rail.charge.bind(f.rail);
+    f.rail.charge = async (input) => {
+      const result = await realCharge(input);
+      f.setNow(new Date('2026-10-05T09:12:30Z'));
+      return result;
+    };
+    f.setNow(new Date('2026-10-05T09:11:59Z'));
+    try {
+      await sweep(f.d);
+    } finally {
+      f.rail.charge = realCharge;
+      f.setNow(new Date('2026-10-05T09:01:00Z'));
+    }
+    expect(f.rail.asked.filter((k) => k === first)).toHaveLength(1);
+    expect(f.rail.asked.filter((k) => k === second)).toEqual([]);
+    expect(f.rail.charges.filter((c) => c.idempotencyKey === second)).toEqual([]);
+    const late = (await f.pool.query('select outcome, rail_called_at, charge_tries from used_approvals where jti = $1', [second])).rows[0];
+    expect(late).toMatchObject({ outcome: 'charging', rail_called_at: null, charge_tries: 0 });
   });
 });

@@ -11,8 +11,9 @@ export class FakeStripe implements StripeLike {
   nextCharge: NextCharge = { status: 'succeeded' };
   /** The next charge throws this Stripe error once. With `afterCharging`, Stripe took the charge and the answer was lost. */
   throwOnce: { type: string; code?: string; afterCharging?: boolean } | null = null;
-  /** Search fails, the way Stripe's API can. */
-  searchThrows = false;
+  /** Listing fails, the way Stripe's API can. */
+  listThrows = false;
+  private readonly customerByKey = new Map<string, string>();
 
   async createCustomer(): Promise<{ id: string }> {
     const id = `cus_${this.customers.length + 1}`;
@@ -26,11 +27,11 @@ export class FakeStripe implements StripeLike {
     return { id, clientSecret: `${id}_secret_test` };
   }
 
-  /** Search answers from the charges recorded under each key, as Stripe's would once it caught up. */
-  async findCharges(approvalJti: string): Promise<Array<{ id: string; status: string }>> {
-    if (this.searchThrows) throw Object.assign(new Error('Stripe search failed.'), { type: 'StripeAPIError' });
-    const seen = this.byKey.get(approvalJti);
-    return seen ? [seen] : [];
+  /** Lists what was charged under a key for that customer, as Stripe's list does (it ignores the time window). */
+  async findCharges(i: { customerId: string; createdSince: Date; approvalJti: string }): Promise<Array<{ id: string; status: string }>> {
+    if (this.listThrows) throw Object.assign(new Error('Stripe could not list PaymentIntents.'), { type: 'StripeAPIError' });
+    const seen = this.byKey.get(i.approvalJti);
+    return seen && this.customerByKey.get(i.approvalJti) === i.customerId ? [seen] : [];
   }
 
   /** What Stripe.js does on the vault page when the person types a test card and taps Save. */
@@ -57,6 +58,7 @@ export class FakeStripe implements StripeLike {
       this.throwOnce = null;
       if (once.afterCharging) {
         this.charges.push(input);
+        this.customerByKey.set(input.idempotencyKey, input.customerId);
         this.byKey.set(input.idempotencyKey, { id: `pi_${this.charges.length}`, status: 'succeeded' });
       }
       throw Object.assign(new Error('The connection to Stripe dropped.'), { type: once.type, ...(once.code ? { code: once.code } : {}) });
@@ -64,6 +66,7 @@ export class FakeStripe implements StripeLike {
     const next = this.nextCharge;
     if ('error' in next) throw Object.assign(new Error('The card was refused.'), next.error);
     this.charges.push(input);
+    this.customerByKey.set(input.idempotencyKey, input.customerId);
     const result = { id: `pi_${this.charges.length}`, status: next.status };
     this.byKey.set(input.idempotencyKey, result);
     return result;

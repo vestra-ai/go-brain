@@ -39,11 +39,18 @@ export type SettledResult = Exclude<ChargeResult, { unknown: string }>;
  */
 export type FindResult = { railRef: string } | { none: true } | { unknown: string };
 
+/** What a rail needs to look up a charge: its idempotency key, whose card it was, and when the attempt began. */
+export interface FindQuery {
+  idempotencyKey: string;
+  personId: string;
+  since: Date;
+}
+
 export interface Rail {
   readonly kind: RailKind;
   charge(input: ChargeInput): Promise<ChargeResult>;
   /** Read only: looks up the charge made with this idempotency key. Used once it is too late to call charge() again. */
-  find(idempotencyKey: string): Promise<FindResult>;
+  find(q: FindQuery): Promise<FindResult>;
 }
 
 export type Rails = Record<RailKind, Rail>;

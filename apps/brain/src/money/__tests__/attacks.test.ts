@@ -257,28 +257,73 @@ describe('a charge the bank has not confirmed', () => {
     expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
   });
 
-  it('long after the approval ran out: never starts it again, never asks the rail again, and says a person is checking', async () => {
+  it('long after the approval ran out: confirming inside the lag, then the normal failed card once nothing was found', async () => {
     const { card, approvalId } = await confirmingPayment();
-    // Go's sweep leaves it alone and Approve never starts it again.
+    // Three minutes past the 09:12 deadline: Go's sweep leaves it alone and Approve never starts it again.
     k.advance(15 * 60_000);
     await pay.sweep();
     expect(await seen.taps.get('pay:approve')?.(tap(card.card_id, 'p_rahul'), card)).toMatchObject({ result: 'refused' });
     await pay.settled();
     expect(payCards()).toHaveLength(1);
-    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
-    // Past the approval's expiry plus its grace, the vault never calls the rail again, even if the bank would now say yes.
+    // The vault never charges past the deadline, even if the bank would now say yes. Finding nothing yet, it lets Go keep
+    // saying the bank is confirming: the rail's records may still be catching up.
     vault.rail.outcome = 'ok';
     await vault.sweep();
     await pay.settled();
     expect(vault.rail.charges).toEqual([]);
-    expect((await vault.pool.query('select outcome from used_approvals where jti = $1', [approvalId])).rows[0].outcome).toBe('unknown');
-    expect((await k.pool.query('select state, checking_at from payments where approval_id = $1', [approvalId])).rows[0]).toMatchObject({
-      state: 'confirming',
-      checking_at: expect.any(Date),
-    });
-    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).fallback_text).toBe(TOASTS.checking);
-    expect(k.server.writesOf('add_booking')).toEqual([]);
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).fallback_text).toContain('with the bank');
     expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+    // Ten minutes past the deadline with still nothing found, no money went out: the normal failed card, one line, one release.
+    k.advance(8 * 60_000);
+    await vault.sweep();
+    await pay.settled();
+    expect(vault.rail.charges).toEqual([]);
+    expect((await vault.pool.query('select outcome from used_approvals where jti = $1', [approvalId])).rows[0].outcome).toBe('failed');
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).state).toBe('failed');
+    expect(k.server.posts.filter((p) => p.text?.includes("didn't go through"))).toHaveLength(1);
+    expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
+    expect(k.server.writesOf('add_booking')).toEqual([]);
+  });
+
+  /** The bank's answer is lost and the rail cannot be asked: past the lag, Go's card says a person is checking. */
+  async function checkingPayment(outcome: 'lost' | 'unknown'): Promise<C.Card> {
+    await setUp();
+    const card = await payCardUp();
+    const url = await approveUrl(card);
+    vault.rail.outcome = outcome;
+    vault.rail.findAnswer = 'throw';
+    expect(await vault.approve(url, rahul)).toMatchObject({ state: 'confirming' });
+    await pay.settled();
+    // 09:23: past the 09:12 deadline and the ten minutes after it.
+    k.advance(23 * 60_000);
+    await vault.sweep();
+    await pay.settled();
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).fallback_text).toBe(TOASTS.checking);
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+    return card;
+  }
+
+  it('a payment a person was checking, found later: Go books it once and the card is paid', async () => {
+    const card = await checkingPayment('lost');
+    vault.rail.findAnswer = 'record';
+    await vault.sweep();
+    await pay.settled();
+    expect(vault.rail.charges).toHaveLength(1);
+    expect(k.server.writesOf('add_booking')).toHaveLength(1);
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).state).toBe('paid');
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+  });
+
+  it('a payment a person was checking, with nothing found: the failed card, one line, one release, no booking', async () => {
+    const card = await checkingPayment('unknown');
+    vault.rail.findAnswer = 'record';
+    await vault.sweep();
+    await pay.settled();
+    expect(vault.rail.charges).toEqual([]);
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).state).toBe('failed');
+    expect(k.server.posts.filter((p) => p.text?.includes("didn't go through"))).toHaveLength(1);
+    expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
+    expect(k.server.writesOf('add_booking')).toEqual([]);
   });
 });
 
