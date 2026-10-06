@@ -20,6 +20,15 @@ describe('maskSecrets', () => {
     }
   });
 
+  it('hides a card number written with dots or more than one space between the groups', () => {
+    for (const card of ['4111.1111.1111.1111', '4111  1111  1111  1111', '5555   5555 5555   4444', '4111.1111 1111-1111']) {
+      const out = maskSecrets(`card ${card} le lo`);
+      expect(out.text).toBe(`card ${CARD_HIDDEN} le lo`);
+      expect(out.kinds).toEqual(['card']);
+    }
+    expect(maskSecrets('order 4111.1111.1111.1112').kinds).toEqual([]);
+  });
+
   it('hides a card inside a longer digit run', () => {
     expect(maskSecrets('1 4111 1111 1111 1111').text).toBe(CARD_HIDDEN);
   });
