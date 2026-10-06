@@ -198,7 +198,8 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(dialAt - Date.parse(line.sent_at)).toBeGreaterThanOrEqual(29_000);
     expect(dialAt - callCueSentAt).toBeLessThanOrEqual(35_000);
     took.push({ beat: 'call', ms: dialAt - callCueSentAt });
-    // Only the allowlisted number is ever dialled.
+    // Only the allowlisted number is ever dialled. P6 posts the dialing card before it asks Twilio, so wait for the dial.
+    await fake().waitFor(() => (d().twilio.calls.length > 0 ? true : null), 5_000).catch(() => null);
     expect(d().twilio.calls.map((c) => c.to)).toEqual([DEMO_CALLEE.phone]);
     mark('call_card', await goAfter(line.seq, (m) => m.card?.card_id === callCard.card_id));
     await fake().waitFor(() => ((cardNow(callCard.card_id) as Card<'call'> | null)?.state === 'ended' ? true : null), 40_000);
