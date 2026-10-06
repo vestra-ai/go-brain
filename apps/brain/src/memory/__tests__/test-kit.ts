@@ -2,6 +2,7 @@
 import type { Pool } from 'pg';
 import type { Message } from '../../door/methods.js';
 import type { ServerLink } from '../../door/server-link.js';
+import type { SideBody } from '../side-model.js';
 
 /** Writes messages the way P1's trip log stores them (one row per message, the whole message in payload). */
 export async function seedMessages(pool: Pool, tripId: string, messages: Message[]): Promise<void> {
@@ -59,6 +60,36 @@ export function scriptedSide(answers: string[]) {
       const next = answers.shift();
       if (next === undefined) throw new Error('the scripted side model has no answer left');
       return next;
+    },
+  };
+}
+
+/**
+ * A model client shaped like brain.anthropic (P1's AnthropicLike) for the side passes: messages.create
+ * answers from a script, one text answer per call, and keeps every request. The side passes never stream.
+ */
+export function scriptedClient(answers: string[]) {
+  const requests: Array<{ body: SideBody; signal: AbortSignal | undefined }> = [];
+  const prompts: Array<{ model: string; system: string; user: string; maxTokens: number }> = [];
+  return {
+    requests,
+    prompts,
+    messages: {
+      async create(body: SideBody, opts?: { signal?: AbortSignal }) {
+        requests.push({ body, signal: opts?.signal });
+        prompts.push({
+          model: body.model,
+          system: body.system.map((b) => b.text).join('\n'),
+          user: body.messages.map((m) => m.content).join('\n'),
+          maxTokens: body.max_tokens,
+        });
+        const next = answers.shift();
+        if (next === undefined) throw new Error('the scripted model has no answer left');
+        return { content: [{ type: 'text', text: next }], usage: { input_tokens: 0, output_tokens: 0 } };
+      },
+      stream(): never {
+        throw new Error('the side passes never stream');
+      },
     },
   };
 }
