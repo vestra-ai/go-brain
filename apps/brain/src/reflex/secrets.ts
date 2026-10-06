@@ -43,8 +43,8 @@ function holdsCard(digits: string): boolean {
   return false;
 }
 
-// 13 or more digits, with single spaces or hyphens allowed between them.
-const DIGIT_RUN = /(?<!\d)\d(?:[ -]?\d){12,}(?!\d)/g;
+// 13 or more digits, with a hyphen, a dot or any number of spaces allowed between them.
+const DIGIT_RUN = /(?<!\d)\d(?:(?:[.-]| +)?\d){12,}(?!\d)/g;
 const CVV = /\b(cvv2?|cvc|security code)(\s*(?:is|hai|:|=|-)?\s*)(\d{3,4})\b/gi;
 const CODE_AFTER = /\b(otp|one[- ]time (?:password|code)|verification code|login code|code|pin)(\s*(?:is|hai|:|=|-)?\s*)(\d{4,8})\b/gi;
 const CODE_BEFORE = /\b(\d{4,8})(\s+(?:is|hai)\s+(?:the\s+|my\s+|mera\s+)?(?:otp|code|pin)\b)/gi;
@@ -55,7 +55,7 @@ const NOT_A_SECRET_BEFORE = /(pin|zip|postal|promo|coupon|discount|area)\s*$/i;
 export function maskSecrets(input: string): Masked {
   const kinds = new Set<SecretKind>();
   let text = input.replace(DIGIT_RUN, (run: string) => {
-    if (!holdsCard(run.replace(/[ -]/g, ''))) return run;
+    if (!holdsCard(run.replace(/[ .-]/g, ''))) return run;
     kinds.add('card');
     return CARD_HIDDEN;
   });

@@ -162,6 +162,37 @@ describe('the desk', () => {
     expect(rows[0].error).toMatch(/^gave up after 3 attempts/);
   });
 
+  it('a message that lands while a failed turn waits for its retry joins the retry, so nothing is answered twice', async () => {
+    const c = clock();
+    const T = newTrip();
+    let failed = false;
+    const { desk, of } = make(c, {
+      run: async (t) => {
+        if (t.tripId === T && !failed) {
+          failed = true;
+          throw new Error('the model fell over');
+        }
+      },
+    });
+    await desk.put(msgItem(T, 1, c.now()));
+    await desk.tick();
+    expect(of(T)).toHaveLength(1);
+    await desk.put(msgItem(T, 2, later(c, 500)));
+    c.advance(600);
+    await desk.tick();
+    expect(of(T)).toHaveLength(1);
+    c.advance(500);
+    await desk.tick();
+    expect(of(T)).toHaveLength(2);
+    expect(of(T)[1]).toMatchObject({ turnId: of(T)[0]?.turnId, attempt: 2 });
+    expect(of(T)[1]?.items.map((i) => i.ref).sort()).toEqual(['m_1', 'm_2']);
+    c.advance(10_000);
+    await desk.tick();
+    expect(of(T)).toHaveLength(2);
+    const { rows } = await db.pool.query('select count(*)::int as open from desk_items where trip_id = $1 and done_at is null', [T]);
+    expect(rows[0].open).toBe(0);
+  });
+
   it('a copy that died mid-turn: its lease runs out and its items run again under the same turn id', async () => {
     const c = clock();
     const T = newTrip();
