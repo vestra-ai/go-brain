@@ -14,3 +14,4 @@ export * from './report-md.js';
 export * from './sim-port.js';
 export * from './replay.js';
 export * from './run-fast.js';
+export * from './run-live.js';
