@@ -14,6 +14,12 @@ import { createContext, type TurnLimits } from '../context.js';
 import { roomTools } from '../room-tools.js';
 import { createSpeak } from '../speak.js';
 import { createTools, type QuickTool } from '../tools.js';
+import { FakeIxigoStore } from '../../travel/fake-ixigo/data.js';
+import { createImages } from '../../travel/images.js';
+import { createTravelLayer } from '../../travel/layer.js';
+import { createFakeTravel } from '../../travel/mcp-travel.js';
+import { createResultsStore } from '../../travel/results.js';
+import { travelTools } from '../../travel/tools.js';
 import { createComposer, OVER_BUDGET, TROUBLE } from '../turn.js';
 import { ASK_HOW_MUCH, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
@@ -633,5 +639,69 @@ describe('a reply of card tools ends the turn on its cards', () => {
       ['Friday: three flights after 6 pm.', 'd_flights'],
       [OVER_BUDGET, undefined],
     ]);
+  });
+});
+
+describe('show the options and put them to a vote in one reply', () => {
+  // Travel's own tools on the fake travel backend, as the brain registers them.
+  const now = (): Date => new Date('2026-10-07T12:00:00Z');
+  const travelOf = () => {
+    const results = createResultsStore(db.pool);
+    const fake = createFakeTravel({ store: new FakeIxigoStore({ now }), now, payRail: () => 'fake' });
+    const travel = createTravelLayer({ switches: { get: () => 'fake' }, now, fake, ixigo: null, results });
+    return travelTools({ travel, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now });
+  };
+  const STAYS = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5, must_have: ['pool', 'beach'] };
+  const resultsIdOf = (body: any): string => JSON.parse(body.messages.at(-1).content[0].content).results_id;
+
+  it('the card, the vote and the line in one reply: one model call after the search, one vote opened', async () => {
+    const ask = msg(3, 'p_priya', '@Go find villas with a pool and put them to a vote');
+    const r = room({
+      messages: [ask],
+      extraTools: travelOf(),
+      script: (body, call) =>
+        call === 0
+          ? { tools: [{ name: 'search_stays', input: STAYS }] }
+          : call === 1
+            ? {
+                text: 'Three villas with a pool, vote is up.',
+                tools: [{ name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool' } }, { name: 'put_to_vote', input: {} }],
+              }
+            : { text: 'never asked' },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(1);
+    // The line rides with the options card; the vote card follows it, as every second card does.
+    expect(r.posts().map((p) => [p.params.text, p.params.card?.kind])).toEqual([
+      ['Three villas with a pool, vote is up.', 'options'],
+      [undefined, 'vote'],
+    ]);
+    expect(r.posts()[1]?.params.card).toMatchObject({ decision_id: 'd_first' });
+  });
+
+  it('a vote with no card_id after two options cards is refused, opens nothing, and goes back to the model', async () => {
+    const ask = msg(3, 'p_priya', '@Go villas, two sets, and a vote');
+    const r = room({
+      messages: [ask],
+      extraTools: travelOf(),
+      script: (body, call) =>
+        call === 0
+          ? { tools: [{ name: 'search_stays', input: STAYS }] }
+          : call === 1
+            ? {
+                tools: [
+                  { name: 'show_options', input: { results_id: resultsIdOf(body), option_numbers: [1, 2], title: 'Two villas' } },
+                  { name: 'show_options', input: { results_id: resultsIdOf(body), option_numbers: [3, 4], title: 'Two more' } },
+                  { name: 'put_to_vote', input: {} },
+                ],
+              }
+            : { text: 'Which set should we vote on?' },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(3);
+    expect(r.calls.filter((c) => c.method === 'open_vote')).toEqual([]);
+    expect(JSON.stringify(r.model.bodies[2].messages.at(-1).content)).toContain('which_card');
+    expect(r.posts()[0]?.params.text).toBe('Which set should we vote on?');
   });
 });

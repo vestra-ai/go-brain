@@ -158,7 +158,12 @@ const ShowArgs = z.object({
 });
 
 const VoteArgs = z.object({
-  card_id: z.string().min(3).max(64),
+  card_id: z
+    .string()
+    .min(3)
+    .max(64)
+    .optional()
+    .describe('The options card to vote on. Leave it out to vote on the options card you show in this same reply.'),
   question: z.string().min(3).max(200).optional(),
   closes_in_hours: z.number().min(0.5).max(72).optional(),
 });
@@ -216,15 +221,29 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   };
   const putToVote: QuickTool<z.infer<typeof VoteArgs>> = {
     name: 'put_to_vote',
-    description: 'Opens a vote on the options of an options card Go showed (card_id). The vote card goes out with your message: write your one short line in the same reply. Use it when the group should decide together.',
+    description:
+      'Opens a vote on the options of an options card Go showed (card_id). To show options and put them to a vote at once, ' +
+      'call show_options and then this with no card_id, in the same reply. The vote card goes out with your message: ' +
+      'write your one short line in the same reply. Use it when the group should decide together.',
     input: VoteArgs,
     endsTurn: true,
     async run(a, ctx) {
+      // No card_id: the one options card shown earlier in this reply (the loop runs a reply of card tools in order).
+      let cardId = a.card_id;
+      if (!cardId) {
+        const shown = ctx.cards.filter((c) => c.kind === 'options');
+        if (shown.length !== 1) {
+          return shown.length === 0
+            ? { error: 'no_card', note: 'Show the options first with show_options in this reply, or give the card_id of a card shown before.' }
+            : { error: 'which_card', note: `This reply showed ${shown.length} options cards: give the card_id of the one to vote on.` };
+        }
+        cardId = shown[0]!.card_id;
+      }
       const r = await openVoteFromCard(
         { results: d.results, link: ctx.link, now: d.now },
         {
           tripId: ctx.tripId,
-          cardId: a.card_id,
+          cardId,
           key: ctx.turnId,
           requestId: ctx.stableId('go_vote'),
           voteCardId: ctx.stableId('c_vote'),
