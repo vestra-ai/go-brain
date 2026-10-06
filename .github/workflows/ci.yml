@@ -60,3 +60,35 @@ jobs:
           curl --fail --silent --show-error --retry 15 --retry-delay 1 --retry-all-errors http://localhost:8080/v1/health
       - if: failure()
         run: docker logs fake-go || true
+
+  brain-image:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: go
+          POSTGRES_PASSWORD: go
+          POSTGRES_DB: go
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U go"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      # Builds the image Railway builds, so a broken Dockerfile fails here and not on a deploy. Nothing is pushed.
+      - run: docker build -f apps/brain/Dockerfile -t go-brain .
+      # Boots it against the Postgres service with throwaway values made on the runner (it migrates on boot), and checks
+      # that /v1/health answers. The model key is a placeholder: nothing calls the model at boot.
+      - run: |
+          docker run -d --name go-brain --network host \
+            -e DATABASE_URL=postgres://go:go@localhost:5432/go \
+            -e GO_SIGNING_SECRET="$(openssl rand -hex 32)" \
+            -e GO_PUBLIC_URL=http://localhost:8080 \
+            -e ANTHROPIC_API_KEY="placeholder-$(openssl rand -hex 8)" \
+            go-brain
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-all-errors http://localhost:8080/v1/health
+      - if: failure()
+        run: docker logs go-brain || true

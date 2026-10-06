@@ -201,13 +201,16 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     }
     const reply = await stream.finalMessage();
     addUsage(usage, usageOf(reply.usage, i.model));
-    messages.push({ role: 'assistant', content: toParams(reply.content) });
     const text = reply.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)
       .join('')
       .trim();
     if (text) latestText = text;
+    // The API refuses an empty assistant message in an exchange that goes on (the pre-post check continues this one): a
+    // round that wrote nothing stands for the answer the turn will post, the latest text an earlier round wrote.
+    const said = toParams(reply.content);
+    messages.push({ role: 'assistant', content: said.length || !latestText ? said : [{ type: 'text', text: latestText }] });
     const calls = reply.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (reply.stop_reason !== 'tool_use' || calls.length === 0) {
       return { text: text || latestText, silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason };
