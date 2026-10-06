@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "room": "tsx src/cli.ts"
   },
   "dependencies": {
     "@go/contract": "workspace:*",

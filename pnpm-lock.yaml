@@ -13,6 +13,52 @@ importers:
 
   .: {}
 
+  apps/brain:
+    dependencies:
+      '@anthropic-ai/sdk':
+        specifier: 0.93.0
+        version: 0.93.0(zod@4.3.6)
+      '@go/contract':
+        specifier: workspace:*
+        version: link:../../packages/contract
+      '@vestra/agent-sdk':
+        specifier: workspace:*
+        version: link:../../packages/agent-sdk
+      fastify:
+        specifier: ^5.12.5
+        version: 5.12.5
+      pg:
+        specifier: ^8.13.0
+        version: 8.23.1
+      ws:
+        specifier: ^8.22.0
+        version: 8.22.0
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@go/sim':
+        specifier: workspace:*
+        version: link:../../packages/sim
+      '@types/node':
+        specifier: ^20.14.0
+        version: 20.19.43
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.23.1
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.17
+        version: 4.1.11(@types/node@20.19.43)(@vitest/coverage-v8@4.1.11)(vite@8.3.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.0))
+
   apps/fake-go:
     dependencies:
       '@go/contract':
@@ -1530,7 +1576,7 @@ snapshots:
 
   '@types/pg@8.23.1':
     dependencies:
-      '@types/node': 22.20.5
+      '@types/node': 20.19.43
       pg-protocol: 1.16.1
       pg-types: 2.2.0
 
