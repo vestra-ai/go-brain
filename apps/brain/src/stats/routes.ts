@@ -4,7 +4,7 @@
  */
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { bearerOf, registerSessionRoute, sameToken, signedIn, signInPage } from '../admin/session.js';
+import { bearerOf, PAGE_HEADERS, registerSessionRoute, sameToken, signedIn, signInPage, type SessionOptions } from '../admin/session.js';
 import type { Brain } from '../app.js';
 import { renderBoardPage, renderClosedPage, renderTiles } from './board-html.js';
 import { statsRegistry } from './sources.js';
@@ -45,16 +45,18 @@ function hoursOf(raw: unknown): number {
 export function registerStats(brain: StatsBrain): void {
   const { http, pool } = brain;
   const expected = brain.env.ADMIN_TOKEN;
-  if (expected !== undefined && expected !== '') registerSessionRoute(http, expected, brain.env.GO_PUBLIC_URL.startsWith('https:'));
+  const session: SessionOptions | null =
+    expected !== undefined && expected !== '' ? { token: expected, secure: brain.env.GO_PUBLIC_URL.startsWith('https:'), now: brain.now } : null;
+  if (session) registerSessionRoute(http, session);
   /** A person's browser signs in with the cookie; `bearerOnly` is for the bench's POST. */
   const denied = (req: FastifyRequest, bearerOnly = false): Denied | null => {
-    if (expected === undefined || expected === '') return { status: 503, body: { error: { code: 'unavailable', message: 'The board is off until ADMIN_TOKEN is set.' } } };
-    const ok = bearerOnly ? sameToken(bearerOf(req), expected) : signedIn(req, expected);
+    if (!session) return { status: 503, body: { error: { code: 'unavailable', message: 'The board is off until ADMIN_TOKEN is set.' } } };
+    const ok = bearerOnly ? sameToken(bearerOf(req), session.token) : signedIn(req, session);
     if (!ok) return { status: 401, body: { error: { code: 'bad_signature', message: 'Wrong or missing token.' } } };
     return null;
   };
   const board = (q: Query): Promise<BoardNumbers> => computeBoard(pool, statsRegistry(brain), { now: brain.now(), hours: hoursOf(q.hours) });
-  const htmlHeaders = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-robots-tag': 'noindex' };
+  const htmlHeaders = PAGE_HEADERS;
 
   http.get<{ Querystring: Query }>('/stats.json', QUIET, async (req, reply) => {
     const no = denied(req);

@@ -1,7 +1,9 @@
-// A trip's chat from Go's database as a bench recording, keeping the labels already written by hand in the file.
-//   pnpm --filter @go/bench export-trip -- --trip <trip_id> --database-url <url>
+// A trip's chat from Go's database as a bench recording, keeping the labels already written by hand in the file. The
+// database address holds a password, so it comes from the environment: export GO_DATABASE_URL (the brain service's
+// DATABASE_URL; the export only reads it), then
+//   pnpm --filter @go/bench export-trip -- --trip <trip_id>
 // It writes packages/bench/chats/private/real-trip.jsonl, which git ignores (real people's words), unless --out names
-// another file. The database is the brain service's DATABASE_URL (or GO_DATABASE_URL); the export only reads it.
+// another file.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -16,7 +18,7 @@ const { values } = parseArgs({
 const trip = values.trip;
 const databaseUrl = values['database-url'] ?? process.env['GO_DATABASE_URL'];
 if (!trip || !databaseUrl) {
-  console.error('Usage: export-trip -- --trip <trip_id> --database-url <url> [--out <file>] (or set GO_DATABASE_URL)');
+  console.error('Usage: export GO_DATABASE_URL (the brain service\'s DATABASE_URL), then export-trip -- --trip <trip_id> [--out <file>]');
   process.exit(2);
 }
 // pnpm runs the script inside packages/bench; a path on the command line is read from where pnpm was started.

@@ -10,18 +10,30 @@ import { newUlid } from '../door/ulid.js';
 import { checkAll, defaultProbes, type Probe, type ProbeResult } from './health.js';
 import { ADMIN_LANES, NOT_DEPLOYED, type AdminLanes } from './lanes.js';
 import { renderAdminPage } from './page.js';
-import { registerSessionRoute, signedIn, signInPage } from './session.js';
+import { PAGE_HEADERS, registerSessionRoute, signedIn, signInPage, type SessionOptions } from './session.js';
 import { SWITCH_RULES, type SwitchName } from './switches.js';
 
 export const DOCS_URL = 'https://vestrago.vercel.app/docs';
 export const SWITCH_NAMES = Object.keys(SWITCH_RULES) as SwitchName[];
 
 const FORM = 'application/x-www-form-urlencoded';
-const HTML_HEADERS = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-robots-tag': 'noindex' };
+
+/** Which deployment this Go is: brain (the stage) or brain-rehearsal. null when it cannot tell. */
+export type GoRole = 'stage' | 'rehearsal';
+
+/** GO_ROLE, else Railway's service name (brain is the stage, brain-rehearsal the rehearsal Go), else null. */
+export function roleOf(env: { GO_ROLE?: GoRole | undefined; RAILWAY_SERVICE_NAME?: string | undefined }): GoRole | null {
+  if (env.GO_ROLE) return env.GO_ROLE;
+  if (env.RAILWAY_SERVICE_NAME === 'brain-rehearsal') return 'rehearsal';
+  if (env.RAILWAY_SERVICE_NAME === 'brain') return 'stage';
+  return null;
+}
 
 /** What GET /admin/health.json answers. The rehearsal runner reads it before it starts. */
 export interface HealthJson {
   at: string;
+  /** The rehearsal runner runs only on a Go that says it is the rehearsal Go. */
+  role: GoRole | null;
   trip_id: string | null;
   server_socket_open: boolean;
   probes: ProbeResult[];
@@ -103,7 +115,9 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
       return reply.code(303).header('location', `/admin?${q.toString()}`).send();
     };
 
-    registerSessionRoute(brain.http, token, brain.env.GO_PUBLIC_URL.startsWith('https:'));
+    const session: SessionOptions = { token, secure: brain.env.GO_PUBLIC_URL.startsWith('https:'), now: brain.now };
+    const role = roleOf(brain.env);
+    registerSessionRoute(brain.http, session);
     await brain.http.register(async (scope) => {
       if (!scope.hasContentTypeParser(FORM)) {
         scope.addContentTypeParser(FORM, { parseAs: 'string' }, (_req, body, done) => {
@@ -111,10 +125,10 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         });
       }
       scope.addHook('onRequest', async (req, reply) => {
-        if (signedIn(req, token)) return;
+        if (signedIn(req, session)) return;
         // Not signed in: the page itself answers with the sign-in page, which reads the token from after the #.
         if (req.method === 'GET' && req.routeOptions.url === '/admin') {
-          return reply.headers(HTML_HEADERS).type('text/html; charset=utf-8').send(signInPage('Go: stage desk', '/admin'));
+          return reply.headers(PAGE_HEADERS).type('text/html; charset=utf-8').send(signInPage('Go: stage desk', '/admin'));
         }
         return reply.code(401).send(err('bad_signature', 'Wrong or missing admin token.'));
       });
@@ -123,10 +137,10 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         const tripId = await tripOf(req.query);
         const [health, people, trips] = await Promise.all([checkAll(probesFor(brain, tripId)), peopleOf(tripId), newestTrips()]);
         const html = renderAdminPage({
-          tripId, trips, at: brain.now(), health, switches: switchValues(), people, calls: calls(),
+          tripId, trips, role, at: brain.now(), health, switches: switchValues(), people, calls: calls(),
           note: req.query.note ?? null, docsUrl: DOCS_URL,
         });
-        return reply.headers(HTML_HEADERS).type('text/html; charset=utf-8').send(html);
+        return reply.headers(PAGE_HEADERS).type('text/html; charset=utf-8').send(html);
       });
 
       scope.get<{ Querystring: Query }>('/admin/health.json', QUIET, async (req, reply) => {
@@ -134,6 +148,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         const c = calls();
         const body: HealthJson = {
           at: brain.now().toISOString(),
+          role,
           trip_id: tripId,
           server_socket_open: brain.door.link.isOpen(),
           probes: await checkAll(probesFor(brain, tripId)),
@@ -181,10 +196,11 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         } catch {
           out = err('unavailable', res.body.slice(0, 200));
         }
-        const promoted = (out as { promoted?: unknown } | null)?.promoted;
+        const fired = (out ?? {}) as { promoted?: unknown; duplicate?: unknown };
         const note = res.statusCode !== 200
           ? `The watch did not fire (HTTP ${res.statusCode}).`
-          : promoted === 1 ? 'The watch fired: one nudge is on its way.' : 'The watch fired, but the bar held it back.';
+          : fired.duplicate === true ? 'That watch already fired a moment ago, so nothing new went out.'
+          : fired.promoted === 1 ? 'The watch fired: one nudge is on its way.' : 'The watch fired, but the bar held it back.';
         return answer(req, reply, res.statusCode, out, note, f.trip_id);
       });
 
@@ -198,10 +214,15 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
           return answer(req, reply, 409, err('conflict', message), message, tripId);
         }
         const running = await tasks.running(tripId);
-        for (const t of running) await tasks.stop(t.id);
-        const ids = running.map((t) => t.id);
-        const note = ids.length === 0 ? 'No job was running.' : `Stopped ${ids.length} running job${ids.length === 1 ? '' : 's'}.`;
-        return answer(req, reply, 200, { ok: true, stopped: ids }, note, tripId);
+        // Every job gets its stop, even when an earlier one fails.
+        const tried = await Promise.allSettled(running.map((t) => tasks.stop(t.id)));
+        const ids = running.filter((_, k) => tried[k]?.status === 'fulfilled').map((t) => t.id);
+        const failed = running.filter((_, k) => tried[k]?.status === 'rejected').map((t) => t.id);
+        for (const r of tried) if (r.status === 'rejected') brain.log.warn({ err: r.reason, trip: tripId }, 'admin: a job did not stop');
+        const plural = (n: number): string => `${n} running job${n === 1 ? '' : 's'}`;
+        const note = running.length === 0 ? 'No job was running.'
+          : failed.length === 0 ? `Stopped ${plural(ids.length)}.` : `Stopped ${plural(ids.length)}; ${failed.length} did not stop.`;
+        return answer(req, reply, failed.length === 0 ? 200 : 502, { ok: failed.length === 0, stopped: ids, ...(failed.length ? { failed } : {}) }, note, tripId);
       });
 
       scope.post<{ Querystring: Query; Body: unknown }>('/admin/decline-pay', async (req, reply) => {

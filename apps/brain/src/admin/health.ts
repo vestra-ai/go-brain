@@ -129,10 +129,10 @@ export function ixigoProbe(env: Pick<Env, 'IXIGO_MCP_URL' | 'IXIGO_MCP_TOKEN'>, 
   return {
     name: 'ixigo',
     label: 'ixigo, tools listed',
-    async run() {
+    async run(signal) {
       if (!list) return { ok: false, detail: `the ixigo connection is ${NOT_DEPLOYED}` };
       if (!env.IXIGO_MCP_URL) return { ok: false, detail: 'IXIGO_MCP_URL is not set' };
-      const n = await list(env.IXIGO_MCP_URL, env.IXIGO_MCP_TOKEN);
+      const n = await list(env.IXIGO_MCP_URL, env.IXIGO_MCP_TOKEN, signal);
       return n > 0 ? { ok: true, detail: `${n} tools` } : { ok: false, detail: 'no tools listed' };
     },
   };

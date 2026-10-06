@@ -9,11 +9,10 @@
  */
 import { parseArgs } from 'node:util';
 import type * as C from '@go/contract';
-import { ForgetResult } from '@go/contract';
 import type { HealthJson } from '@go/brain/dist/admin/register.js';
 import { STOP_LINE } from '@go/brain/dist/calls/service.js';
 import { FakeServer, goaFreshTrip } from '@go/sim';
-import { beatOf, clockMs, DEMO_DIVE_SHOP, DEMO_FRIEND, DEMO_LINES, DEMO_PEOPLE, DEMO_WATCH, type BeatId, type DemoLine } from '../scenarios/demo.js';
+import { beatOf, clockMs, DEMO_DIVE_SHOP, DEMO_FORGET, DEMO_FRIEND, DEMO_LINES, DEMO_PEOPLE, DEMO_WATCH, type BeatId, type DemoLine } from '../scenarios/demo.js';
 import { BeatTimer, preflight, secs, type BeatRun } from './sheet.js';
 
 export const REHEARSAL_PHOTO_URL = 'https://cdn.go.example/rehearsal/beach.jpg';
@@ -219,26 +218,25 @@ async function callBeat(room: RehearsalRoom, timer: BeatTimer, callMessage: C.Me
 }
 
 /**
- * 4:20 "@Go forget me": timed to Go's answer. Then the runner sends forget_person for that person, as the Server does for
- * the App's "Forget me in this trip" (P2 forgets on that request, not on a chat line), and checks nothing is left.
+ * 4:20: Meher taps "Forget me in this trip" in the App. The runner does what the App and the Server do (the FakeServer's
+ * forgetPerson: forget_person to Go, then her join answers cleared), times Go's answer against the App's 2 s, checks
+ * nothing of hers is left, and that Go said nothing in the chat about it.
  */
 async function forgetBeat(room: RehearsalRoom, timer: BeatTimer): Promise<void> {
-  const line = DEMO_LINES.forget;
+  const before = room.lastSeq();
   const t = Date.now();
-  const said = await room.say(line);
-  const ms = patienceMs('forget');
-  const reply = await room.waitGo(said.seq, textOnly, ms).catch(() => null);
-  if (!reply) {
-    timer.miss('forget', `nothing in ${secs(ms)}`);
+  const res = await room.fake.forgetPerson(DEMO_FORGET.person, room.tripId).catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
+  const answeredAt = Date.now();
+  if (res instanceof Error) {
+    timer.miss('forget', `forget_person failed: ${short(res.message)}`);
     return;
   }
-  const answeredAt = Date.now();
-  const forgot = await room.fake
-    .askGo('forget_person', { person_id: line.person, trip_id: room.tripId })
-    .then((r) => ForgetResult.safeParse(r).success, () => false);
+  // Go must stay quiet in the room: forgetting is the App's job.
+  await sleep(2_000);
+  const said = room.go().find((m) => m.seq > before);
   const problems = [
-    /nothing about/i.test(reply.text ?? '') ? null : `Go said: ${short(reply.text ?? '')}`,
-    forgot ? null : 'forget_person did not answer remaining_facts 0',
+    res.remaining_facts === 0 ? null : `${res.remaining_facts} facts left`,
+    said ? `Go said: ${short(said.text ?? said.card?.kind ?? 'a card')}` : null,
   ].filter((p): p is string => p !== null);
   timer.done('forget', t, problems.length === 0 ? { endedAt: answeredAt } : { endedAt: answeredAt, ok: false, note: problems.join('; ') });
 }
@@ -346,7 +344,7 @@ async function playBeats(room: RehearsalRoom, timer: BeatTimer, o: RehearseOptio
   const asked = await room.say(DEMO_LINES.memory);
   await timed(timer, 'memory', t, (ms) => room.waitGo(asked.seq, textOnly, ms), (m) => (/veg/i.test(m.text ?? '') ? null : 'the answer does not say veg'));
 
-  // 4:20 "@Go forget me"
+  // 4:20 "Forget me in this trip", from the App
   await forgetBeat(room, timer);
 }
 
@@ -363,7 +361,7 @@ export async function rehearse(o: RehearseOptions): Promise<RehearseOutcome> {
   const log = o.log ?? ((line: string) => console.log(line));
   const now = o.now ?? (() => new Date());
   if (o.warm) return warmStage(o, log);
-  if (!o.secret) throw new RefusedError(['A full rehearsal connects as the Server: give --secret (or GO_SIGNING_SECRET).']);
+  if (!o.secret) throw new RefusedError(['A full rehearsal connects as the Server: set GO_SIGNING_SECRET in the environment.']);
   const health = await readHealth(o);
   for (const p of health.probes) log(`${p.dot.toUpperCase().padEnd(5)} ${p.label}: ${p.detail} (${p.ms} ms)`);
   const reasons = preflight(health);
@@ -417,9 +415,9 @@ export function parseRehearseArgs(argv: string[], env: Record<string, string | u
     throw new Error('That is the stage Go (GO_STAGE_URL). Rehearsals never share it: give --go brain-rehearsal\'s URL, or use --warm for the health read.');
   }
   const secret = values.secret ?? env['GO_SIGNING_SECRET'];
-  if (!warm && !secret) throw new Error('Give --secret <GO_SIGNING_SECRET> (or set GO_SIGNING_SECRET): a full run connects as the Server.');
+  if (!warm && !secret) throw new Error('Set GO_SIGNING_SECRET in the environment (never on the command line): a full run connects as the Server.');
   const adminToken = values['admin-token'] ?? env['GO_ADMIN_TOKEN'];
-  if (!adminToken) throw new Error('Give --admin-token <ADMIN_TOKEN> (or set GO_ADMIN_TOKEN): the runner reads /admin/health.json first.');
+  if (!adminToken) throw new Error('Set GO_ADMIN_TOKEN in the environment (never on the command line): the runner reads /admin/health.json first.');
   return {
     go,
     ...(!warm && secret ? { secret } : {}),

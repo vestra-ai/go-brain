@@ -4,6 +4,7 @@ import { cueGapMs, parseRehearseArgs, patienceMs, readHealth, RefusedError, rehe
 
 const HEALTH = {
   at: '2026-10-08T13:30:00.000Z',
+  role: 'rehearsal',
   trip_id: null,
   server_socket_open: false,
   probes: [{ name: 'server', label: "The Server's socket", dot: 'red', ms: 0, detail: 'no Server is connected to Go' }],
@@ -42,6 +43,14 @@ describe('the rehearsal runner', () => {
     const err = await rehearse({ ...base, fetch: f }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(RefusedError);
     expect((err as RefusedError).reasons).toEqual([expect.stringMatching(/brain-rehearsal/)]);
+    expect(urls).toEqual(['https://brain.example.com/admin/health.json']);
+  });
+
+  it('refuses a full run, before it opens any socket, on a Go that says it is the stage Go', async () => {
+    const { f, urls } = healthFetch({ ...HEALTH, role: 'stage', calls: ALLOWED });
+    const err = await rehearse({ ...base, fetch: f }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RefusedError);
+    expect((err as RefusedError).reasons).toEqual([expect.stringMatching(/GO_ROLE=stage/)]);
     expect(urls).toEqual(['https://brain.example.com/admin/health.json']);
   });
 

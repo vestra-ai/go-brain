@@ -94,7 +94,7 @@ describe('the sheet', () => {
       '| 3:55 | Refusal (English) | 3.0 s | none | NOT REACHED |  |',
       '| 3:55 | Refusal (Hinglish) | 3.0 s | none | NOT REACHED |  |',
       '| 4:10 | Memory answer | 3.0 s | none | FAIL | nothing in 20.0 s |',
-      '| 4:20 | Forget answer | 3.0 s | none | NOT REACHED |  |',
+      '| 4:20 | Forget me, from the App | 2.0 s | none | NOT REACHED |  |',
       '',
       'Passed 2 of 14. Slowest against its budget: Notice after the watch fires, 2.5 s of 2.0 s.',
     ]);
@@ -111,7 +111,7 @@ describe('the sheet', () => {
 
 describe('the checks before a rehearsal', () => {
   const health = (o: Partial<HealthJson> = {}): HealthJson => ({
-    at: '2026-10-08T13:30:00.000Z', trip_id: 't_goa', server_socket_open: false, probes: [],
+    at: '2026-10-08T13:30:00.000Z', role: 'rehearsal', trip_id: 't_goa', server_socket_open: false, probes: [],
     switches: { TRAVEL_MODE: 'fake', PAY_RAIL: 'fake', CALLS_MODE: 'allowlist', REFLEX_LIVE: 'q1,q2,q3' },
     calls: { mode: 'allowlist', allowlist: ['Anjuna Dive Shop'], allowlist_count: 1 },
     ...o,
@@ -130,6 +130,15 @@ describe('the checks before a rehearsal', () => {
 
   it('does not mind an empty list while calls are off', () => {
     expect(preflight(health({ calls: { mode: 'off', allowlist: [], allowlist_count: 0 } }))).toEqual([]);
+  });
+
+  it('refuses unless the Go itself says it is the rehearsal Go', () => {
+    const stage = preflight(health({ role: 'stage' }));
+    expect(stage).toHaveLength(1);
+    expect(stage[0]).toMatch(/stage Go \(GO_ROLE=stage\)/);
+    const unknown = preflight(health({ role: null }));
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0]).toMatch(/Set GO_ROLE=rehearsal/);
   });
 
   it('refuses when a Server is connected: that is the stage Go, and rehearsals never share it', () => {

@@ -89,6 +89,19 @@ describe('the checks', () => {
     expect(await runProbe(v1Probe({}, listed.f, 't_goa', v1UserIdFor))).toMatchObject({ dot: 'red', detail: 'VESTRA_API_URL or VESTRA_API_KEYS is not set' });
   });
 
+  it('ixigo: the listing is told to stop when the check runs out of time', async () => {
+    let aborted = false;
+    const list = (_url: string, _token: string | undefined, signal: AbortSignal): Promise<number> =>
+      new Promise((_, reject) => {
+        signal.addEventListener('abort', () => {
+          aborted = true;
+          reject(new Error('aborted'));
+        });
+      });
+    expect(await runProbe(ixigoProbe({ IXIGO_MCP_URL: 'https://mcp.ixigo.test' }, list), { timeoutMs: 50 })).toMatchObject({ dot: 'red', detail: 'no answer in 0.05 s' });
+    expect(aborted).toBe(true);
+  });
+
   it("the vault's /health: ok is green, anything else red", async () => {
     const up = fakeFetch(() => new Response('{"ok":true}', { status: 200 }));
     expect((await runProbe(vaultProbe({ VAULT_URL: 'https://vault.test' }, up.f))).dot).toBe('green');
