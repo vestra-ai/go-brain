@@ -61,6 +61,17 @@ export interface ReplayOutcome {
   board: unknown;
   /** What the real reflex said about each line (live only). */
   recorded: Map<string, ReflexRead> | null;
+  /** Live only: why Go woke the model. */
+  jev: JevTrace | null;
+}
+
+/**
+ * Live only, read from Go's own tables before the run's database is dropped: what Jev answered for each message (its
+ * numbers, never people's words: reflex_reads), and how many model turns each kind of wake started (turns.woke_for).
+ */
+export interface JevTrace {
+  reads: Array<{ line: number | null; seq: number; ok: boolean; fault: string | null; totalMs: number; p: unknown; would: unknown; acted: unknown }>;
+  turns: Array<{ wokeFor: string[]; n: number }>;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -80,6 +91,7 @@ export async function replayChat(o: ReplayOptions): Promise<ReplayOutcome> {
   const room = await startRoom({ anthropic: o.client as RoomOptions['anthropic'], env: o.rawEnv, timings: DEFAULT_TIMINGS, instance: 'bench' });
   try {
     const { built, db } = room;
+    const realReflex = built.brain.reflex as typeof built.brain.reflex & { settled?: () => Promise<void> };
     // No trip exists yet, so swapping the reflex now is the same as before start(): the intake reads brain.reflex per message.
     const live = o.reflex.kind === 'live' ? countingReflex(built.brain.reflex) : null;
     const counter: CountingReflex = live ?? new BenchReflex(o.chat.lines, o.reflex.kind === 'bench' && o.reflex.recorded !== null ? o.reflex.recorded : undefined);
@@ -177,6 +189,24 @@ export async function replayChat(o: ReplayOptions): Promise<ReplayOutcome> {
     const frames = sim.frames(tripId);
     assertWallClock(frames, startedMs, endedMs);
     const board = await fetchBoard(goUrl, o.rawEnv['ADMIN_TOKEN']);
+    let jev: JevTrace | null = null;
+    if (live !== null) {
+      // The reflex writes its reads off the message path; wait for the last ones.
+      await realReflex.settled?.();
+      const lineOf = new Map(delivered.flatMap((d): Array<[number, number]> => (d.seq !== undefined ? [[d.seq, d.i]] : [])));
+      const reads = await db.pool.query<{ seq: number; ok: boolean; fault: string | null; total_ms: number; p: unknown; would: unknown; acted: unknown }>(
+        'SELECT seq, ok, fault, total_ms, p, would, acted FROM reflex_reads WHERE trip_id = $1 ORDER BY seq, created_at',
+        [tripId],
+      );
+      const turns = await db.pool.query<{ woke_for: string[]; n: number }>(
+        'SELECT woke_for, count(*)::int AS n FROM turns WHERE trip_id = $1 GROUP BY woke_for ORDER BY n DESC, woke_for',
+        [tripId],
+      );
+      jev = {
+        reads: reads.rows.map((x) => ({ line: lineOf.get(x.seq) ?? null, seq: x.seq, ok: x.ok, fault: x.fault, totalMs: x.total_ms, p: x.p, would: x.would, acted: x.acted })),
+        turns: turns.rows.map((x) => ({ wokeFor: x.woke_for, n: x.n })),
+      };
+    }
     return {
       record: {
         chat: o.chat, mode: o.mode, composerModel: o.log.composerModel,
@@ -185,6 +215,7 @@ export async function replayChat(o: ReplayOptions): Promise<ReplayOutcome> {
       },
       board,
       recorded: live?.recorded ?? null,
+      jev,
     };
   } finally {
     await room.stop();

@@ -88,3 +88,4 @@ The second recording ([run 37439332584](https://github.com/vestra-ai/go-brain/ac
 - The lines are written for the test, not taken from a real trip chat, and there are only 6 to 14 per question. A wrong answer on a real chat is possible that this set did not catch.
 - These are Jev's answers from two runs on one day. Jev is pinned to `jev-1.13.0`; a new version means a new recording.
 - Speed is not measured here. Go waits at most 450 ms for Jev (`JEV_DEADLINE_MS`) before every question reads unsure.
+- The "not spoken to Go" rule skips a line that is an opening for Go: "pata nahi yaar, tum log decide karo" (a vote would help) wakes no model. While question 9 is in shadow Go offers no help on its own from an opening anyway; once it acts live, this line is one it would miss. The set has only one line labelled for Go that does not name it, so the rule's "none for Go skipped" rests on that one line.
