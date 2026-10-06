@@ -4,8 +4,9 @@
  * ("khana", "khaana"). A rare word counts for more than a common one, so "scooter" outweighs "want" in a chat full
  * of "I want ...". The best answer comes first, a fact or a message alike. A fact comes back with the words and number
  * of the message it was said in, and the numbers of earlier messages on its topic, so the answer keeps its proof; on
- * a tie the fact wins. Someone the question names brings at most two of their facts that match no word. Deleted
- * messages, other trips and a forgotten person's earlier words never come back.
+ * a tie the fact wins. Someone the question names brings at most two of their facts that match no word. What people
+ * said counts for more than Go's own words, and a line that answers for more than one that asks. Deleted messages,
+ * other trips and a forgotten person's earlier words never come back.
  */
 import type { Pool } from 'pg';
 import { maskSecrets } from '../reflex/secrets.js';
@@ -53,6 +54,13 @@ const NAMED_BONUS = 2;
 const TRIGRAM_WEIGHT = 1;
 /** A fact over a message that scores the same: the checked, short form wins a tie. */
 const FACT_EDGE = 0.5;
+/**
+ * What people said is the proof: a line of Go's own weighs half as much. A line that asks rather than answers (a
+ * question, or one that only repeats the question's own words) weighs half as much too. Ranked down, never dropped:
+ * when Go's line or an ask is the only source, it still comes back.
+ */
+const GO_LINE = 0.5;
+const ASKS_LINE = 0.5;
 /** Facts of someone the question names that match no word of it: some context, never a crowd. */
 const OTHER_FACTS_MAX = 2;
 /** The earlier messages on a fact's topic it names, newest first. */
@@ -74,9 +82,9 @@ interface Ranked {
   fact?: { personId: string; topic: string; said: string; other: boolean };
 }
 
-/** The question's content words, then each one's extra words, at most 16. Contractions drop their tails first. */
-function queryTerms(question: string): Term[] {
-  const words = question
+/** A text's content words: lower case, contractions without their tails, no stop words. */
+function contentWords(text: string): string[] {
+  return text
     .toLowerCase()
     .normalize('NFKC')
     .replace(/[‘’]/g, "'")
@@ -86,6 +94,11 @@ function queryTerms(question: string): Term[] {
     .replace(/'(s|re|ll|m|ve|d)\b/g, '')
     .split(/[^\p{L}\p{N}]+/u)
     .filter((w) => w.length >= 2 && !STOP.has(w));
+}
+
+/** The question's content words, then each one's extra words, at most 16. Contractions drop their tails first. */
+function queryTerms(question: string): Term[] {
+  const words = contentWords(question);
   const out = new Map<string, number>();
   for (const w of words) {
     out.set(w, Math.max(out.get(w) ?? 0, 1));
@@ -96,6 +109,23 @@ function queryTerms(question: string): Term[] {
 
 export function queryWords(question: string): string[] {
   return queryTerms(question).map((t) => t.word);
+}
+
+/** One word for another, as the stemmed search joins them: the same word, or one the start of the other ("leave", "leaving"). */
+const sameWord = (a: string, b: string): boolean => a === b || (Math.min(a.length, b.length) >= 4 && (a.startsWith(b.slice(0, -1)) || b.startsWith(a.slice(0, -1))));
+
+/**
+ * How much a message's match counts: Go's own line half, a line that asks half. A line asks when it is a question, or
+ * when it says every one of the question's own words (two or more) and little else: more than three in four of its
+ * words. "Rahul paid the deposit on UPI" answers "who paid the deposit on UPI?"; "when can Arjun leave on Friday" asks.
+ */
+export function standing(m: { person_id: string | null; text: string }, own: readonly string[]): number {
+  const words = contentWords(m.text);
+  const repeats =
+    own.length >= 2 &&
+    own.every((q) => words.some((w) => sameWord(w, q))) &&
+    words.filter((w) => own.some((q) => sameWord(w, q))).length * 4 > words.length * 3;
+  return (m.person_id === null ? GO_LINE : 1) * (m.text.includes('?') || repeats ? ASKS_LINE : 1);
 }
 
 export async function recall(
@@ -160,7 +190,7 @@ export async function recall(
          FROM scored s JOIN messages m ON m.trip_id = $1 AND m.message_id = s.message_id
         ORDER BY lower(m.text), s.weight + CASE WHEN m.person_id = ANY($5::text[]) THEN $6::float8 ELSE 0 END DESC, m.seq DESC
      )
-     SELECT * FROM once ORDER BY weight DESC, lexemes, seq DESC LIMIT 40`,
+     SELECT * FROM once ORDER BY weight DESC, lexemes, seq DESC LIMIT 80`,
     [tripId, words, terms.map((t) => t.weight), pack.messages.length, named, NAMED_BONUS],
   );
   // Romanised spellings the stemmer cannot join ("khana" and "khaana"): trigrams on the question's own words.
@@ -199,12 +229,13 @@ export async function recall(
   const bySimilar = new Map(fuzzy.rows.map((r) => [r.message_id, Number(r.sim)]));
   for (const m of msgs.rows) {
     if (forgottenMessage(m.person_id, m.seq)) continue;
-    put(messageHit(m), Number(m.weight) + TRIGRAM_WEIGHT * (bySimilar.get(m.message_id) ?? 0) * 0.5, Number(m.lexemes), m.text);
+    const score = Number(m.weight) + TRIGRAM_WEIGHT * (bySimilar.get(m.message_id) ?? 0) * 0.5;
+    put(messageHit(m), score * standing(m, own), Number(m.lexemes), m.text);
   }
   for (const m of fuzzy.rows) {
     if (forgottenMessage(m.person_id, m.seq) || best.has(m.message_id)) continue;
     const bonus = m.person_id && named.includes(m.person_id) ? NAMED_BONUS : 0;
-    put(messageHit(m), TRIGRAM_WEIGHT * Number(m.sim) + bonus, Number(m.lexemes), m.text);
+    put(messageHit(m), (TRIGRAM_WEIGHT * Number(m.sim) + bonus) * standing(m, own), Number(m.lexemes), m.text);
   }
   // A fact takes its message's place, with that message's words. It scores what its own words score (weighed like a
   // message's), or what its message scored when that is more, plus the fact's edge. A fact that matches no word and
