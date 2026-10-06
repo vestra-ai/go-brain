@@ -64,7 +64,9 @@ async function payLink(d: PayDeps, token: string): Promise<{ link: LinkRow; pr: 
 }
 
 export type PayInfo =
-  | { state: 'invalid' | 'expired' | 'used' }
+  | { state: 'invalid' }
+  | { state: 'expired' }
+  | { state: 'used' }
   | {
       state: 'ready' | 'no_passkey' | 'no_card';
       merchant: string;
