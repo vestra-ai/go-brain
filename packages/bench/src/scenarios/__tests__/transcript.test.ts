@@ -23,12 +23,14 @@ const messages: C.Message[] = [
   }),
 ];
 
+const beatOf = new Map([['m_1', '0:00 Go joins'], ['m_2', '0:00 Go joins'], ['m_4', '2:20 The villas']]);
+
 describe('the demo transcript', () => {
-  it('puts every message, tap and beat in time order, a beat before what happened at its moment, and leaves out deleted lines', () => {
+  it("puts every message and tap under its named beat, in the room's order, and leaves out deleted lines", () => {
     const rows = transcriptRows({
-      messages, people,
-      acts: [{ at: T0 + 2_500, who: 'Priya', what: 'taps "vote" on the options card: done, "Putting it to a vote"' }],
-      chapters: [{ at: T0, title: '0:00 Go joins' }, { at: T0 + 2_000, title: '2:20 The villas' }],
+      messages, people, beatOf,
+      acts: [{ at: T0 + 2_500, afterSeq: 4, beat: '2:20 The villas', who: 'Priya', what: 'taps "vote" on the options card: done, "Putting it to a vote"' }],
+      beats: ['0:00 Go joins', '2:20 The villas'],
     });
     expect(rows.map((r) => (r.chapter ? `## ${r.what}` : `${r.who}: ${r.what}`))).toEqual([
       '## 0:00 Go joins',
@@ -40,26 +42,48 @@ describe('the demo transcript', () => {
     ]);
   });
 
-  it('renders the timings and the room as tables, with times from the start, no broken cells and no long dashes', () => {
+  it("files a reply of Go's that lands after the next beat started under the beat that asked, and an unnamed line with the one before it", () => {
+    const delayed: C.Message[] = [
+      message({ seq: 1, ms: 0, author: { kind: 'person', person_id: 'p_priya' }, text: "@Go what can't Meher eat?" }),
+      // Go's answer lands 50 ms after Meher's tap opened the next beat, and after it in the room too.
+      message({ seq: 2, ms: 60, author: { kind: 'go' }, text: 'Meher is vegetarian.' }),
+      message({ seq: 3, ms: 70, author: { kind: 'go' }, text: 'A line nobody waited for.' }),
+    ];
+    const rows = transcriptRows({
+      messages: delayed, people, beats: ['4:10 Memory', '4:20 Forget me'],
+      beatOf: new Map([['m_1', '4:10 Memory'], ['m_2', '4:10 Memory']]),
+      acts: [{ at: T0 + 10, afterSeq: 1, beat: '4:20 Forget me', who: 'Meher', what: 'taps "Forget me in this trip" in the App' }],
+    });
+    expect(rows.map((r) => (r.chapter ? `## ${r.what}` : `${r.who}: ${r.what}`))).toEqual([
+      '## 4:10 Memory',
+      "Priya: @Go what can't Meher eat?",
+      'Go: Meher is vegetarian.',
+      'Go: A line nobody waited for.',
+      '## 4:20 Forget me',
+      'Meher: taps "Forget me in this trip" in the App',
+    ]);
+  });
+
+  it('renders the timings and the room as tables, with times from the first row, no broken cells and no long dashes', () => {
     const text = renderTranscript({
-      messages, people, acts: [], chapters: [{ at: T0, title: '0:00 Go joins' }],
+      messages, people, acts: [], beats: ['0:00 Go joins'], beatOf,
       took: [{ beat: 'flights', ms: 60 }], runUrl: 'https://github.com/vestra-ai/go-brain/actions/runs/1', at: new Date(T0),
     });
     expect(text).toContain('Run: [https://github.com/vestra-ai/go-brain/actions/runs/1](https://github.com/vestra-ai/go-brain/actions/runs/1), 2026-10-06 10:00 UTC.');
     expect(text).toContain('| flights | 0.06 s |');
     expect(text).toContain('### 0:00 Go joins');
-    expect(text).toContain('| 0.1 s | Go | Hi all, I am Go. |');
-    expect(text).toContain("| 0.9 s | Meher | I'm veg btw \\| no fish (Go reacted ✅) |");
+    expect(text).toContain('| 0.0 s | Go | Hi all, I am Go. |');
+    expect(text).toContain("| 0.8 s | Meher | I'm veg btw \\| no fish (Go reacted ✅) |");
     expect(text).not.toMatch(/[—–]/);
   });
 
   it('compares two runs by their rows, not their times', () => {
-    const a = renderTranscript({ messages, people, acts: [], chapters: [{ at: T0, title: 'x' }], took: [], runUrl: null, at: new Date(T0) });
+    const a = renderTranscript({ messages, people, acts: [], beats: ['x'], beatOf: new Map(), took: [], runUrl: null, at: new Date(T0) });
     const later = messages.map((m) => ({ ...m, sent_at: new Date(Date.parse(m.sent_at) + 1_234).toISOString() }));
-    const b = renderTranscript({ messages: later, people, acts: [], chapters: [{ at: T0, title: 'x' }], took: [{ beat: 'x', ms: 9 }], runUrl: null, at: new Date(T0 + 99) });
+    const b = renderTranscript({ messages: later, people, acts: [], beats: ['x'], beatOf: new Map(), took: [{ beat: 'x', ms: 9 }], runUrl: null, at: new Date(T0 + 99) });
     expect(rowsOfFile(a)).toEqual(rowsOfFile(b));
     expect(rowsOfFile(a)).toContain("| Meher | I'm veg btw \\| no fish (Go reacted ✅) |");
-    const changed = renderTranscript({ messages: messages.slice(1), people, acts: [], chapters: [], took: [], runUrl: null, at: new Date(T0) });
+    const changed = renderTranscript({ messages: messages.slice(1), people, acts: [], beats: [], beatOf: new Map(), took: [], runUrl: null, at: new Date(T0) });
     expect(rowsOfFile(changed)).not.toEqual(rowsOfFile(a));
     // A booking's reference is new on every run, so it is not compared.
     const ticket = (ref: string) => rowsOfFile(`| 1.0 s | Go | [ticket card: Booked: Villa Sol. Ref ${ref}. Free cancellation until 3 Nov.] |`);

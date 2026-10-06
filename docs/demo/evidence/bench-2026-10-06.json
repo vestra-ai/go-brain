@@ -1,8 +1,8 @@
 {
  "schema": "go.bench-report/v1",
  "mode": "fast",
- "at": "2026-10-06T06:52:09.833Z",
- "commit": "95b74456a7",
+ "at": "2026-10-06T08:46:32.588Z",
+ "commit": "de25e65ec5",
  "scores": [
   {
    "chat": "goa-50",
@@ -24,15 +24,15 @@
    },
    "typing": {
     "n": 6,
-    "p50Ms": 3,
+    "p50Ms": 4,
     "p90Ms": 6,
     "missing": 0,
     "withoutPost": 0
    },
    "reply": {
     "n": 6,
-    "p50Ms": 24,
-    "p90Ms": 32
+    "p50Ms": 26,
+    "p90Ms": 30
    },
    "speak": {
     "asks": 6,
@@ -76,7 +76,7 @@
    "turns": [
     {
      "n": 0,
-     "realMs": 1791269365725,
+     "realMs": 1791276227316,
      "simS": 0,
      "firstRound": true,
      "parts": {
@@ -103,7 +103,7 @@
     },
     {
      "n": 6,
-     "realMs": 1791269367437,
+     "realMs": 1791276228980,
      "simS": 262,
      "firstRound": true,
      "parts": {
@@ -130,7 +130,7 @@
     },
     {
      "n": 8,
-     "realMs": 1791269367628,
+     "realMs": 1791276229170,
      "simS": 301,
      "firstRound": true,
      "parts": {
@@ -157,7 +157,7 @@
     },
     {
      "n": 9,
-     "realMs": 1791269367799,
+     "realMs": 1791276229335,
      "simS": 344,
      "firstRound": true,
      "parts": {
@@ -184,7 +184,7 @@
     },
     {
      "n": 10,
-     "realMs": 1791269369978,
+     "realMs": 1791276231478,
      "simS": 850,
      "firstRound": true,
      "parts": {
@@ -211,7 +211,7 @@
     },
     {
      "n": 12,
-     "realMs": 1791269375358,
+     "realMs": 1791276236862,
      "simS": 1504.5,
      "firstRound": true,
      "parts": {
@@ -238,7 +238,7 @@
     },
     {
      "n": 13,
-     "realMs": 1791269376050,
+     "realMs": 1791276237557,
      "simS": 1800,
      "firstRound": true,
      "parts": {
@@ -265,7 +265,7 @@
     },
     {
      "n": 15,
-     "realMs": 1791269376909,
+     "realMs": 1791276238422,
      "simS": 1930,
      "firstRound": true,
      "parts": {
@@ -292,7 +292,7 @@
     },
     {
      "n": 16,
-     "realMs": 1791269377578,
+     "realMs": 1791276239093,
      "simS": 2400,
      "firstRound": true,
      "parts": {
@@ -319,7 +319,7 @@
     },
     {
      "n": 17,
-     "realMs": 1791269378603,
+     "realMs": 1791276240127,
      "simS": 2960,
      "firstRound": true,
      "parts": {
@@ -365,7 +365,7 @@
    "leaks": [],
    "firstToken": {
     "p50Ms": 1,
-    "p90Ms": 2
+    "p90Ms": 1
    },
    "side": {
     "requests": 8,
@@ -373,7 +373,7 @@
    },
    "costUsd": 0.040338000000000006,
    "unreadByReflex": 0,
-   "durationMs": 13114
+   "durationMs": 13063
   },
   {
    "chat": "goa-300",
@@ -402,8 +402,8 @@
    },
    "reply": {
     "n": 12,
-    "p50Ms": 21,
-    "p90Ms": 24
+    "p50Ms": 24,
+    "p90Ms": 30
    },
    "speak": {
     "asks": 12,
@@ -441,13 +441,13 @@
     },
     "folds": [],
     "status": "ok",
-    "hitRate": 0.8161993495133092,
-    "hitRateAll": 0.804674906742064
+    "hitRate": 0.8162808175343624,
+    "hitRateAll": 0.8047540902947212
    },
    "turns": [
     {
      "n": 0,
-     "realMs": 1791269379066,
+     "realMs": 1791276240612,
      "simS": 68400,
      "firstRound": true,
      "parts": {
@@ -474,7 +474,7 @@
     },
     {
      "n": 6,
-     "realMs": 1791269380776,
+     "realMs": 1791276242293,
      "simS": 70800,
      "firstRound": true,
      "parts": {
@@ -501,7 +501,7 @@
     },
     {
      "n": 8,
-     "realMs": 1791269382635,
+     "realMs": 1791276244128,
      "simS": 76200,
      "firstRound": true,
      "parts": {
@@ -528,61 +528,61 @@
     },
     {
      "n": 9,
-     "realMs": 1791269383994,
+     "realMs": 1791276245494,
      "simS": 80267,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 0,
-      "now": 761,
+      "now": 760,
       "rounds": 0,
-      "total": 5345,
+      "total": 5344,
       "chatBlocks": 0,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 5345,
+      "totalTokens": 5344,
       "readTokens": 4584,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": null,
       "rulesTokens": 4584
      },
-     "hitRate": 0.857623947614593,
+     "hitRate": 0.8577844311377245,
      "result": "hit",
      "sharedBlocks": 20
     },
     {
      "n": 10,
-     "realMs": 1791269384162,
+     "realMs": 1791276245661,
      "simS": 80768,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 344,
-      "now": 449,
+      "now": 448,
       "rounds": 0,
-      "total": 5377,
+      "total": 5376,
       "chatBlocks": 2,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 5377,
+      "totalTokens": 5376,
       "readTokens": 4584,
       "writeTokens": 344,
       "eligible": true,
       "chatEndTokens": 4928,
       "rulesTokens": 4584
      },
-     "hitRate": 0.8525199925609076,
+     "hitRate": 0.8526785714285714,
      "result": "hit",
      "sharedBlocks": 20
     },
     {
      "n": 11,
-     "realMs": 1791269386498,
+     "realMs": 1791276247967,
      "simS": 118074,
      "firstRound": true,
      "parts": {
@@ -609,34 +609,34 @@
     },
     {
      "n": 13,
-     "realMs": 1791269387508,
+     "realMs": 1791276248959,
      "simS": 120449,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 347,
-      "now": 646,
+      "now": 645,
       "rounds": 0,
-      "total": 5577,
+      "total": 5576,
       "chatBlocks": 2,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 5577,
+      "totalTokens": 5576,
       "readTokens": 4584,
       "writeTokens": 347,
       "eligible": true,
       "chatEndTokens": 4931,
       "rulesTokens": 4584
      },
-     "hitRate": 0.821947283485745,
+     "hitRate": 0.8220946915351507,
      "result": "edit",
      "sharedBlocks": 20
     },
     {
      "n": 14,
-     "realMs": 1791269388355,
+     "realMs": 1791276249780,
      "simS": 123300,
      "firstRound": true,
      "parts": {
@@ -663,61 +663,61 @@
     },
     {
      "n": 15,
-     "realMs": 1791269389047,
+     "realMs": 1791276250456,
      "simS": 125662,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 613,
-      "now": 494,
+      "now": 493,
       "rounds": 0,
-      "total": 5691,
+      "total": 5690,
       "chatBlocks": 3,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 5691,
+      "totalTokens": 5690,
       "readTokens": 5197,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 5197,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9131962748198911,
+     "hitRate": 0.9133567662565905,
      "result": "hit",
      "sharedBlocks": 22
     },
     {
      "n": 16,
-     "realMs": 1791269390198,
+     "realMs": 1791276251628,
      "simS": 130343,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 613,
-      "now": 586,
+      "now": 585,
       "rounds": 0,
-      "total": 5783,
+      "total": 5782,
       "chatBlocks": 3,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 5783,
+      "totalTokens": 5782,
       "readTokens": 4584,
       "writeTokens": 613,
       "eligible": true,
       "chatEndTokens": 5197,
       "rulesTokens": 4584
      },
-     "hitRate": 0.7926681653121217,
+     "hitRate": 0.7928052576962988,
      "result": "ttl",
      "sharedBlocks": 22
     },
     {
      "n": 17,
-     "realMs": 1791269391533,
+     "realMs": 1791276252975,
      "simS": 135000,
      "firstRound": true,
      "parts": {
@@ -744,115 +744,115 @@
     },
     {
      "n": 18,
-     "realMs": 1791269392053,
+     "realMs": 1791276253497,
      "simS": 136317,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 896,
-      "now": 433,
+      "now": 432,
       "rounds": 0,
-      "total": 5913,
+      "total": 5912,
       "chatBlocks": 4,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 5913,
+      "totalTokens": 5912,
       "readTokens": 5197,
       "writeTokens": 283,
       "eligible": true,
       "chatEndTokens": 5480,
       "rulesTokens": 4584
      },
-     "hitRate": 0.8789108743446643,
+     "hitRate": 0.8790595399188093,
      "result": "hit",
      "sharedBlocks": 22
     },
     {
      "n": 19,
-     "realMs": 1791269393399,
+     "realMs": 1791276254841,
      "simS": 141441,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 896,
-      "now": 503,
+      "now": 502,
       "rounds": 0,
-      "total": 5983,
+      "total": 5982,
       "chatBlocks": 4,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 5983,
+      "totalTokens": 5982,
       "readTokens": 4584,
       "writeTokens": 896,
       "eligible": true,
       "chatEndTokens": 5480,
       "rulesTokens": 4584
      },
-     "hitRate": 0.7661708173157279,
+     "hitRate": 0.7662988966900702,
      "result": "ttl",
      "sharedBlocks": 23
     },
     {
      "n": 20,
-     "realMs": 1791269393899,
+     "realMs": 1791276255348,
      "simS": 143300,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 896,
-      "now": 573,
+      "now": 572,
       "rounds": 0,
-      "total": 6053,
+      "total": 6052,
       "chatBlocks": 4,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6053,
+      "totalTokens": 6052,
       "readTokens": 5480,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 5480,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9053361969271435,
+     "hitRate": 0.9054857898215466,
      "result": "hit",
      "sharedBlocks": 23
     },
     {
      "n": 21,
-     "realMs": 1791269394740,
+     "realMs": 1791276256153,
      "simS": 146520,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 896,
-      "now": 642,
+      "now": 641,
       "rounds": 0,
-      "total": 6122,
+      "total": 6121,
       "chatBlocks": 4,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6122,
+      "totalTokens": 6121,
       "readTokens": 5480,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 5480,
       "rulesTokens": 4584
      },
-     "hitRate": 0.8951323097027115,
+     "hitRate": 0.8952785492566574,
      "result": "hit",
      "sharedBlocks": 23
     },
     {
      "n": 22,
-     "realMs": 1791269399919,
+     "realMs": 1791276261340,
      "simS": 151204,
      "firstRound": true,
      "parts": {
@@ -879,115 +879,115 @@
     },
     {
      "n": 23,
-     "realMs": 1791269401097,
+     "realMs": 1791276262519,
      "simS": 155576,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1184,
-      "now": 551,
+      "now": 550,
       "rounds": 0,
-      "total": 6319,
+      "total": 6318,
       "chatBlocks": 5,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6319,
+      "totalTokens": 6318,
       "readTokens": 4584,
       "writeTokens": 1184,
       "eligible": true,
       "chatEndTokens": 5768,
       "rulesTokens": 4584
      },
-     "hitRate": 0.725431239120114,
+     "hitRate": 0.7255460588793922,
      "result": "ttl",
      "sharedBlocks": 23
     },
     {
      "n": 24,
-     "realMs": 1791269401596,
+     "realMs": 1791276263023,
      "simS": 157553,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1184,
-      "now": 582,
+      "now": 581,
       "rounds": 0,
-      "total": 6350,
+      "total": 6349,
       "chatBlocks": 5,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6350,
+      "totalTokens": 6349,
       "readTokens": 5768,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 5768,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9083464566929134,
+     "hitRate": 0.9084895259095921,
      "result": "hit",
      "sharedBlocks": 24
     },
     {
      "n": 25,
-     "realMs": 1791269401766,
+     "realMs": 1791276263193,
      "simS": 158228,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1184,
-      "now": 597,
+      "now": 596,
       "rounds": 0,
-      "total": 6365,
+      "total": 6364,
       "chatBlocks": 5,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6365,
+      "totalTokens": 6364,
       "readTokens": 5768,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 5768,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9062058130400629,
+     "hitRate": 0.9063482086737901,
      "result": "hit",
      "sharedBlocks": 24
     },
     {
      "n": 26,
-     "realMs": 1791269402269,
+     "realMs": 1791276263696,
      "simS": 160022,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1184,
-      "now": 629,
+      "now": 628,
       "rounds": 0,
-      "total": 6397,
+      "total": 6396,
       "chatBlocks": 5,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6397,
+      "totalTokens": 6396,
       "readTokens": 5768,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 5768,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9016726590589339,
+     "hitRate": 0.9018136335209506,
      "result": "hit",
      "sharedBlocks": 24
     },
     {
      "n": 27,
-     "realMs": 1791269403103,
+     "realMs": 1791276264539,
      "simS": 163200,
      "firstRound": true,
      "parts": {
@@ -1014,115 +1014,115 @@
     },
     {
      "n": 28,
-     "realMs": 1791269404123,
+     "realMs": 1791276265573,
      "simS": 167161,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1433,
-      "now": 528,
+      "now": 527,
       "rounds": 0,
-      "total": 6545,
+      "total": 6544,
       "chatBlocks": 6,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6545,
+      "totalTokens": 6544,
       "readTokens": 4584,
       "writeTokens": 1433,
       "eligible": true,
       "chatEndTokens": 6017,
       "rulesTokens": 4584
      },
-     "hitRate": 0.7003819709702063,
+     "hitRate": 0.7004889975550123,
      "result": "ttl",
      "sharedBlocks": 24
     },
     {
      "n": 29,
-     "realMs": 1791269404625,
+     "realMs": 1791276266069,
      "simS": 169103,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1433,
-      "now": 572,
+      "now": 571,
       "rounds": 0,
-      "total": 6589,
+      "total": 6588,
       "chatBlocks": 6,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6589,
+      "totalTokens": 6588,
       "readTokens": 6017,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 6017,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9131886477462438,
+     "hitRate": 0.9133272616879174,
      "result": "hit",
      "sharedBlocks": 25
     },
     {
      "n": 30,
-     "realMs": 1791269406123,
+     "realMs": 1791276267586,
      "simS": 205350,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1433,
-      "now": 652,
+      "now": 651,
       "rounds": 0,
-      "total": 6669,
+      "total": 6668,
       "chatBlocks": 6,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6669,
+      "totalTokens": 6668,
       "readTokens": 4584,
       "writeTokens": 1433,
       "eligible": true,
       "chatEndTokens": 6017,
       "rulesTokens": 4584
      },
-     "hitRate": 0.6873594242015295,
+     "hitRate": 0.6874625074985004,
      "result": "ttl",
      "sharedBlocks": 25
     },
     {
      "n": 31,
-     "realMs": 1791269406289,
+     "realMs": 1791276267754,
      "simS": 205774,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1433,
-      "now": 662,
+      "now": 661,
       "rounds": 0,
-      "total": 6679,
+      "total": 6678,
       "chatBlocks": 6,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6679,
+      "totalTokens": 6678,
       "readTokens": 6017,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 6017,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9008833657733194,
+     "hitRate": 0.9010182689427972,
      "result": "hit",
      "sharedBlocks": 25
     },
     {
      "n": 32,
-     "realMs": 1791269406624,
+     "realMs": 1791276268089,
      "simS": 207000,
      "firstRound": true,
      "parts": {
@@ -1149,34 +1149,34 @@
     },
     {
      "n": 33,
-     "realMs": 1791269407807,
+     "realMs": 1791276269280,
      "simS": 211670,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1732,
-      "now": 470,
+      "now": 469,
       "rounds": 0,
-      "total": 6786,
+      "total": 6785,
       "chatBlocks": 7,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6786,
+      "totalTokens": 6785,
       "readTokens": 4584,
       "writeTokens": 1732,
       "eligible": true,
       "chatEndTokens": 6316,
       "rulesTokens": 4584
      },
-     "hitRate": 0.6755083996463307,
+     "hitRate": 0.6756079587324981,
      "result": "ttl",
      "sharedBlocks": 25
     },
     {
      "n": 34,
-     "realMs": 1791269408471,
+     "realMs": 1791276269952,
      "simS": 214001,
      "firstRound": true,
      "parts": {
@@ -1203,7 +1203,7 @@
     },
     {
      "n": 35,
-     "realMs": 1791269409469,
+     "realMs": 1791276270956,
      "simS": 217183,
      "firstRound": true,
      "parts": {
@@ -1230,34 +1230,34 @@
     },
     {
      "n": 36,
-     "realMs": 1791269411642,
+     "realMs": 1791276273144,
      "simS": 225655,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1722,
-      "now": 700,
+      "now": 699,
       "rounds": 0,
-      "total": 7006,
+      "total": 7005,
       "chatBlocks": 7,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7006,
+      "totalTokens": 7005,
       "readTokens": 4584,
       "writeTokens": 1722,
       "eligible": true,
       "chatEndTokens": 6306,
       "rulesTokens": 4584
      },
-     "hitRate": 0.6542963174421924,
+     "hitRate": 0.654389721627409,
      "result": "ttl",
      "sharedBlocks": 26
     },
     {
      "n": 37,
-     "realMs": 1791269411971,
+     "realMs": 1791276273475,
      "simS": 226800,
      "firstRound": true,
      "parts": {
@@ -1284,142 +1284,142 @@
     },
     {
      "n": 38,
-     "realMs": 1791269412157,
+     "realMs": 1791276273661,
      "simS": 227585,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1997,
-      "now": 483,
+      "now": 482,
       "rounds": 0,
-      "total": 7064,
+      "total": 7063,
       "chatBlocks": 8,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7064,
+      "totalTokens": 7063,
       "readTokens": 6581,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 6581,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9316251415628539,
+     "hitRate": 0.931757043749115,
      "result": "hit",
      "sharedBlocks": 27
     },
     {
      "n": 39,
-     "realMs": 1791269412656,
+     "realMs": 1791276274164,
      "simS": 229257,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1997,
-      "now": 510,
+      "now": 509,
       "rounds": 0,
-      "total": 7091,
+      "total": 7090,
       "chatBlocks": 8,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7091,
+      "totalTokens": 7090,
       "readTokens": 6581,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 6581,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9280778451558314,
+     "hitRate": 0.9282087447108603,
      "result": "hit",
      "sharedBlocks": 27
     },
     {
      "n": 40,
-     "realMs": 1791269413487,
+     "realMs": 1791276275005,
      "simS": 232929,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1997,
-      "now": 576,
+      "now": 575,
       "rounds": 0,
-      "total": 7157,
+      "total": 7156,
       "chatBlocks": 8,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7157,
+      "totalTokens": 7156,
       "readTokens": 4584,
       "writeTokens": 1997,
       "eligible": true,
       "chatEndTokens": 6581,
       "rulesTokens": 4584
      },
-     "hitRate": 0.6404918261841553,
+     "hitRate": 0.640581330352152,
      "result": "ttl",
      "sharedBlocks": 27
     },
     {
      "n": 41,
-     "realMs": 1791269417315,
+     "realMs": 1791276278854,
      "simS": 246244,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1997,
-      "now": 801,
+      "now": 800,
       "rounds": 0,
-      "total": 7382,
+      "total": 7381,
       "chatBlocks": 8,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7382,
+      "totalTokens": 7381,
       "readTokens": 4584,
       "writeTokens": 1997,
       "eligible": true,
       "chatEndTokens": 6581,
       "rulesTokens": 4584
      },
-     "hitRate": 0.6209699268490924,
+     "hitRate": 0.6210540577157567,
      "result": "ttl",
      "sharedBlocks": 27
     },
     {
      "n": 42,
-     "realMs": 1791269417482,
+     "realMs": 1791276279022,
      "simS": 246758,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 2282,
-      "now": 547,
+      "now": 546,
       "rounds": 0,
-      "total": 7413,
+      "total": 7412,
       "chatBlocks": 9,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7413,
+      "totalTokens": 7412,
       "readTokens": 6581,
       "writeTokens": 285,
       "eligible": true,
       "chatEndTokens": 6866,
       "rulesTokens": 4584
      },
-     "hitRate": 0.8877647376230946,
+     "hitRate": 0.8878845116028062,
      "result": "hit",
      "sharedBlocks": 27
     },
     {
      "n": 43,
-     "realMs": 1791269417648,
+     "realMs": 1791276279194,
      "simS": 247500,
      "firstRound": true,
      "parts": {
@@ -1446,88 +1446,88 @@
     },
     {
      "n": 44,
-     "realMs": 1791269418002,
+     "realMs": 1791276279551,
      "simS": 248928,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 2282,
-      "now": 592,
+      "now": 591,
       "rounds": 0,
-      "total": 7458,
+      "total": 7457,
       "chatBlocks": 9,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7458,
+      "totalTokens": 7457,
       "readTokens": 6866,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 6866,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9206221507106462,
+     "hitRate": 0.9207456081534129,
      "result": "hit",
      "sharedBlocks": 28
     },
     {
      "n": 45,
-     "realMs": 1791269421995,
+     "realMs": 1791276283530,
      "simS": 295277,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 2282,
-      "now": 827,
+      "now": 826,
       "rounds": 0,
-      "total": 7693,
+      "total": 7692,
       "chatBlocks": 9,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7693,
+      "totalTokens": 7692,
       "readTokens": 4584,
       "writeTokens": 2282,
       "eligible": true,
       "chatEndTokens": 6866,
       "rulesTokens": 4584
      },
-     "hitRate": 0.5958663720265176,
+     "hitRate": 0.5959438377535101,
      "result": "ttl",
      "sharedBlocks": 28
     },
     {
      "n": 46,
-     "realMs": 1791269422161,
+     "realMs": 1791276283698,
      "simS": 295957,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 2540,
-      "now": 601,
+      "now": 600,
       "rounds": 0,
-      "total": 7725,
+      "total": 7724,
       "chatBlocks": 10,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7725,
+      "totalTokens": 7724,
       "readTokens": 6866,
       "writeTokens": 258,
       "eligible": true,
       "chatEndTokens": 7124,
       "rulesTokens": 4584
      },
-     "hitRate": 0.8888025889967638,
+     "hitRate": 0.8889176592439151,
      "result": "hit",
      "sharedBlocks": 28
     },
     {
      "n": 47,
-     "realMs": 1791269422992,
+     "realMs": 1791276284537,
      "simS": 298800,
      "firstRound": true,
      "parts": {
@@ -1554,7 +1554,7 @@
     },
     {
      "n": 48,
-     "realMs": 1791269424179,
+     "realMs": 1791276285739,
      "simS": 303315,
      "firstRound": true,
      "parts": {
@@ -1581,88 +1581,88 @@
     },
     {
      "n": 49,
-     "realMs": 1791269425511,
+     "realMs": 1791276287084,
      "simS": 308652,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 2801,
-      "now": 572,
+      "now": 571,
       "rounds": 0,
-      "total": 7957,
+      "total": 7956,
       "chatBlocks": 11,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7957,
+      "totalTokens": 7956,
       "readTokens": 4584,
       "writeTokens": 2801,
       "eligible": true,
       "chatEndTokens": 7385,
       "rulesTokens": 4584
      },
-     "hitRate": 0.5760965187884881,
+     "hitRate": 0.5761689291101055,
      "result": "ttl",
      "sharedBlocks": 29
     },
     {
      "n": 50,
-     "realMs": 1791269425844,
+     "realMs": 1791276287420,
      "simS": 309845,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 2801,
-      "now": 593,
+      "now": 592,
       "rounds": 0,
-      "total": 7978,
+      "total": 7977,
       "chatBlocks": 11,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7978,
+      "totalTokens": 7977,
       "readTokens": 7385,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 7385,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9256705941338681,
+     "hitRate": 0.925786636580168,
      "result": "hit",
      "sharedBlocks": 30
     },
     {
      "n": 51,
-     "realMs": 1791269426347,
+     "realMs": 1791276287924,
      "simS": 312155,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 2801,
-      "now": 625,
+      "now": 624,
       "rounds": 0,
-      "total": 8010,
+      "total": 8009,
       "chatBlocks": 11,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 8010,
+      "totalTokens": 8009,
       "readTokens": 7385,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 7385,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9219725343320849,
+     "hitRate": 0.9220876513921837,
      "result": "hit",
      "sharedBlocks": 30
     },
     {
      "n": 52,
-     "realMs": 1791269428013,
+     "realMs": 1791276289602,
      "simS": 318600,
      "firstRound": true,
      "parts": {
@@ -1689,115 +1689,115 @@
     },
     {
      "n": 53,
-     "realMs": 1791269428369,
+     "realMs": 1791276289962,
      "simS": 319777,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 3073,
-      "now": 496,
+      "now": 495,
       "rounds": 0,
-      "total": 8153,
+      "total": 8152,
       "chatBlocks": 12,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 8153,
+      "totalTokens": 8152,
       "readTokens": 7385,
       "writeTokens": 272,
       "eligible": true,
       "chatEndTokens": 7657,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9058015454433951,
+     "hitRate": 0.9059126594700687,
      "result": "hit",
      "sharedBlocks": 30
     },
     {
      "n": 54,
-     "realMs": 1791269428536,
+     "realMs": 1791276290131,
      "simS": 320541,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 3073,
-      "now": 507,
+      "now": 506,
       "rounds": 0,
-      "total": 8164,
+      "total": 8163,
       "chatBlocks": 12,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 8164,
+      "totalTokens": 8163,
       "readTokens": 7657,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 7657,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9378980891719745,
+     "hitRate": 0.9380129854220263,
      "result": "hit",
      "sharedBlocks": 31
     },
     {
      "n": 55,
-     "realMs": 1791269431042,
+     "realMs": 1791276292650,
      "simS": 330607,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 3073,
-      "now": 690,
+      "now": 689,
       "rounds": 0,
-      "total": 8347,
+      "total": 8346,
       "chatBlocks": 12,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 8347,
+      "totalTokens": 8346,
       "readTokens": 4584,
       "writeTokens": 3073,
       "eligible": true,
       "chatEndTokens": 7657,
       "rulesTokens": 4584
      },
-     "hitRate": 0.5491793458727686,
+     "hitRate": 0.5492451473759885,
      "result": "ttl",
      "sharedBlocks": 31
     },
     {
      "n": 56,
-     "realMs": 1791269431875,
+     "realMs": 1791276293491,
      "simS": 334004,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 3073,
-      "now": 735,
+      "now": 734,
       "rounds": 0,
-      "total": 8392,
+      "total": 8391,
       "chatBlocks": 12,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 8392,
+      "totalTokens": 8391,
       "readTokens": 7657,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 7657,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9124165872259294,
+     "hitRate": 0.9125253247527112,
      "result": "hit",
      "sharedBlocks": 31
     },
     {
      "n": 57,
-     "realMs": 1791269432541,
+     "realMs": 1791276294150,
      "simS": 336600,
      "firstRound": true,
      "parts": {
@@ -1830,7 +1830,7 @@
      "tools": 3620,
      "system": 964,
      "chat": 1599,
-     "now": 592
+     "now": 591
     }
    },
    "recall": {
@@ -1843,15 +1843,15 @@
    "leaks": [],
    "firstToken": {
     "p50Ms": 1,
-    "p90Ms": 1
+    "p90Ms": 2
    },
    "side": {
     "requests": 7,
     "tokens": 4738
    },
-   "costUsd": 0.21675809999999998,
+   "costUsd": 0.2166901,
    "unreadByReflex": 0,
-   "durationMs": 54375
+   "durationMs": 54445
   },
   {
    "chat": "goa-2000",
@@ -1873,15 +1873,15 @@
    },
    "typing": {
     "n": 13,
-    "p50Ms": 2,
+    "p50Ms": 3,
     "p90Ms": 3,
     "missing": 0,
     "withoutPost": 0
    },
    "reply": {
     "n": 13,
-    "p50Ms": 22,
-    "p90Ms": 26
+    "p50Ms": 23,
+    "p90Ms": 29
    },
    "speak": {
     "asks": 13,
@@ -1930,13 +1930,13 @@
      }
     ],
     "status": "ok",
-    "hitRate": 0.8702954467769806,
-    "hitRateAll": 0.868757409609555
+    "hitRate": 0.8703112367753763,
+    "hitRateAll": 0.8687731438467386
    },
    "turns": [
     {
      "n": 0,
-     "realMs": 1791269433743,
+     "realMs": 1791276295346,
      "simS": 68400,
      "firstRound": true,
      "parts": {
@@ -1963,7 +1963,7 @@
     },
     {
      "n": 5,
-     "realMs": 1791269434706,
+     "realMs": 1791276296324,
      "simS": 70677,
      "firstRound": true,
      "parts": {
@@ -1990,7 +1990,7 @@
     },
     {
      "n": 9,
-     "realMs": 1791269435183,
+     "realMs": 1791276296810,
      "simS": 71766,
      "firstRound": true,
      "parts": {
@@ -2017,7 +2017,7 @@
     },
     {
      "n": 10,
-     "realMs": 1791269435484,
+     "realMs": 1791276297113,
      "simS": 72823,
      "firstRound": true,
      "parts": {
@@ -2044,7 +2044,7 @@
     },
     {
      "n": 11,
-     "realMs": 1791269435764,
+     "realMs": 1791276297402,
      "simS": 73800,
      "firstRound": true,
      "parts": {
@@ -2071,34 +2071,34 @@
     },
     {
      "n": 12,
-     "realMs": 1791269436212,
+     "realMs": 1791276297868,
      "simS": 75272,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 306,
-      "now": 650,
+      "now": 649,
       "rounds": 0,
-      "total": 5540,
+      "total": 5539,
       "chatBlocks": 2,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 5540,
+      "totalTokens": 5539,
       "readTokens": 4890,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 4890,
       "rulesTokens": 4584
      },
-     "hitRate": 0.8826714801444043,
+     "hitRate": 0.882830835890955,
      "result": "hit",
      "sharedBlocks": 21
     },
     {
      "n": 13,
-     "realMs": 1791269437719,
+     "realMs": 1791276299398,
      "simS": 80937,
      "firstRound": true,
      "parts": {
@@ -2125,34 +2125,34 @@
     },
     {
      "n": 14,
-     "realMs": 1791269437891,
+     "realMs": 1791276299574,
      "simS": 81684,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 823,
-      "now": 574,
+      "now": 573,
       "rounds": 0,
-      "total": 5981,
+      "total": 5980,
       "chatBlocks": 4,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 5981,
+      "totalTokens": 5980,
       "readTokens": 5143,
       "writeTokens": 264,
       "eligible": true,
       "chatEndTokens": 5407,
       "rulesTokens": 4584
      },
-     "hitRate": 0.859889650560107,
+     "hitRate": 0.8600334448160535,
      "result": "hit",
      "sharedBlocks": 22
     },
     {
      "n": 15,
-     "realMs": 1791269439524,
+     "realMs": 1791276301239,
      "simS": 119871,
      "firstRound": true,
      "parts": {
@@ -2179,7 +2179,7 @@
     },
     {
      "n": 16,
-     "realMs": 1791269441387,
+     "realMs": 1791276303116,
      "simS": 126911,
      "firstRound": true,
      "parts": {
@@ -2206,88 +2206,88 @@
     },
     {
      "n": 17,
-     "realMs": 1791269441907,
+     "realMs": 1791276303646,
      "simS": 128946,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1578,
-      "now": 793,
+      "now": 792,
       "rounds": 0,
-      "total": 6955,
+      "total": 6954,
       "chatBlocks": 7,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6955,
+      "totalTokens": 6954,
       "readTokens": 5905,
       "writeTokens": 257,
       "eligible": true,
       "chatEndTokens": 6162,
       "rulesTokens": 4584
      },
-     "hitRate": 0.8490294751976994,
+     "hitRate": 0.8491515674431982,
      "result": "hit",
      "sharedBlocks": 25
     },
     {
      "n": 18,
-     "realMs": 1791269441994,
+     "realMs": 1791276303737,
      "simS": 129239,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1863,
-      "now": 545,
+      "now": 544,
       "rounds": 0,
-      "total": 6992,
+      "total": 6991,
       "chatBlocks": 8,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 6992,
+      "totalTokens": 6991,
       "readTokens": 6162,
       "writeTokens": 285,
       "eligible": true,
       "chatEndTokens": 6447,
       "rulesTokens": 4584
      },
-     "hitRate": 0.8812929061784897,
+     "hitRate": 0.8814189672435989,
      "result": "hit",
      "sharedBlocks": 26
     },
     {
      "n": 19,
-     "realMs": 1791269442164,
+     "realMs": 1791276303910,
      "simS": 129886,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 1863,
-      "now": 597,
+      "now": 596,
       "rounds": 0,
-      "total": 7044,
+      "total": 7043,
       "chatBlocks": 8,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7044,
+      "totalTokens": 7043,
       "readTokens": 6447,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 6447,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9152470187393527,
+     "hitRate": 0.9153769700411757,
      "result": "hit",
      "sharedBlocks": 27
     },
     {
      "n": 20,
-     "realMs": 1791269442551,
+     "realMs": 1791276304302,
      "simS": 131400,
      "firstRound": true,
      "parts": {
@@ -2314,34 +2314,34 @@
     },
     {
      "n": 21,
-     "realMs": 1791269442917,
+     "realMs": 1791276304689,
      "simS": 132783,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 2136,
-      "now": 507,
+      "now": 506,
       "rounds": 0,
-      "total": 7227,
+      "total": 7226,
       "chatBlocks": 9,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 7227,
+      "totalTokens": 7226,
       "readTokens": 6447,
       "writeTokens": 273,
       "eligible": true,
       "chatEndTokens": 6720,
       "rulesTokens": 4584
      },
-     "hitRate": 0.892071398920714,
+     "hitRate": 0.8921948519236091,
      "result": "hit",
      "sharedBlocks": 27
     },
     {
      "n": 22,
-     "realMs": 1791269444468,
+     "realMs": 1791276306254,
      "simS": 138749,
      "firstRound": true,
      "parts": {
@@ -2368,7 +2368,7 @@
     },
     {
      "n": 23,
-     "realMs": 1791269444511,
+     "realMs": 1791276306294,
      "simS": 138956,
      "firstRound": true,
      "parts": {
@@ -2395,7 +2395,7 @@
     },
     {
      "n": 24,
-     "realMs": 1791269445720,
+     "realMs": 1791276307516,
      "simS": 143569,
      "firstRound": true,
      "parts": {
@@ -2422,7 +2422,7 @@
     },
     {
      "n": 25,
-     "realMs": 1791269445911,
+     "realMs": 1791276307708,
      "simS": 144225,
      "firstRound": true,
      "parts": {
@@ -2449,7 +2449,7 @@
     },
     {
      "n": 26,
-     "realMs": 1791269445953,
+     "realMs": 1791276307753,
      "simS": 144397,
      "firstRound": true,
      "parts": {
@@ -2476,7 +2476,7 @@
     },
     {
      "n": 27,
-     "realMs": 1791269446684,
+     "realMs": 1791276308490,
      "simS": 147251,
      "firstRound": true,
      "parts": {
@@ -2503,7 +2503,7 @@
     },
     {
      "n": 28,
-     "realMs": 1791269450805,
+     "realMs": 1791276312606,
      "simS": 147604,
      "firstRound": true,
      "parts": {
@@ -2530,7 +2530,7 @@
     },
     {
      "n": 29,
-     "realMs": 1791269451254,
+     "realMs": 1791276313061,
      "simS": 149295,
      "firstRound": true,
      "parts": {
@@ -2557,61 +2557,61 @@
     },
     {
      "n": 30,
-     "realMs": 1791269451817,
+     "realMs": 1791276313628,
      "simS": 151474,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 3254,
-      "now": 731,
+      "now": 730,
       "rounds": 0,
-      "total": 8569,
+      "total": 8568,
       "chatBlocks": 13,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 8569,
+      "totalTokens": 8568,
       "readTokens": 7838,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 7838,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9146924962072587,
+     "hitRate": 0.9147992530345471,
      "result": "hit",
      "sharedBlocks": 32
     },
     {
      "n": 31,
-     "realMs": 1791269452078,
+     "realMs": 1791276313892,
      "simS": 152394,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 3562,
-      "now": 499,
+      "now": 498,
       "rounds": 0,
-      "total": 8645,
+      "total": 8644,
       "chatBlocks": 14,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 8645,
+      "totalTokens": 8644,
       "readTokens": 7838,
       "writeTokens": 308,
       "eligible": true,
       "chatEndTokens": 8146,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9066512434933488,
+     "hitRate": 0.9067561314206386,
      "result": "hit",
      "sharedBlocks": 32
     },
     {
      "n": 32,
-     "realMs": 1791269452248,
+     "realMs": 1791276314067,
      "simS": 153102,
      "firstRound": true,
      "parts": {
@@ -2638,61 +2638,61 @@
     },
     {
      "n": 33,
-     "realMs": 1791269452614,
+     "realMs": 1791276314436,
      "simS": 154434,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 3562,
-      "now": 609,
+      "now": 608,
       "rounds": 0,
-      "total": 8755,
+      "total": 8754,
       "chatBlocks": 14,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 8755,
+      "totalTokens": 8754,
       "readTokens": 8146,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 8146,
       "rulesTokens": 4584
      },
-     "hitRate": 0.93043974871502,
+     "hitRate": 0.9305460360977839,
      "result": "hit",
      "sharedBlocks": 33
     },
     {
      "n": 34,
-     "realMs": 1791269453218,
+     "realMs": 1791276315047,
      "simS": 156746,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 3562,
-      "now": 745,
+      "now": 744,
       "rounds": 0,
-      "total": 8891,
+      "total": 8890,
       "chatBlocks": 14,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 8891,
+      "totalTokens": 8890,
       "readTokens": 8146,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 8146,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9162074007423237,
+     "hitRate": 0.9163104611923509,
      "result": "hit",
      "sharedBlocks": 33
     },
     {
      "n": 35,
-     "realMs": 1791269454593,
+     "realMs": 1791276316448,
      "simS": 162146,
      "firstRound": true,
      "parts": {
@@ -2719,115 +2719,115 @@
     },
     {
      "n": 36,
-     "realMs": 1791269454636,
+     "realMs": 1791276316491,
      "simS": 162234,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 4111,
-      "now": 564,
+      "now": 563,
       "rounds": 0,
-      "total": 9259,
+      "total": 9258,
       "chatBlocks": 16,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 9259,
+      "totalTokens": 9258,
       "readTokens": 8398,
       "writeTokens": 297,
       "eligible": true,
       "chatEndTokens": 8695,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9070093962630954,
+     "hitRate": 0.9071073666018579,
      "result": "hit",
      "sharedBlocks": 34
     },
     {
      "n": 37,
-     "realMs": 1791269454808,
+     "realMs": 1791276316667,
      "simS": 162898,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 4111,
-      "now": 598,
+      "now": 597,
       "rounds": 0,
-      "total": 9293,
+      "total": 9292,
       "chatBlocks": 16,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 9293,
+      "totalTokens": 9292,
       "readTokens": 8695,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 8695,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9356504896158399,
+     "hitRate": 0.9357511838140335,
      "result": "hit",
      "sharedBlocks": 35
     },
     {
      "n": 38,
-     "realMs": 1791269455448,
+     "realMs": 1791276317328,
      "simS": 165413,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 4111,
-      "now": 795,
+      "now": 794,
       "rounds": 0,
-      "total": 9490,
+      "total": 9489,
       "chatBlocks": 16,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 9490,
+      "totalTokens": 9489,
       "readTokens": 8695,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 8695,
       "rulesTokens": 4584
      },
-     "hitRate": 0.91622760800843,
+     "hitRate": 0.916324164822426,
      "result": "hit",
      "sharedBlocks": 35
     },
     {
      "n": 39,
-     "realMs": 1791269455665,
+     "realMs": 1791276317560,
      "simS": 166223,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 4370,
-      "now": 614,
+      "now": 613,
       "rounds": 0,
-      "total": 9568,
+      "total": 9567,
       "chatBlocks": 17,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 9568,
+      "totalTokens": 9567,
       "readTokens": 8695,
       "writeTokens": 259,
       "eligible": true,
       "chatEndTokens": 8954,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9087583612040134,
+     "hitRate": 0.9088533500574892,
      "result": "hit",
      "sharedBlocks": 35
     },
     {
      "n": 40,
-     "realMs": 1791269456178,
+     "realMs": 1791276318080,
      "simS": 168263,
      "firstRound": true,
      "parts": {
@@ -2854,34 +2854,34 @@
     },
     {
      "n": 41,
-     "realMs": 1791269456370,
+     "realMs": 1791276318277,
      "simS": 168929,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 4682,
-      "now": 491,
+      "now": 490,
       "rounds": 0,
-      "total": 9757,
+      "total": 9756,
       "chatBlocks": 18,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 9757,
+      "totalTokens": 9756,
       "readTokens": 8954,
       "writeTokens": 312,
       "eligible": true,
       "chatEndTokens": 9266,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9177001127395716,
+     "hitRate": 0.9177941779417794,
      "result": "hit",
      "sharedBlocks": 36
     },
     {
      "n": 42,
-     "realMs": 1791269457751,
+     "realMs": 1791276319666,
      "simS": 204733,
      "firstRound": true,
      "parts": {
@@ -2908,115 +2908,115 @@
     },
     {
      "n": 44,
-     "realMs": 1791269458011,
+     "realMs": 1791276319929,
      "simS": 205524,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 4952,
-      "now": 584,
+      "now": 583,
       "rounds": 0,
-      "total": 10120,
+      "total": 10119,
       "chatBlocks": 19,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 10120,
+      "totalTokens": 10119,
       "readTokens": 4584,
       "writeTokens": 4952,
       "eligible": true,
       "chatEndTokens": 9536,
       "rulesTokens": 4584
      },
-     "hitRate": 0.45296442687747035,
+     "hitRate": 0.4530091906314853,
      "result": "edit",
      "sharedBlocks": 20
     },
     {
      "n": 45,
-     "realMs": 1791269458095,
+     "realMs": 1791276320017,
      "simS": 205835,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 4952,
-      "now": 601,
+      "now": 600,
       "rounds": 0,
-      "total": 10137,
+      "total": 10136,
       "chatBlocks": 19,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 10137,
+      "totalTokens": 10136,
       "readTokens": 9536,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 9536,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9407122422807537,
+     "hitRate": 0.9408050513022889,
      "result": "hit",
      "sharedBlocks": 38
     },
     {
      "n": 46,
-     "realMs": 1791269458438,
+     "realMs": 1791276320364,
      "simS": 207131,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 4952,
-      "now": 691,
+      "now": 690,
       "rounds": 0,
-      "total": 10227,
+      "total": 10226,
       "chatBlocks": 19,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 10227,
+      "totalTokens": 10226,
       "readTokens": 9536,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 9536,
       "rulesTokens": 4584
      },
-     "hitRate": 0.93243375378899,
+     "hitRate": 0.9325249364365343,
      "result": "hit",
      "sharedBlocks": 38
     },
     {
      "n": 47,
-     "realMs": 1791269458782,
+     "realMs": 1791276320714,
      "simS": 208419,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 5193,
-      "now": 560,
+      "now": 559,
       "rounds": 0,
-      "total": 10337,
+      "total": 10336,
       "chatBlocks": 20,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 10337,
+      "totalTokens": 10336,
       "readTokens": 9536,
       "writeTokens": 241,
       "eligible": true,
       "chatEndTokens": 9777,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9225113669343137,
+     "hitRate": 0.9226006191950464,
      "result": "hit",
      "sharedBlocks": 38
     },
     {
      "n": 48,
-     "realMs": 1791269459601,
+     "realMs": 1791276321550,
      "simS": 211569,
      "firstRound": true,
      "parts": {
@@ -3043,7 +3043,7 @@
     },
     {
      "n": 49,
-     "realMs": 1791269459817,
+     "realMs": 1791276321770,
      "simS": 212400,
      "firstRound": true,
      "parts": {
@@ -3070,61 +3070,61 @@
     },
     {
      "n": 50,
-     "realMs": 1791269460072,
+     "realMs": 1791276322032,
      "simS": 213193,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 5500,
-      "now": 565,
+      "now": 564,
       "rounds": 0,
-      "total": 10649,
+      "total": 10648,
       "chatBlocks": 21,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 10649,
+      "totalTokens": 10648,
       "readTokens": 10084,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 10084,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9469433749647854,
+     "hitRate": 0.9470323065364388,
      "result": "hit",
      "sharedBlocks": 40
     },
     {
      "n": 51,
-     "realMs": 1791269460887,
+     "realMs": 1791276322858,
      "simS": 216372,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 5500,
-      "now": 740,
+      "now": 739,
       "rounds": 0,
-      "total": 10824,
+      "total": 10823,
       "chatBlocks": 21,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 10824,
+      "totalTokens": 10823,
       "readTokens": 10084,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 10084,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9316334072431633,
+     "hitRate": 0.9317194862792202,
      "result": "hit",
      "sharedBlocks": 40
     },
     {
      "n": 52,
-     "realMs": 1791269462178,
+     "realMs": 1791276324165,
      "simS": 221403,
      "firstRound": true,
      "parts": {
@@ -3151,34 +3151,34 @@
     },
     {
      "n": 53,
-     "realMs": 1791269463238,
+     "realMs": 1791276325229,
      "simS": 225506,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 5997,
-      "now": 753,
+      "now": 752,
       "rounds": 0,
-      "total": 11334,
+      "total": 11333,
       "chatBlocks": 23,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 11334,
+      "totalTokens": 11333,
       "readTokens": 4584,
       "writeTokens": 5997,
       "eligible": true,
       "chatEndTokens": 10581,
       "rulesTokens": 4584
      },
-     "hitRate": 0.40444679724722077,
+     "hitRate": 0.4044824847789641,
      "result": "ttl",
      "sharedBlocks": 41
     },
     {
      "n": 54,
-     "realMs": 1791269463729,
+     "realMs": 1791276325734,
      "simS": 227331,
      "firstRound": true,
      "parts": {
@@ -3205,7 +3205,7 @@
     },
     {
      "n": 55,
-     "realMs": 1791269463793,
+     "realMs": 1791276325797,
      "simS": 227424,
      "firstRound": true,
      "parts": {
@@ -3232,61 +3232,61 @@
     },
     {
      "n": 56,
-     "realMs": 1791269464354,
+     "realMs": 1791276326368,
      "simS": 229642,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 6537,
-      "now": 571,
+      "now": 570,
       "rounds": 0,
-      "total": 11692,
+      "total": 11691,
       "chatBlocks": 25,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 11692,
+      "totalTokens": 11691,
       "readTokens": 11121,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 11121,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9511631885049606,
+     "hitRate": 0.9512445470875032,
      "result": "hit",
      "sharedBlocks": 44
     },
     {
      "n": 57,
-     "realMs": 1791269464698,
+     "realMs": 1791276326713,
      "simS": 230941,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 6537,
-      "now": 659,
+      "now": 658,
       "rounds": 0,
-      "total": 11780,
+      "total": 11779,
       "chatBlocks": 25,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 11780,
+      "totalTokens": 11779,
       "readTokens": 11121,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 11121,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9440577249575551,
+     "hitRate": 0.9441378724849309,
      "result": "hit",
      "sharedBlocks": 44
     },
     {
      "n": 58,
-     "realMs": 1791269465904,
+     "realMs": 1791276327937,
      "simS": 235663,
      "firstRound": true,
      "parts": {
@@ -3313,7 +3313,7 @@
     },
     {
      "n": 59,
-     "realMs": 1791269466009,
+     "realMs": 1791276328043,
      "simS": 236028,
      "firstRound": true,
      "parts": {
@@ -3340,88 +3340,88 @@
     },
     {
      "n": 60,
-     "realMs": 1791269466620,
+     "realMs": 1791276328654,
      "simS": 238382,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 7082,
-      "now": 598,
+      "now": 597,
       "rounds": 0,
-      "total": 12264,
+      "total": 12263,
       "chatBlocks": 27,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 12264,
+      "totalTokens": 12263,
       "readTokens": 11666,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 11666,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9512393998695369,
+     "hitRate": 0.9513169697463916,
      "result": "hit",
      "sharedBlocks": 46
     },
     {
      "n": 61,
-     "realMs": 1791269466661,
+     "realMs": 1791276328697,
      "simS": 238565,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 7082,
-      "now": 608,
+      "now": 607,
       "rounds": 0,
-      "total": 12274,
+      "total": 12273,
       "chatBlocks": 27,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 12274,
+      "totalTokens": 12273,
       "readTokens": 11666,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 11666,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9504643962848297,
+     "hitRate": 0.9505418398109672,
      "result": "hit",
      "sharedBlocks": 46
     },
     {
      "n": 62,
-     "realMs": 1791269466875,
+     "realMs": 1791276328917,
      "simS": 239383,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 7082,
-      "now": 680,
+      "now": 679,
       "rounds": 0,
-      "total": 12346,
+      "total": 12345,
       "chatBlocks": 27,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 12346,
+      "totalTokens": 12345,
       "readTokens": 11666,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 11666,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9449214320427669,
+     "hitRate": 0.9449979748886189,
      "result": "hit",
      "sharedBlocks": 46
     },
     {
      "n": 63,
-     "realMs": 1791269467174,
+     "realMs": 1791276329227,
      "simS": 240548,
      "firstRound": true,
      "parts": {
@@ -3448,7 +3448,7 @@
     },
     {
      "n": 64,
-     "realMs": 1791269467219,
+     "realMs": 1791276329266,
      "simS": 240677,
      "firstRound": true,
      "parts": {
@@ -3475,7 +3475,7 @@
     },
     {
      "n": 65,
-     "realMs": 1791269467347,
+     "realMs": 1791276329399,
      "simS": 241200,
      "firstRound": true,
      "parts": {
@@ -3502,34 +3502,34 @@
     },
     {
      "n": 66,
-     "realMs": 1791269468272,
+     "realMs": 1791276330360,
      "simS": 244726,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 7379,
-      "now": 742,
+      "now": 741,
       "rounds": 0,
-      "total": 12705,
+      "total": 12704,
       "chatBlocks": 28,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 12705,
+      "totalTokens": 12704,
       "readTokens": 11963,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 11963,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9415977961432507,
+     "hitRate": 0.9416719143576826,
      "result": "hit",
      "sharedBlocks": 47
     },
     {
      "n": 67,
-     "realMs": 1791269469134,
+     "realMs": 1791276331236,
      "simS": 248082,
      "firstRound": true,
      "parts": {
@@ -3556,61 +3556,61 @@
     },
     {
      "n": 68,
-     "realMs": 1791269469306,
+     "realMs": 1791276331416,
      "simS": 248756,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 7928,
-      "now": 453,
+      "now": 452,
       "rounds": 0,
-      "total": 12965,
+      "total": 12964,
       "chatBlocks": 30,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 12965,
+      "totalTokens": 12964,
       "readTokens": 12255,
       "writeTokens": 257,
       "eligible": true,
       "chatEndTokens": 12512,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9452371770150405,
+     "hitRate": 0.945310089478556,
      "result": "hit",
      "sharedBlocks": 48
     },
     {
      "n": 69,
-     "realMs": 1791269469823,
+     "realMs": 1791276331935,
      "simS": 250726,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 7928,
-      "now": 556,
+      "now": 555,
       "rounds": 0,
-      "total": 13068,
+      "total": 13067,
       "chatBlocks": 30,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 13068,
+      "totalTokens": 13067,
       "readTokens": 12512,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 12512,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9574533210896847,
+     "hitRate": 0.9575265937093441,
      "result": "hit",
      "sharedBlocks": 49
     },
     {
      "n": 70,
-     "realMs": 1791269471552,
+     "realMs": 1791276333683,
      "simS": 257530,
      "firstRound": true,
      "parts": {
@@ -3637,7 +3637,7 @@
     },
     {
      "n": 71,
-     "realMs": 1791269472974,
+     "realMs": 1791276335124,
      "simS": 297000,
      "firstRound": true,
      "parts": {
@@ -3664,7 +3664,7 @@
     },
     {
      "n": 72,
-     "realMs": 1791269473230,
+     "realMs": 1791276335385,
      "simS": 297862,
      "firstRound": true,
      "parts": {
@@ -3691,7 +3691,7 @@
     },
     {
      "n": 73,
-     "realMs": 1791269473360,
+     "realMs": 1791276335518,
      "simS": 298355,
      "firstRound": true,
      "parts": {
@@ -3718,61 +3718,61 @@
     },
     {
      "n": 74,
-     "realMs": 1791269473424,
+     "realMs": 1791276335580,
      "simS": 298497,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 8753,
-      "now": 657,
+      "now": 656,
       "rounds": 0,
-      "total": 13994,
+      "total": 13993,
       "chatBlocks": 33,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 13994,
+      "totalTokens": 13993,
       "readTokens": 13337,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 13337,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9530513077033014,
+     "hitRate": 0.9531194168512828,
      "result": "hit",
      "sharedBlocks": 52
     },
     {
      "n": 75,
-     "realMs": 1791269474027,
+     "realMs": 1791276336189,
      "simS": 300827,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9011,
-      "now": 565,
+      "now": 564,
       "rounds": 0,
-      "total": 14160,
+      "total": 14159,
       "chatBlocks": 34,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 14160,
+      "totalTokens": 14159,
       "readTokens": 13337,
       "writeTokens": 258,
       "eligible": true,
       "chatEndTokens": 13595,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9418785310734463,
+     "hitRate": 0.9419450526167102,
      "result": "hit",
      "sharedBlocks": 52
     },
     {
      "n": 76,
-     "realMs": 1791269474977,
+     "realMs": 1791276337143,
      "simS": 304498,
      "firstRound": true,
      "parts": {
@@ -3799,7 +3799,7 @@
     },
     {
      "n": 77,
-     "realMs": 1791269475238,
+     "realMs": 1791276337405,
      "simS": 305510,
      "firstRound": true,
      "parts": {
@@ -3826,7 +3826,7 @@
     },
     {
      "n": 78,
-     "realMs": 1791269475430,
+     "realMs": 1791276337599,
      "simS": 306166,
      "firstRound": true,
      "parts": {
@@ -3853,7 +3853,7 @@
     },
     {
      "n": 79,
-     "realMs": 1791269475818,
+     "realMs": 1791276337991,
      "simS": 307671,
      "firstRound": true,
      "parts": {
@@ -3880,88 +3880,88 @@
     },
     {
      "n": 80,
-     "realMs": 1791269476054,
+     "realMs": 1791276338229,
      "simS": 308510,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9527,
-      "now": 519,
+      "now": 518,
       "rounds": 0,
-      "total": 14630,
+      "total": 14629,
       "chatBlocks": 36,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 14630,
+      "totalTokens": 14629,
       "readTokens": 13865,
       "writeTokens": 246,
       "eligible": true,
       "chatEndTokens": 14111,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9477101845522898,
+     "hitRate": 0.9477749675302481,
      "result": "hit",
      "sharedBlocks": 54
     },
     {
      "n": 81,
-     "realMs": 1791269476096,
+     "realMs": 1791276338270,
      "simS": 308754,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9527,
-      "now": 530,
+      "now": 529,
       "rounds": 0,
-      "total": 14641,
+      "total": 14640,
       "chatBlocks": 36,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 14641,
+      "totalTokens": 14640,
       "readTokens": 14111,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 14111,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9638002868656512,
+     "hitRate": 0.9638661202185792,
      "result": "hit",
      "sharedBlocks": 55
     },
     {
      "n": 82,
-     "realMs": 1791269476138,
+     "realMs": 1791276338314,
      "simS": 308913,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9527,
-      "now": 510,
+      "now": 509,
       "rounds": 0,
-      "total": 14621,
+      "total": 14620,
       "chatBlocks": 36,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 14621,
+      "totalTokens": 14620,
       "readTokens": 14111,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 14111,
       "rulesTokens": 4584
      },
-     "hitRate": 0.965118664933999,
+     "hitRate": 0.9651846785225718,
      "result": "hit",
      "sharedBlocks": 55
     },
     {
      "n": 83,
-     "realMs": 1791269476330,
+     "realMs": 1791276338509,
      "simS": 309606,
      "firstRound": true,
      "parts": {
@@ -3988,7 +3988,7 @@
     },
     {
      "n": 84,
-     "realMs": 1791269476372,
+     "realMs": 1791276338553,
      "simS": 309718,
      "firstRound": true,
      "parts": {
@@ -4015,88 +4015,88 @@
     },
     {
      "n": 85,
-     "realMs": 1791269476683,
+     "realMs": 1791276338856,
      "simS": 310912,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9527,
-      "now": 668,
+      "now": 667,
       "rounds": 0,
-      "total": 14779,
+      "total": 14778,
       "chatBlocks": 36,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 14779,
+      "totalTokens": 14778,
       "readTokens": 14111,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 14111,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9548007307666283,
+     "hitRate": 0.9548653403708215,
      "result": "hit",
      "sharedBlocks": 55
     },
     {
      "n": 86,
-     "realMs": 1791269476723,
+     "realMs": 1791276338899,
      "simS": 311055,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9527,
-      "now": 678,
+      "now": 677,
       "rounds": 0,
-      "total": 14789,
+      "total": 14788,
       "chatBlocks": 36,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 14789,
+      "totalTokens": 14788,
       "readTokens": 14111,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 14111,
       "rulesTokens": 4584
      },
-     "hitRate": 0.95415511528839,
+     "hitRate": 0.9542196375439546,
      "result": "hit",
      "sharedBlocks": 55
     },
     {
      "n": 87,
-     "realMs": 1791269476806,
+     "realMs": 1791276338988,
      "simS": 311358,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9806,
-      "now": 423,
+      "now": 422,
       "rounds": 0,
-      "total": 14813,
+      "total": 14812,
       "chatBlocks": 37,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 14813,
+      "totalTokens": 14812,
       "readTokens": 14111,
       "writeTokens": 279,
       "eligible": true,
       "chatEndTokens": 14390,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9526091946263417,
+     "hitRate": 0.9526735079665136,
      "result": "hit",
      "sharedBlocks": 55
     },
     {
      "n": 88,
-     "realMs": 1791269477366,
+     "realMs": 1791276339550,
      "simS": 313575,
      "firstRound": true,
      "parts": {
@@ -4123,88 +4123,88 @@
     },
     {
      "n": 89,
-     "realMs": 1791269477712,
+     "realMs": 1791276339900,
      "simS": 314876,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9806,
-      "now": 662,
+      "now": 661,
       "rounds": 0,
-      "total": 15052,
+      "total": 15051,
       "chatBlocks": 37,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 15052,
+      "totalTokens": 15051,
       "readTokens": 14390,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 14390,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9560191336699442,
+     "hitRate": 0.9560826523154607,
      "result": "hit",
      "sharedBlocks": 56
     },
     {
      "n": 90,
-     "realMs": 1791269478361,
+     "realMs": 1791276340560,
      "simS": 317386,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9806,
-      "now": 817,
+      "now": 816,
       "rounds": 0,
-      "total": 15207,
+      "total": 15206,
       "chatBlocks": 37,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 15207,
+      "totalTokens": 15206,
       "readTokens": 14390,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 14390,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9462747418951799,
+     "hitRate": 0.9463369722477969,
      "result": "hit",
      "sharedBlocks": 56
     },
     {
      "n": 91,
-     "realMs": 1791269478747,
+     "realMs": 1791276340951,
      "simS": 318962,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 10114,
-      "now": 632,
+      "now": 631,
       "rounds": 0,
-      "total": 15330,
+      "total": 15329,
       "chatBlocks": 38,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 15330,
+      "totalTokens": 15329,
       "readTokens": 14390,
       "writeTokens": 308,
       "eligible": true,
       "chatEndTokens": 14698,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9386823222439661,
+     "hitRate": 0.9387435579620328,
      "result": "hit",
      "sharedBlocks": 56
     },
     {
      "n": 92,
-     "realMs": 1791269478792,
+     "realMs": 1791276340992,
      "simS": 319142,
      "firstRound": true,
      "parts": {
@@ -4231,88 +4231,88 @@
     },
     {
      "n": 93,
-     "realMs": 1791269478919,
+     "realMs": 1791276341122,
      "simS": 319649,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 10114,
-      "now": 684,
+      "now": 683,
       "rounds": 0,
-      "total": 15382,
+      "total": 15381,
       "chatBlocks": 38,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 15382,
+      "totalTokens": 15381,
       "readTokens": 14698,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 14698,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9555324405148875,
+     "hitRate": 0.9555945647227099,
      "result": "hit",
      "sharedBlocks": 57
     },
     {
      "n": 94,
-     "realMs": 1791269479523,
+     "realMs": 1791276341733,
      "simS": 321994,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 10387,
-      "now": 585,
+      "now": 584,
       "rounds": 0,
-      "total": 15556,
+      "total": 15555,
       "chatBlocks": 39,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 15556,
+      "totalTokens": 15555,
       "readTokens": 14698,
       "writeTokens": 273,
       "eligible": true,
       "chatEndTokens": 14971,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9448444330161996,
+     "hitRate": 0.9449051751848281,
      "result": "hit",
      "sharedBlocks": 57
     },
     {
      "n": 95,
-     "realMs": 1791269479698,
+     "realMs": 1791276341913,
      "simS": 322572,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 10387,
-      "now": 647,
+      "now": 646,
       "rounds": 0,
-      "total": 15618,
+      "total": 15617,
       "chatBlocks": 39,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 15618,
+      "totalTokens": 15617,
       "readTokens": 14971,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 14971,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9585734409015239,
+     "hitRate": 0.9586348210283665,
      "result": "hit",
      "sharedBlocks": 58
     },
     {
      "n": 96,
-     "realMs": 1791269480172,
+     "realMs": 1791276342384,
      "simS": 324493,
      "firstRound": true,
      "parts": {
@@ -4339,7 +4339,7 @@
     },
     {
      "n": 97,
-     "realMs": 1791269480522,
+     "realMs": 1791276342729,
      "simS": 325800,
      "firstRound": true,
      "parts": {
@@ -4366,7 +4366,7 @@
     },
     {
      "n": 98,
-     "realMs": 1791269481081,
+     "realMs": 1791276343294,
      "simS": 327781,
      "firstRound": true,
      "parts": {
@@ -4393,7 +4393,7 @@
     },
     {
      "n": 99,
-     "realMs": 1791269481386,
+     "realMs": 1791276343602,
      "simS": 328945,
      "firstRound": true,
      "parts": {
@@ -4420,7 +4420,7 @@
     },
     {
      "n": 100,
-     "realMs": 1791269481646,
+     "realMs": 1791276343876,
      "simS": 329985,
      "firstRound": true,
      "parts": {
@@ -4447,7 +4447,7 @@
     },
     {
      "n": 101,
-     "realMs": 1791269482083,
+     "realMs": 1791276344316,
      "simS": 331595,
      "firstRound": true,
      "parts": {
@@ -4474,7 +4474,7 @@
     },
     {
      "n": 102,
-     "realMs": 1791269482168,
+     "realMs": 1791276344403,
      "simS": 331936,
      "firstRound": true,
      "parts": {
@@ -4501,7 +4501,7 @@
     },
     {
      "n": 103,
-     "realMs": 1791269482770,
+     "realMs": 1791276345019,
      "simS": 334312,
      "firstRound": true,
      "parts": {
@@ -4528,7 +4528,7 @@
     },
     {
      "n": 104,
-     "realMs": 1791269483486,
+     "realMs": 1791276345759,
      "simS": 336927,
      "firstRound": true,
      "parts": {
@@ -4555,7 +4555,7 @@
     },
     {
      "n": 105,
-     "realMs": 1791269483707,
+     "realMs": 1791276345976,
      "simS": 337784,
      "firstRound": true,
      "parts": {
@@ -4582,7 +4582,7 @@
     },
     {
      "n": 106,
-     "realMs": 1791269483853,
+     "realMs": 1791276346128,
      "simS": 338286,
      "firstRound": true,
      "parts": {
@@ -4609,7 +4609,7 @@
     },
     {
      "n": 107,
-     "realMs": 1791269484995,
+     "realMs": 1791276347292,
      "simS": 342648,
      "firstRound": true,
      "parts": {
@@ -4636,7 +4636,7 @@
     },
     {
      "n": 108,
-     "realMs": 1791269485687,
+     "realMs": 1791276347994,
      "simS": 378085,
      "firstRound": true,
      "parts": {
@@ -4663,7 +4663,7 @@
     },
     {
      "n": 109,
-     "realMs": 1791269485860,
+     "realMs": 1791276348169,
      "simS": 378789,
      "firstRound": true,
      "parts": {
@@ -4690,7 +4690,7 @@
     },
     {
      "n": 110,
-     "realMs": 1791269485904,
+     "realMs": 1791276348210,
      "simS": 378958,
      "firstRound": true,
      "parts": {
@@ -4717,7 +4717,7 @@
     },
     {
      "n": 111,
-     "realMs": 1791269486032,
+     "realMs": 1791276348341,
      "simS": 379409,
      "firstRound": true,
      "parts": {
@@ -4744,7 +4744,7 @@
     },
     {
      "n": 112,
-     "realMs": 1791269486161,
+     "realMs": 1791276348470,
      "simS": 379931,
      "firstRound": true,
      "parts": {
@@ -4771,7 +4771,7 @@
     },
     {
      "n": 113,
-     "realMs": 1791269486291,
+     "realMs": 1791276348598,
      "simS": 380480,
      "firstRound": true,
      "parts": {
@@ -4798,7 +4798,7 @@
     },
     {
      "n": 114,
-     "realMs": 1791269487118,
+     "realMs": 1791276349425,
      "simS": 383454,
      "firstRound": true,
      "parts": {
@@ -4825,7 +4825,7 @@
     },
     {
      "n": 115,
-     "realMs": 1791269487591,
+     "realMs": 1791276349903,
      "simS": 385258,
      "firstRound": true,
      "parts": {
@@ -4852,7 +4852,7 @@
     },
     {
      "n": 116,
-     "realMs": 1791269487935,
+     "realMs": 1791276350250,
      "simS": 386573,
      "firstRound": true,
      "parts": {
@@ -4879,7 +4879,7 @@
     },
     {
      "n": 117,
-     "realMs": 1791269488107,
+     "realMs": 1791276350426,
      "simS": 387224,
      "firstRound": true,
      "parts": {
@@ -4906,7 +4906,7 @@
     },
     {
      "n": 118,
-     "realMs": 1791269488280,
+     "realMs": 1791276350599,
      "simS": 387921,
      "firstRound": true,
      "parts": {
@@ -4933,7 +4933,7 @@
     },
     {
      "n": 119,
-     "realMs": 1791269488670,
+     "realMs": 1791276350993,
      "simS": 389425,
      "firstRound": true,
      "parts": {
@@ -4960,7 +4960,7 @@
     },
     {
      "n": 120,
-     "realMs": 1791269489444,
+     "realMs": 1791276351775,
      "simS": 392400,
      "firstRound": true,
      "parts": {
@@ -4987,7 +4987,7 @@
     },
     {
      "n": 121,
-     "realMs": 1791269489931,
+     "realMs": 1791276352255,
      "simS": 394072,
      "firstRound": true,
      "parts": {
@@ -5014,7 +5014,7 @@
     },
     {
      "n": 122,
-     "realMs": 1791269490143,
+     "realMs": 1791276352471,
      "simS": 394873,
      "firstRound": true,
      "parts": {
@@ -5041,7 +5041,7 @@
     },
     {
      "n": 123,
-     "realMs": 1791269490231,
+     "realMs": 1791276352560,
      "simS": 395270,
      "firstRound": true,
      "parts": {
@@ -5068,34 +5068,34 @@
     },
     {
      "n": 124,
-     "realMs": 1791269490965,
+     "realMs": 1791276353294,
      "simS": 398043,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 13191,
-      "now": 658,
+      "now": 657,
       "rounds": 0,
-      "total": 18433,
+      "total": 18432,
       "chatBlocks": 49,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 18433,
+      "totalTokens": 18432,
       "readTokens": 17775,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 17775,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9643031519557316,
+     "hitRate": 0.96435546875,
      "result": "hit",
      "sharedBlocks": 68
     },
     {
      "n": 125,
-     "realMs": 1791269491509,
+     "realMs": 1791276353839,
      "simS": 400133,
      "firstRound": true,
      "parts": {
@@ -5122,7 +5122,7 @@
     },
     {
      "n": 126,
-     "realMs": 1791269491595,
+     "realMs": 1791276353925,
      "simS": 400417,
      "firstRound": true,
      "parts": {
@@ -5149,7 +5149,7 @@
     },
     {
      "n": 127,
-     "realMs": 1791269491903,
+     "realMs": 1791276354230,
      "simS": 401631,
      "firstRound": true,
      "parts": {
@@ -5176,7 +5176,7 @@
     },
     {
      "n": 128,
-     "realMs": 1791269492462,
+     "realMs": 1791276354794,
      "simS": 403800,
      "firstRound": true,
      "parts": {
@@ -5203,7 +5203,7 @@
     },
     {
      "n": 129,
-     "realMs": 1791269492526,
+     "realMs": 1791276354859,
      "simS": 403963,
      "firstRound": true,
      "parts": {
@@ -5230,7 +5230,7 @@
     },
     {
      "n": 130,
-     "realMs": 1791269492568,
+     "realMs": 1791276354902,
      "simS": 404164,
      "firstRound": true,
      "parts": {
@@ -5257,7 +5257,7 @@
     },
     {
      "n": 131,
-     "realMs": 1791269492740,
+     "realMs": 1791276355076,
      "simS": 404837,
      "firstRound": true,
      "parts": {
@@ -5284,7 +5284,7 @@
     },
     {
      "n": 133,
-     "realMs": 1791269497270,
+     "realMs": 1791276359657,
      "simS": 406804,
      "firstRound": true,
      "parts": {
@@ -5311,7 +5311,7 @@
     },
     {
      "n": 135,
-     "realMs": 1791269497526,
+     "realMs": 1791276359906,
      "simS": 407681,
      "firstRound": true,
      "parts": {
@@ -5338,7 +5338,7 @@
     },
     {
      "n": 136,
-     "realMs": 1791269497679,
+     "realMs": 1791276360058,
      "simS": 408108,
      "firstRound": true,
      "parts": {
@@ -5365,7 +5365,7 @@
     },
     {
      "n": 137,
-     "realMs": 1791269498887,
+     "realMs": 1791276361281,
      "simS": 412792,
      "firstRound": true,
      "parts": {
@@ -5392,34 +5392,34 @@
     },
     {
      "n": 138,
-     "realMs": 1791269498972,
+     "realMs": 1791276361366,
      "simS": 413126,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 7518,
-      "now": 558,
+      "now": 557,
       "rounds": 0,
-      "total": 12660,
+      "total": 12659,
       "chatBlocks": 29,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 12660,
+      "totalTokens": 12659,
       "readTokens": 11855,
       "writeTokens": 247,
       "eligible": true,
       "chatEndTokens": 12102,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9364139020537124,
+     "hitRate": 0.9364878742396714,
      "result": "hit",
      "sharedBlocks": 47
     },
     {
      "n": 139,
-     "realMs": 1791269499798,
+     "realMs": 1791276362200,
      "simS": 416326,
      "firstRound": true,
      "parts": {
@@ -5446,7 +5446,7 @@
     },
     {
      "n": 140,
-     "realMs": 1791269500081,
+     "realMs": 1791276362491,
      "simS": 417396,
      "firstRound": true,
      "parts": {
@@ -5473,7 +5473,7 @@
     },
     {
      "n": 141,
-     "realMs": 1791269500167,
+     "realMs": 1791276362577,
      "simS": 417675,
      "firstRound": true,
      "parts": {
@@ -5500,7 +5500,7 @@
     },
     {
      "n": 142,
-     "realMs": 1791269500905,
+     "realMs": 1791276363322,
      "simS": 420574,
      "firstRound": true,
      "parts": {
@@ -5527,7 +5527,7 @@
     },
     {
      "n": 143,
-     "realMs": 1791269501250,
+     "realMs": 1791276363673,
      "simS": 421859,
      "firstRound": true,
      "parts": {
@@ -5554,7 +5554,7 @@
     },
     {
      "n": 144,
-     "realMs": 1791269501637,
+     "realMs": 1791276364064,
      "simS": 423441,
      "firstRound": true,
      "parts": {
@@ -5581,7 +5581,7 @@
     },
     {
      "n": 145,
-     "realMs": 1791269501897,
+     "realMs": 1791276364326,
      "simS": 424389,
      "firstRound": true,
      "parts": {
@@ -5608,7 +5608,7 @@
     },
     {
      "n": 146,
-     "realMs": 1791269502027,
+     "realMs": 1791276364456,
      "simS": 424940,
      "firstRound": true,
      "parts": {
@@ -5635,7 +5635,7 @@
     },
     {
      "n": 147,
-     "realMs": 1791269503248,
+     "realMs": 1791276365675,
      "simS": 429631,
      "firstRound": true,
      "parts": {
@@ -5662,7 +5662,7 @@
     },
     {
      "n": 148,
-     "realMs": 1791269503768,
+     "realMs": 1791276366194,
      "simS": 464764,
      "firstRound": true,
      "parts": {
@@ -5689,7 +5689,7 @@
     },
     {
      "n": 149,
-     "realMs": 1791269503961,
+     "realMs": 1791276366389,
      "simS": 465433,
      "firstRound": true,
      "parts": {
@@ -5716,7 +5716,7 @@
     },
     {
      "n": 150,
-     "realMs": 1791269504069,
+     "realMs": 1791276366494,
      "simS": 465724,
      "firstRound": true,
      "parts": {
@@ -5743,7 +5743,7 @@
     },
     {
      "n": 151,
-     "realMs": 1791269504458,
+     "realMs": 1791276366886,
      "simS": 467267,
      "firstRound": true,
      "parts": {
@@ -5770,7 +5770,7 @@
     },
     {
      "n": 152,
-     "realMs": 1791269504760,
+     "realMs": 1791276367190,
      "simS": 468356,
      "firstRound": true,
      "parts": {
@@ -5797,7 +5797,7 @@
     },
     {
      "n": 153,
-     "realMs": 1791269505126,
+     "realMs": 1791276367557,
      "simS": 469739,
      "firstRound": true,
      "parts": {
@@ -5824,7 +5824,7 @@
     },
     {
      "n": 154,
-     "realMs": 1791269505560,
+     "realMs": 1791276367993,
      "simS": 471392,
      "firstRound": true,
      "parts": {
@@ -5851,7 +5851,7 @@
     },
     {
      "n": 155,
-     "realMs": 1791269505604,
+     "realMs": 1791276368035,
      "simS": 471524,
      "firstRound": true,
      "parts": {
@@ -5878,34 +5878,34 @@
     },
     {
      "n": 156,
-     "realMs": 1791269506081,
+     "realMs": 1791276368513,
      "simS": 473400,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 9153,
-      "now": 715,
+      "now": 714,
       "rounds": 0,
-      "total": 14452,
+      "total": 14451,
       "chatBlocks": 35,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 14452,
+      "totalTokens": 14451,
       "readTokens": 13737,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 13737,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9505258787711044,
+     "hitRate": 0.9505916545567781,
      "result": "hit",
      "sharedBlocks": 54
     },
     {
      "n": 157,
-     "realMs": 1791269506668,
+     "realMs": 1791276369122,
      "simS": 475564,
      "firstRound": true,
      "parts": {
@@ -5932,7 +5932,7 @@
     },
     {
      "n": 158,
-     "realMs": 1791269507237,
+     "realMs": 1791276369686,
      "simS": 477713,
      "firstRound": true,
      "parts": {
@@ -5959,7 +5959,7 @@
     },
     {
      "n": 159,
-     "realMs": 1791269507365,
+     "realMs": 1791276369816,
      "simS": 478215,
      "firstRound": true,
      "parts": {
@@ -5986,7 +5986,7 @@
     },
     {
      "n": 160,
-     "realMs": 1791269507716,
+     "realMs": 1791276370164,
      "simS": 479571,
      "firstRound": true,
      "parts": {
@@ -6013,7 +6013,7 @@
     },
     {
      "n": 161,
-     "realMs": 1791269507762,
+     "realMs": 1791276370208,
      "simS": 479704,
      "firstRound": true,
      "parts": {
@@ -6040,7 +6040,7 @@
     },
     {
      "n": 162,
-     "realMs": 1791269508152,
+     "realMs": 1791276370600,
      "simS": 481258,
      "firstRound": true,
      "parts": {
@@ -6067,7 +6067,7 @@
     },
     {
      "n": 163,
-     "realMs": 1791269508758,
+     "realMs": 1791276371211,
      "simS": 483609,
      "firstRound": true,
      "parts": {
@@ -6094,7 +6094,7 @@
     },
     {
      "n": 164,
-     "realMs": 1791269508845,
+     "realMs": 1791276371299,
      "simS": 483908,
      "firstRound": true,
      "parts": {
@@ -6121,7 +6121,7 @@
     },
     {
      "n": 165,
-     "realMs": 1791269509835,
+     "realMs": 1791276372298,
      "simS": 487776,
      "firstRound": true,
      "parts": {
@@ -6148,7 +6148,7 @@
     },
     {
      "n": 166,
-     "realMs": 1791269510148,
+     "realMs": 1791276372602,
      "simS": 488903,
      "firstRound": true,
      "parts": {
@@ -6175,7 +6175,7 @@
     },
     {
      "n": 167,
-     "realMs": 1791269510340,
+     "realMs": 1791276372798,
      "simS": 489600,
      "firstRound": true,
      "parts": {
@@ -6202,7 +6202,7 @@
     },
     {
      "n": 168,
-     "realMs": 1791269510535,
+     "realMs": 1791276373014,
      "simS": 490317,
      "firstRound": true,
      "parts": {
@@ -6229,7 +6229,7 @@
     },
     {
      "n": 169,
-     "realMs": 1791269510749,
+     "realMs": 1791276373228,
      "simS": 491155,
      "firstRound": true,
      "parts": {
@@ -6256,7 +6256,7 @@
     },
     {
      "n": 170,
-     "realMs": 1791269511267,
+     "realMs": 1791276373747,
      "simS": 493107,
      "firstRound": true,
      "parts": {
@@ -6283,7 +6283,7 @@
     },
     {
      "n": 171,
-     "realMs": 1791269511330,
+     "realMs": 1791276373813,
      "simS": 493269,
      "firstRound": true,
      "parts": {
@@ -6310,7 +6310,7 @@
     },
     {
      "n": 172,
-     "realMs": 1791269511804,
+     "realMs": 1791276374290,
      "simS": 495133,
      "firstRound": true,
      "parts": {
@@ -6337,7 +6337,7 @@
     },
     {
      "n": 173,
-     "realMs": 1791269512624,
+     "realMs": 1791276375115,
      "simS": 498334,
      "firstRound": true,
      "parts": {
@@ -6364,7 +6364,7 @@
     },
     {
      "n": 174,
-     "realMs": 1791269513249,
+     "realMs": 1791276375748,
      "simS": 500654,
      "firstRound": true,
      "parts": {
@@ -6391,7 +6391,7 @@
     },
     {
      "n": 175,
-     "realMs": 1791269513465,
+     "realMs": 1791276375966,
      "simS": 501516,
      "firstRound": true,
      "parts": {
@@ -6418,7 +6418,7 @@
     },
     {
      "n": 176,
-     "realMs": 1791269513679,
+     "realMs": 1791276376183,
      "simS": 502288,
      "firstRound": true,
      "parts": {
@@ -6445,7 +6445,7 @@
     },
     {
      "n": 177,
-     "realMs": 1791269514152,
+     "realMs": 1791276376662,
      "simS": 504125,
      "firstRound": true,
      "parts": {
@@ -6472,7 +6472,7 @@
     },
     {
      "n": 178,
-     "realMs": 1791269514285,
+     "realMs": 1791276376794,
      "simS": 504708,
      "firstRound": true,
      "parts": {
@@ -6499,7 +6499,7 @@
     },
     {
      "n": 179,
-     "realMs": 1791269515043,
+     "realMs": 1791276377563,
      "simS": 507444,
      "firstRound": true,
      "parts": {
@@ -6526,7 +6526,7 @@
     },
     {
      "n": 180,
-     "realMs": 1791269515429,
+     "realMs": 1791276377955,
      "simS": 508967,
      "firstRound": true,
      "parts": {
@@ -6553,7 +6553,7 @@
     },
     {
      "n": 181,
-     "realMs": 1791269515688,
+     "realMs": 1791276378219,
      "simS": 509944,
      "firstRound": true,
      "parts": {
@@ -6580,7 +6580,7 @@
     },
     {
      "n": 182,
-     "realMs": 1791269515862,
+     "realMs": 1791276378395,
      "simS": 510659,
      "firstRound": true,
      "parts": {
@@ -6607,7 +6607,7 @@
     },
     {
      "n": 183,
-     "realMs": 1791269516080,
+     "realMs": 1791276378611,
      "simS": 511519,
      "firstRound": true,
      "parts": {
@@ -6634,34 +6634,34 @@
     },
     {
      "n": 184,
-     "realMs": 1791269516336,
+     "realMs": 1791276378886,
      "simS": 512516,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 11890,
-      "now": 551,
+      "now": 550,
       "rounds": 0,
-      "total": 17025,
+      "total": 17024,
       "chatBlocks": 45,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 17025,
+      "totalTokens": 17024,
       "readTokens": 16474,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 16474,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9676358296622614,
+     "hitRate": 0.9676926691729323,
      "result": "hit",
      "sharedBlocks": 64
     },
     {
      "n": 185,
-     "realMs": 1791269516814,
+     "realMs": 1791276379390,
      "simS": 514319,
      "firstRound": true,
      "parts": {
@@ -6688,7 +6688,7 @@
     },
     {
      "n": 186,
-     "realMs": 1791269516855,
+     "realMs": 1791276379425,
      "simS": 514476,
      "firstRound": true,
      "parts": {
@@ -6715,61 +6715,61 @@
     },
     {
      "n": 187,
-     "realMs": 1791269517002,
+     "realMs": 1791276379579,
      "simS": 514934,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 12188,
-      "now": 468,
+      "now": 467,
       "rounds": 0,
-      "total": 17240,
+      "total": 17239,
       "chatBlocks": 46,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 17240,
+      "totalTokens": 17239,
       "readTokens": 16772,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 16772,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9728538283062645,
+     "hitRate": 0.9729102616161031,
      "result": "hit",
      "sharedBlocks": 65
     },
     {
      "n": 188,
-     "realMs": 1791269517328,
+     "realMs": 1791276379906,
      "simS": 516142,
      "firstRound": true,
      "parts": {
       "tools": 3620,
       "system": 964,
       "chat": 12188,
-      "now": 548,
+      "now": 547,
       "rounds": 0,
-      "total": 17320,
+      "total": 17319,
       "chatBlocks": 46,
       "rules": "fbe35715731cb13cd91ad092b2659c6063b0210fa6dac53048c255668f55e834"
      },
      "estimate": {
-      "totalTokens": 17320,
+      "totalTokens": 17319,
       "readTokens": 16772,
       "writeTokens": 0,
       "eligible": true,
       "chatEndTokens": 16772,
       "rulesTokens": 4584
      },
-     "hitRate": 0.9683602771362586,
+     "hitRate": 0.9684161903112188,
      "result": "hit",
      "sharedBlocks": 65
     },
     {
      "n": 189,
-     "realMs": 1791269518038,
+     "realMs": 1791276380624,
      "simS": 553473,
      "firstRound": true,
      "parts": {
@@ -6796,7 +6796,7 @@
     },
     {
      "n": 190,
-     "realMs": 1791269518316,
+     "realMs": 1791276380905,
      "simS": 554424,
      "firstRound": true,
      "parts": {
@@ -6823,7 +6823,7 @@
     },
     {
      "n": 191,
-     "realMs": 1791269519523,
+     "realMs": 1791276382128,
      "simS": 559141,
      "firstRound": true,
      "parts": {
@@ -6850,7 +6850,7 @@
     },
     {
      "n": 192,
-     "realMs": 1791269519696,
+     "realMs": 1791276382303,
      "simS": 559730,
      "firstRound": true,
      "parts": {
@@ -6877,7 +6877,7 @@
     },
     {
      "n": 193,
-     "realMs": 1791269520040,
+     "realMs": 1791276382653,
      "simS": 561104,
      "firstRound": true,
      "parts": {
@@ -6904,7 +6904,7 @@
     },
     {
      "n": 194,
-     "realMs": 1791269520167,
+     "realMs": 1791276382784,
      "simS": 561600,
      "firstRound": true,
      "parts": {
@@ -6931,7 +6931,7 @@
     },
     {
      "n": 195,
-     "realMs": 1791269520293,
+     "realMs": 1791276382912,
      "simS": 561976,
      "firstRound": true,
      "parts": {
@@ -6958,7 +6958,7 @@
     },
     {
      "n": 196,
-     "realMs": 1791269522709,
+     "realMs": 1791276385371,
      "simS": 571359,
      "firstRound": true,
      "parts": {
@@ -6985,7 +6985,7 @@
     },
     {
      "n": 197,
-     "realMs": 1791269523054,
+     "realMs": 1791276385721,
      "simS": 572722,
      "firstRound": true,
      "parts": {
@@ -7012,7 +7012,7 @@
     },
     {
      "n": 198,
-     "realMs": 1791269524594,
+     "realMs": 1791276387173,
      "simS": 578204,
      "firstRound": true,
      "parts": {
@@ -7039,7 +7039,7 @@
     },
     {
      "n": 199,
-     "realMs": 1791269525282,
+     "realMs": 1791276387865,
      "simS": 580933,
      "firstRound": true,
      "parts": {
@@ -7066,7 +7066,7 @@
     },
     {
      "n": 200,
-     "realMs": 1791269525628,
+     "realMs": 1791276388211,
      "simS": 582242,
      "firstRound": true,
      "parts": {
@@ -7093,7 +7093,7 @@
     },
     {
      "n": 201,
-     "realMs": 1791269526404,
+     "realMs": 1791276389001,
      "simS": 585275,
      "firstRound": true,
      "parts": {
@@ -7120,7 +7120,7 @@
     },
     {
      "n": 202,
-     "realMs": 1791269526967,
+     "realMs": 1791276389567,
      "simS": 587438,
      "firstRound": true,
      "parts": {
@@ -7147,7 +7147,7 @@
     },
     {
      "n": 203,
-     "realMs": 1791269527657,
+     "realMs": 1791276390264,
      "simS": 590109,
      "firstRound": true,
      "parts": {
@@ -7174,7 +7174,7 @@
     },
     {
      "n": 204,
-     "realMs": 1791269527698,
+     "realMs": 1791276390306,
      "simS": 590311,
      "firstRound": true,
      "parts": {
@@ -7201,7 +7201,7 @@
     },
     {
      "n": 205,
-     "realMs": 1791269528645,
+     "realMs": 1791276391264,
      "simS": 594000,
      "firstRound": true,
      "parts": {
@@ -7228,7 +7228,7 @@
     },
     {
      "n": 207,
-     "realMs": 1791269528836,
+     "realMs": 1791276391488,
      "simS": 594129,
      "firstRound": true,
      "parts": {
@@ -7255,7 +7255,7 @@
     },
     {
      "n": 208,
-     "realMs": 1791269528877,
+     "realMs": 1791276391532,
      "simS": 594311,
      "firstRound": true,
      "parts": {
@@ -7288,7 +7288,7 @@
      "tools": 3620,
      "system": 964,
      "chat": 8736,
-     "now": 624
+     "now": 623
     }
    },
    "recall": {
@@ -7307,30 +7307,30 @@
     "requests": 11,
     "tokens": 27356
    },
-   "costUsd": 1.3615674000000006,
+   "costUsd": 1.3614674000000004,
    "unreadByReflex": 0,
-   "durationMs": 95608
+   "durationMs": 96668
   }
  ],
  "boards": {
   "goa-50": {
    "window": {
     "hours": 168,
-    "from": "2026-09-29T06:49:38.798Z",
-    "to": "2026-10-06T06:49:38.798Z"
+    "from": "2026-09-29T08:44:00.338Z",
+    "to": "2026-10-06T08:44:00.338Z"
    },
    "empty": false,
    "turns": 10,
    "messages": 50,
    "typing": {
     "n": 6,
-    "p50Ms": 3,
+    "p50Ms": 2,
     "p90Ms": 4
    },
    "reply": {
     "n": 6,
-    "p50Ms": 26,
-    "p90Ms": 2547
+    "p50Ms": 27,
+    "p90Ms": 2538
    },
    "cache": {
     "status": "ok",
@@ -7363,8 +7363,8 @@
   "goa-300": {
    "window": {
     "hours": 168,
-    "from": "2026-09-29T06:50:33.414Z",
-    "to": "2026-10-06T06:50:33.414Z"
+    "from": "2026-09-29T08:44:55.032Z",
+    "to": "2026-10-06T08:44:55.032Z"
    },
    "empty": false,
    "turns": 51,
@@ -7376,12 +7376,12 @@
    },
    "reply": {
     "n": 12,
-    "p50Ms": 22,
-    "p90Ms": 33
+    "p50Ms": 25,
+    "p90Ms": 31
    },
    "cache": {
     "status": "ok",
-    "hit": 0.804674906742064,
+    "hit": 0.8047540902947212,
     "turns": 51,
     "eligibleTurns": 51
    },
@@ -7391,8 +7391,8 @@
     "rate": 0.17
    },
    "cost": {
-    "totalUsd": 0.21187800000000007,
-    "perTripUsd": 0.21187800000000007,
+    "totalUsd": 0.21181000000000003,
+    "perTripUsd": 0.21181000000000003,
     "trips": 1
    },
    "sources": [
@@ -7410,8 +7410,8 @@
   "goa-2000": {
    "window": {
     "hours": 168,
-    "from": "2026-09-29T06:52:09.337Z",
-    "to": "2026-10-06T06:52:09.337Z"
+    "from": "2026-09-29T08:46:31.997Z",
+    "to": "2026-10-06T08:46:31.997Z"
    },
    "empty": false,
    "turns": 198,
@@ -7423,12 +7423,12 @@
    },
    "reply": {
     "n": 13,
-    "p50Ms": 22,
-    "p90Ms": 2029
+    "p50Ms": 26,
+    "p90Ms": 2023
    },
    "cache": {
     "status": "ok",
-    "hit": 0.868757409609555,
+    "hit": 0.8687731438467386,
     "turns": 198,
     "eligibleTurns": 198
    },
@@ -7438,8 +7438,8 @@
     "rate": 0.099
    },
    "cost": {
-    "totalUsd": 1.3337629999999996,
-    "perTripUsd": 1.3337629999999996,
+    "totalUsd": 1.333662999999999,
+    "perTripUsd": 1.333662999999999,
     "trips": 1
    },
    "sources": [
@@ -7468,7 +7468,7 @@
    {
     "chat": "goa-50",
     "name": "Go's own time to reply",
-    "value": "32 ms",
+    "value": "30 ms",
     "bar": "p90 under 1500 ms",
     "ok": true,
     "note": "the model is a stand-in that answers at once"
@@ -7533,7 +7533,7 @@
    {
     "chat": "goa-300",
     "name": "Go's own time to reply",
-    "value": "24 ms",
+    "value": "30 ms",
     "bar": "p90 under 1500 ms",
     "ok": true,
     "note": "the model is a stand-in that answers at once"
@@ -7599,7 +7599,7 @@
    {
     "chat": "goa-2000",
     "name": "Go's own time to reply",
-    "value": "26 ms",
+    "value": "29 ms",
     "bar": "p90 under 1500 ms",
     "ok": true,
     "note": "the model is a stand-in that answers at once"
