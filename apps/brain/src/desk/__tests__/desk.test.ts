@@ -239,4 +239,21 @@ describe('the desk', () => {
     expect(claimed).toEqual(['m_2']);
     expect(of(T)).toHaveLength(1);
   });
+
+  it('release gives a taken item back: it is not done with the turn that took it, and gets a turn of its own', async () => {
+    const c = clock();
+    const T = newTrip();
+    const { desk, of } = make(c, {
+      run: async (t) => {
+        if (t.tripId !== T || of(T).length > 1) return;
+        await desk.put(msgItem(T, 2, c.now()));
+        const taken = await desk.claimNew(T, t.turnId);
+        await desk.release(t.turnId, taken.map((i) => i.id));
+      },
+    });
+    await desk.put(msgItem(T, 1, c.now()));
+    await desk.tick();
+    expect(of(T).map((r) => r.items.map((i) => i.ref))).toEqual([['m_1'], ['m_2']]);
+    expect(of(T)[1]!.attempt).toBe(1);
+  });
 });

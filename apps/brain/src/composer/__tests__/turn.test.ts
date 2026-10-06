@@ -35,6 +35,7 @@ function room(o: {
   messages: Message[];
   script: Script;
   claimNew?: (tripId: string, turnId: string) => Promise<DeskItem[]>;
+  release?: (turnId: string, ids: string[]) => Promise<void>;
   limits?: (wake: DeskItem[]) => TurnLimits | null;
   budget?: Budget;
   /** More quick tools, as a lane would register them. */
@@ -43,6 +44,7 @@ function room(o: {
   const tripId = `t_turn_${++rooms}`;
   const calls: Array<{ method: string; params: any }> = [];
   const notes: Array<{ method: string; params: any }> = [];
+  const released: string[] = [];
   const link = createServerLink({ pool: db.pool, log: silentLog, timeoutMs: 1_000 });
   const answers: Record<string, () => Record<string, unknown>> = {
     post_message: () => ({ message_id: `m_go_${calls.length}`, seq: 100 + calls.length }),
@@ -82,9 +84,10 @@ function room(o: {
     packs: { get: async () => pack, invalidate: () => undefined },
     tools, context, speak,
     client: model.client, model: 'claude-sonnet-5-5', claimNew: o.claimNew ?? (async () => []),
+    release: o.release ?? (async (_turnId, ids) => { released.push(...ids); }),
     ...(o.budget ? { budget: o.budget } : {}),
   });
-  return { tripId, calls, notes, link, model, composer, pack, speak, posts: () => calls.filter((c) => c.method === 'post_message') };
+  return { tripId, calls, notes, link, model, composer, pack, speak, released, posts: () => calls.filter((c) => c.method === 'post_message') };
 }
 
 const item = (tripId: string, m: Message, namesGo: boolean): DeskItem => ({
@@ -233,6 +236,8 @@ describe('a composer turn', () => {
     expect(r.posts().map((p) => p.params.text)).toEqual(['The villa is free, and pets are welcome.']);
     const seen = await db.pool.query('select composer_seen_seq from trips where trip_id = $1', [r.tripId]);
     expect(seen.rows[0].composer_seen_seq).toBe(4);
+    // It names Go but was no reason this turn woke: it goes back on the desk for a turn of its own.
+    expect(r.released).toEqual([`msg:${r.tripId}:m_4`]);
   });
 
   it('a budget that runs out before the extra round: the answer round 1 paid for still goes out, and the unread ask hears the limit', async () => {
@@ -725,6 +730,7 @@ describe('an ask that lands while Go writes its hello', () => {
         }
         return desk!.claimNew(tripId, turnId);
       },
+      release: (turnId, ids) => desk!.release(turnId, ids),
     });
     desk = createDesk({ pool: db.pool, log: silentLog, now: () => new Date(), holder: 'test', inProcessWake: false });
     desk.setRunner(r.composer.runTurn, r.composer.giveUp);

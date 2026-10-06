@@ -194,6 +194,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     model: env.COMPOSER_MODEL,
     budget,
     claimNew: desk.claimNew,
+    release: desk.release,
     turnTimeoutMs: t.turnTimeoutMs,
   });
   desk.setRunner(o.wrapTurn ? o.wrapTurn(composer.runTurn) : composer.runTurn, composer.giveUp);
