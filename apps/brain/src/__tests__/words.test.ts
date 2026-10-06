@@ -44,6 +44,10 @@ const PEOPLE_READ: readonly string[] = [
   'packages/sim/src/dev-room/page.ts',
   'packages/sim/src/dev-room/serve.ts',
   'packages/sim/src/state/trip-state.ts',
+  // The hosted "try Go" room a judge opens: the passcode page, the room's lines and refusals
+  'packages/sim/src/try-room/gate.ts',
+  'packages/sim/src/try-room/serve.ts',
+  'packages/sim/src/try-room/words.ts',
   'apps/fake-go/src/behaviour.ts',
   'apps/fake-go/src/cards.ts',
 ];

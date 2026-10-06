@@ -71,6 +71,21 @@ jobs:
       - if: failure()
         run: docker logs fake-go || true
 
+  try-room-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The hosted "try Go" room's image, as Railway builds it. Nothing is pushed.
+      - run: docker build -f packages/sim/Dockerfile -t try-room .
+      # Boots it with throwaway values and no Go to reach: /health answers, and / shows only the passcode field.
+      - run: |
+          docker run -d --name try-room -p 8080:8080 -e GO_URL=http://127.0.0.1:9 \
+            -e GO_SIGNING_SECRET="$(openssl rand -hex 32)" -e TRY_PASSCODE="$(openssl rand -hex 12)" try-room
+          curl --fail --silent --show-error --retry 15 --retry-delay 1 --retry-all-errors http://localhost:8080/health
+          curl --fail --silent --show-error http://localhost:8080/ | grep -q 'name="passcode"'
+      - if: failure()
+        run: docker logs try-room || true
+
   brain-image:
     runs-on: ubuntu-latest
     services:
