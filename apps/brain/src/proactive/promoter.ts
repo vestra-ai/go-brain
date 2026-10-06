@@ -10,13 +10,17 @@ import { stillTrue } from './timers.js';
 
 export function moodFrom(sig: Signals, pack: TripPack, tz: string): TripMood {
   let lastPerson: string | null = null;
+  let lastGo: string | null = null;
   for (const m of pack.messages) {
-    if (m.author.kind === 'person' && !m.deleted && (lastPerson === null || m.sent_at > lastPerson)) lastPerson = m.sent_at;
+    if (m.deleted) continue;
+    if (m.author.kind === 'person' && (lastPerson === null || m.sent_at > lastPerson)) lastPerson = m.sent_at;
+    if (m.author.kind === 'go' && (lastGo === null || m.sent_at > lastGo)) lastGo = m.sent_at;
   }
   return {
     tz,
     postsToday: sig.postsToday,
     lastProactivePostAt: sig.lastProactivePostAt,
+    lastGoMessageAt: lastGo ? new Date(lastGo) : null,
     lastPersonMessageAt: lastPerson ? new Date(lastPerson) : null,
     hushCount: sig.hushCount,
     lastHushAt: sig.lastHushAt,

@@ -40,6 +40,7 @@ describe('moodFrom', () => {
     const m = moodFrom({ postsToday: 1, lastProactivePostAt: null, hushCount: 0, lastHushAt: null, ignoredCount: 0 }, pack, 'Asia/Kolkata');
     expect(m.pausedPersonIds).toEqual(['p_meher']);
     expect(m.lastPersonMessageAt?.toISOString()).toBe('2026-10-06T06:00:00.000Z');
+    expect(m.lastGoMessageAt?.toISOString()).toBe('2026-10-06T06:05:00.000Z');
     expect(m.postsToday).toBe(1);
   });
 });
