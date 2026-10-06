@@ -74,7 +74,7 @@ CI runs on every pull request ([`.github/workflows/ci.yml`](.github/workflows/ci
 - **contract-python**: the Python contract's tests, and a check that its models match the OpenAPI file.
 - **fake-go-image** and **brain-image**: build the Docker images Railway builds and check that each one boots and answers its health check.
 
-The live bench ([`.github/workflows/bench-live.yml`](.github/workflows/bench-live.yml)) runs the same replay with the real models and real Jev, by hand or nightly, never on a push.
+The live bench ([`.github/workflows/bench-live.yml`](.github/workflows/bench-live.yml)) runs the same replay with the real models and real Jev when a pull request gets the label `bench-live` (or by hand and nightly from `main`), never on a push. One run's report is in [docs/demo/evidence](docs/demo/evidence/README.md#live-run).
 
 The tests in each package, from [CI run 37437605711](https://github.com/vestra-ai/go-brain/actions/runs/37437605711) (all passed):
 

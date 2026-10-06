@@ -35,7 +35,10 @@ describe('the live bench', () => {
     const base = { DATABASE_URL: 'postgres://localhost/go', ANTHROPIC_API_KEY: 'k1', TYPESAFE_API_KEY: 'k2' };
     expect(() => liveEnv({ DATABASE_URL: 'postgres://localhost/go', ANTHROPIC_API_KEY: 'k1' }, 'claude-sonnet-5-5')).toThrow(/TYPESAFE_API_KEY is required/);
     const env = liveEnv(base, 'claude-haiku-4-5');
-    expect(env).toMatchObject({ COMPOSER_MODEL: 'claude-haiku-4-5', REFLEX_LIVE: 'q1,q2,q3', JEV_MODEL: 'jev-1.13.0', SIDE_MODEL: 'claude-haiku-4-5', CALLS_MODE: 'off' });
+    expect(env).toMatchObject({ COMPOSER_MODEL: 'claude-haiku-4-5', JEV_MODEL: 'jev-1.13.0', SIDE_MODEL: 'claude-haiku-4-5', CALLS_MODE: 'off' });
+    // Go's own REFLEX_LIVE default (the questions whose test sets passed) applies unless the run names a list.
+    expect(env).not.toHaveProperty('REFLEX_LIVE');
+    expect(liveEnv({ ...base, REFLEX_LIVE: 'q1' }, 'claude-haiku-4-5')['REFLEX_LIVE']).toBe('q1');
     expect(env).not.toHaveProperty('GO_SIGNING_SECRET');
     expect(env['ADMIN_TOKEN']?.length).toBe(32);
     expect(liveEnv(base, 'claude-haiku-4-5')['ADMIN_TOKEN']).not.toBe(env['ADMIN_TOKEN']);

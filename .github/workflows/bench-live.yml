@@ -1,7 +1,11 @@
-# The live bench: real models and real Jev. By hand (any branch) or nightly at 03:00 IST (from main). Never on a push.
-# Only a run from build or main posts its numbers to the board; any other branch keeps them in the job's report.
+# The live bench: real models and real Jev. It runs when a pull request gets the label bench-live, by hand once this
+# file is on main (workflow_dispatch needs it there), or nightly at 03:00 IST from main. Never on a push.
+# Only a run from build or main posts its numbers to the board; a pull request or any other branch keeps them in the
+# job's report.
 name: bench-live
 on:
+  pull_request:
+    types: [labeled]
   workflow_dispatch:
     inputs:
       chats:
@@ -26,6 +30,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   live:
+    # A pull request runs it only for the bench-live label, and never for a fork's pull request: the job holds the keys.
+    if: github.event_name != 'pull_request' || (github.event.label.name == 'bench-live' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 120
     services:
@@ -48,6 +54,14 @@ jobs:
       GATE_MODEL: ${{ inputs.gate_model || 'claude-sonnet-5-5' }}
       RECORD_JEV: ${{ inputs.record_jev && '--record-jev' || '' }}
     steps:
+      # GitHub masks secrets already; this masks both keys in every later step's output as well, whatever prints them.
+      - name: Mask the keys
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+        run: |
+          echo "::add-mask::$ANTHROPIC_API_KEY"
+          echo "::add-mask::$TYPESAFE_API_KEY"
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -56,7 +70,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      # The keys live in this step only: install, build and the upload never see them.
+      # The keys live in this step and the mask step only: install, build and the upload never see them.
       - name: Live bench
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

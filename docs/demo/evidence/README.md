@@ -4,6 +4,8 @@ This folder holds measured evidence about Go. `bench-2026-10-06.json` is the rep
 
 The folder also holds Jev's recorded answers for the quick read, and which questions act live because of them: see [jev.md](jev.md).
 
+It also holds one run of the live bench, with the real model and real Jev: see [Live run](#live-run).
+
 ## Where the report comes from
 
 - **Run:** CI run [37437605711](https://github.com/vestra-ai/go-brain/actions/runs/37437605711), job `build-and-test`, artifact `bench-report`, written at 2026-10-06 08:46 UTC. The same run's test counts, and its demo transcript ([`docs/demo/transcript.md`](../transcript.md)), are the ones the other pages cite.
@@ -134,6 +136,63 @@ How they relate to the bench's numbers:
 - **Reply** starts its clock at the first message in a turn that named Go; the bench starts at the last line of the ask. When an ask comes in more than one line, the board's figure includes the time until the ask was finished: Go holds a message its quick read is not sure is complete for 2 seconds (longer while more lines keep coming, up to 6) before it answers. That is where the board's p90 of 2,538 and 2,023 ms comes from; the bench's figure leaves that time out.
 - **Model cost** counts model turns only; the bench's cost adds the side passes.
 - **Payments without both keys** counts bookings Go recorded without the Server's signed approval, over all time. No chat here pays for anything, so 0 shows only that none slipped in.
+
+## Live run
+
+`bench-live-2026-10-06.json` is one run of the live bench, unedited, and `bench-live-2026-10-06.md` is the summary the same run wrote. It replays `goa-50` and `goa-300` through Go as the fast bench does, but with the real model writing Go's turns and real Jev reading every message. It is the run on record of Go with a real model.
+
+- **Run:** bench-live run [37442728267](https://github.com/vestra-ai/go-brain/actions/runs/37442728267), job `live`, artifact `live-bench`, written at 2026-10-06 10:12 UTC. It ran for 48 minutes.
+- **Code:** `build` at commit `50fe0ab`, with pull request #61 merged on top (GitHub's test commit `5616f7f`, which the report names). At that point the pull request changed only how the live bench is started and which of Jev's questions it lets act, so the Go measured is `build`'s.
+- **Models:** each chat ran twice, once with `claude-sonnet-5-5` writing Go's turns (the model the bars are judged on) and once with `claude-haiku-4-5`. The notes pass and the fold ran on `claude-haiku-4-5` both times. Real calls, on Vestra's staging key.
+- **Jev:** real calls to `jev-1.13.0`. The questions acting live are Go's own default, the ones whose test sets passed: `q1,q4,q5,q6,q7,q8` (see [jev.md](jev.md)).
+- **Verdict:** 7 of 28 checks pass; no model passes every bar (`verdict.ok` is `false`). The run suggests `claude-sonnet-5-5`, the faster of the two.
+
+What is still simulated in it:
+
+- **The Server:** the simulator plays it, as in the fast bench, and people's lines come from the chat files.
+- **Travel:** the test inventory, not ixigo (`TRAVEL_MODE` is not set, so it is `fake`). Prices and options are test data.
+- **Jobs on Go's computer:** none. The `/v1` settings are not set, so the jobs lane stays off.
+- **Payments and calls:** the fake rail; calls off.
+- **Time:** the chat's clock skips quiet hours, but every model and Jev call takes its real time.
+
+### The numbers
+
+Next to the fast bench's scripted run above, for `goa-50` / `goa-300`. The live numbers are `claude-sonnet-5-5`'s unless a row says otherwise.
+
+| | Scripted (fast bench) | Live, `claude-sonnet-5-5` | Live bar |
+|---|---|---|---|
+| Typing p90 | 6 / 4 ms | 5 / 5 ms | under 500 ms |
+| Reply p50 | 26 / 24 ms | 4.39 / 4.84 s | under 2.5 s |
+| Reply p90 | 30 / 30 ms | 13.47 / 9.87 s | under 5 s |
+| Model's first word, p50 | 1 / 1 ms | 1.27 / 1.17 s | none |
+| Cache hit | 87.1% / 81.6% (estimated) | 83.8% / 88.2% (the provider's own) | 85% or more |
+| Woke the model | 20.0% / 17.0% | 86.0% / 90.3% | under 25% |
+| Asks answered | 6 of 6 / 12 of 12 | 6 of 6 / 12 of 12 | every one |
+| Posts nobody asked for | 0 of 7 / 0 of 13 | 5 of 21 / 37 of 98 | none on `goa-50` (no wrong speak); under 1 in 50 on `goa-300` |
+| Recall | 5 of 5 / 7 of 7 | 4 of 5 / 3 of 7 | no misses |
+| Cost of the chat | $0.0403 / $0.2167 (priced from estimated tokens) | $0.5314 / $2.9514 (priced from the provider's usage) | none |
+
+With `claude-haiku-4-5`: typing p90 5 / 4 ms, reply p50 5.39 / 16.57 s and p90 12.60 / 54.09 s, 5 of 6 / 11 of 12 asks answered, posts nobody asked for 8 of 23 / 19 of 46, recall 5 of 5 / 4 of 7, cost $0.2671 / $1.3002. The whole run cost $5.05.
+
+How the live numbers are measured:
+
+- **Reply** runs from a person's last line of an ask to Go's post, as in the fast bench, so here it includes the model's time: its first word (p50 about 1.2 seconds with `claude-sonnet-5-5`) and any tool rounds before the post. `goa-50` made 66 requests to the model for 43 turns; the other 23 are later rounds of a turn, after a tool's answer.
+- **Cache hit** is the provider's own count from each response's usage (`cache_read_input_tokens` over all input tokens), over every request for Go's turns but the first. The bench's estimate from the same requests is next to it in the run's summary (83.0% / 87.7%).
+- **Cost** is every request priced from the provider's usage, with the agent SDK's price table.
+- **Woke the model** is model turns over messages from people, as in the fast bench: every turn counts, whatever woke it.
+
+### Where the live run misses a bar
+
+It misses most of them, and each miss is a finding about Go, not about the bench.
+
+- **Reply time (all four):** the bars, 2.5 seconds at p50 and 5 at p90, are below what a real model takes here. `claude-sonnet-5-5`'s first word alone takes about 1.2 seconds, and some turns run a search before they post.
+- **Woke the model (all four):** 86% and 90% with `claude-sonnet-5-5`, against 20% and 17% scripted. In the scripted run the chat's labels answer for Jev and read most chatter as sure; live, question 1 decides on Jev's real answers at its 0.85 bar, and question 2 (is the message finished) is in shadow. The run does not keep Jev's answers per message (they are in the run's own database, which is thrown away), so it cannot say how many chatter lines Jev read as sure.
+- **Cache hit on `goa-50`:** 83.8%, just under 85%. The fast bench holds only `goa-2000` to this bar; the live bars hold every chat to it. `goa-300` passes at 88.2%.
+- **Posts nobody asked for:** with a real model Go also answers some lines nobody asked it about: it replies "Noted, Priya, window seat" where a quiet ✅ was expected, welcomes people back, and wishes Meher a happy birthday. The bench counts each as unprompted for a person to review.
+- **Recall:** 4 of 5 and 3 of 7. With a real side model the notes pass saves facts, and recall puts facts first: a fact stands in for the message it came from, and every fact about the person a question names comes back. So facts like "Bring helmet" fill the five answers ahead of the message that answers "What is Meher allergic to?"; "Who can't take early flights?" finds Arjun's message, but as the fact "No flights before 9 am", without the words the bench looks for; and some facts carry a different message number than the line the bench asks about.
+- **`claude-haiku-4-5` only:** it missed one ask in each chat, and its reply p90 on `goa-300` was 54 seconds.
+
+One measurement to read with care: the bench tells Go's turns from the side passes by the model's name. With `claude-haiku-4-5` writing Go's turns, the side passes run on the same model, so they count as turns too. That is why `claude-haiku-4-5` "woke the model" more than once per message (118% and 101%) and shows no side passes; its wake rate, request count and cache hit are not comparable with `claude-sonnet-5-5`'s, and the table above leaves them out.
 
 ## Running it yourself
 
