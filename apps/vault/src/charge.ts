@@ -37,6 +37,8 @@ export async function chargeOnce(d: PayDeps, a: AttemptRow): Promise<ChargeResul
   } catch {
     return { failed: 'rail_error' };
   }
+  // Stamped before the call: past the deadline, a charge the rail may have seen is never called a failure.
+  await d.pool.query('update used_approvals set rail_called_at = coalesce(rail_called_at, $2) where jti = $1', [a.jti, d.now()]);
   try {
     return await d.rails[a.rail].charge({
       personId: a.payer_person_id,
@@ -68,12 +70,18 @@ export async function holdUnknown(d: Pick<PayDeps, 'pool' | 'log'>, now: Date, a
   );
   const row = r.rows[0];
   if (!row || (row.charge_tries < UNKNOWN_TRIES && now.getTime() - row.used_at.getTime() < UNKNOWN_FOR_MS)) return 'retry';
-  await d.pool.query("update used_approvals set outcome = 'unknown', settled_at = $2 where jti = $1 and outcome = 'charging'", [a.jti, now]);
+  await markUnknown(d, now, a, `${why}, after ${row.charge_tries} tries`);
+  return 'gave_up';
+}
+
+/** The money may have moved and the rail will not be asked again: a person checks it. Never failed. */
+export async function markUnknown(d: Pick<PayDeps, 'pool' | 'log'>, now: Date, a: AttemptRow, why: string): Promise<void> {
+  const r = await d.pool.query("update used_approvals set outcome = 'unknown', settled_at = $2 where jti = $1 and outcome = 'charging'", [a.jti, now]);
+  if ((r.rowCount ?? 0) === 0) return;
   d.log.error(
-    { approval_id: a.approval_id, rail: a.rail, why, tries: row.charge_tries },
+    { approval_id: a.approval_id, rail: a.rail, why },
     'the rail never said whether this payment went through; marked unknown for a person to check',
   );
-  return 'gave_up';
 }
 
 /** Records the outcome once. Answers false when another worker already settled this attempt. */

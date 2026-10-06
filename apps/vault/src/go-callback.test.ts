@@ -125,7 +125,7 @@ describe('a charge the rail gave no clear answer for', () => {
     expect(kinds).toEqual(['pay_attempt', 'pay_ok']);
   });
 
-  it('after 20 unclear answers is marked unknown for a person to check, never failed, and Go is told nothing', async () => {
+  it('after 20 unclear answers is marked unknown for a person to check, never failed, and Go hears it is being checked', async () => {
     const { token, jti } = await f.payLinkFor({ kind: 'stripe_test' });
     f.stripe.nextCharge = { error: { type: 'StripeAPIError', code: 'api_error' } };
     try {
@@ -141,25 +141,51 @@ describe('a charge the rail gave no clear answer for', () => {
       later(0);
     }
     expect(await row(jti)).toMatchObject({ outcome: 'unknown', callback_at: null });
-    expect(callsFor(jti)).toEqual(['/internal/vault/confirming']);
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming']);
+    expect(f.goCalls.filter((c) => c.body.approval_id === jti).at(-1)?.body).toEqual({ trip_id: 't_goa', approval_id: jti, checking: true });
     expect(f.lines.join('\n')).toContain('marked unknown for a person to check');
     const kinds = (await f.pool.query('select kind from unlock_log where approval_id = $1 order by id', [jti])).rows.map((r) => r.kind);
     expect(kinds).toEqual(['pay_attempt']);
   });
 
-  it('after an hour of unclear answers is marked unknown too', async () => {
+  it('past the approval and its grace, never asks the rail again about a charge it may have seen: unknown, and Go hears it is being checked', async () => {
     const { token, jti } = await f.payLinkFor({ kind: 'stripe_test' });
-    f.stripe.nextCharge = { error: { type: 'StripeAPIError', code: 'api_error' } };
+    f.stripe.throwOnce = { type: 'StripeConnectionError' };
+    expect(await f.approve(token, rahul)).toEqual({ state: 'confirming' });
+    // The bank would take the charge now, but it is too late to ask: the approval ran out at 09:10.
+    later(11 * 60_000 + 1_000);
     try {
-      expect(await f.approve(token, rahul)).toEqual({ state: 'confirming' });
-      later(61 * 60_000);
+      await sweep(f.d);
       await sweep(f.d);
     } finally {
-      f.stripe.nextCharge = { status: 'succeeded' };
       later(0);
     }
     expect(await row(jti)).toMatchObject({ outcome: 'unknown' });
-    expect(callsFor(jti)).toEqual(['/internal/vault/confirming']);
+    expect(f.stripe.charges.filter((c) => c.idempotencyKey === jti)).toEqual([]);
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming']);
+    expect(f.goCalls.filter((c) => c.body.approval_id === jti).at(-1)?.body).toEqual({ trip_id: 't_goa', approval_id: jti, checking: true });
+  });
+
+  it('past the approval and its grace, fails a charge the rail was never sent, for sure, and tells Go', async () => {
+    const { jti } = await f.payLinkFor();
+    const link = (await f.pool.query<{ link_id: string }>('select link_id from links where approval_id = $1 limit 1', [jti])).rows[0];
+    const card = (await f.pool.query<{ card_id: string }>("select card_id from cards where person_id = 'p_rahul' limit 1")).rows[0];
+    // The vault took the approval and stopped before calling the rail (a restart, say).
+    await f.pool.query(
+      `insert into used_approvals (jti, approval_id, trip_id, payer_person_id, link_id, card_id, amount_minor, currency, merchant, rail, outcome, used_at,
+         approval_expires_at)
+       values ($1, $1, 't_goa', 'p_rahul', $2, $3, 5420000, 'INR', 'ixigo: Villa Sol, Anjuna', 'fake', 'charging', $4, $5)`,
+      [jti, link?.link_id, card?.card_id, new Date('2026-10-05T09:01:00Z'), new Date('2026-10-05T09:10:00Z')],
+    );
+    later(11 * 60_000 + 1_000);
+    try {
+      await sweep(f.d);
+    } finally {
+      later(0);
+    }
+    expect(await row(jti)).toMatchObject({ outcome: 'failed' });
+    expect(f.rail.charges.filter((c) => c.idempotencyKey === jti)).toEqual([]);
+    expect(f.goCalls.filter((c) => c.body.approval_id === jti)).toMatchObject([{ path: '/internal/vault/failed', body: { reason: 'rail_error' } }]);
   });
 
   it('sends the confirming notice again until Go takes it, and only once after that', async () => {
