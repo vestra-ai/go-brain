@@ -287,7 +287,7 @@ describe('the admin page', () => {
   });
 });
 
-describe('the session: from Go's own pages only, never framed, 12 hours, and a sign-out', () => {
+describe("the session: from Go's own pages only, never framed, 12 hours, and a sign-out", () => {
   const press = (headers: Record<string, string>) =>
     built.brain.http.inject({ method: 'POST', url: '/admin/switches', headers: { ...SIGNED_IN, host: 'go.test', ...headers }, payload: { name: 'TRAVEL_MODE', value: 'fake' } });
 
