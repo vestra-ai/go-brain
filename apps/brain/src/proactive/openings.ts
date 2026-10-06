@@ -22,14 +22,9 @@ export const REPLAN_ON: ReadonlySet<string> = new Set([
   'mandate.set', 'mandate.confirmed', 'mandate.declined', 'booking.changed',
 ]);
 
-export function talksToGo(msg: Message, pack: TripPack): boolean {
-  if (msg.mentions_go) return true;
-  if (!msg.reply_to) return false;
-  return pack.messages.some((m) => m.message_id === msg.reply_to && m.author.kind === 'go');
-}
-
+/** Said to Go: the Server's mention, a reply to Go, or Go named in the text ("Go chup kar"), the same test P1 uses. */
 export function isHush(msg: Message, pack: TripPack): boolean {
-  return msg.author.kind === 'person' && typeof msg.text === 'string' && talksToGo(msg, pack) && HUSH_RE.test(msg.text);
+  return msg.author.kind === 'person' && typeof msg.text === 'string' && plainlyNamesGo(msg, pack) && HUSH_RE.test(msg.text);
 }
 
 /**

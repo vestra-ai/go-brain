@@ -19,6 +19,11 @@ describe('isHush', () => {
     expect(isHush(msg({ by: 'p_kabir', text: 'too many messages bro', replyTo: 'm_go' }), pack)).toBe(true);
     expect(isHush(msg({ by: 'p_kabir', text: 'Go, please be quiet for a bit', mentionsGo: true }), pack)).toBe(true);
   });
+  it('hears a hush that names Go in plain text, with no @ mention', () => {
+    expect(isHush(msg({ by: 'p_kabir', text: 'Go chup kar yaar' }), pack)).toBe(true);
+    expect(isHush(msg({ by: 'p_kabir', text: 'too many messages, Go!' }), pack)).toBe(true);
+    expect(isHush(msg({ by: 'p_kabir', text: 'chup kar yaar Arjun' }), pack)).toBe(false);
+  });
   it('ignores the same words not said to Go', () => {
     expect(isHush(msg({ by: 'p_kabir', text: 'shut up Arjun lol' }), pack)).toBe(false);
     expect(isHush(msg({ by: 'p_kabir', text: 'Go, is the beach quiet in November?', mentionsGo: true }), pack)).toBe(false);
