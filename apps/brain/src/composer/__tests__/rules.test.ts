@@ -12,8 +12,23 @@ describe("Go's rules", () => {
   it("one person's preference gets a ✅ and quiet, not a question to the group", () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
     expect(section).toContain(
-      "- One person saying what they'd like (a place, a date, a budget) is their preference: note it with a ✅ and stay quiet. Don't ask the group to confirm it unless someone asks you.",
+      "- One person saying what they'd like (a place, a date, a budget), or correcting something about themselves (\"actually I eat eggs\"), is their preference: note it with a ✅ and stay quiet, even if you said the old thing earlier. Don't ask the group to confirm it unless someone asks you.",
     );
+  });
+
+  it("one person's dates or place before a vote are not the plan: no leaning, no search unless asked", () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
+    expect(section).toContain(
+      "- Until the group agrees or votes, one person's dates or place are their preference, not the plan: don't treat them as settled, don't lean toward them, and don't search on them unless someone asks you to.",
+    );
+  });
+
+  it("never says a person's budget to the room or ties one to a name, next to the private-budget rule", () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
+    const privateRule = "- Budgets are private. You only know the lowest band anyone picked, never who picked what. Never guess anyone's budget.";
+    const noNames =
+      "- Never repeat a person's budget to the room or tie a budget to a name, even one they said in the chat. When a budget matters, use the group's lowest band without names, or ask people to answer the budget question in the App.";
+    expect(section).toContain(`${privateRule}\n${noNames}`);
   });
 
   it('never tell the group about a tool, what it returned or a refusal; tell_the_room is what to say', () => {
