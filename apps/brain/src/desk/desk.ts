@@ -114,13 +114,15 @@ export function createDesk(o: DeskOptions): DeskImpl {
       `select ${COLUMNS} from desk_items where trip_id = $1 and done_at is null order by due_at, id`,
       [tripId],
     );
-    const due = rows.filter((r) => r.due_at.getTime() <= now);
-    if (due.length === 0) return null;
+    const isDue = (r: Row): boolean => r.due_at.getTime() <= now;
     // A turn that took items and never finished runs again first, under the same turn id, so its writes repeat their request ids.
-    const crashed = due.find((r) => r.turn_id !== null)?.turn_id ?? null;
+    // While it waits for its retry no other turn starts for the trip (one would answer its messages twice); when it runs, the
+    // messages that arrived meanwhile join it, so one turn covers everything.
+    const crashed = rows.find((r) => r.turn_id !== null)?.turn_id ?? null;
+    if (crashed ? !rows.some((r) => r.turn_id === crashed && isDue(r)) : !rows.some(isDue)) return null;
     const take = crashed
-      ? rows.filter((r) => r.turn_id === crashed)
-      : rows.filter((r) => r.turn_id === null && (r.due_at.getTime() <= now || r.kind === 'message'));
+      ? rows.filter((r) => r.turn_id === crashed || (r.turn_id === null && r.kind === 'message'))
+      : rows.filter((r) => r.turn_id === null && (isDue(r) || r.kind === 'message'));
     const turnId = crashed ?? `turn_${newUlid(now)}`;
     const taken = await o.pool.query<{ attempts: number }>(
       'update desk_items set turn_id = $2, attempts = attempts + 1 where id = any($1::text[]) and done_at is null returning attempts',

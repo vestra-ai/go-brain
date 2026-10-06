@@ -62,13 +62,14 @@ function room(o: {
   context.addWake('setup', renderSetupWake);
   if (o.limits) context.addTurnRules(o.limits);
   const model = fakeAnthropic(o.script);
+  const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
   const composer = createComposer({
     pool: db.pool, log: silentLog, now: () => new Date(), link,
     packs: { get: async () => pack, invalidate: () => undefined },
-    tools, context, speak: createSpeak({ pool: db.pool, link, now: () => new Date() }),
+    tools, context, speak,
     client: model.client, model: 'claude-sonnet-5-5', claimNew: o.claimNew ?? (async () => []),
   });
-  return { tripId, calls, notes, model, composer, pack, posts: () => calls.filter((c) => c.method === 'post_message') };
+  return { tripId, calls, notes, model, composer, pack, speak, posts: () => calls.filter((c) => c.method === 'post_message') };
 }
 
 const item = (tripId: string, m: Message, namesGo: boolean): DeskItem => ({
@@ -150,6 +151,59 @@ describe('a composer turn', () => {
     expect(r.posts()[0]?.params.text).toBe('Friday has three flights after 6 pm, Saturday has two.');
     const seen = await db.pool.query('select composer_seen_seq from trips where trip_id = $1', [r.tripId]);
     expect(seen.rows[0].composer_seen_seq).toBe(5);
+  });
+
+  it('typing goes off when the turn ends, also when the message that named Go was pulled in, or the turn posted', async () => {
+    const ask = msg(3, 'p_arjun', '@Go and flights?');
+    let claimed = false;
+    const pulled = room({
+      messages: [],
+      // The fold round ends silent, so only the pulled-in message can turn typing off.
+      script: [{ text: 'Hi all, I am Go!' }, { tools: [{ name: 'stay_silent', input: { reason: 'nothing to add' } }] }],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        pulled.pack.messages.push(ask);
+        pulled.speak.typingOn(tripId); // what intake does for a message that names Go
+        return [item(tripId, ask, true)];
+      },
+    });
+    await turn(pulled, [{ id: `setup:${pulled.tripId}:greet`, tripId: pulled.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} }]);
+    expect(pulled.posts()).toEqual([]);
+    expect(pulled.notes.map((x) => x.params.on)).toEqual([true, false]);
+
+    const hey = msg(4, 'p_meher', 'go team!');
+    const posted = room({ messages: [hey], script: [{ text: 'Let us go!' }] });
+    posted.speak.typingOn(posted.tripId);
+    await turn(posted, [item(posted.tripId, hey, false)]);
+    expect(posted.posts()).toHaveLength(1);
+    expect(posted.notes.map((x) => x.params.on)).toEqual([true, false]);
+  });
+
+  it('the pre-post check never sends an empty assistant message when the last round wrote nothing', async () => {
+    const ask = msg(3, 'p_arjun', '@Go is the villa free?');
+    const more = msg(5, 'p_kabir', 'and pets?');
+    let claimed = false;
+    const r = room({
+      messages: [ask],
+      script: [
+        { text: 'Checking the villa now.', tools: [{ name: 'react', input: { message_id: '#3', emoji: '👀' } }] },
+        {},
+        { text: 'The villa is free, and pets are welcome.' },
+      ],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(more);
+        return [item(tripId, more, false)];
+      },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(3);
+    const sent = r.model.bodies[2].messages as Array<{ role: string; content: unknown[] }>;
+    for (const m of sent) expect(m.content.length).toBeGreaterThan(0);
+    expect(sent[3]).toEqual({ role: 'assistant', content: [{ type: 'text', text: 'Checking the villa now.' }] });
+    expect(r.posts()[0]?.params.text).toBe('The villa is free, and pets are welcome.');
   });
 
   it('a rerun after the message went out posts nothing more and asks the model nothing', async () => {
