@@ -177,3 +177,16 @@ describe('catch_up until Task 13 lands', () => {
     expect(res).toEqual({ items: [] });
   });
 });
+
+describe('forget everywhere finds every trip', () => {
+  it('reaches a trip where only a story line names the person, through the person index', async () => {
+    const idx = await db.pool.query(`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'messages' AND indexname = 'messages_by_person'`);
+    expect(idx.rows).toHaveLength(1);
+    await db.pool.query(
+      `INSERT INTO story_lines (trip_id, idx, text, refs, ref_ids, people) VALUES ('t_story', 0, 'Zed brings the speaker', '{3}', '{m_0003}', '{p_zed}')`,
+    );
+    expect(await h.forget_person({ person_id: 'p_zed' }, meta)).toEqual({ deleted_facts: 0, remaining_facts: 0 });
+    expect((await db.pool.query(`SELECT count(*)::int AS n FROM story_lines WHERE trip_id = 't_story'`)).rows[0].n).toBe(0);
+    expect((await forgottenUpTo(db.pool, 't_story')).has('p_zed')).toBe(true);
+  });
+});

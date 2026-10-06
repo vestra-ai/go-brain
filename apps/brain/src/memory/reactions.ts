@@ -10,7 +10,21 @@ export function reactionRequestId(tripId: string, messageId: string, emoji: stri
   return `go_react_${createHash('sha256').update(`${tripId}|${messageId}|${emoji}`).digest('hex').slice(0, 24)}`;
 }
 
-export async function reactOnce(pool: Pool, link: ServerLink, tripId: string, message: Message, emoji: string): Promise<'sent' | 'skipped' | 'failed'> {
+type Outcome = 'sent' | 'skipped' | 'failed';
+
+/** Reactions being sent right now in this process, by request id: a second caller for the same one waits for the first. */
+const inflight = new Map<string, Promise<Outcome>>();
+
+export function reactOnce(pool: Pool, link: ServerLink, tripId: string, message: Message, emoji: string): Promise<Outcome> {
+  const key = reactionRequestId(tripId, message.message_id, emoji);
+  const running = inflight.get(key);
+  if (running) return running.then((r) => (r === 'sent' ? 'skipped' : r));
+  const p = sendOnce(pool, link, tripId, message, emoji).finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
+async function sendOnce(pool: Pool, link: ServerLink, tripId: string, message: Message, emoji: string): Promise<Outcome> {
   if (message.author.kind !== 'person' || message.deleted || message.withheld) return 'skipped';
   if (message.reactions.some((r) => r.person_id == null && r.emoji === emoji)) return 'skipped';
   await pool.query(
