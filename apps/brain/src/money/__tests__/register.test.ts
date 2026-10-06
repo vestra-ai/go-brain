@@ -124,6 +124,22 @@ describe('payments without both keys', () => {
 describe('the payments block of right now', () => {
   const packs = (trip = goaTrip('confirmed')) => ({ get: async () => ({ trip, messages: [], seq: trip.seq }), invalidate: () => undefined });
 
+  it('never suggests set_mandate for a winner Go cannot book, and says what to tell the group instead', async () => {
+    k.travel.options.set('opt_villa_sol', 'ixigo:flight:6e-2134');
+    k.travel.offers.set('ixigo:flight:6e-2134', {
+      amountMinor: 592000, currency: 'INR', merchant: 'ixigo: IndiGo 6E 2134', refundableUntil: null, title: 'IndiGo 6E 2134', kind: 'flight',
+    });
+    const text = await paymentsNow({ pool: k.pool, packs: packs(goaTrip('closed')), now: k.now, travel: () => k.travel }).render('t_goa', []);
+    expect(text).toContain("Vote d_villa closed and Villa Sol won, but Go can't book it: don't ask who pays or use set_mandate.");
+    expect(text).toContain("I can't book flights for the whole group yet.");
+    expect(text).not.toContain('Once the group says who pays');
+    // A winner Go can book still gets the usual nudge.
+    k.travel.options.set('opt_villa_sol', 'ixigo:stay:villa-sol-anjuna');
+    expect(await paymentsNow({ pool: k.pool, packs: packs(goaTrip('closed')), now: k.now, travel: () => k.travel }).render('t_goa', [])).toContain(
+      'Once the group says who pays, use set_mandate',
+    );
+  });
+
   it('tells the composer a vote is ready to pay, with the ids ask_to_pay needs', async () => {
     const text = await paymentsNow({ pool: k.pool, packs: packs(), now: k.now }).render('t_goa', []);
     expect(text).toContain('Ready to pay for Villa Sol: Rahul said yes. ask_to_pay with decision_id d_villa and option_ref opt_villa_sol.');

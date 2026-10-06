@@ -430,6 +430,8 @@ export class FakeVaultClient implements VaultClient {
   readonly payLinks: PayLinkInput[] = [];
   readonly homeLinks: Array<{ personId: string; start: string }> = [];
   refuse: PayLinkRefusal | null = null;
+  /** Why the vault refused, as its 409 says in `detail`. */
+  refuseDetail: string | null = null;
   hang = false;
   charged: string[] = [];
   withoutBothKeysValue = 0;
@@ -448,7 +450,7 @@ export class FakeVaultClient implements VaultClient {
       await new Promise((resolve) => setTimeout(resolve, o?.timeoutMs ?? 2_000));
       return { ok: false, reason: 'unavailable' };
     }
-    if (this.refuse) return { ok: false, reason: this.refuse };
+    if (this.refuse) return { ok: false, reason: this.refuse, ...(this.refuseDetail ? { detail: this.refuseDetail } : {}) };
     this.payLinks.push(i);
     return { ok: true, url: `https://vault.test/p/pay_${this.payLinks.length}`, expiresAt: new Date(this.now().getTime() + 300_000).toISOString() };
   }
@@ -479,11 +481,11 @@ export interface MoneyKit {
 }
 
 /** A fresh schema, the fake Server with the Goa trip, fake travel and vault, and a clock at 09:00 on 5 Oct. */
-export async function moneyKit(o: { trip?: Trip; at?: Date } = {}): Promise<MoneyKit> {
+export async function moneyKit(o: { trip?: Trip; at?: Date; spendKeyPem?: string } = {}): Promise<MoneyKit> {
   const { pool, drop } = await withSchema();
   let now = o.at ?? new Date('2026-10-05T09:00:00Z');
   const clock = () => now;
-  const server = new FakeServerLink(o.trip ?? goaTrip('confirmed'), clock);
+  const server = new FakeServerLink(o.trip ?? goaTrip('confirmed'), clock, o.spendKeyPem);
   const travel = new FakeTravel(clock);
   const vault = new FakeVaultClient(clock);
   const lines: string[] = [];
