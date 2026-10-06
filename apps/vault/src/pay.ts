@@ -118,7 +118,7 @@ export async function payOptions(
 }
 
 /** Marks the link used and the jti taken, with the attempt, in one transaction. */
-async function startAttempt(d: PayDeps, now: Date, linkId: string, a: AttemptRow): Promise<'ok' | 'used' | 'link_used'> {
+async function startAttempt(d: PayDeps, now: Date, linkId: string, a: AttemptRow, approvalExpiresAt: Date): Promise<'ok' | 'used' | 'link_used'> {
   const client = await d.pool.connect();
   try {
     await client.query('begin');
@@ -129,9 +129,10 @@ async function startAttempt(d: PayDeps, now: Date, linkId: string, a: AttemptRow
     }
     try {
       await client.query(
-        `insert into used_approvals (jti, approval_id, trip_id, payer_person_id, link_id, card_id, amount_minor, currency, merchant, rail, outcome, used_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'charging', $11)`,
-        [a.jti, a.approval_id, a.trip_id, a.payer_person_id, linkId, a.card_id, a.amount_minor, a.currency, a.merchant, a.rail, now],
+        `insert into used_approvals (jti, approval_id, trip_id, payer_person_id, link_id, card_id, amount_minor, currency, merchant, rail, outcome, used_at,
+           approval_expires_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'charging', $11, $12)`,
+        [a.jti, a.approval_id, a.trip_id, a.payer_person_id, linkId, a.card_id, a.amount_minor, a.currency, a.merchant, a.rail, now, approvalExpiresAt],
       );
     } catch (e) {
       await client.query('rollback');
@@ -234,7 +235,7 @@ export async function approvePayment(
     merchant: pr.merchant,
     rail: pr.payment_kind,
   };
-  const started = await startAttempt(d, now, link.link_id, attempt);
+  const started = await startAttempt(d, now, link.link_id, attempt, new Date(c.exp * 1000));
   if (started !== 'ok') return refuse(started, who, { passkey: true, approval: started !== 'used' });
 
   // 8. The rail charges once, keyed by the jti.

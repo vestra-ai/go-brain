@@ -1,5 +1,5 @@
 import { signRequest } from '@go/contract';
-import { chargeOnce, holdUnknown, settle, type AttemptRow, type PayDeps } from './charge.js';
+import { chargeOnce, holdUnknown, markUnknown, settle, type AttemptRow, type PayDeps } from './charge.js';
 import { VAULT_SIGNATURE_HEADER } from './internal/auth.js';
 import type { RailFailReason } from './rails/rail.js';
 
@@ -7,12 +7,15 @@ export type GoOutcome =
   | { kind: 'paid'; trip_id: string; approval_id: string; rail_ref: string }
   | { kind: 'failed'; trip_id: string; approval_id: string; reason: RailFailReason }
   /** Not an outcome: the rail gave no clear answer yet, so Go keeps the pay card waiting on the bank. */
-  | { kind: 'confirming'; trip_id: string; approval_id: string };
+  | { kind: 'confirming'; trip_id: string; approval_id: string }
+  /** The rail will not be asked again and a person checks the charge: Go keeps the payment waiting and says so. */
+  | { kind: 'checking'; trip_id: string; approval_id: string };
 
 const PATHS: Record<GoOutcome['kind'], string> = {
   paid: '/internal/vault/paid',
   failed: '/internal/vault/failed',
   confirming: '/internal/vault/confirming',
+  checking: '/internal/vault/confirming',
 };
 
 /** Answers from Go that a resend cannot change: the body or the request itself is wrong. Anything else is tried again. */
@@ -29,7 +32,9 @@ export async function tellGo(d: Pick<PayDeps, 'env' | 'fetch' | 'now'>, o: GoOut
       ? { trip_id: o.trip_id, approval_id: o.approval_id, rail_ref: o.rail_ref }
       : o.kind === 'failed'
         ? { trip_id: o.trip_id, approval_id: o.approval_id, reason: o.reason }
-        : { trip_id: o.trip_id, approval_id: o.approval_id },
+        : o.kind === 'checking'
+          ? { trip_id: o.trip_id, approval_id: o.approval_id, checking: true }
+          : { trip_id: o.trip_id, approval_id: o.approval_id },
   );
   const signature = signRequest(
     { method: 'POST', target: url.pathname + url.search, body },
@@ -101,16 +106,58 @@ export async function tellConfirming(d: PayDeps, jti: string): Promise<void> {
   await d.pool.query('update used_approvals set confirming_told_at = $2 where jti = $1', [jti, d.now()]);
 }
 
+/** Tells Go, once, that a charge is unknown for good and a person is checking it. The sweep sends it again until Go takes it. */
+export async function tellChecking(d: PayDeps, jti: string): Promise<void> {
+  const r = await d.pool.query<{ trip_id: string; approval_id: string }>(
+    "select trip_id, approval_id from used_approvals where jti = $1 and outcome = 'unknown' and checking_told_at is null",
+    [jti],
+  );
+  const row = r.rows[0];
+  if (!row) return;
+  const said = await tellGo(d, { kind: 'checking', trip_id: row.trip_id, approval_id: row.approval_id });
+  if (said === 'retry') return;
+  if (said === 'final') d.log.error({ approval_id: row.approval_id }, 'Go refused a checking notice; not sending it again');
+  await d.pool.query('update used_approvals set checking_told_at = $2 where jti = $1', [jti, d.now()]);
+}
+
+interface StuckRow extends AttemptRow {
+  charge_tries: number;
+  rail_called_at: Date | null;
+  /** The approval's expiry plus the grace. After it the rail is never called again for this charge. */
+  deadline: Date;
+}
+
+/** How long after its approval runs out a charge may still go to the rail (the same grace as Go's). */
+export const RAIL_GRACE_MS = 120_000;
+
+/**
+ * Past the approval's expiry and the grace, the vault never calls the rail again. A charge the rail was never sent failed
+ * for sure: nothing went out. Any other is unknown, for a person to check, and Go hears that it is being checked.
+ */
+async function closeLate(d: PayDeps, now: Date, a: StuckRow): Promise<void> {
+  if (a.charge_tries === 0 && !a.rail_called_at) {
+    if (await settle(d.pool, now, a, { failed: 'rail_error' })) await reportOutcome(d, a.jti);
+    return;
+  }
+  await markUnknown(d, now, a, 'past the approval and the grace');
+}
+
 /** Finishes what a crash or a lost call left behind. Safe to run any time, from any copy of the service. */
 export async function sweep(d: PayDeps): Promise<{ recharged: number; resent: number }> {
   const now = d.now();
   let recharged = 0;
-  const stuck = await d.pool.query<AttemptRow>(
-    `select jti, approval_id, trip_id, payer_person_id, card_id, amount_minor, currency, merchant, rail
+  // A row from before approval_expires_at was kept is given the longest an approval lives, 600 s.
+  const stuck = await d.pool.query<StuckRow>(
+    `select jti, approval_id, trip_id, payer_person_id, card_id, amount_minor, currency, merchant, rail, charge_tries, rail_called_at,
+       coalesce(approval_expires_at, used_at + interval '600 seconds') + make_interval(secs => $2) as deadline
      from used_approvals where outcome = 'charging' and used_at < $1 order by used_at limit 20`,
-    [new Date(now.getTime() - 120_000)],
+    [new Date(now.getTime() - 120_000), RAIL_GRACE_MS / 1000],
   );
   for (const a of stuck.rows) {
+    if (a.deadline.getTime() <= now.getTime()) {
+      await closeLate(d, now, a);
+      continue;
+    }
     // The same idempotency key: a charge that already went through is answered again, never made twice.
     const result = await chargeOnce(d, a);
     if ('unknown' in result) {
@@ -131,6 +178,10 @@ export async function sweep(d: PayDeps): Promise<{ recharged: number; resent: nu
     "select jti from used_approvals where outcome = 'charging' and charge_tries > 0 and confirming_told_at is null order by used_at limit 50",
   );
   for (const c of confirming.rows) await tellConfirming(d, c.jti);
+  const checking = await d.pool.query<{ jti: string }>(
+    "select jti from used_approvals where outcome = 'unknown' and checking_told_at is null order by used_at limit 50",
+  );
+  for (const c of checking.rows) await tellChecking(d, c.jti);
   await d.pool.query('delete from internal_seen where seen_at < $1', [new Date(now.getTime() - 600_000)]);
   return { recharged, resent: pending.rows.length };
 }

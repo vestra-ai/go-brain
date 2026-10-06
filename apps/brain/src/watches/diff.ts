@@ -1,7 +1,7 @@
 // Which change between two status readings is worth a nudge. Readings are P4's StatusResult as they are.
 // Each change has a key: the same change is nudged once.
 import type { Action } from '../proactive/policy.js';
-import type { StatusQuery, StatusResult } from './status.js';
+import type { StatusQuery, StatusResult } from '../travel/travel.js';
 
 /** What a watch checks: P4's status kinds, a flight by its number or a train ticket by its PNR. */
 export type WatchKind = StatusQuery['kind'];

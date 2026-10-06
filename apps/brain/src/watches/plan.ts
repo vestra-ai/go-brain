@@ -2,7 +2,7 @@
 // A watch's query is P4's StatusQuery as it is.
 import type pg from 'pg';
 import type { Trip } from '../door/methods.js';
-import type { StatusQuery } from './status.js';
+import type { StatusQuery } from '../travel/travel.js';
 
 export interface WatchPlan {
   watchId: string;

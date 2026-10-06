@@ -1,6 +1,7 @@
 // serveDevRoom: the dev room, a one-page App for the simulator and the emergency demo surface. It serves the
 // page and a live WebSocket at /live: the page gets the room's state after every change and sends what people
-// do (say, tap, vote, react, the payer's yes or no), which the FakeServer turns into events for Go.
+// do (say, tap, vote, react, the payer's yes or no, "Forget me in this trip"), which the FakeServer turns into
+// events and requests for Go.
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -29,7 +30,24 @@ type Action =
   | { type: 'vote'; decisionId: string; personId: string; optionIndex: number }
   | { type: 'react'; personId: string; messageId: string; emoji: string }
   | { type: 'confirm'; decisionId: string }
-  | { type: 'decline'; decisionId: string };
+  | { type: 'decline'; decisionId: string }
+  | { type: 'forget'; personId: string };
+
+/** The App's words when a forget did not go through: never tell the person they were forgotten (guide 05). */
+const FORGET_FAILED = "Go couldn't forget you just now. Try again.";
+
+/** "Forget me in this trip", as the App does it, and the toast the person sees. */
+async function forget(fake: FakeServer, personId: string, tripId: string): Promise<string> {
+  const name = fake.trip(tripId).people.find((p) => p.person_id === personId)?.name;
+  if (!name) throw new Error(`personId: ${personId} is not in this trip`);
+  try {
+    // Go's ForgetResult only parses with remaining_facts 0: it checked that nothing is left.
+    await fake.forgetPerson(personId, tripId);
+    return `Done. Nothing about ${name} is left.`;
+  } catch {
+    return FORGET_FAILED;
+  }
+}
 
 /** What the page draws: the trip, the room, Go's typing, and each person's "needs you" list. */
 export function roomState(fake: FakeServer, tripId: string) {
@@ -96,6 +114,9 @@ export async function serveDevRoom(o: DevRoomOptions): Promise<DevRoom> {
           break;
         case 'decline':
           await o.fake.declineMandate(a.decisionId);
+          break;
+        case 'forget':
+          ws.send(JSON.stringify({ type: 'forget_result', personId: a.personId, toast: await forget(o.fake, a.personId, tripId) }));
           break;
         default:
           break;

@@ -9,11 +9,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "start": "node dist/main.js",
-    "jev:record": "tsx scripts/record-jev-answers.ts"
+    "jev:record": "tsx scripts/record-jev-answers.ts",
+    "fake-ixigo": "node dist/travel/fake-ixigo/main.js",
+    "setup-v1": "tsx scripts/setup-v1.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.93.0",
     "@go/contract": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@vestra/agent-sdk": "workspace:*",
     "fastify": "^5.12.5",
     "pg": "^8.13.0",
