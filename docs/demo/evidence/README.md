@@ -292,6 +292,12 @@ Across the six: 31.3 seconds in all, of which 24.5 (78%) inside model calls, 6.7
 
 With `claude-haiku-4-5` the run answered 4 of the 6 asks, posted 5 times unasked, and several of its asks show 4 to 11 seconds between its last model call and the post, which this run does not trace further.
 
+#### After card-ends-turn
+
+`bench-live-2026-10-06-diagnostic-cards.json` (and its summary, `bench-live-2026-10-06-diagnostic-cards.md`) is the same diagnostic run again, unedited, after #86: a reply whose tool calls are only cards (the options card) ends the turn, with its line in the same reply, so a search ask makes one model call fewer.
+
+TBD: the run, the code, and the per-ask table against the run above.
+
 ## Running it yourself
 
 With a Postgres database to use, from the repo root:
