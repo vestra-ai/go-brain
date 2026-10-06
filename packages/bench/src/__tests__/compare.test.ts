@@ -33,7 +33,9 @@ describe('the bars and the verdict', () => {
 
   it('judges the cache on long chats and only reports it on the short one', () => {
     const low = { ...base.cache, hitRate: 0.8 };
-    expect(failed([{ ...base, chat: 'goa-2000', cache: low }])).toEqual(['goa-2000: cache hit']);
+    // goa-2000 must also fold (bars.json requires memory): give it one, so only the cache fails.
+    const folded = { ...low, folds: [{ n: 40, beforeChatTokens: 12_400, afterChatTokens: 6_100 }] };
+    expect(failed([{ ...base, chat: 'goa-2000', cache: folded }])).toEqual(['goa-2000: cache hit']);
     const short = compareFast([{ ...base, cache: low }], bars.fast).checks.find((c) => c.name === 'cache hit');
     expect(short).toMatchObject({ ok: true, value: '80.0%' });
   });
