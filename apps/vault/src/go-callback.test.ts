@@ -16,7 +16,7 @@ afterAll(async () => {
 });
 
 const row = async (jti: string) =>
-  (await f.pool.query('select outcome, callback_at, callback_attempts from used_approvals where jti = $1', [jti])).rows[0];
+  (await f.pool.query('select outcome, callback_at, callback_refused_at, callback_attempts from used_approvals where jti = $1', [jti])).rows[0];
 
 describe('telling Go', () => {
   it('keeps the outcome until Go acknowledges it, then the sweep sends it again', async () => {
@@ -31,12 +31,42 @@ describe('telling Go', () => {
     expect((await row(jti)).callback_at).not.toBeNull();
   });
 
-  it('stops after an answer that will never change', async () => {
-    f.setGoStatus(404);
+  it('stops after an answer that will never change, and records it apart from an answer Go took', async () => {
+    f.setGoStatus(409);
     const { token, jti } = await f.payLinkFor();
     await f.approve(token, rahul);
-    expect((await row(jti)).callback_at).not.toBeNull();
+    expect(await row(jti)).toMatchObject({ callback_at: null, callback_attempts: 1 });
+    expect((await row(jti)).callback_refused_at).not.toBeNull();
     f.setGoStatus(200);
+    const before = f.goCalls.length;
+    await sweep(f.d);
+    expect(f.goCalls.slice(before).filter((c) => c.body.approval_id === jti)).toEqual([]);
+  });
+
+  it('sends a paid outcome again after a 404, until Go takes it', async () => {
+    f.setGoStatus(404);
+    const { token, jti } = await f.payLinkFor();
+    expect((await f.approve(token, rahul)).state).toBe('paid');
+    expect(await row(jti)).toMatchObject({ outcome: 'paid', callback_at: null, callback_refused_at: null, callback_attempts: 1 });
+    await sweep(f.d);
+    expect(await row(jti)).toMatchObject({ callback_at: null, callback_attempts: 2 });
+    f.setGoStatus(200);
+    await sweep(f.d);
+    expect((await row(jti)).callback_at).not.toBeNull();
+    expect(f.goCalls.filter((c) => c.body.approval_id === jti).map((c) => c.path)).toEqual([
+      '/internal/vault/paid', '/internal/vault/paid', '/internal/vault/paid',
+    ]);
+  });
+
+  it('stops after 50 tries, the only cap on a retried outcome', async () => {
+    f.setGoStatus(503);
+    const { token, jti } = await f.payLinkFor();
+    await f.approve(token, rahul);
+    await f.pool.query('update used_approvals set callback_attempts = 50 where jti = $1', [jti]);
+    const before = f.goCalls.length;
+    await sweep(f.d);
+    f.setGoStatus(200);
+    expect(f.goCalls.slice(before).filter((c) => c.body.approval_id === jti)).toEqual([]);
   });
 
   it('finishes a charge left half done, with the same idempotency key, once', async () => {
