@@ -1,7 +1,7 @@
 import type * as C from '@go/contract';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { TurnCtx } from '../../composer/tools.js';
+import { SAY_NOTHING, type TurnCtx } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import type { DeskItem } from '../../desk/desk.js';
 import { fakePacks, goaPeople, goaTrip, msg, packOf } from '../../reflex/goa.fixture.js';
@@ -94,7 +94,7 @@ describe('quick tools', () => {
     expect(await tool('record').run({ kind: 'agreed', text: 'Scuba on Saturday', person_ids: [], proof_message_ids: ['m_0150'] }, c))
       .toMatchObject({ kind: 'open' });
     expect(await tool('record').run({ kind: 'open', text: 'Who books dinner?', person_ids: ['p_zoya'], proof_message_ids: ['m_0150'] }, c))
-      .toEqual({ refused: 'someone named is not in the trip' });
+      .toEqual({ refused: 'someone named is not in the trip', tell_the_room: SAY_NOTHING });
     const adds = link.calls.filter((x) => x.method === 'add_record_line');
     expect(adds.map((x) => x.params.request_id)).toEqual(['go_record_turn_1_1', 'go_record_turn_1_2']);
   });

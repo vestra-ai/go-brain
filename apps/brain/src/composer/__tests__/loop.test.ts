@@ -6,7 +6,7 @@ import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
 import type { TextBlock, TurnLimits } from '../context.js';
 import { countMarkers, MAX_ROUNDS, runLoop, type LoopInput } from '../loop.js';
 import { roomTools } from '../room-tools.js';
-import { makeTurnCtx, type QuickTool } from '../tools.js';
+import { makeTurnCtx, SAY_NOTHING, type QuickTool } from '../tools.js';
 
 const HOUR = { type: 'ephemeral', ttl: '1h' } as const;
 const SYSTEM: TextBlock[] = [{ type: 'text', text: 'You are Go.', cache_control: HOUR }];
@@ -130,6 +130,7 @@ describe('the composer loop', () => {
     const results = limited.bodies[1].messages[2].content;
     expect(results[0]).toMatchObject({ is_error: true });
     expect(results[0].content).toContain('echo is not allowed this turn');
+    expect(results[0].content).toContain(SAY_NOTHING);
     expect(results[1].is_error).toBeUndefined();
     expect(limited.ctx.outcome.reactions).toBe(1);
     expect(r).toMatchObject({ silent: true, stopReason: 'stay_silent' });

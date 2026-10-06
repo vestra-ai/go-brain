@@ -2,7 +2,7 @@
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import { dataBlock, defuse, inlineData, oneLine, personName } from '../composer/fence.js';
-import type { QuickTool, TurnCtx } from '../composer/tools.js';
+import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import { checkLine } from './checker.js';
 import { forgottenUpTo } from './facts.js';
 import type { Memory } from './memory.js';
@@ -81,9 +81,9 @@ export function memoryTools(d: { pool: Pool; memory: Memory }): QuickTool<any>[]
       await mirrorSnapshot(d.pool, ctx.pack.trip);
       const env = { pack: ctx.pack, forgotten: await forgottenUpTo(d.pool, ctx.tripId), record: await recordLines(d.pool, ctx.tripId) };
       const c = checkLine({ kind: args.kind, text: args.text, person_ids: args.person_ids, proof: args.proof_message_ids }, env);
-      if (!c.ok) return { refused: c.reason };
+      if (!c.ok) return { refused: c.reason, tell_the_room: SAY_NOTHING };
       const out = await writeLine(d.pool, ctx.link, ctx.tripId, c.value, ctx.stableId('go_record'));
-      return 'failed' in out ? { refused: `the Server said ${out.failed}` } : { saved: out.lineId, kind: c.value.kind };
+      return 'failed' in out ? { refused: `the Server said ${out.failed}`, tell_the_room: SAY_NOTHING } : { saved: out.lineId, kind: c.value.kind };
     },
   };
 

@@ -38,6 +38,10 @@ describe('the prompt, in order and cache-first', () => {
     const b = await context().build(input(packOf(chatOf(3), goaSnapshot({ trip_id: 't_coorg', title: 'Coorg' })), 0));
     expect(a.system).toEqual([{ type: 'text', text: GO_RULES, cache_control: { type: 'ephemeral', ttl: '1h' } }]);
     expect(b.system).toEqual(a.system);
+    // The rules about preferences and tools ride in that one cached block, not after the cache point.
+    expect(a.system[0]?.text).toContain('is their preference: note it with a ✅ and stay quiet');
+    expect(a.system[0]?.text).toContain('Never mention your tools');
+    expect(all(a.user)).not.toContain('Never mention your tools');
   });
 
   it('puts the chat in blocks of 25 lines with the one-hour marker on the last full block', async () => {
