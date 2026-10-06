@@ -92,6 +92,19 @@ describe('the prompt, in order and cache-first', () => {
     expect(p.newestSeq).toBe(8);
   });
 
+  it('a new line says which reactions Go already put on it; older lines and the cached blocks stay the same bytes', async () => {
+    const mine = { reactions: [{ emoji: '✅', person_id: null }, { emoji: '👍', person_id: 'p_arjun' }] };
+    const messages = chatOf(60).map((m) => (m.seq === 30 || m.seq === 58 ? { ...m, ...mine } : m));
+    const before = await context().build(input());
+    const p = await context().build(input(packOf(messages)));
+    const fresh = p.user.at(-1)?.text ?? '';
+    expect(fresh).toMatch(/^#58 \w+: message 58 \[you reacted ✅\]$/m);
+    expect(fresh).toMatch(/^#59 \w+: message 59$/m);
+    // Only Go's own reactions: a person's 👍 is theirs.
+    expect(fresh).not.toContain('👍');
+    expect(p.user.slice(0, -1)).toEqual(before.user.slice(0, -1));
+  });
+
   it('shows at most 25 new lines; older lines Go never saw join the chat', async () => {
     const p = await context().build(input(packOf(), 0));
     const fresh = p.user.at(-1)?.text ?? '';
@@ -219,9 +232,25 @@ describe('why Go woke, and the trip block', () => {
     expect(hello).toContain('Do not open a vote unless someone asks for one');
     expect(hello).not.toMatch(/open_vote|first vote/);
     expect(c.renderWake(wake({ kind: 'trip_change', ref: 'decision:d_stay', payload: { type: 'decision.closed', decisionId: 'd_stay' } }), p)).toBe(
-      'the vote <data>Where do we stay?</data> closed: <data>Villa Sol</data> won (4 of 5 voted). Say the result in one line and the next step.',
+      'the vote <data>Where do we stay?</data> closed: <data>Villa Sol</data> won (4 of 5 voted). ' +
+        "If it settled the trip's dates or place, save them with update_trip first. Then say the result in one line and the next step.",
     );
     expect(c.renderWake(wake({ kind: 'timer', ref: 'vote_closes', payload: {} }), p)).toBe('timer (vote_closes)');
+  });
+
+  it('a dates vote that closed tells Go to save the dates on the trip: an option is only a label, so the model reads it', () => {
+    const dates = vote({
+      decision_id: 'd_dates', question: 'Which dates work?', options: [{ label: '6-9 Nov' }, { label: '13-16 Nov' }],
+      status: 'closed', voted: 5, tally: [4, 1], result_index: 0, closed_at: '2026-10-05T12:00:00Z',
+    });
+    const split = vote({ decision_id: 'd_split', status: 'closed', voted: 4, tally: [2, 2], closed_at: '2026-10-05T12:00:00Z' });
+    const p = packOf(chatOf(3), goaSnapshot({ decisions: [dates, split] }));
+    const closed = (id: string) => context().renderWake(wake({ kind: 'trip_change', ref: `decision:${id}`, payload: { type: 'decision.closed', decisionId: id } }), p);
+    expect(closed('d_dates')).toContain('<data>6-9 Nov</data> won (5 of 5 voted)');
+    expect(closed('d_dates')).toContain("If it settled the trip's dates or place, save them with update_trip first.");
+    // No winner, nothing to save: the group settles it first.
+    expect(closed('d_split')).toContain('no clear winner');
+    expect(closed('d_split')).not.toContain('update_trip');
   });
 
   it('the trip block names everyone, fences what they said, and lists open votes', async () => {

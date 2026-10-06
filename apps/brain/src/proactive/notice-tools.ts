@@ -2,7 +2,7 @@
 // keep pins to the right people, never ping someone who paused Go, and label simulated news.
 import { z } from 'zod';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
-import { rulesForTurn, simulatedIn } from './allowed.js';
+import { allowedByAnItem, rulesForTurn, simulatedIn } from './allowed.js';
 import { proactiveOf, type ProactivePayload } from './payload.js';
 import type { NoticeIn, ProactiveStore } from './store.js';
 import { clip, plain } from './words.js';
@@ -46,17 +46,22 @@ function simulatedPins(wake: TurnCtx['wake']): string[] | null {
 
 const NOT_NOW = 'Not now: the bar for speaking up unprompted is not met for this. Use an allowed action or stay_silent.';
 const ONE_NOTICE = 'This turn already posted its one notice. Put everything in that notice, or stay_silent.';
+const NEWS_ONLY = 'A notice card is for news you bring on your own (a delay, a deadline, a clash). Answer in your message, or open a vote to ask the group.';
 const refuse = (why: string) => ({ refused: why, tell_the_room: SAY_NOTHING });
 
 export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, QuickTool<UpdateNoticeArgs>] {
   const post: QuickTool<PostNoticeArgs> = {
     name: 'post_notice',
     description:
-      'Post a notice card: news worth knowing, or a heads-up (a deadline, a delay, a clash). Set for_person_ids to pin it for just the people it concerns instead of the whole group.',
+      'Post a notice card: news worth knowing, or a heads-up (a deadline, a delay, a clash), that you bring on your own. Never to ask the group something: that is a vote. ' +
+      'Set for_person_ids to pin it for just the people it concerns instead of the whole group.',
     input: PostNoticeArgs,
     async run(args: PostNoticeArgs, ctx: TurnCtx): Promise<unknown> {
       const rules = rulesForTurn(ctx.wake);
       if (rules && !rules.tools.includes('post_notice')) return refuse(NOT_NOW);
+      // Notices are news Go brings unprompted: a turn only people (or taps, tasks, trip changes) woke answers in its
+      // message, or asks with a vote. A turn a person woke along with a timer or a watch that allowed a notice may post it.
+      if (!rules && !allowedByAnItem(ctx.wake, 'post_notice')) return refuse(NEWS_ONLY);
       // An unprompted turn spends one post of the budget: one notice, however many times the model asks.
       if (rules && ctx.cards.some((c) => (c as { kind?: unknown }).kind === 'notice')) return refuse(ONE_NOTICE);
       const reachable = new Set(ctx.pack.trip.people.filter((p) => !p.go_paused).map((p) => p.person_id));

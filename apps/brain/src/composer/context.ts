@@ -1,7 +1,7 @@
 import type { DeskItem, DeskKind } from '../desk/desk.js';
 import type { Log } from '../log.js';
 import type { TripPack } from '../trips/pack.js';
-import { chatLine, dataBlock, defuse, personName } from './fence.js';
+import { chatLine, dataBlock, defuse, oneLine, personName } from './fence.js';
 import { GO_RULES } from './rules.js';
 
 export interface NowProvider {
@@ -154,8 +154,13 @@ export function createContext(log: Log): ContextImpl {
       const fromSeq = view?.chatFromSeq ?? 0;
       const lines = i.pack.messages
         .filter((m) => m.seq >= fromSeq)
-        .map((m) => ({ seq: m.seq, go: m.author.kind === 'go', line: chatLine(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)) }))
-        .filter((x): x is { seq: number; go: boolean; line: string } => x.line !== null);
+        .map((m) => ({
+          seq: m.seq,
+          go: m.author.kind === 'go',
+          line: chatLine(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)),
+          mine: m.reactions.filter((r) => r.person_id == null).map((r) => defuse(oneLine(r.emoji))),
+        }))
+        .filter((x): x is { seq: number; go: boolean; line: string; mine: string[] } => x.line !== null);
 
       // New since the last turn: what Go has not seen, at most the newest 25. Everything before is the chat.
       // Go's own messages are never new to Go: the reply it posted after its last turn stays in the chat.
@@ -163,7 +168,9 @@ export function createContext(log: Log): ContextImpl {
       if (split < 0) split = lines.length;
       split = Math.max(split, lines.length - NEW_MAX);
       const chat = lines.slice(0, split).map((x) => x.line);
-      const fresh = lines.slice(split).map((x) => x.line);
+      // A new line says which reactions Go already put on it (the reflex's quiet ✅), so the turn does not try them again.
+      // Only new lines: a reaction added to an older message would change a cached chat block's bytes.
+      const fresh = lines.slice(split).map((x) => (x.mine.length ? `${x.line} [you reacted ${x.mine.join(' ')}]` : x.line));
 
       const user: TextBlock[] = [];
       const storyBlock = view?.story ? dataBlock('the story so far', [defuse(view.story)]) : null;

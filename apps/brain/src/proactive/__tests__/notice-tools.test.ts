@@ -104,6 +104,28 @@ describe('post_notice', () => {
   });
 });
 
+describe('a notice is news Go brings on its own', () => {
+  it('refuses one in a turn only people woke, so a question goes to a vote instead, and says nothing in the chat', async () => {
+    const [post] = tools();
+    const voteClosed: DeskItem = { id: 'tc:1', tripId: 't_goa', kind: 'trip_change', ref: 'decision:d_dates', dueAt: NOW, payload: {} };
+    for (const wake of [[messageItem], [messageItem, voteClosed]]) {
+      const ctx = turnCtx({ link: fakeLink(), pack: goaPack(), wake, turnId: 'turn_asked' });
+      const out = await post.run(post.input.parse({ tone: 'info', title: 'Dates: 6-9 Nov?', body: 'Reply here if these dates work for you.' }), ctx);
+      expect(out).toEqual({ refused: expect.stringContaining('open a vote'), tell_the_room: SAY_NOTHING });
+      expect(ctx.cards).toHaveLength(0);
+    }
+    expect(await store.notice('t_goa', 'c_notice_turn_asked_1')).toBeNull();
+  });
+
+  it('posts one in a turn a person woke along with a watch that allowed a notice', async () => {
+    const watch = candidate({ dedupeKey: 'watch:asked:1', source: 'watch', topic: 'flight_status', personIds: ['p_arjun'] });
+    const [post] = tools();
+    const ctx = turnCtx({ link: fakeLink(), pack: goaPack(), wake: [messageItem, proItem(watch, ['message'])], turnId: 'turn_watch_and_ask' });
+    expect(await post.run(post.input.parse({ tone: 'heads_up', title: 'Flight delayed', body: 'Two hours late.' }), ctx)).toMatchObject({ posted: true });
+    expect(ctx.cards).toHaveLength(1);
+  });
+});
+
 describe('simulated news', () => {
   it('keeps its pins to the people it names in a turn a person woke, whatever the model asked', async () => {
     const delay = candidate({ dedupeKey: 'sim:flight_status:mixed', simulated: true });

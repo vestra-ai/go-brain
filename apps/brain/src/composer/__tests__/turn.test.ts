@@ -55,7 +55,7 @@ function room(o: {
   });
   const pack: TripPack = { trip: goaSnapshot({ trip_id: tripId }), messages: [...o.messages], seq: 100 };
   const tools = createTools();
-  for (const t of roomTools({ now: () => new Date() })) tools.register(t);
+  for (const t of roomTools({ now: () => new Date(), pool: db.pool })) tools.register(t);
   const context = createContext(silentLog);
   context.addWake('message', renderMessageWake);
   context.addWake('trip_change', renderTripChangeWake);

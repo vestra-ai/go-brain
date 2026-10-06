@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { fakeAnthropic, type Script } from '../../__tests__/fixtures/fake-anthropic.js';
 import { fakeLink } from '../../__tests__/fixtures/fake-link.js';
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
+import { withSchema } from '../../db/test-db.js';
 import type { TextBlock, TurnLimits } from '../context.js';
 import { countMarkers, MAX_ROUNDS, runLoop, type LoopInput } from '../loop.js';
 import { roomTools } from '../room-tools.js';
@@ -21,18 +22,27 @@ const echo: QuickTool<{ say: string }> = {
 };
 const echoCall = (say: string) => ({ name: 'echo', input: { say } });
 
+// The react tool keeps Go's record of its reactions in Postgres.
+let db: Awaited<ReturnType<typeof withSchema>>;
+beforeAll(async () => {
+  db = await withSchema();
+});
+afterAll(() => db.drop());
+
+let trips = 0;
 function setup(script: Script, more: Partial<LoopInput> = {}, limits: TurnLimits | null = null) {
   const { client, bodies } = fakeAnthropic(script);
   const { link } = fakeLink({ add_reaction: () => ({ seq: 9 }) });
   const ctx = makeTurnCtx({
-    tripId: 't_goa', turnId: 'turn_L', link, wake: [], signal: new AbortController().signal,
+    // A trip of its own per setup: Go reacts to a message once, so a reaction one test sent would be a no-op in the next.
+    tripId: `t_loop_${++trips}`, turnId: 'turn_L', link, wake: [], signal: new AbortController().signal,
     pack: { trip: goaSnapshot(), messages: [msg(3, 'p_arjun', '@Go hello')], seq: 3 },
     limits,
   });
   const run = () =>
     runLoop({
       client, model: 'claude-sonnet-5-5', system: SYSTEM, messages: [{ role: 'user', content: USER }],
-      tools: [echo, ...roomTools({ now: () => new Date() })], ctx, signal: AbortSignal.timeout(5_000), ...more,
+      tools: [echo, ...roomTools({ now: () => new Date(), pool: db.pool })], ctx, signal: AbortSignal.timeout(5_000), ...more,
     });
   return { bodies, ctx, run };
 }
@@ -122,7 +132,7 @@ describe('the composer loop', () => {
         { tools: [echoCall('x'), { name: 'react', input: { message_id: '#3', emoji: '👍' } }] },
         { tools: [{ name: 'stay_silent', input: { reason: 'noted' } }] },
       ],
-      { tools: [counted, ...roomTools({ now: () => new Date() })] },
+      { tools: [counted, ...roomTools({ now: () => new Date(), pool: db.pool })] },
       { tools: ['react'], mayPostText: false },
     );
     const r = await limited.run();
