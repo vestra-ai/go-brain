@@ -28,7 +28,7 @@ export function callTool(service: CallService): QuickTool<CallBusinessArgs> {
         announce: args.announce,
         factsAllowed: args.facts_allowed,
       });
-      if ('refused' in r) return r;
+      if ('refused' in r) return { refused: r.refused, tell_the_room: 'Say this in your own short words.' };
       return { ok: true, call_id: r.callId, note: 'Posted the call line. Say nothing more about the call now: end the turn with no text.' };
     },
   };

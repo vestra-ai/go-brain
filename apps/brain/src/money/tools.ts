@@ -2,6 +2,9 @@ import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../composer/tools.js';
 import type { AskResult } from './ask.js';
 
+/** A refusal in the money flow is the group's to hear, in Go's words. */
+const SAY_THE_REFUSAL = 'Say this in your own short words. Never offer another way to pay.';
+
 /**
  * Only the vote, the winning option as the vote names it, and the purpose. There is no payer and no card here: the payer
  * comes from the mandate. option_ref is the vote option's own reference (an options card's option_id), not a travel offer id.
@@ -39,7 +42,7 @@ export function askToPayTool(run: AskRun): QuickTool<AskToPayInput> {
       // The vote option's option_ref goes in as is; askToPay resolves it to the travel offer.
       const r = await run(ctx, { decisionId: args.decision_id, optionRef: args.option_ref, purpose: args.purpose });
       if ('cardId' in r) return { pay_card: r.cardId, tell_the_room: 'Say in one short line that the pay card is up for the payer.' };
-      return { refused: r.refused, tell_the_room: 'Say this in your own short words. Never offer another way to pay.' };
+      return { refused: r.refused, tell_the_room: SAY_THE_REFUSAL };
     },
   };
 }
@@ -58,7 +61,7 @@ export function setMandateTool(run: SetRun): QuickTool<SetMandateInput> {
         refundableOnly: args.refundable_only,
         payerPersonId: args.payer_person_id,
       });
-      if (!('cardId' in r)) return { refused: r.refused };
+      if (!('cardId' in r)) return { refused: r.refused, tell_the_room: SAY_THE_REFUSAL };
       return {
         mandate_card: r.cardId,
         tell_the_room: r.note

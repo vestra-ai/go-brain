@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SAY_NOTHING } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import type { DeskItem } from '../../desk/desk.js';
 import { candidate, fakeLink, goaPack, goaTrip, seedTrip, turnCtx } from '../fakes.js';
@@ -61,7 +62,10 @@ describe('post_notice', () => {
     const [post] = tools();
     const ctx = turnCtx({ link: fakeLink(), pack: goaPack(), wake: [proItem(c, ['pin'], ['p_rahul'])], turnId: 'turn_once' });
     expect(await post.run(post.input.parse({ tone: 'heads_up', title: 'Free cancellation ends tomorrow', body: 'Villa Sol is free to cancel until Sunday.' }), ctx)).toMatchObject({ posted: true });
-    expect(await post.run(post.input.parse({ tone: 'info', title: 'Also', body: 'One more thing.' }), ctx)).toHaveProperty('refused');
+    // The refusal is Go's own business: it tells the model to say nothing about it in the chat.
+    expect(await post.run(post.input.parse({ tone: 'info', title: 'Also', body: 'One more thing.' }), ctx)).toMatchObject({
+      refused: expect.any(String), tell_the_room: SAY_NOTHING,
+    });
     expect(ctx.cards).toHaveLength(1);
   });
 

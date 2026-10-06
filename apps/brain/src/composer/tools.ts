@@ -52,6 +52,9 @@ export interface Tools {
 
 export const STAY_SILENT = 'stay_silent';
 
+/** tell_the_room on a refusal that is Go's own business (a record line, a notice): the group never hears about Go's tools. */
+export const SAY_NOTHING = 'Say nothing about this in the chat, and carry on.';
+
 export function createTools(): Tools {
   const byName = new Map<string, QuickTool<any>>();
   return {

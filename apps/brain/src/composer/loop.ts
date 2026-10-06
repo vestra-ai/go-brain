@@ -4,7 +4,7 @@ import type { Budget, Reservation } from '../budget.js';
 import type { AnthropicLike } from './anthropic.js';
 import { computeAnthropicCostUsd, estimateCostUsd, normalizeAnthropicUsage, resolveCapabilities, type AnthropicUsage } from './anthropic-helpers.js';
 import type { TextBlock } from './context.js';
-import { STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
+import { SAY_NOTHING, STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
 
 export const MAX_ROUNDS = 4;
 export const MAX_TOKENS = 1_024;
@@ -154,7 +154,7 @@ async function runTool(tool: QuickTool<any> | undefined, call: Anthropic.ToolUse
   const allowed = i.ctx.allowedTools;
   if (allowed && call.name !== STAY_SILENT && !allowed.includes(call.name)) {
     const can = [...new Set([...allowed, STAY_SILENT])].join(', ');
-    return result(`${call.name} is not allowed this turn. You can use: ${can}.`, true);
+    return result(`${call.name} is not allowed this turn. You can use: ${can}. ${SAY_NOTHING}`, true);
   }
   const args = tool.input.safeParse(call.input);
   if (!args.success) return result(`Invalid arguments for ${call.name}: ${z.prettifyError(args.error)}. Fix them and call it again.`, true);
