@@ -165,6 +165,10 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         const parsed = FireForm.safeParse(filled(req.body));
         if (!parsed.success) return answer(req, reply, 422, err('invalid', z.prettifyError(parsed.error).slice(0, 300)), 'Pick the trip and the person first.', trip);
         const f = parsed.data;
+        if (!brain.http.hasRoute({ method: 'POST', url: '/admin/watch/fire' })) {
+          const message = `Watches are ${NOT_DEPLOYED}.`;
+          return answer(req, reply, 404, err('not_found', message), message, f.trip_id);
+        }
         // P6's route, in process, with the demo's body: the same bar as any watch, and its card says "Simulated for the demo".
         const res = await brain.http.inject({
           method: 'POST',
@@ -180,10 +184,6 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
           out = res.json();
         } catch {
           out = err('unavailable', res.body.slice(0, 200));
-        }
-        if (res.statusCode === 404) {
-          const message = `Watches are ${NOT_DEPLOYED}.`;
-          return answer(req, reply, 404, err('not_found', message), message, f.trip_id);
         }
         const promoted = (out as { promoted?: unknown } | null)?.promoted;
         const note = res.statusCode !== 200
