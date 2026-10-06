@@ -62,18 +62,20 @@ export function createTapRouter(o: { pool: pg.Pool; cards: CardStore; log: Log; 
   }
 
   /** One answer per tap_id, from the Server (handle) or from inside Go (dispatch). */
-  function once(tap: CardTapParams): Promise<CardTapResult> {
+  function once(tap: CardTapParams, fromServer: boolean): Promise<CardTapResult> {
     const cur = inflight.get(tap.tap_id);
     if (cur) return cur;
-    const p = decide(tap).finally(() => inflight.delete(tap.tap_id));
+    const p = decide(tap, fromServer).finally(() => inflight.delete(tap.tap_id));
     inflight.set(tap.tap_id, p);
     return p;
   }
 
-  async function decide(tap: CardTapParams): Promise<CardTapResult> {
+  async function decide(tap: CardTapParams, fromServer: boolean): Promise<CardTapResult> {
     const first = await stored(tap.tap_id);
     if (first) return first;
-    const card = await o.cards.get(tap.trip_id, tap.card_id);
+    // A card Go has sent but has no answer for yet counts: the Server only sends a tap for a card it has, so its tap
+    // also proves the card landed, in the same statement that finds it. A tap made inside Go proves nothing.
+    const card = fromServer ? await o.cards.landed(tap.trip_id, tap.card_id) : await o.cards.get(tap.trip_id, tap.card_id);
     const h = card ? routes.get(`${card.kind}:${tap.action_id}`) : undefined;
     const result = clean(
       !card ? refused('That card is not active any more.') : !h ? refused("That button doesn't do anything yet.") : await run(h, tap, card),
@@ -93,7 +95,7 @@ export function createTapRouter(o: { pool: pg.Pool; cards: CardStore; log: Log; 
       if (routes.has(key)) throw new Error(`${key} already has a handler`);
       routes.set(key, h);
     },
-    handle: (tap) => once(tap),
-    dispatch: (tap) => once(tap),
+    handle: (tap) => once(tap, true),
+    dispatch: (tap) => once(tap, false),
   };
 }

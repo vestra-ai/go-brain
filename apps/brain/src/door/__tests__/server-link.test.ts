@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { silentLog } from '../../log.js';
+import { createCardStore } from '../cards.js';
 import { SocketCallError } from '../rpc.js';
 import { createServerLink, newRequestId, type ServerLinkImpl, type SocketHandle } from '../server-link.js';
+import { createTapRouter } from '../taps.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -295,5 +297,187 @@ describe('ServerLink', () => {
     const p = l.request('read_trip', { trip_id: 't_goa' });
     l.close();
     await expect(p).rejects.toMatchObject({ code: 503 });
+  });
+});
+
+describe('a card Go posts, and a tap that beats the Server answer', () => {
+  const notice = (id: string) => ({
+    kind: 'notice' as const, card_id: id, fallback_text: 'Heads up: check-in is at 2 pm', tone: 'heads_up' as const, title: 'Check-in',
+    body: 'Check-in is at 2 pm.', actions: [{ action_id: 'ok', label: 'Got it', style: 'primary' as const }],
+  });
+  function wired(extra: Partial<Parameters<typeof createServerLink>[0]> = {}) {
+    const cards = createCardStore({ pool: db.pool, now: () => new Date() });
+    const { l } = link({ onSend: cards.sending, onResult: cards.observe, onFail: cards.failed, ...extra });
+    const router = createTapRouter({ pool: db.pool, cards, log: silentLog });
+    let runs = 0;
+    router.on('notice', 'ok', async () => {
+      runs += 1;
+      return { result: 'done', toast: 'Noted' };
+    });
+    return { l, cards, router, runs: () => runs };
+  }
+  const row = async (cardId: string) =>
+    (await db.pool.query<{ pending: boolean; message_id: string | null }>('select pending, message_id from cards where trip_id = $1 and card_id = $2', ['t_race', cardId])).rows[0] ?? null;
+  const tapOf = (cardId: string, tapId: string) => ({ tap_id: tapId, trip_id: 't_race', card_id: cardId, action_id: 'ok', person_id: 'p_priya' });
+  const meta = { instance: 'server-1', frameId: 'gs_1' };
+
+  it('a tap that lands between the send and the answer is handled once, and the answer keeps the card', async () => {
+    const { l, router, runs } = wired();
+    const a = socket('a');
+    l.attach(a);
+    const p = l.request('post_message', { request_id: newRequestId(), trip_id: 't_race', card: notice('c_race_1') });
+    await vi.waitFor(() => expect(a.sent).toHaveLength(1));
+    // The room shows the card and a person taps it before Go hears the Server's answer.
+    const t = tapOf('c_race_1', 'tap_race_1');
+    const [x, y] = await Promise.all([router.handle(t, meta), router.handle(t, meta)]);
+    expect(x).toEqual({ result: 'done', toast: 'Noted' });
+    expect(y).toEqual(x);
+    expect(await router.handle(t, meta)).toEqual(x);
+    expect(runs()).toBe(1);
+    answer(l, a.sent[0]!.id!, { message_id: 'm_race_1', seq: 12 });
+    await expect(p).resolves.toEqual({ message_id: 'm_race_1', seq: 12 });
+    expect(await row('c_race_1')).toEqual({ pending: false, message_id: 'm_race_1' });
+  });
+
+  it('a card whose post the Server refused is gone, so its tap is refused', async () => {
+    const { l, router, runs } = wired();
+    const a = socket('a');
+    l.attach(a);
+    const p = l.request('post_message', { request_id: newRequestId(), trip_id: 't_race', card: notice('c_race_2') });
+    await vi.waitFor(() => expect(a.sent).toHaveLength(1));
+    fail(l, a.sent[0]!.id!, 422, 'that card is not valid', { dataCode: 'invalid' });
+    await expect(p).rejects.toBeInstanceOf(SocketCallError);
+    expect(await row('c_race_2')).toBeNull();
+    expect(await router.handle(tapOf('c_race_2', 'tap_race_2'), meta)).toEqual({ result: 'refused', toast: 'That card is not active any more.' });
+    expect(runs()).toBe(0);
+  });
+
+  it('a post that never left Go (no socket) failed for sure, and leaves no card behind', async () => {
+    const { l } = wired({ waitForSocketMs: 20 });
+    const p = l.request('post_message', { request_id: newRequestId(), trip_id: 't_race', card: notice('c_race_3') });
+    await expect(p).rejects.toBeInstanceOf(SocketCallError);
+    expect(await row('c_race_3')).toBeNull();
+  });
+
+  it('an answer that never comes (out of retries) keeps the card pending, and a Server tap then is handled once and makes it live', async () => {
+    const { l, router, runs } = wired({ timeoutMs: 30 });
+    const a = socket('a');
+    l.attach(a);
+    const p = l.request('post_message', { request_id: newRequestId(), trip_id: 't_race', card: notice('c_race_5') });
+    // Sent four times, no answer: unknown, never failed. The Server may have posted it.
+    await expect(p).rejects.toBeInstanceOf(SocketCallError);
+    expect(a.sent).toHaveLength(4);
+    expect(await row('c_race_5')).toEqual({ pending: true, message_id: null });
+    const t = tapOf('c_race_5', 'tap_race_5');
+    const [x, y] = await Promise.all([router.handle(t, meta), router.handle(t, meta)]);
+    expect(x).toEqual({ result: 'done', toast: 'Noted' });
+    expect(y).toEqual(x);
+    expect(await router.handle(t, meta)).toEqual(x);
+    expect(runs()).toBe(1);
+    expect(await row('c_race_5')).toEqual({ pending: false, message_id: null });
+  });
+
+  it('a socket that drops mid-flight with none coming back is unknown too: the card stays pending', async () => {
+    const { l } = wired({ waitForSocketMs: 20 });
+    const a = socket('a');
+    l.attach(a);
+    const p = l.request('post_message', { request_id: newRequestId(), trip_id: 't_race', card: notice('c_race_6') });
+    await vi.waitFor(() => expect(a.sent).toHaveLength(1));
+    l.detach('a');
+    await expect(p).rejects.toBeInstanceOf(SocketCallError);
+    expect(await row('c_race_6')).toEqual({ pending: true, message_id: null });
+  });
+
+  it('a socket that keeps closing under the post is unknown: the card stays pending', async () => {
+    const { l } = wired();
+    let sends = 0;
+    const flaky: SocketHandle = {
+      id: 'flaky',
+      instance: 'flaky',
+      send: () => {
+        sends += 1;
+        setTimeout(() => {
+          l.detach('flaky');
+          l.attach(flaky);
+        }, 0);
+      },
+    };
+    l.attach(flaky);
+    await expect(l.request('post_message', { request_id: newRequestId(), trip_id: 't_race', card: notice('c_race_7') })).rejects.toBeInstanceOf(SocketCallError);
+    expect(sends).toBeGreaterThan(5);
+    expect(await row('c_race_7')).toEqual({ pending: true, message_id: null });
+  });
+
+  it('a Server 500 on every try is unknown, not a refusal: the card stays pending', async () => {
+    const { l } = wired();
+    const broken: SocketHandle = {
+      id: 'broken',
+      instance: 'broken',
+      send: (f) => {
+        const id = (JSON.parse(f) as { id: string }).id;
+        setTimeout(() => fail(l, id, 500, 'the Server broke'), 0);
+      },
+    };
+    l.attach(broken);
+    await expect(l.request('post_message', { request_id: newRequestId(), trip_id: 't_race', card: notice('c_race_8') })).rejects.toBeInstanceOf(SocketCallError);
+    expect(await row('c_race_8')).toEqual({ pending: true, message_id: null });
+  });
+
+  it('after a restart, a post the earlier run sent stays pending even when no socket comes back', async () => {
+    const { l, cards } = wired({ waitForSocketMs: 20 });
+    const rid = newRequestId();
+    const params = { request_id: rid, trip_id: 't_race', card: notice('c_race_9') };
+    // The process before the restart kept the card and sent the frame, then stopped with no answer.
+    await cards.sending('post_message', params);
+    await db.pool.query(
+      `insert into go_requests (request_id, rpc_id, trip_id, method, params, sent_at, attempts) values ($1, 'go_rpc_before', 't_race', 'post_message', $2::jsonb, now(), 1)`,
+      [rid, JSON.stringify(params)],
+    );
+    expect(await l.resumePending()).toBeGreaterThanOrEqual(1);
+    // The same request joins the resend that resumePending started.
+    await expect(l.request('post_message', params)).rejects.toBeInstanceOf(SocketCallError);
+    expect(await row('c_race_9')).toEqual({ pending: true, message_id: null });
+  });
+
+  it('a rerun that gets a stored answer never writes the first version of a card back over a replaced one', async () => {
+    const { l } = wired();
+    const a = socket('a');
+    l.attach(a);
+    const post = { request_id: newRequestId(), trip_id: 't_race', card: notice('c_race_10') };
+    const posting = l.request('post_message', post);
+    await vi.waitFor(() => expect(a.sent).toHaveLength(1));
+    answer(l, a.sent[0]!.id!, { message_id: 'm_race_10', seq: 20 });
+    await posting;
+    const replacing = l.request('replace_card', { trip_id: 't_race', card: { ...notice('c_race_10'), title: 'Check-in moved', body: 'Check-in is at 3 pm now.' } });
+    await vi.waitFor(() => expect(a.sent).toHaveLength(2));
+    answer(l, a.sent[1]!.id!, { message_id: 'm_race_10' });
+    await replacing;
+    // A crashed turn runs again with the same request: the stored answer comes back and nothing is sent.
+    const { l: again } = wired();
+    const b = socket('b');
+    again.attach(b);
+    await expect(again.request('post_message', post)).resolves.toEqual({ message_id: 'm_race_10', seq: 20 });
+    expect(b.sent).toHaveLength(0);
+    const { rows } = await db.pool.query<{ title: string; pending: boolean }>(
+      `select card->>'title' as title, pending from cards where trip_id = 't_race' and card_id = 'c_race_10'`,
+    );
+    expect(rows[0]).toEqual({ title: 'Check-in moved', pending: false });
+  });
+
+  it('a rerun after a crash gets the stored answer, sends nothing, and keeps the card live', async () => {
+    const { l, cards } = wired();
+    const a = socket('a');
+    l.attach(a);
+    const rid = newRequestId();
+    const params = { request_id: rid, trip_id: 't_race', card: notice('c_race_4') };
+    // Go crashed after storing the Server's answer and before keeping the card: the card is still pending.
+    await cards.sending('post_message', params);
+    await db.pool.query(
+      `insert into go_requests (request_id, rpc_id, trip_id, method, params, result, answered_at) values ($1, $2, 't_race', 'post_message', $3::jsonb, $4::jsonb, now())`,
+      [rid, 'go_rpc_crash', JSON.stringify(params), JSON.stringify({ message_id: 'm_race_4', seq: 13 })],
+    );
+    await expect(l.request('post_message', params)).resolves.toEqual({ message_id: 'm_race_4', seq: 13 });
+    expect(a.sent).toHaveLength(0);
+    expect(await row('c_race_4')).toEqual({ pending: false, message_id: 'm_race_4' });
   });
 });
