@@ -5,6 +5,7 @@ import { moneyRoutes } from './callbacks.js';
 import type { MoneyDeps } from './deps.js';
 import { createPay } from './engine.js';
 import { readMoneyEnv } from './env.js';
+import { readExpensesTool, recordExpenseTool } from './expenses.js';
 import { setMandate } from './mandate.js';
 import { paidButNotBooked } from './store.js';
 import { paymentsNow } from './now.js';
@@ -17,6 +18,9 @@ const railOf = (value: string): PaymentKind => (value === 'ixigo' || value === '
 /** Lane D. Tests pass a fetch that reaches an in-process vault, and 0 to leave the sweep off. */
 export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: number } = {}): RegisterLane {
   return async (brain) => {
+    // What people say they paid needs no vault: Go records it and reads who owes whom whether or not paying is on.
+    brain.tools.register(recordExpenseTool());
+    brain.tools.register(readExpensesTool());
     const env = readMoneyEnv(brain.env);
     if (!env) {
       brain.log.warn('money is off: set VAULT_URL and VAULT_SHARED_SECRET to turn it on');
