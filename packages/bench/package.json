@@ -28,7 +28,6 @@
     "@go/contract": "workspace:*",
     "@go/sim": "workspace:*",
     "@go/vault": "workspace:*",
-    "@vestra/agent-sdk": "workspace:*",
     "pg": "^8.23.1",
     "ws": "^8.22.0",
     "zod": "^4.0.0"

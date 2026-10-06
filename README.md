@@ -27,7 +27,6 @@ All three teams are the Vestra team. What travels between the Server and Go is f
 | [`packages/contract-py`](packages/contract-py) | The same contract for Python: models generated from the OpenAPI file, signing and spend approvals. |
 | [`packages/sim`](packages/sim) | The simulator: a fake Server that holds trips in memory with the Server's rules, and the dev room, a one-page App in the browser. |
 | [`packages/bench`](packages/bench) | The replay bench: recorded Goa chats of 50, 300 and 2,000 messages replayed through the real Go with a scripted model, scored against the bars in `bars.json` (typing, reply time, cache hit, wake rate, recall), in CI on every pull request. A live run uses the real models and Jev. |
-| [`packages/agent-sdk`](packages/agent-sdk) | An agent loop copied from Vestra's Bash (see its `PROVENANCE.md`). Go's composer uses a few of its helpers: model capabilities, usage, cost and error kinds. |
 | [`docs/guide`](docs/guide) | The guide to the contract, for the Server and App teams. Start here to build against Go. |
 | [`docs/spec`](docs/spec) | Go's design: how it works inside. |
 | [`docs/plans`](docs/plans) | The week's build plans: the master plan and one plan per lane, with the code and tests for every task. |
@@ -88,12 +87,6 @@ The tests in each package built this week, from [CI run 37425497279](https://git
 | `packages/sim` | 9 | 83 |
 | `packages/contract` | 4 | 35 |
 | `packages/contract-py` | | 13 |
-
-Brought in from Vestra's Bash on 4 October, before this week, and counted apart (see its [`PROVENANCE.md`](packages/agent-sdk/PROVENANCE.md)):
-
-| Package | Test files | Tests |
-|---|---|---|
-| `packages/agent-sdk` | 588 (and 1 skipped) | 7,851 (and 4 skipped) |
 
 To run the tests on your own machine, start the Postgres above and run `DATABASE_URL=postgres://go:go@localhost:5432/go pnpm build && DATABASE_URL=postgres://go:go@localhost:5432/go pnpm test`. Each app's README says what its tests prove.
 
