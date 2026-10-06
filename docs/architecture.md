@@ -26,7 +26,7 @@ flowchart LR
   Go -- "one model turn" --> Models
   Go -- "nine questions per message" --> Jev
   Go -- "call_business" --> Phone
-  Go -. "pay links, and paid or failed back" .-> Vault
+  Go <-- "pay links, and paid or failed back, signed" --> Vault
   Go -. "long jobs" .-> Bash
   Go -. "search, status, booking" .-> Ixigo
 ```
@@ -55,9 +55,13 @@ No code path pays on the model's word. A payment needs both:
 1. **The Server's key.** The Server runs its spend check and signs a spend approval with its Ed25519 private key: a compact JWS from `server` to `go-vault`, for one trip, one payer, one amount and currency, valid for at most 10 minutes and usable once (`packages/contract/src/spend-approval.ts`).
 2. **The payer's key.** The payer opens the vault's pay page from the App and unlocks it with their own passkey (Face ID or a fingerprint).
 
+The flow, from Go's side (`apps/brain/src/money/pay.ts`): the group votes; the payer taps "Yes, book it" on the mandate card; Go holds the voted offer and asks the Server for its spend approval (`request_spend_approval`); the vault checks the approval and gives Go a pay link; Go posts the pay card, with Approve shown only to the payer; the payer taps Approve and opens the vault's page; after the passkey the vault pays and calls Go back, signed; Go then confirms the booking and records the booking, the expense and the ticket card, each once. Any failure on the way cancels the approval and says so in the room. The model has no tool that confirms a booking or reaches a rail: only the vault's signed callback does (`apps/brain/src/money/__tests__/no-path-to-confirm.test.ts`). Stays are booked this way; for a flight, train or bus Go holds nothing and hands over the booking link, because those fares are per person.
+
 The vault checks, in order, and refuses at the first failure (`apps/vault/src/pay.ts`): the link is valid and unused; the passkey verifies and is the payer's; the Server's signature checks and the approval has not expired; it is meant for the vault, by the Server, for this trip; it was never used before (one row per approval id, so two pages racing pay once); the person who unlocked is the payer the Server approved; and the amount is within the approval, in the same currency, while the hold still stands. Only then does it charge the saved card, once, with the approval's id as the idempotency key. The vault never sees a card number: a card is added through Stripe's own form, and the vault keeps only Stripe's token, encrypted with a key per item. `GET /internal/both-keys` counts payments without both keys from the vault's own records.
 
-The tests in `apps/vault/src/pay.test.ts` walk every step, each refusing on its own. The simulator signs spend approvals with the contract's test key (`packages/sim/src/test-spend-key.ts`), and the real Server signs with its own key, which is never in a repo.
+When the rail gives no clear answer, the payment is never settled as failed: it stays "charging" and the vault asks the rail again with the same id until it knows, or marks it for a person to check (`apps/vault/src/charge.ts`).
+
+The tests in `apps/vault/src/pay.test.ts` walk every step, each refusing on its own, and `apps/brain/src/money/__tests__/attacks.test.ts` tries every way to pay without both keys: a friend's tap, a friend's passkey, a reused link or approval, an expired approval, and an approval for another trip. The simulator signs spend approvals with the contract's test key (`packages/sim/src/test-spend-key.ts`), and the real Server signs with its own key, which is never in a repo.
 
 ## What runs for real and what is simulated
 
@@ -68,6 +72,6 @@ The tests in `apps/vault/src/pay.test.ts` walk every step, each refusing on its 
 | Memory | Facts with proof, pages, recall, the trip record, "the story so far", forget me, and catch-up. | |
 | Speaking first | Timers (votes closing, free cancellation ending, travel day, settle-up, a waiting payer) and openings in the chat, through the bar and the daily budget. | Flight and train watches need a travel layer, which is not in this repo yet. The demo's watch is `POST /admin/watch/fire`, and every card it leads to says "Simulated for the demo". |
 | Calls | Real phone calls through Twilio with a realtime voice model, only to numbers on `CALLS_ALLOWLIST` while the `CALLS_MODE` switch says `allowlist`. Go says who it will call and why, and waits 30 seconds for a stop first. | Off by default (`CALLS_MODE=off`). |
-| Payments | The vault charges test cards through Stripe test mode, with both keys. | Test cards only: the vault refuses live Stripe keys at boot. `PAY_RAIL=fake` moves no money, and the ixigo rail answers "not ready". Go's side of paying (`apps/brain/src/money`) is an interface here. |
+| Payments | Go asks the Server for a signed approval and posts the pay card; the vault charges test cards through Stripe test mode, with both keys (`apps/brain/src/money`, `apps/vault`). | Test cards only: the vault refuses live Stripe keys at boot. `PAY_RAIL=fake` moves no money, and the ixigo rail answers "not ready". Holding an offer needs a travel layer, which is not in this repo yet; without one Go refuses to pay. |
 | The proof board | `/board` and `/stats.json` show numbers from the turns Go really ran: time to typing and to the reply, the cache hit, the share of messages that woke the model, and cost per trip. | The bench's numbers on the board come from replays of recorded chats: the fast bench with a scripted model, the live bench with the real models and Jev (`packages/bench`). |
 | Travel search and booking, long jobs | | Interfaces only in this repo (`travel/`, `tasks/`). |

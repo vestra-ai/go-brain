@@ -6,7 +6,7 @@ It is a Fastify service on Node 22 with Postgres 16. It applies its migrations a
 
 ## How a service is put together
 
-`src/app.ts` builds the core (`buildBrain`): the socket, the trip log, the desk and the composer. Every other part is a lane that registers itself on that core through one function. [`src/main.ts`](src/main.ts) lists the lanes in boot order (`LANES`): the room, the reflex, memory, stats, proactive and calls. A lane adds quick tools, blocks of "right now" for the prompt, handlers for the Server's requests, and listeners on events and messages, and it stops its own timers when Go stops.
+`src/app.ts` builds the core (`buildBrain`): the socket, the trip log, the desk and the composer. Every other part is a lane that registers itself on that core through one function. [`src/main.ts`](src/main.ts) lists the lanes in boot order (`LANES`): the room, the reflex, memory, stats, money, proactive and calls. A lane adds quick tools, blocks of "right now" for the prompt, handlers for the Server's requests, and listeners on events and messages, and it stops its own timers when Go stops.
 
 ## The folders under `src/`
 
@@ -24,7 +24,8 @@ It is a Fastify service on Node 22 with Postgres 16. It applies its migrations a
 | `admin/` | Runtime switches stored in the database (`TRAVEL_MODE`, `PAY_RAIL`, `CALLS_MODE`, `REFLEX_LIVE`), so a demo fallback flips without a redeploy, and the operator's sign-in (`session.ts`): the token is read from the part of the address after `#` and traded once for an HttpOnly cookie. |
 | `db/` | The Postgres pool, the migrator (each lane numbers its own migrations), and `test-db.ts`, which gives every test file its own schema. |
 | `testing/` | `start-room.ts`: Go on a real port with every lane registered and the simulator's fake Server connected. The end-to-end tests use it. |
-| `travel/`, `tasks/`, `money/` | Interfaces only in this repo for now: travel search, status and booking; long jobs on the trip's own computer; and Go's side of paying. With no travel layer set, watches make no checks, and only the admin fire runs. |
+| `money/` | Go's side of paying, the only path to spending: once a vote is closed and its payer tapped "Yes, book it", `ask_to_pay` holds the voted offer, asks the Server for its signed spend approval, has the vault check it and posts the pay card; Approve and Decline on that card; the vault's signed callbacks (`POST /internal/vault/paid` and `/failed`); finishing a paid booking once (confirm, the booking, the expense, the ticket card); and `vault_link`. The model has no tool that reaches confirm or a rail. Holding an offer needs a travel layer: without one Go refuses to pay and says so. |
+| `travel/`, `tasks/` | Interfaces only in this repo for now: travel search, status and booking, and long jobs on the trip's own computer. With no travel layer set, watches make no checks, and only the admin fire runs. |
 | `stats/` | The proof board: numbers from the turns Go really ran (time to typing and to the reply from the message that named Go, the cache hit, the share of messages that woke the model, cost per trip) as `GET /stats.json` and a page at `/board`, plus the latest bench result for each chat (`POST /stats/bench`). Closed unless `ADMIN_TOKEN` is set; a person signs in from `/board#token=...`, so the token never travels in a URL the service sees. |
 
 `room.ts` is the room's own lane (its tools, its "right now" block and Go's hello to a new trip), `env.ts` merges every lane's variables, and `log.ts` is the logger shape the modules share.
@@ -37,6 +38,7 @@ Tests live in a `__tests__` folder next to the code they test, and CI runs all o
 - **Memory**: a fact needs a message by that same person; a deleted message takes its facts and story lines with it; "forget me" is checked by queries before it answers, including when it lands while a notes pass is reading (`forget-race.test.ts`); people's words stay fenced as data in every prompt.
 - **The reflex**: its readers can only raise caution on the risky question, over 2,000 random answer sets (`read.test.ts`); a card number never reaches Jev or the log; a fault in Jev reads "unsure".
 - **Speaking first**: the bar, the budget, night in the trip's zone, hushes and the stage's forced fire (`policy.test.ts`, `promoter.test.ts`, `register.test.ts`).
+- **Money**: every way to pay without both keys is refused (`attacks.test.ts`), only the vault's callback can confirm a booking (`no-path-to-confirm.test.ts`), steering lines in the chat get a calm refusal and no pay card, and a card number typed in the chat never reaches the model or Go's tables (`composed-attacks.test.ts`), and a whole payment runs end to end with the simulator and the vault (`e2e.test.ts`).
 - **The proof board**: times measured from the message that named Go, "No turns yet" instead of a zero, and the token never read from a URL (`stats/__tests__`).
 - **Calls**: the 30 s stop window, the allowlist, no card or bank words, one call at a time, and a whole call against a scripted voice model, card updates at most every 3 s and the outcome in the record (`calls/__tests__`).
 
