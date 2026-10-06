@@ -8,6 +8,7 @@ This page explains the recording in this folder: where it comes from, how each q
 
 - `jev-2026-10-06.json`: Jev's answers to every question for every line of the test set, as recorded, unedited. It is the same file, byte for byte, as `apps/brain/src/reflex/testsets/recorded/jev-1.13.0.json`, which CI scores on every change.
 - `jev-2026-10-06.txt`: what the recording printed, unedited: one line per question at the bars Go had when it was recorded, then the bar sweep (each bar's values and what they give).
+- `jev-2026-10-06-repeat.json` and `jev-2026-10-06-repeat.txt`: a second recording of the same lines about 19 minutes later, at the bars Go has now, unedited. Go does not use it; it shows how much Jev's answers move between two runs (see "Asked twice" below).
 
 ## Where the answers come from
 
@@ -46,9 +47,9 @@ At the bars Go has now. Recall by language is right over labelled in that langua
 | 8 | Risky (spend, steering Go, a secret)? | 14 (5 risky) | 5 raised | 0 false alarms | 1.00 | 1.00 / 1.00 | 0.8 | live |
 | 9 | An opening for Go (a question it could answer, a choice going round in circles, someone asked to look something up)? | 6 | 0 | 0 | 0.00 | 0.00 / 0.00 | 0.3 | shadow |
 
-So questions 1, 4, 5, 6, 7 and 8 act live (`PASSED_SETS` in `apps/brain/src/reflex/live-gate.ts`, and `REFLEX_LIVE` defaults to `q1,q4,q5,q6,q7,q8`). The admin page's `REFLEX_LIVE` switch can narrow that list or turn Jev off, but it cannot make a question in shadow act live. Jev never gave a sure wrong answer on any question. Questions 2, 3 and 9 stay in shadow because Jev was too rarely sure on them: no value in the sweep brings them to their gate (the best are 0.18, 0.22 and 0.17).
+So questions 1, 4, 5, 6, 7 and 8 act live (`PASSED_SETS` in `apps/brain/src/reflex/live-gate.ts`, and `REFLEX_LIVE` defaults to `q1,q4,q5,q6,q7,q8`). The admin page's `REFLEX_LIVE` switch can narrow that list or turn Jev off, but it cannot make a question in shadow act live. Jev never gave a sure wrong answer on any question. Questions 2, 3 and 9 stay in shadow because Jev was too rarely sure on them: no value in the sweep brings them to their gate (the best, in the recording CI scores, are 0.18, 0.22 and 0.17).
 
-Rows 2 to 9 are the recording's own lines in `jev-2026-10-06.txt`. Row 1 is after the one bar that moved.
+The rows are the lines the second recording printed (`jev-2026-10-06-repeat.txt`), since it ran at these bars. The first recording ran before question 1's bar moved; its lines for questions 2 to 9 are the same.
 
 ### The one bar that moved
 
@@ -62,6 +63,10 @@ Read this with care:
 
 Every other bar is unchanged. The sweep also shows question 5 would reach 0.86 at 0.7 instead of 0.8, and question 8 would raise one false alarm at 0.4 or lower; neither was needed to pass, so neither moved.
 
+### Asked twice
+
+The second recording ([run 37439332584](https://github.com/vestra-ai/go-brain/actions/runs/37439332584), at 08:55 UTC, the same model, settings and question wording) asked Jev the same 1,118 questions again. 555 of its answers came back different, by 0.02 on average and at most 0.09. At the bars Go has now, every question's sure, wrong and recall came out exactly the same in both recordings, and so did every pass or fail. CI scores the first recording.
+
 ## What acting live changes
 
 - **Question 1:** a message Jev is sure is chatter does not wake the main model. A message that names Go always does.
@@ -74,5 +79,5 @@ Every other bar is unchanged. The sweep also shows question 5 would reach 0.86 a
 ## What this does not show
 
 - The lines are written for the test, not taken from a real trip chat, and there are only 6 to 14 per question. A wrong answer on a real chat is possible that this set did not catch.
-- These are Jev's answers on one day. Jev is pinned to `jev-1.13.0`; a new version means a new recording.
+- These are Jev's answers from two runs on one day. Jev is pinned to `jev-1.13.0`; a new version means a new recording.
 - Speed is not measured here. Go waits at most 450 ms for Jev (`JEV_DEADLINE_MS`) before every question reads unsure.
