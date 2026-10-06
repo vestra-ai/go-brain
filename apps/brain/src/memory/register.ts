@@ -55,7 +55,7 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   const env = brain.env;
   const memory = createMemory({ pool: brain.pool, packs: brain.packs });
   brain.memory = memory;
-  const side = anthropicSideModel(brain.anthropic, env.SIDE_MODEL, brain.log);
+  const side = anthropicSideModel(brain.anthropic, env.SIDE_MODEL, brain.log, brain.budget);
   const notes = createNotes({ pool: brain.pool, packs: brain.packs, link: brain.door.link, side, log: brain.log, now: brain.now });
   const fold = createFold({
     pool: brain.pool, packs: brain.packs, side, log: brain.log, now: brain.now,
@@ -79,7 +79,7 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   brain.door.handle('forget_person', people.forget_person);
   brain.door.handle(
     'catch_up',
-    catchUpHandler({ pool: brain.pool, packs: brain.packs, jev: d.jev, log: brain.log, jevOn: () => brain.switches.get('REFLEX_LIVE') !== 'off' }),
+    catchUpHandler({ pool: brain.pool, packs: brain.packs, jev: d.jev, log: brain.log, jevOn: () => brain.switches.get('REFLEX_LIVE') !== 'off' && (brain.budget?.allows() ?? true) }),
   );
 
   const runNotes = (tripId: string, only?: string[]): void => {

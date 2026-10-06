@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { limitRequestId, utcDay, type Budget } from '../budget.js';
 import type { DeskItem, TurnInput, TurnRunner } from '../desk/desk.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
@@ -24,6 +25,8 @@ export interface ComposerDeps {
   model: string;
   /** The desk's claimNew: message items that arrived while this turn ran. */
   claimNew: (tripId: string, turnId: string) => Promise<DeskItem[]>;
+  /** The daily model budget; without it, no cap. */
+  budget?: Budget;
   turnTimeoutMs?: number;
 }
 
@@ -33,6 +36,8 @@ export interface Composer {
 }
 
 export const TROUBLE = "Sorry, I'm having trouble right now. Give me a minute and ask me again?";
+/** Said once per trip per day, to someone who asks Go once today's model budget is spent. */
+export const OVER_BUDGET = "I've reached today's limit for this demo. I'll be back tomorrow.";
 
 const isForGo = (i: DeskItem): boolean => i.kind === 'message' && (i.payload as { namesGo?: boolean } | null)?.namesGo === true;
 const messageIdOf = (i: DeskItem): string => (i.payload as { messageId?: string } | null)?.messageId ?? i.ref;
@@ -85,6 +90,7 @@ export function createComposer(d: ComposerDeps): Composer {
     if (await alreadyPosted(t.turnId)) return;
     const pack = await d.packs.get(t.tripId);
     const forGo = t.items.some(isForGo);
+    if (d.budget && !d.budget.allows()) return overBudget(t, forGo);
     // Typing stays honest while the turn works: on now (if it was not), off when the turn ends.
     const typingAt = forGo ? d.speak.working(t.tripId) : null;
     const times: { firstToken: Date | null } = { firstToken: null };
@@ -118,6 +124,7 @@ export function createComposer(d: ComposerDeps): Composer {
         onFirstToken: () => {
           times.firstToken ??= d.now();
         },
+        ...(d.budget ? { budget: d.budget } : {}),
       };
       let r = await runLoop({ ...base, messages: [{ role: 'user', content: prompt.user }] });
       addUsage(usage, r.usage);
@@ -178,6 +185,28 @@ export function createComposer(d: ComposerDeps): Composer {
       throw e;
     } finally {
       if (forGo || posted || pulled.some(isForGo)) d.speak.typingOff(t.tripId);
+    }
+  }
+
+  /**
+   * Over today's model budget: no model call. Someone who named Go hears so once per trip per day (one request id per
+   * trip and day, so the Server posts it once however often this runs); a turn Go woke for on its own just ends.
+   * Typing goes off either way.
+   */
+  async function overBudget(t: TurnInput, forGo: boolean): Promise<void> {
+    try {
+      if (!forGo) return;
+      const day = utcDay(d.now());
+      await d.speak.post({
+        link: scopedLink(d.link, t.turnId),
+        tripId: t.tripId,
+        turnId: t.turnId,
+        requestId: () => limitRequestId(t.tripId, day),
+        text: OVER_BUDGET,
+        cards: [],
+      });
+    } finally {
+      if (forGo) d.speak.typingOff(t.tripId);
     }
   }
 

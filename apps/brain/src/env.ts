@@ -21,6 +21,8 @@ export const RoomEnv = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
   COMPOSER_MODEL: z.string().min(1).default('claude-sonnet-5-5'),
   SIDE_MODEL: z.string().min(1).default('claude-haiku-4-5'),
+  /** A hard cap on what the model calls may cost in one UTC day, in USD. Unset means no cap (the stage and rehearsal Gos). */
+  MODEL_DAILY_BUDGET_USD: z.coerce.number().positive().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 

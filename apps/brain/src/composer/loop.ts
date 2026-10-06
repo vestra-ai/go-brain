@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import type { Budget } from '../budget.js';
 import type { AnthropicLike } from './anthropic.js';
 import { computeAnthropicCostUsd, normalizeAnthropicUsage, resolveCapabilities, type AnthropicUsage } from './anthropic-helpers.js';
 import type { TextBlock } from './context.js';
@@ -39,6 +40,8 @@ export interface LoopInput {
   continuing?: boolean;
   onFirstToken?: () => void;
   toolTimeoutMs?: number;
+  /** The daily model budget: checked before each round, and given each round's cost. */
+  budget?: Pick<Budget, 'allows' | 'spend'>;
 }
 
 export interface LoopResult {
@@ -179,6 +182,10 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   let firstToken = false;
   let latestText = '';
   for (let round = 1; round <= maxRounds; round++) {
+    // Over today's model budget: no more model calls; the turn keeps what it has.
+    if (i.budget && !i.budget.allows()) {
+      return { text: latestText, silent: i.ctx.outcome.silent, rounds: round - 1, usage, messages, stopReason: 'over_budget' };
+    }
     let outgoing = round > 1 || i.continuing ? withRollingMarker(messages) : messages;
     if (countMarkers(i.system, tools, outgoing) > 4) outgoing = messages;
     const body = {
@@ -199,7 +206,9 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
       }
     }
     const reply = await stream.finalMessage();
-    addUsage(usage, usageOf(reply.usage, i.model));
+    const spent = usageOf(reply.usage, i.model);
+    addUsage(usage, spent);
+    await i.budget?.spend({ purpose: 'composer', model: i.model, usd: spent.costUsd });
     const text = reply.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)
