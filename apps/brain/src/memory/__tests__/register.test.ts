@@ -47,7 +47,12 @@ function manualTimers() {
 const ev = (tripId: string, seq: number, type: string, data: unknown): TripEvent =>
   ({ event_id: `ev_${tripId}_${seq}`, trip_id: tripId, seq, occurred_at: '2026-10-07T10:00:00Z', type, data }) as unknown as TripEvent;
 
-function setup(tripId: string, messages: Message[], answers: string[], o: { story?: boolean; fail?: (method: string) => Error | null } = {}) {
+function setup(
+  tripId: string,
+  messages: Message[],
+  answers: string[],
+  o: { story?: boolean; fail?: (method: string) => Error | null; env?: Record<string, number> } = {},
+) {
   const pack: TripPack = packOf(messages, goaTrip({ trip_id: tripId }));
   const handlers = new Map<string, unknown>();
   const tools: QuickTool<any>[] = [];
@@ -66,6 +71,7 @@ function setup(tripId: string, messages: Message[], answers: string[], o: { stor
       SIDE_MODEL: 'side-test', FOLD_AT_TOKENS: 60_000, STORY_TOKENS: 5_000, CHAT_HARD_CAP_TOKENS: 90_000, NOTES_QUIET_MS: 20_000, FOLD_QUIET_MS: 60_000,
       // registerMemory builds its own Jev client for catch-up; no key, so it never calls out.
       TYPESAFE_BASE_URL: 'https://jev.example', JEV_MODEL: 'jev-1.13.0',
+      ...o.env,
     },
     anthropic: model,
     pool: db.pool,
@@ -262,6 +268,35 @@ describe('wireMemory', () => {
     w.wired.stop();
     w.t.advance(120_000);
     expect(w.model.prompts).toHaveLength(0);
+  });
+});
+
+describe('the fold in a chat that never goes quiet for a minute', () => {
+  const STORY = JSON.stringify({ lines: [{ text: 'The group planned the Goa trip', refs: [1], people: [] }] });
+  /** Chatter of about 25 estimated tokens a line: 400 lines are well past a 5,000 token budget. */
+  const chatter = (n: number): Message[] =>
+    Array.from({ length: n }, (_, i) =>
+      msg(i + 1, ['p_rahul', 'p_priya', 'p_arjun'][i % 3]!, `line ${i + 1}: chalo beach chalte hain, sunset dekhenge aur phir dinner, kal ka plan bhi`),
+    );
+
+  it('folds right after Go posts once the chat is past FOLD_AT_TOKENS, without waiting for a quiet minute', async () => {
+    const w = setup('t_r22', chatter(400), Array<string>(20).fill(STORY), { env: { FOLD_AT_TOKENS: 5_000 } });
+    const goes = msg(401, 'go', 'On it!');
+    w.pack.messages.push(goes);
+    await w.wired.onEvent(ev('t_r22', 401, 'message.created', { message: goes }));
+    await vi.waitFor(async () => expect((await w.story()!.get('t_r22')).foldedToSeq).toBeGreaterThan(0));
+  });
+
+  it('folds within the longest wait while people keep talking and Go says nothing', async () => {
+    const messages = chatter(400);
+    // The notes pass runs after each 20 s quiet spell and refuses the story answer; the fold takes one of the rest.
+    const w = setup('t_r23', messages, Array<string>(100).fill(STORY), { env: { FOLD_AT_TOKENS: 5_000 } });
+    // Someone speaks every 30 s for 12 minutes: never a quiet minute.
+    for (let k = 0; k < 24; k += 1) {
+      await w.wired.onRead(messages[k]!, read({}), w.pack);
+      w.t.advance(30_000);
+    }
+    await vi.waitFor(async () => expect((await w.story()!.get('t_r23')).foldedToSeq).toBeGreaterThan(0));
   });
 });
 
