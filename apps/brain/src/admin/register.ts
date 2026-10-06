@@ -18,13 +18,14 @@ export const SWITCH_NAMES = Object.keys(SWITCH_RULES) as SwitchName[];
 
 const FORM = 'application/x-www-form-urlencoded';
 
-/** Which deployment this Go is: brain (the stage) or brain-rehearsal. null when it cannot tell. */
-export type GoRole = 'stage' | 'rehearsal';
+/** Which deployment this Go is: brain (the stage), brain-rehearsal, or brain-try (where visitors chat with Go). null when it cannot tell. */
+export type GoRole = 'stage' | 'rehearsal' | 'try';
 
-/** GO_ROLE, else Railway's service name (brain is the stage, brain-rehearsal the rehearsal Go), else null. */
+/** GO_ROLE, else Railway's service name (brain is the stage, brain-rehearsal the rehearsal Go, brain-try the try-room Go), else null. */
 export function roleOf(env: { GO_ROLE?: GoRole | undefined; RAILWAY_SERVICE_NAME?: string | undefined }): GoRole | null {
   if (env.GO_ROLE) return env.GO_ROLE;
   if (env.RAILWAY_SERVICE_NAME === 'brain-rehearsal') return 'rehearsal';
+  if (env.RAILWAY_SERVICE_NAME === 'brain-try') return 'try';
   if (env.RAILWAY_SERVICE_NAME === 'brain') return 'stage';
   return null;
 }

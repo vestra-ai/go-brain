@@ -5,8 +5,8 @@ import type { SwitchName } from './switches.js';
 
 export interface AdminView {
   tripId: string | null;
-  /** This Go: the stage (brain) or the rehearsal Go; null when it cannot tell. */
-  role: 'stage' | 'rehearsal' | null;
+  /** This Go: the stage (brain), the rehearsal Go or the try-room Go; null when it cannot tell. */
+  role: 'stage' | 'rehearsal' | 'try' | null;
   /** The newest trips, for the trip picker. */
   trips: string[];
   at: Date;
@@ -43,9 +43,10 @@ export const SWITCH_MEANING: Record<SwitchName, string> = {
 export const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-const ROLE_LINE: Record<'stage' | 'rehearsal' | 'unknown', string> = {
+const ROLE_LINE: Record<'stage' | 'rehearsal' | 'try' | 'unknown', string> = {
   stage: 'This is the stage Go.',
   rehearsal: 'This is the rehearsal Go.',
+  try: 'This is the try-room Go, where visitors chat with Go.',
   unknown: 'This Go does not say which it is: set GO_ROLE.',
 };
 

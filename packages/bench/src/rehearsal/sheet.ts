@@ -108,7 +108,9 @@ export function preflight(h: HealthJson): string[] {
   if (h.role !== 'rehearsal') {
     reasons.push(h.role === 'stage'
       ? 'This Go says it is the stage Go (GO_ROLE=stage). Rehearsals never share the stage Go: run against brain-rehearsal (--go its URL, or GO_REHEARSAL_URL).'
-      : 'This Go does not say it is the rehearsal Go. Set GO_ROLE=rehearsal on brain-rehearsal (and GO_ROLE=stage on brain), then run again.');
+      : h.role === 'try'
+        ? 'This Go says it is the try-room Go (GO_ROLE=try), where visitors chat with Go. Rehearsals run only on brain-rehearsal: run against it (--go its URL, or GO_REHEARSAL_URL).'
+        : 'This Go does not say it is the rehearsal Go. Set GO_ROLE=rehearsal on brain-rehearsal (and GO_ROLE=stage on brain), then run again.');
   }
   if (h.server_socket_open) {
     reasons.push('A Server is connected to this Go, so it is the stage Go (or something real uses it). Rehearsals never share the stage Go: run against brain-rehearsal (--go its URL, or GO_REHEARSAL_URL).');
