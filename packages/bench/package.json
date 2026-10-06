@@ -19,7 +19,8 @@
     "bench:fast": "tsx src/run-fast.ts",
     "bench:live": "tsx src/run-live.ts",
     "rehearse": "tsx scripts/rehearse.ts",
-    "export-trip": "tsx scripts/export-trip.ts"
+    "export-trip": "tsx scripts/export-trip.ts",
+    "demo-transcript": "DEMO_TRANSCRIPT=../../docs/demo/transcript.md vitest run src/scenarios/__tests__/demo.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.93.0",

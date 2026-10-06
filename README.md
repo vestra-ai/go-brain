@@ -2,6 +2,8 @@
 
 [![ci](https://github.com/vestra-ai/go-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/vestra-ai/go-brain/actions/workflows/ci.yml)
 
+**Judges: start at [SUBMISSION.md](SUBMISSION.md)**, which links every claim to its proof and says what is live and what is simulated.
+
 Go is the AI member of a trip group. Friends plan a trip in a group chat, and Go is in that chat with them: it reads every message, answers when someone asks, keeps track of what each person said and what the group agreed, searches flights and stays, hands long jobs to the trip's own computer, books what the group voted for only with two keys, and can phone a business for the group. To the people in the room, Go is one member of the group, and this repo is Go.
 
 ## The three parts
@@ -75,17 +77,22 @@ CI runs on every pull request ([`.github/workflows/ci.yml`](.github/workflows/ci
 
 The live bench ([`.github/workflows/bench-live.yml`](.github/workflows/bench-live.yml)) runs the same replay with the real models and real Jev, by hand or nightly, never on a push.
 
-The tests in each package, from [CI run 37414383964](https://github.com/vestra-ai/go-brain/actions/runs/37414383964) (all passed):
+The tests in each package built this week, from [CI run 37425497279](https://github.com/vestra-ai/go-brain/actions/runs/37425497279) (all passed):
 
 | Package | Test files | Tests |
 |---|---|---|
-| `apps/brain` | 117 | 952 |
-| `apps/vault` | 11 | 122 |
+| `apps/brain` | 120 | 1,041 |
+| `apps/vault` | 11 | 133 |
 | `apps/fake-go` | 4 | 42 |
-| `packages/bench` | 10 | 91 |
-| `packages/sim` | 8 | 71 |
+| `packages/bench` | 15 | 137 |
+| `packages/sim` | 9 | 83 |
 | `packages/contract` | 4 | 35 |
 | `packages/contract-py` | | 13 |
+
+Brought in from Vestra's Bash on 4 October, before this week, and counted apart (see its [`PROVENANCE.md`](packages/agent-sdk/PROVENANCE.md)):
+
+| Package | Test files | Tests |
+|---|---|---|
 | `packages/agent-sdk` | 588 (and 1 skipped) | 7,851 (and 4 skipped) |
 
 To run the tests on your own machine, start the Postgres above and run `DATABASE_URL=postgres://go:go@localhost:5432/go pnpm build && DATABASE_URL=postgres://go:go@localhost:5432/go pnpm test`. Each app's README says what its tests prove.
