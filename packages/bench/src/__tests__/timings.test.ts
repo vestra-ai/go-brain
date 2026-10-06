@@ -45,7 +45,7 @@ describe('where an ask\'s reply time goes', () => {
           { startMs: 2_600, firstWordMs: 3_200, endMs: 3_900, toolsAfter: [] },
         ],
         postMs: 4_100,
-        parts: { beforeTurnMs: 250, modelMs: 2_000, betweenMs: 600, afterModelMs: 200 },
+        parts: { beforeTurnMs: 250, modelMs: 3_000, betweenMs: 600, afterModelMs: 200 },
       },
     ]);
   });
