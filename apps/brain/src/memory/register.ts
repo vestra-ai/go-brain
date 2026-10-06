@@ -1,8 +1,7 @@
 /**
- * Memory's wiring into Go: sets brain.memory, answers the Server's people and catch-up requests (catch-up is an
- * empty answer until the stretch Task 13), gives the composer its tools and right-now blocks, hands P1's context
- * the story so far, keeps the record copy and the facts in step with events, and runs the notes pass and the fold
- * off the reply path:
+ * Memory's wiring into Go: sets brain.memory, answers the Server's people and catch-up requests, gives the composer
+ * its tools and right-now blocks, hands P1's context the story so far, keeps the record copy and the facts in step
+ * with events, and runs the notes pass and the fold off the reply path:
  *  - at once when Jev is sure a message holds a fact or a record line (or would get a ✅);
  *  - 2 s after Go posts (the after-turn pass);
  *  - after a quiet spell (20 s, at most 60 s in a busy chat) for everything else;
@@ -17,13 +16,14 @@ import type { Message, TripEvent } from '../door/methods.js';
 import { createJev, type JevClient } from '../reflex/jev.js';
 import type { ReflexRead } from '../reflex/reflex.js';
 import type { TripPack } from '../trips/pack.js';
+import { catchUpHandler } from './catch-up.js';
 import { createMemory } from './create-memory.js';
 import { dropFactsFromMessage } from './facts.js';
 import { createFold } from './fold.js';
 import { syncJoinFacts } from './join-facts.js';
 import { createNotes } from './notes.js';
 import { peopleNow, recordNow } from './now.js';
-import { emptyCatchUp, peopleHandlers } from './people.js';
+import { peopleHandlers } from './people.js';
 import { reactOnce } from './reactions.js';
 import { mirrorLine, mirrorSnapshot } from './record.js';
 import { createDebouncer, realTimers, type Timers } from './schedule.js';
@@ -32,7 +32,7 @@ import { memoryTools } from './tools.js';
 
 /** No model here: the side model is built from brain.anthropic, where tests and the bench put their fake. */
 export interface WireDeps {
-  /** Catch-up's ranking client, used once the stretch Task 13 swaps in catchUpHandler. */
+  /** Catch-up's ranking client. */
   jev: Pick<JevClient, 'ask'>;
   timers: Timers;
   clock: () => number;
@@ -75,8 +75,10 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   brain.door.handle('update_person', people.update_person);
   brain.door.handle('delete_fact', people.delete_fact);
   brain.door.handle('forget_person', people.forget_person);
-  // A valid, empty catch-up until the stretch Task 13 lands (it replaces this line), so the Server never gets -32601.
-  brain.door.handle('catch_up', emptyCatchUp());
+  brain.door.handle(
+    'catch_up',
+    catchUpHandler({ pool: brain.pool, packs: brain.packs, jev: d.jev, log: brain.log, jevOn: () => brain.switches.get('REFLEX_LIVE') !== 'off' }),
+  );
 
   const runNotes = (tripId: string, only?: string[]): void => {
     notes.run(tripId, only ? { only } : {}).catch((err: unknown) => brain.log.warn({ tripId, err: String(err) }, 'notes pass failed'));
