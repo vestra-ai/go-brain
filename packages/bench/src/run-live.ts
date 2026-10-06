@@ -49,13 +49,15 @@ export function liveEnv(env: EnvSource, model: string): Record<string, string> {
     return v;
   };
   const baseUrl = env['TYPESAFE_BASE_URL'];
+  const reflexLive = env['REFLEX_LIVE'];
   return {
     DATABASE_URL: need('DATABASE_URL'),
     ANTHROPIC_API_KEY: need('ANTHROPIC_API_KEY'),
     TYPESAFE_API_KEY: need('TYPESAFE_API_KEY'),
     ...(baseUrl !== undefined && baseUrl !== '' ? { TYPESAFE_BASE_URL: baseUrl } : {}),
     JEV_MODEL: env['JEV_MODEL'] || 'jev-1.13.0',
-    REFLEX_LIVE: env['REFLEX_LIVE'] || 'q1,q2,q3',
+    // Unless the run names one, Go's own default applies: the questions whose test sets passed (reflex/live-gate.ts).
+    ...(reflexLive !== undefined && reflexLive !== '' ? { REFLEX_LIVE: reflexLive } : {}),
     COMPOSER_MODEL: model,
     SIDE_MODEL: env['SIDE_MODEL'] || 'claude-haiku-4-5',
     // No GO_SIGNING_SECRET: P1's startRoom signs the socket with its own SECRET.
