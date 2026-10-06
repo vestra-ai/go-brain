@@ -1,0 +1,313 @@
+import { MAX_FRAME_BYTES } from '@go/contract';
+import type pg from 'pg';
+import { z } from 'zod';
+import type { Log } from '../log.js';
+import { TO_SERVER_SCHEMAS, type ToServerMethod, type ToServerParams, type ToServerResult } from './methods.js';
+import { notificationFrame, requestFrame, SocketCallError, type AnswerFrame, type ErrorCodeName, type ErrorFrame } from './rpc.js';
+import { newUlid } from './ulid.js';
+
+export interface ServerLink {
+  /** Sends one request on any open socket; resends after a reconnect with the same id; rejects with SocketCallError. */
+  request<M extends ToServerMethod>(
+    method: M,
+    params: ToServerParams<M>,
+    opts?: { timeoutMs?: number; turnId?: string },
+  ): Promise<ToServerResult<M>>;
+  /** `typing` is the only notification Go sends. */
+  notify(method: 'typing', params: ToServerParams<'typing'>): void;
+  isOpen(): boolean;
+}
+// Trip affinity: a request for a trip goes on the socket that last delivered that trip's events (any open socket when none
+// has yet, or when that one is gone). Several instances of the one Server can each answer any trip, so this costs nothing;
+// and a rehearsal simulator connected to the same Go never receives the real trip's requests, nor the real Server a
+// rehearsal trip's.
+
+/** "go_" + ULID. Mint one per new write; a retry reuses it. */
+export function newRequestId(): string {
+  return `go_${newUlid()}`;
+}
+
+/** One open socket to the Server, as the link sees it. The door makes these. */
+export interface SocketHandle {
+  id: string;
+  instance: string;
+  send(frame: string): void;
+}
+
+export interface LinkOptions {
+  pool: pg.Pool;
+  log: Log;
+  now?: () => Date;
+  /** The wait for one answer; the Server answers within 2 s. */
+  timeoutMs?: number;
+  /** The waits before the three retries after a timeout, a 500 or a 503. */
+  retryDelaysMs?: readonly number[];
+  /** How long one attempt waits for an open socket. Go cannot dial the Server, so it can only wait. */
+  waitForSocketMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  /** Runs after each successful answer; the card store keeps every card Go posts or replaces. */
+  onResult?: (method: ToServerMethod, params: Record<string, unknown>, result: unknown) => void | Promise<void>;
+}
+
+export type ServerLinkImpl = ServerLink & {
+  attach(s: SocketHandle): void;
+  detach(socketId: string): void;
+  /** The door calls this on every send_event: that trip's requests go back on the socket that brought its events. */
+  noteTrip(tripId: string, socketId: string): void;
+  onAnswer(f: AnswerFrame): void;
+  /** After a restart: sends again every write from the last 10 minutes that never got an answer, with its old id. */
+  resumePending(): Promise<number>;
+  /** On shutdown: requests waiting for a socket give up at once. */
+  close(): void;
+};
+
+// Go's own codes for an attempt that ended without an answer. Never sent on the wire.
+const TIMEOUT = -1;
+const LOST = -2;
+const MAX_LOSSES = 5;
+
+interface Pending {
+  id: string;
+  frame: string;
+  /** The trip the request names; null for one that names none. */
+  tripId: string | null;
+  socketId: string | null;
+  settle: ((f: AnswerFrame) => void) | null;
+}
+
+export function createServerLink(o: LinkOptions): ServerLinkImpl {
+  const now = o.now ?? (() => new Date());
+  const delays = o.retryDelaysMs ?? [500, 2_000, 5_000];
+  const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const waitForSocketMs = o.waitForSocketMs ?? 15_000;
+  const sockets = new Map<string, SocketHandle>();
+  // trip_id → the socket that last delivered that trip's events.
+  const tripSockets = new Map<string, string>();
+  const pending = new Map<string, Pending>();
+  const byRequestId = new Map<string, Promise<unknown>>();
+  const waiters = new Set<() => void>();
+  let rr = 0;
+  let closed = false;
+
+  /** The trip's own socket while it is open; otherwise any open socket, taken in turn. */
+  function pick(tripId: string | null): SocketHandle | null {
+    const ownId = tripId ? tripSockets.get(tripId) : undefined;
+    const own = ownId ? sockets.get(ownId) : undefined;
+    if (own) return own;
+    const all = [...sockets.values()];
+    if (all.length === 0) return null;
+    rr = (rr + 1) % all.length;
+    return all[rr] ?? null;
+  }
+
+  function waitForSocket(tripId: string | null): Promise<SocketHandle> {
+    const s = pick(tripId);
+    if (s) return Promise.resolve(s);
+    if (closed) return Promise.reject(new SocketCallError(503, 'Go is shutting down', 'unavailable'));
+    return new Promise<SocketHandle>((resolve, reject) => {
+      const wake = (): void => {
+        const next = closed ? null : pick(tripId);
+        if (!next && !closed) return;
+        clearTimeout(timer);
+        waiters.delete(wake);
+        if (next) resolve(next);
+        else reject(new SocketCallError(503, 'Go is shutting down', 'unavailable'));
+      };
+      const timer = setTimeout(() => {
+        waiters.delete(wake);
+        reject(new SocketCallError(503, 'no socket from the Server is open', 'unavailable'));
+      }, waitForSocketMs);
+      waiters.add(wake);
+    });
+  }
+
+  async function attempt(p: Pending, timeoutMs: number): Promise<AnswerFrame> {
+    let s: SocketHandle;
+    try {
+      s = await waitForSocket(p.tripId);
+    } catch (e) {
+      return { kind: 'error', id: p.id, error: { code: 503, message: e instanceof Error ? e.message : String(e), dataCode: 'unavailable' } };
+    }
+    return new Promise<AnswerFrame>((resolve) => {
+      const done = (f: AnswerFrame): void => {
+        clearTimeout(timer);
+        p.settle = null;
+        resolve(f);
+      };
+      const timer = setTimeout(
+        () => done({ kind: 'error', id: p.id, error: { code: TIMEOUT, message: `no answer in ${timeoutMs} ms` } }),
+        timeoutMs,
+      );
+      p.settle = done;
+      p.socketId = s.id;
+      s.send(p.frame);
+    });
+  }
+
+  function parseResult(method: ToServerMethod, raw: unknown): unknown {
+    const schema = TO_SERVER_SCHEMAS[method][1] as z.ZodType | null;
+    if (!schema) return undefined;
+    const r = schema.safeParse(raw);
+    if (r.success) return r.data;
+    o.log.warn({ method, issues: z.prettifyError(r.error) }, 'the Server answered outside the contract');
+    return raw;
+  }
+
+  function toCallError(e: ErrorFrame['error']): SocketCallError {
+    if (e.code === TIMEOUT) return new SocketCallError(503, e.message, 'unavailable');
+    if (e.code === LOST) return new SocketCallError(503, 'the socket kept closing', 'unavailable');
+    return new SocketCallError(e.code, e.message, e.dataCode as ErrorCodeName | undefined, e.retryAfterSeconds);
+  }
+
+  async function run(
+    method: ToServerMethod,
+    body: Record<string, unknown>,
+    rpcId: string,
+    requestId: string | null,
+    timeoutMs: number,
+  ): Promise<unknown> {
+    const frame = requestFrame(rpcId, method, body);
+    if (Buffer.byteLength(frame) > MAX_FRAME_BYTES) throw new SocketCallError(422, `${method} is over the 1 MB frame limit`, 'invalid');
+    const tripId = typeof body.trip_id === 'string' && body.trip_id !== '' ? body.trip_id : null;
+    const p: Pending = { id: rpcId, frame, tripId, socketId: null, settle: null };
+    pending.set(rpcId, p);
+    try {
+      let retries = 0;
+      let losses = 0;
+      for (;;) {
+        if (requestId) {
+          await o.pool.query('update go_requests set sent_at = coalesce(sent_at, $2), attempts = attempts + 1 where request_id = $1', [
+            requestId,
+            now(),
+          ]);
+        }
+        const f = await attempt(p, timeoutMs);
+        if (f.kind === 'result') {
+          if (requestId) {
+            await o.pool.query('update go_requests set result = $2::jsonb, error = null, answered_at = $3 where request_id = $1', [
+              requestId,
+              JSON.stringify(f.result),
+              now(),
+            ]);
+          }
+          const result = parseResult(method, f.result);
+          try {
+            await o.onResult?.(method, body, result);
+          } catch (e) {
+            o.log.warn({ err: e, method }, 'an answer listener failed');
+          }
+          return result;
+        }
+        const code = f.error.code;
+        if (code === LOST && losses < MAX_LOSSES) {
+          losses += 1;
+          continue; // the socket closed under it: send again at once, same id, on the trip's next socket or any open one
+        }
+        const retryable = code === TIMEOUT || code === LOST || code === 500 || code === 503 || code === 429;
+        if (!retryable || retries >= delays.length) {
+          const err = toCallError(f.error);
+          if (requestId) {
+            await o.pool.query('update go_requests set error = $2::jsonb, answered_at = $3 where request_id = $1', [
+              requestId,
+              JSON.stringify({ code: err.code, message: err.message }),
+              now(),
+            ]);
+          }
+          throw err;
+        }
+        const wait = code === 429 ? Math.min(60, Math.max(1, f.error.retryAfterSeconds ?? 1)) * 1_000 : (delays[retries] ?? 5_000);
+        retries += 1;
+        await sleep(wait);
+      }
+    } finally {
+      pending.delete(rpcId);
+    }
+  }
+
+  async function request<M extends ToServerMethod>(
+    method: M,
+    params: ToServerParams<M>,
+    opts: { timeoutMs?: number; turnId?: string } = {},
+  ): Promise<ToServerResult<M>> {
+    if (method === 'typing') throw new SocketCallError(422, 'typing is a notification: use notify', 'invalid');
+    const parsed = (TO_SERVER_SCHEMAS[method][0] as z.ZodType).safeParse(params);
+    if (!parsed.success) throw new SocketCallError(422, `bad ${method}: ${z.prettifyError(parsed.error)}`, 'invalid');
+    const body = parsed.data as Record<string, unknown>;
+    const timeoutMs = opts.timeoutMs ?? o.timeoutMs ?? 2_500;
+    const requestId = typeof body.request_id === 'string' ? body.request_id : null;
+    if (!requestId) return (await run(method, body, `go_${newUlid(now().getTime())}`, null, timeoutMs)) as ToServerResult<M>;
+    const running = byRequestId.get(requestId);
+    if (running) return (await running) as ToServerResult<M>;
+    const job = (async () => {
+      const { rows } = await o.pool.query<{ rpc_id: string; result: unknown; answered_at: Date | null }>(
+        'select rpc_id, result, answered_at from go_requests where request_id = $1',
+        [requestId],
+      );
+      const row = rows[0];
+      // Already done, e.g. by a turn that crashed after this write: the stored answer, nothing sent.
+      if (row?.answered_at && row.result !== null) return parseResult(method, row.result);
+      const rpcId = row?.rpc_id ?? `go_${newUlid(now().getTime())}`;
+      if (!row) {
+        await o.pool.query(
+          `insert into go_requests (request_id, rpc_id, trip_id, turn_id, method, params, created_at)
+           values ($1, $2, $3, $4, $5, $6::jsonb, $7) on conflict (request_id) do nothing`,
+          [requestId, rpcId, typeof body.trip_id === 'string' ? body.trip_id : '', opts.turnId ?? null, method, JSON.stringify(body), now()],
+        );
+      }
+      return run(method, body, rpcId, requestId, timeoutMs);
+    })().finally(() => byRequestId.delete(requestId));
+    byRequestId.set(requestId, job);
+    return (await job) as ToServerResult<M>;
+  }
+
+  function notify(method: 'typing', params: ToServerParams<'typing'>): void {
+    const r = TO_SERVER_SCHEMAS[method][0].safeParse(params);
+    if (!r.success) {
+      o.log.warn({ method }, 'dropped a notification outside the contract');
+      return;
+    }
+    pick(r.data.trip_id)?.send(notificationFrame(method, r.data));
+  }
+
+  return {
+    request,
+    notify,
+    isOpen: () => sockets.size > 0,
+    attach(s) {
+      sockets.set(s.id, s);
+      for (const w of [...waiters]) w();
+    },
+    detach(socketId) {
+      sockets.delete(socketId);
+      // Its trips go back to any open socket until their events arrive on a new one.
+      for (const [tripId, id] of tripSockets) if (id === socketId) tripSockets.delete(tripId);
+      for (const p of pending.values()) {
+        if (p.socketId === socketId && p.settle) p.settle({ kind: 'error', id: p.id, error: { code: LOST, message: 'the socket closed' } });
+      }
+    },
+    noteTrip(tripId, socketId) {
+      if (sockets.has(socketId)) tripSockets.set(tripId, socketId);
+    },
+    onAnswer(f) {
+      if (f.id === null) return;
+      pending.get(f.id)?.settle?.(f);
+    },
+    async resumePending() {
+      const { rows } = await o.pool.query<{ request_id: string; rpc_id: string; method: ToServerMethod; params: Record<string, unknown> }>(
+        'select request_id, rpc_id, method, params from go_requests where answered_at is null and created_at > $1 order by created_at',
+        [new Date(now().getTime() - 10 * 60_000)],
+      );
+      for (const r of rows) {
+        if (pending.has(r.rpc_id) || byRequestId.has(r.request_id)) continue;
+        const job = run(r.method, r.params, r.rpc_id, r.request_id, o.timeoutMs ?? 2_500).finally(() => byRequestId.delete(r.request_id));
+        byRequestId.set(r.request_id, job);
+        job.catch((e: unknown) => o.log.warn({ err: e, request: r.request_id }, 'a resent request failed'));
+      }
+      return rows.length;
+    },
+    close() {
+      closed = true;
+      for (const w of [...waiters]) w();
+    },
+  };
+}
