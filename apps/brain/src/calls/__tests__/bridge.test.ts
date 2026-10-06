@@ -1,9 +1,9 @@
-import type { AddressInfo } from 'node:net';
+import { createServer, type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { manualTime, waitFor } from '../../proactive/fakes.js';
 import { attachBridge, BARGE_IN_LEVEL, frameLevel, type EndReason } from '../bridge.js';
-import type { CallBrief, ReportedOutcome } from '../realtime.js';
+import { openVoice, type CallBrief, type ReportedOutcome } from '../realtime.js';
 import type { CallLine } from '../store.js';
 
 /** G.711 μ-law, as Twilio sends it: 160 bytes per 20 ms frame at 8 kHz. */
@@ -320,5 +320,19 @@ describe('attachBridge on gpt-live-1 (the day-one A/B)', () => {
       delegation_id: null,
       content: 'Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together.',
     });
+  });
+});
+
+describe('openVoice', () => {
+  it('gives up on a voice model that never answers the handshake, instead of a silent line', async () => {
+    // A server that takes the connection and never says a word.
+    const silent = createServer(() => undefined);
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    const port = (silent.address() as AddressInfo).port;
+    const ws = openVoice({ model: 'gpt-realtime-2.1', apiKey: 'sk-test', url: `ws://127.0.0.1:${port}`, handshakeTimeoutMs: 200 });
+    const error = await new Promise<Error>((resolve) => ws.once('error', resolve));
+    expect(error.message).toMatch(/handshake has timed out/i);
+    await new Promise((resolve) => ws.once('close', resolve));
+    silent.close();
   });
 });

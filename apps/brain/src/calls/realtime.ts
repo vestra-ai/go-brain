@@ -63,10 +63,15 @@ export const ReportedOutcome = z.object({
 });
 export type ReportedOutcome = z.infer<typeof ReportedOutcome>;
 
-/** A plain WebSocket to the voice model (no SDK: the repo pins an older SDK for the copied agent loop). */
-export function openVoice(o: { model: string; apiKey: string }): WebSocket {
-  const headers = { Authorization: `Bearer ${o.apiKey}` };
-  return voiceKind(o.model) === 'live'
-    ? new WebSocket(LIVE_URL, { headers })
-    : new WebSocket(`${REALTIME_URL}?model=${encodeURIComponent(o.model)}`, { headers });
+/** How long the voice model may take to accept the socket; past it the call ends and the person is told. */
+export const VOICE_HANDSHAKE_MS = 10_000;
+
+/**
+ * A plain WebSocket to the voice model (no SDK: the repo pins an older SDK for the copied agent loop). `url` and
+ * `handshakeTimeoutMs` are for tests; a stuck handshake fails instead of leaving the business on a silent line.
+ */
+export function openVoice(o: { model: string; apiKey: string; url?: string; handshakeTimeoutMs?: number }): WebSocket {
+  const options = { headers: { Authorization: `Bearer ${o.apiKey}` }, handshakeTimeout: o.handshakeTimeoutMs ?? VOICE_HANDSHAKE_MS };
+  const url = o.url ?? (voiceKind(o.model) === 'live' ? LIVE_URL : `${REALTIME_URL}?model=${encodeURIComponent(o.model)}`);
+  return new WebSocket(url, options);
 }
