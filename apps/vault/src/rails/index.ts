@@ -9,6 +9,9 @@ export function notReadyRail(kind: RailKind): Rail {
     async charge() {
       return { failed: 'rail_not_ready' };
     },
+    async find() {
+      return { unknown: 'rail_not_ready' };
+    },
   };
 }
 

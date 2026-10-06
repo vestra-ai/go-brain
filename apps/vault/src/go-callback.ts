@@ -1,7 +1,7 @@
 import { signRequest } from '@go/contract';
 import { chargeOnce, holdUnknown, markUnknown, settle, type AttemptRow, type PayDeps } from './charge.js';
 import { VAULT_SIGNATURE_HEADER } from './internal/auth.js';
-import type { RailFailReason } from './rails/rail.js';
+import type { FindResult, RailFailReason } from './rails/rail.js';
 
 export type GoOutcome =
   | { kind: 'paid'; trip_id: string; approval_id: string; rail_ref: string }
@@ -130,16 +130,44 @@ interface StuckRow extends AttemptRow {
 /** How long after its approval runs out a charge may still go to the rail (the same grace as Go's). */
 export const RAIL_GRACE_MS = 120_000;
 
+/** How long Stripe's search may lag behind a payment: `none` is read as final only this long after the deadline. */
+export const FIND_LAG_MS = 10 * 60_000;
+/** How long after the deadline the sweep keeps looking for an unknown charge. After that a person settles it by hand. */
+export const FIND_FOR_MS = 24 * 3_600_000;
+
 /**
- * Past the approval's expiry and the grace, the vault never calls the rail again. A charge the rail was never sent failed
- * for sure: nothing went out. Any other is unknown, for a person to check, and Go hears that it is being checked.
+ * Past the approval's expiry and the grace, the vault never calls the rail's charge again. A charge the rail was never
+ * sent failed for sure: nothing went out. For any other, the rail is asked, read only, what it has for the jti.
  */
 async function closeLate(d: PayDeps, now: Date, a: StuckRow): Promise<void> {
   if (a.charge_tries === 0 && !a.rail_called_at) {
     if (await settle(d.pool, now, a, { failed: 'rail_error' })) await reportOutcome(d, a.jti);
     return;
   }
-  await markUnknown(d, now, a, 'past the approval and the grace');
+  await findLate(d, now, a);
+}
+
+/**
+ * Settles a late charge from what the rail finds for its jti, never by charging. Paid: Go books it through the normal
+ * path. Nothing went out, once the search had time to catch up: a definite failure, and Go shows its failed card.
+ * Otherwise it stays unknown for a person, Go hears that it is being checked, and the sweep looks again.
+ */
+async function findLate(d: PayDeps, now: Date, a: StuckRow): Promise<void> {
+  let found: FindResult;
+  try {
+    found = await d.rails[a.rail].find(a.jti);
+  } catch {
+    found = { unknown: 'thrown' };
+  }
+  if ('railRef' in found) {
+    if (await settle(d.pool, now, a, { railRef: found.railRef })) await reportOutcome(d, a.jti);
+    return;
+  }
+  if ('none' in found && now.getTime() - a.deadline.getTime() > FIND_LAG_MS) {
+    if (await settle(d.pool, now, a, { failed: 'rail_error' })) await reportOutcome(d, a.jti);
+    return;
+  }
+  await markUnknown(d, now, a, 'unknown' in found ? `past the approval and the grace: ${found.unknown}` : 'past the approval and the grace: not found yet');
 }
 
 /** Finishes what a crash or a lost call left behind. Safe to run any time, from any copy of the service. */
@@ -168,6 +196,16 @@ export async function sweep(d: PayDeps): Promise<{ recharged: number; resent: nu
     if (await settle(d.pool, d.now(), a, result)) recharged += 1;
     await reportOutcome(d, a.jti);
   }
+  // Unknown charges past their deadline: the rail is asked, read only, until it can tell or a day has passed.
+  const late = await d.pool.query<StuckRow>(
+    `select * from (
+       select jti, approval_id, trip_id, payer_person_id, card_id, amount_minor, currency, merchant, rail, charge_tries, rail_called_at,
+         coalesce(approval_expires_at, used_at + interval '600 seconds') + make_interval(secs => $2) as deadline
+       from used_approvals where outcome = 'unknown'
+     ) u where deadline <= $1 and deadline > $3 order by deadline limit 20`,
+    [now, RAIL_GRACE_MS / 1000, new Date(now.getTime() - FIND_FOR_MS)],
+  );
+  for (const a of late.rows) await findLate(d, now, a);
   const pending = await d.pool.query<{ jti: string }>(
     `select jti from used_approvals
      where outcome in ('paid', 'failed') and callback_at is null and callback_refused_at is null and callback_attempts < 50

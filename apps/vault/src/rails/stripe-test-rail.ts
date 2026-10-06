@@ -1,5 +1,5 @@
 import type { StripeLike } from '../stripe-client.js';
-import type { ChargeInput, ChargeResult, Rail, RailFailReason } from './rail.js';
+import type { ChargeInput, ChargeResult, FindResult, Rail, RailFailReason } from './rail.js';
 
 /** Charges a saved test card through Stripe test mode, off session, once per approval. */
 export class StripeTestRail implements Rail {
@@ -34,7 +34,31 @@ export class StripeTestRail implements Rail {
       return stripeErrorResult(e);
     }
   }
+
+  /**
+   * Read only: finds the PaymentIntent charged with this jti by its metadata (set at charge time). Succeeded is the
+   * payment; no PaymentIntent, or one that stopped, means no money went out; anything else cannot be told yet. Stripe's
+   * search can lag behind a fresh payment, so the caller waits before it reads `none` as final.
+   */
+  async find(idempotencyKey: string): Promise<FindResult> {
+    if (!SEARCHABLE.test(idempotencyKey)) return { unknown: 'unsearchable_key' };
+    try {
+      const found = await this.stripe.findCharges(idempotencyKey);
+      const paid = found.find((pi) => pi.status === 'succeeded');
+      if (paid) return { railRef: paid.id };
+      if (found.every((pi) => STOPPED.has(pi.status))) return { none: true };
+      return { unknown: `status_${found.map((pi) => pi.status).join('_')}` };
+    } catch (e) {
+      const err = (e ?? {}) as { type?: unknown };
+      return { unknown: typeof err.type === 'string' && err.type.startsWith('Stripe') ? err.type : 'thrown' };
+    }
+  }
 }
+
+/** A key safe to put in a Stripe search query as it is. Approval ids are made of these. */
+const SEARCHABLE = /^[A-Za-z0-9_.:-]{1,64}$/;
+/** PaymentIntent states in which no money moved and none will. */
+const STOPPED: ReadonlySet<string> = new Set(['canceled', 'requires_payment_method', 'requires_action']);
 
 /** Stripe errors that mean Stripe refused the request, so nothing was charged. */
 const REFUSED: ReadonlySet<unknown> = new Set(['StripeInvalidRequestError', 'StripeAuthenticationError', 'StripePermissionError']);

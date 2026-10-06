@@ -84,12 +84,15 @@ export async function markUnknown(d: Pick<PayDeps, 'pool' | 'log'>, now: Date, a
   );
 }
 
-/** Records the outcome once. Answers false when another worker already settled this attempt. */
+/**
+ * Records the outcome once. Answers false when another worker already settled this attempt. A charge marked unknown can
+ * still be settled, from what the rail finds for it later.
+ */
 export async function settle(db: Db, now: Date, a: AttemptRow, result: SettledResult): Promise<boolean> {
   const paid = 'railRef' in result;
   const r = await db.query(
     `update used_approvals set outcome = $2, rail_ref = $3, fail_reason = $4, settled_at = $5
-     where jti = $1 and outcome = 'charging'`,
+     where jti = $1 and outcome in ('charging', 'unknown')`,
     [a.jti, paid ? 'paid' : 'failed', paid ? result.railRef : null, paid ? null : result.failed, now],
   );
   if ((r.rowCount ?? 0) === 0) return false;

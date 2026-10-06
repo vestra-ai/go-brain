@@ -110,6 +110,47 @@ describe('StripeTestRail', () => {
   });
 });
 
+describe('find, which never moves money', () => {
+  const customerOf = async (personId: string) => (personId === 'p_rahul' ? 'cus_1' : null);
+
+  it('FakeRail answers from what it recorded, and a lost answer is still found', async () => {
+    const rail = new FakeRail('lost');
+    expect(await rail.charge(input)).toEqual({ unknown: 'fake' });
+    expect(await rail.find('ap_01JA7Q3V8Z')).toEqual({ railRef: 'fake_ap_01JA7Q3V8Z' });
+    expect(await rail.find('ap_never_charged')).toEqual({ none: true });
+    expect(rail.charges).toHaveLength(1);
+  });
+
+  it('StripeTestRail finds the PaymentIntent by the jti in its metadata', async () => {
+    const stripe = new FakeStripe();
+    const rail = new StripeTestRail(stripe, customerOf);
+    stripe.throwOnce = { type: 'StripeConnectionError', afterCharging: true };
+    expect(await rail.charge(input)).toEqual({ unknown: 'StripeConnectionError' });
+    expect(await rail.find('ap_01JA7Q3V8Z')).toEqual({ railRef: 'pi_1' });
+    expect(await rail.find('ap_never_charged')).toEqual({ none: true });
+    expect(stripe.charges).toHaveLength(1);
+  });
+
+  it('StripeTestRail cannot tell while a payment is processing, or when the search fails or the key is not searchable', async () => {
+    const stripe = new FakeStripe();
+    const rail = new StripeTestRail(stripe, customerOf);
+    stripe.nextCharge = { status: 'processing' };
+    await rail.charge({ ...input, idempotencyKey: 'ap_processing' });
+    expect(await rail.find('ap_processing')).toEqual({ unknown: 'status_processing' });
+    stripe.nextCharge = { status: 'requires_payment_method' };
+    await rail.charge({ ...input, idempotencyKey: 'ap_declined' });
+    expect(await rail.find('ap_declined')).toEqual({ none: true });
+    stripe.searchThrows = true;
+    expect(await rail.find('ap_processing')).toEqual({ unknown: 'StripeAPIError' });
+    expect(await rail.find("ap_x' OR '1")).toEqual({ unknown: 'unsearchable_key' });
+  });
+
+  it('ixigo cannot tell yet', async () => {
+    const rails = makeRails({ stripe: new FakeStripe(), customerOf: async () => 'cus_1' });
+    expect(await rails.ixigo.find('ap_01JA7Q3V8Z')).toEqual({ unknown: 'rail_not_ready' });
+  });
+});
+
 describe('the rails together', () => {
   it('keeps ixigo as a seam that is not ready', async () => {
     const rails = makeRails({ stripe: new FakeStripe(), customerOf: async () => 'cus_1' });

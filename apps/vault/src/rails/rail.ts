@@ -33,9 +33,17 @@ export type ChargeResult = { railRef: string } | { failed: RailFailReason } | { 
 /** A result the vault can record: paid, or a definite failure. */
 export type SettledResult = Exclude<ChargeResult, { unknown: string }>;
 
+/**
+ * What the rail has for an idempotency key: the payment it took, `none` when no money went out for it, or `unknown` when
+ * it cannot tell yet. Finding never moves money.
+ */
+export type FindResult = { railRef: string } | { none: true } | { unknown: string };
+
 export interface Rail {
   readonly kind: RailKind;
   charge(input: ChargeInput): Promise<ChargeResult>;
+  /** Read only: looks up the charge made with this idempotency key. Used once it is too late to call charge() again. */
+  find(idempotencyKey: string): Promise<FindResult>;
 }
 
 export type Rails = Record<RailKind, Rail>;

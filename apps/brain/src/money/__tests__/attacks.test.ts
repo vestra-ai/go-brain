@@ -236,6 +236,27 @@ describe('a charge the bank has not confirmed', () => {
     expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
   });
 
+  it('past the deadline, the vault finds the charge the bank took, and Go books it once', async () => {
+    await setUp();
+    const card = await payCardUp();
+    const url = await approveUrl(card);
+    // The bank takes the charge, but its answer is lost on the way back.
+    vault.rail.outcome = 'lost';
+    expect(await vault.approve(url, rahul)).toMatchObject({ state: 'confirming' });
+    await pay.settled();
+    const approvalId = (card as { approval_id: string }).approval_id;
+    expect((await k.pool.query('select state from payments where approval_id = $1', [approvalId])).rows[0].state).toBe('confirming');
+    // Long after the approval ran out, the vault asks the rail what it has for the jti, never charging again.
+    k.advance(15 * 60_000);
+    await vault.sweep();
+    await pay.settled();
+    expect(vault.rail.charges).toHaveLength(1);
+    expect(vault.rail.asked.filter((key) => key === approvalId)).toHaveLength(1);
+    expect(k.server.writesOf('add_booking')).toHaveLength(1);
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).state).toBe('paid');
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+  });
+
   it('long after the approval ran out: never starts it again, never asks the rail again, and says a person is checking', async () => {
     const { card, approvalId } = await confirmingPayment();
     // Go's sweep leaves it alone and Approve never starts it again.

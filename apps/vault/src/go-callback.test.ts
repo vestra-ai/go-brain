@@ -205,3 +205,81 @@ describe('a charge the rail gave no clear answer for', () => {
     expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming']);
   });
 });
+
+describe('a charge settled from what the rail finds, never by charging again', () => {
+  const later = (ms: number) => f.setNow(new Date(new Date('2026-10-05T09:01:00Z').getTime() + ms));
+  const callsFor = (jti: string) => f.goCalls.filter((c) => c.body.approval_id === jti).map((c) => c.path);
+  // The approvals in these tests run out at 09:10, so the deadline is 09:12.
+  const pastDeadline = 11 * 60_000 + 1_000;
+
+  it('the rail took the charge but its answer was lost: past the deadline, find settles it paid, with one charge in all', async () => {
+    const { token, jti } = await f.payLinkFor();
+    f.rail.outcome = 'lost';
+    try {
+      expect(await f.approve(token, rahul)).toEqual({ state: 'confirming' });
+    } finally {
+      f.rail.outcome = 'ok';
+    }
+    later(pastDeadline);
+    try {
+      await sweep(f.d);
+      await sweep(f.d);
+    } finally {
+      later(0);
+    }
+    expect(await row(jti)).toMatchObject({ outcome: 'paid' });
+    expect(f.rail.charges.filter((c) => c.idempotencyKey === jti)).toHaveLength(1);
+    // charge() was called once, at approve; past the deadline the rail was only asked what it had.
+    expect(f.rail.asked.filter((k) => k === jti)).toHaveLength(1);
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/paid']);
+  });
+
+  it('the bank never saw it: once the search had 10 minutes to catch up, it fails for sure, with no charge', async () => {
+    const { token, jti } = await f.payLinkFor();
+    f.rail.outcome = 'unknown';
+    try {
+      expect(await f.approve(token, rahul)).toEqual({ state: 'confirming' });
+    } finally {
+      f.rail.outcome = 'ok';
+    }
+    later(pastDeadline);
+    try {
+      await sweep(f.d);
+      // Inside the 10 minutes, "not found" may be the search lagging: a person is checking, nothing is settled.
+      expect(await row(jti)).toMatchObject({ outcome: 'unknown' });
+      later(pastDeadline + 10 * 60_000);
+      await sweep(f.d);
+    } finally {
+      later(0);
+    }
+    expect(await row(jti)).toMatchObject({ outcome: 'failed' });
+    expect(f.rail.charges.filter((c) => c.idempotencyKey === jti)).toEqual([]);
+    expect(f.rail.asked.filter((k) => k === jti)).toHaveLength(1);
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming', '/internal/vault/failed']);
+    expect(f.goCalls.filter((c) => c.body.approval_id === jti).at(-1)?.body).toMatchObject({ reason: 'rail_error' });
+  });
+
+  it('when find throws or cannot tell, the charge stays unknown and Go hears it is being checked once', async () => {
+    const { token, jti } = await f.payLinkFor();
+    f.rail.outcome = 'unknown';
+    f.rail.findAnswer = 'throw';
+    try {
+      expect(await f.approve(token, rahul)).toEqual({ state: 'confirming' });
+      later(pastDeadline);
+      await sweep(f.d);
+      expect(await row(jti)).toMatchObject({ outcome: 'unknown' });
+      later(pastDeadline + 30 * 60_000);
+      await sweep(f.d);
+      f.rail.findAnswer = 'unknown';
+      await sweep(f.d);
+    } finally {
+      f.rail.outcome = 'ok';
+      f.rail.findAnswer = 'record';
+      later(0);
+    }
+    expect(await row(jti)).toMatchObject({ outcome: 'unknown', callback_at: null });
+    expect(f.rail.asked.filter((k) => k === jti)).toHaveLength(1);
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming']);
+    expect(f.goCalls.filter((c) => c.body.approval_id === jti).at(-1)?.body).toMatchObject({ checking: true });
+  });
+});

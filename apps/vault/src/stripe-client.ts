@@ -23,6 +23,8 @@ export interface StripeLike {
     idempotencyKey: string;
     metadata: Record<string, string>;
   }): Promise<{ id: string; status: string }>;
+  /** Read only: the PaymentIntents charged with this approval jti, found by their metadata. */
+  findCharges(approvalJti: string): Promise<Array<{ id: string; status: string }>>;
 }
 
 export function assertTestKey(key: string): void {
@@ -77,6 +79,10 @@ export function realStripe(secretKey: string): StripeLike {
         { idempotencyKey: i.idempotencyKey },
       );
       return { id: pi.id, status: pi.status };
+    },
+    async findCharges(approvalJti) {
+      const r = await stripe.paymentIntents.search({ query: `metadata['approval_jti']:'${approvalJti}'`, limit: 10 });
+      return r.data.map((pi) => ({ id: pi.id, status: pi.status }));
     },
   };
 }

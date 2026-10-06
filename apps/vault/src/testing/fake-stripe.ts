@@ -11,6 +11,8 @@ export class FakeStripe implements StripeLike {
   nextCharge: NextCharge = { status: 'succeeded' };
   /** The next charge throws this Stripe error once. With `afterCharging`, Stripe took the charge and the answer was lost. */
   throwOnce: { type: string; code?: string; afterCharging?: boolean } | null = null;
+  /** Search fails, the way Stripe's API can. */
+  searchThrows = false;
 
   async createCustomer(): Promise<{ id: string }> {
     const id = `cus_${this.customers.length + 1}`;
@@ -22,6 +24,13 @@ export class FakeStripe implements StripeLike {
     const id = `seti_${this.setupIntents.size + 1}`;
     this.setupIntents.set(id, { customerId, card: null, status: 'requires_payment_method' });
     return { id, clientSecret: `${id}_secret_test` };
+  }
+
+  /** Search answers from the charges recorded under each key, as Stripe's would once it caught up. */
+  async findCharges(approvalJti: string): Promise<Array<{ id: string; status: string }>> {
+    if (this.searchThrows) throw Object.assign(new Error('Stripe search failed.'), { type: 'StripeAPIError' });
+    const seen = this.byKey.get(approvalJti);
+    return seen ? [seen] : [];
   }
 
   /** What Stripe.js does on the vault page when the person types a test card and taps Save. */
