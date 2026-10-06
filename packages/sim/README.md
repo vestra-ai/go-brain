@@ -37,7 +37,7 @@ A judge opens the page, types the passcode, and lands in a fresh Goa trip with t
 - **Staying small.** At most 3 live sockets for a visit and 300 in all, about 5 frames a second from each socket (the rest are dropped, with a note), each trip's state worked out once for every socket watching it, and trips nobody has used or watched for 6 hours dropped.
 - **What is live.** The page says whether Go answers at `GO_URL/v1/health`, and says what is simulated.
 
-It runs from `packages/sim/Dockerfile` (built from the repo root) with `packages/sim/railway.json`, which health-checks `/health`. On Railway, leave Root Directory empty and set the config file path to `/packages/sim/railway.json`. On its first visit it logs the raw `x-forwarded-for`, `x-real-ip` and `x-envoy-external-address` once, so the wrong-try limit can be keyed on the right one; until then it uses the first `x-forwarded-for` address.
+It runs from `packages/sim/Dockerfile` (built from the repo root) with `packages/sim/railway.json`, which health-checks `/health`. On Railway, leave Root Directory empty and set the config file path to `/packages/sim/railway.json`. The wrong-try limit keys on `x-real-ip`, which Railway's edge sets to the visitor's address, and on the first `x-forwarded-for` address only when `x-real-ip` is missing (a visitor can write that one). It remembers at most 10,000 addresses. On its first visit it logs the raw `x-forwarded-for`, `x-real-ip` and `x-envoy-external-address` once.
 
 | Variable | What it is |
 |---|---|
