@@ -19,7 +19,7 @@ const room = await serveTryRoom({
   port: env.PORT,
   host: '0.0.0.0',
   trustProxy: true,
-  caps: { dailyTurns: env.TRY_DAILY_TURNS, dailyMessages: env.TRY_DAILY_MESSAGES },
+  caps: { dailyTurns: env.TRY_DAILY_TURNS, dailyMessages: env.TRY_DAILY_MESSAGES, visitTurns: env.TRY_VISIT_TURNS },
   simulatedLine: env.TRY_SIMULATED_LINE,
   log,
 });

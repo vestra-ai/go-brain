@@ -2,10 +2,11 @@
 // in constant time, gets an HttpOnly, Secure, SameSite=Strict cookie that names the visit, good for 12 hours, signed
 // with a key made from TRY_PASSCODE and the random TRY_COOKIE_SALT: without the salt, a cookie that leaks cannot be
 // used to test passcode guesses offline. Every page, request and socket checks it. After 5 wrong tries in a minute
-// from one address, every try from it is held for a moment; the right passcode always gets in. GO_SIGNING_SECRET is
-// not used here: it stays in the Server's socket to Go.
+// from one address, its wrong tries are held for a moment, and in a flood of wrong tries they are turned away at once;
+// the right passcode always gets in. GO_SIGNING_SECRET is not used here: it stays in the Server's socket to Go.
 import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
+import { isIP } from 'node:net';
 
 export const SESSION_SECONDS = 12 * 60 * 60;
 /** __Host-: only this host can set it, on Path=/, Secure, so nothing else can plant one. */
@@ -93,67 +94,86 @@ export class Gate {
   }
 }
 
+/** How the room answers a wrong passcode: at once (401), after a wait (429), or at once in a flood (429). */
+export type WrongVerdict = 'wrong' | 'slow' | 'flood';
+
 /**
- * Wrong passcode tries for each address: after 5 in a minute, the address is slowed until the oldest is a minute old.
- * It holds at most `maxAddresses` addresses, dropping the one that went wrong longest ago first, so a flood of made-up
- * addresses cannot grow memory.
+ * Wrong passcode tries. After 5 in a minute from one address, that address's wrong tries are slowed until the oldest is
+ * a minute old. It keeps at most `maxAddresses` addresses and the last 5 tries of each, dropping the address that went
+ * wrong longest ago first, in constant time, and prune() clears the stale ones on a timer. Over `perSecond` wrong tries
+ * a second across every address (a flood), a wrong try is turned away at once and not remembered. The right passcode
+ * never comes here: it always gets in.
  */
 export class WrongTries {
   /** In the order each address last went wrong, oldest first. */
   private readonly tries = new Map<string, number[]>();
+  private second = 0;
+  private inSecond = 0;
 
   constructor(
     private readonly now: () => Date = () => new Date(),
     private readonly max = WRONG_TRIES_PER_MINUTE,
     private readonly windowMs = 60_000,
     private readonly maxAddresses = 10_000,
+    private readonly perSecond = 30,
   ) {}
 
-  blocked(address: string): boolean {
-    return this.recent(address).length >= this.max;
-  }
-
-  wrong(address: string): void {
-    const recent = this.recent(address);
-    recent.push(this.now().getTime());
+  /** Counts one wrong try from `address` and says how to answer it. */
+  wrong(address: string): WrongVerdict {
+    const t = this.now().getTime();
+    const second = Math.floor(t / 1000);
+    if (second !== this.second) {
+      this.second = second;
+      this.inSecond = 0;
+    }
+    this.inSecond += 1;
+    if (this.inSecond > this.perSecond) return 'flood';
+    const recent = this.recent(address, t);
+    const slowed = recent.length >= this.max;
+    recent.push(t);
+    if (recent.length > this.max) recent.shift();
     this.tries.delete(address); // set again below, so it moves to the newest end
     this.tries.set(address, recent);
-    for (const oldest of this.tries.keys()) {
-      if (this.tries.size <= this.maxAddresses) break;
-      this.tries.delete(oldest);
+    if (this.tries.size > this.maxAddresses) {
+      const oldest = this.tries.keys().next().value;
+      if (oldest !== undefined) this.tries.delete(oldest);
     }
+    return slowed ? 'slow' : 'wrong';
   }
 
-  private recent(address: string): number[] {
+  /** Whether the address's wrong tries are being slowed now. */
+  blocked(address: string): boolean {
+    return this.recent(address, this.now().getTime()).length >= this.max;
+  }
+
+  /** Drops every address with no wrong try in the last minute. */
+  prune(): void {
     const since = this.now().getTime() - this.windowMs;
-    const recent = (this.tries.get(address) ?? []).filter((t) => t > since);
-    if (recent.length > 0) this.tries.set(address, recent);
-    else this.tries.delete(address);
-    return recent;
+    for (const [address, times] of this.tries) if (!times.some((t) => t > since)) this.tries.delete(address);
+  }
+
+  /** How many addresses it holds. */
+  get size(): number {
+    return this.tries.size;
+  }
+
+  private recent(address: string, t: number): number[] {
+    return (this.tries.get(address) ?? []).filter((x) => x > t - this.windowMs);
   }
 }
 
 /**
- * The visitor's address, for the wrong-try limit. Behind Railway's proxy (trustProxy) it is x-real-ip, which Railway's
- * edge sets to the visitor's address; the first x-forwarded-for address, which a visitor can write themselves, is used
- * only when x-real-ip is missing. The limit only slows wrong tries, so a made-up address costs nothing but speed.
+ * The visitor's address, for the wrong-try limit, and where it came from. Behind Railway's proxy (trustProxy) it is
+ * x-real-ip, which Railway's edge sets to the visitor's address, when that is an IP address; anything else is never used
+ * as a key, and the socket's own address is used instead. x-forwarded-for is never used: a visitor can write it.
  */
-export function clientAddress(req: IncomingMessage, trustProxy: boolean): string {
+export function clientAddress(req: IncomingMessage, trustProxy: boolean): { address: string; source: 'x-real-ip' | 'socket' } {
   if (trustProxy) {
     const realIp = req.headers['x-real-ip'];
-    const real = (Array.isArray(realIp) ? realIp[0] : realIp)?.trim();
-    if (real) return real;
-    const forwarded = req.headers['x-forwarded-for'];
-    const first = (Array.isArray(forwarded) ? forwarded.join(',') : (forwarded ?? '')).split(',')[0]?.trim();
-    if (first) return first;
+    const real = (Array.isArray(realIp) ? realIp[0] : realIp)?.trim() ?? '';
+    if (isIP(real) !== 0) return { address: real, source: 'x-real-ip' };
   }
-  return req.socket.remoteAddress ?? 'unknown';
-}
-
-/** The three address headers a proxy may set, raw, and no other header: logged once so the right one can be chosen. */
-export function addressHeaders(req: IncomingMessage): string {
-  const raw = (name: string): string => JSON.stringify(req.headers[name] ?? null);
-  return `x-forwarded-for=${raw('x-forwarded-for')} x-real-ip=${raw('x-real-ip')} x-envoy-external-address=${raw('x-envoy-external-address')}`;
+  return { address: req.socket.remoteAddress ?? 'unknown', source: 'socket' };
 }
 
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
