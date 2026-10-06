@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import type { Message } from '../../door/methods.js';
 import { goaTrip, msg, packOf } from '../../reflex/goa.fixture.js';
-import { recall, type RecallHit } from '../recall.js';
+import { recall, standing, type RecallHit } from '../recall.js';
 import { seedMessages } from './test-kit.js';
 
 /**
@@ -108,5 +108,21 @@ describe("Go's own line as the only source", () => {
   it('is still found when nobody else said it', async () => {
     const hits = await recall(db.pool, pack, new Map(), 'When does the flight land?', 'group');
     expect(hits[0]?.seq, JSON.stringify(hits)).toBe(2);
+  });
+});
+
+describe('standing: how much a line\'s match counts', () => {
+  const own = ['arjun', 'leave', 'friday'];
+  it("people's lines count in full, Go's half; a question or a line that only repeats the question half again", () => {
+    expect(standing({ person_id: 'p_arjun', text: "Office till 6 on Friday, can't leave before that 😩" }, own)).toBe(1);
+    expect(standing({ person_id: null, text: "Arjun can't leave before 6:30 pm on Friday" }, own)).toBe(0.5);
+    expect(standing({ person_id: 'p_rahul', text: "@Go what can't Meher eat, and when can Arjun leave on Friday?" }, own)).toBe(0.5);
+    expect(standing({ person_id: 'p_rahul', text: '@Go when can Arjun leave on Friday' }, own)).toBe(0.5);
+    expect(standing({ person_id: null, text: 'when is Arjun leaving on Friday?' }, own)).toBe(0.25);
+  });
+
+  it('an answer that says the question\'s words, with its answer, counts in full', () => {
+    expect(standing({ person_id: 'p_meher', text: 'Arjun can leave Friday after 6:30, his office said yes' }, own)).toBe(1);
+    expect(standing({ person_id: 'p_rahul', text: 'Paid the villa deposit, send me your share on UPI' }, ['paid', 'deposit', 'upi'])).toBe(1);
   });
 });
