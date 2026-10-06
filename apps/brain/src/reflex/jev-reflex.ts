@@ -10,6 +10,7 @@ import { plainlyNamesGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
 import type { JevClient, JevResult } from './jev.js';
 import { parseLive } from './live.js';
+import { looksLikeMoney } from './money-line.js';
 import type { Log } from '../log.js';
 import { buildQuestions, buildState, messageText, QUESTION_VERSIONS } from './questions.js';
 import { applyLive, codeOnly, readAnswers, type CodeFacts } from './read.js';
@@ -35,7 +36,8 @@ export type JevReflex = Reflex & { settled(): Promise<void> };
  * in the text (still there, or already hidden by P1's intake: secretKinds reads the marks), tasks running.
  */
 export function codeFacts(msg: Message, pack: TripPack, runningTasks: Array<{ id: string }>): CodeFacts {
-  return { namesGo: plainlyNamesGo(msg, pack), secretKinds: secretKinds(messageText(msg)), hasTasks: runningTasks.length > 0 };
+  const text = messageText(msg);
+  return { namesGo: plainlyNamesGo(msg, pack), secretKinds: secretKinds(text), hasTasks: runningTasks.length > 0, money: looksLikeMoney(text) };
 }
 
 export function createJevReflex(d: JevReflexDeps): JevReflex {
@@ -71,7 +73,7 @@ export function createJevReflex(d: JevReflexDeps): JevReflex {
   return {
     async read(msg, ctx): Promise<ReflexRead> {
       if (msg.author.kind !== 'person' || msg.withheld || msg.deleted) {
-        return codeOnly({ namesGo: false, secretKinds: [], hasTasks: ctx.runningTasks.length > 0 });
+        return codeOnly({ namesGo: false, secretKinds: [], hasTasks: ctx.runningTasks.length > 0, money: false });
       }
       const tripId = ctx.pack.trip.trip_id;
       const facts = codeFacts(msg, ctx.pack, ctx.runningTasks);

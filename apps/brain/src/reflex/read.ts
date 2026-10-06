@@ -15,6 +15,8 @@ export interface CodeFacts {
   /** What the secrets screen found in the message. */
   secretKinds: SecretKind[];
   hasTasks: boolean;
+  /** A line about money (money-line.ts): it always reaches the model, whatever Jev says. */
+  money: boolean;
 }
 export type RiskWhy = 'spend' | 'steer' | 'secret';
 type Answers = Record<string, JevAnswer> | null;
@@ -48,10 +50,13 @@ function readForGo(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
   if (f.namesGo) return sure(true);
   const addressed = noulP(a, 'q1_addressed');
   const chatter = noulP(a, 'q1_chatter');
-  if (atLeast(chatter, b.for_go.chatterMin) && atMost(addressed, b.for_go.addressedMaxForChatter)) return sure(false);
-  // No one spoke to Go (a fact, a plan, friends talking): not for Go, though not chatter. The chatter answer must be
-  // well formed too, so an odd answer still reads unsure.
-  if (atMost(addressed, b.for_go.notAddressedMax) && Number.isFinite(chatter)) return sure(false);
+  // A line about money is never read as not for Go: only a turn records an expense or asks what it was for.
+  if (!f.money) {
+    if (atLeast(chatter, b.for_go.chatterMin) && atMost(addressed, b.for_go.addressedMaxForChatter)) return sure(false);
+    // No one spoke to Go (a fact, a plan, friends talking): not for Go, though not chatter. The chatter answer must be
+    // well formed too, so an odd answer still reads unsure.
+    if (atMost(addressed, b.for_go.notAddressedMax) && Number.isFinite(chatter)) return sure(false);
+  }
   if (atLeast(addressed, b.for_go.addressedMin) && atMost(chatter, b.for_go.chatterMaxForAddressed)) return sure(true);
   return unsure();
 }

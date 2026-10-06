@@ -183,6 +183,26 @@ describe('a composer turn', () => {
     expect(seen.rows[0].composer_seen_seq).toBe(5);
   });
 
+  it('an ask that ends at once ("...?") gets no wait, and the same person\'s next line, landing before the post, joins that turn', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights to Goa?');
+    const more = msg(5, 'p_arjun', 'from Delhi');
+    let claimed = false;
+    const r = room({
+      messages: [ask],
+      script: [{ text: 'Flights to Goa: three on Friday.' }, { text: 'From Delhi to Goa: three flights on Friday.' }],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(more);
+        return [item(tripId, more, false)];
+      },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    expect(r.model.bodies[1].messages.at(-1).content[0].text).toContain('#5 Arjun: from Delhi');
+    expect(r.posts().map((p) => p.params.text)).toEqual(['From Delhi to Goa: three flights on Friday.']);
+  });
+
   it('the pre-post check never reads a message twice: one the prompt already held runs no extra round', async () => {
     const ask = msg(3, 'p_arjun', '@Go is the villa free?');
     // In the pack when the prompt was built, its desk item claimed only at the pre-post check.

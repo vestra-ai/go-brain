@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { JevAnswer } from '../jev.js';
+import { looksLikeMoney } from '../money-line.js';
 import { applyLive, codeOnly, readAnswers, type CodeFacts } from '../read.js';
 import type { QuestionName } from '../questions.js';
 
@@ -8,7 +9,7 @@ const ch = (probabilities: Record<string, number>): JevAnswer => {
   const [choice, confidence] = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0]!;
   return { type: 'choice', choice, confidence, probabilities };
 };
-const plain: CodeFacts = { namesGo: false, secretKinds: [], hasTasks: false };
+const plain: CodeFacts = { namesGo: false, secretKinds: [], hasTasks: false, money: false };
 const read = (a: Record<string, JevAnswer> | null, facts: CodeFacts = plain, taskKeys: Array<{ key: string; id: string }> = []) =>
   readAnswers(a, facts, taskKeys).would;
 
@@ -22,6 +23,16 @@ describe('question 1: for Go', () => {
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }).forGo).toEqual({ value: false, sure: true });
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.12) }).forGo.sure).toBe(false);
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
+  });
+  it('never reads a line about money as not for Go, so it reaches the model; a bare number or a fact without money still skips', () => {
+    const notToGo = { q1_chatter: n(0.9), q1_addressed: n(0.03) };
+    const facts = (text: string): CodeFacts => ({ ...plain, money: looksLikeMoney(text) });
+    for (const text of ['I paid 3,200 for the cab', 'Rahul owes me 1,500', 'paid something for the snacks']) {
+      expect(read(notToGo, facts(text)).forGo.sure, text).toBe(false);
+    }
+    for (const text of ["we're 5 people", "I'm veg btw"]) {
+      expect(read(notToGo, facts(text)).forGo, text).toEqual({ value: false, sure: true });
+    }
   });
   it('is sure for Go when code saw Go named, whatever Jev says', () => {
     expect(read({ q1_chatter: n(0.99), q1_addressed: n(0.0) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
@@ -129,7 +140,7 @@ describe('question 8 is raise-only', () => {
 describe('applyLive', () => {
   const all = { q1_chatter: n(0.97), q1_addressed: n(0.01), q2_complete: n(0.95), q5_food: n(0.95), q5_dates: n(0.0), q5_travel: n(0.0), q5_other: n(0.0), q8_spend: n(0.9) };
   it('acts on live questions and leaves the rest unsure, keeping code facts', () => {
-    const facts: CodeFacts = { namesGo: false, secretKinds: ['code'], hasTasks: false };
+    const facts: CodeFacts = { namesGo: false, secretKinds: ['code'], hasTasks: false, money: false };
     const { would } = readAnswers(all, facts, []);
     const live = new Set<QuestionName>(['for_go', 'complete', 'size']);
     const acted = applyLive(would, live, facts);
