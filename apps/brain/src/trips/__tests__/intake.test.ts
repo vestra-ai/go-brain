@@ -3,7 +3,7 @@ import { fakeLink, type FakeAnswers } from '../../__tests__/fixtures/fake-link.j
 import { ev, goaSnapshot, msg, vote } from '../../__tests__/fixtures/goa.js';
 import type { Speak } from '../../composer/speak.js';
 import { withSchema } from '../../db/test-db.js';
-import { createDesk } from '../../desk/desk.js';
+import { createDesk, type Desk } from '../../desk/desk.js';
 import type { TripEvent } from '../../door/methods.js';
 import { silentLog } from '../../log.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../../reflex/reflex.js';
@@ -22,7 +22,7 @@ afterAll(() => db.drop());
 const sure = <T>(value: T) => ({ value, sure: true as const });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers } = {}) {
+function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers; failFirstPut?: boolean } = {}) {
   const now = () => new Date();
   const order: string[] = [];
   const f = fakeLink({
@@ -34,6 +34,17 @@ function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswer
   const packs = createPacks({ pool: db.pool, link: f.link, log: silentLog, now });
   const setup = createSetup({ pool: db.pool, log: silentLog, now });
   const desk = createDesk({ pool: db.pool, log: silentLog, now, holder: 'intake-test', inProcessWake: false });
+  let putFailed = !o.failFirstPut;
+  const flakyDesk: Desk = {
+    put: async (item) => {
+      if (!putFailed && item.kind === 'message') {
+        putFailed = true;
+        throw new Error('the database blinked');
+      }
+      await desk.put(item);
+    },
+    cancel: (tripId, ref) => desk.cancel(tripId, ref),
+  };
   const hooks = createMessageHooks(silentLog);
   hooks.onRead(async (m) => { order.push(`hook:${m.message_id}`); });
   const emitted: string[] = [];
@@ -57,7 +68,7 @@ function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswer
   });
   const reflex: Reflex = o.reflex?.(order) ?? { read: async () => { order.push('reflex'); return UNSURE_READ; } };
   const intake = createIntake({
-    pool: db.pool, log: silentLog, now, tripLog, packs, setup, desk, speak, hooks,
+    pool: db.pool, log: silentLog, now, tripLog, packs, setup, desk: flakyDesk, speak, hooks,
     reflex: () => reflex, runningTasks: async () => [], waitMs: 2_000,
   });
   const send = (e: TripEvent) => intake.sendEvent(e, { instance: 'test', frameId: `gs_${e.event_id}` });
@@ -165,13 +176,46 @@ describe('intake', () => {
     expect(items.find((r) => r.ref === 'm_3')?.payload.namesGo).toBe(true);
   });
 
-  it('any event for a trip Go has not set up yet: setup reads the trip first, then Go says hello', async () => {
-    const h = harness();
+  it('the first event for a trip Go already knows: its whole history is read and stored, nothing old wakes Go, and Go does not greet again', async () => {
     const T = 't_in_8';
+    const history = [msg(2, null, 'Hi all, I am Go!'), msg(3, 'p_rahul', '@Go find us a villa'), msg(5, null, 'Three villas below.')];
+    const h = harness({
+      answers: {
+        read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 7 }),
+        read_messages: (p) => (p.after_seq === 0 ? { messages: [...history, msg(7, 'p_priya', '@Go hi')], has_more: false } : { messages: [], has_more: false }),
+      },
+    });
     await h.send(ev(7, 'message.created', { message: msg(7, 'p_priya', '@Go hi') }, T));
     await h.intake.idle();
-    await vi.waitFor(async () => expect((await open(T)).map((r) => r.id).sort()).toEqual([`msg:${T}:m_7`, `setup:${T}:greet`]));
+    await vi.waitFor(async () => {
+      const { rows } = await db.pool.query(`select done_at from trip_setup where trip_id = $1 and step = 'brain.ready'`, [T]);
+      expect(rows[0]?.done_at).toBeInstanceOf(Date);
+    });
     expect(h.f.calls.some((c) => c.method === 'read_trip' && c.params.trip_id === T)).toBe(true);
+    expect(h.f.calls.filter((c) => c.method === 'read_messages').map((c) => c.params.after_seq)).toEqual([0]);
+    expect((await open(T)).map((r) => r.id)).toEqual([`msg:${T}:m_7`]);
+    expect((await h.packs.get(T)).messages.map((m) => m.seq)).toEqual([2, 3, 5, 7]);
+    const stored = await db.pool.query<{ n: number }>('select count(*)::int as n from messages where trip_id = $1', [T]);
+    expect(stored.rows[0]?.n).toBe(4);
+  });
+
+  it('a message whose desk item failed to go in is handled again by the next gap check', async () => {
+    const T = 't_in_15';
+    const h = harness({
+      failFirstPut: true,
+      answers: {
+        read_messages: (p) => (p.after_seq === 1 ? { messages: [msg(2, 'p_arjun', '@Go hi')], has_more: false } : { messages: [], has_more: false }),
+      },
+    });
+    await h.send(created(T));
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_arjun', '@Go hi') }, T));
+    await h.intake.idle();
+    expect((await open(T)).filter((r) => r.kind === 'message')).toEqual([]);
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_priya', 'hello?') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref).sort()).toEqual(['m_2', 'm_3']);
+    expect(items.find((r) => r.ref === 'm_2')?.payload.namesGo).toBe(true);
   });
 
   it('a deleted message cancels its waiting item', async () => {

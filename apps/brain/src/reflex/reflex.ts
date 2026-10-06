@@ -14,6 +14,10 @@ export interface ReflexRead {
   reaction: Sure<string | null>;
   risky: Sure<boolean>;
   opening: Sure<boolean>;
+  /** Why question 8 raised caution. Set by P2's reflex. */
+  riskWhy?: Array<'spend' | 'steer' | 'secret'>;
+  /** The reflex_reads row of this read. Set by P2's reflex. */
+  readId?: string;
 }
 
 export interface Reflex {

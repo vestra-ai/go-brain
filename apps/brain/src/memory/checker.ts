@@ -1,0 +1,198 @@
+/**
+ * Code decides what becomes a fact or a record line. A model (the side pass, the composer, the trip's
+ * computer) only proposes. The rules (spec §11 and the guide's add_record_line):
+ *  - a fact's proof is a visible message written by that same person, with no secret in it;
+ *  - "agreed" needs two people saying yes (a 👍 on a proof message counts) or the organizer, and no
+ *    objection; otherwise the line is written as "open";
+ *  - a doing line names only people who said they would do it;
+ *  - only an open question may cite Go's own message;
+ *  - a person Go was asked to forget is never proof for anything said before the forget.
+ */
+import * as C from '@go/contract';
+import type { Message } from '../door/methods.js';
+import { messageText } from '../reflex/questions.js';
+import { hasSecret } from '../reflex/secrets.js';
+import type { TripPack } from '../trips/pack.js';
+import { normTopic, type Audience } from './facts.js';
+
+export interface FactProposal {
+  person_id: string;
+  topic: string;
+  text: string;
+  message_id: string;
+  audience?: Audience;
+}
+export interface LineProposal {
+  kind: 'agreed' | 'open' | 'doing';
+  text: string;
+  person_ids: string[];
+  proof: string[];
+  objections?: string[];
+  due_at?: string;
+  /** Set to change one of Go's own lines (an open question that got settled, a job that is done). */
+  line_id?: string;
+  status?: 'done';
+}
+export type Checked<T> = { ok: true; value: T } | { ok: false; reason: string };
+export interface CheckedFact {
+  personId: string;
+  tripId: string;
+  topic: string;
+  text: string;
+  messageId: string;
+  saidAt: Date;
+  audience: Audience;
+}
+export interface CheckedLine {
+  kind: 'agreed' | 'open' | 'doing';
+  text: string;
+  personIds: string[];
+  proof: Array<{ message_id: string; person_id: string | null }>;
+  dueAt?: string;
+  lineId?: string;
+  status?: 'done';
+  /** Proposed as agreed, written as open because the bar was not met. */
+  downgraded?: boolean;
+}
+export interface CheckEnv {
+  pack: TripPack;
+  /** person_id to the change number up to which Go must forget them in this trip. */
+  forgotten: ReadonlyMap<string, number>;
+  record: C.RecordLine[];
+}
+
+const no = (reason: string): { ok: false; reason: string } => ({ ok: false, reason });
+const MASKED = /\[(card number )?hidden\]/;
+const THUMBS_UP = /^👍/u;
+
+/** One line of plain words: no newlines, no em dashes, 1 to max characters; null when it does not fit. */
+export function cleanText(s: string, max: number): string | null {
+  const t = s
+    .replace(/\s*—\s*/g, ', ')
+    .replace(/–/g, '-')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return t.length >= 1 && t.length <= max ? t : null;
+}
+
+/** Lowercase letters and digits only, for comparing lines. */
+export function normLine(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+function holdsSecret(m: Message): boolean {
+  const t = messageText(m);
+  return hasSecret(t) || MASKED.test(t);
+}
+
+function forgottenAt(env: CheckEnv, m: Message): boolean {
+  if (m.author.kind !== 'person') return false;
+  const upTo = env.forgotten.get(m.author.person_id);
+  return upTo !== undefined && m.seq <= upTo;
+}
+
+export function checkFact(p: FactProposal, env: CheckEnv): Checked<CheckedFact> {
+  const m = env.pack.messages.find((x) => x.message_id === p.message_id);
+  if (!m || m.deleted || m.withheld || !m.text) return no('the proof is not a message in this trip');
+  if (m.author.kind !== 'person' || m.author.person_id !== p.person_id) return no('the proof is not a message by that person');
+  if (!env.pack.trip.people.some((x) => x.person_id === p.person_id)) return no('that person is not in the trip');
+  if (forgottenAt(env, m)) return no('that person asked Go to forget this');
+  if (holdsSecret(m)) return no('the message holds a secret');
+  const text = cleanText(p.text, 200);
+  if (!text) return no('the fact text is empty or too long');
+  if (hasSecret(text) || MASKED.test(text)) return no('the fact holds a secret');
+  return {
+    ok: true,
+    value: {
+      personId: p.person_id,
+      tripId: env.pack.trip.trip_id,
+      topic: normTopic(p.topic),
+      text,
+      messageId: m.message_id,
+      saidAt: new Date(m.sent_at),
+      audience: p.audience ?? 'group',
+    },
+  };
+}
+
+export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> {
+  const { pack } = env;
+  const inTrip = new Set(pack.trip.people.map((x) => x.person_id));
+  const text = cleanText(p.text, 200);
+  if (!text) return no('the line text is empty or too long');
+  if (hasSecret(text) || MASKED.test(text)) return no('the line holds a secret');
+
+  const proofIds = [...new Set(p.proof)].slice(0, 10);
+  if (proofIds.length === 0) return no('a line needs proof');
+  const proof: Message[] = [];
+  for (const id of proofIds) {
+    const m = pack.messages.find((x) => x.message_id === id);
+    if (!m || m.deleted || m.withheld) return no('a proof is not a message in this trip');
+    if (m.author.kind === 'system') return no('a proof is not a message in this trip');
+    if (m.author.kind === 'go' && p.kind !== 'open') return no('only an open question may cite Go');
+    if (forgottenAt(env, m)) return no('a proof is from someone Go was asked to forget');
+    if (holdsSecret(m)) return no('a proof message holds a secret');
+    proof.push(m);
+  }
+  const authors = proof.flatMap((m) => (m.author.kind === 'person' ? [m.author.person_id] : []));
+
+  const named = [...new Set(p.person_ids)];
+  if (named.some((id) => !inTrip.has(id))) return no('someone named is not in the trip');
+  let personIds = named.slice(0, 30);
+
+  let kind = p.kind;
+  let downgraded = false;
+  if (kind === 'agreed') {
+    const objections = (p.objections ?? [])
+      .map((id) => pack.messages.find((x) => x.message_id === id))
+      .filter((m): m is Message => m !== undefined && !m.deleted && m.author.kind === 'person');
+    const yes = new Set(authors);
+    for (const m of proof) {
+      for (const r of m.reactions) if (r.person_id && THUMBS_UP.test(r.emoji) && inTrip.has(r.person_id)) yes.add(r.person_id);
+    }
+    for (const m of objections) if (m.author.kind === 'person') yes.delete(m.author.person_id);
+    const enough = objections.length === 0 && (yes.size >= 2 || yes.has(pack.trip.organizer_person_id));
+    if (enough) {
+      personIds = [...new Set([...personIds, ...yes])].slice(0, 30);
+    } else {
+      kind = 'open';
+      downgraded = true;
+    }
+  }
+  if (kind === 'doing') {
+    if (personIds.length === 0) personIds = [...new Set(authors)];
+    if (personIds.length === 0 || !personIds.every((id) => authors.includes(id))) {
+      return no('a doing line names someone who did not say they would do it');
+    }
+  }
+
+  if (p.line_id) {
+    const existing = env.record.find((l) => l.line_id === p.line_id);
+    if (!existing) return no('no such line');
+    if (existing.source !== 'go') return no("that line is not Go's to change");
+    if (existing.status === 'undone') return no('someone undid that line');
+  } else {
+    const key = normLine(text);
+    if (env.record.some((l) => l.status === 'active' && normLine(l.text) === key)) return no('already in the record');
+    const undone = env.record.find((l) => l.status === 'undone' && normLine(l.text) === key);
+    if (undone && proof.every((m) => Date.parse(m.sent_at) <= Date.parse(undone.updated_at))) {
+      return no('someone undid that line; it needs new messages to come back');
+    }
+  }
+
+  const dueAt = p.due_at && C.IsoDateTime.safeParse(p.due_at).success ? p.due_at : undefined;
+  return {
+    ok: true,
+    value: {
+      kind,
+      text,
+      personIds,
+      proof: proof.map((m) => ({ message_id: m.message_id, person_id: m.author.kind === 'person' ? m.author.person_id : null })),
+      ...(dueAt ? { dueAt } : {}),
+      ...(p.line_id ? { lineId: p.line_id } : {}),
+      ...(p.status ? { status: p.status } : {}),
+      ...(downgraded ? { downgraded } : {}),
+    },
+  };
+}
