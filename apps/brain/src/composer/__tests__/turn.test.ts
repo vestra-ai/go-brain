@@ -705,3 +705,12 @@ describe('show the options and put them to a vote in one reply', () => {
     expect(r.posts()[0]?.params.text).toBe('Which set should we vote on?');
   });
 });
+
+describe('people Go names', () => {
+  it('get a push: the turn posts them as mentions, worked out in code from the trip, not by the model', async () => {
+    const ask = msg(3, 'p_arjun', '@Go who pays for the villa?');
+    const r = room({ messages: [ask], script: [{ text: 'Priya, you are the payer, so tap Yes, book it. Arjun, nothing for you to do.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.posts()[0]?.params.mentions).toEqual(['p_priya', 'p_arjun']);
+  });
+});

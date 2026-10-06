@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeLink } from '../../__tests__/fixtures/fake-link.js';
 import { withSchema } from '../../db/test-db.js';
-import { createSpeak } from '../speak.js';
+import { createSpeak, mentionsIn } from '../speak.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -87,5 +87,44 @@ describe('post', () => {
     expect(calls).toHaveLength(0);
     expect(await speak.post({ ...base, text: null, cards: [notice('c_9')] })).toEqual(['m_go_9']);
     expect(calls[0]?.params.text).toBeUndefined();
+  });
+});
+
+describe('mentions: the people Go names get a push', () => {
+  const person = (person_id: string, name: string, go_paused = false) => ({ person_id, name, go_paused });
+  const trip = [person('p_asha', 'Asha'), person('p_priya', 'Priya Shah'), person('p_rahul', 'Rahul'), person('p_meher', 'Meher', true)];
+
+  it('a person Go names by first name goes in, as a whole word, next to any punctuation', () => {
+    expect(mentionsIn("Asha, you're the payer, so tap Yes, book it.", trip)).toEqual(['p_asha']);
+    expect(mentionsIn('Rahul bhai, Priya ko bolo!', trip)).toEqual(['p_priya', 'p_rahul']);
+    expect(mentionsIn('@asha?', trip)).toEqual(['p_asha']);
+  });
+
+  it('a name inside another word is not that person: Asha is not in Ashanti', () => {
+    expect(mentionsIn('Ashanti says hi, and the Rahulpur bus leaves at 6.', trip)).toEqual([]);
+  });
+
+  it('two people both go in, each once; never someone who paused Go, never a member named Go', () => {
+    expect(mentionsIn('Priya and Rahul are in. Priya, you pay.', trip)).toEqual(['p_priya', 'p_rahul']);
+    expect(mentionsIn('Meher, the villa wants a code.', trip)).toEqual([]);
+    expect(mentionsIn('Go here, Go there.', [...trip, person('p_go', 'Go')])).toEqual([]);
+  });
+
+  it('a first name two people share goes only to the one named in full', () => {
+    const twins = [person('p_r1', 'Rahul Mehta'), person('p_r2', 'Rahul Kapoor')];
+    expect(mentionsIn('Rahul, can you check?', twins)).toEqual([]);
+    expect(mentionsIn('Rahul Kapoor, can you check?', twins)).toEqual(['p_r2']);
+  });
+
+  it('post sends the named people as mentions with the text, and given mentions as they are', async () => {
+    const { link, calls } = fakeLink({ post_message: () => ({ message_id: `m_go_${calls.length}`, seq: 20 + calls.length }) });
+    const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
+    const base = { link, tripId: 't_goa', turnId: 'turn_M', requestId: (tag: string) => `go_${tag}_turn_M_${calls.length + 1}`, cards: [] };
+    await speak.post({ ...base, text: "Asha, you're the payer, so tap Yes, book it.", people: trip });
+    expect(calls[0]?.params.mentions).toEqual(['p_asha']);
+    await speak.post({ ...base, text: 'Nobody named here.', people: trip });
+    expect(calls[1]?.params.mentions).toBeUndefined();
+    await speak.post({ ...base, text: 'Asha!', people: trip, mentions: ['p_rahul'] });
+    expect(calls[2]?.params.mentions).toEqual(['p_rahul']);
   });
 });
