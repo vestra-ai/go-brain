@@ -24,16 +24,29 @@ export class StripeTestRail implements Rail {
         metadata: { approval_jti: i.idempotencyKey },
       });
       if (pi.status === 'succeeded') return { railRef: pi.id };
-      return { failed: pi.status === 'requires_action' ? 'needs_authentication' : 'rail_error' };
+      // Definite: the payment stopped and nothing was charged.
+      if (pi.status === 'requires_action') return { failed: 'needs_authentication' };
+      if (pi.status === 'requires_payment_method') return { failed: 'card_declined' };
+      if (pi.status === 'canceled') return { failed: 'rail_error' };
+      // Processing, or any other state: the money may still move.
+      return { unknown: `status_${pi.status}` };
     } catch (e) {
-      return { failed: stripeFailure(e) };
+      return stripeErrorResult(e);
     }
   }
 }
 
-/** Stripe's error type and code, in the vault's words. Never reads anything else off the error. */
-export function stripeFailure(e: unknown): RailFailReason {
+/** Stripe errors that mean Stripe refused the request, so nothing was charged. */
+const REFUSED: ReadonlySet<unknown> = new Set(['StripeInvalidRequestError', 'StripeAuthenticationError', 'StripePermissionError']);
+
+/**
+ * Stripe's error type and code, in the vault's words. Never reads anything else off the error. A card error or a refused
+ * request is a definite failure. A dropped connection, a Stripe server error, a rate limit or any other throw is unknown:
+ * Stripe may have charged before the answer was lost.
+ */
+export function stripeErrorResult(e: unknown): { failed: RailFailReason } | { unknown: string } {
   const err = (e ?? {}) as { type?: unknown; code?: unknown };
-  if (err.type === 'StripeCardError') return err.code === 'authentication_required' ? 'needs_authentication' : 'card_declined';
-  return 'rail_error';
+  if (err.type === 'StripeCardError') return { failed: err.code === 'authentication_required' ? 'needs_authentication' : 'card_declined' };
+  if (REFUSED.has(err.type)) return { failed: 'rail_error' };
+  return { unknown: typeof err.type === 'string' && err.type.startsWith('Stripe') ? err.type : 'thrown' };
 }

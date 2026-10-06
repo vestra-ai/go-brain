@@ -135,7 +135,7 @@ export const VAULT_JS = `(() => {
     try {
       const r = await api('/approve', { challenge_id: o.data.challenge_id, response });
       if (r.data.state === 'paid') { show('pay', false); show('done'); return; }
-      say('pay-msg', r.data.message || "The payment didn't go through.", 'bad');
+      say('pay-msg', r.data.message || "The payment didn't go through.", r.data.state === 'confirming' ? '' : 'bad');
       if (r.data.retry) btn.disabled = false;
     } catch (e) {
       say('pay-msg', 'Something went wrong. Check the card in Go before trying again.', 'bad');

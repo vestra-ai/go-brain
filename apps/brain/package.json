@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@go/sim": "workspace:*",
+    "@go/vault": "workspace:*",
     "@types/node": "^20.14.0",
     "@types/pg": "^8.11.0",
     "@types/ws": "^8.18.2",
