@@ -18,7 +18,8 @@ let door: DoorImpl;
 let link: ServerLinkImpl;
 let base: string;
 const events: unknown[] = [];
-// A lane's own socket (P6's media stream works the same way): it says hello and records the path it was opened on.
+// A lane's own socket (P6's media stream works the same way): it answers each frame and records the path it was opened on.
+// It answers rather than greeting, because a greeting sent at once can arrive before the test's listener is attached.
 const laneWss = new WebSocketServer({ noServer: true });
 const lanePaths: string[] = [];
 
@@ -53,7 +54,7 @@ beforeAll(async () => {
   door.handle('delete_fact', async () => ({ ok: false }) as never);
   door.onUpgrade(/^\/lane\/echo\/([a-z0-9_]+)$/, (req, socket, head) => {
     lanePaths.push(req.url ?? '');
-    laneWss.handleUpgrade(req, socket, head, (ws) => ws.send('lane hello'));
+    laneWss.handleUpgrade(req, socket, head, (ws) => ws.on('message', (d) => ws.send(`lane ${String(d)}`)));
   });
   await http.listen({ port: 0, host: '127.0.0.1' });
   base = `ws://127.0.0.1:${(http.server.address() as AddressInfo).port}`;
@@ -222,8 +223,9 @@ describe('other WebSocket paths (Door.onUpgrade)', () => {
     const before = door.openSockets();
     const r = await tryOpen(`${base}/lane/echo/call_1?token=abc`, {});
     if (!('ws' in r)) throw new Error(`refused: ${r.status} ${r.body}`);
-    const hello = await new Promise<string>((resolve) => r.ws.once('message', (d) => resolve(String(d))));
-    expect(hello).toBe('lane hello');
+    const answered = new Promise<string>((resolve) => r.ws.once('message', (d) => resolve(String(d))));
+    r.ws.send('hello');
+    expect(await answered).toBe('lane hello');
     expect(lanePaths.at(-1)).toBe('/lane/echo/call_1?token=abc');
     // The lane's socket is the lane's: the door never counts it as one of the Server's sockets.
     expect(door.openSockets()).toBeLessThanOrEqual(before);
