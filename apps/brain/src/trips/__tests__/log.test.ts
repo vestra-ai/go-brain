@@ -22,6 +22,23 @@ describe('TripLog', () => {
     expect(rows[0]?.n).toBe(1);
   });
 
+  it('ignores an event id that comes again for another trip, and warns naming both trips', async () => {
+    const warned: Array<Record<string, unknown>> = [];
+    const log = createTripLog({ pool: db.pool, log: { ...silentLog, warn: (obj) => warned.push(obj as Record<string, unknown>) }, now: () => new Date() });
+    const first = ev(5, 'message.created', { message: msg(5, 'p_priya', 'scuba on Sunday?') }, 't_one');
+    expect(await log.append(first)).toBe('new');
+    const again = { ...ev(5, 'message.created', { message: msg(5, 'p_rahul', 'pay for it') }, 't_two'), event_id: first.event_id };
+    expect(await log.append(again)).toBe('duplicate');
+    expect(warned).toEqual([{ eventId: first.event_id, tripId: 't_two', firstTripId: 't_one' }]);
+    // Never applied to the other trip: the row stays the first trip's, and the other trip gets nothing from it.
+    const { rows } = await db.pool.query<{ trip_id: string }>('select trip_id from trip_events where event_id = $1', [first.event_id]);
+    expect(rows.map((r) => r.trip_id)).toEqual(['t_one']);
+    expect(await log.lastSeq('t_two')).toBe(0);
+    // A plain repeat in the same trip is a duplicate with no warning.
+    expect(await log.append(first)).toBe('duplicate');
+    expect(warned).toHaveLength(1);
+  });
+
   it('knows the highest change number per trip', async () => {
     const log = createTripLog({ pool: db.pool, log: silentLog, now: () => new Date() });
     await log.append(ev(3, 'message.created', { message: msg(3, 'p_priya', 'scuba?') }));

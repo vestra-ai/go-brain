@@ -1,6 +1,7 @@
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { createSwitches, type Switches } from './admin/switches.js';
+import { createBudget, type Budget } from './budget.js';
 import { anthropicClient, type AnthropicLike } from './composer/anthropic.js';
 import { createContext, type Context } from './composer/context.js';
 import { createSpeak } from './composer/speak.js';
@@ -66,6 +67,8 @@ export interface Brain {
   tasks?: Tasks;
   /** Set by P5. */
   pay?: Pay;
+  /** The daily model budget (MODEL_DAILY_BUDGET_USD). buildBrain always sets it; it is optional only so lane test doubles need not. */
+  budget?: Budget;
 }
 
 export type RegisterLane = (brain: Brain) => void | Promise<void>;
@@ -83,6 +86,8 @@ export interface Timings {
   /** The once-a-minute re-read of active trips. */
   refreshMs: number;
   pruneMs: number;
+  /** How often the daily model budget re-reads today's spend from the database. */
+  budgetRefreshMs: number;
   turnTimeoutMs: number;
   linkTimeoutMs: number;
   waitForSocketMs: number;
@@ -99,6 +104,7 @@ export const DEFAULT_TIMINGS: Timings = {
   setupSweepMs: 120_000,
   refreshMs: 60_000,
   pruneMs: 60_000,
+  budgetRefreshMs: 60_000,
   turnTimeoutMs: 20_000,
   linkTimeoutMs: 2_500,
   waitForSocketMs: 15_000,
@@ -161,19 +167,21 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
 
   // One model client for the composer and every lane's side passes: a test's fake or the bench's recorder reaches all of them.
   const anthropic = o.anthropic ?? anthropicClient(env.ANTHROPIC_API_KEY);
+  const budget = createBudget({ pool, now, capUsd: env.MODEL_DAILY_BUDGET_USD ?? null, log });
   // What stop() runs, newest first: lanes register after buildBrain returns, so their timers stop while the room is still up.
   const stoppers: Array<() => Promise<void> | void> = [];
   const onStop = (fn: () => Promise<void> | void): void => {
     stoppers.push(fn);
   };
   const brain: Brain = {
-    env, pool, log, now, http, anthropic, onStop, door, taps, tripLog, packs, setup, desk, tools, context, hooks, switches, reflex: unsureReflex,
+    env, pool, log, now, http, anthropic, onStop, door, taps, tripLog, packs, setup, desk, tools, context, hooks, switches, reflex: unsureReflex, budget,
   };
 
   const composer = createComposer({
     pool, log, now, link, packs, tools, context, speak,
     client: anthropic,
     model: env.COMPOSER_MODEL,
+    budget,
     claimNew: desk.claimNew,
     turnTimeoutMs: t.turnTimeoutMs,
   });
@@ -204,6 +212,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     brain,
     async start() {
       await switches.refresh();
+      await budget.refresh();
       await http.listen({ port: env.PORT, host: '0.0.0.0' });
       listening = true;
       desk.start();
@@ -214,6 +223,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
         setInterval(() => void setup.sweep().catch((e: unknown) => log.warn({ err: e }, 'the setup sweep failed')), t.setupSweepMs).unref(),
         setInterval(() => void intake.refreshActive().catch((e: unknown) => log.warn({ err: e }, 'the trip refresh failed')), t.refreshMs).unref(),
         setInterval(() => void guard.prune().catch((e: unknown) => log.warn({ err: e }, 'pruning signatures failed')), t.pruneMs).unref(),
+        setInterval(() => void budget.refresh().catch((e: unknown) => log.warn({ err: e }, 'reading the model budget failed')), t.budgetRefreshMs).unref(),
       );
       const addr = http.server.address();
       return { port: typeof addr === 'object' && addr ? addr.port : env.PORT };

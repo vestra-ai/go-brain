@@ -1,6 +1,7 @@
 // Health checks for the operator's desk. Each check gets 1.5 s: a slow answer is amber, a failure or no answer is red.
 // Every check takes its fetch from outside, so the tests run offline.
 import type { Brain } from '../app.js';
+import type { Budget } from '../budget.js';
 import type { Env } from '../env.js';
 import { NOT_DEPLOYED, type AdminLanes } from './lanes.js';
 
@@ -168,8 +169,24 @@ export function modelProbe(env: Pick<Env, 'ANTHROPIC_API_KEY'>, f: Fetch, base =
   };
 }
 
-/** The six rows on the page, in the order the operator reads them. */
-export function defaultProbes(brain: Pick<Brain, 'env' | 'door'>, tripId: string | null, lanes: AdminLanes, f: Fetch = fetch): Probe[] {
+/** What today's model calls have cost (a UTC day), against the daily cap when there is one. Red once Go is over it. */
+export function budgetProbe(budget: Pick<Budget, 'capUsd' | 'spentToday'> | undefined): Probe {
+  return {
+    name: 'budget',
+    label: 'Model spend today',
+    async run() {
+      if (!budget) return { ok: true, detail: 'no budget on this Go' };
+      const usd = (n: number): string => `$${n.toFixed(2)}`;
+      const spent = budget.spentToday();
+      if (budget.capUsd === null) return { ok: true, detail: `${usd(spent)} today, no cap` };
+      const detail = `${usd(spent)} of the ${usd(budget.capUsd)} cap today`;
+      return spent < budget.capUsd ? { ok: true, detail } : { ok: false, detail: `${detail}: Go makes no model calls until tomorrow (UTC)` };
+    },
+  };
+}
+
+/** The seven rows on the page, in the order the operator reads them. */
+export function defaultProbes(brain: Pick<Brain, 'env' | 'door' | 'budget'>, tripId: string | null, lanes: AdminLanes, f: Fetch = fetch): Probe[] {
   return [
     serverProbe(brain.door.link),
     jevProbe(brain.env, f),
@@ -177,5 +194,6 @@ export function defaultProbes(brain: Pick<Brain, 'env' | 'door'>, tripId: string
     ixigoProbe(brain.env, lanes.listIxigoTools),
     vaultProbe(brain.env, f),
     modelProbe(brain.env, f),
+    budgetProbe(brain.budget),
   ];
 }

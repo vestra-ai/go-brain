@@ -60,6 +60,25 @@ describe('the tap router', () => {
     expect(await afterRestart.handle(t, meta)).toEqual(a);
   });
 
+  it("never answers a tap with another trip's answer, when the same tap id comes in another trip", async () => {
+    await cards.record('t_coorg', working('c_coorg_work'), 'm_coorg_1');
+    const r = router();
+    let runs = 0;
+    r.on('working', 'watch', async (t) => {
+      runs += 1;
+      return { result: 'open', url: `https://go.example/watch/${t.trip_id}`, expires_at: '2026-10-05T10:05:00Z' };
+    });
+    const inCoorg = tap({ tap_id: 'tap_reused', trip_id: 't_coorg', card_id: 'c_coorg_work' });
+    const goa = await r.handle(tap({ tap_id: 'tap_reused' }), meta);
+    const coorg = await r.handle(inCoorg, meta);
+    expect(goa).toMatchObject({ result: 'open', url: 'https://go.example/watch/t_goa' });
+    expect(coorg).toMatchObject({ result: 'open', url: 'https://go.example/watch/t_coorg' });
+    // Still once per tap in each trip: a repeat gets that trip's first answer, after a restart too.
+    expect(await r.handle(inCoorg, meta)).toEqual(coorg);
+    expect(await router().handle(tap({ tap_id: 'tap_reused' }), meta)).toEqual(goa);
+    expect(runs).toBe(2);
+  });
+
   it('refuses kindly a card Go does not know, or a button with no handler', async () => {
     const r = router();
     expect(await r.handle(tap({ card_id: 'c_gone' }), meta)).toEqual({ result: 'refused', toast: 'That card is not active any more.' });
