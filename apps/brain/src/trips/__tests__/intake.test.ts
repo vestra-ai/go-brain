@@ -165,13 +165,27 @@ describe('intake', () => {
     expect(items.find((r) => r.ref === 'm_3')?.payload.namesGo).toBe(true);
   });
 
-  it('any event for a trip Go has not set up yet: setup reads the trip first, then Go says hello', async () => {
-    const h = harness();
+  it('the first event for a trip Go already knows: its whole history is read and stored, nothing old wakes Go, and Go does not greet again', async () => {
     const T = 't_in_8';
+    const history = [msg(2, null, 'Hi all, I am Go!'), msg(3, 'p_rahul', '@Go find us a villa'), msg(5, null, 'Three villas below.')];
+    const h = harness({
+      answers: {
+        read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 7 }),
+        read_messages: (p) => (p.after_seq === 0 ? { messages: [...history, msg(7, 'p_priya', '@Go hi')], has_more: false } : { messages: [], has_more: false }),
+      },
+    });
     await h.send(ev(7, 'message.created', { message: msg(7, 'p_priya', '@Go hi') }, T));
     await h.intake.idle();
-    await vi.waitFor(async () => expect((await open(T)).map((r) => r.id).sort()).toEqual([`msg:${T}:m_7`, `setup:${T}:greet`]));
+    await vi.waitFor(async () => {
+      const { rows } = await db.pool.query(`select done_at from trip_setup where trip_id = $1 and step = 'brain.ready'`, [T]);
+      expect(rows[0]?.done_at).toBeInstanceOf(Date);
+    });
     expect(h.f.calls.some((c) => c.method === 'read_trip' && c.params.trip_id === T)).toBe(true);
+    expect(h.f.calls.filter((c) => c.method === 'read_messages').map((c) => c.params.after_seq)).toEqual([0]);
+    expect((await open(T)).map((r) => r.id)).toEqual([`msg:${T}:m_7`]);
+    expect((await h.packs.get(T)).messages.map((m) => m.seq)).toEqual([2, 3, 5, 7]);
+    const stored = await db.pool.query<{ n: number }>('select count(*)::int as n from messages where trip_id = $1', [T]);
+    expect(stored.rows[0]?.n).toBe(4);
   });
 
   it('a deleted message cancels its waiting item', async () => {
