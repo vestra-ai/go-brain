@@ -16,6 +16,18 @@ export interface WatchPlan {
 
 const H = 3600_000;
 
+/**
+ * The flight number without its carrier code. The contract's Journey.number reads like "6E 2134", while P4's
+ * StatusQuery takes the code and the number apart, so "6E 2134", "6E-2134" and "6E2134" all become "2134".
+ */
+export function flightNumber(number: string, carrierCode: string): string {
+  const n = number.trim();
+  const code = carrierCode.trim();
+  if (!code || n.slice(0, code.length).toUpperCase() !== code.toUpperCase()) return n;
+  const rest = n.slice(code.length).replace(/^[\s-]+/, '');
+  return /^\d/.test(rest) ? rest : n;
+}
+
 export function planWatches(trip: Trip, now: Date): WatchPlan[] {
   const out: WatchPlan[] = [];
   const t = now.getTime();
@@ -27,12 +39,13 @@ export function planWatches(trip: Trip, now: Date): WatchPlan[] {
       const depart = Date.parse(j.depart_at);
       const arrive = Date.parse(j.arrive_at);
       if (arrive + H <= t) continue;
+      const number = flightNumber(j.number, j.carrier_code);
       out.push({
         watchId: `flight:${trip.trip_id}:${b.booking_id}`,
         tripId: trip.trip_id,
-        query: { kind: 'flight', carrierCode: j.carrier_code, number: j.number, date: j.depart_at.slice(0, 10) },
+        query: { kind: 'flight', carrierCode: j.carrier_code, number, date: j.depart_at.slice(0, 10) },
         personIds: b.for_person_ids,
-        label: `${j.carrier_name ? `${j.carrier_name} ` : ''}${j.carrier_code} ${j.number}`,
+        label: `${j.carrier_name ? `${j.carrier_name} ` : ''}${j.carrier_code} ${number}`,
         startAt: new Date(Math.max(t, depart - 24 * H)),
         endsAt: new Date(arrive + H),
       });

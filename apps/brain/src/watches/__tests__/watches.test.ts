@@ -3,7 +3,7 @@ import { withSchema } from '../../db/test-db.js';
 import { goaTrip } from '../../proactive/fakes.js';
 import type { StatusResult } from '../status.js';
 import { diffReading, type WatchInfo } from '../diff.js';
-import { noteWatchNotice, planWatches, syncWatches } from '../plan.js';
+import { flightNumber, noteWatchNotice, planWatches, syncWatches } from '../plan.js';
 
 const NOW = new Date('2026-11-06T07:00:00Z'); // travel day, under 6 hours before the 12:45Z departure
 const SCHEDULED = '2026-11-06T18:15:00+05:30';
@@ -88,6 +88,15 @@ describe('diffReading: train tickets by PNR', () => {
 });
 
 describe('planWatches and syncWatches', () => {
+  it("asks for the flight by its number alone: the contract's \"6E 2134\" loses its carrier code", () => {
+    for (const n of ['6E 2134', '6E-2134', '6e2134', ' 6E  2134 ', '2134']) expect(flightNumber(n, '6E'), n).toBe('2134');
+    expect(flightNumber('AI 101', 'AI')).toBe('101');
+    expect(flightNumber('EK501', '6E')).toBe('EK501');
+    const [f] = planWatches(goaTrip(), new Date('2026-10-06T06:30:00Z'));
+    expect(goaTrip().bookings.find((b) => b.booking_id === 'b_flight')?.journey?.number).toBe('6E 2134');
+    expect(f).toMatchObject({ label: 'IndiGo 6E 2134', query: { kind: 'flight', carrierCode: '6E', number: '2134' } });
+  });
+
   it('watches the booked flight by its number and the booked train by its PNR, as P4 status queries', () => {
     const plans = planWatches(withTrain(), new Date('2026-10-06T06:30:00Z'));
     expect(plans.map((p) => p.watchId)).toEqual(['flight:t_goa:b_flight', 'pnr:t_goa:b_train']);
