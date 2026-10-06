@@ -7,7 +7,7 @@ import type * as C from '@go/contract';
 import type { Pool } from 'pg';
 import { hasSecret } from '../reflex/secrets.js';
 import { cleanText } from './checker.js';
-import { currentFacts, deleteFactRow, saveFact } from './facts.js';
+import { currentFacts, deleteFactChain, saveFact } from './facts.js';
 
 const KNOW_TOPICS: Array<[RegExp, string]> = [
   [/\b(veg|vegetarian|vegan|jain|non[- ]?veg|allerg\w*|nuts?|gluten|lactose|eat|khana|spicy)\b/i, 'food'],
@@ -50,5 +50,6 @@ export async function syncJoinFacts(pool: Pool, tripId: string, person: C.Person
     });
   }
   const wanted = new Set(want.map((w) => w.topic));
-  for (const f of current) if (f.source === 'join' && !wanted.has(f.topic)) await deleteFactRow(pool, f.factId);
+  // A cleared answer takes its whole history with it, so no older answer comes back as current.
+  for (const f of current) if (f.source === 'join' && !wanted.has(f.topic)) await deleteFactChain(pool, person.person_id, f.factId);
 }
