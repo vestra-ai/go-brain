@@ -30,6 +30,17 @@ Seventeen teams, seven groups, three teams in ours ("AI in the group trip chat":
 
 **The real trip.** From Wednesday the team plans a real trip with Go in the App. The demo shows that real history (hundreds of real messages) and a live segment on top. It also dogfoods everything for three days before the stage.
 
+### Judged by an AI with a rubric (Keshav, 6 Oct)
+
+The judge is an AI following a rubric, not a room of people. It reads what we submit (the repo, the docs, the README, the video and its words) and scores it against criteria. So:
+
+1. **Get the rubric first.** Keshav asks the organisers for the exact rubric and the submission format (repo link, video, write-up, form fields, length limits) on Tuesday morning. Every line of the judge pack below maps to a rubric line, in the rubric's own words.
+2. **Evidence beats adjectives.** Every claim in the submission links to proof the judge can read: a file and line, a test name, a CI run, a bench number with how it was measured, a timestamp in the video. No claim without a link.
+3. **The judge pack** (P7 Task 9, built Thursday and Friday): `SUBMISSION.md` at the repo root (what Go is in three sentences, the rubric table with one row per criterion and its evidence, the architecture in one diagram, what is live and what is simulated, how to run it in five minutes), the bench report and proof-board numbers as a committed snapshot, the demo video with chapters and a full transcript file, and the docs site's `llms.txt` (already agent-readable) linked from it.
+4. **Make the repo itself readable by a model:** the root README says what each folder is; each sub-plan's goal sits at the top of its folder's README; CI badges and test counts are visible; no dead code or stale docs (first-version docs have no history).
+5. **Say what is simulated, everywhere.** An AI judge that finds an unlabelled fake will mark down trust; one that finds honest labels and a test proving the real path scores it as engineering maturity.
+6. **The video still matters:** it may be watched or transcribed. Clear on-screen captions for each beat ("Go answered in 1.9 s", "Simulated for the demo"), spoken words that match the transcript.
+
 ---
 
 ## 1. The demo (we build backwards from this)
