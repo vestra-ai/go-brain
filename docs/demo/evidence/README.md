@@ -292,6 +292,29 @@ Across the six: 31.3 seconds in all, of which 24.5 (78%) inside model calls, 6.7
 
 With `claude-haiku-4-5` the run answered 4 of the 6 asks, posted 5 times unasked, and several of its asks show 4 to 11 seconds between its last model call and the post, which this run does not trace further.
 
+#### After card-ends-turn
+
+`bench-live-2026-10-06-diagnostic-cards.json` (and its summary, `bench-live-2026-10-06-diagnostic-cards.md`) is the same diagnostic run again, unedited, after #86: a reply whose tool calls are only cards (the options card) ends the turn, with its line in the same reply, so a search ask makes one model call fewer.
+
+- **Run:** bench-live run [37465309177](https://github.com/vestra-ai/go-brain/actions/runs/37465309177), job `live`, artifact `live-bench`, written at 2026-10-06 12:47 UTC; both models on `goa-50`, $0.37.
+- **Code:** `build` at commit `2c7e4b0` (with #86, and #84, which stops retrying a trip the Server no longer has), with pull request #87 merged on top (GitHub's test commit `1b0695a`). The pull request adds only documents.
+- **Verdict:** 4 of 14 checks pass. With `claude-sonnet-5-5`: reply p50 4.79 s and p90 7.24 s, first word p50 1.38 s, provider cache 84.4%, woke the model 34%, 2 posts nobody asked for, recall 5 of 5, every ask answered, $0.2306.
+
+`claude-sonnet-5-5`'s six asks, the run above against this one:
+
+| Ask (line) | Model calls | In model calls | Reply |
+|---|---|---|---|
+| 9 (flights) | 3 → 2: search_flights, then the card and its line together | 5.55 s → 4.12 s | 7.73 s → 6.34 s |
+| 24 (villa) | 3 → 2: search_stays, then the card and its line together | 6.54 s → 4.75 s | 8.69 s → 6.93 s |
+| 33 (the end of a five-line ask) | 1 → 1 | 5.62 s → 2.60 s | 7.75 s → 4.79 s |
+| 37 (rain in November) | 1 → 1 | 2.05 s → 3.70 s | 2.16 s → 3.87 s |
+| 46 ("abhi book kar de villa, … 😂") | 1 → 3: put_to_vote, search_stays, the line | 1.92 s → 7.04 s | 2.06 s → 7.24 s |
+| 52 (what Meher can't eat, when Arjun can leave) | 1 → 1 | 2.82 s → 4.52 s | 2.94 s → 4.69 s |
+
+Both search asks made one model call fewer, as #86 intends, and each replied 1.4 to 1.8 seconds sooner. The reply p50 still rose, from 2.94 to 4.79 seconds, while the p90 fell from 8.69 to 7.24. Two asks answered in one call were slower this time (lines 37 and 52: 3.70 and 4.52 seconds in their calls, against 2.05 and 2.82, the first word alone 3.8 seconds into the call on line 52), while line 33's one call was faster (2.60 against 5.62); and on line 46 the model chose to put the villas to a vote and search again before its line, three calls where the run above made one. Both are the model's own variation between runs, which six asks cannot average out. The 2-second wait on asks without an end mark is unchanged (lines 9, 24 and 33).
+
+With `claude-haiku-4-5`: reply p50 5.93 s and p90 8.29 s, every ask answered, 1 post nobody asked for, recall 5 of 5, $0.1396.
+
 ## Running it yourself
 
 With a Postgres database to use, from the repo root:
