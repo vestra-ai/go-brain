@@ -36,4 +36,10 @@ describe('constraints applied in code', () => {
     };
     expect(applyConstraints('flights', { arriveBefore: '23:00' }, [overnight])).toEqual([]);
   });
+
+  it('drops a train that arrives the next day when it must arrive before a time', async () => {
+    const { results } = await fake.search('trains', { from: 'Delhi', to: 'Goa', date: FRIDAY });
+    expect(results.length).toBeGreaterThan(0);
+    expect(applyConstraints('trains', { arriveBefore: '23:00' }, results)).toEqual([]);
+  });
 });
