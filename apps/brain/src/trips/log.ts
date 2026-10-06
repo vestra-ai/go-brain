@@ -29,6 +29,14 @@ export function createTripLog(o: { pool: pg.Pool; log: Log; now: () => Date }): 
              on conflict (trip_id) do update set last_seq = greatest(trips.last_seq, excluded.last_seq), active_at = excluded.active_at`,
             [ev.trip_id, ev.seq, o.now()],
           );
+        } else {
+          // event_id is unique per Server by contract, so the same id for another trip is the Server's mistake. It is
+          // ignored like any repeat (an event is never applied to a trip it was not written for), and said out loud.
+          const first = await c.query<{ trip_id: string }>('select trip_id from trip_events where event_id = $1', [ev.event_id]);
+          const firstTripId = first.rows[0]?.trip_id;
+          if (firstTripId !== undefined && firstTripId !== ev.trip_id) {
+            o.log.warn({ eventId: ev.event_id, tripId: ev.trip_id, firstTripId }, 'an event id came again for another trip: ignored');
+          }
         }
         await c.query('commit');
         return r.rowCount === 1 ? 'new' : 'duplicate';

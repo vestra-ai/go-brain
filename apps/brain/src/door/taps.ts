@@ -38,8 +38,9 @@ export function createTapRouter(o: { pool: pg.Pool; cards: CardStore; log: Log; 
   const routes = new Map<string, TapHandler>();
   const inflight = new Map<string, Promise<CardTapResult>>();
 
-  async function stored(tapId: string): Promise<CardTapResult | null> {
-    const { rows } = await o.pool.query<{ result: CardTapResult }>('select result from card_taps where tap_id = $1', [tapId]);
+  /** The answer a tap already got, in its own trip only: a tap id another trip used is another tap. */
+  async function stored(tripId: string, tapId: string): Promise<CardTapResult | null> {
+    const { rows } = await o.pool.query<{ result: CardTapResult }>('select result from card_taps where trip_id = $1 and tap_id = $2', [tripId, tapId]);
     return rows[0]?.result ?? null;
   }
 
@@ -63,15 +64,16 @@ export function createTapRouter(o: { pool: pg.Pool; cards: CardStore; log: Log; 
 
   /** One answer per tap_id, from the Server (handle) or from inside Go (dispatch). */
   function once(tap: CardTapParams, fromServer: boolean): Promise<CardTapResult> {
-    const cur = inflight.get(tap.tap_id);
+    const key = `${tap.trip_id}\u0000${tap.tap_id}`;
+    const cur = inflight.get(key);
     if (cur) return cur;
-    const p = decide(tap, fromServer).finally(() => inflight.delete(tap.tap_id));
-    inflight.set(tap.tap_id, p);
+    const p = decide(tap, fromServer).finally(() => inflight.delete(key));
+    inflight.set(key, p);
     return p;
   }
 
   async function decide(tap: CardTapParams, fromServer: boolean): Promise<CardTapResult> {
-    const first = await stored(tap.tap_id);
+    const first = await stored(tap.trip_id, tap.tap_id);
     if (first) return first;
     // A card Go has sent but has no answer for yet counts: the Server only sends a tap for a card it has, so its tap
     // also proves the card landed, in the same statement that finds it. A tap made inside Go proves nothing.
@@ -82,10 +84,10 @@ export function createTapRouter(o: { pool: pg.Pool; cards: CardStore; log: Log; 
     );
     const ins = await o.pool.query<{ result: CardTapResult }>(
       `insert into card_taps (tap_id, trip_id, card_id, action_id, person_id, result) values ($1, $2, $3, $4, $5, $6::jsonb)
-       on conflict (tap_id) do nothing returning result`,
+       on conflict (trip_id, tap_id) do nothing returning result`,
       [tap.tap_id, tap.trip_id, tap.card_id, tap.action_id, tap.person_id, JSON.stringify(result)],
     );
-    return ins.rows[0]?.result ?? (await stored(tap.tap_id)) ?? result;
+    return ins.rows[0]?.result ?? (await stored(tap.trip_id, tap.tap_id)) ?? result;
   }
 
   return {
