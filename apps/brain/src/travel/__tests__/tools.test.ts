@@ -98,6 +98,8 @@ describe('search tools', () => {
       '4 of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fit sleeping 5, with a pool and within 10 minutes of the beach: ₹12,200 to ₹16,900 per night, in Morjim, Anjuna, Vagator and Candolim.',
     );
     expect(out.note).toContain("Each option's area, time and price are as given here: name no other");
+    // The option's area wins over the asker's words.
+    expect(out.note).toContain("If someone asked for a place an option is not in, say the option's own area: asked for Calangute, a villa in Vagator is in Vagator.");
     // A stay the data gives no area for says so, rather than leaving the model to fill one in.
     expect(compactOption(1, { kind: 'stay', title: 'Somewhere', priceMinor: 900000, priceNote: 'per night', highlights: [], facts: {} })).toMatchObject({ area: 'not in the data' });
   });
