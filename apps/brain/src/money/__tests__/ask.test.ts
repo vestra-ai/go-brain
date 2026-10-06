@@ -188,6 +188,21 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     expect(rows.rows).toEqual([{ state: 'refused', refused_reason: 'approval_outstanding' }]);
   });
 
+  it("when the vault turns the approval down before any page opened: Go couldn't start it, and why is logged and kept", async () => {
+    k.vault.refuse = 'bad_approval';
+    k.vault.refuseDetail = "the approval's signature is not valid for this vault's GO_SPEND_PUBLIC_KEY";
+    expect(await k.ask()).toMatchObject({ code: 'vault_refused', refused: "I couldn't start this payment, so nothing was charged." });
+    expect(payCards()).toEqual([]);
+    const row = (await k.pool.query('select state, refused_reason from payments')).rows[0];
+    expect(row).toEqual({
+      state: 'refused',
+      refused_reason: "vault_bad_approval: the approval's signature is not valid for this vault's GO_SPEND_PUBLIC_KEY",
+    });
+    const logged = k.lines.find((l) => l.includes('before any pay page opened'));
+    expect(logged).toContain('signature is not valid');
+    expect(logged).toContain('bad_approval');
+  });
+
   it('when the vault refuses the approval, and keeps the approval for release', async () => {
     k.vault.refuse = 'over_amount';
     expect(await k.ask()).toMatchObject({ code: 'vault_refused' });

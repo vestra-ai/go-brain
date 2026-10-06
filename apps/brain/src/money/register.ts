@@ -46,7 +46,7 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
     brain.taps.on('pay', 'approve', (tap, card) => pay.approveTap(tap, card));
     brain.taps.on('pay', 'decline', (tap, card) => pay.declineTap(tap, card));
     brain.door.handle('vault_link', vaultLinkHandler(vault));
-    brain.context.addNow(paymentsNow({ pool: brain.pool, packs: brain.packs, now: brain.now }));
+    brain.context.addNow(paymentsNow({ pool: brain.pool, packs: brain.packs, now: brain.now, travel: () => brain.travel }));
     brain.tripLog.onEvent((ev) => pay.heard(ev));
     await brain.http.register(
       moneyRoutes({ pool: brain.pool, secret: VAULT_SHARED_SECRET, now: brain.now, paid: (p) => pay.paid(p), failed: (p) => pay.failed(p), confirming: (p) => pay.confirming(p) }),

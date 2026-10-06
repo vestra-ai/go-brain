@@ -30,7 +30,7 @@ type AskRun = (ctx: TurnCtx, o: { decisionId: string; optionRef: string; purpose
 type SetRun = (
   ctx: TurnCtx,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
-) => Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string }>;
+) => Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true }>;
 
 export function askToPayTool(run: AskRun): QuickTool<AskToPayInput> {
   return {
@@ -61,7 +61,14 @@ export function setMandateTool(run: SetRun): QuickTool<SetMandateInput> {
         refundableOnly: args.refundable_only,
         payerPersonId: args.payer_person_id,
       });
-      if (!('cardId' in r)) return { refused: r.refused, tell_the_room: SAY_THE_REFUSAL };
+      if (!('cardId' in r)) {
+        return {
+          refused: r.refused,
+          tell_the_room: r.unbookable
+            ? 'Say this in one short line, before anything about who pays: there is nothing to set up for paying for this option.'
+            : SAY_THE_REFUSAL,
+        };
+      }
       return {
         mandate_card: r.cardId,
         tell_the_room: r.note

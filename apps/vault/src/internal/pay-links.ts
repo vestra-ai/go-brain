@@ -33,19 +33,27 @@ export type PayLinkRefusal =
   | 'rail_not_ready'
   | 'used';
 
-/** Checks the Server's approval and the hold, then makes a pay link for the payer. */
+/** Why an approval was refused as bad, in words an operator can act on. */
+const BAD_APPROVAL: Record<'malformed' | 'bad_signature' | 'invalid_claims' | 'not_yet_valid', string> = {
+  malformed: 'the approval is not a signed approval token',
+  bad_signature: "the approval's signature is not valid for this vault's GO_SPEND_PUBLIC_KEY",
+  invalid_claims: "the approval's claims are not valid",
+  not_yet_valid: 'the approval is not valid yet (its iat is ahead of the clock)',
+};
+
+/** Checks the Server's approval and the hold, then makes a pay link for the payer. A refusal says why in `detail`. */
 export async function openPayLink(
   db: pg.Pool,
   env: VaultEnv,
   now: Date,
   body: PayLinkBody,
-): Promise<{ ok: true; url: string; expiresAt: Date } | { ok: false; reason: PayLinkRefusal }> {
-  const refuse = (reason: PayLinkRefusal) => ({ ok: false, reason }) as const;
+): Promise<{ ok: true; url: string; expiresAt: Date } | { ok: false; reason: PayLinkRefusal; detail?: string }> {
+  const refuse = (reason: PayLinkRefusal, detail?: string) => ({ ok: false, reason, ...(detail ? { detail } : {}) }) as const;
   const check = verifySpendApproval(body.approval, env.GO_SPEND_PUBLIC_KEY, Math.floor(now.getTime() / 1000));
-  if (!check.ok) return refuse(check.reason === 'expired' ? 'expired' : 'bad_approval');
+  if (!check.ok) return check.reason === 'expired' ? refuse('expired', 'the approval has expired') : refuse('bad_approval', BAD_APPROVAL[check.reason]);
   const c = check.claims;
-  if (c.iss !== 'server' || c.aud !== 'go-vault') return refuse('bad_approval');
-  if (c.jti !== body.approval_id) return refuse('bad_approval');
+  if (c.iss !== 'server' || c.aud !== 'go-vault') return refuse('bad_approval', 'the approval was not issued by the Server for the vault');
+  if (c.jti !== body.approval_id) return refuse('bad_approval', "the approval's jti is not the approval_id Go sent");
   if (c.trip_id !== body.trip_id) return refuse('wrong_trip');
   if (c.payer_person_id !== body.payer_person_id) return refuse('wrong_payer');
   if (body.hold.currency !== c.currency) return refuse('currency_mismatch');
@@ -74,7 +82,7 @@ export async function openPayLink(
   );
   const row = stored.rows[0];
   if (!row || row.jti !== c.jti || row.hold_id !== body.hold.hold_id || row.amount_minor !== body.hold.amount_minor || row.approval !== body.approval) {
-    return refuse('bad_approval');
+    return refuse('bad_approval', 'this approval was first sent with another hold or amount');
   }
   const link = await createPayLink(db, now, { personId: c.payer_person_id, approvalId: body.approval_id, notAfter: new Date(c.exp * 1000) });
   return { ok: true, url: `${env.VAULT_PUBLIC_URL}/p/${link.token}`, expiresAt: link.expiresAt };

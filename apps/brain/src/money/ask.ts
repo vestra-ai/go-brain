@@ -71,10 +71,10 @@ const CODES: ReadonlySet<string> = new Set<RefusalCode>([
 ]);
 
 /** Fares Go does not book for the whole group this week (master §9 "Cut now"): they are per person. */
-const GROUP_FARES: ReadonlySet<string> = new Set(['flight', 'train', 'bus']);
+export const GROUP_FARES: ReadonlySet<string> = new Set(['flight', 'train', 'bus']);
 
 function codeOf(reason: string | null): RefusalCode {
-  if (reason === 'vault_rail_not_ready') return 'rail_not_ready';
+  if (reason?.startsWith('vault_rail_not_ready')) return 'rail_not_ready';
   if (reason?.startsWith('vault_')) return 'vault_refused';
   return reason && CODES.has(reason) ? (reason as RefusalCode) : 'server_down';
 }
@@ -293,7 +293,16 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
       expiresAt: row.hold_expires_at.toISOString(),
     },
   });
-  if (!link.ok) return fail(`vault_${link.reason}`, link.reason === 'rail_not_ready' ? 'rail_not_ready' : 'vault_refused');
+  if (!link.ok) {
+    // No pay page was ever opened: the vault turned the approval down first. Why is kept on the row (for the admin view)
+    // and in the log, e.g. a signature not valid for the vault's key; the room only hears that Go couldn't start it.
+    const why = link.detail ? `vault_${link.reason}: ${link.detail}` : `vault_${link.reason}`;
+    d.log.warn(
+      { payment_id: row.payment_id, approval_id: approvalId, reason: link.reason, detail: link.detail ?? null },
+      'the vault refused the approval before any pay page opened',
+    );
+    return fail(why, link.reason === 'rail_not_ready' ? 'rail_not_ready' : 'vault_refused');
+  }
 
   // 3. The pay card, for the payer only.
   const cardId = row.card_id ?? ids.cardId;

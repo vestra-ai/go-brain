@@ -41,7 +41,12 @@ export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (ap
     if (!body.success) return reply.code(422).send(invalid(body.error));
     const result = await openPayLink(deps.pool, deps.env, deps.now(), body.data);
     if (!result.ok) {
-      return reply.code(409).send({ error: { code: 'conflict', message: `the vault refused: ${result.reason}`, reason: result.reason } });
+      // Logged by the approval, never a token: the operator sees why the Server's approvals are refused (a wrong key, say).
+      app.log.warn({ approval_id: body.data.approval_id, trip_id: body.data.trip_id, reason: result.reason, detail: result.detail ?? null }, 'the vault refused a pay link');
+      const message = result.detail ? `the vault refused: ${result.reason} (${result.detail})` : `the vault refused: ${result.reason}`;
+      return reply.code(409).send({
+        error: { code: 'conflict', message, reason: result.reason, ...(result.detail ? { detail: result.detail } : {}) },
+      });
     }
     return { url: result.url, expires_at: result.expiresAt.toISOString() };
   });

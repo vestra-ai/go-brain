@@ -50,7 +50,8 @@ describe('G4: Go books with two keys', () => {
     const card = C.PayCard.parse(payMessage.card);
     expect(card).toMatchObject({ state: 'waiting', payer_person_id: 'p_rahul', amount_minor: 5420000, for_person_ids: ['p_rahul'] });
     // The vote's option_ref was turned into the travel offer before anything was held.
-    expect(room.travel.looked).toEqual(['opt_villa_sol']);
+    // (set_mandate and "right now" also look it up, to check Go can book it, so only the option is checked, not the count.)
+    expect([...new Set(room.travel.looked)]).toEqual(['opt_villa_sol']);
     expect(room.travel.holds.map((h) => h.offerId)).toEqual(['ixigo:stay:villa-sol-anjuna']);
 
     // Only the payer may approve; the payer gets the vault page.
