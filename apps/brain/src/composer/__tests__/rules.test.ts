@@ -23,6 +23,11 @@ describe("Go's rules", () => {
     );
   });
 
+  it('take no side while a vote is open: who has voted and a reminder to tap, nothing more', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nVotes and the trip\n'));
+    expect(section).toContain("- While a vote is open, don't argue for an option; you may say who has voted and remind people to tap.");
+  });
+
   it('use no em dashes or en dashes, as they ask of Go', () => {
     expect(GO_RULES).not.toMatch(/[—–]/);
   });
