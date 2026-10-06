@@ -104,3 +104,16 @@ describe('Decline', () => {
     expect(await declineTap(t, tap('p_rahul', 'decline'), card)).toEqual({ result: 'refused', toast: TOASTS.declined });
   });
 });
+
+describe('while the bank is confirming a charge', () => {
+  it('refuses Approve and Decline, and never offers Start again, even long after the approval ran out', async () => {
+    await k.pool.query("update payments set state = 'confirming'");
+    expect(await approveTap(t, tap('p_rahul'), card)).toEqual({ result: 'refused', toast: TOASTS.confirming });
+    expect(await declineTap(t, tap('p_rahul', 'decline'), card)).toEqual({ result: 'refused', toast: TOASTS.confirming });
+    k.advance(30 * 60_000);
+    expect(await approveTap(t, tap('p_rahul'), card)).toEqual({ result: 'refused', toast: TOASTS.confirming });
+    await t.later.settled();
+    expect(k.server.writesOf('request_spend_approval')).toHaveLength(1);
+    expect(reconciled).toEqual([]);
+  });
+});

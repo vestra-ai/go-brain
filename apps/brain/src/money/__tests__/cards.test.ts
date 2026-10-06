@@ -54,6 +54,15 @@ describe('pay card', () => {
     expect(JSON.stringify(card)).not.toMatch(/\u2014/);
   });
 
+  it('says the bank is being asked, as a waiting card with no buttons and no pin', () => {
+    const card = payCard(villa, 'confirming');
+    expect(C.Card.parse(card)).toEqual(card);
+    expect(card.state).toBe('waiting');
+    expect(card.actions ?? null).toBeNull();
+    expect(card.for_person_ids ?? null).toBeNull();
+    expect(card.fallback_text).toBe("Confirming ₹54,200 to ixigo: Villa Sol, Anjuna with the bank. Don't pay again; Go will say when it's done.");
+  });
+
   it('leaves free cancellation out when there is none', () => {
     const card = payCard({ ...villa, refundableUntil: null }, 'waiting');
     expect(card.refundable_until ?? null).toBeNull();

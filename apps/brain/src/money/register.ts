@@ -45,7 +45,7 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
     brain.context.addNow(paymentsNow({ pool: brain.pool, packs: brain.packs, now: brain.now }));
     brain.tripLog.onEvent((ev) => pay.heard(ev));
     await brain.http.register(
-      moneyRoutes({ pool: brain.pool, secret: VAULT_SHARED_SECRET, now: brain.now, paid: (p) => pay.paid(p), failed: (p) => pay.failed(p) }),
+      moneyRoutes({ pool: brain.pool, secret: VAULT_SHARED_SECRET, now: brain.now, paid: (p) => pay.paid(p), failed: (p) => pay.failed(p), confirming: (p) => pay.confirming(p) }),
     );
     // The proof board's number, counted from both sides' records (it replaces P3's default under the same name).
     statsRegistry(brain).add({

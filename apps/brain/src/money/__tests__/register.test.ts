@@ -134,6 +134,14 @@ describe('the payments block of right now', () => {
     expect(await paymentsNow({ pool: k.pool, packs: packs(goaTrip('mandate')), now: k.now }).render('t_goa', [])).toContain('Waiting on Rahul to tap Yes, book it for Villa Sol');
   });
 
+  it('tells the composer a payment is being confirmed with the bank, and never to start it again', async () => {
+    await k.ask();
+    await k.pool.query("update payments set state = 'confirming'");
+    const text = await paymentsNow({ pool: k.pool, packs: packs(), now: k.now }).render('t_goa', []);
+    expect(text).toContain("The bank is still confirming Rahul's payment of ₹54,200 for Villa Sol. Never start it again");
+    expect(text).not.toContain('Ready to pay');
+  });
+
   it('shows who a waiting pay card is waiting on, and nothing when there is nothing', async () => {
     // Before any payment: an open vote and no payments rows say nothing.
     expect(await paymentsNow({ pool: k.pool, packs: packs(goaTrip('open')), now: k.now }).render('t_goa', [])).toBeNull();

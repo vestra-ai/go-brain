@@ -27,6 +27,10 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
           lines.push(`- Waiting on ${r.payer_name} to approve ${amount} for ${r.label} on pay card ${r.card_id ?? ''}${until}.`);
           continue;
         }
+        if (r.state === 'confirming') {
+          lines.push(`- The bank is still confirming ${r.payer_name}'s payment of ${amount} for ${r.label}. Never start it again; Go says when it's done.`);
+          continue;
+        }
         if (r.created_at.getTime() < since) continue;
         if (r.state === 'paid') lines.push(r.ticket_posted_at ? `- Paid and booked: ${r.label}, ${amount} by ${r.payer_name}.` : `- Paid: ${r.label}. The booking is being finished.`);
         if (r.state === 'failed') lines.push(`- Didn't go through: ${r.label} (${failReasonWords(r.fail_reason)}). Nothing was charged.`);
@@ -36,7 +40,7 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
 
       for (const dec of pack.trip.decisions) {
         if (dec.kind !== 'choice' || dec.status !== 'closed') continue;
-        if (rows.some((r) => r.decision_id === dec.decision_id && (r.state === 'asking' || r.state === 'waiting' || r.state === 'paid'))) continue;
+        if (rows.some((r) => r.decision_id === dec.decision_id && (r.state === 'asking' || r.state === 'waiting' || r.state === 'confirming' || r.state === 'paid'))) continue;
         const m = dec.mandate;
         const win = dec.options[m?.choice_index ?? dec.result_index ?? -1];
         if (!win) continue;

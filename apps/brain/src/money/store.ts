@@ -1,7 +1,8 @@
 import type pg from 'pg';
 import type { Confirmed } from '../travel/travel.js';
 
-export type PaymentState = 'asking' | 'waiting' | 'paid' | 'declined' | 'expired' | 'failed' | 'refused';
+/** 'confirming': the vault took the payer's yes but the bank has not said whether the charge went through. It never expires. */
+export type PaymentState = 'asking' | 'waiting' | 'confirming' | 'paid' | 'declined' | 'expired' | 'failed' | 'refused';
 export type ReleaseReason = 'payment_failed' | 'payer_declined' | 'price_changed' | 'expired' | 'other';
 type Db = pg.Pool | pg.PoolClient;
 
@@ -127,7 +128,7 @@ export const getPayment = (db: Db, id: string) => one(db, 'payment_id = $1', [id
 export const byApproval = (db: Db, tripId: string, approvalId: string) => one(db, 'trip_id = $1 and approval_id = $2', [tripId, approvalId]);
 export const byCard = (db: Db, tripId: string, cardId: string) => one(db, 'trip_id = $1 and card_id = $2', [tripId, cardId]);
 export const openForDecision = (db: Db, tripId: string, decisionId: string) =>
-  one(db, "trip_id = $1 and decision_id = $2 and state in ('asking', 'waiting')", [tripId, decisionId]);
+  one(db, "trip_id = $1 and decision_id = $2 and state in ('asking', 'waiting', 'confirming')", [tripId, decisionId]);
 export const paidForDecision = (db: Db, tripId: string, decisionId: string) =>
   one(db, "trip_id = $1 and decision_id = $2 and state = 'paid'", [tripId, decisionId]);
 
@@ -162,6 +163,7 @@ export async function unsettled(db: Db, now: Date, limit = 50): Promise<string[]
          (state in ('declined', 'expired', 'failed', 'refused') and approval_id is not null and released_at is null)
          or (state in ('declined', 'expired', 'failed') and card_id is not null and card_state is distinct from state)
          or (state in ('declined', 'failed') and said_at is null)
+         or (state = 'confirming' and card_id is not null and card_state is distinct from 'confirming')
        ))
      order by updated_at limit $1`,
     [limit, STEP_TRIES, new Date(now.getTime() - PAID_BACKOFF_MS)],

@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { moneyRoutes } from '../callbacks.js';
-import { markFailed, markPaid, reconcile } from '../finish.js';
+import { markConfirming, markFailed, markPaid, reconcile } from '../finish.js';
 import { signVaultCall } from '../signed.js';
 import { getPayment } from '../store.js';
 import { moneyKit, type MoneyKit } from './kit.js';
@@ -39,6 +39,7 @@ beforeEach(async () => {
         return 'ok';
       },
       failed: async (p) => ((await markFailed(k.deps, p)) ? 'ok' : 'unknown'),
+      confirming: async (p) => ((await markConfirming(k.deps, p)) ? 'ok' : 'unknown'),
     }),
   );
 });
@@ -72,6 +73,13 @@ describe("the vault's call back", () => {
 
   it('refuses a body that does not match', async () => {
     expect((await call('/internal/vault/failed', { trip_id: 't_goa', approval_id: approvalId, reason: 'bored' })).res.statusCode).toBe(422);
+  });
+
+  it('keeps the payment waiting on the bank on confirming', async () => {
+    const { res } = await call('/internal/vault/confirming', { trip_id: 't_goa', approval_id: approvalId });
+    expect(res.statusCode).toBe(200);
+    expect((await getPayment(k.pool, paymentId))?.state).toBe('confirming');
+    expect((await call('/internal/vault/confirming', { trip_id: 't_goa', approval_id: 'ap_unknown_01' })).res.statusCode).toBe(404);
   });
 
   it('marks the payment failed on failed', async () => {

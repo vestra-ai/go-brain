@@ -155,4 +155,5 @@ export const TOASTS = {
   restart: 'Setting up a fresh payment.',
   noPage: "Couldn't open the payment page. Try again.",
   declinedDone: 'Declined. Nothing was charged.',
+  confirming: "We're confirming this payment with the bank. Don't pay again.",
 } as const;

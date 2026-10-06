@@ -194,6 +194,34 @@ describe('a key used twice', () => {
   });
 });
 
+describe('a charge the bank has not confirmed', () => {
+  it('keeps the pay card waiting on the bank, never starts it again, and books once when the vault learns it went through', async () => {
+    await setUp();
+    const card = await payCardUp();
+    const url = await approveUrl(card);
+    vault.rail.outcome = 'unknown';
+    expect(await vault.approve(url, rahul)).toMatchObject({ state: 'confirming' });
+    await pay.settled();
+    const approvalId = (card as { approval_id: string }).approval_id;
+    expect((await k.pool.query('select state from payments where approval_id = $1', [approvalId])).rows[0].state).toBe('confirming');
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).fallback_text).toContain('with the bank');
+    // Long after the approval ran out, Go's sweep leaves it alone and Approve never starts it again.
+    k.advance(15 * 60_000);
+    await pay.sweep();
+    expect(await seen.taps.get('pay:approve')?.(tap(card.card_id, 'p_rahul'), card)).toMatchObject({ result: 'refused' });
+    await pay.settled();
+    expect(payCards()).toHaveLength(1);
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+    // The bank answers: the vault's sweep asks the rail again with the same key, and Go books once.
+    vault.rail.outcome = 'ok';
+    await vault.sweep();
+    await pay.settled();
+    expect(vault.rail.charges).toHaveLength(1);
+    expect(k.server.writesOf('add_booking')).toHaveLength(1);
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).state).toBe('paid');
+  });
+});
+
 describe('the wrong trip or the wrong amount', () => {
   it('refuses an approval sent for another trip, at the vault and at Go', async () => {
     await setUp();
