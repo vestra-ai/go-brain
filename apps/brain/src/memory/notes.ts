@@ -178,6 +178,11 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
         continue;
       }
       const saved = await saveFact(d.pool, { ...c.value, source: 'message' });
+      if ('refused' in saved) {
+        // The person asked Go to forget them while the model was reading.
+        out.refused.push('fact: that person asked Go to forget this');
+        continue;
+      }
       out.facts += 1;
       if (saved.changed) noted.add(m.message_id);
     }

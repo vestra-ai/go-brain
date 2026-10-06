@@ -66,11 +66,35 @@ export function normTopic(t: string): string {
 
 const sameText = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-export async function saveFact(pool: Pool, f: NewFact): Promise<{ factId: string; changed: boolean }> {
+/**
+ * One person's writes and their forget take turns: saveFact and forget_person both take this lock inside their
+ * transaction, so a save that started before a forget either lands before it (and the forget removes it) or
+ * sees the forget and refuses.
+ */
+export async function lockPerson(db: Db, personId: string): Promise<void> {
+  await db.query(`SELECT pg_advisory_xact_lock(hashtext('person:' || $1))`, [personId]);
+}
+
+export type SaveResult = { factId: string; changed: boolean } | { factId: null; changed: false; refused: 'forgotten' };
+
+export async function saveFact(pool: Pool, f: NewFact): Promise<SaveResult> {
   const topic = normTopic(f.topic);
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await withTx(pool, async (c) => {
+      return await withTx(pool, async (c): Promise<SaveResult> => {
+        await lockPerson(c, f.personId);
+        if (f.messageId !== null) {
+          // A forget for this trip covers every message up to its change number. A proof the messages table does not
+          // know cannot be placed after the forget, so it is refused too.
+          const gone = await c.query<{ up_to_seq: number; seq: number | null }>(
+            `SELECT g.up_to_seq, m.seq FROM forgotten g
+               LEFT JOIN messages m ON m.trip_id = g.trip_id AND m.message_id = $3
+              WHERE g.person_id = $1 AND g.trip_id = $2`,
+            [f.personId, f.tripId, f.messageId],
+          );
+          const g = gone.rows[0];
+          if (g && (g.seq === null || g.up_to_seq >= g.seq)) return { factId: null, changed: false, refused: 'forgotten' };
+        }
         const cur = await c.query<{ fact_id: string; text: string }>(
           `SELECT fact_id, text FROM facts
             WHERE person_id = $1 AND trip_id = $2 AND topic = $3 AND superseded_by IS NULL FOR UPDATE`,
