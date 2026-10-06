@@ -3,6 +3,7 @@ import { limitRequestId, utcDay, type Budget } from '../budget.js';
 import type { DeskItem, TurnInput, TurnRunner } from '../desk/desk.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
+import { withholdCheck } from '../memory/reactions.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import type { AnthropicLike } from './anthropic.js';
 import { classifyAnthropicError } from './anthropic-helpers.js';
@@ -52,6 +53,27 @@ function replyToFor(items: DeskItem[], pack: TripPack): string | null {
   const m = pack.messages.find((x) => x.message_id === id);
   if (!m) return null;
   return pack.messages.some((x) => x.seq > m.seq && x.author.kind === 'person') ? id : null;
+}
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The messages a posted question goes back to: Go asked their author something, so no ✅ goes on them. When several
+ * people's messages woke the turn, only those whose author the question names.
+ */
+function askedBack(text: string, items: DeskItem[], pack: TripPack, readUpTo: number): string[] {
+  if (!text.includes('?')) return [];
+  const ids = new Set(items.filter((i) => i.kind === 'message').map(messageIdOf));
+  // Only lines the model read: one the budget left unread was never part of the question.
+  const theirs = pack.messages.flatMap((m) =>
+    ids.has(m.message_id) && m.seq <= readUpTo && m.author.kind === 'person' ? [{ id: m.message_id, by: m.author.person_id }] : [],
+  );
+  if (new Set(theirs.map((x) => x.by)).size <= 1) return theirs.map((x) => x.id);
+  const named = (personId: string): boolean => {
+    const first = pack.trip.people.find((p) => p.person_id === personId)?.name.trim().split(/\s+/)[0];
+    return !!first && new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(first)}(?![\\p{L}\\p{N}])`, 'iu').test(text);
+  };
+  return theirs.filter((x) => named(x.by)).map((x) => x.id);
 }
 
 /**
@@ -196,6 +218,15 @@ export function createComposer(d: ComposerDeps): Composer {
       ctx.outcome.spoke = text !== null && ids.length > 0;
       // Someone named Go in a line the budget left unread: they hear the day's limit, once per trip.
       if (unanswered) await limitLine(t);
+      // Go asked instead of noting (a question back to the person, or a tool that chose to ask): no ✅ on those messages,
+      // and a quick one the reflex already put there is taken back. A message this turn noted itself keeps its ✅.
+      const asked = new Set([...(ctx.outcome.asked ?? []), ...(ctx.outcome.spoke && text ? askedBack(text, [...t.items, ...pulled], pack, newest) : [])]);
+      for (const id of ctx.outcome.noted ?? []) asked.delete(id);
+      for (const id of asked) {
+        await withholdCheck(d.pool, ctx.link, t.tripId, id).catch((err: unknown) =>
+          d.log.warn({ err, trip: t.tripId, message: id }, 'could not keep the ✅ off a message Go asked about'),
+        );
+      }
       const outcome = ctx.outcome.spoke ? 'spoke' : ids.length > 0 || ctx.outcome.reactions > 0 ? 'acted' : 'silent';
       await d.pool.query(
         `update turns set ended_at = $2, first_token_at = $3, rounds = $4, input_tokens = $5, cached_tokens = $6,

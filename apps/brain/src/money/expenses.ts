@@ -72,14 +72,19 @@ export async function recordExpense(ctx: Pick<TurnCtx, 'tripId' | 'link' | 'pack
   if (!m || m.deleted || m.withheld || m.author.kind !== 'person' || !m.text) return { refused: `There is no message ${a.message_id} from a person to record.`, tell_the_room: ASK };
   const trip = ctx.pack.trip;
   const payer = m.author.person_id;
-  if (!trip.people.some((p) => p.person_id === payer)) return { refused: 'The person who wrote that is not in the trip.', tell_the_room: ASK };
+  // Go asks instead of recording: the turn keeps the ✅ off this message.
+  const ask = (why: string) => {
+    (ctx.outcome.asked ??= []).push(m.message_id);
+    return { refused: why, tell_the_room: ASK };
+  };
+  if (!trip.people.some((p) => p.person_id === payer)) return ask('The person who wrote that is not in the trip.');
   if (!amountsIn(m.text).includes(a.amount_minor)) {
-    return { refused: `That message does not say ${money(a.amount_minor, a.currency ?? trip.money.currency)}.`, tell_the_room: ASK };
+    return ask(`That message does not say ${money(a.amount_minor, a.currency ?? trip.money.currency)}.`);
   }
   let split: string[];
   if (a.split_with) {
     const ids = a.split_with.map((s) => personOf(trip, s, payer));
-    if (ids.some((id) => id === null)) return { refused: `Not sure who ${a.split_with.join(', ')} is in this trip.`, tell_the_room: ASK };
+    if (ids.some((id) => id === null)) return ask(`Not sure who ${a.split_with.join(', ')} is in this trip.`);
     split = [...new Set(ids as string[])];
   } else {
     split = trip.people.map((p) => p.person_id);
@@ -94,6 +99,7 @@ export async function recordExpense(ctx: Pick<TurnCtx, 'tripId' | 'link' | 'pack
     category: a.category ?? 'other',
     split_person_ids: split,
   });
+  (ctx.outcome.noted ??= []).push(m.message_id);
   try {
     await ctx.link.request('add_reaction', { request_id: rid('go_expense_ok', m.message_id), trip_id: ctx.tripId, message_id: m.message_id, emoji: '✅' });
     ctx.outcome.reactions += 1;

@@ -77,11 +77,21 @@ describe('record_expense', () => {
   });
 
   it('records nothing from an amount the message does not say, and says to ask', async () => {
-    const { run } = turn([['p_rahul', 'I paid for the cab, will check the amount']]);
+    const { ctx, run } = turn([['p_rahul', 'I paid for the cab, will check the amount']]);
     const [out] = await run([{ name: 'record_expense', input: { message_id: '#1', amount_minor: 320000, for_what: 'Cab' } }]);
     expect(out).toMatchObject({ refused: expect.stringContaining('does not say'), tell_the_room: expect.stringContaining('Ask the person one short question') });
     expect(expenses()).toEqual([]);
     expect(reactions()).toEqual([]);
+    // The turn keeps the ✅ off the message Go asks about.
+    expect(ctx.outcome.asked).toEqual(['m_1']);
+    expect(ctx.outcome.noted ?? []).toEqual([]);
+  });
+
+  it('a recorded expense is noted by the turn, so a question in the same turn keeps its ✅', async () => {
+    const { ctx, run } = turn([['p_rahul', 'I paid 3,200 for the cab']]);
+    await run([{ name: 'record_expense', input: { message_id: '#1', amount_minor: 320000, for_what: 'Cab' } }]);
+    expect(ctx.outcome.noted).toEqual(['m_1']);
+    expect(ctx.outcome.asked ?? []).toEqual([]);
   });
 
   it('records nothing when it cannot tell who shares the cost, and says to ask', async () => {

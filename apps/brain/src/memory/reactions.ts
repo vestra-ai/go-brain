@@ -10,18 +10,66 @@ export function reactionRequestId(tripId: string, messageId: string, emoji: stri
   return `go_react_${createHash('sha256').update(`${tripId}|${messageId}|${emoji}`).digest('hex').slice(0, 24)}`;
 }
 
+/** The request_id for taking Go's ✅ back from a message it asked about instead. */
+function takeBackRequestId(tripId: string, messageId: string): string {
+  return reactionRequestId(tripId, messageId, '✅').replace(/^go_react_/, 'go_unreact_');
+}
+
 type Outcome = 'sent' | 'skipped' | 'failed';
 
-/** Reactions being sent right now in this process, by request id: a second caller for the same one waits for the first. */
-const inflight = new Map<string, Promise<Outcome>>();
+/**
+ * Work on one message and emoji runs one job at a time in this process, by request id: a second ✅ waits for the first
+ * and then finds it done, and Go taking a ✅ back never interleaves with one being sent.
+ */
+const queues = new Map<string, Promise<unknown>>();
+function oneAtATime<T>(key: string, job: () => Promise<T>): Promise<T> {
+  const run = (queues.get(key) ?? Promise.resolve()).then(job);
+  const settled = run.catch(() => undefined);
+  queues.set(key, settled);
+  void settled.then(() => {
+    if (queues.get(key) === settled) queues.delete(key);
+  });
+  return run;
+}
 
 export function reactOnce(pool: Pool, link: ServerLink, tripId: string, message: Message, emoji: string): Promise<Outcome> {
-  const key = reactionRequestId(tripId, message.message_id, emoji);
-  const running = inflight.get(key);
-  if (running) return running.then((r) => (r === 'sent' ? 'skipped' : r));
-  const p = sendOnce(pool, link, tripId, message, emoji).finally(() => inflight.delete(key));
-  inflight.set(key, p);
-  return p;
+  return oneAtATime(reactionRequestId(tripId, message.message_id, emoji), () => sendOnce(pool, link, tripId, message, emoji));
+}
+
+/**
+ * Go asked about this message instead of noting it, so no ✅ goes on it: one already sent (the reflex is quicker than a
+ * turn) is taken back, and the row marks it done so a later ✅ (the notes pass, a rerun) is skipped. 'held' when no ✅
+ * had gone out.
+ */
+export function withholdCheck(pool: Pool, link: ServerLink, tripId: string, messageId: string): Promise<'held' | 'taken_back'> {
+  const off = takeBackRequestId(tripId, messageId);
+  return oneAtATime(reactionRequestId(tripId, messageId, '✅'), async () => {
+    const fresh = await pool.query(
+      `INSERT INTO go_reactions (trip_id, message_id, emoji, request_id, done_at) VALUES ($1, $2, '✅', $3, now())
+       ON CONFLICT (trip_id, message_id, emoji) DO NOTHING`,
+      [tripId, messageId, off],
+    );
+    if (fresh.rowCount === 1) return 'held';
+    const row = (
+      await pool.query<{ request_id: string }>(
+        `SELECT request_id FROM go_reactions WHERE trip_id = $1 AND message_id = $2 AND emoji = '✅'`,
+        [tripId, messageId],
+      )
+    ).rows[0];
+    if (row?.request_id === off) return 'held';
+    // A ✅ went out, or may have (a send whose answer never came): mark the row taken back, then take it back.
+    await pool.query(
+      `UPDATE go_reactions SET request_id = $3, done_at = coalesce(done_at, now()) WHERE trip_id = $1 AND message_id = $2 AND emoji = '✅'`,
+      [tripId, messageId, off],
+    );
+    try {
+      await link.request('remove_reaction', { request_id: off, trip_id: tripId, message_id: messageId, emoji: '✅' });
+    } catch (err) {
+      // 404, 409 and 422: no ✅ there, or no message any more. Anything else goes up to the turn, which logs it.
+      if (!(err instanceof SocketCallError && [404, 409, 422].includes(err.code))) throw err;
+    }
+    return 'taken_back';
+  });
 }
 
 async function sendOnce(pool: Pool, link: ServerLink, tripId: string, message: Message, emoji: string): Promise<Outcome> {

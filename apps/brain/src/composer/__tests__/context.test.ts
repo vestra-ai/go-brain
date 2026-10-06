@@ -4,7 +4,7 @@ import type { DeskItem } from '../../desk/desk.js';
 import type { Message } from '../../door/methods.js';
 import { silentLog } from '../../log.js';
 import type { TripPack } from '../../trips/pack.js';
-import { createContext, type TextBlock } from '../context.js';
+import { createContext, formatTime, type TextBlock } from '../context.js';
 import { GO_RULES } from '../rules.js';
 import { tripNow } from '../trip-now.js';
 import { renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
@@ -132,6 +132,19 @@ describe('the prompt, in order and cache-first', () => {
     expect(now).toMatch(/2:30\s?pm/i);
     expect(now).toContain('Asia/Kolkata');
   });
+
+  it('tells the year too, in the right-now block after the cache point, never in the cached rules or chat', async () => {
+    expect(formatTime(new Date('2026-10-06T09:00:00Z'), 'Asia/Kolkata')).toMatch(/^Tue, 6 Oct,? 2026, 2:30\s?pm$/i);
+    // Late on 31 Dec in UTC is already the new year in India.
+    expect(formatTime(new Date('2026-12-31T20:00:00Z'), 'Asia/Kolkata')).toMatch(/1 Jan,? 2027/);
+    const p = await context().build(input());
+    const now = p.user.at(-2);
+    expect(now?.text).toMatch(/^# Right now\nIt is Tue, 6 Oct,? 2026, /);
+    expect(now?.cache_control).toBeUndefined();
+    expect(p.user.indexOf(now!)).toBeGreaterThan(p.user.findLastIndex((b) => b.cache_control !== undefined));
+    expect(p.system[0]?.text).not.toContain('2026');
+    expect(all(p.user.slice(0, -2))).not.toContain('2026');
+  });
 });
 
 describe('the fence: people\'s text is data and nobody can pose as Go', () => {
@@ -233,7 +246,8 @@ describe('why Go woke, and the trip block', () => {
     expect(hello).not.toMatch(/open_vote|first vote/);
     expect(c.renderWake(wake({ kind: 'trip_change', ref: 'decision:d_stay', payload: { type: 'decision.closed', decisionId: 'd_stay' } }), p)).toBe(
       'the vote <data>Where do we stay?</data> closed: <data>Villa Sol</data> won (4 of 5 voted). ' +
-        "If it settled the trip's dates or place, save them with update_trip first. Then say the result in one line and the next step.",
+        "If it settled the trip's dates or place, save them with update_trip first (days without a year are the next ones from today). " +
+        'Then say the result in one line and the next step.',
     );
     expect(c.renderWake(wake({ kind: 'timer', ref: 'vote_closes', payload: {} }), p)).toBe('timer (vote_closes)');
   });
@@ -247,7 +261,8 @@ describe('why Go woke, and the trip block', () => {
     const p = packOf(chatOf(3), goaSnapshot({ decisions: [dates, split] }));
     const closed = (id: string) => context().renderWake(wake({ kind: 'trip_change', ref: `decision:${id}`, payload: { type: 'decision.closed', decisionId: id } }), p);
     expect(closed('d_dates')).toContain('<data>6-9 Nov</data> won (5 of 5 voted)');
-    expect(closed('d_dates')).toContain("If it settled the trip's dates or place, save them with update_trip first.");
+    expect(closed('d_dates')).toContain("If it settled the trip's dates or place, save them with update_trip first");
+    expect(closed('d_dates')).toContain('days without a year are the next ones from today');
     // No winner, nothing to save: the group settles it first.
     expect(closed('d_split')).toContain('no clear winner');
     expect(closed('d_split')).not.toContain('update_trip');
