@@ -121,3 +121,98 @@ describe('the card store', () => {
     expect(await cards.get('t_goa', 'c_missing')).toBeNull();
   });
 });
+
+describe('a card Go has sent, before the Server answers', () => {
+  const posted = (id: string): Record<string, unknown> => ({ request_id: `go_post_${id}`, trip_id: 't_goa', card: working(id) });
+  const pendingOf = async (id: string): Promise<boolean | null> =>
+    (await db.pool.query<{ pending: boolean }>('select pending from cards where trip_id = $1 and card_id = $2', ['t_goa', id])).rows[0]?.pending ?? null;
+  const withWatch = () => {
+    const r = router();
+    let runs = 0;
+    r.on('working', 'watch', async () => {
+      runs += 1;
+      return { result: 'done', toast: 'Watching' };
+    });
+    return { r, runs: () => runs };
+  };
+
+  it('is tappable at once: a tap from the Server is handled once and proves the card landed', async () => {
+    const { r, runs } = withWatch();
+    await cards.sending('post_message', posted('c_fresh'));
+    expect(await pendingOf('c_fresh')).toBe(true);
+    const t = tap({ card_id: 'c_fresh', tap_id: 'tap_fresh' });
+    const [a, b] = await Promise.all([r.handle(t, meta), r.handle(t, meta)]);
+    expect(a).toEqual({ result: 'done', toast: 'Watching' });
+    expect(b).toEqual(a);
+    expect(await r.handle(t, meta)).toEqual(a);
+    expect(runs()).toBe(1);
+    expect(await pendingOf('c_fresh')).toBe(false);
+    // The Server's answer comes after the tap: the card stays, now with its message id.
+    await cards.observe('post_message', posted('c_fresh'), { message_id: 'm_go_fresh', seq: 40 });
+    const { rows } = await db.pool.query('select pending, message_id from cards where trip_id = $1 and card_id = $2', ['t_goa', 'c_fresh']);
+    expect(rows[0]).toEqual({ pending: false, message_id: 'm_go_fresh' });
+  });
+
+  it('is gone once its post fails, so a later tap is refused as before', async () => {
+    const { r, runs } = withWatch();
+    await cards.sending('post_message', posted('c_refused'));
+    await cards.failed('post_message', posted('c_refused'));
+    expect(await pendingOf('c_refused')).toBeNull();
+    expect(await r.handle(tap({ card_id: 'c_refused' }), meta)).toEqual({ result: 'refused', toast: 'That card is not active any more.' });
+    expect(runs()).toBe(0);
+  });
+
+  it('stays when its post fails after a tap proved it landed (the answer was lost, not the card)', async () => {
+    const { r } = withWatch();
+    await cards.sending('post_message', posted('c_landed'));
+    expect(await r.handle(tap({ card_id: 'c_landed' }), meta)).toEqual({ result: 'done', toast: 'Watching' });
+    await cards.failed('post_message', posted('c_landed'));
+    expect(await pendingOf('c_landed')).toBe(false);
+    expect(await r.handle(tap({ card_id: 'c_landed' }), meta)).toEqual({ result: 'done', toast: 'Watching' });
+  });
+
+  it('races a Server tap against a failed post, and never lets both win: handled with the card kept, or refused with it gone', async () => {
+    const { r, runs } = withWatch();
+    let handled = 0;
+    for (let k = 0; k < 20; k++) {
+      const id = `c_vs_${k}`;
+      await cards.sending('post_message', posted(id));
+      const [answer] = await Promise.all([r.handle(tap({ card_id: id, tap_id: `tap_vs_${k}` }), meta), cards.failed('post_message', posted(id))]);
+      if (answer.result === 'done') {
+        handled += 1;
+        expect(await pendingOf(id), id).toBe(false);
+      } else {
+        expect(answer, id).toEqual({ result: 'refused', toast: 'That card is not active any more.' });
+        expect(await pendingOf(id), id).toBeNull();
+      }
+    }
+    expect(runs()).toBe(handled);
+  });
+
+  it('is not proved by a tap made inside Go', async () => {
+    const { r } = withWatch();
+    await cards.sending('post_message', posted('c_inside'));
+    expect(await r.dispatch(tap({ card_id: 'c_inside', tap_id: 'tap_inside' }))).toEqual({ result: 'done', toast: 'Watching' });
+    expect(await pendingOf('c_inside')).toBe(true);
+  });
+
+  it('is kept once however often the post is sent again, and a live card never goes back to pending', async () => {
+    await cards.sending('post_message', posted('c_twice'));
+    await cards.sending('post_message', posted('c_twice'));
+    const count = async () => (await db.pool.query<{ n: number }>('select count(*)::int as n from cards where card_id = $1', ['c_twice'])).rows[0]?.n;
+    expect(await count()).toBe(1);
+    await cards.observe('post_message', posted('c_twice'), { message_id: 'm_go_twice', seq: 41 });
+    await cards.sending('post_message', posted('c_twice'));
+    await cards.failed('post_message', posted('c_twice'));
+    expect(await count()).toBe(1);
+    expect(await pendingOf('c_twice')).toBe(false);
+  });
+
+  it('is only a post with a card: text and replace_card add nothing pending, and a failed replace never takes a card away', async () => {
+    await cards.sending('post_message', { request_id: 'go_text', trip_id: 't_goa', text: 'Hi all' });
+    await cards.sending('replace_card', { trip_id: 't_goa', card: working('c_replaced') });
+    expect(await pendingOf('c_replaced')).toBeNull();
+    await cards.failed('replace_card', { trip_id: 't_goa', card: working('c_work') });
+    expect(await cards.get('t_goa', 'c_work')).not.toBeNull();
+  });
+});

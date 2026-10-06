@@ -139,7 +139,9 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   await migrate(pool);
 
   const cards = createCardStore({ pool, now });
-  const link = createServerLink({ pool, log, now, timeoutMs: t.linkTimeoutMs, waitForSocketMs: t.waitForSocketMs, onResult: cards.observe });
+  const link = createServerLink({
+    pool, log, now, timeoutMs: t.linkTimeoutMs, waitForSocketMs: t.waitForSocketMs, onSend: cards.sending, onResult: cards.observe, onFail: cards.failed,
+  });
   const guard = createReplayGuard({ pool, now });
   const door = createDoor({ http, secret: env.GO_SIGNING_SECRET, guard, link, log, now, pingMs: t.pingMs, idleMs: t.idleMs });
   const taps = createTapRouter({ pool, cards, log });
