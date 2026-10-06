@@ -16,6 +16,8 @@ export interface CardUpdater {
 }
 
 interface Slot {
+  /** The card has been pushed done or failed: a job never comes back, so a later live card is a stale one. */
+  ended: boolean;
   lastAt: number;
   pending: { tripId: string; card: WorkingCardT } | null;
   timer: ReturnType<typeof setTimeout> | null;
@@ -61,9 +63,12 @@ export function createCardUpdater(d: {
     push(tripId, card, opts) {
       let slot = slots.get(card.card_id);
       if (!slot) {
-        slot = { lastAt: Number.NEGATIVE_INFINITY, pending: null, timer: null, chain: Promise.resolve() };
+        slot = { ended: false, lastAt: Number.NEGATIVE_INFINITY, pending: null, timer: null, chain: Promise.resolve() };
         slots.set(card.card_id, slot);
       }
+      const ends = card.state === 'done' || card.state === 'failed';
+      if (slot.ended && !ends) return;
+      if (ends) slot.ended = true;
       slot.pending = { tripId, card };
       const wait = slot.lastAt + gap - clock();
       if (opts?.now || wait <= 0) {

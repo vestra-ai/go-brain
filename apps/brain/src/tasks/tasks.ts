@@ -315,7 +315,9 @@ export function createTasks(d: TasksDeps): TasksService {
     },
 
     async pushCard(row, urgent) {
-      d.cards.push(row.tripId, await service.cardFor(row), { now: urgent });
+      // Built from the row as it is now: a caller's copy read before a wait may be stale (a job that finished meanwhile).
+      const fresh = (await d.store.get(row.id)) ?? row;
+      d.cards.push(fresh.tripId, await service.cardFor(fresh), { now: urgent });
     },
 
     async stopV1(v1TaskId) {

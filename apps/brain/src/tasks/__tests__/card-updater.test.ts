@@ -53,4 +53,16 @@ describe('the card updater', () => {
     expect(link.card('c_work_1')?.fallback_text).toBe('v1');
     expect(log.warn).toHaveBeenCalledTimes(1);
   });
+
+  it('never sends a live card after the job ended, however late it was built', async () => {
+    const link = new FakeLink();
+    await posted(link, 3);
+    const cards = createCardUpdater({ link, log: { warn: vi.fn() }, gapMs: 0 });
+    cards.push('t_goa', card(1, 'done'), { now: true });
+    cards.push('t_goa', card(2, 'running'));
+    cards.push('t_goa', card(3, 'needs_you'), { now: true });
+    await cards.flush();
+    expect(link.sent('replace_card').map((p) => (p.card as WorkingCardT).fallback_text)).toEqual(['v1']);
+    expect(link.card('c_work_1')?.state).toBe('done');
+  });
 });

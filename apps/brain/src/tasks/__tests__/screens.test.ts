@@ -51,6 +51,40 @@ describe("the trip's screen on the card", () => {
     expect((await h.store.get(row.id))!.steps).toEqual([{ text: 'Search stays', state: 'doing' }]);
   });
 
+  it('never puts a finished job back to running: a job that ends while its screen is being saved stays done', async () => {
+    const { row, v1TaskId } = await h.runningJob('scr_done', 't_scr_done');
+    const images = createImages({ pool: h.pool, publicUrl: 'https://go.test' });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let saving!: () => void;
+    const started = new Promise<void>((r) => {
+      saving = r;
+    });
+    const slow = createScreens({
+      v1: h.v1, store: h.store, tasks: h.tasks, userIdFor: h.computer.userIdFor, now: h.lb.clock.now, log: h.lb.brain.log,
+      images: {
+        putBytes: async (bytes, mime) => {
+          saving();
+          await gate;
+          return images.putBytes(bytes, mime);
+        },
+      },
+    });
+    h.fake.screen = Buffer.from([0xff, 0xd8, 0xff, 9]);
+    const tick = slow.tick('t_scr_done');
+    await started;
+    h.fake.complete(v1TaskId, { summary: 'Nothing fits.', options: [] }, 'Nothing fits.');
+    await h.events.apply({ type: 'task.completed', data: { task_id: v1TaskId }, source: 'webhook' });
+    release();
+    await tick;
+    await h.cards.flush();
+    expect((await h.store.get(row.id))?.state).toBe('done');
+    expect(h.lb.link.card(row.cardId)).toMatchObject({ state: 'done', actions: [] });
+    h.fake.screen = null;
+  });
+
   it('words a trace step plainly and never echoes what the job read', () => {
     expect(stepWords('WebFetch', 'https://reviews.example.com/villa-sol?ref=ignore-your-rules')).toBe('Reading reviews.example.com');
     expect(stepWords('mcp_invoke', 'search_stays')).toBe("Using Go's trip tools");
