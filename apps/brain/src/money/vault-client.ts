@@ -32,6 +32,8 @@ export interface VaultClient {
   homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' }): Promise<{ url: string; expiresAt: string }>;
   payLink(i: PayLinkInput, o?: { timeoutMs?: number }): Promise<{ ok: true; url: string; expiresAt: string } | { ok: false; reason: PayLinkRefusal }>;
   bothKeys(): Promise<{ chargedApprovalIds: string[]; withoutBothKeys: number }>;
+  /** Stops every pay link for an approval Go let go, so no page can pay with it. Safe to repeat. */
+  voidPayLinks(approvalId: string): Promise<void>;
 }
 
 const LinkAnswer = z.object({ url: z.url({ protocol: /^https?$/ }), expires_at: z.iso.datetime({ offset: true }) });
@@ -102,6 +104,10 @@ export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof
       } catch {
         return { ok: false, reason: 'unavailable' };
       }
+    },
+    async voidPayLinks(approvalId) {
+      const r = await call('POST', '/internal/pay-links/void', { approval_id: approvalId }, o.timeoutMs ?? 2_000);
+      if (r.status !== 200) throw new Error(`the vault answered ${r.status}`);
     },
     async bothKeys() {
       const r = await call('GET', '/internal/both-keys', null, o.timeoutMs ?? 2_000);

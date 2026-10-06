@@ -54,6 +54,23 @@ describe('pay card', () => {
     expect(JSON.stringify(card)).not.toMatch(/\u2014/);
   });
 
+  it('says the bank is being asked, as a waiting card with no buttons and no pin', () => {
+    const card = payCard(villa, 'confirming');
+    expect(C.Card.parse(card)).toEqual(card);
+    expect(card.state).toBe('waiting');
+    expect(card.actions ?? null).toBeNull();
+    expect(card.for_person_ids ?? null).toBeNull();
+    expect(card.fallback_text).toBe("Confirming ₹54,200 to ixigo: Villa Sol, Anjuna with the bank. Don't pay again; Go will say when it's done.");
+  });
+
+  it('says a person is checking once the vault stopped asking the bank, still with no buttons', () => {
+    const card = payCard(villa, 'checking');
+    expect(C.Card.parse(card)).toEqual(card);
+    expect(card).toMatchObject({ state: 'waiting', fallback_text: "We couldn't confirm this payment. Don't pay again; we're checking." });
+    expect(card.actions ?? null).toBeNull();
+    expect(JSON.stringify(card)).not.toContain('Nothing was charged');
+  });
+
   it('leaves free cancellation out when there is none', () => {
     const card = payCard({ ...villa, refundableUntil: null }, 'waiting');
     expect(card.refundable_until ?? null).toBeNull();

@@ -10,6 +10,7 @@ import {
   getPayment,
   interruptStale,
   patchPayment,
+  STEP_TRIES,
   transition,
   unsettled,
   type PaymentRow,
@@ -33,7 +34,7 @@ export async function markPaid(d: MoneyDeps, p: { tripId: string; approvalId: st
   if (!row) return null;
   if (row.state !== 'paid') {
     if (row.state !== 'waiting') d.log.warn({ payment_id: row.payment_id, was: row.state }, 'the vault paid a payment Go had closed; finishing it');
-    const from: PaymentState[] = ['asking', 'waiting', 'expired', 'declined', 'failed', 'refused'];
+    const from: PaymentState[] = ['asking', 'waiting', 'confirming', 'expired', 'declined', 'failed', 'refused'];
     await transition(d.pool, row.payment_id, from, 'paid', { rail_ref: p.railRef }, d.now());
   }
   return getPayment(d.pool, row.payment_id);
@@ -43,7 +44,29 @@ export async function markPaid(d: MoneyDeps, p: { tripId: string; approvalId: st
 export async function markFailed(d: MoneyDeps, p: { tripId: string; approvalId: string; reason: VaultFailReason }): Promise<PaymentRow | null> {
   const row = await byApproval(d.pool, p.tripId, p.approvalId);
   if (!row) return null;
-  await transition(d.pool, row.payment_id, ['asking', 'waiting', 'expired'], 'failed', { fail_reason: p.reason, release_reason: 'payment_failed' }, d.now());
+  await transition(d.pool, row.payment_id, ['asking', 'waiting', 'confirming', 'expired'], 'failed', { fail_reason: p.reason, release_reason: 'payment_failed' }, d.now());
+  return getPayment(d.pool, row.payment_id);
+}
+
+/**
+ * The vault says the bank has not answered about a charge yet. The payment waits on it: it never expires and cannot be
+ * started again until the vault says paid or failed.
+ */
+export async function markConfirming(
+  d: MoneyDeps,
+  p: { tripId: string; approvalId: string; checking?: boolean },
+): Promise<PaymentRow | null> {
+  const row = await byApproval(d.pool, p.tripId, p.approvalId);
+  if (!row) return null;
+  try {
+    await transition(d.pool, row.payment_id, ['waiting', 'expired'], 'confirming', {}, d.now());
+  } catch (e) {
+    // A fresh payment for the same vote is already open: this one stays closed, and a person has to look at it.
+    if ((e as { code?: string }).code !== '23505') throw e;
+    d.log.error({ payment_id: row.payment_id }, 'the vault is confirming a payment Go had closed while a fresh one is open');
+  }
+  // The vault will not ask the bank again: a person checks the charge, and the card says so.
+  if (p.checking && !row.checking_at) await patchPayment(d.pool, row.payment_id, { checking_at: d.now() }, d.now());
   return getPayment(d.pool, row.payment_id);
 }
 
@@ -56,11 +79,16 @@ export async function reconcile(d: MoneyDeps, paymentId: string): Promise<void> 
   if (!row || row.state === 'asking' || row.state === 'waiting') return;
   try {
     if (row.state === 'paid') await finishPaid(d, row);
+    else if (row.state === 'confirming') await showConfirming(d, row);
     else await finishClosed(d, row, row.state);
   } catch (e) {
     const message = e instanceof Error ? e.message : 'unknown';
-    await bumpAttempt(d.pool, paymentId, message, d.now());
-    d.log.warn({ payment_id: paymentId, err: message }, 'a payment step failed; the sweep will try again');
+    const tries = await bumpAttempt(d.pool, paymentId, message, d.now());
+    if (row.state === 'paid' && tries === STEP_TRIES) {
+      d.log.error({ payment_id: paymentId, err: message }, 'a paid payment is still not booked after 20 tries; the sweep keeps trying every 10 minutes');
+    } else {
+      d.log.warn({ payment_id: paymentId, err: message }, 'a payment step failed; the sweep will try again');
+    }
   }
 }
 
@@ -144,12 +172,26 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
   }
 }
 
+/**
+ * The pay card says the bank is being asked (or, once the vault gave up asking, that a person is checking), with no
+ * buttons, so nobody approves or starts it again.
+ */
+async function showConfirming(d: MoneyDeps, row: PaymentRow): Promise<void> {
+  const look = row.checking_at ? 'checking' : 'confirming';
+  if (!row.card_id || row.card_state === look) return;
+  const card = payCardOf(row, look);
+  if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
+  await patchPayment(d.pool, row.payment_id, { card_state: look }, d.now());
+}
+
 async function finishClosed(d: MoneyDeps, row: PaymentRow, state: 'declined' | 'expired' | 'failed' | 'refused'): Promise<void> {
   const key = row.approval_id ?? row.payment_id;
   const id = (step: string) => rid(`go_${state}`, key, step);
 
-  // 1. Let the Server's approval go, so the vote can be asked again.
+  // 1. Let the Server's approval go, so the vote can be asked again. The vault first stops every pay link for it, so no
+  //    page can pay after Go let it go; if the vault cannot be reached, nothing is released and the sweep tries again.
   if (row.approval_id && !row.released_at) {
+    await d.vault.voidPayLinks(row.approval_id);
     await d.link.request('cancel_spend_approval', {
       request_id: id('release'),
       trip_id: row.trip_id,
@@ -179,7 +221,7 @@ export async function sweepPayments(d: MoneyDeps): Promise<number> {
   const now = d.now();
   await expireOverdue(d.pool, now);
   await interruptStale(d.pool, now);
-  const ids = await unsettled(d.pool);
+  const ids = await unsettled(d.pool, now);
   for (const id of ids) await reconcile(d, id);
   return ids.length;
 }

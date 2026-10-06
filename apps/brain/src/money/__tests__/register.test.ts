@@ -53,6 +53,19 @@ describe('registerMoney', () => {
     });
   });
 
+  it('puts paid payments that are not booked on the proof board, where zero is good', async () => {
+    const { brain } = fakeBrain({ pool: k.pool, link: k.server });
+    await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
+    const source = statsRegistry(brain).list().find((x) => x.name === 'paid_but_not_booked');
+    expect(source).toMatchObject({ label: 'Paid but not booked', good: 'zero', order: 101 });
+    const window = { from: new Date('2026-10-01T00:00:00Z'), to: new Date('2026-10-06T00:00:00Z'), hours: 120 };
+    expect(await source?.read(k.pool, window)).toMatchObject({ value: 0, of: 0 });
+    const r = await k.ask();
+    if (!('paymentId' in r)) throw new Error('refused');
+    await k.pool.query("update payments set state = 'paid'");
+    expect(await source?.read(k.pool, window)).toMatchObject({ value: 1, of: 1 });
+  });
+
   it('answers vault_link with a link the contract accepts', async () => {
     const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server });
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
@@ -119,6 +132,14 @@ describe('the payments block of right now', () => {
   it('suggests set_mandate after a vote closes, and waits on the payer after that', async () => {
     expect(await paymentsNow({ pool: k.pool, packs: packs(goaTrip('closed')), now: k.now }).render('t_goa', [])).toContain('set_mandate');
     expect(await paymentsNow({ pool: k.pool, packs: packs(goaTrip('mandate')), now: k.now }).render('t_goa', [])).toContain('Waiting on Rahul to tap Yes, book it for Villa Sol');
+  });
+
+  it('tells the composer a payment is being confirmed with the bank, and never to start it again', async () => {
+    await k.ask();
+    await k.pool.query("update payments set state = 'confirming'");
+    const text = await paymentsNow({ pool: k.pool, packs: packs(), now: k.now }).render('t_goa', []);
+    expect(text).toContain("The bank is still confirming Rahul's payment of ₹54,200 for Villa Sol. Never start it again");
+    expect(text).not.toContain('Ready to pay');
   });
 
   it('shows who a waiting pay card is waiting on, and nothing when there is nothing', async () => {

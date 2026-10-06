@@ -6,6 +6,7 @@ import type { Brain } from '../../app.js';
 import type { PayEngine } from '../engine.js';
 import { registerMoneyWith } from '../register.js';
 import { vaultClient } from '../vault-client.js';
+import { TOASTS } from '../words.js';
 import { fakeBrain } from './fake-brain.js';
 import { goaTrip, moneyKit, runToolCalls, turnCtx, type MoneyKit } from './kit.js';
 
@@ -184,10 +185,79 @@ describe('a key used twice', () => {
     const url = await approveUrl(card);
     k.advance(11 * 60_000);
     expect(await vault.approve(url, rahul)).toMatchObject({ state: 'refused' });
+    // Inside the 120 s grace the vault's own expiry is the answer; after it, Approve starts a fresh payment.
+    expect(await seen.taps.get('pay:approve')?.(tap(card.card_id, 'p_rahul'), card)).toMatchObject({ result: 'refused' });
+    k.advance(61_000);
     expect(await seen.taps.get('pay:approve')?.(tap(card.card_id, 'p_rahul'), card)).toMatchObject({ result: 'done' });
     await pay.settled();
     expect(payCards()).toHaveLength(2);
     expect(vault.rail.charges).toEqual([]);
+  });
+});
+
+describe('a payment Go let go', () => {
+  it('stops the vault page the moment the payer declines', async () => {
+    await setUp();
+    const card = await payCardUp();
+    const url = await approveUrl(card);
+    expect(await seen.taps.get('pay:decline')?.(tap(card.card_id, 'p_rahul', 'decline'), card)).toMatchObject({ result: 'done' });
+    await pay.settled();
+    expect(await vault.approve(url, rahul)).toEqual({ state: 'refused', message: 'This payment link was already used.' });
+    expect(vault.rail.charges).toEqual([]);
+    expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
+  });
+});
+
+describe('a charge the bank has not confirmed', () => {
+  /** The payer approves with Face ID, the rail gives no clear answer, and the pay card waits on the bank. */
+  async function confirmingPayment(): Promise<{ card: C.Card; approvalId: string }> {
+    await setUp();
+    const card = await payCardUp();
+    const url = await approveUrl(card);
+    vault.rail.outcome = 'unknown';
+    expect(await vault.approve(url, rahul)).toMatchObject({ state: 'confirming' });
+    await pay.settled();
+    const approvalId = (card as { approval_id: string }).approval_id;
+    expect((await k.pool.query('select state from payments where approval_id = $1', [approvalId])).rows[0].state).toBe('confirming');
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).fallback_text).toContain('with the bank');
+    return { card, approvalId };
+  }
+
+  it('books once when the bank answers inside the window, with nothing released', async () => {
+    const { card } = await confirmingPayment();
+    // Three minutes on: past the vault's 120 s before a retry, well before the approval's expiry plus its grace.
+    k.advance(3 * 60_000);
+    vault.rail.outcome = 'ok';
+    await vault.sweep();
+    await pay.settled();
+    expect(vault.rail.charges).toHaveLength(1);
+    expect(k.server.writesOf('add_booking')).toHaveLength(1);
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).state).toBe('paid');
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+  });
+
+  it('long after the approval ran out: never starts it again, never asks the rail again, and says a person is checking', async () => {
+    const { card, approvalId } = await confirmingPayment();
+    // Go's sweep leaves it alone and Approve never starts it again.
+    k.advance(15 * 60_000);
+    await pay.sweep();
+    expect(await seen.taps.get('pay:approve')?.(tap(card.card_id, 'p_rahul'), card)).toMatchObject({ result: 'refused' });
+    await pay.settled();
+    expect(payCards()).toHaveLength(1);
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+    // Past the approval's expiry plus its grace, the vault never calls the rail again, even if the bank would now say yes.
+    vault.rail.outcome = 'ok';
+    await vault.sweep();
+    await pay.settled();
+    expect(vault.rail.charges).toEqual([]);
+    expect((await vault.pool.query('select outcome from used_approvals where jti = $1', [approvalId])).rows[0].outcome).toBe('unknown');
+    expect((await k.pool.query('select state, checking_at from payments where approval_id = $1', [approvalId])).rows[0]).toMatchObject({
+      state: 'confirming',
+      checking_at: expect.any(Date),
+    });
+    expect(C.PayCard.parse(k.server.cards.get(card.card_id)).fallback_text).toBe(TOASTS.checking);
+    expect(k.server.writesOf('add_booking')).toEqual([]);
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
   });
 });
 

@@ -88,6 +88,17 @@ describe('vaultClient', () => {
     expect(await slow.payLink(input, { timeoutMs: 50 })).toEqual({ ok: false, reason: 'unavailable' });
   });
 
+  it('voids an approval\'s pay links with a signed POST, and throws when the vault does not take it', async () => {
+    answer = { status: 200, body: { ok: true, voided: 1 } };
+    await client.voidPayLinks('ap_01JA7Q3V8Z');
+    const call = calls.at(-1);
+    expect(call?.url).toBe('https://vault.test/internal/pay-links/void');
+    expect(JSON.parse(call?.body ?? '{}')).toMatchObject({ approval_id: 'ap_01JA7Q3V8Z' });
+    expect(verifyRequest({ method: 'POST', target: '/internal/pay-links/void', body: call?.body ?? '' }, call?.signature, secret, Math.floor(now.getTime() / 1000))).toEqual({ ok: true });
+    answer = { status: 503, body: {} };
+    await expect(client.voidPayLinks('ap_01JA7Q3V8Z')).rejects.toThrow(/503/);
+  });
+
   it('reads the both-keys count with a signed GET', async () => {
     answer = { status: 200, body: { charged_approval_ids: ['ap_1'], without_both_keys: 0 } };
     expect(await client.bothKeys()).toEqual({ chargedApprovalIds: ['ap_1'], withoutBothKeys: 0 });

@@ -20,34 +20,43 @@ export interface PayCardInput {
   expiresAt: string;
 }
 
+/**
+ * How Go draws a pay card: one of the contract's states, or 'confirming' while the vault asks the bank about a charge.
+ * The contract has no state for that, so it goes out as a waiting card with no buttons and words that say so.
+ */
+export type PayCardLook = PayCardState | 'confirming' | 'checking';
+
 /** The pay card in each of its states. Only the payer sees the buttons; settled cards carry none. */
-export function payCard(i: PayCardInput, state: PayCardState): PayCard {
+export function payCard(i: PayCardInput, look: PayCardLook): PayCard {
   const amount = money(i.amountMinor, i.currency);
   const merchant = clip(plain(i.merchant), 120);
   const purpose = clip(plain(i.purpose), 200);
   const refund = i.refundableUntil ? ` Free cancellation until ${shortDate(i.refundableUntil)}.` : '';
-  const fallback: Record<PayCardState, string> = {
+  const fallback: Record<PayCardLook, string> = {
     waiting: `${i.payerName}, approve ${amount} to ${merchant} for ${purpose}.${refund}`,
     paid: `Paid ${amount} to ${merchant} for ${purpose}.${refund}`,
     declined: `${i.payerName} declined ${amount} to ${merchant}.`,
     expired: `The payment of ${amount} to ${merchant} timed out.`,
     failed: `The payment of ${amount} to ${merchant} didn't go through. Nothing was charged.`,
+    confirming: `Confirming ${amount} to ${merchant} with the bank. Don't pay again; Go will say when it's done.`,
+    checking: "We couldn't confirm this payment. Don't pay again; we're checking.",
   };
+  const state: PayCardState = look === 'confirming' || look === 'checking' ? 'waiting' : look;
   const only = [i.payerPersonId];
   const actions =
-    state === 'waiting'
+    look === 'waiting'
       ? [
           { action_id: 'approve', label: 'Approve', style: 'primary' as const, only_for_person_ids: only },
           { action_id: 'decline', label: 'Decline', style: 'secondary' as const, only_for_person_ids: only },
         ]
-      : state === 'expired'
+      : look === 'expired'
         ? [{ action_id: 'approve', label: 'Start again', style: 'primary' as const, only_for_person_ids: only }]
         : null;
   return C.PayCard.parse({
     card_id: i.cardId,
     kind: 'pay',
-    fallback_text: clip(plain(fallback[state]), 300),
-    ...(state === 'waiting' ? { for_person_ids: only } : {}),
+    fallback_text: clip(plain(fallback[look]), 300),
+    ...(look === 'waiting' ? { for_person_ids: only } : {}),
     approval_id: i.approvalId,
     payer_person_id: i.payerPersonId,
     amount_minor: i.amountMinor,

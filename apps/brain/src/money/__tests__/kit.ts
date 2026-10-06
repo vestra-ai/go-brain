@@ -431,6 +431,8 @@ export class FakeVaultClient implements VaultClient {
   hang = false;
   charged: string[] = [];
   withoutBothKeysValue = 0;
+  readonly voids: string[] = [];
+  failVoid = false;
 
   constructor(private readonly now: () => Date) {}
 
@@ -447,6 +449,11 @@ export class FakeVaultClient implements VaultClient {
     if (this.refuse) return { ok: false, reason: this.refuse };
     this.payLinks.push(i);
     return { ok: true, url: `https://vault.test/p/pay_${this.payLinks.length}`, expiresAt: new Date(this.now().getTime() + 300_000).toISOString() };
+  }
+
+  async voidPayLinks(approvalId: string): Promise<void> {
+    if (this.failVoid) throw new Error('the vault did not answer');
+    this.voids.push(approvalId);
   }
 
   async bothKeys(): Promise<{ chargedApprovalIds: string[]; withoutBothKeys: number }> {

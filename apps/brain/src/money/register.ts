@@ -6,6 +6,7 @@ import type { MoneyDeps } from './deps.js';
 import { createPay } from './engine.js';
 import { readMoneyEnv } from './env.js';
 import { setMandate } from './mandate.js';
+import { paidButNotBooked } from './store.js';
 import { paymentsNow } from './now.js';
 import { askToPayTool, setMandateTool } from './tools.js';
 import { vaultClient, type PaymentKind } from './vault-client.js';
@@ -44,7 +45,7 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
     brain.context.addNow(paymentsNow({ pool: brain.pool, packs: brain.packs, now: brain.now }));
     brain.tripLog.onEvent((ev) => pay.heard(ev));
     await brain.http.register(
-      moneyRoutes({ pool: brain.pool, secret: VAULT_SHARED_SECRET, now: brain.now, paid: (p) => pay.paid(p), failed: (p) => pay.failed(p) }),
+      moneyRoutes({ pool: brain.pool, secret: VAULT_SHARED_SECRET, now: brain.now, paid: (p) => pay.paid(p), failed: (p) => pay.failed(p), confirming: (p) => pay.confirming(p) }),
     );
     // The proof board's number, counted from both sides' records (it replaces P3's default under the same name).
     statsRegistry(brain).add({
@@ -55,6 +56,16 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
       read: async () => {
         const r = await pay.withoutBothKeys();
         return { value: r.count, of: r.paid, note: "From the vault's unlock log and Go's payments: the Server's approval and the payer's passkey on every one." };
+      },
+    });
+    statsRegistry(brain).add({
+      name: 'paid_but_not_booked',
+      label: 'Paid but not booked',
+      order: 101,
+      good: 'zero',
+      read: async (pool, w) => {
+        const r = await paidButNotBooked(pool, w.to);
+        return { value: r.missing, of: r.paid, note: 'Payments the vault took that Go has not booked in the room yet. The sweep keeps trying them.' };
       },
     });
 

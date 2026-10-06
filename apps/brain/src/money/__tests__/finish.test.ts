@@ -1,6 +1,6 @@
 import * as C from '@go/contract';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { markFailed, markPaid, reconcile, sweepPayments } from '../finish.js';
+import { markConfirming, markFailed, markPaid, reconcile, sweepPayments } from '../finish.js';
 import { getPayment, transition, unsettled } from '../store.js';
 import { FakeCallError, moneyKit, type MoneyKit } from './kit.js';
 
@@ -64,7 +64,7 @@ describe('a paid payment', () => {
     expect(ticket?.text).toBe('Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.');
     expect(ticket?.card).toMatchObject({ kind: 'ticket', card_id: `c_ticket_${approvalId}`, booking_id: bookingId });
     expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'paid', booking_id: bookingId, ticket_posted_at: expect.any(Date) });
-    expect(await unsettled(k.pool)).toEqual([]);
+    expect(await unsettled(k.pool, k.now())).toEqual([]);
   });
 
   it('does every step once when the vault calls back twice', async () => {
@@ -96,9 +96,19 @@ describe('a paid payment', () => {
     expect(k.server.writesOf('add_booking')).toHaveLength(1);
   });
 
-  it('stops retrying a step after 20 tries', async () => {
-    await k.pool.query("update payments set state = 'paid', rail_ref = 'fake_x', attempts = 20");
-    expect(await unsettled(k.pool)).toEqual([]);
+  it('backs off a paid payment after 20 tries, never drops it, and logs an error on the 20th', async () => {
+    k.travel.failConfirm = true;
+    await markPaid(k.deps, { tripId: 't_goa', approvalId, railRef: `fake_${approvalId}` });
+    await k.pool.query('update payments set attempts = 19');
+    await reconcile(k.deps, paymentId);
+    expect((await getPayment(k.pool, paymentId))?.attempts).toBe(20);
+    expect(k.lines.join('\n')).toContain('still not booked after 20 tries');
+    expect(await unsettled(k.pool, k.now())).toEqual([]);
+    k.advance(11 * 60_000);
+    expect(await unsettled(k.pool, k.now())).toEqual([paymentId]);
+    k.travel.failConfirm = false;
+    await sweepPayments(k.deps);
+    expect(k.server.writesOf('add_booking')).toHaveLength(1);
   });
 });
 
@@ -128,8 +138,22 @@ describe('a payment that did not happen', () => {
     await reconcile(k.deps, paymentId);
     await reconcile(k.deps, paymentId);
     expect(k.server.writesOf('cancel_spend_approval').map((w) => w.params.reason)).toEqual(['payer_declined']);
+    expect(k.vault.voids).toEqual([approvalId]);
     expect(k.server.cards.get(cardId)).toMatchObject({ state: 'declined' });
     expect(k.server.posts.filter((p) => p.text === 'Holding off on Villa Sol for now.')).toHaveLength(1);
+  });
+
+  it('releases nothing until the vault has stopped the pay links, then does both once', async () => {
+    await transition(k.pool, paymentId, ['waiting'], 'declined', { release_reason: 'payer_declined' }, k.now());
+    k.vault.failVoid = true;
+    await reconcile(k.deps, paymentId);
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+    expect((await getPayment(k.pool, paymentId))?.released_at).toBeNull();
+    k.vault.failVoid = false;
+    await sweepPayments(k.deps);
+    await reconcile(k.deps, paymentId);
+    expect(k.vault.voids).toEqual([approvalId]);
+    expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
   });
 
   it('expires 120 s after the approval ran out, quietly, with a way to start again', async () => {
@@ -151,5 +175,49 @@ describe('a payment that did not happen', () => {
     await sweepPayments(k.deps);
     expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'refused', refused_reason: 'interrupted', released_at: expect.any(Date) });
     expect(k.server.writesOf('cancel_spend_approval')[0]?.params.reason).toBe('other');
+  });
+});
+
+describe('a payment the bank has not confirmed yet', () => {
+  it('waits on the bank: the card says so, it never expires, and it finishes when the vault says paid', async () => {
+    await markConfirming(k.deps, { tripId: 't_goa', approvalId });
+    await reconcile(k.deps, paymentId);
+    const card = C.PayCard.parse(k.server.cards.get(cardId));
+    expect(card).toMatchObject({ state: 'waiting', fallback_text: expect.stringContaining('with the bank') });
+    expect(card.actions ?? null).toBeNull();
+    // Long after the approval ran out, the sweep leaves it alone and releases nothing.
+    k.setNow(new Date('2026-10-05T09:20:00Z'));
+    await sweepPayments(k.deps);
+    expect((await getPayment(k.pool, paymentId))?.state).toBe('confirming');
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+    await markPaid(k.deps, { tripId: 't_goa', approvalId, railRef: `fake_${approvalId}` });
+    await reconcile(k.deps, paymentId);
+    expect(k.server.writesOf('add_booking')).toHaveLength(1);
+    expect(C.PayCard.parse(k.server.cards.get(cardId)).state).toBe('paid');
+  });
+
+  it('says a person is checking once the vault stops asking the bank, and stays open', async () => {
+    await markConfirming(k.deps, { tripId: 't_goa', approvalId });
+    await reconcile(k.deps, paymentId);
+    await markConfirming(k.deps, { tripId: 't_goa', approvalId, checking: true });
+    await reconcile(k.deps, paymentId);
+    expect(C.PayCard.parse(k.server.cards.get(cardId)).fallback_text).toBe("We couldn't confirm this payment. Don't pay again; we're checking.");
+    expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'confirming', card_state: 'checking' });
+    expect(await k.ask()).toMatchObject({ code: 'approval_outstanding' });
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+  });
+
+  it('turns failed, with nothing charged, when the vault says the charge failed', async () => {
+    await markConfirming(k.deps, { tripId: 't_goa', approvalId });
+    await markFailed(k.deps, { tripId: 't_goa', approvalId, reason: 'card_declined' });
+    await reconcile(k.deps, paymentId);
+    expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'failed', release_reason: 'payment_failed' });
+    expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
+  });
+
+  it('is the vote\'s open payment, so a second ask is refused', async () => {
+    await markConfirming(k.deps, { tripId: 't_goa', approvalId });
+    expect(await k.ask()).toMatchObject({ code: 'approval_outstanding' });
+    expect(k.server.writesOf('request_spend_approval')).toHaveLength(1);
   });
 });
