@@ -1,3 +1,4 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import type pg from 'pg';
 import { limitRequestId, utcDay, type Budget } from '../budget.js';
 import type { DeskItem, TurnInput, TurnRunner } from '../desk/desk.js';
@@ -105,6 +106,18 @@ function linesFor(items: DeskItem[], pack: TripPack, shownUpTo: number): { lines
   return out;
 }
 
+/**
+ * The exchange plus the lines that arrived meanwhile, as the next user turn. A turn that ended on its cards ends with
+ * the cards' tool results (a user turn), so the lines join that turn instead of starting a second one in a row.
+ */
+function withNewLines(messages: Anthropic.MessageParam[], text: string): Anthropic.MessageParam[] {
+  const last = messages.at(-1);
+  if (last?.role === 'user' && Array.isArray(last.content)) {
+    return [...messages.slice(0, -1), { role: 'user', content: [...last.content, { type: 'text', text }] }];
+  }
+  return [...messages, { role: 'user', content: [{ type: 'text', text }] }];
+}
+
 const foldText = (lines: string[]): string =>
   `# New while you were writing\n${dataBlock('new messages', lines)}\n` +
   'Your reply above has not been posted yet. Write the one message to post now, covering these too if they need it. ' +
@@ -183,7 +196,7 @@ export function createComposer(d: ComposerDeps): Composer {
             ...base,
             continuing: true,
             maxRounds: MAX_ROUNDS - rounds,
-            messages: [...r.messages, { role: 'user', content: [{ type: 'text', text: foldText(fresh.lines) }] }],
+            messages: withNewLines(r.messages, foldText(fresh.lines)),
           });
           addUsage(usage, more.usage);
           rounds += more.rounds;
