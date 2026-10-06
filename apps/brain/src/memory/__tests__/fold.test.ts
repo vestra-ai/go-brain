@@ -184,3 +184,31 @@ describe('redaction finds every line about a person', () => {
     expect((await db.pool.query('SELECT text FROM story_lines WHERE trip_id = $1', ['t_f8'])).rows).toEqual([{ text: 'Meher is allergic to peanuts' }]);
   });
 });
+
+describe('a message that changes while the fold is writing', () => {
+  it('takes its story lines with it: deleted or edited messages leave no line behind', async () => {
+    const messages = longChat();
+    await seedMessages(db.pool, 't_f9', messages);
+    const answer = story([
+      { text: 'Meher is allergic to peanuts', refs: [142], people: ['p_meher'] },
+      { text: 'Kabir books the airport cab', refs: [400], people: ['p_kabir'] },
+      { text: 'Picked North Goa', refs: [5] },
+    ]);
+    const side = {
+      async complete(): Promise<string> {
+        // While the model writes: Meher deletes #142 and someone edits #400.
+        await db.pool.query(`UPDATE messages SET deleted_at = now(), text = NULL WHERE trip_id = 't_f9' AND message_id = 'm_0142'`);
+        await db.pool.query(`UPDATE messages SET updated_seq = 3000, text = 'cab sorted, I booked it' WHERE trip_id = 't_f9' AND message_id = 'm_0400'`);
+        return answer;
+      },
+    };
+    const fold = createFold({
+      pool: db.pool, packs: fakePacks({ t_f9: packOf(messages, goaTrip({ trip_id: 't_f9' })) }), side, log: silentLog,
+      now: () => new Date('2026-10-07T10:00:00Z'), foldAtTokens: 60_000, storyTokens: 5_000, hardCapTokens: 90_000,
+    });
+    expect(await fold.maybeFold('t_f9')).toBe('folded');
+    const rows = (await db.pool.query('SELECT text FROM story_lines WHERE trip_id = $1 ORDER BY idx', ['t_f9'])).rows;
+    expect(rows).toEqual([{ text: 'Picked North Goa' }]);
+    expect((await fold.get('t_f9')).foldedToSeq).toBe(1000);
+  });
+});

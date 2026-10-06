@@ -163,6 +163,8 @@ export function createFold(d: FoldDeps): Fold {
         const chunk = unfolded.slice(0, take);
         const lastSeq = chunk[chunk.length - 1]!.seq;
         const forgotten = await forgottenUpTo(d.pool, tripId);
+        // What each message looked like when the fold read it, to catch an edit made while the model was writing.
+        const readAt = new Map(pack.messages.map((m) => [m.message_id, m.updated_seq]));
 
         const user = [
           '<chat_data>',
@@ -228,8 +230,19 @@ export function createFold(d: FoldDeps): Fold {
             // A forget that landed while the model was writing wins: drop this fold and try again later.
             const nowForgotten = await forgottenUpTo(c, tripId);
             for (const [p, s] of nowForgotten) if ((forgotten.get(p) ?? -1) < s) throw new Error('a person was forgotten during the fold');
+            // A message deleted or edited while the model was writing takes its lines with it.
+            const cited = await c.query<{ message_id: string; deleted: boolean; updated_seq: number }>(
+              'SELECT message_id, deleted_at IS NOT NULL AS deleted, updated_seq FROM messages WHERE trip_id = $1 AND message_id = ANY($2::text[])',
+              [tripId, [...new Set(kept.flatMap((l) => l.refIds))]],
+            );
+            const changed = new Set(
+              cited.rows.filter((m) => m.deleted || m.updated_seq > (readAt.get(m.message_id) ?? Number.POSITIVE_INFINITY)).map((m) => m.message_id),
+            );
+            const lines = kept.filter((l) => !l.refIds.some((id) => changed.has(id)));
+            if (lines.length === 0) throw new Error('every line cites a message that changed during the fold');
+            total = lines.reduce((n, l) => n + estimateTokens(storyLineText(l)), 0);
             await c.query('DELETE FROM story_lines WHERE trip_id = $1', [tripId]);
-            for (const [idx, l] of kept.entries()) {
+            for (const [idx, l] of lines.entries()) {
               await c.query('INSERT INTO story_lines (trip_id, idx, text, refs, ref_ids, people) VALUES ($1, $2, $3, $4, $5, $6)', [
                 tripId, idx, l.text, l.refs, l.refIds, l.people,
               ]);
