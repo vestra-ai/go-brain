@@ -136,6 +136,22 @@ describe('a composer turn', () => {
     expect(why).not.toMatch(/open_vote|first vote/);
   });
 
+  it('cites a message by its number: the number leaves the words, and the post replies to that message', async () => {
+    const veg = msg(2, 'p_meher', "I'm veg btw");
+    const ask = msg(3, 'p_priya', "@Go what can't Meher eat?");
+    const r = room({ messages: [veg, ask], script: [{ text: 'Meher is vegetarian, so no seafood shacks. Meher said so in #2.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Meher is vegetarian, so no seafood shacks. Meher said so.', reply_to: veg.message_id });
+  });
+
+  it('a number that is no message in the trip leaves the words too, and no proof is made up for it', async () => {
+    const ask = msg(3, 'p_priya', "@Go what can't Meher eat?");
+    const r = room({ messages: [ask], script: [{ text: 'Meher is vegetarian. Meher said so in #99.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.posts()[0]?.params.text).toBe('Meher is vegetarian. Meher said so.');
+    expect(r.posts()[0]?.params.reply_to).toBeUndefined();
+  });
+
   it('the pre-post check: a message that lands while Go writes joins the same turn', async () => {
     const ask = msg(3, 'p_arjun', '@Go flights Friday?');
     const more = msg(5, 'p_kabir', 'also Saturday?');
