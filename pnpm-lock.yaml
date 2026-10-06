@@ -43,6 +43,9 @@ importers:
       '@go/sim':
         specifier: workspace:*
         version: link:../../packages/sim
+      '@go/vault':
+        specifier: workspace:*
+        version: link:../vault
       '@types/node':
         specifier: ^20.14.0
         version: 20.19.43
