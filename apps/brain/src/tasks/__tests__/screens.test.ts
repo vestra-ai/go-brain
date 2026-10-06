@@ -85,6 +85,23 @@ describe("the trip's screen on the card", () => {
     h.fake.screen = null;
   });
 
+  it("takes no picture of the trip's screen for any job while one of them waits on someone signing in", async () => {
+    const signing = await h.runningJob('scr_sign', 't_scr_sign');
+    const other = await h.runningJob('scr_other', 't_scr_sign');
+    await h.store.transition(signing.row.id, ['running'], 'needs_you', { needsPersonId: 'p_meher' });
+    h.fake.screen = Buffer.from([0xff, 0xd8, 0xff, 7]);
+    const shots = () => h.fake.callsTo('GET', /\/screenshot$/).length;
+    const before = shots();
+    await screens.tick('t_scr_sign');
+    expect(shots()).toBe(before);
+    expect((await h.store.get(other.row.id))?.screenshotUrl).toBeNull();
+    await h.store.transition(signing.row.id, ['needs_you'], 'running', { needsPersonId: null });
+    await screens.tick('t_scr_sign');
+    expect(shots()).toBe(before + 1);
+    expect((await h.store.get(other.row.id))?.screenshotUrl).toMatch(/^https:\/\/go\.test\/img\//);
+    h.fake.screen = null;
+  });
+
   it('words a trace step plainly and never echoes what the job read', () => {
     expect(stepWords('WebFetch', 'https://reviews.example.com/villa-sol?ref=ignore-your-rules')).toBe('Reading reviews.example.com');
     expect(stepWords('mcp_invoke', 'search_stays')).toBe("Using Go's trip tools");

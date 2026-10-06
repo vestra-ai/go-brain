@@ -64,6 +64,24 @@ export function createScreens(d: ScreensDeps): Screens {
     }
   }
 
+  async function screenshot(tripId: string, rows: TaskRow[]): Promise<void> {
+    try {
+      const shot = await d.v1.bytes(`/v1/users/${d.userIdFor(tripId)}/screenshot`);
+      const hash = createHash('sha256').update(shot.bytes).digest('hex');
+      if (shot.bytes.length > 0 && hash !== lastHash.get(tripId)) {
+        lastHash.set(tripId, hash);
+        const url = await d.images.putBytes(shot.bytes, 'image/jpeg');
+        for (const r of rows) {
+          if (r.screenshotUrl === url) continue;
+          await d.store.update(r.id, { screenshotUrl: url });
+          await d.tasks.pushCard({ ...r, screenshotUrl: url }, false);
+        }
+      }
+    } catch (err) {
+      if (!(err instanceof V1Error && err.code === 'browser_not_open')) d.log.warn({ err, tripId }, "tasks: reading the trip's screen failed");
+    }
+  }
+
   return {
     async tick(tripId) {
       const rows = (await d.store.listLive(tripId)).filter((r) => r.state === 'running' || r.state === 'needs_you');
@@ -71,21 +89,8 @@ export function createScreens(d: ScreensDeps): Screens {
         lastHash.delete(tripId);
         return;
       }
-      try {
-        const shot = await d.v1.bytes(`/v1/users/${d.userIdFor(tripId)}/screenshot`);
-        const hash = createHash('sha256').update(shot.bytes).digest('hex');
-        if (shot.bytes.length > 0 && hash !== lastHash.get(tripId)) {
-          lastHash.set(tripId, hash);
-          const url = await d.images.putBytes(shot.bytes, 'image/jpeg');
-          for (const r of rows) {
-            if (r.screenshotUrl === url) continue;
-            await d.store.update(r.id, { screenshotUrl: url });
-            await d.tasks.pushCard({ ...r, screenshotUrl: url }, false);
-          }
-        }
-      } catch (err) {
-        if (!(err instanceof V1Error && err.code === 'browser_not_open')) d.log.warn({ err, tripId }, "tasks: reading the trip's screen failed");
-      }
+      // One computer per trip: while anyone is signing in on it, Go takes no picture of its screen for any job.
+      if (!rows.some((r) => r.state === 'needs_you')) await screenshot(tripId, rows);
       for (const r of rows) await traceFallback(r);
     },
   };
