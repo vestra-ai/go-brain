@@ -46,7 +46,7 @@ describe('the demo transcript', () => {
       took: [{ beat: 'flights', ms: 60 }], runUrl: 'https://github.com/vestra-ai/go-brain/actions/runs/1', at: new Date(T0),
     });
     expect(text).toContain('Run: [https://github.com/vestra-ai/go-brain/actions/runs/1](https://github.com/vestra-ai/go-brain/actions/runs/1), 2026-10-06 10:00 UTC.');
-    expect(text).toContain('| flights | 0.1 s |');
+    expect(text).toContain('| flights | 0.06 s |');
     expect(text).toContain('### 0:00 Go joins');
     expect(text).toContain('| 0.1 s | Go | Hi all, I am Go. |');
     expect(text).toContain("| 0.9 s | Meher | I'm veg btw \\| no fish (Go reacted ✅) |");
@@ -61,5 +61,8 @@ describe('the demo transcript', () => {
     expect(rowsOfFile(a)).toContain("| Meher | I'm veg btw \\| no fish (Go reacted ✅) |");
     const changed = renderTranscript({ messages: messages.slice(1), people, acts: [], chapters: [], took: [], runUrl: null, at: new Date(T0) });
     expect(rowsOfFile(changed)).not.toEqual(rowsOfFile(a));
+    // A booking's reference is new on every run, so it is not compared.
+    const ticket = (ref: string) => rowsOfFile(`| 1.0 s | Go | [ticket card: Booked: Villa Sol. Ref ${ref}. Free cancellation until 3 Nov.] |`);
+    expect(ticket('IXG456974')).toEqual(ticket('IXG123456'));
   });
 });
