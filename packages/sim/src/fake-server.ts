@@ -2,7 +2,7 @@
 // ?instance=), keeps trips in memory, answers all 18 of Go's methods with the contract's rules, and sends each
 // trip's events to Go one at a time, in change-number order, waiting for each answer. Its helpers play the
 // people in the room: say, react, edit, delete, tap, vote, a vote closing on time, and the payer's yes or no.
-import { CardActionResult, EventAccepted, SOCKET_PATH, type Event, type Message, type TripSnapshot } from '@go/contract';
+import { CardActionResult, EventAccepted, ForgetResult, SOCKET_PATH, type Event, type Message, type TripSnapshot } from '@go/contract';
 import type { z } from 'zod';
 import { GoSocket, SocketCallError, SocketTimeoutError, type Handler } from './server-socket.js';
 import { closeVote, closeVoteByTime, confirmMandate, declineMandate, openVote, setMandate, vote } from './state/decisions.js';
@@ -233,6 +233,16 @@ export class FakeServer {
     const s = this.state(this.tripWith((t) => t.cardMessage(cardId) !== undefined, `card ${cardId}`));
     const tap = { tap_id: this.mint('tap_'), trip_id: s.id, card_id: cardId, action_id: actionId, person_id: personId, ...(optionId ? { option_id: optionId } : {}) };
     return CardActionResult.parse(await this.socket.request('card_tap', tap, { timeoutMs: 3500 }));
+  }
+
+  /**
+   * Someone taps "Forget me in this trip" in the App: forget_person to Go, and once Go answers that nothing is left,
+   * the Server clears the person's join answers in the trip and sends person.updated (guide 07).
+   */
+  async forgetPerson(personId: string, tripId: string = this.lastTripId()): Promise<z.infer<typeof ForgetResult>> {
+    const result = ForgetResult.parse(await this.askGo('forget_person', { person_id: personId, trip_id: tripId }));
+    await this.act(tripId, (s) => s.clearJoinAnswers(personId));
+    return result;
   }
 
   /** Sends any of the Server's requests to Go (catch_up, get_person, forget_person, vault_link...). */
