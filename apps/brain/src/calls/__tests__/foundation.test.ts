@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
-import { findCallee, loadCallsConfig, maskPhone, mediaUrl, normalisePhone, parseAllowlist, statusUrl, voiceKind } from '../config.js';
+import { findCallee, loadCallsConfig, maskNumbers, maskPhone, mediaUrl, normalisePhone, parseAllowlist, statusUrl, voiceKind } from '../config.js';
 import { CallsEnv } from '../env.js';
 import { saysStop } from '../stop-words.js';
 import { CallStore, type NewCall } from '../store.js';
@@ -37,6 +37,8 @@ describe('config', () => {
     expect(statusUrl('https://brain.test', 'call_1')).toBe('https://brain.test/calls/twilio/status/call_1');
     expect(mediaUrl('https://brain.test', 'call_1')).toBe('wss://brain.test/calls/media/call_1');
     expect(maskPhone('+919800000001')).toBe('+91***001');
+    expect(maskNumbers('Account not authorized to call +91 98000-00001.')).toBe('Account not authorized to call +91***001.');
+    expect(maskNumbers('call 9800000001 at 10 am, 6 Nov')).toBe('call 980***001 at 10 am, 6 Nov');
   });
 
   it('picks the voice model: gpt-realtime-2.1 unless the day-one A/B says gpt-live-1, and never a transcriber', () => {

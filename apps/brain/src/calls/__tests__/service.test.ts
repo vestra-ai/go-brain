@@ -39,6 +39,7 @@ function make(tripId: string, o: { mode?: string; twilioFails?: boolean; placing
   const values: Record<string, string> = { CALLS_MODE: o.mode ?? 'allowlist' };
   const twilioCalls: CreateCall[] = [];
   const hangUps: string[] = [];
+  const logs: string[] = [];
   const twilio: TwilioClient = {
     createCall: async (p) => {
       twilioCalls.push(p);
@@ -54,12 +55,13 @@ function make(tripId: string, o: { mode?: string; twilioFails?: boolean; placing
   });
   const service = new CallService({
     store, link, packs: fakePacks(pack), switches: { get: (n: string) => values[n] ?? '' }, config: loadCallsConfig(env), twilio,
-    now: time.now, schedule: time.schedule, log: { info: () => {}, warn: () => {} },
+    now: time.now, schedule: time.schedule,
+    log: { info: (obj: object, m: string) => { logs.push(`${m} ${JSON.stringify(obj)}`); }, warn: (obj: object, m: string) => { logs.push(`${m} ${JSON.stringify(obj)}`); } },
   });
   let n = 0;
   /** As the tool does: a fresh call id per new request (the turn's stableId('call')). */
   const request = (over: Partial<CallRequest> = {}) => service.request(tripId, pack, { ...base, callId: `call_${tripId}_${++n}`, ...over });
-  return { time, link, values, twilioCalls, hangUps, service, pack, request };
+  return { time, link, values, twilioCalls, hangUps, service, pack, request, logs };
 }
 
 async function dialed(tripId: string) {
@@ -300,6 +302,9 @@ describe('dialing', () => {
     await m.service.tick();
     expect(m.link.of('replace_card').at(-1)).toMatchObject({ card: { state: 'failed', outcome: "Couldn't connect the call." } });
     expect(m.link.of('post_message').at(-1)?.text).toBe("I couldn't get through to Villa Sol.");
+    // Twilio's error names the number it could not call; the logs never carry it whole.
+    expect(m.logs.some((l) => l.includes('Twilio refused the call') && l.includes('+91***001'))).toBe(true);
+    expect(m.logs.join('\n')).not.toContain('9800000001');
   });
 });
 

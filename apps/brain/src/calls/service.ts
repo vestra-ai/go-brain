@@ -13,7 +13,7 @@ import type { Packs, TripPack } from '../trips/pack.js';
 import type { EndReason } from './bridge.js';
 import { CardUpdater } from './card-updater.js';
 import {
-  CALL_WINDOW_MS, CARD_GAP_MS, RING_TIMEOUT_S, TWILIO_TIME_LIMIT_S, findCallee, maskPhone, mediaUrl, statusUrl, type CallsConfig,
+  CALL_WINDOW_MS, CARD_GAP_MS, RING_TIMEOUT_S, TWILIO_TIME_LIMIT_S, findCallee, maskNumbers, maskPhone, mediaUrl, statusUrl, type CallsConfig,
 } from './config.js';
 import type { CallBrief, ReportedOutcome } from './realtime.js';
 import { saysStop } from './stop-words.js';
@@ -59,6 +59,15 @@ function noOutcome(reason: string, stoppedBy: string | null): string {
   return 'The call ended before an answer.';
 }
 const rid = (callId: string, step: string): string => `go_${callId}_${step}`;
+/** An error for the logs, with any phone number in it masked (Twilio's errors name the number they could not call). */
+const logged = (err: unknown): object => {
+  const e = err as { status?: unknown; code?: unknown; message?: unknown };
+  return {
+    error: maskNumbers(err instanceof Error ? err.message : String(err)),
+    ...(typeof e?.status === 'number' ? { status: e.status } : {}),
+    ...(typeof e?.code === 'number' ? { code: e.code } : {}),
+  };
+};
 const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
 
 /** A person's message after Go's call line that says stop (a bare "no" counts only as a reply to that line). */
@@ -173,7 +182,7 @@ export class CallService {
       }
       this.d.log.info({ callId: row.callId, tripId, to: maskPhone(row.phone) }, 'calls: announced; dialing in 30 s unless someone says stop');
       this.d.schedule(() => {
-        this.tick().catch((err: unknown) => this.d.log.warn({ err }, 'calls: tick failed'));
+        this.tick().catch((err: unknown) => this.d.log.warn(logged(err), 'calls: tick failed'));
       }, Math.max(0, row.dialAt.getTime() - this.d.now().getTime()));
     }
     return { ok: true, callId: row.callId, dialAt: row.dialAt.toISOString() };
@@ -219,14 +228,14 @@ export class CallService {
     await this.d.store.cancelUnannounced(new Date(now.getTime() - (NOT_ANNOUNCED_AFTER_MS - CALL_WINDOW_MS)), now);
     for (const row of await this.d.store.dueToDial(now)) {
       // One call that cannot be dialed never holds up the others; it stays due for the next tick.
-      await this.dial(row).catch((err: unknown) => this.d.log.warn({ err, callId: row.callId }, 'calls: dialing failed; trying again next tick'));
+      await this.dial(row).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: dialing failed; trying again next tick'));
     }
     for (const row of await this.d.store.inCall()) {
       if (this.live.has(row.callId)) continue;
-      await this.sweepOne(row, now).catch((err: unknown) => this.d.log.warn({ err, callId: row.callId }, 'calls: closing a stranded call failed'));
+      await this.sweepOne(row, now).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: closing a stranded call failed'));
     }
     for (const row of await this.d.store.toCloseOut(new Date(now.getTime() - CLOSE_OUT_AFTER_MS))) {
-      await this.closeOut(row, null).catch((err: unknown) => this.d.log.warn({ err, callId: row.callId }, 'calls: a close-out failed; trying again next tick'));
+      await this.closeOut(row, null).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: a close-out failed; trying again next tick'));
     }
   }
 
@@ -282,7 +291,7 @@ export class CallService {
       }
       this.d.log.info({ callId: row.callId, to: maskPhone(row.phone) }, 'calls: dialing');
     } catch (err) {
-      this.d.log.warn({ err, callId: row.callId }, 'calls: Twilio refused the call');
+      this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: Twilio refused the call');
       await this.fail(row.callId, 'failed');
     }
   }
@@ -337,7 +346,7 @@ export class CallService {
     const row = await this.d.store.byCard(tap.trip_id, tap.card_id);
     if (!row || (row.state !== 'dialing' && row.state !== 'talking')) return { result: 'refused', toast: 'The call has already ended.' };
     // Answer the tap at once (3 s limit); hanging up and closing out run behind it.
-    void this.stopLive(row, tap.person_id).catch((err: unknown) => this.d.log.warn({ err, callId: row.callId }, 'calls: stopping the call failed'));
+    void this.stopLive(row, tap.person_id).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: stopping the call failed'));
     return { result: 'done', toast: 'Hanging up.' };
   }
 
@@ -381,7 +390,7 @@ export class CallService {
     });
     this.live.delete(callId);
     if (!row) return;
-    if (why === 'dropped') await this.hangUp(callId).catch((err: unknown) => this.d.log.warn({ err, callId }, 'calls: hanging up a dropped call failed'));
+    if (why === 'dropped') await this.hangUp(callId).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId }, 'calls: hanging up a dropped call failed'));
     await this.closeOut(row, live?.updater ?? null);
   }
 

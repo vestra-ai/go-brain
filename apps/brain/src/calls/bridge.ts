@@ -4,6 +4,7 @@
 import WebSocket, { type RawData } from 'ws';
 import { z } from 'zod';
 import type { Schedule } from '../proactive/clock.js';
+import { maskNumbers } from './config.js';
 import { ReportedOutcome, type CallBrief, type SessionSettings } from './realtime.js';
 import type { CallLine } from './store.js';
 import { wireFor, type VoiceEvent } from './voice-wire.js';
@@ -137,7 +138,7 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
   const hangUp = (reason: EndReason): void => {
     if (hangingUp) return;
     hangingUp = true;
-    d.hangUp(callId).catch((err: unknown) => d.log.warn({ err, callId }, 'calls: hanging up failed'));
+    d.hangUp(callId).catch((err: unknown) => d.log.warn({ error: maskNumbers(err instanceof Error ? err.message : String(err)), callId }, 'calls: hanging up failed'));
     finish(reason);
   };
 
