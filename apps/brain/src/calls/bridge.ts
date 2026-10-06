@@ -39,6 +39,8 @@ export const HANG_UP_AFTER_REPORT_MS = 15_000;
 /** Barge-in without a speech event (gpt-live-1): this loud for this many 20 ms frames while Go's audio plays. Tuned on day one. */
 export const BARGE_IN_LEVEL = 1_500;
 export const BARGE_IN_FRAMES = 3;
+/** Twilio sends `start` right after connecting; a media socket with no valid one by then is closed. */
+export const START_WITHIN_MS = 10_000;
 
 const TwilioFrame = z.object({
   event: z.string(),
@@ -252,6 +254,7 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
         return;
       }
       started = true;
+      cancelStart();
       streamSid = frame.start.streamSid;
       const moved = await d.hooks.talking(callId);
       if (ended) return; // Twilio dropped meanwhile: end() has already closed the call
@@ -283,6 +286,10 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
     if (frame.event === 'stop') finish('hangup');
   }
 
+  const cancelStart = d.schedule(() => {
+    if (!started && !ended) twilio.close(1008, 'no start');
+  }, START_WITHIN_MS);
+  cancels.push(cancelStart);
   twilio.on('message', (data: RawData) => {
     onTwilio(data).catch((err: unknown) => d.log.warn({ err, callId }, 'calls: media frame failed'));
   });

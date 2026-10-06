@@ -176,6 +176,21 @@ describe('attachBridge on gpt-realtime-2.1 (the default)', () => {
     expect(s.modelSocket()).toBeNull();
   });
 
+  it('closes a media socket that sends no valid start within 10 s, and ends nothing', async () => {
+    const s = await setup();
+    s.send({ event: 'connected', protocol: 'Call', version: '1.0.0' });
+    s.send({ event: 'start', streamSid: 'MZ1' }); // no start block: not a valid start
+    s.time.advance(9_999);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(s.closedWith()).toBeNull();
+    s.time.advance(1);
+    await waitFor(() => s.closedWith() !== null);
+    expect(s.closedWith()).toBe(1008);
+    expect(s.seen.talking).toEqual([]);
+    expect(s.seen.ended).toEqual([]);
+    expect(s.modelSocket()).toBeNull();
+  });
+
   it('refuses a media connection with the wrong token and ends nothing', async () => {
     const s = await setup();
     s.send(startFrame('forged'));
