@@ -92,7 +92,7 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 | `OPENAI_API_KEY` | The voice model Go speaks with on a call. | Not set: Keshav's key |
 | `CALLS_ALLOWLIST` | The only numbers Go may call this week, as `Name=+91...` joined by commas. | Not set |
 | `CALLS_VOICE_MODEL` | The voice model on a call. | Not set: the default applies |
-| `FOLD_AT_TOKENS`, `STORY_TOKENS`, `CHAT_HARD_CAP_TOKENS`, `NOTES_QUIET_MS`, `FOLD_QUIET_MS` | When Go summarises a long chat, and how long it waits after the last message before it takes notes. | Not set: the defaults apply |
+| `FOLD_AT_TOKENS`, `STORY_TOKENS`, `CHAT_HARD_CAP_TOKENS`, `NOTES_QUIET_MS`, `FOLD_QUIET_MS` | How long a chat grows before Go summarises it (right after Go posts, or after `FOLD_QUIET_MS` of quiet, at most 10 minutes in a busy chat), and how long Go waits after the last message before it takes notes. | Not set: the defaults apply |
 
 Railway also sets `RAILWAY_*` variables on every service (its domains and ids). On `brain` and `fake-go`, `RAILWAY_DOCKERFILE_PATH` picks the Dockerfile.
 
