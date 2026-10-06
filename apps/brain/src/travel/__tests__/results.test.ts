@@ -44,6 +44,19 @@ describe('result sets', () => {
     expect(await store.offer('opt_missing')).toBeNull();
   });
 
+  it('says which trip searched an offer, and for which check-in or departure day, from the newest search that showed it', async () => {
+    const store = createResultsStore(db.pool);
+    const stay = villa('Casa Dated', 1500000);
+    await store.save({ tripId: 't_dated', optionKind: 'stay', source: 'search', query: { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, options: [stay], checkedAt: CHECKED });
+    // The trip's computer's search keeps its query with how it came; a job's picks are saved with no dates at all.
+    const flight = { ...villa('Flight Dated', 592000), offerId: 'fake:fl-6E2134-20261106', kind: 'flight' as const };
+    await store.save({ tripId: 't_dated', optionKind: 'flight', source: 'search', query: { via: 'trip_computer', kind: 'flights', from: 'Delhi', to: 'Goa', date: '2026-11-06' }, options: [flight], checkedAt: CHECKED });
+    await store.save({ tripId: 't_dated', optionKind: 'stay', source: 'task', query: { task_id: 'gt_dated' }, options: [stay], checkedAt: '2026-10-07T13:00:00.000Z' });
+    expect(await store.searchedFor(stay.offerId!)).toEqual({ tripId: 't_dated', day: '2026-11-06' });
+    expect(await store.searchedFor('fake:fl-6E2134-20261106')).toEqual({ tripId: 't_dated', day: '2026-11-06' });
+    expect(await store.searchedFor('fake:never-shown')).toBeNull();
+  });
+
   it("finds an offer Go's search showed this trip, from the newest check, and never another trip's or a job's", async () => {
     const store = createResultsStore(db.pool);
     const older = villa('Villa Sol', 1280000);

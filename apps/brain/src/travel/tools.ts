@@ -4,7 +4,7 @@
  * before 6") arrive as arguments and are applied in code by the travel layer.
  */
 import { z } from 'zod';
-import type { QuickTool, TurnCtx } from '../composer/tools.js';
+import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import { buildOptionsCard, clip, formatInr, subtitleFor } from './cards.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
@@ -127,8 +127,10 @@ function suggestTitle(kind: TravelKind, q: TravelQuery): string {
 async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
   let found;
   try {
-    found = await d.travel.search(kind, q);
+    found = await d.travel.search(kind, q, { tripId: ctx.tripId });
   } catch (err) {
+    // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
+    if (err instanceof TravelError && err.code === 'past_date') return { count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
     if (err instanceof TravelError) return { count: 0, error: err.code, note: clip(err.message, 200) };
     throw err;
   }

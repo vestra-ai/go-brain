@@ -108,6 +108,14 @@ describe("Go's MCP server", () => {
     expect(await results.findOffer('t_manali', sol.offer_id)).toBeNull();
   });
 
+  it("refuses a job's search for a check-in already past, with the date to use instead, and searches nothing", async () => {
+    await expect(searchAsTheJob({
+      goUrl: base, token: await tokens.mint('t_goa', LATER), tool: 'search_stays',
+      args: { area: 'North Goa', check_in: '2025-11-06', check_out: '2025-11-09', guests: 5 },
+    })).rejects.toThrow(/past_date.*such as 2026-11-06/);
+    expect(await results.findOffer('t_goa', 'fake:st-villa-sol-anjuna-20251106-20251109-5')).toBeNull();
+  });
+
   it('searches trains for the job too, read-only, with offer ids and checked prices', async () => {
     const r = await searchAsTheJob({ goUrl: base, token: await tokens.mint('t_goa', LATER), tool: 'search_trains', args: { from: 'Delhi', to: 'Goa', date: '2026-11-06' } });
     expect(r.results.find((x) => x.offer_id === 'fake:tr-NZM-MAO-20261106-22414-3A')).toMatchObject({ price_minor: 412000, price_note: 'per person, 3A' });
