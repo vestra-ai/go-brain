@@ -108,7 +108,7 @@ These are measured but not held to a bar.
 - **Prompt size:** the largest prompt was 5,776 / 8,463 / 20,191 tokens, and the last 5,776 / 8,463 / 12,857. On average a first-round prompt held the tools (3,620 tokens), the rules (964), the cached chat (208 / 1,599 / 8,736) and the part after the cache point (621 / 592 / 624).
 - **Side passes:** Go's smaller model takes notes and writes the story in the background: 8 / 7 / 11 requests, 6,096 / 4,738 / 27,356 tokens.
 - **First word:** the scripted model's first word arrived in 1 ms (p50), so it adds nothing to the reply times.
-- **Cost:** $0.0403 / $0.2168 / $1.3616 per chat. It is every request Go sent (model turns and side passes), priced with the agent SDK's price table for each request's model, from the estimated token counts. It is an estimate of what the chat would cost, not a bill.
+- **Cost:** $0.0403 / $0.2168 / $1.3616 per chat. It is every request Go sent (model turns and side passes), priced with Go's price table ([`apps/brain/src/composer/anthropic-helpers.ts`](../../../apps/brain/src/composer/anthropic-helpers.ts#L44)) for each request's model, from the estimated token counts. It is an estimate of what the chat would cost, not a bill.
 - **Run time:** 13.1 / 54.4 / 95.6 seconds of real time to replay each chat.
 
 ## The proof board (`boards`)
