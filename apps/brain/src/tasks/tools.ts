@@ -77,7 +77,9 @@ export function taskTools(d: { tasks: TasksService }): QuickTool<any>[] {
   };
   const messageTask: QuickTool<z.infer<typeof MessageArgs>> = {
     name: 'message_task',
-    description: "Passes a person's words to a running job: the answer to its question, a one-time code for its hand-off, or more to do. Use the job's id from the jobs list.",
+    description:
+      "Passes a person's words to a running job: the answer to its question, or more to do. Never for a one-time code or a password: " +
+      "codes typed in the chat are hidden, so a sign-in is done on Go's screen through Watch, then settle_handoff. Use the job's id from the jobs list.",
     input: MessageArgs,
     run: (a) => asAnswer(async () => {
       await d.tasks.message(a.task_id, a.text);

@@ -81,6 +81,13 @@ describe('start_task', () => {
     await lane.tasks.settled();
   });
 
+  it('tells the composer message_task is never for a code: a sign-in is done on Go\'s screen through Watch', () => {
+    const description = lb.tools.list().find((t) => t.name === 'message_task')!.description;
+    expect(description).toContain('Never for a one-time code or a password');
+    expect(description).toContain('Watch');
+    expect(description).not.toMatch(/code for its hand-off/);
+  });
+
   it('answers a job that is not there as a tool answer, not a crash', async () => {
     expect(await lb.tools.run('message_task', { task_id: 'gt_000000nothing', text: 'hi' }, lb.ctx())).toMatchObject({ error: 'unknown_task' });
     expect(await lb.tools.run('settle_handoff', { task_id: 'gt_000000nothing', outcome: 'done' }, lb.ctx())).toMatchObject({ error: 'unknown_task' });
