@@ -77,7 +77,7 @@ CI runs on every pull request ([`.github/workflows/ci.yml`](.github/workflows/ci
 
 The live bench ([`.github/workflows/bench-live.yml`](.github/workflows/bench-live.yml)) runs the same replay with the real models and real Jev, by hand or nightly, never on a push.
 
-The tests in each package built this week, from [CI run 37429724054](https://github.com/vestra-ai/go-brain/actions/runs/37429724054) (all passed):
+The tests in each package, from [CI run 37429724054](https://github.com/vestra-ai/go-brain/actions/runs/37429724054) (all passed):
 
 | Package | Test files | Tests |
 |---|---|---|
@@ -88,12 +88,6 @@ The tests in each package built this week, from [CI run 37429724054](https://git
 | `packages/sim` | 9 | 83 |
 | `packages/contract` | 4 | 35 |
 | `packages/contract-py` | | 13 |
-
-Brought in from Vestra's Bash on 4 October, before this week, and counted apart (see its [`PROVENANCE.md`](packages/agent-sdk/PROVENANCE.md)):
-
-| Package | Test files | Tests |
-|---|---|---|
-| `packages/agent-sdk` | 588 (and 1 skipped) | 7,851 (and 4 skipped) |
 
 To run the tests on your own machine, start the Postgres above and run `DATABASE_URL=postgres://go:go@localhost:5432/go pnpm build && DATABASE_URL=postgres://go:go@localhost:5432/go pnpm test`. Each app's README says what its tests prove.
 

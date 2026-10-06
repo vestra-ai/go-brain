@@ -12,9 +12,9 @@ Go is the AI member of a trip group. Friends plan a trip in a group chat inside 
 
 | Part | Who builds it | What it does |
 |---|---|---|
-| **Go** | Keshav's team, with Bash and Nami | The AI member itself: reading the room, deciding when to speak, memory about people, searching and booking, phone calls, and the vault that holds cards. It exposes this contract. |
+| **Go** | Keshav's team | The AI member itself: reading the room, deciding when to speak, memory about people, searching and booking, phone calls, and the vault that holds cards. It exposes this contract. |
 | **Server** | Nishanth's team | The app's backend and its database. It owns everything about a trip: people, messages, votes, bookings, expenses, the trip record and the spend check. It connects to Go and builds on this contract. |
-| **App** | Saket's team | The Flutter app people use: the trip room (the group chat), the Trip screens, joining by link, push notifications. It talks to the server. |
+| **App** | Saket's team | The app people use: the trip room (the group chat), the Trip screens, joining by link, push notifications. It talks to the server. |
 
 All three teams are the Vestra team.
 
@@ -23,7 +23,7 @@ All three teams are the Vestra team.
 Go has two layers, so it answers in seconds and can still take on jobs that need minutes:
 
 - **The composer** is the quick layer. It runs all the time inside Go's own service. It reads every message in the trip (the whole chat, one conversation per trip), remembers people, and decides when to speak. It answers in a second or two, and does the quick things itself: it reads the trip, searches ixigo, opens votes, writes the trip record, reacts and asks to pay.
-- **The trip's computer** is for big jobs. Each trip gets its own Bash from Vestra, started when the trip is created. It does slow, many-step work, such as comparing 30 villas across sites, reading reviews, filling in forms or watching a fare. It works for minutes and never speaks in the room. It reports to the composer, which posts the result in place of the "working" card it showed while the job ran.
+- **The trip's computer** is for big jobs. Each trip gets its own Bash, Vestra's AI agent, which runs a job on its own computer. It is started when the trip is created. It does slow, many-step work, such as comparing 30 villas across sites, reading reviews, filling in forms or watching a fare. It works for minutes and never speaks in the room. It reports to the composer, which posts the result in place of the "working" card it showed while the job ran.
 
 Payments never go through the computer: the composer pays through Go's vault, with the server's signed approval and the payer's Face ID. None of this changes what the server or the app do. They talk to one Go.
 
