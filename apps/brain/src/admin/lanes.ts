@@ -1,7 +1,10 @@
 // The helpers the admin page borrows from other lanes, read only (master interface note 9): P4's v1UserIdFor and
-// createHttpMcpCaller, P6's loadCallsConfig and maskPhone. A lane that is not on this build yet reads on the page as
-// "not deployed on this Go yet", and nothing here changes when it lands.
+// createHttpMcpCaller, P6's loadCallsConfig and maskPhone. Tests pass their own, including none at all, which reads on
+// the page as "not deployed on this Go yet".
+import { loadCallsConfig, maskPhone } from '../calls/config.js';
 import type { Env } from '../env.js';
+import { v1UserIdFor } from '../tasks/computer.js';
+import { createHttpMcpCaller } from '../travel/mcp-caller.js';
 
 export const NOT_DEPLOYED = 'not deployed on this Go yet';
 
@@ -14,44 +17,18 @@ export interface AdminLanes {
   calls: { allowlist(env: Env): Array<{ name: string | null; phone: string }>; maskPhone(phone: string): string } | null;
 }
 
-interface ComputerModule {
-  v1UserIdFor?: (tripId: string) => string;
-}
-interface McpCallerModule {
-  createHttpMcpCaller?: (o: { url: string; token?: string; name?: string }) => { listTools(): Promise<unknown[]>; close(): Promise<void> };
-}
-interface CallsModule {
-  loadCallsConfig?: (env: Env) => { allowlist: Array<{ name: string | null; phone: string }> };
-  maskPhone?: (phone: string) => string;
+/** Lists ixigo's tools over MCP and closes the connection again. */
+async function listIxigoTools(url: string, token: string | undefined): Promise<number> {
+  const caller = createHttpMcpCaller({ url, name: 'go-admin-probe', ...(token ? { token } : {}) });
+  try {
+    return (await caller.listTools()).length;
+  } finally {
+    await caller.close();
+  }
 }
 
-/** A lane's module, or null when that lane is not on this build. */
-const optional = <T>(load: () => Promise<unknown>): Promise<T | null> => load().then((m) => m as T, () => null);
-
-export async function loadAdminLanes(): Promise<AdminLanes> {
-  const [computer, mcp, callsConfig] = await Promise.all([
-    // @ts-ignore P4's file: not on every build yet, and then this lane reads as not deployed.
-    optional<ComputerModule>(() => import('../tasks/computer.js')),
-    // @ts-ignore P4's file: not on every build yet, and then this lane reads as not deployed.
-    optional<McpCallerModule>(() => import('../travel/mcp-caller.js')),
-    // @ts-ignore P6's file: not on every build yet, and then this lane reads as not deployed.
-    optional<CallsModule>(() => import('../calls/config.js')),
-  ]);
-  const connect = mcp?.createHttpMcpCaller;
-  const load = callsConfig?.loadCallsConfig;
-  const mask = callsConfig?.maskPhone;
-  return {
-    v1UserIdFor: computer?.v1UserIdFor ?? null,
-    listIxigoTools: connect
-      ? async (url, token) => {
-          const caller = connect({ url, name: 'go-admin-probe', ...(token ? { token } : {}) });
-          try {
-            return (await caller.listTools()).length;
-          } finally {
-            await caller.close();
-          }
-        }
-      : null,
-    calls: load && mask ? { allowlist: (env) => load(env).allowlist, maskPhone: mask } : null,
-  };
-}
+export const ADMIN_LANES: AdminLanes = {
+  v1UserIdFor,
+  listIxigoTools,
+  calls: { allowlist: (env) => loadCallsConfig(env).allowlist, maskPhone },
+};
