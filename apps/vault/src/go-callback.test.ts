@@ -15,6 +15,8 @@ afterAll(async () => {
   await f.drop();
 });
 
+const confirmingTold = async (jti: string) =>
+  (await f.pool.query('select confirming_told_at from used_approvals where jti = $1', [jti])).rows[0]?.confirming_told_at ?? null;
 const row = async (jti: string) =>
   (await f.pool.query('select outcome, callback_at, callback_refused_at, callback_attempts from used_approvals where jti = $1', [jti])).rows[0];
 
@@ -106,7 +108,9 @@ describe('a charge the rail gave no clear answer for', () => {
     f.stripe.throwOnce = { type: 'StripeConnectionError', afterCharging: true };
     expect(await f.approve(token, rahul)).toEqual({ state: 'confirming' });
     expect(await row(jti)).toMatchObject({ outcome: 'charging', callback_at: null });
-    expect(callsFor(jti)).toEqual([]);
+    // Go hears that the bank is being asked, so its pay card cannot be started again meanwhile.
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming']);
+    expect(f.goCalls.at(-1)?.body).toEqual({ trip_id: 't_goa', approval_id: jti });
     later(121_000);
     try {
       expect((await sweep(f.d)).recharged).toBe(1);
@@ -116,7 +120,7 @@ describe('a charge the rail gave no clear answer for', () => {
     }
     expect(f.stripe.charges.filter((c) => c.idempotencyKey === jti)).toHaveLength(1);
     expect(await row(jti)).toMatchObject({ outcome: 'paid' });
-    expect(callsFor(jti)).toEqual(['/internal/vault/paid']);
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/paid']);
     const kinds = (await f.pool.query('select kind from unlock_log where approval_id = $1 order by id', [jti])).rows.map((r) => r.kind);
     expect(kinds).toEqual(['pay_attempt', 'pay_ok']);
   });
@@ -137,7 +141,7 @@ describe('a charge the rail gave no clear answer for', () => {
       later(0);
     }
     expect(await row(jti)).toMatchObject({ outcome: 'unknown', callback_at: null });
-    expect(callsFor(jti)).toEqual([]);
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming']);
     expect(f.lines.join('\n')).toContain('marked unknown for a person to check');
     const kinds = (await f.pool.query('select kind from unlock_log where approval_id = $1 order by id', [jti])).rows.map((r) => r.kind);
     expect(kinds).toEqual(['pay_attempt']);
@@ -155,6 +159,23 @@ describe('a charge the rail gave no clear answer for', () => {
       later(0);
     }
     expect(await row(jti)).toMatchObject({ outcome: 'unknown' });
-    expect(callsFor(jti)).toEqual([]);
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming']);
+  });
+
+  it('sends the confirming notice again until Go takes it, and only once after that', async () => {
+    const { token, jti } = await f.payLinkFor({ kind: 'stripe_test' });
+    f.stripe.throwOnce = { type: 'StripeConnectionError' };
+    f.setGoStatus(503);
+    try {
+      expect(await f.approve(token, rahul)).toEqual({ state: 'confirming' });
+      expect(await confirmingTold(jti)).toBeNull();
+      f.setGoStatus(200);
+      await sweep(f.d);
+      await sweep(f.d);
+    } finally {
+      f.setGoStatus(200);
+    }
+    expect(await confirmingTold(jti)).not.toBeNull();
+    expect(callsFor(jti)).toEqual(['/internal/vault/confirming', '/internal/vault/confirming']);
   });
 });

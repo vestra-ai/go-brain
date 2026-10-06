@@ -22,7 +22,7 @@ describe('vault migrations', () => {
     );
     expect(r.rows.map((x) => x.table_name)).toEqual([
       'cards', 'challenges', 'internal_seen', 'links', 'passkeys', 'pay_requests',
-      'unlock_log', 'used_approvals', 'vault_migrations', 'vault_people',
+      'unlock_log', 'used_approvals', 'vault_migrations', 'vault_people', 'voided_approvals',
     ]);
   });
 
