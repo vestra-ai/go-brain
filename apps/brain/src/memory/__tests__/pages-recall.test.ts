@@ -73,9 +73,13 @@ describe('drawPage', () => {
 });
 
 describe('recall', () => {
-  it('answers "what can\'t Meher eat" from her fact, with the message it came from', async () => {
+  it('answers "what can\'t Meher eat" from her fact, with the words and number of the message it came from', async () => {
     const hits = await recall(db.pool, pack, new Map(), "what can't Meher eat?", 'go');
-    expect(hits[0]).toEqual({ text: 'Meher (food): Allergic to peanuts', messageId: 'm_0101', seq: 101 });
+    expect(hits[0]).toEqual({
+      text: "Meher (food): Allergic to peanuts (#101 Meher: I'm allergic to peanuts, so no satay for me)",
+      messageId: 'm_0101',
+      seq: 101,
+    });
   });
 
   it('finds a romanised Hindi spelling it was not given exactly', async () => {
