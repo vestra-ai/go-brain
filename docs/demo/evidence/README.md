@@ -228,6 +228,13 @@ Where it still misses a bar, plainly:
 
 With `claude-haiku-4-5`: reply p50 8.67 s and p90 8.89 s, recall 5 of 5, cost $0.1473, and it answered 3 of the 6 asks. Jev read two of the three it missed as for Go and the third as unsure, so Go woke the model for them, but no answer reached the room. Its wake rate (66%) counts its side passes, as explained above.
 
+### Measured offline since
+
+Two more changes, measured on the chats and the 50 labelled lines before they were built. The next live run will show them.
+
+- **No wait for an ask that ends.** A message that names Go and ends with ?, !, one full stop or an emoji goes to the model at once; one that trails off ("@Go can you") still waits 2 seconds for the rest. Asks whose last line ends that way, by the bench's own grouping of asks: 3 of 6 on `goa-50`, 8 of 12 on `goa-300`, 8 of 13 on `goa-2000`. Asks that would be answered before their next line arrived, from the chats' timestamps: none; in every multi-line ask the line that names Go has no end mark. Of the 22 labelled lines that name Go, code calls 6 finished, and none of them is labelled unfinished. The case the chats do not have: "@Go flights to Goa?" then "from Delhi". A second line that lands before Go posts joins the same turn (one more round, tested); one that lands after it gets its own.
+- **A line about money always wakes the model.** An amount that is plainly money (₹500, 3,200, 8k) or a word for paying or owing wakes Go even when Jev is sure no one spoke to it, so an expense is recorded and an unclear one gets its question. The wakes it adds: 2 of the 50 labelled lines, in both recordings; 1 on `goa-50` with the after run's own Jev answers ("agreed, pool villa it is. Under 8k a head"), 0 in its `claude-haiku-4-5` run; and at most 1 on `goa-300` and 2 on `goa-2000`, the lines there that look like money and do not name Go.
+
 ## Running it yourself
 
 With a Postgres database to use, from the repo root:
