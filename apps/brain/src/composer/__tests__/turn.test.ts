@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fakeAnthropic, type Script } from '../../__tests__/fixtures/fake-anthropic.js';
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
+import { createBudget, type Budget } from '../../budget.js';
 import { withSchema } from '../../db/test-db.js';
 import type { DeskItem } from '../../desk/desk.js';
 import type { Message } from '../../door/methods.js';
@@ -11,7 +12,7 @@ import { createContext, type TurnLimits } from '../context.js';
 import { roomTools } from '../room-tools.js';
 import { createSpeak } from '../speak.js';
 import { createTools } from '../tools.js';
-import { createComposer, TROUBLE } from '../turn.js';
+import { createComposer, OVER_BUDGET, TROUBLE } from '../turn.js';
 import { renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -27,6 +28,7 @@ function room(o: {
   script: Script;
   claimNew?: (tripId: string, turnId: string) => Promise<DeskItem[]>;
   limits?: (wake: DeskItem[]) => TurnLimits | null;
+  budget?: Budget;
 }) {
   const tripId = `t_turn_${++rooms}`;
   const calls: Array<{ method: string; params: any }> = [];
@@ -68,6 +70,7 @@ function room(o: {
     packs: { get: async () => pack, invalidate: () => undefined },
     tools, context, speak,
     client: model.client, model: 'claude-sonnet-5-5', claimNew: o.claimNew ?? (async () => []),
+    ...(o.budget ? { budget: o.budget } : {}),
   });
   return { tripId, calls, notes, model, composer, pack, speak, posts: () => calls.filter((c) => c.method === 'post_message') };
 }
@@ -176,6 +179,55 @@ describe('a composer turn', () => {
     expect(r.posts()[0]?.params.text).toBe('Friday has three flights after 6 pm, Saturday has two.');
     const seen = await db.pool.query('select composer_seen_seq from trips where trip_id = $1', [r.tripId]);
     expect(seen.rows[0].composer_seen_seq).toBe(5);
+  });
+
+  it('the pre-post check never reads a message twice: one the prompt already held runs no extra round', async () => {
+    const ask = msg(3, 'p_arjun', '@Go is the villa free?');
+    // In the pack when the prompt was built, its desk item claimed only at the pre-post check.
+    const early = msg(4, 'p_kabir', '@Go and pets?');
+    let claimed = false;
+    const r = room({
+      messages: [ask, early],
+      script: [{ text: 'The villa is free, and pets are welcome.' }, { text: 'never asked' }],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        return [item(tripId, early, true)];
+      },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.model.bodies[0].messages[0].content.at(-1).text).toContain('#4 Kabir: @Go and pets?');
+    expect(r.posts().map((p) => p.params.text)).toEqual(['The villa is free, and pets are welcome.']);
+    const seen = await db.pool.query('select composer_seen_seq from trips where trip_id = $1', [r.tripId]);
+    expect(seen.rows[0].composer_seen_seq).toBe(4);
+  });
+
+  it('a budget that runs out before the extra round: the answer round 1 paid for still goes out, and the unread ask hears the limit', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights Delhi to Goa Friday?');
+    const more = msg(5, 'p_kabir', '@Go and hotels?');
+    let claimed = false;
+    // claude-sonnet-5-5 at $2 per million input tokens: round 1's 600,000 cost $1.20, past the $1 cap.
+    const budget = createBudget({ pool: db.pool, now: () => new Date(), capUsd: 1, log: silentLog });
+    const r = room({
+      messages: [ask],
+      script: [{ text: 'Three flights after 6 pm on Friday.', usage: { input_tokens: 600_000 } }, { text: 'never asked' }],
+      budget,
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(more);
+        return [item(tripId, more, true)];
+      },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts().map((p) => p.params.text)).toEqual(['Three flights after 6 pm on Friday.', OVER_BUDGET]);
+    // The extra line was never read: it stays new for the next turn.
+    const seen = await db.pool.query('select composer_seen_seq from trips where trip_id = $1', [r.tripId]);
+    expect(seen.rows[0].composer_seen_seq).toBe(3);
+    const { rows } = await db.pool.query('select outcome, rounds from turns where turn_id = $1', [`turn_${r.tripId}`]);
+    expect(rows[0]).toMatchObject({ outcome: 'spoke', rounds: 1 });
   });
 
   it('typing goes off when the turn ends, also when the message that named Go was pulled in, or the turn posted', async () => {
