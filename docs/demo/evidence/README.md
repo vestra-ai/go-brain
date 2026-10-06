@@ -6,7 +6,7 @@ The folder also holds Jev's recorded answers for the quick read, and which quest
 
 ## Where the report comes from
 
-- **Run:** CI run [37437605711](https://github.com/vestra-ai/go-brain/actions/runs/37437605711), job `build-and-test`, artifact `bench-report`, written at 2026-10-06 08:46 UTC. The same run's test counts, and its demo transcript ([`docs/demo/transcript.md`](../transcript.md)), are the ones the other pages cite.
+- **Run:** CI run [37437605711](https://github.com/vestra-ai/go-brain/actions/runs/37437605711), job `build-and-test`, artifact `bench-report`, written at 2026-10-06 08:46 UTC. The same run's test counts are the ones the other pages cite.
 - **Code:** `build` at commit `5225799`, with pull request #50 merged on top (GitHub's test commit `de25e65`, which the report names). Pull request #50 changes documents and the demo test's transcript, which the bench does not run, so the code measured is `build`'s. CI runs on pull requests and on `main`, not on pushes to `build`, so this is how a run of `build`'s code is made.
 - **Verdict:** all 28 checks passed (`verdict.ok` is `true`).
 
