@@ -19,7 +19,7 @@ import { reactionRequestId } from '../reactions.js';
 import { recordLines } from '../record.js';
 import { registerMemory, wireMemory } from '../register.js';
 import type { Timers } from '../schedule.js';
-import { fakeLink, scriptedClient } from './test-kit.js';
+import { fakeLink, scriptedClient, seedMessages } from './test-kit.js';
 
 let db: { pool: Pool; drop: () => Promise<void> };
 beforeAll(async () => { db = await withSchema(); });
@@ -249,6 +249,19 @@ describe('wireMemory', () => {
     w.wired.stop();
     w.t.advance(120_000);
     expect(w.model.prompts).toHaveLength(0);
+  });
+});
+
+describe('the 5-minute sweep after a restart', () => {
+  it('finds a trip with unread words in the database, with nothing heard since the restart', async () => {
+    const m = msg(80, 'p_priya', 'I can only do Friday night');
+    const w = setup('t_r13', [m], [JSON.stringify({ facts: [], lines: [] })]);
+    await db.pool.query(`INSERT INTO trips (trip_id) VALUES ('t_r13') ON CONFLICT DO NOTHING`);
+    await seedMessages(db.pool, 't_r13', [m]);
+    await w.wired.sweep();
+    await vi.waitFor(() => expect(w.model.prompts).toHaveLength(1));
+    expect(w.model.prompts[0]!.user).toContain('#80 [person Priya | p_priya]: I can only do Friday night');
+    await vi.waitFor(async () => expect((await db.pool.query<{ seq: number }>("SELECT seq FROM notes_cursor WHERE trip_id = 't_r13'")).rows[0]?.seq).toBe(80));
   });
 });
 
