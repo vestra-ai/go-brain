@@ -1,6 +1,6 @@
 import { verifySpendApproval } from '@go/contract';
 import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/server';
-import { chargeOnce, settle, type AttemptRow, type PayDeps } from './charge.js';
+import { chargeOnce, holdUnknown, settle, type AttemptRow, type PayDeps } from './charge.js';
 import { reportOutcome } from './go-callback.js';
 import { findLink, linkProblem, type LinkRow } from './links.js';
 import { authenticationOptions, hasPasskey, passkeyConfig, verifyAssertion } from './passkeys.js';
@@ -30,6 +30,8 @@ export type PayRefusal =
 export type ApproveResult =
   | { state: 'paid'; railRef: string }
   | { state: 'failed'; reason: RailFailReason }
+  /** The rail gave no clear answer: nothing is said to have failed, and the sweep finishes it. */
+  | { state: 'confirming' }
   | { state: 'refused'; reason: PayRefusal };
 
 interface PayRequestRow {
@@ -237,6 +239,12 @@ export async function approvePayment(
 
   // 8. The rail charges once, keyed by the jti.
   const result = await chargeOnce(d, attempt);
+  if ('unknown' in result) {
+    // No clear answer from the rail: never settled as failed. The sweep asks the rail again with the same jti.
+    await holdUnknown(d, d.now(), attempt, result.unknown);
+    d.log.warn({ approval_id: attempt.approval_id, why: result.unknown }, 'the rail gave no clear answer; the sweep asks again');
+    return { state: 'confirming' };
+  }
   // 9. The outcome is recorded, then 10. Go hears about it.
   await settle(d.pool, d.now(), attempt, result);
   d.log.info({ approval_id: attempt.approval_id, outcome: 'railRef' in result ? 'paid' : result.failed }, 'payment attempt settled');

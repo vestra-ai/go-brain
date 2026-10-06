@@ -1,5 +1,5 @@
 import { signRequest } from '@go/contract';
-import { chargeOnce, settle, type AttemptRow, type PayDeps } from './charge.js';
+import { chargeOnce, holdUnknown, settle, type AttemptRow, type PayDeps } from './charge.js';
 import { VAULT_SIGNATURE_HEADER } from './internal/auth.js';
 import type { RailFailReason } from './rails/rail.js';
 
@@ -76,6 +76,11 @@ export async function sweep(d: PayDeps): Promise<{ recharged: number; resent: nu
   for (const a of stuck.rows) {
     // The same idempotency key: a charge that already went through is answered again, never made twice.
     const result = await chargeOnce(d, a);
+    if ('unknown' in result) {
+      // Still no clear answer: the row stays charging until the cap marks it unknown. Never failed.
+      await holdUnknown(d, d.now(), a, result.unknown);
+      continue;
+    }
     if (await settle(d.pool, d.now(), a, result)) recharged += 1;
     await reportOutcome(d, a.jti);
   }

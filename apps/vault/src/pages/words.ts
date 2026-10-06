@@ -32,8 +32,9 @@ export function brandLabel(brand: string): string {
 
 const CANT = "Go can't take this payment. Nothing was charged.";
 
-export const PAY_MESSAGES: Record<'paid' | PayRefusal | RailFailReason, string> = {
+export const PAY_MESSAGES: Record<'paid' | 'confirming' | PayRefusal | RailFailReason, string> = {
   paid: 'Paid. Go is booking it now. You can close this page.',
+  confirming: "We're confirming this payment with the bank. Go will say in the chat when it's done. Don't pay again meanwhile.",
   card_declined: 'Your bank declined the card. Nothing was charged.',
   needs_authentication: "Your bank wants an extra check this card can't do here. Nothing was charged.",
   rail_error: "The payment didn't go through. Nothing was charged. Ask Go to try again.",
