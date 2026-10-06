@@ -1,3 +1,4 @@
+import type { IncomingMessage } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { PAGE_HTML, roomPage } from '../dev-room/page.js';
@@ -5,7 +6,7 @@ import { FakeServer } from '../fake-server.js';
 import { goaFreshTrip } from '../goa.js';
 import { Caps, DEFAULT_CAPS } from '../try-room/caps.js';
 import { TryEnv } from '../try-room/env.js';
-import { COOKIE_NAME, Gate } from '../try-room/gate.js';
+import { COOKIE_NAME, Gate, WrongTries, clientAddress } from '../try-room/gate.js';
 import { CLOSE_TOO_MANY, refusal, serveTryRoom, visitTrip, type TryRoom, type TryRoomOptions } from '../try-room/serve.js';
 import { DAILY_LIMIT_LINE, HINTS, NOT_IN_YOUR_TRIP, ROOM_FULL, SIMULATED_LINE, SLOW_DOWN, tooManyTabs } from '../try-room/words.js';
 import { startTestGo, type TestGo } from './helpers/test-go.js';
@@ -189,8 +190,9 @@ describe('the passcode gate', () => {
   it('slows wrong tries after 5 a minute from one address, and never turns away the right passcode', async () => {
     let clock = Date.parse('2026-10-06T06:00:00Z');
     const { room: r } = await setUp({ now: () => new Date(clock), trustProxy: true });
-    // Keyed on the first x-forwarded-for address for now.
-    const from = (address: string) => ({ 'x-forwarded-for': `${address}, 10.0.0.1` });
+    // Keyed on x-real-ip, as Railway's edge sets it: a made-up first x-forwarded-for address changes nothing.
+    let n = 0;
+    const from = (address: string) => ({ 'x-real-ip': address, 'x-forwarded-for': `203.0.113.${++n}, 10.0.0.1` });
     for (let i = 0; i < 5; i++) expect((await enter(r, 'wrong-guess', from('198.51.100.1'))).status).toBe(401);
     const started = Date.now();
     const slowed = await enter(r, 'wrong-guess', from('198.51.100.1'));
@@ -201,16 +203,38 @@ describe('the passcode gate', () => {
     const right = await enter(r, passcode, from('198.51.100.1'));
     expect(right.status).toBe(303);
     expect(right.headers.get('set-cookie')).toContain(COOKIE_NAME);
-    // Another first address is not slowed, and the first one is not slowed a minute later.
+    // Another address is not slowed, and the first one is not slowed a minute later.
     expect((await enter(r, 'wrong-guess', from('198.51.100.2'))).status).toBe(401);
     clock += 61_000;
     expect((await enter(r, 'wrong-guess', from('198.51.100.1'))).status).toBe(401);
   });
 
+  it('keys the limit on x-real-ip, on the first x-forwarded-for address only when x-real-ip is missing, and trusts neither without trustProxy', () => {
+    const req = (headers: Record<string, string>) => ({ headers, socket: { remoteAddress: '127.0.0.1' } }) as unknown as IncomingMessage;
+    expect(clientAddress(req({ 'x-real-ip': '198.51.100.7', 'x-forwarded-for': '203.0.113.1, 10.0.0.1' }), true)).toBe('198.51.100.7');
+    expect(clientAddress(req({ 'x-real-ip': ' 198.51.100.7 ' }), true)).toBe('198.51.100.7');
+    expect(clientAddress(req({ 'x-forwarded-for': '203.0.113.1, 10.0.0.1' }), true)).toBe('203.0.113.1');
+    expect(clientAddress(req({ 'x-real-ip': '', 'x-forwarded-for': '203.0.113.1' }), true)).toBe('203.0.113.1');
+    expect(clientAddress(req({}), true)).toBe('127.0.0.1');
+    expect(clientAddress(req({ 'x-real-ip': '198.51.100.7', 'x-forwarded-for': '203.0.113.1' }), false)).toBe('127.0.0.1');
+  });
+
+  it('remembers at most a set number of addresses, dropping the one that went wrong longest ago first', () => {
+    const tries = new WrongTries(() => new Date('2026-10-06T06:00:00Z'), 1, 60_000, 3);
+    for (const a of ['a', 'b', 'c']) tries.wrong(a);
+    expect(['a', 'b', 'c'].map((a) => tries.blocked(a))).toEqual([true, true, true]);
+    tries.wrong('a'); // a went wrong again: now b is the oldest
+    tries.wrong('d');
+    expect(['a', 'b', 'c', 'd'].map((x) => tries.blocked(x))).toEqual([true, false, true, true]);
+    for (let i = 0; i < 1000; i++) tries.wrong(`made-up-${i}`);
+    expect(['made-up-997', 'made-up-998', 'made-up-999'].map((x) => tries.blocked(x))).toEqual([true, true, true]);
+    expect(tries.blocked('a')).toBe(false);
+  });
+
   it('logs the three address headers once, raw, on the first visit, and no other header', async () => {
     const lines: string[] = [];
     const { room: r } = await setUp({ log: (line) => lines.push(line) });
-    expect(lines.some((l) => l.includes('first x-forwarded-for'))).toBe(true);
+    expect(lines.some((l) => l.includes('keys on x-real-ip'))).toBe(true);
     await fetch(`${r.url}health`);
     await fetch(r.url, { headers: { 'x-forwarded-for': '203.0.113.7, 10.0.0.1', 'x-real-ip': '203.0.113.8', cookie: 'not-for-the-log' } });
     await page(r);

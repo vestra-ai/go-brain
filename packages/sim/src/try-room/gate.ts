@@ -93,11 +93,21 @@ export class Gate {
   }
 }
 
-/** Wrong passcode tries for each address: after 5 in a minute, the address is slowed until the oldest is a minute old. */
+/**
+ * Wrong passcode tries for each address: after 5 in a minute, the address is slowed until the oldest is a minute old.
+ * It holds at most `maxAddresses` addresses, dropping the one that went wrong longest ago first, so a flood of made-up
+ * addresses cannot grow memory.
+ */
 export class WrongTries {
+  /** In the order each address last went wrong, oldest first. */
   private readonly tries = new Map<string, number[]>();
 
-  constructor(private readonly now: () => Date = () => new Date(), private readonly max = WRONG_TRIES_PER_MINUTE, private readonly windowMs = 60_000) {}
+  constructor(
+    private readonly now: () => Date = () => new Date(),
+    private readonly max = WRONG_TRIES_PER_MINUTE,
+    private readonly windowMs = 60_000,
+    private readonly maxAddresses = 10_000,
+  ) {}
 
   blocked(address: string): boolean {
     return this.recent(address).length >= this.max;
@@ -106,8 +116,12 @@ export class WrongTries {
   wrong(address: string): void {
     const recent = this.recent(address);
     recent.push(this.now().getTime());
+    this.tries.delete(address); // set again below, so it moves to the newest end
     this.tries.set(address, recent);
-    if (this.tries.size > 10_000) for (const a of [...this.tries.keys()]) this.recent(a); // drops addresses with nothing recent
+    for (const oldest of this.tries.keys()) {
+      if (this.tries.size <= this.maxAddresses) break;
+      this.tries.delete(oldest);
+    }
   }
 
   private recent(address: string): number[] {
@@ -120,12 +134,15 @@ export class WrongTries {
 }
 
 /**
- * The visitor's address, for the wrong-try limit. Behind Railway's proxy (trustProxy) it is the first address in
- * x-forwarded-for for now, until the addresses logged by addressHeaders show which header Railway sets; the limit only
- * slows wrong tries, so a made-up address costs nothing but speed.
+ * The visitor's address, for the wrong-try limit. Behind Railway's proxy (trustProxy) it is x-real-ip, which Railway's
+ * edge sets to the visitor's address; the first x-forwarded-for address, which a visitor can write themselves, is used
+ * only when x-real-ip is missing. The limit only slows wrong tries, so a made-up address costs nothing but speed.
  */
 export function clientAddress(req: IncomingMessage, trustProxy: boolean): string {
   if (trustProxy) {
+    const realIp = req.headers['x-real-ip'];
+    const real = (Array.isArray(realIp) ? realIp[0] : realIp)?.trim();
+    if (real) return real;
     const forwarded = req.headers['x-forwarded-for'];
     const first = (Array.isArray(forwarded) ? forwarded.join(',') : (forwarded ?? '')).split(',')[0]?.trim();
     if (first) return first;

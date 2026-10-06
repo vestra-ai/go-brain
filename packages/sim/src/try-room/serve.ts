@@ -50,7 +50,7 @@ export interface TryRoomOptions {
   caps?: Partial<CapLimits>;
   /** What is simulated in this demo. Default SIMULATED_LINE. */
   simulatedLine?: string;
-  /** Behind Railway's proxy: the visitor's address comes from x-forwarded-for. */
+  /** Behind Railway's proxy: the visitor's address comes from x-real-ip, or else the first x-forwarded-for address. */
   trustProxy?: boolean;
   /** Live sockets for one visit (default 3) and in all (default 300). */
   maxSocketsPerVisit?: number;
@@ -391,7 +391,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
   const healthTimer = setInterval(() => void refreshHealth(), HEALTH_EVERY_MS);
   const sweepTimer = setInterval(sweep, SWEEP_EVERY_MS);
   await refreshHealth();
-  log("the wrong-try limit keys on the first x-forwarded-for address for now; the first visit's address headers are logged once");
+  log("the wrong-try limit keys on x-real-ip (the first x-forwarded-for address when it is missing); the first visit's address headers are logged once");
 
   await new Promise<void>((resolve) => http.listen(o.port, o.host ?? '127.0.0.1', resolve));
   const port = (http.address() as AddressInfo).port;
