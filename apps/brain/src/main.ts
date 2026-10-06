@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { registerAdmin } from './admin/register.js';
 import { buildBrain, type RegisterLane } from './app.js';
 import { registerCalls } from './calls/register.js';
 import { loadEnv } from './env.js';
@@ -16,7 +17,7 @@ import { registerTravel } from './travel/register.js';
  * registerTasks, registerMoney, registerProactive, registerCalls, registerAdmin. Each lane adds its one
  * line here, in that order, in its own PR.
  */
-export const LANES: RegisterLane[] = [registerRoom, registerReflex, registerMemory, registerStats, registerTravel, registerTasks, registerMoney, registerProactive, registerCalls];
+export const LANES: RegisterLane[] = [registerRoom, registerReflex, registerMemory, registerStats, registerTravel, registerTasks, registerMoney, registerProactive, registerCalls, registerAdmin];
 
 export async function main(): Promise<void> {
   const env = loadEnv();
