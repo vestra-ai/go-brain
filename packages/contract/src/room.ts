@@ -28,7 +28,7 @@ export const Reaction = z.object({ emoji: z.string().min(1).max(16), person_id: 
 /**
  * One message in a trip room, as the Server stores it, in its current state.
  *
- * A withheld message (its author paused Go) has `text` null, no attachments, `mentions_go` false,
+ * A withheld message (its author paused Go) has `text` null, no attachments, no `reply_to`, `mentions_go` false,
  * no `mentions` and no `about_message_id`.
  */
 export const Message = z

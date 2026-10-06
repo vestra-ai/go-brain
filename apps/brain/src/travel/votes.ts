@@ -42,7 +42,7 @@ function voteCardFor(id: string, decisionId: string, question: string, options: 
 
 export async function openVoteFromCard(
   d: { results: ResultsStore; link: Pick<ServerLink, 'request'>; now: () => Date },
-  o: { tripId: string; cardId: string; key: string; requestId: string; voteCardId: string; question?: string; closesInHours?: number },
+  o: { tripId: string; cardId: string; key: string; requestId: string; voteCardId: string; question?: string; closesInHours?: number; anonymous?: boolean },
 ): Promise<VoteOutcome> {
   const row = await d.results.card(o.tripId, o.cardId);
   if (!row) return { ok: false, reason: 'unknown_card' };
@@ -60,7 +60,7 @@ export async function openVoteFromCard(
   try {
     const closesAt = new Date(d.now().getTime() + (o.closesInHours ?? 3) * 3_600_000).toISOString();
     const opened = await d.link.request('open_vote', {
-      trip_id: o.tripId, request_id: o.requestId, question, kind: 'choice', anonymous: false, options, closes_at: closesAt,
+      trip_id: o.tripId, request_id: o.requestId, question, kind: 'choice', anonymous: o.anonymous ?? false, options, closes_at: closesAt,
     });
     await d.results.setDecision(o.cardId, opened.decision_id);
     return { ok: true, decisionId: opened.decision_id, voteCard: voteCardFor(o.voteCardId, opened.decision_id, question, options) };

@@ -166,6 +166,7 @@ const VoteArgs = z.object({
     .describe('The options card to vote on. Leave it out to vote on the options card you show in this same reply.'),
   question: z.string().min(3).max(200).optional(),
   closes_in_hours: z.number().min(0.5).max(72).optional(),
+  anonymous: z.boolean().optional().describe('true for a secret ballot, only when someone asks for a secret or anonymous vote. Leave it out otherwise.'),
 });
 
 export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
@@ -224,7 +225,8 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     description:
       'Opens a vote on the options of an options card Go showed (card_id). To show options and put them to a vote at once, ' +
       'call show_options and then this with no card_id, in the same reply. The vote card goes out with your message: ' +
-      'write your one short line in the same reply. Use it when the group should decide together.',
+      'write your one short line in the same reply. Use it when the group should decide together. ' +
+      'Set anonymous when someone asks for a secret or anonymous vote.',
     input: VoteArgs,
     endsTurn: true,
     async run(a, ctx) {
@@ -249,6 +251,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
           voteCardId: ctx.stableId('c_vote'),
           ...(a.question ? { question: a.question } : {}),
           ...(a.closes_in_hours ? { closesInHours: a.closes_in_hours } : {}),
+          ...(a.anonymous ? { anonymous: true } : {}),
         },
       );
       if (!r.ok) return { error: r.reason, ...(r.decisionId ? { decision_id: r.decisionId } : {}) };
