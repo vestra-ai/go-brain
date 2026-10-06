@@ -74,7 +74,7 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 | `GO_SIGNING_SECRET` | Signs the socket between the Server and Go. The Server holds the same value. It is not the same as `fake-go`'s. | Set |
 | `GO_PUBLIC_URL` | Go's own https address: the links to the pictures on Go's cards, and where Twilio connects a call's audio to Go. | Set |
 | `GO_ROLE` | Which Go this is: `stage` here, `rehearsal` on `brain-rehearsal`. The admin page shows it, and the rehearsal runner refuses any Go that is not `rehearsal`. Without it, Go falls back to Railway's service name. | Set |
-| `ANTHROPIC_API_KEY` | The model Go thinks with: every turn, the notes and the trip summary. | Placeholder: Go cannot answer anyone until the real key is in. |
+| `ANTHROPIC_API_KEY` | The model Go thinks with: every turn, the notes and the trip summary. | Set: Vestra's staging key |
 | `COMPOSER_MODEL` | The model for Go's turns in the room. | Set |
 | `SIDE_MODEL` | The smaller model for notes and summaries. | Set |
 | `LOG_LEVEL` | How much Go writes to its log. | Set |
@@ -84,9 +84,9 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 | `VAULT_URL` | The vault's address. Money stays off until this and `VAULT_SHARED_SECRET` are both set. | Set |
 | `VAULT_SHARED_SECRET` | Signs every call between Go and the vault, both ways. The vault holds the same value. | Set |
 | `ADMIN_TOKEN` | Opens the admin page. | Set |
-| `TYPESAFE_API_KEY` | Jev, the quick read of every message: is it for Go, does it hold a fact (the instant ✅). Without it Jev makes no calls, every quick read is "unsure", and Go decides from its own rules alone. | Not set: Keshav's key |
+| `TYPESAFE_API_KEY` | Jev, the quick read of every message: is it for Go, does it hold a fact (the instant ✅). Without it Jev makes no calls, every quick read is "unsure", and Go decides from its own rules alone. | Set |
 | `TYPESAFE_BASE_URL`, `JEV_MODEL`, `REFLEX_LIVE`, `JEV_DEADLINE_MS`, `JEV_DAILY_CALLS_PER_TRIP` | Jev's address, its pinned version, which questions act live, how long a message waits for it, and a daily cap per trip. | Not set: the defaults apply |
-| `VESTRA_API_URL`, `VESTRA_API_KEYS`, `VESTRA_ADMIN_KEY`, `VESTRA_WEBHOOK_SECRET`, `VESTRA_DEPLOYMENT_ID`, `VESTRA_MCP_SERVER_ID` | The trip's computer through Vestra `/v1`: jobs like the villa search, and Watch. All six come from `scripts/setup-v1.ts` and work only together. | Not set: jobs are off |
+| `VESTRA_API_URL`, `VESTRA_API_KEYS`, `VESTRA_ADMIN_KEY`, `VESTRA_WEBHOOK_SECRET`, `VESTRA_DEPLOYMENT_ID`, `VESTRA_MCP_SERVER_ID` | The trip's computer through Vestra `/v1`: jobs like the villa search, and Watch. All six come from `scripts/setup-v1.ts` and work only together. | Set: staging `/v1`, this Go's own test org |
 | `IXIGO_MCP_URL`, `IXIGO_MCP_TOKEN` | ixigo's search server and its token. Without them, searches use the test inventory even when `TRAVEL_MODE` says `ixigo`. | Not set |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Placing phone calls, and the number Go calls from. | Not set: Keshav's keys. Go refuses to call until they are in. |
 | `OPENAI_API_KEY` | The voice model Go speaks with on a call. | Not set: Keshav's key |
@@ -104,7 +104,7 @@ The same variable names as `brain`, with these differences:
 - `GO_SIGNING_SECRET` and `ADMIN_TOKEN` are its own: the stage's secret does not open it, and its secret does not open the stage.
 - `GO_ROLE` is `rehearsal`.
 - `VAULT_URL` and `VAULT_SHARED_SECRET` point at `vault-rehearsal`, not the stage's vault.
-- `ANTHROPIC_API_KEY` is the same placeholder as on `brain` until Keshav's key arrives.
+- The `VESTRA_*` variables point at its own test org on staging `/v1`, not the stage Go's.
 
 **It has its own vault.** `vault-rehearsal` reports every payment to `brain-rehearsal` (its `GO_CALLBACK_URL`), so a payment approved on the vault page during a rehearsal reaches the Go that asked for it. Nothing a rehearsal pays touches the stage's vault or the stage Go.
 
@@ -204,7 +204,6 @@ Things to know:
 
 - Each run leaves one smoke trip in Go's database. When jobs are on, it also gets its own trip computer on Vestra. Run it a few times, never in a loop.
 - The flights line searches whatever the `TRAVEL_MODE` switch says.
-- While `ANTHROPIC_API_KEY` is a placeholder, Go cannot reply, so the smoke fails with "no reply".
 - Smoke the stage Go (`GO_URL` set to `brain`'s address, `--service brain`) only when you must, and only after the real trip has had a message since Go last started. Go sends each trip's requests back on the socket that brought that trip's events, so the real trip stays on the real Server's socket. But right after a restart, before the real trip has had any event, a request for the real trip can go to the smoke's socket instead and fail.
 
 ## Rehearse
