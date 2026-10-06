@@ -99,14 +99,39 @@ function optionOf(kind: OptionKind, o: Record<string, unknown>): ResultOption | 
   };
 }
 
-/** A job's answer, read back: the summary (or the job's text), and its options when the kind has them. */
-export function readReturned(kind: ReturnsKind, data: unknown, text: string | null): { summary: string | null; options: ResultOption[] } {
-  const parsed = Returned.safeParse(data);
-  const summary = parsed.success && parsed.data.summary ? clip(parsed.data.summary, 1500) : text ? clip(text, 1500) : null;
+/**
+ * The answer a job wrote as JSON in its text instead of handing it in as data: the whole text, or one fenced block that
+ * is the whole text. Only an object in the answer's shape (a summary or options) counts; anything else stays words.
+ */
+function answerInText(text: string | null): Record<string, unknown> | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  const body = /^```(?:json)?\s*\n([\s\S]*?)\n?```$/.exec(trimmed)?.[1] ?? trimmed;
+  if (!body.startsWith('{')) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  const parsed = Returned.safeParse(value);
+  if (!parsed.success || (parsed.data.summary === undefined && parsed.data.options === undefined)) return null;
+  return value as Record<string, unknown>;
+}
+
+/**
+ * A job's answer, read back: the summary (or the job's text), and its options when the kind has them. With no data,
+ * an answer in the text is read as the data would be (fromText says so).
+ */
+export function readReturned(kind: ReturnsKind, data: unknown, text: string | null): { summary: string | null; options: ResultOption[]; fromText: boolean } {
+  const inText = data === null || data === undefined ? answerInText(text) : null;
+  const parsed = Returned.safeParse(inText ?? data);
+  const fromText = inText !== null;
+  const summary = parsed.success && parsed.data.summary ? clip(parsed.data.summary, 1500) : text && !fromText ? clip(text, 1500) : null;
   const optionKind = OPTION_KIND_FOR[kind];
-  if (!optionKind || !parsed.success || !parsed.data.options) return { summary, options: [] };
+  if (!optionKind || !parsed.success || !parsed.data.options) return { summary, options: [], fromText };
   const options = parsed.data.options.map((o) => optionOf(optionKind, o)).filter((o): o is ResultOption => o !== null).slice(0, 5);
-  return { summary, options };
+  return { summary, options, fromText };
 }
 
 /** The first highlight of a pick Go cannot book: it came from the open web, not from Go's search. */

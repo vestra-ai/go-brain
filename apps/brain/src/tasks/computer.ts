@@ -1,7 +1,8 @@
 /**
  * The trip's computer on Vestra /v1: one user per trip (created with the admin key, its default deployment
- * go-trip-task), warmed in the background, one conversation per trip, and the trip token armed before every job.
- * Each step is safe to repeat; what is done is recorded in trip_computers.
+ * go-trip-task), warmed in the background, one conversation per job, and the trip token armed before every job.
+ * A job's own conversation is idle on /v1 exactly when nothing of the job is left to run: its start and every
+ * follow-up settled, and no work open. Each step is safe to repeat; what is done is recorded in trip_computers.
  */
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
@@ -20,7 +21,8 @@ export interface Computer {
   userIdFor(tripId: string): string;
   ensureUser(tripId: string): Promise<string>;
   warm(tripId: string): Promise<'ready' | 'waking' | 'skipped'>;
-  conversation(tripId: string): Promise<{ userId: string; conversationId: string }>;
+  /** The job's own conversation on the trip user: the same one however often it is asked for. */
+  conversation(tripId: string, taskId: string): Promise<{ userId: string; conversationId: string }>;
   /** A fresh token in the trip user's TRIP_TOKEN secret, good until `expiresAt`, checked against Go's MCP server. */
   armToken(tripId: string, expiresAt: Date): Promise<void>;
   releaseTokens(tripId: string): Promise<void>;
@@ -45,9 +47,9 @@ export function v1UserIdFor(tripId: string): string {
 export function createComputer(d: ComputerDeps): Computer {
   let warmsIssued: number[] = [];
 
-  async function row(tripId: string): Promise<{ v1_user_id: string; conversation_id: string | null; user_ready_at: Date | null; warm_at: Date | null } | null> {
-    const { rows } = await d.pool.query<{ v1_user_id: string; conversation_id: string | null; user_ready_at: Date | null; warm_at: Date | null }>(
-      'select v1_user_id, conversation_id, user_ready_at, warm_at from trip_computers where trip_id = $1',
+  async function row(tripId: string): Promise<{ v1_user_id: string; user_ready_at: Date | null; warm_at: Date | null } | null> {
+    const { rows } = await d.pool.query<{ v1_user_id: string; user_ready_at: Date | null; warm_at: Date | null }>(
+      'select v1_user_id, user_ready_at, warm_at from trip_computers where trip_id = $1',
       [tripId],
     );
     return rows[0] ?? null;
@@ -97,17 +99,14 @@ export function createComputer(d: ComputerDeps): Computer {
       return r.status;
     },
 
-    async conversation(tripId) {
+    async conversation(tripId, taskId) {
       const userId = await computer.ensureUser(tripId);
-      const known = await row(tripId);
-      if (known?.conversation_id) return { userId, conversationId: known.conversation_id };
+      // The job's id is the idempotency key, so a hand-off that runs again gets the same conversation back.
       const c = await d.v1.call<{ id: string }>('POST', '/v1/conversations', {
-        idempotencyKey: `go-conv-${userId}`,
-        body: { user_id: userId, deployment: d.env.VESTRA_DEPLOYMENT_ID, metadata: { go_trip_id: tripId } },
+        idempotencyKey: `go-conv-${taskId}`,
+        body: { user_id: userId, deployment: d.env.VESTRA_DEPLOYMENT_ID, metadata: { go_trip_id: tripId, go_task_id: taskId } },
       });
-      await d.pool.query('update trip_computers set conversation_id = $2 where trip_id = $1 and conversation_id is null', [tripId, c.id]);
-      const stored = await row(tripId);
-      return { userId, conversationId: stored?.conversation_id ?? c.id };
+      return { userId, conversationId: c.id };
     },
 
     async armToken(tripId, expiresAt) {

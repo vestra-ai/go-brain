@@ -58,14 +58,16 @@ describe("the trip's computer", () => {
     expect(await computer.warm('t_warm_9')).toBe('waking');
   });
 
-  it("opens the trip's conversation once, on the go-trip-task deployment", async () => {
-    const a = await computer.conversation('t_goa');
-    const b = await computer.conversation('t_goa');
-    expect(b).toEqual(a);
+  it('opens one conversation for each job, on the go-trip-task deployment, the same one when a hand-off runs again', async () => {
+    const a = await computer.conversation('t_goa', 'gt_conv_a');
+    const again = await computer.conversation('t_goa', 'gt_conv_a');
+    const b = await computer.conversation('t_goa', 'gt_conv_b');
+    expect(again).toEqual(a);
+    expect(b.conversationId).not.toBe(a.conversationId);
+    expect(b.userId).toBe(a.userId);
     const creates = fake.callsTo('POST', /^\/v1\/conversations$/);
-    expect(creates).toHaveLength(1);
-    expect(creates[0]!.body).toMatchObject({ user_id: v1UserIdFor('t_goa'), deployment: 'dep_go' });
-    expect(creates[0]!.headers['idempotency-key']).toBe(`go-conv-${v1UserIdFor('t_goa')}`);
+    expect(creates.map((c) => c.headers['idempotency-key'])).toEqual(['go-conv-gt_conv_a', 'go-conv-gt_conv_a', 'go-conv-gt_conv_b']);
+    expect(creates[0]!.body).toMatchObject({ user_id: v1UserIdFor('t_goa'), deployment: 'dep_go', metadata: { go_trip_id: 't_goa', go_task_id: 'gt_conv_a' } });
   });
 
   it('arms a fresh TRIP_TOKEN in the body of PUT /v1/secrets, checks it reaches Go, and the token names the trip', async () => {

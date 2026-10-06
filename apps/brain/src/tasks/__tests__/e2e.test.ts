@@ -6,6 +6,7 @@ import { fakeAnthropic, type Reply } from '../../__tests__/fixtures/fake-anthrop
 import { buildBrain, type Built } from '../../app.js';
 import { withSchema } from '../../db/test-db.js';
 import { loadEnv } from '../../env.js';
+import { createTokenStore } from '../../mcp/tokens.js';
 import { registerRoom } from '../../room.js';
 import { registerTravel } from '../../travel/register.js';
 import { createTasksLane, type TasksLane } from '../register.js';
@@ -44,6 +45,7 @@ function goScript(body: any): Reply {
   if (now.includes('needs Meher for something only they can do')) return { text: 'Meher, the villa site wants a one-time code. Send it here, or tap Watch on the card.' };
   const job = /\b(gt_[0-9a-z]{6,40})\b/.exec(now)?.[1];
   if (job && fresh.includes('I put the code in')) return { tools: [{ name: 'settle_handoff', input: { task_id: job, outcome: 'done' } }] };
+  if (job && fresh.includes('allow pets')) return { tools: [{ name: 'message_task', input: { task_id: job, text: 'Also check if any of them allow pets' } }] };
   if (fresh.includes('find a villa')) {
     return {
       tools: [{
@@ -220,4 +222,69 @@ describe('G3: Go does real work', () => {
     expect(fake.interactions.get(ask.id)?.status).toBe('cancelled');
     await server.waitFor(() => goMessages().find((m) => m.text === "That didn't work. Want me to try again?") ?? null, 20_000);
   }, 60_000);
+
+  it("replays the rehearsal drill: a follow-up sent while the job is queued runs first, and only the job's last run ends it, with one options card", async () => {
+    fake.autoStart = false;
+    const messages = () => fake.callsTo('POST', /^\/v1\/conversations\/[^/]+\/messages$/);
+    const sentBefore = messages().length;
+    const cardsBefore = working().length;
+    await server.say('p_priya', 'Go, find a villa with a pool in North Goa for 6 to 9 Nov under 8k a head, and check real reviews and how far the beach really is');
+    const { card: startCard } = await server.waitFor(() => (working().length > cardsBefore ? working().at(-1)! : null), 20_000);
+    const cardId = startCard!.card_id;
+    await eventually(() => messages().length > sentBefore, 10_000);
+    const start = messages()[sentBefore]!;
+    expect(start.body).toMatchObject({ hand_off: 'always', output_schema: { required: ['summary', 'options'] } });
+    // The job has a conversation of its own.
+    const conv = start.path.split('/')[3]!;
+    expect(messages().slice(0, sentBefore).some((c) => c.path.includes(`/${conv}/`))).toBe(false);
+    const turnsOf = () => [...fake.turns.values()].filter((u) => u.conversationId === conv);
+    // /v1 names the job while the computer is still waking: no run has its words yet.
+    const task = fake.startTask(conv, turnsOf()[0]!.id, 'Finding villas with a pool in North Goa', { queued: true });
+
+    // Priya's follow-up while it waits: one more message to the job, with its output_schema.
+    await server.say('p_priya', 'Go, also check if any of them allow pets');
+    await eventually(() => turnsOf().length === 2, 20_000);
+    const follow = messages().filter((c) => c.path.includes(`/${conv}/`)).at(-1)!;
+    expect(follow.body).toMatchObject({ hand_off: 'auto', output_schema: { required: ['summary', 'options'] } });
+    expect(follow.body.message).toContain('allow pets');
+    const token = armedToken(fake, TRIP);
+
+    // Run 1 takes the follow-up first, ticks its own to-do list, and ends with its answer as JSON text, no data.
+    fake.nextRun(task.id, [turnsOf()[1]!.id]);
+    fake.progress(task.id, [['Find the villas already shortlisted', 'completed'], ['Check each villa’s pet policy', 'completed']]);
+    await server.waitFor(() => (cardOf(cardId)?.steps?.some((st: { text: string }) => st.text === 'Check each villa’s pet policy') ? true : null), 10_000);
+    const looks = () => fake.callsTo('GET', new RegExp(`^/v1/conversations/${conv}$`)).length;
+    const looksBefore = looks();
+    const optionsBefore = options().length;
+    fake.complete(task.id, null, JSON.stringify({ summary: 'No pet policy is confirmed yet.', options: [] }));
+    // Go looks, finds the job's start still open, and keeps the job running.
+    await eventually(() => looks() > looksBefore, 10_000);
+    await new Promise((r) => setTimeout(r, 1_000));
+    expect(cardOf(cardId)).toMatchObject({ state: 'running', actions: [{ action_id: 'watch' }, { action_id: 'stop' }] });
+    expect(options()).toHaveLength(optionsBefore);
+    // The trip token still opens Go's tools between the runs: no 401 mid-task.
+    const between = await searchAsTheJob({ goUrl, token, tool: 'search_stays', args: STAY_SEARCH });
+    expect(between.results.length).toBeGreaterThan(0);
+
+    // Run 2 takes the start: /v1's to-do list keeps run 1's steps and adds its own; the job searches Go's stays.
+    fake.nextRun(task.id);
+    fake.progress(task.id, [
+      ['Find the villas already shortlisted', 'completed'], ['Check each villa’s pet policy', 'completed'],
+      ['Find pool villas for 6 to 9 November', 'completed'], ['Verify reviews, beach access and pet rules', 'in_progress'], ['Return the best three verified villas', 'pending'],
+    ]);
+    await server.waitFor(() => (cardOf(cardId)?.steps?.length === 5 ? true : null), 10_000);
+    await searchAsTheJob({ goUrl, token, tool: 'search_stays', args: STAY_SEARCH });
+    fake.complete(task.id, VILLAS, 'Found three villas.');
+    const shown = await server.waitFor(() => (options().length > optionsBefore ? options().at(-1)! : null), 20_000);
+    const card = shown.card as Extract<C.Card, { kind: 'options' }>;
+    expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+    await server.waitFor(() => (cardOf(cardId)?.state === 'done' ? true : null), 10_000);
+    expect(cardOf(cardId).steps.map((st: { state: string }) => st.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
+    // The token goes at the real end, and only one options card came.
+    await eventually(async () => (await createTokenStore(db.pool, now).tripFor(token)) === null, 10_000);
+    await new Promise((r) => setTimeout(r, 1_000));
+    expect(options()).toHaveLength(optionsBefore + 1);
+    fake.autoStart = true;
+  }, 90_000);
 });

@@ -55,6 +55,28 @@ describe('the fake /v1', () => {
     expect(after.data.map((e) => e.id)).toEqual(all.data.slice(0, -1).reverse().map((e) => e.id));
   });
 
+  it('keeps turns as /v1 does: a follow-up waits for the next run, each run settles the turns it took, idle only at the end', async () => {
+    const conv = await v1.call<{ id: string }>('POST', '/v1/conversations', { body: { user_id: 'gotrip-1' } });
+    fake.autoStart = false;
+    const start = await v1.call<{ id: string }>('POST', `/v1/conversations/${conv.id}/messages`, { body: { message: 'Find a villa', hand_off: 'always' } });
+    const task = fake.startTask(conv.id, start.id, 'Find a villa', { queued: true });
+    const follow = await v1.call<{ id: string }>('POST', `/v1/conversations/${conv.id}/messages`, { body: { message: 'Also pets', hand_off: 'auto' } });
+    expect(task.inbox).toEqual([start.id, follow.id]);
+    const status = async () => (await v1.call<{ status: string }>('GET', `/v1/conversations/${conv.id}`)).status;
+    fake.nextRun(task.id, [follow.id]);
+    fake.complete(task.id, null, 'pets');
+    expect(await status()).toBe('working');
+    expect(fake.turns.get(follow.id)?.status).toBe('completed');
+    expect(fake.turns.get(start.id)?.status).toBe('working');
+    fake.nextRun(task.id);
+    fake.complete(task.id, { summary: 'Villas.' }, 'Villas.');
+    expect(await status()).toBe('idle');
+    const settled = fake.conversations.get(conv.id)!.events.filter((e) => e.type === 'conversation.status').map((e) => [e.data.turn_id, e.data.status]);
+    expect(settled).toEqual([[follow.id, 'working'], [start.id, 'idle']]);
+    expect(fake.conversations.get(conv.id)!.events.filter((e) => e.type === 'task.completed')).toHaveLength(2);
+    fake.autoStart = true;
+  });
+
   it('answers a view session, and refuses control unless shared control is on', async () => {
     const view = await v1.call<{ url: string; expires_at: string }>('POST', '/v1/sessions', { body: { user_id: 'gotrip-1', screen: 'view' } });
     expect(view.url).toMatch(/^https:\/\//);

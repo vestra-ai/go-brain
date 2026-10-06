@@ -76,11 +76,15 @@ export interface TaskStore {
   countActive(tripId: string): Promise<number>;
   activeIds(tripId: string): Promise<string[]>;
   hasActiveIn(conversationId: string): Promise<boolean>;
+  /** The live jobs in one /v1 conversation. */
+  liveIn(conversationId: string): Promise<TaskRow[]>;
   oldestQueued(tripId: string): Promise<TaskRow | null>;
   /** Jobs Go stopped since `since` that reached /v1 but were never named by it, so /v1 may still be running them. */
   unnamedStops(since: Date): Promise<TaskRow[]>;
   update(id: string, patch: TaskPatch): Promise<void>;
   transition(id: string, from: TaskState[], to: TaskState, patch?: TaskPatch): Promise<boolean>;
+  /** Adds words to a live job's goal while it has not been handed to /v1 yet. False once it has (or it ended). */
+  foldIntoGoal(id: string, words: string): Promise<boolean>;
   setTurn(id: string, conversationId: string, turnId: string): Promise<void>;
   recordStart(turnId: string, v1TaskId: string, title: string | null): Promise<void>;
   matchStarts(): Promise<Array<{ id: string; v1TaskId: string }>>;
@@ -207,6 +211,7 @@ export function createTaskStore(pool: pg.Pool): TaskStore {
       const { rows } = await pool.query('select 1 from tasks where conversation_id = $1 and state = any($2::text[]) limit 1', [conversationId, ACTIVE_STATES]);
       return rows.length > 0;
     },
+    liveIn: (conversationId) => many('select * from tasks where conversation_id = $1 and state = any($2::text[]) order by created_at', [conversationId, LIVE_STATES]),
     oldestQueued: (tripId) => one("select * from tasks where trip_id = $1 and state = 'queued' order by created_at limit 1", [tripId]),
     unnamedStops: (since) =>
       many('select * from tasks where stop_requested_at > $1 and v1_turn_id is not null and v1_task_id is null order by created_at', [since]),
@@ -218,6 +223,10 @@ export function createTaskStore(pool: pg.Pool): TaskStore {
     async transition(id, from, to, patch = {}) {
       const { sql, values } = setClause(patch, 3);
       const r = await pool.query(`update tasks set state = $2${sql ? `, ${sql}` : ''} where id = $1 and state = any($3::text[]) returning id`, [id, to, from, ...values]);
+      return r.rowCount === 1;
+    },
+    async foldIntoGoal(id, words) {
+      const r = await pool.query('update tasks set goal = goal || $2 where id = $1 and v1_turn_id is null and state = any($3::text[]) returning id', [id, words, LIVE_STATES]);
       return r.rowCount === 1;
     },
     async setTurn(id, conversationId, turnId) {
