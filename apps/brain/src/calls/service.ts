@@ -28,7 +28,9 @@ export const CLOSE_OUT_AFTER_MS = 10_000;
 /** A waiting call whose line never reached the room this long after it was asked for is called off. */
 export const NOT_ANNOUNCED_AFTER_MS = 60_000;
 const NOT_ON_A_CALL = /\b(card|cvv|otp|upi|pin|password|passcode|bank|account number|ifsc)\b/i;
-const LONG_DIGITS = /\d[\d\s-]{10,}\d/;
+const SEPARATORS = /[\s\-.,/()_+*#]/g;
+/** 12 or more digits once every separator is gone: a card, an account or a phone number, however it was typed. */
+const longDigits = (t: string): boolean => /\d{12,}/.test(t.replace(SEPARATORS, ''));
 
 type FailWhy = 'busy' | 'no_answer' | 'failed' | 'canceled';
 const FAIL_OUTCOME: Readonly<Record<FailWhy, string>> = {
@@ -133,7 +135,7 @@ export class CallService {
     if (!row) {
       if (this.mode() === 'off') return { refused: 'Calls are switched off right now.' };
       if (!this.d.twilio || this.d.config.missing.length > 0) return { refused: 'Calls are not set up yet.' };
-      if ([r.goal, ...r.factsAllowed].some((t) => NOT_ON_A_CALL.test(t) || LONG_DIGITS.test(t))) {
+      if ([r.business, r.goal, ...r.factsAllowed].some((t) => NOT_ON_A_CALL.test(t) || longDigits(t))) {
         return { refused: 'Calls never pay or share card, bank, OTP or login details. Leave those out.' };
       }
       const callee = findCallee(this.d.config, { business: r.business, phone: r.phone });
@@ -144,7 +146,8 @@ export class CallService {
       row = await this.d.store.create({
         callId: r.callId,
         tripId,
-        business: clip(plain(r.business), 80),
+        // The allowlist's own name for the number when it has one, never the model's spelling.
+        business: callee.name ?? clip(plain(r.business), 80),
         phone: callee.phone,
         goal: clip(plain(r.goal), 160),
         factsAllowed: r.factsAllowed.map((f) => clip(f, 200)),

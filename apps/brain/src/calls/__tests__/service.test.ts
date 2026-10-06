@@ -93,6 +93,28 @@ describe('request', () => {
     expect(m.link.calls).toHaveLength(0);
   });
 
+  it('counts card digits however they are written, and screens the business name too', async () => {
+    const m = make('t_digits');
+    for (const fact of ['card 4111.1111.1111.1111', 'card 4111  1111  1111  1111', '4111/1111/1111/1111', 'call me on +91 98000 00001']) {
+      expect(await m.request({ factsAllowed: [fact] }), fact).toHaveProperty('refused');
+    }
+    expect(await m.request({ business: 'Villa Sol, card 4111 1111 1111 1111' })).toHaveProperty('refused');
+    expect(await m.request({ business: 'HDFC bank' })).toHaveProperty('refused');
+    expect(m.link.calls).toHaveLength(0);
+    expect(await m.request({ factsAllowed: ['Staying 6 to 9 November', 'Group of 5, 2 rooms'] })).toMatchObject({ ok: true });
+  });
+
+  it("names the business the way the allowlist does, whatever the model wrote", async () => {
+    const byName = make('t_name');
+    const a = await byName.request({ business: 'villa sol' });
+    if (!('ok' in a)) throw new Error('refused');
+    expect((await store.get(a.callId))?.business).toBe('Villa Sol');
+    const byNumber = make('t_number');
+    const b = await byNumber.request({ business: 'the villa', phone: '+91 98000 00001' });
+    if (!('ok' in b)) throw new Error('refused');
+    expect((await store.get(b.callId))?.business).toBe('Villa Sol');
+  });
+
   it('says who and why with the stop line, waits 30 s, and allows one call at a time', async () => {
     const m = make('t_announce');
     const r = await m.request();
