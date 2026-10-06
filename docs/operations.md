@@ -94,7 +94,7 @@ The table is production's `brain`. Staging's differences follow it.
 | `ADMIN_TOKEN` | Opens the admin page. | Set |
 | `TYPESAFE_API_KEY` | Jev, the quick read of every message: is it for Go, does it hold a fact (the instant ✅). Without it Jev makes no calls, every quick read is "unsure", and Go decides from its own rules alone. | Set |
 | `TYPESAFE_BASE_URL`, `JEV_MODEL`, `REFLEX_LIVE`, `JEV_DEADLINE_MS`, `JEV_DAILY_CALLS_PER_TRIP` | Jev's address, its pinned version, which questions act live, how long a message waits for it, and a daily cap per trip. | Not set: the defaults apply |
-| `VESTRA_API_URL`, `VESTRA_API_KEYS`, `VESTRA_ADMIN_KEY`, `VESTRA_WEBHOOK_SECRET`, `VESTRA_DEPLOYMENT_ID`, `VESTRA_MCP_SERVER_ID` | The trip's computer through Vestra `/v1`: jobs like the villa search, and Watch. All six come from `scripts/setup-v1.ts` and work only together. | Set: staging `/v1`, this Go's own test org |
+| `VESTRA_API_URL`, `VESTRA_API_KEYS`, `VESTRA_ADMIN_KEY`, `VESTRA_WEBHOOK_SECRET`, `VESTRA_DEPLOYMENT_ID`, `VESTRA_MCP_SERVER_ID` | The trip's computer through Vestra `/v1`: jobs like the villa search, and Watch. All six come from `scripts/setup-v1.ts` and work only together. | Set: staging `/v1`, the "Go stage (ixigo hackweek)" test org |
 | `IXIGO_MCP_URL`, `IXIGO_MCP_TOKEN` | ixigo's search server and its token. Without them, searches use the test inventory even when `TRAVEL_MODE` says `ixigo`. | Not set |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Placing phone calls, and the number Go calls from. | Not set: Keshav's keys. Go refuses to call until they are in. |
 | `OPENAI_API_KEY` | The voice model Go speaks with on a call. | Not set: Keshav's key |
@@ -112,7 +112,7 @@ The same variable names, with these differences:
 - `GO_SIGNING_SECRET` and `ADMIN_TOKEN` are its own: production's secret does not open it, and its secret does not open production.
 - `GO_ROLE` is `rehearsal`, so the rehearsal runner accepts it.
 - `GO_PUBLIC_URL`, `VAULT_URL` and `VAULT_SHARED_SECRET` are staging's own address and staging's vault.
-- The `VESTRA_*` variables point at its own test org on staging `/v1`, "Go rehearsal".
+- The `VESTRA_*` variables point at its own test org on staging `/v1`, "Go rehearsal (ixigo hackweek)".
 
 **It has its own vault.** Staging's `vault` reports every payment to staging's `brain` (its `GO_CALLBACK_URL`), so a payment approved on the vault page during a rehearsal reaches the Go that asked for it. Nothing staging pays touches production.
 
