@@ -6,11 +6,12 @@
 import { z } from 'zod';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import { buildOptionsCard, clip, formatInr, subtitleFor } from './cards.js';
+import { asked } from './filters.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
 import { TravelError } from './mcp-travel.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultsStore } from './results.js';
-import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelQuery } from './travel.js';
+import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery } from './travel.js';
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelToolDeps { travel: Travel; results: ResultsStore; images: Images; now: () => Date }
@@ -96,14 +97,18 @@ export function ageText(checkedAt: string, now: Date): string {
   return minutes < 60 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`;
 }
 
+/** A stay's area exactly as the data gives it, so the model never fills one in from what people asked for. */
+const areaOf = (o: { facts: Record<string, string | number | boolean> }): string => (typeof o.facts.area === 'string' ? o.facts.area : 'not in the data');
+
 export function compactOption(n: number, o: ResultOption): Record<string, unknown> {
   const when = o.journey ? subtitleFor(o) : null;
   const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
   return {
     n,
     title: o.title,
+    ...(o.journey ? { route: `${o.journey.origin.name} to ${o.journey.destination.name}` } : {}),
     ...(when ? { when } : {}),
-    ...(typeof o.facts.area === 'string' ? { area: o.facts.area } : {}),
+    ...(o.kind === 'stay' ? { area: areaOf(o) } : {}),
     ...(o.priceMinor !== undefined ? { price: `${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}` } : {}),
     ...(o.totalMinor !== undefined && nights ? { total: `${formatInr(o.totalMinor)} for ${nights} nights` } : {}),
     ...(o.rating !== undefined ? { rating: o.rating } : {}),
@@ -124,29 +129,114 @@ function suggestTitle(kind: TravelKind, q: TravelQuery): string {
   }
 }
 
+/** What was searched, where and when, without the conditions: "stays in North Goa, 2026-11-06 to 2026-11-09". */
+export function searchScope(kind: TravelKind, q: TravelQuery): string {
+  if (kind === 'stays') return `stays in ${q.area ?? q.to ?? 'Goa'}${q.checkIn && q.checkOut ? `, ${q.checkIn} to ${q.checkOut}` : ''}`;
+  return `${kind} from ${q.from ?? '?'} to ${q.to ?? '?'}${q.date ? ` on ${q.date}` : ''}`;
+}
+
+/** One option in a line: its name, the stay's area, the journey's time, and its price as checked. */
+function optionLine(o: TravelOption): string {
+  const where = o.kind === 'stay' ? ` (${areaOf(o)})` : '';
+  const when = o.journey ? `, ${subtitleFor(toResultOption(o))}` : '';
+  return `${o.title}${where}${when}, ${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}`;
+}
+
+/** The lowest to the highest price the results show, with what the price covers. */
+function priceRange(options: ResultOption[]): string | null {
+  const prices = options.flatMap((o) => (o.priceMinor === undefined ? [] : [o.priceMinor]));
+  if (prices.length === 0) return null;
+  const low = Math.min(...prices);
+  const high = Math.max(...prices);
+  const note = options.find((o) => o.priceNote)?.priceNote;
+  return `${low === high ? formatInr(low) : `${formatInr(low)} to ${formatInr(high)}`}${note ? ` ${note}` : ''}`;
+}
+
+const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
+
+/**
+ * Every search answers with a summary built in code: how many it found and how many fit, the conditions people gave, the
+ * prices and the stays' areas. When nothing fits it names the conditions and the closest miss, so a line about it can
+ * never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
+ */
 async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
+  const scope = searchScope(kind, q);
+  const terms = asked(kind, q);
+  const search = terms.length ? `${scope}, ${terms.join(', ')}` : scope;
   let found;
   try {
     found = await d.travel.search(kind, q, { tripId: ctx.tripId });
   } catch (err) {
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
-    if (err instanceof TravelError && err.code === 'past_date') return { count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
-    if (err instanceof TravelError) return { count: 0, error: err.code, note: clip(err.message, 200) };
+    if (err instanceof TravelError && err.code === 'past_date') return { search, count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
+    if (err instanceof TravelError) {
+      return { search, count: 0, error: err.code, note: clip(err.message, 200), summary: `This search failed (${err.code}): nothing came back for ${search}, so there is no list for it.` };
+    }
     throw err;
   }
+  const before = found.found ?? found.results.length;
   const options = found.results.slice(0, 10).map(toResultOption);
   if (options.length === 0) {
-    return { count: 0, checked: ageText(found.checkedAt, d.now()), note: 'Nothing matched. Say so in one line and suggest loosening one thing.' };
+    const near = found.closest;
+    const summary =
+      before === 0
+        ? `Nothing came back: there are no ${scope} at all.`
+        : `None of the ${before} ${scope} fits ${listOf(terms)}.${near ? ` Closest: ${optionLine(near.option)}, but ${listOf(near.misses)}.` : ''}`;
+    return {
+      search,
+      count: 0,
+      checked: ageText(found.checkedAt, d.now()),
+      summary,
+      note: 'Nothing to show. Say what the summary says in one line, keeping every condition in it, and suggest loosening one thing.',
+    };
   }
   const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt });
+  const fit = found.results.length;
+  const prices = priceRange(options);
+  const areas = kind === 'stays' ? [...new Set(options.map(areaOf))] : [];
+  const summary =
+    `${terms.length ? `${fit} of the ${before} ${scope} fit ${listOf(terms)}` : `${fit} ${scope}`}` +
+    `${prices ? `: ${prices}` : ''}${areas.length ? `, in ${listOf(areas)}` : ''}.` +
+    `${fit > options.length ? ` The best ${options.length} are below.` : ''}`;
   return {
+    search,
     results_id: set.resultsId,
     checked: ageText(found.checkedAt, d.now()),
     count: options.length,
+    summary,
     results: options.map((o, i) => compactOption(i + 1, o)),
     card: { results_id: set.resultsId, option_numbers: options.slice(0, 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
-    note: 'To show options, call show_options with this results_id. Quote prices only from these results, and say how long ago they were checked when it is not just now.',
+    note:
+      'To show options, call show_options with this results_id. Quote prices only from these results, and say how long ago they were checked when it is not just now. ' +
+      "Each option's area, time and price are as given here: name no other, and say no count the summary does not give.",
   };
+}
+
+/**
+ * Two or more searches in one reply come back together, so their tally is said once, in code: how many came back with
+ * options, and which found nothing or failed. Prose about "the three lists" can then only count what came back.
+ */
+export function searchRoundSummary(results: Array<{ content: string; isError: boolean }>): string | null {
+  const came: string[] = [];
+  const nothing: string[] = [];
+  const failed: string[] = [];
+  for (const r of results) {
+    let out: { search?: string; count?: number; error?: string } = {};
+    try {
+      out = JSON.parse(r.content) as typeof out;
+    } catch {
+      // A thrown tool comes back as its message: it failed.
+    }
+    const name = out.search ?? 'one search';
+    if (r.isError || out.error) failed.push(name);
+    else if ((out.count ?? 0) > 0) came.push(`${name} (${out.count})`);
+    else nothing.push(name);
+  }
+  const lines = [`${came.length} of ${results.length} searches came back with options${came.length ? `: ${came.join('; ')}` : ''}.`];
+  if (nothing.length) lines.push(`Nothing came back for ${nothing.join('; ')}.`);
+  if (failed.length) lines.push(`Failed: ${failed.join('; ')}.`);
+  lines.push('Count only what came back.');
+  return lines.join(' ');
 }
 
 const SEARCH_RULE = 'Put every constraint people gave into the arguments: Go applies them to the results itself.';
@@ -175,24 +265,28 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     description: `Searches flights on one date. ${SEARCH_RULE} For example depart_after "18:00" when someone cannot leave before 6 pm.`,
     input: FlightsArgs,
     run: (a, ctx) => runSearch('flights', flightsQuery(a), ctx, d),
+    summarizeRound: searchRoundSummary,
   };
   const searchTrains: QuickTool<z.infer<typeof JourneyArgs>> = {
     name: 'search_trains',
     description: `Searches trains on one date, one fare per class. ${SEARCH_RULE}`,
     input: JourneyArgs,
     run: (a, ctx) => runSearch('trains', journeyQuery(a), ctx, d),
+    summarizeRound: searchRoundSummary,
   };
   const searchBuses: QuickTool<z.infer<typeof JourneyArgs>> = {
     name: 'search_buses',
     description: `Searches buses on one date. ${SEARCH_RULE}`,
     input: JourneyArgs,
     run: (a, ctx) => runSearch('buses', journeyQuery(a), ctx, d),
+    summarizeRound: searchRoundSummary,
   };
   const searchStays: QuickTool<z.infer<typeof StaysArgs>> = {
     name: 'search_stays',
     description: `Searches villas and hotels for check-in and check-out dates. ${SEARCH_RULE} For a deep comparison (reviews, many sites), use start_task instead.`,
     input: StaysArgs,
     run: (a, ctx) => runSearch('stays', staysQuery(a), ctx, d),
+    summarizeRound: searchRoundSummary,
   };
   const showOptions: QuickTool<z.infer<typeof ShowArgs>> = {
     name: 'show_options',

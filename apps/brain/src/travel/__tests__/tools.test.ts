@@ -8,7 +8,7 @@ import { createImages } from '../images.js';
 import { createTravelLayer } from '../layer.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import { createResultsStore, type ResultsStore } from '../results.js';
-import { travelTools } from '../tools.js';
+import { compactOption, searchRoundSummary, travelTools } from '../tools.js';
 import type { Travel } from '../travel.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -65,9 +65,48 @@ describe('search tools', () => {
     expect(out.results[1]).toMatchObject({ price: '₹12,800 per night', total: '₹38,400 for 3 nights' });
     const missing = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_night: 5000 }, lb.ctx())) as any;
     expect(missing.count).toBe(0);
-    expect(missing.note).toContain('Nothing matched');
+    // The fake gives 7 that sleep 5; none is under ₹5,000 a night.
+    expect(missing.summary).toMatch(/^None of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹5,000 a night, sleeping 5, with a pool and within 10 minutes of the beach\. Closest: /);
+    expect(missing.note).toContain('keeping every condition in it');
   });
 
+  it('nothing fits a pool villa under ₹10,000 a night: the summary keeps the pool and names the closest miss and why', async () => {
+    const none = (await lb.tools.run(
+      'search_stays',
+      { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', must_have: ['pool'], max_price_per_night: 10000 },
+      lb.ctx({ turnId: 'turn_pf1' }),
+    )) as any;
+    expect(none).toMatchObject({ count: 0, search: 'stays in North Goa, 2026-11-06 to 2026-11-09, at most ₹10,000 a night, with a pool' });
+    // The ₹9,800 villa the next search can show is named here, with the pool it lacks, so "nothing at ₹8 to 10k" cannot be said.
+    expect(none.summary).toBe(
+      'None of the 8 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹10,000 a night and with a pool. Closest: Saudade Villa (Parra), ₹9,800 per night, but no pool.',
+    );
+    expect(none.results_id).toBeUndefined();
+  });
+
+  it('an area with no stays at all says nothing came back, not that nothing fit', async () => {
+    const none = (await lb.tools.run('search_stays', { area: 'Calangute', check_in: '2026-11-06', check_out: '2026-11-09' }, lb.ctx({ turnId: 'turn_pf2' }))) as any;
+    expect(none).toMatchObject({ count: 0, summary: 'Nothing came back: there are no stays in Calangute, 2026-11-06 to 2026-11-09 at all.' });
+  });
+
+  it('every stay carries its own area as the data gives it, and the summary names the areas and the price range', async () => {
+    const out = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_pf3' }))) as any;
+    expect(out.results.map((r: { title: string; area: string }) => [r.title, r.area])).toEqual([
+      ['Casa Mareia', 'Morjim'], ['Villa Sol', 'Anjuna'], ['The Palms Villa', 'Vagator'], ['Ocean Breeze Villa', 'Candolim'],
+    ]);
+    expect(out.summary).toBe(
+      '4 of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fit sleeping 5, with a pool and within 10 minutes of the beach: ₹12,200 to ₹16,900 per night, in Morjim, Anjuna, Vagator and Candolim.',
+    );
+    expect(out.note).toContain("Each option's area, time and price are as given here: name no other");
+    // A stay the data gives no area for says so, rather than leaving the model to fill one in.
+    expect(compactOption(1, { kind: 'stay', title: 'Somewhere', priceMinor: 900000, priceNote: 'per night', highlights: [], facts: {} })).toMatchObject({ area: 'not in the data' });
+  });
+
+  it('flights carry their route, and a search with no conditions just counts what came back', async () => {
+    const out = (await lb.tools.run('search_flights', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_pf4' }))) as any;
+    expect(out.results[0]).toMatchObject({ route: expect.stringMatching(/ to /) });
+    expect(out.summary).toMatch(new RegExp(`^${out.count} flights from Delhi to Goa on 2026-11-06: ₹[\\d,]+ to ₹[\\d,]+ per person\\.$`));
+  });
   it('search_trains and search_buses answer journeys, and nothing that misses arrive_before', async () => {
     const trains = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_t1' }))) as any;
     expect(trains.count).toBe(6);
@@ -76,6 +115,23 @@ describe('search tools', () => {
     expect(late.count).toBe(0);
     const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_b1' }))) as any;
     expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
+  });
+});
+
+describe('a reply of several searches', () => {
+  it('says how many came back with options, and which found nothing or failed, so prose can only count what came back', () => {
+    const line = searchRoundSummary([
+      { content: JSON.stringify({ search: 'flights from Delhi to Goa on 2026-11-06, leaving after 6:00 pm', count: 4 }), isError: false },
+      { content: JSON.stringify({ search: 'flights from Mumbai to Goa on 2026-11-06', count: 0, summary: 'Nothing came back.' }), isError: false },
+      { content: JSON.stringify({ search: 'flights from Pune to Goa on 2026-11-06', count: 0, error: 'unreachable' }), isError: false },
+    ]);
+    expect(line).toBe(
+      '1 of 3 searches came back with options: flights from Delhi to Goa on 2026-11-06, leaving after 6:00 pm (4). ' +
+        'Nothing came back for flights from Mumbai to Goa on 2026-11-06. Failed: flights from Pune to Goa on 2026-11-06. Count only what came back.',
+    );
+    expect(searchRoundSummary([{ content: 'socket timeout', isError: true }, { content: JSON.stringify({ search: 'stays in Goa', count: 3 }), isError: false }])).toBe(
+      '1 of 2 searches came back with options: stays in Goa (3). Failed: one search. Count only what came back.',
+    );
   });
 });
 

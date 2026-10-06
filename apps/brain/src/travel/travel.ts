@@ -57,7 +57,14 @@ export interface TravelOption {
   facts: Record<string, string | number | boolean>;
 }
 
-export interface TravelSearch { results: TravelOption[]; checkedAt: string }
+export interface TravelSearch {
+  results: TravelOption[];
+  checkedAt: string;
+  /** How many the backend found before the constraints were applied (set by the travel layer). */
+  found?: number;
+  /** When nothing fits: the option that misses the fewest constraints, and what it misses, in plain words. */
+  closest?: { option: TravelOption; misses: string[] };
+}
 
 export type StatusQuery =
   | { kind: 'flight'; carrierCode: string; number: string; date: string }

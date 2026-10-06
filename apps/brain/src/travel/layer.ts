@@ -7,7 +7,7 @@
 import type { Switches } from '../admin/switches.js';
 import { localDay } from '../proactive/clock.js';
 import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
-import { applyConstraints } from './filters.js';
+import { applyConstraints, closest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
 import type { ResultsStore } from './results.js';
 import { TravelQuery, type OfferRef, type Travel, type TravelBackend, type TravelKind, type TravelOptionKind, type TravelSearch } from './travel.js';
@@ -82,7 +82,10 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
           cache.delete(oldest);
         }
       }
-      return { checkedAt: hit.value.checkedAt, results: applyConstraints(kind, parsed, hit.value.results) };
+      const all = hit.value.results;
+      const results = applyConstraints(kind, parsed, all);
+      const near = results.length === 0 ? closest(kind, parsed, all) : null;
+      return { checkedAt: hit.value.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}) };
     },
     async status(q) {
       return pick().b.status(q);
