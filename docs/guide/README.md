@@ -73,7 +73,7 @@ Here is what happens when Priya asks Go for flights. Every step between the serv
 
 1. Priya types "@Go flights on Friday from Delhi, under 6k?" in the room. The app sends it to the server.
 2. The server stores the message as change 57 of the trip and shows it to everyone in the room. It sends Go a `send_event` request carrying the `message.created` event, and Go answers `{ "accepted": true, "duplicate": false }` straight away.
-3. Go sees that the message mentions it. It waits about 2 seconds in case Priya sends more. Then it sends a `typing` notification, and the server shows "Go is typing..." in the room.
+3. Go sees that the message mentions it, and that it ends with a question mark, so it starts at once (a message for Go that trails off, like "@Go can you", waits about 2 seconds in case Priya sends more). It sends a `typing` notification, and the server shows "Go is typing..." in the room.
 4. Go sends `read_trip`, and the server answers with the trip as it is now, from its database. Go searches flights and picks three.
 5. Just before it posts, Go checks for anything new for it in the room, so it can answer that too. Then it sends `post_message` with a line of text and an `options` card with the three flights. The server stores Go's message as change 58 and answers with its `message_id` and `seq`.
 6. The server shows Go's message in the room over the app's live connection, and sends a push to Priya because Go named her in `mentions`. It also sends the `message.created` event for change 58 back to Go, because Go's own changes come back as events too.

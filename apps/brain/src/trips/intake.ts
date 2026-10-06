@@ -7,7 +7,7 @@ import type { Log } from '../log.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../reflex/reflex.js';
 import type { HooksImpl } from './hooks.js';
 import type { TripLogImpl } from './log.js';
-import { namesGoInText, plainlyNamesGo } from './names-go.js';
+import { endsThought, namesGoInText, plainlyNamesGo } from './names-go.js';
 import type { PacksImpl } from './pack.js';
 import { screenEvent } from './screen.js';
 import type { SetupImpl } from './setup.js';
@@ -25,7 +25,7 @@ export interface IntakeDeps {
   /** Read at call time: P2 replaces brain.reflex after boot wiring. */
   reflex: () => Reflex;
   runningTasks: (tripId: string) => Promise<Array<{ id: string; brief: string }>>;
-  /** The wait after a message for Go, unless the reflex is sure the thought is complete. */
+  /** The wait after a message for Go, unless the reflex is sure the thought is complete or it names Go and plainly ends one. */
   waitMs?: number;
 }
 
@@ -89,7 +89,8 @@ export function createIntake(d: IntakeDeps) {
     // Sure chatter never wakes the model, but a message that names Go always does.
     if (namesGo || !(read.forGo.sure && read.forGo.value === false)) {
       const now = d.now();
-      const complete = read.complete.sure && read.complete.value === true;
+      // No wait for a thought that is over: the reflex is sure, or the message names Go and plainly ends ("...?").
+      const complete = (read.complete.sure && read.complete.value === true) || (namesGo && endsThought(m.text));
       await d.desk.put({
         id: `msg:${tripId}:${m.message_id}`,
         tripId,

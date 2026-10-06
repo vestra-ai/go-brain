@@ -118,7 +118,7 @@ Each team can build and test its part before the other part is ready, against a 
 - Answers every `send_event` within 2 seconds (`accepted: true` even for an event type it does not know yet), ignores repeated `event_id`s, and catches up with `read_trip` and `read_messages` after a gap in change numbers.
 - Answers `card_tap` and `catch_up` within 3 seconds and every other request within 2 seconds, acts on each `tap_id` once, answers `-32601` for a method it does not know, and sends `retry_after_seconds` with every `429`.
 - Sends each of its requests on one open socket, and sends unanswered ones again after a reconnect with the same JSON-RPC `id` and `request_id`.
-- Shows "Go is typing..." while it works. After a message for Go, it waits about 2 seconds in case the same person sends more, and just before it posts, it checks for anything new for it in the room and answers that too.
+- Shows "Go is typing..." while it works. After a message for Go, it waits about 2 seconds in case the same person sends more (unless the message plainly ends with a question mark, a full stop, an exclamation mark or an emoji), and just before it posts, it checks for anything new for it in the room and answers that too.
 - Reacts quietly when it notes something without speaking.
 - Serves people pages, carry-over, deleting a fact and "forget me", and checks nothing is left after a forget.
 - Only pays with a valid spend approval and the payer's passkey, and records the booking with its `approval_id`.
