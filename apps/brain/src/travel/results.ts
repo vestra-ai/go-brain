@@ -87,15 +87,18 @@ export function toResultOption(o: TravelOption): ResultOption {
 interface OfferDbRow {
   option_id: string; trip_id: string; card_id: string; results_id: string; n: number; offer_id: string | null; kind: string; title: string;
   price_minor: string | null; total_minor: string | null; currency: string | null; price_note: string | null; checked_at: Date;
+  option: ResultOption;
 }
 
-const OFFER_COLUMNS = 'option_id, trip_id, card_id, results_id, n, offer_id, kind, title, price_minor, total_minor, currency, price_note, checked_at';
+const OFFER_COLUMNS = 'option_id, trip_id, card_id, results_id, n, offer_id, kind, title, price_minor, total_minor, currency, price_note, checked_at, option';
 
 function offerOf(r: OfferDbRow): StoredOffer {
   return {
     optionId: r.option_id, tripId: r.trip_id, cardId: r.card_id, resultsId: r.results_id, n: r.n, offerId: r.offer_id, kind: r.kind, title: r.title,
     priceMinor: r.price_minor === null ? null : Number(r.price_minor), totalMinor: r.total_minor === null ? null : Number(r.total_minor),
     currency: r.currency, priceNote: r.price_note, checkedAt: r.checked_at.toISOString(),
+    place: r.option.place ? { name: r.option.place.name, address: r.option.place.address ?? null } : null,
+    area: typeof r.option.facts?.['area'] === 'string' ? r.option.facts['area'] : null,
   };
 }
 

@@ -108,7 +108,10 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       // A vote and a payment use the whole stay; the card shows the nightly price.
       // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is ixigo's own page for
       // the offer, filled once ixigo's tools are mapped (Task 23), and null until then.
-      return { offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: null };
+      return {
+        offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: null,
+        place: o.place ?? null, area: o.area ?? null,
+      };
     },
     ...(d.simulate ? { simulate: d.simulate } : {}),
   };

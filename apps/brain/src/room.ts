@@ -5,7 +5,7 @@ import { renderMessageWake, renderSetupWake, renderTripChangeWake } from './comp
 
 /** Lane A's own contributions, made through the same interfaces every lane uses. */
 export const registerRoom: RegisterLane = (brain) => {
-  for (const t of roomTools({ now: brain.now, pool: brain.pool })) brain.tools.register(t);
+  for (const t of roomTools({ now: brain.now, pool: brain.pool, travel: () => brain.travel })) brain.tools.register(t);
   brain.context.addWake('message', renderMessageWake);
   brain.context.addWake('trip_change', renderTripChangeWake);
   brain.context.addWake('setup', renderSetupWake);

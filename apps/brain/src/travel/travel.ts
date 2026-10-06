@@ -115,6 +115,9 @@ export interface StoredOffer {
   currency: string | null;
   priceNote: string | null;
   checkedAt: string;
+  /** The option's own place and area (a stay's), as the search gave them. */
+  place?: { name: string; address: string | null } | null;
+  area?: string | null;
 }
 
 /** What answers behind the layer: the fake ixigo or ixigo's MCP server. */
@@ -135,7 +138,12 @@ export interface Travel {
    * came from a job's web browsing (P5 refuses to book those). priceMinor is what a vote and a payment use: the whole stay
    * for a stay, the fare per person for a journey. Null when Go never showed that option.
    */
-  offer(optionId: string): Promise<{ offerId: string | null; title: string; priceMinor: number | null; currency: string | null; kind: 'flight' | 'train' | 'bus' | 'stay'; link: string | null } | null>;
+  offer(optionId: string): Promise<{
+    offerId: string | null; title: string; priceMinor: number | null; currency: string | null; kind: 'flight' | 'train' | 'bus' | 'stay'; link: string | null;
+    /** The option's own place and area (a stay's), as the search gave them: what Go saves when a vote picked it. */
+    place?: { name: string; address: string | null } | null;
+    area?: string | null;
+  } | null>;
   /** Booking is two steps so card details only ever travel between the vault and the rail. Composer and P5 only. */
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   /** Safe to repeat: the same hold confirmed twice gives the same answer. */
