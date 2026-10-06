@@ -41,6 +41,8 @@ describe('the prompt, in order and cache-first', () => {
     // The rules about preferences and tools ride in that one cached block, not after the cache point.
     expect(a.system[0]?.text).toContain('is their preference: note it with a ✅ and stay quiet');
     expect(a.system[0]?.text).toContain('Never mention your tools');
+    expect(a.system[0]?.text).toContain("are their preference, not the plan");
+    expect(a.system[0]?.text).toContain("Never repeat a person's budget to the room");
     expect(all(a.user)).not.toContain('Never mention your tools');
   });
 
