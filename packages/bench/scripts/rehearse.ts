@@ -1,7 +1,9 @@
-// The live rehearsal, on brain-rehearsal only. From the repo root:
-//   pnpm --filter @go/bench rehearse -- --go https://<brain-rehearsal host> --secret <GO_SIGNING_SECRET> --admin-token <ADMIN_TOKEN>
-// The stage Go, before the demo: one health read for the real trip, and nothing else.
-//   pnpm --filter @go/bench rehearse -- --warm --go https://<stage brain host> --trip <real trip id> --admin-token <ADMIN_TOKEN>
+// The live rehearsal, on brain-rehearsal only. The secrets come from the environment, never the command line (it lands
+// in shell history and the process list): export GO_REHEARSAL_URL, GO_SIGNING_SECRET and GO_ADMIN_TOKEN (and GO_STAGE_URL,
+// so a full run can refuse the stage Go) from the team's env file, then, from the repo root:
+//   pnpm --filter @go/bench rehearse
+// The stage Go, before the demo: one health read for the real trip, and nothing else (GO_STAGE_URL and GO_ADMIN_TOKEN set):
+//   pnpm --filter @go/bench rehearse -- --warm --trip <real trip id>
 // Exit 0: every beat passed (warm: no red probe). 1: a beat missed (warm: a red probe). 2: refused before it started.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { parseRehearseArgs, RefusedError, rehearse, type RehearseOptions } from '../src/rehearsal/run.js';

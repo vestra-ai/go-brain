@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { SESSION_COOKIE, sessionValue } from '../../admin/session.js';
+import { sessionValue } from '../../admin/session.js';
 import { withSchema } from '../../db/test-db.js';
 import { registerStats, type StatsBrain } from '../routes.js';
 import { statsRegistry } from '../sources.js';
@@ -9,7 +9,7 @@ import { NOW, seedTrip, seedTurn, truncateAll } from './seed.js';
 const TOKEN = 'board-token-for-tests';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 /** What the browser sends once it has signed in at /board#token=... */
-const SIGNED_IN = { cookie: `${SESSION_COOKIE}=${sessionValue(TOKEN)}` };
+const SIGNED_IN = { cookie: `go_admin=${sessionValue(TOKEN, NOW)}` };
 const routes: Array<{ method: unknown; url: string; logLevel: unknown }> = [];
 let db: Awaited<ReturnType<typeof withSchema>>;
 let app: FastifyInstance;
@@ -87,6 +87,8 @@ describe('the proof board routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.headers['referrer-policy']).toBe('no-referrer');
+    expect(res.headers['x-frame-options']).toBe('DENY');
+    expect(res.headers['content-security-policy']).toBe("frame-ancestors 'none'");
     expect(res.body).toContain('No turns yet');
     expect(res.body).toContain('<meta name="referrer" content="no-referrer">');
     expect(res.body).toContain('api.fontshare.com');

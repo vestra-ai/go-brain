@@ -12,18 +12,24 @@ export interface AdminLanes {
   /** P4 (tasks/computer.ts): the /v1 user that holds a trip's computer. */
   v1UserIdFor: ((tripId: string) => string) | null;
   /** P4 (travel/mcp-caller.ts): lists ixigo's tools over MCP and closes the connection again. */
-  listIxigoTools: ((url: string, token: string | undefined) => Promise<number>) | null;
+  listIxigoTools: ((url: string, token: string | undefined, signal: AbortSignal) => Promise<number>) | null;
   /** P6 (calls/config.ts): who Go may phone, and a number with its middle hidden. */
   calls: { allowlist(env: Env): Array<{ name: string | null; phone: string }>; maskPhone(phone: string): string } | null;
 }
 
-/** Lists ixigo's tools over MCP and closes the connection again. */
-async function listIxigoTools(url: string, token: string | undefined): Promise<number> {
+/** Lists ixigo's tools over MCP and closes the connection again; when the check runs out of time, at once. */
+async function listIxigoTools(url: string, token: string | undefined, signal: AbortSignal): Promise<number> {
   const caller = createHttpMcpCaller({ url, name: 'go-admin-probe', ...(token ? { token } : {}) });
+  const stop = (): void => {
+    caller.close().catch(() => undefined);
+  };
+  signal.addEventListener('abort', stop, { once: true });
   try {
+    if (signal.aborted) throw new Error('the check ran out of time');
     return (await caller.listTools()).length;
   } finally {
-    await caller.close();
+    signal.removeEventListener('abort', stop);
+    await caller.close().catch(() => undefined);
   }
 }
 

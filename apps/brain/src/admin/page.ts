@@ -5,6 +5,8 @@ import type { SwitchName } from './switches.js';
 
 export interface AdminView {
   tripId: string | null;
+  /** This Go: the stage (brain) or the rehearsal Go; null when it cannot tell. */
+  role: 'stage' | 'rehearsal' | null;
   /** The newest trips, for the trip picker. */
   trips: string[];
   at: Date;
@@ -41,12 +43,18 @@ export const SWITCH_MEANING: Record<SwitchName, string> = {
 export const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+const ROLE_LINE: Record<'stage' | 'rehearsal' | 'unknown', string> = {
+  stage: 'This is the stage Go.',
+  rehearsal: 'This is the rehearsal Go.',
+  unknown: 'This Go does not say which it is: set GO_ROLE.',
+};
+
 const DOT_WORD: Record<ProbeResult['dot'], string> = { green: 'OK', amber: 'Slow or waking', red: 'Down' };
 
 const CSS = `
 :root{--ink:#0A0A0A;--muted:#5F5F5F;--line:#ECEAE6;--soft:#F7F6F3;--green:#1F8A4C;--amber:#A86500;--red:#C0362C;--accent:#EEF0FF}
 *{box-sizing:border-box}
-body{margin:0;background:#FFFFFF;color:var(--ink);font:16px/1.45 Satoshi,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+body{margin:0;background:#FFFFFF;color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
 main{max-width:980px;margin:0 auto;padding:28px 24px 48px}
 h1{font-size:28px;margin:0 0 4px;letter-spacing:-0.01em}
 h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:32px 0 10px}
@@ -68,7 +76,7 @@ button.quiet{background:#FFFFFF;color:var(--ink);border:1px solid var(--line)}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0}
 .pick{display:flex;gap:8px;max-width:520px;margin-top:12px}
 .warn{color:var(--red);font-weight:600}
-footer{margin-top:36px;display:flex;gap:18px}
+footer{margin-top:36px;display:flex;gap:18px;align-items:center}
 a{color:var(--ink)}
 `;
 
@@ -132,11 +140,10 @@ export function renderAdminPage(v: AdminView): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><title>Go: stage desk</title>
-<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" referrerpolicy="no-referrer">
 <style>${CSS}</style></head>
 <body><main>
 <h1>Go: stage desk</h1>
-<p>Trip <b>${esc(v.tripId ?? 'none chosen')}</b>. Checked at ${esc(time)}.</p>
+<p>${ROLE_LINE[v.role ?? 'unknown']} Trip <b>${esc(v.tripId ?? 'none chosen')}</b>. Checked at ${esc(time)}.</p>
 <form class="pick" method="get" action="/admin">
 <input name="trip" list="trips" value="${esc(v.tripId ?? '')}" placeholder="trip id" aria-label="trip id"><datalist id="trips">${trips}</datalist>
 <button class="quiet">Check this trip</button></form>
@@ -152,6 +159,7 @@ ${v.switches.map((s) => switchRow(v, s)).join('\n')}
 ${callsBlock(v)}
 <h2>Stage actions</h2>
 ${actionsBlock(v)}
-<footer><a href="/board">Proof board</a><a href="${esc(v.docsUrl)}" rel="noreferrer">Docs</a><a href="${esc(link('/admin/health.json', v))}">health.json</a></footer>
+<footer><a href="/board">Proof board</a><a href="${esc(v.docsUrl)}" rel="noreferrer">Docs</a><a href="${esc(link('/admin/health.json', v))}">health.json</a>
+<form method="post" action="/admin/sign-out"><button class="quiet">Sign out</button></form></footer>
 </main></body></html>`;
 }

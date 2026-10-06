@@ -1,3 +1,4 @@
+import type { FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fakeAnthropic } from '../../__tests__/fixtures/fake-anthropic.js';
 import { buildBrain, type Built } from '../../app.js';
@@ -7,15 +8,16 @@ import { loadEnv } from '../../env.js';
 import type { Tasks } from '../../tasks/tasks.js';
 import type { Probe } from '../health.js';
 import { NOT_DEPLOYED, type AdminLanes } from '../lanes.js';
-import { DOCS_URL, registerAdmin, registerAdminWith } from '../register.js';
-import { registerSessionRoute, SESSION_COOKIE, sessionValue } from '../session.js';
+import { DOCS_URL, registerAdmin, registerAdminWith, roleOf } from '../register.js';
+import { cookieName, registerSessionRoute, SESSION_SECONDS, sessionCookie, sessionValue, signedIn } from '../session.js';
 import { createSwitches } from '../switches.js';
 
 const TOKEN = 'admin-token-for-the-tests-0001';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
-/** What the browser sends once it has signed in at /admin#token=... */
-const SIGNED_IN = { cookie: `${SESSION_COOKIE}=${sessionValue(TOKEN)}` };
-const FORM = { ...SIGNED_IN, 'content-type': 'application/x-www-form-urlencoded' };
+/** What the browser sends once it has signed in at /admin#token=... (Go here is plain http, so the cookie is go_admin). */
+const SIGNED_IN = { cookie: `go_admin=${sessionValue(TOKEN, new Date())}` };
+/** A form on Go's own page: the browser adds Sec-Fetch-Site. */
+const FORM = { ...SIGNED_IN, 'content-type': 'application/x-www-form-urlencoded', 'sec-fetch-site': 'same-origin' };
 const base = {
   PORT: '0', DATABASE_URL: process.env.DATABASE_URL, GO_SIGNING_SECRET: 'a'.repeat(64), GO_PUBLIC_URL: 'http://127.0.0.1',
   ANTHROPIC_API_KEY: 'test-key', LOG_LEVEL: 'silent', REFLEX_LIVE: 'q1,q2,q3', CALLS_MODE: 'allowlist', CALLS_ALLOWLIST: 'Villa Sol=+919800000001',
@@ -54,10 +56,12 @@ const fakeTasks: Tasks = {
   start: async () => ({ taskId: 'gt_new', cardId: 'c_new' }),
   message: async () => undefined,
   stop: async (id) => {
+    if (id === 'gt_stuck') throw new Error('/v1 did not answer');
     stopped.push(id);
   },
   running: async (tripId) =>
-    tripId === 't_goa' ? [{ id: 'gt_villa', brief: 'villas', state: 'running' }, { id: 'gt_cab', brief: 'a cab', state: 'needs_you' }] : [],
+    tripId === 't_goa' ? [{ id: 'gt_villa', brief: 'villas', state: 'running' }, { id: 'gt_cab', brief: 'a cab', state: 'needs_you' }]
+      : tripId === 't_stuck' ? [{ id: 'gt_stuck', brief: 'a train', state: 'running' }, { id: 'gt_ok', brief: 'a bus', state: 'running' }] : [],
   handoff: async () => undefined,
 };
 
@@ -70,7 +74,7 @@ const payCard = (cardId: string, state: string) => ({
 beforeAll(async () => {
   db = await withSchema();
   const model = fakeAnthropic([]);
-  built = await buildBrain(loadEnv({ ...base, ADMIN_TOKEN: TOKEN }), { pool: db.pool, anthropic: model.client, logger: false });
+  built = await buildBrain(loadEnv({ ...base, ADMIN_TOKEN: TOKEN, GO_ROLE: 'rehearsal' }), { pool: db.pool, anthropic: model.client, logger: false });
   built.brain.tasks = fakeTasks;
   built.brain.taps.on('pay', 'decline', async (tap) => {
     declined.push(tap);
@@ -78,6 +82,7 @@ beforeAll(async () => {
   });
   // Stands in for P6's route, so the test sees exactly what the admin page sends it.
   built.brain.http.post('/admin/watch/fire', async (req) => {
+    if ((req.body as { label?: string }).label === 'Again') return { ok: true, dedupe_key: 'sim:flight_status:again', duplicate: true, promoted: 0 };
     fired.push({ auth: req.headers.authorization, body: req.body });
     return { ok: true, dedupe_key: 'sim:flight_status:abc123', promoted: 1 };
   });
@@ -90,7 +95,7 @@ beforeAll(async () => {
   await registerAdmin(closed.brain);
 
   // A Go with the admin page on but none of the other lanes deployed: no jobs, no watch route, no calls, no P4 helpers.
-  bare = await buildBrain(loadEnv({ ...base, ADMIN_TOKEN: TOKEN }), { pool: db.pool, anthropic: model.client, logger: false });
+  bare = await buildBrain(loadEnv({ ...base, ADMIN_TOKEN: TOKEN, RAILWAY_SERVICE_NAME: 'brain' }), { pool: db.pool, anthropic: model.client, logger: false });
   const offline = (async () => new Response('', { status: 503 })) as typeof fetch;
   await registerAdminWith({ lanes: { v1UserIdFor: null, listIxigoTools: null, calls: null }, fetch: offline })(bare.brain);
 
@@ -122,7 +127,7 @@ describe('the admin page', () => {
     expect((await http.inject({ method: 'GET', url: '/admin/health.json' })).statusCode).toBe(401);
     expect((await http.inject({ method: 'GET', url: `/admin/health.json?token=${TOKEN}` })).statusCode).toBe(401);
     expect((await http.inject({ method: 'GET', url: '/admin/health.json', headers: { authorization: 'Bearer nope' } })).statusCode).toBe(401);
-    expect((await http.inject({ method: 'GET', url: '/admin/health.json', headers: { cookie: `${SESSION_COOKIE}=${TOKEN}` } })).statusCode).toBe(401);
+    expect((await http.inject({ method: 'GET', url: '/admin/health.json', headers: { cookie: `go_admin=${TOKEN}` } })).statusCode).toBe(401);
     expect((await http.inject({ method: 'POST', url: '/admin/switches', payload: { name: 'TRAVEL_MODE', value: 'fake' } })).statusCode).toBe(401);
     expect((await http.inject({ method: 'GET', url: '/admin/health.json', headers: AUTH })).statusCode).toBe(200);
     expect((await http.inject({ method: 'GET', url: '/admin/health.json', headers: SIGNED_IN })).statusCode).toBe(200);
@@ -142,7 +147,7 @@ describe('the admin page', () => {
     const session = await http.inject({ method: 'POST', url: '/admin/session', headers: AUTH });
     expect(session.statusCode).toBe(204);
     const cookie = String(session.headers['set-cookie']);
-    expect(cookie).toContain(`${SESSION_COOKIE}=${sessionValue(TOKEN)}`);
+    expect(cookie).toMatch(/^go_admin=\d+\.[\w-]+; Path=\/;/);
     expect(cookie).toMatch(/HttpOnly/);
     expect(cookie).toMatch(/SameSite=Lax/);
     expect(cookie).not.toContain(TOKEN);
@@ -150,7 +155,7 @@ describe('the admin page', () => {
     const after = await http.inject({ method: 'GET', url: '/admin', headers: { cookie: cookie.split(';')[0] ?? '' } });
     expect(after.body).toContain('Stage actions');
     // The board registers the same route: whichever lane comes second leaves it as it is.
-    expect(() => registerSessionRoute(http, TOKEN, false)).not.toThrow();
+    expect(() => registerSessionRoute(http, { token: TOKEN, secure: false, now: () => new Date() })).not.toThrow();
   });
 
   it('its GET routes log at warn, so a request line never reaches the logs at info', () => {
@@ -163,6 +168,7 @@ describe('the admin page', () => {
     const http = built.brain.http;
     const newest = (await http.inject({ method: 'GET', url: '/admin/health.json', headers: AUTH })).json();
     expect(newest.trip_id).toBe('t_goa');
+    expect(newest.role).toBe('rehearsal');
     expect(newest.probes).toEqual([
       expect.objectContaining({ name: 'server', dot: 'green', detail: 'open' }),
       expect.objectContaining({ name: 'v1', dot: 'amber', detail: 'computer waking for t_goa' }),
@@ -233,6 +239,20 @@ describe('the admin page', () => {
     expect(stopped).toEqual(['gt_villa', 'gt_cab']);
   });
 
+  it('a job that will not stop never keeps the others running, and says so', async () => {
+    const res = await built.brain.http.inject({ method: 'POST', url: '/admin/stop-jobs', headers: AUTH, payload: { trip_id: 't_stuck' } });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ ok: false, stopped: ['gt_ok'], failed: ['gt_stuck'] });
+    const form = await built.brain.http.inject({ method: 'POST', url: '/admin/stop-jobs', headers: FORM, payload: 'trip_id=t_stuck' });
+    expect(new URL(String(form.headers.location), 'http://go.local').searchParams.get('note')).toBe('Stopped 1 running job; 1 did not stop.');
+  });
+
+  it('a watch fired twice in a minute reads "already fired"', async () => {
+    const res = await built.brain.http.inject({ method: 'POST', url: '/admin/fire-watch', headers: FORM, payload: 'trip_id=t_goa&person_id=p_arjun&label=Again' });
+    expect(res.statusCode).toBe(303);
+    expect(new URL(String(res.headers.location), 'http://go.local').searchParams.get('note')).toBe('That watch already fired a moment ago, so nothing new went out.');
+  });
+
   it("declines the waiting pay card as the payer's own Decline tap", async () => {
     const res = await built.brain.http.inject({ method: 'POST', url: '/admin/decline-pay', headers: AUTH, payload: { trip_id: 't_goa' } });
     expect(res.statusCode).toBe(200);
@@ -252,8 +272,9 @@ describe('the admin page', () => {
     for (const text of [
       'The Server&#39;s socket', 'computer waking for t_goa', 'TRAVEL_MODE', 'PAY_RAIL', 'CALLS_MODE', 'REFLEX_LIVE', 'DEMO_ROOM',
       '<option value="stripe_test"', 'Villa Sol (+91***001)', 'Fire a watch', 'Stop all running jobs for this trip',
-      'Decline the waiting pay card', 'href="/board"', DOCS_URL,
+      'Decline the waiting pay card', 'href="/board"', DOCS_URL, 'This is the rehearsal Go.', 'action="/admin/sign-out"',
     ]) expect(html, text).toContain(text);
+    expect(html).not.toContain('fontshare');
     expect(html).not.toContain('9800000001');
     expect(html).not.toContain(TOKEN);
     expect(html).not.toMatch(/[\u2014\u2013]/);
@@ -266,6 +287,70 @@ describe('the admin page', () => {
   });
 });
 
+describe('the session: from Go's own pages only, never framed, 12 hours, and a sign-out', () => {
+  const press = (headers: Record<string, string>) =>
+    built.brain.http.inject({ method: 'POST', url: '/admin/switches', headers: { ...SIGNED_IN, host: 'go.test', ...headers }, payload: { name: 'TRAVEL_MODE', value: 'fake' } });
+
+  it("a button pressed with the cookie must come from Go's own page; a bearer needs no Origin", async () => {
+    expect((await press({})).statusCode).toBe(401);
+    expect((await press({ origin: 'https://evil.example' })).statusCode).toBe(401);
+    expect((await press({ 'sec-fetch-site': 'cross-site' })).statusCode).toBe(401);
+    expect((await press({ origin: 'https://go.test' })).statusCode).toBe(200);
+    expect((await press({ 'sec-fetch-site': 'same-origin' })).statusCode).toBe(200);
+    // A read changes nothing, so the cookie alone is enough.
+    expect((await built.brain.http.inject({ method: 'GET', url: '/admin/health.json', headers: { ...SIGNED_IN, origin: 'https://evil.example' } })).statusCode).toBe(200);
+    expect((await built.brain.http.inject({ method: 'POST', url: '/admin/switches', headers: AUTH, payload: { name: 'TRAVEL_MODE', value: 'fake' } })).statusCode).toBe(200);
+  });
+
+  it('is never framed, signed in or not', async () => {
+    for (const headers of [SIGNED_IN, {}]) {
+      const page = await built.brain.http.inject({ method: 'GET', url: '/admin', headers });
+      expect(page.headers['x-frame-options']).toBe('DENY');
+      expect(page.headers['content-security-policy']).toBe("frame-ancestors 'none'");
+    }
+  });
+
+  it('ends on the server after 12 hours, and a cookie made with another token is no session', async () => {
+    const read = (cookie: string) => built.brain.http.inject({ method: 'GET', url: '/admin/health.json', headers: { cookie } });
+    expect((await read(`go_admin=${sessionValue(TOKEN, new Date(Date.now() - (SESSION_SECONDS + 60) * 1000))}`)).statusCode).toBe(401);
+    expect((await read(`go_admin=${sessionValue(TOKEN, new Date(Date.now() - (SESSION_SECONDS - 60) * 1000))}`)).statusCode).toBe(200);
+    expect((await read(`go_admin=${sessionValue('another-admin-token-0000', new Date())}`)).statusCode).toBe(401);
+  });
+
+  it('over https the cookie is __Host-go_admin, the only name read, and a planted cookie beside it changes nothing', () => {
+    const now = new Date('2026-10-08T12:00:00Z');
+    const o = { token: TOKEN, secure: true, now: () => now };
+    const set = sessionCookie(o);
+    expect(set).toMatch(/^__Host-go_admin=\d+\.[\w-]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=43200; Secure$/);
+    const valid = sessionValue(TOKEN, now);
+    const req = (cookie: string) => ({ method: 'GET', headers: { cookie }, host: 'go.test' }) as unknown as FastifyRequest;
+    expect(signedIn(req(`__Host-go_admin=${valid}`), o)).toBe(true);
+    expect(signedIn(req(`go_admin=${valid}`), o)).toBe(false);
+    expect(signedIn(req(`__Host-go_admin=1.planted; __Host-go_admin=${valid}`), o)).toBe(true);
+    expect(signedIn(req('__Host-go_admin=1.planted'), o)).toBe(false);
+    expect(cookieName(false)).toBe('go_admin');
+  });
+
+  it('signs out: the cookie is cleared, and back to the page it came from', async () => {
+    const res = await built.brain.http.inject({ method: 'POST', url: '/admin/sign-out' });
+    expect(res.statusCode).toBe(303);
+    expect(res.headers.location).toBe('/admin');
+    expect(String(res.headers['set-cookie'])).toMatch(/^go_admin=; Path=\/; HttpOnly; SameSite=Lax; Max-Age=0$/);
+    expect((await built.brain.http.inject({ method: 'POST', url: '/admin/sign-out?next=/board' })).headers.location).toBe('/board');
+    expect((await built.brain.http.inject({ method: 'POST', url: '/admin/sign-out?next=https://evil.example' })).headers.location).toBe('/admin');
+  });
+});
+
+describe('which Go this is', () => {
+  it('GO_ROLE first, then Railway\'s service name; otherwise it cannot tell', () => {
+    expect(roleOf({ GO_ROLE: 'stage', RAILWAY_SERVICE_NAME: 'brain-rehearsal' })).toBe('stage');
+    expect(roleOf({ RAILWAY_SERVICE_NAME: 'brain-rehearsal' })).toBe('rehearsal');
+    expect(roleOf({ RAILWAY_SERVICE_NAME: 'brain' })).toBe('stage');
+    expect(roleOf({ RAILWAY_SERVICE_NAME: 'something-else' })).toBeNull();
+    expect(roleOf({})).toBeNull();
+  });
+});
+
 describe('a lane that is not on this Go yet', () => {
   it('reads as not deployed on the page, in health.json and on each action, and nothing breaks', async () => {
     const http = bare.brain.http;
@@ -273,6 +358,7 @@ describe('a lane that is not on this Go yet', () => {
     expect(health.probes.find((p: { name: string }) => p.name === 'v1')).toMatchObject({ dot: 'red', detail: `trip computers are ${NOT_DEPLOYED}` });
     expect(health.probes.find((p: { name: string }) => p.name === 'ixigo')).toMatchObject({ dot: 'red', detail: `the ixigo connection is ${NOT_DEPLOYED}` });
     expect(health.calls).toEqual({ mode: 'allowlist', allowlist: [], allowlist_count: 0 });
+    expect(health.role).toBe('stage');
 
     const page = (await http.inject({ method: 'GET', url: '/admin?trip=t_goa', headers: SIGNED_IN })).body;
     expect(page).toContain('Calls are not deployed on this Go yet');
