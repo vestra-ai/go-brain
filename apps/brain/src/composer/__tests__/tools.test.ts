@@ -107,6 +107,14 @@ describe('the room\'s tools', () => {
     expect(ctx.cards).toEqual([{ kind: 'vote', card_id: 'c_vote_turn_T_1', fallback_text: 'Vote: Where do we stay?', decision_id: 'd_new' }]);
   });
 
+  it('open_vote asks for a secret ballot when the model sets anonymous, and an open one otherwise', async () => {
+    const { ctx, calls } = ctxWith({ open_vote: () => ({ decision_id: 'd_secret', seq: 62 }) });
+    const args = tool('open_vote').input.parse({ question: 'Who should cook on Saturday?', options: [{ label: 'Rahul' }, { label: 'Priya' }], anonymous: true });
+    expect(await tool('open_vote').run(args, ctx)).toMatchObject({ ok: true, decision_id: 'd_secret' });
+    expect(calls[0]?.params).toMatchObject({ question: 'Who should cook on Saturday?', anonymous: true });
+    expect(tool('open_vote').description).toContain('secret or anonymous vote');
+  });
+
   it('open_vote passes every option field through, so a vote made from search results carries the offer', async () => {
     const { ctx, calls } = ctxWith({ open_vote: () => ({ decision_id: 'd_villa', seq: 61 }) });
     const sol = {

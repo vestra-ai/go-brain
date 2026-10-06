@@ -145,6 +145,13 @@ describe('put_to_vote', () => {
     expect((ctx.cards[0] as { fallback_text: string }).fallback_text).toMatch(/^Vote: Where do we stay\?/);
   });
 
+  it('asks for a secret ballot when the model sets anonymous', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_anon1' }))) as any;
+    const shown = (await lb.tools.run('show_options', { results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_anon2' }))) as any;
+    await lb.tools.run('put_to_vote', { card_id: shown.card_id, anonymous: true }, lb.ctx({ turnId: 'turn_anon3' }));
+    expect(lb.link.sent('open_vote').at(-1)).toMatchObject({ request_id: 'go_vote_turn_anon3_1', anonymous: true });
+  });
+
   it('shows the same vote again when the same turn runs again, and refuses a second vote from another turn', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_w1' }))) as any;
     const shown = (await lb.tools.run('show_options', { results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_w2' }))) as any;

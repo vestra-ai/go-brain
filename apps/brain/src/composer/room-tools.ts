@@ -42,6 +42,7 @@ const OpenVoteInput = z.object({
   question: z.string().min(1).max(200),
   options: z.array(VoteOption).min(2).max(10),
   kind: z.enum(['choice', 'yesno']).optional().describe('choice (the default) or yesno.'),
+  anonymous: z.boolean().optional().describe('true for a secret ballot, only when someone asks for a secret or anonymous vote. Leave it out otherwise.'),
   closes_at: z.iso
     .datetime({ offset: true })
     .optional()
@@ -98,7 +99,8 @@ export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] 
     name: 'open_vote',
     description:
       'Open a vote in the room, with 2 to 10 short options. The vote card goes out with your message: write your one ' +
-      'short line in the same reply. Never open a second vote on a question that already has an open one.',
+      'short line in the same reply. Never open a second vote on a question that already has an open one. ' +
+      'Set anonymous when someone asks for a secret or anonymous vote.',
     input: OpenVoteInput,
     endsTurn: true,
     async run(a, ctx) {
@@ -108,7 +110,7 @@ export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] 
         trip_id: ctx.tripId,
         question: a.question,
         kind: a.kind ?? 'choice',
-        anonymous: false,
+        anonymous: a.anonymous ?? false,
         // Every DecisionOption field the model filled goes through as it is: option_ref is how P5 finds the offer to book.
         options: a.options.map(filledOnly),
         ...(a.closes_at ? { closes_at: a.closes_at } : {}),
