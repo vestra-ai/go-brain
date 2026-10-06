@@ -24,13 +24,16 @@ export async function buildVault(deps: VaultDeps): Promise<FastifyInstance> {
   // Request logging off also silences Fastify's own 5xx logs, so a failed request is logged here: by its route pattern,
   // never by its path. Set before any route, so every route uses it.
   app.setErrorHandler((err, req, reply) => {
-    const status = typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
+    // Anything can be thrown, so only these two fields are read, and only when they are what they should be.
+    const e = (err ?? {}) as { statusCode?: unknown; message?: unknown };
+    const status = typeof e.statusCode === 'number' && e.statusCode >= 400 && e.statusCode < 600 ? e.statusCode : 500;
     const fields = { err, route: req.routeOptions.url };
     if (status >= 500) req.log.error(fields, 'request failed');
     else req.log.warn(fields, 'request refused');
+    const message = typeof e.message === 'string' ? e.message.slice(0, 200) : 'The request was not accepted.';
     return reply
       .status(status)
-      .send({ error: status >= 500 ? { code: 'internal', message: 'Something went wrong.' } : { code: 'bad_request', message: err.message.slice(0, 200) } });
+      .send({ error: status >= 500 ? { code: 'internal', message: 'Something went wrong.' } : { code: 'bad_request', message } });
   });
   keepRawJson(app);
   securityHeaders(app);
