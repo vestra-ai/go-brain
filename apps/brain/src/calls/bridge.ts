@@ -68,7 +68,16 @@ export function frameLevel(payload: string): number {
   return Math.sqrt(sum / bytes.length);
 }
 
-export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): void {
+export interface BridgeHandle {
+  /** Settles once the call is closed out, or the media socket was refused or dropped. */
+  closed: Promise<void>;
+}
+
+export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): BridgeHandle {
+  let markClosed = (): void => {};
+  const closed = new Promise<void>((resolve) => {
+    markClosed = resolve;
+  });
   const wire = wireFor(d.session.model);
   let rt: WebSocket | null = null;
   let streamSid = '';
@@ -107,14 +116,18 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
   async function end(reason: EndReason): Promise<void> {
     if (ended) return;
     ended = true;
-    for (const cancel of cancels) cancel();
-    cancelGoodbye();
-    if (started) {
-      for (const e of wire.flush()) if (e.kind === 'go_line') d.hooks.line(callId, { who: 'go', text: e.text });
+    try {
+      for (const cancel of cancels) cancel();
+      cancelGoodbye();
+      if (started) {
+        for (const e of wire.flush()) if (e.kind === 'go_line') d.hooks.line(callId, { who: 'go', text: e.text });
+      }
+      if (rt && rt.readyState !== WebSocket.CLOSED) rt.close();
+      if (twilio.readyState === WebSocket.OPEN) twilio.close();
+      if (started) await d.hooks.ended(callId, reason);
+    } finally {
+      markClosed();
     }
-    if (rt && rt.readyState !== WebSocket.CLOSED) rt.close();
-    if (twilio.readyState === WebSocket.OPEN) twilio.close();
-    if (started) await d.hooks.ended(callId, reason);
   }
   const finish = (reason: EndReason): void => {
     end(reason).catch((err: unknown) => d.log.warn({ err, callId }, 'calls: closing the call failed'));
@@ -275,4 +288,5 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
   });
   twilio.on('close', () => finish('hangup'));
   twilio.on('error', (err: Error) => d.log.warn({ err, callId }, 'calls: media socket error'));
+  return { closed };
 }
