@@ -48,8 +48,9 @@ export async function runProbe(p: Probe, t: ProbeTiming = {}): Promise<ProbeResu
   let timer: NodeJS.Timeout | undefined;
   const late = new Promise<'late'>((resolve) => {
     timer = setTimeout(() => {
-      ctrl.abort();
+      // 'late' first: aborting runs the check's abort listeners at once, and a check that rejects on abort must not win.
       resolve('late');
+      ctrl.abort();
     }, timeoutMs);
   });
   const result = (dot: Dot, detail: string): ProbeResult => ({
