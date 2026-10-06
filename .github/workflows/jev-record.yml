@@ -14,10 +14,16 @@ concurrency:
   cancel-in-progress: false
 jobs:
   record:
-    if: github.event.label.name == 'jev-record'
+    # Never for a fork's pull request: the job holds the repo's Jev key.
+    if: github.event.label.name == 'jev-record' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # GitHub masks secrets already; this masks the key in every later step's output as well, whatever prints it.
+      - name: Mask the key
+        env:
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+        run: echo "::add-mask::$TYPESAFE_API_KEY"
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -26,7 +32,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      # The key lives in this step only: install, build and the upload never see it, and the script never prints it.
+      # The key lives in this step and the mask step only: install, build and the upload never see it, and the script never prints it.
       - name: Record Jev's answers
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
