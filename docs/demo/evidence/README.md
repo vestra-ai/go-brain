@@ -178,7 +178,7 @@ How the live numbers are measured:
 
 - **Reply** runs from a person's last line of an ask to Go's post, as in the fast bench, so here it includes the model's time: its first word (p50 about 1.2 seconds with `claude-sonnet-5-5`) and any tool rounds before the post. `goa-50` made 66 requests to the model for 43 turns; the other 23 are later rounds of a turn, after a tool's answer.
 - **Cache hit** is the provider's own count from each response's usage (`cache_read_input_tokens` over all input tokens), over every request for Go's turns but the first. The bench's estimate from the same requests is next to it in the run's summary (83.0% / 87.7%).
-- **Cost** is every request priced from the provider's usage, with the agent SDK's price table.
+- **Cost** is every request priced from the provider's usage, with Go's price table ([`apps/brain/src/composer/anthropic-helpers.ts`](../../../apps/brain/src/composer/anthropic-helpers.ts#L44)).
 - **Woke the model** is model turns over messages from people, as in the fast bench: every turn counts, whatever woke it.
 
 ### Where the live run misses a bar
