@@ -28,6 +28,15 @@ describe("Go's rules", () => {
     expect(section).toContain("- While a vote is open, don't argue for an option; you may say who has voted and remind people to tap.");
   });
 
+  it('keeps the shared costs people say they paid and reads who owes whom, but never moves money between people', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
+    expect(section).toContain("You keep the group's shared costs.");
+    expect(section).toContain('record it with record_expense');
+    expect(section).toContain('only from who_owes_what');
+    expect(section).toContain('You never move money between people.');
+    expect(GO_RULES).not.toMatch(/not tracking|don't track|do not track/i);
+  });
+
   it('use no em dashes or en dashes, as they ask of Go', () => {
     expect(GO_RULES).not.toMatch(/[—–]/);
   });
