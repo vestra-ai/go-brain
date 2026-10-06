@@ -92,7 +92,7 @@ describe('CallStore', () => {
     const row = await store.create(call());
     expect(row).toMatchObject({ state: 'waiting', business: 'Villa Sol', factsAllowed: ['Group of five', 'Staying 6 to 9 November'], transcript: [] });
     expect((await store.liveFor('t_goa'))?.callId).toBe('call_1');
-    await store.announced('call_1', 'm_go_1', 301);
+    await store.announced('call_1', 'm_go_1', 301, new Date(at.getTime() + 30_000));
     expect((await store.get('call_1'))?.announceSeq).toBe(301);
 
     expect(await store.dueToDial(at)).toEqual([]);

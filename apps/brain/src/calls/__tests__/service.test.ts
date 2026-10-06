@@ -152,6 +152,77 @@ describe('the stop window', () => {
   });
 });
 
+describe('the 30 seconds can never be skipped, and a stop is never lost', () => {
+  const dialedFor = (m: { twilioCalls: CreateCall[] }, callId: string) => m.twilioCalls.filter((c) => c.statusCallback.endsWith(`/${callId}`));
+
+  it('starts the 30 s when Go\'s line is in the room, however slow posting it was', async () => {
+    const m = make('t_slow');
+    const post = m.link.request.bind(m.link);
+    m.link.request = (async (method: string, params: Record<string, unknown>) => {
+      if (method === 'post_message' && String(params.request_id).endsWith('_announce')) m.time.advance(20_000);
+      return post(method, params);
+    }) as typeof m.link.request;
+    expect(await m.request()).toMatchObject({ ok: true, callId: 'call_t_slow_1', dialAt: '2026-10-06T10:00:50.000Z' });
+    m.time.advance(10_000); // 30 s after Go was asked, but only 10 s after its line landed
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_slow_1')).toHaveLength(0);
+    m.time.advance(20_000);
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_slow_1')).toHaveLength(1);
+  });
+
+  it('never dials a call whose line did not reach the room; a rerun of the turn posts the line and starts the 30 s then', async () => {
+    const m = make('t_crash');
+    // The turn crashed after it stored the call and before Go's line went out.
+    await store.create({
+      callId: 'call_t_crash_9', tripId: 't_crash', business: 'Villa Sol', phone: '+919800000001', goal: 'Ask about check-in', factsAllowed: [],
+      forWhom: 'a group of 5 friends travelling together', askedByPersonId: null, askedMessageId: null, cardId: 'c_call_t_crash_9',
+      dialAt: new Date(m.time.now().getTime() + 30_000),
+    });
+    m.time.advance(30_000);
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_crash_9')).toHaveLength(0);
+    expect(await m.service.request('t_crash', m.pack, { ...base, callId: 'call_t_crash_9' })).toMatchObject({ ok: true, dialAt: '2026-10-06T10:01:00.000Z' });
+    expect(m.link.of('post_message')).toHaveLength(1);
+    m.time.advance(30_000);
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_crash_9')).toHaveLength(1);
+  });
+
+  it('calls off a call whose line never went out, a minute after it was asked for, and says nothing', async () => {
+    const m = make('t_lost');
+    await store.create({
+      callId: 'call_t_lost_1', tripId: 't_lost', business: 'Villa Sol', phone: '+919800000001', goal: 'Ask about check-in', factsAllowed: [],
+      forWhom: 'a group of 5 friends travelling together', askedByPersonId: null, askedMessageId: null, cardId: 'c_call_t_lost_1',
+      dialAt: new Date(m.time.now().getTime() + 30_000),
+    });
+    m.time.advance(61_000);
+    await m.service.tick();
+    expect(await store.get('call_t_lost_1')).toMatchObject({ state: 'cancelled', endReason: 'not_announced' });
+    expect(m.link.of('post_message')).toHaveLength(0);
+  });
+
+  it('looks at the room once more before dialing: a stop the message hook missed calls it off', async () => {
+    const m = make('t_missed');
+    await m.request();
+    m.pack.messages.push(msg({ id: 'm_missed', seq: 1003, by: 'p_kabir', text: 'band karo' }));
+    m.time.advance(30_000);
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_missed_1')).toHaveLength(0);
+    expect(m.link.of('post_message').at(-1)).toMatchObject({ text: "Okay, I won't call Villa Sol.", reply_to: 'm_missed' });
+  });
+
+  it('a stop sent inside the window that reaches Go after dialing began still hangs up; one sent after it does not', async () => {
+    const m = await dialed('t_late_stop');
+    await m.service.onMessage(msg({ id: 'm_after', seq: 1500, by: 'p_priya', text: 'stop', sentAt: '2026-10-06T10:00:40Z' }), m.pack);
+    expect((await store.get(m.callId))?.state).toBe('dialing');
+    await m.service.onMessage(msg({ id: 'm_late', seq: 1501, by: 'p_priya', text: 'ruko!', sentAt: '2026-10-06T10:00:20Z' }), m.pack);
+    await waitFor(() => m.link.of('post_message').some((p) => p.text === 'Okay, I hung up on Villa Sol.'));
+    expect(m.hangUps).toEqual(['CA_t_late_stop']);
+    expect((await store.get(m.callId))?.state).toBe('ended');
+  });
+});
+
 describe('dialing', () => {
   it('posts the dialing card and calls through Twilio with a one-use token', async () => {
     const m = await dialed('t_dial');

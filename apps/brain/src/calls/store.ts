@@ -103,8 +103,21 @@ export class CallStore {
     return this.one(`select * from calls where trip_id = $1 and state = 'cancelled' and ended_at >= $2 order by ended_at desc limit 1`, [tripId, since]);
   }
 
-  async announced(callId: string, messageId: string, seq: number): Promise<void> {
-    await this.pool.query(`update calls set announce_message_id = $2, announce_seq = $3 where call_id = $1`, [callId, messageId, seq]);
+  /** Go's line is in the room: the 30 s window starts now, so `dialAt` is set here, never at create. */
+  announced(callId: string, messageId: string, seq: number, dialAt: Date): Promise<CallRow | null> {
+    return this.one(
+      `update calls set announce_message_id = $2, announce_seq = $3, dial_at = $4 where call_id = $1 and state = 'waiting' returning *`,
+      [callId, messageId, seq, dialAt],
+    );
+  }
+
+  /** Waiting calls whose line never reached the room (a crash before the announce): called off, never dialed. */
+  cancelUnannounced(dialAtBefore: Date, at: Date): Promise<CallRow[]> {
+    return this.many(
+      `update calls set state = 'cancelled', end_reason = 'not_announced', ended_at = $2
+       where state = 'waiting' and announce_seq is null and dial_at < $1 returning *`,
+      [dialAtBefore, at],
+    );
   }
 
   cancel(callId: string, reason: string, at: Date): Promise<CallRow | null> {
@@ -112,7 +125,7 @@ export class CallStore {
   }
 
   dueToDial(now: Date): Promise<CallRow[]> {
-    return this.many(`select * from calls where state = 'waiting' and dial_at <= $1 order by dial_at`, [now]);
+    return this.many(`select * from calls where state = 'waiting' and announce_seq is not null and dial_at <= $1 order by dial_at`, [now]);
   }
 
   startDialing(callId: string): Promise<CallRow | null> {
