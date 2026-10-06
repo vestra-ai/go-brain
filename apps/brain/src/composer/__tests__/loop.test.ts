@@ -49,6 +49,25 @@ function setup(script: Script, more: Partial<LoopInput> = {}, limits: TurnLimits
 const markersIn = (body: any) => countMarkers(body.system, body.tools, body.messages);
 
 describe('the composer loop', () => {
+  it('two or more calls in a reply that share a round summary get one tally line after their results; a lone call gets none', async () => {
+    const tally = (rs: Array<{ content: string; isError: boolean }>): string => `${rs.length} looks: ${rs.map((r) => (JSON.parse(r.content) as { said: string }).said).join(', ')}`;
+    const look: QuickTool<{ say: string }> = { ...echo, name: 'look', summarizeRound: tally };
+    const lookAgain: QuickTool<{ say: string }> = { ...echo, name: 'look_again', summarizeRound: tally };
+    const { bodies, run } = setup(
+      [
+        { tools: [{ name: 'look', input: { say: 'a' } }, { name: 'look_again', input: { say: 'b' } }, echoCall('c')] },
+        { tools: [{ name: 'look', input: { say: 'd' } }] },
+        { text: 'done' },
+      ],
+      { tools: [echo, look, lookAgain] },
+    );
+    await run();
+    const second = bodies[1].messages.at(-1).content;
+    expect(second.map((b: { type: string }) => b.type)).toEqual(['tool_result', 'tool_result', 'tool_result', 'text']);
+    expect(second.at(-1).text).toBe('2 looks: a, b');
+    expect(bodies[2].messages.at(-1).content.map((b: { type: string }) => b.type)).toEqual(['tool_result']);
+  });
+
   it('one round: the final text is the answer, and the wire body is what Go needs', async () => {
     const { bodies, run } = setup([{ text: 'Hello!' }]);
     const r = await run();

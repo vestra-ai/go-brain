@@ -21,6 +21,11 @@ export interface QuickTool<A = unknown> {
    * model call is spent on a line.
    */
   endsTurn?: boolean;
+  /**
+   * When two or more calls in one reply use this same summary (the searches), the loop adds its line after their results:
+   * a tally the model reads once, in code, instead of counting results itself.
+   */
+  summarizeRound?(results: Array<{ content: string; isError: boolean }>): string | null;
 }
 
 export interface TurnCtx {

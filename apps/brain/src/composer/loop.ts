@@ -147,6 +147,27 @@ function withTimeout<T>(p: Promise<T>, ms: number, signal: AbortSignal): Promise
   });
 }
 
+/** The tallies for a reply's calls: one line for each summary that two or more of its calls share (see summarizeRound). */
+export function roundNotes(
+  calls: Anthropic.ToolUseBlock[],
+  results: Anthropic.ToolResultBlockParam[],
+  byName: ReadonlyMap<string, QuickTool<any>>,
+): Anthropic.TextBlockParam[] {
+  const groups = new Map<NonNullable<QuickTool['summarizeRound']>, Array<{ content: string; isError: boolean }>>();
+  calls.forEach((c, k) => {
+    const summarize = byName.get(c.name)?.summarizeRound;
+    const r = results[k];
+    if (!summarize || !r) return;
+    groups.set(summarize, [...(groups.get(summarize) ?? []), { content: typeof r.content === 'string' ? r.content : '', isError: r.is_error === true }]);
+  });
+  const notes: Anthropic.TextBlockParam[] = [];
+  for (const [summarize, rs] of groups) {
+    const line = rs.length > 1 ? summarize(rs) : null;
+    if (line) notes.push({ type: 'text', text: line });
+  }
+  return notes;
+}
+
 async function runTool(tool: QuickTool<any> | undefined, call: Anthropic.ToolUseBlock, i: LoopInput): Promise<Anthropic.ToolResultBlockParam> {
   const result = (content: string, isError = false): Anthropic.ToolResultBlockParam => ({
     type: 'tool_result',
@@ -263,7 +284,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     } else {
       results.push(...(await Promise.all(calls.map((c) => runTool(byName.get(c.name), c, i)))));
     }
-    messages.push({ role: 'user', content: results });
+    messages.push({ role: 'user', content: [...results, ...roundNotes(calls, results, byName)] });
     if (calls.some((c) => c.name === STAY_SILENT)) {
       i.ctx.outcome.silent = true;
       return { text: '', silent: true, rounds: round, usage, messages, stopReason: STAY_SILENT };
