@@ -208,7 +208,8 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
     card: { results_id: set.resultsId, option_numbers: options.slice(0, 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
     note:
       'To show options, call show_options with this results_id. Quote prices only from these results, and say how long ago they were checked when it is not just now. ' +
-      "Each option's area, time and price are as given here: name no other, and say no count the summary does not give.",
+      "Each option's area, time and price are as given here: name no other, and say no count the summary does not give. " +
+      'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator.',
   };
 }
 
