@@ -57,6 +57,26 @@ describe('the notes pass', () => {
     expect(await cursor('t_n1')).toBe(133);
   });
 
+  it('writes no doing line for an ask to Go, read after Go answered it, and still writes one for a real promise', async () => {
+    const said = [
+      msg(190, 'p_rahul', '@Go find flights Friday'),
+      msg(191, 'go', 'Three flights on Friday evening, checked just now.'),
+      msg(192, 'p_kabir', "I'll book the airport cab"),
+    ];
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [
+        { kind: 'doing', text: 'Rahul is finding flights', person_ids: ['p_rahul'], proof: [190] },
+        { kind: 'doing', text: 'Kabir books the airport cab', person_ids: ['p_kabir'], proof: [192] },
+      ],
+    });
+    const { link, notes } = setup('t_n9', said, [answer]);
+    const out = await notes.run('t_n9');
+    expect(out.refused).toEqual(['line: a doing line cannot rest on a message to Go: that is an ask, and Go does it']);
+    const adds = link.calls.filter((c) => c.method === 'add_record_line').map((c) => [c.params.kind, c.params.text, c.params.person_ids]);
+    expect(adds).toEqual([['doing', 'Kabir books the airport cab', ['p_kabir']]]);
+  });
+
   it('fences the chat: one fence, no way to close it or pose as Go, secrets masked', async () => {
     const { side, notes } = setup('t_n2', chat(), [JSON.stringify({ facts: [], lines: [] })]);
     await notes.run('t_n2');
