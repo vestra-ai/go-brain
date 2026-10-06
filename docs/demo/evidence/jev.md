@@ -53,7 +53,7 @@ Rows 2 to 9 are the lines both recordings printed. Row 1 is the sweep line both 
 
 ### The one bar that moved
 
-Question 1 reads a line as sure chatter when Jev's "chatter" answer is at least a bar and its "for Go" answer at most 0.2. Go took that bar, 0.9, from Bash, where it was measured on 149 lines. At 0.9 question 1 failed here (recall 0.46): Jev read the six chatter lines at 0.76 to 0.89, so none was sure. The sweep tried 0.8, 0.85, 0.9 and 0.95. Both 0.8 and 0.85 give no wrong answer (recall 0.85 and 0.77). The bar is 0.85, the one with more margin, because the two mistakes do not cost the same: an ask read as chatter goes unanswered, while a needless wake costs one model call. Four of the six chatter lines are now sure; "I'm veg btw" (0.76) and "chal theek hai, kal baat karte hain" (0.83) stay unsure.
+Question 1 reads a line as sure chatter when Jev's "chatter" answer is at least a bar and its "for Go" answer at most 0.2. Go took that bar, 0.9, from Bash, where it was measured on 149 lines. At 0.9 question 1 failed here (recall 0.46): Jev read the six chatter lines at 0.76 to 0.89, so none was sure. The sweep tried 0.8, 0.85, 0.9 and 0.95. Both 0.8 and 0.85 give no wrong answer (recall 0.85 and 0.77). The bar is 0.85, the one with more margin, for two reasons: the two mistakes do not cost the same (an ask read as chatter goes unanswered, while a needless wake costs one model call), and Jev's answers move a little from run to run (by up to 0.09, see "Asked twice"), so a bar at the edge of the data needs room. Four of the six chatter lines are now sure; "I'm veg btw" (0.76) and "chal theek hai, kal baat karte hain" (0.83) stay unsure.
 
 Read this with care:
 
@@ -66,7 +66,7 @@ Every other bar is unchanged. The sweep also shows question 5 would reach 0.86 a
 
 ### Asked twice
 
-The second recording ([run 37439332584](https://github.com/vestra-ai/go-brain/actions/runs/37439332584), at 08:55 UTC, the same model, settings and question wording) asked Jev the same 1,118 questions again. 555 of its answers came back different, by 0.02 on average and at most 0.09. At the bars Go has now, every question's sure, wrong and recall came out exactly the same in both recordings, and so did every pass or fail. CI scores the first recording.
+The second recording ([run 37439332584](https://github.com/vestra-ai/go-brain/actions/runs/37439332584), at 08:55 UTC, the same model, settings and question wording) asked Jev the same 1,118 questions again. 555 of its answers came back different, by 0.02 on average and at most 0.09. At the bars Go has now, every question's sure, wrong and recall came out exactly the same in both recordings, and so did every pass or fail. Question 1 at 0.85 is 10 of 13 sure, recall 0.77, no wrong answer, in each; at the sweep's 0.8 it would be 11 of 13 and 0.85, also in each. CI scores the first recording.
 
 ## What acting live changes
 
