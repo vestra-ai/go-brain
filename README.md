@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/vestra-ai/go-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/vestra-ai/go-brain/actions/workflows/ci.yml)
 
-Go is the AI member of a trip group. Friends plan a trip in a group chat, and Go is in that chat with them: it reads every message, answers when someone asks, keeps track of what each person said and what the group agreed, and can phone a business for the group. To the people in the room, Go is one member of the group, and this repo is Go.
+Go is the AI member of a trip group. Friends plan a trip in a group chat, and Go is in that chat with them: it reads every message, answers when someone asks, keeps track of what each person said and what the group agreed, searches flights and stays, hands long jobs to the trip's own computer, books what the group voted for only with two keys, and can phone a business for the group. To the people in the room, Go is one member of the group, and this repo is Go.
 
 ## The three parts
 
@@ -10,7 +10,7 @@ Go is the AI member of a trip group. Friends plan a trip in a group chat, and Go
 |---|---|---|
 | **The App** | Saket's team | The app people use: the trip room (the group chat), the trip screens, joining by link, push notifications. It talks only to the Server, except for the vault page, which it opens directly. |
 | **The Server** | Nishanth's team | Everything about a trip and its database: people, messages, votes, bookings, expenses, the trip record and the spend check. It opens one signed WebSocket to Go and keeps it open. |
-| **Go** (this repo) | Keshav's team | The AI member itself: reading the room, deciding when to speak, memory about people with proof, speaking first when it truly helps, phone calls, and the vault that holds cards and pays. |
+| **Go** (this repo) | Keshav's team | The AI member itself: reading the room, deciding when to speak, memory about people with proof, travel search and booking, long jobs on the trip's computer, speaking first when it truly helps, phone calls, and the vault that holds cards and pays. |
 
 All three teams are the Vestra team. What travels between the Server and Go is fixed by the contract in [`packages/contract`](packages/contract) and explained in plain words in [`docs/guide`](docs/guide) (also live, and readable by coding agents, at https://vestrago.vercel.app/docs and https://vestrago.vercel.app/llms.txt). How the pieces fit is in [`docs/architecture.md`](docs/architecture.md).
 
@@ -18,7 +18,7 @@ All three teams are the Vestra team. What travels between the Server and Go is f
 
 | Folder | What it is |
 |---|---|
-| [`apps/brain`](apps/brain) | Go's service: the socket the Server connects to, the trip log, the composer (the model loop that writes Go's messages), the reflex (a fast classifier on every message), memory, speaking first, and calls. |
+| [`apps/brain`](apps/brain) | Go's service: the socket the Server connects to, the trip log, the composer (the model loop that writes Go's messages), the reflex (a fast classifier on every message), memory, travel, jobs on the trip's computer, Go's side of paying, speaking first, calls and the proof board. |
 | [`apps/vault`](apps/vault) | The vault: its own service and database. It keeps each person's card as the payment processor's token, encrypted, and pays only with the Server's signed approval and the payer's passkey. |
 | [`apps/fake-go`](apps/fake-go) | A small stand-in for Go that speaks the real socket with fixed answers, so the Server team can build against it. |
 | [`packages/contract`](packages/contract) | The contract in zod, the single source of truth for the wire: every event, method, card and error, socket signing, the spend approval, and the OpenAPI and AsyncAPI files generated from it. |

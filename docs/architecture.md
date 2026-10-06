@@ -4,7 +4,7 @@ Go is one member of a trip's group chat. The App is what people hold, the Server
 
 ## The parts
 
-Solid lines are done by code in this repo. Dotted lines are fixed by the contract or an interface here, while the code on Go's side of them is not in this repo yet.
+Go's side of every line is code in this repo; the App's and the Server's sides are built by their teams against the contract.
 
 ```mermaid
 flowchart LR
@@ -27,13 +27,15 @@ flowchart LR
   Go -- "nine questions per message" --> Jev
   Go -- "call_business" --> Phone
   Go <-- "pay links, and paid or failed back, signed" --> Vault
-  Go -. "long jobs" .-> Bash
-  Go -. "search, status, booking" .-> Ixigo
+  Go -- "long jobs" --> Bash
+  Bash -- "Go's MCP server: the trip, facts, recall, search" --> Go
+  Go -- "search, status, hold, confirm (MCP)" --> Ixigo
 ```
 
 - **The socket.** The Server opens one WebSocket to Go at `GET /v1/socket`, signed with a shared secret, and keeps it open; Go accepts each signature once and pings every 20 seconds (`apps/brain/src/door`). Every change in a trip reaches Go as an event; every write Go makes (a message, a reaction, a vote, a record line) is a request back on the same socket, with a `request_id` so the Server does it once. The methods and objects are fixed in [`packages/contract`](../packages/contract) and explained in [`docs/guide`](guide).
 - **The vault** is its own service with its own database ([`apps/vault`](../apps/vault)). Cards and payments never pass through the Server or the model: the App opens the vault's page directly.
-- **The trip's own Bash and ixigo.** Go's interfaces for them are `apps/brain/src/tasks/tasks.ts` and `apps/brain/src/travel/travel.ts`. Their code is not in this repo yet.
+- **The trip's own Bash.** Each trip gets its own computer, a Vestra Bash reached through `/v1` (`apps/brain/src/tasks`). Big jobs (compare villas, read reviews, fill a form) run there for minutes while the room goes on; it never speaks in the room, and it reads the trip through Go's MCP server, locked to that trip by a token (`apps/brain/src/mcp`).
+- **ixigo.** Travel search, status and booking go through one layer (`apps/brain/src/travel`): ixigo's MCP server, or the fake ixigo in process.
 
 ## One message, from the room to Go's reply
 
@@ -44,7 +46,7 @@ flowchart LR
 5. Lanes see the read message: memory schedules its notes pass, and speaking first looks for an opening or a hush.
 6. Unless the reflex is sure it is chatter between friends, the message goes on the desk: due now when the thought is complete, otherwise after 2 seconds, in case the same person adds more (`apps/brain/src/desk`).
 7. When it is due, the desk takes the trip's lease and runs one composer turn for everything due in that trip, so a burst of messages gets one answer.
-8. The composer builds the prompt cache-first (Go's rules, then the chat in fixed chunks of 25 messages, then "right now" with the trip record and the people talking, then what is new, fenced as data) and runs a direct Anthropic Messages tool loop: at most 4 rounds within 20 seconds, with quick tools such as `recall`, `record`, `open_vote` and `call_business` (`apps/brain/src/composer`).
+8. The composer builds the prompt cache-first (Go's rules, then the chat in fixed chunks of 25 messages, then "right now" with the trip record and the people talking, then what is new, fenced as data) and runs a direct Anthropic Messages tool loop: at most 4 rounds within 20 seconds, with quick tools such as `recall`, `search_flights`, `start_task`, `open_vote` and `call_business` (`apps/brain/src/composer`).
 9. Just before posting, the turn checks for anything new in the room and takes it into the same answer. Then `speak` posts one message (with any cards), with no em dashes, and turns typing off. Every write takes an id from the turn, so a rerun after a crash never posts twice.
 10. About 2 seconds after Go posts, the notes pass reads the new lines: a small side model proposes facts and record lines, and code saves only what checks out against the message it came from (`apps/brain/src/memory/notes.ts`, `checker.ts`).
 
@@ -70,8 +72,9 @@ The tests in `apps/vault/src/pay.test.ts` walk every step, each refusing on its 
 | The socket, the trip log and the composer | The real socket to the Server; model turns on Anthropic models (`COMPOSER_MODEL`, `SIDE_MODEL`). | The simulator ([`packages/sim`](../packages/sim)) plays the Server, and the fake Go ([`apps/fake-go`](../apps/fake-go)) plays Go, for building and tests. In tests every model is a scripted fake. |
 | The reflex | Jev is called on every person's message when `TYPESAFE_API_KEY` is set, and every answer is logged. | All nine questions run in shadow: a question acts only after its labelled test set passes on recorded answers (`reflex/live-gate.ts`), and none is recorded yet. Code alone decides until then. |
 | Memory | Facts with proof, pages, recall, the trip record, "the story so far", forget me, and catch-up. | |
-| Speaking first | Timers (votes closing, free cancellation ending, travel day, settle-up, a waiting payer) and openings in the chat, through the bar and the daily budget. | Flight and train watches need a travel layer, which is not in this repo yet. The demo's watch is `POST /admin/watch/fire`, and every card it leads to says "Simulated for the demo". |
+| Speaking first | Timers (votes closing, free cancellation ending, travel day, settle-up, a waiting payer), openings in the chat, and flight and train watches through the travel layer's status, all through the bar and the daily budget. | On the fake ixigo, a watched flight's status is the fake's. The demo's watch is `POST /admin/watch/fire`, and every card it leads to says "Simulated for the demo". |
 | Calls | Real phone calls through Twilio with a realtime voice model, only to numbers on `CALLS_ALLOWLIST` while the `CALLS_MODE` switch says `allowlist`. Go says who it will call and why, and waits 30 seconds for a stop first. | Off by default (`CALLS_MODE=off`). |
-| Payments | Go asks the Server for a signed approval and posts the pay card; the vault charges test cards through Stripe test mode, with both keys (`apps/brain/src/money`, `apps/vault`). | Test cards only: the vault refuses live Stripe keys at boot. `PAY_RAIL=fake` moves no money, and the ixigo rail answers "not ready". Holding an offer needs a travel layer, which is not in this repo yet; without one Go refuses to pay. |
+| Payments | Go holds the voted stay, asks the Server for a signed approval and posts the pay card; the vault charges test cards through Stripe test mode, with both keys (`apps/brain/src/money`, `apps/vault`). | Test cards only: the vault refuses live Stripe keys at boot. `PAY_RAIL=fake` moves no money, and the ixigo rail answers "not ready". Flights, trains and buses are not booked by Go: it hands over the booking link. |
 | The proof board | `/board` and `/stats.json` show numbers from the turns Go really ran: time to typing and to the reply, the cache hit, the share of messages that woke the model, and cost per trip. | The bench's numbers on the board come from replays of recorded chats: the fast bench with a scripted model, the live bench with the real models and Jev (`packages/bench`). |
-| Travel search and booking, long jobs | | Interfaces only in this repo (`travel/`, `tasks/`). |
+| Travel | ixigo's MCP server when `IXIGO_MCP_URL` and its token are set and the `TRAVEL_MODE` switch says `ixigo`. | The fake ixigo answers by default: deterministic flights into Goa, North and South Goa villas, flight status and a two-step booking, everything it sells labelled "ixigo (simulated)". Go's mapping to ixigo's tools is the fake's until ixigo shares its tool list (`travel/ixigo-map.ts`). |
+| Long jobs | A real Vestra Bash per trip through `/v1`, when the `/v1` keys are set. | In tests, `/v1` is a fake that streams events like the real one. |
