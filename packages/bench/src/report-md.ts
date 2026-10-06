@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import type { LiveRun, Verdict } from './compare.js';
 import type { ChatScore } from './score.js';
-import { fmtInt, fmtMs, fmtPct } from './stats-math.js';
+import { fmtInt, fmtMs, fmtPct, percentile } from './stats-math.js';
 
 export interface BenchReport {
   schema: 'go.bench-report/v1';
@@ -18,6 +18,31 @@ export interface BenchReport {
 }
 
 const cell = (s: string): string => s.replace(/\|/g, '/').replace(/\n/g, ' ');
+
+/** One line per live run, from Go's own tables: what Jev answered, and what woke each model turn. */
+export function whyWoke(x: LiveRun): string | null {
+  if (x.jev === undefined) return null;
+  const reads = x.jev.reads;
+  const faults = new Map<string, number>();
+  for (const r of reads) if (!r.ok) faults.set(r.fault ?? 'unknown', (faults.get(r.fault ?? 'unknown') ?? 0) + 1);
+  const notForGo = reads.filter((r) => {
+    const f = (r.acted as { forGo?: { sure?: unknown; value?: unknown } } | null)?.forGo;
+    return f?.sure === true && f.value === false;
+  }).length;
+  const answered = reads.length - [...faults.values()].reduce((a, b) => a + b, 0);
+  const kinds = new Map<string, number>();
+  for (const t of x.jev.turns) {
+    const k = [...new Set(t.wokeFor)].sort().join(' and ') || 'nothing';
+    kinds.set(k, (kinds.get(k) ?? 0) + t.n);
+  }
+  const woke = [...kinds].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${fmtInt(n)}`).join(', ');
+  const ms = reads.map((r) => r.totalMs);
+  return (
+    `- ${x.model} on ${x.chat}: Jev read ${fmtInt(reads.length)} messages and answered ${fmtInt(answered)}` +
+    `${faults.size > 0 ? ` (not answered: ${[...faults].map(([k, n]) => `${k} ${fmtInt(n)}`).join(', ')})` : ''}, in ${fmtMs(percentile(ms, 50))} p50 and ${fmtMs(percentile(ms, 90))} p90;` +
+    ` ${fmtInt(notForGo)} read sure not for Go. Model turns by what woke them: ${woke || 'none'}.`
+  );
+}
 
 function chatSection(s: ChatScore): string[] {
   const c = s.cache.results;
@@ -66,6 +91,8 @@ export function renderSummary(r: BenchReport): string {
       lines.push(`| ${x.model} | ${x.chat} | ${fmtMs(s.reply.p50Ms)} | ${fmtMs(s.reply.p90Ms)} | ${fmtMs(x.provider.firstTokenP50Ms)} | ${fmtMs(s.typing.p90Ms)} | ${fmtPct(x.provider.cacheHit)} | ${fmtPct(s.cache.hitRate)} | ${x.provider.costUsd === null ? 'n/a' : `$${x.provider.costUsd.toFixed(4)}`} | ${s.speak.missed.length + s.speak.unprompted.length + s.speak.duplicates.length} |`);
     }
     lines.push('', r.pick ? `**Suggested COMPOSER_MODEL: ${r.pick.model}.** It ${r.pick.why}.` : 'No model to suggest.', '');
+    const why = r.live.map(whyWoke).filter((l): l is string => l !== null);
+    if (why.length > 0) lines.push('## Why Go woke', '', ...why, '');
   }
   lines.push('## Checks', '', '| Chat | Check | Value | Bar | Result |', '|---|---|---|---|---|');
   for (const c of [...failing, ...r.verdict.checks.filter((x) => x.ok)]) {

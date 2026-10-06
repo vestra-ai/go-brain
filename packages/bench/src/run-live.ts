@@ -131,7 +131,9 @@ export async function runLive(args: LiveArgs, env: EnvSource): Promise<BenchRepo
         chat, mode: 'live', rawEnv: liveEnv(env, model), client: recordingClient(real, log, clock.now), log, clock,
         reflex: { kind: 'live' }, settings: { quietTimeoutMs: 120_000 }, progress: (line) => console.log(line),
       });
-      const run: LiveRun = { model, chat: name, score: scoreReplay(out.record), provider: providerNumbers(out.record.requests) };
+      const run: LiveRun = {
+        model, chat: name, score: scoreReplay(out.record), provider: providerNumbers(out.record.requests), ...(out.jev !== null ? { jev: out.jev } : {}),
+      };
       runs.push(run);
       console.log(`${model} on ${name}: reply p50 ${run.score.reply.p50Ms ?? 'n/a'} ms, provider cache ${run.provider.cacheHit ?? 'n/a'}`);
       if (model === args.gateModel && args.recordJev && out.recorded !== null) {

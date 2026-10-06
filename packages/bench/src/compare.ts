@@ -1,6 +1,7 @@
 /** The bars from spec §1 and the verdict on a run: every check with its value, its bar, and why it passed when there was nothing to measure. */
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
+import type { JevTrace } from './replay.js';
 import { wrongSpeak, type ChatScore, type ProviderNumbers } from './score.js';
 import { fmtMs, fmtPct, percentile } from './stats-math.js';
 
@@ -95,7 +96,7 @@ export function compareFast(scores: readonly ChatScore[], b: Bars['fast']): Verd
   return { ok: checks.every((c) => c.ok), checks };
 }
 
-export interface LiveRun { model: string; chat: string; score: ChatScore; provider: ProviderNumbers }
+export interface LiveRun { model: string; chat: string; score: ChatScore; provider: ProviderNumbers; jev?: JevTrace }
 
 export function liveChecks(run: LiveRun, b: Bars['live']): Check[] {
   const checks: Check[] = [];

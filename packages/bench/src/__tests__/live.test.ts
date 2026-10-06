@@ -1,6 +1,7 @@
 import { BenchSummary } from '@go/brain/dist/stats/index.js';
 import { describe, expect, it } from 'vitest';
 import type { LiveRun } from '../compare.js';
+import { whyWoke } from '../report-md.js';
 import { liveEnv, parseArgs, postSummary, toBoardSummary } from '../run-live.js';
 import type { ChatScore } from '../score.js';
 
@@ -22,6 +23,22 @@ const run: LiveRun = { model: 'claude-sonnet-5-5', chat: 'goa-300', score, provi
 const FROM = { commit: '1a2b3c4d5e', branch: 'build' };
 
 describe('the live bench', () => {
+  it('says why Go woke, from what Jev answered for each message and what each model turn woke for', () => {
+    expect(whyWoke(run)).toBeNull();
+    const acted = (sure: boolean, value: boolean | null) => ({ forGo: { sure, value } });
+    const jev = {
+      reads: [
+        { line: 1, seq: 3, ok: true, fault: null, totalMs: 300, p: {}, would: {}, acted: acted(true, false) },
+        { line: 2, seq: 4, ok: true, fault: null, totalMs: 400, p: {}, would: {}, acted: acted(false, null) },
+        { line: 3, seq: 5, ok: false, fault: 'timeout', totalMs: 450, p: {}, would: {}, acted: acted(false, null) },
+      ],
+      turns: [{ wokeFor: ['message', 'message'], n: 2 }, { wokeFor: ['message'], n: 3 }, { wokeFor: ['task_done'], n: 1 }],
+    };
+    expect(whyWoke({ ...run, jev })).toBe(
+      '- claude-sonnet-5-5 on goa-300: Jev read 3 messages and answered 2 (not answered: timeout 1), in 400 ms p50 and 450 ms p90; 1 read sure not for Go. Model turns by what woke them: message 5, task_done 1.',
+    );
+  });
+
   it('reads its arguments, with the Tuesday comparison as the default', () => {
     expect(parseArgs([])).toEqual({ chats: ['goa-50', 'goa-300'], models: ['claude-sonnet-5-5', 'claude-haiku-4-5'], gateModel: 'claude-sonnet-5-5', recordJev: false, postBoard: false });
     expect(parseArgs(['--chats', 'goa-2000', '--models', 'claude-haiku-4-5', '--record-jev', '--post-board'])).toEqual({
