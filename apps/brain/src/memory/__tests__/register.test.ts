@@ -373,6 +373,8 @@ describe('open lines a vote settles', () => {
     w.pack.trip.decisions = [closed];
     await w.wired.sweep();
     expect(doneCalls(w)).toEqual([['r_v31', 'done']]);
+    // The Server's record.changed would follow; without it the line stays active in the copy and other sweeps here would try again.
+    await db.pool.query(`UPDATE record_lines SET status = 'done' WHERE trip_id = 't_r31'`);
   });
 });
 

@@ -186,9 +186,12 @@ export function wireMemory(brain: Brain, d: WireDeps): {
          JOIN trips t ON t.trip_id = ld.trip_id AND t.gone_at IS NULL`,
     );
     for (const { trip_id } of due.rows) {
-      await settleDecisionLines(brain.pool, brain.door.link, trip_id, await brain.packs.get(trip_id)).catch((err: unknown) =>
-        brain.log.warn({ tripId: trip_id, err: String(err) }, 'open lines a vote settled: not marked done yet'),
-      );
+      try {
+        await settleDecisionLines(brain.pool, brain.door.link, trip_id, await brain.packs.get(trip_id));
+      } catch (err) {
+        // One trip's failure (its pack, the socket) never stops the sweep; the next one tries again.
+        brain.log.warn({ tripId: trip_id, err: String(err) }, 'open lines a vote settled: not marked done yet');
+      }
     }
     // After a restart the map starts empty: the database says which trips were active lately, or still have
     // people's words the notes pass has not read.
