@@ -20,6 +20,8 @@ export const TryEnv = z.object({
   TRY_DAILY_TURNS: count(DEFAULT_CAPS.dailyTurns),
   /** Everything sent into the room per UTC day, reactions included. */
   TRY_DAILY_MESSAGES: count(DEFAULT_CAPS.dailyMessages),
+  /** One visit's share of TRY_DAILY_TURNS, keyed to its cookie, so one visit cannot use up the day. */
+  TRY_VISIT_TURNS: count(DEFAULT_CAPS.visitTurns),
   /** The line about what is simulated. Change it here when a part goes live. */
   TRY_SIMULATED_LINE: z.string().min(1).max(300).default(SIMULATED_LINE),
   /** The try room's name in Go's socket (?instance=). */

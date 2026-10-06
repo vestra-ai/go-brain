@@ -1,7 +1,8 @@
 // serveTryRoom: the hosted "try Go" room, for a judge to chat with the real Go in two minutes. It plays the Server: the
 // FakeServer signs its socket to Go with GO_SIGNING_SECRET, here on the server side, and never in the browser. It
-// serves the dev room's page behind a passcode, gives each visit its own fresh Goa trip with the five friends, lets
-// "Start over" make a new one, and holds everything to the caps in caps.ts so visitors cannot run up a bill. It also
+// serves the dev room's page behind a passcode, gives each visit its own fresh Goa trip with the five friends (made by
+// its first message, so opening the room costs nothing), lets "Start over" begin a new one, and holds everything to the
+// caps in caps.ts so visitors cannot run up a bill. It also
 // keeps itself small: a few sockets for each visit, a few frames a second on each, and idle trips dropped.
 import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -14,9 +15,9 @@ import { doAction, roomState, type Action } from '../dev-room/serve.js';
 import type { FakeServer } from '../fake-server.js';
 import { goaFreshTrip } from '../goa.js';
 import { Caps, DEFAULT_CAPS, type CapLimits } from './caps.js';
-import { Gate, PAGE_HEADERS, WrongTries, addressHeaders, clientAddress, contentSecurityPolicy, passcodePage } from './gate.js';
+import { Gate, PAGE_HEADERS, WrongTries, clientAddress, contentSecurityPolicy, passcodePage } from './gate.js';
 import {
-  DAILY_LIMIT_LINE, GO_DOWN_LINE, HINTS, NOT_IN_YOUR_TRIP, PICK_A_PERSON, ROOM_FULL, SIMULATED_LINE, SLOW_DOWN, TOO_LONG, TOO_MANY_TRIES,
+  GO_DOWN_LINE, HINTS, NOT_IN_YOUR_TRIP, PICK_A_PERSON, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_LONG, TOO_MANY_TRIES,
   TYPE_SOMETHING, UNKNOWN_ACTION, WRONG_PASSCODE, goLiveLine, tooManyTabs,
 } from './words.js';
 
@@ -26,6 +27,7 @@ export const MAX_TEXT = 1000;
 export const CLOSE_TOO_MANY = 4429;
 const HEALTH_EVERY_MS = 30_000;
 const SWEEP_EVERY_MS = 10 * 60_000;
+const PRUNE_TRIES_EVERY_MS = 60_000;
 const RECORDS_KEPT_PER_TRIP = 200;
 
 /** What can wake Go's model: anything said, a vote, a card tap, the payer's yes or no. A reaction or "Forget me" cannot. */
@@ -59,6 +61,8 @@ export interface TryRoomOptions {
   framesPerSecond?: number;
   /** How long a wrong try waits once its address made 5 in a minute (default 2000 ms). */
   wrongTryDelayMs?: number;
+  /** Wrong tries a second across every address before each is turned away at once (default 30). */
+  wrongTriesPerSecond?: number;
   /** A trip nobody has used or watched for this long is dropped (default 6 hours). */
   idleTripMs?: number;
   now?: () => Date;
@@ -157,9 +161,7 @@ export function refusal(fake: FakeServer, tripId: string, a: Action): string | n
   const isPerson = (id: unknown): boolean => typeof id === 'string' && fake.has(tripId, { person: id });
   switch (a.type) {
     case 'say':
-      if (!isPerson(a.personId)) return PICK_A_PERSON;
-      if (typeof a.text !== 'string' || !a.text.trim()) return TYPE_SOMETHING;
-      return a.text.length > MAX_TEXT ? TOO_LONG(MAX_TEXT) : null;
+      return sayRefusal(isPerson, a);
     case 'tap':
       return isPerson(a.personId) && typeof a.cardId === 'string' && fake.has(tripId, { card: a.cardId }) ? null : NOT_IN_YOUR_TRIP;
     case 'react':
@@ -179,11 +181,18 @@ export function refusal(fake: FakeServer, tripId: string, a: Action): string | n
   }
 }
 
+/** Why a message is refused before it is counted, or null. */
+function sayRefusal(isPerson: (id: unknown) => boolean, a: Extract<Action, { type: 'say' }>): string | null {
+  if (!isPerson(a.personId)) return PICK_A_PERSON;
+  if (typeof a.text !== 'string' || !a.text.trim()) return TYPE_SOMETHING;
+  return a.text.length > MAX_TEXT ? TOO_LONG(MAX_TEXT) : null;
+}
+
 export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
   const now = o.now ?? (() => new Date());
   const log = o.log ?? (() => {});
   const gate = new Gate(o.passcode, o.cookieSalt, now);
-  const wrongTries = new WrongTries(now);
+  const wrongTries = new WrongTries(now, undefined, undefined, undefined, o.wrongTriesPerSecond ?? 30);
   const caps = new Caps({ ...DEFAULT_CAPS, ...o.caps }, now);
   const simulatedLine = o.simulatedLine ?? SIMULATED_LINE;
   const goHealth = o.goHealth ?? (() => fetchGoHealth(o.goUrl));
@@ -191,49 +200,79 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
   const maxSockets = o.maxSockets ?? 300;
   const framesPerSecond = o.framesPerSecond ?? 5;
   const idleTripMs = o.idleTripMs ?? 6 * 60 * 60_000;
-  /** Each visit's trip. */
+  /** Each visit's trip, once its first message made one. */
   const trips = new Map<string, string>();
+  /**
+   * The trip a visit will get, shown to it until its first message makes it real. Opening the room costs nothing:
+   * no trip and no turn until someone says something. Only visits with an open socket have one.
+   */
+  const pending = new Map<string, TripSnapshot>();
   /** When each trip the room made was last used. */
   const activity = new Map<string, number>();
   /** Each open live socket's visit. */
   const sockets = new Map<WebSocket, string>();
   let health: GoHealth = { ok: false, contract: null };
-  let addressesLogged = false;
+  let sourceLogged = false;
 
   const refreshHealth = async (): Promise<void> => {
     health = await goHealth();
   };
 
-  /** A fresh Goa trip for the visit, with the five friends, if today's turns allow one: Go greets a new trip. */
-  const startTrip = (visit: string): string | null => {
-    if (!caps.newTrip().ok) return null;
-    const suffix = randomBytes(6).toString('hex');
-    const tripId = `t_try_${suffix}`;
+  /** The trip the visit will get: the one it has been shown, or a fresh Goa trip with the five friends. */
+  const pendingFor = (visit: string): TripSnapshot => {
+    let trip = pending.get(visit);
+    if (!trip) {
+      const suffix = randomBytes(6).toString('hex');
+      trip = visitTrip(`t_try_${suffix}`, suffix);
+      pending.set(visit, trip);
+    }
+    return trip;
+  };
+
+  /** Makes the visit's trip real, if its turns allow: Go greets a new trip. Returns the refusal's line otherwise. */
+  const startTrip = (visit: string): { tripId: string } | { line: string } => {
+    const verdict = caps.newTrip(visit);
+    if (!verdict.ok) return { line: verdict.line };
+    const trip = pendingFor(visit);
+    pending.delete(visit);
     // createTrip adds the trip at once and then tells Go (trip.created); the page can draw it straight away.
-    void o.fake.createTrip(visitTrip(tripId, suffix)).catch((err: unknown) => log(`trip ${tripId} did not start: ${String(err)}`));
-    trips.set(visit, tripId);
-    activity.set(tripId, now().getTime());
-    return tripId;
+    void o.fake.createTrip(trip).catch((err: unknown) => log(`trip ${trip.trip_id} did not start: ${String(err)}`));
+    trips.set(visit, trip.trip_id);
+    activity.set(trip.trip_id, now().getTime());
+    return { tripId: trip.trip_id };
   };
 
   const send = (ws: WebSocket, message: object): void => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
   };
 
-  /** The room's state to every socket on a trip (all trips when none is named), worked out once for each trip. */
+  const about = (): string[] => [health.ok ? goLiveLine(health.contract) : GO_DOWN_LINE, simulatedLine];
+
+  /** What a visit sees before its first message: its trip-to-be, with nobody's needs and no messages. */
+  const preview = (visit: string) => {
+    const trip = pendingFor(visit);
+    return {
+      type: 'state' as const, connected: o.fake.isOpen(), trip, messages: [], typing: false,
+      needs: Object.fromEntries(trip.people.map((p) => [p.person_id, []])), about: about(), limit: caps.line(visit),
+    };
+  };
+
+  /**
+   * The room's state to every socket of a visit (every visit when none is named). Worked out once for each trip, or
+   * each trip-to-be: a trip belongs to one visit, so every socket on it sees the same thing.
+   */
   const pushAll = (only?: string): void => {
     const frames = new Map<string, string>();
     for (const [ws, visit] of sockets) {
+      if ((only !== undefined && visit !== only) || ws.readyState !== ws.OPEN) continue;
       const tripId = trips.get(visit);
-      if (!tripId || (only !== undefined && tripId !== only) || ws.readyState !== ws.OPEN || !o.fake.has(tripId, {})) continue;
-      let frame = frames.get(tripId);
+      const key = tripId ?? `pending:${visit}`;
+      let frame = frames.get(key);
       if (frame === undefined) {
-        frame = JSON.stringify({
-          ...roomState(o.fake, tripId),
-          about: [health.ok ? goLiveLine(health.contract) : GO_DOWN_LINE, simulatedLine],
-          limit: caps.line(),
-        });
-        frames.set(tripId, frame);
+        frame = JSON.stringify(
+          tripId && o.fake.has(tripId, {}) ? { ...roomState(o.fake, tripId), about: about(), limit: caps.line(visit) } : preview(visit),
+        );
+        frames.set(key, frame);
       }
       ws.send(frame);
     }
@@ -252,19 +291,34 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     const reply = (message: object): void => send(ws, message);
     try {
       if (a.type === 'start_over') {
-        const fresh = startTrip(visit);
-        if (!fresh) return reply({ type: 'limit', text: DAILY_LIMIT_LINE });
-        return pushAll(fresh);
+        // A fresh trip-to-be: it costs nothing until someone says something in it.
+        trips.delete(visit);
+        pending.delete(visit);
+        return pushAll(visit);
       }
-      const tripId = trips.get(visit);
-      if (!tripId) return reply({ type: 'limit', text: DAILY_LIMIT_LINE });
+      let tripId = trips.get(visit);
+      if (!tripId) {
+        // The first message makes the trip; nothing else can happen in a trip that does not exist yet.
+        if (a.type !== 'say') return reply({ type: 'error', message: SAY_FIRST });
+        const people = pendingFor(visit).people;
+        const refusedFirst = sayRefusal((id) => people.some((p) => p.person_id === id), a);
+        if (refusedFirst) return reply({ type: 'error', message: refusedFirst });
+        // Over a cap now, no trip is made for a message that could not be sent.
+        const capped = caps.line(visit);
+        const started = capped ? { line: capped } : startTrip(visit);
+        if ('line' in started) {
+          reply({ type: 'limit', text: started.line });
+          return pushAll(visit);
+        }
+        tripId = started.tripId;
+      }
       const refused = refusal(o.fake, tripId, a);
       if (refused) return reply({ type: 'error', message: refused });
       // Counted before it reaches Go; over a cap nothing reaches Go.
-      const verdict = caps.send(WAKES_GO.has(a.type));
+      const verdict = caps.send(visit, WAKES_GO.has(a.type));
       if (!verdict.ok) {
         reply({ type: 'limit', text: verdict.line });
-        return pushAll(tripId);
+        return pushAll(visit);
       }
       activity.set(tripId, now().getTime());
       await doAction(o.fake, tripId, a, reply);
@@ -289,21 +343,25 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
 
   /**
    * POST /enter: the passcode, as the form sends it. The right one always gets the visit cookie, at once. A wrong one
-   * from an address that made 5 wrong tries in the last minute waits a moment before it is turned away.
+   * from an address that made 5 wrong tries in the last minute waits a moment before it is turned away, and in a flood
+   * of wrong tries from everywhere it is turned away at once.
    */
   const enter = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    const address = clientAddress(req, o.trustProxy ?? false);
+    const { address, source } = clientAddress(req, o.trustProxy ?? false);
     const body = await readBody(req, 2048);
     const given = new URLSearchParams(body ?? '').get('passcode') ?? '';
     if (gate.matches(given)) {
+      if (!sourceLogged) {
+        sourceLogged = true;
+        log(`the first passcode that got in: its wrong-try key came from ${source === 'x-real-ip' ? 'x-real-ip' : "the socket's own address"}`);
+      }
       res.writeHead(303, { ...PAGE_HEADERS, location: '/', 'set-cookie': gate.newVisit().setCookie });
       res.end();
       return;
     }
-    const slowed = wrongTries.blocked(address);
-    wrongTries.wrong(address);
-    if (!slowed) return html(req, res, 401, passcodePage(WRONG_PASSCODE), null);
-    await new Promise((resolve) => setTimeout(resolve, o.wrongTryDelayMs ?? 2000));
+    const verdict = wrongTries.wrong(address);
+    if (verdict === 'wrong') return html(req, res, 401, passcodePage(WRONG_PASSCODE), null);
+    if (verdict === 'slow') await new Promise((resolve) => setTimeout(resolve, o.wrongTryDelayMs ?? 2000));
     return html(req, res, 429, passcodePage(TOO_MANY_TRIES), null, { 'retry-after': '60' });
   };
 
@@ -311,10 +369,6 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     const path = (req.url ?? '/').split('?')[0];
     // Open, for Railway's health check: it says nothing about any visit.
     if (req.method === 'GET' && path === '/health') return plain(res, 200, 'application/json', JSON.stringify({ ok: true, go_connected: o.fake.isOpen() }));
-    if (!addressesLogged) {
-      addressesLogged = true;
-      log(`address headers on the first visit: ${addressHeaders(req)}`);
-    }
     if (req.method === 'POST' && path === '/enter') return enter(req, res);
     if (req.method === 'GET' && path === '/') {
       if (!gate.visit(req)) return html(req, res, 200, passcodePage(), null);
@@ -347,7 +401,11 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
         return;
       }
       sockets.set(ws, visit);
-      ws.on('close', () => sockets.delete(ws));
+      ws.on('close', () => {
+        sockets.delete(ws);
+        // A trip-to-be is only kept while its visit has a socket open.
+        if (![...sockets.values()].includes(visit)) pending.delete(visit);
+      });
       const allowed = frameBudget(framesPerSecond, now);
       let warnedAt = Number.NEGATIVE_INFINITY;
       ws.on('message', (data) => {
@@ -357,10 +415,10 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
         warnedAt = now().getTime();
         send(ws, { type: 'error', message: SLOW_DOWN });
       });
-      const tripId = trips.get(visit) ?? startTrip(visit);
-      if (!tripId) return send(ws, { type: 'limit', text: DAILY_LIMIT_LINE });
-      activity.set(tripId, now().getTime());
-      pushAll(tripId);
+      // Opening the room makes no trip and takes no turn: the visit's first message does.
+      const tripId = trips.get(visit);
+      if (tripId) activity.set(tripId, now().getTime());
+      pushAll(visit);
     });
   });
 
@@ -374,6 +432,8 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
       activity.delete(tripId);
       for (const [visit, t] of trips) if (t === tripId) trips.delete(visit);
     }
+    const open = new Set(sockets.values());
+    for (const visit of pending.keys()) if (!open.has(visit)) pending.delete(visit);
     o.fake.trimRecords(RECORDS_KEPT_PER_TRIP);
   };
 
@@ -390,8 +450,8 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
   const tick = setInterval(() => pushAll(), 1000);
   const healthTimer = setInterval(() => void refreshHealth(), HEALTH_EVERY_MS);
   const sweepTimer = setInterval(sweep, SWEEP_EVERY_MS);
+  const pruneTimer = setInterval(() => wrongTries.prune(), PRUNE_TRIES_EVERY_MS);
   await refreshHealth();
-  log("the wrong-try limit keys on x-real-ip (the first x-forwarded-for address when it is missing); the first visit's address headers are logged once");
 
   await new Promise<void>((resolve) => http.listen(o.port, o.host ?? '127.0.0.1', resolve));
   const port = (http.address() as AddressInfo).port;
@@ -405,6 +465,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
       clearInterval(tick);
       clearInterval(healthTimer);
       clearInterval(sweepTimer);
+      clearInterval(pruneTimer);
       for (const ws of sockets.keys()) ws.terminate();
       await new Promise<void>((resolve) => http.close(() => resolve()));
     },

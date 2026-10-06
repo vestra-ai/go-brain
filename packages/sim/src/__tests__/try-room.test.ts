@@ -8,7 +8,7 @@ import { Caps, DEFAULT_CAPS } from '../try-room/caps.js';
 import { TryEnv } from '../try-room/env.js';
 import { COOKIE_NAME, Gate, WrongTries, clientAddress } from '../try-room/gate.js';
 import { CLOSE_TOO_MANY, refusal, serveTryRoom, visitTrip, type TryRoom, type TryRoomOptions } from '../try-room/serve.js';
-import { DAILY_LIMIT_LINE, HINTS, NOT_IN_YOUR_TRIP, ROOM_FULL, SIMULATED_LINE, SLOW_DOWN, tooManyTabs } from '../try-room/words.js';
+import { DAILY_LIMIT_LINE, HINTS, NOT_IN_YOUR_TRIP, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_MANY_TRIES, tooManyTabs, visitLimitLine } from '../try-room/words.js';
 import { startTestGo, type TestGo } from './helpers/test-go.js';
 
 const secret = 'sim-test-secret-0123456789abcdef';
@@ -176,14 +176,22 @@ describe('the passcode gate', () => {
     expect(html).toContain('<title>Try Go</title>');
     for (const hint of HINTS) expect(html).toContain(`data-fill="${hint}"`);
 
-    const { got } = await inRoom(r, cookie);
-    const state = states(got)[0];
+    const l = await inRoom(r, cookie);
+    const state = states(l.got)[0];
     expect(state.trip.trip_id).toMatch(/^t_try_[0-9a-f]{12}$/);
     expect(state.trip.people.map((p: { name: string }) => p.name)).toEqual(['Rahul', 'Priya', 'Arjun', 'Meher', 'Kabir']);
     expect(state.messages).toEqual([]);
     expect(state.about).toEqual(['Go is live: this room talks to the real Go (contract 1.0.0).', SIMULATED_LINE]);
     expect(state.limit).toBeNull();
-    await until(() => g.events.some((e) => e.type === 'trip.created' && e.trip_id === state.trip.trip_id));
+    // Opening the room makes no trip: the first message does, with the people the page was shown.
+    await pause(150);
+    expect(g.events).toEqual([]);
+    expect(r.tripOf(visitOf(cookie))).toBeUndefined();
+    sayAs(l, state.trip.people[1].person_id, '@Go hello');
+    await until(() => said(g).length === 1);
+    expect(g.events.map((e) => e.type)).toEqual(['trip.created', 'message.created']);
+    expect(g.events[0].trip_id).toBe(state.trip.trip_id);
+    expect(r.tripOf(visitOf(cookie))).toBe(state.trip.trip_id);
     expect(await live(r, cookie, 'https://somewhere-else.example')).toEqual({ status: 401 });
   });
 
@@ -209,38 +217,59 @@ describe('the passcode gate', () => {
     expect((await enter(r, 'wrong-guess', from('198.51.100.1'))).status).toBe(401);
   });
 
-  it('keys the limit on x-real-ip, on the first x-forwarded-for address only when x-real-ip is missing, and trusts neither without trustProxy', () => {
-    const req = (headers: Record<string, string>) => ({ headers, socket: { remoteAddress: '127.0.0.1' } }) as unknown as IncomingMessage;
-    expect(clientAddress(req({ 'x-real-ip': '198.51.100.7', 'x-forwarded-for': '203.0.113.1, 10.0.0.1' }), true)).toBe('198.51.100.7');
-    expect(clientAddress(req({ 'x-real-ip': ' 198.51.100.7 ' }), true)).toBe('198.51.100.7');
-    expect(clientAddress(req({ 'x-forwarded-for': '203.0.113.1, 10.0.0.1' }), true)).toBe('203.0.113.1');
-    expect(clientAddress(req({ 'x-real-ip': '', 'x-forwarded-for': '203.0.113.1' }), true)).toBe('203.0.113.1');
-    expect(clientAddress(req({}), true)).toBe('127.0.0.1');
-    expect(clientAddress(req({ 'x-real-ip': '198.51.100.7', 'x-forwarded-for': '203.0.113.1' }), false)).toBe('127.0.0.1');
+  it('keys the limit on x-real-ip only when it is an IP address, else on the socket; never on x-forwarded-for', () => {
+    const req = (headers: Record<string, string>) => ({ headers, socket: { remoteAddress: '10.0.0.9' } }) as unknown as IncomingMessage;
+    const edge = { address: '10.0.0.9', source: 'socket' };
+    expect(clientAddress(req({ 'x-real-ip': '198.51.100.7', 'x-forwarded-for': '203.0.113.1, 10.0.0.1' }), true)).toEqual({ address: '198.51.100.7', source: 'x-real-ip' });
+    expect(clientAddress(req({ 'x-real-ip': ' 2001:db8::7 ' }), true)).toEqual({ address: '2001:db8::7', source: 'x-real-ip' });
+    for (const junk of ['not-an-ip', 'x'.repeat(16_000), '198.51.100.7, 203.0.113.1', '198.51.100.300', '']) {
+      expect(clientAddress(req({ 'x-real-ip': junk, 'x-forwarded-for': '203.0.113.1' }), true)).toEqual(edge);
+    }
+    expect(clientAddress(req({ 'x-forwarded-for': '203.0.113.1, 10.0.0.1' }), true)).toEqual(edge);
+    expect(clientAddress(req({ 'x-real-ip': '198.51.100.7' }), false)).toEqual(edge);
   });
 
-  it('remembers at most a set number of addresses, dropping the one that went wrong longest ago first', () => {
-    const tries = new WrongTries(() => new Date('2026-10-06T06:00:00Z'), 1, 60_000, 3);
-    for (const a of ['a', 'b', 'c']) tries.wrong(a);
+  it('holds at most a set number of addresses, dropping the oldest first, and prunes the stale ones', () => {
+    let clock = Date.parse('2026-10-06T06:00:00Z');
+    const tries = new WrongTries(() => new Date(clock), 1, 60_000, 3, 10_000);
+    for (const a of ['a', 'b', 'c']) expect(tries.wrong(a)).toBe('wrong');
     expect(['a', 'b', 'c'].map((a) => tries.blocked(a))).toEqual([true, true, true]);
-    tries.wrong('a'); // a went wrong again: now b is the oldest
+    expect(tries.wrong('a')).toBe('slow'); // a went wrong again: now b is the oldest
     tries.wrong('d');
     expect(['a', 'b', 'c', 'd'].map((x) => tries.blocked(x))).toEqual([true, false, true, true]);
-    for (let i = 0; i < 1000; i++) tries.wrong(`made-up-${i}`);
-    expect(['made-up-997', 'made-up-998', 'made-up-999'].map((x) => tries.blocked(x))).toEqual([true, true, true]);
-    expect(tries.blocked('a')).toBe(false);
+    for (let i = 0; i < 1000; i++) {
+      tries.wrong(`198.51.${Math.floor(i / 250)}.${i % 250}`);
+      expect(tries.size).toBeLessThanOrEqual(3);
+    }
+    clock += 61_000;
+    tries.prune();
+    expect(tries.size).toBe(0);
   });
 
-  it('logs the three address headers once, raw, on the first visit, and no other header', async () => {
+  it('turns wrong tries away at once in a flood from everywhere, and still lets the right passcode in', async () => {
+    const fixed = Date.parse('2026-10-06T06:00:00Z');
+    const unit = new WrongTries(() => new Date(fixed), 5, 60_000, 10_000, 3);
+    expect(['198.51.100.1', '198.51.100.2', '198.51.100.3', '198.51.100.4'].map((a) => unit.wrong(a))).toEqual(['wrong', 'wrong', 'wrong', 'flood']);
+    expect(unit.size).toBe(3); // a try in a flood is not remembered
+
+    const { room: r } = await setUp({ now: () => new Date(fixed), trustProxy: true, wrongTriesPerSecond: 3, wrongTryDelayMs: 2000 });
+    for (let i = 1; i <= 3; i++) expect((await enter(r, 'wrong-guess', { 'x-real-ip': `198.51.100.${i}` })).status).toBe(401);
+    const started = Date.now();
+    const flooded = await enter(r, 'wrong-guess', { 'x-real-ip': '198.51.100.4' });
+    expect(flooded.status).toBe(429);
+    expect(Date.now() - started).toBeLessThan(1000); // at once, not after the 2 s wait
+    expect(await flooded.text()).toContain(TOO_MANY_TRIES);
+    expect((await enter(r, passcode, { 'x-real-ip': '198.51.100.4' })).status).toBe(303);
+  });
+
+  it('logs once where the wrong-try key came from, on the first passcode that gets in, and never an address', async () => {
     const lines: string[] = [];
-    const { room: r } = await setUp({ log: (line) => lines.push(line) });
-    expect(lines.some((l) => l.includes('keys on x-real-ip'))).toBe(true);
-    await fetch(`${r.url}health`);
-    await fetch(r.url, { headers: { 'x-forwarded-for': '203.0.113.7, 10.0.0.1', 'x-real-ip': '203.0.113.8', cookie: 'not-for-the-log' } });
-    await page(r);
-    const logged = lines.filter((l) => l.startsWith('address headers'));
-    expect(logged).toEqual(['address headers on the first visit: x-forwarded-for="203.0.113.7, 10.0.0.1" x-real-ip="203.0.113.8" x-envoy-external-address=null']);
-    expect(lines.some((l) => l.includes('not-for-the-log'))).toBe(false);
+    const { room: r } = await setUp({ log: (line) => lines.push(line), trustProxy: true });
+    const headers = { 'x-real-ip': '203.0.113.8', 'x-forwarded-for': '203.0.113.8, 10.0.0.1' };
+    await enter(r, 'wrong-guess', headers);
+    await enter(r, passcode, headers);
+    await enter(r, passcode, headers);
+    expect(lines).toEqual(['the first passcode that got in: its wrong-try key came from x-real-ip']);
   });
 
   it('never puts the signing secret, the passcode or the salt in any answer', async () => {
@@ -271,63 +300,112 @@ describe('the passcode gate', () => {
 describe('the caps', () => {
   it('TRY_DAILY_TURNS: one budget for everything that can wake Go, across every visit, started again at 05:30 IST', () => {
     let clock = Date.parse('2026-10-06T18:00:00Z');
-    const caps = new Caps({ dailyTurns: 3, dailyMessages: 100 }, () => new Date(clock));
-    expect(caps.newTrip()).toEqual({ ok: true });
-    expect(caps.send(true)).toEqual({ ok: true });
-    expect(caps.send(true)).toEqual({ ok: true });
-    expect(caps.send(true)).toEqual({ ok: false, line: DAILY_LIMIT_LINE });
-    expect(caps.newTrip()).toEqual({ ok: false, line: DAILY_LIMIT_LINE });
-    expect(caps.send(false)).toEqual({ ok: true }); // a reaction still goes through
-    expect(caps.line()).toBe(DAILY_LIMIT_LINE);
+    const caps = new Caps({ dailyTurns: 3, dailyMessages: 100, visitTurns: 100 }, () => new Date(clock));
+    expect(caps.newTrip('a')).toEqual({ ok: true });
+    expect(caps.send('b', true)).toEqual({ ok: true });
+    expect(caps.send('c', true)).toEqual({ ok: true });
+    expect(caps.send('d', true)).toEqual({ ok: false, line: DAILY_LIMIT_LINE });
+    expect(caps.newTrip('d')).toEqual({ ok: false, line: DAILY_LIMIT_LINE });
+    expect(caps.send('d', false)).toEqual({ ok: true }); // a reaction still goes through
+    expect(caps.line('d')).toBe(DAILY_LIMIT_LINE);
     clock = Date.parse('2026-10-07T00:00:01Z'); // 05:30:01 IST
-    expect(caps.line()).toBeNull();
-    expect(caps.send(true)).toEqual({ ok: true });
-    expect(DEFAULT_CAPS).toEqual({ dailyTurns: 200, dailyMessages: 600 });
+    expect(caps.line('d')).toBeNull();
+    expect(caps.send('d', true)).toEqual({ ok: true });
+    expect(DEFAULT_CAPS).toEqual({ dailyTurns: 200, dailyMessages: 600, visitTurns: 30 });
+  });
+
+  it('TRY_VISIT_TURNS: each visit has its own share of the day, so one visit cannot use it up', () => {
+    let clock = Date.parse('2026-10-06T18:00:00Z');
+    const caps = new Caps({ dailyTurns: 100, dailyMessages: 100, visitTurns: 2 }, () => new Date(clock));
+    expect(caps.newTrip('a')).toEqual({ ok: true });
+    expect(caps.send('a', true)).toEqual({ ok: true });
+    expect(caps.send('a', true)).toEqual({ ok: false, line: visitLimitLine(2) });
+    expect(caps.newTrip('a')).toEqual({ ok: false, line: visitLimitLine(2) });
+    expect(caps.send('a', false)).toEqual({ ok: true }); // a reaction still goes through
+    expect(caps.line('a')).toBe(visitLimitLine(2));
+    expect(caps.send('b', true)).toEqual({ ok: true });
+    expect(caps.line('b')).toBeNull();
+    clock = Date.parse('2026-10-07T00:00:01Z');
+    expect(caps.send('a', true)).toEqual({ ok: true });
   });
 
   it('TRY_DAILY_MESSAGES: counts everything sent into the room, reactions included', () => {
-    const caps = new Caps({ dailyTurns: 100, dailyMessages: 2 });
-    expect(caps.send(false)).toEqual({ ok: true });
-    expect(caps.send(true)).toEqual({ ok: true });
-    expect(caps.send(false)).toEqual({ ok: false, line: DAILY_LIMIT_LINE });
-    expect(caps.send(true)).toEqual({ ok: false, line: DAILY_LIMIT_LINE });
-    expect(caps.line()).toBe(DAILY_LIMIT_LINE);
+    const caps = new Caps({ dailyTurns: 100, dailyMessages: 2, visitTurns: 100 });
+    expect(caps.send('a', false)).toEqual({ ok: true });
+    expect(caps.send('b', true)).toEqual({ ok: true });
+    expect(caps.send('c', false)).toEqual({ ok: false, line: DAILY_LIMIT_LINE });
+    expect(caps.send('c', true)).toEqual({ ok: false, line: DAILY_LIMIT_LINE });
+    expect(caps.line('c')).toBe(DAILY_LIMIT_LINE);
   });
 
-  it('counts a message that does not name Go, a new trip and Start over as turns; over the budget nothing reaches Go, a reaction still does', async () => {
-    const { go: g, fake: f, room: r } = await setUp({ caps: { dailyTurns: 3 } });
+  it('counts a message that does not name Go and each new trip as turns; Start over is free until someone speaks; a reaction still goes through', async () => {
+    const { go: g, fake: f, room: r } = await setUp({ caps: { dailyTurns: 4 } });
     const cookie = await signIn(r);
-    const l = await inRoom(r, cookie); // the trip: turn 1
-    sayAs(l, personId(l, 'Rahul'), 'hello all'); // turn 2, though it never names Go
+    const l = await inRoom(r, cookie);
+    sayAs(l, personId(l, 'Rahul'), 'hello all'); // the trip and the message: turns 1 and 2, though it never names Go
     await until(() => said(g).length === 1);
-    l.ws.send(JSON.stringify({ type: 'start_over' })); // turn 3
-    await until(() => g.events.filter((e) => e.type === 'trip.created').length === 2);
-    await until(() => lastState(l.got).messages.length === 0 && lastState(l.got).trip.trip_id === r.tripOf(visitOf(cookie)));
-    sayAs(l, personId(l, 'Priya'), 'anyone up for scuba');
+    l.ws.send(JSON.stringify({ type: 'start_over' })); // free: no trip yet
+    await until(() => lastState(l.got).messages.length === 0 && r.tripOf(visitOf(cookie)) === undefined);
+    await pause(100);
+    expect(g.events.filter((e) => e.type === 'trip.created')).toHaveLength(1);
+    sayAs(l, personId(l, 'Priya'), 'anyone up for scuba'); // the new trip and the message: turns 3 and 4
+    await until(() => said(g).length === 2);
+    sayAs(l, personId(l, 'Priya'), '@Go one more?');
     await until(() => l.got.some((m) => m.type === 'limit'));
     expect(l.got.find((m) => m.type === 'limit').text).toBe(DAILY_LIMIT_LINE);
     await until(() => lastState(l.got).limit === DAILY_LIMIT_LINE);
-    l.ws.send(JSON.stringify({ type: 'start_over' }));
-    await until(() => l.got.filter((m) => m.type === 'limit').length === 2);
     // A reaction cannot wake Go: it still goes through.
-    const tripId = lastState(l.got).trip.trip_id;
-    await f.say(personId(l, 'Arjun'), 'Goa in November?', { tripId });
+    const tripId = r.tripOf(visitOf(cookie))!;
     const messageId = f.messages(tripId)[0]!.message_id;
     l.ws.send(JSON.stringify({ type: 'react', personId: personId(l, 'Meher'), messageId, emoji: '👍' }));
     await until(() => g.events.some((e) => e.type === 'reaction.added'));
     await pause(100);
-    expect(said(g).map((e) => e.data.message.text)).toEqual(['hello all', 'Goa in November?']);
+    expect(said(g).map((e) => e.data.message.text)).toEqual(['hello all', 'anyone up for scuba']);
   });
 
-  it('cannot be reset by typing the passcode again: a new visit shares the same budget', async () => {
-    const { room: r } = await setUp({ caps: { dailyTurns: 1 } });
-    await inRoom(r, await signIn(r));
-    const again = await openLive(r, await signIn(r));
-    await until(() => again.got.length > 0);
-    expect(again.got[0]).toEqual({ type: 'limit', text: DAILY_LIMIT_LINE });
+  it('opening the room costs nothing: sockets without a message make no trip and take no turn', async () => {
+    const { go: g, room: r } = await setUp({ caps: { dailyTurns: 1 } });
+    for (let i = 0; i < 5; i++) {
+      const l = await inRoom(r, await signIn(r));
+      expect(lastState(l.got).limit).toBeNull();
+    }
+    await pause(100);
+    expect(g.events).toEqual([]);
+    expect(r.caps.line('anyone')).toBeNull();
   });
 
-  it('over the daily message cap no visit can send, and nothing reaches Go', async () => {
+  it('gives one visit its share and then refuses it, while other visits still talk to Go; nothing more reaches Go from it', async () => {
+    const { go: g, room: r } = await setUp({ caps: { visitTurns: 3 } });
+    const a = await inRoom(r, await signIn(r));
+    const b = await inRoom(r, await signIn(r));
+    sayAs(a, personId(a, 'Rahul'), 'one'); // A's trip and message: 2 turns
+    await until(() => said(g).length === 1);
+    sayAs(a, personId(a, 'Rahul'), 'two'); // 3
+    await until(() => said(g).length === 2);
+    sayAs(a, personId(a, 'Rahul'), 'three');
+    await until(() => a.got.some((m) => m.type === 'limit'));
+    expect(a.got.find((m) => m.type === 'limit').text).toBe(visitLimitLine(3));
+    sayAs(b, personId(b, 'Meher'), 'hello from B');
+    await until(() => said(g).length === 3);
+    await pause(100);
+    expect(said(g).map((e) => e.data.message.text)).toEqual(['one', 'two', 'hello from B']);
+  });
+
+  it('cannot be reset by typing the passcode again: a new visit shares the same daily budget', async () => {
+    const { go: g, room: r } = await setUp({ caps: { dailyTurns: 2 } });
+    const a = await inRoom(r, await signIn(r));
+    sayAs(a, personId(a, 'Rahul'), 'hi');
+    await until(() => said(g).length === 1);
+    const again = await inRoom(r, await signIn(r));
+    expect(lastState(again.got).limit).toBe(DAILY_LIMIT_LINE);
+    sayAs(again, personId(again, 'Kabir'), 'hello');
+    await until(() => again.got.some((m) => m.type === 'limit'));
+    await pause(100);
+    expect(g.events.filter((e) => e.type === 'trip.created')).toHaveLength(1);
+    expect(said(g)).toHaveLength(1);
+  });
+
+  it('over the daily message cap no visit can send, no trip is made, and nothing reaches Go', async () => {
     const { go: g, room: r } = await setUp({ caps: { dailyMessages: 1 } });
     const a = await inRoom(r, await signIn(r));
     const b = await inRoom(r, await signIn(r));
@@ -338,6 +416,17 @@ describe('the caps', () => {
     expect(b.got.find((m) => m.type === 'limit').text).toBe(DAILY_LIMIT_LINE);
     await pause(100);
     expect(said(g)).toHaveLength(1);
+    expect(g.events.filter((e) => e.type === 'trip.created')).toHaveLength(1);
+  });
+
+  it('asks for a message first before anything else can happen in a trip that does not exist yet', async () => {
+    const { go: g, room: r } = await setUp();
+    const l = await inRoom(r, await signIn(r));
+    l.ws.send(JSON.stringify({ type: 'react', personId: personId(l, 'Meher'), messageId: 'm_nothing', emoji: '👍' }));
+    await until(() => l.got.some((m) => m.type === 'error'));
+    expect(l.got.find((m) => m.type === 'error').message).toBe(SAY_FIRST);
+    await pause(100);
+    expect(g.events).toEqual([]);
   });
 });
 
@@ -372,10 +461,13 @@ describe('sockets', () => {
   });
 
   it("works out a trip's state once for all the sockets watching it", async () => {
-    const { fake: f, room: r } = await setUp();
+    const { go: g, fake: f, room: r } = await setUp();
     const cookie = await signIn(r);
-    for (let i = 0; i < 3; i++) await inRoom(r, cookie);
-    await pause(150); // Go's answer to trip.created has come and gone
+    const first = await inRoom(r, cookie);
+    for (let i = 0; i < 2; i++) await inRoom(r, cookie);
+    sayAs(first, personId(first, 'Rahul'), 'hi');
+    await until(() => said(g).length === 1);
+    await pause(150); // Go's answers have come and gone
     const spy = vi.spyOn(f, 'messages');
     await pause(1100); // at least one redraw tick, and no changes
     expect(spy.mock.calls.length).toBeGreaterThanOrEqual(1);
@@ -403,11 +495,14 @@ describe('a trip for each visit', () => {
     const cookieB = await signIn(r);
     const a = await inRoom(r, cookieA);
     const b = await inRoom(r, cookieB);
+    const idsA = lastState(a.got).trip.people.map((p: { person_id: string }) => p.person_id);
+    const idsB = lastState(b.got).trip.people.map((p: { person_id: string }) => p.person_id);
+    sayAs(a, idsA[0], 'trip A begins');
+    sayAs(b, idsB[0], 'trip B begins');
+    await until(() => r.tripOf(visitOf(cookieA)) !== undefined && r.tripOf(visitOf(cookieB)) !== undefined);
     const tripA = r.tripOf(visitOf(cookieA))!;
     const tripB = r.tripOf(visitOf(cookieB))!;
     expect(tripA).not.toBe(tripB);
-    const idsA = lastState(a.got).trip.people.map((p: { person_id: string }) => p.person_id);
-    const idsB = lastState(b.got).trip.people.map((p: { person_id: string }) => p.person_id);
     expect(idsA).toEqual(['rahul', 'priya', 'arjun', 'meher', 'kabir'].map((n) => `p_${n}_${tripA.slice('t_try_'.length)}`));
     expect(idsB.some((id: string) => idsA.includes(id))).toBe(false);
     expect(lastState(a.got).trip.organizer_person_id).toBe(idsA[0]);
@@ -415,34 +510,37 @@ describe('a trip for each visit', () => {
     expect(g.events.find((e) => e.trip_id === tripA).data.trip.people.map((p: { person_id: string }) => p.person_id)).toEqual(idsA);
 
     sayAs(a, idsA[1], 'hi from A');
-    await until(() => f.messages(tripA).length === 1);
-    await until(() => lastState(a.got).messages.length === 1);
-    expect(lastState(b.got).messages).toEqual([]);
-    const fromA = f.messages(tripA)[0]!.message_id;
+    await until(() => f.messages(tripA).length === 2);
+    await until(() => lastState(a.got).messages.length === 2);
+    await until(() => lastState(b.got).messages.length === 1);
+    expect(lastState(b.got).messages.map((m: { text: string }) => m.text)).toEqual(['trip B begins']);
+    const fromA = f.messages(tripA)[1]!.message_id;
     b.ws.send(JSON.stringify({ type: 'react', personId: idsB[4], messageId: fromA, emoji: '👍' }));
     await until(() => b.got.some((m) => m.type === 'error'));
     expect(b.got.find((m) => m.type === 'error').message).toBe(NOT_IN_YOUR_TRIP);
     // Someone from another trip is not in this one either.
     sayAs(b, idsA[1], 'hi as someone else');
     await until(() => b.got.filter((m) => m.type === 'error').length === 2);
-    expect(f.messages(tripA)[0]!.reactions).toEqual([]);
-    expect(f.messages(tripB)).toEqual([]);
+    expect(f.messages(tripA)[1]!.reactions).toEqual([]);
+    expect(f.messages(tripB)).toHaveLength(1);
   });
 
   it('Start over gives the visit a new trip with the same five friends, new ids, and keeps the cookie', async () => {
     const { go: g, fake: f, room: r } = await setUp();
     const cookie = await signIn(r);
     const l = await inRoom(r, cookie);
-    const first = r.tripOf(visitOf(cookie))!;
     sayAs(l, personId(l, 'Rahul'), 'Goa in November?');
+    await until(() => r.tripOf(visitOf(cookie)) !== undefined);
+    const first = r.tripOf(visitOf(cookie))!;
     await until(() => f.messages(first).length === 1);
     l.ws.send(JSON.stringify({ type: 'start_over' }));
-    await until(() => r.tripOf(visitOf(cookie)) !== first);
-    const second = r.tripOf(visitOf(cookie))!;
-    await until(() => lastState(l.got).trip.trip_id === second);
+    await until(() => lastState(l.got).trip.trip_id !== first);
+    const second = lastState(l.got).trip.trip_id;
     expect(lastState(l.got).messages).toEqual([]);
     expect(lastState(l.got).trip.people.map((p: { name: string }) => p.name)).toEqual(['Rahul', 'Priya', 'Arjun', 'Meher', 'Kabir']);
     expect(personId(l, 'Rahul')).toBe(`p_rahul_${second.slice('t_try_'.length)}`);
+    sayAs(l, personId(l, 'Rahul'), 'starting again');
+    await until(() => r.tripOf(visitOf(cookie)) === second);
     await until(() => g.events.filter((e) => e.type === 'trip.created').length === 2);
   });
 
@@ -497,7 +595,10 @@ describe('ids and memory', () => {
     const idle = await signIn(r);
     const watching = await signIn(r);
     const gone = await inRoom(r, idle);
-    await inRoom(r, watching);
+    const stays = await inRoom(r, watching);
+    sayAs(gone, personId(gone, 'Rahul'), 'hi');
+    sayAs(stays, personId(stays, 'Rahul'), 'hi');
+    await until(() => r.tripOf(visitOf(idle)) !== undefined && r.tripOf(visitOf(watching)) !== undefined);
     const idleTrip = r.tripOf(visitOf(idle))!;
     const watchedTrip = r.tripOf(visitOf(watching))!;
     gone.ws.close();
@@ -535,7 +636,7 @@ describe('the hosted page and its settings', () => {
       GO_URL: 'https://brain-try.example', GO_SIGNING_SECRET: 'a'.repeat(64), TRY_PASSCODE: 'judges-only-2026-passcode', TRY_COOKIE_SALT: 'b'.repeat(64),
     };
     expect(TryEnv.parse(base)).toMatchObject({
-      PORT: 8080, TRY_DAILY_TURNS: 200, TRY_DAILY_MESSAGES: 600, TRY_SIMULATED_LINE: SIMULATED_LINE, TRY_INSTANCE: 'try-room',
+      PORT: 8080, TRY_DAILY_TURNS: 200, TRY_DAILY_MESSAGES: 600, TRY_VISIT_TURNS: 30, TRY_SIMULATED_LINE: SIMULATED_LINE, TRY_INSTANCE: 'try-room',
     });
     expect(TryEnv.parse({ ...base, PORT: '9000', TRY_DAILY_TURNS: '10' })).toMatchObject({ PORT: 9000, TRY_DAILY_TURNS: 10 });
     expect(() => TryEnv.parse({ ...base, GO_SIGNING_SECRET: 'short' })).toThrow();
