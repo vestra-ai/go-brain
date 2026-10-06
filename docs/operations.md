@@ -9,19 +9,20 @@ Two words used below:
 
 ## The Railway project
 
-Everything runs in the Railway project `go`, environment `production`.
+Every service runs in the Railway project `go`, environment `production`. Go's own databases are in the Supabase project `go` instead (see [Go's databases](#gos-databases-supabase)).
 
 | Service | What it is | Public address | Built from |
 |---|---|---|---|
 | `brain` | The stage Go. | https://brain-production-6b68.up.railway.app | `apps/brain/Dockerfile` |
 | `vault` | The vault: it keeps each payer's passkey and test card, and charges a payment once the Server and the payer both approved it. | https://vault-production-35aa.up.railway.app | Railpack, with the build and start commands in its variables |
 | `fake-go` | A stand-in for Go that the App and Server teams build and test against. It is not the stage Go. | https://fake-go-production.up.railway.app | `apps/fake-go/Dockerfile` |
-| `Postgres` | Go's database. Only `brain` uses it. | none (private network only) | Railway's Postgres template |
+| `Postgres` | `brain`'s old database. No Go uses it; it is kept as a backup. | none (private network only) | Railway's Postgres template |
 | `Postgres-D6Kp` | The vault's own database. Only `vault` uses it; Go never reads it. | none (private network only) | Railway's Postgres template |
 | `brain-rehearsal` | The rehearsal Go: the same code as `brain`, with its own database, its own signing secret and its own admin token. Rehearsals and the live smoke go here, never to the stage. | https://brain-rehearsal-production.up.railway.app | `apps/brain/Dockerfile` |
-| `Postgres-ozV9` | `brain-rehearsal`'s database. | none (private network only) | Railway's Postgres template |
+| `Postgres-ozV9` | `brain-rehearsal`'s old database. No Go uses it; it is kept as a backup. | none (private network only) | Railway's Postgres template |
 | `vault-rehearsal` | The rehearsal vault: the same code as `vault`, with its own database, master key and shared secret. It reports payments to `brain-rehearsal`, so a rehearsal can pay end to end. | https://vault-rehearsal-production.up.railway.app | Railpack, with the build and start commands in its variables |
 | `Postgres-hxd7` | `vault-rehearsal`'s database. | none (private network only) | Railway's Postgres template |
+| `Postgres-S3Ht` | `brain-try`'s old database. No Go uses it; it is kept as a backup. | none (private network only) | Railway's Postgres template |
 
 Go applies its database migrations itself when it starts, so a new version that needs a new table needs nothing extra.
 
@@ -70,7 +71,7 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 
 | Variable | What it is for | State |
 |---|---|---|
-| `DATABASE_URL` | Go's database, from the `Postgres` service. | Set |
+| `DATABASE_URL` | Go's database: the `go_stage` login and schema in the Supabase project `go`, through the session pooler (see [Go's databases](#gos-databases-supabase)). | Set |
 | `GO_SIGNING_SECRET` | Signs the socket between the Server and Go. The Server holds the same value. It is not the same as `fake-go`'s. | Set |
 | `GO_PUBLIC_URL` | Go's own https address: the links to the pictures on Go's cards, and where Twilio connects a call's audio to Go. | Set |
 | `GO_ROLE` | Which Go this is: `stage` here, `rehearsal` on `brain-rehearsal`. The admin page shows it, and the rehearsal runner refuses any Go that is not `rehearsal`. Without it, Go falls back to Railway's service name. | Set |
@@ -100,7 +101,7 @@ Railway also sets `RAILWAY_*` variables on every service (its domains and ids). 
 
 The same variable names as `brain`, with these differences:
 
-- `DATABASE_URL` is `Postgres-ozV9`, not Go's stage database.
+- `DATABASE_URL` is the `go_rehearsal` login and schema, not the stage's `go_stage`.
 - `GO_SIGNING_SECRET` and `ADMIN_TOKEN` are its own: the stage's secret does not open it, and its secret does not open the stage.
 - `GO_ROLE` is `rehearsal`.
 - `VAULT_URL` and `VAULT_SHARED_SECRET` point at `vault-rehearsal`, not the stage's vault.
@@ -141,9 +142,50 @@ The same variable names as `vault`, with these differences:
 | `FAKE_GO_ADMIN_TOKEN` | Opens fake-go's admin routes. | Set |
 | `FAKE_GO_PUBLIC_URL` | fake-go's address for the links it hands out. Railway's domain is used when it is not set. | Not set |
 
-### The databases: Postgres, Postgres-D6Kp, Postgres-ozV9, Postgres-hxd7
+### The vaults' databases: Postgres-D6Kp, Postgres-hxd7
 
-All four have Railway's template variables: `DATABASE_URL`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `PGDATA`, `SSL_CERT_DAYS`. Leave them alone: each Go and each vault reads its address from them.
+Each vault keeps its own Railway database: `Postgres-D6Kp` for `vault` and `Postgres-hxd7` for `vault-rehearsal`. Both have Railway's template variables: `DATABASE_URL`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `PGDATA`, `SSL_CERT_DAYS`. Leave them alone: each vault reads its address from them.
+
+The old Railway databases of the Gos, `Postgres`, `Postgres-ozV9` and `Postgres-S3Ht`, are no longer used by any Go. They are kept as a backup.
+
+## Go's databases: Supabase
+
+Every Go keeps its database in the Supabase project `go`: ref `rbltcfpcqkefazsonzbb`, region us-east-1, organization Vestra Org. Dashboard: https://supabase.com/dashboard/project/rbltcfpcqkefazsonzbb.
+
+Each Go has one schema and one login of the same name:
+
+| Go | Login and schema |
+|---|---|
+| `brain` | `go_stage` |
+| `brain-rehearsal` | `go_rehearsal` |
+| `brain-try` | `go_try` |
+
+- Each login's `search_path` is its own schema, then `extensions`. A login can create only in its own schema and cannot see the others.
+- Each schema has 45 tables.
+- `DATABASE_URL` on each Go points at Supabase's session pooler:
+
+  ```
+  postgresql://<login>.rbltcfpcqkefazsonzbb:<password>@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=no-verify
+  ```
+
+  Go uses the pooler because the project's direct host is IPv6 only, and Railway's outbound IPv6 is off.
+- **A known trade-off:** `sslmode=no-verify` encrypts the connection but does not check the server's certificate.
+- `pg_trgm`, the word search behind recall, lives in the schema `public`, because migration 2003 and `apps/brain/src/memory/recall.ts` name `public.gin_trgm_ops` and `public.word_similarity`. The logins have `USAGE` on `public`, not `CREATE`.
+
+### Adding a Go
+
+As `postgres`, in the project's SQL editor, for a new login and schema named `<role>`:
+
+```sql
+create role <role> login password '<a SCRAM-SHA-256 hash of the password, never the password itself>';
+grant <role> to postgres with set true;
+create schema <role> authorization <role>;
+alter role <role> set search_path to <role>, extensions;
+grant usage on schema public to <role>;
+grant usage on schema extensions to <role>;
+```
+
+Generate the password in the shell and put it straight into the new Go's `DATABASE_URL` on Railway, in the pooler form above. Never print it. Go makes its tables itself the first time it starts.
 
 ## Deploy
 
@@ -253,9 +295,10 @@ A switch takes the first of these that has a value:
 To flip a switch:
 
 - **On the admin page:** open `/admin?token=...`, pick the value, save. This is the way on stage.
-- **Until then, in the database:** `railway connect Postgres`, then:
+- **Until then, in the database:** in the Supabase project's SQL editor, set the stage Go's schema first, then:
 
   ```sql
+  set search_path to go_stage;
   insert into switches (name, value, updated_at) values ('TRAVEL_MODE', 'fake', now())
   on conflict (name) do update set value = excluded.value, updated_at = excluded.updated_at;
   ```
