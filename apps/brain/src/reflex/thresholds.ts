@@ -7,9 +7,11 @@ export const BARS = {
   /**
    * Q1. Bash moment-vs-work: moment 0.9 with work at most 0.1 (149-row corpus, 0 wrong). Chatter is 0.85 on Go's own set
    * (Jev 1.13.0, recorded 2026-10-06: recall 0.77, 0 wrong of 13). 0.8 also had no wrong answer, but an ask read as chatter
-   * goes unanswered while a needless wake costs one model call, so the bar keeps the margin. The other three are Bash's.
+   * goes unanswered while a needless wake costs one model call, so the bar keeps the margin. notAddressedMax: a line Jev
+   * is sure no one spoke to Go in is not for Go either, chatter or not (a fact, a plan); on the same recordings it skips
+   * 20 of 50 lines and none labelled for Go, whose lowest answer was 0.57. The other three are Bash's.
    */
-  for_go: { chatterMin: 0.85, addressedMaxForChatter: 0.2, addressedMin: 0.9, chatterMaxForAddressed: 0.1 },
+  for_go: { chatterMin: 0.85, addressedMaxForChatter: 0.2, notAddressedMax: 0.1, addressedMin: 0.9, chatterMaxForAddressed: 0.1 },
   /** Q2. Answering mid-thought is visible; unsure only costs the 2 s wait. */
   complete: { yesMin: 0.85, noMax: 0.1 },
   /** Q3. Bash moment-vs-work: work 0.9 with every moment noul at most 0.1. */

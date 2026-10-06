@@ -163,6 +163,7 @@ export function gatePasses(s: QuestionScore): boolean {
 
 export const SWEEPS: Array<{ name: QuestionName; bar: string; values: number[]; apply: (b: Bars, v: number) => Bars }> = [
   { name: 'for_go', bar: 'chatterMin', values: [0.8, 0.85, 0.9, 0.95], apply: (b, v) => ({ ...b, for_go: { ...b.for_go, chatterMin: v } }) },
+  { name: 'for_go', bar: 'notAddressedMax', values: [0.05, 0.1, 0.15, 0.2], apply: (b, v) => ({ ...b, for_go: { ...b.for_go, notAddressedMax: v } }) },
   { name: 'for_go', bar: 'addressedMin', values: [0.8, 0.85, 0.9, 0.95], apply: (b, v) => ({ ...b, for_go: { ...b.for_go, addressedMin: v } }) },
   { name: 'complete', bar: 'yesMin', values: [0.75, 0.8, 0.85, 0.9], apply: (b, v) => ({ ...b, complete: { ...b.complete, yesMin: v } }) },
   { name: 'size', bar: 'kindMin', values: [0.8, 0.85, 0.9, 0.95], apply: (b, v) => ({ ...b, size: { ...b.size, kindMin: v } }) },

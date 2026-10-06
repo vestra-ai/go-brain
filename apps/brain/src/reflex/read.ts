@@ -49,6 +49,9 @@ function readForGo(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
   const addressed = noulP(a, 'q1_addressed');
   const chatter = noulP(a, 'q1_chatter');
   if (atLeast(chatter, b.for_go.chatterMin) && atMost(addressed, b.for_go.addressedMaxForChatter)) return sure(false);
+  // No one spoke to Go (a fact, a plan, friends talking): not for Go, though not chatter. The chatter answer must be
+  // well formed too, so an odd answer still reads unsure.
+  if (atMost(addressed, b.for_go.notAddressedMax) && Number.isFinite(chatter)) return sure(false);
   if (atLeast(addressed, b.for_go.addressedMin) && atMost(chatter, b.for_go.chatterMaxForAddressed)) return sure(true);
   return unsure();
 }
