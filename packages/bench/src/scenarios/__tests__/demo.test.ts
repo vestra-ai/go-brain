@@ -106,6 +106,7 @@ const COMMITTED = fileURLToPath(new URL('../../../../../docs/demo/transcript.md'
 const WRITE_TO = process.env['DEMO_TRANSCRIPT'] ? resolve(process.env['DEMO_TRANSCRIPT']) : fileURLToPath(new URL('../../../out/demo-transcript.md', import.meta.url));
 
 let vegSeq = 0;
+let vegMessageId = '';
 let workingId = '';
 let v1TaskId = '';
 let villaSentAt = 0;
@@ -153,6 +154,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
       if (line.fact) {
         vegSeq = message.seq;
         vegId = message.message_id;
+        vegMessageId = vegId;
         vegAt = sentAt;
       }
     }
@@ -385,13 +387,15 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     }, 30_000);
   }
 
-  it("4:10 memory: what Meher can't eat, linked to the message where she said it, and who hasn't paid yet", async () => {
+  it("4:10 memory: what Meher can't eat, replying to the message where she said it, and who hasn't paid yet", async () => {
     chapter('4:10 Memory');
     const { message, sentAt } = await say(DEMO_LINES.memory);
     const reply = await goAfter(message.seq, (m) => (m.text ?? '').includes('vegetarian'));
     mark('memory', reply, sentAt);
     // Villa Sol's ₹38,400 split five ways: everyone but Rahul owes him ₹7,680.
-    expect(reply.text).toBe(`Meher is vegetarian, so no seafood shacks. Meher said so in #${vegSeq}. Priya, Arjun, Meher and Kabir haven't paid Rahul back yet: ₹7,680 each.`);
+    // The director cites "#N" as Go reads the chat; the number leaves the words, and the answer replies to her line instead.
+    expect(reply.text).toBe("Meher is vegetarian, so no seafood shacks. Meher said so. Priya, Arjun, Meher and Kabir haven't paid Rahul back yet: ₹7,680 each.");
+    expect(reply.reply_to).toBe(vegMessageId);
   }, 20_000);
 
   it('4:20 Meher taps "Forget me in this trip" in the App: Go forgets her inside 2 s, says nothing in the chat, and queries find nothing left', async () => {
