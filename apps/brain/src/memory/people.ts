@@ -46,7 +46,7 @@ async function tripsOf(db: Db, personId: string): Promise<string[]> {
   const r = await db.query<{ trip_id: string }>(
     `SELECT trip_id FROM facts WHERE person_id = $1
      UNION SELECT trip_id FROM messages WHERE person_id = $1
-     UNION SELECT trip_id FROM story_lines WHERE $1 = ANY(people)`,
+     UNION SELECT trip_id FROM story_lines WHERE people @> ARRAY[$1]::text[]`,
     [personId],
   );
   return r.rows.map((x) => x.trip_id).sort();
