@@ -4,7 +4,8 @@
  *  - a fact's proof is a visible message written by that same person, with no secret in it;
  *  - "agreed" needs two people saying yes (a 👍 on a proof message counts) or the organizer, and no
  *    objection; otherwise the line is written as "open";
- *  - a doing line names only people who said they would do it;
+ *  - a doing line names only people who said they would do it, and never rests on a message to Go (that is an ask:
+ *    Go does it);
  *  - only an open question may cite Go's own message;
  *  - a person Go was asked to forget is never proof for anything said before the forget.
  */
@@ -12,6 +13,7 @@ import * as C from '@go/contract';
 import type { Message } from '../door/methods.js';
 import { messageText } from '../reflex/questions.js';
 import { hasSecret } from '../reflex/secrets.js';
+import { plainlyNamesGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
 import { normTopic, type Audience } from './facts.js';
 
@@ -161,6 +163,10 @@ export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> 
     }
   }
   if (kind === 'doing') {
+    // "@Go find flights Friday" is an ask: Go does it, so it is never "Rahul is finding flights". A promise said to Go in
+    // the same breath ("@Go I'll sort the cab, you do flights") goes too: code cannot tell it from the ask beside it, and a
+    // wrong name in everyone's record costs more than a line the person can say again.
+    if (proof.some((m) => plainlyNamesGo(m, pack))) return no('a doing line cannot rest on a message to Go: that is an ask, and Go does it');
     if (personIds.length === 0) personIds = [...new Set(authors)];
     if (personIds.length === 0 || !personIds.every((id) => authors.includes(id))) {
       return no('a doing line names someone who did not say they would do it');

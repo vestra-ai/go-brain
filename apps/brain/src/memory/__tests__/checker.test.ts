@@ -73,6 +73,20 @@ describe('checkLine', () => {
     expect(checkLine(lineP({ text: 'Dinner at Thalassa on Saturday', proof: ['m_0150'], objections: ['m_0151'] }), env()))
       .toMatchObject({ ok: true, value: { kind: 'open' } });
   });
+  it('never makes a doing line from a message to Go: an ask is Go\'s job, not its author\'s', () => {
+    const ask = msg(180, 'p_rahul', '@Go find flights Friday');
+    const mixed = msg(181, 'p_kabir', "@Go I'll sort the cab, you do flights");
+    const e = env({ pack: packOf([...messages, ask, mixed], goaTrip()) });
+    const refused = { ok: false, reason: 'a doing line cannot rest on a message to Go: that is an ask, and Go does it' };
+    expect(checkLine(lineP({ kind: 'doing', text: 'Rahul is finding flights', proof: ['m_0180'], person_ids: ['p_rahul'] }), e)).toEqual(refused);
+    expect(checkLine(lineP({ kind: 'doing', text: 'Rahul is finding flights', proof: ['m_0180'], person_ids: [] }), e)).toEqual(refused);
+    // A real promise still makes a doing line for its author.
+    expect(checkLine(lineP({ kind: 'doing', text: 'Kabir books the airport cab', proof: ['m_0140'], person_ids: ['p_kabir'] }), e))
+      .toMatchObject({ ok: true, value: { kind: 'doing', personIds: ['p_kabir'] } });
+    // A promise said to Go in the same breath is refused too (see checker.ts): its words cannot be told from the ask.
+    expect(checkLine(lineP({ kind: 'doing', text: 'Kabir sorts the cab', proof: ['m_0181'], person_ids: ['p_kabir'] }), e)).toEqual(refused);
+  });
+
   it('lets only the person who said it be on a doing line', () => {
     expect(checkLine(lineP({ kind: 'doing', text: 'Kabir books the airport cab', proof: ['m_0140'], person_ids: ['p_kabir'] }), env()).ok).toBe(true);
     expect(checkLine(lineP({ kind: 'doing', text: 'Kabir books the airport cab', proof: ['m_0141'], person_ids: ['p_kabir'] }), env()))
