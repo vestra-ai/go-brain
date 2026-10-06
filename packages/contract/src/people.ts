@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AmountMinor, Currency, HttpUrl, Id, IsoDateTime } from './common.js';
 
 /**
- * A person in a trip. `person_id` is the server's id for the human and stays the same across every
+ * A person in a trip. `person_id` is the Server's id for the human and stays the same across every
  * trip they join, so Go can recognise them next time (if they allow it). There is no separate
  * per-trip member id.
  *
@@ -21,10 +21,10 @@ export const Person = z
     earliest_leave: z.string().max(60).nullish(),
     /** Their "anything Go should know" answers, as plain words. The group can see these. */
     know: z.array(z.string().min(1).max(80)).max(20),
-    /** True when they have a UPI id saved, so friends can pay them back. The id itself stays in the server. */
+    /** True when they have a UPI id saved, so friends can pay them back. The id itself stays in the Server. */
     has_upi: z.boolean(),
     /**
-     * True when they paused Go. While paused, the server still sends their messages (so the change
+     * True when they paused Go. While paused, the Server still sends their messages (so the change
      * numbers stay in order) but with `withheld: true` and no words or attachments.
      */
     go_paused: z.boolean(),

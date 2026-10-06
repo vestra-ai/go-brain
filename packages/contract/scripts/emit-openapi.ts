@@ -67,7 +67,7 @@ for (const r of HTTP_ROUTES) {
 write('openapi/go.json', {
   openapi: '3.1.0',
   info: { title: 'The Go brain API', version: CONTRACT_VERSION,
-    description: 'Go is the AI member of every trip group. The server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain.' },
+    description: 'Go is the AI member of every trip group. The Server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain.' },
   paths,
   components: { schemas },
 });
@@ -104,7 +104,7 @@ for (const x of SOCKET_METHODS) {
 write('asyncapi/socket.json', {
   asyncapi: '3.0.0',
   info: { title: 'The Go brain socket', version: CONTRACT_VERSION,
-    description: 'Described from Go\'s side: "receive" methods are sent by the server, "send" methods are sent by Go. Frames are JSON-RPC 2.0.' },
+    description: 'Described from Go\'s side: "receive" methods are sent by the Server, "send" methods are sent by Go. Frames are JSON-RPC 2.0.' },
   servers: { staging: { host: 'brain.go.example', protocol: 'wss', pathname: SOCKET_PATH } },
   channels: { socket: { address: SOCKET_PATH, messages } },
   operations,

@@ -1,7 +1,7 @@
 /**
  * Calling an MCP server. ixigo's: streamable HTTP, one client per process, a bearer, 8 s to connect, 25 s per call,
  * one reconnect after a transport failure (the shape of Bash's fal-mcp-upstream.ts). The fake ixigo: in this process.
- * A JSON-RPC error from the server is the call's own answer on a good connection; anything else is the transport.
+ * A JSON-RPC error from the MCP server is the call's own answer on a good connection; anything else is the transport.
  */
 import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -46,7 +46,7 @@ const sleep = (ms: number) =>
     setTimeout(resolve, ms).unref();
   });
 
-/** The server answered with a JSON-RPC error: the call was wrong, the connection is fine. Timeouts and closes are the transport. */
+/** The MCP server answered with a JSON-RPC error: the call was wrong, the connection is fine. Timeouts and closes are the transport. */
 const isProtocolError = (err: unknown): err is McpError =>
   err instanceof McpError && err.code !== ErrorCode.RequestTimeout && err.code !== ErrorCode.ConnectionClosed;
 
@@ -88,7 +88,7 @@ async function realConnect(url: string, token: string | undefined, name: string)
 }
 
 export function createHttpMcpCaller(o: { url: string; token?: string; name?: string; connectImpl?: () => Promise<unknown> }): McpCaller {
-  const connectImpl = o.connectImpl ?? (() => realConnect(o.url, o.token, o.name ?? 'go-brain'));
+  const connectImpl = o.connectImpl ?? (() => realConnect(o.url, o.token, o.name ?? 'go'));
   let client: Promise<UpstreamClient> | null = null;
   const ensure = (): Promise<UpstreamClient> => (client ??= connectImpl().then(asUpstreamClient));
   const drop = async (): Promise<void> => {
@@ -126,7 +126,7 @@ export function createHttpMcpCaller(o: { url: string; token?: string; name?: str
         if (isProtocolError(err)) return onProtocol(err);
         reason = err instanceof Error ? err.message : String(err);
         await drop();
-        // The request may have reached the server: only a call that is safe to repeat goes again.
+        // The request may have reached the MCP server: only a call that is safe to repeat goes again.
         if (!resendable) break;
       }
     }

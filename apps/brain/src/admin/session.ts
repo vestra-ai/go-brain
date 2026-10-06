@@ -1,5 +1,5 @@
-// The one way in to the operator's pages (the admin page, and the proof board), with ADMIN_TOKEN never in a URL the
-// server sees or logs. A person opens /admin#token=<ADMIN_TOKEN>: the browser never sends the part after #. The sign-in
+// The one way in to the operator's pages (the admin page, and the proof board), with ADMIN_TOKEN never in a URL Go
+// sees or logs. A person opens /admin#token=<ADMIN_TOKEN>: the browser never sends the part after #. The sign-in
 // page reads it, drops it from the address bar, sends it once as a bearer to POST /admin/session, gets an HttpOnly
 // cookie back and loads the clean URL. Scripts and the bench send the token as a bearer on every call.
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
@@ -7,7 +7,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 export const SESSION_PATH = '/admin/session';
 export const SIGN_OUT_PATH = '/admin/sign-out';
-/** A stage day: the operator signs in again the next morning. The server checks it, not only the browser. */
+/** A stage day: the operator signs in again the next morning. Go checks it, not only the browser. */
 export const SESSION_SECONDS = 12 * 60 * 60;
 
 /** Headers for every page a person signs in to: never cached, never framed, never indexed, no referrer. */

@@ -88,7 +88,7 @@ class CardAction(BaseModel):
 
 class VoteCard(BaseModel):
     """
-    A vote. The server draws the options, the tally and the vote buttons.
+    A vote. The Server draws the options, the tally and the vote buttons.
     """
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -100,7 +100,7 @@ class VoteCard(BaseModel):
 
 class MandateCard(BaseModel):
     """
-    Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The server shows "Yes, book it" and "Not now" to the payer only.
+    Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The Server shows "Yes, book it" and "Not now" to the payer only.
     """
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -337,7 +337,7 @@ class Message(BaseModel):
     updated_seq: Annotated[int, Field(gt=0)]
     author: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or the server itself (system).
+    Who did it: a person, Go, or the Server itself (system).
     """
     text: str | None = None
     attachments: Annotated[
@@ -513,7 +513,7 @@ class Expense(BaseModel):
     note: Annotated[str, Field(max_length=120, min_length=1)]
     category: Literal["stay", "food", "getting_around", "activities", "other"]
     """
-    The spending category. The app colours: stay blue, food orange, getting around green, activities yellow.
+    The spending category. The App colours: stay blue, food orange, getting around green, activities yellow.
     """
     split_person_ids: Annotated[list[str], Field(max_length=30, min_length=1)]
     booking_id: str | None = None
@@ -531,7 +531,7 @@ class Transfer(BaseModel):
 class ByCategoryItem(BaseModel):
     category: Literal["stay", "food", "getting_around", "activities", "other"]
     """
-    The spending category. The app colours: stay blue, food orange, getting around green, activities yellow.
+    The spending category. The App colours: stay blue, food orange, getting around green, activities yellow.
     """
     amount_minor: Annotated[int, Field(ge=0)]
 
@@ -550,7 +550,7 @@ class ItineraryItem(BaseModel):
     title: Annotated[str, Field(max_length=120, min_length=1)]
     category: Literal["stay", "food", "getting_around", "activities", "other"]
     """
-    The spending category. The app colours: stay blue, food orange, getting around green, activities yellow.
+    The spending category. The App colours: stay blue, food orange, getting around green, activities yellow.
     """
     place: Place | None = None
     booking_id: str | None = None
@@ -784,7 +784,7 @@ class TripCreated(BaseModel):
 class TripUpdatedData(BaseModel):
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or the server itself (system).
+    Who did it: a person, Go, or the Server itself (system).
     """
     changed: Annotated[
         list[
@@ -820,7 +820,7 @@ class DecisionOpenedData(BaseModel):
     decision: Decision
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or the server itself (system).
+    Who did it: a person, Go, or the Server itself (system).
     """
 
 
@@ -881,7 +881,7 @@ class DecisionCancelledData(BaseModel):
     decision_id: Annotated[str, Field(max_length=64, min_length=1)]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or the server itself (system).
+    Who did it: a person, Go, or the Server itself (system).
     """
 
 
@@ -957,7 +957,7 @@ class RecordChangedData(BaseModel):
     change: Literal["added", "updated", "done", "undone"]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or the server itself (system).
+    Who did it: a person, Go, or the Server itself (system).
     """
 
 
@@ -979,7 +979,7 @@ class BookingChangedData(BaseModel):
     change: Literal["added", "updated", "cancelled"]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or the server itself (system).
+    Who did it: a person, Go, or the Server itself (system).
     """
 
 
@@ -1001,7 +1001,7 @@ class ExpenseChangedData(BaseModel):
     change: Literal["added", "removed"]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
-    Who did it: a person, Go, or the server itself (system).
+    Who did it: a person, Go, or the Server itself (system).
     """
 
 
@@ -1073,7 +1073,7 @@ class ReadTrip(BaseModel):
 
 class ReadMessages(BaseModel):
     """
-    Up to 200 at a time; 200 when limit is left out. The server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit.
+    Up to 200 at a time; 200 when limit is left out. The Server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit.
     """
 
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -1226,7 +1226,7 @@ class AddExpense(BaseModel):
     note: Annotated[str, Field(max_length=120, min_length=1)]
     category: Literal["stay", "food", "getting_around", "activities", "other"]
     """
-    The spending category. The app colours: stay blue, food orange, getting around green, activities yellow.
+    The spending category. The App colours: stay blue, food orange, getting around green, activities yellow.
     """
     split_person_ids: Annotated[list[str], Field(max_length=30, min_length=1)]
     booking_id: str | None = None
@@ -1494,7 +1494,7 @@ class SocketError(BaseModel):
 
 class SpendApprovalClaims(BaseModel):
     """
-    What the server signs. exp is at most 600 seconds after iat.
+    What the Server signs. exp is at most 600 seconds after iat.
     """
 
     iss: Literal["server"]

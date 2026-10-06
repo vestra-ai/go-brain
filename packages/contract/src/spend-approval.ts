@@ -3,12 +3,12 @@ import { z } from 'zod';
 import { Currency, Id, IsoDateTime, PositiveAmountMinor } from './common.js';
 
 /**
- * The signed spend approval: the server's half of the two keys.
+ * The signed spend approval: the Server's half of the two keys.
  *
- * The server runs the spend check and signs this with its Ed25519 private key. Go's vault
+ * The Server runs the spend check and signs this with its Ed25519 private key. Go's vault
  * pays only with a valid, unexpired, unused approval AND the payer's own passkey (Face ID). Neither
  * key is the model's word. One use: the vault records `jti` and refuses it a second time, and
- * The server marks it used when Go records the booking.
+ * The Server marks it used when Go records the booking.
  *
  * Wire format (a compact JWS):
  *   base64url(header JSON) "." base64url(claims JSON) "." base64url(Ed25519 signature over the first two parts)
@@ -39,7 +39,7 @@ export const SpendApprovalClaims = z
   .refine((c) => c.exp > c.iat && c.exp - c.iat <= MAX_APPROVAL_TTL_SECONDS, {
     message: `exp must be after iat and at most ${MAX_APPROVAL_TTL_SECONDS} seconds later`,
   })
-  .meta({ id: 'SpendApprovalClaims', description: 'What the server signs. exp is at most 600 seconds after iat.' });
+  .meta({ id: 'SpendApprovalClaims', description: 'What the Server signs. exp is at most 600 seconds after iat.' });
 export type SpendApprovalClaims = z.infer<typeof SpendApprovalClaims>;
 
 const b64 = (v: string | Buffer): string => Buffer.from(v).toString('base64url');

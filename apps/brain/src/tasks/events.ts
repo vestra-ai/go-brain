@@ -39,7 +39,7 @@ interface V1Interaction {
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 
-/** "mcp__go-trip__trip" or ("go-trip", "trip"): the server and the bare tool name. */
+/** "mcp__go-trip__trip" or ("go-trip", "trip"): the MCP server and the bare tool name. */
 function toolOf(name: string | null, server: string | null): { server: string | null; tool: string | null } {
   const m = name ? /^mcp__(.+?)__(.+)$/.exec(name) : null;
   return m ? { server: m[1] ?? null, tool: m[2] ?? null } : { server, tool: name };

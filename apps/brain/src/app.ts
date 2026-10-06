@@ -43,7 +43,7 @@ export interface Brain {
   anthropic: AnthropicLike;
   /**
    * Lanes stop their timers, streams and sockets here. `built.stop()` runs every stopper in reverse order of
-   * registration (each awaited; one that throws is logged and the rest still run), then closes the server and pool.
+   * registration (each awaited; one that throws is logged and the rest still run), then closes the HTTP server and the pool.
    */
   onStop(fn: () => Promise<void> | void): void;
   door: Door;

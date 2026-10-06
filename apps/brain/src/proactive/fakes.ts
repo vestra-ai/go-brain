@@ -1,5 +1,5 @@
 // Test fakes shared by the proactive, watches and calls tests: the Goa trip from the guide, a pack, a
-// server link that records every request, a desk that keeps what it is given, a clock whose timers move by
+// ServerLink that records every request, a desk that keeps what it is given, a clock whose timers move by
 // hand, and a fake Brain that records what a lane registers. Nothing here runs in production.
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';

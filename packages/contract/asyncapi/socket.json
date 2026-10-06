@@ -3,7 +3,7 @@
   "info": {
     "title": "The Go brain socket",
     "version": "1.0.0",
-    "description": "Described from Go's side: \"receive\" methods are sent by the server, \"send\" methods are sent by Go. Frames are JSON-RPC 2.0."
+    "description": "Described from Go's side: \"receive\" methods are sent by the Server, \"send\" methods are sent by Go. Frames are JSON-RPC 2.0."
   },
   "servers": {
     "staging": {
@@ -77,7 +77,7 @@
         "card_tap": {
           "name": "card_tap",
           "title": "card_tap",
-          "summary": "Someone tapped a button on one of Go's cards. Go answers what the app should do.",
+          "summary": "Someone tapped a button on one of Go's cards. Go answers what the App should do.",
           "payload": {
             "type": "object",
             "required": [
@@ -1521,7 +1521,7 @@
       "channel": {
         "$ref": "#/channels/socket"
       },
-      "summary": "Someone tapped a button on one of Go's cards. Go answers what the app should do.",
+      "summary": "Someone tapped a button on one of Go's cards. Go answers what the App should do.",
       "messages": [
         {
           "$ref": "#/channels/socket/messages/card_tap"
@@ -2068,7 +2068,7 @@
           "activities",
           "other"
         ],
-        "description": "The spending category. The app colours: stay blue, food orange, getting around green, activities yellow."
+        "description": "The spending category. The App colours: stay blue, food orange, getting around green, activities yellow."
       },
       "PersonActor": {
         "type": "object",
@@ -2127,7 +2127,7 @@
         "discriminator": {
           "propertyName": "kind"
         },
-        "description": "Who did it: a person, Go, or the server itself (system)."
+        "description": "Who did it: a person, Go, or the Server itself (system)."
       },
       "Place": {
         "type": "object",
@@ -2571,7 +2571,7 @@
           "kind",
           "decision_id"
         ],
-        "description": "A vote. The server draws the options, the tally and the vote buttons."
+        "description": "A vote. The Server draws the options, the tally and the vote buttons."
       },
       "MandateCard": {
         "type": "object",
@@ -2618,7 +2618,7 @@
           "kind",
           "decision_id"
         ],
-        "description": "Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The server shows \"Yes, book it\" and \"Not now\" to the payer only."
+        "description": "Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The Server shows \"Yes, book it\" and \"Not now\" to the payer only."
       },
       "TicketCard": {
         "type": "object",
@@ -6491,7 +6491,7 @@
           "trip_id",
           "after_seq"
         ],
-        "description": "Up to 200 at a time; 200 when limit is left out. The server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit."
+        "description": "Up to 200 at a time; 200 when limit is left out. The Server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit."
       },
       "WriteResult": {
         "type": "object",
@@ -8328,7 +8328,7 @@
           "iat",
           "exp"
         ],
-        "description": "What the server signs. exp is at most 600 seconds after iat."
+        "description": "What the Server signs. exp is at most 600 seconds after iat."
       }
     }
   }
