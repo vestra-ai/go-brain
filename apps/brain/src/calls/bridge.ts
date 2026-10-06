@@ -37,6 +37,8 @@ export const GREET_AFTER_MS = 4_000;
 export const WRAP_UP_BEFORE_MS = 20_000;
 export const HANG_UP_AFTER_GOODBYE_MS = 2_500;
 export const HANG_UP_AFTER_REPORT_MS = 15_000;
+/** The Twilio mark that comes back once the goodbye has played (gpt-realtime). */
+const GOODBYE_MARK = 'go_goodbye';
 /** Barge-in without a speech event (gpt-live-1): this loud for this many 20 ms frames while Go's audio plays. Tuned on day one. */
 export const BARGE_IN_LEVEL = 1_500;
 export const BARGE_IN_FRAMES = 3;
@@ -209,7 +211,9 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
         if (reported && goodbyeId === null) goodbyeId = e.id;
         return;
       case 'response_done':
-        if (goodbyeId !== null && e.id === goodbyeId) cancels.push(d.schedule(() => hangUp('hangup'), HANG_UP_AFTER_GOODBYE_MS));
+        // The goodbye is generated, but Twilio may still be playing it: ask Twilio to say when it has played, and
+        // hang up shortly after that (a Live wire already marks every chunk of Go's audio).
+        if (goodbyeId !== null && e.id === goodbyeId && wire.bargeIn === 'model') toTwilio({ event: 'mark', streamSid, mark: { name: GOODBYE_MARK } });
         return;
       case 'error':
         d.log.warn({ callId, error: e.error }, 'calls: the voice model reported an error');
@@ -280,6 +284,10 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
       return;
     }
     if (frame.event === 'mark' && frame.mark) {
+      if (frame.mark.name === GOODBYE_MARK) {
+        cancels.push(d.schedule(() => hangUp('hangup'), HANG_UP_AFTER_GOODBYE_MS));
+        return;
+      }
       playing.delete(frame.mark.name);
       afterPlayed();
       return;

@@ -115,7 +115,7 @@ describe('attachBridge on gpt-realtime-2.1 (the default)', () => {
     s.fromModel({ type: 'response.output_audio.delta', response_id: 'resp_1', item_id: 'item_1', delta: toneFrame(0) });
     await waitFor(() => s.twilioGot.some((f) => f.event === 'media'));
     expect(s.twilioGot.find((f) => f.event === 'media')).toEqual({ event: 'media', streamSid: 'MZ1', media: { payload: toneFrame(0) } });
-    expect(s.twilioGot.some((f) => f.event === 'mark')).toBe(false); // marks are for the Live wire only
+    expect(s.twilioGot.some((f) => f.event === 'mark')).toBe(false); // a mark after each chunk is for the Live wire only
 
     const frames = [10, 11, 12].map(toneFrame);
     frames.forEach((payload, i) => s.send({ event: 'media', sequenceNumber: String(i + 2), streamSid: 'MZ1', media: { track: 'inbound', chunk: String(i + 1), timestamp: String(i * 20), payload } }));
@@ -144,7 +144,14 @@ describe('attachBridge on gpt-realtime-2.1 (the default)', () => {
     s.fromModel({ type: 'response.done', response: { id: 'resp_3' } });
     s.fromModel({ type: 'response.created', response: { id: 'resp_4' } });
     s.fromModel({ type: 'response.done', response: { id: 'resp_4' } });
-    await waitFor(() => s.time.pending() === 5); // greet, wrap-up, cap, report fallback, goodbye
+    // The goodbye is generated; Go asks Twilio to say when it has played, and waits for that.
+    await waitFor(() => s.twilioGot.some((f) => f.event === 'mark'));
+    const goodbye = s.twilioGot.find((f) => f.event === 'mark')!;
+    expect(goodbye).toEqual({ event: 'mark', streamSid: 'MZ1', mark: { name: 'go_goodbye' } });
+    s.time.advance(10_000); // still playing: no hang-up yet
+    expect(s.seen.hangUps).toEqual([]);
+    s.send({ event: 'mark', streamSid: 'MZ1', mark: goodbye.mark });
+    await waitFor(() => s.time.pending() === 4); // wrap-up, cap, report fallback, goodbye
     s.time.advance(2_500);
     expect(s.seen.hangUps).toEqual(['call_1']);
     await waitFor(() => s.seen.ended.length === 1);
