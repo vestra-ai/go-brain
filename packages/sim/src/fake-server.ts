@@ -2,6 +2,7 @@
 // ?instance=), keeps trips in memory, answers all 18 of Go's methods with the contract's rules, and sends each
 // trip's events to Go one at a time, in change-number order, waiting for each answer. Its helpers play the
 // people in the room: say, react, edit, delete, tap, vote, a vote closing on time, and the payer's yes or no.
+import { randomBytes } from 'node:crypto';
 import { CardActionResult, EventAccepted, ForgetResult, SOCKET_PATH, type Event, type Message, type TripSnapshot } from '@go/contract';
 import type { z } from 'zod';
 import { GoSocket, SocketCallError, SocketTimeoutError, type Handler } from './server-socket.js';
@@ -87,6 +88,13 @@ export function socketUrl(goUrl: string, instance: string): string {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Keeps the items of a list that pass, in place. */
+function keepOnly<T>(list: T[], keep: (x: T) => boolean): void {
+  const kept = list.filter(keep);
+  list.length = 0;
+  for (const x of kept) list.push(x);
+}
 const RETRYABLE = new Set([429, 500, 503]);
 
 export class FakeServer {
@@ -102,6 +110,8 @@ export class FakeServer {
   private readonly now: () => Date;
   private readonly log: (line: string) => void;
   private n = 0;
+  /** Random for each FakeServer, so its ids never repeat after a restart: Go ignores an event_id it has seen. */
+  private readonly run = randomBytes(4).toString('hex');
   private open = false;
   private stopped = false;
 
@@ -303,6 +313,48 @@ export class FakeServer {
     return this.state(tripId).needsYou(personId);
   }
 
+  /** Whether a trip holds this person, message, card or decision. It copies nothing, so a refused action costs little. */
+  has(tripId: string, what: { person?: string; message?: string; card?: string; decision?: string }): boolean {
+    const s = this.trips.get(tripId);
+    if (!s) return false;
+    if (what.person !== undefined && !s.trip.people.some((p) => p.person_id === what.person)) return false;
+    if (what.message !== undefined && s.message(what.message) === undefined) return false;
+    if (what.card !== undefined && s.cardMessage(what.card) === undefined) return false;
+    if (what.decision !== undefined && s.decision(what.decision) === undefined) return false;
+    return true;
+  }
+
+  // ── for a FakeServer that runs for days (the hosted try room) ──
+
+  /** Drops a trip and everything recorded about it. Go's later requests for it are answered not_found. */
+  forgetTrip(tripId: string): void {
+    this.trips.delete(tripId);
+    this.queues.delete(tripId);
+    const at = this.order.indexOf(tripId);
+    if (at >= 0) this.order.splice(at, 1);
+    keepOnly(this.writes, (w) => w.trip_id !== tripId);
+    keepOnly(this.requests, (r) => r.params.trip_id !== tripId);
+    keepOnly(this.events, (e) => e.event.trip_id !== tripId);
+    this.changed();
+  }
+
+  /** Keeps only the newest `keep` writes, requests and events of each trip. */
+  trimRecords(keep: number): void {
+    const newest = <T>(list: T[], tripOf: (x: T) => unknown): void => {
+      const seen = new Map<unknown, number>();
+      const kept = new Set<T>();
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        const n = (seen.get(tripOf(list[i]!)) ?? 0) + 1;
+        seen.set(tripOf(list[i]!), n);
+        if (n <= keep) kept.add(list[i]!);
+      }
+      keepOnly(list, (x) => kept.has(x));
+    };
+    newest(this.writes, (w) => w.trip_id);
+    newest(this.requests, (r) => r.params.trip_id);
+    newest(this.events, (e) => e.event.trip_id);
+  }
+
   /** Called after every change: a write, a person's action, an event answered, the socket opening or closing. */
   onChange(fn: () => void): () => void {
     this.listeners.add(fn);
@@ -315,7 +367,7 @@ export class FakeServer {
 
   private mint(prefix: string): string {
     this.n += 1;
-    return `${prefix}${String(this.n).padStart(4, '0')}`;
+    return `${prefix}${this.run}_${String(this.n).padStart(4, '0')}`;
   }
 
   private state(tripId: string): TripState {

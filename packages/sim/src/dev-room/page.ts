@@ -385,8 +385,13 @@ ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete=
     ws.onmessage = function (ev) {
       var data = JSON.parse(ev.data);
       if (data.type === 'state') {
+        var was = person(me);
         state = data;
-        if (!person(me) && state.trip.people.length) me = state.trip.people[0].person_id;
+        if (!person(me) && state.trip.people.length) {
+          // A new trip has new ids for the same people: stay the same person, by name.
+          var same = was ? find(state.trip.people, 'name', was.name) : null;
+          me = same ? same.person_id : state.trip.people[0].person_id;
+        }
         render();
       } else if (data.type === 'tap_result') {
         var r = data.result;
@@ -406,7 +411,9 @@ ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete=
       }
     };
     ws.onopen = function () { fails = 0; };
-    ws.onclose = function () {
+    ws.onclose = function (e) {
+      // 4429: too many sockets. The room said why in its last message, and another try would be turned away too.
+      if (e.code === 4429) return;
       fails += 1;
       // The hosted room refuses a socket without a good passcode cookie: after a few tries, load the passcode page.
       if (document.body.getAttribute('data-hosted') && fails >= 3) { location.reload(); return; }

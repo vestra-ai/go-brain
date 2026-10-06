@@ -14,16 +14,12 @@ void fake.start().catch((err: unknown) => log(`the socket to Go did not open: ${
 const room = await serveTryRoom({
   fake,
   passcode: env.TRY_PASSCODE,
+  cookieSalt: env.TRY_COOKIE_SALT,
   goUrl: env.GO_URL,
   port: env.PORT,
   host: '0.0.0.0',
   trustProxy: true,
-  caps: {
-    dailyGoAsks: env.TRY_DAILY_GO_ASKS,
-    dailyMessages: env.TRY_DAILY_MESSAGES,
-    sessionGoAsks: env.TRY_SESSION_GO_ASKS,
-    dailyTrips: env.TRY_DAILY_TRIPS,
-  },
+  caps: { dailyTurns: env.TRY_DAILY_TURNS, dailyMessages: env.TRY_DAILY_MESSAGES },
   simulatedLine: env.TRY_SIMULATED_LINE,
   log,
 });
