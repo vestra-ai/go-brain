@@ -8,7 +8,7 @@ This page explains the recording in this folder: where it comes from, how each q
 
 - `jev-2026-10-06.json`: Jev's answers to every question for every line of the test set, as recorded, unedited. It is the same file, byte for byte, as `apps/brain/src/reflex/testsets/recorded/jev-1.13.0.json`, which CI scores on every change.
 - `jev-2026-10-06.txt`: what the recording printed, unedited: one line per question at the bars Go had when it was recorded, then the bar sweep (each bar's values and what they give).
-- `jev-2026-10-06-repeat.json` and `jev-2026-10-06-repeat.txt`: a second recording of the same lines about 19 minutes later, at the bars Go has now, unedited. Go does not use it; it shows how much Jev's answers move between two runs (see "Asked twice" below).
+- `jev-2026-10-06-repeat.json` and `jev-2026-10-06-repeat.txt`: a second recording of the same lines about 19 minutes later, unedited. Go does not use it; it shows how much Jev's answers move between two runs (see "Asked twice" below).
 
 ## Where the answers come from
 
@@ -37,7 +37,7 @@ At the bars Go has now. Recall by language is right over labelled in that langua
 
 | # | Question | Lines | Sure | Wrong | Recall | English / Hinglish | Gate | Result |
 |---|---|---|---|---|---|---|---|---|
-| 1 | Is the message for Go, or chatter? | 13 | 11 | 0 | 0.85 | 0.78 / 1.00 | 0.5 | live |
+| 1 | Is the message for Go, or chatter? | 13 | 10 | 0 | 0.77 | 0.78 / 0.75 | 0.5 | live |
 | 2 | Is the message finished? | 11 | 2 | 0 | 0.18 | 0.14 / 0.25 | 0.5 | shadow |
 | 3 | A quick ask, or big work? | 9 | 0 | 0 | 0.00 | 0.00 / 0.00 | 0.4 | shadow |
 | 4 | Which running job is it about? | 6 | 4 | 0 | 0.67 | 0.75 / 0.50 | 0.5 | live |
@@ -49,16 +49,17 @@ At the bars Go has now. Recall by language is right over labelled in that langua
 
 So questions 1, 4, 5, 6, 7 and 8 act live (`PASSED_SETS` in `apps/brain/src/reflex/live-gate.ts`, and `REFLEX_LIVE` defaults to `q1,q4,q5,q6,q7,q8`). The admin page's `REFLEX_LIVE` switch can narrow that list or turn Jev off, but it cannot make a question in shadow act live. Jev never gave a sure wrong answer on any question. Questions 2, 3 and 9 stay in shadow because Jev was too rarely sure on them: no value in the sweep brings them to their gate (the best, in the recording CI scores, are 0.18, 0.22 and 0.17).
 
-The rows are the lines the second recording printed (`jev-2026-10-06-repeat.txt`), since it ran at these bars. The first recording ran before question 1's bar moved; its lines for questions 2 to 9 are the same.
+Rows 2 to 9 are the lines both recordings printed. Row 1 is the sweep line both printed for a chatter bar of 0.85 (`for_go chatterMin=0.85 recall=0.77 wrong=0`); its sure count and its split by language are worked out from the recorded answers, and CI's scorer checks on every change that question 1 passes at this bar.
 
 ### The one bar that moved
 
-Question 1 reads a line as sure chatter when Jev's "chatter" answer is at least a bar and its "for Go" answer at most 0.2. Go took that bar, 0.9, from Bash, where it was measured on 149 lines. At 0.9 question 1 failed here (recall 0.46): Jev read the six chatter lines at 0.76 to 0.89, so none was sure. The sweep tried 0.8, 0.85, 0.9 and 0.95; 0.8 gives the best recall with no wrong answer (0.85), so the bar is 0.8. Five of the six chatter lines are now sure; "I'm veg btw" (0.76) stays unsure.
+Question 1 reads a line as sure chatter when Jev's "chatter" answer is at least a bar and its "for Go" answer at most 0.2. Go took that bar, 0.9, from Bash, where it was measured on 149 lines. At 0.9 question 1 failed here (recall 0.46): Jev read the six chatter lines at 0.76 to 0.89, so none was sure. The sweep tried 0.8, 0.85, 0.9 and 0.95. Both 0.8 and 0.85 give no wrong answer (recall 0.85 and 0.77). The bar is 0.85, the one with more margin, because the two mistakes do not cost the same: an ask read as chatter goes unanswered, while a needless wake costs one model call. Four of the six chatter lines are now sure; "I'm veg btw" (0.76) and "chal theek hai, kal baat karte hain" (0.83) stay unsure.
 
 Read this with care:
 
 - The bar was chosen on the same 13 lines it is scored on.
-- Six of question 1's 11 right answers are lines that name Go, which code gets right without Jev. Jev's own part is the five chatter lines.
+- Six of question 1's 10 right answers are lines that name Go, which code gets right without Jev. Jev's own part is the four chatter lines.
+- One chatter line sits on the bar: Jev read "hahaha Kabir you're never waking up at 6" at 0.86 the first time and 0.85 the second. If it reads lower, the line is unsure and Go wakes for it: a model call, not a missed ask.
 - The one ask that does not name Go ("can someone check trains from Mumbai on Thursday?") stayed unsure, so Go still wakes for it.
 
 Every other bar is unchanged. The sweep also shows question 5 would reach 0.86 at 0.7 instead of 0.8, and question 8 would raise one false alarm at 0.4 or lower; neither was needed to pass, so neither moved.
