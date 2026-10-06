@@ -184,6 +184,7 @@ describe('stopping a job', () => {
     await tasks.settled();
     const v1Id = await mapped(r.taskId);
     await tasks.stop(r.taskId);
+    await tasks.settled();
     await cards.flush();
     expect(lb.link.card(r.cardId)).toMatchObject({ state: 'failed', fallback_text: `Stopped: ${TITLE}`, actions: [] });
     expect(lb.desk.cancelled).toContainEqual({ tripId: 't_s', ref: r.taskId });
@@ -194,9 +195,37 @@ describe('stopping a job', () => {
     const early = await tasks.start('t_s', { ...VILLAS, key: 'stop2' });
     await tasks.settled();
     await tasks.stop(early.taskId);
+    await tasks.settled();
     const v1Id = await mapped(early.taskId);
     expect(fake.tasks.get(v1Id)?.stopped).toBe(true);
     expect((await store.get(early.taskId))?.state).toBe('stopped');
+  });
+
+  it('answers a stop at once with the job stopped in Go, and stops it on /v1 behind, however slow /v1 is', async () => {
+    const real = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
+    let release!: () => void;
+    const slow = new Promise<void>((r) => {
+      release = r;
+    });
+    // /v1 takes as long as the test likes to answer a stop.
+    const v1 = { ...real, call: async <T>(method: Parameters<typeof real.call>[0], path: string, opts?: Parameters<typeof real.call>[2]): Promise<T> => {
+      if (/\/stop$/.test(path)) await slow;
+      return real.call<T>(method, path, opts);
+    } };
+    const computer = createComputer({ pool: db.pool, v1, tokens: createTokenStore(db.pool, lb.clock.now), env: { VESTRA_DEPLOYMENT_ID: 'dep_go', VESTRA_MCP_SERVER_ID: 'mcp_go' }, now: lb.clock.now, log: lb.brain.log });
+    const own = createTasks({ store, v1, computer, cards, link: lb.link, desk: lb.desk, packs: lb.brain.packs, now: lb.clock.now, log: lb.brain.log, follow: () => undefined });
+    const r = await own.start('t_slow_stop', { ...VILLAS, key: 'slow1' });
+    await own.settled();
+    const row = (await store.get(r.taskId))!;
+    const t = fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
+    await store.recordStart(row.v1TurnId!, t.id, row.title);
+    await own.mapStarts();
+    await own.stop(r.taskId);
+    expect((await store.get(r.taskId))?.state).toBe('stopped');
+    expect(fake.tasks.get(t.id)?.stopped).toBe(false);
+    release();
+    await own.settled();
+    expect(fake.tasks.get(t.id)?.stopped).toBe(true);
   });
 
   it("looks the job up on /v1 when the stop lands after /v1 started it but before Go heard, and stops it there", async () => {
@@ -206,6 +235,7 @@ describe('stopping a job', () => {
     // /v1 has started the job, but its task.started has not reached Go.
     const t = fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
     await tasks.stop(r.taskId);
+    await tasks.settled();
     expect(fake.tasks.get(t.id)?.stopped).toBe(true);
     expect(await store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
   });

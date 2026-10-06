@@ -108,6 +108,7 @@ describe('the sweep', () => {
     const r = await h.tasks.start('t_sw8', { ...VILLA_BRIEF, key: 'sw8' });
     await h.tasks.settled();
     await h.tasks.stop(r.taskId);
+    await h.tasks.settled();
     const row = (await h.store.get(r.taskId))!;
     // /v1 starts it only now, and Go hears nothing: no stream, and the events poll is already past it.
     const t = h.fake.startTask(row.conversationId!, row.v1TurnId!, row.title);

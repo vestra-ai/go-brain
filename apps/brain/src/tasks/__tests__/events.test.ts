@@ -144,6 +144,7 @@ describe('applying /v1 events', () => {
   it('never posts results for a job that was stopped, even when /v1 finishes it afterwards', async () => {
     const { row, v1TaskId } = await h.runningJob('ev7', 't_ev7');
     await h.tasks.stop(row.id);
+    await h.tasks.settled();
     h.fake.tasks.get(v1TaskId)!.status = 'working';
     h.fake.complete(v1TaskId, VILLAS, 'Found three villas.');
     await h.events.apply({ type: 'task.completed', data: { task_id: v1TaskId }, source: 'webhook' });
