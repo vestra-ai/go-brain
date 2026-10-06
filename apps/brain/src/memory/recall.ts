@@ -2,8 +2,10 @@
  * Recall: a word search over this trip's messages and facts, under 100 ms. The question's content words are
  * matched with English stemming ("paying" finds "pays") and by prefix, and with trigrams for romanised spellings
  * ("khana", "khaana"). A rare word counts for more than a common one, so "scooter" outweighs "want" in a chat full
- * of "I want ...". Facts rank first: they are the checked, short form of what someone said. Deleted messages, other
- * trips and a forgotten person's earlier words never come back.
+ * of "I want ...". The best answer comes first, a fact or a message alike. A fact comes back with the words and number
+ * of the message it was said in, and the numbers of earlier messages on its topic, so the answer keeps its proof; on
+ * a tie the fact wins. Someone the question names brings at most two of their facts that match no word. Deleted
+ * messages, other trips and a forgotten person's earlier words never come back.
  */
 import type { Pool } from 'pg';
 import { maskSecrets } from '../reflex/secrets.js';
@@ -49,10 +51,27 @@ const EXPANDED_WEIGHT = 0.5;
 const NAMED_BONUS = 2;
 /** A trigram match alone (a romanised spelling) counts for less than a stemmed word match. */
 const TRIGRAM_WEIGHT = 1;
+/** A fact over a message that scores the same: the checked, short form wins a tie. */
+const FACT_EDGE = 0.5;
+/** Facts of someone the question names that match no word of it: some context, never a crowd. */
+const OTHER_FACTS_MAX = 2;
+/** The earlier messages on a fact's topic it names, newest first. */
+const EARLIER_MAX = 3;
+/** How much of a fact's source message comes with it. */
+const SAID_MAX = 200;
 
 interface Term {
   word: string;
   weight: number;
+}
+
+/** A candidate answer; a fact keeps what its proof needs. */
+interface Ranked {
+  hit: RecallHit;
+  score: number;
+  lexemes: number;
+  same: string;
+  fact?: { personId: string; topic: string; said: string; other: boolean };
 }
 
 /** The question's content words, then each one's extra words, at most 16. Contractions drop their tails first. */
@@ -94,18 +113,26 @@ export async function recall(
   const nameOf = new Map(pack.trip.people.map((p) => [p.person_id, p.name]));
   const named = pack.trip.people.filter((p) => words.includes((p.name.toLowerCase().split(/\s+/)[0] ?? '').trim())).map((p) => p.person_id);
   // Words are letters and digits only, so they cannot break to_tsquery.
-  const tsq = words.map((w) => `${w}:*`).join(' | ');
-
-  const facts = await pool.query<{ person_id: string; topic: string; text: string; message_id: string; seq: number; rank: number }>(
-    `SELECT f.person_id, f.topic, f.text, f.message_id, m.seq,
-            ts_rank(to_tsvector('english', f.topic || ' ' || f.text), to_tsquery('english', $2)) AS rank
-       FROM facts f
-       JOIN messages m ON m.trip_id = f.trip_id AND m.message_id = f.message_id AND m.deleted_at IS NULL
-      WHERE f.trip_id = $1 AND f.superseded_by IS NULL AND ($4::text = 'go' OR f.audience = 'group')
-        AND (to_tsvector('english', f.topic || ' ' || f.text) @@ to_tsquery('english', $2) OR f.person_id = ANY($3::text[]))
-      ORDER BY rank DESC
-      LIMIT 20`,
-    [tripId, tsq, named, audience],
+  const facts = await pool.query<{ person_id: string; topic: string; text: string; message_id: string; seq: number; said: string | null; words: string[] }>(
+    `SELECT * FROM (
+       SELECT f.person_id, f.topic, f.text, f.message_id, m.seq, m.text AS said,
+              ARRAY(SELECT u.word FROM unnest($2::text[]) AS u(word)
+                     WHERE to_tsvector('english', f.topic || ' ' || f.text) @@ to_tsquery('english', u.word || ':*')) AS words
+         FROM facts f
+         JOIN messages m ON m.trip_id = f.trip_id AND m.message_id = f.message_id AND m.deleted_at IS NULL
+        WHERE f.trip_id = $1 AND f.superseded_by IS NULL AND ($4::text = 'go' OR f.audience = 'group')
+     ) c
+     WHERE cardinality(c.words) > 0 OR c.person_id = ANY($3::text[])`,
+    [tripId, words, named, audience],
+  );
+  // How many messages each word matches, so a fact's words weigh what they weigh in the chat.
+  const df = await pool.query<{ word: string; n: number }>(
+    `SELECT u.word, count(m.message_id)::float8 AS n
+       FROM unnest($2::text[]) AS u(word)
+       LEFT JOIN messages m ON m.trip_id = $1 AND m.deleted_at IS NULL AND m.text IS NOT NULL
+                           AND m.text_tsv_en @@ to_tsquery('english', u.word || ':*')
+      GROUP BY u.word`,
+    [tripId, words],
   );
 
   // Every message a word matches, weighted by how rare the word is in this trip (inverse document frequency), plus a
@@ -154,17 +181,12 @@ export async function recall(
         [tripId, near],
       );
 
-  const best = new Map<string, { hit: RecallHit; score: number; lexemes: number; same: string }>();
+  const best = new Map<string, Ranked>();
   const put = (hit: RecallHit, score: number, lexemes: number, words: string): void => {
     const had = best.get(hit.messageId);
     const same = words.toLowerCase().replace(/\s+/g, ' ').trim();
     if (!had || had.score < score) best.set(hit.messageId, { hit, score, lexemes, same });
   };
-  // Facts come first, whatever a message scores.
-  for (const f of facts.rows) {
-    const score = 1_000 + Number(f.rank) + (named.includes(f.person_id) ? 0.5 : 0);
-    put({ text: `${nameOf.get(f.person_id) ?? 'Someone'} (${f.topic}): ${f.text}`, messageId: f.message_id, seq: f.seq }, score, 0, f.text);
-  }
   const forgottenMessage = (personId: string | null, seq: number): boolean => {
     if (!personId) return false;
     const upTo = forgotten.get(personId);
@@ -184,16 +206,75 @@ export async function recall(
     const bonus = m.person_id && named.includes(m.person_id) ? NAMED_BONUS : 0;
     put(messageHit(m), TRIGRAM_WEIGHT * Number(m.sim) + bonus, Number(m.lexemes), m.text);
   }
+  // A fact takes its message's place, with that message's words. It scores what its own words score (weighed like a
+  // message's), or what its message scored when that is more, plus the fact's edge. A fact that matches no word and
+  // whose message matched none either is one of the named person's other facts: it scores the name alone.
+  const idf = new Map(df.rows.map((r) => [r.word, Math.max(Math.log((pack.messages.length + 1) / (Number(r.n) + 0.5)), 0.1)]));
+  const weightOf = new Map(terms.map((t) => [t.word, t.weight]));
+  const messageScore = new Map([...best].map(([id, x]) => [id, x.score]));
+  for (const f of facts.rows) {
+    if (forgottenMessage(f.person_id, f.seq)) continue;
+    const isNamed = named.includes(f.person_id);
+    const own = f.words.reduce((s, w) => s + (weightOf.get(w) ?? 0) * (idf.get(w) ?? 0.1), 0) + (isNamed ? NAMED_BONUS : 0);
+    const base = messageScore.get(f.message_id);
+    const other = f.words.length === 0 && base === undefined;
+    const score = other ? (isNamed ? NAMED_BONUS : 0) : Math.max(f.words.length > 0 ? own : 0, base ?? 0) + FACT_EDGE;
+    const had = best.get(f.message_id);
+    if (had?.fact && had.score >= score) continue;
+    best.set(f.message_id, {
+      hit: { text: `${nameOf.get(f.person_id) ?? 'Someone'} (${f.topic}): ${f.text}`, messageId: f.message_id, seq: f.seq },
+      score,
+      lexemes: 0,
+      same: f.text.toLowerCase().replace(/\s+/g, ' ').trim(),
+      fact: { personId: f.person_id, topic: f.topic, said: f.said ? maskSecrets(f.said).text.slice(0, SAID_MAX) : '', other },
+    });
+  }
   // Ties go to the shorter message (a plain statement beats a long one that mentions the word), then the newer.
   // The same words said again (chat filler) come back once, so they never crowd out the line that answers.
   const ranked = [...best.values()].sort((a, b) => b.score - a.score || a.lexemes - b.lexemes || b.hit.seq - a.hit.seq);
   const said = new Set<string>();
-  const out: RecallHit[] = [];
+  const out: Ranked[] = [];
+  let others = 0;
   for (const x of ranked) {
     if (said.has(x.same)) continue;
+    if (x.fact?.other) {
+      if (others === OTHER_FACTS_MAX) continue;
+      others += 1;
+    }
     said.add(x.same);
-    out.push(x.hit);
+    out.push(x);
     if (out.length === RECALL_MAX) break;
   }
-  return out;
+
+  // The proof: each fact names the message it was said in, with its words, and the earlier messages on its topic
+  // (a newer fact on a topic replaces the older one, whose message still says it first).
+  const shown = out.flatMap((x) => (x.fact ? [`${x.fact.personId}:${x.fact.topic}`] : []));
+  const earlier = new Map<string, number[]>();
+  if (shown.length > 0) {
+    const r = await pool.query<{ person_id: string; topic: string; seq: number }>(
+      `SELECT f.person_id, f.topic, m.seq FROM facts f
+         JOIN messages m ON m.trip_id = f.trip_id AND m.message_id = f.message_id AND m.deleted_at IS NULL
+        WHERE f.trip_id = $1 AND f.superseded_by IS NOT NULL AND ($3::text = 'go' OR f.audience = 'group')
+          AND f.person_id || ':' || f.topic = ANY($2::text[])`,
+      [tripId, shown, audience],
+    );
+    for (const row of r.rows) {
+      if (forgottenMessage(row.person_id, row.seq)) continue;
+      const key = `${row.person_id}:${row.topic}`;
+      earlier.set(key, [...(earlier.get(key) ?? []), row.seq]);
+    }
+  }
+  return out.map((x) => {
+    if (!x.fact) return x.hit;
+    const who = nameOf.get(x.fact.personId) ?? 'Someone';
+    const before = [...new Set(earlier.get(`${x.fact.personId}:${x.fact.topic}`) ?? [])]
+      .filter((s) => s < x.hit.seq)
+      .sort((a, b) => b - a)
+      .slice(0, EARLIER_MAX);
+    const proof = [
+      x.fact.said ? `#${x.hit.seq} ${who}: ${x.fact.said}` : `#${x.hit.seq}`,
+      ...(before.length ? [`earlier on this topic: ${before.map((s) => `#${s}`).join(', ')}`] : []),
+    ].join('; ');
+    return { ...x.hit, text: `${x.hit.text} (${proof})` };
+  });
 }
