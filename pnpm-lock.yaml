@@ -167,6 +167,40 @@ importers:
         specifier: ^4.0.17
         version: 4.1.11(@types/node@20.19.43)(@vitest/coverage-v8@4.1.11)(vite@8.3.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.0))
 
+  packages/bench:
+    dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.93.0
+        version: 0.93.0(zod@4.3.6)
+      '@go/brain':
+        specifier: workspace:*
+        version: link:../../apps/brain
+      '@go/contract':
+        specifier: workspace:*
+        version: link:../contract
+      '@go/sim':
+        specifier: workspace:*
+        version: link:../sim
+      '@vestra/agent-sdk':
+        specifier: workspace:*
+        version: link:../agent-sdk
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.0
+        version: 20.19.43
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.15
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.17
+        version: 4.1.11(@types/node@20.19.43)(@vitest/coverage-v8@4.1.11)(vite@8.3.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.0))
+
   packages/contract:
     dependencies:
       zod:
