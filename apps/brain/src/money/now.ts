@@ -28,7 +28,11 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
           continue;
         }
         if (r.state === 'confirming') {
-          lines.push(`- The bank is still confirming ${r.payer_name}'s payment of ${amount} for ${r.label}. Never start it again; Go says when it's done.`);
+          lines.push(
+            r.checking_at
+              ? `- Go couldn't confirm ${r.payer_name}'s payment of ${amount} for ${r.label}; a person is checking it. Never start it again.`
+              : `- The bank is still confirming ${r.payer_name}'s payment of ${amount} for ${r.label}. Never start it again; Go says when it's done.`,
+          );
           continue;
         }
         if (r.created_at.getTime() < since) continue;

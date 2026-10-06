@@ -14,7 +14,7 @@ type Paid = { tripId: string; approvalId: string; railRef: string };
 export interface PayEngine extends Pay {
   paid(p: Paid): Promise<'ok' | 'unknown'>;
   failed(p: { tripId: string; approvalId: string; reason: VaultFailReason }): Promise<'ok' | 'unknown'>;
-  confirming(p: { tripId: string; approvalId: string }): Promise<'ok' | 'unknown'>;
+  confirming(p: { tripId: string; approvalId: string; checking?: boolean }): Promise<'ok' | 'unknown'>;
   approveTap(tap: CardTapParams, card: C.Card): Promise<CardTapResult>;
   declineTap(tap: CardTapParams, card: C.Card): Promise<CardTapResult>;
   tripEvent(ev: TripEvent): Promise<void>;

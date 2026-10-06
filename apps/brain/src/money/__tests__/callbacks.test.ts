@@ -80,6 +80,9 @@ describe("the vault's call back", () => {
     expect(res.statusCode).toBe(200);
     expect((await getPayment(k.pool, paymentId))?.state).toBe('confirming');
     expect((await call('/internal/vault/confirming', { trip_id: 't_goa', approval_id: 'ap_unknown_01' })).res.statusCode).toBe(404);
+    const { res: checking } = await call('/internal/vault/confirming', { trip_id: 't_goa', approval_id: approvalId, checking: true });
+    expect(checking.statusCode).toBe(200);
+    expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'confirming', checking_at: expect.any(Date) });
   });
 
   it('marks the payment failed on failed', async () => {

@@ -27,7 +27,7 @@ function stateToast(row: PaymentRow): string {
     case 'failed':
       return TOASTS.failed;
     case 'confirming':
-      return TOASTS.confirming;
+      return row.checking_at ? TOASTS.checking : TOASTS.confirming;
     default:
       return TOASTS.notReady;
   }
@@ -75,7 +75,7 @@ export async function approveTap(t: TapDeps, tap: CardTapParams, card: C.Card): 
   if (!row) return refused(TOASTS.gone);
   if (tap.person_id !== row.payer_person_id) return refused(TOASTS.notPayer(row.payer_name));
   // The bank has not answered about a charge: no new page, and never Start again.
-  if (row.state === 'confirming') return refused(TOASTS.confirming);
+  if (row.state === 'confirming') return refused(row.checking_at ? TOASTS.checking : TOASTS.confirming);
   if (row.state === 'expired') {
     startAgain(t, row, tap.tap_id);
     return done(TOASTS.restart);

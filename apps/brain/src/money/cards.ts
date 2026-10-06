@@ -24,7 +24,7 @@ export interface PayCardInput {
  * How Go draws a pay card: one of the contract's states, or 'confirming' while the vault asks the bank about a charge.
  * The contract has no state for that, so it goes out as a waiting card with no buttons and words that say so.
  */
-export type PayCardLook = PayCardState | 'confirming';
+export type PayCardLook = PayCardState | 'confirming' | 'checking';
 
 /** The pay card in each of its states. Only the payer sees the buttons; settled cards carry none. */
 export function payCard(i: PayCardInput, look: PayCardLook): PayCard {
@@ -39,8 +39,9 @@ export function payCard(i: PayCardInput, look: PayCardLook): PayCard {
     expired: `The payment of ${amount} to ${merchant} timed out.`,
     failed: `The payment of ${amount} to ${merchant} didn't go through. Nothing was charged.`,
     confirming: `Confirming ${amount} to ${merchant} with the bank. Don't pay again; Go will say when it's done.`,
+    checking: "We couldn't confirm this payment. Don't pay again; we're checking.",
   };
-  const state: PayCardState = look === 'confirming' ? 'waiting' : look;
+  const state: PayCardState = look === 'confirming' || look === 'checking' ? 'waiting' : look;
   const only = [i.payerPersonId];
   const actions =
     look === 'waiting'

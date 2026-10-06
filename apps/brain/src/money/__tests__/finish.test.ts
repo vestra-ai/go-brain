@@ -196,6 +196,17 @@ describe('a payment the bank has not confirmed yet', () => {
     expect(C.PayCard.parse(k.server.cards.get(cardId)).state).toBe('paid');
   });
 
+  it('says a person is checking once the vault stops asking the bank, and stays open', async () => {
+    await markConfirming(k.deps, { tripId: 't_goa', approvalId });
+    await reconcile(k.deps, paymentId);
+    await markConfirming(k.deps, { tripId: 't_goa', approvalId, checking: true });
+    await reconcile(k.deps, paymentId);
+    expect(C.PayCard.parse(k.server.cards.get(cardId)).fallback_text).toBe("We couldn't confirm this payment. Don't pay again; we're checking.");
+    expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'confirming', card_state: 'checking' });
+    expect(await k.ask()).toMatchObject({ code: 'approval_outstanding' });
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+  });
+
   it('turns failed, with nothing charged, when the vault says the charge failed', async () => {
     await markConfirming(k.deps, { tripId: 't_goa', approvalId });
     await markFailed(k.deps, { tripId: 't_goa', approvalId, reason: 'card_declined' });

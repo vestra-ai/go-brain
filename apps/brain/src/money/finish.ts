@@ -52,7 +52,10 @@ export async function markFailed(d: MoneyDeps, p: { tripId: string; approvalId: 
  * The vault says the bank has not answered about a charge yet. The payment waits on it: it never expires and cannot be
  * started again until the vault says paid or failed.
  */
-export async function markConfirming(d: MoneyDeps, p: { tripId: string; approvalId: string }): Promise<PaymentRow | null> {
+export async function markConfirming(
+  d: MoneyDeps,
+  p: { tripId: string; approvalId: string; checking?: boolean },
+): Promise<PaymentRow | null> {
   const row = await byApproval(d.pool, p.tripId, p.approvalId);
   if (!row) return null;
   try {
@@ -62,6 +65,8 @@ export async function markConfirming(d: MoneyDeps, p: { tripId: string; approval
     if ((e as { code?: string }).code !== '23505') throw e;
     d.log.error({ payment_id: row.payment_id }, 'the vault is confirming a payment Go had closed while a fresh one is open');
   }
+  // The vault will not ask the bank again: a person checks the charge, and the card says so.
+  if (p.checking && !row.checking_at) await patchPayment(d.pool, row.payment_id, { checking_at: d.now() }, d.now());
   return getPayment(d.pool, row.payment_id);
 }
 
@@ -167,12 +172,16 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
   }
 }
 
-/** The pay card says the bank is being asked, with no buttons, so nobody approves or starts it again. */
+/**
+ * The pay card says the bank is being asked (or, once the vault gave up asking, that a person is checking), with no
+ * buttons, so nobody approves or starts it again.
+ */
 async function showConfirming(d: MoneyDeps, row: PaymentRow): Promise<void> {
-  if (!row.card_id || row.card_state === 'confirming') return;
-  const card = payCardOf(row, 'confirming');
+  const look = row.checking_at ? 'checking' : 'confirming';
+  if (!row.card_id || row.card_state === look) return;
+  const card = payCardOf(row, look);
   if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
-  await patchPayment(d.pool, row.payment_id, { card_state: 'confirming' }, d.now());
+  await patchPayment(d.pool, row.payment_id, { card_state: look }, d.now());
 }
 
 async function finishClosed(d: MoneyDeps, row: PaymentRow, state: 'declined' | 'expired' | 'failed' | 'refused'): Promise<void> {

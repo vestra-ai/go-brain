@@ -41,6 +41,8 @@ export interface PaymentRow {
   released_at: Date | null;
   ticket_posted_at: Date | null;
   said_at: Date | null;
+  /** The vault will not ask the bank again and a person is checking the charge; the payment stays confirming. */
+  checking_at: Date | null;
   attempts: number;
   last_error: string | null;
   created_at: Date;
@@ -69,7 +71,7 @@ export interface NewPayment {
 const PATCHABLE = [
   'refused_reason', 'release_reason', 'approval_id', 'approval_token', 'approval_expires_at', 'card_id', 'card_state',
   'pay_link_url', 'pay_link_expires_at', 'rail_ref', 'fail_reason', 'confirmed', 'booking_id', 'expense_id',
-  'released_at', 'ticket_posted_at', 'said_at', 'last_error',
+  'released_at', 'ticket_posted_at', 'said_at', 'last_error', 'checking_at',
 ] as const;
 export type PaymentPatch = Partial<Pick<PaymentRow, (typeof PATCHABLE)[number]>>;
 
@@ -163,7 +165,8 @@ export async function unsettled(db: Db, now: Date, limit = 50): Promise<string[]
          (state in ('declined', 'expired', 'failed', 'refused') and approval_id is not null and released_at is null)
          or (state in ('declined', 'expired', 'failed') and card_id is not null and card_state is distinct from state)
          or (state in ('declined', 'failed') and said_at is null)
-         or (state = 'confirming' and card_id is not null and card_state is distinct from 'confirming')
+         or (state = 'confirming' and card_id is not null
+             and card_state is distinct from (case when checking_at is null then 'confirming' else 'checking' end))
        ))
      order by updated_at limit $1`,
     [limit, STEP_TRIES, new Date(now.getTime() - PAID_BACKOFF_MS)],
