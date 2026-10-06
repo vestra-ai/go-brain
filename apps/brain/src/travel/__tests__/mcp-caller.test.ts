@@ -45,24 +45,46 @@ describe('createHttpMcpCaller', () => {
     expect(connectImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('reconnects once after a transport failure, and says unreachable after a second', async () => {
+  it('reconnects once after a transport failure on a read-only call, and says unreachable after a second', async () => {
     const dead = fakeClient(async () => {
       throw new Error('socket hang up');
     });
     const alive = fakeClient(async () => ({ content: [{ type: 'text', text: '{"ok":1}' }] }));
     const connectImpl = vi.fn().mockResolvedValueOnce(dead).mockResolvedValueOnce(alive);
     const caller = createHttpMcpCaller({ url: 'https://ixigo.invalid/mcp', connectImpl });
-    expect(await caller.call('anything', {})).toEqual({ text: '{"ok":1}', data: { ok: 1 }, isError: false });
+    expect(await caller.call('search_stays', {}, { readOnly: true })).toEqual({ text: '{"ok":1}', data: { ok: 1 }, isError: false });
     expect(connectImpl).toHaveBeenCalledTimes(2);
     expect(dead.close).toHaveBeenCalled();
 
     const always = vi.fn(async () => fakeClient(async () => {
       throw new Error('ECONNRESET');
     }));
-    const down = await createHttpMcpCaller({ url: 'https://ixigo.invalid/mcp', connectImpl: always }).call('anything', {});
+    const down = await createHttpMcpCaller({ url: 'https://ixigo.invalid/mcp', connectImpl: always }).call('search_stays', {}, { readOnly: true });
     expect(down.isError).toBe(true);
     expect(down.text).toMatch(/unreachable/);
     expect(always).toHaveBeenCalledTimes(2);
+  });
+
+  it('never sends a hold or a confirm twice: after a failure once the request went out, it answers unreachable', async () => {
+    const dead = fakeClient(async () => {
+      throw new Error('socket hang up');
+    });
+    const alive = fakeClient(async () => ({ content: [{ type: 'text', text: '{"ok":1}' }] }));
+    const connectImpl = vi.fn().mockResolvedValueOnce(dead).mockResolvedValueOnce(alive);
+    const caller = createHttpMcpCaller({ url: 'https://ixigo.invalid/mcp', connectImpl });
+    const r = await caller.call('confirm_booking', { hold_id: 'hold_1', payment_ref: 'pi_1' });
+    expect(r).toMatchObject({ isError: true, data: null });
+    expect(r.text).toMatch(/unreachable/);
+    expect(dead.callTool).toHaveBeenCalledTimes(1);
+    expect(alive.callTool).not.toHaveBeenCalled();
+  });
+
+  it('tries a write again when only the connect failed, since nothing was sent', async () => {
+    const alive = fakeClient(async () => ({ content: [{ type: 'text', text: '{"hold_id":"hold_2"}' }] }));
+    const connectImpl = vi.fn().mockRejectedValueOnce(new Error('ECONNREFUSED')).mockResolvedValueOnce(alive);
+    const caller = createHttpMcpCaller({ url: 'https://ixigo.invalid/mcp', connectImpl });
+    expect(await caller.call('hold_booking', { fare_id: 'x' })).toMatchObject({ isError: false, data: { hold_id: 'hold_2' } });
+    expect(alive.callTool).toHaveBeenCalledTimes(1);
   });
 });
 

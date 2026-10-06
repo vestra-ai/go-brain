@@ -42,8 +42,9 @@ export function createMcpTravel(o: McpTravelOptions): TravelBackend {
     if (!id.startsWith(prefix)) throw new TravelError('unknown_offer', `${what} ${id} is not from ${o.backend}.`);
     return id.slice(prefix.length);
   };
-  const call = async (tool: string, args: Record<string, unknown>): Promise<unknown> => {
-    const r = await o.caller.call(tool, args);
+  /** readOnly: searches, status and lookups may be sent again after a dropped connection; a hold or a confirm never is. */
+  const call = async (tool: string, args: Record<string, unknown>, readOnly = false): Promise<unknown> => {
+    const r = await o.caller.call(tool, args, { readOnly });
     if (r.isError) throw new TravelError(r.data === null ? 'unreachable' : 'refused', r.text.slice(0, 300));
     return r.data;
   };
@@ -63,7 +64,7 @@ export function createMcpTravel(o: McpTravelOptions): TravelBackend {
       const args = m.args(q);
       if (!args) throw new TravelError('needs_more', NEEDS[kind]);
       const checkedAt = o.now().toISOString();
-      const data = await call(m.tool, args);
+      const data = await call(m.tool, args, true);
       const results = mapped(`a ${kind} search`, () => m.results(data)).map(({ backendId, ...rest }): TravelOption => ({ ...rest, offerId: prefix + backendId }));
       return { results, checkedAt };
     },
@@ -71,11 +72,11 @@ export function createMcpTravel(o: McpTravelOptions): TravelBackend {
       const checkedAt = o.now().toISOString();
       if (q.kind === 'flight') {
         const m = o.map.flightStatus;
-        const data = await call(m.tool, m.args(q));
+        const data = await call(m.tool, m.args(q), true);
         return mapped('a flight status', () => m.result(data, checkedAt));
       }
       const m = o.map.pnrStatus;
-      const data = await call(m.tool, m.args(q));
+      const data = await call(m.tool, m.args(q), true);
       return mapped('a booking status', () => m.result(data, checkedAt));
     },
     async hold(offerId, lead) {
@@ -96,7 +97,7 @@ export function createMcpTravel(o: McpTravelOptions): TravelBackend {
         const lookup = o.map.bookingForHold;
         if (lookup) {
           // A confirm that reached the backend before a restart or a lost answer is not sent again.
-          const found = await call(lookup.tool, lookup.args(backendHoldId));
+          const found = await call(lookup.tool, lookup.args(backendHoldId), true);
           const booking = mapped('a booking lookup', () => lookup.result(found));
           if (booking) return booking;
         }

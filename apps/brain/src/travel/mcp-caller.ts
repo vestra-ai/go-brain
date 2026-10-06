@@ -17,7 +17,11 @@ const DROP_TIMEOUT_MS = 5_000;
 export interface McpCallResult { text: string; data: unknown; isError: boolean }
 export interface McpToolInfo { name: string; description?: string; inputSchema?: unknown; annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean } }
 export interface McpCaller {
-  call(tool: string, args: Record<string, unknown>): Promise<McpCallResult>;
+  /**
+   * One tool call. A failed connect is tried again (nothing was sent). A failure after the request went out is tried
+   * again only for a call marked readOnly: a hold or a confirm must never reach ixigo twice.
+   */
+  call(tool: string, args: Record<string, unknown>, opts?: { readOnly?: boolean }): Promise<McpCallResult>;
   listTools(): Promise<McpToolInfo[]>;
   close(): Promise<void>;
 }
@@ -99,25 +103,42 @@ export function createHttpMcpCaller(o: { url: string; token?: string; name?: str
     })();
     await Promise.race([closing, sleep(DROP_TIMEOUT_MS)]);
   };
-  async function attempt<T>(run: (c: UpstreamClient) => Promise<T>, onProtocol: (err: McpError) => T, onDown: (reason: string) => T): Promise<T> {
+  async function attempt<T>(
+    run: (c: UpstreamClient) => Promise<T>,
+    onProtocol: (err: McpError) => T,
+    onDown: (reason: string) => T,
+    resendable: boolean,
+  ): Promise<T> {
     let reason = 'no answer';
     for (let i = 0; i < 2; i += 1) {
+      let c: UpstreamClient;
       try {
-        return await run(await ensure());
+        c = await ensure();
+      } catch (err) {
+        // The connect failed, so nothing was sent: trying again is safe for any call.
+        reason = err instanceof Error ? err.message : String(err);
+        await drop();
+        continue;
+      }
+      try {
+        return await run(c);
       } catch (err) {
         if (isProtocolError(err)) return onProtocol(err);
         reason = err instanceof Error ? err.message : String(err);
         await drop();
+        // The request may have reached the server: only a call that is safe to repeat goes again.
+        if (!resendable) break;
       }
     }
     return onDown(reason);
   }
   return {
-    call: (tool, args) =>
+    call: (tool, args, opts) =>
       attempt(
         async (c) => textResult(await c.callTool({ name: tool, arguments: args }, undefined, { timeout: CALL_TIMEOUT_MS })),
         (err) => ({ text: err.message, data: null, isError: true }),
         (reason) => ({ text: `The travel service is unreachable right now: ${reason}`, data: null, isError: true }),
+        opts?.readOnly === true,
       ),
     listTools: () =>
       attempt(
@@ -128,6 +149,7 @@ export function createHttpMcpCaller(o: { url: string; token?: string; name?: str
         (reason) => {
           throw new Error(`The travel service is unreachable right now: ${reason}`);
         },
+        true,
       ),
     close: drop,
   };
