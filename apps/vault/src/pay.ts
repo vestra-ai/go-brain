@@ -1,7 +1,7 @@
 import { verifySpendApproval } from '@go/contract';
 import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/server';
 import { chargeOnce, holdUnknown, settle, type AttemptRow, type PayDeps } from './charge.js';
-import { reportOutcome } from './go-callback.js';
+import { reportOutcome, tellConfirming } from './go-callback.js';
 import { findLink, linkProblem, type LinkRow } from './links.js';
 import { authenticationOptions, hasPasskey, passkeyConfig, verifyAssertion } from './passkeys.js';
 import type { RailFailReason, RailKind } from './rails/rail.js';
@@ -243,6 +243,7 @@ export async function approvePayment(
     // No clear answer from the rail: never settled as failed. The sweep asks the rail again with the same jti.
     await holdUnknown(d, d.now(), attempt, result.unknown);
     d.log.warn({ approval_id: attempt.approval_id, why: result.unknown }, 'the rail gave no clear answer; the sweep asks again');
+    await tellConfirming(d, attempt.jti);
     return { state: 'confirming' };
   }
   // 9. The outcome is recorded, then 10. Go hears about it.
