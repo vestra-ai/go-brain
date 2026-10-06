@@ -2,6 +2,8 @@
 
 This folder holds measured evidence about Go. `bench-2026-10-06.json` is the report of Go's fast bench from one CI run, unedited. This page explains every number in it: what it measures, how, the bar it is held to, and the value in this run.
 
+The folder also holds Jev's recorded answers for the quick read, and which questions act live because of them: see [jev.md](jev.md).
+
 ## Where the report comes from
 
 - **Run:** CI run [37425189498](https://github.com/vestra-ai/go-brain/actions/runs/37425189498), job `build-and-test`, artifact `bench-report`, written at 2026-10-06 06:52 UTC.
