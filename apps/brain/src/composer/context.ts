@@ -154,11 +154,12 @@ export function createContext(log: Log): ContextImpl {
       const fromSeq = view?.chatFromSeq ?? 0;
       const lines = i.pack.messages
         .filter((m) => m.seq >= fromSeq)
-        .map((m) => ({ seq: m.seq, line: chatLine(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)) }))
-        .filter((x): x is { seq: number; line: string } => x.line !== null);
+        .map((m) => ({ seq: m.seq, go: m.author.kind === 'go', line: chatLine(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)) }))
+        .filter((x): x is { seq: number; go: boolean; line: string } => x.line !== null);
 
       // New since the last turn: what Go has not seen, at most the newest 25. Everything before is the chat.
-      let split = lines.findIndex((x) => x.seq > i.seenSeq);
+      // Go's own messages are never new to Go: the reply it posted after its last turn stays in the chat.
+      let split = lines.findIndex((x) => x.seq > i.seenSeq && !x.go);
       if (split < 0) split = lines.length;
       split = Math.max(split, lines.length - NEW_MAX);
       const chat = lines.slice(0, split).map((x) => x.line);

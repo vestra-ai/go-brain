@@ -78,6 +78,16 @@ describe('the prompt, in order and cache-first', () => {
     expect(all(after.user)).not.toContain('#30 ');
   });
 
+  it("Go's own reply after its last turn is not new to Go: it stays in the chat", async () => {
+    const messages = [...chatOf(5), msg(7, null, 'ok [t:first]'), msg(8, 'p_priya', '@Go [t:second] and dinner?')];
+    const p = await context().build(input(packOf(messages), 6));
+    const fresh = p.user.at(-1)?.text ?? '';
+    expect(fresh).toContain('#8 Priya: @Go [t:second] and dinner?');
+    expect(fresh).not.toContain('#7 ');
+    expect(all(p.user.slice(0, -2))).toContain('#7 Go (you): ok [t:first]');
+    expect(p.newestSeq).toBe(8);
+  });
+
   it('shows at most 25 new lines; older lines Go never saw join the chat', async () => {
     const p = await context().build(input(packOf(), 0));
     const fresh = p.user.at(-1)?.text ?? '';
