@@ -130,13 +130,12 @@ export function wireMemory(brain: Brain, d: WireDeps): {
     lastHeard.set(tripId, d.clock());
     const sureFact = read.fact.sure && read.fact.value === true;
     if (sureFact && read.reaction.sure && read.reaction.value === '✅') {
-      // The instant ✅ (Q5 and Q7 both sure): sent here, before the notes pass starts. Its request id comes from the
-      // trip, message and emoji, so the notes pass's own ✅ for this message finds it done (a 409 also counts as done).
-      try {
-        await reactOnce(brain.pool, brain.door.link, tripId, msg, '✅');
-      } catch (err) {
-        brain.log.warn({ tripId, err: String(err) }, 'instant ✅ failed; the notes pass will react');
-      }
+      // The instant ✅ (Q5 and Q7 both sure): started here, before the notes pass, and never awaited, so the trip's
+      // queue moves on at once. Its request id comes from the trip, message and emoji, so the notes pass's own ✅ for
+      // this message joins it or finds it done (a 409 also counts as done).
+      reactOnce(brain.pool, brain.door.link, tripId, msg, '✅').catch((err: unknown) =>
+        brain.log.warn({ tripId, err: String(err) }, 'instant ✅ failed; the notes pass will react'),
+      );
     } else if (read.reaction.sure && (read.reaction.value === '👍' || read.reaction.value === '🙌')) {
       reactOnce(brain.pool, brain.door.link, tripId, msg, read.reaction.value).catch((err: unknown) =>
         brain.log.warn({ tripId, err: String(err) }, 'quiet reaction failed'),

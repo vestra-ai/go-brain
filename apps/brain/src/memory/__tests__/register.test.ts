@@ -162,9 +162,9 @@ describe('wireMemory', () => {
     const answer = JSON.stringify({ facts: [{ person_id: 'p_meher', topic: 'food', text: 'Vegetarian', message: 50 }], lines: [] });
     const w = setup('t_r10', [m], [answer]);
     await w.wired.onRead(m, read({ fact: sure(true), reaction: sure('✅') }), w.pack);
-    // Already sent when the hook returns: no timer moved, and no model answer was needed for it.
+    // Sent without any timer moving, and no model answer was needed for it.
     const sent = () => w.link.calls.filter((c) => c.method === 'add_reaction');
-    expect(sent()).toHaveLength(1);
+    await vi.waitFor(() => expect(sent()).toHaveLength(1));
     expect(sent()[0]!.params).toMatchObject({ trip_id: 't_r10', message_id: 'm_0050', emoji: '✅', request_id: reactionRequestId('t_r10', 'm_0050', '✅') });
     // The fact check started at once as well; its own ✅ for the same message finds the reaction done and sends nothing.
     await vi.waitFor(async () => expect((await currentFacts(db.pool, { personId: 'p_meher', tripId: 't_r10' })).map((f) => f.text)).toEqual(['Vegetarian']));
@@ -178,11 +178,34 @@ describe('wireMemory', () => {
     const conflict = (method: string) => (method === 'add_reaction' ? new SocketCallError(409, 'already reacted', 'conflict') : null);
     const w = setup('t_r11', [m], [answer], { fail: conflict });
     await w.wired.onRead(m, read({ fact: sure(true), reaction: sure('✅') }), w.pack);
-    expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toHaveLength(1);
+    await vi.waitFor(() => expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toHaveLength(1));
     // The notes pass saved the fact and reached its own ✅ step, which found the reaction done.
     await vi.waitFor(async () => expect((await currentFacts(db.pool, { personId: 'p_meher', tripId: 't_r11' })).map((f) => f.text)).toEqual(['Vegetarian']));
     await vi.waitFor(async () => expect((await db.pool.query<{ seq: number }>("SELECT seq FROM notes_cursor WHERE trip_id = 't_r11'")).rows[0]?.seq).toBe(60));
     expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toHaveLength(1);
+  });
+
+  it('never holds up the trip queue: the hook returns while the instant ✅ is still on its way, and it is sent once', async () => {
+    const m = msg(70, 'p_meher', "I'm veg btw");
+    const answer = JSON.stringify({ facts: [{ person_id: 'p_meher', topic: 'food', text: 'Vegetarian', message: 70 }], lines: [] });
+    const w = setup('t_r12', [m], [answer]);
+    // The Server is slow to answer add_reaction until the test lets it.
+    let open!: () => void;
+    const slow = new Promise<void>((resolve) => { open = resolve; });
+    const request = w.link.request.bind(w.link) as (method: string, params: Record<string, unknown>) => Promise<unknown>;
+    (w.link as unknown as { request: typeof request }).request = async (method, params) => {
+      if (method === 'add_reaction') await slow;
+      return request(method, params);
+    };
+    await w.wired.onRead(m, read({ fact: sure(true), reaction: sure('✅') }), w.pack);
+    const sent = () => w.link.calls.filter((c) => c.method === 'add_reaction');
+    expect(sent()).toHaveLength(0);
+    // The notes pass saves the fact meanwhile; its own ✅ joins the one on its way.
+    await vi.waitFor(async () => expect((await currentFacts(db.pool, { personId: 'p_meher', tripId: 't_r12' })).map((f) => f.text)).toEqual(['Vegetarian']));
+    open();
+    await vi.waitFor(() => expect(sent()).toHaveLength(1));
+    await vi.waitFor(async () => expect((await db.pool.query<{ seq: number }>("SELECT seq FROM notes_cursor WHERE trip_id = 't_r12'")).rows[0]?.seq).toBe(70));
+    expect(sent()).toHaveLength(1);
   });
 
   it('runs the notes pass at once on a sure fact, and only after a quiet spell otherwise', async () => {
