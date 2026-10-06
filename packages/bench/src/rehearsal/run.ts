@@ -11,6 +11,7 @@ import { parseArgs } from 'node:util';
 import type * as C from '@go/contract';
 import { ForgetResult } from '@go/contract';
 import type { HealthJson } from '@go/brain/dist/admin/register.js';
+import { STOP_LINE } from '@go/brain/dist/calls/service.js';
 import { FakeServer, goaFreshTrip } from '@go/sim';
 import { beatOf, clockMs, DEMO_DIVE_SHOP, DEMO_FRIEND, DEMO_LINES, DEMO_PEOPLE, DEMO_WATCH, type BeatId, type DemoLine } from '../scenarios/demo.js';
 import { BeatTimer, preflight, secs, type BeatRun } from './sheet.js';
@@ -36,8 +37,6 @@ export interface RehearseOptions {
   fetch?: typeof fetch;
   log?: (line: string) => void;
   now?: () => Date;
-  /** P6's STOP_LINE; tests pass their own. Default: loadStopLine(). */
-  stopLine?: () => Promise<string | null>;
 }
 
 export interface RehearseOutcome {
@@ -54,18 +53,7 @@ const short = (s: string, n = 120): string => (s.length > n ? `${s.slice(0, n - 
 const kind = (k: C.Card['kind']) => (m: C.Message): boolean => m.card?.kind === k;
 const textOnly = (m: C.Message): boolean => !m.card && !!m.text;
 /** Go's call line: its own words plus P6's stop notice. */
-const callLine = (stopLine: string) => (m: C.Message): boolean => textOnly(m) && (m.text ?? '').endsWith(stopLine);
-
-/** P6's stop notice, the end of Go's call line; null while P6's calls lane is not on this build. */
-export async function loadStopLine(): Promise<string | null> {
-  try {
-    // @ts-ignore P6's file: not on every build yet, and then a full rehearsal refuses to run.
-    const m = (await import('@go/brain/dist/calls/service.js')) as { STOP_LINE?: unknown };
-    return typeof m.STOP_LINE === 'string' ? m.STOP_LINE : null;
-  } catch {
-    return null;
-  }
-}
+const isCallLine = (m: C.Message): boolean => textOnly(m) && (m.text ?? '').endsWith(STOP_LINE);
 
 /** How long to wait for a beat before calling it missing: three times its budget, at least 20 s, at most 3 minutes. */
 export function patienceMs(id: BeatId): number {
@@ -255,8 +243,7 @@ async function forgetBeat(room: RehearsalRoom, timer: BeatTimer): Promise<void> 
   timer.done('forget', t, problems.length === 0 ? { endedAt: answeredAt } : { endedAt: answeredAt, ok: false, note: problems.join('; ') });
 }
 
-async function playBeats(room: RehearsalRoom, timer: BeatTimer, o: RehearseOptions, log: (line: string) => void, stopLine: string): Promise<void> {
-  const isCallLine = callLine(stopLine);
+async function playBeats(room: RehearsalRoom, timer: BeatTimer, o: RehearseOptions, log: (line: string) => void): Promise<void> {
   // Days ago, in the real trip: when a friend can leave. The flights card at 0:30 must honour it.
   for (const line of DEMO_LINES.history) {
     await room.say(line);
@@ -381,8 +368,6 @@ export async function rehearse(o: RehearseOptions): Promise<RehearseOutcome> {
   for (const p of health.probes) log(`${p.dot.toUpperCase().padEnd(5)} ${p.label}: ${p.detail} (${p.ms} ms)`);
   const reasons = preflight(health);
   if (reasons.length > 0) throw new RefusedError(reasons);
-  const stopLine = await (o.stopLine ?? loadStopLine)();
-  if (!stopLine) throw new RefusedError(["P6's calls lane is not on this build, so the call beats cannot be checked. Rehearse once P6 has merged."]);
 
   const trip = rehearsalTrip(now());
   const fake = new FakeServer({ goUrl: o.go, secret: o.secret, instance: `rehearsal-${trip.trip_id.slice('t_reh_'.length)}` });
@@ -393,7 +378,7 @@ export async function rehearse(o: RehearseOptions): Promise<RehearseOutcome> {
     await fake.createTrip(trip);
     await room.waitGo(0, (m) => !!m.text, 30_000);
     log(`Rehearsal trip ${trip.trip_id}: Go said hello.`);
-    await playBeats(room, timer, o, log, stopLine);
+    await playBeats(room, timer, o, log);
     return { tripId: trip.trip_id, runs: timer.results(), warmed: false, health };
   } finally {
     await adminPost(o, '/admin/stop-jobs', { trip_id: trip.trip_id }).catch(() => null);

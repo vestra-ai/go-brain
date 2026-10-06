@@ -45,14 +45,6 @@ describe('the rehearsal runner', () => {
     expect(urls).toEqual(['https://brain.example.com/admin/health.json']);
   });
 
-  it("refuses a full run, before it opens any socket, while P6's calls lane is not on this build", async () => {
-    const { f, urls } = healthFetch({ ...HEALTH, calls: ALLOWED });
-    const err = await rehearse({ ...base, fetch: f, stopLine: async () => null }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(RefusedError);
-    expect((err as RefusedError).reasons).toEqual([expect.stringMatching(/P6's calls lane is not on this build/)]);
-    expect(urls).toEqual(['https://brain.example.com/admin/health.json']);
-  });
-
   it('--warm on the stage Go only reads health.json for the real trip: no socket, no trip, no message, no secret', async () => {
     const { f, urls } = healthFetch({ ...HEALTH, server_socket_open: true, trip_id: 't_real' });
     const out = await rehearse({ go: base.go, adminToken: base.adminToken, warm: true, trip: 't_real', fetch: f, log: () => undefined });

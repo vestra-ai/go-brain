@@ -8,7 +8,7 @@ import { z } from 'zod';
 import type { Brain, RegisterLane } from '../app.js';
 import { newUlid } from '../door/ulid.js';
 import { checkAll, defaultProbes, type Probe, type ProbeResult } from './health.js';
-import { loadAdminLanes, NOT_DEPLOYED, type AdminLanes } from './lanes.js';
+import { ADMIN_LANES, NOT_DEPLOYED, type AdminLanes } from './lanes.js';
 import { renderAdminPage } from './page.js';
 import { registerSessionRoute, signedIn, signInPage } from './session.js';
 import { SWITCH_RULES, type SwitchName } from './switches.js';
@@ -57,7 +57,7 @@ export interface AdminOptions {
   /** The checks to run; tests pass their own. Default: every dependency (health.ts). */
   probes?: (brain: Brain, tripId: string | null) => Probe[];
   fetch?: typeof fetch;
-  /** The other lanes' helpers; tests pass their own. Default: whatever is on this build (lanes.ts). */
+  /** The other lanes' helpers; tests pass their own. Default: the real ones (lanes.ts). */
   lanes?: AdminLanes;
 }
 
@@ -68,7 +68,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
       brain.log.info('admin: the page is off until ADMIN_TOKEN is set');
       return;
     }
-    const lanes = o.lanes ?? (await loadAdminLanes());
+    const lanes = o.lanes ?? ADMIN_LANES;
     const probesFor = o.probes ?? ((b: Brain, tripId: string | null) => defaultProbes(b, tripId, lanes, o.fetch ?? fetch));
 
     const newestTrips = async (): Promise<string[]> =>

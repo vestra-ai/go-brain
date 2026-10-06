@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkAll, ixigoProbe, jevProbe, modelProbe, PROBE_TIMEOUT_MS, runProbe, serverProbe, v1Probe, vaultProbe, type Probe } from '../health.js';
-import { loadAdminLanes, NOT_DEPLOYED } from '../lanes.js';
+import { ADMIN_LANES, NOT_DEPLOYED } from '../lanes.js';
 
 /** Stands in for P4's v1UserIdFor. */
 const v1UserIdFor = (tripId: string): string => `vu_${tripId}`;
@@ -129,10 +129,9 @@ describe('a lane that is not on this Go yet', () => {
     expect(calls.map((c) => c.url)).toEqual(['https://api.vestra.test/v1/users?limit=1']);
   });
 
-  it('loading the other lanes never throws: each helper is there or null', async () => {
-    const lanes = await loadAdminLanes();
-    expect(lanes.v1UserIdFor === null || typeof lanes.v1UserIdFor === 'function').toBe(true);
-    expect(lanes.listIxigoTools === null || typeof lanes.listIxigoTools === 'function').toBe(true);
-    expect(lanes.calls === null || typeof lanes.calls.maskPhone === 'function').toBe(true);
+  it("on this build every lane is deployed: P4's and P6's helpers are the real ones", () => {
+    expect(ADMIN_LANES.v1UserIdFor?.('t_goa')).toEqual(expect.any(String));
+    expect(ADMIN_LANES.listIxigoTools).toEqual(expect.any(Function));
+    expect(ADMIN_LANES.calls?.maskPhone('+919800000001')).toBe('+91***001');
   });
 });
