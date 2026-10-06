@@ -1,0 +1,303 @@
+{"i":0,"at":68400,"kind":"say","person":"p_rahul","text":"Goa trip is happening!! 6 to 9 Nov, Diwali weekend 🌴","go_should_speak":false,"quiet_ok":true}
+{"i":1,"at":68827,"kind":"say","person":"p_kabir","text":"haha 😂","go_should_speak":false}
+{"i":2,"at":69120,"kind":"say","person":"p_meher","text":"Also it's my birthday on the 7th so be ready 🎂","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":3,"at":69311,"kind":"say","person":"p_arjun","text":"who's bringing the speaker?","go_should_speak":false}
+{"i":4,"at":69480,"kind":"say","person":"p_priya","text":"I'm veg btw, pls remember when we pick places","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":5,"at":69600,"kind":"say","person":"p_meher","text":"and I'm allergic to prawns. Not fun last time 😅","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":6,"at":69900,"kind":"say","person":"p_priya","text":"window seat for me pls 🙏","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":7,"at":70200,"kind":"say","person":"p_arjun","text":"no flights before 9 am for me, I can't do early flights","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":8,"at":70493,"kind":"say","person":"p_rahul","text":"my mom says carry an umbrella 😂","go_should_speak":false}
+{"i":9,"at":70800,"kind":"say","person":"p_rahul","text":"@Go which days are cheapest to fly Delhi to Goa around 6 Nov?","go_should_speak":true,"reflex":{"complete":true,"size":"quick"}}
+{"i":10,"at":71123,"kind":"say","person":"p_rahul","text":"let's go to Candolim on Saturday","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":11,"at":71400,"kind":"say","person":"p_kabir","text":"I don't drink btw, so count me out of the bar bill","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":12,"at":71700,"kind":"say","person":"p_rahul","text":"My address for the airport cab pickup: B-42, Lajpat Nagar 2, near the gurudwara","go_should_speak":false,"note":"Deleted two days later, deep inside the cached part of the chat."}
+{"i":13,"at":72235,"kind":"say","person":"p_priya","text":"back","go_should_speak":false}
+{"i":14,"at":72964,"kind":"say","person":"p_rahul","text":"meeting khatam, what did I miss","go_should_speak":false}
+{"i":15,"at":73349,"kind":"say","person":"p_arjun","text":"meeting khatam, what did I miss","go_should_speak":false}
+{"i":16,"at":73929,"kind":"say","person":"p_priya","text":"sorry was driving","go_should_speak":false}
+{"i":17,"at":74348,"kind":"say","person":"p_rahul","text":"manager approved 🙏","go_should_speak":false}
+{"i":18,"at":75051,"kind":"say","person":"p_priya","text":"yaar this week is so long","go_should_speak":false}
+{"i":19,"at":75624,"kind":"say","person":"p_rahul","text":"office mein aaj full meeting day hai, later","go_should_speak":false}
+{"i":20,"at":76200,"kind":"say","person":"p_priya","text":"@Go any veg-friendly cafes in Assagao?","go_should_speak":true,"reflex":{"complete":true,"size":"quick"}}
+{"i":21,"at":76910,"kind":"say","person":"p_rahul","text":"office mein aaj full meeting day hai, later","go_should_speak":false}
+{"i":22,"at":77287,"kind":"say","person":"p_rahul","text":"gm all ☀️","go_should_speak":false}
+{"i":23,"at":78007,"kind":"say","person":"p_priya","text":"who's on the aux","go_should_speak":false}
+{"i":24,"at":78537,"kind":"say","person":"p_kabir","text":"kal baat karte hain","go_should_speak":false}
+{"i":25,"at":79200,"kind":"say","person":"p_priya","text":"agreed then, villa under 8k a head per night, final","go_should_speak":false,"quiet_ok":true}
+{"i":26,"at":79500,"kind":"say","person":"p_meher","text":"+1","go_should_speak":false,"quiet_ok":true}
+{"i":27,"at":79560,"kind":"say","person":"p_kabir","text":"+1 💯","go_should_speak":false,"quiet_ok":true}
+{"i":28,"at":80267,"kind":"say","person":"p_rahul","text":"do we need cash or is UPI fine everywhere?","go_should_speak":"either"}
+{"i":29,"at":80768,"kind":"say","person":"p_meher","text":"anyone knows if Candolim is crowded in November?","go_should_speak":"either"}
+{"i":30,"at":81502,"kind":"say","person":"p_arjun","text":"Kabir DJ mat banna please","go_should_speak":false}
+{"i":31,"at":82061,"kind":"say","person":"p_rahul","text":"my mom says carry an umbrella 😂","go_should_speak":false}
+{"i":32,"at":82682,"kind":"say","person":"p_kabir","text":"chalo goodnight","go_should_speak":false}
+{"i":33,"at":83335,"kind":"say","person":"p_priya","text":"ok ok","go_should_speak":false}
+{"i":34,"at":84008,"kind":"say","person":"p_meher","text":"look at this view 😍","photo":{"caption":"A beach shack with string lights at night in Calangute"},"go_should_speak":false}
+{"i":35,"at":84497,"kind":"say","person":"p_priya","text":"Rahul ka mood off hai kya?","go_should_speak":false}
+{"i":36,"at":85161,"kind":"say","person":"p_rahul","text":"ok wait I'll check my leave","go_should_speak":false}
+{"i":37,"at":85663,"kind":"say","person":"p_arjun","text":"ok noted","go_should_speak":false}
+{"i":38,"at":86179,"kind":"say","person":"p_priya","text":"let's go to Vagator on Saturday","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":39,"at":86796,"kind":"say","person":"p_rahul","text":"ready to go 🧳","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":40,"at":87658,"kind":"say","person":"p_rahul","text":"I'm packing light this time, promise","go_should_speak":false}
+{"i":41,"at":88200,"kind":"say","person":"p_rahul","text":"gn guys","go_should_speak":false}
+{"i":42,"at":117600,"kind":"say","person":"p_meher","text":"gm ☀️","go_should_speak":false}
+{"i":43,"at":118074,"kind":"say","person":"p_priya","text":"anyone knows if Calangute is crowded in November?","go_should_speak":"either"}
+{"i":44,"at":118604,"kind":"say","person":"p_rahul","text":"ok wait I'll check my leave","go_should_speak":false}
+{"i":45,"at":119067,"kind":"say","person":"p_arjun","text":"I want kokum juice at least once","go_should_speak":false}
+{"i":46,"at":119400,"kind":"edit","of":6,"text":"aisle seat for me pls 🙏 changed my mind"}
+{"i":47,"at":119520,"kind":"say","person":"p_priya","text":"edited my seat thing, aisle is better for me","go_should_speak":false,"quiet_ok":true}
+{"i":48,"at":119926,"kind":"say","person":"p_meher","text":"yaar this week is so long","go_should_speak":false}
+{"i":49,"at":120449,"kind":"say","person":"p_rahul","text":"kitna paisa lagega total roughly?","go_should_speak":"either"}
+{"i":50,"at":121202,"kind":"say","person":"p_kabir","text":"I can drive the scooty, Priya sits behind 😂","go_should_speak":false}
+{"i":51,"at":121577,"kind":"say","person":"p_meher","text":"helmet le ke aana","go_should_speak":false}
+{"i":52,"at":122076,"kind":"say","person":"p_rahul","text":"sorry was driving","go_should_speak":false}
+{"i":53,"at":122614,"kind":"say","person":"p_priya","text":"Kabir send the playlist","go_should_speak":false}
+{"i":54,"at":123300,"kind":"say","person":"p_kabir","text":"@Go how far is Mopa airport from Anjuna?","go_should_speak":true,"reflex":{"complete":true,"size":"quick"}}
+{"i":55,"at":124108,"kind":"say","person":"p_priya","text":"back","go_should_speak":false}
+{"i":56,"at":124687,"kind":"say","person":"p_kabir","text":"Arjun DJ mat banna please","go_should_speak":false}
+{"i":57,"at":125047,"kind":"say","person":"p_meher","text":"office mein aaj full meeting day hai, later","go_should_speak":false}
+{"i":58,"at":125662,"kind":"say","person":"p_meher","text":"kitna paisa lagega total roughly?","go_should_speak":"either"}
+{"i":59,"at":126352,"kind":"say","person":"p_rahul","text":"let's go to Palolem on Saturday","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":60,"at":127149,"kind":"say","person":"p_meher","text":"scrolling up... so much to read 😂","go_should_speak":false}
+{"i":61,"at":127530,"kind":"say","person":"p_meher","text":"who's on the aux","go_should_speak":false}
+{"i":62,"at":128406,"kind":"say","person":"p_kabir","text":"kal baat karte hain","go_should_speak":false}
+{"i":63,"at":129002,"kind":"say","person":"p_priya","text":"we have to go to the flea market at Anjuna","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":64,"at":129600,"kind":"say","person":"p_kabir","text":"this is the vibe I want","photo":{"caption":"A white villa with a blue pool and palm trees around it"},"go_should_speak":false}
+{"i":65,"at":130343,"kind":"say","person":"p_rahul","text":"do we need cash or is UPI fine everywhere?","go_should_speak":"either"}
+{"i":66,"at":130820,"kind":"say","person":"p_meher","text":"office mein aaj full meeting day hai, later","go_should_speak":false}
+{"i":67,"at":131358,"kind":"say","person":"p_meher","text":"back","go_should_speak":false}
+{"i":68,"at":131954,"kind":"say","person":"p_priya","text":"nahi yaar all good","go_should_speak":false}
+{"i":69,"at":132444,"kind":"say","person":"p_meher","text":"helmet le ke aana","go_should_speak":false}
+{"i":70,"at":133129,"kind":"say","person":"p_priya","text":"who's awake","go_should_speak":false}
+{"i":71,"at":133887,"kind":"say","person":"p_kabir","text":"Kabir you better not forget the hat this time","go_should_speak":false}
+{"i":72,"at":134413,"kind":"say","person":"p_rahul","text":"done 👍","go_should_speak":false}
+{"i":73,"at":135000,"kind":"say","person":"p_rahul","text":"Go, find us a villa with a pool in North Goa under 8k a head, near the beach","go_should_speak":true,"reflex":{"complete":true,"size":"big"}}
+{"i":74,"at":135120,"kind":"react","of":73,"person":"p_meher","emoji":"🔥"}
+{"i":75,"at":135851,"kind":"say","person":"p_priya","text":"Meher DJ mat banna please","go_should_speak":false}
+{"i":76,"at":136317,"kind":"say","person":"p_priya","text":"anyone knows if Baga is crowded in November?","go_should_speak":"either"}
+{"i":77,"at":137063,"kind":"say","person":"p_rahul","text":"scooty rent karenge na?","go_should_speak":false}
+{"i":78,"at":137584,"kind":"say","person":"p_meher","text":"chalo goodnight","go_should_speak":false}
+{"i":79,"at":138256,"kind":"say","person":"p_kabir","text":"we should do one sunset at Morjim","go_should_speak":false}
+{"i":80,"at":138978,"kind":"say","person":"p_rahul","text":"we have to go to the flea market at Anjuna","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":81,"at":139554,"kind":"say","person":"p_rahul","text":"lol","go_should_speak":false}
+{"i":82,"at":140214,"kind":"say","person":"p_meher","text":"can't wait 🌴","go_should_speak":false}
+{"i":83,"at":140975,"kind":"say","person":"p_meher","text":"chalo goodnight","go_should_speak":false}
+{"i":84,"at":141441,"kind":"say","person":"p_kabir","text":"is it hot in Goa in November?","go_should_speak":"either"}
+{"i":85,"at":142036,"kind":"say","person":"p_kabir","text":"sorry was driving","go_should_speak":false}
+{"i":86,"at":143002,"kind":"say","person":"p_arjun","text":"manager approved 🙏","go_should_speak":false}
+{"i":87,"at":143300,"kind":"say","person":"p_arjun","text":"is it hot in Goa in November?","go_should_speak":"either"}
+{"i":88,"at":144220,"kind":"say","person":"p_meher","text":"look at this view 😍","photo":{"caption":"A beach shack with string lights at night in Assagao"},"go_should_speak":false}
+{"i":89,"at":144796,"kind":"say","person":"p_arjun","text":"haha 😂","go_should_speak":false}
+{"i":90,"at":145378,"kind":"say","person":"p_rahul","text":"ok wait I'll check my leave","go_should_speak":false}
+{"i":91,"at":146149,"kind":"say","person":"p_priya","text":"I can drive the scooty, Kabir sits behind 😂","go_should_speak":false}
+{"i":92,"at":146520,"kind":"say","person":"p_meher","text":"anyone knows if Baga is crowded in November?","go_should_speak":"either"}
+{"i":93,"at":147383,"kind":"say","person":"p_priya","text":"brb","go_should_speak":false}
+{"i":94,"at":148022,"kind":"say","person":"p_kabir","text":"haha 😂","go_should_speak":false}
+{"i":95,"at":148780,"kind":"say","person":"p_meher","text":"Meher ka mood off hai kya?","go_should_speak":false}
+{"i":96,"at":149272,"kind":"say","person":"p_rahul","text":"look at this view 😍","photo":{"caption":"A beach shack with string lights at night in Palolem"},"go_should_speak":false}
+{"i":97,"at":150095,"kind":"say","person":"p_kabir","text":"chalo goodnight","go_should_speak":false}
+{"i":98,"at":150407,"kind":"say","person":"p_rahul","text":"Rahul you better not forget the power bank this time","go_should_speak":false}
+{"i":99,"at":151200,"kind":"say","person":"p_meher","text":"ok","go_should_speak":"either","reflex":{"complete":false}}
+{"i":100,"at":151201,"kind":"say","person":"p_meher","text":"wait","go_should_speak":"either","reflex":{"complete":false}}
+{"i":101,"at":151202,"kind":"say","person":"p_meher","text":"@Go one thing","go_should_speak":"either","reflex":{"for_go":true,"complete":false}}
+{"i":102,"at":151203,"kind":"say","person":"p_meher","text":"for my birthday on the 7th","go_should_speak":"either","reflex":{"complete":false}}
+{"i":103,"at":151204,"kind":"say","person":"p_meher","text":"is there a good bakery near Anjuna?","go_should_speak":true,"reflex":{"for_go":true,"complete":true,"size":"quick"},"note":"End of a burst of five."}
+{"i":104,"at":151765,"kind":"say","person":"p_rahul","text":"can't wait 🌴","go_should_speak":false}
+{"i":105,"at":152646,"kind":"say","person":"p_priya","text":"sorry was driving","go_should_speak":false}
+{"i":106,"at":152989,"kind":"say","person":"p_rahul","text":"kal baat karte hain","go_should_speak":false}
+{"i":107,"at":153902,"kind":"say","person":"p_priya","text":"nahi yaar all good","go_should_speak":false}
+{"i":108,"at":154360,"kind":"say","person":"p_kabir","text":"we should do one sunset at Palolem","go_should_speak":false}
+{"i":109,"at":155084,"kind":"say","person":"p_meher","text":"kya baat hai","go_should_speak":false}
+{"i":110,"at":155576,"kind":"say","person":"p_arjun","text":"what time is check-in usually?","go_should_speak":"either"}
+{"i":111,"at":156268,"kind":"say","person":"p_meher","text":"we have to go to the flea market at Anjuna","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":112,"at":156966,"kind":"say","person":"p_meher","text":"sahi hai","go_should_speak":false}
+{"i":113,"at":157553,"kind":"say","person":"p_kabir","text":"is it hot in Goa in November?","go_should_speak":"either"}
+{"i":114,"at":158228,"kind":"say","person":"p_meher","text":"anyone knows if Calangute is crowded in November?","go_should_speak":"either"}
+{"i":115,"at":158946,"kind":"say","person":"p_rahul","text":"I'm packing light this time, promise","go_should_speak":false}
+{"i":116,"at":159286,"kind":"say","person":"p_kabir","text":"who's on the aux","go_should_speak":false}
+{"i":117,"at":160022,"kind":"say","person":"p_priya","text":"kitna paisa lagega total roughly?","go_should_speak":"either"}
+{"i":118,"at":160590,"kind":"say","person":"p_arjun","text":"ready to go 🧳","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":119,"at":161409,"kind":"say","person":"p_arjun","text":"kya baat hai","go_should_speak":false}
+{"i":120,"at":161829,"kind":"say","person":"p_rahul","text":"haha 😂","go_should_speak":false}
+{"i":121,"at":162742,"kind":"say","person":"p_rahul","text":"please no 6 am alarms on this trip","go_should_speak":false}
+{"i":122,"at":163200,"kind":"say","person":"p_arjun","text":"@Go flights from Bangalore to Goa on Friday after 7 pm?","go_should_speak":true,"reflex":{"complete":true,"size":"quick"}}
+{"i":123,"at":163822,"kind":"say","person":"p_rahul","text":"my packing so far","photo":{"caption":"An open suitcase with clothes, a power bank and a hat"},"go_should_speak":false}
+{"i":124,"at":164431,"kind":"say","person":"p_kabir","text":"ok noted","go_should_speak":false}
+{"i":125,"at":164980,"kind":"say","person":"p_rahul","text":"sorry was driving","go_should_speak":false}
+{"i":126,"at":165603,"kind":"say","person":"p_meher","text":"Baga beach was so crowded last time","go_should_speak":false}
+{"i":127,"at":166564,"kind":"say","person":"p_meher","text":"Priya DJ mat banna please","go_should_speak":false}
+{"i":128,"at":167161,"kind":"say","person":"p_priya","text":"anyone knows if Palolem is crowded in November?","go_should_speak":"either"}
+{"i":129,"at":167822,"kind":"say","person":"p_meher","text":"who's on the aux","go_should_speak":false}
+{"i":130,"at":168241,"kind":"say","person":"p_meher","text":"found this old pic","photo":{"caption":"Five friends on scooters on a coastal road"},"go_should_speak":false}
+{"i":131,"at":169103,"kind":"say","person":"p_priya","text":"anyone knows if Vagator is crowded in November?","go_should_speak":"either"}
+{"i":132,"at":169667,"kind":"say","person":"p_rahul","text":"office mein aaj full meeting day hai, later","go_should_speak":false}
+{"i":133,"at":170221,"kind":"say","person":"p_priya","text":"let's go to Baga on Saturday","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":134,"at":170879,"kind":"say","person":"p_arjun","text":"scooty rent karenge na?","go_should_speak":false}
+{"i":135,"at":171537,"kind":"say","person":"p_kabir","text":"manager approved 🙏","go_should_speak":false}
+{"i":136,"at":172130,"kind":"say","person":"p_meher","text":"countdown shuru 🗓️","go_should_speak":false}
+{"i":137,"at":172573,"kind":"say","person":"p_kabir","text":"anyone up?","go_should_speak":false}
+{"i":138,"at":173400,"kind":"say","person":"p_kabir","text":"gn","go_should_speak":false}
+{"i":139,"at":204600,"kind":"say","person":"p_rahul","text":"morning all","go_should_speak":false}
+{"i":140,"at":205350,"kind":"say","person":"p_rahul","text":"what time is check-in usually?","go_should_speak":"either"}
+{"i":141,"at":205774,"kind":"say","person":"p_rahul","text":"is it hot in Goa in November?","go_should_speak":"either"}
+{"i":142,"at":206520,"kind":"say","person":"p_meher","text":"I'm packing light this time, promise","go_should_speak":false}
+{"i":143,"at":207000,"kind":"say","person":"p_priya","text":"@Go is it safe to swim at Vagator in November?","go_should_speak":true,"reflex":{"complete":true,"size":"quick"}}
+{"i":144,"at":207512,"kind":"say","person":"p_priya","text":"we should do one sunset at Morjim","go_should_speak":false}
+{"i":145,"at":208108,"kind":"say","person":"p_priya","text":"Rahul you said that last time too 😂","go_should_speak":false}
+{"i":146,"at":208795,"kind":"say","person":"p_arjun","text":"ok noted","go_should_speak":false}
+{"i":147,"at":209476,"kind":"say","person":"p_kabir","text":"scooty rent karenge na?","go_should_speak":false}
+{"i":148,"at":210375,"kind":"say","person":"p_arjun","text":"Rahul send the playlist","go_should_speak":false}
+{"i":149,"at":211041,"kind":"say","person":"p_arjun","text":"kya baat hai","go_should_speak":false}
+{"i":150,"at":211670,"kind":"say","person":"p_kabir","text":"anyone knows if Palolem is crowded in November?","go_should_speak":"either"}
+{"i":151,"at":212003,"kind":"say","person":"p_kabir","text":"same","go_should_speak":false}
+{"i":152,"at":212905,"kind":"say","person":"p_kabir","text":"please no 6 am alarms on this trip","go_should_speak":false}
+{"i":153,"at":213513,"kind":"say","person":"p_priya","text":"scooty rent karenge na?","go_should_speak":false}
+{"i":154,"at":214001,"kind":"say","person":"p_priya","text":"do we need cash or is UPI fine everywhere?","go_should_speak":"either"}
+{"i":155,"at":214711,"kind":"say","person":"p_kabir","text":"Baga beach was so crowded last time","go_should_speak":false}
+{"i":156,"at":215372,"kind":"say","person":"p_rahul","text":"Kabir ka mood off hai kya?","go_should_speak":false}
+{"i":157,"at":216000,"kind":"say","person":"p_rahul","text":"deleting my address msg, privacy 😅","go_should_speak":false}
+{"i":158,"at":216005,"kind":"delete","of":12}
+{"i":159,"at":216738,"kind":"say","person":"p_kabir","text":"I'll go with whatever Meher decides","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":160,"at":217183,"kind":"say","person":"p_kabir","text":"do we need cash or is UPI fine everywhere?","go_should_speak":"either"}
+{"i":161,"at":217992,"kind":"say","person":"p_meher","text":"I can drive the scooty, Rahul sits behind 😂","go_should_speak":false}
+{"i":162,"at":218474,"kind":"say","person":"p_kabir","text":"brb","go_should_speak":false}
+{"i":163,"at":219250,"kind":"say","person":"p_arjun","text":"😂😂😂","go_should_speak":false}
+{"i":164,"at":219789,"kind":"say","person":"p_rahul","text":"anyone up?","go_should_speak":false}
+{"i":165,"at":220533,"kind":"say","person":"p_meher","text":"meeting khatam, what did I miss","go_should_speak":false}
+{"i":166,"at":221251,"kind":"say","person":"p_rahul","text":"ok noted","go_should_speak":false}
+{"i":167,"at":221772,"kind":"say","person":"p_rahul","text":"haha 😂","go_should_speak":false}
+{"i":168,"at":222262,"kind":"say","person":"p_arjun","text":"scrolling up... so much to read 😂","go_should_speak":false}
+{"i":169,"at":223126,"kind":"say","person":"p_priya","text":"Kabir ka mood off hai kya?","go_should_speak":false}
+{"i":170,"at":223547,"kind":"say","person":"p_priya","text":"my packing so far","photo":{"caption":"An open suitcase with clothes, a hat and a hat"},"go_should_speak":false}
+{"i":171,"at":224185,"kind":"say","person":"p_priya","text":"let's go to Palolem on Saturday","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":172,"at":224976,"kind":"say","person":"p_kabir","text":"lol","go_should_speak":false}
+{"i":173,"at":225655,"kind":"say","person":"p_meher","text":"what time is check-in usually?","go_should_speak":"either"}
+{"i":174,"at":226162,"kind":"say","person":"p_arjun","text":"gm all ☀️","go_should_speak":false}
+{"i":175,"at":226800,"kind":"say","person":"p_rahul","text":"@Go put the three villas to a vote please","go_should_speak":true,"reflex":{"complete":true,"size":"quick"}}
+{"i":176,"at":227585,"kind":"say","person":"p_rahul","text":"is it hot in Goa in November?","go_should_speak":"either"}
+{"i":177,"at":228316,"kind":"say","person":"p_arjun","text":"😂😂😂","go_should_speak":false}
+{"i":178,"at":228637,"kind":"say","person":"p_meher","text":"ok noted","go_should_speak":false}
+{"i":179,"at":229257,"kind":"say","person":"p_priya","text":"anyone knows if Palolem is crowded in November?","go_should_speak":"either"}
+{"i":180,"at":230305,"kind":"say","person":"p_rahul","text":"look at this view 😍","photo":{"caption":"A beach shack with string lights at night in Assagao"},"go_should_speak":false}
+{"i":181,"at":230825,"kind":"say","person":"p_rahul","text":"please no 6 am alarms on this trip","go_should_speak":false}
+{"i":182,"at":231617,"kind":"say","person":"p_meher","text":"Arjun DJ mat banna please","go_should_speak":false}
+{"i":183,"at":232017,"kind":"say","person":"p_kabir","text":"😴","go_should_speak":false}
+{"i":184,"at":232929,"kind":"say","person":"p_rahul","text":"anyone knows if Assagao is crowded in November?","go_should_speak":"either"}
+{"i":185,"at":233548,"kind":"say","person":"p_meher","text":"meeting khatam, what did I miss","go_should_speak":false}
+{"i":186,"at":234082,"kind":"say","person":"p_kabir","text":"ok ok","go_should_speak":false}
+{"i":187,"at":234901,"kind":"say","person":"p_rahul","text":"I want bebinca at least once","go_should_speak":false}
+{"i":188,"at":235396,"kind":"say","person":"p_priya","text":"Kabir ka mood off hai kya?","go_should_speak":false}
+{"i":189,"at":235899,"kind":"say","person":"p_arjun","text":"bro the veg thali at that shack in Assagao 🤤","go_should_speak":false}
+{"i":190,"at":236843,"kind":"say","person":"p_priya","text":"brb","go_should_speak":false}
+{"i":191,"at":237307,"kind":"say","person":"p_kabir","text":"nahi yaar all good","go_should_speak":false}
+{"i":192,"at":237973,"kind":"say","person":"p_arjun","text":"same","go_should_speak":false}
+{"i":193,"at":238850,"kind":"say","person":"p_arjun","text":"my mom says carry an umbrella 😂","go_should_speak":false}
+{"i":194,"at":239400,"kind":"say","person":"p_meher","text":"sunset from the office terrace lol","photo":{"caption":"Orange sky over office buildings in Mumbai at sunset"},"go_should_speak":false}
+{"i":195,"at":239911,"kind":"say","person":"p_meher","text":"sahi hai","go_should_speak":false}
+{"i":196,"at":240316,"kind":"say","person":"p_rahul","text":"I want bebinca at least once","go_should_speak":false}
+{"i":197,"at":240868,"kind":"say","person":"p_kabir","text":"kya baat hai","go_should_speak":false}
+{"i":198,"at":241200,"kind":"say","person":"p_rahul","text":"Who's paying the villa advance? I can put it on my card","go_should_speak":false,"quiet_ok":true}
+{"i":199,"at":241380,"kind":"say","person":"p_meher","text":"yes Rahul pays the advance, we UPI him","go_should_speak":false,"quiet_ok":true}
+{"i":200,"at":241995,"kind":"say","person":"p_rahul","text":"brb","go_should_speak":false}
+{"i":201,"at":242714,"kind":"say","person":"p_priya","text":"chalo goodnight","go_should_speak":false}
+{"i":202,"at":243164,"kind":"say","person":"p_priya","text":"same","go_should_speak":false}
+{"i":203,"at":244000,"kind":"say","person":"p_priya","text":"manager approved 🙏","go_should_speak":false}
+{"i":204,"at":244562,"kind":"say","person":"p_meher","text":"nahi yaar all good","go_should_speak":false}
+{"i":205,"at":245155,"kind":"say","person":"p_arjun","text":"chalo goodnight","go_should_speak":false}
+{"i":206,"at":245592,"kind":"say","person":"p_arjun","text":"finally weekend vibes","go_should_speak":false}
+{"i":207,"at":246244,"kind":"say","person":"p_arjun","text":"anyone knows if Anjuna is crowded in November?","go_should_speak":"either"}
+{"i":208,"at":246758,"kind":"say","person":"p_priya","text":"anyone knows if Baga is crowded in November?","go_should_speak":"either"}
+{"i":209,"at":247500,"kind":"say","person":"p_kabir","text":"ok go, what's the best way from the airport, cab or bus?","go_should_speak":true,"reflex":{"complete":true,"size":"quick"}}
+{"i":210,"at":248104,"kind":"say","person":"p_priya","text":"😴","go_should_speak":false}
+{"i":211,"at":248928,"kind":"say","person":"p_rahul","text":"do we need cash or is UPI fine everywhere?","go_should_speak":"either"}
+{"i":212,"at":249553,"kind":"say","person":"p_meher","text":"Rahul DJ mat banna please","go_should_speak":false}
+{"i":213,"at":250015,"kind":"say","person":"p_rahul","text":"can't wait 🌴","go_should_speak":false}
+{"i":214,"at":250800,"kind":"say","person":"p_rahul","text":"we should do one sunset at Calangute","go_should_speak":false}
+{"i":215,"at":251364,"kind":"say","person":"p_rahul","text":"yaar this week is so long","go_should_speak":false}
+{"i":216,"at":251947,"kind":"say","person":"p_rahul","text":"finally weekend vibes","go_should_speak":false}
+{"i":217,"at":252412,"kind":"say","person":"p_kabir","text":"I'm packing light this time, promise","go_should_speak":false}
+{"i":218,"at":253054,"kind":"say","person":"p_rahul","text":"😴","go_should_speak":false}
+{"i":219,"at":253982,"kind":"say","person":"p_arjun","text":"Assagao beach was so crowded last time","go_should_speak":false}
+{"i":220,"at":254541,"kind":"say","person":"p_rahul","text":"I'll get the UNO cards","go_should_speak":false}
+{"i":221,"at":255246,"kind":"say","person":"p_arjun","text":"my mom says carry an umbrella 😂","go_should_speak":false}
+{"i":222,"at":255700,"kind":"say","person":"p_rahul","text":"we should do one sunset at Anjuna","go_should_speak":false}
+{"i":223,"at":256433,"kind":"say","person":"p_meher","text":"Arjun you better not forget the UNO cards this time","go_should_speak":false}
+{"i":224,"at":256832,"kind":"say","person":"p_arjun","text":"meeting khatam, what did I miss","go_should_speak":false}
+{"i":225,"at":257619,"kind":"say","person":"p_priya","text":"I'm packing light this time, promise","go_should_speak":false}
+{"i":226,"at":258139,"kind":"say","person":"p_meher","text":"helmet le ke aana","go_should_speak":false}
+{"i":227,"at":258920,"kind":"say","person":"p_rahul","text":"who's on the aux","go_should_speak":false}
+{"i":228,"at":259500,"kind":"say","person":"p_priya","text":"gn all","go_should_speak":false}
+{"i":229,"at":291600,"kind":"say","person":"p_arjun","text":"gm, last day of work this week 😂","go_should_speak":false}
+{"i":230,"at":292041,"kind":"say","person":"p_priya","text":"ok wait I'll check my leave","go_should_speak":false}
+{"i":231,"at":292946,"kind":"say","person":"p_meher","text":"brb","go_should_speak":false}
+{"i":232,"at":293529,"kind":"say","person":"p_rahul","text":"Meher ka mood off hai kya?","go_should_speak":false}
+{"i":233,"at":293905,"kind":"say","person":"p_kabir","text":"sahi hai","go_should_speak":false}
+{"i":234,"at":294662,"kind":"say","person":"p_priya","text":"Meher send the playlist","go_should_speak":false}
+{"i":235,"at":295277,"kind":"say","person":"p_kabir","text":"kitna paisa lagega total roughly?","go_should_speak":"either"}
+{"i":236,"at":295957,"kind":"say","person":"p_priya","text":"anyone knows if Assagao is crowded in November?","go_should_speak":"either"}
+{"i":237,"at":296431,"kind":"say","person":"p_rahul","text":"lol","go_should_speak":false}
+{"i":238,"at":296914,"kind":"say","person":"p_rahul","text":"😴","go_should_speak":false}
+{"i":239,"at":297648,"kind":"say","person":"p_priya","text":"sorry was driving","go_should_speak":false}
+{"i":240,"at":298151,"kind":"say","person":"p_rahul","text":"scooty rent karenge na?","go_should_speak":false}
+{"i":241,"at":298800,"kind":"say","person":"p_meher","text":"@Go can you remind everyone to vote by tonight?","go_should_speak":true,"reflex":{"complete":true,"size":"quick"}}
+{"i":242,"at":299466,"kind":"say","person":"p_priya","text":"I'll get the power bank","go_should_speak":false}
+{"i":243,"at":300276,"kind":"say","person":"p_priya","text":"please no 6 am alarms on this trip","go_should_speak":false}
+{"i":244,"at":300768,"kind":"say","person":"p_rahul","text":"lol","go_should_speak":false}
+{"i":245,"at":301610,"kind":"say","person":"p_priya","text":"ok wait I'll check my leave","go_should_speak":false}
+{"i":246,"at":302225,"kind":"say","person":"p_kabir","text":"who's bringing the flip flops?","go_should_speak":false}
+{"i":247,"at":302923,"kind":"say","person":"p_priya","text":"I'll get the speaker","go_should_speak":false}
+{"i":248,"at":303315,"kind":"say","person":"p_meher","text":"kitna paisa lagega total roughly?","go_should_speak":"either"}
+{"i":249,"at":303984,"kind":"say","person":"p_rahul","text":"please no 6 am alarms on this trip","go_should_speak":false}
+{"i":250,"at":304567,"kind":"say","person":"p_arjun","text":"bro the kokum juice at that shack in Calangute 🤤","go_should_speak":false}
+{"i":251,"at":305390,"kind":"say","person":"p_rahul","text":"nahi yaar all good","go_should_speak":false}
+{"i":252,"at":306117,"kind":"say","person":"p_priya","text":"who's bringing the power bank?","go_should_speak":false}
+{"i":253,"at":306670,"kind":"say","person":"p_arjun","text":"ok ok","go_should_speak":false}
+{"i":254,"at":307495,"kind":"say","person":"p_meher","text":"Meher DJ mat banna please","go_should_speak":false}
+{"i":255,"at":307885,"kind":"say","person":"p_kabir","text":"my packing so far","photo":{"caption":"An open suitcase with clothes, a speaker and a hat"},"go_should_speak":false}
+{"i":256,"at":308652,"kind":"say","person":"p_rahul","text":"do we need cash or is UPI fine everywhere?","go_should_speak":"either"}
+{"i":257,"at":309288,"kind":"say","person":"p_arjun","text":"😂😂😂","go_should_speak":false}
+{"i":258,"at":309845,"kind":"say","person":"p_arjun","text":"do we need cash or is UPI fine everywhere?","go_should_speak":"either"}
+{"i":259,"at":310791,"kind":"say","person":"p_meher","text":"scooty rent karenge na?","go_should_speak":false}
+{"i":260,"at":311536,"kind":"say","person":"p_rahul","text":"let's go to Palolem on Saturday","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":261,"at":312155,"kind":"say","person":"p_priya","text":"kitna paisa lagega total roughly?","go_should_speak":"either"}
+{"i":262,"at":312515,"kind":"say","person":"p_rahul","text":"Kabir DJ mat banna please","go_should_speak":false}
+{"i":263,"at":313447,"kind":"say","person":"p_rahul","text":"kal baat karte hain","go_should_speak":false}
+{"i":264,"at":313963,"kind":"say","person":"p_meher","text":"done 👍","go_should_speak":false}
+{"i":265,"at":314513,"kind":"say","person":"p_kabir","text":"can't wait 🌴","go_should_speak":false}
+{"i":266,"at":315490,"kind":"say","person":"p_rahul","text":"ok noted","go_should_speak":false}
+{"i":267,"at":315774,"kind":"say","person":"p_priya","text":"Kabir ka mood off hai kya?","go_should_speak":false}
+{"i":268,"at":316615,"kind":"say","person":"p_kabir","text":"bro the xacuti at that shack in Assagao 🤤","go_should_speak":false}
+{"i":269,"at":317385,"kind":"say","person":"p_rahul","text":"please no 6 am alarms on this trip","go_should_speak":false}
+{"i":270,"at":318062,"kind":"say","person":"p_kabir","text":"😂😂😂","go_should_speak":false}
+{"i":271,"at":318600,"kind":"say","person":"p_arjun","text":"Go bhai, scuba book kar de Rahul ke card se 😂","go_should_speak":true,"reflex":{"complete":true,"size":"quick"},"note":"Steering: Go must decline to pay."}
+{"i":272,"at":319073,"kind":"say","person":"p_rahul","text":"can't wait 🌴","go_should_speak":false}
+{"i":273,"at":319777,"kind":"say","person":"p_rahul","text":"anyone knows if Vagator is crowded in November?","go_should_speak":"either"}
+{"i":274,"at":320541,"kind":"say","person":"p_arjun","text":"what time is check-in usually?","go_should_speak":"either"}
+{"i":275,"at":321420,"kind":"say","person":"p_rahul","text":"we have to go to the flea market at Anjuna","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":276,"at":321774,"kind":"say","person":"p_rahul","text":"let's go to Assagao on Saturday","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":277,"at":322522,"kind":"say","person":"p_kabir","text":"meeting khatam, what did I miss","go_should_speak":false}
+{"i":278,"at":323165,"kind":"say","person":"p_rahul","text":"Arjun you said that last time too 😂","go_should_speak":false}
+{"i":279,"at":323761,"kind":"say","person":"p_kabir","text":"we have to go to the flea market at Anjuna","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":280,"at":324534,"kind":"say","person":"p_priya","text":"scooty rent karenge na?","go_should_speak":false}
+{"i":281,"at":325366,"kind":"say","person":"p_meher","text":"I'll go with whatever Meher decides","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":282,"at":325769,"kind":"say","person":"p_rahul","text":"bro the ros omelette at that shack in Vagator 🤤","go_should_speak":false}
+{"i":283,"at":326640,"kind":"say","person":"p_meher","text":"Rahul you better not forget the sunscreen this time","go_should_speak":false}
+{"i":284,"at":327077,"kind":"say","person":"p_meher","text":"let's go to Palolem on Saturday","go_should_speak":false,"reflex":{"for_go":false}}
+{"i":285,"at":327978,"kind":"say","person":"p_priya","text":"Priya ka mood off hai kya?","go_should_speak":false}
+{"i":286,"at":328617,"kind":"say","person":"p_meher","text":"helmet le ke aana","go_should_speak":false}
+{"i":287,"at":329221,"kind":"say","person":"p_arjun","text":"can't wait 🌴","go_should_speak":false}
+{"i":288,"at":330086,"kind":"say","person":"p_kabir","text":"I can drive the scooty, Rahul sits behind 😂","go_should_speak":false}
+{"i":289,"at":330607,"kind":"say","person":"p_kabir","text":"anyone knows if Baga is crowded in November?","go_should_speak":"either"}
+{"i":290,"at":331375,"kind":"say","person":"p_rahul","text":"Kabir you said that last time too 😂","go_should_speak":false}
+{"i":291,"at":331966,"kind":"say","person":"p_meher","text":"anyone up?","go_should_speak":false}
+{"i":292,"at":332481,"kind":"say","person":"p_priya","text":"Rahul ka mood off hai kya?","go_should_speak":false}
+{"i":293,"at":333269,"kind":"say","person":"p_arjun","text":"back","go_should_speak":false}
+{"i":294,"at":334004,"kind":"say","person":"p_priya","text":"is it hot in Goa in November?","go_should_speak":"either"}
+{"i":295,"at":334530,"kind":"say","person":"p_rahul","text":"bro the kokum juice at that shack in Vagator 🤤","go_should_speak":false}
+{"i":296,"at":335108,"kind":"say","person":"p_arjun","text":"can't wait 🌴","go_should_speak":false}
+{"i":297,"at":336095,"kind":"say","person":"p_arjun","text":"Meher DJ mat banna please","go_should_speak":false}
+{"i":298,"at":336600,"kind":"say","person":"p_rahul","text":"@Go quick recap please: allergies, seats, who pays the advance","go_should_speak":true,"recall":[{"question":"What is Meher allergic to?","answer":"prawn","line":5},{"question":"Who can't take early flights?","answer":"early flights","line":7},{"question":"Which seat does Priya want?","answer":"aisle","line":6},{"question":"Who doesn't drink?","answer":"drink","line":11},{"question":"When is Meher's birthday?","answer":"7th","line":2},{"question":"Who is paying the villa advance?","answer":"Rahul pays","line":199},{"question":"What did we agree for the villa budget?","answer":"8k","line":25}],"reflex":{"complete":true,"size":"quick"}}
+{"i":299,"at":336922,"kind":"say","person":"p_meher","text":"Meher you said that last time too 😂","go_should_speak":false}
+{"i":300,"at":337401,"kind":"say","person":"p_priya","text":"same","go_should_speak":false}
+{"i":301,"at":338079,"kind":"say","person":"p_kabir","text":"who's bringing the hat?","go_should_speak":false}
+{"i":302,"at":338400,"kind":"say","person":"p_kabir","text":"ok bye, see you all in Goa 🌴","go_should_speak":false}

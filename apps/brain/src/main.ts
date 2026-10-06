@@ -3,13 +3,14 @@ import { registerAdmin } from './admin/register.js';
 import { buildBrain, type RegisterLane } from './app.js';
 import { loadEnv } from './env.js';
 import { registerRoom } from './room.js';
+import { registerStats } from './stats/index.js';
 
 /**
  * The lanes, in boot order: registerRoom, registerReflex, registerMemory, registerStats, registerTravel,
  * registerTasks, registerMoney, registerProactive, registerCalls, registerAdmin. Each lane adds its one
  * line here, in that order, in its own PR.
  */
-export const LANES: RegisterLane[] = [registerRoom, registerAdmin];
+export const LANES: RegisterLane[] = [registerRoom, registerStats, registerAdmin];
 
 export async function main(): Promise<void> {
   const env = loadEnv();
