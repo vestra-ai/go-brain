@@ -20,6 +20,8 @@ Everything runs in the Railway project `go`, environment `production`.
 | `Postgres-D6Kp` | The vault's own database. Only `vault` uses it; Go never reads it. | none (private network only) | Railway's Postgres template |
 | `brain-rehearsal` | The rehearsal Go: the same code as `brain`, with its own database, its own signing secret and its own admin token. Rehearsals and the live smoke go here, never to the stage. | https://brain-rehearsal-production.up.railway.app | `apps/brain/Dockerfile` |
 | `Postgres-ozV9` | `brain-rehearsal`'s database. | none (private network only) | Railway's Postgres template |
+| `vault-rehearsal` | The rehearsal vault: the same code as `vault`, with its own database, master key and shared secret. It reports payments to `brain-rehearsal`, so a rehearsal can pay end to end. | https://vault-rehearsal-production.up.railway.app | Railpack, with the build and start commands in its variables |
+| `Postgres-hxd7` | `vault-rehearsal`'s database. | none (private network only) | Railway's Postgres template |
 
 Go applies its database migrations itself when it starts, so a new version that needs a new table needs nothing extra.
 
@@ -30,7 +32,7 @@ Each app service has a health check and a restart policy in its own Railway sett
 | Service | Health check path | Timeout | Restart |
 |---|---|---|---|
 | `brain`, `brain-rehearsal`, `fake-go` | `/v1/health` | 60 s | on failure, up to 10 times |
-| `vault` | `/health` | 60 s | on failure, up to 10 times |
+| `vault`, `vault-rehearsal` | `/health` | 60 s | on failure, up to 10 times |
 
 Railway starts a new deploy, waits for the health check to answer, and only then moves traffic to it. A version that never becomes healthy fails its deploy and the old one keeps running. A setting changed on a service applies from that service's next deploy.
 
@@ -71,7 +73,7 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 | `DATABASE_URL` | Go's database, from the `Postgres` service. | Set |
 | `GO_SIGNING_SECRET` | Signs the socket between the Server and Go. The Server holds the same value. It is not the same as `fake-go`'s. | Set |
 | `GO_PUBLIC_URL` | Go's own https address: the links to the pictures on Go's cards, and where Twilio connects a call's audio to Go. | Set |
-| `GO_ROLE` | Which Go this is: `stage` here, `rehearsal` on `brain-rehearsal`. Read once PR #15 lands: the admin page shows it, and the rehearsal runner refuses any Go that is not `rehearsal`. Without it, Go falls back to Railway's service name. | Set |
+| `GO_ROLE` | Which Go this is: `stage` here, `rehearsal` on `brain-rehearsal`. The admin page shows it, and the rehearsal runner refuses any Go that is not `rehearsal`. Without it, Go falls back to Railway's service name. | Set |
 | `ANTHROPIC_API_KEY` | The model Go thinks with: every turn, the notes and the trip summary. | Placeholder: Go cannot answer anyone until the real key is in. |
 | `COMPOSER_MODEL` | The model for Go's turns in the room. | Set |
 | `SIDE_MODEL` | The smaller model for notes and summaries. | Set |
@@ -81,7 +83,7 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 | `CALLS_MODE` | The start value of the `CALLS_MODE` switch. | Set |
 | `VAULT_URL` | The vault's address. Money stays off until this and `VAULT_SHARED_SECRET` are both set. | Set |
 | `VAULT_SHARED_SECRET` | Signs every call between Go and the vault, both ways. The vault holds the same value. | Set |
-| `ADMIN_TOKEN` | Opens the admin page (it arrives with PR #15). | Set |
+| `ADMIN_TOKEN` | Opens the admin page. | Set |
 | `TYPESAFE_API_KEY` | Jev, the quick read of every message: is it for Go, does it hold a fact (the instant ✅). Without it Jev makes no calls, every quick read is "unsure", and Go decides from its own rules alone. | Not set: Keshav's key |
 | `TYPESAFE_BASE_URL`, `JEV_MODEL`, `REFLEX_LIVE`, `JEV_DEADLINE_MS`, `JEV_DAILY_CALLS_PER_TRIP` | Jev's address, its pinned version, which questions act live, how long a message waits for it, and a daily cap per trip. | Not set: the defaults apply |
 | `VESTRA_API_URL`, `VESTRA_API_KEYS`, `VESTRA_ADMIN_KEY`, `VESTRA_WEBHOOK_SECRET`, `VESTRA_DEPLOYMENT_ID`, `VESTRA_MCP_SERVER_ID` | The trip's computer through Vestra `/v1`: jobs like the villa search, and Watch. All six come from `scripts/setup-v1.ts` and work only together. | Not set: jobs are off |
@@ -101,9 +103,10 @@ The same variable names as `brain`, with these differences:
 - `DATABASE_URL` is `Postgres-ozV9`, not Go's stage database.
 - `GO_SIGNING_SECRET` and `ADMIN_TOKEN` are its own: the stage's secret does not open it, and its secret does not open the stage.
 - `GO_ROLE` is `rehearsal`.
+- `VAULT_URL` and `VAULT_SHARED_SECRET` point at `vault-rehearsal`, not the stage's vault.
 - `ANTHROPIC_API_KEY` is the same placeholder as on `brain` until Keshav's key arrives.
 
-**It shares the stage's vault.** `VAULT_URL` and `VAULT_SHARED_SECRET` are the same as on `brain`, and the vault reports every payment to one address, its `GO_CALLBACK_URL`, which is the stage Go. So a payment approved on the vault page during a rehearsal is charged (on the fake rail), but the vault reports it to the stage Go, which does not know it and answers 404, and the vault keeps retrying. `brain-rehearsal` never hears that the payment went through. The rehearsal runner declines the pay card instead of paying, so it never gets there; when you rehearse by hand on `brain-rehearsal`, stop at the pay card too.
+**It has its own vault.** `vault-rehearsal` reports every payment to `brain-rehearsal` (its `GO_CALLBACK_URL`), so a payment approved on the vault page during a rehearsal reaches the Go that asked for it. Nothing a rehearsal pays touches the stage's vault or the stage Go.
 
 ### vault
 
@@ -120,6 +123,16 @@ The same variable names as `brain`, with these differences:
 | `VAULT_RAILS` | Which rails the vault may pay on: `fake`, `stripe_test`, `ixigo`. | Set |
 | `RAILPACK_BUILD_CMD`, `RAILPACK_START_CMD` | How Railway builds and starts the vault. | Set |
 
+### vault-rehearsal
+
+The same variable names as `vault`, with these differences:
+
+- `VAULT_DATABASE_URL` is `Postgres-hxd7`.
+- `VAULT_MASTER_KEY` and `VAULT_SHARED_SECRET` are its own; `brain-rehearsal` holds the same shared secret.
+- `VAULT_PUBLIC_URL`, `WEBAUTHN_ORIGIN` and `WEBAUTHN_RP_ID` are its own address, so a passkey made on the stage's vault does not work here: enroll again for a rehearsal.
+- `GO_CALLBACK_URL` is `brain-rehearsal`'s address.
+- `GO_SPEND_PUBLIC_KEY`, the Stripe keys, `VAULT_RAILS` and the Railpack commands are the same as on `vault`.
+
 ### fake-go
 
 | Variable | What it is for | State |
@@ -128,9 +141,9 @@ The same variable names as `brain`, with these differences:
 | `FAKE_GO_ADMIN_TOKEN` | Opens fake-go's admin routes. | Set |
 | `FAKE_GO_PUBLIC_URL` | fake-go's address for the links it hands out. Railway's domain is used when it is not set. | Not set |
 
-### Postgres and Postgres-D6Kp
+### The databases: Postgres, Postgres-D6Kp, Postgres-ozV9, Postgres-hxd7
 
-Both have Railway's template variables: `DATABASE_URL`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `PGDATA`, `SSL_CERT_DAYS`. Leave them alone: `brain` and `vault` read the address from them.
+All four have Railway's template variables: `DATABASE_URL`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `PGDATA`, `SSL_CERT_DAYS`. Leave them alone: each Go and each vault reads its address from them.
 
 ## Deploy
 
@@ -144,7 +157,7 @@ git status --short          # railway up uploads the folder as it is on disk, so
 railway up --service brain --detach -m "$(git rev-parse --short HEAD) $(git log -1 --format=%s)"
 ```
 
-Use `--service brain-rehearsal`, `--service vault` or `--service fake-go` for the others. Ship a new Go to `brain-rehearsal` first, run the live smoke there, then ship the same commit to `brain`. The `-m` message puts the commit on the deployment, so the deployment list shows which commit is live.
+Use `--service brain-rehearsal`, `--service vault`, `--service vault-rehearsal` or `--service fake-go` for the others. Ship a new Go to `brain-rehearsal` first, run the live smoke there, then ship the same commit to `brain`. The `-m` message puts the commit on the deployment, so the deployment list shows which commit is live.
 
 Follow it:
 
@@ -164,10 +177,11 @@ After every deploy, and before the demo:
 curl -s https://brain-production-6b68.up.railway.app/v1/health     # {"ok":true,"contract":"1.0.0"}
 curl -s https://brain-rehearsal-production.up.railway.app/v1/health   # the same
 curl -s https://vault-production-35aa.up.railway.app/health        # {"ok":true}
+curl -s https://vault-rehearsal-production.up.railway.app/health  # the same
 curl -s https://fake-go-production.up.railway.app/v1/health        # {"ok":true,"contract":"1.0.0"}
 ```
 
-`/v1/health` says Go is up and which contract it speaks. It does not check the model, Jev, `/v1`, ixigo or the vault. The admin page's health view checks each of those; it arrives with PR #15, at `/admin?token=...` and `/admin/health.json`.
+`/v1/health` says Go is up and which contract it speaks. It does not check the model, Jev, `/v1`, ixigo or the vault. The admin page's health view checks each of those, at `/admin?token=...` and `/admin/health.json`.
 
 ## Run the live smoke
 
@@ -195,7 +209,7 @@ Things to know:
 
 ## Rehearse
 
-The rehearsal runner arrives with PR #15. It plays the whole demo on `brain-rehearsal`, times every beat against the run sheet, and refuses any Go whose role is not `rehearsal`. It reads `GO_REHEARSAL_URL`, `GO_SIGNING_SECRET`, `GO_ADMIN_TOKEN` and `GO_STAGE_URL` from the environment. The service calls its admin token `ADMIN_TOKEN`, so pass it on inside the command:
+The rehearsal runner plays the whole demo on `brain-rehearsal`, times every beat against the run sheet, and refuses any Go whose role is not `rehearsal`. It reads `GO_REHEARSAL_URL`, `GO_SIGNING_SECRET`, `GO_ADMIN_TOKEN` and `GO_STAGE_URL` from the environment. The service calls its admin token `ADMIN_TOKEN`, so pass it on inside the command:
 
 ```bash
 GO_REHEARSAL_URL=https://brain-rehearsal-production.up.railway.app GO_STAGE_URL=https://brain-production-6b68.up.railway.app \
@@ -239,7 +253,7 @@ A switch takes the first of these that has a value:
 
 To flip a switch:
 
-- **On the admin page** (once PR #15 is on `brain`): open `/admin?token=...`, pick the value, save. This is the way on stage.
+- **On the admin page:** open `/admin?token=...`, pick the value, save. This is the way on stage.
 - **Until then, in the database:** `railway connect Postgres`, then:
 
   ```sql

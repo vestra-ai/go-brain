@@ -48,13 +48,6 @@ describe('G4: Go books with two keys', () => {
     await s.confirmMandate('d_villa');
     const payMessage = await s.waitFor(() => s.messages().find((m) => m.card?.kind === 'pay'), 10_000);
     const card = C.PayCard.parse(payMessage.card);
-    // The Server shows the card before its answer reaches Go, and Go routes a tap only to a card it has recorded: wait for that.
-    for (const started = Date.now(); ; ) {
-      const known = await room.db.pool.query('select 1 from cards where card_id = $1', [card.card_id]);
-      if ((known.rowCount ?? 0) > 0) break;
-      if (Date.now() - started > 10_000) throw new Error('Go never recorded the pay card');
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
     expect(card).toMatchObject({ state: 'waiting', payer_person_id: 'p_rahul', amount_minor: 5420000, for_person_ids: ['p_rahul'] });
     // The vote's option_ref was turned into the travel offer before anything was held.
     expect(room.travel.looked).toEqual(['opt_villa_sol']);

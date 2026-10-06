@@ -10,7 +10,7 @@
     "recallMissMax": 0,
     "leakMax": 0,
     "brokenCacheMax": 0,
-    "requireMemory": false,
+    "requireMemory": true,
     "foldChats": ["goa-2000"]
   },
   "live": {

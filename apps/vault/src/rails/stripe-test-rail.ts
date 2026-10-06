@@ -1,5 +1,5 @@
 import type { StripeLike } from '../stripe-client.js';
-import type { ChargeInput, ChargeResult, Rail, RailFailReason } from './rail.js';
+import type { ChargeInput, ChargeResult, FindQuery, FindResult, Rail, RailFailReason } from './rail.js';
 
 /** Charges a saved test card through Stripe test mode, off session, once per approval. */
 export class StripeTestRail implements Rail {
@@ -34,7 +34,37 @@ export class StripeTestRail implements Rail {
       return stripeErrorResult(e);
     }
   }
+
+  /**
+   * Read only: lists the person's PaymentIntents since an hour before the attempt and keeps the one whose metadata
+   * carries this jti (set at charge time). Listing reads what was just written, which Stripe's search does not promise
+   * (and search is not offered to accounts in India). Succeeded is the payment; no PaymentIntent, or only ones that
+   * stopped, means no money went out; anything else cannot be told yet.
+   */
+  async find(q: FindQuery): Promise<FindResult> {
+    try {
+      const customerId = await this.customerOf(q.personId);
+      // No Stripe customer: this rail never sent a charge for the person (charge() stops before calling Stripe).
+      if (!customerId) return { none: true };
+      const found = await this.stripe.findCharges({
+        customerId,
+        // An hour back, so a vault clock running ahead of Stripe's never puts the real PaymentIntent outside the window.
+        createdSince: new Date(q.since.getTime() - 3_600_000),
+        approvalJti: q.idempotencyKey,
+      });
+      const paid = found.find((pi) => pi.status === 'succeeded');
+      if (paid) return { railRef: paid.id };
+      if (found.every((pi) => STOPPED.has(pi.status))) return { none: true };
+      return { unknown: `status_${found.map((pi) => pi.status).join('_')}` };
+    } catch (e) {
+      const err = (e ?? {}) as { type?: unknown };
+      return { unknown: typeof err.type === 'string' && err.type.startsWith('Stripe') ? err.type : 'thrown' };
+    }
+  }
 }
+
+/** PaymentIntent states in which no money moved and none will. */
+const STOPPED: ReadonlySet<string> = new Set(['canceled', 'requires_payment_method', 'requires_action']);
 
 /** Stripe errors that mean Stripe refused the request, so nothing was charged. */
 const REFUSED: ReadonlySet<unknown> = new Set(['StripeInvalidRequestError', 'StripeAuthenticationError', 'StripePermissionError']);

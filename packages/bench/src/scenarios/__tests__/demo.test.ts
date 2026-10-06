@@ -49,14 +49,6 @@ const jobState = (): string | undefined => (cardNow(workingId) as Card<'working'
 /** Go's first message after `seq` that matches. */
 const goAfter = (seq: number, pred: (m: C.Message) => boolean, timeoutMs = 20_000): Promise<C.Message> =>
   fake().waitFor(() => go().find((m) => m.seq > seq && pred(m)) ?? null, timeoutMs);
-/** Polls an async check every 20 ms until it holds. */
-async function until(check: () => Promise<boolean>, what: string, timeoutMs = 5_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!(await check())) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-}
 /** Go's applied reactions on these messages, as [message_id, emoji]. */
 const reactionsOn = (ids: string[]): Array<[string, string]> =>
   fake().writes
@@ -280,9 +272,6 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     const offers = await Promise.all(card.options.map((o) => d().room.built.brain.travel!.offer(o.option_id)));
     expect(offers.map((o) => [o?.offerId, o?.priceMinor])).toEqual(DEMO_VILLAS.options.map((v) => [v.offer_id, v.total_paise]));
     expect(go().filter((m) => m.seq > from && m.card?.kind === 'vote')).toEqual([]);
-    // Go keeps each card it posts once the Server's answer reaches it, a moment after the room shows the card; a person's
-    // thumb is never that fast, the test is.
-    await until(async () => (await d().room.db.pool.query('select 1 from cards where card_id = $1', [card.card_id])).rowCount === 1, 'Go to keep the options card');
     // The stage's way: the card's own button opens the vote in code, with no model turn.
     expect(await tap(card.card_id, 'vote', DEMO_FRIEND)).toMatchObject({ result: 'done', toast: 'Putting it to a vote' });
     const vote = await goAfter(shown.seq, kindIs('vote'));
@@ -334,7 +323,6 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     const card = payCard;
     if (!card) throw new Error('no pay card');
     const from = lastSeq();
-    await until(async () => (await d().room.db.pool.query('select 1 from cards where card_id = $1', [card.card_id])).rowCount === 1, 'Go to keep the pay card');
     // Only the payer may approve: Priya's tap is refused for that, not because Go does not know the card.
     expect(await tap(card.card_id, 'approve', DEMO_FRIEND)).toMatchObject({ result: 'refused' });
     const open = await tap(card.card_id, 'approve', DEMO_PAYER);

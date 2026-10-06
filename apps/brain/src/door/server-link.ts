@@ -45,8 +45,19 @@ export interface LinkOptions {
   /** How long one attempt waits for an open socket. Go cannot dial the Server, so it can only wait. */
   waitForSocketMs?: number;
   sleep?: (ms: number) => Promise<void>;
-  /** Runs after each successful answer; the card store keeps every card Go posts or replaces. */
-  onResult?: (method: ToServerMethod, params: Record<string, unknown>, result: unknown) => void | Promise<void>;
+  /**
+   * Runs after each successful answer; the card store keeps every card Go posts or replaces. `stored` is true for the
+   * answer a rerun gets back from go_requests without sending: the card may have changed since, so only mark it landed.
+   */
+  onResult?: (method: ToServerMethod, params: Record<string, unknown>, result: unknown, stored: boolean) => void | Promise<void>;
+  /** Runs before a request first goes out: the card store keeps a card Go posts from that moment, pending. */
+  onSend?: (method: ToServerMethod, params: Record<string, unknown>) => void | Promise<void>;
+  /**
+   * Runs when a request failed for sure: the frame never left Go (no socket, Go shutting down before it was sent) or the
+   * Server refused it. Never when it was sent and no answer came (out of retries, Go shutting down mid-flight): the
+   * Server may have done it. The card store drops a pending card here.
+   */
+  onFail?: (method: ToServerMethod, params: Record<string, unknown>) => void | Promise<void>;
 }
 
 export type ServerLinkImpl = ServerLink & {
@@ -73,6 +84,8 @@ interface Pending {
   tripId: string | null;
   socketId: string | null;
   settle: ((f: AnswerFrame) => void) | null;
+  /** The frame was handed to a socket at least once, in this run or an earlier one, so the Server may have it. */
+  sent: boolean;
 }
 
 export function createServerLink(o: LinkOptions): ServerLinkImpl {
@@ -140,6 +153,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
       );
       p.settle = done;
       p.socketId = s.id;
+      p.sent = true;
       s.send(p.frame);
     });
   }
@@ -165,12 +179,20 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
     rpcId: string,
     requestId: string | null,
     timeoutMs: number,
+    /** An earlier run (before a crash or a restart) already sent this frame, so the Server may have it. */
+    sentBefore = false,
   ): Promise<unknown> {
     const frame = requestFrame(rpcId, method, body);
     if (Buffer.byteLength(frame) > MAX_FRAME_BYTES) throw new SocketCallError(422, `${method} is over the 1 MB frame limit`, 'invalid');
     const tripId = typeof body.trip_id === 'string' && body.trip_id !== '' ? body.trip_id : null;
-    const p: Pending = { id: rpcId, frame, tripId, socketId: null, settle: null };
+    const p: Pending = { id: rpcId, frame, tripId, socketId: null, settle: null, sent: sentBefore };
     pending.set(rpcId, p);
+    // Before the frame can reach the Server: a card in it is kept from now, so a tap that beats the answer finds it.
+    await listen(() => o.onSend?.(method, body), method, 'a send listener failed');
+    let answered = false;
+    // The Server answered with an error no retry can change. Go's own errors (no answer in time, the socket lost, no
+    // socket) are all retryable, so a final one that is not retryable came from the Server.
+    let refused = false;
     try {
       let retries = 0;
       let losses = 0;
@@ -183,6 +205,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
         }
         const f = await attempt(p, timeoutMs);
         if (f.kind === 'result') {
+          answered = true;
           if (requestId) {
             await o.pool.query('update go_requests set result = $2::jsonb, error = null, answered_at = $3 where request_id = $1', [
               requestId,
@@ -191,11 +214,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
             ]);
           }
           const result = parseResult(method, f.result);
-          try {
-            await o.onResult?.(method, body, result);
-          } catch (e) {
-            o.log.warn({ err: e, method }, 'an answer listener failed');
-          }
+          await listen(() => o.onResult?.(method, body, result, false), method, 'an answer listener failed');
           return result;
         }
         const code = f.error.code;
@@ -205,6 +224,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
         }
         const retryable = code === TIMEOUT || code === LOST || code === 500 || code === 503 || code === 429;
         if (!retryable || retries >= delays.length) {
+          refused = !retryable;
           const err = toCallError(f.error);
           if (requestId) {
             await o.pool.query('update go_requests set error = $2::jsonb, answered_at = $3 where request_id = $1', [
@@ -219,8 +239,27 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
         retries += 1;
         await sleep(wait);
       }
+    } catch (e) {
+      // Failed for sure: the frame never left Go, or the Server refused it. Sent and then no answer is unknown, never
+      // failed: the Server may have done it.
+      if (!answered && (refused || !p.sent)) await listen(() => o.onFail?.(method, body), method, 'a failure listener failed');
+      throw e;
     } finally {
       pending.delete(rpcId);
+    }
+  }
+
+  /** What go_requests says about an earlier run: it tried to send, so the frame may have reached the Server. */
+  function wasSent(row: { sent_at: Date | null; attempts: number }): boolean {
+    return row.sent_at !== null || row.attempts > 0;
+  }
+
+  /** A listener never fails the request it listens to. */
+  async function listen(fn: () => void | Promise<void>, method: ToServerMethod, what: string): Promise<void> {
+    try {
+      await fn();
+    } catch (e) {
+      o.log.warn({ err: e, method }, what);
     }
   }
 
@@ -239,13 +278,18 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
     const running = byRequestId.get(requestId);
     if (running) return (await running) as ToServerResult<M>;
     const job = (async () => {
-      const { rows } = await o.pool.query<{ rpc_id: string; result: unknown; answered_at: Date | null }>(
-        'select rpc_id, result, answered_at from go_requests where request_id = $1',
+      const { rows } = await o.pool.query<{ rpc_id: string; result: unknown; answered_at: Date | null; sent_at: Date | null; attempts: number }>(
+        'select rpc_id, result, answered_at, sent_at, attempts from go_requests where request_id = $1',
         [requestId],
       );
       const row = rows[0];
-      // Already done, e.g. by a turn that crashed after this write: the stored answer, nothing sent.
-      if (row?.answered_at && row.result !== null) return parseResult(method, row.result);
+      // Already done, e.g. by a turn that crashed after this write: the stored answer, nothing sent. Its listeners run
+      // again, so a card whose answer was stored just before the crash is kept live.
+      if (row?.answered_at && row.result !== null) {
+        const result = parseResult(method, row.result);
+        await listen(() => o.onResult?.(method, body, result, true), method, 'an answer listener failed');
+        return result;
+      }
       const rpcId = row?.rpc_id ?? `go_${newUlid(now().getTime())}`;
       if (!row) {
         await o.pool.query(
@@ -254,7 +298,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
           [requestId, rpcId, typeof body.trip_id === 'string' ? body.trip_id : '', opts.turnId ?? null, method, JSON.stringify(body), now()],
         );
       }
-      return run(method, body, rpcId, requestId, timeoutMs);
+      return run(method, body, rpcId, requestId, timeoutMs, row !== undefined && wasSent(row));
     })().finally(() => byRequestId.delete(requestId));
     byRequestId.set(requestId, job);
     return (await job) as ToServerResult<M>;
@@ -293,13 +337,15 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
       pending.get(f.id)?.settle?.(f);
     },
     async resumePending() {
-      const { rows } = await o.pool.query<{ request_id: string; rpc_id: string; method: ToServerMethod; params: Record<string, unknown> }>(
-        'select request_id, rpc_id, method, params from go_requests where answered_at is null and created_at > $1 order by created_at',
+      const { rows } = await o.pool.query<{
+        request_id: string; rpc_id: string; method: ToServerMethod; params: Record<string, unknown>; sent_at: Date | null; attempts: number;
+      }>(
+        'select request_id, rpc_id, method, params, sent_at, attempts from go_requests where answered_at is null and created_at > $1 order by created_at',
         [new Date(now().getTime() - 10 * 60_000)],
       );
       for (const r of rows) {
         if (pending.has(r.rpc_id) || byRequestId.has(r.request_id)) continue;
-        const job = run(r.method, r.params, r.rpc_id, r.request_id, o.timeoutMs ?? 2_500).finally(() => byRequestId.delete(r.request_id));
+        const job = run(r.method, r.params, r.rpc_id, r.request_id, o.timeoutMs ?? 2_500, wasSent(r)).finally(() => byRequestId.delete(r.request_id));
         byRequestId.set(r.request_id, job);
         job.catch((e: unknown) => o.log.warn({ err: e, request: r.request_id }, 'a resent request failed'));
       }

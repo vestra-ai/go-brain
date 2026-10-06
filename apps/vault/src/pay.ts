@@ -1,6 +1,6 @@
 import { verifySpendApproval } from '@go/contract';
 import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/server';
-import { chargeOnce, holdUnknown, settle, type AttemptRow, type PayDeps } from './charge.js';
+import { chargeOnce, holdUnknown, NOT_SENT, settle, type AttemptRow, type PayDeps } from './charge.js';
 import { reportOutcome, tellConfirming } from './go-callback.js';
 import { findLink, linkProblem, type LinkRow } from './links.js';
 import { authenticationOptions, hasPasskey, passkeyConfig, verifyAssertion } from './passkeys.js';
@@ -240,6 +240,7 @@ export async function approvePayment(
 
   // 8. The rail charges once, keyed by the jti.
   const result = await chargeOnce(d, attempt);
+  if ('unknown' in result && result.unknown === NOT_SENT) return answerUnsent(d, attempt);
   if ('unknown' in result) {
     // No clear answer from the rail: never settled as failed. The sweep asks the rail again with the same jti.
     await holdUnknown(d, d.now(), attempt, result.unknown);
@@ -252,4 +253,26 @@ export async function approvePayment(
   d.log.info({ approval_id: attempt.approval_id, outcome: 'railRef' in result ? 'paid' : result.failed }, 'payment attempt settled');
   await reportOutcome(d, attempt.jti);
   return 'railRef' in result ? { state: 'paid', railRef: result.railRef } : { state: 'failed', reason: result.failed };
+}
+
+/**
+ * The charge was not sent from here: its deadline passed, or another copy of the vault already settled the row. The
+ * payer hears how the row stands. A row still charging that the rail was never called for failed for sure (nothing went
+ * out), so it fails at once and Go shows the failed card; one another copy sent to the rail is left to the sweep.
+ */
+async function answerUnsent(d: PayDeps, a: AttemptRow): Promise<ApproveResult> {
+  const r = await d.pool.query<{ outcome: string; rail_ref: string | null; fail_reason: RailFailReason | null; rail_called_at: Date | null }>(
+    'select outcome, rail_ref, fail_reason, rail_called_at from used_approvals where jti = $1',
+    [a.jti],
+  );
+  const row = r.rows[0];
+  if (row?.outcome === 'paid' && row.rail_ref) return { state: 'paid', railRef: row.rail_ref };
+  if (row?.outcome === 'failed') return { state: 'failed', reason: row.fail_reason ?? 'rail_error' };
+  if (row?.outcome === 'charging' && !row.rail_called_at) {
+    await settle(d.pool, d.now(), a, { failed: 'rail_error' });
+    d.log.info({ approval_id: a.approval_id }, 'a charge was past its deadline before it was sent; failed, nothing went out');
+    await reportOutcome(d, a.jti);
+    return { state: 'failed', reason: 'rail_error' };
+  }
+  return { state: 'confirming' };
 }

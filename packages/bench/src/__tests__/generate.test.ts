@@ -54,13 +54,14 @@ describe('the chat generator', () => {
     expect((burst[4]?.at ?? 0) - (burst[0]?.at ?? 0)).toBeLessThan(5);
   });
 
-  it('the 2,000 chat asks eight recall questions near the end about facts from the first evening', () => {
+  it('the 2,000 chat asks ten recall questions near the end about facts from the first two days', () => {
     const chat = loadChat('goa-2000');
     expect(chatCounts(chat).messages).toBe(2000);
     const asker = saysOf(chat.lines).find((l) => l.recall !== undefined);
     expect(asker?.i).toBeGreaterThan(1500);
-    expect(asker?.recall?.length).toBe(8);
-    for (const p of asker?.recall ?? []) expect(p.line).toBeLessThan(300);
+    expect(asker?.recall?.length).toBe(10);
+    // All in the part the first fold takes in on the fast bench (FOLD_AT_TOKENS=12000 folds well past line 450).
+    for (const p of asker?.recall ?? []) expect(p.line).toBeLessThan(450);
   });
 
   it('puts no chatter into a night marked quiet', () => {

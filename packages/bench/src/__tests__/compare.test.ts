@@ -19,6 +19,8 @@ const base: ChatScore = {
   leaks: [], firstToken: { p50Ms: null, p90Ms: null }, side: { requests: 3, tokens: 1200 }, costUsd: 0.012, unreadByReflex: 0, durationMs: 20_000,
 };
 const failed = (scores: ChatScore[]): string[] => compareFast(scores, bars.fast).checks.filter((c) => !c.ok).map((c) => `${c.chat}: ${c.name}`);
+/** goa-2000 must fold (bars.json requires memory): a score for it carries one, so only what a test changes fails. */
+const oneFold = [{ n: 40, beforeChatTokens: 12_400, afterChatTokens: 6_100 }];
 
 describe('the bars and the verdict', () => {
   it('holds the spec\'s numbers', () => {
@@ -33,7 +35,7 @@ describe('the bars and the verdict', () => {
 
   it('judges the cache on long chats and only reports it on the short one', () => {
     const low = { ...base.cache, hitRate: 0.8 };
-    expect(failed([{ ...base, chat: 'goa-2000', cache: low }])).toEqual(['goa-2000: cache hit']);
+    expect(failed([{ ...base, chat: 'goa-2000', cache: { ...low, folds: oneFold } }])).toEqual(['goa-2000: cache hit']);
     const short = compareFast([{ ...base, cache: low }], bars.fast).checks.find((c) => c.name === 'cache hit');
     expect(short).toMatchObject({ ok: true, value: '80.0%' });
   });
@@ -105,7 +107,7 @@ describe('the live verdict and the model pick', () => {
 
 describe('the summary', () => {
   it('puts failures first and never prints NaN, undefined, Infinity or an em dash', () => {
-    const scores = [base, { ...base, chat: 'goa-2000', cache: { ...base.cache, hitRate: 0.8 } }, { ...base, chat: 'empty', wake: { turns: 0, messages: 0, rate: null }, typing: { n: 0, p50Ms: null, p90Ms: null, missing: 0, withoutPost: 0 }, prompt: { maxTokens: null, lastTokens: null, average: null }, costUsd: null }];
+    const scores = [base, { ...base, chat: 'goa-2000', cache: { ...base.cache, hitRate: 0.8, folds: oneFold } }, { ...base, chat: 'empty', wake: { turns: 0, messages: 0, rate: null }, typing: { n: 0, p50Ms: null, p90Ms: null, missing: 0, withoutPost: 0 }, prompt: { maxTokens: null, lastTokens: null, average: null }, costUsd: null }];
     const report: BenchReport = { schema: 'go.bench-report/v1', mode: 'fast', at: '2026-10-06T18:00:00Z', commit: 'abc1234', scores, verdict: compareFast(scores, bars.fast) };
     const md = renderSummary(report);
     expect(md).toContain('1 of');
