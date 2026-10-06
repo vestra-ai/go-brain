@@ -18,11 +18,38 @@ Everything runs in the Railway project `go`, environment `production`.
 | `fake-go` | A stand-in for Go that the App and Server teams build and test against. It is not the stage Go. | https://fake-go-production.up.railway.app | `apps/fake-go/Dockerfile` |
 | `Postgres` | Go's database. Only `brain` uses it. | none (private network only) | Railway's Postgres template |
 | `Postgres-D6Kp` | The vault's own database. Only `vault` uses it; Go never reads it. | none (private network only) | Railway's Postgres template |
-| `brain-rehearsal` (to come) | A second Go with its own database and its own signing secret, for full rehearsals. The same code as `brain`. | | `apps/brain/Dockerfile` |
+| `brain-rehearsal` | The rehearsal Go: the same code as `brain`, with its own database, its own signing secret and its own admin token. Rehearsals and the live smoke go here, never to the stage. | https://brain-rehearsal-production.up.railway.app | `apps/brain/Dockerfile` |
+| `Postgres-ozV9` | `brain-rehearsal`'s database. | none (private network only) | Railway's Postgres template |
 
 Go applies its database migrations itself when it starts, so a new version that needs a new table needs nothing extra.
 
-**The services do not read their `railway.json` files yet.** Each app has one (`apps/brain/railway.json`, `apps/vault/railway.json`, `apps/fake-go/railway.json`) with a health check and a restart policy, but no service has its config file path set. So Railway runs no health check before a new deploy takes over: a version that crashes on start replaces a working one. Until someone sets each service's Settings, Config-as-code path to `/apps/<service>/railway.json`, check health yourself after every deploy (see [Check health](#check-health)).
+### Health checks and restarts
+
+Each app service has a health check and a restart policy in its own Railway settings:
+
+| Service | Health check path | Timeout | Restart |
+|---|---|---|---|
+| `brain`, `brain-rehearsal`, `fake-go` | `/v1/health` | 60 s | on failure, up to 10 times |
+| `vault` | `/health` | 60 s | on failure, up to 10 times |
+
+Railway starts a new deploy, waits for the health check to answer, and only then moves traffic to it. A version that never becomes healthy fails its deploy and the old one keeps running. A setting changed on a service applies from that service's next deploy.
+
+The settings live on the services, not in the repo: no service has a config file path set, so the `railway.json` files in `apps/brain`, `apps/vault` and `apps/fake-go` are not read. Keep them in step with the settings anyway, so the repo says what runs.
+
+To change a setting, use the service's Settings, Deploy in the dashboard, or Railway's API (the `serviceInstanceUpdate` mutation), from the deploy worktree:
+
+```bash
+cd ~/workspace/agents/go-brain-worktrees/deploy
+env=$(railway status --json | jq -r '.environments.edges[0].node.id')
+sid=$(railway status --json | jq -r '.environments.edges[].node.serviceInstances.edges[].node | select(.serviceName=="brain") | .serviceId')
+railway api "mutation { serviceInstanceUpdate(environmentId: \"$env\", serviceId: \"$sid\", input: { healthcheckPath: \"/v1/health\", healthcheckTimeout: 60, restartPolicyType: ON_FAILURE, restartPolicyMaxRetries: 10 }) }"
+```
+
+To read them back, the same ids with a query:
+
+```bash
+railway api "query { serviceInstance(environmentId: \"$env\", serviceId: \"$sid\") { healthcheckPath healthcheckTimeout restartPolicyType restartPolicyMaxRetries } }"
+```
 
 ## Variables
 
@@ -44,7 +71,7 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 | `DATABASE_URL` | Go's database, from the `Postgres` service. | Set |
 | `GO_SIGNING_SECRET` | Signs the socket between the Server and Go. The Server holds the same value. It is not the same as `fake-go`'s. | Set |
 | `GO_PUBLIC_URL` | Go's own https address: the links to the pictures on Go's cards, and where Twilio connects a call's audio to Go. | Set |
-| `GO_ROLE` | Names this deployment's role. No code reads it yet. | Set |
+| `GO_ROLE` | Which Go this is: `stage` here, `rehearsal` on `brain-rehearsal`. Read once PR #15 lands: the admin page shows it, and the rehearsal runner refuses any Go that is not `rehearsal`. Without it, Go falls back to Railway's service name. | Set |
 | `ANTHROPIC_API_KEY` | The model Go thinks with: every turn, the notes and the trip summary. | Placeholder: Go cannot answer anyone until the real key is in. |
 | `COMPOSER_MODEL` | The model for Go's turns in the room. | Set |
 | `SIDE_MODEL` | The smaller model for notes and summaries. | Set |
@@ -66,6 +93,17 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 | `FOLD_AT_TOKENS`, `STORY_TOKENS`, `CHAT_HARD_CAP_TOKENS`, `NOTES_QUIET_MS`, `FOLD_QUIET_MS` | When Go summarises a long chat, and how long it waits after the last message before it takes notes. | Not set: the defaults apply |
 
 Railway also sets `RAILWAY_*` variables on every service (its domains and ids). On `brain` and `fake-go`, `RAILWAY_DOCKERFILE_PATH` picks the Dockerfile.
+
+### brain-rehearsal
+
+The same variable names as `brain`, with these differences:
+
+- `DATABASE_URL` is `Postgres-ozV9`, not Go's stage database.
+- `GO_SIGNING_SECRET` and `ADMIN_TOKEN` are its own: the stage's secret does not open it, and its secret does not open the stage.
+- `GO_ROLE` is `rehearsal`.
+- `ANTHROPIC_API_KEY` is the same placeholder as on `brain` until Keshav's key arrives.
+
+**It shares the stage's vault.** `VAULT_URL` and `VAULT_SHARED_SECRET` are the same as on `brain`, and the vault reports every payment to one address, its `GO_CALLBACK_URL`, which is the stage Go. So a payment approved on the vault page during a rehearsal is charged (on the fake rail), but the vault reports it to the stage Go, which does not know it and answers 404, and the vault keeps retrying. `brain-rehearsal` never hears that the payment went through. The rehearsal runner declines the pay card instead of paying, so it never gets there; when you rehearse by hand on `brain-rehearsal`, stop at the pay card too.
 
 ### vault
 
@@ -106,7 +144,7 @@ git status --short          # railway up uploads the folder as it is on disk, so
 railway up --service brain --detach -m "$(git rev-parse --short HEAD) $(git log -1 --format=%s)"
 ```
 
-Use `--service vault` or `--service fake-go` for the others. The `-m` message puts the commit on the deployment, so the deployment list shows which commit is live.
+Use `--service brain-rehearsal`, `--service vault` or `--service fake-go` for the others. Ship a new Go to `brain-rehearsal` first, run the live smoke there, then ship the same commit to `brain`. The `-m` message puts the commit on the deployment, so the deployment list shows which commit is live.
 
 Follow it:
 
@@ -124,6 +162,7 @@ After every deploy, and before the demo:
 
 ```bash
 curl -s https://brain-production-6b68.up.railway.app/v1/health     # {"ok":true,"contract":"1.0.0"}
+curl -s https://brain-rehearsal-production.up.railway.app/v1/health   # the same
 curl -s https://vault-production-35aa.up.railway.app/health        # {"ok":true}
 curl -s https://fake-go-production.up.railway.app/v1/health        # {"ok":true,"contract":"1.0.0"}
 ```
@@ -139,20 +178,31 @@ The live smoke checks that a deployed Go answers people in time. It connects to 
 
 For each line it prints how long Go took to show typing, Go's reply, the cards Go posted, and the total time. It passes when typing shows within 1 second and a reply lands within 15 seconds on both lines.
 
-Run it from any worktree at `origin/build` after `pnpm install`:
+Run it against `brain-rehearsal`, from any worktree at `origin/build` after `pnpm install`:
 
 ```bash
-GO_URL=https://brain-production-6b68.up.railway.app railway run --service brain -- pnpm --filter @go/sim live-smoke
+GO_URL=https://brain-rehearsal-production.up.railway.app railway run --service brain-rehearsal -- pnpm --filter @go/sim live-smoke
 ```
 
-`railway run` puts `brain`'s variables, `GO_SIGNING_SECRET` among them, into the command's environment, so the secret never appears in your terminal or your shell history. The script reads `GO_URL` and `GO_SIGNING_SECRET` from the environment only. It exits 0 on a pass, 1 when typing was slow or a reply did not come, and 2 when it could not connect.
+`railway run` puts the service's variables, `GO_SIGNING_SECRET` among them, into the command's environment, so the secret never appears in your terminal or your shell history. The script reads `GO_URL` and `GO_SIGNING_SECRET` from the environment only. It exits 0 on a pass, 1 when typing was slow or a reply did not come, and 2 when it could not connect.
 
 Things to know:
 
 - Each run leaves one smoke trip in Go's database. When jobs are on, it also gets its own trip computer on Vestra. Run it a few times, never in a loop.
 - The flights line searches whatever the `TRAVEL_MODE` switch says.
 - While `ANTHROPIC_API_KEY` is a placeholder, Go cannot reply, so the smoke fails with "no reply".
-- On the stage Go, run it only after the real trip has had a message since Go last started. Go sends each trip's requests back on the socket that brought that trip's events, so the real trip stays on the real Server's socket. But right after a restart, before the real trip has had any event, a request for the real trip can go to the smoke's socket instead and fail. Once `brain-rehearsal` exists, smoke that.
+- Smoke the stage Go (`GO_URL` set to `brain`'s address, `--service brain`) only when you must, and only after the real trip has had a message since Go last started. Go sends each trip's requests back on the socket that brought that trip's events, so the real trip stays on the real Server's socket. But right after a restart, before the real trip has had any event, a request for the real trip can go to the smoke's socket instead and fail.
+
+## Rehearse
+
+The rehearsal runner arrives with PR #15. It plays the whole demo on `brain-rehearsal`, times every beat against the run sheet, and refuses any Go whose role is not `rehearsal`. It reads `GO_REHEARSAL_URL`, `GO_SIGNING_SECRET`, `GO_ADMIN_TOKEN` and `GO_STAGE_URL` from the environment. The service calls its admin token `ADMIN_TOKEN`, so pass it on inside the command:
+
+```bash
+GO_REHEARSAL_URL=https://brain-rehearsal-production.up.railway.app GO_STAGE_URL=https://brain-production-6b68.up.railway.app \
+  railway run --service brain-rehearsal -- sh -c 'GO_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm --filter @go/bench rehearse'
+```
+
+The single quotes matter: the token is read inside the command's environment, never typed or shown. The only thing the runner does to the stage Go is the warm-up before the demo (`--warm --trip <real trip id>`, with `--service brain` and `GO_STAGE_URL`): one health read, no trip and no message.
 
 ## Roll back
 
