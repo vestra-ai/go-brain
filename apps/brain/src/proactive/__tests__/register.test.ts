@@ -107,7 +107,8 @@ describe('startProactive', () => {
 
     const held = (await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: stage })).json();
     expect(held).toMatchObject({ ok: true, promoted: 0 });
-    expect(await h.store.status('t_stage', held.dedupe_key)).toMatchObject({ status: 'pending', reason: 'budget' });
+    // The day's budget is spent and the fire expires in 2 hours, before tomorrow's budget: held back for good.
+    expect(await h.store.status('t_stage', held.dedupe_key)).toMatchObject({ status: 'dropped', reason: 'budget' });
     expect(desk.items).toHaveLength(0);
 
     const forced = (await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: { ...stage, force: true } })).json();
