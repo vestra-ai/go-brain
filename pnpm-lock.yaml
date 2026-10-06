@@ -187,12 +187,18 @@ importers:
       '@go/sim':
         specifier: workspace:*
         version: link:../sim
+      '@go/vault':
+        specifier: workspace:*
+        version: link:../../apps/vault
       '@vestra/agent-sdk':
         specifier: workspace:*
         version: link:../agent-sdk
       pg:
         specifier: ^8.23.1
         version: 8.23.1
+      ws:
+        specifier: ^8.22.0
+        version: 8.22.0
       zod:
         specifier: 4.3.6
         version: 4.3.6
@@ -203,6 +209,9 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
       tsx:
         specifier: ^4.21.0
         version: 4.23.15
