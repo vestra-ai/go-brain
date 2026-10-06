@@ -4,7 +4,7 @@ This folder holds measured evidence about Go. `bench-2026-10-06.json` is the rep
 
 The folder also holds Jev's recorded answers for the quick read, and which questions act live because of them: see [jev.md](jev.md).
 
-It also holds one run of the live bench, with the real model and real Jev: see [Live run](#live-run).
+It also holds three runs of the live bench, with the real model and real Jev: the first on `goa-50` and `goa-300`, then `goa-50` after the fixes it led to, and a final `goa-50` run with every fix. See [Live run](#live-run).
 
 ## Where the report comes from
 
