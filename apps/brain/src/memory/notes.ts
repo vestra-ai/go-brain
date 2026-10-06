@@ -9,10 +9,11 @@ import { z } from 'zod';
 import type { Message } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
+import { maskSecrets } from '../reflex/secrets.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import { checkFact, checkLine, type CheckEnv } from './checker.js';
 import { forgottenUpTo, saveFact } from './facts.js';
-import { chatLine, FENCE_RULE, isForgotten, peopleLegend } from './fence.js';
+import { chatLine, FENCE_RULE, fenceText, isForgotten, peopleLegend } from './fence.js';
 import { reactOnce } from './reactions.js';
 import { lineRequestId, mirrorLine, mirrorSnapshot, recordLines, writeLine } from './record.js';
 import type { SideModel } from './side-model.js';
@@ -87,7 +88,7 @@ function promptFor(pack: TripPack, record: CheckEnv['record'], context: Message[
   const recordText = record.length
     ? record
         .filter((l) => l.status !== 'undone')
-        .map((l) => `- ${l.line_id} [${l.kind}${l.source === 'go' ? ", Go's" : ''}${l.status === 'done' ? ', done' : ''}]: ${l.text}`)
+        .map((l) => `- ${fenceText(l.line_id)} [${l.kind}${l.source === 'go' ? ", Go's" : ''}${l.status === 'done' ? ', done' : ''}]: ${fenceText(maskSecrets(l.text).text)}`)
         .join('\n')
     : '(empty)';
   const line = (m: Message) => chatLine(m, pack, isForgotten(m, forgotten));
@@ -96,7 +97,7 @@ function promptFor(pack: TripPack, record: CheckEnv['record'], context: Message[
     'People in the trip:',
     peopleLegend(pack),
     'The trip record now:',
-    recordText.replace(/</g, '‹').replace(/>/g, '›'),
+    recordText,
     ...(context.length ? ['Earlier lines, for context only:', ...context.map(line)] : []),
     'New lines:',
     ...fresh.map(line),
