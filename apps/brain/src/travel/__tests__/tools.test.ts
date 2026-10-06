@@ -88,6 +88,20 @@ describe('show_options', () => {
     expect(await results.offersOnCard('c_opt_turn_r2_1')).toHaveLength(3);
   });
 
+  it('shows the card it saved first when a rerun of the same turn asks for other options, so the card always matches its offers', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_c1' }))) as any;
+    const first = lb.ctx({ turnId: 'turn_c2' });
+    await lb.tools.run('show_options', { results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, first);
+    const again = lb.ctx({ turnId: 'turn_c2' });
+    const out = (await lb.tools.run('show_options', { results_id: found.results_id, option_numbers: [3, 4], title: 'Two other villas' }, again)) as any;
+    expect(out.shown).toBe(2);
+    expect(again.cards).toEqual(first.cards);
+    const card = C.OptionsCard.parse(again.cards[0]);
+    expect(card.title).toBe('Two villas');
+    const offers = await results.offersOnCard(card.card_id);
+    expect(offers.map((o) => [o.optionId, o.title])).toEqual(card.options.map((o) => [o.option_id, o.title]));
+  });
+
   it("refuses results it does not have, or another trip's", async () => {
     const other = await results.save({ tripId: 't_other', optionKind: 'flight', source: 'search', query: {}, options: [], checkedAt: '2026-10-07T12:00:00.000Z' });
     expect(await lb.tools.run('show_options', { results_id: other.resultsId, title: 'x' }, lb.ctx())).toMatchObject({ error: 'unknown_results' });

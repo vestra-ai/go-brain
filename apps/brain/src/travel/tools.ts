@@ -172,8 +172,10 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       const card = buildOptionsCard({ cardId, title: a.title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks });
       // Saved before it is shown, so a tap on it always finds its offers.
       await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
-      ctx.cards.push(card);
-      return { card_id: cardId, shown: picks.length, checked: ageText(set.checkedAt, d.now()), note: 'The card goes out with your message. Add one short line; quote prices only from the card.' };
+      // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
+      const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
+      ctx.cards.push(shown);
+      return { card_id: cardId, shown: shown.options.length, checked: ageText(set.checkedAt, d.now()), note: 'The card goes out with your message. Add one short line; quote prices only from the card.' };
     },
   };
   const putToVote: QuickTool<z.infer<typeof VoteArgs>> = {
