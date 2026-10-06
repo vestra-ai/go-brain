@@ -533,7 +533,7 @@ These controls on the You screen let each person decide what Go sees and keeps a
 
 | Control | What the server does | Request to Go |
 |---|---|---|
-| Pause Go in this trip | Sets `go_paused` on the person and sends a `person.updated` event with `changed: ["go_paused"]`. While Go is paused, the person's messages still reach Go as `message.created`, with `withheld: true` and no text or attachments. | None: Go learns it from the event |
+| Pause Go in this trip | Sets `go_paused` on the person and sends a `person.updated` event with `changed: ["go_paused"]`. While Go is paused, the person's messages still reach Go as `message.created`, with `withheld: true` and no text, attachments or `reply_to`. | None: Go learns it from the event |
 | What Go knows about you | Shows the person's facts, each with its topic, its trip and where it came from | `get_person` |
 | Delete one fact | Removes one fact from the list | `delete_fact` |
 | Remember me in my next trips (carry-over, off by default) | Turns carry-over on or off | `update_person` |

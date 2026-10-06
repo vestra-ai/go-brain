@@ -731,7 +731,7 @@ Here Priya posted at change 47 and Arjun at change 48. Meher then put a 👍 on 
 How the server fills the page:
 - It returns the messages whose `updated_seq` is greater than `after_seq`, sorted by `updated_seq`, each one as it is now. In SQL: `select ... from messages where trip_id = $1 and updated_seq > $2 order by updated_seq limit $3 + 1`, where the one extra row tells you whether there are more.
 - Go's own messages are included, and so are Go's reactions, with `person_id` null.
-- A message from someone who paused Go is included with `"withheld": true`, no text, no attachments, `mentions_go` false, no `mentions` and no `about_message_id`.
+- A message from someone who paused Go is included with `"withheld": true`, no text, no attachments, no `reply_to`, `mentions_go` false, no `mentions` and no `about_message_id`.
 - A deleted message is included with `"deleted": true` and no text.
 - `has_more` is `true` when more messages changed after the last one in the page. To read them, Go sends `read_messages` again with `after_seq` set to the `updated_seq` of the last message.
 - A frame is at most 1 MB. When `limit` messages would make the answer bigger than that (long messages, big cards such as a call transcript), send fewer messages with `has_more` set to `true`.
