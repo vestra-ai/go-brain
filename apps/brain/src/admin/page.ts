@@ -4,7 +4,6 @@ import type { ProbeResult } from './health.js';
 import type { SwitchName } from './switches.js';
 
 export interface AdminView {
-  token: string;
   tripId: string | null;
   /** The newest trips, for the trip picker. */
   trips: string[];
@@ -73,9 +72,11 @@ footer{margin-top:36px;display:flex;gap:18px}
 a{color:var(--ink)}
 `;
 
+/** A link that keeps the chosen trip. Never the token: the session cookie signs every request in. */
 function link(path: string, v: AdminView, extra: Record<string, string> = {}): string {
-  const q = new URLSearchParams({ token: v.token, ...(v.tripId ? { trip: v.tripId } : {}), ...extra });
-  return `${path}?${q.toString()}`;
+  const q = new URLSearchParams({ ...(v.tripId ? { trip: v.tripId } : {}), ...extra });
+  const query = q.toString();
+  return query ? `${path}?${query}` : path;
 }
 
 function switchRow(v: AdminView, s: { name: SwitchName; value: string }): string {
@@ -136,7 +137,7 @@ export function renderAdminPage(v: AdminView): string {
 <body><main>
 <h1>Go: stage desk</h1>
 <p>Trip <b>${esc(v.tripId ?? 'none chosen')}</b>. Checked at ${esc(time)}.</p>
-<form class="pick" method="get" action="/admin"><input type="hidden" name="token" value="${esc(v.token)}">
+<form class="pick" method="get" action="/admin">
 <input name="trip" list="trips" value="${esc(v.tripId ?? '')}" placeholder="trip id" aria-label="trip id"><datalist id="trips">${trips}</datalist>
 <button class="quiet">Check this trip</button></form>
 ${v.note ? `<p class="note">${esc(v.note)}</p>` : ''}
@@ -151,6 +152,6 @@ ${v.switches.map((s) => switchRow(v, s)).join('\n')}
 ${callsBlock(v)}
 <h2>Stage actions</h2>
 ${actionsBlock(v)}
-<footer><a href="${esc(link('/board', v))}">Proof board</a><a href="${esc(v.docsUrl)}" rel="noreferrer">Docs</a><a href="${esc(link('/admin/health.json', v))}">health.json</a></footer>
+<footer><a href="/board">Proof board</a><a href="${esc(v.docsUrl)}" rel="noreferrer">Docs</a><a href="${esc(link('/admin/health.json', v))}">health.json</a></footer>
 </main></body></html>`;
 }

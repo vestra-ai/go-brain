@@ -8,10 +8,14 @@ import type { Tasks } from '../../tasks/tasks.js';
 import type { Probe } from '../health.js';
 import { NOT_DEPLOYED, type AdminLanes } from '../lanes.js';
 import { DOCS_URL, registerAdmin, registerAdminWith } from '../register.js';
+import { SESSION_COOKIE, sessionValue } from '../session.js';
 import { createSwitches } from '../switches.js';
 
 const TOKEN = 'admin-token-for-the-tests-0001';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
+/** What the browser sends once it has signed in at /admin#token=... */
+const SIGNED_IN = { cookie: `${SESSION_COOKIE}=${sessionValue(TOKEN)}` };
+const FORM = { ...SIGNED_IN, 'content-type': 'application/x-www-form-urlencoded' };
 const base = {
   PORT: '0', DATABASE_URL: process.env.DATABASE_URL, GO_SIGNING_SECRET: 'a'.repeat(64), GO_PUBLIC_URL: 'http://127.0.0.1',
   ANTHROPIC_API_KEY: 'test-key', LOG_LEVEL: 'silent', REFLEX_LIVE: 'q1,q2,q3', CALLS_MODE: 'allowlist', CALLS_ALLOWLIST: 'Villa Sol=+919800000001',
@@ -23,6 +27,7 @@ let closed: Built;
 let bare: Built;
 const fired: Array<{ auth: string | undefined; body: unknown }> = [];
 const declined: CardTapParams[] = [];
+const routes: Array<{ method: unknown; url: string; logLevel: unknown }> = [];
 const stopped: string[] = [];
 
 /** Two checks that answer at once, so the page and health.json need no network. */
@@ -76,6 +81,9 @@ beforeAll(async () => {
     fired.push({ auth: req.headers.authorization, body: req.body });
     return { ok: true, dedupe_key: 'sim:flight_status:abc123', promoted: 1 };
   });
+  built.brain.http.addHook('onRoute', (r) => {
+    routes.push({ method: r.method, url: r.url, logLevel: r.logLevel });
+  });
   await registerAdminWith({ probes, lanes })(built.brain);
 
   closed = await buildBrain(loadEnv(base), { pool: db.pool, anthropic: model.client, logger: false });
@@ -109,14 +117,44 @@ describe('the admin page', () => {
     }
   });
 
-  it('needs the token, as a bearer or as ?token=', async () => {
+  it('needs the token as a bearer, or the session cookie; never from the URL', async () => {
     const http = built.brain.http;
     expect((await http.inject({ method: 'GET', url: '/admin/health.json' })).statusCode).toBe(401);
-    expect((await http.inject({ method: 'GET', url: '/admin/health.json?token=wrong-token-00000000' })).statusCode).toBe(401);
+    expect((await http.inject({ method: 'GET', url: `/admin/health.json?token=${TOKEN}` })).statusCode).toBe(401);
     expect((await http.inject({ method: 'GET', url: '/admin/health.json', headers: { authorization: 'Bearer nope' } })).statusCode).toBe(401);
+    expect((await http.inject({ method: 'GET', url: '/admin/health.json', headers: { cookie: `${SESSION_COOKIE}=${TOKEN}` } })).statusCode).toBe(401);
     expect((await http.inject({ method: 'POST', url: '/admin/switches', payload: { name: 'TRAVEL_MODE', value: 'fake' } })).statusCode).toBe(401);
     expect((await http.inject({ method: 'GET', url: '/admin/health.json', headers: AUTH })).statusCode).toBe(200);
-    expect((await http.inject({ method: 'GET', url: `/admin?token=${TOKEN}` })).statusCode).toBe(200);
+    expect((await http.inject({ method: 'GET', url: '/admin/health.json', headers: SIGNED_IN })).statusCode).toBe(200);
+  });
+
+  it('signs a person in from /admin#token=...: the token goes once as a bearer, and comes back as an HttpOnly cookie', async () => {
+    const http = built.brain.http;
+    const before = await http.inject({ method: 'GET', url: `/admin?token=${TOKEN}` });
+    expect(before.statusCode).toBe(200);
+    expect(before.body).toContain('location.hash');
+    expect(before.body).toContain("fetch('/admin/session'");
+    expect(before.body).toContain('history.replaceState');
+    expect(before.body).not.toContain('Stage actions');
+    expect(before.body).not.toContain(TOKEN);
+
+    expect((await http.inject({ method: 'POST', url: '/admin/session', headers: { authorization: 'Bearer nope' } })).statusCode).toBe(401);
+    const session = await http.inject({ method: 'POST', url: '/admin/session', headers: AUTH });
+    expect(session.statusCode).toBe(204);
+    const cookie = String(session.headers['set-cookie']);
+    expect(cookie).toContain(`${SESSION_COOKIE}=${sessionValue(TOKEN)}`);
+    expect(cookie).toMatch(/HttpOnly/);
+    expect(cookie).toMatch(/SameSite=Lax/);
+    expect(cookie).not.toContain(TOKEN);
+
+    const after = await http.inject({ method: 'GET', url: '/admin', headers: { cookie: cookie.split(';')[0] ?? '' } });
+    expect(after.body).toContain('Stage actions');
+  });
+
+  it('its GET routes log at warn, so a request line never reaches the logs at info', () => {
+    const gets = routes.filter((r) => r.method === 'GET' && r.url.startsWith('/admin'));
+    expect(gets.map((r) => r.url).sort()).toEqual(['/admin', '/admin/health.json']);
+    for (const r of gets) expect(r.logLevel, r.url).toBe('warn');
   });
 
   it('health.json: every check for the chosen trip (else the newest), the switches, and the allowlist by name only', async () => {
@@ -156,13 +194,12 @@ describe('the admin page', () => {
 
   it("the page's forms come back to the page with a note", async () => {
     const res = await built.brain.http.inject({
-      method: 'POST', url: `/admin/switches?token=${TOKEN}&trip=t_goa`,
-      headers: { 'content-type': 'application/x-www-form-urlencoded' }, payload: 'name=CALLS_MODE&value=off',
+      method: 'POST', url: '/admin/switches?trip=t_goa', headers: FORM, payload: 'name=CALLS_MODE&value=off',
     });
     expect(res.statusCode).toBe(303);
     const to = new URL(String(res.headers.location), 'http://go.local');
     expect(to.pathname).toBe('/admin');
-    expect(to.searchParams.get('token')).toBe(TOKEN);
+    expect(to.searchParams.has('token')).toBe(false);
     expect(to.searchParams.get('trip')).toBe('t_goa');
     expect(to.searchParams.get('note')).toBe('CALLS_MODE is now off');
     expect(built.brain.switches.get('CALLS_MODE')).toBe('off');
@@ -206,21 +243,22 @@ describe('the admin page', () => {
   });
 
   it('the page: health, every switch with a choice, the allowlist masked, the actions and the links, and no em dash', async () => {
-    const res = await built.brain.http.inject({ method: 'GET', url: `/admin?token=${TOKEN}&trip=t_goa` });
+    const res = await built.brain.http.inject({ method: 'GET', url: '/admin?trip=t_goa', headers: SIGNED_IN });
     expect(res.headers['content-type']).toMatch(/^text\/html/);
     expect(res.headers['referrer-policy']).toBe('no-referrer');
     const html = res.body;
     for (const text of [
       'The Server&#39;s socket', 'computer waking for t_goa', 'TRAVEL_MODE', 'PAY_RAIL', 'CALLS_MODE', 'REFLEX_LIVE', 'DEMO_ROOM',
       '<option value="stripe_test"', 'Villa Sol (+91***001)', 'Fire a watch', 'Stop all running jobs for this trip',
-      'Decline the waiting pay card', `/board?token=${TOKEN}`, DOCS_URL,
+      'Decline the waiting pay card', 'href="/board"', DOCS_URL,
     ]) expect(html, text).toContain(text);
     expect(html).not.toContain('9800000001');
+    expect(html).not.toContain(TOKEN);
     expect(html).not.toMatch(/[\u2014\u2013]/);
   });
 
   it('escapes what it shows', async () => {
-    const res = await built.brain.http.inject({ method: 'GET', url: `/admin?token=${TOKEN}&trip=${encodeURIComponent('<script>x</script>')}` });
+    const res = await built.brain.http.inject({ method: 'GET', url: `/admin?trip=${encodeURIComponent('<script>x</script>')}`, headers: SIGNED_IN });
     expect(res.body).not.toContain('<script>x</script>');
     expect(res.body).toContain('&lt;script&gt;x&lt;/script&gt;');
   });
@@ -234,7 +272,7 @@ describe('a lane that is not on this Go yet', () => {
     expect(health.probes.find((p: { name: string }) => p.name === 'ixigo')).toMatchObject({ dot: 'red', detail: `the ixigo connection is ${NOT_DEPLOYED}` });
     expect(health.calls).toEqual({ mode: 'allowlist', allowlist: [], allowlist_count: 0 });
 
-    const page = (await http.inject({ method: 'GET', url: `/admin?token=${TOKEN}&trip=t_goa` })).body;
+    const page = (await http.inject({ method: 'GET', url: '/admin?trip=t_goa', headers: SIGNED_IN })).body;
     expect(page).toContain('Calls are not deployed on this Go yet');
     expect(page).not.toContain('9800000001');
 
@@ -247,8 +285,7 @@ describe('a lane that is not on this Go yet', () => {
     expect(watch.json().error.message).toBe(`Watches are ${NOT_DEPLOYED}.`);
 
     const form = await http.inject({
-      method: 'POST', url: `/admin/stop-jobs?token=${TOKEN}`,
-      headers: { 'content-type': 'application/x-www-form-urlencoded' }, payload: 'trip_id=t_goa',
+      method: 'POST', url: '/admin/stop-jobs', headers: FORM, payload: 'trip_id=t_goa',
     });
     expect(form.statusCode).toBe(303);
     expect(new URL(String(form.headers.location), 'http://go.local').searchParams.get('note')).toBe(`Jobs are ${NOT_DEPLOYED}.`);

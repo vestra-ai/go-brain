@@ -1,7 +1,7 @@
 // The admin page: the operator's desk at the side of the stage. Health, the demo switches, the simulated watch and two
 // clean-up buttons, each through a lane's own interface. It does not exist unless ADMIN_TOKEN is set, and every route
-// needs that token as a bearer or as ?token= (the browser page).
-import { createHash, timingSafeEqual } from 'node:crypto';
+// needs that token as a bearer, or the session cookie a person gets by opening /admin#token=... (session.ts). The token
+// is never read from a URL.
 import type * as C from '@go/contract';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -10,6 +10,7 @@ import { newUlid } from '../door/ulid.js';
 import { checkAll, defaultProbes, type Probe, type ProbeResult } from './health.js';
 import { loadAdminLanes, NOT_DEPLOYED, type AdminLanes } from './lanes.js';
 import { renderAdminPage } from './page.js';
+import { SESSION_PATH, sessionCookie, signedIn, signInPage } from './session.js';
 import { SWITCH_RULES, type SwitchName } from './switches.js';
 
 export const DOCS_URL = 'https://vestrago.vercel.app/docs';
@@ -39,19 +40,10 @@ export const FireForm = z.object({
 });
 const TripForm = z.object({ trip_id: z.string().min(1).max(64) });
 
-type Query = { token?: string; trip?: string; note?: string };
+type Query = { trip?: string; note?: string };
 type Req = FastifyRequest<{ Querystring: Query; Body: unknown }>;
-
-function tokenOf(req: Req): string | undefined {
-  const auth = req.headers.authorization;
-  if (typeof auth === 'string' && auth.startsWith('Bearer ')) return auth.slice('Bearer '.length);
-  return typeof req.query.token === 'string' ? req.query.token : undefined;
-}
-
-function sameToken(given: string | undefined, expected: string): boolean {
-  if (!given) return false;
-  return timingSafeEqual(createHash('sha256').update(given).digest(), createHash('sha256').update(expected).digest());
-}
+/** The GET routes log at warn: a request line never lands in the logs at info, whatever its URL holds. */
+const QUIET = { logLevel: 'warn' } as const;
 
 /** The body as an object, with empty form fields left out (an empty field means "not given"). */
 function filled(body: unknown): Record<string, unknown> {
@@ -107,7 +99,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
     /** JSON gets JSON; the page's forms go back to the page with a note. */
     const answer = (req: Req, reply: FastifyReply, status: number, body: unknown, note: string, tripId: string | null) => {
       if (!String(req.headers['content-type'] ?? '').startsWith(FORM)) return reply.code(status).send(body);
-      const q = new URLSearchParams({ token: tokenOf(req) ?? '', ...(tripId ? { trip: tripId } : {}), note });
+      const q = new URLSearchParams({ ...(tripId ? { trip: tripId } : {}), note });
       return reply.code(303).header('location', `/admin?${q.toString()}`).send();
     };
 
@@ -118,22 +110,30 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         });
       }
       scope.addHook('onRequest', async (req, reply) => {
-        if (!sameToken(tokenOf(req as Req), token)) {
-          return reply.code(401).send(err('bad_signature', 'Wrong or missing admin token.'));
+        if (signedIn(req, token)) return;
+        // Not signed in: the page itself answers with the sign-in page, which reads the token from after the #.
+        if (req.method === 'GET' && req.routeOptions.url === '/admin') {
+          return reply.headers(HTML_HEADERS).type('text/html; charset=utf-8').send(signInPage('Go: stage desk', '/admin'));
         }
+        return reply.code(401).send(err('bad_signature', 'Wrong or missing admin token.'));
       });
 
-      scope.get<{ Querystring: Query }>('/admin', async (req, reply) => {
+      // The sign-in page's one call: the token as a bearer, swapped for an HttpOnly cookie.
+      scope.post(SESSION_PATH, async (_req, reply) =>
+        reply.header('set-cookie', sessionCookie(token, brain.env.GO_PUBLIC_URL.startsWith('https:'))).code(204).send(),
+      );
+
+      scope.get<{ Querystring: Query }>('/admin', QUIET, async (req, reply) => {
         const tripId = await tripOf(req.query);
         const [health, people, trips] = await Promise.all([checkAll(probesFor(brain, tripId)), peopleOf(tripId), newestTrips()]);
         const html = renderAdminPage({
-          token, tripId, trips, at: brain.now(), health, switches: switchValues(), people, calls: calls(),
+          tripId, trips, at: brain.now(), health, switches: switchValues(), people, calls: calls(),
           note: req.query.note ?? null, docsUrl: DOCS_URL,
         });
         return reply.headers(HTML_HEADERS).type('text/html; charset=utf-8').send(html);
       });
 
-      scope.get<{ Querystring: Query }>('/admin/health.json', async (req, reply) => {
+      scope.get<{ Querystring: Query }>('/admin/health.json', QUIET, async (req, reply) => {
         const tripId = await tripOf(req.query);
         const c = calls();
         const body: HealthJson = {
