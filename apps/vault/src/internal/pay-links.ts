@@ -55,6 +55,8 @@ export async function openPayLink(
   if (!env.VAULT_RAILS.includes(body.hold.payment_kind)) return refuse('rail_not_ready');
   const used = await db.query('select 1 from used_approvals where jti = $1', [c.jti]);
   if ((used.rowCount ?? 0) > 0) return refuse('used');
+  const voided = await db.query('select 1 from voided_approvals where approval_id = $1', [body.approval_id]);
+  if ((voided.rowCount ?? 0) > 0) return refuse('used');
 
   await ensurePerson(db, body.payer_person_id, now, body.payer_name ?? undefined);
   await db.query(
@@ -76,4 +78,11 @@ export async function openPayLink(
   }
   const link = await createPayLink(db, now, { personId: c.payer_person_id, approvalId: body.approval_id, notAfter: new Date(c.exp * 1000) });
   return { ok: true, url: `${env.VAULT_PUBLIC_URL}/p/${link.token}`, expiresAt: link.expiresAt };
+}
+
+/** Go let this payment go: every pay link for the approval stops working, and no new one is made. Safe to repeat. */
+export async function voidPayLinks(db: pg.Pool, now: Date, approvalId: string): Promise<number> {
+  await db.query('insert into voided_approvals (approval_id, voided_at) values ($1, $2) on conflict do nothing', [approvalId, now]);
+  const r = await db.query("update links set used_at = $2 where approval_id = $1 and kind = 'pay' and used_at is null", [approvalId, now]);
+  return r.rowCount ?? 0;
 }

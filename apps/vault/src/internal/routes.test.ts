@@ -221,6 +221,32 @@ describe('POST /internal/pay-links', () => {
   });
 });
 
+describe('POST /internal/pay-links/void', () => {
+  const at = (s: number) => new Date(now.getTime() + s * 1000);
+
+  it('stops every pay link for the approval, and refuses a new one', async () => {
+    const body = payBody({ approval: signTestApproval({ jti: 'ap_void_00001' }), approval_id: 'ap_void_00001' });
+    expect((await payLink(body)).statusCode).toBe(200);
+    const res = await signedInject(app, { method: 'POST', url: '/internal/pay-links/void', body: { approval_id: 'ap_void_00001' }, now: at(3) });
+    expect(res.json()).toEqual({ ok: true, voided: 1 });
+    const links = await pool.query<{ used_at: Date | null }>("select used_at from links where approval_id = 'ap_void_00001'");
+    expect(links.rows.map((l) => l.used_at !== null)).toEqual([true]);
+    expect(await reasonOf(body, at(4))).toBe('used');
+  });
+
+  it('voids an approval it has not seen yet, so a pay link asked for later is refused', async () => {
+    const res = await signedInject(app, { method: 'POST', url: '/internal/pay-links/void', body: { approval_id: 'ap_void_00002' }, now: at(5) });
+    expect(res.json()).toEqual({ ok: true, voided: 0 });
+    const body = payBody({ approval: signTestApproval({ jti: 'ap_void_00002' }), approval_id: 'ap_void_00002' });
+    expect(await reasonOf(body, at(6))).toBe('used');
+  });
+
+  it('refuses a call without the shared secret', async () => {
+    const res = await app.inject({ method: 'POST', url: '/internal/pay-links/void', payload: { approval_id: 'ap_void_00003' } });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
 describe('GET /internal/both-keys', () => {
   it('counts payments without both keys from the unlock log', async () => {
     const res = await signedInject(app, { method: 'GET', url: '/internal/both-keys', now: new Date(now.getTime() + 2000) });
