@@ -70,3 +70,14 @@ It listens on `PORT` (8080 when not set). Point your Server's `GO_URL` at `http:
 3. In Settings, Config-as-code, set the config file path to `/apps/fake-go/railway.json`. It builds `apps/fake-go/Dockerfile` and checks `/v1/health` before a deploy goes live.
 4. In Variables, set `GO_SIGNING_SECRET` (make it with `openssl rand -hex 32`) and `FAKE_GO_ADMIN_TOKEN` (make it with `openssl rand -hex 16`). Railway sets `PORT` and `RAILWAY_PUBLIC_DOMAIN` itself.
 5. In Settings, Networking, generate a domain. `https://<that domain>` is the `GO_URL` the Server uses.
+
+## How the tests prove it
+
+CI runs these tests, then builds the Docker image Railway builds and checks that it boots and answers `/v1/health`.
+
+- `server.test.ts`: the upgrade refuses a missing, malformed, stale or wrong signature, accepts each signature once and needs the query string signed; health answers without a signature; the frames page needs the admin token; `send_event` accepts an unknown event type and refuses a broken known one with `422`.
+- `behaviour.test.ts`: a message that mentions Go gets typing, `read_trip`, a ✅, a reply with a card and typing off, on the socket the event came on; repeats, Go's own messages, withheld messages and messages not for Go get nothing; each card kind is valid and has no em dash; taps are answered once, and only the payer can approve.
+- `link.test.ts`: which socket a request goes on, and that every answer from the Server is checked against the contract, with a Problem row for a bad or late one.
+- `smoke.test.ts`: the smoke check passes against a running fake Go, and fails with a plain reason when the secret is wrong.
+
+`pnpm --filter @go/fake-go test` runs them.
