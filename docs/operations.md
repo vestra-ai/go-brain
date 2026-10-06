@@ -161,7 +161,7 @@ Each Go has one schema and one login of the same name:
 | `brain-try` | `go_try` |
 
 - Each login's `search_path` is its own schema, then `extensions`. A login can create only in its own schema and cannot see the others.
-- Each schema has 45 tables.
+- Each schema has 45 tables, which Go made with its own migrations on a fresh database.
 - `DATABASE_URL` on each Go points at Supabase's session pooler:
 
   ```
