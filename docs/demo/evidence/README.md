@@ -4,8 +4,8 @@ This folder holds measured evidence about Go. `bench-2026-10-06.json` is the rep
 
 ## Where the report comes from
 
-- **Run:** CI run [37425189498](https://github.com/vestra-ai/go-brain/actions/runs/37425189498), job `build-and-test`, artifact `bench-report`, written at 2026-10-06 06:52 UTC.
-- **Code:** `build` at commit `9c8556a`, with pull request #43 merged on top (GitHub's test commit `95b7445`, which the report names). Pull request #43 changes only documents, so the code measured is `build`'s. CI runs on pull requests and on `main`, not on pushes to `build`, so this is how a run of `build`'s code is made.
+- **Run:** CI run [37437605711](https://github.com/vestra-ai/go-brain/actions/runs/37437605711), job `build-and-test`, artifact `bench-report`, written at 2026-10-06 08:46 UTC. The same run's test counts, and its demo transcript ([`docs/demo/transcript.md`](../transcript.md)), are the ones the other pages cite.
+- **Code:** `build` at commit `5225799`, with pull request #50 merged on top (GitHub's test commit `de25e65`, which the report names). Pull request #50 changes documents and the demo test's transcript, which the bench does not run, so the code measured is `build`'s. CI runs on pull requests and on `main`, not on pushes to `build`, so this is how a run of `build`'s code is made.
 - **Verdict:** all 28 checks passed (`verdict.ok` is `true`).
 
 ## What the fast bench is
@@ -27,7 +27,7 @@ The bars come from `packages/bench/bars.json`. Values are in the order `goa-50` 
 | Check | What it measures | Bar | This run |
 |---|---|---|---|
 | Typing p90 | How soon Go shows "typing" after a line that asks it something. | under 500 ms | 6 / 4 / 3 ms |
-| Go's own time to reply, p90 | How long Go takes from a person's last line of an ask to Go's message in the room. | under 1,500 ms | 32 / 24 / 26 ms |
+| Go's own time to reply, p90 | How long Go takes from a person's last line of an ask to Go's message in the room. | under 1,500 ms | 30 / 30 / 29 ms |
 | Cache hit | The share of each prompt read from the provider's cache. | 85% or more, on `goa-2000` only | 87.1% / 81.6% / 87.0% |
 | Cache breaks | Cache misses with no good reason. | 0 | 0 / 0 / 0 |
 | Woke the model | How often a message from a person led to a model call. | under 25% | 20.0% / 17.0% / 9.9% |
@@ -105,11 +105,11 @@ This run folded `goa-2000` twice (`scores[].cache.folds` and `scores[].turns`):
 
 These are measured but not held to a bar.
 
-- **Prompt size:** the largest prompt was 5,776 / 8,463 / 20,191 tokens, and the last 5,776 / 8,463 / 12,857. On average a first-round prompt held the tools (3,620 tokens), the rules (964), the cached chat (208 / 1,599 / 8,736) and the part after the cache point (621 / 592 / 624).
+- **Prompt size:** the largest prompt was 5,776 / 8,463 / 20,191 tokens, and the last 5,776 / 8,463 / 12,857. On average a first-round prompt held the tools (3,620 tokens), the rules (964), the cached chat (208 / 1,599 / 8,736) and the part after the cache point (621 / 591 / 623).
 - **Side passes:** Go's smaller model takes notes and writes the story in the background: 8 / 7 / 11 requests, 6,096 / 4,738 / 27,356 tokens.
 - **First word:** the scripted model's first word arrived in 1 ms (p50), so it adds nothing to the reply times.
-- **Cost:** $0.0403 / $0.2168 / $1.3616 per chat. It is every request Go sent (model turns and side passes), priced with Go's price table ([`apps/brain/src/composer/anthropic-helpers.ts`](../../../apps/brain/src/composer/anthropic-helpers.ts#L44)) for each request's model, from the estimated token counts. It is an estimate of what the chat would cost, not a bill.
-- **Run time:** 13.1 / 54.4 / 95.6 seconds of real time to replay each chat.
+- **Cost:** $0.0403 / $0.2167 / $1.3615 per chat. It is every request Go sent (model turns and side passes), priced with Go's price table ([`apps/brain/src/composer/anthropic-helpers.ts`](../../../apps/brain/src/composer/anthropic-helpers.ts#L44)) for each request's model, from the estimated token counts. It is an estimate of what the chat would cost, not a bill.
+- **Run time:** 13.1 / 54.4 / 96.7 seconds of real time to replay each chat.
 
 ## The proof board (`boards`)
 
@@ -120,8 +120,8 @@ After each replay, the bench reads Go's own proof board: the numbers Go works ou
 | Woke the model | 10 of 50 | 51 of 300 | 198 of 2,000 |
 | Cache hit | 79.3% | 80.5% | 86.9% |
 | Typing p90 (turns timed) | 4 ms (6) | 2 ms (12) | 2 ms (45) |
-| Reply p50 / p90 | 26 / 2,547 ms | 22 / 33 ms | 22 / 2,029 ms |
-| Model cost for the trip | $0.0341 | $0.2119 | $1.3338 |
+| Reply p50 / p90 | 27 / 2,538 ms | 25 / 31 ms | 26 / 2,023 ms |
+| Model cost for the trip | $0.0341 | $0.2118 | $1.3337 |
 | Payments without both keys | 0 | 0 | 0 |
 
 How they relate to the bench's numbers:
@@ -129,7 +129,7 @@ How they relate to the bench's numbers:
 - **Woke the model** is the same count.
 - **Cache hit** matches the bench's figure with the first request included, because the usage Go recorded for each turn came from the same estimate.
 - **Typing** counts every turn that included a message marked as naming Go, which in `goa-2000` is 45 turns against the bench's 13 asks.
-- **Reply** starts its clock at the first message in a turn that named Go; the bench starts at the last line of the ask. When an ask comes in more than one line, the board's figure includes the time until the ask was finished: Go holds a message its quick read is not sure is complete for 2 seconds (longer while more lines keep coming, up to 6) before it answers. That is where the board's p90 of 2,547 and 2,029 ms comes from; the bench's figure leaves that time out.
+- **Reply** starts its clock at the first message in a turn that named Go; the bench starts at the last line of the ask. When an ask comes in more than one line, the board's figure includes the time until the ask was finished: Go holds a message its quick read is not sure is complete for 2 seconds (longer while more lines keep coming, up to 6) before it answers. That is where the board's p90 of 2,538 and 2,023 ms comes from; the bench's figure leaves that time out.
 - **Model cost** counts model turns only; the bench's cost adds the side passes.
 - **Payments without both keys** counts bookings Go recorded without the Server's signed approval, over all time. No chat here pays for anything, so 0 shows only that none slipped in.
 
@@ -142,4 +142,4 @@ pnpm install && pnpm build
 DATABASE_URL=postgres://... pnpm --filter @go/bench bench:fast
 ```
 
-It writes `packages/bench/out/bench-report.json` and `bench-report.md`. Times will differ a little from run to run and machine to machine; the counts and the cache estimate should not.
+It writes `packages/bench/out/bench-report.json` and `bench-report.md`. Times will differ a little from run to run and machine to machine, and so will the cache estimate and the cost, in their last digits: each prompt says the time of day, and a time written with one more character counts as more tokens. The counts should not differ.
