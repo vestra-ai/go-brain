@@ -3,6 +3,11 @@
  * Last-Event-ID, cut on demand), GET /v1/events for the webhook kinds, and helpers that play the trip's computer
  * (a task starts, ticks its to-do list, asks, hands off, finishes). It checks keys, the admin key where /v1 asks for
  * it, idempotency keys on creates, and records every call.
+ *
+ * Turns as /v1 keeps them: every message is a turn. A follow-up's words wait in its conversation's task (the task
+ * inbox) for the next run, and a run settles the turns whose words it took (conversation.status, after the run's
+ * ending), so a task with a follow-up runs twice and ends twice. A conversation is idle only with no turn and no work
+ * open.
  */
 import { createHmac } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
@@ -17,7 +22,12 @@ export interface FakePlatformEvent {
 export interface FakeTask {
   id: string; conversationId: string; userId: string; turnId: string; title: string; status: 'queued' | 'working' | 'waiting' | 'done' | 'failed';
   progress: Array<{ content: string; status: string }>; result: { text: string | null; data: unknown }; stopped: boolean;
+  /** The turns whose words the current run took: they settle when it ends. */
+  inRun: string[];
+  /** The turns whose words wait for the next run. */
+  inbox: string[];
 }
+export interface FakeTurn { id: string; conversationId: string; status: 'working' | 'completed' | 'failed' | 'stopped'; data: unknown }
 export interface FakeInteraction {
   id: string; taskId: string; conversationId: string; userId: string; type: 'question' | 'handoff' | 'approval' | 'connect' | 'tool_call'; kind: string;
   status: 'pending' | 'resolved' | 'cancelled' | 'expired'; summary: string;
@@ -43,6 +53,7 @@ export class FakeV1 {
   readonly secrets = new Map<string, string>();
   readonly conversations = new Map<string, { id: string; userId: string; deployment: string | null; events: FakeEvent[] }>();
   readonly tasks = new Map<string, FakeTask>();
+  readonly turns = new Map<string, FakeTurn>();
   readonly interactions = new Map<string, FakeInteraction>();
   readonly platformEvents: FakePlatformEvent[] = [];
   /** The computer's screen; null answers 409 browser_not_open. */
@@ -107,13 +118,26 @@ export class FakeV1 {
     return e;
   }
 
-  startTask(conversationId: string, turnId: string, title: string): FakeTask {
+  /** /v1 starts the work a hand_off message asked for. Queued: the computer is still waking, so no run has its words yet. */
+  startTask(conversationId: string, turnId: string, title: string, o: { queued?: boolean } = {}): FakeTask {
     const conv = this.conversations.get(conversationId);
     if (!conv) throw new Error(`no conversation ${conversationId}`);
-    const t: FakeTask = { id: this.next('task'), conversationId, userId: conv.userId, turnId, title, status: 'working', progress: [], result: { text: null, data: null }, stopped: false };
+    const t: FakeTask = {
+      id: this.next('task'), conversationId, userId: conv.userId, turnId, title, status: o.queued ? 'queued' : 'working', progress: [], result: { text: null, data: null },
+      stopped: false, inRun: o.queued ? [] : [turnId], inbox: o.queued ? [turnId] : [],
+    };
     this.tasks.set(t.id, t);
     this.emit(conversationId, 'task.started', { task_id: t.id, title, turn_id: turnId });
     return t;
+  }
+
+  /** The task's next run starts, taking the words of these turns from its inbox (default: all of them). */
+  nextRun(taskId: string, takes?: string[]): void {
+    const t = this.task(taskId);
+    const taking = takes ?? [...t.inbox];
+    t.inbox = t.inbox.filter((id) => !taking.includes(id));
+    t.inRun = taking;
+    t.status = 'working';
   }
 
   lastTask(): FakeTask | undefined {
@@ -135,24 +159,31 @@ export class FakeV1 {
     return i;
   }
 
+  /** The current run ends: its ending, then the turns whose words it took settle. Words still in the inbox run next. */
   complete(taskId: string, data: unknown, text: string): void {
     const t = this.task(taskId);
-    t.status = 'done';
+    const ran = this.endRun(t);
+    t.status = t.inbox.length > 0 ? 'queued' : 'done';
     t.result = { text, data };
     this.emit(t.conversationId, 'task.completed', { task_id: taskId, status: 'completed', cost_usd: 0.42, cost_complete: true, summary: text.slice(0, 280), answer: text });
+    this.settleTurns(ran, 'completed', data, true);
   }
 
   fail(taskId: string, message: string): void {
     const t = this.task(taskId);
+    const all = [...this.endRun(t), ...t.inbox.splice(0)];
     t.status = 'failed';
     this.emit(t.conversationId, 'task.failed', { task_id: taskId, status: 'failed', message });
+    this.settleTurns(all, 'failed', null, true);
   }
 
   /** Done on /v1 with no event at all: what a lost webhook and a dead stream look like together. */
   finishSilently(taskId: string, data: unknown, text: string): void {
     const t = this.task(taskId);
+    const all = [...this.endRun(t), ...t.inbox.splice(0)];
     t.status = 'done';
     t.result = { text, data };
+    this.settleTurns(all, 'completed', data, false);
   }
 
   /** A webhook delivery of one event, signed as Vestra signs it. */
@@ -172,20 +203,44 @@ export class FakeV1 {
     return t;
   }
 
+  private endRun(t: FakeTask): string[] {
+    const ran = t.inRun;
+    t.inRun = [];
+    return ran;
+  }
+
+  /** Settles open turns; announced, each is a conversation.status naming the turn and the conversation's status after it. */
+  private settleTurns(ids: string[], status: FakeTurn['status'], data: unknown, announce: boolean): void {
+    for (const id of ids) {
+      const turn = this.turns.get(id);
+      if (!turn || turn.status !== 'working') continue;
+      turn.status = status;
+      turn.data = data ?? null;
+      if (announce) {
+        const conv = this.conversationView(turn.conversationId);
+        this.emit(turn.conversationId, 'conversation.status', { status: conv.status, turn_id: id, turn_status: status, ...(data != null ? { data } : {}) });
+      }
+    }
+  }
+
   private stop(t: FakeTask): void {
     if (t.status === 'done' || t.status === 'failed') return;
+    const all = [...this.endRun(t), ...t.inbox.splice(0)];
     t.status = 'failed';
     t.stopped = true;
     for (const i of this.interactions.values()) if (i.taskId === t.id && i.status === 'pending') i.status = 'cancelled';
     this.emit(t.conversationId, 'task.stopped', { task_id: t.id, status: 'stopped' });
+    this.settleTurns(all, 'stopped', null, true);
   }
 
   private conversationView(id: string): Record<string, unknown> {
     const c = this.conversations.get(id)!;
     const work = [...this.tasks.values()].filter((t) => t.conversationId === id && (t.status === 'working' || t.status === 'waiting' || t.status === 'queued'));
     const asks = [...this.interactions.values()].filter((i) => i.conversationId === id && i.status === 'pending');
+    const openTurns = [...this.turns.values()].some((u) => u.conversationId === id && u.status === 'working');
+    const status = asks.length > 0 ? 'waiting' : work.length > 0 || openTurns ? 'working' : 'idle';
     return {
-      id, object: 'conversation', user_id: c.userId, deployment_id: c.deployment, deployment_version: 1, status: work.length > 0 ? 'working' : 'idle', metadata: {},
+      id, object: 'conversation', user_id: c.userId, deployment_id: c.deployment, deployment_version: 1, status, metadata: {},
       open_work: work.map((t) => ({ task_id: t.id, title: t.title, status: t.status })),
       open_interactions: asks.map((i) => ({ interaction_id: i.id, task_id: i.taskId, kind: i.kind })),
       pending_tool_calls: [], last_event_seq: c.events.length, cost_usd: 0, created_at: this.o.now().toISOString(), last_active_at: this.o.now().toISOString(),
@@ -292,7 +347,19 @@ export class FakeV1 {
       return idempotent(req, reply, 202, () => {
         const b = req.body as { message: string; hand_off?: string };
         const turnId = this.next('turn');
-        if (b.hand_off === 'always' && this.autoStart) setImmediate(() => this.startTask(id, turnId, b.message.slice(0, 60)));
+        this.turns.set(turnId, { id: turnId, conversationId: id, status: 'working', data: null });
+        if (b.hand_off === 'always') {
+          if (this.autoStart) setImmediate(() => this.startTask(id, turnId, b.message.slice(0, 60)));
+        } else {
+          // More words for the conversation's work: they wait in its inbox for its next run. With no work, Bash just replies.
+          const work = [...this.tasks.values()].filter((t) => t.conversationId === id && t.status !== 'failed').at(-1);
+          if (work) {
+            work.inbox.push(turnId);
+            if (work.status === 'done') work.status = 'queued';
+          } else {
+            setImmediate(() => this.settleTurns([turnId], 'completed', null, true));
+          }
+        }
         return {
           id: turnId, object: 'conversation.turn', conversation_id: id, status: 'running', reply: null, answer: null, data: null, outcome: null,
           work: [], tool_calls: [], error: null, created_at: this.o.now().toISOString(), finished_at: null,

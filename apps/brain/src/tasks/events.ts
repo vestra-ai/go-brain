@@ -2,6 +2,11 @@
  * One place that applies a /v1 event to Go's jobs, whichever way it came: the live stream, a webhook, the events poll
  * or the sweep. Every step is idempotent (state moves only forward, desk items have fixed ids), so the same event from
  * two sources, or twice from one, changes things once. A stopped job never posts results.
+ *
+ * task.completed ends one run of a job's /v1 task, not the job: a message Go sent while the job waited (a follow-up)
+ * runs as a run of its own, in either order. The job ends only when /v1 says nothing of it is left: its conversation
+ * is idle (every message Go put in has settled, no work open) and its task has ended. Until then a run's end is
+ * progress, and the trip token stays live for the runs still to come.
  */
 import type { Brain } from '../app.js';
 import { clip } from '../travel/cards.js';
@@ -158,15 +163,45 @@ export function createTaskEvents(d: TaskEventsDeps): TaskEvents {
     const v1TaskId = str(data.task_id);
     const row = v1TaskId ? await d.store.byV1Task(v1TaskId) : null;
     if (!isLive(row) || row.stopRequestedAt || !v1TaskId) return;
-    let task: { result?: { text?: string | null; data?: unknown } | null; cost_usd?: number | null };
+    await finishIfIdle(row, v1TaskId, str(data.answer) ?? str(data.summary));
+  }
+
+  /** A turn of a conversation settled: when the conversation says it is idle, its jobs may have nothing left to run. */
+  async function conversationStatus(data: Record<string, unknown>, conversationId: string | null): Promise<void> {
+    const status = str(data.status);
+    if (!conversationId || (status !== null && status !== 'idle')) return;
+    for (const row of await d.store.liveIn(conversationId)) {
+      if (row.v1TaskId && !row.stopRequestedAt) await finishIfIdle(row, row.v1TaskId, null);
+    }
+  }
+
+  /**
+   * Ends a job once nothing of it is left on /v1: its conversation idle and its task done (or failed). Anything else is
+   * a run ending with more to come, so the job keeps running, its card live and its token armed.
+   */
+  async function finishIfIdle(row: TaskRow, v1TaskId: string, eventText: string | null): Promise<void> {
+    if (row.conversationId) {
+      const conv = await d.v1.call<{ status?: string }>('GET', `/v1/conversations/${row.conversationId}`);
+      if (conv.status !== 'idle') {
+        d.log.info({ taskId: row.id, v1TaskId, conversation: conv.status ?? null }, 'tasks: a run of the job ended, and more of it is still on /v1');
+        return;
+      }
+    }
+    let task: { status?: string; result?: { text?: string | null; data?: unknown } | null; cost_usd?: number | null };
     try {
       task = await d.v1.call('GET', `/v1/tasks/${v1TaskId}`);
     } catch (err) {
       d.log.warn({ err, v1TaskId }, "tasks: reading a finished job's result failed; using the event's summary");
-      task = { result: { text: str(data.answer) ?? str(data.summary), data: null } };
+      task = { status: 'done', result: { text: eventText, data: null } };
     }
+    if (task.status === 'failed') {
+      await d.tasks.fail(row, 'failed', 'The computer reported a problem.');
+      return;
+    }
+    if (task.status !== 'done') return;
     const kind = row.returnsKind as ReturnsKind;
-    const read = readReturned(kind, task.result?.data ?? null, task.result?.text ?? str(data.summary));
+    const read = readReturned(kind, task.result?.data ?? null, task.result?.text ?? eventText);
+    if (read.fromText) d.log.info({ taskId: row.id, v1TaskId }, "tasks: the job's answer came as JSON in its text, not as data; read it from the text");
     const optionKind = OPTION_KIND_FOR[kind];
     // An offer id Go's search showed this trip becomes that offer, checked prices and whole stay included; any other
     // stay or journey pick is "Found on the web", with no offer, so it can be voted on but never booked.
@@ -206,6 +241,8 @@ export function createTaskEvents(d: TaskEventsDeps): TaskEvents {
     if (!isLive(row)) return;
     if (row.stopRequestedAt) return quietStop(row);
     await d.tasks.fail(row, 'failed', str(data.message) ?? str(data.reason) ?? 'The computer reported a problem.');
+    // Ended in Go, so its token goes: /v1 must not run a message still waiting in the task without it.
+    if (v1TaskId) await d.tasks.stopV1(v1TaskId);
   }
 
   async function stopped(data: Record<string, unknown>): Promise<void> {
@@ -240,6 +277,8 @@ export function createTaskEvents(d: TaskEventsDeps): TaskEvents {
           return failed(ev.data);
         case 'task.stopped':
           return stopped(ev.data);
+        case 'conversation.status':
+          return conversationStatus(ev.data, ev.conversationId ?? null);
         default:
           return;
       }

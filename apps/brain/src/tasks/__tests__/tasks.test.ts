@@ -150,9 +150,48 @@ describe('talking to a job', () => {
     expect(await store.openInteractions(r.taskId)).toEqual([]);
     await tasks.message(r.taskId, 'Also look in Assagao');
     const follow = fake.callsTo('POST', /\/messages$/).at(-1)!;
-    expect(follow.body).toMatchObject({ hand_off: 'auto', metadata: { go_task_id: r.taskId } });
+    // The job's output_schema rides every message, so whichever run ends the job answers in its shape.
+    expect(follow.body).toMatchObject({ hand_off: 'auto', output_schema: returnsSchema('stays'), metadata: { go_task_id: r.taskId } });
     expect(follow.body.message).toContain('Also look in Assagao');
     await expect(tasks.message('gt_nope', 'x')).rejects.toMatchObject({ code: 'unknown_task' });
+  });
+
+  it('puts words for a job still waiting for a slot into its goal, so it starts with them and nothing extra goes to /v1', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i += 1) ids.push((await tasks.start('t_fold', { ...VILLAS, key: `fold${i}` })).taskId);
+    const fourth = await tasks.start('t_fold', { ...VILLAS, key: 'fold3' });
+    await tasks.settled();
+    expect((await store.get(fourth.taskId))?.state).toBe('queued');
+    await tasks.message(fourth.taskId, 'Also check if any of them allow pets');
+    const sentFor = (id: string) => fake.callsTo('POST', /\/messages$/).filter((c) => c.body?.metadata?.go_task_id === id);
+    expect(sentFor(fourth.taskId)).toEqual([]);
+    await tasks.stop(ids[0]!);
+    await tasks.settled();
+    const sent = sentFor(fourth.taskId);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.body).toMatchObject({ hand_off: 'always', output_schema: returnsSchema('stays') });
+    expect(sent[0]!.body.message).toBe(`${VILLAS.goal}\n\nAlso from the group: Also check if any of them allow pets`);
+  });
+
+  it('sends words that landed while the hand-off was on its way as the next message, with the schema', async () => {
+    const v1 = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
+    const real = createComputer({ pool: db.pool, v1, tokens: createTokenStore(db.pool, lb.clock.now), env: { VESTRA_DEPLOYMENT_ID: 'dep_go', VESTRA_MCP_SERVER_ID: 'mcp_go' }, now: lb.clock.now, log: lb.brain.log });
+    let own: TasksService | null = null;
+    const taskId = stableId('gt', 't_late', 'late1');
+    // Someone adds to the job after the hand-off read its goal, before /v1 has the message.
+    const computer = { ...real, conversation: async (tripId: string, id: string) => {
+      await own!.message(taskId, 'Also check if any of them allow pets');
+      return real.conversation(tripId, id);
+    } };
+    own = createTasks({ store, v1, computer, cards, link: lb.link, desk: lb.desk, packs: lb.brain.packs, now: lb.clock.now, log: lb.brain.log, follow: () => undefined });
+    await own.start('t_late', { ...VILLAS, key: 'late1' });
+    await own.settled();
+    const sent = fake.callsTo('POST', /\/messages$/).filter((c) => c.body?.metadata?.go_task_id === taskId);
+    expect(sent.map((c) => c.body.hand_off)).toEqual(['always', 'auto']);
+    expect(sent[0]!.body.message).toBe(VILLAS.goal);
+    expect(sent[1]!.body).toMatchObject({ output_schema: returnsSchema('stays') });
+    expect(sent[1]!.body.message).toContain('Also from the group: Also check if any of them allow pets');
+    expect(await store.get(taskId)).toMatchObject({ state: 'starting', endReason: null });
   });
 
   it('settles a hand-off the person did themselves, and the card stops pinning them', async () => {

@@ -1,9 +1,10 @@
 /**
  * Tasks: big jobs on the trip's computer. start() saves the job, posts its working card and returns at once; the
- * hand-off to /v1 runs behind it (a fresh trip token, the trip's conversation, one message with hand_off: always),
+ * hand-off to /v1 runs behind it (a fresh trip token, the job's own conversation, one message with hand_off: always),
  * so "On it" and the card reach the room within a second. At most three jobs run per trip; more wait as queued and
- * start in order as others end. message() answers an open question or hand-off, or passes the words on to the job.
- * stop() ends a job at once on the card and on /v1; a stopped job never posts results.
+ * start in order as others end. message() answers an open question or hand-off; otherwise the words join the goal of
+ * a job not yet handed over, or go to the job as one more message with the job's output_schema. stop() ends a job at
+ * once on the card and on /v1; a stopped job never posts results.
  */
 import type * as C from '@go/contract';
 import type { Brain } from '../app.js';
@@ -136,7 +137,7 @@ export function createTasks(d: TasksDeps): TasksService {
     await service.findStart(row).catch((err: unknown) => d.log.warn({ err, taskId: row.id }, "tasks: looking up a stopped job's start failed; the sweep tries again"));
   }
 
-  /** Hands one starting job to the trip's computer: a fresh trip token, the trip's conversation, one hand_off message. */
+  /** Hands one starting job to the trip's computer: a fresh trip token, the job's own conversation, one hand_off message. */
   async function handOver(taskId: string): Promise<void> {
     const row = await d.store.get(taskId);
     if (!row || row.state !== 'starting' || row.stopRequestedAt) return;
@@ -149,11 +150,13 @@ export function createTasks(d: TasksDeps): TasksService {
         if ((await d.store.countActive(row.tripId)) === 0) await d.computer.releaseTokens(row.tripId);
         return;
       }
-      const { conversationId } = await d.computer.conversation(row.tripId);
+      const { conversationId } = await d.computer.conversation(row.tripId, row.id);
+      // The goal as it is now: words someone added while the job waited (message()) are part of it.
+      const goal = current.goal;
       const turn = await d.v1.call<{ id: string }>('POST', `/v1/conversations/${conversationId}/messages`, {
         idempotencyKey: `go-msg-${row.id}`,
         body: {
-          message: row.goal,
+          message: goal,
           context: row.context,
           output_schema: row.returns,
           ...(row.successCriteria ? { success_criteria: row.successCriteria } : {}),
@@ -162,6 +165,12 @@ export function createTasks(d: TasksDeps): TasksService {
         },
       });
       await d.store.setTurn(row.id, conversationId, turn.id);
+      // Words added while the message was on its way missed it: they go as the job's next message. The job is on /v1
+      // by now, so a failure here is logged, never taken for a failed hand-off.
+      const after = await d.store.get(row.id);
+      if (after && after.goal.length > goal.length) {
+        await followUp(after, after.goal.slice(goal.length).trim()).catch((err: unknown) => d.log.warn({ err, taskId }, 'tasks: words added during the hand-off did not reach the job'));
+      }
       await service.mapStarts();
       d.follow(conversationId, row.tripId);
     } catch (err) {
@@ -171,6 +180,20 @@ export function createTasks(d: TasksDeps): TasksService {
       const reason = err instanceof V1Error && err.code === 'wallet_empty' ? "Go's account for the trip's computer is out of credit." : "It could not start on the trip's computer.";
       await service.fail(row, 'dispatch_failed', reason);
     }
+  }
+
+  /** One more message to a job on /v1, with its output_schema, so whatever turn ends the job answers in its shape. */
+  async function followUp(row: TaskRow, text: string): Promise<void> {
+    if (!row.conversationId) throw new TaskError('not_started', 'That job has not reached the computer yet. Try again in a moment.');
+    await d.v1.call('POST', `/v1/conversations/${row.conversationId}/messages`, {
+      idempotencyKey: stableId('go-follow', row.id, text),
+      body: {
+        message: `About the job "${row.title}"${row.v1TaskId ? ` (${row.v1TaskId})` : ''}: ${text.slice(0, 4000)}`,
+        output_schema: row.returns,
+        hand_off: 'auto',
+        metadata: { go_task_id: row.id },
+      },
+    });
   }
 
   async function backToWork(row: TaskRow): Promise<void> {
@@ -309,11 +332,10 @@ export function createTasks(d: TasksDeps): TasksService {
         if (ask.type === 'handoff') await backToWork(row);
         return;
       }
-      if (!row.conversationId) throw new TaskError('not_started', 'That job has not reached the computer yet. Try again in a moment.');
-      await d.v1.call('POST', `/v1/conversations/${row.conversationId}/messages`, {
-        idempotencyKey: stableId('go-follow', taskId, text),
-        body: { message: `About the job "${row.title}"${row.v1TaskId ? ` (${row.v1TaskId})` : ''}: ${text.slice(0, 4000)}`, hand_off: 'auto', metadata: { go_task_id: taskId } },
-      });
+      // Not handed to /v1 yet (waiting for a slot, or still arming its token): the words join its goal, so the job
+      // starts with them. /v1 cannot edit a message it already has, so after the hand-off they are one more message.
+      if (!row.v1TurnId && (await d.store.foldIntoGoal(taskId, `\n\nAlso from the group: ${text.slice(0, 2000)}`))) return;
+      await followUp((await d.store.get(taskId)) ?? row, text);
     },
 
     async handoff(taskId, outcome) {

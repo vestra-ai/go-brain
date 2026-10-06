@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type * as C from '@go/contract';
 import { FakeIxigoStore } from '../../travel/fake-ixigo/data.js';
 import { createImages } from '../../travel/images.js';
@@ -6,8 +6,10 @@ import { createTravelLayer } from '../../travel/layer.js';
 import { createFakeTravel } from '../../travel/mcp-travel.js';
 import type { ResultOption } from '../../travel/results.js';
 import { travelTools } from '../../travel/tools.js';
+import { createTokenStore, hashToken } from '../../mcp/tokens.js';
 import { FakeSwitches } from '../testing/lane-brain.js';
-import { makeTaskHarness, type TaskHarness } from '../testing/harness.js';
+import { makeTaskHarness, VILLA_BRIEF, type TaskHarness } from '../testing/harness.js';
+import { armedToken } from '../testing/job-search.js';
 
 let h: TaskHarness;
 let travel: ReturnType<typeof createTravelLayer>;
@@ -158,9 +160,132 @@ describe('applying /v1 events', () => {
     const a = await h.runningJob('ev8', 't_ev8');
     await h.events.apply({ type: 'task.failed', data: { task_id: a.v1TaskId, message: 'The villa site would not load.' }, source: 'webhook' });
     expect(h.lb.desk.items.find((i) => i.id === `task:${a.row.id}:failed`)?.payload).toMatchObject({ event: 'failed', reason: 'The villa site would not load.' });
+    // Ended in Go, its token revoked: /v1 must not run anything still waiting in the task.
+    expect(h.fake.tasks.get(a.v1TaskId)?.stopped).toBe(true);
     const b = await h.runningJob('ev9', 't_ev9');
     await h.events.apply({ type: 'task.stopped', data: { task_id: b.v1TaskId, reason: 'max_budget' }, source: 'webhook' });
     expect(await h.store.get(b.row.id)).toMatchObject({ state: 'failed', endReason: 'max_budget' });
     expect(h.lb.desk.items.find((i) => i.id === `task:${b.row.id}:failed`)?.payload).toMatchObject({ reason: 'It hit its spending limit, so it stopped.' });
+  });
+});
+
+/** Applies a conversation's new stream events in order, as the follower does. */
+async function deliver(conversationId: string, from: { seq: number }): Promise<string[]> {
+  const events = h.fake.conversations.get(conversationId)!.events.filter((e) => e.seq > from.seq);
+  for (const e of events) {
+    await h.events.apply({ type: e.type, data: e.data, conversationId, source: 'stream' });
+    from.seq = e.seq;
+  }
+  await h.cards.flush();
+  return events.map((e) => e.type);
+}
+
+const stepsOf = (cardId: string) => (h.lb.link.card(cardId)?.steps ?? []) as Array<{ text: string; state: string }>;
+const tokenLive = async (token: string) => (await createTokenStore(h.pool, h.lb.clock.now).tripFor(token)) !== null;
+const revokedAt = async (token: string) => (await h.pool.query<{ revoked_at: Date | null }>('select revoked_at from trip_tokens where token_hash = $1', [hashToken(token)])).rows[0]?.revoked_at ?? null;
+
+describe('a job whose /v1 task runs more than once', () => {
+  it('replays the rehearsal drill: queued, the follow-up runs first, two runs, two endings, one result from the last run', async () => {
+    const tripId = 't_drill';
+    const r = await h.tasks.start(tripId, { ...VILLA_BRIEF, key: 'drill' });
+    await h.tasks.settled();
+    const row = (await h.store.get(r.taskId))!;
+    const conv = row.conversationId!;
+    const from = { seq: 0 };
+    // The computer is still waking: /v1 names the job, but no run has its words yet.
+    const t = h.fake.startTask(conv, row.v1TurnId!, row.title, { queued: true });
+    await deliver(conv, from);
+    expect((await h.store.get(row.id))?.state).toBe('running');
+    // Priya's follow-up reaches the job while it is queued: one more message, with the job's schema.
+    await h.tasks.message(row.id, 'Also check if any of them allow pets');
+    const follow = h.fake.callsTo('POST', /\/messages$/).at(-1)!;
+    expect(follow.body).toMatchObject({ hand_off: 'auto', output_schema: VILLA_BRIEF.returns });
+    const followTurn = [...h.fake.turns.values()].at(-1)!.id;
+    const token = armedToken(h.fake, tripId);
+
+    // Run 1 takes the follow-up first, writes its own to-do list, and ends with its answer as JSON text, no data.
+    h.fake.nextRun(t.id, [followTurn]);
+    h.fake.progress(t.id, [['Find the villas already shortlisted', 'completed'], ['Check each villa’s pet policy', 'completed'], ['Add pet policies to the villa results', 'completed']]);
+    h.fake.complete(t.id, null, JSON.stringify({ summary: 'No pet policy confirmed.', options: [] }));
+    expect(await deliver(conv, from)).toEqual(['task.progress', 'task.completed', 'conversation.status']);
+    // A run ended, not the job: still running, its card live, no result, no wake, and the token still opens Go's tools.
+    expect((await h.store.get(row.id))?.state).toBe('running');
+    expect(h.lb.link.card(row.cardId)).toMatchObject({ state: 'running', actions: [{ action_id: 'watch' }, { action_id: 'stop' }] });
+    expect(h.lb.desk.items.some((i) => i.id === `task:${row.id}:done`)).toBe(false);
+    expect(await tokenLive(token)).toBe(true);
+    expect(await revokedAt(token)).toBeNull();
+    h.lb.clock.advance(90_000);
+
+    // Run 2 takes the start: /v1's to-do list keeps run 1's steps and adds its own.
+    h.fake.nextRun(t.id);
+    h.fake.progress(t.id, [
+      ['Find the villas already shortlisted', 'completed'], ['Check each villa’s pet policy', 'completed'], ['Add pet policies to the villa results', 'completed'],
+      ['Find pool villas for 6 to 9 November', 'completed'], ['Verify reviews, beach access and pet rules', 'in_progress'], ['Return the best three verified villas', 'pending'],
+    ]);
+    await deliver(conv, from);
+    expect(stepsOf(row.cardId).map((st) => st.text)).toEqual([
+      'Find the villas already shortlisted', 'Check each villa’s pet policy', 'Add pet policies to the villa results',
+      'Find pool villas for 6 to 9 November', 'Verify reviews, beach access and pet rules', 'Return the best three verified villas',
+    ]);
+    expect(await tokenLive(token)).toBe(true);
+    await searched(tripId);
+    h.fake.complete(t.id, VILLAS, 'Found three villas.');
+    expect(await deliver(conv, from)).toEqual(['task.completed', 'conversation.status']);
+
+    const done = (await h.store.get(row.id))!;
+    expect(done).toMatchObject({ state: 'done', endReason: 'completed' });
+    const wakes = h.lb.desk.items.filter((i) => i.id === `task:${row.id}:done`);
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0]!.payload).toMatchObject({ event: 'completed', count: 3, resultsId: done.resultsId, summary: VILLAS.summary });
+    expect((await h.results.get(tripId, done.resultsId!))?.options.map((o) => o.offerId)).toEqual([SOL.offerId, PALMS.offerId, BREEZE.offerId]);
+    expect(h.lb.link.card(row.cardId)).toMatchObject({ state: 'done', actions: [] });
+    expect(stepsOf(row.cardId).every((st) => st.state === 'done')).toBe(true);
+    // Revoked once, at the real end.
+    expect(await tokenLive(token)).toBe(false);
+    expect((await revokedAt(token))!.getTime()).toBe(done.endedAt!.getTime());
+  });
+
+  it('a follow-up in the usual order: the start runs first, the follow-up second, and only the second ending ends the job', async () => {
+    const { row, v1TaskId } = await h.runningJob('order', 't_order');
+    const conv = row.conversationId!;
+    const from = { seq: h.fake.conversations.get(conv)!.events.length };
+    await h.tasks.message(row.id, 'Also check if any of them allow pets');
+    h.fake.complete(v1TaskId, { summary: 'One villa.', options: [] }, 'One villa.');
+    await deliver(conv, from);
+    expect((await h.store.get(row.id))?.state).toBe('running');
+    h.fake.nextRun(v1TaskId);
+    h.fake.complete(v1TaskId, VILLAS, 'Found three villas.');
+    await deliver(conv, from);
+    expect((await h.store.get(row.id))?.state).toBe('done');
+    expect(h.lb.desk.items.filter((i) => i.id === `task:${row.id}:done`)).toHaveLength(1);
+  });
+
+  it("ends the job on the turn that leaves its conversation idle, when the task's ending came before it", async () => {
+    const { row, v1TaskId } = await h.runningJob('idle', 't_idle');
+    await h.tasks.message(row.id, 'Also check if any of them allow pets');
+    h.fake.complete(v1TaskId, VILLAS, 'Found three villas.');
+    await h.events.apply({ type: 'task.completed', data: { task_id: v1TaskId }, source: 'webhook' });
+    expect((await h.store.get(row.id))?.state).toBe('running');
+    // The last run ends and its turn settles; Go hears only the turn (the ending was lost).
+    h.fake.nextRun(v1TaskId);
+    h.fake.finishSilently(v1TaskId, VILLAS, 'Found three villas.');
+    await h.events.apply({ type: 'conversation.status', data: { status: 'working', turn_id: 'turn_other', turn_status: 'completed' }, conversationId: row.conversationId, source: 'webhook' });
+    expect((await h.store.get(row.id))?.state).toBe('running');
+    await h.events.apply({ type: 'conversation.status', data: { status: 'idle', turn_id: 'turn_last', turn_status: 'completed' }, conversationId: row.conversationId, source: 'poll' });
+    expect((await h.store.get(row.id))?.state).toBe('done');
+    expect(h.lb.desk.items.filter((i) => i.id === `task:${row.id}:done`)).toHaveLength(1);
+  });
+
+  it("reads the job's answer from its text when /v1 has no data, and the card still comes", async () => {
+    const info = vi.spyOn(h.lb.brain.log, 'info');
+    const { row, v1TaskId } = await h.runningJob('text', 't_text');
+    await searched(row.tripId);
+    h.fake.complete(v1TaskId, null, JSON.stringify(VILLAS));
+    await h.events.apply({ type: 'task.completed', data: { task_id: v1TaskId }, source: 'webhook' });
+    const done = (await h.store.get(row.id))!;
+    expect(done.state).toBe('done');
+    expect(h.lb.desk.items.find((i) => i.id === `task:${row.id}:done`)?.payload).toMatchObject({ count: 3, summary: VILLAS.summary, resultsId: done.resultsId });
+    expect(info).toHaveBeenCalledWith(expect.objectContaining({ taskId: row.id }), expect.stringContaining('JSON in its text'));
+    info.mockRestore();
   });
 });

@@ -97,7 +97,8 @@ export function createFollower(d: FollowerDeps): Follower {
             for await (const f of s.frames) {
               failures = 0;
               await handle(conversationId, f);
-              const ending = f.event === 'task.completed' || f.event === 'task.failed' || f.event === 'task.stopped';
+              // A job ends on its task's ending, or on the turn settling after it that leaves the conversation idle.
+              const ending = f.event === 'task.completed' || f.event === 'task.failed' || f.event === 'task.stopped' || f.event === 'conversation.status';
               if (ending && !(await d.store.hasActiveIn(conversationId))) break;
             }
           } finally {

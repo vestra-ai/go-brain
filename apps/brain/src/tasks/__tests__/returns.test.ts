@@ -34,8 +34,38 @@ describe('return shapes', () => {
   });
 
   it('reads an answer as its summary, and falls back to the text when the data is not the shape', () => {
-    expect(readReturned('answer', { summary: 'Check-in is at 2 pm.' }, 'ignored')).toEqual({ summary: 'Check-in is at 2 pm.', options: [] });
-    expect(readReturned('stays', 'not json', 'The job wrote this.')).toEqual({ summary: 'The job wrote this.', options: [] });
+    expect(readReturned('answer', { summary: 'Check-in is at 2 pm.' }, 'ignored')).toEqual({ summary: 'Check-in is at 2 pm.', options: [], fromText: false });
+    expect(readReturned('stays', 'not json', 'The job wrote this.')).toEqual({ summary: 'The job wrote this.', options: [], fromText: false });
+  });
+
+  // The rehearsal drill: the run that ended first had no output_schema, so its answer came as JSON in the text.
+  const IN_TEXT = {
+    summary: 'Checked all four villas the stay search returned; none has a confirmed pet policy.',
+    options: [
+      { title: 'Villa Sol', offer_id: 'fake:st-villa-sol-anjuna-20261106-20261109-5', total_paise: 3840000, price_note: 'Whole villa, 3 nights, 5 guests', area: 'Anjuna', rating: 4.7, highlights: ['Private pool'], why_it_fits: 'Within budget.' },
+      { title: 'The Palms Villa', offer_id: 'fake:st-the-palms-vagator-20261106-20261109-5', total_paise: 3660000, area: 'Vagator', highlights: ['Private pool'] },
+    ],
+  };
+
+  it('with no data, reads an answer the job wrote as JSON in its text, plain or in one fenced block, and says so', () => {
+    for (const text of [JSON.stringify(IN_TEXT, null, 2), `\`\`\`json\n${JSON.stringify(IN_TEXT)}\n\`\`\``]) {
+      const r = readReturned('stays', null, text);
+      expect(r.fromText).toBe(true);
+      expect(r.summary).toBe(IN_TEXT.summary);
+      expect(r.options.map((o) => [o.title, o.offerId, o.totalMinor])).toEqual([
+        ['Villa Sol', 'fake:st-villa-sol-anjuna-20261106-20261109-5', 3840000],
+        ['The Palms Villa', 'fake:st-the-palms-vagator-20261106-20261109-5', 3660000],
+      ]);
+    }
+    // Options alone: no summary, rather than the raw JSON as one.
+    expect(readReturned('stays', null, JSON.stringify({ options: IN_TEXT.options }))).toMatchObject({ summary: null, fromText: true });
+  });
+
+  it('keeps the data first, and words, JSON of another shape or broken JSON in the text as words', () => {
+    expect(readReturned('stays', { summary: 'From the data.', options: [] }, JSON.stringify(IN_TEXT))).toMatchObject({ summary: 'From the data.', options: [], fromText: false });
+    for (const text of ['Found three villas, all near the beach.', '{"villas": 3}', '{"summary": "cut off', '[1, 2]']) {
+      expect(readReturned('stays', null, text), text).toEqual({ summary: text, options: [], fromText: false });
+    }
   });
 });
 
