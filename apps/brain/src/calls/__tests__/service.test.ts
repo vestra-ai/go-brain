@@ -278,6 +278,21 @@ describe('dialing', () => {
     expect((await store.get(r.callId))?.state).toBe('ended');
   });
 
+  it('measures "nobody picked up" from when the call was placed, not from when the window ended', async () => {
+    const m = make('t_slow_place');
+    const r = await m.request();
+    if (!('ok' in r)) throw new Error('refused');
+    m.time.advance(90_000); // the tick runs a minute late: the call is placed at 10:01:30, a minute after its dial time
+    await m.service.tick();
+    expect((await store.get(r.callId))?.placedAt?.toISOString()).toBe('2026-10-06T10:01:30.000Z');
+    m.time.advance(40_000); // 100 s after the dial time, 40 s after it was placed
+    await m.service.tick();
+    expect((await store.get(r.callId))?.state).toBe('dialing');
+    m.time.advance(60_000); // 100 s after it was placed
+    await m.service.tick();
+    expect(await store.get(r.callId)).toMatchObject({ state: 'failed', endReason: 'no_answer' });
+  });
+
   it('turns a Twilio refusal into a failed card and one line', async () => {
     const m = make('t_refused', { twilioFails: true });
     await m.request();

@@ -22,6 +22,8 @@ export interface CallRow {
   cardMessageId: string | null;
   dialAt: Date;
   twilioSid: string | null;
+  /** When Twilio accepted the call. */
+  placedAt: Date | null;
   startedAt: Date | null;
   endedAt: Date | null;
   outcome: string | null;
@@ -50,7 +52,7 @@ export interface NewCall {
 type Row = {
   call_id: string; trip_id: string; business: string; phone: string; goal: string; facts_allowed: string[]; for_whom: string;
   state: CallState; asked_by_person_id: string | null; asked_message_id: string | null; announce_message_id: string | null;
-  announce_seq: number | null; card_id: string; card_message_id: string | null; dial_at: Date; twilio_sid: string | null;
+  announce_seq: number | null; card_id: string; card_message_id: string | null; dial_at: Date; twilio_sid: string | null; placed_at: Date | null;
   started_at: Date | null; ended_at: Date | null; outcome: string | null; reported: boolean; record: RecordAsk | null;
   transcript: CallLine[]; end_reason: string | null; record_line_id: string | null; closed_out_at: Date | null;
 };
@@ -59,7 +61,7 @@ const toRow = (r: Row): CallRow => ({
   callId: r.call_id, tripId: r.trip_id, business: r.business, phone: r.phone, goal: r.goal, factsAllowed: r.facts_allowed,
   forWhom: r.for_whom, state: r.state, askedByPersonId: r.asked_by_person_id, askedMessageId: r.asked_message_id,
   announceMessageId: r.announce_message_id, announceSeq: r.announce_seq, cardId: r.card_id, cardMessageId: r.card_message_id,
-  dialAt: r.dial_at, twilioSid: r.twilio_sid, startedAt: r.started_at, endedAt: r.ended_at, outcome: r.outcome,
+  dialAt: r.dial_at, twilioSid: r.twilio_sid, placedAt: r.placed_at, startedAt: r.started_at, endedAt: r.ended_at, outcome: r.outcome,
   reported: r.reported, record: r.record, transcript: r.transcript, endReason: r.end_reason, recordLineId: r.record_line_id,
   closedOutAt: r.closed_out_at,
 });
@@ -130,6 +132,11 @@ export class CallStore {
 
   startDialing(callId: string): Promise<CallRow | null> {
     return this.one(`update calls set state = 'dialing' where call_id = $1 and state = 'waiting' returning *`, [callId]);
+  }
+
+  /** Twilio accepted the call: its sid, and the moment it was placed. */
+  async placed(callId: string, twilioSid: string, at: Date): Promise<void> {
+    await this.pool.query(`update calls set twilio_sid = $2, placed_at = coalesce(placed_at, $3) where call_id = $1`, [callId, twilioSid, at]);
   }
 
   async dialInfo(callId: string, o: { cardMessageId?: string; tokenHash?: string; twilioSid?: string }): Promise<void> {

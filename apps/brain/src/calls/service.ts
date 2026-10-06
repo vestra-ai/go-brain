@@ -223,10 +223,18 @@ export class CallService {
     }
     for (const row of await this.d.store.inCall()) {
       if (this.live.has(row.callId)) continue;
-      if (row.state === 'talking' && row.startedAt && now.getTime() - row.startedAt.getTime() > ORPHAN_AFTER_MS) await this.finish(row.callId, 'dropped');
-      else if (row.state === 'dialing' && now.getTime() - row.dialAt.getTime() > NO_MEDIA_AFTER_MS) await this.fail(row.callId, 'no_answer');
+      await this.sweepOne(row, now).catch((err: unknown) => this.d.log.warn({ err, callId: row.callId }, 'calls: closing a stranded call failed'));
     }
-    for (const row of await this.d.store.toCloseOut(new Date(now.getTime() - CLOSE_OUT_AFTER_MS))) await this.closeOut(row, null);
+    for (const row of await this.d.store.toCloseOut(new Date(now.getTime() - CLOSE_OUT_AFTER_MS))) {
+      await this.closeOut(row, null).catch((err: unknown) => this.d.log.warn({ err, callId: row.callId }, 'calls: a close-out failed; trying again next tick'));
+    }
+  }
+
+  /** A call this process is not running: left talking by a restart, or dialed and never answered. */
+  private async sweepOne(row: CallRow, now: Date): Promise<void> {
+    if (row.state === 'talking' && row.startedAt && now.getTime() - row.startedAt.getTime() > ORPHAN_AFTER_MS) await this.finish(row.callId, 'dropped');
+    // No answer is measured from when Twilio placed the call (the dial time while it has not been placed yet).
+    else if (row.state === 'dialing' && now.getTime() - (row.placedAt ?? row.dialAt).getTime() > NO_MEDIA_AFTER_MS) await this.fail(row.callId, 'no_answer');
   }
 
   private async dial(due: CallRow): Promise<void> {
@@ -265,7 +273,7 @@ export class CallService {
         timeLimitS: TWILIO_TIME_LIMIT_S,
         ringTimeoutS: RING_TIMEOUT_S,
       });
-      await this.d.store.dialInfo(row.callId, { twilioSid: sid });
+      await this.d.store.placed(row.callId, sid, this.d.now());
       const after = await this.d.store.get(row.callId);
       if (after && after.state !== 'dialing' && after.state !== 'talking') {
         // Stopped while Twilio was placing the call, before Go knew its sid: hang it up at once.
