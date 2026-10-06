@@ -9,3 +9,5 @@ export * from './recorder.js';
 export * from './bench-reflex.js';
 export * from './stats-math.js';
 export * from './score.js';
+export * from './compare.js';
+export * from './report-md.js';
