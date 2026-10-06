@@ -5,6 +5,7 @@ import { createTokenStore } from '../../mcp/tokens.js';
 import { stableId } from '../../travel/ids.js';
 import { createCardUpdater, type CardUpdater } from '../card-updater.js';
 import { createComputer } from '../computer.js';
+import { DEMO_LISTINGS } from '../instructions.js';
 import { returnsSchema } from '../returns.js';
 import { createTaskStore, type TaskStore } from '../store.js';
 import { createTasks, type TaskBrief, type TasksService } from '../tasks.js';
@@ -69,6 +70,22 @@ describe('starting a job', () => {
     expect(followed).toContain(row.conversationId);
     const v1Id = await mapped(r.taskId);
     expect(await store.get(r.taskId)).toMatchObject({ state: 'running', v1TaskId: v1Id });
+  });
+
+  it("says the listings are simulated in the job's message only while Go's travel search is the simulator", async () => {
+    const v1 = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
+    const computer = createComputer({ pool: db.pool, v1, tokens: createTokenStore(db.pool, lb.clock.now), env: { VESTRA_DEPLOYMENT_ID: 'dep_go', VESTRA_MCP_SERVER_ID: 'mcp_go' }, now: lb.clock.now, log: lb.brain.log });
+    let simulated = true;
+    const own = createTasks({ store, v1, computer, cards, link: lb.link, desk: lb.desk, packs: lb.brain.packs, now: lb.clock.now, log: lb.brain.log, follow: () => undefined, listingsSimulated: () => simulated });
+    const sent = (taskId: string) => fake.callsTo('POST', /\/messages$/).find((c) => c.headers['idempotency-key'] === `go-msg-${taskId}`)!.body.message as string;
+    const demo = await own.start('t_demo', { ...VILLAS, key: 'demo1' });
+    await own.settled();
+    expect(sent(demo.taskId)).toBe(`${VILLAS.goal}\n\n${DEMO_LISTINGS}`);
+    simulated = false;
+    const real = await own.start('t_real', { ...VILLAS, key: 'real1' });
+    await own.settled();
+    expect(sent(real.taskId)).toBe(VILLAS.goal);
+    expect(sent(real.taskId)).not.toContain('simulated');
   });
 
   it('starts one job for one key, however often it is asked', async () => {

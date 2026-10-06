@@ -78,6 +78,17 @@ describe('the travel layer', () => {
     expect((await b.layer.search('flights', { from: 'Delhi', to: 'Goa', date: '2026-11-06' })).results[0]!.offerId).toBe('fake:a');
   });
 
+  it('says its listings are simulated exactly when its searches go to the fake', async () => {
+    const a = setup();
+    await a.switches.set('TRAVEL_MODE', 'ixigo');
+    expect(a.layer.simulated?.()).toBe(false);
+    await a.switches.set('TRAVEL_MODE', 'fake');
+    expect(a.layer.simulated?.()).toBe(true);
+    const b = setup(false);
+    await b.switches.set('TRAVEL_MODE', 'ixigo');
+    expect(b.layer.simulated?.()).toBe(true);
+  });
+
   it('routes a hold and a confirm to the backend that made the offer, whatever the switch says now', async () => {
     const { layer, ixigo, switches } = setup();
     await switches.set('TRAVEL_MODE', 'fake');

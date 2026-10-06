@@ -13,7 +13,8 @@ export const PICK_ACTION = { action_id: 'pick', label: "I'll take this", style: 
 export const VOTE_ACTION = { action_id: 'vote', label: 'Put it to a vote', style: 'secondary' } as const;
 
 export function plain(text: string): string {
-  return text.replace(/\s*[—–]\s*/g, ', ').replace(/\s+/g, ' ').trim();
+  // A number range keeps its meaning as a hyphen ("6–9 Nov" is "6-9 Nov"), as sanitize() does; any other dash is a comma.
+  return text.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2').replace(/\s*[—–]\s*/g, ', ').replace(/\s+/g, ' ').trim();
 }
 
 export function clip(text: string, max: number): string {

@@ -71,6 +71,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     async status(q) {
       return pick().b.status(q);
     },
+    simulated: () => pick().name === 'fake',
     async hold(offerId, lead) {
       return byPrefix(offerId).hold(offerId, lead);
     },

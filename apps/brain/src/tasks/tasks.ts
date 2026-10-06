@@ -13,6 +13,7 @@ import { clip } from '../travel/cards.js';
 import { mintId, stableId } from '../travel/ids.js';
 import type { CardUpdater } from './card-updater.js';
 import type { Computer } from './computer.js';
+import { DEMO_LISTINGS } from './instructions.js';
 import type { ReturnsKind } from './returns.js';
 import { LIVE_STATES, type NewTask, type TaskRow, type TaskState, type TaskStore } from './store.js';
 import { V1Error, type V1Client } from './v1-client.js';
@@ -83,6 +84,8 @@ export interface TasksDeps {
   log: { warn(obj: object, msg: string): void; info(obj: object, msg: string): void };
   /** Told when a job reached a conversation, so the follower opens its stream. */
   follow: (conversationId: string, tripId: string) => void;
+  /** True while Go's travel search is the simulator: the job's message then says its listings are simulated. */
+  listingsSimulated?: () => boolean;
   deadlineMs?: number;
 }
 
@@ -156,7 +159,7 @@ export function createTasks(d: TasksDeps): TasksService {
       const turn = await d.v1.call<{ id: string }>('POST', `/v1/conversations/${conversationId}/messages`, {
         idempotencyKey: `go-msg-${row.id}`,
         body: {
-          message: goal,
+          message: d.listingsSimulated?.() ? `${goal}\n\n${DEMO_LISTINGS}` : goal,
           context: row.context,
           output_schema: row.returns,
           ...(row.successCriteria ? { success_criteria: row.successCriteria } : {}),

@@ -50,6 +50,11 @@ describe('words and numbers on cards', () => {
 
   it('removes dashes and trims to a length', () => {
     expect(plain('Three that leave after 6 — all non-stop')).toBe('Three that leave after 6, all non-stop');
+    // A number range keeps its meaning as a hyphen; any other dash is still a comma.
+    expect(plain('Search North Goa pool villas for 6–9 Nov')).toBe('Search North Goa pool villas for 6-9 Nov');
+    expect(plain('6 — 9 Nov, ₹8,000–12,000 a night')).toBe('6-9 Nov, ₹8,000-12,000 a night');
+    expect(plain('Villa Sol – Anjuna, 4.7 – near the beach')).toBe('Villa Sol, Anjuna, 4.7, near the beach');
+    expect(plain('6–9 Nov')).not.toMatch(/[—–]/);
     expect(clip('a'.repeat(100), 10)).toBe(`${'a'.repeat(9)}…`);
   });
 });
