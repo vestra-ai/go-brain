@@ -137,4 +137,26 @@ describe('planWatches and syncWatches', () => {
     const n = await db.pool.query<{ notice_card_id: string }>(`select notice_card_id from watches where watch_id = 'flight:t_goa:b_flight'`);
     expect(n.rows[0]?.notice_card_id).toBe('c_notice_1');
   });
+
+  it('starts a watch afresh when its query changes, and keeps its state while the query stays the same', async () => {
+    const now = new Date('2026-10-06T06:30:00Z');
+    const state = async () =>
+      (await db.pool.query<{ last_reading: unknown; last_change_key: string | null; notice_card_id: string | null; errors: number }>(
+        `select last_reading, last_change_key, notice_card_id, errors from watches where watch_id = 'flight:t_goa:b_flight'`,
+      )).rows[0];
+    await syncWatches(db.pool, goaTrip(), now);
+    await db.pool.query(
+      `update watches set last_reading = $2, last_change_key = 'flight:t_goa:b_flight:delay:120', notice_card_id = 'c_notice_9', errors = 2 where watch_id = $1`,
+      ['flight:t_goa:b_flight', JSON.stringify(flight(120))],
+    );
+    await syncWatches(db.pool, goaTrip(), now);
+    expect(await state()).toMatchObject({ last_change_key: 'flight:t_goa:b_flight:delay:120', notice_card_id: 'c_notice_9', errors: 2 });
+    // Rebooked on another flight: the same booking, a new number to watch.
+    const base = goaTrip();
+    const rebooked = goaTrip({
+      bookings: base.bookings.map((b) => (b.booking_id === 'b_flight' && b.journey ? { ...b, journey: { ...b.journey, number: '6E 5310' } } : b)),
+    });
+    await syncWatches(db.pool, rebooked, now);
+    expect(await state()).toEqual({ last_reading: null, last_change_key: null, notice_card_id: null, errors: 0 });
+  });
 });

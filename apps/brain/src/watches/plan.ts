@@ -73,7 +73,14 @@ export async function syncWatches(pool: pg.Pool, trip: Trip, now: Date): Promise
       `insert into watches (watch_id, trip_id, kind, query, person_ids, label, next_check_at, ends_at)
        values ($1, $2, $3, $4, $5, $6, $7, $8)
        on conflict (watch_id) do update set query = excluded.query, person_ids = excluded.person_ids,
-         label = excluded.label, ends_at = excluded.ends_at, active = true`,
+         label = excluded.label, ends_at = excluded.ends_at, active = true,
+         -- A new query (a rebooked flight, a new PNR) is a new thing to watch: its old reading, change and notice go.
+         last_reading = case when watches.query = excluded.query then watches.last_reading end,
+         last_change_key = case when watches.query = excluded.query then watches.last_change_key end,
+         notice_card_id = case when watches.query = excluded.query then watches.notice_card_id end,
+         errors = case when watches.query = excluded.query then watches.errors else 0 end,
+         last_error = case when watches.query = excluded.query then watches.last_error end,
+         next_check_at = case when watches.query = excluded.query then watches.next_check_at else excluded.next_check_at end`,
       [p.watchId, p.tripId, p.query.kind, JSON.stringify(p.query), p.personIds, p.label, p.startAt, p.endsAt],
     );
   }
