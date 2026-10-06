@@ -3,6 +3,7 @@ import type { Message, Trip, TripEvent } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
 import { applyEvent, upsertMessage } from './apply.js';
+import { screenMessage } from './screen.js';
 
 /** An active trip's working set, kept fresh from events. */
 export interface TripPack {
@@ -66,13 +67,14 @@ export function createPacks(o: { pool: pg.Pool; link: ServerLink; log: Log; now:
     return rows[0]?.n ?? 0;
   }
 
-  /** Reads messages changed after `after`, page by page while has_more; stores them; returns the ones Go never stored. */
+  /** Reads messages changed after `after`, page by page while has_more; screens and stores them; returns the ones Go never stored. */
   async function pull(tripId: string, after: number, pack: TripPack): Promise<Message[]> {
     const fresh: Message[] = [];
     let cursor = after;
     for (let page = 0; page < 50; page++) {
       const r = await o.link.request('read_messages', { trip_id: tripId, after_seq: cursor, limit: 200 });
-      for (const m of r.messages) {
+      for (const raw of r.messages) {
+        const m = screenMessage(raw);
         if (await storeMessage(o.pool, tripId, m, o.now())) fresh.push(m);
         upsertMessage(pack, m);
         cursor = Math.max(cursor, m.updated_seq);
