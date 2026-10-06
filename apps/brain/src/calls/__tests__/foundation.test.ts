@@ -59,6 +59,14 @@ describe('saysStop', () => {
       expect(saysStop(t, false), t).toBe(true);
     }
   });
+  it('hears a curly apostrophe, "rehne do", "chhodo" and stop in Devanagari', () => {
+    for (const t of ['don\u2019t call them', 'don\u2018t call', 'rehne do yaar', 'chhodo, abhi nahi', 'chodo', 'रुको', 'अभी मत करो', 'रहने दो', 'छोड़ो', '\u091B\u094B\u095C\u094B']) {
+      expect(saysStop(t, false), t).toBe(true);
+    }
+    expect(saysStop('नहीं', true)).toBe(true);
+    expect(saysStop('नहीं', false)).toBe(false);
+    for (const t of ['रुकना पड़ेगा थोड़ा', 'गोवा जाना है', 'do it']) expect(saysStop(t, false), t).toBe(false);
+  });
   it('takes a bare no only as a reply to the call line', () => {
     expect(saysStop('nahi', true)).toBe(true);
     expect(saysStop('no', true)).toBe(true);
