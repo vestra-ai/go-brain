@@ -8,7 +8,7 @@ import type { Tasks } from '../../tasks/tasks.js';
 import type { Probe } from '../health.js';
 import { NOT_DEPLOYED, type AdminLanes } from '../lanes.js';
 import { DOCS_URL, registerAdmin, registerAdminWith } from '../register.js';
-import { SESSION_COOKIE, sessionValue } from '../session.js';
+import { registerSessionRoute, SESSION_COOKIE, sessionValue } from '../session.js';
 import { createSwitches } from '../switches.js';
 
 const TOKEN = 'admin-token-for-the-tests-0001';
@@ -149,6 +149,8 @@ describe('the admin page', () => {
 
     const after = await http.inject({ method: 'GET', url: '/admin', headers: { cookie: cookie.split(';')[0] ?? '' } });
     expect(after.body).toContain('Stage actions');
+    // The board registers the same route: whichever lane comes second leaves it as it is.
+    expect(() => registerSessionRoute(http, TOKEN, false)).not.toThrow();
   });
 
   it('its GET routes log at warn, so a request line never reaches the logs at info', () => {

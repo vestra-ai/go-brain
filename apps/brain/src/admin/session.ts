@@ -3,7 +3,7 @@
 // page reads it, drops it from the address bar, sends it once as a bearer to POST /admin/session, gets an HttpOnly
 // cookie back and loads the clean URL. Scripts and the bench send the token as a bearer on every call.
 import { createHash, timingSafeEqual } from 'node:crypto';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 export const SESSION_COOKIE = 'go_admin';
 export const SESSION_PATH = '/admin/session';
@@ -46,6 +46,18 @@ export function signedIn(req: FastifyRequest, token: string): boolean {
 
 export function sessionCookie(token: string, secure: boolean): string {
   return `${SESSION_COOKIE}=${sessionValue(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_SECONDS}${secure ? '; Secure' : ''}`;
+}
+
+/**
+ * POST /admin/session: the sign-in page's one call, the token as a bearer swapped for the cookie. The admin page and the
+ * board both call this; the first one registers the route, so either works without the other.
+ */
+export function registerSessionRoute(http: FastifyInstance, token: string, secure: boolean): void {
+  if (http.hasRoute({ method: 'POST', url: SESSION_PATH })) return;
+  http.post(SESSION_PATH, async (req, reply) => {
+    if (!sameToken(bearerOf(req), token)) return reply.code(401).send({ error: { code: 'bad_signature', message: 'Wrong or missing admin token.' } });
+    return reply.header('set-cookie', sessionCookie(token, secure)).code(204).send();
+  });
 }
 
 /** The page a person sees before signing in, at `path` (/admin or /board). Its script only sends the token in a header. */

@@ -10,7 +10,7 @@ import { newUlid } from '../door/ulid.js';
 import { checkAll, defaultProbes, type Probe, type ProbeResult } from './health.js';
 import { loadAdminLanes, NOT_DEPLOYED, type AdminLanes } from './lanes.js';
 import { renderAdminPage } from './page.js';
-import { SESSION_PATH, sessionCookie, signedIn, signInPage } from './session.js';
+import { registerSessionRoute, signedIn, signInPage } from './session.js';
 import { SWITCH_RULES, type SwitchName } from './switches.js';
 
 export const DOCS_URL = 'https://vestrago.vercel.app/docs';
@@ -103,6 +103,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
       return reply.code(303).header('location', `/admin?${q.toString()}`).send();
     };
 
+    registerSessionRoute(brain.http, token, brain.env.GO_PUBLIC_URL.startsWith('https:'));
     await brain.http.register(async (scope) => {
       if (!scope.hasContentTypeParser(FORM)) {
         scope.addContentTypeParser(FORM, { parseAs: 'string' }, (_req, body, done) => {
@@ -117,11 +118,6 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         }
         return reply.code(401).send(err('bad_signature', 'Wrong or missing admin token.'));
       });
-
-      // The sign-in page's one call: the token as a bearer, swapped for an HttpOnly cookie.
-      scope.post(SESSION_PATH, async (_req, reply) =>
-        reply.header('set-cookie', sessionCookie(token, brain.env.GO_PUBLIC_URL.startsWith('https:'))).code(204).send(),
-      );
 
       scope.get<{ Querystring: Query }>('/admin', QUIET, async (req, reply) => {
         const tripId = await tripOf(req.query);
