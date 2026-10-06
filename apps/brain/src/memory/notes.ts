@@ -12,6 +12,7 @@ import type { Log } from '../log.js';
 import { maskSecrets } from '../reflex/secrets.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import { checkFact, checkLine, type CheckEnv } from './checker.js';
+import { decisionOf, linkLine } from './decision-lines.js';
 import { forgottenUpTo, saveFact } from './facts.js';
 import { chatLine, FENCE_RULE, fenceText, isForgotten, peopleLegend } from './fence.js';
 import { reactOnce } from './reactions.js';
@@ -219,6 +220,8 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
         continue;
       }
       out.lines += 1;
+      const vote = decisionOf(c.value, pack);
+      if (vote) await linkLine(d.pool, tripId, written.lineId, vote, pack);
       if (!c.value.lineId) {
         // Keep a provisional copy until record.changed arrives (seq 0 loses to any real event),
         // so the next pass sees the line and does not write it again.

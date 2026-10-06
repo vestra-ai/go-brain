@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Brain } from '../../app.js';
 import { createContext, type NowProvider } from '../../composer/context.js';
 import type { QuickTool } from '../../composer/tools.js';
+import { vote } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
 import type { ToGoHandler } from '../../door/handlers.js';
 import type { Message, TripEvent } from '../../door/methods.js';
@@ -13,11 +14,12 @@ import { SocketCallError } from '../../door/rpc.js';
 import { codeOnly, sure } from '../../reflex/read.js';
 import type { ReflexRead } from '../../reflex/reflex.js';
 import type { TripPack } from '../../trips/pack.js';
+import { linkLine } from '../decision-lines.js';
 import { currentFacts, saveFact } from '../facts.js';
 import type { Fold, StoryProvider } from '../fold.js';
 import { joinFacts } from '../join-facts.js';
 import { reactionRequestId } from '../reactions.js';
-import { recordLines } from '../record.js';
+import { mirrorLine, recordLines } from '../record.js';
 import { registerMemory, wireMemory } from '../register.js';
 import type { Timers } from '../schedule.js';
 import { fakeLink, scriptedClient, seedMessages } from './test-kit.js';
@@ -339,6 +341,38 @@ describe('a long trip in the prompt after its fold', () => {
     expect(p.user[9]?.cache_control).toEqual(hour);
     expect(p.user[9]?.text.startsWith('<data source="chat, part 8">')).toBe(true);
     expect(p.user[10]?.text.startsWith('<data source="chat, part 9">')).toBe(true);
+  });
+});
+
+describe('open lines a vote settles', () => {
+  const at = '2026-10-06T10:00:00Z';
+  const line = (lineId: string): C.RecordLine => ({
+    line_id: lineId, kind: 'open', text: 'Which villa: Casa Mareia, Villa Sol or The Palms?', status: 'active',
+    proof: [{ message_id: 'm_0041', person_id: 'p_priya' }], person_ids: ['p_rahul', 'p_priya'], source: 'go', created_at: at, updated_at: at,
+  });
+  const closed = vote({ decision_id: 'd_villa', status: 'closed', result_index: 1 });
+  const doneCalls = (w: ReturnType<typeof setup>) =>
+    w.link.calls.filter((c) => c.method === 'update_record_line').map((c) => [c.params['line_id'], c.params['status']]);
+
+  it('decision.closed marks Go\'s open line about that vote done', async () => {
+    const w = setup('t_r30', [msg(41, 'p_priya', 'Casa Mareia looks nice')], []);
+    w.pack.trip.decisions = [vote({ decision_id: 'd_villa' })];
+    await mirrorLine(db.pool, 't_r30', line('r_v30'), 5);
+    await linkLine(db.pool, 't_r30', 'r_v30', 'd_villa', w.pack);
+    w.pack.trip.decisions = [closed];
+    await w.wired.onEvent(ev('t_r30', 9, 'decision.closed', { decision: closed, reason: 'deadline' }));
+    expect(doneCalls(w)).toEqual([['r_v30', 'done']]);
+  });
+
+  it('the sweep marks it done when the event was missed', async () => {
+    const w = setup('t_r31', [msg(41, 'p_priya', 'Casa Mareia looks nice')], []);
+    await db.pool.query(`INSERT INTO trips (trip_id) VALUES ('t_r31') ON CONFLICT DO NOTHING`);
+    w.pack.trip.decisions = [vote({ decision_id: 'd_villa' })];
+    await mirrorLine(db.pool, 't_r31', line('r_v31'), 5);
+    await linkLine(db.pool, 't_r31', 'r_v31', 'd_villa', w.pack);
+    w.pack.trip.decisions = [closed];
+    await w.wired.sweep();
+    expect(doneCalls(w)).toEqual([['r_v31', 'done']]);
   });
 });
 
