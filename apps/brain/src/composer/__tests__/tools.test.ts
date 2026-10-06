@@ -159,12 +159,13 @@ describe('the room\'s tools', () => {
   });
 
   describe('update_trip and a decided vote', () => {
-    const sol = { offerId: 'fake:villa-sol', title: 'Villa Sol', priceMinor: 3_840_000, currency: 'INR', kind: 'stay', link: null, place: { name: 'Villa Sol', address: 'Anjuna, North Goa' }, area: 'Anjuna' };
-    const casa = { ...sol, offerId: 'fake:casa-mareia', title: 'Casa Mareia', place: { name: 'Casa Mareia', address: 'Vagator, North Goa' }, area: 'Vagator' };
-    const north = { offerId: null, title: 'North Goa', priceMinor: null, currency: null, kind: 'place', link: null, place: { name: 'North Goa', address: null }, area: null };
-    const offers: Record<string, unknown> = { opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } } };
-    const travel = { offer: async (id: string) => offers[id] ?? null } as unknown as Travel;
-    const updateTrip = roomTools({ now: () => new Date('2026-10-06T09:00:00Z'), pool: db.pool, travel: () => travel }).find((x) => x.name === 'update_trip')!;
+    const sol = { kind: 'stay', title: 'Villa Sol', place: { name: 'Villa Sol', address: 'Anjuna, North Goa' }, area: 'Anjuna' };
+    const casa = { kind: 'stay', title: 'Casa Mareia', place: { name: 'Casa Mareia', address: 'Vagator, North Goa' }, area: 'Vagator' };
+    const north = { kind: 'place', title: 'North Goa', place: { name: 'North Goa', address: null }, area: null };
+    const options: Record<string, unknown> = { opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } } };
+    const travel = { placeOf: async (id: string) => options[id] ?? null } as unknown as Travel;
+    // Built in each test: the database is ready only once beforeAll has run.
+    const updateTrip = { run: (a: unknown, ctx: Parameters<QuickTool['run']>[1]) => roomTools({ now: () => new Date('2026-10-06T09:00:00Z'), pool: db.pool, travel: () => travel }).find((x) => x.name === 'update_trip')!.run(a, ctx) };
     const closed = (id: string, refs: string[], won: number, at: string) =>
       vote({ decision_id: id, status: 'closed', result_index: won, closed_at: at, options: refs.map((r) => ({ label: r, option_ref: r })), tally: refs.map(() => 0) });
     const run = (decisions: ReturnType<typeof vote>[]) => {

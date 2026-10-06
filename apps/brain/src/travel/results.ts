@@ -77,6 +77,15 @@ export interface ResultsStore {
   releaseVote(cardId: string, key: string): Promise<void>;
   offer(optionId: string): Promise<StoredOffer | null>;
   offersOnCard(cardId: string): Promise<StoredOffer[]>;
+  /** The option's own name, place and area (a stay's), as the search gave them: what Go saves when a vote picked it. */
+  placeOf(optionId: string): Promise<OptionPlace | null>;
+}
+
+export interface OptionPlace {
+  kind: string;
+  title: string;
+  place: { name: string; address: string | null } | null;
+  area: string | null;
 }
 
 export function toResultOption(o: TravelOption): ResultOption {
@@ -87,18 +96,15 @@ export function toResultOption(o: TravelOption): ResultOption {
 interface OfferDbRow {
   option_id: string; trip_id: string; card_id: string; results_id: string; n: number; offer_id: string | null; kind: string; title: string;
   price_minor: string | null; total_minor: string | null; currency: string | null; price_note: string | null; checked_at: Date;
-  option: ResultOption;
 }
 
-const OFFER_COLUMNS = 'option_id, trip_id, card_id, results_id, n, offer_id, kind, title, price_minor, total_minor, currency, price_note, checked_at, option';
+const OFFER_COLUMNS = 'option_id, trip_id, card_id, results_id, n, offer_id, kind, title, price_minor, total_minor, currency, price_note, checked_at';
 
 function offerOf(r: OfferDbRow): StoredOffer {
   return {
     optionId: r.option_id, tripId: r.trip_id, cardId: r.card_id, resultsId: r.results_id, n: r.n, offerId: r.offer_id, kind: r.kind, title: r.title,
     priceMinor: r.price_minor === null ? null : Number(r.price_minor), totalMinor: r.total_minor === null ? null : Number(r.total_minor),
     currency: r.currency, priceNote: r.price_note, checkedAt: r.checked_at.toISOString(),
-    place: r.option.place ? { name: r.option.place.name, address: r.option.place.address ?? null } : null,
-    area: typeof r.option.facts?.['area'] === 'string' ? r.option.facts['area'] : null,
   };
 }
 
@@ -207,6 +213,18 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
     async offer(optionId) {
       const { rows } = await pool.query<OfferDbRow>(`select ${OFFER_COLUMNS} from travel_offers where option_id = $1`, [optionId]);
       return rows[0] ? offerOf(rows[0]) : null;
+    },
+
+    async placeOf(optionId) {
+      const { rows } = await pool.query<{ kind: string; title: string; option: ResultOption }>('select kind, title, option from travel_offers where option_id = $1', [optionId]);
+      const r = rows[0];
+      if (!r) return null;
+      const area = r.option.facts['area'];
+      return {
+        kind: r.kind, title: r.title,
+        place: r.option.place ? { name: r.option.place.name, address: r.option.place.address ?? null } : null,
+        area: typeof area === 'string' ? area : null,
+      };
     },
 
     async offersOnCard(cardId) {

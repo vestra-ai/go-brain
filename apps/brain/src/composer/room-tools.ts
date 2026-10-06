@@ -5,6 +5,7 @@ import type { Message } from '../door/methods.js';
 import { SocketCallError } from '../door/rpc.js';
 import { reactOnce } from '../memory/reactions.js';
 import { DEFAULT_TZ, localDay } from '../proactive/clock.js';
+import type { OptionPlace } from '../travel/results.js';
 import type { Travel } from '../travel/travel.js';
 import type { TripPack } from '../trips/pack.js';
 import { inlineData } from './fence.js';
@@ -74,25 +75,23 @@ export function nextDates(d: { start: string; end: string }, today: string): { s
 }
 
 /** The room's quick tools. None of them can pay, book or see a card: those are never composer tools in P1. */
-type Offer = NonNullable<Awaited<ReturnType<Travel['offer']>>>;
-
 /** Lowercase letters and digits only, so "Villa Sol," and "villa sol" compare equal. */
 const plain = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 /** travel: brain.travel, read when a tool runs (the travel lane registers after this one). */
 export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Travel | undefined }): QuickTool<any>[] {
   /** The winner of the latest closed vote whose winning option is of this kind, with the option's own data. */
-  async function decided(pack: TripPack, kind: 'stay' | 'place'): Promise<Offer | null> {
+  async function decided(pack: TripPack, kind: 'stay' | 'place'): Promise<OptionPlace | null> {
     const travel = o.travel?.();
-    if (!travel) return null;
+    if (!travel?.placeOf) return null;
     const closed = pack.trip.decisions
       .filter((d) => d.status === 'closed' && d.result_index !== null && d.result_index !== undefined)
       .sort((a, b) => (b.closed_at ?? '').localeCompare(a.closed_at ?? ''));
     for (const d of closed) {
       const ref = d.options[d.result_index!]?.option_ref;
       if (!ref) continue;
-      const offer = await travel.offer(ref);
-      if (offer && (offer.kind as string) === kind) return offer;
+      const option = await travel.placeOf(ref);
+      if (option?.kind === kind) return option;
     }
     return null;
   }
