@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TurnRunner } from '../../desk/desk.js';
 import { fakeAnthropic, type Reply } from '../fixtures/fake-anthropic.js';
 import {
-  afterTools, appliedCount, newSince, postsWith, rightNow, sleep, startRoom, waitTyping, waitWrite, type Room,
+  appliedCount, newSince, postsWith, rightNow, sleep, startRoom, waitTyping, waitWrite, type Room,
 } from './harness.js';
 
 // Messages carry a tag, [t:name], that the scripted model and the checks key on.
@@ -14,9 +14,7 @@ let crashed = false;
 
 function script(body: any): Reply {
   if (rightNow(body).includes('you just joined this trip')) {
-    return afterTools(body)
-      ? { text: 'Hi all, I am Go!' }
-      : { tools: [{ name: 'open_vote', input: { question: 'Where should we stay?', options: [{ label: 'North Goa' }, { label: 'South Goa' }] } }] };
+    return { text: 'Hi all, I am Go!' };
   }
   const fresh = newSince(body);
   if (fresh.includes('burst-')) return { text: `Read ${(fresh.match(/burst-\d/g) ?? []).length} new messages.` };
@@ -43,7 +41,7 @@ let room: Room;
 beforeAll(async () => {
   room = await startRoom({ anthropic: model.client, wrapTurn: dieAfterPosting });
   await room.fake.createTrip(goaFreshTrip());
-  await waitWrite(room.fake, (w) => w.method === 'post_message' && w.params.card?.kind === 'vote');
+  await waitWrite(room.fake, (w) => w.method === 'post_message' && w.params.text === 'Hi all, I am Go!');
 }, 30_000);
 afterAll(async () => {
   await room.stop();

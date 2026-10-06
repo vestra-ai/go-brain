@@ -109,22 +109,31 @@ describe('a composer turn', () => {
     expect(rows[0].outcome).toBe('silent');
   });
 
-  it('the greeting: the first vote opens and its card rides with hello', async () => {
-    const r = room({
-      messages: [],
-      script: [
-        { tools: [{ name: 'open_vote', input: { question: 'Where should we stay?', options: [{ label: 'North Goa villa' }, { label: 'South Goa resort' }] } }] },
-        { text: 'Hi all, I am Go! I can find stays, run votes and keep the plan.' },
-      ],
-    });
+  it('the greeting: hello only, and the model is not told to open a vote', async () => {
+    const r = room({ messages: [], script: [{ text: 'Hi all, I am Go! I can find stays, run votes and keep the plan.' }] });
     await turn(r, [{ id: `setup:${r.tripId}:greet`, tripId: r.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} }]);
-    expect(r.calls.map((c) => c.method)).toEqual(['open_vote', 'post_message']);
-    expect(r.posts()[0]?.params).toMatchObject({
-      text: 'Hi all, I am Go! I can find stays, run votes and keep the plan.',
-      card: { kind: 'vote', decision_id: 'd_first', card_id: `c_vote_turn_${r.tripId}_1` },
-    });
-    expect(r.model.bodies[0].messages[0].content.at(-2).text).toContain('you just joined this trip');
+    expect(r.calls.map((c) => c.method)).toEqual(['post_message']);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Hi all, I am Go! I can find stays, run votes and keep the plan.' });
+    expect(r.posts()[0]?.params.card).toBeUndefined();
+    const why = r.model.bodies[0].messages[0].content.at(-2).text;
+    expect(why).toContain('you just joined this trip');
+    expect(why).not.toMatch(/open_vote|first vote/);
     expect(r.notes).toEqual([]);
+  });
+
+  it('the first ask lands with the hello: one turn reads both, is told to answer the ask first, and is not told to vote', async () => {
+    const ask = msg(2, 'p_priya', '@Go is there a ferry from Panjim to Divar island?');
+    const r = room({ messages: [ask], script: [{ text: 'Yes, the Ribandar ferry goes to Divar all day. Hi all, I am Go!' }] });
+    await turn(r, [
+      { id: `setup:${r.tripId}:greet`, tripId: r.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} },
+      item(r.tripId, ask, true),
+    ]);
+    expect(r.calls.map((c) => c.method)).toEqual(['post_message']);
+    const why = r.model.bodies[0].messages[0].content.at(-2).text;
+    expect(why).toContain('you just joined this trip');
+    expect(why).toContain('answer that first');
+    expect(why).toContain('message #2 from Priya, it names you');
+    expect(why).not.toMatch(/open_vote|first vote/);
   });
 
   it('the pre-post check: a message that lands while Go writes joins the same turn', async () => {

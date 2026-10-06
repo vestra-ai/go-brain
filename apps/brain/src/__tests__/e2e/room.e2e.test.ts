@@ -2,14 +2,12 @@ import { goaFreshTrip } from '@go/sim';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fakeAnthropic, type Reply } from '../fixtures/fake-anthropic.js';
 import {
-  afterTools, appliedCount, newSince, rightNow, sleep, startRoom, typingOf, waitTyping, waitWrite, writesOf, type Room,
+  appliedCount, newSince, rightNow, sleep, startRoom, typingOf, waitTyping, waitWrite, writesOf, type Room,
 } from './harness.js';
 
 function goScript(body: any): Reply {
   if (rightNow(body).includes('you just joined this trip')) {
-    return afterTools(body)
-      ? { text: 'Hi all, I am Go! I can find stays and flights, run votes and keep the plan. First up, where should we stay?' }
-      : { tools: [{ name: 'open_vote', input: { question: 'Where should we stay?', options: [{ label: 'North Goa villa' }, { label: 'South Goa resort' }] } }] };
+    return { text: 'Hi all, I am Go! I can find stays and flights, run votes and keep the plan.' };
   }
   if (/@go/i.test(newSince(body))) return { text: 'Friday evening flights from Delhi after 6 pm, on it.' };
   return { tools: [{ name: 'stay_silent', input: { reason: 'chatter' } }] };
@@ -25,12 +23,12 @@ afterAll(async () => {
 });
 
 describe('G1: Go hears the room', () => {
-  it('greets a new trip and opens the first vote', async () => {
+  it('greets a new trip with hello only, and opens no vote', async () => {
     await room.fake.createTrip(goaFreshTrip());
-    const vote = await waitWrite(room.fake, (w) => w.method === 'open_vote');
-    expect(vote.params.question).toBe('Where should we stay?');
-    const hello = await waitWrite(room.fake, (w) => w.method === 'post_message' && w.params.card?.kind === 'vote');
+    const hello = await waitWrite(room.fake, (w) => w.method === 'post_message');
     expect(hello.params.text).toMatch(/^Hi all, I am Go!/);
+    expect(hello.params.card).toBeUndefined();
+    expect(writesOf(room.fake).filter((w) => w.method === 'open_vote')).toEqual([]);
     expect(hello.params.text).not.toMatch(/[—–]/);
     expect(hello.request_id).toMatch(/^go_post_turn_/);
     expect(appliedCount(room.fake, hello.request_id)).toBe(1);

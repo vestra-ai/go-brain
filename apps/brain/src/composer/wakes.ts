@@ -32,9 +32,9 @@ export function renderSetupWake(item: DeskItem): string {
   if (item.ref === 'greet') {
     return (
       'you just joined this trip. Say hello to the group in one or two short lines and what you can do for them ' +
-      '(find stays and flights, run votes, keep the plan, book when the group agrees). Then open the first vote with ' +
-      'open_vote on what the trip most needs settled: where to stay if that is open, otherwise when to go or what to do first. ' +
-      'Two to four options drawn from what the trip already says. No prices.'
+      '(find stays and flights, run votes, keep the plan, book when the group agrees). If someone asked you something ' +
+      'in this turn, answer that first and keep the hello to a few words. Do not open a vote unless someone asks for one: ' +
+      'votes come later, when the group is choosing.'
     );
   }
   return `setup: ${item.ref}`;

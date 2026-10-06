@@ -13,13 +13,7 @@ let built: Built;
 let port: number;
 let server: RawServer;
 
-const model = fakeAnthropic((body) => {
-  const last = body.messages.at(-1);
-  const afterTools = Array.isArray(last.content) && last.content.some((b: { type: string }) => b.type === 'tool_result');
-  return afterTools
-    ? { text: 'Hi all, I am Go!' }
-    : { tools: [{ name: 'open_vote', input: { question: 'Where should we stay?', options: [{ label: 'North Goa' }, { label: 'South Goa' }] } }] };
-});
+const model = fakeAnthropic(() => ({ text: 'Hi all, I am Go!' }));
 
 beforeAll(async () => {
   db = await withSchema();
@@ -31,7 +25,6 @@ beforeAll(async () => {
   await registerRoom(built.brain);
   ({ port } = await built.start());
   server = await rawServer(`ws://127.0.0.1:${port}/v1/socket?instance=boot-test`, SECRET, (method, params) => {
-    if (method === 'open_vote') return { decision_id: 'd_first', seq: 2 };
     if (method === 'post_message') return { message_id: 'm_go_1', seq: 3 };
     if (method === 'read_trip') return goaSnapshot({ trip_id: params.trip_id });
     if (method === 'read_messages') return { messages: [], has_more: false };
@@ -58,7 +51,7 @@ describe('boot', () => {
     expect(model.sideBodies.length).toBe(before + 1);
   });
 
-  it('a new trip on the socket: accepted at once, then hello with the first vote', async () => {
+  it('a new trip on the socket: accepted at once, then hello, and no vote', async () => {
     const answer = await server.call('send_event', {
       event_id: 'ev_boot_1', trip_id: 't_boot', seq: 1, occurred_at: '2026-10-05T02:30:00Z', type: 'trip.created',
       data: { trip: goaSnapshot({ trip_id: 't_boot' }) },
@@ -66,8 +59,9 @@ describe('boot', () => {
     expect(answer.result).toEqual({ accepted: true, duplicate: false });
     const post = await server.waitFor((f) => f.method === 'post_message', 10_000);
     expect(post.id).toMatch(/^go_/);
-    expect(post.params).toMatchObject({ trip_id: 't_boot', text: 'Hi all, I am Go!', card: { kind: 'vote', decision_id: 'd_first' } });
-    expect(server.frames.findIndex((f) => f.method === 'open_vote')).toBeLessThan(server.frames.indexOf(post));
+    expect(post.params).toMatchObject({ trip_id: 't_boot', text: 'Hi all, I am Go!' });
+    expect(post.params.card).toBeUndefined();
+    expect(server.frames.filter((f) => f.method === 'open_vote')).toEqual([]);
   });
 
   it('a tap on a card Go does not know is refused kindly', async () => {
