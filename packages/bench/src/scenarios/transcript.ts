@@ -1,29 +1,33 @@
 /**
  * The demo's transcript: what reached the room while the demo test played the run sheet, in order. Every message (people,
  * Go and the trip), every tap and every action outside the chat (votes, the vault, the admin page, the App's forget), each
- * with its time from the start and under the beat it belongs to, then the beat timings. The demo test writes it on every
- * run, so docs/demo/transcript.md is generated, never written by hand.
+ * with its time from the start and under the beat it belongs to, then the beat timings. The demo test names the beat of
+ * every line it sends, every act and every reply of Go's it waits for, so a row's beat never depends on the clock. The demo
+ * test writes it on every run, so docs/demo/transcript.md is generated, never written by hand.
  */
 import type * as C from '@go/contract';
 
 /** Something that happened outside the chat lines: a tap, a vote, the vault, the admin page, the App. */
 export interface TranscriptAct {
   at: number;
+  /** The room's last change number when it happened: it comes after the messages up to here and before any later one. */
+  afterSeq: number;
+  beat: string;
   who: string;
   what: string;
-}
-
-/** Where a beat of the run sheet starts. */
-export interface TranscriptChapter {
-  at: number;
-  title: string;
 }
 
 export interface TranscriptInput {
   messages: readonly C.Message[];
   people: ReadonlyArray<{ person_id: string; name: string }>;
   acts: readonly TranscriptAct[];
-  chapters: readonly TranscriptChapter[];
+  /** The beats of the run sheet, in order. */
+  beats: readonly string[];
+  /**
+   * The beat of each message, by message id: the beat that sent it, and for Go's message the beat whose cue it answers,
+   * however late it lands. A message not named here goes with the message before it.
+   */
+  beatOf: ReadonlyMap<string, string>;
   /** Each beat's time from its cue to what had to happen, as the test measured it. */
   took: ReadonlyArray<{ beat: string; ms: number }>;
   /** Where the run happened: a CI run's address, or null for a run on someone's machine. */
@@ -65,32 +69,45 @@ const secs = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
 /** Beats are timed to the hundredth: most land in well under a tenth of a second. */
 const secs2 = (ms: number): string => `${(ms / 1000).toFixed(2)} s`;
 
+export type TranscriptRow = { chapter: true; what: string } | { chapter: false; at: number; who: string; what: string };
+
 /**
- * The rows in order, without times: who and what. Two runs of the same demo give the same rows, so the demo test checks
- * the committed transcript against a fresh run with this.
+ * The rows in order: each beat's heading, then what belongs to it in the room's order (change numbers, not times). Two
+ * runs of the same demo give the same rows, so the demo test checks the committed transcript against a fresh run with this.
  */
-export function transcriptRows(t: Pick<TranscriptInput, 'messages' | 'people' | 'acts' | 'chapters'>): Array<{ at: number; chapter: boolean; who: string; what: string }> {
+export function transcriptRows(t: Pick<TranscriptInput, 'messages' | 'people' | 'acts' | 'beats' | 'beatOf'>): TranscriptRow[] {
   const name = new Map(t.people.map((p) => [p.person_id, p.name]));
-  const fromMessages = t.messages
-    .filter((m) => !m.deleted)
-    .map((m) => ({
+  type Item = { pos: number; at: number; who: string; what: string };
+  const byBeat = new Map<string, Item[]>();
+  const add = (beat: string, item: Item): void => {
+    byBeat.set(beat, [...(byBeat.get(beat) ?? []), item]);
+  };
+  let beat = '';
+  for (const m of [...t.messages].sort((a, b) => a.seq - b.seq)) {
+    beat = t.beatOf.get(m.message_id) ?? beat;
+    if (m.deleted) continue;
+    add(beat, {
+      pos: m.seq,
       at: Date.parse(m.sent_at),
-      chapter: false,
       who: m.author.kind === 'go' ? 'Go' : m.author.kind === 'system' ? 'Trip' : (name.get(m.author.person_id) ?? m.author.person_id),
       what: messageLine(m),
-    }));
-  const rows = [
-    ...t.chapters.map((c) => ({ at: c.at, chapter: true, who: '', what: c.title })),
-    ...t.acts.map((a) => ({ at: a.at, chapter: false, who: a.who, what: a.what })),
-    ...fromMessages,
-  ];
-  // A beat's heading comes before what happened at the same moment.
-  return rows.sort((a, b) => a.at - b.at || Number(b.chapter) - Number(a.chapter));
+    });
+  }
+  // Half a step after its change number, so an act never ties with a message.
+  for (const a of t.acts) add(a.beat, { pos: a.afterSeq + 0.5, at: a.at, who: a.who, what: a.what });
+  const rows: TranscriptRow[] = [];
+  // What came before the first beat, then the beats in the run sheet's order.
+  for (const b of new Set(['', ...t.beats, ...byBeat.keys()])) {
+    if (b !== '') rows.push({ chapter: true, what: b });
+    for (const i of (byBeat.get(b) ?? []).sort((x, y) => x.pos - y.pos)) rows.push({ chapter: false, at: i.at, who: i.who, what: i.what });
+  }
+  return rows;
 }
 
 export function renderTranscript(t: TranscriptInput): string {
   const rows = transcriptRows(t);
-  const start = rows[0]?.at ?? 0;
+  const times = rows.flatMap((r) => (r.chapter ? [] : [r.at]));
+  const start = times.length > 0 ? Math.min(...times) : 0;
   const out: string[] = [
     '# The demo, as the test plays it',
     '',

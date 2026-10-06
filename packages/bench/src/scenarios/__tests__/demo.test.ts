@@ -27,7 +27,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEMO_CAP_MINOR, DEMO_FORGET, DEMO_FRIEND, DEMO_LINES, DEMO_PAYER, DEMO_PEOPLE, DEMO_STAY_SEARCH, DEMO_VILLAS, DEMO_WATCH, type DemoLine } from '../demo.js';
 import { createDirector, DIRECTOR_WORDS as W } from '../director.js';
 import { CALL_OUTCOME, CALL_RECORD, DEMO_ADMIN_TOKEN, DEMO_CALLEE, DEMO_PHOTO_URL, startDemoRoom, type DemoRoom } from '../kit.js';
-import { renderTranscript, rowsOfFile, type TranscriptAct, type TranscriptChapter } from '../transcript.js';
+import { renderTranscript, rowsOfFile, type TranscriptAct } from '../transcript.js';
 
 const DATABASE_URL = process.env['DATABASE_URL'];
 if (process.env['CI'] !== undefined && DATABASE_URL === undefined) throw new Error('The demo test needs DATABASE_URL in CI (the Postgres service).');
@@ -55,6 +55,23 @@ const reactionsOn = (ids: string[]): Array<[string, string]> =>
     .filter((w) => w.method === 'add_reaction' && w.applied && ids.includes(String(w.params['message_id'])))
     .map((w) => [String(w.params['message_id']), String(w.params['emoji'])]);
 
+/**
+ * For the transcript: the beats in order, the beat now playing, the beat of each message and what happened outside the
+ * chat lines. Each beat's test names its own lines, acts and the replies it waits for, so no row is filed by the clock.
+ */
+const beats: string[] = [];
+let beatNow = '';
+const beatOf = new Map<string, string>();
+const acts: TranscriptAct[] = [];
+const chapter = (title: string): void => {
+  beats.push(title);
+  beatNow = title;
+};
+const nameOf = (personId: string): string => fake().trip().people.find((p) => p.person_id === personId)?.name ?? personId;
+const act = (at: number, who: string, what: string, afterSeq = lastSeq()): void => {
+  acts.push({ at, afterSeq, beat: beatNow, who, what });
+};
+
 async function say(line: DemoLine): Promise<{ message: C.Message; sentAt: number }> {
   const sentAt = Date.now();
   const message = await fake().say(
@@ -62,6 +79,7 @@ async function say(line: DemoLine): Promise<{ message: C.Message; sentAt: number
     line.text,
     line.photoCaption ? { attachments: [{ kind: 'photo', url: DEMO_PHOTO_URL, caption: line.photoCaption }] } : {},
   );
+  beatOf.set(message.message_id, beatNow);
   return { message, sentAt };
 }
 
@@ -70,25 +88,17 @@ const seqs: Array<[string, number]> = [];
 const took: Array<{ beat: string; ms: number }> = [];
 const mark = (beat: string, m: C.Message, sentAt?: number): void => {
   seqs.push([beat, m.seq]);
+  beatOf.set(m.message_id, beatNow);
   if (sentAt !== undefined) took.push({ beat, ms: Date.now() - sentAt });
 };
 
-/** For the transcript: what happened outside the chat lines, and where each beat starts. */
-const acts: TranscriptAct[] = [];
-const chapters: TranscriptChapter[] = [];
-const chapter = (title: string): void => {
-  chapters.push({ at: Date.now(), title });
-};
-const nameOf = (personId: string): string => fake().trip().people.find((p) => p.person_id === personId)?.name ?? personId;
-const act = (at: number, who: string, what: string): void => {
-  acts.push({ at, who, what });
-};
 /** A tap, as the Server sends it, written down for the transcript. */
 async function tap(cardId: string, action: string, personId: string) {
   const at = Date.now();
+  const afterSeq = lastSeq();
   const kind = cardNow(cardId)?.kind ?? 'a';
   const r = await fake().tap(cardId, action, personId);
-  act(at, nameOf(personId), `taps "${action}" on the ${kind} card: ${r.result}${'toast' in r && r.toast ? `, "${r.toast}"` : ''}`);
+  act(at, nameOf(personId), `taps "${action}" on the ${kind} card: ${r.result}${'toast' in r && r.toast ? `, "${r.toast}"` : ''}`, afterSeq);
   return r;
 }
 /** The committed transcript, and where this run writes its own. */
@@ -118,7 +128,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
 
   it('0:00 Go joins the trip and says hello, the trip gets its computer, and the line a friend said days ago is in the chat', async () => {
     chapter('0:00 Go joins the trip');
-    act(Date.now(), 'The Server', 'creates the Goa trip: Rahul, Priya, Arjun, Meher and Kabir');
+    act(Date.now(), 'The Server', 'creates the Goa trip: Rahul, Priya, Arjun, Meher and Kabir', 0);
     await fake().createTrip(goaFreshTrip());
     mark('greeting', await goAfter(0, (m) => m.text === W.greeting));
     await fake().waitFor(() => (d().v1.users.size > 0 ? true : null), 15_000);
@@ -427,7 +437,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
   it('writes the transcript, and the committed one matches this run apart from the times', () => {
     const run = process.env['GITHUB_RUN_ID'];
     const text = renderTranscript({
-      messages: fake().messages(), people: fake().trip().people, acts, chapters, took,
+      messages: fake().messages(), people: fake().trip().people, acts, beats, beatOf, took,
       runUrl: run ? `${process.env['GITHUB_SERVER_URL'] ?? 'https://github.com'}/${process.env['GITHUB_REPOSITORY'] ?? 'vestra-ai/go-brain'}/actions/runs/${run}` : null,
       at: new Date(),
     });
