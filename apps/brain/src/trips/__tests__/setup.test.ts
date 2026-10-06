@@ -80,6 +80,9 @@ describe('setup', () => {
     s.ensureSoon('t_setup_5');
     await new Promise((r) => setTimeout(r, 30));
     expect(runs).toBe(1);
+    // The first try has written its error (a busy CI database can take longer than 30 ms), so it is no longer running.
+    await vi.waitFor(async () => expect((await steps('t_setup_5'))[0]?.error).toBe('not yet'));
+    await new Promise((r) => setTimeout(r, 20));
     t += 31_000;
     s.ensureSoon('t_setup_5');
     await vi.waitFor(() => expect(runs).toBe(2));
