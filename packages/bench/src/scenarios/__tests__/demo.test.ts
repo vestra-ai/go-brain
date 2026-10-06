@@ -11,6 +11,7 @@ import { LANES } from '@go/brain/dist/main.js';
 import { countFacts } from '@go/brain/dist/memory/facts.js';
 import { registerMemory } from '@go/brain/dist/memory/register.js';
 import { registerMoney } from '@go/brain/dist/money/register.js';
+import { refusalWords } from '@go/brain/dist/money/words.js';
 import { registerProactive } from '@go/brain/dist/proactive/register.js';
 import { registerReflex } from '@go/brain/dist/reflex/register.js';
 import { registerRoom } from '@go/brain/dist/room.js';
@@ -332,8 +333,8 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
       expect(d().vault.rail.charges).toHaveLength(1);
       const tried = director.results.filter((r) => r.name === 'ask_to_pay').slice(triedBefore);
       expect(tried).toHaveLength(1);
-      // Refused for the reason that holds here (there is no such vote), not because something was down.
-      expect(JSON.parse(tried[0]?.content ?? '{}')).toMatchObject({ refused: "I couldn't find that vote." });
+      // Refused for the reason that holds here (nobody voted on scuba), not because something was down.
+      expect(JSON.parse(tried[0]?.content ?? '{}')).toMatchObject({ refused: refusalWords('no_vote', { payer: 'Rahul', what: 'scuba' }).text });
     }, 30_000);
   }
 
