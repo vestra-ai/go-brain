@@ -62,9 +62,10 @@ export function createPromoter(deps: PromoterDeps): Promoter {
     const tz = await deps.store.tripTz(tripId);
     const day = localDay(now, tz);
     const mood = moodFrom(await deps.store.signals(tripId, day), pack, tz);
+    const watchKeys = cands.some((c) => typeof c.facts.watchId === 'string') ? await deps.store.watchKeys(tripId) : new Map<string, string | null>();
     const live: Candidate[] = [];
     for (const c of cands) {
-      const check = stillTrue(c, pack);
+      const check = stillTrue(c, pack, watchKeys);
       if (!check.ok) {
         await deps.store.drop(c, 'no_longer_true', now);
         continue;

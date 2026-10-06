@@ -108,6 +108,15 @@ export class ProactiveStore {
     return r.rows.map(toCandidate);
   }
 
+  /** Each of the trip's watches and its newest change key, for the "is this watch nudge still true" check. */
+  async watchKeys(tripId: string): Promise<Map<string, string | null>> {
+    const r = await this.pool.query<{ watch_id: string; last_change_key: string | null }>(
+      `select watch_id, last_change_key from watches where trip_id = $1`,
+      [tripId],
+    );
+    return new Map(r.rows.map((w) => [w.watch_id, w.last_change_key]));
+  }
+
   /** One trip's due candidates (the stage fire promotes its trip at once). */
   async dueFor(tripId: string, now: Date): Promise<Candidate[]> {
     const r = await this.pool.query<CandidateRow>(
