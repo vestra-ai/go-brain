@@ -51,10 +51,11 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
         const win = dec.options[m?.choice_index ?? dec.result_index ?? -1];
         if (!win) continue;
         if (!m) {
-          // Something Go cannot book needs no payer: tell the composer before it asks the group who pays.
+          // Something Go cannot book needs no payer: tell the composer before it asks the group who pays. A check that
+          // failed just now proves nothing, so that falls through to the usual line.
           const cannot = d.travel ? await whyNotBookable({ travel: d.travel }, win) : null;
-          if (cannot) {
-            lines.push(`- Vote ${dec.decision_id} closed and ${win.label} won, but Go can't book it: don't ask who pays or use set_mandate. If it comes up, say: ${cannot}`);
+          if (cannot?.unbookable) {
+            lines.push(`- Vote ${dec.decision_id} closed and ${win.label} won, but Go can't book it: don't ask who pays or use set_mandate. If it comes up, say: ${cannot.refused}`);
             continue;
           }
           lines.push(`- Vote ${dec.decision_id} closed and ${win.label} won. Once the group says who pays, use set_mandate (the cap is the price plus a little, or a number they said).`);
