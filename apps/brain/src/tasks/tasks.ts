@@ -327,8 +327,15 @@ export function createTasks(d: TasksDeps): TasksService {
       if (fresh) await service.pushCard(fresh, true);
       await d.desk.cancel(row.tripId, taskId);
       for (const i of await d.store.openInteractions(taskId)) await d.store.setInteraction(i.interactionId, 'cancelled', d.now());
-      await stopOnV1(row);
-      await service.afterEnd(row.tripId);
+      // The job is stopped in Go and its card says so. Stopping it on /v1 and starting the next waiting job run behind,
+      // so a Stop tap answers inside its 3 s however slow /v1 is; settled() waits for them, and the sweep finishes a stop
+      // that failed here.
+      track(
+        (async () => {
+          await stopOnV1(row);
+          await service.afterEnd(row.tripId);
+        })().catch((err: unknown) => d.log.warn({ err, taskId }, 'tasks: finishing a stop on /v1 failed; the sweep tries again')),
+      );
     },
 
     async running(tripId) {
