@@ -243,7 +243,7 @@ Four switches change how Go behaves on stage without a redeploy. Go reads them o
 | `TRAVEL_MODE` | `ixigo`, `fake` | Where flights and stays come from. `fake` is our test inventory: say so on stage. | `fake` |
 | `PAY_RAIL` | `ixigo`, `stripe_test`, `fake` | How a payment is charged. `stripe_test` charges a test card; `fake` charges nothing. | `fake` |
 | `CALLS_MODE` | `off`, `allowlist` | Whether Go may phone anyone. `allowlist` means only the numbers in `CALLS_ALLOWLIST`. | `off` |
-| `REFLEX_LIVE` | `off`, empty, or questions like `q1,q2,q3,q5,q7` | Which of Jev's quick-read questions act live; the others only watch. `off` makes no Jev call at all. | `q1,q2,q3,q5,q7` |
+| `REFLEX_LIVE` | `off`, empty, or questions like `q1,q2,q3,q5,q7` | Which of Jev's quick-read questions act live; the others only watch. `off` makes no Jev call at all. | `q1,q4,q5,q6,q7,q8` |
 
 A switch takes the first of these that has a value:
 
