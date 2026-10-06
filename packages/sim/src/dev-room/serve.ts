@@ -24,7 +24,7 @@ export interface DevRoom {
 }
 
 /** What the page may send. Anything else is ignored. */
-type Action =
+export type Action =
   | { type: 'say'; personId: string; text: string }
   | { type: 'tap'; cardId: string; actionId: string; personId: string; optionId?: string }
   | { type: 'vote'; decisionId: string; personId: string; optionIndex: number }
@@ -46,6 +46,40 @@ async function forget(fake: FakeServer, personId: string, tripId: string): Promi
     return `Done. Nothing about ${name} is left.`;
   } catch {
     return FORGET_FAILED;
+  }
+}
+
+/**
+ * Does one thing a person did on the page, in trip `tripId`, and answers the page through `reply` when there is
+ * something to say (a tap's result, a forget's toast). Throws when the room refuses it.
+ */
+export async function doAction(fake: FakeServer, tripId: string, a: Action, reply: (message: object) => void): Promise<void> {
+  switch (a.type) {
+    case 'say': {
+      const words = typeof a.text === 'string' ? a.text.trim() : '';
+      if (words) await fake.say(a.personId, words, { tripId });
+      break;
+    }
+    case 'tap':
+      reply({ type: 'tap_result', result: await fake.tap(a.cardId, a.actionId, a.personId, a.optionId) });
+      break;
+    case 'vote':
+      await fake.vote(a.decisionId, a.personId, a.optionIndex);
+      break;
+    case 'react':
+      await fake.react(a.personId, a.messageId, a.emoji);
+      break;
+    case 'confirm':
+      await fake.confirmMandate(a.decisionId);
+      break;
+    case 'decline':
+      await fake.declineMandate(a.decisionId);
+      break;
+    case 'forget':
+      reply({ type: 'forget_result', personId: a.personId, toast: await forget(fake, a.personId, tripId) });
+      break;
+    default:
+      break;
   }
 }
 
@@ -94,33 +128,7 @@ export async function serveDevRoom(o: DevRoomOptions): Promise<DevRoom> {
       return;
     }
     try {
-      switch (a.type) {
-        case 'say': {
-          const words = typeof a.text === 'string' ? a.text.trim() : '';
-          if (words) await o.fake.say(a.personId, words, { tripId });
-          break;
-        }
-        case 'tap':
-          ws.send(JSON.stringify({ type: 'tap_result', result: await o.fake.tap(a.cardId, a.actionId, a.personId, a.optionId) }));
-          break;
-        case 'vote':
-          await o.fake.vote(a.decisionId, a.personId, a.optionIndex);
-          break;
-        case 'react':
-          await o.fake.react(a.personId, a.messageId, a.emoji);
-          break;
-        case 'confirm':
-          await o.fake.confirmMandate(a.decisionId);
-          break;
-        case 'decline':
-          await o.fake.declineMandate(a.decisionId);
-          break;
-        case 'forget':
-          ws.send(JSON.stringify({ type: 'forget_result', personId: a.personId, toast: await forget(o.fake, a.personId, tripId) }));
-          break;
-        default:
-          break;
-      }
+      await doAction(o.fake, tripId, a, (message) => ws.send(JSON.stringify(message)));
     } catch (err) {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'error', message: err instanceof Error ? err.message : String(err) }));
     }

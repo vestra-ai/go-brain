@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "room": "tsx src/cli.ts",
+    "try": "node dist/try-room/main.js",
     "live-smoke": "tsx scripts/live-smoke.ts"
   },
   "dependencies": {

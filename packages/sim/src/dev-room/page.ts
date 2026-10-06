@@ -1,11 +1,39 @@
 // The dev room: one self-contained page. Its script is plain ES5 built with string concatenation, because it
 // lives inside this template literal: no backticks, no dollar-brace and no backslashes in it.
-export const PAGE_HTML = `<!doctype html>
+// roomPage() draws the hosted "try Go" room from the same page: its own title, "Start over", the lines about what is
+// live and what is simulated, example messages to tap, the limit line, and a nonce on the script for a strict
+// Content-Security-Policy. With no options it is the dev room.
+
+export interface RoomPageOptions {
+  /** The page's title and the header's first line. Default "Go dev room". */
+  title?: string;
+  /** The script's nonce, for a Content-Security-Policy that allows only this script. */
+  nonce?: string;
+  /** Example messages above the message box. A tap puts one in the box. */
+  hints?: readonly string[];
+  /** The hosted room: "Start over", the lines about what is live, the limit line, and a reload to the passcode page when the socket keeps failing. */
+  hosted?: boolean;
+}
+
+const escHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+export function roomPage(o: RoomPageOptions = {}): string {
+  const title = escHtml(o.title ?? 'Go dev room');
+  const titleDiv = `<div class="title" id="title">${title}<small>connecting</small></div>`;
+  const top = o.hosted
+    ? `<div class="top">${titleDiv}<button class="act secondary" type="button" data-start-over="1">Start over</button></div>
+  <div class="about" id="about"></div>`
+    : titleDiv;
+  const limit = o.hosted ? '  <div class="limit" id="limit" role="status"></div>\n' : '';
+  const hints = o.hints?.length
+    ? `  <div class="hints"><span>Try:</span>${o.hints.map((h) => `<button class="hint" type="button" data-fill="${escHtml(h)}">${escHtml(h)}</button>`).join('')}</div>\n`
+    : '';
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Go dev room</title>
+<title>${title}</title>
 <style>
 :root { --bg: #f6f7f9; --panel: #ffffff; --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --go: #38bdf8; --go-ink: #0369a1; --accent: #0f172a; --warn: #b45309; --column: 430px; }
 * { box-sizing: border-box; }
@@ -59,12 +87,20 @@ form { display: flex; gap: 8px; }
 input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
 .toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 14px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(var(--column) - 32px); width: max-content; }
 .toast.show { opacity: 1; }
+.top { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.top button.act { margin-top: 0; font-size: 14px; padding: 8px 12px; flex: none; }
+.about { color: var(--muted); font-size: 12px; }
+.limit { color: var(--warn); font-size: 13px; margin-bottom: 8px; }
+.limit:empty { display: none; }
+.hints { display: flex; gap: 6px; align-items: center; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-bottom: 8px; }
+.hints span { color: var(--muted); font-size: 13px; flex: none; }
+button.hint { flex: none; font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; min-height: 44px; padding: 6px 12px; cursor: pointer; touch-action: manipulation; }
 </style>
 </head>
-<body>
+<body${o.hosted ? ' data-hosted="1"' : ''}>
 <div class="app">
 <header>
-  <div class="title" id="title">Go dev room<small>connecting</small></div>
+  ${top}
   <div class="people" id="people"></div>
   <div class="you" id="you"></div>
 </header>
@@ -74,16 +110,17 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
   <div class="typing" id="typing"></div>
 </main>
 <footer>
-  <form id="composer"><input type="text" id="text" autocomplete="off" enterkeyhint="send" placeholder="Message the group. Start with @Go to ask Go."><button class="act primary" type="submit">Send</button></form>
+${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete="off" enterkeyhint="send" placeholder="Message the group. Start with @Go to ask Go."><button class="act primary" type="submit">Send</button></form>
 </footer>
 </div>
 <div class="toast" id="toast"></div>
-<script>
+<script${o.nonce ? ` nonce="${escHtml(o.nonce)}"` : ''}>
 (function () {
   var COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#14b8a6'];
   var state = null;
   var me = 'p_rahul';
   var ws = null;
+  var fails = 0;
   var toastTimer = null;
   try { me = localStorage.getItem('go-dev-room-me') || me; } catch (e) {}
 
@@ -300,6 +337,9 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
     var atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     $('room').innerHTML = state.messages.map(message).join('') || '<div class="muted">No messages yet. Say hello, or start with @Go to ask Go.</div>';
     $('typing').textContent = state.typing ? 'Go is typing...' : '';
+    var about = $('about');
+    if (about) about.innerHTML = (state.about || []).map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('');
+    if ($('limit')) $('limit').textContent = state.limit || '';
     if (atBottom) window.scrollTo(0, document.body.scrollHeight);
   }
 
@@ -323,6 +363,11 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
       send({ type: 'react', personId: me, messageId: d.react, emoji: '👍' });
     } else if (d.forget) {
       send({ type: 'forget', personId: d.forget });
+    } else if (d.fill) {
+      $('text').value = d.fill;
+      $('text').focus();
+    } else if (d.startOver) {
+      send({ type: 'start_over' });
     }
   });
 
@@ -353,11 +398,20 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
         }
       } else if (data.type === 'forget_result') {
         toast(data.toast);
+      } else if (data.type === 'limit') {
+        if ($('limit')) $('limit').textContent = data.text;
+        toast(data.text);
       } else if (data.type === 'error') {
         toast(data.message);
       }
     };
-    ws.onclose = function () { setTimeout(connect, 1000); };
+    ws.onopen = function () { fails = 0; };
+    ws.onclose = function () {
+      fails += 1;
+      // The hosted room refuses a socket without a good passcode cookie: after a few tries, load the passcode page.
+      if (document.body.getAttribute('data-hosted') && fails >= 3) { location.reload(); return; }
+      setTimeout(connect, 1000);
+    };
   }
 
   connect();
@@ -367,3 +421,6 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
 </body>
 </html>
 `;
+}
+
+export const PAGE_HTML = roomPage();
