@@ -17,6 +17,7 @@ import { mcpCallRecorder, registerGoMcp } from '../routes.js';
 import { createTokenStore, type TokenStore } from '../tokens.js';
 
 const now = () => new Date('2026-10-07T12:00:00Z');
+const LATER = new Date('2026-10-07T13:00:00Z');
 let db: Awaited<ReturnType<typeof withSchema>>;
 let app: FastifyInstance;
 let base = '';
@@ -62,7 +63,7 @@ const body = (r: unknown): any => JSON.parse((r as { content: Array<{ text: stri
 
 describe("Go's MCP server", () => {
   it('lists six tools; everything but note is marked read-only', async () => {
-    const c = await connect(await tokens.mint('t_goa'));
+    const c = await connect(await tokens.mint('t_goa', LATER));
     const { tools } = await c.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(['note', 'person', 'recall', 'search_flights', 'search_stays', 'trip']);
     for (const t of tools) expect(t.annotations?.readOnlyHint === true, t.name).toBe(t.name !== 'note');
@@ -70,7 +71,7 @@ describe("Go's MCP server", () => {
   });
 
   it('answers trip() with what the group sees, and no budget, money, invite link or person ids', async () => {
-    const c = await connect(await tokens.mint('t_goa'));
+    const c = await connect(await tokens.mint('t_goa', LATER));
     const trip = body(await c.callTool({ name: 'trip', arguments: {} }));
     expect(trip).toMatchObject({ title: 'Goa 🌴', destination: 'North Goa', dates: { start: '2026-11-06', end: '2026-11-09' } });
     expect(trip.people.map((p: { name: string }) => p.name)).toEqual(['Rahul', 'Priya', 'Arjun', 'Meher', 'Kabir']);
@@ -80,7 +81,7 @@ describe("Go's MCP server", () => {
   });
 
   it("reads a person's group-visible page and this trip's recall, and passes a note on as a group-visible suggestion", async () => {
-    const c = await connect(await tokens.mint('t_goa'));
+    const c = await connect(await tokens.mint('t_goa', LATER));
     expect(body(await c.callTool({ name: 'person', arguments: { name: 'meher' } }))).toEqual({ name: 'Meher', page: 'Meher: vegetarian (message #32)' });
     expect(page).toHaveBeenLastCalledWith('t_goa', 'p_meher', 'group');
     expect(body(await c.callTool({ name: 'recall', arguments: { question: 'who is veg?' } }))).toEqual({ hits: [{ text: "I'm veg btw", message_id: 'm_32', seq: 32 }] });
@@ -95,7 +96,7 @@ describe("Go's MCP server", () => {
 
   it('searches stays read-only, each result with its offer id and checked prices, and keeps what it showed for this trip', async () => {
     const r = await searchAsTheJob({
-      goUrl: base, token: await tokens.mint('t_goa'), tool: 'search_stays',
+      goUrl: base, token: await tokens.mint('t_goa', LATER), tool: 'search_stays',
       args: { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5, must_have: ['pool'] },
     });
     expect(r.checked_at).toBe('2026-10-07T12:00:00.000Z');
@@ -114,7 +115,7 @@ describe("Go's MCP server", () => {
   });
 
   it('reads only the trip its token names', async () => {
-    const c = await connect(await tokens.mint('t_manali'));
+    const c = await connect(await tokens.mint('t_manali', LATER));
     await c.callTool({ name: 'trip', arguments: {} });
     expect(asked.at(-1)).toBe('t_manali');
     await c.close();
@@ -125,7 +126,7 @@ describe("Go's MCP server", () => {
     const post = (auth?: string) => fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(auth ? { authorization: auth } : {}) }, body: list });
     expect((await post()).status).toBe(401);
     expect((await post(`Bearer gtt_${'x'.repeat(43)}`)).status).toBe(401);
-    const old = await tokens.mint('t_old');
+    const old = await tokens.mint('t_old', LATER);
     await tokens.revokeAll('t_old');
     expect((await post(`Bearer ${old}`)).status).toBe(401);
     expect((await fetch(`${base}/mcp`)).status).toBe(405);

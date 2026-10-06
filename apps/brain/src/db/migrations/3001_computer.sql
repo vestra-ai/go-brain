@@ -14,6 +14,8 @@ create table trip_tokens (
   token_hash text primary key,
   trip_id text not null,
   created_at timestamptz not null,
+  -- The job's deadline and a margin: a token nobody revoked still stops working.
+  expires_at timestamptz not null,
   revoked_at timestamptz
 );
 create index trip_tokens_live on trip_tokens (trip_id) where revoked_at is null;

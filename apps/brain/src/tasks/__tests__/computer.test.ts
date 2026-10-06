@@ -69,7 +69,7 @@ describe("the trip's computer", () => {
   });
 
   it('arms a fresh TRIP_TOKEN in the body of PUT /v1/secrets, checks it reaches Go, and the token names the trip', async () => {
-    await computer.armToken('t_goa');
+    await computer.armToken('t_goa', new Date(clock.ms + 23 * 60_000));
     const put = fake.callsTo('PUT', /^\/v1\/secrets\/TRIP_TOKEN$/).at(-1)!;
     expect(put.body.user_id).toBe(v1UserIdFor('t_goa'));
     expect(put.query.user_id).toBeUndefined();
@@ -80,14 +80,14 @@ describe("the trip's computer", () => {
   it('puts the secret again when the check fails, then carries on and says so in the log', async () => {
     fake.checkOk = false;
     const before = fake.callsTo('PUT', /TRIP_TOKEN/).length;
-    await computer.armToken('t_goa');
+    await computer.armToken('t_goa', new Date(clock.ms + 23 * 60_000));
     expect(fake.callsTo('PUT', /TRIP_TOKEN/).length - before).toBe(2);
     expect(log.warn).toHaveBeenCalled();
     fake.checkOk = null;
   });
 
   it("revokes every token of a trip when its jobs end", async () => {
-    await computer.armToken('t_goa');
+    await computer.armToken('t_goa', new Date(clock.ms + 23 * 60_000));
     const token = fake.callsTo('PUT', /TRIP_TOKEN/).at(-1)!.body.value as string;
     await computer.releaseTokens('t_goa');
     expect(await tokens.tripFor(token)).toBeNull();

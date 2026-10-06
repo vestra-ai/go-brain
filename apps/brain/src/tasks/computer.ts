@@ -21,9 +21,11 @@ export interface Computer {
   ensureUser(tripId: string): Promise<string>;
   warm(tripId: string): Promise<'ready' | 'waking' | 'skipped'>;
   conversation(tripId: string): Promise<{ userId: string; conversationId: string }>;
-  /** A fresh token in the trip user's TRIP_TOKEN secret, checked against Go's MCP server. */
-  armToken(tripId: string): Promise<void>;
+  /** A fresh token in the trip user's TRIP_TOKEN secret, good until `expiresAt`, checked against Go's MCP server. */
+  armToken(tripId: string, expiresAt: Date): Promise<void>;
   releaseTokens(tripId: string): Promise<void>;
+  /** The trips that still hold a live token. */
+  tripsWithTokens(): Promise<string[]>;
 }
 
 export interface ComputerDeps {
@@ -108,9 +110,9 @@ export function createComputer(d: ComputerDeps): Computer {
       return { userId, conversationId: stored?.conversation_id ?? c.id };
     },
 
-    async armToken(tripId) {
+    async armToken(tripId, expiresAt) {
       const userId = await computer.ensureUser(tripId);
-      const token = await d.tokens.mint(tripId);
+      const token = await d.tokens.mint(tripId, expiresAt);
       await putSecret(userId, token);
       if (await reachesGo(userId)) return;
       await putSecret(userId, token);
@@ -122,6 +124,8 @@ export function createComputer(d: ComputerDeps): Computer {
     async releaseTokens(tripId) {
       await d.tokens.revokeAll(tripId);
     },
+
+    tripsWithTokens: () => d.tokens.liveTrips(),
   };
   return computer;
 }

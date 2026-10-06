@@ -34,7 +34,7 @@ export interface SweepDeps {
   eventStore: EventStore;
   tasks: TasksService;
   events: TaskEvents;
-  computer: Pick<Computer, 'userIdFor'>;
+  computer: Pick<Computer, 'tripsWithTokens' | 'releaseTokens'>;
   follow: (conversationId: string, tripId: string) => void;
   desk: Brain['desk'];
   packs: Pick<Brain['packs'], 'get'>;
@@ -192,6 +192,14 @@ export function createSweep(d: SweepDeps): Sweep {
         if (row?.conversationId && ACTIVE_STATES.includes(row.state)) conversations.set(row.conversationId, row.tripId);
       } catch (err) {
         d.log.warn({ err, taskId: seen.id }, 'tasks: the sweep could not check a job');
+      }
+    }
+    // A trip with no job running keeps no live token (a stop during start-up, an end Go never heard).
+    for (const tripId of await d.computer.tripsWithTokens()) {
+      try {
+        if ((await d.store.countActive(tripId)) === 0) await d.computer.releaseTokens(tripId);
+      } catch (err) {
+        d.log.warn({ err, tripId }, "tasks: the sweep could not revoke a trip's tokens");
       }
     }
     // Jobs stopped before Go heard /v1 name them: once their start is found, mapStarts stops them on /v1 too.

@@ -194,4 +194,26 @@ describe('stopping a job', () => {
     expect(fake.tasks.get(t.id)?.stopped).toBe(true);
     expect(await store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
   });
+
+  it('hands nothing over and leaves no live token when the stop lands while the token is being armed', async () => {
+    const v1 = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
+    const tokens = createTokenStore(db.pool, lb.clock.now);
+    const real = createComputer({ pool: db.pool, v1, tokens, env: { VESTRA_DEPLOYMENT_ID: 'dep_go', VESTRA_MCP_SERVER_ID: 'mcp_go' }, now: lb.clock.now, log: lb.brain.log });
+    let taskId = '';
+    let own: TasksService | null = null;
+    // The stop lands after dispatch began and before the token exists, so stop() itself finds nothing to revoke.
+    const computer = { ...real, armToken: async (tripId: string, until: Date) => {
+      await own!.stop(taskId);
+      await real.armToken(tripId, until);
+    } };
+    own = createTasks({ store, v1, computer, cards, link: lb.link, desk: lb.desk, packs: lb.brain.packs, now: lb.clock.now, log: lb.brain.log, follow: () => undefined });
+    taskId = stableId('gt', 't_tok', 'tok1');
+    const r = await own.start('t_tok', { ...VILLAS, key: 'tok1' });
+    expect(r.taskId).toBe(taskId);
+    await own.settled();
+    expect((await store.get(taskId))?.state).toBe('stopped');
+    expect(fake.callsTo('POST', /\/messages$/).some((c) => c.headers['idempotency-key'] === `go-msg-${taskId}`)).toBe(false);
+    const token = fake.callsTo('PUT', /TRIP_TOKEN/).at(-1)!.body.value as string;
+    expect(await tokens.tripFor(token)).toBeNull();
+  });
 });

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createTokenStore } from '../../mcp/tokens.js';
 import { createSweep, type Sweep } from '../sweep.js';
 import { VILLA_BRIEF, makeTaskHarness, type TaskHarness } from '../testing/harness.js';
 
@@ -115,5 +116,14 @@ describe('the sweep', () => {
     await sweep.runOnce();
     expect(h.fake.tasks.get(t.id)?.stopped).toBe(true);
     expect(await h.store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
+  });
+
+  it('revokes the tokens of a trip with no job running', async () => {
+    await h.computer.armToken('t_sw9', new Date(h.lb.clock.now().getTime() + 30 * 60_000));
+    const token = h.fake.callsTo('PUT', /TRIP_TOKEN/).at(-1)!.body.value as string;
+    const tokens = createTokenStore(h.pool, h.lb.clock.now);
+    expect(await tokens.tripFor(token)).toBe('t_sw9');
+    await sweep.runOnce();
+    expect(await tokens.tripFor(token)).toBeNull();
   });
 });

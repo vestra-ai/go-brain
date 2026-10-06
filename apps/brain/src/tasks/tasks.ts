@@ -19,6 +19,8 @@ import type { PlatformEvent } from './webhooks.js';
 import { buildWorkingCard, plannedSteps, type WorkingCardT } from './working-card.js';
 
 export const MAX_ACTIVE_PER_TRIP = 3;
+/** A job's trip token outlives its deadline by this much, then stops working even if nobody revoked it. */
+export const TOKEN_MARGIN_MS = 15 * 60_000;
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 export const DEFAULT_DEADLINE_MS = 8 * 60_000;
 /** While a job waits on a person, its deadline moves past the 10 minutes a question or hand-off may wait. */
@@ -186,7 +188,14 @@ export function createTasks(d: TasksDeps): TasksService {
       const row = await d.store.get(taskId);
       if (!row || row.state !== 'starting' || row.stopRequestedAt) return;
       try {
-        await d.computer.armToken(row.tripId);
+        const deadline = row.deadlineAt?.getTime() ?? d.now().getTime() + deadlineMs;
+        await d.computer.armToken(row.tripId, new Date(deadline + TOKEN_MARGIN_MS));
+        // A stop that landed while the token was being armed: no hand-off, and no token left live for nothing.
+        const current = await d.store.get(row.id);
+        if (!current || current.state !== 'starting' || current.stopRequestedAt) {
+          if ((await d.store.countActive(row.tripId)) === 0) await d.computer.releaseTokens(row.tripId);
+          return;
+        }
         const { conversationId } = await d.computer.conversation(row.tripId);
         const turn = await d.v1.call<{ id: string }>('POST', `/v1/conversations/${conversationId}/messages`, {
           idempotencyKey: `go-msg-${row.id}`,
