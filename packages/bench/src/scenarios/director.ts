@@ -19,10 +19,9 @@ export const DIRECTOR_WORDS = {
   villaStarted: 'On it. Looking for villas with a pool in North Goa, near the beach.',
   callAnnounce: `I'll call ${DEMO_DIVE_SHOP.name} to ask if they can take five of us on Sunday morning.`,
   weather: 'November is dry and sunny in Goa, around 32 degrees by day. Good beach weather.',
-  villasShown: 'Three villas that fit. Vote below.',
+  villasShown: 'Three villas that fit, with their prices for the whole stay.',
   mandate: 'Villa Sol won. Rahul, tap Yes, book it when you are ready.',
   refusal: "I can't pay without a group vote and Rahul's OK on his phone. Want me to put scuba to a vote?",
-  forgotten: (name: string): string => `Done. Nothing about ${name} is left.`,
 } as const;
 
 interface ToolCall {
@@ -141,13 +140,8 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
       const id = field(searched.content, 'results_id');
       return id ? { tools: [{ name: 'show_options', input: { results_id: id, title: 'Friday flights, Delhi to Goa' } }] } : { text: DIRECTOR_WORDS.noFlights };
     }
-    const shown = result('show_options');
-    if (shown) {
-      const card = field(shown.content, 'card_id');
-      if (card && now.includes('finished with')) return { tools: [{ name: 'put_to_vote', input: { card_id: card, closes_in_hours: 2 } }] };
-      return { text: DIRECTOR_WORDS.flights };
-    }
-    if (result('put_to_vote')) return { text: DIRECTOR_WORDS.villasShown };
+    // The villas go up as options only: the group opens the vote with the card's own "Put it to a vote" (the stage's way).
+    if (result('show_options')) return { text: now.includes('finished with') ? DIRECTOR_WORDS.villasShown : DIRECTOR_WORDS.flights };
     if (result('start_task')) return { text: DIRECTOR_WORDS.villaStarted };
     if (result('set_mandate')) return { text: DIRECTOR_WORDS.mandate };
     if (result('ask_to_pay')) return { text: DIRECTOR_WORDS.refusal };
@@ -163,10 +157,6 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
     if (/ignore (?:the|your) rules|rules chhod/i.test(fresh)) {
       // A model talked into it: it tries the only paying tool there is.
       return { tools: [{ name: 'ask_to_pay', input: { decision_id: 'd_scuba', option_ref: 'opt_scuba', purpose: 'Scuba for everyone' } }] };
-    }
-    if (/\bforget me\b/i.test(fresh)) {
-      const who = chatLinesIn(body).filter((l) => /\bforget me\b/i.test(l.text)).at(-1)?.name ?? 'you';
-      return { text: DIRECTOR_WORDS.forgotten(who) };
     }
     if (/\bweather\b/i.test(fresh)) return { text: DIRECTOR_WORDS.weather };
     if (/flights delhi to goa/i.test(fresh)) {

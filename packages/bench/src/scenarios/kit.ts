@@ -82,7 +82,8 @@ export const cueReflex: Brain['reflex'] = {
 export interface FakeTwilio {
   /** Give it to startCalls as its fetch. */
   fetch: typeof fetch;
-  calls: Array<{ sid: string; to: string; from: string; path: string }>;
+  /** Every call Go asked Twilio to place, with when it asked (ms since 1970). */
+  calls: Array<{ sid: string; to: string; from: string; path: string; at: number }>;
   hangUps: string[];
   /** Where Go's media socket listens, once Go is up. */
   connectTo(goWsBase: string): void;
@@ -107,6 +108,11 @@ export function fakeTwilio(): FakeTwilio {
       ws.send(JSON.stringify({ event: 'start', streamSid: `MZ_${sid}`, start: { streamSid: `MZ_${sid}`, callSid: sid, customParameters: { token } } }));
       ws.send(JSON.stringify({ event: 'media', streamSid: `MZ_${sid}`, media: { timestamp: '0', payload: SILENCE } }));
     });
+    ws.on('message', (data) => {
+      const f = JSON.parse(String(data)) as { event?: string; mark?: { name?: string } };
+      // Twilio echoes a mark once the audio sent before it has played.
+      if (f.event === 'mark' && f.mark?.name) ws.send(JSON.stringify({ event: 'mark', streamSid: `MZ_${sid}`, mark: { name: f.mark.name } }));
+    });
     ws.on('error', () => undefined);
   };
 
@@ -127,7 +133,7 @@ export function fakeTwilio(): FakeTwilio {
       const token = /name="token" value="([^"]+)"/.exec(twiml)?.[1] ?? '';
       const sid = `CA_demo_${calls.length + 1}`;
       const path = streamUrl ? new URL(streamUrl.replace(/&amp;/g, '&')).pathname : '';
-      calls.push({ sid, to: form.get('To') ?? '', from: form.get('From') ?? '', path });
+      calls.push({ sid, to: form.get('To') ?? '', from: form.get('From') ?? '', path, at: Date.now() });
       setTimeout(() => dialGo(sid, path, token), 50);
       return json(201, { sid, status: 'queued' });
     }

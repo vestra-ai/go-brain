@@ -2,7 +2,7 @@
 // a scripted director as the model. It proves the plumbing, not the model's judgement: the director always makes the
 // right call, and the test checks that each call reaches the room the way the run sheet says it must.
 import type * as C from '@go/contract';
-import { ForgetResult, PersonPage } from '@go/contract';
+import { PersonPage } from '@go/contract';
 import { goaFreshTrip } from '@go/sim';
 import { registerAdmin } from '@go/brain/dist/admin/register.js';
 import { registerCalls } from '@go/brain/dist/calls/register.js';
@@ -20,7 +20,7 @@ import { armedToken, searchAsTheJob } from '@go/brain/dist/tasks/testing/job-sea
 import { appliedCount, typingOf, waitTyping } from '@go/brain/dist/testing/watch.js';
 import { registerTravel } from '@go/brain/dist/travel/register.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEMO_CAP_MINOR, DEMO_FRIEND, DEMO_LINES, DEMO_PAYER, DEMO_PEOPLE, DEMO_STAY_SEARCH, DEMO_VILLAS, DEMO_WATCH, type DemoLine } from '../demo.js';
+import { DEMO_CAP_MINOR, DEMO_FORGET, DEMO_FRIEND, DEMO_LINES, DEMO_PAYER, DEMO_PEOPLE, DEMO_STAY_SEARCH, DEMO_VILLAS, DEMO_WATCH, type DemoLine } from '../demo.js';
 import { createDirector, DIRECTOR_WORDS as W } from '../director.js';
 import { CALL_OUTCOME, CALL_RECORD, DEMO_ADMIN_TOKEN, DEMO_CALLEE, DEMO_PHOTO_URL, startDemoRoom, type DemoRoom } from '../kit.js';
 
@@ -198,9 +198,11 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(dialAt - Date.parse(line.sent_at)).toBeGreaterThanOrEqual(29_000);
     expect(dialAt - callCueSentAt).toBeLessThanOrEqual(35_000);
     took.push({ beat: 'call', ms: dialAt - callCueSentAt });
-    // Only the allowlisted number is ever dialled. P6 posts the dialing card before it asks Twilio, so wait for the dial.
+    // Only the allowlisted number is ever dialled. P6 posts the dialing card before it asks Twilio, so wait for the dial,
+    // and time the dial itself: nothing may ring before the 30 s stop window is over.
     await fake().waitFor(() => (d().twilio.calls.length > 0 ? true : null), 5_000).catch(() => null);
     expect(d().twilio.calls.map((c) => c.to)).toEqual([DEMO_CALLEE.phone]);
+    expect((d().twilio.calls[0]?.at ?? 0) - Date.parse(line.sent_at)).toBeGreaterThanOrEqual(29_000);
     mark('call_card', await goAfter(line.seq, (m) => m.card?.card_id === callCard.card_id));
     await fake().waitFor(() => ((cardNow(callCard.card_id) as Card<'call'> | null)?.state === 'ended' ? true : null), 40_000);
     expect(cardNow(callCard.card_id)).toMatchObject({ state: 'ended', outcome: CALL_OUTCOME });
@@ -209,12 +211,14 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     const records = (): string[] => fake().writes.filter((w) => w.method === 'add_record_line' && w.applied).map((w) => (w.params as { text: string }).text);
     await fake().waitFor(() => (records().includes(CALL_RECORD) ? true : null), 5_000).catch(() => null);
     expect(records()).toContain(CALL_RECORD);
+    // The REST hang-up runs beside the end of the call, so the ended card can land first.
+    await fake().waitFor(() => (d().twilio.hangUps.length > 0 ? true : null), 5_000).catch(() => null);
     expect(d().twilio.hangUps).toHaveLength(1);
     // The villa job browsed through the whole call.
     expect(jobState()).toBe('running');
   }, 120_000);
 
-  it('2:20 the job comes back: three villas as an options card, bookable at their whole-stay prices, put to a vote', async () => {
+  it('2:20 the job comes back: three villas as an options card, bookable at their whole-stay prices, and Priya taps "Put it to a vote"', async () => {
     const from = lastSeq();
     // The job searches Go's stays first, as the real one does: Go keeps what it showed for the trip.
     const searched = await searchAsTheJob({ goUrl: d().goUrl, token: armedToken(d().v1, fake().trip().trip_id), tool: 'search_stays', args: DEMO_STAY_SEARCH });
@@ -228,11 +232,18 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     // The same path as the real flow: each option is the fake ixigo offer the job picked, at the whole stay.
     const offers = await Promise.all(card.options.map((o) => d().room.built.brain.travel!.offer(o.option_id)));
     expect(offers.map((o) => [o?.offerId, o?.priceMinor])).toEqual(DEMO_VILLAS.options.map((v) => [v.offer_id, v.total_paise]));
-    const vote = await goAfter(from, kindIs('vote'));
+    expect(go().filter((m) => m.seq > from && m.card?.kind === 'vote')).toEqual([]);
+    // The stage's way: the card's own button opens the vote in code, with no model turn.
+    expect(await fake().tap(card.card_id, 'vote', DEMO_FRIEND)).toMatchObject({ result: 'done', toast: 'Putting it to a vote' });
+    const vote = await goAfter(shown.seq, kindIs('vote'));
+    mark('vote', vote);
+    expect(await fake().tap(card.card_id, 'vote', DEMO_FRIEND)).toMatchObject({ result: 'done', toast: 'Already up for a vote' });
     decisionId = (vote.card as Card<'vote'>).decision_id;
     const decision = fake().trip().decisions.find((x) => x.decision_id === decisionId);
     expect(decision?.options.map((o) => o.label)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
     expect(decision?.options.map((o) => o.price_minor)).toEqual(DEMO_VILLAS.options.map((v) => v.total_paise));
+    // Each option names the card's option, the one the mandate and the pay card book.
+    expect(decision?.options.map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
     expect(cardNow(workingId)).toMatchObject({ state: 'done' });
   }, 30_000);
 
@@ -292,6 +303,8 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     const notice = await goAfter(from, kindIs('notice'));
     mark('notice', notice, t0);
     expect(notice.card).toMatchObject({ for_person_ids: [DEMO_WATCH.person_id], source: { name: 'Simulated for the demo' } });
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    expect(go().filter((m) => m.seq > from && m.card?.kind === 'notice')).toHaveLength(1);
   }, 30_000);
 
   for (const [beat, line] of [['refusal_en', DEMO_LINES.attackEn], ['refusal_hi', DEMO_LINES.attackHi]] as const) {
@@ -306,7 +319,8 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
       expect(d().vault.rail.charges).toHaveLength(1);
       const tried = director.results.filter((r) => r.name === 'ask_to_pay').slice(triedBefore);
       expect(tried).toHaveLength(1);
-      expect(tried[0]?.content).toContain('"refused"');
+      // Refused for the reason that holds here (there is no such vote), not because something was down.
+      expect(JSON.parse(tried[0]?.content ?? '{}')).toMatchObject({ refused: "I couldn't find that vote." });
     }, 30_000);
   }
 
@@ -318,19 +332,19 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(reply.text).toBe(`Meher is vegetarian, so no seafood shacks. Meher said so in #${vegSeq}. Priya, Arjun, Meher and Kabir haven't paid Rahul back yet: ₹7,680 each.`);
   }, 20_000);
 
-  it('4:20 "@Go forget me" from Meher: "Done. Nothing about Meher is left.", and queries find nothing left', async () => {
+  it('4:20 Meher taps "Forget me in this trip" in the App: Go forgets her inside 2 s, says nothing in the chat, and queries find nothing left', async () => {
     const tripId = fake().trip().trip_id;
-    const meher = DEMO_LINES.forget.person;
+    const meher = DEMO_FORGET.person;
     const memory = d().room.built.brain.memory;
     if (!memory) throw new Error('the memory lane is not registered');
     // Before: Go holds what Meher said at 0:15, with its proof.
     expect(await countFacts(d().room.db.pool, meher, tripId)).toBeGreaterThan(0);
-    const { message, sentAt } = await say(DEMO_LINES.forget);
-    const reply = await goAfter(message.seq, (m) => m.text === W.forgotten('Meher'));
-    mark('forget', reply, sentAt);
-    // P2 forgets on the Server's forget_person (the App's "Forget me in this trip"), not on a chat line, so the test
-    // sends it right after Go's reply, as the Server does for the App (interface note 11).
-    const res = ForgetResult.parse(await fake().askGo('forget_person', { person_id: meher, trip_id: tripId }));
+    const before = lastSeq();
+    // What the App and the Server do (interface note 11): forget_person to Go, then her join answers cleared.
+    const t0 = Date.now();
+    const res = await fake().forgetPerson(meher, tripId);
+    took.push({ beat: 'forget', ms: Date.now() - t0 });
+    expect(Date.now() - t0).toBeLessThan(2_000);
     expect(res.remaining_facts).toBe(0);
     expect(res.deleted_facts).toBeGreaterThanOrEqual(1);
     // Checked by queries, not by trust: no fact row, nothing on her page for this trip, no recall hit on her old line.
@@ -339,12 +353,15 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(page.facts.filter((f) => f.trip_id === tripId)).toEqual([]);
     const hits = await memory.recall(tripId, "What can't Meher eat? veg", 'group');
     expect(hits.map((h) => h.seq)).not.toContain(vegSeq);
+    // Forgetting is the App's job: Go says nothing about it in the room.
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(go().filter((m) => m.seq > before)).toEqual([]);
   }, 20_000);
 
   it("the beats landed in the run sheet's order, each of Go's writes was done once, and nothing Go sent has a dash", () => {
     expect(seqs.map(([beat]) => beat)).toEqual([
-      'greeting', 'flights', 'villa_start', 'call_line', 'weather', 'call_card', 'call_outcome', 'villa_done', 'mandate', 'pay_card', 'ticket',
-      'notice', 'refusal_en', 'refusal_hi', 'memory', 'forget',
+      'greeting', 'flights', 'villa_start', 'call_line', 'weather', 'call_card', 'call_outcome', 'villa_done', 'vote', 'mandate', 'pay_card', 'ticket',
+      'notice', 'refusal_en', 'refusal_hi', 'memory',
     ]);
     for (let k = 1; k < seqs.length; k++) expect(seqs[k]?.[1] ?? 0, seqs[k]?.[0]).toBeGreaterThan(seqs[k - 1]?.[1] ?? 0);
     const ids = new Set(fake().writes.map((w) => w.request_id).filter((id): id is string => typeof id === 'string' && id !== ''));
