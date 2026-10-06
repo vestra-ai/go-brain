@@ -1,5 +1,5 @@
 import { signRequest } from '@go/contract';
-import { chargeOnce, deadlineSql, holdUnknown, markUnknown, PAST_DEADLINE, RAIL_GRACE_MS, settle, type AttemptRow, type PayDeps } from './charge.js';
+import { chargeOnce, deadlineSql, holdUnknown, markUnknown, NOT_SENT, RAIL_GRACE_MS, settle, type AttemptRow, type PayDeps } from './charge.js';
 import { VAULT_SIGNATURE_HEADER } from './internal/auth.js';
 import type { FindResult, RailFailReason } from './rails/rail.js';
 
@@ -205,7 +205,7 @@ export async function sweep(d: PayDeps): Promise<{ recharged: number; resent: nu
     await d.pool.query('update used_approvals set rail_checked_at = $2 where jti = $1', [a.jti, d.now()]);
     if ('unknown' in result) {
       // Still no clear answer: the row stays charging until the cap marks it unknown. Never failed.
-      if (result.unknown !== PAST_DEADLINE) await holdUnknown(d, d.now(), a, result.unknown);
+      if (result.unknown !== NOT_SENT) await holdUnknown(d, d.now(), a, result.unknown);
       continue;
     }
     if (await settle(d.pool, d.now(), a, result)) recharged += 1;

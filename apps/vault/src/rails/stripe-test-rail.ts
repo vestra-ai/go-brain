@@ -36,7 +36,7 @@ export class StripeTestRail implements Rail {
   }
 
   /**
-   * Read only: lists the person's PaymentIntents since a minute before the attempt and keeps the one whose metadata
+   * Read only: lists the person's PaymentIntents since an hour before the attempt and keeps the one whose metadata
    * carries this jti (set at charge time). Listing reads what was just written, which Stripe's search does not promise
    * (and search is not offered to accounts in India). Succeeded is the payment; no PaymentIntent, or only ones that
    * stopped, means no money went out; anything else cannot be told yet.
@@ -48,7 +48,8 @@ export class StripeTestRail implements Rail {
       if (!customerId) return { none: true };
       const found = await this.stripe.findCharges({
         customerId,
-        createdSince: new Date(q.since.getTime() - 60_000),
+        // An hour back, so a vault clock running ahead of Stripe's never puts the real PaymentIntent outside the window.
+        createdSince: new Date(q.since.getTime() - 3_600_000),
         approvalJti: q.idempotencyKey,
       });
       const paid = found.find((pi) => pi.status === 'succeeded');

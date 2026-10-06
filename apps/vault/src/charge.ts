@@ -31,8 +31,11 @@ export interface AttemptRow {
 
 /** How long after its approval runs out a charge may still go to the rail (the same grace as Go's). */
 export const RAIL_GRACE_MS = 120_000;
-/** The unknown reason chargeOnce gives when the deadline has passed: the rail was not called. */
-export const PAST_DEADLINE = 'past_deadline';
+/**
+ * The unknown reason chargeOnce gives when it did not call the rail: the deadline had passed, or the row was no longer
+ * charging (another copy of the vault settled it). Nothing went out from this call.
+ */
+export const NOT_SENT = 'not_sent';
 
 /**
  * The SQL for a charge's deadline: its approval's expiry plus RAIL_GRACE_MS (the grace in seconds is the parameter
@@ -50,14 +53,16 @@ export async function chargeOnce(d: PayDeps, a: AttemptRow): Promise<ChargeResul
   } catch {
     return { failed: 'rail_error' };
   }
-  // Stamped before the call, with the clock as it is now, and only before the deadline: a charge is never sent on an
-  // approval past its expiry and grace, however long a sweep has been running. Past the deadline, a charge the rail may
-  // have seen is never called a failure.
+  // Stamped before the call, with the clock as it is now, only before the deadline and only while the row is still
+  // charging: a charge is never sent on an approval past its expiry and grace, however long a sweep has been running,
+  // nor on a row another copy of the vault already settled. Past the deadline, a charge the rail may have seen is never
+  // called a failure.
   const stamped = await d.pool.query(
-    `update used_approvals set rail_called_at = coalesce(rail_called_at, $2) where jti = $1 and ${deadlineSql('$3')} > $2 returning 1`,
+    `update used_approvals set rail_called_at = coalesce(rail_called_at, $2)
+     where jti = $1 and outcome = 'charging' and ${deadlineSql('$3')} > $2 returning 1`,
     [a.jti, d.now(), RAIL_GRACE_MS / 1000],
   );
-  if ((stamped.rowCount ?? 0) === 0) return { unknown: PAST_DEADLINE };
+  if ((stamped.rowCount ?? 0) === 0) return { unknown: NOT_SENT };
   try {
     return await d.rails[a.rail].charge({
       personId: a.payer_person_id,
