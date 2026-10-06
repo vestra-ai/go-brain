@@ -34,6 +34,16 @@ export interface NoticeToolDeps {
   onPosted?: (p: ProactivePayload, cardId: string) => Promise<void>;
 }
 
+/** The people a simulated item in the wake names, or null when there is none or it names nobody. */
+function simulatedPins(wake: TurnCtx['wake']): string[] | null {
+  const ids = new Set<string>();
+  for (const item of wake) {
+    const p = proactiveOf(item);
+    if (p?.candidate.simulated) for (const id of p.forPersonIds) ids.add(id);
+  }
+  return ids.size > 0 ? [...ids] : null;
+}
+
 const NOT_NOW = 'Not now: the bar for speaking up unprompted is not met for this. Use an allowed action or stay_silent.';
 const ONE_NOTICE = 'This turn already posted its one notice. Put everything in that notice, or stay_silent.';
 
@@ -50,8 +60,10 @@ export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, Q
       if (rules && ctx.cards.some((c) => (c as { kind?: unknown }).kind === 'notice')) return { refused: ONE_NOTICE };
       const reachable = new Set(ctx.pack.trip.people.filter((p) => !p.go_paused).map((p) => p.person_id));
       let pins = (args.for_person_ids ?? []).filter((id) => reachable.has(id));
-      if (rules?.pinOnlyFor) {
-        const named = rules.pinOnlyFor.filter((id) => reachable.has(id));
+      // Simulated news stays pinned to the people it names, even in a turn a person woke (no rules then).
+      const pinOnlyFor = rules?.pinOnlyFor ?? simulatedPins(ctx.wake);
+      if (pinOnlyFor) {
+        const named = pinOnlyFor.filter((id) => reachable.has(id));
         pins = pins.filter((id) => named.includes(id));
         if (pins.length === 0) pins = named;
         if (pins.length === 0) return { refused: 'Nobody this concerns can be pinged right now.' };

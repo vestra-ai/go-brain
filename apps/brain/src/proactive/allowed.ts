@@ -31,15 +31,18 @@ export function rulesForTurn(wake: DeskItem[]): TurnRules | null {
   const allowed = new Set<Action>();
   const pins = new Set<string>();
   const dedupeKeys: string[] = [];
+  let simulated = false;
   for (const p of payloads) {
     if (p === null) return null;
     for (const a of p.allowed) allowed.add(a);
     for (const id of p.forPersonIds) pins.add(id);
     dedupeKeys.push(p.candidate.dedupeKey);
+    if (p.candidate.simulated) simulated = true;
   }
   const tools = new Set<string>(ALWAYS);
   for (const a of allowed) for (const t of TOOLS_FOR[a]) tools.add(t);
-  const mayPostText = allowed.has('message');
+  // Simulated news goes out only on a notice card, which carries the "Simulated for the demo" label and the pins.
+  const mayPostText = allowed.has('message') && !simulated;
   return {
     allowed: ACTIONS.filter((a) => allowed.has(a)),
     tools: [...tools],

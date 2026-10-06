@@ -63,6 +63,13 @@ describe('rulesForTurn', () => {
     expect(r?.tools).toEqual(expect.arrayContaining(['react', 'record', 'post_notice', 'stay_silent']));
   });
 
+  it('never lets simulated news out as text: a notice card carries its label and pins', () => {
+    const toAll = candidate({ dedupeKey: 'sim:flight_status:all', simulated: true, personIds: [] });
+    expect(rulesForTurn([proItem(toAll, ['message'])])).toMatchObject({ mayPostText: false, tools: expect.arrayContaining(['post_notice']) });
+    expect(composerRules([proItem(toAll, ['message'])])?.mayPostText).toBe(false);
+    expect(rulesForTurn([proItem(chat, ['react', 'record', 'message'])])?.mayPostText).toBe(true);
+  });
+
   it('notices a simulated item even in a turn a person woke', () => {
     expect(simulatedIn([messageItem, proItem(delay, ['pin'], ['p_arjun'])])).toBe(true);
     expect(simulatedIn([messageItem])).toBe(false);

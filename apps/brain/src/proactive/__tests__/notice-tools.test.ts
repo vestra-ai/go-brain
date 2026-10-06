@@ -100,6 +100,20 @@ describe('post_notice', () => {
   });
 });
 
+describe('simulated news', () => {
+  it('keeps its pins to the people it names in a turn a person woke, whatever the model asked', async () => {
+    const delay = candidate({ dedupeKey: 'sim:flight_status:mixed', simulated: true });
+    const [post] = tools();
+    const ask = async (forPersonIds?: string[]) => {
+      const ctx = turnCtx({ link: fakeLink(), pack: goaPack(), wake: [messageItem, proItem(delay, ['pin'], ['p_arjun'])], turnId: `turn_sim_${forPersonIds?.length ?? 0}` });
+      await post.run(post.input.parse({ tone: 'heads_up', title: 'Late flight', body: 'Two hours late.', ...(forPersonIds ? { for_person_ids: forPersonIds } : {}) }), ctx);
+      return ctx.cards[0] as Record<string, unknown>;
+    };
+    expect(await ask()).toMatchObject({ for_person_ids: ['p_arjun'], source: { name: SIMULATED_SOURCE } });
+    expect(await ask(['p_rahul', 'p_priya'])).toMatchObject({ for_person_ids: ['p_arjun'] });
+  });
+});
+
 describe('update_notice', () => {
   it('replaces a notice Go posted, in place', async () => {
     const delay = candidate({ dedupeKey: 'sim:flight_status:3', simulated: true });

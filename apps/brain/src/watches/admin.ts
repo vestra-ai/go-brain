@@ -79,7 +79,8 @@ export function registerFireRoute(app: FastifyInstance, d: FireDeps): void {
       importance: b.importance,
       confidence: 1,
       urgency: b.urgency,
-      useful: b.person_ids.length > 0 ? ['pin', 'message'] : ['message'],
+      // Pinned to the people it names, never a message to everyone: the label and the pins ride on the notice card.
+      useful: b.person_ids.length > 0 ? ['pin'] : ['message'],
       personIds: b.person_ids,
       facts: {
         label: b.label,

@@ -63,6 +63,9 @@ describe('startProactive', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ ok: true, promoted: 1 });
 
+    // A fire that names people is only ever a pin for them, never a message to everyone.
+    const useful = await db.pool.query<{ useful: string[] }>(`select useful from proactive_candidates where trip_id = 't_goa' and dedupe_key = $1`, [res.json().dedupe_key]);
+    expect(useful.rows[0]?.useful).toEqual(['pin']);
     const item = desk.items.at(-1)!;
     expect(item.kind).toBe('watch');
     expect(proactiveOf(item)).toMatchObject({ allowed: ['pin'], forPersonIds: ['p_arjun'], candidate: { simulated: true } });
