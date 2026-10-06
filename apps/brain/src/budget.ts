@@ -1,6 +1,7 @@
 // The daily model budget: a hard cap, in USD, on what this Go's model calls may cost in one UTC day
-// (MODEL_DAILY_BUDGET_USD; unset means no cap). Every model call checks it first and records its cost after. The total
-// is kept in process, and read back from model_spend at boot and on a slow interval, so a restart starts from it.
+// (MODEL_DAILY_BUDGET_USD; unset means no cap). Every model call reserves an upper-bound estimate first, which fails
+// once it would pass the cap, and settles to its real cost after, finished or not. The settled costs are kept in
+// model_spend and read back at boot and on a slow interval, so a restart starts from them.
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import type { Log } from './log.js';
@@ -15,14 +16,25 @@ export class OverBudget extends Error {
 export interface Budget {
   /** The cap for one UTC day, in USD, or null for no cap. */
   readonly capUsd: number | null;
-  /** True when a model call may go ahead: there is no cap, or today's spend is still under it. */
+  /** True while there is room left today: no cap, or what is spent and held is still under it. */
   allows(): boolean;
-  /** What today's model calls (UTC) have cost so far, in USD. */
+  /** What today's model calls (UTC) cost so far, in USD: the settled calls and those still running (at their estimate). */
   spentToday(): number;
-  /** One model call's cost: added at once, and kept in the database. Never throws. */
-  spend(o: { purpose: string; model: string; usd: number }): Promise<void>;
-  /** Reads today's total back from the database: at boot, and on a slow interval. */
+  /**
+   * Holds `usd` (an upper-bound estimate) for one model call, or null when it would take today past the cap. The check
+   * and the hold happen at once, so calls running at the same moment can never all pass near the cap.
+   */
+  reserve(o: { purpose: string; model: string; usd: number }): Reservation | null;
+  /** Reads today's settled total back from the database: at boot, and on a slow interval. */
   refresh(): Promise<void>;
+}
+
+export interface Reservation {
+  /**
+   * The call is over: its real cost from the usage it reported, or null when no usage arrived (the call failed before
+   * Anthropic said anything), and then the hold is kept as spent. Recorded once, in model_spend. Never throws.
+   */
+  settle(actualUsd: number | null): Promise<void>;
 }
 
 /** "2026-10-06" for any moment of that UTC day. */
@@ -35,8 +47,11 @@ export function limitRequestId(tripId: string, day: string): string {
 
 export function createBudget(o: { pool: pg.Pool; now: () => Date; capUsd: number | null; log: Log }): Budget {
   let day = utcDay(o.now());
+  /** Settled today. */
   let spent = 0;
-  /** A new UTC day starts from nothing. */
+  /** Held by calls still running. */
+  let held = 0;
+  /** A new UTC day starts from nothing settled; calls still running keep their holds. */
   const today = (): void => {
     const d = utcDay(o.now());
     if (d !== day) {
@@ -48,20 +63,32 @@ export function createBudget(o: { pool: pg.Pool; now: () => Date; capUsd: number
     capUsd: o.capUsd,
     allows() {
       today();
-      return o.capUsd === null || spent < o.capUsd;
+      return o.capUsd === null || spent + held < o.capUsd;
     },
     spentToday() {
       today();
-      return spent;
+      return spent + held;
     },
-    async spend({ purpose, model, usd }) {
+    reserve({ purpose, model, usd }) {
       today();
-      spent += usd;
-      try {
-        await o.pool.query('insert into model_spend (at, purpose, model, cost_usd) values ($1, $2, $3, $4)', [o.now(), purpose, model, usd]);
-      } catch (err) {
-        o.log.warn({ err, purpose }, 'budget: keeping a model call cost failed; the total in this process still has it');
-      }
+      if (o.capUsd !== null && spent + held + usd > o.capUsd) return null;
+      held += usd;
+      let settled = false;
+      return {
+        async settle(actualUsd) {
+          if (settled) return;
+          settled = true;
+          held = Math.max(0, held - usd);
+          const cost = actualUsd ?? usd;
+          today();
+          spent += cost;
+          try {
+            await o.pool.query('insert into model_spend (at, purpose, model, cost_usd) values ($1, $2, $3, $4)', [o.now(), purpose, model, cost]);
+          } catch (err) {
+            o.log.warn({ err, purpose }, 'budget: keeping a model call cost failed; the total in this process still has it');
+          }
+        },
+      };
     },
     async refresh() {
       const now = o.now();
@@ -70,7 +97,7 @@ export function createBudget(o: { pool: pg.Pool; now: () => Date; capUsd: number
         [new Date(`${utcDay(now)}T00:00:00Z`)],
       );
       today();
-      // Never below this process's own total: a cost added here may not be in the database yet.
+      // Never below this process's own total: a cost settled here may not be in the database yet.
       spent = Math.max(spent, Number(rows[0]?.usd ?? 0));
     },
   };
