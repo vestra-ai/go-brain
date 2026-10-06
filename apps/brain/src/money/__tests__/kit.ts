@@ -247,6 +247,8 @@ export class FakeServerLink implements ServerLink {
         trip.bookings.push(C.Booking.parse({ ...p, booking_id, status: 'confirmed', created_at: this.now().toISOString() }));
         return { booking_id, seq: this.seq(trip) };
       }
+      case 'add_reaction':
+        return { seq: this.seq(trip) };
       case 'add_expense': {
         const expense_id = `e_${++this.n}`;
         trip.expenses.push(C.Expense.parse({ ...p, expense_id, created_at: this.now().toISOString() }));
