@@ -1,6 +1,7 @@
 import { verifyRequest } from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { payInfo } from './pay.js';
+import type pg from 'pg';
+import { approvePayment, payInfo, payOptions } from './pay.js';
 import { payFixture, type PayFixture } from './testing/pay-fixtures.js';
 import { TEST_SHARED_SECRET } from './testing/vault-test-env.js';
 import type { TestAuthenticator } from './testing/test-authenticator.js';
@@ -214,5 +215,74 @@ describe('step 8: the rail fails', () => {
     expect(f.goCalls.at(-1)).toMatchObject({ path: '/internal/vault/failed', body: { trip_id: 't_goa', approval_id: jti, reason: 'card_declined' } });
     expect((await logFor(jti)).map((r) => r.kind)).toEqual(['pay_attempt', 'pay_failed']);
     expect(await f.approve(token, rahul)).toEqual({ state: 'refused', reason: 'link_used' });
+  });
+});
+
+describe('step 8: a charge that is not sent', () => {
+  /**
+   * The vault's pool, with `fn` run right after the attempt's transaction commits and before the charge: what another
+   * copy of the vault, or the clock, does in between.
+   */
+  function afterCommit(fn: () => Promise<void>): pg.Pool {
+    return new Proxy(f.pool, {
+      get(target, prop) {
+        if (prop === 'connect') {
+          return async () => {
+            const client = await target.connect();
+            const query = client.query.bind(client) as (...args: unknown[]) => Promise<unknown>;
+            const release = client.release.bind(client);
+            (client as unknown as { query: unknown }).query = async (...args: unknown[]) => {
+              const r = await query(...args);
+              if (args[0] === 'commit') await fn();
+              return r;
+            };
+            client.release = ((err?: Error | boolean) => {
+              (client as unknown as { query: unknown }).query = query;
+              return release(err);
+            }) as typeof client.release;
+            return client;
+          };
+        }
+        const v = Reflect.get(target, prop, target) as unknown;
+        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      },
+    });
+  }
+
+  async function approveWith(token: string, pool: pg.Pool) {
+    const opts = await payOptions(f.d, token);
+    if (!opts.ok) throw new Error(opts.reason);
+    return approvePayment({ ...f.d, pool }, { token, challengeId: opts.challengeId, response: rahul.assert(opts.options) });
+  }
+
+  const rowOf = async (jti: string) =>
+    (await f.pool.query('select outcome, fail_reason, rail_called_at, charge_tries from used_approvals where jti = $1', [jti])).rows[0];
+
+  it('past its deadline before it went out, fails at once: nothing was charged, the payer and Go hear failed', async () => {
+    const { token, jti } = await f.payLinkFor();
+    // The approval runs out at 09:10, so the deadline is 09:12: the clock passes it between taking the approval and charging.
+    try {
+      expect(await approveWith(token, afterCommit(async () => f.setNow(new Date('2026-10-05T09:13:00Z'))))).toEqual({
+        state: 'failed',
+        reason: 'rail_error',
+      });
+    } finally {
+      f.setNow(new Date('2026-10-05T09:01:00Z'));
+    }
+    expect(await rowOf(jti)).toMatchObject({ outcome: 'failed', fail_reason: 'rail_error', rail_called_at: null, charge_tries: 0 });
+    expect(f.rail.asked.filter((k) => k === jti)).toEqual([]);
+    expect(f.goCalls.filter((c) => c.body.approval_id === jti)).toMatchObject([{ path: '/internal/vault/failed', body: { reason: 'rail_error' } }]);
+    expect((await logFor(jti)).map((r) => r.kind)).toEqual(['pay_attempt', 'pay_failed']);
+  });
+
+  it('settled failed by another copy of the vault first: a late approve neither stamps nor charges it', async () => {
+    const { token, jti } = await f.payLinkFor();
+    const settledElsewhere = async () => {
+      await f.pool.query("update used_approvals set outcome = 'failed', fail_reason = 'rail_error', settled_at = now() where jti = $1", [jti]);
+    };
+    expect(await approveWith(token, afterCommit(settledElsewhere))).toEqual({ state: 'failed', reason: 'rail_error' });
+    expect(await rowOf(jti)).toMatchObject({ outcome: 'failed', rail_called_at: null });
+    expect(f.rail.asked.filter((k) => k === jti)).toEqual([]);
+    expect(charges(jti)).toBe(0);
   });
 });

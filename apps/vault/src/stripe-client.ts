@@ -23,7 +23,15 @@ export interface StripeLike {
     idempotencyKey: string;
     metadata: Record<string, string>;
   }): Promise<{ id: string; status: string }>;
+  /**
+   * Read only: the customer's PaymentIntents created since a time whose metadata carries this approval jti. Listed, not
+   * searched, so a PaymentIntent just written is always there.
+   */
+  findCharges(input: { customerId: string; createdSince: Date; approvalJti: string }): Promise<Array<{ id: string; status: string }>>;
 }
+
+/** The most PaymentIntents one look goes through. */
+const LIST_MAX = 1_000;
 
 export function assertTestKey(key: string): void {
   if (!/^(sk|rk)_test_/.test(key)) throw new Error('Refusing a Stripe key that is not a test key');
@@ -77,6 +85,17 @@ export function realStripe(secretKey: string): StripeLike {
         { idempotencyKey: i.idempotencyKey },
       );
       return { id: pi.id, status: pi.status };
+    },
+    async findCharges(i) {
+      const found: Array<{ id: string; status: string }> = [];
+      let seen = 0;
+      const list = stripe.paymentIntents.list({ customer: i.customerId, created: { gte: Math.floor(i.createdSince.getTime() / 1000) }, limit: 100 });
+      for await (const pi of list) {
+        // A test customer never has this many; stopping keeps one look bounded, and the caller reads it as unknown.
+        if (++seen > LIST_MAX) throw new Error('too many PaymentIntents to look through');
+        if (pi.metadata?.['approval_jti'] === i.approvalJti) found.push({ id: pi.id, status: pi.status });
+      }
+      return found;
     },
   };
 }
