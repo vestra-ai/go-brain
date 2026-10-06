@@ -20,6 +20,7 @@ import type { TripPack } from '../trips/pack.js';
 import { catchUpHandler } from './catch-up.js';
 import { createMemory } from './create-memory.js';
 import { dropFactsFromMessage } from './facts.js';
+import { settleDecisionLines } from './decision-lines.js';
 import { createFold } from './fold.js';
 import { syncJoinFacts } from './join-facts.js';
 import { createNotes } from './notes.js';
@@ -119,6 +120,14 @@ export function wireMemory(brain: Brain, d: WireDeps): {
           if (m.author.kind === 'person' && !m.withheld && !m.deleted) runNotes(ev.trip_id, [m.message_id]);
           break;
         }
+        case 'decision.closed':
+        case 'decision.cancelled':
+        case 'mandate.set':
+        case 'mandate.confirmed':
+        case 'mandate.declined':
+          // A vote that ended, or a mandate set, settles Go's open lines about it.
+          await settleDecisionLines(brain.pool, brain.door.link, ev.trip_id, await brain.packs.get(ev.trip_id));
+          break;
         case 'message.created':
           // Go just spoke: read the turn's new lines once the burst has landed, and fold now if the chat is past its
           // budget, so the next turn starts from the story (a busy chat may never give the quiet fold its minute).
@@ -170,6 +179,20 @@ export function wireMemory(brain: Brain, d: WireDeps): {
    */
   async function sweep(): Promise<string[]> {
     const now = d.clock();
+    // Open lines a vote settled while an event was missed or Go was down.
+    const due = await brain.pool.query<{ trip_id: string }>(
+      `SELECT DISTINCT ld.trip_id FROM line_decisions ld
+         JOIN record_lines rl ON rl.trip_id = ld.trip_id AND rl.line_id = ld.line_id AND rl.status = 'active'
+         JOIN trips t ON t.trip_id = ld.trip_id AND t.gone_at IS NULL`,
+    );
+    for (const { trip_id } of due.rows) {
+      try {
+        await settleDecisionLines(brain.pool, brain.door.link, trip_id, await brain.packs.get(trip_id));
+      } catch (err) {
+        // One trip's failure (its pack, the socket) never stops the sweep; the next one tries again.
+        brain.log.warn({ tripId: trip_id, err: String(err) }, 'open lines a vote settled: not marked done yet');
+      }
+    }
     // After a restart the map starts empty: the database says which trips were active lately, or still have
     // people's words the notes pass has not read.
     const waiting = await brain.pool.query<{ trip_id: string }>(
