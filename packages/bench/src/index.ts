@@ -11,3 +11,6 @@ export * from './stats-math.js';
 export * from './score.js';
 export * from './compare.js';
 export * from './report-md.js';
+export * from './sim-port.js';
+export * from './replay.js';
+export * from './run-fast.js';

@@ -22,6 +22,7 @@
   "dependencies": {
     "@go/brain": "workspace:*",
     "@go/contract": "workspace:*",
+    "@go/sim": "workspace:*",
     "@vestra/agent-sdk": "workspace:*",
     "zod": "^4.0.0"
   },

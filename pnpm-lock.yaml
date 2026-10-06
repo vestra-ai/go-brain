@@ -135,6 +135,9 @@ importers:
       '@go/contract':
         specifier: workspace:*
         version: link:../contract
+      '@go/sim':
+        specifier: workspace:*
+        version: link:../sim
       '@vestra/agent-sdk':
         specifier: workspace:*
         version: link:../agent-sdk
