@@ -18,6 +18,11 @@ describe('question 1: for Go', () => {
     expect(read({ q1_chatter: n(0.02), q1_addressed: n(0.94) }).forGo).toEqual({ value: true, sure: true });
     expect(read({ q1_chatter: n(0.6), q1_addressed: n(0.4) }).forGo.sure).toBe(false);
   });
+  it('is sure not for Go when Jev is sure no one spoke to Go, chatter or not, so a fact or a plan wakes no model', () => {
+    expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }).forGo).toEqual({ value: false, sure: true });
+    expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.12) }).forGo.sure).toBe(false);
+    expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
+  });
   it('is sure for Go when code saw Go named, whatever Jev says', () => {
     expect(read({ q1_chatter: n(0.99), q1_addressed: n(0.0) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
   });
