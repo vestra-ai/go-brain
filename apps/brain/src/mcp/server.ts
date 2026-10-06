@@ -12,7 +12,7 @@ import type { Trip } from '../door/methods.js';
 import { formatInr, subtitleFor } from '../travel/cards.js';
 import { TravelError } from '../travel/mcp-travel.js';
 import { toResultOption, type ResultsStore } from '../travel/results.js';
-import { FlightsArgs, OPTION_KIND, StaysArgs, flightsQuery, staysQuery } from '../travel/tools.js';
+import { FlightsArgs, JourneyArgs, OPTION_KIND, StaysArgs, flightsQuery, journeyQuery, staysQuery } from '../travel/tools.js';
 import type { Travel, TravelKind, TravelQuery } from '../travel/travel.js';
 
 type Memory = NonNullable<Brain['memory']>;
@@ -27,8 +27,7 @@ export interface GoMcpDeps {
   nowMs?: () => number;
 }
 
-/** Flights and stays first; the stretch Task 8b adds search_trains and search_buses. */
-export const GO_MCP_TOOLS = ['trip', 'person', 'recall', 'note', 'search_flights', 'search_stays'] as const;
+export const GO_MCP_TOOLS = ['trip', 'person', 'recall', 'note', 'search_flights', 'search_trains', 'search_buses', 'search_stays'] as const;
 
 const ok = (v: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(v) }] });
 const refuse = (v: unknown): CallToolResult => ({ ...ok(v), isError: true });
@@ -181,6 +180,16 @@ export function buildGoMcpServer(tripId: string, d: GoMcpDeps): McpServer {
     'search_flights',
     { description: `Flights on one date with live prices in paise. ${OFFER_RULE}`, inputSchema: FlightsArgs.shape, annotations: READ_ONLY },
     guard('search_flights', (a: z.infer<typeof FlightsArgs>) => searchFor(tripId, 'flights', flightsQuery(a), d)),
+  );
+  server.registerTool(
+    'search_trains',
+    { description: `Trains on one date, one fare per class, with live prices in paise. ${OFFER_RULE}`, inputSchema: JourneyArgs.shape, annotations: READ_ONLY },
+    guard('search_trains', (a: z.infer<typeof JourneyArgs>) => searchFor(tripId, 'trains', journeyQuery(a), d)),
+  );
+  server.registerTool(
+    'search_buses',
+    { description: `Buses on one date with live prices in paise. ${OFFER_RULE}`, inputSchema: JourneyArgs.shape, annotations: READ_ONLY },
+    guard('search_buses', (a: z.infer<typeof JourneyArgs>) => searchFor(tripId, 'buses', journeyQuery(a), d)),
   );
   server.registerTool(
     'search_stays',

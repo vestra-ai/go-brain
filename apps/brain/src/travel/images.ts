@@ -6,9 +6,10 @@
  */
 import { createHash } from 'node:crypto';
 import { lookup as dnsLookup } from 'node:dns/promises';
-import { BlockList, isIP } from 'node:net';
+import { BlockList, isIP, type LookupFunction } from 'node:net';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8_000;
@@ -38,6 +39,42 @@ async function resolvesPublic(lookup: Lookup, host: string): Promise<boolean> {
   const addresses = await lookup(host);
   return addresses.length > 0 && addresses.every(isPublicAddress);
 }
+
+/**
+ * A dns.lookup for one connection: it resolves the name once, refuses it unless every address is allowed, and answers
+ * those same addresses, so the address checked is the address connected to. DNS that changes its answer between Go's
+ * check and the fetch (rebinding) cannot point a connection at Go's own network.
+ */
+export function pinnedLookup(lookup: Lookup, allowed: (ip: string) => boolean = isPublicAddress): LookupFunction {
+  return (hostname, options, callback) => {
+    lookup(hostname).then(
+      (addresses) => {
+        if (addresses.length === 0 || !addresses.every(allowed)) {
+          callback(Object.assign(new Error(`${hostname} does not resolve only to public addresses`), { code: 'ENOTFOUND' }), '', 0);
+          return;
+        }
+        if (options.all) callback(null, addresses.map((address) => ({ address, family: isIP(address) })));
+        else callback(null, addresses[0]!, isIP(addresses[0]!));
+      },
+      (err: unknown) => callback(Object.assign(err instanceof Error ? err : new Error(String(err)), { code: 'ENOTFOUND' }), '', 0),
+    );
+  };
+}
+
+/** An undici dispatcher whose every connection is made through pinnedLookup. */
+export function createPinnedAgent(lookup: Lookup, allowed: (ip: string) => boolean = isPublicAddress): Agent {
+  return new Agent({ connect: { lookup: pinnedLookup(lookup, allowed) } });
+}
+
+interface ImageResponse {
+  ok: boolean;
+  status: number;
+  headers: { get(name: string): string | null };
+  arrayBuffer(): Promise<ArrayBuffer>;
+  body: { cancel(): Promise<void> } | null;
+}
+/** What fetching one hop needs; tests pass their own. */
+export type ImageFetch = (url: string, init: { signal: AbortSignal; redirect: 'manual' }) => Promise<ImageResponse>;
 
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 export type ImageMime = 'image/jpeg' | 'image/png' | 'image/webp';
@@ -80,10 +117,11 @@ export function createImages(d: { pool: pg.Pool; publicUrl: string }): Images {
   };
 }
 
-async function fetchImage(doFetch: typeof fetch, lookup: Lookup, first: string): Promise<{ mime: string; bytes: Buffer } | null> {
+async function fetchImage(doFetch: ImageFetch, lookup: Lookup, first: string): Promise<{ mime: string; bytes: Buffer } | null> {
   let url = first;
   try {
-    // Redirects are followed by hand, so every hop is checked before it is fetched.
+    // Redirects are followed by hand, so every hop is checked before it is fetched; the connection itself is pinned
+    // to the addresses its own lookup checked (pinnedLookup).
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
       if (!isFetchableImageUrl(url) || !(await resolvesPublic(lookup, new URL(url).hostname))) return null;
       const res = await doFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), redirect: 'manual' });
@@ -106,9 +144,11 @@ async function fetchImage(doFetch: typeof fetch, lookup: Lookup, first: string):
   }
 }
 
-export function registerImageRoute(app: FastifyInstance, d: { pool: pg.Pool; fetch?: typeof fetch; lookup?: Lookup }): void {
-  const doFetch = d.fetch ?? fetch;
+/** GET /img/:file. Answers what closes the image fetcher's connections, for brain.onStop. */
+export function registerImageRoute(app: FastifyInstance, d: { pool: pg.Pool; fetch?: ImageFetch; lookup?: Lookup }): { close(): Promise<void> } {
   const lookup = d.lookup ?? systemLookup;
+  const agent = createPinnedAgent(lookup);
+  const doFetch: ImageFetch = d.fetch ?? ((url, init) => undiciFetch(url, { ...init, dispatcher: agent }));
   app.get<{ Params: { file: string } }>('/img/:file', async (req, reply) => {
     const id = req.params.file.replace(/\.[a-z]+$/, '');
     if (!/^[iu][0-9a-f]{32}$/.test(id)) return reply.code(404).send({ error: 'not_found' });
@@ -130,4 +170,5 @@ export function registerImageRoute(app: FastifyInstance, d: { pool: pg.Pool; fet
     if (!bytes || !mime) return reply.code(404).send({ error: 'not_found' });
     return reply.header('content-type', mime).header('cache-control', 'public, max-age=31536000, immutable').send(bytes);
   });
+  return { close: () => agent.close() };
 }

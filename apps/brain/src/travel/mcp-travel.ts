@@ -59,7 +59,7 @@ export function createMcpTravel(o: McpTravelOptions): TravelBackend {
   return {
     async search(kind, q) {
       const m = o.map.search[kind];
-      // Trains and buses until the stretch Task 8b maps them: a plain refusal, never a crash.
+      // A kind this backend's map has no search for (a real ixigo map without trains or buses): a plain refusal, never a crash.
       if (!m) throw new TravelError('refused', `Go cannot search ${kind} yet.`);
       const args = m.args(q);
       if (!args) throw new TravelError('needs_more', NEEDS[kind]);

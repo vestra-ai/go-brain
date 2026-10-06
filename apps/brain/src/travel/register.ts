@@ -26,7 +26,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   if (!ixigo) brain.log.info('travel: IXIGO_MCP_URL is not set, so searches use the fake ixigo whatever TRAVEL_MODE says');
   const results = createResultsStore(brain.pool);
   const images = createImages({ pool: brain.pool, publicUrl: env.GO_PUBLIC_URL });
-  registerImageRoute(brain.http, { pool: brain.pool });
+  const imageRoute = registerImageRoute(brain.http, { pool: brain.pool });
+  brain.onStop(() => imageRoute.close());
   const travel = createTravelLayer({
     switches: brain.switches,
     now: brain.now,

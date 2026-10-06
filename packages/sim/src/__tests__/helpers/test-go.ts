@@ -1,5 +1,5 @@
 // A tiny Go for the sim's tests. It checks the signature on the upgrade, answers send_event (duplicates by
-// event_id) and card_tap, records every frame the sim sends, and lets a test send Go's requests.
+// event_id), card_tap and forget_person, records every frame the sim sends, and lets a test send Go's requests.
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -11,6 +11,9 @@ export interface TestGo {
   /** The params of every send_event, in arrival order, repeats included. */
   events: any[];
   taps: any[];
+  forgets: any[];
+  /** What forget_person answers: Go's ForgetResult, or 'fail' for an error. */
+  forget: object | 'fail';
   targets: string[];
   signatures: string[];
   refused: number;
@@ -41,6 +44,8 @@ export async function startTestGo(secret: string): Promise<TestGo> {
     frames: [],
     events: [],
     taps: [],
+    forgets: [],
+    forget: { deleted_facts: 2, remaining_facts: 0 },
     targets: [],
     signatures: [],
     refused: 0,
@@ -78,6 +83,12 @@ export async function startTestGo(secret: string): Promise<TestGo> {
       if (f.method === 'card_tap') {
         go.taps.push(f.params);
         ws.send(JSON.stringify({ jsonrpc: '2.0', id: f.id, result: { result: 'done', toast: 'Noted.' } }));
+        return;
+      }
+      if (f.method === 'forget_person') {
+        go.forgets.push(f.params);
+        const answer = go.forget === 'fail' ? { error: { code: -32603, message: 'Go could not forget everything. Try again.' } } : { result: go.forget };
+        ws.send(JSON.stringify({ jsonrpc: '2.0', id: f.id, ...answer }));
         return;
       }
       if (typeof f.method === 'string') {

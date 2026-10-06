@@ -5,10 +5,7 @@
 export const GO_MCP_SLUG = 'go-trip';
 export const GO_DEPLOYMENT_SLUG = 'go-trip-task';
 
-/**
- * Go's MCP tools that only read. An approval for one of them is answered yes; anything else no. A name here that Go's
- * MCP server does not offer yet (search_trains and search_buses until the stretch Task 8b) is never called, so it is harmless.
- */
+/** Go's MCP tools that only read. An approval for one of them is answered yes; anything else no. */
 export const GO_READ_ONLY_TOOLS = ['trip', 'person', 'recall', 'search_flights', 'search_trains', 'search_buses', 'search_stays'] as const;
 
 export const GO_TASK_INSTRUCTIONS = `You are the trip's computer for Go, the AI member of a group chat that is planning a trip together. Go hands you one job at a time. Nobody in the group talks to you directly: Go passes their words on, and your answer goes back to Go, who tells the group in the chat.

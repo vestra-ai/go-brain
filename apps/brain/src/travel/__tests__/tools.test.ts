@@ -57,6 +57,16 @@ describe('search tools', () => {
     expect(missing.count).toBe(0);
     expect(missing.note).toContain('Nothing matched');
   });
+
+  it('search_trains and search_buses answer journeys, and nothing that misses arrive_before', async () => {
+    const trains = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_t1' }))) as any;
+    expect(trains.count).toBe(6);
+    expect(trains.card.title).toBe('Trains, Delhi to Goa');
+    const late = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06', arrive_before: '09:00' }, lb.ctx())) as any;
+    expect(late.count).toBe(0);
+    const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_b1' }))) as any;
+    expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
+  });
 });
 
 describe('show_options', () => {
@@ -137,5 +147,20 @@ describe('put_to_vote', () => {
     expect(rerun.cards).toEqual(first.cards);
     expect(lb.link.sent('open_vote')).toHaveLength(opened);
     expect(await lb.tools.run('put_to_vote', { card_id: shown.card_id }, lb.ctx({ turnId: 'turn_w4' }))).toMatchObject({ error: 'already_voting', decision_id: a.decision_id });
+  });
+
+  it('puts trains to a vote at their per-person fares, each option answering travel.offer as a train, which is never booked for the group', async () => {
+    const found = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_tr1' }))) as any;
+    const showCtx = lb.ctx({ turnId: 'turn_tr2' });
+    const shown = (await lb.tools.run('show_options', { results_id: found.results_id, title: 'Trains to Goa' }, showCtx)) as any;
+    const card = C.OptionsCard.parse(showCtx.cards[0]);
+    expect(card.option_kind).toBe('train');
+    const out = (await lb.tools.run('put_to_vote', { card_id: shown.card_id }, lb.ctx({ turnId: 'turn_tr3' }))) as any;
+    expect(out.decision_id).toBeDefined();
+    const vote = lb.link.sent('open_vote').at(-1)!;
+    expect(vote).toMatchObject({ question: 'Which train?' });
+    expect((vote.options as Array<{ price_minor: number }>).map((o) => o.price_minor)).toEqual(card.options.map((o) => o.price_minor));
+    // P5 reads the kind and refuses group journeys: a train is searchable and votable, never paid for here.
+    expect((await travel.offer(card.options[0]!.option_id))?.kind).toBe('train');
   });
 });

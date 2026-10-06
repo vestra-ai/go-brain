@@ -28,11 +28,11 @@ async function connect(): Promise<Client> {
 const body = (r: unknown): any => JSON.parse((r as { content: Array<{ text: string }> }).content[0]!.text);
 
 describe('the fake ixigo over MCP', () => {
-  it('lists its seven tools, marking searches and status read-only and cancelling destructive', async () => {
+  it('lists its nine tools, marking searches and status read-only and cancelling destructive', async () => {
     const c = await connect();
     const { tools } = await c.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'cancel_booking', 'confirm_booking', 'flight_status', 'hold_booking', 'pnr_status', 'search_flights', 'search_stays',
+      'cancel_booking', 'confirm_booking', 'flight_status', 'hold_booking', 'pnr_status', 'search_buses', 'search_flights', 'search_stays', 'search_trains',
     ]);
     const hints = Object.fromEntries(tools.map((t) => [t.name, t.annotations ?? {}]));
     expect(hints.search_flights).toMatchObject({ readOnlyHint: true });
