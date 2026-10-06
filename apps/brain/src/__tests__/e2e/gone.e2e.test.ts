@@ -1,5 +1,6 @@
 // A trip the Server forgets (the hosted try room drops old trips): the next read of it is answered 404 not_found, so Go
-// marks it gone and drops its pack, and the minute's refresh never asks for it again.
+// marks it gone and drops its pack, and the minute's refresh never asks for it again. The read that finds it is usually
+// the refresh's read_trip, but a refresh that read the trip just before it was forgotten finds it with its read_messages.
 import { FakeServer, goaFreshTrip } from '@go/sim';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildBrain, type Built } from '../../app.js';
@@ -15,6 +16,7 @@ let built: Built;
 let server: FakeServer;
 const trip = goaFreshTrip();
 const alive = { ...goaFreshTrip(), trip_id: 't_alive', title: 'Coorg' };
+const midway = { ...goaFreshTrip(), trip_id: 't_midway', title: 'Hampi' };
 
 beforeAll(async () => {
   db = await withSchema();
@@ -39,8 +41,12 @@ afterAll(async () => {
   await db.drop();
 });
 
-const goneAt = async (): Promise<Date | null | undefined> =>
-  (await db.pool.query<{ gone_at: Date | null }>('select gone_at from trips where trip_id = $1', [trip.trip_id])).rows[0]?.gone_at;
+const goneAt = async (tripId = trip.trip_id): Promise<Date | null | undefined> =>
+  (await db.pool.query<{ gone_at: Date | null }>('select gone_at from trips where trip_id = $1', [tripId])).rows[0]?.gone_at;
+
+/** Every request the Server got for a trip since it was forgotten (forgetTrip drops the ones before), by any method. */
+const asked = (tripId: string) => server.requests.filter((r) => r.params.trip_id === tripId);
+const liveReads = () => server.requests.filter((r) => r.params.trip_id === alive.trip_id && r.method === 'read_trip').length;
 
 describe('a trip the Server forgot', () => {
   it('is marked gone at its next read, its pack goes, and the refresh stops asking for it', async () => {
@@ -51,12 +57,30 @@ describe('a trip the Server forgot', () => {
     await vi.waitFor(async () => expect(await goneAt()).toBeInstanceOf(Date), { timeout: 5_000, interval: 50 });
     expect(packs.active()).not.toContain(trip.trip_id);
     // Two more refreshes go by (the live trip is read twice more), and the forgotten trip is never asked for again.
-    const reads = (tripId: string) => server.requests.filter((r) => r.params.trip_id === tripId && r.method === 'read_trip').length;
-    const gone = reads(trip.trip_id);
+    const gone = asked(trip.trip_id).length;
     expect(gone).toBeGreaterThanOrEqual(1);
-    const live = reads(alive.trip_id);
-    await vi.waitFor(() => expect(reads(alive.trip_id)).toBeGreaterThanOrEqual(live + 2), { timeout: 5_000, interval: 50 });
-    expect(reads(trip.trip_id)).toBe(gone);
+    const live = liveReads();
+    await vi.waitFor(() => expect(liveReads()).toBeGreaterThanOrEqual(live + 2), { timeout: 5_000, interval: 50 });
+    expect(asked(trip.trip_id)).toHaveLength(gone);
     expect(packs.active()).toContain(alive.trip_id);
+  });
+
+  it("forgotten between a refresh's read_trip and its read_messages: the read_messages finds it, and nothing asks again", async () => {
+    const packs = built.brain.packs as PacksImpl;
+    await server.createTrip(midway);
+    await vi.waitFor(() => expect(packs.active()).toContain(midway.trip_id), { timeout: 5_000 });
+    // The Server forgets the trip the moment it answers the refresh's read_trip, before Go reads the messages.
+    const from = server.requests.length;
+    const off = server.onChange(() => {
+      if (!server.requests.slice(from).some((r) => r.params.trip_id === midway.trip_id && r.method === 'read_trip')) return;
+      off();
+      server.forgetTrip(midway.trip_id);
+    });
+    await vi.waitFor(async () => expect(await goneAt(midway.trip_id)).toBeInstanceOf(Date), { timeout: 5_000, interval: 50 });
+    expect(packs.active()).not.toContain(midway.trip_id);
+    expect(asked(midway.trip_id).map((r) => r.method)).toEqual(['read_messages']);
+    const live = liveReads();
+    await vi.waitFor(() => expect(liveReads()).toBeGreaterThanOrEqual(live + 2), { timeout: 5_000, interval: 50 });
+    expect(asked(midway.trip_id)).toHaveLength(1);
   });
 });
