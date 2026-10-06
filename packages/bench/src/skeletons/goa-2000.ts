@@ -34,7 +34,7 @@ export const GOA_2000: Skeleton = {
     say(clock(1, 17, 0, 1), R, 'about the villa', 'either', { reflex: MORE }),
     say(clock(1, 17, 0, 2), R, '@Go can you', 'either', { reflex: { for_go: true, complete: false } }),
     say(clock(1, 17, 0, 3), R, 'find options with a pool', 'either', { reflex: MORE }),
-    say(clock(1, 17, 0, 4), R, 'in Anjuna or Vagator under 8k a head', true, { reflex: { for_go: true, complete: true, size: 'big' }, note: 'End of a burst of five.' }),
+    say(clock(1, 17, 0, 4), R, 'in Anjuna or Vagator under 8k a head', true, { ref: 'villa_ask', reflex: { for_go: true, complete: true, size: 'big' }, note: 'End of a burst of five.' }),
     say(clock(1, 22, 0), P, 'agreed, Anjuna or Vagator, under 8k a head', false, { ref: 'villa_agree', quiet_ok: true }),
     say(clock(1, 23, 55), A, 'gn', false, { quietAfter: true }),
     say(clock(2, 8, 30), K, 'gm ☀️', false),
@@ -76,6 +76,9 @@ export const GOA_2000: Skeleton = {
         { question: "What is too early for Arjun's flights?", answer: '10 am', ref: 'arjun_early' },
         { question: "When is Meher's birthday?", answer: '7th', ref: 'meher_bday' },
         { question: 'Who is paying the villa advance?', answer: 'Rahul pays', ref: 'advance' },
+        // Day two, in the part the first fold folds: recall must still find the words.
+        { question: 'Where did we agree the villa should be?', answer: 'Anjuna', ref: 'villa_agree' },
+        { question: 'How much a head did Rahul want to spend on the villa?', answer: '8k', ref: 'villa_ask' },
       ],
     }),
     say(clock(6, 21, 30), M, 'love this group 🥹', false),

@@ -1,6 +1,6 @@
 /**
- * The fold (spec §9 rules 4, 6 and 8). When a trip's chat passes the budget (about 60,000 tokens), while
- * the trip is quiet, the side model folds the oldest half, in whole 25-message chunks, into "the story so
+ * The fold (spec §9 rules 4, 6 and 8). When a trip's chat passes the budget (about 60,000 tokens), right
+ * after Go posts or while the trip is quiet, the side model folds the oldest half, in whole 25-message chunks, into "the story so
  * far": short lines, each citing its message numbers, rewritten from the old story plus the next chunk.
  * Code checks every line (real references, no secrets, people tagged by id and by name). A deleted message
  * takes its story lines with it; a forget redacts every line about the person. Nothing is lost: every
