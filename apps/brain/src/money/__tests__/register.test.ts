@@ -53,6 +53,19 @@ describe('registerMoney', () => {
     });
   });
 
+  it('puts paid payments that are not booked on the proof board, where zero is good', async () => {
+    const { brain } = fakeBrain({ pool: k.pool, link: k.server });
+    await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
+    const source = statsRegistry(brain).list().find((x) => x.name === 'paid_but_not_booked');
+    expect(source).toMatchObject({ label: 'Paid but not booked', good: 'zero', order: 101 });
+    const window = { from: new Date('2026-10-01T00:00:00Z'), to: new Date('2026-10-06T00:00:00Z'), hours: 120 };
+    expect(await source?.read(k.pool, window)).toMatchObject({ value: 0, of: 0 });
+    const r = await k.ask();
+    if (!('paymentId' in r)) throw new Error('refused');
+    await k.pool.query("update payments set state = 'paid'");
+    expect(await source?.read(k.pool, window)).toMatchObject({ value: 1, of: 1 });
+  });
+
   it('answers vault_link with a link the contract accepts', async () => {
     const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server });
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);

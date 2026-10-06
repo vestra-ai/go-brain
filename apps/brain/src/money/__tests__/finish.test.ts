@@ -64,7 +64,7 @@ describe('a paid payment', () => {
     expect(ticket?.text).toBe('Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.');
     expect(ticket?.card).toMatchObject({ kind: 'ticket', card_id: `c_ticket_${approvalId}`, booking_id: bookingId });
     expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'paid', booking_id: bookingId, ticket_posted_at: expect.any(Date) });
-    expect(await unsettled(k.pool)).toEqual([]);
+    expect(await unsettled(k.pool, k.now())).toEqual([]);
   });
 
   it('does every step once when the vault calls back twice', async () => {
@@ -96,9 +96,19 @@ describe('a paid payment', () => {
     expect(k.server.writesOf('add_booking')).toHaveLength(1);
   });
 
-  it('stops retrying a step after 20 tries', async () => {
-    await k.pool.query("update payments set state = 'paid', rail_ref = 'fake_x', attempts = 20");
-    expect(await unsettled(k.pool)).toEqual([]);
+  it('backs off a paid payment after 20 tries, never drops it, and logs an error on the 20th', async () => {
+    k.travel.failConfirm = true;
+    await markPaid(k.deps, { tripId: 't_goa', approvalId, railRef: `fake_${approvalId}` });
+    await k.pool.query('update payments set attempts = 19');
+    await reconcile(k.deps, paymentId);
+    expect((await getPayment(k.pool, paymentId))?.attempts).toBe(20);
+    expect(k.lines.join('\n')).toContain('still not booked after 20 tries');
+    expect(await unsettled(k.pool, k.now())).toEqual([]);
+    k.advance(11 * 60_000);
+    expect(await unsettled(k.pool, k.now())).toEqual([paymentId]);
+    k.travel.failConfirm = false;
+    await sweepPayments(k.deps);
+    expect(k.server.writesOf('add_booking')).toHaveLength(1);
   });
 });
 

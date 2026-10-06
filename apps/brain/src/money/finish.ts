@@ -10,6 +10,7 @@ import {
   getPayment,
   interruptStale,
   patchPayment,
+  STEP_TRIES,
   transition,
   unsettled,
   type PaymentRow,
@@ -59,8 +60,12 @@ export async function reconcile(d: MoneyDeps, paymentId: string): Promise<void> 
     else await finishClosed(d, row, row.state);
   } catch (e) {
     const message = e instanceof Error ? e.message : 'unknown';
-    await bumpAttempt(d.pool, paymentId, message, d.now());
-    d.log.warn({ payment_id: paymentId, err: message }, 'a payment step failed; the sweep will try again');
+    const tries = await bumpAttempt(d.pool, paymentId, message, d.now());
+    if (row.state === 'paid' && tries === STEP_TRIES) {
+      d.log.error({ payment_id: paymentId, err: message }, 'a paid payment is still not booked after 20 tries; the sweep keeps trying every 10 minutes');
+    } else {
+      d.log.warn({ payment_id: paymentId, err: message }, 'a payment step failed; the sweep will try again');
+    }
   }
 }
 
@@ -179,7 +184,7 @@ export async function sweepPayments(d: MoneyDeps): Promise<number> {
   const now = d.now();
   await expireOverdue(d.pool, now);
   await interruptStale(d.pool, now);
-  const ids = await unsettled(d.pool);
+  const ids = await unsettled(d.pool, now);
   for (const id of ids) await reconcile(d, id);
   return ids.length;
 }

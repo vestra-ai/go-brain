@@ -6,6 +6,7 @@ import type { MoneyDeps } from './deps.js';
 import { createPay } from './engine.js';
 import { readMoneyEnv } from './env.js';
 import { setMandate } from './mandate.js';
+import { paidButNotBooked } from './store.js';
 import { paymentsNow } from './now.js';
 import { askToPayTool, setMandateTool } from './tools.js';
 import { vaultClient, type PaymentKind } from './vault-client.js';
@@ -55,6 +56,16 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
       read: async () => {
         const r = await pay.withoutBothKeys();
         return { value: r.count, of: r.paid, note: "From the vault's unlock log and Go's payments: the Server's approval and the payer's passkey on every one." };
+      },
+    });
+    statsRegistry(brain).add({
+      name: 'paid_but_not_booked',
+      label: 'Paid but not booked',
+      order: 101,
+      good: 'zero',
+      read: async (pool, w) => {
+        const r = await paidButNotBooked(pool, w.to);
+        return { value: r.missing, of: r.paid, note: 'Payments the vault took that Go has not booked in the room yet. The sweep keeps trying them.' };
       },
     });
 
