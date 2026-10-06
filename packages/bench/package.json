@@ -18,6 +18,7 @@
     "gen-chats": "tsx scripts/gen-chats.ts",
     "bench:fast": "tsx src/run-fast.ts",
     "bench:live": "tsx src/run-live.ts",
+    "rehearse": "tsx scripts/rehearse.ts",
     "export-trip": "tsx scripts/export-trip.ts"
   },
   "dependencies": {
