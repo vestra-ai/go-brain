@@ -9,6 +9,8 @@ export class FakeStripe implements StripeLike {
   readonly charges: Array<Parameters<StripeLike['chargeSaved']>[0]> = [];
   private readonly byKey = new Map<string, { id: string; status: string }>();
   nextCharge: NextCharge = { status: 'succeeded' };
+  /** The next charge throws this Stripe error once. With `afterCharging`, Stripe took the charge and the answer was lost. */
+  throwOnce: { type: string; code?: string; afterCharging?: boolean } | null = null;
 
   async createCustomer(): Promise<{ id: string }> {
     const id = `cus_${this.customers.length + 1}`;
@@ -41,6 +43,15 @@ export class FakeStripe implements StripeLike {
   async chargeSaved(input: Parameters<StripeLike['chargeSaved']>[0]): Promise<{ id: string; status: string }> {
     const seen = this.byKey.get(input.idempotencyKey);
     if (seen) return seen;
+    const once = this.throwOnce;
+    if (once) {
+      this.throwOnce = null;
+      if (once.afterCharging) {
+        this.charges.push(input);
+        this.byKey.set(input.idempotencyKey, { id: `pi_${this.charges.length}`, status: 'succeeded' });
+      }
+      throw Object.assign(new Error('The connection to Stripe dropped.'), { type: once.type, ...(once.code ? { code: once.code } : {}) });
+    }
     const next = this.nextCharge;
     if ('error' in next) throw Object.assign(new Error('The card was refused.'), next.error);
     this.charges.push(input);

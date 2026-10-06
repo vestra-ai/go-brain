@@ -37,6 +37,8 @@ export function testVaultEnv(over: Partial<VaultEnv> = {}): VaultEnv {
     STRIPE_SECRET_KEY: 'sk_test_fake',
     STRIPE_PUBLISHABLE_KEY: 'pk_test_fake',
     GO_CALLBACK_URL: 'https://brain.test',
+    // Tests sign with the contract's test key, so readVaultEnv would allow the fake rail only; tests build the env directly.
+    VAULT_RAILS: ['fake', 'stripe_test'],
     ...over,
   };
 }

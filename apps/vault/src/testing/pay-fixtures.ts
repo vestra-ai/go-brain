@@ -30,7 +30,7 @@ export interface PayFixture {
   setGoStatus(status: number): void;
   registerFor(personId: string): Promise<TestAuthenticator>;
   cardFor(personId: string): Promise<CardSummary>;
-  payLinkFor(o?: { jti?: string; sameApproval?: boolean; payer?: string }): Promise<{ token: string; jti: string }>;
+  payLinkFor(o?: { jti?: string; sameApproval?: boolean; payer?: string; kind?: 'fake' | 'stripe_test' }): Promise<{ token: string; jti: string }>;
   approve(token: string, who: TestAuthenticator): Promise<ApproveResult>;
   drop(): Promise<void>;
 }
@@ -115,7 +115,7 @@ export async function payFixture(): Promise<PayFixture> {
           amount_minor: 5420000,
           currency: 'INR',
           merchant: 'ixigo: Villa Sol, Anjuna',
-          payment_kind: 'fake',
+          payment_kind: o.kind ?? 'fake',
           expires_at: '2026-10-05T09:30:00Z',
         },
       });
