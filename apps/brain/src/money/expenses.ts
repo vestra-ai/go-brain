@@ -1,8 +1,9 @@
 import * as C from '@go/contract';
+import type { Pool } from 'pg';
 import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../composer/tools.js';
 import type { Message, Trip } from '../door/methods.js';
-import { SocketCallError } from '../door/rpc.js';
+import { reactOnce } from '../memory/reactions.js';
 import { rid } from './ids.js';
 import { clip, money, plain } from './words.js';
 
@@ -61,13 +62,11 @@ export type RecordExpenseInput = z.infer<typeof RecordExpenseInput>;
 const QUIET = 'Nothing to say: it is recorded and the message has a ✅. Stay quiet unless someone asked you something.';
 const ASK = 'Do not record anything. Ask the person one short question to get it right.';
 
-const codeOf = (e: unknown): number => (e instanceof SocketCallError ? e.code : 0);
-
 /**
  * Records one expense from what a person said they paid, with a request id made from their message, so a rerun records
  * it once. The payer is always the person who wrote the message; the amount must be one the message says.
  */
-export async function recordExpense(ctx: Pick<TurnCtx, 'tripId' | 'link' | 'pack' | 'outcome'>, a: RecordExpenseInput): Promise<object> {
+export async function recordExpense(ctx: Pick<TurnCtx, 'tripId' | 'link' | 'pack' | 'outcome'>, a: RecordExpenseInput, pool: Pool): Promise<object> {
   const m = findMessage(ctx.pack.messages, a.message_id);
   if (!m || m.deleted || m.withheld || m.author.kind !== 'person' || !m.text) return { refused: `There is no message ${a.message_id} from a person to record.`, tell_the_room: ASK };
   const trip = ctx.pack.trip;
@@ -100,13 +99,9 @@ export async function recordExpense(ctx: Pick<TurnCtx, 'tripId' | 'link' | 'pack
     split_person_ids: split,
   });
   (ctx.outcome.noted ??= []).push(m.message_id);
-  try {
-    await ctx.link.request('add_reaction', { request_id: rid('go_expense_ok', m.message_id), trip_id: ctx.tripId, message_id: m.message_id, emoji: '✅' });
-    ctx.outcome.reactions += 1;
-  } catch (e) {
-    // Already reacted, or the message was deleted since: the expense is recorded either way.
-    if (codeOf(e) !== 409) throw e;
-  }
+  // The same path as every ✅ Go sends: one that the reflex already put on this line is joined, never sent twice. A ✅
+  // that did not go through leaves the expense recorded either way.
+  if ((await reactOnce(pool, ctx.link, ctx.tripId, m, '✅')) === 'sent') ctx.outcome.reactions += 1;
   return { recorded: true, expense_id: r.expense_id, tell_the_room: QUIET };
 }
 
@@ -131,7 +126,7 @@ export async function readExpenses(ctx: Pick<TurnCtx, 'tripId' | 'link'>): Promi
   };
 }
 
-export function recordExpenseTool(): QuickTool<RecordExpenseInput> {
+export function recordExpenseTool(o: { pool: Pool }): QuickTool<RecordExpenseInput> {
   return {
     name: 'record_expense',
     description:
@@ -139,7 +134,7 @@ export function recordExpenseTool(): QuickTool<RecordExpenseInput> {
       '"Rahul owes me 1,500 for the tickets"). The person who wrote the message is the payer. It adds a ✅ to their message. ' +
       'Only from what they clearly said: if the amount or who it was for is unclear, ask instead. You record costs; you never move money between people.',
     input: RecordExpenseInput,
-    run: (a, ctx) => recordExpense(ctx, a),
+    run: (a, ctx) => recordExpense(ctx, a, o.pool),
   };
 }
 

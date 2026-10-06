@@ -1,5 +1,5 @@
 import { FakeServer, goaFreshTrip } from '@go/sim';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { budgetProbe } from '../admin/health.js';
 import { buildBrain, type Built } from '../app.js';
 import { createBudget, limitRequestId, OverBudget, type Budget } from '../budget.js';
@@ -277,6 +277,17 @@ describe('a Go with a daily cap, end to end', () => {
     await server.start();
     await server.createTrip(goa);
     await server.createTrip(coorg);
+    // Both hellos are over before anyone asks, so the first ask always gets a turn of its own, never one shared with a hello.
+    await vi.waitFor(
+      async () => {
+        const { rows } = await db.pool.query<{ n: number }>(
+          `select count(*)::int as n from turns where trip_id = any($1) and 'setup' = any(woke_for) and ended_at is not null`,
+          [[goa.trip_id, coorg.trip_id]],
+        );
+        expect(rows[0]?.n).toBe(2);
+      },
+      { timeout: 10_000, interval: 50 },
+    );
   }, 30_000);
   afterAll(async () => {
     server.stop();
