@@ -276,10 +276,10 @@ export class CallService {
     return row ? { business: row.business, goal: row.goal, factsAllowed: row.factsAllowed, forWhom: row.forWhom } : null;
   }
 
-  async talking(callId: string): Promise<void> {
+  async talking(callId: string): Promise<boolean> {
     const now = this.d.now();
     const row = await this.d.store.talking(callId, now);
-    if (!row) return;
+    if (!row) return false;
     const updater = new CardUpdater<CallCardIn>((card) => this.replace(row.tripId, card), {
       now: this.d.now,
       schedule: this.d.schedule,
@@ -288,6 +288,7 @@ export class CallService {
     });
     this.live.set(callId, { row, lines: [], outcome: null, startedAt: now, stoppedBy: null, updater });
     updater.update(this.card(row, { state: 'talking', startedAt: now }));
+    return true;
   }
 
   /** Go's own lines only: the card never shows the business's words (Keshav's ruling; showing them needs his explicit OK). */

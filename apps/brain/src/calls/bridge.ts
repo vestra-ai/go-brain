@@ -11,7 +11,8 @@ import { wireFor, type VoiceEvent } from './voice-wire.js';
 export type EndReason = 'hangup' | 'cap' | 'error';
 
 export interface BridgeHooks {
-  talking(callId: string): Promise<void>;
+  /** The call is connected; false when the call row could not move to talking (it was stopped or ended meanwhile). */
+  talking(callId: string): Promise<boolean>;
   /** Go's own lines only. */
   line(callId: string, line: CallLine): void;
   outcome(callId: string, o: ReportedOutcome): void;
@@ -232,9 +233,20 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
         twilio.close(1008, 'refused');
         return;
       }
+      if (ended) {
+        // Twilio dropped while the token was checked: the claimed call ends here, with no voice model opened.
+        await d.hooks.ended(callId, 'hangup');
+        return;
+      }
       started = true;
       streamSid = frame.start.streamSid;
-      await d.hooks.talking(callId);
+      const moved = await d.hooks.talking(callId);
+      if (ended) return; // Twilio dropped meanwhile: end() has already closed the call
+      if (!moved) {
+        // The call was stopped or ended while it connected: never open the voice model.
+        hangUp('hangup');
+        return;
+      }
       openModel(brief);
       cancels.push(d.schedule(() => {
         if (!heardThem && !goSpoke) toModelAll(wire.speakFirst(brief));

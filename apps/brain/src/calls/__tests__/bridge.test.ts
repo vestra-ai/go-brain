@@ -33,7 +33,10 @@ afterEach(() => {
   while (cleanups.length) cleanups.pop()?.();
 });
 
-async function setup(model = 'gpt-realtime-2.1') {
+async function setup(
+  model = 'gpt-realtime-2.1',
+  over: { claim?: (id: string, token: string) => Promise<CallBrief | null>; talking?: (id: string) => Promise<boolean> } = {},
+) {
   const time = manualTime('2026-10-06T10:00:00Z');
   const voice = new WebSocketServer({ port: 0 });
   const modelGot: Array<Record<string, any>> = [];
@@ -48,11 +51,14 @@ async function setup(model = 'gpt-realtime-2.1') {
   const bridgeServer = new WebSocketServer({ port: 0 });
   bridgeServer.on('connection', (ws) =>
     attachBridge(ws, 'call_1', {
-      claim: async (_id, token) => (token === 'tok' ? brief : null),
+      claim: over.claim ?? (async (_id, token) => (token === 'tok' ? brief : null)),
       openVoice: () => new WebSocket(voiceUrl),
       hangUp: async (id) => { seen.hangUps.push(id); },
       hooks: {
-        talking: async (id) => { seen.talking.push(id); },
+        talking: async (id) => {
+          seen.talking.push(id);
+          return over.talking ? over.talking(id) : true;
+        },
         line: (_id, line) => { seen.lines.push(line); },
         outcome: (_id, o) => { seen.outcomes.push(o); },
         ended: async (_id, reason) => { seen.ended.push(reason); },
@@ -73,6 +79,7 @@ async function setup(model = 'gpt-realtime-2.1') {
   return {
     time, seen, modelGot, twilioGot,
     send: (frame: object) => twilio.send(JSON.stringify(frame)),
+    closeTwilio: () => twilio.close(),
     fromModel: (event: object) => modelSocket?.send(JSON.stringify(event)),
     modelSocket: () => modelSocket,
     closedWith: () => closedWith,
@@ -142,6 +149,31 @@ describe('attachBridge on gpt-realtime-2.1 (the default)', () => {
     expect(s.seen.hangUps).toEqual(['call_1']);
     await waitFor(() => s.seen.ended.length === 1);
     expect(s.seen.ended).toEqual(['hangup']);
+  });
+
+  it('Twilio dropping while the token is checked ends the call and never opens the voice model', async () => {
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const s = await setup('gpt-realtime-2.1', { claim: async (_id, token) => { await gate; return token === 'tok' ? brief : null; } });
+    s.send(startFrame('tok'));
+    s.closeTwilio();
+    await waitFor(() => s.closedWith() !== null);
+    release();
+    await waitFor(() => s.seen.ended.length === 1);
+    expect(s.seen.ended).toEqual(['hangup']);
+    expect(s.seen.talking).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(s.modelSocket()).toBeNull();
+  });
+
+  it('never opens the voice model when the call could not move to talking (stopped while it connected)', async () => {
+    const s = await setup('gpt-realtime-2.1', { talking: async () => false });
+    s.send(startFrame('tok'));
+    await waitFor(() => s.seen.ended.length === 1);
+    expect(s.seen.hangUps).toEqual(['call_1']);
+    expect(s.seen.ended).toEqual(['hangup']);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(s.modelSocket()).toBeNull();
   });
 
   it('refuses a media connection with the wrong token and ends nothing', async () => {
