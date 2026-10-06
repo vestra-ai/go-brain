@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import Fastify from 'fastify';
+import { fetch as undiciFetch } from 'undici';
 import { withSchema } from '../../db/test-db.js';
-import { createImages, isFetchableImageUrl, isPublicAddress, registerImageRoute, type Lookup } from '../images.js';
+import { createImages, createPinnedAgent, isFetchableImageUrl, isPublicAddress, registerImageRoute, type Lookup } from '../images.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -95,5 +98,60 @@ describe("Go's image cache", () => {
     for (const ip of ['10.1.2.3', '172.16.0.1', '192.168.1.1', '127.0.0.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '::1', '::', 'fe80::1', 'fd00::1', '::ffff:10.0.0.1', 'not-an-ip']) {
       expect(isPublicAddress(ip), ip).toBe(false);
     }
+  });
+
+  it('re-resolves at the connect and refuses there too: a name that answers public, then private, is never fetched', async () => {
+    const answers = [['93.184.216.34'], ['10.0.0.7']];
+    const asked: string[] = [];
+    const rebinding: Lookup = async (host) => {
+      asked.push(host);
+      return answers.shift() ?? ['10.0.0.7'];
+    };
+    const app = Fastify();
+    // No fetch stub: the real fetcher, whose connections go through the pinned lookup.
+    const route = registerImageRoute(app, { pool: db.pool, lookup: rebinding });
+    const url = await images().rehostUrl('https://rebind.example.com/x.png');
+    expect((await app.inject({ method: 'GET', url: new URL(url!).pathname })).statusCode).toBe(404);
+    // Once for the hop's check and once by the connect itself, which saw the private answer and connected nowhere.
+    expect(asked).toEqual(['rebind.example.com', 'rebind.example.com']);
+    await route.close();
+  });
+
+  it('connects only to the address its lookup checked, and never to a later private answer', async () => {
+    const hits = { checked: 0, other: 0 };
+    const listen = (host: string, port: number, key: keyof typeof hits): Promise<Server> =>
+      new Promise((resolve) => {
+        const server = createServer((_req, res) => {
+          res.end('ok');
+        });
+        server.on('connection', () => {
+          hits[key] += 1;
+        });
+        server.listen(port, host, () => resolve(server));
+      });
+    const checked = await listen('127.0.0.1', 0, 'checked');
+    const port = (checked.address() as AddressInfo).port;
+    const other = await listen('127.0.0.2', port, 'other');
+    const answers = [['127.0.0.1'], ['127.0.0.2']];
+    const asked: string[] = [];
+    const lookup: Lookup = async (host) => {
+      asked.push(host);
+      return answers.shift() ?? ['127.0.0.2'];
+    };
+    // Here 127.0.0.1 stands for a public address and 127.0.0.2 for a private one.
+    const allowed = (ip: string) => ip === '127.0.0.1';
+    const first = createPinnedAgent(lookup, allowed);
+    const res = await undiciFetch(`http://rebind.test:${port}/a.png`, { dispatcher: first });
+    expect(await res.text()).toBe('ok');
+    expect(asked).toEqual(['rebind.test']);
+    expect(hits).toEqual({ checked: 1, other: 0 });
+    await first.close();
+    // A new connection resolves again; the private answer is refused before any connect.
+    const second = createPinnedAgent(lookup, allowed);
+    await expect(undiciFetch(`http://rebind.test:${port}/b.png`, { dispatcher: second })).rejects.toThrow();
+    expect(hits).toEqual({ checked: 1, other: 0 });
+    await second.close();
+    await new Promise((r) => checked.close(r));
+    await new Promise((r) => other.close(r));
   });
 });

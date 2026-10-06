@@ -70,11 +70,12 @@ describe('registerTravel', () => {
     expect(await lb.taps.tap('options', 'vote', tap({ tap_id: 'tap_v3', action_id: 'vote' }), card)).toEqual({ result: 'done', toast: 'Already up for a vote' });
   });
 
-  it('closes the ixigo connection through brain.onStop, and has nothing to stop with the fake alone', async () => {
-    expect(lb.stoppers).toHaveLength(0);
+  it("closes the image fetcher's connections and the ixigo connection through brain.onStop", async () => {
+    // The fake alone: only the image fetcher.
+    expect(lb.stoppers).toHaveLength(1);
     const withIxigo = makeLaneBrain({ pool: db.pool, env: { IXIGO_MCP_URL: 'http://127.0.0.1:1/mcp', IXIGO_MCP_TOKEN: 'tok-ixigo-123456' } });
     await registerTravel(withIxigo.brain);
-    expect(withIxigo.stoppers).toHaveLength(1);
+    expect(withIxigo.stoppers).toHaveLength(2);
     // The client connects on its first call, so closing one that never called resolves at once.
     await withIxigo.stop();
     expect(withIxigo.stoppers).toEqual([]);
