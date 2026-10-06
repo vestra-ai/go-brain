@@ -1,7 +1,7 @@
 import type { TurnCtx } from '../composer/tools.js';
 import type { ToServerResult, Trip } from '../door/methods.js';
 import type { Hold, Travel } from '../travel/travel.js';
-import { payCard, type PayCard, type PayCardState } from './cards.js';
+import { payCard, type PayCard, type PayCardLook } from './cards.js';
 import type { MoneyDeps } from './deps.js';
 import { paymentIdFor, rid } from './ids.js';
 import { getPayment, insertAsking, openForDecision, paidForDecision, patchPayment, transition, type PaymentRow } from './store.js';
@@ -94,7 +94,7 @@ function purposeFor(label: string, asked: string): string {
 }
 
 /** The pay card for a payments row in a given state, or null when the row has no card yet. */
-export function payCardOf(row: PaymentRow, state: PayCardState): PayCard | null {
+export function payCardOf(row: PaymentRow, state: PayCardLook): PayCard | null {
   if (!row.card_id || !row.approval_id || !row.approval_expires_at || row.amount_minor === null || !row.currency || !row.merchant) return null;
   return payCard(
     {
@@ -234,6 +234,9 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
       await deliver(card);
       return { cardId: row.card_id, paymentId: row.payment_id };
     }
+    case 'confirming':
+      // The vault is still asking the bank about this payment: never start it again meanwhile.
+      return refuse(d, 'approval_outstanding', words);
     case 'asking':
       break;
   }

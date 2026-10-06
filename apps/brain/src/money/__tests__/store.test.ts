@@ -8,6 +8,7 @@ import {
   insertAsking,
   interruptStale,
   openForDecision,
+  paidButNotBooked,
   patchPayment,
   transition,
   unsettled,
@@ -111,10 +112,31 @@ describe('payments', () => {
     const paid = ask({ decision_id: 'd_six' });
     await insertAsking(pool, paid, t0);
     await transition(pool, paid.payment_id, ['asking'], 'paid', { approval_id: 'ap_six_00001' }, t0);
-    const ids = await unsettled(pool);
+    const ids = await unsettled(pool, t0);
     expect(ids).toContain(paid.payment_id);
     await patchPayment(pool, paid.payment_id, { ticket_posted_at: t0 }, t0);
-    expect(await unsettled(pool)).not.toContain(paid.payment_id);
+    expect(await unsettled(pool, t0)).not.toContain(paid.payment_id);
+  });
+
+  it('never drops a paid payment that is not booked: after 20 tries it backs off to every 10 minutes', async () => {
+    const paid = ask({ decision_id: 'd_seven' });
+    await insertAsking(pool, paid, t0);
+    await transition(pool, paid.payment_id, ['asking'], 'paid', { approval_id: 'ap_seven_0001' }, t0);
+    await pool.query('update payments set attempts = 20 where payment_id = $1', [paid.payment_id]);
+    expect(await unsettled(pool, new Date(t0.getTime() + 60_000))).not.toContain(paid.payment_id);
+    expect(await unsettled(pool, new Date(t0.getTime() + 11 * 60_000))).toContain(paid.payment_id);
+    const closed = ask({ decision_id: 'd_eight' });
+    await insertAsking(pool, closed, t0);
+    await transition(pool, closed.payment_id, ['asking'], 'declined', { approval_id: 'ap_eight_0001' }, t0);
+    await pool.query('update payments set attempts = 20 where payment_id = $1', [closed.payment_id]);
+    expect(await unsettled(pool, new Date(t0.getTime() + 11 * 60_000))).not.toContain(closed.payment_id);
+  });
+
+  it('counts paid payments that are not booked, after the first 2 minutes', async () => {
+    const before = await paidButNotBooked(pool, new Date(t0.getTime() + 60_000));
+    const after = await paidButNotBooked(pool, new Date(t0.getTime() + 3 * 60_000));
+    expect(after.missing).toBeGreaterThan(before.missing);
+    expect(after.paid).toBe(before.paid);
   });
 
   it('has no column for card details', async () => {

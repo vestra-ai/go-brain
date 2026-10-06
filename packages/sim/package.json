@@ -15,7 +15,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "room": "tsx src/cli.ts"
+    "room": "tsx src/cli.ts",
+    "live-smoke": "tsx scripts/live-smoke.ts"
   },
   "dependencies": {
     "@go/contract": "workspace:*",

@@ -6,6 +6,8 @@ import type { VaultFailReason } from './finish.js';
 import { checkVaultCall, keepRawJson, rawBodyOf } from './signed.js';
 
 const PaidBody = z.object({ trip_id: Id, approval_id: Id, rail_ref: z.string().min(1).max(200) });
+/** `checking`: the vault will not ask the bank again, and a person checks the charge. */
+const ConfirmingBody = z.object({ trip_id: Id, approval_id: Id, checking: z.boolean().optional() });
 const FailedBody = z.object({
   trip_id: Id,
   approval_id: Id,
@@ -18,6 +20,8 @@ export interface MoneyRoutesOptions {
   now: () => Date;
   paid: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<'ok' | 'unknown'>;
   failed: (p: { tripId: string; approvalId: string; reason: VaultFailReason }) => Promise<'ok' | 'unknown'>;
+  /** The bank has not said yet whether a charge went through. */
+  confirming: (p: { tripId: string; approvalId: string; checking?: boolean }) => Promise<'ok' | 'unknown'>;
 }
 
 /** The vault's calls back to Go. Only a call signed with VAULT_SHARED_SECRET, seen once, gets through. */
@@ -44,6 +48,17 @@ export function moneyRoutes(o: MoneyRoutesOptions): FastifyPluginAsync {
       const body = FailedBody.safeParse(req.body);
       if (!body.success) return reply.code(422).send(invalid(body.error));
       const r = await o.failed({ tripId: body.data.trip_id, approvalId: body.data.approval_id, reason: body.data.reason });
+      return r === 'unknown' ? reply.code(404).send(unknown) : { ok: true };
+    });
+
+    scope.post('/internal/vault/confirming', async (req, reply) => {
+      const body = ConfirmingBody.safeParse(req.body);
+      if (!body.success) return reply.code(422).send(invalid(body.error));
+      const r = await o.confirming({
+        tripId: body.data.trip_id,
+        approvalId: body.data.approval_id,
+        ...(body.data.checking ? { checking: true } : {}),
+      });
       return r === 'unknown' ? reply.code(404).send(unknown) : { ok: true };
     });
   };

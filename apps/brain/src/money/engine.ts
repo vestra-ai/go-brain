@@ -4,7 +4,7 @@ import { newRequestId } from '../door/server-link.js';
 import { askOutsideTurn } from './ask.js';
 import { Later, type MoneyDeps } from './deps.js';
 import { tripEvent } from './events.js';
-import { markFailed, markPaid, reconcile, sweepPayments, type VaultFailReason } from './finish.js';
+import { markConfirming, markFailed, markPaid, reconcile, sweepPayments, type VaultFailReason } from './finish.js';
 import type { Pay } from './pay.js';
 import { byApproval, paidApprovalIds } from './store.js';
 import { approveTap, declineTap, type TapDeps } from './taps.js';
@@ -14,6 +14,7 @@ type Paid = { tripId: string; approvalId: string; railRef: string };
 export interface PayEngine extends Pay {
   paid(p: Paid): Promise<'ok' | 'unknown'>;
   failed(p: { tripId: string; approvalId: string; reason: VaultFailReason }): Promise<'ok' | 'unknown'>;
+  confirming(p: { tripId: string; approvalId: string; checking?: boolean }): Promise<'ok' | 'unknown'>;
   approveTap(tap: CardTapParams, card: C.Card): Promise<CardTapResult>;
   declineTap(tap: CardTapParams, card: C.Card): Promise<CardTapResult>;
   tripEvent(ev: TripEvent): Promise<void>;
@@ -57,6 +58,12 @@ export function createPay(d: MoneyDeps): PayEngine {
       const row = await markFailed(d, p);
       if (!row) return 'unknown';
       later.run(d.log, 'a failed payment', () => reconcile(d, row.payment_id));
+      return 'ok';
+    },
+    async confirming(p) {
+      const row = await markConfirming(d, p);
+      if (!row) return 'unknown';
+      later.run(d.log, 'a payment the bank is confirming', () => reconcile(d, row.payment_id));
       return 'ok';
     },
     approveTap: (tap, card) => approveTap(t, tap, card),

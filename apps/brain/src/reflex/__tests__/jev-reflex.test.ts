@@ -82,17 +82,20 @@ describe('createJevReflex', () => {
   });
 
   it('masks a card number before Jev and the log, and raises question 8 even in shadow', async () => {
+    // A card number: a run of 13 to 19 digits, spaces allowed between them. Never a bare 4-digit substring, and never
+    // across dashes: the row also holds a random read id (rr_<uuid>), whose dash-separated parts can be all digits.
+    const card = /\d(?: ?\d){12,18}/;
     const m = msg(14, 'p_kabir', 'card 4111 1111 1111 1111 hai mera, cvv 123');
     const jev = fakeJev(okAnswers({ q8_spend: n(0), q8_steer: n(0), q8_secret: n(0) }));
     const reflex = reflexWith(jev, 'q1,q2,q3', [1, 2, 3]);
     const read = await reflex.read(m, one(m));
     await reflex.settled();
-    expect(JSON.stringify(jev.asked[0]!.state)).not.toContain('4111');
+    expect(JSON.stringify(jev.asked[0]!.state)).not.toMatch(card);
     expect(read.risky).toEqual({ value: true, sure: true });
     expect(read.riskWhy).toEqual(['secret']);
     const [r] = await row(m.message_id);
     expect(r!.secret_kinds).toEqual(['card', 'cvv']);
-    expect(r!.whole).not.toContain('4111');
+    expect(r!.whole).not.toMatch(card);
   });
 
   it('raises question 8 on a message the door already masked (P1 intake runs maskSecrets first)', async () => {

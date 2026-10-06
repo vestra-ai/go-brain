@@ -3,7 +3,7 @@ import type { CardTapParams, CardTapResult } from '../door/methods.js';
 import type { AskResult } from './ask.js';
 import { postLine, type Later, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
-import { byApproval, patchPayment, transition, type PaymentRow } from './store.js';
+import { byApproval, EXPIRY_GRACE_MS, patchPayment, transition, type PaymentRow } from './store.js';
 import type { PayLinkInput, PaymentKind } from './vault-client.js';
 import { TOASTS } from './words.js';
 
@@ -26,6 +26,8 @@ function stateToast(row: PaymentRow): string {
       return TOASTS.declined;
     case 'failed':
       return TOASTS.failed;
+    case 'confirming':
+      return row.checking_at ? TOASTS.checking : TOASTS.confirming;
     default:
       return TOASTS.notReady;
   }
@@ -72,6 +74,8 @@ export async function approveTap(t: TapDeps, tap: CardTapParams, card: C.Card): 
   const row = await paymentOf(t, tap, card);
   if (!row) return refused(TOASTS.gone);
   if (tap.person_id !== row.payer_person_id) return refused(TOASTS.notPayer(row.payer_name));
+  // The bank has not answered about a charge: no new page, and never Start again.
+  if (row.state === 'confirming') return refused(row.checking_at ? TOASTS.checking : TOASTS.confirming);
   if (row.state === 'expired') {
     startAgain(t, row, tap.tap_id);
     return done(TOASTS.restart);
@@ -79,7 +83,8 @@ export async function approveTap(t: TapDeps, tap: CardTapParams, card: C.Card): 
   if (row.state !== 'waiting') return refused(stateToast(row));
 
   const now = t.d.now();
-  const approvalGone = !row.approval_expires_at || row.approval_expires_at.getTime() <= now.getTime();
+  // The same grace as the sweep: inside it the vault's own expiry answers, and only the sweep turns the card expired.
+  const approvalGone = !row.approval_expires_at || row.approval_expires_at.getTime() + EXPIRY_GRACE_MS <= now.getTime();
   const holdGone = !row.hold_expires_at || row.hold_expires_at.getTime() <= now.getTime() + 60_000;
   if (approvalGone || holdGone) {
     await transition(t.d.pool, row.payment_id, ['waiting'], 'expired', { release_reason: 'expired' }, now);

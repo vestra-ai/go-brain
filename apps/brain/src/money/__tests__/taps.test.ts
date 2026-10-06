@@ -55,8 +55,18 @@ describe('Approve', () => {
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 
-  it('starts again after the approval ran out, and posts a fresh pay card with ids from the tap', async () => {
+  it('inside the 120 s after the approval ran out, leaves the card to the sweep and starts nothing', async () => {
     k.advance(11 * 60_000);
+    k.vault.refuse = 'expired';
+    expect(await approveTap(t, tap('p_rahul'), card)).toEqual({ result: 'refused', toast: TOASTS.noPage });
+    await t.later.settled();
+    expect((await getPayment(k.pool, paymentId))?.state).toBe('waiting');
+    expect(reconciled).toEqual([]);
+    expect(k.server.writesOf('request_spend_approval')).toHaveLength(1);
+  });
+
+  it('starts again once the approval ran out more than 120 s ago, and posts a fresh pay card with ids from the tap', async () => {
+    k.advance(12 * 60_000 + 1_000);
     const again = tap('p_rahul');
     expect(await approveTap(t, again, card)).toEqual({ result: 'done', toast: TOASTS.fresh });
     await t.later.settled();
@@ -92,5 +102,18 @@ describe('Decline', () => {
     expect(await declineTap(t, tap('p_kabir', 'decline'), card)).toEqual({ result: 'refused', toast: 'Only Rahul can approve this payment.' });
     await declineTap(t, tap('p_rahul', 'decline'), card);
     expect(await declineTap(t, tap('p_rahul', 'decline'), card)).toEqual({ result: 'refused', toast: TOASTS.declined });
+  });
+});
+
+describe('while the bank is confirming a charge', () => {
+  it('refuses Approve and Decline, and never offers Start again, even long after the approval ran out', async () => {
+    await k.pool.query("update payments set state = 'confirming'");
+    expect(await approveTap(t, tap('p_rahul'), card)).toEqual({ result: 'refused', toast: TOASTS.confirming });
+    expect(await declineTap(t, tap('p_rahul', 'decline'), card)).toEqual({ result: 'refused', toast: TOASTS.confirming });
+    k.advance(30 * 60_000);
+    expect(await approveTap(t, tap('p_rahul'), card)).toEqual({ result: 'refused', toast: TOASTS.confirming });
+    await t.later.settled();
+    expect(k.server.writesOf('request_spend_approval')).toHaveLength(1);
+    expect(reconciled).toEqual([]);
   });
 });
