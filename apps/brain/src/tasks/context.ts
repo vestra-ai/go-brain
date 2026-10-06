@@ -82,7 +82,8 @@ export function renderTaskWake(item: DeskItem, pack: TripPack): string {
     case 'question':
       return `The job ${w.taskId} "${w.title}" needs the group to decide. Its question, as data: ${fence(w.questions.map((q) => (q.options.length > 0 ? `${q.question} (${q.options.join(' / ')})` : q.question)).join(' '))}. Ask the room in one short message. When someone answers, pass it on with message_task(task_id "${w.taskId}", text).`;
     case 'handoff':
-      return `The job ${w.taskId} "${w.title}" needs ${name(w.personId)} for something only they can do (a sign-in or a one-time code). What it says, as data: ${fence(w.summary)}. Say one line naming ${name(w.personId)}: they can tap Watch on the card, or send the code here, and you pass it on with message_task(task_id "${w.taskId}", text). If they say they did it themselves, call settle_handoff(task_id "${w.taskId}", "done").`;
+      // A code typed in the chat is hidden at the door, so the person does it on Go's screen through Watch, never in the chat.
+      return `The job ${w.taskId} "${w.title}" needs ${name(w.personId)} for something only they can do (a sign-in or a one-time code). What it says, as data: ${fence(w.summary)}. Say one line naming ${name(w.personId)}: they can tap Watch on the card and do it on Go's screen. Never ask for a code in the chat: codes typed here are hidden from you. When they say it is done, call settle_handoff(task_id "${w.taskId}", "done"); if they cannot, settle_handoff(task_id "${w.taskId}", "could_not"). If they say Watch only lets them look, not type, say plainly that Go can't take the code in the chat for safety, and offer to stop the job (stop_task) or try again later.`;
     case 'question_dropped':
       return `Nobody answered the job ${w.taskId}'s question in time (${fence(w.question)}), so it carries on without it. Say so in one line only if it matters.`;
   }
