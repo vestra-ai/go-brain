@@ -4,6 +4,7 @@
 import WebSocket, { type RawData } from 'ws';
 import { z } from 'zod';
 import type { Schedule } from '../proactive/clock.js';
+import { maskNumbers } from './config.js';
 import { ReportedOutcome, type CallBrief, type SessionSettings } from './realtime.js';
 import type { CallLine } from './store.js';
 import { wireFor, type VoiceEvent } from './voice-wire.js';
@@ -11,7 +12,8 @@ import { wireFor, type VoiceEvent } from './voice-wire.js';
 export type EndReason = 'hangup' | 'cap' | 'error';
 
 export interface BridgeHooks {
-  talking(callId: string): Promise<void>;
+  /** The call is connected; false when the call row could not move to talking (it was stopped or ended meanwhile). */
+  talking(callId: string): Promise<boolean>;
   /** Go's own lines only. */
   line(callId: string, line: CallLine): void;
   outcome(callId: string, o: ReportedOutcome): void;
@@ -35,9 +37,13 @@ export const GREET_AFTER_MS = 4_000;
 export const WRAP_UP_BEFORE_MS = 20_000;
 export const HANG_UP_AFTER_GOODBYE_MS = 2_500;
 export const HANG_UP_AFTER_REPORT_MS = 15_000;
+/** The Twilio mark that comes back once the goodbye has played (gpt-realtime). */
+const GOODBYE_MARK = 'go_goodbye';
 /** Barge-in without a speech event (gpt-live-1): this loud for this many 20 ms frames while Go's audio plays. Tuned on day one. */
 export const BARGE_IN_LEVEL = 1_500;
 export const BARGE_IN_FRAMES = 3;
+/** Twilio sends `start` right after connecting; a media socket with no valid one by then is closed. */
+export const START_WITHIN_MS = 10_000;
 
 const TwilioFrame = z.object({
   event: z.string(),
@@ -67,7 +73,16 @@ export function frameLevel(payload: string): number {
   return Math.sqrt(sum / bytes.length);
 }
 
-export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): void {
+export interface BridgeHandle {
+  /** Settles once the call is closed out, or the media socket was refused or dropped. */
+  closed: Promise<void>;
+}
+
+export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): BridgeHandle {
+  let markClosed = (): void => {};
+  const closed = new Promise<void>((resolve) => {
+    markClosed = resolve;
+  });
   const wire = wireFor(d.session.model);
   let rt: WebSocket | null = null;
   let streamSid = '';
@@ -106,14 +121,18 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
   async function end(reason: EndReason): Promise<void> {
     if (ended) return;
     ended = true;
-    for (const cancel of cancels) cancel();
-    cancelGoodbye();
-    if (started) {
-      for (const e of wire.flush()) if (e.kind === 'go_line') d.hooks.line(callId, { who: 'go', text: e.text });
+    try {
+      for (const cancel of cancels) cancel();
+      cancelGoodbye();
+      if (started) {
+        for (const e of wire.flush()) if (e.kind === 'go_line') d.hooks.line(callId, { who: 'go', text: e.text });
+      }
+      if (rt && rt.readyState !== WebSocket.CLOSED) rt.close();
+      if (twilio.readyState === WebSocket.OPEN) twilio.close();
+      if (started) await d.hooks.ended(callId, reason);
+    } finally {
+      markClosed();
     }
-    if (rt && rt.readyState !== WebSocket.CLOSED) rt.close();
-    if (twilio.readyState === WebSocket.OPEN) twilio.close();
-    if (started) await d.hooks.ended(callId, reason);
   }
   const finish = (reason: EndReason): void => {
     end(reason).catch((err: unknown) => d.log.warn({ err, callId }, 'calls: closing the call failed'));
@@ -121,7 +140,7 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
   const hangUp = (reason: EndReason): void => {
     if (hangingUp) return;
     hangingUp = true;
-    d.hangUp(callId).catch((err: unknown) => d.log.warn({ err, callId }, 'calls: hanging up failed'));
+    d.hangUp(callId).catch((err: unknown) => d.log.warn({ error: maskNumbers(err instanceof Error ? err.message : String(err)), callId }, 'calls: hanging up failed'));
     finish(reason);
   };
 
@@ -192,7 +211,9 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
         if (reported && goodbyeId === null) goodbyeId = e.id;
         return;
       case 'response_done':
-        if (goodbyeId !== null && e.id === goodbyeId) cancels.push(d.schedule(() => hangUp('hangup'), HANG_UP_AFTER_GOODBYE_MS));
+        // The goodbye is generated, but Twilio may still be playing it: ask Twilio to say when it has played, and
+        // hang up shortly after that (a Live wire already marks every chunk of Go's audio).
+        if (goodbyeId !== null && e.id === goodbyeId && wire.bargeIn === 'model') toTwilio({ event: 'mark', streamSid, mark: { name: GOODBYE_MARK } });
         return;
       case 'error':
         d.log.warn({ callId, error: e.error }, 'calls: the voice model reported an error');
@@ -232,9 +253,21 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
         twilio.close(1008, 'refused');
         return;
       }
+      if (ended) {
+        // Twilio dropped while the token was checked: the claimed call ends here, with no voice model opened.
+        await d.hooks.ended(callId, 'hangup');
+        return;
+      }
       started = true;
+      cancelStart();
       streamSid = frame.start.streamSid;
-      await d.hooks.talking(callId);
+      const moved = await d.hooks.talking(callId);
+      if (ended) return; // Twilio dropped meanwhile: end() has already closed the call
+      if (!moved) {
+        // The call was stopped or ended while it connected: never open the voice model.
+        hangUp('hangup');
+        return;
+      }
       openModel(brief);
       cancels.push(d.schedule(() => {
         if (!heardThem && !goSpoke) toModelAll(wire.speakFirst(brief));
@@ -251,6 +284,10 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
       return;
     }
     if (frame.event === 'mark' && frame.mark) {
+      if (frame.mark.name === GOODBYE_MARK) {
+        cancels.push(d.schedule(() => hangUp('hangup'), HANG_UP_AFTER_GOODBYE_MS));
+        return;
+      }
       playing.delete(frame.mark.name);
       afterPlayed();
       return;
@@ -258,9 +295,14 @@ export function attachBridge(twilio: WebSocket, callId: string, d: BridgeDeps): 
     if (frame.event === 'stop') finish('hangup');
   }
 
+  const cancelStart = d.schedule(() => {
+    if (!started && !ended) twilio.close(1008, 'no start');
+  }, START_WITHIN_MS);
+  cancels.push(cancelStart);
   twilio.on('message', (data: RawData) => {
     onTwilio(data).catch((err: unknown) => d.log.warn({ err, callId }, 'calls: media frame failed'));
   });
   twilio.on('close', () => finish('hangup'));
   twilio.on('error', (err: Error) => d.log.warn({ err, callId }, 'calls: media socket error'));
+  return { closed };
 }

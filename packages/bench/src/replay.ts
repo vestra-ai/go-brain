@@ -67,7 +67,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 async function fetchBoard(url: string, token: string | undefined): Promise<unknown> {
   if (token === undefined || token === '') return null;
-  const res = await fetch(`${url}/stats.json?token=${encodeURIComponent(token)}&hours=168`);
+  const res = await fetch(`${url}/stats.json?hours=168`, { headers: { authorization: `Bearer ${token}` } });
   return res.ok ? await res.json() : null;
 }
 

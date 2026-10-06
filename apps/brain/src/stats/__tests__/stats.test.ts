@@ -77,6 +77,17 @@ describe('the board numbers', () => {
     expect(n.cache.status).toBe('ok');
   });
 
+  it('times a turn from the message that named Go, not from chatter it took in, and leaves out turns no message named Go in', async () => {
+    // One turn took in "lol" and then "@Go flights?" 4 s later: the clock starts at the @Go line.
+    await seedTurn(db.pool, { id: 'tu_merge', at: 20, chatterBeforeMs: 4_000, typingMs: 300, postedMs: 2_200, input: 600, cached: 3_000 });
+    // A turn whose only message is chatter (Go spoke up on its own) has no ask to time.
+    await seedTurn(db.pool, { id: 'tu_chatter', at: 30, namesGo: false, typingMs: 150, postedMs: 1_800, input: 600, cached: 3_000 });
+    const n = await computeBoard(db.pool, registry(), { now: NOW, hours: 2 });
+    expect(n.turns).toBe(2);
+    expect(n.typing).toEqual({ n: 1, p50Ms: 300, p90Ms: 300 });
+    expect(n.reply).toEqual({ n: 1, p50Ms: 2_200, p90Ms: 2_200 });
+  });
+
   it('says not cacheable yet when every turn is under its model\'s minimum', async () => {
     await seedTurn(db.pool, { id: 'tu_h1', at: 20, model: 'claude-haiku-4-5', input: 3_000 });
     await seedTurn(db.pool, { id: 'tu_h2', at: 25, model: 'claude-haiku-4-5', input: 3_000, written: 500 });

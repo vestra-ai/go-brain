@@ -1,4 +1,5 @@
 # The live bench: real models and real Jev. By hand (any branch) or nightly at 03:00 IST (from main). Never on a push.
+# Only a run from build or main posts its numbers to the board; any other branch keeps them in the job's report.
 name: bench-live
 on:
   workflow_dispatch:
@@ -18,6 +19,8 @@ on:
         default: false
   schedule:
     - cron: '30 21 * * *'
+permissions:
+  contents: read
 concurrency:
   group: bench-live
   cancel-in-progress: false
@@ -40,10 +43,6 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/go_bench
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
-      GO_BOARD_URL: ${{ secrets.GO_BOARD_URL }}
-      GO_BOARD_TOKEN: ${{ secrets.GO_BOARD_TOKEN }}
       CHATS: ${{ inputs.chats || 'goa-50,goa-300' }}
       MODELS: ${{ inputs.models || 'claude-sonnet-5-5,claude-haiku-4-5' }}
       GATE_MODEL: ${{ inputs.gate_model || 'claude-sonnet-5-5' }}
@@ -57,8 +56,15 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # The keys live in this step only: install, build and the upload never see them.
       - name: Live bench
-        run: node packages/bench/dist/run-live.js --chats "$CHATS" --models "$MODELS" --gate-model "$GATE_MODEL" $RECORD_JEV --post-board
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          GO_BOARD_URL: ${{ (github.ref == 'refs/heads/build' || github.ref == 'refs/heads/main') && secrets.GO_BOARD_URL || '' }}
+          GO_BOARD_TOKEN: ${{ (github.ref == 'refs/heads/build' || github.ref == 'refs/heads/main') && secrets.GO_BOARD_TOKEN || '' }}
+          POST_BOARD: ${{ (github.ref == 'refs/heads/build' || github.ref == 'refs/heads/main') && '--post-board' || '' }}
+        run: node packages/bench/dist/run-live.js --chats "$CHATS" --models "$MODELS" --gate-model "$GATE_MODEL" $RECORD_JEV $POST_BOARD
       - name: Summary on the job page
         if: always()
         run: if [ -f packages/bench/out/live-report.md ]; then cat packages/bench/out/live-report.md >> "$GITHUB_STEP_SUMMARY"; fi

@@ -39,7 +39,8 @@ export function callsNow(service: CallService): NowProvider {
 export interface CallsHandles {
   service: CallService;
   tick(): Promise<void>;
-  stop(): void;
+  /** Ends every live call, waits for each to close out, and takes no new media socket. */
+  stop(): Promise<void>;
 }
 
 export interface StartCallsOpts {
@@ -99,14 +100,16 @@ export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1_048_576 });
   const openModel = o.openVoice ?? (() => openVoice({ model: config.voiceModel, apiKey: config.openaiKey ?? '' }));
   let stopped = false;
+  // Each live call's "closed out" promise, so stopping Go can wait for them.
+  const bridges = new Set<Promise<void>>();
   const onMedia = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
     const callId = MEDIA_PATH.exec((req.url ?? '').split('?')[0] ?? '')?.[1];
     if (stopped || !callId) {
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) =>
-      attachBridge(ws, callId, {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const { closed } = attachBridge(ws, callId, {
         claim: (id, token) => service.claim(id, token),
         openVoice: openModel,
         hangUp: (id) => service.hangUp(id),
@@ -120,8 +123,10 @@ export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<
         capMs: CALL_CAP_MS,
         session: { model: config.voiceModel, voice: REALTIME_VOICE },
         log: brain.log,
-      }),
-    );
+      });
+      bridges.add(closed);
+      void closed.finally(() => bridges.delete(closed));
+    });
   };
   brain.door.onUpgrade(MEDIA_PATH, onMedia);
 
@@ -135,12 +140,15 @@ export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<
   }
   brain.log.info({ voiceModel: config.voiceModel, missing: config.missing }, config.missing.length > 0 ? 'calls: not set up yet; call_business will refuse' : 'calls: ready');
 
-  const stop = (): void => {
+  const stop = async (): Promise<void> => {
     stopped = true;
     for (const h of handles.splice(0)) clearInterval(h);
+    // A live call's media socket goes now; each call closes out (final card, the line in the room) before Go stops.
+    for (const ws of wss.clients) ws.terminate();
+    await Promise.allSettled([...bridges]);
     wss.close();
   };
-  // When Go stops (master §6.3: Brain.onStop), the tick stops and no new media socket is taken.
+  // When Go stops (master §6.3: Brain.onStop), the tick stops, live calls end, and no new media socket is taken.
   brain.onStop(stop);
 
   return { service, tick: () => service.tick(), stop };
