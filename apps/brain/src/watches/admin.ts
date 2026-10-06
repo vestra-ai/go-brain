@@ -39,7 +39,8 @@ export interface FireDeps {
   adminToken: string | undefined;
   store: ProactiveStore;
   now: () => Date;
-  promote: () => Promise<number>;
+  /** Promotes this trip's due candidates now, behind any pass already running. */
+  promote: (tripId: string) => Promise<number>;
 }
 
 function sameToken(given: string, expected: string): boolean {
@@ -94,7 +95,9 @@ export function registerFireRoute(app: FastifyInstance, d: FireDeps): void {
     };
     // Two clicks at the same moment: one insert wins, the other is the double click.
     if ((await d.store.add(c)) === 'exists') return reply.send({ ok: true, dedupe_key: dedupeKey, duplicate: true, promoted: 0 });
-    const promoted = await d.promote();
+    await d.promote(b.trip_id);
+    // The answer is about this fire only, whatever else the pass promoted.
+    const promoted = (await d.store.status(b.trip_id, dedupeKey))?.status === 'promoted' ? 1 : 0;
     return reply.send({ ok: true, dedupe_key: dedupeKey, promoted });
   });
 }

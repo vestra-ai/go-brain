@@ -37,10 +37,24 @@ export interface PromoterDeps {
   log: { warn(obj: object, msg: string): void };
 }
 
-export function createPromoter(deps: PromoterDeps): { tick(): Promise<number> } {
-  let running: Promise<number> | null = null;
+export interface Promoter {
+  /** One pass over every trip. A pass already running is joined, never doubled. */
+  tick(): Promise<number>;
+  /** This trip's due candidates now, queued behind a pass that is running (the stage fire). */
+  promoteTrip(tripId: string): Promise<number>;
+}
 
-  async function promoteTrip(tripId: string, cands: Candidate[], now: Date): Promise<number> {
+export function createPromoter(deps: PromoterDeps): Promoter {
+  let running: Promise<number> | null = null;
+  // Passes run one at a time, so a trip's candidates are never decided by two passes at once.
+  let tail: Promise<unknown> = Promise.resolve();
+  const inTurn = <T>(job: () => Promise<T>): Promise<T> => {
+    const next = tail.then(job, job);
+    tail = next.catch(() => undefined);
+    return next;
+  };
+
+  async function decideTrip(tripId: string, cands: Candidate[], now: Date): Promise<number> {
     const pack = await deps.packs.get(tripId);
     const tz = await deps.store.tripTz(tripId);
     const day = localDay(now, tz);
@@ -79,7 +93,7 @@ export function createPromoter(deps: PromoterDeps): { tick(): Promise<number> } 
     let promoted = 0;
     for (const [tripId, cands] of byTrip) {
       try {
-        promoted += await promoteTrip(tripId, cands, now);
+        promoted += await decideTrip(tripId, cands, now);
       } catch (err) {
         deps.log.warn({ err, tripId }, 'proactive: promote failed; the candidates stay due');
       }
@@ -88,10 +102,16 @@ export function createPromoter(deps: PromoterDeps): { tick(): Promise<number> } 
   }
 
   return {
-    /** One pass. A pass already running is joined, never doubled. */
     tick(): Promise<number> {
-      if (!running) running = once().finally(() => { running = null; });
+      if (!running) running = inTurn(once).finally(() => { running = null; });
       return running;
+    },
+    promoteTrip(tripId: string): Promise<number> {
+      return inTurn(async () => {
+        const now = deps.now();
+        const cands = await deps.store.dueFor(tripId, now);
+        return cands.length > 0 ? decideTrip(tripId, cands, now) : 0;
+      });
     },
   };
 }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
-import { candidate, fakeDesk, fakePacks, goaPack, goaTrip, manualTime, msg, seedTrip } from '../fakes.js';
+import { candidate, fakeDesk, fakePacks, goaPack, goaTrip, manualTime, msg, seedTrip, waitFor } from '../fakes.js';
 import { proactiveOf } from '../payload.js';
 import { createPromoter, moodFrom } from '../promoter.js';
 import { ProactiveStore } from '../store.js';
@@ -109,6 +109,29 @@ describe('createPromoter', () => {
     const [a, b] = await Promise.all([p.tick(), p.tick()]);
     expect(a).toBe(b);
     expect(desk.items.filter((i) => i.id === 'watch:t_goa:join:1')).toHaveLength(1);
+  });
+
+  it('promotes one trip at once for the stage fire, queued behind a pass already running, and includes what came due meanwhile', async () => {
+    await seedTrip(db.pool, 't_fire');
+    packs.set(goaPack({ trip: goaTrip({ trip_id: 't_fire' }) }));
+    const inner = fakeDesk();
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let held = false;
+    const desk = { ...inner, put: async (item: Parameters<typeof inner.put>[0]): Promise<void> => { held = true; await gate; await inner.put(item); } };
+    const p = createPromoter({ store, desk, packs, now: manualTime(NOON).now, log });
+    const quiet = { tripId: 't_fire', topic: 'note', personIds: [], useful: ['update_card' as const], dueAt: new Date(Date.parse(NOON) - 1000) };
+    await store.add(candidate({ ...quiet, dedupeKey: 'fire:a' }));
+    const pass = p.tick();
+    await waitFor(() => held); // the pass has read what was due and is held at the desk
+    await store.add(candidate({ ...quiet, dedupeKey: 'fire:b' })); // the stage fire, while the pass runs
+    const fire = p.promoteTrip('t_fire');
+    release();
+    expect(await pass).toBeGreaterThanOrEqual(1);
+    expect(await fire).toBe(1);
+    expect((await store.status('t_fire', 'fire:b'))?.status).toBe('promoted');
+    expect(inner.items.filter((i) => i.tripId === 't_fire').map((i) => i.id).sort()).toEqual(['watch:t_fire:fire:a', 'watch:t_fire:fire:b']);
+    expect(await p.promoteTrip('t_fire')).toBe(0);
   });
 
   it('keeps a trip due when its pack cannot be read', async () => {

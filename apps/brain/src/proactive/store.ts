@@ -108,6 +108,15 @@ export class ProactiveStore {
     return r.rows.map(toCandidate);
   }
 
+  /** One trip's due candidates (the stage fire promotes its trip at once). */
+  async dueFor(tripId: string, now: Date): Promise<Candidate[]> {
+    const r = await this.pool.query<CandidateRow>(
+      `select ${COLS} from proactive_candidates where trip_id = $1 and status = 'pending' and due_at <= $2 order by due_at`,
+      [tripId, now],
+    );
+    return r.rows.map(toCandidate);
+  }
+
   async promote(c: Candidate, d: { allowed: Action[]; forPersonIds: string[]; counted: boolean; localDay: string }, now: Date): Promise<void> {
     await this.pool.query(
       `update proactive_candidates set status = 'promoted', reason = null, allowed = $3, for_person_ids = $4,
