@@ -136,6 +136,9 @@ describe('the checks before a rehearsal', () => {
     const stage = preflight(health({ role: 'stage' }));
     expect(stage).toHaveLength(1);
     expect(stage[0]).toMatch(/stage Go \(GO_ROLE=stage\)/);
+    const tryRoom = preflight(health({ role: 'try' }));
+    expect(tryRoom).toHaveLength(1);
+    expect(tryRoom[0]).toMatch(/try-room Go \(GO_ROLE=try\)/);
     const unknown = preflight(health({ role: null }));
     expect(unknown).toHaveLength(1);
     expect(unknown[0]).toMatch(/Set GO_ROLE=rehearsal/);

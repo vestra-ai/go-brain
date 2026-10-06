@@ -8,6 +8,7 @@ import { loadEnv } from '../../env.js';
 import type { Tasks } from '../../tasks/tasks.js';
 import type { Probe } from '../health.js';
 import { NOT_DEPLOYED, type AdminLanes } from '../lanes.js';
+import { renderAdminPage } from '../page.js';
 import { DOCS_URL, registerAdmin, registerAdminWith, roleOf } from '../register.js';
 import { cookieName, registerSessionRoute, SESSION_SECONDS, sessionCookie, sessionValue, signedIn } from '../session.js';
 import { createSwitches } from '../switches.js';
@@ -346,6 +347,13 @@ describe('which Go this is', () => {
     expect(roleOf({ GO_ROLE: 'stage', RAILWAY_SERVICE_NAME: 'brain-rehearsal' })).toBe('stage');
     expect(roleOf({ RAILWAY_SERVICE_NAME: 'brain-rehearsal' })).toBe('rehearsal');
     expect(roleOf({ RAILWAY_SERVICE_NAME: 'brain' })).toBe('stage');
+    expect(roleOf({ GO_ROLE: 'try', RAILWAY_SERVICE_NAME: 'brain' })).toBe('try');
+    expect(roleOf({ RAILWAY_SERVICE_NAME: 'brain-try' })).toBe('try');
+    const page = renderAdminPage({
+      tripId: null, role: 'try', trips: [], at: new Date('2026-10-06T10:00:00Z'), health: [], switches: [], people: [],
+      calls: { mode: 'off', deployed: false, allowlist: [] }, note: null, docsUrl: DOCS_URL,
+    });
+    expect(page).toContain('This is the try-room Go, where visitors chat with Go.');
     expect(roleOf({ RAILWAY_SERVICE_NAME: 'something-else' })).toBeNull();
     expect(roleOf({})).toBeNull();
   });

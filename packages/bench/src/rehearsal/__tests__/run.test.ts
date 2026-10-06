@@ -54,6 +54,14 @@ describe('the rehearsal runner', () => {
     expect(urls).toEqual(['https://brain.example.com/admin/health.json']);
   });
 
+  it('refuses a full run, before it opens any socket, on the try-room Go', async () => {
+    const { f, urls } = healthFetch({ ...HEALTH, role: 'try', calls: ALLOWED });
+    const err = await rehearse({ ...base, fetch: f }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RefusedError);
+    expect((err as RefusedError).reasons).toEqual([expect.stringMatching(/GO_ROLE=try/)]);
+    expect(urls).toEqual(['https://brain.example.com/admin/health.json']);
+  });
+
   it('--warm on the stage Go only reads health.json for the real trip: no socket, no trip, no message, no secret', async () => {
     const { f, urls } = healthFetch({ ...HEALTH, server_socket_open: true, trip_id: 't_real' });
     const out = await rehearse({ go: base.go, adminToken: base.adminToken, warm: true, trip: 't_real', fetch: f, log: () => undefined });
