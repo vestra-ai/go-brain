@@ -66,13 +66,14 @@ function citedMessageId(text: string, pack: TripPack): string | null {
   return null;
 }
 
-/** The chat lines of desk items' messages, as the context draws them. */
-function linesFor(items: DeskItem[], pack: TripPack): { lines: string[]; seqs: number[] } {
+/** The chat lines of desk items' messages, as the context draws them, past `shownUpTo`: the prompt already holds the rest. */
+function linesFor(items: DeskItem[], pack: TripPack, shownUpTo: number): { lines: string[]; seqs: number[] } {
   const names = new Map(pack.trip.people.map((p) => [p.person_id, personName(p.name)]));
   const seqs = new Map(pack.messages.map((m) => [m.message_id, m.seq]));
   const out = { lines: [] as string[], seqs: [] as number[] };
   for (const i of items) {
     const m = pack.messages.find((x) => x.message_id === messageIdOf(i));
+    if (m && m.seq <= shownUpTo) continue;
     const line = m ? chatLine(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)) : null;
     if (m && line) {
       out.lines.push(line);
@@ -146,23 +147,32 @@ export function createComposer(d: ComposerDeps): Composer {
       // call was made, so someone who asked Go hears the day's limit, once per trip.
       if (r.stopReason === 'over_budget' && r.rounds === 0 && forGo) await limitLine(t);
       let newest = prompt.newestSeq;
+      let unanswered = false;
 
       // Just before posting: messages that arrived meanwhile join this turn (one more round), instead of a stale answer.
       // A turn under limits (Go woke for itself) skips it: people's messages wait on the desk for their own turn,
-      // which runs under the normal rules, never this turn's.
+      // which runs under the normal rules, never this turn's. A message the prompt already held (it landed before the
+      // prompt was built, its desk item after) needs no extra round.
       if (!r.silent && r.text && ctx.mayPostText !== false && ctx.allowedTools === undefined && rounds < MAX_ROUNDS) {
         pulled.push(...(await d.claimNew(t.tripId, t.turnId)));
-        const fresh = linesFor(pulled, pack);
+        const fresh = linesFor(pulled, pack, prompt.newestSeq);
         if (fresh.lines.length) {
-          r = await runLoop({
+          const more = await runLoop({
             ...base,
             continuing: true,
             maxRounds: MAX_ROUNDS - rounds,
             messages: [...r.messages, { role: 'user', content: [{ type: 'text', text: foldText(fresh.lines) }] }],
           });
-          addUsage(usage, r.usage);
-          rounds += r.rounds;
-          newest = Math.max(newest, ...fresh.seqs);
+          addUsage(usage, more.usage);
+          rounds += more.rounds;
+          if (more.stopReason === 'over_budget' && more.rounds === 0) {
+            // Today's budget ran out before the extra round could call the model: the answer round 1 already paid for
+            // still goes out. The new lines were never read, so they stay new for the next turn.
+            unanswered = pulled.some(isForGo);
+          } else {
+            r = more;
+            newest = Math.max(newest, ...fresh.seqs);
+          }
         }
       }
 
@@ -184,6 +194,8 @@ export function createComposer(d: ComposerDeps): Composer {
       posted = ids.length > 0;
       ctx.outcome.posts.push(...ids);
       ctx.outcome.spoke = text !== null && ids.length > 0;
+      // Someone named Go in a line the budget left unread: they hear the day's limit, once per trip.
+      if (unanswered) await limitLine(t);
       const outcome = ctx.outcome.spoke ? 'spoke' : ids.length > 0 || ctx.outcome.reactions > 0 ? 'acted' : 'silent';
       await d.pool.query(
         `update turns set ended_at = $2, first_token_at = $3, rounds = $4, input_tokens = $5, cached_tokens = $6,
