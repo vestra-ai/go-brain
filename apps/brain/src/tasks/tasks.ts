@@ -145,7 +145,6 @@ export function createTasks(d: TasksDeps): TasksService {
         return { taskId: known.id, cardId: known.cardId };
       }
       const now = d.now();
-      const state: TaskState = (await d.store.countActive(tripId)) >= MAX_ACTIVE_PER_TRIP ? 'queued' : 'starting';
       const row: NewTask = {
         id,
         tripId,
@@ -156,13 +155,15 @@ export function createTasks(d: TasksDeps): TasksService {
         context: brief.context,
         successCriteria: brief.successCriteria ?? null,
         askedBy: brief.askedBy ?? null,
-        state,
+        state: 'starting',
         cardId: brief.cardId ?? `c_work_${id.slice(3)}`,
         steps: plannedSteps(brief.steps),
-        deadlineAt: state === 'starting' ? new Date(now.getTime() + deadlineMs) : null,
+        deadlineAt: new Date(now.getTime() + deadlineMs),
         createdAt: now,
       };
-      if (!(await d.store.insert(row))) {
+      // Queued instead when the trip already runs three: counted and saved under one per-trip lock.
+      const state = await d.store.insertCapped(row, MAX_ACTIVE_PER_TRIP);
+      if (state === null) {
         const again = await d.store.get(id);
         if (again) return { taskId: again.id, cardId: again.cardId };
       }
@@ -234,12 +235,11 @@ export function createTasks(d: TasksDeps): TasksService {
     },
 
     async startQueued(tripId) {
-      while ((await d.store.countActive(tripId)) < MAX_ACTIVE_PER_TRIP) {
-        const next = await d.store.oldestQueued(tripId);
+      for (;;) {
+        // A free slot and the oldest waiting job are taken together, under the trip's lock.
+        const next = await d.store.promoteQueued(tripId, MAX_ACTIVE_PER_TRIP, new Date(d.now().getTime() + deadlineMs));
         if (!next) return;
-        if (!(await d.store.transition(next.id, ['queued'], 'starting', { deadlineAt: new Date(d.now().getTime() + deadlineMs) }))) continue;
-        const fresh = await d.store.get(next.id);
-        if (fresh) await service.pushCard(fresh, true);
+        await service.pushCard(next, true);
         track(service.dispatch(next.id));
       }
     },

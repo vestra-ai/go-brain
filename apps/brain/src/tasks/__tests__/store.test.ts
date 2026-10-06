@@ -58,6 +58,21 @@ describe('task rows', () => {
     expect((await store.listLive('t_q')).map((t) => t.id).sort()).toEqual(['gt_q1', 'gt_q2', 'gt_r1']);
   });
 
+  it("takes a trip's job slots one at a time: five starts at once leave two queued, and a freed slot goes to one job", async () => {
+    const states = await Promise.all(Array.from({ length: 5 }, (_, i) => store.insertCapped(task(`gt_cap${i}`, { tripId: 't_cap', createdAt: new Date(T0.getTime() + i) }), 3)));
+    expect(states.filter((st) => st === 'queued')).toHaveLength(2);
+    expect(states.filter((st) => st === 'starting')).toHaveLength(3);
+    expect(await store.countActive('t_cap')).toBe(3);
+    for (const q of (await store.listLive('t_cap')).filter((r) => r.state === 'queued')) expect(q.deadlineAt).toBeNull();
+    expect(await store.insertCapped(task('gt_cap0', { tripId: 't_cap' }), 3)).toBeNull();
+    const first = (await store.listLive('t_cap')).find((r) => r.state === 'starting')!;
+    await store.transition(first.id, ['starting'], 'done', { endedAt: T0 });
+    const promoted = await Promise.all([store.promoteQueued('t_cap', 3, T0), store.promoteQueued('t_cap', 3, T0)]);
+    expect(promoted.filter((r) => r !== null)).toHaveLength(1);
+    expect(promoted.find((r) => r !== null)).toMatchObject({ state: 'starting', deadlineAt: T0 });
+    expect(await store.countActive('t_cap')).toBe(3);
+  });
+
   it('keeps the asks a job raised, once each, and settles them', async () => {
     await store.insert(task('gt_i'));
     const ask = { interactionId: 'int_1', taskId: 'gt_i', tripId: 't_goa', type: 'question', summary: 'Which dates?', questions: [{ question: 'Which dates?', options: ['6 to 9 Nov', '13 to 16 Nov'] }], forPersonIds: [], createdAt: T0 };

@@ -60,6 +60,13 @@ export interface InteractionRow {
 
 export interface TaskStore {
   insert(row: NewTask): Promise<boolean>;
+  /**
+   * Saves a new job, queued (with no deadline) when the trip already runs `maxActive`. The count and the insert happen
+   * under a per-trip lock, so two starts at the same moment never both take the last slot. Null when the job exists.
+   */
+  insertCapped(row: NewTask, maxActive: number): Promise<TaskState | null>;
+  /** Moves the trip's oldest queued job to starting when a slot is free, under the same per-trip lock. */
+  promoteQueued(tripId: string, maxActive: number, deadlineAt: Date): Promise<TaskRow | null>;
   get(id: string): Promise<TaskRow | null>;
   byV1Task(v1TaskId: string): Promise<TaskRow | null>;
   listLive(tripId?: string): Promise<TaskRow[]>;
@@ -126,18 +133,59 @@ function setClause(patch: TaskPatch, offset: number): { sql: string; values: unk
   return { sql: parts.join(', '), values };
 }
 
+const INSERT_TASK = `insert into tasks (id, trip_id, title, goal, returns_kind, returns, context, success_criteria, asked_by, state, card_id, steps, deadline_at, created_at)
+  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) on conflict (id) do nothing`;
+
+const insertValues = (t: NewTask): unknown[] => [
+  t.id, t.tripId, t.title, t.goal, t.returnsKind, JSON.stringify(t.returns), JSON.stringify(t.context), t.successCriteria, t.askedBy, t.state, t.cardId,
+  JSON.stringify(t.steps), t.deadlineAt, t.createdAt,
+];
+
 export function createTaskStore(pool: pg.Pool): TaskStore {
   const many = async (sql: string, values: unknown[]): Promise<TaskRow[]> => (await pool.query<TaskDb>(sql, values)).rows.map(rowOf);
   const one = async (sql: string, values: unknown[]): Promise<TaskRow | null> => (await many(sql, values))[0] ?? null;
+
+  /** Runs one trip's slot decision in a transaction that holds that trip's advisory lock. */
+  async function lockedTrip<T>(tripId: string, run: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+    const c = await pool.connect();
+    try {
+      await c.query('begin');
+      await c.query('select pg_advisory_xact_lock(hashtext($1))', [`go_tasks:${tripId}`]);
+      const out = await run(c);
+      await c.query('commit');
+      return out;
+    } catch (err) {
+      await c.query('rollback').catch(() => undefined);
+      throw err;
+    } finally {
+      c.release();
+    }
+  }
+  const activeIn = async (c: pg.PoolClient, tripId: string): Promise<number> =>
+    Number((await c.query<{ n: string }>('select count(*) as n from tasks where trip_id = $1 and state = any($2::text[])', [tripId, ACTIVE_STATES])).rows[0]?.n ?? 0);
+
   return {
     async insert(t) {
-      const r = await pool.query(
-        `insert into tasks (id, trip_id, title, goal, returns_kind, returns, context, success_criteria, asked_by, state, card_id, steps, deadline_at, created_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) on conflict (id) do nothing`,
-        [t.id, t.tripId, t.title, t.goal, t.returnsKind, JSON.stringify(t.returns), JSON.stringify(t.context), t.successCriteria, t.askedBy, t.state, t.cardId, JSON.stringify(t.steps), t.deadlineAt, t.createdAt],
-      );
+      const r = await pool.query(INSERT_TASK, insertValues(t));
       return r.rowCount === 1;
     },
+    insertCapped: (t, maxActive) =>
+      lockedTrip(t.tripId, async (c) => {
+        const full = (await activeIn(c, t.tripId)) >= maxActive;
+        const row: NewTask = full ? { ...t, state: 'queued', deadlineAt: null } : t;
+        const r = await c.query(INSERT_TASK, insertValues(row));
+        return r.rowCount === 1 ? row.state : null;
+      }),
+    promoteQueued: (tripId, maxActive, deadlineAt) =>
+      lockedTrip(tripId, async (c) => {
+        if ((await activeIn(c, tripId)) >= maxActive) return null;
+        const { rows } = await c.query<TaskDb>(
+          `update tasks set state = 'starting', deadline_at = $2
+            where id = (select id from tasks where trip_id = $1 and state = 'queued' order by created_at limit 1) returning *`,
+          [tripId, deadlineAt],
+        );
+        return rows[0] ? rowOf(rows[0]) : null;
+      }),
     get: (id) => one('select * from tasks where id = $1', [id]),
     byV1Task: (v1TaskId) => one('select * from tasks where v1_task_id = $1', [v1TaskId]),
     listLive: (tripId) =>

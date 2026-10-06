@@ -88,6 +88,14 @@ describe('starting a job', () => {
     await tasks.settled();
   });
 
+  it('never runs more than three jobs of a trip, even when five start at the same moment', async () => {
+    const started = await Promise.all(Array.from({ length: 5 }, (_, i) => tasks.start('t_race', { ...VILLAS, key: `race${i}` })));
+    await tasks.settled();
+    const states = await Promise.all(started.map(async (r) => (await store.get(r.taskId))?.state));
+    expect(states.filter((st) => st === 'queued')).toHaveLength(2);
+    expect(states.filter((st) => st === 'starting' || st === 'running')).toHaveLength(3);
+  });
+
   it('keeps a fourth job waiting until one of three ends', async () => {
     const ids: string[] = [];
     for (let i = 0; i < 3; i += 1) ids.push((await tasks.start('t_q', { ...VILLAS, key: `q${i}` })).taskId);
