@@ -125,8 +125,9 @@ export function createComposer(d: ComposerDeps): Composer {
       let newest = prompt.newestSeq;
 
       // Just before posting: messages that arrived meanwhile join this turn (one more round), instead of a stale answer.
-      // A turn that may not post text skips it: those messages wait on the desk for their own turn.
-      if (!r.silent && r.text && ctx.mayPostText !== false && rounds < MAX_ROUNDS) {
+      // A turn under limits (Go woke for itself) skips it: people's messages wait on the desk for their own turn,
+      // which runs under the normal rules, never this turn's.
+      if (!r.silent && r.text && ctx.mayPostText !== false && ctx.allowedTools === undefined && rounds < MAX_ROUNDS) {
         pulled.push(...(await d.claimNew(t.tripId, t.turnId)));
         const fresh = linesFor(pulled, pack);
         if (fresh.lines.length) {
