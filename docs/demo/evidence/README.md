@@ -139,7 +139,7 @@ How they relate to the bench's numbers:
 
 ## Live run
 
-`bench-live-2026-10-06.json` is one run of the live bench, unedited, and `bench-live-2026-10-06.md` is the summary the same run wrote. It replays `goa-50` and `goa-300` through Go as the fast bench does, but with the real model writing Go's turns and real Jev reading every message. It is the run on record of Go with a real model.
+`bench-live-2026-10-06.json` is one run of the live bench, unedited, and `bench-live-2026-10-06.md` is the summary the same run wrote. It replays `goa-50` and `goa-300` through Go as the fast bench does, but with the real model writing Go's turns and real Jev reading every message. It is the first run on record of Go with a real model; a second run on `goa-50`, after the fixes it led to, is [below](#after-the-fixes-goa-50-again).
 
 - **Run:** bench-live run [37442728267](https://github.com/vestra-ai/go-brain/actions/runs/37442728267), job `live`, artifact `live-bench`, written at 2026-10-06 10:12 UTC. It ran for 48 minutes.
 - **Code:** `build` at commit `50fe0ab`, with pull request #61 merged on top (GitHub's test commit `5616f7f`, which the report names). At that point the pull request changed only how the live bench is started and which of Jev's questions it lets act, so the Go measured is `build`'s.
@@ -193,6 +193,40 @@ It misses most of them, and each miss is a finding about Go, not about the bench
 - **`claude-haiku-4-5` only:** it missed one ask in each chat, and its reply p90 on `goa-300` was 54 seconds.
 
 One measurement to read with care: the bench tells Go's turns from the side passes by the model's name. With `claude-haiku-4-5` writing Go's turns, the side passes run on the same model, so they count as turns too. That is why `claude-haiku-4-5` "woke the model" more than once per message (118% and 101%) and shows no side passes; its wake rate, request count and cache hit are not comparable with `claude-sonnet-5-5`'s, and the table above leaves them out.
+
+### After the fixes: `goa-50` again
+
+`bench-live-2026-10-06-after.json` (and its summary, `bench-live-2026-10-06-after.md`) is a second live run, unedited, on `goa-50` only. It ran after the fixes the run above led to: recall puts the best answer first and gives each fact its proof (#71), a line Jev is sure no one spoke to Go in wakes no model (#72), and one person's preference gets a ✅ and no post (#64).
+
+- **Run:** bench-live run [37452902475](https://github.com/vestra-ai/go-brain/actions/runs/37452902475), job `live`, artifact `live-bench`, written at 2026-10-06 10:59 UTC. Its two replays took 3.5 minutes and cost $0.39.
+- **Code:** `build` at commit `aedc4ce` (with #64, #66, #68, #71 and #72), with pull request #74 merged on top (GitHub's test commit `b88dcb5`, which the report names). At that point the pull request added only what the run records about why Go woke and the label that picks the chat, so the Go measured is `build`'s.
+- **Models and Jev:** as above, both models on `goa-50`, real Jev, the same questions acting live.
+- **Verdict:** 5 of 14 checks pass (`verdict.ok` is `false`).
+
+`claude-sonnet-5-5` on `goa-50`, the first run against this one:
+
+| | Before the fixes | After | Live bar |
+|---|---|---|---|
+| Typing p90 | 5 ms | 5 ms | under 500 ms |
+| Reply p50 | 4.39 s | 5.22 s | under 2.5 s |
+| Reply p90 | 13.47 s | 10.44 s | under 5 s |
+| Model's first word, p50 | 1.27 s | 1.15 s | none |
+| Cache hit (the provider's own) | 83.8% | 85.9% | 85% or more |
+| Woke the model | 86.0% (43 turns for 50 messages) | 32.0% (16 turns) | under 25% |
+| Asks answered | 6 of 6 | 6 of 6 | every one |
+| Posts nobody asked for | 5 of 21 | 1 of 12 | none (no wrong speak) |
+| Recall | 4 of 5 | 5 of 5 | no misses |
+| Cost of the chat | $0.5314 | $0.2476 | none |
+
+Why Go woke, from the run's own tables (the "Why Go woke" line of its summary): Jev answered all 50 messages, in 153 ms at p50 and 192 ms at p90, and read 33 of them as sure not for Go. Of the 16 model turns, 15 were woken by messages and 1 by the trip's setup. The lines Jev read as not for Go are the ones the chat labels as quiet, plus "wait" and "one more thing", two unfinished lines the labels leave either way; no line labelled for Go was among them.
+
+Where it still misses a bar, plainly:
+
+- **Reply time:** 5.22 seconds at p50, against 2.5. At least 2 seconds of it is Go holding the ask: question 2 (is the message finished) is in shadow, so Go waits 2 seconds after a line in case more come, before the model starts. The model's first word then takes 1.15 seconds at p50, and the rest is the model writing its answer and any tool rounds (27 requests to the model for 16 turns).
+- **Woke the model:** 32%, against 25%. Every turn counts: all 16 were for a message or the setup.
+- **Posts nobody asked for:** 1, against none on this hand-labelled chat.
+
+With `claude-haiku-4-5`: reply p50 8.67 s and p90 8.89 s, recall 5 of 5, cost $0.1473, and it answered 3 of the 6 asks. Jev read two of the three it missed as for Go and the third as unsure, so Go woke the model for them, but no answer reached the room. Its wake rate (66%) counts its side passes, as explained above.
 
 ## Running it yourself
 
