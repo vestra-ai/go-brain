@@ -166,3 +166,21 @@ describe('deletes, forgets and the safety net', () => {
     expect(view.tokens).toBeLessThanOrEqual(2_000);
   });
 });
+
+describe('redaction finds every line about a person', () => {
+  it('also takes lines that cite a message they wrote, and lines that use only their first name', async () => {
+    const { fold } = setup('t_f8', longChat(10), []);
+    await seedMessages(db.pool, 't_f8', [msg(4, 'p_kabir', 'I get seasick on boats'), msg(5, 'p_meher', "I'm allergic to peanuts")]);
+    await db.pool.query(
+      `INSERT INTO story_lines (trip_id, idx, text, refs, ref_ids, people) VALUES
+         ('t_f8', 0, 'Someone gets seasick, so no cruise', '{4}', '{m_0004}', '{}'),
+         ('t_f8', 1, 'Kabir pays the villa deposit', '{6}', '{m_0006}', '{}'),
+         ('t_f8', 2, 'Meher is allergic to peanuts', '{5}', '{m_0005}', '{p_meher}')`,
+    );
+    // The trip knows him as "Kabir Singh"; the story calls him "Kabir".
+    expect(await fold.storyMentions(db.pool, 'p_kabir', ['t_f8'], ['Kabir Singh'])).toBe(2);
+    expect(await withTx(db.pool, (c) => fold.redactPerson(c, 'p_kabir', ['t_f8'], ['Kabir Singh']))).toBe(2);
+    expect(await fold.storyMentions(db.pool, 'p_kabir', ['t_f8'], ['Kabir Singh'])).toBe(0);
+    expect((await db.pool.query('SELECT text FROM story_lines WHERE trip_id = $1', ['t_f8'])).rows).toEqual([{ text: 'Meher is allergic to peanuts' }]);
+  });
+});

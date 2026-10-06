@@ -113,12 +113,18 @@ const lockStory = (db: Db, tripId: string) => db.query('SELECT pg_advisory_xact_
 export function createFold(d: FoldDeps): Fold {
   const busy = new Set<string>();
 
+  /** Lines about the person: tagged with them, citing a message they wrote, or naming them (full name or first name). */
   async function linesAbout(db: Db, personId: string, tripIds: string[], names: string[]) {
-    const r = await db.query<{ trip_id: string; idx: number; text: string; people: string[] }>(
-      'SELECT trip_id, idx, text, people FROM story_lines WHERE trip_id = ANY($1::text[])',
-      [tripIds],
+    const r = await db.query<{ trip_id: string; idx: number; text: string; people: string[]; cites: boolean }>(
+      `SELECT s.trip_id, s.idx, s.text, s.people,
+              EXISTS (SELECT 1 FROM messages m
+                       WHERE m.trip_id = s.trip_id AND m.person_id = $2 AND m.message_id = ANY(s.ref_ids)) AS cites
+         FROM story_lines s
+        WHERE s.trip_id = ANY($1::text[])`,
+      [tripIds, personId],
     );
-    return r.rows.filter((l) => l.people.includes(personId) || names.some((n) => mentionsName(l.text, n)));
+    const said = [...new Set(names.flatMap((n) => [n, n.trim().split(/\s+/)[0] ?? '']))];
+    return r.rows.filter((l) => l.cites || l.people.includes(personId) || said.some((n) => mentionsName(l.text, n)));
   }
 
   return {
