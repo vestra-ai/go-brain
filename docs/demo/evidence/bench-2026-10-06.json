@@ -1,0 +1,7666 @@
+{
+ "schema": "go.bench-report/v1",
+ "mode": "fast",
+ "at": "2026-10-06T11:45:35.114Z",
+ "commit": "e22f9d20dd",
+ "scores": [
+  {
+   "chat": "goa-50",
+   "mode": "fast",
+   "composerModel": "claude-sonnet-5-5",
+   "reflexSource": "labels",
+   "messages": {
+    "people": 50,
+    "goLinesSkipped": 0,
+    "edits": 1,
+    "deletes": 1,
+    "reactions": 1,
+    "photos": 1
+   },
+   "wake": {
+    "turns": 10,
+    "messages": 50,
+    "rate": 0.2
+   },
+   "typing": {
+    "n": 6,
+    "p50Ms": 4,
+    "p90Ms": 6,
+    "missing": 0,
+    "withoutPost": 0
+   },
+   "reply": {
+    "n": 6,
+    "p50Ms": 30,
+    "p90Ms": 39
+   },
+   "speak": {
+    "asks": 6,
+    "answered": 6,
+    "missed": [],
+    "posts": 7,
+    "byKind": {
+     "prompted": 6,
+     "follow_up": 0,
+     "greeting": 1,
+     "duplicate": 0,
+     "unprompted": 0
+    },
+    "unprompted": [],
+    "duplicates": []
+   },
+   "quiet": {
+    "reactions": 7,
+    "wrongReactions": [],
+    "recordLines": 0
+   },
+   "cache": {
+    "requests": 10,
+    "eligible": 10,
+    "results": {
+     "hit": 9,
+     "first": 1,
+     "below_minimum": 0,
+     "ttl": 0,
+     "rules_changed": 0,
+     "delete": 0,
+     "edit": 0,
+     "fold": 0,
+     "drift": 0
+    },
+    "folds": [],
+    "status": "ok",
+    "hitRate": 0.8890127111265889,
+    "hitRateAll": 0.807745854955069
+   },
+   "turns": [
+    {
+     "n": 0,
+     "realMs": 1791286968355,
+     "simS": 0,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 290,
+      "rounds": 0,
+      "total": 5778,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 5778,
+      "readTokens": 0,
+      "writeTokens": 5488,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0,
+     "result": "first",
+     "sharedBlocks": 0
+    },
+    {
+     "n": 6,
+     "realMs": 1791286969999,
+     "simS": 262,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 645,
+      "rounds": 0,
+      "total": 6133,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6133,
+      "readTokens": 5488,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8948312408283059,
+     "result": "hit",
+     "sharedBlocks": 21
+    },
+    {
+     "n": 8,
+     "realMs": 1791286970190,
+     "simS": 301,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 643,
+      "rounds": 0,
+      "total": 6131,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6131,
+      "readTokens": 5488,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8951231446746045,
+     "result": "hit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 9,
+     "realMs": 1791286970357,
+     "simS": 344,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 660,
+      "rounds": 0,
+      "total": 6148,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6148,
+      "readTokens": 5488,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8926480156148341,
+     "result": "hit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 10,
+     "realMs": 1791286972335,
+     "simS": 850,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 818,
+      "rounds": 0,
+      "total": 6306,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6306,
+      "readTokens": 5488,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8702822708531557,
+     "result": "hit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 12,
+     "realMs": 1791286977664,
+     "simS": 1504.5,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 416,
+      "now": 531,
+      "rounds": 0,
+      "total": 6435,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6435,
+      "readTokens": 5488,
+      "writeTokens": 416,
+      "eligible": true,
+      "chatEndTokens": 5904,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8528360528360528,
+     "result": "hit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 13,
+     "realMs": 1791286978344,
+     "simS": 1800,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 416,
+      "now": 527,
+      "rounds": 0,
+      "total": 6431,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6431,
+      "readTokens": 5904,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 5904,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9180531799098118,
+     "result": "hit",
+     "sharedBlocks": 23
+    },
+    {
+     "n": 15,
+     "realMs": 1791286979197,
+     "simS": 1930,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 416,
+      "now": 652,
+      "rounds": 0,
+      "total": 6556,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6556,
+      "readTokens": 5904,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 5904,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.900549115314216,
+     "result": "hit",
+     "sharedBlocks": 23
+    },
+    {
+     "n": 16,
+     "realMs": 1791286979860,
+     "simS": 2400,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 416,
+      "now": 705,
+      "rounds": 0,
+      "total": 6609,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6609,
+      "readTokens": 5904,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 5904,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8933272809804812,
+     "result": "hit",
+     "sharedBlocks": 23
+    },
+    {
+     "n": 17,
+     "realMs": 1791286980833,
+     "simS": 2960,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 416,
+      "now": 777,
+      "rounds": 0,
+      "total": 6681,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6681,
+      "readTokens": 5904,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 5904,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8837000449034575,
+     "result": "hit",
+     "sharedBlocks": 23
+    }
+   ],
+   "prompt": {
+    "maxTokens": 6681,
+    "lastTokens": 6681,
+    "average": {
+     "tools": 4185,
+     "system": 1303,
+     "chat": 208,
+     "now": 625
+    }
+   },
+   "recall": {
+    "probes": 5,
+    "ran": true,
+    "passed": 5,
+    "afterFold": 0,
+    "failed": []
+   },
+   "leaks": [],
+   "firstToken": {
+    "p50Ms": 1,
+    "p90Ms": 2
+   },
+   "side": {
+    "requests": 8,
+    "tokens": 6096
+   },
+   "costUsd": 0.04430320000000001,
+   "unreadByReflex": 0,
+   "durationMs": 12737
+  },
+  {
+   "chat": "goa-300",
+   "mode": "fast",
+   "composerModel": "claude-sonnet-5-5",
+   "reflexSource": "labels",
+   "messages": {
+    "people": 300,
+    "goLinesSkipped": 0,
+    "edits": 1,
+    "deletes": 1,
+    "reactions": 1,
+    "photos": 10
+   },
+   "wake": {
+    "turns": 51,
+    "messages": 300,
+    "rate": 0.17
+   },
+   "typing": {
+    "n": 12,
+    "p50Ms": 3,
+    "p90Ms": 4,
+    "missing": 0,
+    "withoutPost": 0
+   },
+   "reply": {
+    "n": 12,
+    "p50Ms": 25,
+    "p90Ms": 36
+   },
+   "speak": {
+    "asks": 12,
+    "answered": 12,
+    "missed": [],
+    "posts": 13,
+    "byKind": {
+     "prompted": 12,
+     "follow_up": 0,
+     "greeting": 1,
+     "duplicate": 0,
+     "unprompted": 0
+    },
+    "unprompted": [],
+    "duplicates": []
+   },
+   "quiet": {
+    "reactions": 6,
+    "wrongReactions": [],
+    "recordLines": 0
+   },
+   "cache": {
+    "requests": 51,
+    "eligible": 51,
+    "results": {
+     "hit": 31,
+     "first": 1,
+     "below_minimum": 0,
+     "ttl": 17,
+     "rules_changed": 0,
+     "delete": 1,
+     "edit": 1,
+     "fold": 0,
+     "drift": 0
+    },
+    "folds": [],
+    "status": "ok",
+    "hitRate": 0.8375536664170654,
+    "hitRateAll": 0.8251996926430907
+   },
+   "turns": [
+    {
+     "n": 0,
+     "realMs": 1791286981403,
+     "simS": 68400,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 290,
+      "rounds": 0,
+      "total": 5778,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 5778,
+      "readTokens": 0,
+      "writeTokens": 5488,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0,
+     "result": "first",
+     "sharedBlocks": 0
+    },
+    {
+     "n": 6,
+     "realMs": 1791286983105,
+     "simS": 70800,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 609,
+      "rounds": 0,
+      "total": 6097,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6097,
+      "readTokens": 5488,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9001148105625718,
+     "result": "hit",
+     "sharedBlocks": 21
+    },
+    {
+     "n": 8,
+     "realMs": 1791286984895,
+     "simS": 76200,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 698,
+      "rounds": 0,
+      "total": 6186,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6186,
+      "readTokens": 5488,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8871645651471064,
+     "result": "hit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 9,
+     "realMs": 1791286986250,
+     "simS": 80267,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 762,
+      "rounds": 0,
+      "total": 6250,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6250,
+      "readTokens": 5488,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.87808,
+     "result": "hit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 10,
+     "realMs": 1791286986401,
+     "simS": 80768,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 344,
+      "now": 450,
+      "rounds": 0,
+      "total": 6282,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6282,
+      "readTokens": 5488,
+      "writeTokens": 344,
+      "eligible": true,
+      "chatEndTokens": 5832,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8736071314867877,
+     "result": "hit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 11,
+     "realMs": 1791286988726,
+     "simS": 118074,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 344,
+      "now": 631,
+      "rounds": 0,
+      "total": 6463,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6463,
+      "readTokens": 5488,
+      "writeTokens": 344,
+      "eligible": true,
+      "chatEndTokens": 5832,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8491412656660994,
+     "result": "ttl",
+     "sharedBlocks": 23
+    },
+    {
+     "n": 13,
+     "realMs": 1791286989721,
+     "simS": 120449,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 347,
+      "now": 647,
+      "rounds": 0,
+      "total": 6482,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6482,
+      "readTokens": 5488,
+      "writeTokens": 347,
+      "eligible": true,
+      "chatEndTokens": 5835,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8466522678185745,
+     "result": "edit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 14,
+     "realMs": 1791286990567,
+     "simS": 123300,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 613,
+      "now": 492,
+      "rounds": 0,
+      "total": 6593,
+      "chatBlocks": 3,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6593,
+      "readTokens": 5835,
+      "writeTokens": 266,
+      "eligible": true,
+      "chatEndTokens": 6101,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8850295768239042,
+     "result": "hit",
+     "sharedBlocks": 23
+    },
+    {
+     "n": 15,
+     "realMs": 1791286991258,
+     "simS": 125662,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 613,
+      "now": 495,
+      "rounds": 0,
+      "total": 6596,
+      "chatBlocks": 3,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6596,
+      "readTokens": 6101,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6101,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9249545178896301,
+     "result": "hit",
+     "sharedBlocks": 24
+    },
+    {
+     "n": 16,
+     "realMs": 1791286992434,
+     "simS": 130343,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 613,
+      "now": 587,
+      "rounds": 0,
+      "total": 6688,
+      "chatBlocks": 3,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6688,
+      "readTokens": 5488,
+      "writeTokens": 613,
+      "eligible": true,
+      "chatEndTokens": 6101,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8205741626794258,
+     "result": "ttl",
+     "sharedBlocks": 24
+    },
+    {
+     "n": 17,
+     "realMs": 1791286993778,
+     "simS": 135000,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 613,
+      "now": 671,
+      "rounds": 0,
+      "total": 6772,
+      "chatBlocks": 3,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6772,
+      "readTokens": 5488,
+      "writeTokens": 613,
+      "eligible": true,
+      "chatEndTokens": 6101,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8103957471943296,
+     "result": "ttl",
+     "sharedBlocks": 24
+    },
+    {
+     "n": 18,
+     "realMs": 1791286994307,
+     "simS": 136317,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 896,
+      "now": 434,
+      "rounds": 0,
+      "total": 6818,
+      "chatBlocks": 4,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6818,
+      "readTokens": 6101,
+      "writeTokens": 283,
+      "eligible": true,
+      "chatEndTokens": 6384,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8948371956585509,
+     "result": "hit",
+     "sharedBlocks": 24
+    },
+    {
+     "n": 19,
+     "realMs": 1791286995623,
+     "simS": 141441,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 896,
+      "now": 504,
+      "rounds": 0,
+      "total": 6888,
+      "chatBlocks": 4,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6888,
+      "readTokens": 5488,
+      "writeTokens": 896,
+      "eligible": true,
+      "chatEndTokens": 6384,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.7967479674796748,
+     "result": "ttl",
+     "sharedBlocks": 25
+    },
+    {
+     "n": 20,
+     "realMs": 1791286996107,
+     "simS": 143300,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 896,
+      "now": 574,
+      "rounds": 0,
+      "total": 6958,
+      "chatBlocks": 4,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6958,
+      "readTokens": 6384,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6384,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9175050301810865,
+     "result": "hit",
+     "sharedBlocks": 25
+    },
+    {
+     "n": 21,
+     "realMs": 1791286996958,
+     "simS": 146520,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 896,
+      "now": 643,
+      "rounds": 0,
+      "total": 7027,
+      "chatBlocks": 4,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7027,
+      "readTokens": 6384,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6384,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9084958019069304,
+     "result": "hit",
+     "sharedBlocks": 25
+    },
+    {
+     "n": 22,
+     "realMs": 1791287002144,
+     "simS": 151204,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 896,
+      "now": 737,
+      "rounds": 0,
+      "total": 7121,
+      "chatBlocks": 4,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7121,
+      "readTokens": 5488,
+      "writeTokens": 896,
+      "eligible": true,
+      "chatEndTokens": 6384,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.7706782755231006,
+     "result": "ttl",
+     "sharedBlocks": 25
+    },
+    {
+     "n": 23,
+     "realMs": 1791287003313,
+     "simS": 155576,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1184,
+      "now": 552,
+      "rounds": 0,
+      "total": 7224,
+      "chatBlocks": 5,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7224,
+      "readTokens": 5488,
+      "writeTokens": 1184,
+      "eligible": true,
+      "chatEndTokens": 6672,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.7596899224806202,
+     "result": "ttl",
+     "sharedBlocks": 25
+    },
+    {
+     "n": 24,
+     "realMs": 1791287003820,
+     "simS": 157553,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1184,
+      "now": 583,
+      "rounds": 0,
+      "total": 7255,
+      "chatBlocks": 5,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7255,
+      "readTokens": 6672,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6672,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9196416264645072,
+     "result": "hit",
+     "sharedBlocks": 26
+    },
+    {
+     "n": 25,
+     "realMs": 1791287003989,
+     "simS": 158228,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1184,
+      "now": 598,
+      "rounds": 0,
+      "total": 7270,
+      "chatBlocks": 5,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7270,
+      "readTokens": 6672,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6672,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9177441540577717,
+     "result": "hit",
+     "sharedBlocks": 26
+    },
+    {
+     "n": 26,
+     "realMs": 1791287004499,
+     "simS": 160022,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1184,
+      "now": 630,
+      "rounds": 0,
+      "total": 7302,
+      "chatBlocks": 5,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7302,
+      "readTokens": 6672,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6672,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.913722267871816,
+     "result": "hit",
+     "sharedBlocks": 26
+    },
+    {
+     "n": 27,
+     "realMs": 1791287005324,
+     "simS": 163200,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1184,
+      "now": 681,
+      "rounds": 0,
+      "total": 7353,
+      "chatBlocks": 5,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7353,
+      "readTokens": 6672,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6672,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9073847409220727,
+     "result": "hit",
+     "sharedBlocks": 26
+    },
+    {
+     "n": 28,
+     "realMs": 1791287006343,
+     "simS": 167161,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1433,
+      "now": 529,
+      "rounds": 0,
+      "total": 7450,
+      "chatBlocks": 6,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7450,
+      "readTokens": 5488,
+      "writeTokens": 1433,
+      "eligible": true,
+      "chatEndTokens": 6921,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.7366442953020135,
+     "result": "ttl",
+     "sharedBlocks": 26
+    },
+    {
+     "n": 29,
+     "realMs": 1791287006828,
+     "simS": 169103,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1433,
+      "now": 573,
+      "rounds": 0,
+      "total": 7494,
+      "chatBlocks": 6,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7494,
+      "readTokens": 6921,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6921,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9235388310648519,
+     "result": "hit",
+     "sharedBlocks": 27
+    },
+    {
+     "n": 30,
+     "realMs": 1791287008332,
+     "simS": 205350,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1433,
+      "now": 653,
+      "rounds": 0,
+      "total": 7574,
+      "chatBlocks": 6,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7574,
+      "readTokens": 5488,
+      "writeTokens": 1433,
+      "eligible": true,
+      "chatEndTokens": 6921,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.7245841035120147,
+     "result": "ttl",
+     "sharedBlocks": 27
+    },
+    {
+     "n": 31,
+     "realMs": 1791287008501,
+     "simS": 205774,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1433,
+      "now": 663,
+      "rounds": 0,
+      "total": 7584,
+      "chatBlocks": 6,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7584,
+      "readTokens": 6921,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6921,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9125791139240507,
+     "result": "hit",
+     "sharedBlocks": 27
+    },
+    {
+     "n": 32,
+     "realMs": 1791287008841,
+     "simS": 207000,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1433,
+      "now": 694,
+      "rounds": 0,
+      "total": 7615,
+      "chatBlocks": 6,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7615,
+      "readTokens": 6921,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 6921,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9088640840446487,
+     "result": "hit",
+     "sharedBlocks": 27
+    },
+    {
+     "n": 33,
+     "realMs": 1791287010001,
+     "simS": 211670,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1732,
+      "now": 471,
+      "rounds": 0,
+      "total": 7691,
+      "chatBlocks": 7,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7691,
+      "readTokens": 5488,
+      "writeTokens": 1732,
+      "eligible": true,
+      "chatEndTokens": 7220,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.7135613054219218,
+     "result": "ttl",
+     "sharedBlocks": 27
+    },
+    {
+     "n": 34,
+     "realMs": 1791287010675,
+     "simS": 214001,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1732,
+      "now": 465,
+      "rounds": 0,
+      "total": 7685,
+      "chatBlocks": 7,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7685,
+      "readTokens": 7220,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 7220,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9394925178919974,
+     "result": "hit",
+     "sharedBlocks": 28
+    },
+    {
+     "n": 35,
+     "realMs": 1791287011658,
+     "simS": 217183,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1722,
+      "now": 546,
+      "rounds": 0,
+      "total": 7756,
+      "chatBlocks": 7,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7756,
+      "readTokens": 5488,
+      "writeTokens": 1722,
+      "eligible": true,
+      "chatEndTokens": 7210,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.7075812274368231,
+     "result": "delete",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 36,
+     "realMs": 1791287013834,
+     "simS": 225655,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1722,
+      "now": 701,
+      "rounds": 0,
+      "total": 7911,
+      "chatBlocks": 7,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7911,
+      "readTokens": 5488,
+      "writeTokens": 1722,
+      "eligible": true,
+      "chatEndTokens": 7210,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.6937176083933763,
+     "result": "ttl",
+     "sharedBlocks": 28
+    },
+    {
+     "n": 37,
+     "realMs": 1791287014158,
+     "simS": 226800,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1997,
+      "now": 467,
+      "rounds": 0,
+      "total": 7952,
+      "chatBlocks": 8,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7952,
+      "readTokens": 7210,
+      "writeTokens": 275,
+      "eligible": true,
+      "chatEndTokens": 7485,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9066901408450704,
+     "result": "hit",
+     "sharedBlocks": 28
+    },
+    {
+     "n": 38,
+     "realMs": 1791287014347,
+     "simS": 227585,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1997,
+      "now": 484,
+      "rounds": 0,
+      "total": 7969,
+      "chatBlocks": 8,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7969,
+      "readTokens": 7485,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 7485,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.939264650520768,
+     "result": "hit",
+     "sharedBlocks": 29
+    },
+    {
+     "n": 39,
+     "realMs": 1791287014852,
+     "simS": 229257,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1997,
+      "now": 511,
+      "rounds": 0,
+      "total": 7996,
+      "chatBlocks": 8,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7996,
+      "readTokens": 7485,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 7485,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9360930465232616,
+     "result": "hit",
+     "sharedBlocks": 29
+    },
+    {
+     "n": 40,
+     "realMs": 1791287015678,
+     "simS": 232929,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1997,
+      "now": 577,
+      "rounds": 0,
+      "total": 8062,
+      "chatBlocks": 8,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8062,
+      "readTokens": 5488,
+      "writeTokens": 1997,
+      "eligible": true,
+      "chatEndTokens": 7485,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.6807243860084347,
+     "result": "ttl",
+     "sharedBlocks": 29
+    },
+    {
+     "n": 41,
+     "realMs": 1791287019496,
+     "simS": 246244,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1997,
+      "now": 802,
+      "rounds": 0,
+      "total": 8287,
+      "chatBlocks": 8,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8287,
+      "readTokens": 5488,
+      "writeTokens": 1997,
+      "eligible": true,
+      "chatEndTokens": 7485,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.662242065886328,
+     "result": "ttl",
+     "sharedBlocks": 29
+    },
+    {
+     "n": 42,
+     "realMs": 1791287019664,
+     "simS": 246758,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2282,
+      "now": 548,
+      "rounds": 0,
+      "total": 8318,
+      "chatBlocks": 9,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8318,
+      "readTokens": 7485,
+      "writeTokens": 285,
+      "eligible": true,
+      "chatEndTokens": 7770,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8998557345515749,
+     "result": "hit",
+     "sharedBlocks": 29
+    },
+    {
+     "n": 43,
+     "realMs": 1791287019834,
+     "simS": 247500,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2282,
+      "now": 568,
+      "rounds": 0,
+      "total": 8338,
+      "chatBlocks": 9,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8338,
+      "readTokens": 7770,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 7770,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9318781482369873,
+     "result": "hit",
+     "sharedBlocks": 30
+    },
+    {
+     "n": 44,
+     "realMs": 1791287020173,
+     "simS": 248928,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2282,
+      "now": 593,
+      "rounds": 0,
+      "total": 8363,
+      "chatBlocks": 9,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8363,
+      "readTokens": 7770,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 7770,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9290924309458328,
+     "result": "hit",
+     "sharedBlocks": 30
+    },
+    {
+     "n": 45,
+     "realMs": 1791287024179,
+     "simS": 295277,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2282,
+      "now": 828,
+      "rounds": 0,
+      "total": 8598,
+      "chatBlocks": 9,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8598,
+      "readTokens": 5488,
+      "writeTokens": 2282,
+      "eligible": true,
+      "chatEndTokens": 7770,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.6382879739474296,
+     "result": "ttl",
+     "sharedBlocks": 30
+    },
+    {
+     "n": 46,
+     "realMs": 1791287024336,
+     "simS": 295957,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2540,
+      "now": 602,
+      "rounds": 0,
+      "total": 8630,
+      "chatBlocks": 10,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8630,
+      "readTokens": 7770,
+      "writeTokens": 258,
+      "eligible": true,
+      "chatEndTokens": 8028,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9003476245654692,
+     "result": "hit",
+     "sharedBlocks": 30
+    },
+    {
+     "n": 47,
+     "realMs": 1791287025155,
+     "simS": 298800,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2540,
+      "now": 603,
+      "rounds": 0,
+      "total": 8631,
+      "chatBlocks": 10,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8631,
+      "readTokens": 8028,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 8028,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9301355578727841,
+     "result": "hit",
+     "sharedBlocks": 31
+    },
+    {
+     "n": 48,
+     "realMs": 1791287026323,
+     "simS": 303315,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2540,
+      "now": 675,
+      "rounds": 0,
+      "total": 8703,
+      "chatBlocks": 10,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8703,
+      "readTokens": 5488,
+      "writeTokens": 2540,
+      "eligible": true,
+      "chatEndTokens": 8028,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.6305871538549925,
+     "result": "ttl",
+     "sharedBlocks": 31
+    },
+    {
+     "n": 49,
+     "realMs": 1791287027577,
+     "simS": 308652,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2801,
+      "now": 573,
+      "rounds": 0,
+      "total": 8862,
+      "chatBlocks": 11,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8862,
+      "readTokens": 5488,
+      "writeTokens": 2801,
+      "eligible": true,
+      "chatEndTokens": 8289,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.6192733017377567,
+     "result": "ttl",
+     "sharedBlocks": 31
+    },
+    {
+     "n": 50,
+     "realMs": 1791287027901,
+     "simS": 309845,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2801,
+      "now": 594,
+      "rounds": 0,
+      "total": 8883,
+      "chatBlocks": 11,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8883,
+      "readTokens": 8289,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 8289,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9331306990881459,
+     "result": "hit",
+     "sharedBlocks": 32
+    },
+    {
+     "n": 51,
+     "realMs": 1791287028384,
+     "simS": 312155,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2801,
+      "now": 626,
+      "rounds": 0,
+      "total": 8915,
+      "chatBlocks": 11,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8915,
+      "readTokens": 8289,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 8289,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9297812675266405,
+     "result": "hit",
+     "sharedBlocks": 32
+    },
+    {
+     "n": 52,
+     "realMs": 1791287030055,
+     "simS": 318600,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2801,
+      "now": 724,
+      "rounds": 0,
+      "total": 9013,
+      "chatBlocks": 11,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9013,
+      "readTokens": 5488,
+      "writeTokens": 2801,
+      "eligible": true,
+      "chatEndTokens": 8289,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.6088982580716743,
+     "result": "ttl",
+     "sharedBlocks": 32
+    },
+    {
+     "n": 53,
+     "realMs": 1791287030416,
+     "simS": 319777,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3073,
+      "now": 497,
+      "rounds": 0,
+      "total": 9058,
+      "chatBlocks": 12,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9058,
+      "readTokens": 8289,
+      "writeTokens": 272,
+      "eligible": true,
+      "chatEndTokens": 8561,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9151026716714507,
+     "result": "hit",
+     "sharedBlocks": 32
+    },
+    {
+     "n": 54,
+     "realMs": 1791287030585,
+     "simS": 320541,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3073,
+      "now": 508,
+      "rounds": 0,
+      "total": 9069,
+      "chatBlocks": 12,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9069,
+      "readTokens": 8561,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 8561,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.943985003859301,
+     "result": "hit",
+     "sharedBlocks": 33
+    },
+    {
+     "n": 55,
+     "realMs": 1791287033037,
+     "simS": 330607,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3073,
+      "now": 691,
+      "rounds": 0,
+      "total": 9252,
+      "chatBlocks": 12,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9252,
+      "readTokens": 5488,
+      "writeTokens": 3073,
+      "eligible": true,
+      "chatEndTokens": 8561,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.5931690445309122,
+     "result": "ttl",
+     "sharedBlocks": 33
+    },
+    {
+     "n": 56,
+     "realMs": 1791287033867,
+     "simS": 334004,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3073,
+      "now": 736,
+      "rounds": 0,
+      "total": 9297,
+      "chatBlocks": 12,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9297,
+      "readTokens": 8561,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 8561,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9208346778530709,
+     "result": "hit",
+     "sharedBlocks": 33
+    },
+    {
+     "n": 57,
+     "realMs": 1791287034524,
+     "simS": 336600,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3383,
+      "now": 497,
+      "rounds": 0,
+      "total": 9368,
+      "chatBlocks": 13,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9368,
+      "readTokens": 8561,
+      "writeTokens": 310,
+      "eligible": true,
+      "chatEndTokens": 8871,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9138556789069172,
+     "result": "hit",
+     "sharedBlocks": 33
+    }
+   ],
+   "prompt": {
+    "maxTokens": 9368,
+    "lastTokens": 9368,
+    "average": {
+     "tools": 4185,
+     "system": 1303,
+     "chat": 1599,
+     "now": 593
+    }
+   },
+   "recall": {
+    "probes": 7,
+    "ran": true,
+    "passed": 7,
+    "afterFold": 0,
+    "failed": []
+   },
+   "leaks": [],
+   "firstToken": {
+    "p50Ms": 1,
+    "p90Ms": 2
+   },
+   "side": {
+    "requests": 7,
+    "tokens": 4738
+   },
+   "costUsd": 0.2282101,
+   "unreadByReflex": 0,
+   "durationMs": 54040
+  },
+  {
+   "chat": "goa-2000",
+   "mode": "fast",
+   "composerModel": "claude-sonnet-5-5",
+   "reflexSource": "labels",
+   "messages": {
+    "people": 2000,
+    "goLinesSkipped": 0,
+    "edits": 1,
+    "deletes": 1,
+    "reactions": 0,
+    "photos": 120
+   },
+   "wake": {
+    "turns": 198,
+    "messages": 2000,
+    "rate": 0.099
+   },
+   "typing": {
+    "n": 13,
+    "p50Ms": 3,
+    "p90Ms": 4,
+    "missing": 0,
+    "withoutPost": 0
+   },
+   "reply": {
+    "n": 13,
+    "p50Ms": 27,
+    "p90Ms": 29
+   },
+   "speak": {
+    "asks": 13,
+    "answered": 13,
+    "missed": [],
+    "posts": 14,
+    "byKind": {
+     "prompted": 13,
+     "follow_up": 0,
+     "greeting": 1,
+     "duplicate": 0,
+     "unprompted": 0
+    },
+    "unprompted": [],
+    "duplicates": []
+   },
+   "quiet": {
+    "reactions": 7,
+    "wrongReactions": [],
+    "recordLines": 0
+   },
+   "cache": {
+    "requests": 198,
+    "eligible": 198,
+    "results": {
+     "hit": 169,
+     "first": 1,
+     "below_minimum": 0,
+     "ttl": 24,
+     "rules_changed": 0,
+     "delete": 1,
+     "edit": 1,
+     "fold": 2,
+     "drift": 0
+    },
+    "folds": [
+     {
+      "n": 135,
+      "beforeChatTokens": 13750,
+      "afterChatTokens": 7271
+     },
+     {
+      "n": 207,
+      "beforeChatTokens": 14999,
+      "afterChatTokens": 7825
+     }
+    ],
+    "status": "ok",
+    "hitRate": 0.8780883967243407,
+    "hitRateAll": 0.8763627000704415
+   },
+   "turns": [
+    {
+     "n": 0,
+     "realMs": 1791287035849,
+     "simS": 68400,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 290,
+      "rounds": 0,
+      "total": 5778,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 5778,
+      "readTokens": 0,
+      "writeTokens": 5488,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0,
+     "result": "first",
+     "sharedBlocks": 0
+    },
+    {
+     "n": 5,
+     "realMs": 1791287036862,
+     "simS": 70677,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 685,
+      "rounds": 0,
+      "total": 6173,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6173,
+      "readTokens": 5488,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8890328851449862,
+     "result": "hit",
+     "sharedBlocks": 21
+    },
+    {
+     "n": 9,
+     "realMs": 1791287037358,
+     "simS": 71766,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 0,
+      "now": 778,
+      "rounds": 0,
+      "total": 6266,
+      "chatBlocks": 0,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6266,
+      "readTokens": 5488,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": null,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8758378550909671,
+     "result": "hit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 10,
+     "realMs": 1791287037659,
+     "simS": 72823,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 306,
+      "now": 500,
+      "rounds": 0,
+      "total": 6294,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6294,
+      "readTokens": 5488,
+      "writeTokens": 306,
+      "eligible": true,
+      "chatEndTokens": 5794,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8719415316174134,
+     "result": "hit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 11,
+     "realMs": 1791287037949,
+     "simS": 73800,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 306,
+      "now": 600,
+      "rounds": 0,
+      "total": 6394,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6394,
+      "readTokens": 5794,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 5794,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.906162026900219,
+     "result": "hit",
+     "sharedBlocks": 23
+    },
+    {
+     "n": 12,
+     "realMs": 1791287038436,
+     "simS": 75272,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 306,
+      "now": 651,
+      "rounds": 0,
+      "total": 6445,
+      "chatBlocks": 2,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6445,
+      "readTokens": 5794,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 5794,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8989914662529093,
+     "result": "hit",
+     "sharedBlocks": 23
+    },
+    {
+     "n": 13,
+     "realMs": 1791287040012,
+     "simS": 80937,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 559,
+      "now": 780,
+      "rounds": 0,
+      "total": 6827,
+      "chatBlocks": 3,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6827,
+      "readTokens": 5488,
+      "writeTokens": 559,
+      "eligible": true,
+      "chatEndTokens": 6047,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.803866998681705,
+     "result": "ttl",
+     "sharedBlocks": 23
+    },
+    {
+     "n": 14,
+     "realMs": 1791287040190,
+     "simS": 81684,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 823,
+      "now": 575,
+      "rounds": 0,
+      "total": 6886,
+      "chatBlocks": 4,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 6886,
+      "readTokens": 6047,
+      "writeTokens": 264,
+      "eligible": true,
+      "chatEndTokens": 6311,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8781585826314261,
+     "result": "hit",
+     "sharedBlocks": 24
+    },
+    {
+     "n": 15,
+     "realMs": 1791287041894,
+     "simS": 119871,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1070,
+      "now": 655,
+      "rounds": 0,
+      "total": 7213,
+      "chatBlocks": 5,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7213,
+      "readTokens": 5488,
+      "writeTokens": 1070,
+      "eligible": true,
+      "chatEndTokens": 6558,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.7608484680438098,
+     "result": "ttl",
+     "sharedBlocks": 25
+    },
+    {
+     "n": 16,
+     "realMs": 1791287043814,
+     "simS": 126911,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1321,
+      "now": 879,
+      "rounds": 0,
+      "total": 7688,
+      "chatBlocks": 6,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7688,
+      "readTokens": 5488,
+      "writeTokens": 1321,
+      "eligible": true,
+      "chatEndTokens": 6809,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.7138397502601457,
+     "result": "ttl",
+     "sharedBlocks": 26
+    },
+    {
+     "n": 17,
+     "realMs": 1791287044359,
+     "simS": 128946,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1578,
+      "now": 794,
+      "rounds": 0,
+      "total": 7860,
+      "chatBlocks": 7,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7860,
+      "readTokens": 6809,
+      "writeTokens": 257,
+      "eligible": true,
+      "chatEndTokens": 7066,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8662849872773537,
+     "result": "hit",
+     "sharedBlocks": 27
+    },
+    {
+     "n": 18,
+     "realMs": 1791287044440,
+     "simS": 129239,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1863,
+      "now": 546,
+      "rounds": 0,
+      "total": 7897,
+      "chatBlocks": 8,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7897,
+      "readTokens": 7066,
+      "writeTokens": 285,
+      "eligible": true,
+      "chatEndTokens": 7351,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8947701658857794,
+     "result": "hit",
+     "sharedBlocks": 28
+    },
+    {
+     "n": 19,
+     "realMs": 1791287044617,
+     "simS": 129886,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1863,
+      "now": 598,
+      "rounds": 0,
+      "total": 7949,
+      "chatBlocks": 8,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 7949,
+      "readTokens": 7351,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 7351,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9247704113724997,
+     "result": "hit",
+     "sharedBlocks": 29
+    },
+    {
+     "n": 20,
+     "realMs": 1791287045016,
+     "simS": 131400,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 1863,
+      "now": 686,
+      "rounds": 0,
+      "total": 8037,
+      "chatBlocks": 8,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8037,
+      "readTokens": 7351,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 7351,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9146447679482393,
+     "result": "hit",
+     "sharedBlocks": 29
+    },
+    {
+     "n": 21,
+     "realMs": 1791287045413,
+     "simS": 132783,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2136,
+      "now": 508,
+      "rounds": 0,
+      "total": 8132,
+      "chatBlocks": 9,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8132,
+      "readTokens": 7351,
+      "writeTokens": 273,
+      "eligible": true,
+      "chatEndTokens": 7624,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9039596655189376,
+     "result": "hit",
+     "sharedBlocks": 29
+    },
+    {
+     "n": 22,
+     "realMs": 1791287047031,
+     "simS": 138749,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2136,
+      "now": 858,
+      "rounds": 0,
+      "total": 8482,
+      "chatBlocks": 9,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8482,
+      "readTokens": 5488,
+      "writeTokens": 2136,
+      "eligible": true,
+      "chatEndTokens": 7624,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.6470172129214807,
+     "result": "ttl",
+     "sharedBlocks": 30
+    },
+    {
+     "n": 23,
+     "realMs": 1791287047076,
+     "simS": 138956,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2408,
+      "now": 613,
+      "rounds": 0,
+      "total": 8509,
+      "chatBlocks": 10,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8509,
+      "readTokens": 7624,
+      "writeTokens": 272,
+      "eligible": true,
+      "chatEndTokens": 7896,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.8959924785521213,
+     "result": "hit",
+     "sharedBlocks": 30
+    },
+    {
+     "n": 24,
+     "realMs": 1791287048322,
+     "simS": 143569,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 2712,
+      "now": 678,
+      "rounds": 0,
+      "total": 8878,
+      "chatBlocks": 11,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8878,
+      "readTokens": 5488,
+      "writeTokens": 2712,
+      "eligible": true,
+      "chatEndTokens": 8200,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.6181572426222122,
+     "result": "ttl",
+     "sharedBlocks": 31
+    },
+    {
+     "n": 25,
+     "realMs": 1791287048520,
+     "simS": 144225,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3003,
+      "now": 399,
+      "rounds": 0,
+      "total": 8890,
+      "chatBlocks": 12,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8890,
+      "readTokens": 8200,
+      "writeTokens": 291,
+      "eligible": true,
+      "chatEndTokens": 8491,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.922384701912261,
+     "result": "hit",
+     "sharedBlocks": 32
+    },
+    {
+     "n": 26,
+     "realMs": 1791287048567,
+     "simS": 144397,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3003,
+      "now": 426,
+      "rounds": 0,
+      "total": 8917,
+      "chatBlocks": 12,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 8917,
+      "readTokens": 8491,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 8491,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.952226085006168,
+     "result": "hit",
+     "sharedBlocks": 33
+    },
+    {
+     "n": 27,
+     "realMs": 1791287049331,
+     "simS": 147251,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3003,
+      "now": 597,
+      "rounds": 0,
+      "total": 9088,
+      "chatBlocks": 12,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9088,
+      "readTokens": 8491,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 8491,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9343089788732394,
+     "result": "hit",
+     "sharedBlocks": 33
+    },
+    {
+     "n": 28,
+     "realMs": 1791287053447,
+     "simS": 147604,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3003,
+      "now": 670,
+      "rounds": 0,
+      "total": 9161,
+      "chatBlocks": 12,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9161,
+      "readTokens": 8491,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 8491,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9268638794891387,
+     "result": "hit",
+     "sharedBlocks": 33
+    },
+    {
+     "n": 29,
+     "realMs": 1791287053922,
+     "simS": 149295,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3254,
+      "now": 525,
+      "rounds": 0,
+      "total": 9267,
+      "chatBlocks": 13,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9267,
+      "readTokens": 8491,
+      "writeTokens": 251,
+      "eligible": true,
+      "chatEndTokens": 8742,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9162620049638502,
+     "result": "hit",
+     "sharedBlocks": 33
+    },
+    {
+     "n": 30,
+     "realMs": 1791287054507,
+     "simS": 151474,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3254,
+      "now": 732,
+      "rounds": 0,
+      "total": 9474,
+      "chatBlocks": 13,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9474,
+      "readTokens": 8742,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 8742,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9227359088030399,
+     "result": "hit",
+     "sharedBlocks": 34
+    },
+    {
+     "n": 31,
+     "realMs": 1791287054770,
+     "simS": 152394,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3562,
+      "now": 500,
+      "rounds": 0,
+      "total": 9550,
+      "chatBlocks": 14,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9550,
+      "readTokens": 8742,
+      "writeTokens": 308,
+      "eligible": true,
+      "chatEndTokens": 9050,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.915392670157068,
+     "result": "hit",
+     "sharedBlocks": 34
+    },
+    {
+     "n": 32,
+     "realMs": 1791287054947,
+     "simS": 153102,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3562,
+      "now": 506,
+      "rounds": 0,
+      "total": 9556,
+      "chatBlocks": 14,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9556,
+      "readTokens": 9050,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 9050,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9470489744663039,
+     "result": "hit",
+     "sharedBlocks": 35
+    },
+    {
+     "n": 33,
+     "realMs": 1791287055324,
+     "simS": 154434,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3562,
+      "now": 610,
+      "rounds": 0,
+      "total": 9660,
+      "chatBlocks": 14,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9660,
+      "readTokens": 9050,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 9050,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9368530020703933,
+     "result": "hit",
+     "sharedBlocks": 35
+    },
+    {
+     "n": 34,
+     "realMs": 1791287055946,
+     "simS": 156746,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3562,
+      "now": 746,
+      "rounds": 0,
+      "total": 9796,
+      "chatBlocks": 14,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 9796,
+      "readTokens": 9050,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 9050,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9238464679461005,
+     "result": "hit",
+     "sharedBlocks": 35
+    },
+    {
+     "n": 35,
+     "realMs": 1791287057375,
+     "simS": 162146,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 3814,
+      "now": 798,
+      "rounds": 0,
+      "total": 10100,
+      "chatBlocks": 15,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 10100,
+      "readTokens": 5488,
+      "writeTokens": 3814,
+      "eligible": true,
+      "chatEndTokens": 9302,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.5433663366336634,
+     "result": "ttl",
+     "sharedBlocks": 35
+    },
+    {
+     "n": 36,
+     "realMs": 1791287057420,
+     "simS": 162234,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4111,
+      "now": 565,
+      "rounds": 0,
+      "total": 10164,
+      "chatBlocks": 16,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 10164,
+      "readTokens": 9302,
+      "writeTokens": 297,
+      "eligible": true,
+      "chatEndTokens": 9599,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9151908697363242,
+     "result": "hit",
+     "sharedBlocks": 36
+    },
+    {
+     "n": 37,
+     "realMs": 1791287057596,
+     "simS": 162898,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4111,
+      "now": 599,
+      "rounds": 0,
+      "total": 10198,
+      "chatBlocks": 16,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 10198,
+      "readTokens": 9599,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 9599,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9412629927436752,
+     "result": "hit",
+     "sharedBlocks": 37
+    },
+    {
+     "n": 38,
+     "realMs": 1791287058260,
+     "simS": 165413,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4111,
+      "now": 796,
+      "rounds": 0,
+      "total": 10395,
+      "chatBlocks": 16,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 10395,
+      "readTokens": 9599,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 9599,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9234247234247234,
+     "result": "hit",
+     "sharedBlocks": 37
+    },
+    {
+     "n": 39,
+     "realMs": 1791287058483,
+     "simS": 166223,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4370,
+      "now": 615,
+      "rounds": 0,
+      "total": 10473,
+      "chatBlocks": 17,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 10473,
+      "readTokens": 9599,
+      "writeTokens": 259,
+      "eligible": true,
+      "chatEndTokens": 9858,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9165473121359686,
+     "result": "hit",
+     "sharedBlocks": 37
+    },
+    {
+     "n": 40,
+     "realMs": 1791287059016,
+     "simS": 168263,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4370,
+      "now": 725,
+      "rounds": 0,
+      "total": 10583,
+      "chatBlocks": 17,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 10583,
+      "readTokens": 9858,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 9858,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9314939053198525,
+     "result": "hit",
+     "sharedBlocks": 38
+    },
+    {
+     "n": 41,
+     "realMs": 1791287059245,
+     "simS": 168929,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4682,
+      "now": 492,
+      "rounds": 0,
+      "total": 10662,
+      "chatBlocks": 18,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 10662,
+      "readTokens": 9858,
+      "writeTokens": 312,
+      "eligible": true,
+      "chatEndTokens": 10170,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9245920090039392,
+     "result": "hit",
+     "sharedBlocks": 38
+    },
+    {
+     "n": 42,
+     "realMs": 1791287060673,
+     "simS": 204733,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4682,
+      "now": 746,
+      "rounds": 0,
+      "total": 10916,
+      "chatBlocks": 18,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 10916,
+      "readTokens": 5488,
+      "writeTokens": 4682,
+      "eligible": true,
+      "chatEndTokens": 10170,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.5027482594356907,
+     "result": "ttl",
+     "sharedBlocks": 39
+    },
+    {
+     "n": 44,
+     "realMs": 1791287060941,
+     "simS": 205524,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4952,
+      "now": 585,
+      "rounds": 0,
+      "total": 11025,
+      "chatBlocks": 19,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 11025,
+      "readTokens": 5488,
+      "writeTokens": 4952,
+      "eligible": true,
+      "chatEndTokens": 10440,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.49777777777777776,
+     "result": "edit",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 45,
+     "realMs": 1791287061030,
+     "simS": 205835,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4952,
+      "now": 602,
+      "rounds": 0,
+      "total": 11042,
+      "chatBlocks": 19,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 11042,
+      "readTokens": 10440,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 10440,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9454808911429089,
+     "result": "hit",
+     "sharedBlocks": 40
+    },
+    {
+     "n": 46,
+     "realMs": 1791287061385,
+     "simS": 207131,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 4952,
+      "now": 692,
+      "rounds": 0,
+      "total": 11132,
+      "chatBlocks": 19,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 11132,
+      "readTokens": 10440,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 10440,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9378368666906216,
+     "result": "hit",
+     "sharedBlocks": 40
+    },
+    {
+     "n": 47,
+     "realMs": 1791287061747,
+     "simS": 208419,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 5193,
+      "now": 561,
+      "rounds": 0,
+      "total": 11242,
+      "chatBlocks": 20,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 11242,
+      "readTokens": 10440,
+      "writeTokens": 241,
+      "eligible": true,
+      "chatEndTokens": 10681,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9286603807151752,
+     "result": "hit",
+     "sharedBlocks": 40
+    },
+    {
+     "n": 48,
+     "realMs": 1791287062590,
+     "simS": 211569,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 5193,
+      "now": 725,
+      "rounds": 0,
+      "total": 11406,
+      "chatBlocks": 20,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 11406,
+      "readTokens": 10681,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 10681,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9364369630019288,
+     "result": "hit",
+     "sharedBlocks": 41
+    },
+    {
+     "n": 49,
+     "realMs": 1791287062809,
+     "simS": 212400,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 5500,
+      "now": 512,
+      "rounds": 0,
+      "total": 11500,
+      "chatBlocks": 21,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 11500,
+      "readTokens": 10681,
+      "writeTokens": 307,
+      "eligible": true,
+      "chatEndTokens": 10988,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9287826086956522,
+     "result": "hit",
+     "sharedBlocks": 41
+    },
+    {
+     "n": 50,
+     "realMs": 1791287063076,
+     "simS": 213193,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 5500,
+      "now": 566,
+      "rounds": 0,
+      "total": 11554,
+      "chatBlocks": 21,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 11554,
+      "readTokens": 10988,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 10988,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9510126363164272,
+     "result": "hit",
+     "sharedBlocks": 42
+    },
+    {
+     "n": 51,
+     "realMs": 1791287063917,
+     "simS": 216372,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 5500,
+      "now": 741,
+      "rounds": 0,
+      "total": 11729,
+      "chatBlocks": 21,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 11729,
+      "readTokens": 10988,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 10988,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9368232585898201,
+     "result": "hit",
+     "sharedBlocks": 42
+    },
+    {
+     "n": 52,
+     "realMs": 1791287065241,
+     "simS": 221403,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 5729,
+      "now": 776,
+      "rounds": 0,
+      "total": 11993,
+      "chatBlocks": 22,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 11993,
+      "readTokens": 5488,
+      "writeTokens": 5729,
+      "eligible": true,
+      "chatEndTokens": 11217,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.45760026682231303,
+     "result": "ttl",
+     "sharedBlocks": 42
+    },
+    {
+     "n": 53,
+     "realMs": 1791287066318,
+     "simS": 225506,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 5997,
+      "now": 754,
+      "rounds": 0,
+      "total": 12239,
+      "chatBlocks": 23,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 12239,
+      "readTokens": 5488,
+      "writeTokens": 5997,
+      "eligible": true,
+      "chatEndTokens": 11485,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.44840264727510415,
+     "result": "ttl",
+     "sharedBlocks": 43
+    },
+    {
+     "n": 54,
+     "realMs": 1791287066843,
+     "simS": 227331,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 6236,
+      "now": 686,
+      "rounds": 0,
+      "total": 12410,
+      "chatBlocks": 24,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 12410,
+      "readTokens": 11485,
+      "writeTokens": 239,
+      "eligible": true,
+      "chatEndTokens": 11724,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9254633360193393,
+     "result": "hit",
+     "sharedBlocks": 44
+    },
+    {
+     "n": 55,
+     "realMs": 1791287066922,
+     "simS": 227424,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 6537,
+      "now": 409,
+      "rounds": 0,
+      "total": 12434,
+      "chatBlocks": 25,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 12434,
+      "readTokens": 11724,
+      "writeTokens": 301,
+      "eligible": true,
+      "chatEndTokens": 12025,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9428985041016568,
+     "result": "hit",
+     "sharedBlocks": 45
+    },
+    {
+     "n": 56,
+     "realMs": 1791287067506,
+     "simS": 229642,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 6537,
+      "now": 572,
+      "rounds": 0,
+      "total": 12597,
+      "chatBlocks": 25,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 12597,
+      "readTokens": 12025,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 12025,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9545923632610939,
+     "result": "hit",
+     "sharedBlocks": 46
+    },
+    {
+     "n": 57,
+     "realMs": 1791287067857,
+     "simS": 230941,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 6537,
+      "now": 660,
+      "rounds": 0,
+      "total": 12685,
+      "chatBlocks": 25,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 12685,
+      "readTokens": 12025,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 12025,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9479700433582972,
+     "result": "hit",
+     "sharedBlocks": 46
+    },
+    {
+     "n": 58,
+     "realMs": 1791287069098,
+     "simS": 235663,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 6818,
+      "now": 680,
+      "rounds": 0,
+      "total": 12986,
+      "chatBlocks": 26,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 12986,
+      "readTokens": 5488,
+      "writeTokens": 6818,
+      "eligible": true,
+      "chatEndTokens": 12306,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.42260896349915295,
+     "result": "ttl",
+     "sharedBlocks": 46
+    },
+    {
+     "n": 59,
+     "realMs": 1791287069209,
+     "simS": 236028,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7082,
+      "now": 412,
+      "rounds": 0,
+      "total": 12982,
+      "chatBlocks": 27,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 12982,
+      "readTokens": 12306,
+      "writeTokens": 264,
+      "eligible": true,
+      "chatEndTokens": 12570,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9479279001694654,
+     "result": "hit",
+     "sharedBlocks": 47
+    },
+    {
+     "n": 60,
+     "realMs": 1791287069830,
+     "simS": 238382,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7082,
+      "now": 599,
+      "rounds": 0,
+      "total": 13169,
+      "chatBlocks": 27,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13169,
+      "readTokens": 12570,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 12570,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9545143898549624,
+     "result": "hit",
+     "sharedBlocks": 48
+    },
+    {
+     "n": 61,
+     "realMs": 1791287069874,
+     "simS": 238565,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7082,
+      "now": 609,
+      "rounds": 0,
+      "total": 13179,
+      "chatBlocks": 27,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13179,
+      "readTokens": 12570,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 12570,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.953790120646483,
+     "result": "hit",
+     "sharedBlocks": 48
+    },
+    {
+     "n": 62,
+     "realMs": 1791287070098,
+     "simS": 239383,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7082,
+      "now": 681,
+      "rounds": 0,
+      "total": 13251,
+      "chatBlocks": 27,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13251,
+      "readTokens": 12570,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 12570,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9486076522526602,
+     "result": "hit",
+     "sharedBlocks": 48
+    },
+    {
+     "n": 63,
+     "realMs": 1791287070406,
+     "simS": 240548,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7082,
+      "now": 719,
+      "rounds": 0,
+      "total": 13289,
+      "chatBlocks": 27,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13289,
+      "readTokens": 12570,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 12570,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9458951012115283,
+     "result": "hit",
+     "sharedBlocks": 48
+    },
+    {
+     "n": 64,
+     "realMs": 1791287070452,
+     "simS": 240677,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7379,
+      "now": 450,
+      "rounds": 0,
+      "total": 13317,
+      "chatBlocks": 28,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13317,
+      "readTokens": 12570,
+      "writeTokens": 297,
+      "eligible": true,
+      "chatEndTokens": 12867,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9439062851993693,
+     "result": "hit",
+     "sharedBlocks": 48
+    },
+    {
+     "n": 65,
+     "realMs": 1791287070588,
+     "simS": 241200,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7379,
+      "now": 538,
+      "rounds": 0,
+      "total": 13405,
+      "chatBlocks": 28,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13405,
+      "readTokens": 12867,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 12867,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9598657217456174,
+     "result": "hit",
+     "sharedBlocks": 49
+    },
+    {
+     "n": 66,
+     "realMs": 1791287071563,
+     "simS": 244726,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7379,
+      "now": 743,
+      "rounds": 0,
+      "total": 13610,
+      "chatBlocks": 28,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13610,
+      "readTokens": 12867,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 12867,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.945407788390889,
+     "result": "hit",
+     "sharedBlocks": 49
+    },
+    {
+     "n": 67,
+     "realMs": 1791287072460,
+     "simS": 248082,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7671,
+      "now": 639,
+      "rounds": 0,
+      "total": 13798,
+      "chatBlocks": 29,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13798,
+      "readTokens": 12867,
+      "writeTokens": 292,
+      "eligible": true,
+      "chatEndTokens": 13159,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9325264531091463,
+     "result": "hit",
+     "sharedBlocks": 49
+    },
+    {
+     "n": 68,
+     "realMs": 1791287072636,
+     "simS": 248756,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7928,
+      "now": 454,
+      "rounds": 0,
+      "total": 13870,
+      "chatBlocks": 30,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13870,
+      "readTokens": 13159,
+      "writeTokens": 257,
+      "eligible": true,
+      "chatEndTokens": 13416,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9487382840663302,
+     "result": "hit",
+     "sharedBlocks": 50
+    },
+    {
+     "n": 69,
+     "realMs": 1791287073169,
+     "simS": 250726,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7928,
+      "now": 557,
+      "rounds": 0,
+      "total": 13973,
+      "chatBlocks": 30,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13973,
+      "readTokens": 13416,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 13416,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9601374078580118,
+     "result": "hit",
+     "sharedBlocks": 51
+    },
+    {
+     "n": 70,
+     "realMs": 1791287074949,
+     "simS": 257530,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8185,
+      "now": 727,
+      "rounds": 0,
+      "total": 14400,
+      "chatBlocks": 31,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14400,
+      "readTokens": 5488,
+      "writeTokens": 8185,
+      "eligible": true,
+      "chatEndTokens": 13673,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.3811111111111111,
+     "result": "ttl",
+     "sharedBlocks": 51
+    },
+    {
+     "n": 71,
+     "realMs": 1791287076416,
+     "simS": 297000,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8469,
+      "now": 763,
+      "rounds": 0,
+      "total": 14720,
+      "chatBlocks": 32,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14720,
+      "readTokens": 5488,
+      "writeTokens": 8469,
+      "eligible": true,
+      "chatEndTokens": 13957,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.37282608695652175,
+     "result": "ttl",
+     "sharedBlocks": 52
+    },
+    {
+     "n": 72,
+     "realMs": 1791287076694,
+     "simS": 297862,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8753,
+      "now": 585,
+      "rounds": 0,
+      "total": 14826,
+      "chatBlocks": 33,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14826,
+      "readTokens": 13957,
+      "writeTokens": 284,
+      "eligible": true,
+      "chatEndTokens": 14241,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9413867530014839,
+     "result": "hit",
+     "sharedBlocks": 53
+    },
+    {
+     "n": 73,
+     "realMs": 1791287076819,
+     "simS": 298355,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8753,
+      "now": 647,
+      "rounds": 0,
+      "total": 14888,
+      "chatBlocks": 33,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14888,
+      "readTokens": 14241,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14241,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9565421816227835,
+     "result": "hit",
+     "sharedBlocks": 54
+    },
+    {
+     "n": 74,
+     "realMs": 1791287076897,
+     "simS": 298497,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8753,
+      "now": 658,
+      "rounds": 0,
+      "total": 14899,
+      "chatBlocks": 33,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14899,
+      "readTokens": 14241,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14241,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9558359621451105,
+     "result": "hit",
+     "sharedBlocks": 54
+    },
+    {
+     "n": 75,
+     "realMs": 1791287077518,
+     "simS": 300827,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9011,
+      "now": 566,
+      "rounds": 0,
+      "total": 15065,
+      "chatBlocks": 34,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15065,
+      "readTokens": 14241,
+      "writeTokens": 258,
+      "eligible": true,
+      "chatEndTokens": 14499,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9453036840358446,
+     "result": "hit",
+     "sharedBlocks": 54
+    },
+    {
+     "n": 76,
+     "realMs": 1791287078503,
+     "simS": 304498,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9011,
+      "now": 729,
+      "rounds": 0,
+      "total": 15228,
+      "chatBlocks": 34,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15228,
+      "readTokens": 5488,
+      "writeTokens": 9011,
+      "eligible": true,
+      "chatEndTokens": 14499,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.3603887575518781,
+     "result": "ttl",
+     "sharedBlocks": 55
+    },
+    {
+     "n": 77,
+     "realMs": 1791287078791,
+     "simS": 305510,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9281,
+      "now": 579,
+      "rounds": 0,
+      "total": 15348,
+      "chatBlocks": 35,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15348,
+      "readTokens": 14499,
+      "writeTokens": 270,
+      "eligible": true,
+      "chatEndTokens": 14769,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9446833463643471,
+     "result": "hit",
+     "sharedBlocks": 55
+    },
+    {
+     "n": 78,
+     "realMs": 1791287079001,
+     "simS": 306166,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9281,
+      "now": 572,
+      "rounds": 0,
+      "total": 15341,
+      "chatBlocks": 35,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15341,
+      "readTokens": 14769,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14769,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9627142950263998,
+     "result": "hit",
+     "sharedBlocks": 56
+    },
+    {
+     "n": 79,
+     "realMs": 1791287079405,
+     "simS": 307671,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9281,
+      "now": 700,
+      "rounds": 0,
+      "total": 15469,
+      "chatBlocks": 35,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15469,
+      "readTokens": 14769,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14769,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9547482060895985,
+     "result": "hit",
+     "sharedBlocks": 56
+    },
+    {
+     "n": 80,
+     "realMs": 1791287079651,
+     "simS": 308510,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9527,
+      "now": 520,
+      "rounds": 0,
+      "total": 15535,
+      "chatBlocks": 36,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15535,
+      "readTokens": 14769,
+      "writeTokens": 246,
+      "eligible": true,
+      "chatEndTokens": 15015,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9506919858384294,
+     "result": "hit",
+     "sharedBlocks": 56
+    },
+    {
+     "n": 81,
+     "realMs": 1791287079693,
+     "simS": 308754,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9527,
+      "now": 531,
+      "rounds": 0,
+      "total": 15546,
+      "chatBlocks": 36,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15546,
+      "readTokens": 15015,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15015,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9658433037437283,
+     "result": "hit",
+     "sharedBlocks": 57
+    },
+    {
+     "n": 82,
+     "realMs": 1791287079738,
+     "simS": 308913,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9527,
+      "now": 511,
+      "rounds": 0,
+      "total": 15526,
+      "chatBlocks": 36,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15526,
+      "readTokens": 15015,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15015,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9670874661857529,
+     "result": "hit",
+     "sharedBlocks": 57
+    },
+    {
+     "n": 83,
+     "realMs": 1791287079937,
+     "simS": 309606,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9527,
+      "now": 550,
+      "rounds": 0,
+      "total": 15565,
+      "chatBlocks": 36,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15565,
+      "readTokens": 15015,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15015,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9646643109540636,
+     "result": "hit",
+     "sharedBlocks": 57
+    },
+    {
+     "n": 84,
+     "realMs": 1791287079983,
+     "simS": 309718,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9527,
+      "now": 561,
+      "rounds": 0,
+      "total": 15576,
+      "chatBlocks": 36,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15576,
+      "readTokens": 15015,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15015,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9639830508474576,
+     "result": "hit",
+     "sharedBlocks": 57
+    },
+    {
+     "n": 85,
+     "realMs": 1791287080293,
+     "simS": 310912,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9527,
+      "now": 669,
+      "rounds": 0,
+      "total": 15684,
+      "chatBlocks": 36,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15684,
+      "readTokens": 15015,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15015,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.95734506503443,
+     "result": "hit",
+     "sharedBlocks": 57
+    },
+    {
+     "n": 86,
+     "realMs": 1791287080336,
+     "simS": 311055,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9527,
+      "now": 679,
+      "rounds": 0,
+      "total": 15694,
+      "chatBlocks": 36,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15694,
+      "readTokens": 15015,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15015,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9567350579839429,
+     "result": "hit",
+     "sharedBlocks": 57
+    },
+    {
+     "n": 87,
+     "realMs": 1791287080426,
+     "simS": 311358,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9806,
+      "now": 424,
+      "rounds": 0,
+      "total": 15718,
+      "chatBlocks": 37,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15718,
+      "readTokens": 15015,
+      "writeTokens": 279,
+      "eligible": true,
+      "chatEndTokens": 15294,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9552742079144929,
+     "result": "hit",
+     "sharedBlocks": 57
+    },
+    {
+     "n": 88,
+     "realMs": 1791287081000,
+     "simS": 313575,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9806,
+      "now": 528,
+      "rounds": 0,
+      "total": 15822,
+      "chatBlocks": 37,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15822,
+      "readTokens": 15294,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15294,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9666287447857413,
+     "result": "hit",
+     "sharedBlocks": 58
+    },
+    {
+     "n": 89,
+     "realMs": 1791287081357,
+     "simS": 314876,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9806,
+      "now": 663,
+      "rounds": 0,
+      "total": 15957,
+      "chatBlocks": 37,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15957,
+      "readTokens": 15294,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15294,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9584508366234255,
+     "result": "hit",
+     "sharedBlocks": 58
+    },
+    {
+     "n": 90,
+     "realMs": 1791287082029,
+     "simS": 317386,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9806,
+      "now": 818,
+      "rounds": 0,
+      "total": 16112,
+      "chatBlocks": 37,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16112,
+      "readTokens": 15294,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15294,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9492303872889771,
+     "result": "hit",
+     "sharedBlocks": 58
+    },
+    {
+     "n": 91,
+     "realMs": 1791287082429,
+     "simS": 318962,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10114,
+      "now": 633,
+      "rounds": 0,
+      "total": 16235,
+      "chatBlocks": 38,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16235,
+      "readTokens": 15294,
+      "writeTokens": 308,
+      "eligible": true,
+      "chatEndTokens": 15602,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9420388050508162,
+     "result": "hit",
+     "sharedBlocks": 58
+    },
+    {
+     "n": 92,
+     "realMs": 1791287082475,
+     "simS": 319142,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10114,
+      "now": 610,
+      "rounds": 0,
+      "total": 16212,
+      "chatBlocks": 38,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16212,
+      "readTokens": 15602,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15602,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.962373550456452,
+     "result": "hit",
+     "sharedBlocks": 59
+    },
+    {
+     "n": 93,
+     "realMs": 1791287082608,
+     "simS": 319649,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10114,
+      "now": 685,
+      "rounds": 0,
+      "total": 16287,
+      "chatBlocks": 38,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16287,
+      "readTokens": 15602,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15602,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9579419168662123,
+     "result": "hit",
+     "sharedBlocks": 59
+    },
+    {
+     "n": 94,
+     "realMs": 1791287083233,
+     "simS": 321994,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10387,
+      "now": 586,
+      "rounds": 0,
+      "total": 16461,
+      "chatBlocks": 39,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16461,
+      "readTokens": 15602,
+      "writeTokens": 273,
+      "eligible": true,
+      "chatEndTokens": 15875,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9478160500577122,
+     "result": "hit",
+     "sharedBlocks": 59
+    },
+    {
+     "n": 95,
+     "realMs": 1791287083412,
+     "simS": 322572,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10387,
+      "now": 648,
+      "rounds": 0,
+      "total": 16523,
+      "chatBlocks": 39,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16523,
+      "readTokens": 15875,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15875,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9607819403256067,
+     "result": "hit",
+     "sharedBlocks": 60
+    },
+    {
+     "n": 96,
+     "realMs": 1791287083898,
+     "simS": 324493,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10387,
+      "now": 704,
+      "rounds": 0,
+      "total": 16579,
+      "chatBlocks": 39,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16579,
+      "readTokens": 15875,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15875,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9575366427408167,
+     "result": "hit",
+     "sharedBlocks": 60
+    },
+    {
+     "n": 97,
+     "realMs": 1791287084255,
+     "simS": 325800,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10688,
+      "now": 542,
+      "rounds": 0,
+      "total": 16718,
+      "chatBlocks": 40,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16718,
+      "readTokens": 15875,
+      "writeTokens": 301,
+      "eligible": true,
+      "chatEndTokens": 16176,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9495753080512023,
+     "result": "hit",
+     "sharedBlocks": 60
+    },
+    {
+     "n": 98,
+     "realMs": 1791287084835,
+     "simS": 327781,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10688,
+      "now": 646,
+      "rounds": 0,
+      "total": 16822,
+      "chatBlocks": 40,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16822,
+      "readTokens": 16176,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16176,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9615979075020806,
+     "result": "hit",
+     "sharedBlocks": 61
+    },
+    {
+     "n": 99,
+     "realMs": 1791287085144,
+     "simS": 328945,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10956,
+      "now": 462,
+      "rounds": 0,
+      "total": 16906,
+      "chatBlocks": 41,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16906,
+      "readTokens": 16176,
+      "writeTokens": 268,
+      "eligible": true,
+      "chatEndTokens": 16444,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9568200638826452,
+     "result": "hit",
+     "sharedBlocks": 61
+    },
+    {
+     "n": 100,
+     "realMs": 1791287085414,
+     "simS": 329985,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10956,
+      "now": 567,
+      "rounds": 0,
+      "total": 17011,
+      "chatBlocks": 41,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17011,
+      "readTokens": 16444,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16444,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.966668626183058,
+     "result": "hit",
+     "sharedBlocks": 62
+    },
+    {
+     "n": 101,
+     "realMs": 1791287085867,
+     "simS": 331595,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10956,
+      "now": 631,
+      "rounds": 0,
+      "total": 17075,
+      "chatBlocks": 41,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17075,
+      "readTokens": 16444,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16444,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9630453879941435,
+     "result": "hit",
+     "sharedBlocks": 62
+    },
+    {
+     "n": 102,
+     "realMs": 1791287085960,
+     "simS": 331936,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10956,
+      "now": 692,
+      "rounds": 0,
+      "total": 17136,
+      "chatBlocks": 41,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17136,
+      "readTokens": 16444,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16444,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9596171802054155,
+     "result": "hit",
+     "sharedBlocks": 62
+    },
+    {
+     "n": 103,
+     "realMs": 1791287086588,
+     "simS": 334312,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11236,
+      "now": 579,
+      "rounds": 0,
+      "total": 17303,
+      "chatBlocks": 42,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17303,
+      "readTokens": 16444,
+      "writeTokens": 280,
+      "eligible": true,
+      "chatEndTokens": 16724,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9503554296942727,
+     "result": "hit",
+     "sharedBlocks": 62
+    },
+    {
+     "n": 104,
+     "realMs": 1791287087327,
+     "simS": 336927,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11236,
+      "now": 711,
+      "rounds": 0,
+      "total": 17435,
+      "chatBlocks": 42,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17435,
+      "readTokens": 16724,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16724,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9592199598508747,
+     "result": "hit",
+     "sharedBlocks": 63
+    },
+    {
+     "n": 105,
+     "realMs": 1791287087550,
+     "simS": 337784,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11500,
+      "now": 568,
+      "rounds": 0,
+      "total": 17556,
+      "chatBlocks": 43,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17556,
+      "readTokens": 16724,
+      "writeTokens": 264,
+      "eligible": true,
+      "chatEndTokens": 16988,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9526087947140579,
+     "result": "hit",
+     "sharedBlocks": 63
+    },
+    {
+     "n": 106,
+     "realMs": 1791287087706,
+     "simS": 338286,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11500,
+      "now": 573,
+      "rounds": 0,
+      "total": 17561,
+      "chatBlocks": 43,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17561,
+      "readTokens": 16988,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16988,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9673708786515575,
+     "result": "hit",
+     "sharedBlocks": 64
+    },
+    {
+     "n": 107,
+     "realMs": 1791287088901,
+     "simS": 342648,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11500,
+      "now": 871,
+      "rounds": 0,
+      "total": 17859,
+      "chatBlocks": 43,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17859,
+      "readTokens": 5488,
+      "writeTokens": 11500,
+      "eligible": true,
+      "chatEndTokens": 16988,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.307296041211714,
+     "result": "ttl",
+     "sharedBlocks": 64
+    },
+    {
+     "n": 108,
+     "realMs": 1791287089644,
+     "simS": 378085,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11821,
+      "now": 673,
+      "rounds": 0,
+      "total": 17982,
+      "chatBlocks": 44,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17982,
+      "readTokens": 5488,
+      "writeTokens": 11821,
+      "eligible": true,
+      "chatEndTokens": 17309,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.30519408297186074,
+     "result": "ttl",
+     "sharedBlocks": 64
+    },
+    {
+     "n": 109,
+     "realMs": 1791287089856,
+     "simS": 378789,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12070,
+      "now": 527,
+      "rounds": 0,
+      "total": 18085,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18085,
+      "readTokens": 17309,
+      "writeTokens": 249,
+      "eligible": true,
+      "chatEndTokens": 17558,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9570915123030136,
+     "result": "hit",
+     "sharedBlocks": 65
+    },
+    {
+     "n": 110,
+     "realMs": 1791287089891,
+     "simS": 378958,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12070,
+      "now": 539,
+      "rounds": 0,
+      "total": 18097,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18097,
+      "readTokens": 17558,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17558,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9702160579101509,
+     "result": "hit",
+     "sharedBlocks": 66
+    },
+    {
+     "n": 111,
+     "realMs": 1791287090026,
+     "simS": 379409,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12070,
+      "now": 541,
+      "rounds": 0,
+      "total": 18099,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18099,
+      "readTokens": 17558,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17558,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9701088457925853,
+     "result": "hit",
+     "sharedBlocks": 66
+    },
+    {
+     "n": 112,
+     "realMs": 1791287090161,
+     "simS": 379931,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12070,
+      "now": 572,
+      "rounds": 0,
+      "total": 18130,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18130,
+      "readTokens": 17558,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17558,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.968450082735797,
+     "result": "hit",
+     "sharedBlocks": 66
+    },
+    {
+     "n": 113,
+     "realMs": 1791287090298,
+     "simS": 380480,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12070,
+      "now": 639,
+      "rounds": 0,
+      "total": 18197,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18197,
+      "readTokens": 17558,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17558,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9648843215914711,
+     "result": "hit",
+     "sharedBlocks": 66
+    },
+    {
+     "n": 114,
+     "realMs": 1791287091151,
+     "simS": 383454,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12057,
+      "now": 776,
+      "rounds": 0,
+      "total": 18321,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18321,
+      "readTokens": 5488,
+      "writeTokens": 12057,
+      "eligible": true,
+      "chatEndTokens": 17545,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.2995469679602642,
+     "result": "delete",
+     "sharedBlocks": 27
+    },
+    {
+     "n": 115,
+     "realMs": 1791287091637,
+     "simS": 385258,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12351,
+      "now": 614,
+      "rounds": 0,
+      "total": 18453,
+      "chatBlocks": 46,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18453,
+      "readTokens": 17545,
+      "writeTokens": 294,
+      "eligible": true,
+      "chatEndTokens": 17839,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9507939088495095,
+     "result": "hit",
+     "sharedBlocks": 66
+    },
+    {
+     "n": 116,
+     "realMs": 1791287091997,
+     "simS": 386573,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12351,
+      "now": 741,
+      "rounds": 0,
+      "total": 18580,
+      "chatBlocks": 46,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18580,
+      "readTokens": 17839,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17839,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9601184068891281,
+     "result": "hit",
+     "sharedBlocks": 67
+    },
+    {
+     "n": 117,
+     "realMs": 1791287092176,
+     "simS": 387224,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12626,
+      "now": 484,
+      "rounds": 0,
+      "total": 18598,
+      "chatBlocks": 47,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18598,
+      "readTokens": 17839,
+      "writeTokens": 275,
+      "eligible": true,
+      "chatEndTokens": 18114,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9591891601247446,
+     "result": "hit",
+     "sharedBlocks": 67
+    },
+    {
+     "n": 118,
+     "realMs": 1791287092358,
+     "simS": 387921,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12626,
+      "now": 529,
+      "rounds": 0,
+      "total": 18643,
+      "chatBlocks": 47,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18643,
+      "readTokens": 18114,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18114,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9716247385077509,
+     "result": "hit",
+     "sharedBlocks": 68
+    },
+    {
+     "n": 119,
+     "realMs": 1791287092756,
+     "simS": 389425,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12626,
+      "now": 670,
+      "rounds": 0,
+      "total": 18784,
+      "chatBlocks": 47,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18784,
+      "readTokens": 18114,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18114,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9643313458262351,
+     "result": "hit",
+     "sharedBlocks": 68
+    },
+    {
+     "n": 120,
+     "realMs": 1791287093557,
+     "simS": 392400,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12626,
+      "now": 850,
+      "rounds": 0,
+      "total": 18964,
+      "chatBlocks": 47,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18964,
+      "readTokens": 18114,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18114,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9551782324404134,
+     "result": "hit",
+     "sharedBlocks": 68
+    },
+    {
+     "n": 121,
+     "realMs": 1791287094043,
+     "simS": 394072,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12913,
+      "now": 666,
+      "rounds": 0,
+      "total": 19067,
+      "chatBlocks": 48,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19067,
+      "readTokens": 18114,
+      "writeTokens": 287,
+      "eligible": true,
+      "chatEndTokens": 18401,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9500183563224419,
+     "result": "hit",
+     "sharedBlocks": 68
+    },
+    {
+     "n": 122,
+     "realMs": 1791287094264,
+     "simS": 394873,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13191,
+      "now": 480,
+      "rounds": 0,
+      "total": 19159,
+      "chatBlocks": 49,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19159,
+      "readTokens": 18401,
+      "writeTokens": 278,
+      "eligible": true,
+      "chatEndTokens": 18679,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9604363484524244,
+     "result": "hit",
+     "sharedBlocks": 69
+    },
+    {
+     "n": 123,
+     "realMs": 1791287094354,
+     "simS": 395270,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13191,
+      "now": 503,
+      "rounds": 0,
+      "total": 19182,
+      "chatBlocks": 49,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19182,
+      "readTokens": 18679,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18679,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9737774997393389,
+     "result": "hit",
+     "sharedBlocks": 70
+    },
+    {
+     "n": 124,
+     "realMs": 1791287095113,
+     "simS": 398043,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13191,
+      "now": 659,
+      "rounds": 0,
+      "total": 19338,
+      "chatBlocks": 49,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19338,
+      "readTokens": 18679,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18679,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9659220188230427,
+     "result": "hit",
+     "sharedBlocks": 70
+    },
+    {
+     "n": 125,
+     "realMs": 1791287095670,
+     "simS": 400133,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13475,
+      "now": 508,
+      "rounds": 0,
+      "total": 19471,
+      "chatBlocks": 50,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19471,
+      "readTokens": 18679,
+      "writeTokens": 284,
+      "eligible": true,
+      "chatEndTokens": 18963,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9593241230547994,
+     "result": "hit",
+     "sharedBlocks": 70
+    },
+    {
+     "n": 126,
+     "realMs": 1791287095756,
+     "simS": 400417,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13475,
+      "now": 537,
+      "rounds": 0,
+      "total": 19500,
+      "chatBlocks": 50,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19500,
+      "readTokens": 18963,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18963,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9724615384615385,
+     "result": "hit",
+     "sharedBlocks": 71
+    },
+    {
+     "n": 127,
+     "realMs": 1791287096118,
+     "simS": 401631,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13475,
+      "now": 643,
+      "rounds": 0,
+      "total": 19606,
+      "chatBlocks": 50,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19606,
+      "readTokens": 18963,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18963,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9672039171682139,
+     "result": "hit",
+     "sharedBlocks": 71
+    },
+    {
+     "n": 128,
+     "realMs": 1791287096693,
+     "simS": 403800,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13475,
+      "now": 783,
+      "rounds": 0,
+      "total": 19746,
+      "chatBlocks": 50,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19746,
+      "readTokens": 18963,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18963,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9603463992707384,
+     "result": "hit",
+     "sharedBlocks": 71
+    },
+    {
+     "n": 129,
+     "realMs": 1791287096760,
+     "simS": 403963,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13750,
+      "now": 533,
+      "rounds": 0,
+      "total": 19771,
+      "chatBlocks": 51,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19771,
+      "readTokens": 18963,
+      "writeTokens": 275,
+      "eligible": true,
+      "chatEndTokens": 19238,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.959132062111173,
+     "result": "hit",
+     "sharedBlocks": 71
+    },
+    {
+     "n": 130,
+     "realMs": 1791287096808,
+     "simS": 404164,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13750,
+      "now": 548,
+      "rounds": 0,
+      "total": 19786,
+      "chatBlocks": 51,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19786,
+      "readTokens": 19238,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 19238,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9723036490447792,
+     "result": "hit",
+     "sharedBlocks": 72
+    },
+    {
+     "n": 131,
+     "realMs": 1791287096995,
+     "simS": 404837,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13750,
+      "now": 578,
+      "rounds": 0,
+      "total": 19816,
+      "chatBlocks": 51,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19816,
+      "readTokens": 19238,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 19238,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9708316511909568,
+     "result": "hit",
+     "sharedBlocks": 72
+    },
+    {
+     "n": 133,
+     "realMs": 1791287101537,
+     "simS": 406804,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13750,
+      "now": 751,
+      "rounds": 0,
+      "total": 19989,
+      "chatBlocks": 51,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19989,
+      "readTokens": 19238,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 19238,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9624293361348741,
+     "result": "hit",
+     "sharedBlocks": 72
+    },
+    {
+     "n": 135,
+     "realMs": 1791287101800,
+     "simS": 407681,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7271,
+      "now": 461,
+      "rounds": 0,
+      "total": 13220,
+      "chatBlocks": 28,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13220,
+      "readTokens": 5488,
+      "writeTokens": 7271,
+      "eligible": true,
+      "chatEndTokens": 12759,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.4151285930408472,
+     "result": "fold",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 136,
+     "realMs": 1791287101955,
+     "simS": 408108,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7271,
+      "now": 523,
+      "rounds": 0,
+      "total": 13282,
+      "chatBlocks": 28,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13282,
+      "readTokens": 12759,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 12759,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9606234000903479,
+     "result": "hit",
+     "sharedBlocks": 49
+    },
+    {
+     "n": 137,
+     "realMs": 1791287103208,
+     "simS": 412792,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7271,
+      "now": 795,
+      "rounds": 0,
+      "total": 13554,
+      "chatBlocks": 28,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13554,
+      "readTokens": 5488,
+      "writeTokens": 7271,
+      "eligible": true,
+      "chatEndTokens": 12759,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.4048989228272097,
+     "result": "ttl",
+     "sharedBlocks": 49
+    },
+    {
+     "n": 138,
+     "realMs": 1791287103296,
+     "simS": 413126,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7518,
+      "now": 559,
+      "rounds": 0,
+      "total": 13565,
+      "chatBlocks": 29,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13565,
+      "readTokens": 12759,
+      "writeTokens": 247,
+      "eligible": true,
+      "chatEndTokens": 13006,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9405823811279027,
+     "result": "hit",
+     "sharedBlocks": 49
+    },
+    {
+     "n": 139,
+     "realMs": 1791287104148,
+     "simS": 416326,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7518,
+      "now": 823,
+      "rounds": 0,
+      "total": 13829,
+      "chatBlocks": 29,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13829,
+      "readTokens": 13006,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 13006,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9404873815894136,
+     "result": "hit",
+     "sharedBlocks": 50
+    },
+    {
+     "n": 140,
+     "realMs": 1791287104440,
+     "simS": 417396,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7779,
+      "now": 616,
+      "rounds": 0,
+      "total": 13883,
+      "chatBlocks": 30,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13883,
+      "readTokens": 13006,
+      "writeTokens": 261,
+      "eligible": true,
+      "chatEndTokens": 13267,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9368292155874091,
+     "result": "hit",
+     "sharedBlocks": 50
+    },
+    {
+     "n": 141,
+     "realMs": 1791287104530,
+     "simS": 417675,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7779,
+      "now": 632,
+      "rounds": 0,
+      "total": 13899,
+      "chatBlocks": 30,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13899,
+      "readTokens": 13267,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 13267,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9545291028131521,
+     "result": "hit",
+     "sharedBlocks": 51
+    },
+    {
+     "n": 142,
+     "realMs": 1791287105303,
+     "simS": 420574,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7779,
+      "now": 830,
+      "rounds": 0,
+      "total": 14097,
+      "chatBlocks": 30,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14097,
+      "readTokens": 13267,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 13267,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9411222245867915,
+     "result": "hit",
+     "sharedBlocks": 51
+    },
+    {
+     "n": 143,
+     "realMs": 1791287105652,
+     "simS": 421859,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8066,
+      "now": 597,
+      "rounds": 0,
+      "total": 14151,
+      "chatBlocks": 31,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14151,
+      "readTokens": 13267,
+      "writeTokens": 287,
+      "eligible": true,
+      "chatEndTokens": 13554,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9375309165430005,
+     "result": "hit",
+     "sharedBlocks": 51
+    },
+    {
+     "n": 144,
+     "realMs": 1791287106057,
+     "simS": 423441,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8066,
+      "now": 744,
+      "rounds": 0,
+      "total": 14298,
+      "chatBlocks": 31,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14298,
+      "readTokens": 13554,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 13554,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9479647503147294,
+     "result": "hit",
+     "sharedBlocks": 52
+    },
+    {
+     "n": 145,
+     "realMs": 1791287106326,
+     "simS": 424389,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8319,
+      "now": 562,
+      "rounds": 0,
+      "total": 14369,
+      "chatBlocks": 32,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14369,
+      "readTokens": 13554,
+      "writeTokens": 253,
+      "eligible": true,
+      "chatEndTokens": 13807,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9432806736724894,
+     "result": "hit",
+     "sharedBlocks": 52
+    },
+    {
+     "n": 146,
+     "realMs": 1791287106459,
+     "simS": 424940,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8319,
+      "now": 600,
+      "rounds": 0,
+      "total": 14407,
+      "chatBlocks": 32,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14407,
+      "readTokens": 13807,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 13807,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9583535781217464,
+     "result": "hit",
+     "sharedBlocks": 53
+    },
+    {
+     "n": 147,
+     "realMs": 1791287107713,
+     "simS": 429631,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8319,
+      "now": 900,
+      "rounds": 0,
+      "total": 14707,
+      "chatBlocks": 32,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14707,
+      "readTokens": 5488,
+      "writeTokens": 8319,
+      "eligible": true,
+      "chatEndTokens": 13807,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.373155640171347,
+     "result": "ttl",
+     "sharedBlocks": 53
+    },
+    {
+     "n": 148,
+     "realMs": 1791287108245,
+     "simS": 464764,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8637,
+      "now": 704,
+      "rounds": 0,
+      "total": 14829,
+      "chatBlocks": 33,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14829,
+      "readTokens": 5488,
+      "writeTokens": 8637,
+      "eligible": true,
+      "chatEndTokens": 14125,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.37008564299683055,
+     "result": "ttl",
+     "sharedBlocks": 53
+    },
+    {
+     "n": 149,
+     "realMs": 1791287108464,
+     "simS": 465433,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8879,
+      "now": 525,
+      "rounds": 0,
+      "total": 14892,
+      "chatBlocks": 34,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14892,
+      "readTokens": 14125,
+      "writeTokens": 242,
+      "eligible": true,
+      "chatEndTokens": 14367,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9484958366908407,
+     "result": "hit",
+     "sharedBlocks": 54
+    },
+    {
+     "n": 150,
+     "realMs": 1791287108575,
+     "simS": 465724,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8879,
+      "now": 537,
+      "rounds": 0,
+      "total": 14904,
+      "chatBlocks": 34,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14904,
+      "readTokens": 14367,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14367,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9639694041867954,
+     "result": "hit",
+     "sharedBlocks": 55
+    },
+    {
+     "n": 151,
+     "realMs": 1791287108982,
+     "simS": 467267,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8879,
+      "now": 588,
+      "rounds": 0,
+      "total": 14955,
+      "chatBlocks": 34,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 14955,
+      "readTokens": 14367,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14367,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9606820461384152,
+     "result": "hit",
+     "sharedBlocks": 55
+    },
+    {
+     "n": 152,
+     "realMs": 1791287109292,
+     "simS": 468356,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 8879,
+      "now": 703,
+      "rounds": 0,
+      "total": 15070,
+      "chatBlocks": 34,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15070,
+      "readTokens": 14367,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14367,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9533510285335103,
+     "result": "hit",
+     "sharedBlocks": 55
+    },
+    {
+     "n": 153,
+     "realMs": 1791287109667,
+     "simS": 469739,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9153,
+      "now": 489,
+      "rounds": 0,
+      "total": 15130,
+      "chatBlocks": 35,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15130,
+      "readTokens": 14367,
+      "writeTokens": 274,
+      "eligible": true,
+      "chatEndTokens": 14641,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9495703899537343,
+     "result": "hit",
+     "sharedBlocks": 55
+    },
+    {
+     "n": 154,
+     "realMs": 1791287110111,
+     "simS": 471392,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9153,
+      "now": 640,
+      "rounds": 0,
+      "total": 15281,
+      "chatBlocks": 35,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15281,
+      "readTokens": 14641,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14641,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9581179242196192,
+     "result": "hit",
+     "sharedBlocks": 56
+    },
+    {
+     "n": 155,
+     "realMs": 1791287110157,
+     "simS": 471524,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9153,
+      "now": 651,
+      "rounds": 0,
+      "total": 15292,
+      "chatBlocks": 35,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15292,
+      "readTokens": 14641,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14641,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9574287208998169,
+     "result": "hit",
+     "sharedBlocks": 56
+    },
+    {
+     "n": 156,
+     "realMs": 1791287110648,
+     "simS": 473400,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9153,
+      "now": 716,
+      "rounds": 0,
+      "total": 15357,
+      "chatBlocks": 35,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15357,
+      "readTokens": 14641,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14641,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9533763104773068,
+     "result": "hit",
+     "sharedBlocks": 56
+    },
+    {
+     "n": 157,
+     "realMs": 1791287111271,
+     "simS": 475564,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9432,
+      "now": 610,
+      "rounds": 0,
+      "total": 15530,
+      "chatBlocks": 36,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15530,
+      "readTokens": 14641,
+      "writeTokens": 279,
+      "eligible": true,
+      "chatEndTokens": 14920,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9427559562137798,
+     "result": "hit",
+     "sharedBlocks": 56
+    },
+    {
+     "n": 158,
+     "realMs": 1791287111838,
+     "simS": 477713,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9432,
+      "now": 749,
+      "rounds": 0,
+      "total": 15669,
+      "chatBlocks": 36,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15669,
+      "readTokens": 14920,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 14920,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9521986087178506,
+     "result": "hit",
+     "sharedBlocks": 57
+    },
+    {
+     "n": 159,
+     "realMs": 1791287111971,
+     "simS": 478215,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9675,
+      "now": 525,
+      "rounds": 0,
+      "total": 15688,
+      "chatBlocks": 37,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15688,
+      "readTokens": 14920,
+      "writeTokens": 243,
+      "eligible": true,
+      "chatEndTokens": 15163,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9510453850076491,
+     "result": "hit",
+     "sharedBlocks": 57
+    },
+    {
+     "n": 160,
+     "realMs": 1791287112319,
+     "simS": 479571,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9675,
+      "now": 596,
+      "rounds": 0,
+      "total": 15759,
+      "chatBlocks": 37,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15759,
+      "readTokens": 15163,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15163,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9621803413922203,
+     "result": "hit",
+     "sharedBlocks": 58
+    },
+    {
+     "n": 161,
+     "realMs": 1791287112365,
+     "simS": 479704,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9675,
+      "now": 650,
+      "rounds": 0,
+      "total": 15813,
+      "chatBlocks": 37,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15813,
+      "readTokens": 15163,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15163,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9588945804085246,
+     "result": "hit",
+     "sharedBlocks": 58
+    },
+    {
+     "n": 162,
+     "realMs": 1791287112763,
+     "simS": 481258,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9675,
+      "now": 725,
+      "rounds": 0,
+      "total": 15888,
+      "chatBlocks": 37,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 15888,
+      "readTokens": 15163,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15163,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9543680765357503,
+     "result": "hit",
+     "sharedBlocks": 58
+    },
+    {
+     "n": 163,
+     "realMs": 1791287113383,
+     "simS": 483609,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9944,
+      "now": 612,
+      "rounds": 0,
+      "total": 16044,
+      "chatBlocks": 38,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16044,
+      "readTokens": 15163,
+      "writeTokens": 269,
+      "eligible": true,
+      "chatEndTokens": 15432,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9450885066068312,
+     "result": "hit",
+     "sharedBlocks": 58
+    },
+    {
+     "n": 164,
+     "realMs": 1791287113477,
+     "simS": 483908,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9944,
+      "now": 627,
+      "rounds": 0,
+      "total": 16059,
+      "chatBlocks": 38,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16059,
+      "readTokens": 15432,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15432,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9609564730057911,
+     "result": "hit",
+     "sharedBlocks": 59
+    },
+    {
+     "n": 165,
+     "realMs": 1791287114483,
+     "simS": 487776,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 9944,
+      "now": 814,
+      "rounds": 0,
+      "total": 16246,
+      "chatBlocks": 38,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16246,
+      "readTokens": 5488,
+      "writeTokens": 9944,
+      "eligible": true,
+      "chatEndTokens": 15432,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.33780622922565556,
+     "result": "ttl",
+     "sharedBlocks": 59
+    },
+    {
+     "n": 166,
+     "realMs": 1791287114800,
+     "simS": 488903,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10195,
+      "now": 681,
+      "rounds": 0,
+      "total": 16364,
+      "chatBlocks": 39,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16364,
+      "readTokens": 15432,
+      "writeTokens": 251,
+      "eligible": true,
+      "chatEndTokens": 15683,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9430457100953312,
+     "result": "hit",
+     "sharedBlocks": 59
+    },
+    {
+     "n": 167,
+     "realMs": 1791287115001,
+     "simS": 489600,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10452,
+      "now": 489,
+      "rounds": 0,
+      "total": 16429,
+      "chatBlocks": 40,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16429,
+      "readTokens": 15683,
+      "writeTokens": 257,
+      "eligible": true,
+      "chatEndTokens": 15940,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9545924888915941,
+     "result": "hit",
+     "sharedBlocks": 60
+    },
+    {
+     "n": 168,
+     "realMs": 1791287115220,
+     "simS": 490317,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10452,
+      "now": 524,
+      "rounds": 0,
+      "total": 16464,
+      "chatBlocks": 40,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16464,
+      "readTokens": 15940,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15940,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.968172983479106,
+     "result": "hit",
+     "sharedBlocks": 61
+    },
+    {
+     "n": 169,
+     "realMs": 1791287115441,
+     "simS": 491155,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10452,
+      "now": 567,
+      "rounds": 0,
+      "total": 16507,
+      "chatBlocks": 40,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16507,
+      "readTokens": 15940,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15940,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9656509359665596,
+     "result": "hit",
+     "sharedBlocks": 61
+    },
+    {
+     "n": 170,
+     "realMs": 1791287115965,
+     "simS": 493107,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10452,
+      "now": 704,
+      "rounds": 0,
+      "total": 16644,
+      "chatBlocks": 40,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16644,
+      "readTokens": 15940,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 15940,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9577024753664984,
+     "result": "hit",
+     "sharedBlocks": 61
+    },
+    {
+     "n": 171,
+     "realMs": 1791287116034,
+     "simS": 493269,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10722,
+      "now": 461,
+      "rounds": 0,
+      "total": 16671,
+      "chatBlocks": 41,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16671,
+      "readTokens": 15940,
+      "writeTokens": 270,
+      "eligible": true,
+      "chatEndTokens": 16210,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9561514006358347,
+     "result": "hit",
+     "sharedBlocks": 61
+    },
+    {
+     "n": 172,
+     "realMs": 1791287116518,
+     "simS": 495133,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10722,
+      "now": 576,
+      "rounds": 0,
+      "total": 16786,
+      "chatBlocks": 41,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 16786,
+      "readTokens": 16210,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16210,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9656856904563327,
+     "result": "hit",
+     "sharedBlocks": 62
+    },
+    {
+     "n": 173,
+     "realMs": 1791287117364,
+     "simS": 498334,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 10722,
+      "now": 794,
+      "rounds": 0,
+      "total": 17004,
+      "chatBlocks": 41,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17004,
+      "readTokens": 16210,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16210,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9533051046812515,
+     "result": "hit",
+     "sharedBlocks": 62
+    },
+    {
+     "n": 174,
+     "realMs": 1791287117997,
+     "simS": 500654,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11013,
+      "now": 659,
+      "rounds": 0,
+      "total": 17160,
+      "chatBlocks": 42,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17160,
+      "readTokens": 16210,
+      "writeTokens": 291,
+      "eligible": true,
+      "chatEndTokens": 16501,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9446386946386947,
+     "result": "hit",
+     "sharedBlocks": 62
+    },
+    {
+     "n": 175,
+     "realMs": 1791287118216,
+     "simS": 501516,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11013,
+      "now": 752,
+      "rounds": 0,
+      "total": 17253,
+      "chatBlocks": 42,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17253,
+      "readTokens": 16501,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16501,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9564133773836434,
+     "result": "hit",
+     "sharedBlocks": 63
+    },
+    {
+     "n": 176,
+     "realMs": 1791287118436,
+     "simS": 502288,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11333,
+      "now": 502,
+      "rounds": 0,
+      "total": 17323,
+      "chatBlocks": 43,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17323,
+      "readTokens": 16501,
+      "writeTokens": 320,
+      "eligible": true,
+      "chatEndTokens": 16821,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9525486347630318,
+     "result": "hit",
+     "sharedBlocks": 63
+    },
+    {
+     "n": 177,
+     "realMs": 1791287118925,
+     "simS": 504125,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11333,
+      "now": 615,
+      "rounds": 0,
+      "total": 17436,
+      "chatBlocks": 43,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17436,
+      "readTokens": 16821,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16821,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9647281486579491,
+     "result": "hit",
+     "sharedBlocks": 64
+    },
+    {
+     "n": 178,
+     "realMs": 1791287119058,
+     "simS": 504708,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11333,
+      "now": 669,
+      "rounds": 0,
+      "total": 17490,
+      "chatBlocks": 43,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17490,
+      "readTokens": 16821,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16821,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9617495711835334,
+     "result": "hit",
+     "sharedBlocks": 64
+    },
+    {
+     "n": 179,
+     "realMs": 1791287119852,
+     "simS": 507444,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11333,
+      "now": 849,
+      "rounds": 0,
+      "total": 17670,
+      "chatBlocks": 43,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17670,
+      "readTokens": 16821,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 16821,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9519524617996604,
+     "result": "hit",
+     "sharedBlocks": 64
+    },
+    {
+     "n": 180,
+     "realMs": 1791287120241,
+     "simS": 508967,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11644,
+      "now": 628,
+      "rounds": 0,
+      "total": 17760,
+      "chatBlocks": 44,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17760,
+      "readTokens": 16821,
+      "writeTokens": 311,
+      "eligible": true,
+      "chatEndTokens": 17132,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9471283783783784,
+     "result": "hit",
+     "sharedBlocks": 64
+    },
+    {
+     "n": 181,
+     "realMs": 1791287120511,
+     "simS": 509944,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11644,
+      "now": 700,
+      "rounds": 0,
+      "total": 17832,
+      "chatBlocks": 44,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17832,
+      "readTokens": 17132,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17132,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9607447285778375,
+     "result": "hit",
+     "sharedBlocks": 65
+    },
+    {
+     "n": 182,
+     "realMs": 1791287120693,
+     "simS": 510659,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11890,
+      "now": 515,
+      "rounds": 0,
+      "total": 17893,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17893,
+      "readTokens": 17132,
+      "writeTokens": 246,
+      "eligible": true,
+      "chatEndTokens": 17378,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9574694014419046,
+     "result": "hit",
+     "sharedBlocks": 65
+    },
+    {
+     "n": 183,
+     "realMs": 1791287120917,
+     "simS": 511519,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11890,
+      "now": 548,
+      "rounds": 0,
+      "total": 17926,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17926,
+      "readTokens": 17378,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17378,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9694298783889322,
+     "result": "hit",
+     "sharedBlocks": 66
+    },
+    {
+     "n": 184,
+     "realMs": 1791287121184,
+     "simS": 512516,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11890,
+      "now": 552,
+      "rounds": 0,
+      "total": 17930,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 17930,
+      "readTokens": 17378,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17378,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9692136084774121,
+     "result": "hit",
+     "sharedBlocks": 66
+    },
+    {
+     "n": 185,
+     "realMs": 1791287121671,
+     "simS": 514319,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 11890,
+      "now": 744,
+      "rounds": 0,
+      "total": 18122,
+      "chatBlocks": 45,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18122,
+      "readTokens": 17378,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17378,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.958944928815804,
+     "result": "hit",
+     "sharedBlocks": 66
+    },
+    {
+     "n": 186,
+     "realMs": 1791287121714,
+     "simS": 514476,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12188,
+      "now": 480,
+      "rounds": 0,
+      "total": 18156,
+      "chatBlocks": 46,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18156,
+      "readTokens": 17378,
+      "writeTokens": 298,
+      "eligible": true,
+      "chatEndTokens": 17676,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9571491517955497,
+     "result": "hit",
+     "sharedBlocks": 66
+    },
+    {
+     "n": 187,
+     "realMs": 1791287121866,
+     "simS": 514934,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12188,
+      "now": 469,
+      "rounds": 0,
+      "total": 18145,
+      "chatBlocks": 46,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18145,
+      "readTokens": 17676,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17676,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9741526591347479,
+     "result": "hit",
+     "sharedBlocks": 67
+    },
+    {
+     "n": 188,
+     "realMs": 1791287122196,
+     "simS": 516142,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12188,
+      "now": 549,
+      "rounds": 0,
+      "total": 18225,
+      "chatBlocks": 46,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18225,
+      "readTokens": 17676,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 17676,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9698765432098766,
+     "result": "hit",
+     "sharedBlocks": 67
+    },
+    {
+     "n": 189,
+     "realMs": 1791287122934,
+     "simS": 553473,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12188,
+      "now": 733,
+      "rounds": 0,
+      "total": 18409,
+      "chatBlocks": 46,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18409,
+      "readTokens": 5488,
+      "writeTokens": 12188,
+      "eligible": true,
+      "chatEndTokens": 17676,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.29811505242001196,
+     "result": "ttl",
+     "sharedBlocks": 67
+    },
+    {
+     "n": 190,
+     "realMs": 1791287123219,
+     "simS": 554424,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12459,
+      "now": 504,
+      "rounds": 0,
+      "total": 18451,
+      "chatBlocks": 47,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18451,
+      "readTokens": 17676,
+      "writeTokens": 271,
+      "eligible": true,
+      "chatEndTokens": 17947,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.957996856538941,
+     "result": "hit",
+     "sharedBlocks": 67
+    },
+    {
+     "n": 191,
+     "realMs": 1791287124462,
+     "simS": 559141,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12459,
+      "now": 842,
+      "rounds": 0,
+      "total": 18789,
+      "chatBlocks": 47,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18789,
+      "readTokens": 5488,
+      "writeTokens": 12459,
+      "eligible": true,
+      "chatEndTokens": 17947,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.292085794879983,
+     "result": "ttl",
+     "sharedBlocks": 68
+    },
+    {
+     "n": 192,
+     "realMs": 1791287124638,
+     "simS": 559730,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12728,
+      "now": 633,
+      "rounds": 0,
+      "total": 18849,
+      "chatBlocks": 48,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18849,
+      "readTokens": 17947,
+      "writeTokens": 269,
+      "eligible": true,
+      "chatEndTokens": 18216,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9521460024404478,
+     "result": "hit",
+     "sharedBlocks": 68
+    },
+    {
+     "n": 193,
+     "realMs": 1791287124991,
+     "simS": 561104,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 12728,
+      "now": 716,
+      "rounds": 0,
+      "total": 18932,
+      "chatBlocks": 48,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18932,
+      "readTokens": 18216,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18216,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9621804352419184,
+     "result": "hit",
+     "sharedBlocks": 69
+    },
+    {
+     "n": 194,
+     "realMs": 1791287125123,
+     "simS": 561600,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13009,
+      "now": 493,
+      "rounds": 0,
+      "total": 18990,
+      "chatBlocks": 49,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18990,
+      "readTokens": 18216,
+      "writeTokens": 281,
+      "eligible": true,
+      "chatEndTokens": 18497,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9592417061611375,
+     "result": "hit",
+     "sharedBlocks": 69
+    },
+    {
+     "n": 195,
+     "realMs": 1791287125254,
+     "simS": 561976,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13009,
+      "now": 476,
+      "rounds": 0,
+      "total": 18973,
+      "chatBlocks": 49,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 18973,
+      "readTokens": 18497,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 18497,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9749117166499763,
+     "result": "hit",
+     "sharedBlocks": 70
+    },
+    {
+     "n": 196,
+     "realMs": 1791287127736,
+     "simS": 571359,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13291,
+      "now": 780,
+      "rounds": 0,
+      "total": 19559,
+      "chatBlocks": 50,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19559,
+      "readTokens": 5488,
+      "writeTokens": 13291,
+      "eligible": true,
+      "chatEndTokens": 18779,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.2805869420727031,
+     "result": "ttl",
+     "sharedBlocks": 70
+    },
+    {
+     "n": 197,
+     "realMs": 1791287128090,
+     "simS": 572722,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13567,
+      "now": 656,
+      "rounds": 0,
+      "total": 19711,
+      "chatBlocks": 51,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 19711,
+      "readTokens": 18779,
+      "writeTokens": 276,
+      "eligible": true,
+      "chatEndTokens": 19055,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9527167571406828,
+     "result": "hit",
+     "sharedBlocks": 71
+    },
+    {
+     "n": 198,
+     "realMs": 1791287129554,
+     "simS": 578204,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 13846,
+      "now": 729,
+      "rounds": 0,
+      "total": 20063,
+      "chatBlocks": 52,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 20063,
+      "readTokens": 5488,
+      "writeTokens": 13846,
+      "eligible": true,
+      "chatEndTokens": 19334,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.2735383541843194,
+     "result": "ttl",
+     "sharedBlocks": 72
+    },
+    {
+     "n": 199,
+     "realMs": 1791287130261,
+     "simS": 580933,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 14116,
+      "now": 602,
+      "rounds": 0,
+      "total": 20206,
+      "chatBlocks": 53,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 20206,
+      "readTokens": 19334,
+      "writeTokens": 270,
+      "eligible": true,
+      "chatEndTokens": 19604,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9568445016331782,
+     "result": "hit",
+     "sharedBlocks": 73
+    },
+    {
+     "n": 200,
+     "realMs": 1791287130612,
+     "simS": 582242,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 14116,
+      "now": 695,
+      "rounds": 0,
+      "total": 20299,
+      "chatBlocks": 53,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 20299,
+      "readTokens": 19604,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 19604,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9657618601901572,
+     "result": "hit",
+     "sharedBlocks": 74
+    },
+    {
+     "n": 201,
+     "realMs": 1791287131416,
+     "simS": 585275,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 14395,
+      "now": 661,
+      "rounds": 0,
+      "total": 20544,
+      "chatBlocks": 54,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 20544,
+      "readTokens": 19604,
+      "writeTokens": 279,
+      "eligible": true,
+      "chatEndTokens": 19883,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9542445482866043,
+     "result": "hit",
+     "sharedBlocks": 74
+    },
+    {
+     "n": 202,
+     "realMs": 1791287131993,
+     "simS": 587438,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 14395,
+      "now": 837,
+      "rounds": 0,
+      "total": 20720,
+      "chatBlocks": 54,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 20720,
+      "readTokens": 19883,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 19883,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9596042471042471,
+     "result": "hit",
+     "sharedBlocks": 75
+    },
+    {
+     "n": 203,
+     "realMs": 1791287132701,
+     "simS": 590109,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 14681,
+      "now": 694,
+      "rounds": 0,
+      "total": 20863,
+      "chatBlocks": 55,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 20863,
+      "readTokens": 19883,
+      "writeTokens": 286,
+      "eligible": true,
+      "chatEndTokens": 20169,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9530268897090544,
+     "result": "hit",
+     "sharedBlocks": 75
+    },
+    {
+     "n": 204,
+     "realMs": 1791287132747,
+     "simS": 590311,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 14999,
+      "now": 408,
+      "rounds": 0,
+      "total": 20895,
+      "chatBlocks": 56,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 20895,
+      "readTokens": 20169,
+      "writeTokens": 318,
+      "eligible": true,
+      "chatEndTokens": 20487,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9652548456568557,
+     "result": "hit",
+     "sharedBlocks": 76
+    },
+    {
+     "n": 205,
+     "realMs": 1791287133719,
+     "simS": 594000,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 14999,
+      "now": 610,
+      "rounds": 0,
+      "total": 21097,
+      "chatBlocks": 56,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 21097,
+      "readTokens": 5488,
+      "writeTokens": 14999,
+      "eligible": true,
+      "chatEndTokens": 20487,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.26013177228989903,
+     "result": "ttl",
+     "sharedBlocks": 77
+    },
+    {
+     "n": 207,
+     "realMs": 1791287133912,
+     "simS": 594129,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7825,
+      "now": 408,
+      "rounds": 0,
+      "total": 13721,
+      "chatBlocks": 30,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13721,
+      "readTokens": 5488,
+      "writeTokens": 7825,
+      "eligible": true,
+      "chatEndTokens": 13313,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.39997084760585966,
+     "result": "fold",
+     "sharedBlocks": 22
+    },
+    {
+     "n": 208,
+     "realMs": 1791287133953,
+     "simS": 594311,
+     "firstRound": true,
+     "parts": {
+      "tools": 4185,
+      "system": 1303,
+      "chat": 7825,
+      "now": 449,
+      "rounds": 0,
+      "total": 13762,
+      "chatBlocks": 30,
+      "rules": "82f6c06ca2bbf2976027427164f0fb6d54ee07131f14feecbb59b4af5acf7ac0"
+     },
+     "estimate": {
+      "totalTokens": 13762,
+      "readTokens": 13313,
+      "writeTokens": 0,
+      "eligible": true,
+      "chatEndTokens": 13313,
+      "rulesTokens": 5488
+     },
+     "hitRate": 0.9673739282081093,
+     "result": "hit",
+     "sharedBlocks": 51
+    }
+   ],
+   "prompt": {
+    "maxTokens": 21097,
+    "lastTokens": 13762,
+    "average": {
+     "tools": 4185,
+     "system": 1303,
+     "chat": 8736,
+     "now": 625
+    }
+   },
+   "recall": {
+    "probes": 10,
+    "ran": true,
+    "passed": 10,
+    "afterFold": 10,
+    "failed": []
+   },
+   "leaks": [],
+   "firstToken": {
+    "p50Ms": 1,
+    "p90Ms": 2
+   },
+   "side": {
+    "requests": 11,
+    "tokens": 27356
+   },
+   "costUsd": 1.3999689999999994,
+   "unreadByReflex": 0,
+   "durationMs": 98598
+  }
+ ],
+ "boards": {
+  "goa-50": {
+   "window": {
+    "hours": 168,
+    "from": "2026-09-29T11:43:01.048Z",
+    "to": "2026-10-06T11:43:01.048Z"
+   },
+   "empty": false,
+   "turns": 10,
+   "messages": 50,
+   "typing": {
+    "n": 6,
+    "p50Ms": 3,
+    "p90Ms": 4
+   },
+   "reply": {
+    "n": 6,
+    "p50Ms": 32,
+    "p90Ms": 2539
+   },
+   "cache": {
+    "status": "ok",
+    "hit": 0.807745854955069,
+    "turns": 10,
+    "eligibleTurns": 10
+   },
+   "wake": {
+    "turns": 10,
+    "messages": 50,
+    "rate": 0.2
+   },
+   "cost": {
+    "totalUsd": 0.03805,
+    "perTripUsd": 0.03805,
+    "trips": 1
+   },
+   "sources": [
+    {
+     "name": "payments_without_both_keys",
+     "label": "Payments without both keys",
+     "good": "zero",
+     "value": 0,
+     "of": 0,
+     "note": "All time. Bookings Go recorded without the Server's signed approval."
+    }
+   ],
+   "bench": []
+  },
+  "goa-300": {
+   "window": {
+    "hours": 168,
+    "from": "2026-09-29T11:43:55.416Z",
+    "to": "2026-10-06T11:43:55.416Z"
+   },
+   "empty": false,
+   "turns": 51,
+   "messages": 300,
+   "typing": {
+    "n": 12,
+    "p50Ms": 2,
+    "p90Ms": 3
+   },
+   "reply": {
+    "n": 12,
+    "p50Ms": 26,
+    "p90Ms": 49
+   },
+   "cache": {
+    "status": "ok",
+    "hit": 0.8251996926430907,
+    "turns": 51,
+    "eligibleTurns": 51
+   },
+   "wake": {
+    "turns": 51,
+    "messages": 300,
+    "rate": 0.17
+   },
+   "cost": {
+    "totalUsd": 0.22333599999999995,
+    "perTripUsd": 0.22333599999999995,
+    "trips": 1
+   },
+   "sources": [
+    {
+     "name": "payments_without_both_keys",
+     "label": "Payments without both keys",
+     "good": "zero",
+     "value": 0,
+     "of": 0,
+     "note": "All time. Bookings Go recorded without the Server's signed approval."
+    }
+   ],
+   "bench": []
+  },
+  "goa-2000": {
+   "window": {
+    "hours": 168,
+    "from": "2026-09-29T11:45:34.428Z",
+    "to": "2026-10-06T11:45:34.428Z"
+   },
+   "empty": false,
+   "turns": 198,
+   "messages": 2000,
+   "typing": {
+    "n": 45,
+    "p50Ms": 2,
+    "p90Ms": 3
+   },
+   "reply": {
+    "n": 13,
+    "p50Ms": 27,
+    "p90Ms": 2026
+   },
+   "cache": {
+    "status": "ok",
+    "hit": 0.8763627000704415,
+    "turns": 198,
+    "eligibleTurns": 198
+   },
+   "wake": {
+    "turns": 198,
+    "messages": 2000,
+    "rate": 0.099
+   },
+   "cost": {
+    "totalUsd": 1.3721739999999998,
+    "perTripUsd": 1.3721739999999998,
+    "trips": 1
+   },
+   "sources": [
+    {
+     "name": "payments_without_both_keys",
+     "label": "Payments without both keys",
+     "good": "zero",
+     "value": 0,
+     "of": 0,
+     "note": "All time. Bookings Go recorded without the Server's signed approval."
+    }
+   ],
+   "bench": []
+  }
+ },
+ "verdict": {
+  "ok": true,
+  "checks": [
+   {
+    "chat": "goa-50",
+    "name": "typing p90",
+    "value": "6 ms",
+    "bar": "p90 under 500 ms",
+    "ok": true
+   },
+   {
+    "chat": "goa-50",
+    "name": "Go's own time to reply",
+    "value": "39 ms",
+    "bar": "p90 under 1500 ms",
+    "ok": true,
+    "note": "the model is a stand-in that answers at once"
+   },
+   {
+    "chat": "goa-50",
+    "name": "cache hit",
+    "value": "88.9%",
+    "bar": "85% or more",
+    "ok": true,
+    "note": "reported only: this chat is shorter than the prompts the bar is for"
+   },
+   {
+    "chat": "goa-50",
+    "name": "cache breaks (drift, rules changed)",
+    "value": "0",
+    "bar": "at most 0",
+    "ok": true
+   },
+   {
+    "chat": "goa-50",
+    "name": "woke the model",
+    "value": "10 of 50 (20.0%)",
+    "bar": "under 25%",
+    "ok": true
+   },
+   {
+    "chat": "goa-50",
+    "name": "wrong speak (missed, unprompted, duplicate)",
+    "value": "0",
+    "bar": "0",
+    "ok": true
+   },
+   {
+    "chat": "goa-50",
+    "name": "wrong quiet reactions",
+    "value": "0",
+    "bar": "0",
+    "ok": true
+   },
+   {
+    "chat": "goa-50",
+    "name": "deleted text in a later prompt",
+    "value": "0",
+    "bar": "at most 0",
+    "ok": true
+   },
+   {
+    "chat": "goa-50",
+    "name": "recall",
+    "value": "5 of 5",
+    "bar": "at most 0 missed",
+    "ok": true
+   },
+   {
+    "chat": "goa-300",
+    "name": "typing p90",
+    "value": "4 ms",
+    "bar": "p90 under 500 ms",
+    "ok": true
+   },
+   {
+    "chat": "goa-300",
+    "name": "Go's own time to reply",
+    "value": "36 ms",
+    "bar": "p90 under 1500 ms",
+    "ok": true,
+    "note": "the model is a stand-in that answers at once"
+   },
+   {
+    "chat": "goa-300",
+    "name": "cache hit",
+    "value": "83.8%",
+    "bar": "85% or more",
+    "ok": true,
+    "note": "reported only: this chat is shorter than the prompts the bar is for"
+   },
+   {
+    "chat": "goa-300",
+    "name": "cache breaks (drift, rules changed)",
+    "value": "0",
+    "bar": "at most 0",
+    "ok": true
+   },
+   {
+    "chat": "goa-300",
+    "name": "woke the model",
+    "value": "51 of 300 (17.0%)",
+    "bar": "under 25%",
+    "ok": true
+   },
+   {
+    "chat": "goa-300",
+    "name": "duplicate posts",
+    "value": "0",
+    "bar": "0",
+    "ok": true
+   },
+   {
+    "chat": "goa-300",
+    "name": "wrong speak",
+    "value": "0",
+    "bar": "for review",
+    "ok": true,
+    "note": "generated labels: listed for a person to review"
+   },
+   {
+    "chat": "goa-300",
+    "name": "deleted text in a later prompt",
+    "value": "0",
+    "bar": "at most 0",
+    "ok": true
+   },
+   {
+    "chat": "goa-300",
+    "name": "recall",
+    "value": "7 of 7",
+    "bar": "at most 0 missed",
+    "ok": true
+   },
+   {
+    "chat": "goa-2000",
+    "name": "typing p90",
+    "value": "4 ms",
+    "bar": "p90 under 500 ms",
+    "ok": true
+   },
+   {
+    "chat": "goa-2000",
+    "name": "Go's own time to reply",
+    "value": "29 ms",
+    "bar": "p90 under 1500 ms",
+    "ok": true,
+    "note": "the model is a stand-in that answers at once"
+   },
+   {
+    "chat": "goa-2000",
+    "name": "cache hit",
+    "value": "87.8%",
+    "bar": "85% or more",
+    "ok": true
+   },
+   {
+    "chat": "goa-2000",
+    "name": "cache breaks (drift, rules changed)",
+    "value": "0",
+    "bar": "at most 0",
+    "ok": true
+   },
+   {
+    "chat": "goa-2000",
+    "name": "woke the model",
+    "value": "198 of 2000 (9.9%)",
+    "bar": "under 25%",
+    "ok": true
+   },
+   {
+    "chat": "goa-2000",
+    "name": "duplicate posts",
+    "value": "0",
+    "bar": "0",
+    "ok": true
+   },
+   {
+    "chat": "goa-2000",
+    "name": "wrong speak",
+    "value": "0",
+    "bar": "for review",
+    "ok": true,
+    "note": "generated labels: listed for a person to review"
+   },
+   {
+    "chat": "goa-2000",
+    "name": "deleted text in a later prompt",
+    "value": "0",
+    "bar": "at most 0",
+    "ok": true
+   },
+   {
+    "chat": "goa-2000",
+    "name": "recall",
+    "value": "10 of 10",
+    "bar": "at most 0 missed",
+    "ok": true
+   },
+   {
+    "chat": "goa-2000",
+    "name": "folds",
+    "value": "2",
+    "bar": "at least 1",
+    "ok": true
+   }
+  ]
+ }
+}

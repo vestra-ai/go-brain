@@ -1,0 +1,4975 @@
+{
+ "model": "jev-1.13.0",
+ "recorded_at": "2026-10-06T08:37:05.905Z",
+ "versions": {
+  "for_go": "658b07f5812e",
+  "complete": "f29972f63816",
+  "size": "062c6aaf4301",
+  "task": "4fe4af5368fe",
+  "fact": "6e7148a62903",
+  "record": "44d6483ab6c7",
+  "reaction": "b9bc95c6b3d0",
+  "risky": "6d4cb909a7df",
+  "opening": "2e62a4bc01d1"
+ },
+ "answers": {
+  "c01": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.86
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.57
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.18
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.96,
+    "probabilities": {
+     "noted": 0.02,
+     "thumbs": 0.01,
+     "cheer": 0,
+     "none": 0.97
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.03
+   }
+  },
+  "c02": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.89
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.63
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.86,
+    "probabilities": {
+     "none": 0.9,
+     "noted": 0,
+     "thumbs": 0.09,
+     "cheer": 0.01
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.04
+   }
+  },
+  "c03": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.76
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.64
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.2
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.65
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.75
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 0.65,
+    "probabilities": {
+     "thumbs": 0,
+     "noted": 0.75,
+     "cheer": 0,
+     "none": 0.25
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.2
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.26
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.31
+   }
+  },
+  "c04": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.64
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.63
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 1,
+    "probabilities": {
+     "thumbs": 0,
+     "noted": 0,
+     "none": 1,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.64
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.27
+   }
+  },
+  "c05": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.7
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.55
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.84
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.25
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.97,
+    "probabilities": {
+     "thumbs": 0.01,
+     "cheer": 0,
+     "none": 0.98,
+     "noted": 0.01
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.44
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.78
+   }
+  },
+  "c06": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.72
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.48
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.77
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.96,
+    "probabilities": {
+     "thumbs": 0.02,
+     "noted": 0,
+     "none": 0.98,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.32
+   }
+  },
+  "c07": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.38
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.25
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.96,
+    "probabilities": {
+     "none": 0.96,
+     "noted": 0.01,
+     "cheer": 0,
+     "thumbs": 0.03
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.25
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.1
+   }
+  },
+  "c08": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.23
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.23
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.19
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.96,
+    "probabilities": {
+     "thumbs": 0.02,
+     "noted": 0.01,
+     "none": 0.97,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.21
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.1
+   }
+  },
+  "c09": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.96,
+    "probabilities": {
+     "thumbs": 0,
+     "noted": 0.03,
+     "none": 0.97,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.38
+   }
+  },
+  "c10": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.76
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.64
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.86
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.77
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.84
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 1,
+    "probabilities": {
+     "noted": 1,
+     "thumbs": 0,
+     "cheer": 0,
+     "none": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.33
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.04
+   }
+  },
+  "c11": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.81
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.6
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.76
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.61
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.71
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 0.96,
+    "probabilities": {
+     "none": 0.03,
+     "thumbs": 0,
+     "cheer": 0,
+     "noted": 0.97
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.21
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.04
+   }
+  },
+  "c12": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.46
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.69
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.9
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.54
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.14
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 0.99,
+    "probabilities": {
+     "cheer": 0,
+     "none": 0,
+     "noted": 1,
+     "thumbs": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.26
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.05
+   }
+  },
+  "c13": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.52
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.59
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.84
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.25
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 0.89,
+    "probabilities": {
+     "cheer": 0,
+     "noted": 0.92,
+     "none": 0.08,
+     "thumbs": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.07
+   }
+  },
+  "c14": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.79
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.7
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.25
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.85
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.84
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 0.98,
+    "probabilities": {
+     "thumbs": 0,
+     "noted": 0.99,
+     "none": 0.01,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.44
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.05
+   }
+  },
+  "c15": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.33
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.33
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.19
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.63
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "none": 1,
+     "cheer": 0,
+     "noted": 0,
+     "thumbs": 0
+    }
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.65
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.83
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   }
+  },
+  "c16": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.68
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.79
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.14
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.88
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.18
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "thumbs",
+    "confidence": 0.46,
+    "probabilities": {
+     "cheer": 0,
+     "none": 0.13,
+     "noted": 0.27,
+     "thumbs": 0.6
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.32
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.06
+   }
+  },
+  "c17": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.77
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.73
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.92
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "thumbs",
+    "confidence": 0.94,
+    "probabilities": {
+     "none": 0.02,
+     "thumbs": 0.95,
+     "noted": 0.03,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.05
+   }
+  },
+  "c18": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.49
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.64
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.19
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.91
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 0.29,
+    "probabilities": {
+     "thumbs": 0.25,
+     "cheer": 0.15,
+     "none": 0.13,
+     "noted": 0.47
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.61
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.14
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.05
+   }
+  },
+  "c19": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.66
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.43
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.44
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.85
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 0.85,
+    "probabilities": {
+     "cheer": 0,
+     "noted": 0.89,
+     "none": 0.06,
+     "thumbs": 0.05
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.29
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.1
+   }
+  },
+  "c20": {
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.22
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.3
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.22
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.76
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "thumbs": 0.01,
+     "noted": 0,
+     "none": 0.99,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.27
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.66
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.06
+   }
+  },
+  "c21": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.2
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.58
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.82
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.44
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.89
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "thumbs",
+    "confidence": 1,
+    "probabilities": {
+     "thumbs": 1,
+     "none": 0,
+     "noted": 0,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.09
+   }
+  },
+  "c22": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.79
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.67
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.44
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.22
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.73
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "cheer",
+    "confidence": 0.97,
+    "probabilities": {
+     "cheer": 0.98,
+     "thumbs": 0.02,
+     "none": 0,
+     "noted": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.04
+   }
+  },
+  "c23": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.78
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.7
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.44
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "cheer",
+    "confidence": 0.94,
+    "probabilities": {
+     "none": 0,
+     "thumbs": 0.02,
+     "cheer": 0.96,
+     "noted": 0.02
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.32
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.04
+   }
+  },
+  "c24": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.58
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.97,
+    "probabilities": {
+     "none": 0.98,
+     "thumbs": 0.01,
+     "cheer": 0,
+     "noted": 0.01
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.8
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.91
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.08
+   }
+  },
+  "c25": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.5
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.5
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.22
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.92,
+    "probabilities": {
+     "thumbs": 0.05,
+     "noted": 0.01,
+     "none": 0.94,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.85
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.33
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.16
+   }
+  },
+  "c26": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.42
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.57
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.48
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.14
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.36,
+    "probabilities": {
+     "thumbs": 0.18,
+     "noted": 0.07,
+     "none": 0.51,
+     "cheer": 0.24
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.8
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.95
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.08
+   }
+  },
+  "c27": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.63
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.65
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.29
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.89,
+    "probabilities": {
+     "none": 0.91,
+     "noted": 0.01,
+     "thumbs": 0.05,
+     "cheer": 0.03
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.87
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.88
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.07
+   }
+  },
+  "c28": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.58
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.74
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.56
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.43
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 1,
+    "probabilities": {
+     "cheer": 0,
+     "noted": 0,
+     "none": 1,
+     "thumbs": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.71
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.26
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.35
+   }
+  },
+  "c29": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.59
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.65
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.72
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.6
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "noted": 0,
+     "none": 1,
+     "cheer": 0,
+     "thumbs": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.79
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.48
+   }
+  },
+  "c30": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.57
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.53
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.18
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.57
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.69
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "none": 1,
+     "noted": 0,
+     "thumbs": 0,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.73
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.29
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.88
+   }
+  },
+  "c31": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.79
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.63
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.84,
+    "probabilities": {
+     "noted": 0.09,
+     "none": 0.88,
+     "thumbs": 0.03,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.79
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.16
+   }
+  },
+  "c32": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.86
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.53
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.96,
+    "probabilities": {
+     "thumbs": 0.02,
+     "cheer": 0,
+     "none": 0.98,
+     "noted": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.14
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.03
+   }
+  },
+  "c33": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.69
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.58
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.54
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.24
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.97,
+    "probabilities": {
+     "thumbs": 0.01,
+     "none": 0.98,
+     "noted": 0.01,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.44
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.31
+   },
+   "q4_task": {
+    "type": "choice",
+    "choice": "t1",
+    "confidence": 0.88,
+    "probabilities": {
+     "none": 0.08,
+     "t1": 0.92,
+     "t2": 0
+    }
+   },
+   "q4_is_t1": {
+    "type": "noul",
+    "noul": 0.9
+   },
+   "q4_is_t2": {
+    "type": "noul",
+    "noul": 0.03
+   }
+  },
+  "c34": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.45
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.61
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.7,
+    "probabilities": {
+     "thumbs": 0.02,
+     "noted": 0.2,
+     "cheer": 0,
+     "none": 0.78
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q4_task": {
+    "type": "choice",
+    "choice": "t2",
+    "confidence": 0.81,
+    "probabilities": {
+     "t2": 0.88,
+     "t1": 0,
+     "none": 0.12
+    }
+   },
+   "q4_is_t1": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q4_is_t2": {
+    "type": "noul",
+    "noul": 0.85
+   }
+  },
+  "c35": {
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q4_task": {
+    "type": "choice",
+    "choice": "t1",
+    "confidence": 0.79,
+    "probabilities": {
+     "t2": 0,
+     "none": 0.14,
+     "t1": 0.86
+    }
+   },
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.73
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.38
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.72,
+    "probabilities": {
+     "cheer": 0,
+     "none": 0.79,
+     "noted": 0.18,
+     "thumbs": 0.03
+    }
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.42
+   },
+   "q4_is_t2": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.21
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q4_is_t1": {
+    "type": "noul",
+    "noul": 0.87
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.54
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.02
+   }
+  },
+  "c36": {
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q4_is_t1": {
+    "type": "noul",
+    "noul": 0.19
+   },
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.86
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q4_is_t2": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "thumbs": 0,
+     "cheer": 0,
+     "none": 0.99,
+     "noted": 0.01
+    }
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.14
+   },
+   "q4_task": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.92,
+    "probabilities": {
+     "none": 0.95,
+     "t1": 0.05,
+     "t2": 0
+    }
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.63
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.58
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.59
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   }
+  },
+  "c37": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.8
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.58
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.35
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.38
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "none": 1,
+     "cheer": 0,
+     "noted": 0,
+     "thumbs": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.67
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.73
+   },
+   "q4_task": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.85,
+    "probabilities": {
+     "none": 0.9,
+     "t1": 0.1,
+     "t2": 0
+    }
+   },
+   "q4_is_t1": {
+    "type": "noul",
+    "noul": 0.23
+   },
+   "q4_is_t2": {
+    "type": "noul",
+    "noul": 0.05
+   }
+  },
+  "c38": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.86
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.6
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.61
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.19
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.45
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "noted": 0.01,
+     "none": 0.99,
+     "cheer": 0,
+     "thumbs": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.55
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.19
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.55
+   },
+   "q4_task": {
+    "type": "choice",
+    "choice": "t2",
+    "confidence": 0.92,
+    "probabilities": {
+     "t2": 0.95,
+     "t1": 0,
+     "none": 0.05
+    }
+   },
+   "q4_is_t1": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q4_is_t2": {
+    "type": "noul",
+    "noul": 0.86
+   }
+  },
+  "c39": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.68
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.55
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.27
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.18
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "none": 0.99,
+     "thumbs": 0.01,
+     "cheer": 0,
+     "noted": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.81
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.2
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.44
+   }
+  },
+  "c40": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.48
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.54
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.56
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.98,
+    "probabilities": {
+     "none": 0.99,
+     "noted": 0.01,
+     "thumbs": 0,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.44
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.3
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.32
+   }
+  },
+  "c41": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.65
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.73
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.14
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 0.69,
+    "probabilities": {
+     "thumbs": 0,
+     "noted": 0.78,
+     "none": 0.22,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.24
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.06
+   }
+  },
+  "c42": {
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.12
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.19
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.67
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.89
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 0.57,
+    "probabilities": {
+     "none": 0.32,
+     "thumbs": 0.01,
+     "cheer": 0,
+     "noted": 0.67
+    }
+   }
+  },
+  "c43": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.89
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.91,
+    "probabilities": {
+     "thumbs": 0.02,
+     "cheer": 0,
+     "noted": 0.05,
+     "none": 0.93
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.04
+   }
+  },
+  "c44": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.83
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.63
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.59
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.45,
+    "probabilities": {
+     "none": 0.59,
+     "noted": 0.04,
+     "cheer": 0,
+     "thumbs": 0.37
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.21
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.03
+   }
+  },
+  "c45": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.61
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.6
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.79
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.11
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.91,
+    "probabilities": {
+     "none": 0.9400000000000001,
+     "thumbs": 0.06,
+     "cheer": 0,
+     "noted": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.17
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.56
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.38
+   }
+  },
+  "c46": {
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.22
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.59
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.72
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.76
+   },
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.69
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.68
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.96,
+    "probabilities": {
+     "none": 0.97,
+     "cheer": 0,
+     "noted": 0.01,
+     "thumbs": 0.02
+    }
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.2
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.13
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   }
+  },
+  "c47": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.8
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.63
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.2
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.75
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.1
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.23
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.34
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.97,
+    "probabilities": {
+     "thumbs": 0.01,
+     "noted": 0.01,
+     "none": 0.98,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.6
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.78
+   }
+  },
+  "c48": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.63
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.51
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.76
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.27
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "noted",
+    "confidence": 1,
+    "probabilities": {
+     "thumbs": 0,
+     "noted": 1,
+     "cheer": 0,
+     "none": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.08
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.22
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.06
+   }
+  },
+  "c49": {
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.5
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.29
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.38
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.15
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.19
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.16
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.83,
+    "probabilities": {
+     "noted": 0.01,
+     "none": 0.87,
+     "thumbs": 0.12,
+     "cheer": 0
+    }
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.27
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.21
+   },
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.06
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.21
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.16
+   }
+  },
+  "c50": {
+   "q8_secret": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q9_group_question": {
+    "type": "noul",
+    "noul": 0.56
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.53
+   },
+   "q3_big_compare": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q3_quick_act": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q5_travel": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q6_open": {
+    "type": "noul",
+    "noul": 0.42
+   },
+   "q8_spend": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q8_steer": {
+    "type": "noul",
+    "noul": 0.07
+   },
+   "q3_big_steps": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q5_dates": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q9_someone_look": {
+    "type": "noul",
+    "noul": 0.62
+   },
+   "q3_quick_answer": {
+    "type": "noul",
+    "noul": 0.82
+   },
+   "q5_food": {
+    "type": "noul",
+    "noul": 0.02
+   },
+   "q5_other": {
+    "type": "noul",
+    "noul": 0.03
+   },
+   "q6_doing": {
+    "type": "noul",
+    "noul": 0.05
+   },
+   "q9_circles": {
+    "type": "noul",
+    "noul": 0.48
+   },
+   "q1_addressed": {
+    "type": "noul",
+    "noul": 0.85
+   },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.14
+   },
+   "q3_quick_search": {
+    "type": "noul",
+    "noul": 0.09
+   },
+   "q6_agreed": {
+    "type": "noul",
+    "noul": 0.04
+   },
+   "q7_reaction": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 1,
+    "probabilities": {
+     "none": 1,
+     "noted": 0,
+     "thumbs": 0,
+     "cheer": 0
+    }
+   }
+  }
+ }
+}

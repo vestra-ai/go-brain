@@ -6,6 +6,21 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: go
+          POSTGRES_PASSWORD: go
+          POSTGRES_DB: go_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U go"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://go:go@localhost:5432/go_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
@@ -16,6 +31,90 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
-      # The contract's OpenAPI file is generated from the zod schemas; fail if someone
-      # edited the schemas without regenerating it (the Go team builds from that file).
-      - run: pnpm --filter @go/contract emit-openapi && git diff --exit-code packages/contract/openapi.json
+      - name: Bench summary on the job page
+        if: always()
+        run: if [ -f packages/bench/out/bench-report.md ]; then cat packages/bench/out/bench-report.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Keep the bench report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report
+          path: packages/bench/out/
+          if-no-files-found: ignore
+      # The OpenAPI, AsyncAPI and method files are generated from the zod schemas; fail if someone
+      # edited the schemas without regenerating them (the Go team builds from those files).
+      - run: pnpm --filter @go/contract emit-openapi && git diff --exit-code packages/contract/openapi packages/contract/asyncapi packages/contract/socket
+
+  contract-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - run: pip install -e 'packages/contract-py[dev]'
+      - run: pytest -q packages/contract-py/tests
+      # models.py is generated from the OpenAPI file; fail if it is stale.
+      - run: cd packages/contract-py && python scripts/gen_models.py && git diff --exit-code go_contract/models.py go_contract/socket_methods.py
+
+  fake-go-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Builds the image Railway builds, so a broken Dockerfile fails here and not on a deploy. Nothing is pushed.
+      - run: docker build -f apps/fake-go/Dockerfile -t fake-go .
+      # Boots it with throwaway values made on the runner, and checks that /v1/health answers.
+      - run: |
+          docker run -d --name fake-go -p 8080:8080 \
+            -e GO_SIGNING_SECRET="$(openssl rand -hex 32)" -e FAKE_GO_ADMIN_TOKEN="$(openssl rand -hex 16)" fake-go
+          curl --fail --silent --show-error --retry 15 --retry-delay 1 --retry-all-errors http://localhost:8080/v1/health
+      - if: failure()
+        run: docker logs fake-go || true
+
+  try-room-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The hosted "try Go" room's image, as Railway builds it. Nothing is pushed.
+      - run: docker build -f packages/sim/Dockerfile -t try-room .
+      # Boots it with throwaway values and no Go to reach: /health answers, and / shows only the passcode field.
+      - run: |
+          docker run -d --name try-room -p 8080:8080 -e GO_URL=http://127.0.0.1:9 \
+            -e GO_SIGNING_SECRET="$(openssl rand -hex 32)" -e TRY_PASSCODE="$(openssl rand -hex 12)" \
+            -e TRY_COOKIE_SALT="$(openssl rand -hex 32)" try-room
+          curl --fail --silent --show-error --retry 15 --retry-delay 1 --retry-all-errors http://localhost:8080/health
+          curl --fail --silent --show-error http://localhost:8080/ | grep -q 'name="passcode"'
+      - if: failure()
+        run: docker logs try-room || true
+
+  brain-image:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: go
+          POSTGRES_PASSWORD: go
+          POSTGRES_DB: go
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U go"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      # Builds the image Railway builds, so a broken Dockerfile fails here and not on a deploy. Nothing is pushed.
+      - run: docker build -f apps/brain/Dockerfile -t go-brain .
+      # Boots it against the Postgres service with throwaway values made on the runner (it migrates on boot), and checks
+      # that /v1/health answers. The model key is a placeholder: nothing calls the model at boot.
+      - run: |
+          docker run -d --name go-brain --network host \
+            -e DATABASE_URL=postgres://go:go@localhost:5432/go \
+            -e GO_SIGNING_SECRET="$(openssl rand -hex 32)" \
+            -e GO_PUBLIC_URL=http://localhost:8080 \
+            -e ANTHROPIC_API_KEY="placeholder-$(openssl rand -hex 8)" \
+            go-brain
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-all-errors http://localhost:8080/v1/health
+      - if: failure()
+        run: docker logs go-brain || true

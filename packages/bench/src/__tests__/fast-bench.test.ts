@@ -1,0 +1,45 @@
+import { afterAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { compareFast, loadBars } from '../compare.js';
+import { writeReport } from '../report-md.js';
+import { FAST_CHATS, fastReport, OUT_DIR, runFastChat } from '../run-fast.js';
+import type { ChatScore } from '../score.js';
+
+const DATABASE_URL = process.env['DATABASE_URL'];
+if (process.env['CI'] !== undefined && DATABASE_URL === undefined) throw new Error('The replay bench needs DATABASE_URL in CI (the Postgres service).');
+
+const BoardCache = z.object({ cache: z.object({ status: z.string(), hit: z.number().nullable() }) });
+const Times = z.object({ n: z.number(), p50Ms: z.number().nullable() });
+const BoardTimes = z.object({ typing: Times, reply: Times });
+
+/** The board (from turns and the events Go received) and the bench (from the frames the simulator saw) time the same asks. */
+function sameTimes(what: string, board: number | null, bench: number | null, slackMs: number): void {
+  if (board === null || bench === null) return;
+  expect(Math.abs(board - bench), `the board and the bench disagree on ${what}: the board says ${board} ms at p50, the bench ${bench} ms. Check where the board starts its clock (the message that named Go) and which turns it counts`).toBeLessThan(slackMs);
+}
+
+const scores: ChatScore[] = [];
+const boards: Record<string, unknown> = {};
+
+describe.skipIf(DATABASE_URL === undefined)('the fast replay bench', () => {
+  for (const c of FAST_CHATS) {
+    it(`replays ${c.name} through Go and meets the bars`, async () => {
+      const { score, board } = await runFastChat(c, DATABASE_URL ?? '');
+      scores.push(score);
+      boards[c.name] = board;
+      const failing = compareFast([score], loadBars().fast).checks.filter((x) => !x.ok);
+      expect(failing, JSON.stringify(failing, null, 1)).toEqual([]);
+      const b = BoardCache.safeParse(board);
+      if (b.success && b.data.cache.status === 'ok' && b.data.cache.hit !== null && score.cache.hitRateAll !== null)
+        expect(Math.abs(b.data.cache.hit - score.cache.hitRateAll), 'the board (from turns) and the bench (from request bodies) disagree on the cache: check how turns stores input, cache reads and cache writes').toBeLessThan(0.02);
+      const t = BoardTimes.safeParse(board);
+      if (t.success) {
+        sameTimes('typing', t.data.typing.p50Ms, score.typing.p50Ms, 500);
+        sameTimes('the reply', t.data.reply.p50Ms, score.reply.p50Ms, Math.max(1_500, (score.reply.p50Ms ?? 0) * 0.35));
+      }
+    }, c.timeoutMs);
+  }
+  afterAll(() => {
+    if (scores.length > 0) writeReport(fastReport(scores, boards), OUT_DIR, 'bench-report');
+  });
+});

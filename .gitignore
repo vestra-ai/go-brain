@@ -6,3 +6,7 @@ coverage/
 .env.*
 !.env.example
 .DS_Store
+# The real trip's chat export: real people's words, kept out of git unless everyone in the trip opts in.
+packages/bench/chats/private/
+__pycache__/
+*.pyc

@@ -1,0 +1,6329 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "The Go brain API",
+    "version": "1.0.0",
+    "description": "Go is the AI member of every trip group. The Server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain."
+  },
+  "paths": {
+    "/v1/socket": {
+      "get": {
+        "operationId": "openSocket",
+        "summary": "Open the socket. A WebSocket upgrade, signed with x-go-signature (method GET, this path, empty body). The Server keeps it open.",
+        "parameters": [
+          {
+            "name": "x-go-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "t=<unix seconds>,v1=<hex HMAC-SHA256(GO_SIGNING_SECRET, \"<t>\\nGET\\n/v1/socket\\n\")>"
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching to the WebSocket. Every frame after this is JSON-RPC 2.0; see asyncapi/socket.json."
+          },
+          "401": {
+            "description": "Missing, stale or wrong signature"
+          }
+        }
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "Up, and which contract version it speaks. Not signed.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Category": {
+        "type": "string",
+        "enum": [
+          "stay",
+          "food",
+          "getting_around",
+          "activities",
+          "other"
+        ],
+        "description": "The spending category. The App colours: stay blue, food orange, getting around green, activities yellow."
+      },
+      "PersonActor": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "person"
+          },
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "kind",
+          "person_id"
+        ]
+      },
+      "GoActor": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "go"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "SystemActor": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "system"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "Actor": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PersonActor"
+          },
+          {
+            "$ref": "#/components/schemas/GoActor"
+          },
+          {
+            "$ref": "#/components/schemas/SystemActor"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind"
+        },
+        "description": "Who did it: a person, Go, or the Server itself (system)."
+      },
+      "Place": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "place_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": -90,
+                "maximum": 90
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": -180,
+                "maximum": 180
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "photo_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "Journey": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "flight",
+              "train",
+              "bus",
+              "cab"
+            ]
+          },
+          "origin": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 8
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "destination": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 8
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "depart_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "arrive_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "carrier_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "carrier_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stops": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "origin",
+          "destination",
+          "depart_at",
+          "arrive_at"
+        ]
+      },
+      "Person": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "photo_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "organizer",
+              "member"
+            ]
+          },
+          "joined_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "from_city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "earliest_leave": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "know": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "has_upi": {
+            "type": "boolean"
+          },
+          "go_paused": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "person_id",
+          "name",
+          "role",
+          "joined_at",
+          "know",
+          "has_upi",
+          "go_paused"
+        ]
+      },
+      "BudgetBand": {
+        "type": "object",
+        "properties": {
+          "min_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "max_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          }
+        },
+        "required": [
+          "min_minor",
+          "currency"
+        ]
+      },
+      "BudgetSummary": {
+        "type": "object",
+        "properties": {
+          "lowest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetBand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answered": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "of": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "answered",
+          "of"
+        ]
+      },
+      "CardAction": {
+        "type": "object",
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z_]{0,31}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24
+          },
+          "style": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "secondary"
+            ]
+          },
+          "only_for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "per_option": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "action_id",
+          "label",
+          "style"
+        ]
+      },
+      "VoteCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "vote"
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "decision_id"
+        ],
+        "description": "A vote. The Server draws the options, the tally and the vote buttons."
+      },
+      "MandateCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "mandate"
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "decision_id"
+        ],
+        "description": "Ready to book: what the group allowed (the choice, the cap, refundable or not, who pays). The Server shows \"Yes, book it\" and \"Not now\" to the payer only."
+      },
+      "TicketCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "ticket"
+          },
+          "booking_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "booking_id"
+        ],
+        "description": "A booking, drawn as a ticket (boarding pass, stay pass, table)."
+      },
+      "ExpenseCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "expense"
+          },
+          "expense_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "expense_id"
+        ],
+        "description": "One expense: who paid, how much, split between whom."
+      },
+      "SettleUpCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "settle_up"
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind"
+        ],
+        "description": "Who pays whom right now, each with a UPI button."
+      },
+      "DayCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "day"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "date"
+        ],
+        "description": "One day of the itinerary."
+      },
+      "PlanCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "plan"
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind"
+        ],
+        "description": "The whole itinerary, day by day."
+      },
+      "BudgetCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "budget"
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind"
+        ],
+        "description": "Spent against the plan, by category."
+      },
+      "Option": {
+        "type": "object",
+        "properties": {
+          "option_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "highlights": {
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            }
+          },
+          "journey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Journey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "place": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Place"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 5
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refundable_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "option_id",
+          "title",
+          "highlights"
+        ]
+      },
+      "OptionsCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "options"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "option_kind": {
+            "type": "string",
+            "enum": [
+              "stay",
+              "flight",
+              "train",
+              "bus",
+              "place",
+              "food",
+              "activity"
+            ]
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "options": {
+            "minItems": 1,
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            }
+          },
+          "actions": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardAction"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "title",
+          "option_kind",
+          "checked_at",
+          "options"
+        ],
+        "description": "Options Go found (stays, flights, places...), with prices and when they were checked."
+      },
+      "WorkingCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "working"
+          },
+          "task_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "needs_you",
+              "done",
+              "failed"
+            ]
+          },
+          "steps": {
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "todo",
+                    "doing",
+                    "done",
+                    "failed"
+                  ]
+                }
+              },
+              "required": [
+                "text",
+                "state"
+              ]
+            }
+          },
+          "screenshot_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actions": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardAction"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "task_id",
+          "title",
+          "state",
+          "steps",
+          "updated_at"
+        ],
+        "description": "Go doing a longer job (booking on a website, comparing many options). Updated in place."
+      },
+      "CallCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "call"
+          },
+          "call_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "business": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "goal": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "dialing",
+              "talking",
+              "ended",
+              "failed"
+            ]
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_line": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "who": {
+                    "type": "string",
+                    "enum": [
+                      "go",
+                      "them"
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "who",
+                  "text"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "maxItems": 300,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "who": {
+                      "type": "string",
+                      "enum": [
+                        "go",
+                        "them"
+                      ]
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  },
+                  "required": [
+                    "who",
+                    "text"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actions": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardAction"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "call_id",
+          "business",
+          "goal",
+          "state"
+        ],
+        "description": "Go on a phone call to a business. Updated in place while it runs; the final version is the record."
+      },
+      "PayCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "pay"
+          },
+          "approval_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "payer_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "merchant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "refundable_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "paid",
+              "declined",
+              "expired",
+              "failed"
+            ]
+          },
+          "actions": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardAction"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "approval_id",
+          "payer_person_id",
+          "amount_minor",
+          "currency",
+          "merchant",
+          "purpose",
+          "expires_at",
+          "state"
+        ],
+        "description": "A payment waiting for the payer. Their \"Approve\" button opens the vault page, where they confirm with Face ID."
+      },
+      "NoticeCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "notice"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "info",
+              "heads_up"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "url": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actions": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardAction"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "tone",
+          "title",
+          "body"
+        ],
+        "description": "Good to know (with its source) or a heads-up (a deadline, a price change, a clash)."
+      },
+      "Card": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/VoteCard"
+          },
+          {
+            "$ref": "#/components/schemas/MandateCard"
+          },
+          {
+            "$ref": "#/components/schemas/TicketCard"
+          },
+          {
+            "$ref": "#/components/schemas/ExpenseCard"
+          },
+          {
+            "$ref": "#/components/schemas/SettleUpCard"
+          },
+          {
+            "$ref": "#/components/schemas/DayCard"
+          },
+          {
+            "$ref": "#/components/schemas/PlanCard"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetCard"
+          },
+          {
+            "$ref": "#/components/schemas/OptionsCard"
+          },
+          {
+            "$ref": "#/components/schemas/WorkingCard"
+          },
+          {
+            "$ref": "#/components/schemas/CallCard"
+          },
+          {
+            "$ref": "#/components/schemas/PayCard"
+          },
+          {
+            "$ref": "#/components/schemas/NoticeCard"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind"
+        }
+      },
+      "PhotoAttachment": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "photo"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "url"
+        ]
+      },
+      "FileAttachment": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "file"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "mime": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "kind",
+          "url",
+          "name",
+          "mime",
+          "size_bytes"
+        ]
+      },
+      "Attachment": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PhotoAttachment"
+          },
+          {
+            "$ref": "#/components/schemas/FileAttachment"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind"
+        }
+      },
+      "Reaction": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "emoji"
+        ]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "updated_seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "author": {
+            "$ref": "#/components/schemas/Actor"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attachments": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attachment"
+            }
+          },
+          "reply_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "about_message_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mentions_go": {
+            "type": "boolean"
+          },
+          "mentions": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "reactions": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reaction"
+            }
+          },
+          "card": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Card"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "withheld": {
+            "type": "boolean"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "edited_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "message_id",
+          "seq",
+          "updated_seq",
+          "author",
+          "attachments",
+          "mentions_go",
+          "mentions",
+          "reactions",
+          "withheld",
+          "deleted",
+          "sent_at"
+        ]
+      },
+      "MessagesPage": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "messages",
+          "has_more"
+        ]
+      },
+      "PostMessage": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "card": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Card"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reply_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mentions": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id"
+        ],
+        "description": "Needs text, a card, or both."
+      },
+      "PostMessageResult": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "message_id",
+          "seq"
+        ]
+      },
+      "ReplaceCard": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "card": {
+            "$ref": "#/components/schemas/Card"
+          }
+        },
+        "required": [
+          "trip_id",
+          "card"
+        ]
+      },
+      "ReplaceCardResult": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "GoTyping": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "trip_id",
+          "on"
+        ]
+      },
+      "DecisionOption": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "option_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "label"
+        ]
+      },
+      "Mandate": {
+        "type": "object",
+        "properties": {
+          "choice_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "cap_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "refundable_only": {
+            "type": "boolean"
+          },
+          "payer_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "set_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "declined_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "choice_index",
+          "cap_minor",
+          "currency",
+          "refundable_only",
+          "payer_person_id",
+          "set_at"
+        ]
+      },
+      "Decision": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "choice",
+              "yesno"
+            ]
+          },
+          "anonymous": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "cancelled"
+            ]
+          },
+          "opened_by_person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "options": {
+            "minItems": 2,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionOption"
+            }
+          },
+          "closes_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voted": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "of": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "tally": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "votes": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "person_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "option_index": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "person_id",
+                    "option_index"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result_index": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mandate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Mandate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "decision_id",
+          "question",
+          "kind",
+          "anonymous",
+          "status",
+          "options",
+          "voted",
+          "of",
+          "tally",
+          "opened_at"
+        ]
+      },
+      "BookingKind": {
+        "type": "string",
+        "enum": [
+          "stay",
+          "flight",
+          "train",
+          "bus",
+          "cab",
+          "table",
+          "activity",
+          "other"
+        ]
+      },
+      "Booking": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BookingKind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "cancelled"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "vendor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "payer_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "for_person_ids": {
+            "minItems": 1,
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "refundable_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "journey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Journey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "place": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Place"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "added_by_person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "booking_id",
+          "kind",
+          "status",
+          "title",
+          "vendor",
+          "ref",
+          "amount_minor",
+          "currency",
+          "payer_person_id",
+          "for_person_ids",
+          "created_at"
+        ]
+      },
+      "Expense": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "paid_by_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "category": {
+            "$ref": "#/components/schemas/Category"
+          },
+          "split_person_ids": {
+            "minItems": 1,
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "booking_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "added_by_person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "expense_id",
+          "paid_by_person_id",
+          "amount_minor",
+          "currency",
+          "note",
+          "category",
+          "split_person_ids",
+          "created_at"
+        ]
+      },
+      "Transfer": {
+        "type": "object",
+        "properties": {
+          "from_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "to_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          }
+        },
+        "required": [
+          "from_person_id",
+          "to_person_id",
+          "amount_minor",
+          "currency"
+        ]
+      },
+      "Money": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "plan_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spent_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "by_category": {
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "$ref": "#/components/schemas/Category"
+                },
+                "amount_minor": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "category",
+                "amount_minor"
+              ]
+            }
+          },
+          "transfers": {
+            "maxItems": 60,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Transfer"
+            }
+          }
+        },
+        "required": [
+          "currency",
+          "spent_minor",
+          "by_category",
+          "transfers"
+        ]
+      },
+      "ItineraryItem": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "category": {
+            "$ref": "#/components/schemas/Category"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Place"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "booking_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "booked",
+              "planned",
+              "idea"
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "category",
+          "status"
+        ]
+      },
+      "Day": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItineraryItem"
+            }
+          }
+        },
+        "required": [
+          "date",
+          "items"
+        ]
+      },
+      "Proof": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "RecordLine": {
+        "type": "object",
+        "properties": {
+          "line_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "decided",
+              "agreed",
+              "open",
+              "doing",
+              "booked"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "done",
+              "undone"
+            ]
+          },
+          "proof": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Proof"
+            }
+          },
+          "person_ids": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "booking_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "go",
+              "person",
+              "vote",
+              "booking"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "line_id",
+          "kind",
+          "text",
+          "status",
+          "proof",
+          "person_ids",
+          "source",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "TripSnapshot": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "booked",
+              "on_trip",
+              "over"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "organizer_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "invite_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Place"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dates": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vibe": {
+            "maxItems": 12,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            }
+          },
+          "stay": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget": {
+            "$ref": "#/components/schemas/BudgetSummary"
+          },
+          "people": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Person"
+            }
+          },
+          "decisions": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            }
+          },
+          "bookings": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Booking"
+            }
+          },
+          "expenses": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expense"
+            }
+          },
+          "money": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "itinerary": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Day"
+            }
+          },
+          "record": {
+            "maxItems": 300,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordLine"
+            }
+          }
+        },
+        "required": [
+          "trip_id",
+          "seq",
+          "title",
+          "status",
+          "created_at",
+          "organizer_person_id",
+          "invite_url",
+          "vibe",
+          "budget",
+          "people",
+          "decisions",
+          "bookings",
+          "expenses",
+          "money",
+          "itinerary",
+          "record"
+        ]
+      },
+      "MessageCreatedData": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/Message"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "MessageCreated": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "message.created"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MessageCreatedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Someone posted in the room (Go's own messages come back too)."
+      },
+      "MessageEditedData": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/Message"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "MessageEdited": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "message.edited"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MessageEditedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Someone edited a message. Carries the message as it is now."
+      },
+      "MessageDeletedData": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "MessageDeleted": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "message.deleted"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MessageDeletedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Someone deleted a message. Go drops anything it learned from it."
+      },
+      "ReactionAddedData": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "reaction": {
+            "$ref": "#/components/schemas/Reaction"
+          }
+        },
+        "required": [
+          "message_id",
+          "reaction"
+        ]
+      },
+      "ReactionAdded": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "reaction.added"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReactionAddedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Someone reacted to a message. A thumbs up can count as agreeing."
+      },
+      "ReactionRemovedData": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "reaction": {
+            "$ref": "#/components/schemas/Reaction"
+          }
+        },
+        "required": [
+          "message_id",
+          "reaction"
+        ]
+      },
+      "ReactionRemoved": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "reaction.removed"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReactionRemovedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Someone took a reaction back."
+      },
+      "PersonJoinedData": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "$ref": "#/components/schemas/Person"
+          }
+        },
+        "required": [
+          "person"
+        ]
+      },
+      "PersonJoined": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "person.joined"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PersonJoinedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Someone joined the trip, with their join answers (never their budget answer)."
+      },
+      "PersonUpdatedData": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "$ref": "#/components/schemas/Person"
+          },
+          "changed": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "photo_url",
+                "from_city",
+                "earliest_leave",
+                "know",
+                "has_upi",
+                "go_paused",
+                "role"
+              ]
+            }
+          }
+        },
+        "required": [
+          "person",
+          "changed"
+        ]
+      },
+      "PersonUpdated": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "person.updated"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PersonUpdatedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Someone changed their details, or paused or unpaused Go."
+      },
+      "PersonLeftData": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "PersonLeft": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "person.left"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PersonLeftData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Someone left the trip."
+      },
+      "TripCreatedData": {
+        "type": "object",
+        "properties": {
+          "trip": {
+            "$ref": "#/components/schemas/TripSnapshot"
+          }
+        },
+        "required": [
+          "trip"
+        ]
+      },
+      "TripCreated": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "trip.created"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TripCreatedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "A new trip room. Carries the whole trip, so Go can greet the group and start."
+      },
+      "TripUpdatedData": {
+        "type": "object",
+        "properties": {
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          },
+          "changed": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "title",
+                "destination",
+                "dates",
+                "vibe",
+                "stay",
+                "itinerary",
+                "status",
+                "budget"
+              ]
+            }
+          }
+        },
+        "required": [
+          "by",
+          "changed"
+        ]
+      },
+      "TripUpdated": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "trip.updated"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TripUpdatedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Trip details changed. Read the trip to see the new values."
+      },
+      "DecisionOpenedData": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          }
+        },
+        "required": [
+          "decision",
+          "by"
+        ]
+      },
+      "DecisionOpened": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "decision.opened"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DecisionOpenedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "A vote opened."
+      },
+      "DecisionVotedData": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "option_index": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voted": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "of": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "tally": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "required": [
+          "decision_id",
+          "voted",
+          "of",
+          "tally"
+        ]
+      },
+      "DecisionVoted": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "decision.voted"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DecisionVotedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Someone voted (or changed their vote)."
+      },
+      "DecisionClosedData": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "time",
+              "everyone_voted",
+              "closed_by_person",
+              "closed_by_go"
+            ]
+          }
+        },
+        "required": [
+          "decision",
+          "reason"
+        ]
+      },
+      "DecisionClosed": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "decision.closed"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DecisionClosedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "A vote closed, with the result."
+      },
+      "DecisionCancelledData": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          }
+        },
+        "required": [
+          "decision_id",
+          "by"
+        ]
+      },
+      "DecisionCancelled": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "decision.cancelled"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DecisionCancelledData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "A vote was called off."
+      },
+      "MandateSetData": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "mandate": {
+            "$ref": "#/components/schemas/Mandate"
+          }
+        },
+        "required": [
+          "decision_id",
+          "mandate"
+        ]
+      },
+      "MandateSet": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "mandate.set"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MandateSetData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "Go set what the group allowed for a spend."
+      },
+      "MandateConfirmedData": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "decision_id",
+          "person_id"
+        ]
+      },
+      "MandateConfirmed": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "mandate.confirmed"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MandateConfirmedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "The payer tapped \"Yes, book it\". Go may now ask for a spend approval."
+      },
+      "MandateDeclinedData": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "decision_id",
+          "person_id"
+        ]
+      },
+      "MandateDeclined": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "mandate.declined"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MandateDeclinedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "The payer tapped \"Not now\"."
+      },
+      "RecordChangedData": {
+        "type": "object",
+        "properties": {
+          "line": {
+            "$ref": "#/components/schemas/RecordLine"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "added",
+              "updated",
+              "done",
+              "undone"
+            ]
+          },
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          }
+        },
+        "required": [
+          "line",
+          "change",
+          "by"
+        ]
+      },
+      "RecordChanged": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "record.changed"
+          },
+          "data": {
+            "$ref": "#/components/schemas/RecordChangedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "A trip record line was added, changed, finished or undone."
+      },
+      "BookingChangedData": {
+        "type": "object",
+        "properties": {
+          "booking": {
+            "$ref": "#/components/schemas/Booking"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "added",
+              "updated",
+              "cancelled"
+            ]
+          },
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          }
+        },
+        "required": [
+          "booking",
+          "change",
+          "by"
+        ]
+      },
+      "BookingChanged": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "booking.changed"
+          },
+          "data": {
+            "$ref": "#/components/schemas/BookingChangedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "A booking was added, changed or cancelled."
+      },
+      "ExpenseChangedData": {
+        "type": "object",
+        "properties": {
+          "expense": {
+            "$ref": "#/components/schemas/Expense"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "added",
+              "removed"
+            ]
+          },
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          }
+        },
+        "required": [
+          "expense",
+          "change",
+          "by"
+        ]
+      },
+      "ExpenseChanged": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "expense.changed"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ExpenseChangedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "An expense was added or removed."
+      },
+      "Event": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/MessageCreated"
+          },
+          {
+            "$ref": "#/components/schemas/MessageEdited"
+          },
+          {
+            "$ref": "#/components/schemas/MessageDeleted"
+          },
+          {
+            "$ref": "#/components/schemas/ReactionAdded"
+          },
+          {
+            "$ref": "#/components/schemas/ReactionRemoved"
+          },
+          {
+            "$ref": "#/components/schemas/PersonJoined"
+          },
+          {
+            "$ref": "#/components/schemas/PersonUpdated"
+          },
+          {
+            "$ref": "#/components/schemas/PersonLeft"
+          },
+          {
+            "$ref": "#/components/schemas/TripCreated"
+          },
+          {
+            "$ref": "#/components/schemas/TripUpdated"
+          },
+          {
+            "$ref": "#/components/schemas/DecisionOpened"
+          },
+          {
+            "$ref": "#/components/schemas/DecisionVoted"
+          },
+          {
+            "$ref": "#/components/schemas/DecisionClosed"
+          },
+          {
+            "$ref": "#/components/schemas/DecisionCancelled"
+          },
+          {
+            "$ref": "#/components/schemas/MandateSet"
+          },
+          {
+            "$ref": "#/components/schemas/MandateConfirmed"
+          },
+          {
+            "$ref": "#/components/schemas/MandateDeclined"
+          },
+          {
+            "$ref": "#/components/schemas/RecordChanged"
+          },
+          {
+            "$ref": "#/components/schemas/BookingChanged"
+          },
+          {
+            "$ref": "#/components/schemas/ExpenseChanged"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
+      "ReadTrip": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "trip_id"
+        ]
+      },
+      "ReadMessages": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "after_seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "trip_id",
+          "after_seq"
+        ],
+        "description": "Up to 200 at a time; 200 when limit is left out. The Server sends fewer, with has_more: true, when the answer would go over the 1 MB frame limit."
+      },
+      "WriteResult": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "seq"
+        ]
+      },
+      "UpdateTrip": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Place"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dates": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "end": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vibe": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stay": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "itinerary": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Day"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id"
+        ],
+        "description": "Only the fields sent change."
+      },
+      "OpenDecision": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "choice",
+              "yesno"
+            ]
+          },
+          "anonymous": {
+            "type": "boolean"
+          },
+          "options": {
+            "minItems": 2,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionOption"
+            }
+          },
+          "closes_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "question",
+          "kind",
+          "anonymous",
+          "options"
+        ],
+        "description": "Opens a vote. Go then posts a message with a vote card to show it in the room."
+      },
+      "OpenDecisionResult": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "decision_id",
+          "seq"
+        ]
+      },
+      "CloseDecision": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "decision_id"
+        ]
+      },
+      "CloseDecisionResult": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "decision",
+          "seq"
+        ]
+      },
+      "SetMandate": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "choice_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "cap_minor": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "refundable_only": {
+            "type": "boolean"
+          },
+          "payer_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "decision_id",
+          "choice_index",
+          "cap_minor",
+          "currency",
+          "refundable_only",
+          "payer_person_id"
+        ],
+        "description": "Sets (or replaces) what the group allowed for a closed choice vote. Replacing clears the payer's earlier yes or no."
+      },
+      "AddRecordLine": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "agreed",
+              "open",
+              "doing"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "proof": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Proof"
+            }
+          },
+          "person_ids": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "kind",
+          "text",
+          "proof",
+          "person_ids"
+        ]
+      },
+      "AddRecordLineResult": {
+        "type": "object",
+        "properties": {
+          "line_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "line_id",
+          "seq"
+        ]
+      },
+      "UpdateRecordLine": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "line_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "agreed",
+                  "open",
+                  "doing"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "done"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proof": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Proof"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "line_id"
+        ],
+        "description": "Only the fields sent change. Go cannot undo a line; only people can."
+      },
+      "AddBooking": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BookingKind"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "vendor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "payer_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "for_person_ids": {
+            "minItems": 1,
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "refundable_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "journey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Journey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "place": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Place"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "kind",
+          "title",
+          "vendor",
+          "ref",
+          "amount_minor",
+          "currency",
+          "payer_person_id",
+          "for_person_ids"
+        ]
+      },
+      "AddBookingResult": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "booking_id",
+          "seq"
+        ]
+      },
+      "UpdateBooking": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "booking_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "cancelled"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refundable_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "booking_id"
+        ],
+        "description": "Only the fields sent change."
+      },
+      "AddExpense": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "paid_by_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "category": {
+            "$ref": "#/components/schemas/Category"
+          },
+          "split_person_ids": {
+            "minItems": 1,
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "booking_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "paid_by_person_id",
+          "amount_minor",
+          "currency",
+          "note",
+          "category",
+          "split_person_ids"
+        ]
+      },
+      "AddExpenseResult": {
+        "type": "object",
+        "properties": {
+          "expense_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "expense_id",
+          "seq"
+        ]
+      },
+      "RequestSpendApproval": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "merchant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "refundable_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "decision_id",
+          "amount_minor",
+          "currency",
+          "merchant",
+          "purpose"
+        ]
+      },
+      "CancelSpendApproval": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "approval_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "payment_failed",
+              "payer_declined",
+              "price_changed",
+              "expired",
+              "other"
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "approval_id",
+          "reason"
+        ]
+      },
+      "SpendDenialReason": {
+        "type": "string",
+        "enum": [
+          "decision_not_found",
+          "decision_not_closed",
+          "no_mandate",
+          "payer_has_not_confirmed",
+          "payer_declined",
+          "over_cap",
+          "currency_mismatch",
+          "not_refundable",
+          "approval_outstanding"
+        ]
+      },
+      "SpendApproved": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "approved"
+          },
+          "approval_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "approval": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "approval_id",
+          "approval",
+          "expires_at"
+        ]
+      },
+      "SpendDenied": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "denied"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/SpendDenialReason"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "reason"
+        ]
+      },
+      "SpendApprovalResult": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SpendApproved"
+          },
+          {
+            "$ref": "#/components/schemas/SpendDenied"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "status"
+        }
+      },
+      "AddReaction": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "message_id",
+          "emoji"
+        ]
+      },
+      "RemoveReaction": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "message_id",
+          "emoji"
+        ]
+      },
+      "EventAccepted": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "const": true
+          },
+          "duplicate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted",
+          "duplicate"
+        ]
+      },
+      "CardTap": {
+        "type": "object",
+        "properties": {
+          "tap_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "action_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z_]{0,31}$"
+          },
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "option_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "tap_id",
+          "trip_id",
+          "card_id",
+          "action_id",
+          "person_id"
+        ]
+      },
+      "ActionDone": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string",
+            "const": "done"
+          },
+          "toast": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "ActionOpen": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string",
+            "const": "open"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "result",
+          "url",
+          "expires_at"
+        ]
+      },
+      "ActionRefused": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string",
+            "const": "refused"
+          },
+          "toast": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "result",
+          "toast"
+        ]
+      },
+      "CardActionResult": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ActionDone"
+          },
+          {
+            "$ref": "#/components/schemas/ActionOpen"
+          },
+          {
+            "$ref": "#/components/schemas/ActionRefused"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "result"
+        }
+      },
+      "CatchUpRequest": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "trip_id",
+          "person_id",
+          "since"
+        ]
+      },
+      "CatchUp": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "decided",
+                    "booked",
+                    "needs_you",
+                    "open",
+                    "news"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 140
+                },
+                "image_url": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "message_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "description": "For one person only. Shown above the room, never posted in it."
+      },
+      "Fact": {
+        "type": "object",
+        "properties": {
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "topic": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "said_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "fact_id",
+          "topic",
+          "text",
+          "trip_id",
+          "said_at"
+        ]
+      },
+      "PersonPage": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "carry_over": {
+            "type": "boolean"
+          },
+          "facts": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Fact"
+            }
+          }
+        },
+        "required": [
+          "person_id",
+          "carry_over",
+          "facts"
+        ]
+      },
+      "GetPerson": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "UpdatePerson": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "carry_over": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "person_id",
+          "carry_over"
+        ]
+      },
+      "DeleteFact": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "person_id",
+          "fact_id"
+        ]
+      },
+      "ForgetPerson": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "Ok": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "ForgetResult": {
+        "type": "object",
+        "properties": {
+          "deleted_facts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "remaining_facts": {
+            "type": "number",
+            "const": 0
+          }
+        },
+        "required": [
+          "deleted_facts",
+          "remaining_facts"
+        ]
+      },
+      "CreateLink": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "vault"
+            ]
+          },
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "home",
+                  "add_card",
+                  "add_login"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "person_id"
+        ]
+      },
+      "Link": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "contract": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "contract"
+        ]
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "bad_signature",
+          "not_found",
+          "invalid",
+          "conflict",
+          "rate_limited",
+          "internal",
+          "unavailable"
+        ]
+      },
+      "ErrorBody": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "SocketRequest": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "A request. The other side answers it once, with a result or an error, using the same id."
+      },
+      "SocketNotification": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "method",
+          "params"
+        ],
+        "description": "A notification: no id, no answer. Used only for Go's typing."
+      },
+      "SocketResult": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "result": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "id",
+          "result"
+        ],
+        "description": "The answer to a request that worked."
+      },
+      "SocketError": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "data": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "$ref": "#/components/schemas/ErrorCode"
+                      },
+                      "retry_after_seconds": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 3600
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "id",
+          "error"
+        ],
+        "description": "The answer to a request that did not work."
+      },
+      "SpendApprovalClaims": {
+        "type": "object",
+        "properties": {
+          "iss": {
+            "type": "string",
+            "const": "server"
+          },
+          "aud": {
+            "type": "string",
+            "const": "go-vault"
+          },
+          "jti": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "payer_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "merchant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "refundable_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "iat": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "exp": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "iss",
+          "aud",
+          "jti",
+          "trip_id",
+          "decision_id",
+          "payer_person_id",
+          "amount_minor",
+          "currency",
+          "merchant",
+          "purpose",
+          "iat",
+          "exp"
+        ],
+        "description": "What the Server signs. exp is at most 600 seconds after iat."
+      }
+    }
+  }
+}

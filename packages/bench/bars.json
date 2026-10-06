@@ -1,0 +1,26 @@
+{
+  "schema": "go.bench-bars/v1",
+  "fast": {
+    "typingP90Ms": 500,
+    "goTimeP90Ms": 1500,
+    "cacheHitMin": 0.85,
+    "cacheChats": ["goa-2000"],
+    "wakeRateMax": 0.25,
+    "labelledChats": ["goa-50"],
+    "recallMissMax": 0,
+    "leakMax": 0,
+    "brokenCacheMax": 0,
+    "requireMemory": true,
+    "foldChats": ["goa-2000"]
+  },
+  "live": {
+    "typingP90Ms": 500,
+    "replyP50Ms": 2500,
+    "replyP90Ms": 5000,
+    "cacheHitMin": 0.85,
+    "wakeRateMax": 0.25,
+    "labelledChats": ["goa-50"],
+    "unpromptedShareMax": 0.02,
+    "recallMissMax": 0
+  }
+}
