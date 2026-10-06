@@ -102,3 +102,5 @@ export const statusUrl = (publicUrl: string, callId: string): string => `${publi
 export const mediaUrl = (publicUrl: string, callId: string): string => `wss://${new URL(publicUrl).host}/calls/media/${callId}`;
 /** For logs: never a whole phone number. */
 export const maskPhone = (phone: string): string => (phone.length <= 6 ? '***' : `${phone.slice(0, 3)}***${phone.slice(-3)}`);
+/** For logs: every phone-like number in a text (an error from Twilio names the number it could not call) masked. */
+export const maskNumbers = (text: string): string => text.replace(/\+?\d[\d\s\-().]{6,}\d/g, (n) => maskPhone(n.replace(/[\s\-().]/g, '')));

@@ -6,7 +6,7 @@ import { rawBody } from '../http/security.js';
 import { createHomeLink } from '../links.js';
 import { ensurePerson } from '../store/people.js';
 import { checkInternal } from './auth.js';
-import { PayLinkBody, openPayLink } from './pay-links.js';
+import { PayLinkBody, openPayLink, voidPayLinks } from './pay-links.js';
 
 const LinkBody = z.object({
   person_id: Id,
@@ -14,6 +14,8 @@ const LinkBody = z.object({
   start: z.enum(['home', 'add_card', 'add_login']).nullish(),
   display_name: z.string().min(1).max(80).nullish(),
 });
+
+const VoidBody = z.object({ approval_id: Id });
 
 const invalid = (error: z.ZodError) => ({ error: { code: 'invalid', message: z.prettifyError(error).slice(0, 500) } });
 
@@ -42,6 +44,13 @@ export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (ap
       return reply.code(409).send({ error: { code: 'conflict', message: `the vault refused: ${result.reason}`, reason: result.reason } });
     }
     return { url: result.url, expires_at: result.expiresAt.toISOString() };
+  });
+
+  // Go let a payment go (declined, expired, failed or refused): its pay links stop working, and no new one is made.
+  app.post('/internal/pay-links/void', async (req, reply) => {
+    const body = VoidBody.safeParse(req.body);
+    if (!body.success) return reply.code(422).send(invalid(body.error));
+    return { ok: true, voided: await voidPayLinks(deps.pool, deps.now(), body.data.approval_id) };
   });
 
   // Payments without both keys, counted from the vault's own records. Always 0 by construction.

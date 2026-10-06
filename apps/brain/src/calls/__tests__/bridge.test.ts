@@ -1,9 +1,9 @@
-import type { AddressInfo } from 'node:net';
+import { createServer, type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { manualTime, waitFor } from '../../proactive/fakes.js';
 import { attachBridge, BARGE_IN_LEVEL, frameLevel, type EndReason } from '../bridge.js';
-import type { CallBrief, ReportedOutcome } from '../realtime.js';
+import { openVoice, type CallBrief, type ReportedOutcome } from '../realtime.js';
 import type { CallLine } from '../store.js';
 
 /** G.711 μ-law, as Twilio sends it: 160 bytes per 20 ms frame at 8 kHz. */
@@ -33,7 +33,10 @@ afterEach(() => {
   while (cleanups.length) cleanups.pop()?.();
 });
 
-async function setup(model = 'gpt-realtime-2.1') {
+async function setup(
+  model = 'gpt-realtime-2.1',
+  over: { claim?: (id: string, token: string) => Promise<CallBrief | null>; talking?: (id: string) => Promise<boolean> } = {},
+) {
   const time = manualTime('2026-10-06T10:00:00Z');
   const voice = new WebSocketServer({ port: 0 });
   const modelGot: Array<Record<string, any>> = [];
@@ -48,11 +51,14 @@ async function setup(model = 'gpt-realtime-2.1') {
   const bridgeServer = new WebSocketServer({ port: 0 });
   bridgeServer.on('connection', (ws) =>
     attachBridge(ws, 'call_1', {
-      claim: async (_id, token) => (token === 'tok' ? brief : null),
+      claim: over.claim ?? (async (_id, token) => (token === 'tok' ? brief : null)),
       openVoice: () => new WebSocket(voiceUrl),
       hangUp: async (id) => { seen.hangUps.push(id); },
       hooks: {
-        talking: async (id) => { seen.talking.push(id); },
+        talking: async (id) => {
+          seen.talking.push(id);
+          return over.talking ? over.talking(id) : true;
+        },
         line: (_id, line) => { seen.lines.push(line); },
         outcome: (_id, o) => { seen.outcomes.push(o); },
         ended: async (_id, reason) => { seen.ended.push(reason); },
@@ -73,6 +79,7 @@ async function setup(model = 'gpt-realtime-2.1') {
   return {
     time, seen, modelGot, twilioGot,
     send: (frame: object) => twilio.send(JSON.stringify(frame)),
+    closeTwilio: () => twilio.close(),
     fromModel: (event: object) => modelSocket?.send(JSON.stringify(event)),
     modelSocket: () => modelSocket,
     closedWith: () => closedWith,
@@ -108,7 +115,7 @@ describe('attachBridge on gpt-realtime-2.1 (the default)', () => {
     s.fromModel({ type: 'response.output_audio.delta', response_id: 'resp_1', item_id: 'item_1', delta: toneFrame(0) });
     await waitFor(() => s.twilioGot.some((f) => f.event === 'media'));
     expect(s.twilioGot.find((f) => f.event === 'media')).toEqual({ event: 'media', streamSid: 'MZ1', media: { payload: toneFrame(0) } });
-    expect(s.twilioGot.some((f) => f.event === 'mark')).toBe(false); // marks are for the Live wire only
+    expect(s.twilioGot.some((f) => f.event === 'mark')).toBe(false); // a mark after each chunk is for the Live wire only
 
     const frames = [10, 11, 12].map(toneFrame);
     frames.forEach((payload, i) => s.send({ event: 'media', sequenceNumber: String(i + 2), streamSid: 'MZ1', media: { track: 'inbound', chunk: String(i + 1), timestamp: String(i * 20), payload } }));
@@ -137,11 +144,58 @@ describe('attachBridge on gpt-realtime-2.1 (the default)', () => {
     s.fromModel({ type: 'response.done', response: { id: 'resp_3' } });
     s.fromModel({ type: 'response.created', response: { id: 'resp_4' } });
     s.fromModel({ type: 'response.done', response: { id: 'resp_4' } });
-    await waitFor(() => s.time.pending() === 5); // greet, wrap-up, cap, report fallback, goodbye
+    // The goodbye is generated; Go asks Twilio to say when it has played, and waits for that.
+    await waitFor(() => s.twilioGot.some((f) => f.event === 'mark'));
+    const goodbye = s.twilioGot.find((f) => f.event === 'mark')!;
+    expect(goodbye).toEqual({ event: 'mark', streamSid: 'MZ1', mark: { name: 'go_goodbye' } });
+    s.time.advance(10_000); // still playing: no hang-up yet
+    expect(s.seen.hangUps).toEqual([]);
+    s.send({ event: 'mark', streamSid: 'MZ1', mark: goodbye.mark });
+    await waitFor(() => s.time.pending() === 4); // wrap-up, cap, report fallback, goodbye
     s.time.advance(2_500);
     expect(s.seen.hangUps).toEqual(['call_1']);
     await waitFor(() => s.seen.ended.length === 1);
     expect(s.seen.ended).toEqual(['hangup']);
+  });
+
+  it('Twilio dropping while the token is checked ends the call and never opens the voice model', async () => {
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const s = await setup('gpt-realtime-2.1', { claim: async (_id, token) => { await gate; return token === 'tok' ? brief : null; } });
+    s.send(startFrame('tok'));
+    s.closeTwilio();
+    await waitFor(() => s.closedWith() !== null);
+    release();
+    await waitFor(() => s.seen.ended.length === 1);
+    expect(s.seen.ended).toEqual(['hangup']);
+    expect(s.seen.talking).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(s.modelSocket()).toBeNull();
+  });
+
+  it('never opens the voice model when the call could not move to talking (stopped while it connected)', async () => {
+    const s = await setup('gpt-realtime-2.1', { talking: async () => false });
+    s.send(startFrame('tok'));
+    await waitFor(() => s.seen.ended.length === 1);
+    expect(s.seen.hangUps).toEqual(['call_1']);
+    expect(s.seen.ended).toEqual(['hangup']);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(s.modelSocket()).toBeNull();
+  });
+
+  it('closes a media socket that sends no valid start within 10 s, and ends nothing', async () => {
+    const s = await setup();
+    s.send({ event: 'connected', protocol: 'Call', version: '1.0.0' });
+    s.send({ event: 'start', streamSid: 'MZ1' }); // no start block: not a valid start
+    s.time.advance(9_999);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(s.closedWith()).toBeNull();
+    s.time.advance(1);
+    await waitFor(() => s.closedWith() !== null);
+    expect(s.closedWith()).toBe(1008);
+    expect(s.seen.talking).toEqual([]);
+    expect(s.seen.ended).toEqual([]);
+    expect(s.modelSocket()).toBeNull();
   });
 
   it('refuses a media connection with the wrong token and ends nothing', async () => {
@@ -273,5 +327,21 @@ describe('attachBridge on gpt-live-1 (the day-one A/B)', () => {
       delegation_id: null,
       content: 'Hi, this is Go, an AI assistant calling for a group of 5 friends travelling together.',
     });
+  });
+});
+
+describe('openVoice', () => {
+  it('gives up on a voice model that never answers the handshake, instead of a silent line', async () => {
+    // A server that takes the connection and never says a word.
+    const silent = createServer(() => undefined);
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    const port = (silent.address() as AddressInfo).port;
+    const ws = openVoice({ model: 'gpt-realtime-2.1', apiKey: 'sk-test', url: `ws://127.0.0.1:${port}`, handshakeTimeoutMs: 200 });
+    // ws emits 'error' and then 'close' in the same tick: listen for both before either comes.
+    const closed = new Promise((resolve) => ws.once('close', resolve));
+    const error = await new Promise<Error>((resolve) => ws.once('error', resolve));
+    expect(error.message).toMatch(/handshake has timed out/i);
+    await closed;
+    silent.close();
   });
 });
