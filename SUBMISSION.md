@@ -96,10 +96,12 @@ The admin page's health view (`/admin/health.json`, for the operator, behind the
 | The Server | The simulator ([`packages/sim`](packages/sim)), which keeps trips with the Server's rules. | The Server team's service, when it is pointed at Go. The health view's first row shows whether a Server is connected at that moment. | The Server's own deployment, with the same `GO_SIGNING_SECRET` as Go. |
 | The flight watch at 3:40 | Fired from the admin page. | Simulated for the demo: the operator fires it from the admin page, and every card it leads to says "Simulated for the demo". | It stays simulated on stage, and the presenter says so. Go's real watches follow booked flights through the travel layer, which answers from the fake ixigo until ixigo is connected. |
 
-## Rubric map
-
-The rubric arrives from the organisers; each criterion will map to the sections above.
-
 ## Known gaps
 
+- **No real model turn yet.** The stage Go's model key is a placeholder until the key arrives. Every Go line in the [transcript](docs/demo/transcript.md) and in the bench comes from a scripted model, so nothing here measures a real model's time or its words.
+- **Jev runs in shadow, with no recorded answers.** No question acts on Jev's read until its test set passes on recorded answers, and none has ([`apps/brain/src/reflex/live-gate.ts:6`](apps/brain/src/reflex/live-gate.ts#L6)). The bench and the demo test take the quick read from labels.
+- **ixigo.** The adapter is built, but its tool map is the fake's until ixigo shares its MCP tool list ([`apps/brain/src/travel/ixigo-map.ts:271`](apps/brain/src/travel/ixigo-map.ts#L271)), and the vault's ixigo pay rail answers `rail_not_ready` ([`apps/vault/src/internal/pay-links.ts:54`](apps/vault/src/internal/pay-links.ts#L54)). ixigo's platform is VPN-only and access is being arranged.
+- **The trip's computer (`/v1`) is not connected.** Jobs are tested against a fake `/v1`; on the stage Go the six `VESTRA_*` variables are not set, so jobs are off.
+- **Calls are off.** `CALLS_MODE` is `off` on the stage Go, and the Twilio and voice keys are not set. The calls are tested against a fake Twilio and a scripted voice model.
+- **The App and the Server are the other teams' repos.** This repo holds Go, and the simulator and the dev room stand in for the App and the Server. Nothing here shows Go with the real App and Server.
 - **The cache on the 300 message chat.** Its estimated cache hit is 81.6%, under 85%. Only the 2,000 message chat is held to that bar (87.0%), because its prompts are the size the bar is for ([evidence README](docs/demo/evidence/README.md), "Cache hit").
