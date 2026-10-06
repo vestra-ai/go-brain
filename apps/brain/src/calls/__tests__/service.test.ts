@@ -317,7 +317,7 @@ describe('a call that connects', () => {
     expect(m.link.of('replace_card').at(-1)).toMatchObject({ card: { state: 'talking', started_at: '2026-10-06T10:00:30.000Z' } });
     m.service.line(m.callId, { who: 'go', text: 'Hi, this is Go, an AI assistant calling for a group of 5 friends.' });
     m.service.line(m.callId, { who: 'go', text: 'So, 10 am check-in is fine — and ₹2,000 off for the deposit this week.' });
-    // The card carries Go's side only (Keshav's ruling): a line from the business is dropped.
+    // By design, the card carries Go's side only: a line from the business is dropped.
     m.service.line(m.callId, { who: 'them', text: 'Yes, that is right.' });
     await flush();
     expect(m.link.of('replace_card')).toHaveLength(1);
