@@ -6,9 +6,9 @@
 import type * as C from '@go/contract';
 import type { Pool } from 'pg';
 import type { NowProvider } from '../composer/context.js';
+import { dataBlock, defuse, inlineData, oneLine, personName } from '../composer/fence.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { Packs, TripPack } from '../trips/pack.js';
-import { fenceText, nameLabel } from './fence.js';
 import type { Memory } from './memory.js';
 import { mirrorSnapshot, recordLines } from './record.js';
 
@@ -18,7 +18,7 @@ const newestFirst = (a: C.RecordLine, b: C.RecordLine) => Date.parse(b.updated_a
 const KIND_WORD: Record<C.RecordLine['kind'], string> = { decided: 'Decided', agreed: 'Agreed', booked: 'Booked', open: 'Open', doing: 'Doing' };
 
 export function renderRecord(lines: C.RecordLine[], pack: TripPack, caps = { full: 15, short: 20 }): string | null {
-  const nameOf = (id: string) => nameLabel(pack.trip.people.find((p) => p.person_id === id)?.name ?? 'someone');
+  const nameOf = (id: string) => personName(pack.trip.people.find((p) => p.person_id === id)?.name ?? 'someone');
   const seqOf = (id: string) => pack.messages.find((m) => m.message_id === id)?.seq;
   const active = lines.filter((l) => l.status === 'active');
   const full = active
@@ -29,13 +29,14 @@ export function renderRecord(lines: C.RecordLine[], pack: TripPack, caps = { ful
       const who = l.person_ids.map(nameOf).join(', ') || 'the group';
       const due = l.due_at ? `, by ${l.due_at.slice(0, 10)}` : '';
       const refs = l.proof.map((p) => seqOf(p.message_id)).filter((s): s is number => s !== undefined).map((s) => `#${s}`).join(', ');
-      return fenceText(`${KIND_WORD[l.kind]}: ${l.text} (${l.kind === 'open' ? 'asking' : 'on it'}: ${who}${due}${refs ? `; ${refs}` : ''})`);
+      // The line's words came from people: fenced as data. Names, dates and message numbers are Go's own.
+      return `${KIND_WORD[l.kind]}: ${inlineData(l.text, 200)} (${l.kind === 'open' ? 'asking' : 'on it'}: ${who}${due}${refs ? `; ${refs}` : ''})`;
     });
   const short = active
     .filter((l) => l.kind === 'agreed' || l.kind === 'decided' || l.kind === 'booked')
     .sort(newestFirst)
     .slice(0, caps.short)
-    .map((l) => fenceText(`${KIND_WORD[l.kind]}: ${l.text}`));
+    .map((l) => `${KIND_WORD[l.kind]}: ${inlineData(l.text, 200)}`);
   if (full.length === 0 && short.length === 0) return null;
   return limit(['The trip record:', ...full, ...short].join('\n'));
 }
@@ -76,8 +77,8 @@ export function peopleNow(d: { memory: Memory; packs: Packs }): NowProvider {
       for (const id of conversationPeople(pack, wake)) {
         const page = await d.memory.page(tripId, id, 'go');
         if (!page) continue;
-        const name = nameLabel(pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone');
-        blocks.push(`${name}:\n${page.split('\n').slice(0, 10).map(fenceText).join('\n')}`);
+        const name = personName(pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone');
+        blocks.push(`${name}:\n${dataBlock('facts', page.split('\n').slice(0, 10).map((l) => defuse(oneLine(l))))}`);
       }
       if (blocks.length === 0) return null;
       return limit(['What Go knows about the people talking (drawn from facts; #n is the message it came from):', ...blocks].join('\n'));

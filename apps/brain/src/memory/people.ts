@@ -11,7 +11,7 @@ import { SocketCallError } from '../door/rpc.js';
 import type { Log } from '../log.js';
 import type { Packs } from '../trips/pack.js';
 import {
-  countFacts, currentFacts, deleteFactChain, forgetFacts, getCarryOver, markForgotten, setCarryOver, withTx, type Db, type FactRow,
+  countFacts, currentFacts, deleteFactChain, forgetFacts, getCarryOver, lockPerson, markForgotten, setCarryOver, withTx, type Db, type FactRow,
 } from './facts.js';
 import type { Fold } from './fold.js';
 
@@ -46,7 +46,7 @@ async function tripsOf(db: Db, personId: string): Promise<string[]> {
   const r = await db.query<{ trip_id: string }>(
     `SELECT trip_id FROM facts WHERE person_id = $1
      UNION SELECT trip_id FROM messages WHERE person_id = $1
-     UNION SELECT trip_id FROM story_lines WHERE $1 = ANY(people)`,
+     UNION SELECT trip_id FROM story_lines WHERE people @> ARRAY[$1]::text[]`,
     [personId],
   );
   return r.rows.map((x) => x.trip_id).sort();
@@ -112,6 +112,8 @@ export function peopleHandlers(d: PeopleDeps): {
       const trips = tripId ? [tripId] : await tripsOf(d.pool, person_id);
       const names = await namesOf(d.packs, person_id, trips);
       const deleted = await withTx(d.pool, async (c) => {
+        // The same lock saveFact takes: a notes pass that is saving for this person waits, then sees the forget.
+        await lockPerson(c, person_id);
         const n = await forgetFacts(c, person_id, tripId);
         for (const t of trips) await markForgotten(c, person_id, t, await lastSeq(c, t), d.now());
         await d.fold.redactPerson(c, person_id, trips, names);
