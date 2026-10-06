@@ -3,6 +3,7 @@
  * the composer's travel tools, the options taps, the tap wake line and Go's image route.
  */
 import type { RegisterLane } from '../app.js';
+import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { createImages, registerImageRoute } from './images.js';
@@ -34,6 +35,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     fake,
     ixigo,
     results,
+    today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
   });
   for (const t of travelTools({ travel, results, images, now: brain.now })) brain.tools.register(t);

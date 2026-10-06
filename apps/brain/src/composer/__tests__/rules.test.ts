@@ -23,6 +23,11 @@ describe("Go's rules", () => {
     );
   });
 
+  it('take no side while a vote is open: who has voted and a reminder to tap, nothing more', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nVotes and the trip\n'));
+    expect(section).toContain("- While a vote is open, don't argue for an option; you may say who has voted and remind people to tap.");
+  });
+
   it('keeps the shared costs people say they paid and reads who owes whom, but never moves money between people', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
     expect(section).toContain("You keep the group's shared costs.");

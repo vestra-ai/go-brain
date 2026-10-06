@@ -10,6 +10,7 @@ import { classifyAnthropicError } from './anthropic-helpers.js';
 import type { ContextImpl } from './context.js';
 import { chatLine, dataBlock, personName } from './fence.js';
 import { addUsage, MAX_ROUNDS, noUsage, runLoop } from './loop.js';
+import { stripMessageRefs } from './sanitize.js';
 import type { Speak } from './speak.js';
 import { makeTurnCtx, scopedLink, type Tools } from './tools.js';
 
@@ -70,6 +71,18 @@ function askedBack(text: string, items: DeskItem[], pack: TripPack): string[] {
     return !!first && new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(first)}(?![\\p{L}\\p{N}])`, 'iu').test(text);
   };
   return theirs.filter((x) => named(x.by)).map((x) => x.id);
+}
+
+/**
+ * The first message Go's words cited ("Meher said so in #6"), when it is a real message in this trip. The number leaves
+ * the words, and the post replies to that message instead, so people see the proof itself.
+ */
+function citedMessageId(text: string, pack: TripPack): string | null {
+  for (const seq of stripMessageRefs(text).refs) {
+    const m = pack.messages.find((x) => x.seq === seq && !x.deleted && !x.withheld);
+    if (m) return m.message_id;
+  }
+  return null;
 }
 
 /** The chat lines of desk items' messages, as the context draws them. */
@@ -174,7 +187,7 @@ export function createComposer(d: ComposerDeps): Composer {
 
       // With mayPostText false the words are dropped; the cards in ctx.cards still go.
       const text = r.silent || ctx.mayPostText === false ? null : r.text.trim() || null;
-      const replyTo = text ? replyToFor(t.items, pack) : null;
+      const replyTo = text ? (replyToFor(t.items, pack) ?? citedMessageId(text, pack)) : null;
       const ids =
         text || ctx.cards.length
           ? await d.speak.post({

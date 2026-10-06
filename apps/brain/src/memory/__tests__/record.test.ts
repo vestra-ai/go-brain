@@ -78,4 +78,22 @@ describe('writeLine', () => {
     expect(out).toEqual({ lineId: 'r_cab' });
     expect(link.calls[0]).toMatchObject({ method: 'update_record_line', params: { line_id: 'r_cab', status: 'done', kind: 'doing' } });
   });
+
+  it('skips an update that changes nothing (the same words, kind and status as the line now), so the Server writes nothing', async () => {
+    const link = fakeLink();
+    await mirrorLine(db.pool, 't_w4', line({ line_id: 'r_dates', kind: 'open', text: 'Dates: 13 to 16 Nov?', person_ids: [] }), 70);
+    const same: CheckedLine = { kind: 'open', text: 'Dates: 13 to 16 Nov?', personIds: [], proof: [{ message_id: 'm_0130', person_id: 'p_priya' }], lineId: 'r_dates' };
+    // Three passes in a row rewrite the same open line: none of them is sent.
+    for (const k of [1, 2, 3]) expect(await writeLine(db.pool, link, 't_w4', same, `go_record_turn_${k}_1`)).toEqual({ lineId: 'r_dates' });
+    expect(link.calls).toEqual([]);
+    // New words, or a new status, still go out.
+    const moved = { ...same, text: 'Dates: 6 to 9 Nov?' };
+    const done = { ...same, status: 'done' as const };
+    expect(await writeLine(db.pool, link, 't_w4', moved, lineRequestId(moved))).toEqual({ lineId: 'r_dates' });
+    expect(await writeLine(db.pool, link, 't_w4', done, lineRequestId(done))).toEqual({ lineId: 'r_dates' });
+    expect(link.calls.map((c) => [c.method, c.params.text, c.params.status])).toEqual([
+      ['update_record_line', 'Dates: 6 to 9 Nov?', undefined],
+      ['update_record_line', 'Dates: 13 to 16 Nov?', 'done'],
+    ]);
+  });
 });

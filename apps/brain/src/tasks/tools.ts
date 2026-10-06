@@ -45,7 +45,8 @@ async function asAnswer(run: () => Promise<unknown>): Promise<unknown> {
   }
 }
 
-export function taskTools(d: { tasks: TasksService }): QuickTool<any>[] {
+/** today: the date (YYYY-MM-DD) in the trip's time zone, so a job never guesses the year of "6 to 9 Nov". */
+export function taskTools(d: { tasks: TasksService; today?: (tripId: string) => Promise<string> }): QuickTool<any>[] {
   const startTask: QuickTool<z.infer<typeof StartArgs>> = {
     name: 'start_task',
     description:
@@ -55,7 +56,13 @@ export function taskTools(d: { tasks: TasksService }): QuickTool<any>[] {
     async run(a, ctx) {
       const trip = ctx.pack.trip;
       const askedBy = a.asked_by ? personNamed(trip, a.asked_by) : null;
-      const context = { ...(a.context ?? {}), trip: { destination: trip.destination?.name ?? null, dates: trip.dates ?? null, people: trip.people.length } };
+      // The trip's dates are ISO with their year; today is there too, for the dates people gave without one.
+      const today = d.today ? await d.today(ctx.tripId) : null;
+      const context = {
+        ...(a.context ?? {}),
+        trip: { destination: trip.destination?.name ?? null, dates: trip.dates ?? null, people: trip.people.length },
+        ...(today ? { today } : {}),
+      };
       const r = await d.tasks.start(ctx.tripId, {
         goal: a.goal,
         returns: returnsSchema(a.returns),

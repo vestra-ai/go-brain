@@ -8,7 +8,7 @@ It also holds one run of the live bench, with the real model and real Jev: see [
 
 ## Where the report comes from
 
-- **Run:** CI run [37437605711](https://github.com/vestra-ai/go-brain/actions/runs/37437605711), job `build-and-test`, artifact `bench-report`, written at 2026-10-06 08:46 UTC. The same run's test counts, and its demo transcript ([`docs/demo/transcript.md`](../transcript.md)), are the ones the other pages cite.
+- **Run:** CI run [37437605711](https://github.com/vestra-ai/go-brain/actions/runs/37437605711), job `build-and-test`, artifact `bench-report`, written at 2026-10-06 08:46 UTC. The same run's test counts are the ones the other pages cite.
 - **Code:** `build` at commit `5225799`, with pull request #50 merged on top (GitHub's test commit `de25e65`, which the report names). Pull request #50 changes documents and the demo test's transcript, which the bench does not run, so the code measured is `build`'s. CI runs on pull requests and on `main`, not on pushes to `build`, so this is how a run of `build`'s code is made.
 - **Verdict:** all 28 checks passed (`verdict.ok` is `true`).
 
@@ -188,7 +188,7 @@ It misses most of them, and each miss is a finding about Go, not about the bench
 - **Reply time (all four):** the bars, 2.5 seconds at p50 and 5 at p90, are below what a real model takes here. `claude-sonnet-5-5`'s first word alone takes about 1.2 seconds, and some turns run a search before they post.
 - **Woke the model (all four):** 86% and 90% with `claude-sonnet-5-5`, against 20% and 17% scripted. In the scripted run the chat's labels answer for Jev and read most chatter as sure; live, question 1 decides on Jev's real answers at its 0.85 bar, and question 2 (is the message finished) is in shadow. The run does not keep Jev's answers per message (they are in the run's own database, which is thrown away), so it cannot say how many chatter lines Jev read as sure.
 - **Cache hit on `goa-50`:** 83.8%, just under 85%. The fast bench holds only `goa-2000` to this bar; the live bars hold every chat to it. `goa-300` passes at 88.2%.
-- **Posts nobody asked for:** with a real model Go also answers some lines nobody asked it about: it replies "Noted, Priya, window seat" where a quiet ✅ was expected, welcomes people back, and wishes Meher a happy birthday. The bench counts each as unprompted for a person to review.
+- **Posts nobody asked for:** with a real model Go also answers some lines nobody asked it about: it replies "Noted, Priya, window seat" where a quiet ✅ was expected, welcomes people back, and wishes Meher a happy birthday. The bench counts each as unprompted for a person to review. This run predates pull request #64 (`db914a9`: one person's preference gets a ✅ and no post, and Go never tells the room about its tools), which passed 3 of 3 drills with the real model, so these counts are from before that fix.
 - **Recall:** 4 of 5 and 3 of 7. With a real side model the notes pass saves facts, and recall puts facts first: a fact stands in for the message it came from, and every fact about the person a question names comes back. So facts like "Bring helmet" fill the five answers ahead of the message that answers "What is Meher allergic to?"; "Who can't take early flights?" finds Arjun's message, but as the fact "No flights before 9 am", without the words the bench looks for; and some facts carry a different message number than the line the bench asks about.
 - **`claude-haiku-4-5` only:** it missed one ask in each chat, and its reply p90 on `goa-300` was 54 seconds.
 

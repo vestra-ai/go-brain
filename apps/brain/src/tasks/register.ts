@@ -6,6 +6,7 @@
 import type { Brain, RegisterLane } from '../app.js';
 import { mcpCallRecorder, registerGoMcp } from '../mcp/routes.js';
 import { createTokenStore } from '../mcp/tokens.js';
+import { tripToday } from '../travel/dates.js';
 import { createImages } from '../travel/images.js';
 import { createResultsStore } from '../travel/results.js';
 import { createCardUpdater } from './card-updater.js';
@@ -79,7 +80,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     tokens,
     log: brain.log,
   });
-  for (const t of taskTools({ tasks })) brain.tools.register(t);
+  for (const t of taskTools({ tasks, today: tripToday(brain.pool, brain.now) })) brain.tools.register(t);
   registerTaskTaps(brain.taps, { store, tasks, v1, userIdFor: computer.userIdFor, log: brain.log });
   brain.context.addNow(tasksNow({ store, packs: brain.packs, now: brain.now }));
   brain.context.addWake('task', renderTaskWake);
