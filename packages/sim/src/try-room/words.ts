@@ -15,8 +15,9 @@ export const HINTS: readonly string[] = [
 /** UTC midnight, when the daily counts start again, is 05:30 in India. */
 export const DAILY_LIMIT_LINE = "This demo has reached today's limit. It resets at 05:30 IST.";
 
-export const sessionLimitLine = (asks: number): string =>
-  `This visit has asked Go ${asks} times, the most one visit can. You can still talk to the group.`;
+export const tooManyTabs = (tabs: number): string => `This room is already open in ${tabs} tabs. Use one of those, or close one and reload this page.`;
+export const ROOM_FULL = 'The room is full right now. Try again in a few minutes.';
+export const SLOW_DOWN = 'That was a lot at once, so some of it was not sent. Try again more slowly.';
 
 export const goLiveLine = (contract: string | null): string =>
   `Go is live: this room talks to the real Go${contract ? ` (contract ${contract})` : ''}.`;

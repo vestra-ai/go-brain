@@ -1,5 +1,5 @@
-// The try room's settings, all from the environment, so it runs as a Railway service. GO_SIGNING_SECRET and
-// TRY_PASSCODE live only in Railway's variables, never in the repo or a log.
+// The try room's settings, all from the environment, so it runs as a Railway service. GO_SIGNING_SECRET, TRY_PASSCODE
+// and TRY_COOKIE_SALT live only in Railway's variables, never in the repo or a log.
 import { z } from 'zod';
 import { DEFAULT_CAPS } from './caps.js';
 import { SIMULATED_LINE } from './words.js';
@@ -7,17 +7,19 @@ import { SIMULATED_LINE } from './words.js';
 const count = (fallback: number) => z.coerce.number().int().nonnegative().default(fallback);
 
 export const TryEnv = z.object({
-  /** Go's base URL, e.g. https://brain-rehearsal.up.railway.app. The socket goes to its /v1/socket. */
+  /** Go's base URL, such as https://<Go's domain>. The socket goes to its /v1/socket. */
   GO_URL: z.string().regex(/^(https?|wss?):\/\/\S+$/, 'GO_URL must start with https://, http://, wss:// or ws://'),
   /** The secret Go and the Server share. The try room signs its socket to Go with it, on the server side only. */
   GO_SIGNING_SECRET: z.string().min(32, 'GO_SIGNING_SECRET must be at least 32 characters'),
-  /** What a visitor types to get in. The visit cookie's key is made from it. */
-  TRY_PASSCODE: z.string().min(8, 'TRY_PASSCODE must be at least 8 characters'),
+  /** What a visitor types to get in. The visit cookie's key is made from it and TRY_COOKIE_SALT. */
+  TRY_PASSCODE: z.string().min(20, 'TRY_PASSCODE must be at least 20 characters'),
+  /** Random and secret, at least 32 characters (openssl rand -hex 32). It keeps a leaked cookie from being used to test passcode guesses. */
+  TRY_COOKIE_SALT: z.string().min(32, 'TRY_COOKIE_SALT must be at least 32 characters: make it with openssl rand -hex 32'),
   PORT: z.coerce.number().int().positive().default(8080),
-  TRY_DAILY_GO_ASKS: count(DEFAULT_CAPS.dailyGoAsks),
+  /** What can wake Go's model per UTC day, across every visitor: messages, votes, taps, yes or no, new trips. */
+  TRY_DAILY_TURNS: count(DEFAULT_CAPS.dailyTurns),
+  /** Everything sent into the room per UTC day, reactions included. */
   TRY_DAILY_MESSAGES: count(DEFAULT_CAPS.dailyMessages),
-  TRY_SESSION_GO_ASKS: count(DEFAULT_CAPS.sessionGoAsks),
-  TRY_DAILY_TRIPS: count(DEFAULT_CAPS.dailyTrips),
   /** The line about what is simulated. Change it here when a part goes live. */
   TRY_SIMULATED_LINE: z.string().min(1).max(300).default(SIMULATED_LINE),
   /** The try room's name in Go's socket (?instance=). */

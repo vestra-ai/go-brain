@@ -1,7 +1,9 @@
 // The passcode gate in front of the try room. The first visit shows one passcode field. The right passcode, compared
-// in constant time, gets an HttpOnly, Secure, SameSite=Strict cookie that names the visit, signed with a key made from
-// TRY_PASSCODE and good for 12 hours. Every page, request and socket checks it. Wrong tries are held to 5 a minute
-// for each address. GO_SIGNING_SECRET is not used here: it stays in the Server's socket to Go.
+// in constant time, gets an HttpOnly, Secure, SameSite=Strict cookie that names the visit, good for 12 hours, signed
+// with a key made from TRY_PASSCODE and the random TRY_COOKIE_SALT: without the salt, a cookie that leaks cannot be
+// used to test passcode guesses offline. Every page, request and socket checks it. After 5 wrong tries in a minute
+// from one address, every try from it is held for a moment; the right passcode always gets in. GO_SIGNING_SECRET is
+// not used here: it stays in the Server's socket to Go.
 import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 
@@ -52,9 +54,9 @@ function cookiesNamed(header: string | undefined, name: string): string[] {
 export class Gate {
   private readonly key: Buffer;
 
-  constructor(private readonly passcode: string, private readonly now: () => Date = () => new Date()) {
-    // The cookie key is made from the passcode, so a new passcode signs every visitor out.
-    this.key = Buffer.from(hkdfSync('sha256', passcode, 'go-try-room', 'visit cookie', 32));
+  constructor(private readonly passcode: string, salt: string, private readonly now: () => Date = () => new Date()) {
+    // A new passcode or a new salt signs every visitor out.
+    this.key = Buffer.from(hkdfSync('sha256', passcode, salt, 'go-try-room visit cookie', 32));
   }
 
   /** The passcode, compared in constant time. */
@@ -91,7 +93,7 @@ export class Gate {
   }
 }
 
-/** Wrong passcode tries for each address: after 5 in a minute, every try waits until the oldest is a minute old. */
+/** Wrong passcode tries for each address: after 5 in a minute, the address is slowed until the oldest is a minute old. */
 export class WrongTries {
   private readonly tries = new Map<string, number[]>();
 
@@ -118,17 +120,23 @@ export class WrongTries {
 }
 
 /**
- * The visitor's address. Behind Railway's proxy (trustProxy) it is the last address in x-forwarded-for, the one the
- * proxy added; anything before it came from the visitor and could be made up.
+ * The visitor's address, for the wrong-try limit. Behind Railway's proxy (trustProxy) it is the first address in
+ * x-forwarded-for for now, until the addresses logged by addressHeaders show which header Railway sets; the limit only
+ * slows wrong tries, so a made-up address costs nothing but speed.
  */
 export function clientAddress(req: IncomingMessage, trustProxy: boolean): string {
   if (trustProxy) {
     const forwarded = req.headers['x-forwarded-for'];
-    const list = (Array.isArray(forwarded) ? forwarded.join(',') : (forwarded ?? '')).split(',').map((s) => s.trim()).filter(Boolean);
-    const last = list[list.length - 1];
-    if (last) return last;
+    const first = (Array.isArray(forwarded) ? forwarded.join(',') : (forwarded ?? '')).split(',')[0]?.trim();
+    if (first) return first;
   }
   return req.socket.remoteAddress ?? 'unknown';
+}
+
+/** The three address headers a proxy may set, raw, and no other header: logged once so the right one can be chosen. */
+export function addressHeaders(req: IncomingMessage): string {
+  const raw = (name: string): string => JSON.stringify(req.headers[name] ?? null);
+  return `x-forwarded-for=${raw('x-forwarded-for')} x-real-ip=${raw('x-real-ip')} x-envoy-external-address=${raw('x-envoy-external-address')}`;
 }
 
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

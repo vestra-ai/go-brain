@@ -23,7 +23,7 @@ Go's end-to-end tests (`apps/brain/src/__tests__/e2e`) run against the `FakeServ
 - `fake-server.test.ts`: the upgrade, events in order, a write done once per `request_id` even when it arrives twice, refused writes changing nothing, and a reconnect that keeps the trip.
 - `trip-state.test.ts`, `decisions.test.ts`, `records.test.ts` and `money.test.ts`: each of the Server's rules, including the spend check and the money maths.
 - `dev-room.test.ts`: one self-contained page with no em dashes and every card kind, laid out for a phone, and what people do on it reaching the room.
-- `try-room.test.ts`: the passcode gate (no cookie, a bad or old cookie, a good one, wrong tries held to 5 a minute, the secret and passcode in no answer), each cap, and a trip for each visit.
+- `try-room.test.ts`: the passcode gate (no cookie, a bad or old cookie, a good one, wrong tries slowed while the right passcode always gets in, no secret in any answer), each cap, the socket limits, per-visit trips and person ids, unique ids across restarts, and dropping idle trips.
 
 `pnpm --filter @go/sim test` runs them.
 
@@ -31,23 +31,23 @@ Go's end-to-end tests (`apps/brain/src/__tests__/e2e`) run against the `FakeServ
 
 A judge opens the page, types the passcode, and lands in a fresh Goa trip with the five friends, typing as any of them, with the real Go. The try room plays the Server: it signs its socket to Go with `GO_SIGNING_SECRET` on the server side, and the secret never reaches the browser.
 
-- **The gate.** The right passcode gets a cookie (HttpOnly, Secure, SameSite=Strict, signed with a key made from `TRY_PASSCODE`) that lasts 12 hours. Every page, the live socket and every action check it. Wrong tries are held to 5 a minute for each address. Pages are never cached, cannot be framed, and run only their own script.
-- **A trip for each visit.** "Start over" makes a new one. Nothing one visit does can reach another visit's trip.
-- **The caps,** counted in memory and started again at UTC midnight (05:30 IST). Over a cap the room says so and nothing reaches Go. A message counts as asking Go when it has the word "go" in it.
+- **The gate.** The right passcode gets a cookie (HttpOnly, Secure, SameSite=Strict) that lasts 12 hours, signed with a key made from `TRY_PASSCODE` and the secret `TRY_COOKIE_SALT`, so a cookie that leaks cannot be used to test passcode guesses. Every page, the live socket and every action check it. After 5 wrong tries in a minute from one address, wrong tries are slowed; the right passcode always gets in. Pages are never cached, cannot be framed, and run only their own script.
+- **A trip for each visit,** with person ids of its own (`p_rahul_<trip>`), so nothing Go learns about a person carries from one visit to another. "Start over" makes a new one. Nothing one visit does can reach another visit's trip.
+- **The caps,** counted in memory and started again at UTC midnight (05:30 IST). One daily budget of turns covers everything that can wake Go's model: anything said (not only messages that name Go), votes, card taps, the payer's yes or no, and new trips. A daily total covers everything sent, reactions included. Typing the passcode again does not start a visitor's count again: both caps are shared by everyone. Over a cap the room says so and nothing reaches Go.
+- **Staying small.** At most 3 live sockets for a visit and 300 in all, about 5 frames a second from each socket (the rest are dropped, with a note), each trip's state worked out once for every socket watching it, and trips nobody has used or watched for 6 hours dropped.
 - **What is live.** The page says whether Go answers at `GO_URL/v1/health`, and says what is simulated.
 
-It runs from `packages/sim/Dockerfile` (built from the repo root) with `packages/sim/railway.json`, which health-checks `/health`. On Railway, leave Root Directory empty and set the config file path to `/packages/sim/railway.json`.
+It runs from `packages/sim/Dockerfile` (built from the repo root) with `packages/sim/railway.json`, which health-checks `/health`. On Railway, leave Root Directory empty and set the config file path to `/packages/sim/railway.json`. On its first visit it logs the raw `x-forwarded-for`, `x-real-ip` and `x-envoy-external-address` once, so the wrong-try limit can be keyed on the right one; until then it uses the first `x-forwarded-for` address.
 
 | Variable | What it is |
 |---|---|
 | `GO_URL` | Go's base URL, such as `https://<Go's domain>`. |
 | `GO_SIGNING_SECRET` | The same secret Go has. |
-| `TRY_PASSCODE` | What a judge types. At least 8 characters; changing it signs everyone out. |
-| `TRY_DAILY_GO_ASKS` | Messages that ask Go per UTC day, across every visitor. Default 150. |
-| `TRY_DAILY_MESSAGES` | Everything sent into the room per UTC day: messages, taps, votes, reactions. Default 600. |
-| `TRY_SESSION_GO_ASKS` | Messages that ask Go in one visit. Default 25. |
-| `TRY_DAILY_TRIPS` | New trips per UTC day, each visit's first and every "Start over". Default 100. |
+| `TRY_PASSCODE` | What a judge types. At least 20 characters; changing it signs everyone out. |
+| `TRY_COOKIE_SALT` | Random and secret, at least 32 characters (`openssl rand -hex 32`). Changing it signs everyone out. |
+| `TRY_DAILY_TURNS` | Everything that can wake Go's model, per UTC day, across every visitor. Default 200. |
+| `TRY_DAILY_MESSAGES` | Everything sent into the room per UTC day, reactions included. Default 600. |
 | `TRY_SIMULATED_LINE` | The line about what is simulated. |
 | `TRY_INSTANCE` | The try room's name on Go's socket. Default `try-room`. |
 
-Railway sets `PORT`. On your machine: `pnpm --filter "@go/sim..." build`, then `GO_URL=... GO_SIGNING_SECRET=... TRY_PASSCODE=... pnpm --filter @go/sim try`, and open http://localhost:8080 (the cookie is Secure, which browsers allow on localhost).
+Railway sets `PORT`. On your machine: `pnpm --filter "@go/sim..." build`, then `GO_URL=... GO_SIGNING_SECRET=... TRY_PASSCODE=... TRY_COOKIE_SALT=... pnpm --filter @go/sim try`, and open http://localhost:8080 (the cookie is Secure, which browsers allow on localhost).
