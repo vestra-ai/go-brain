@@ -19,6 +19,16 @@ export interface BenchReport {
 
 const cell = (s: string): string => s.replace(/\|/g, '/').replace(/\n/g, ' ');
 
+/** One table row per ask of a live run: where its reply time went (timings.ts). */
+export function timingRows(x: LiveRun): string[] {
+  return (x.asks ?? []).map((a) => {
+    const tools = [...new Set(a.calls.flatMap((c) => c.toolsAfter))];
+    const waited = a.waited === null ? 'n/a' : a.waited ? `yes (due at ${fmtMs(a.dueMs)})` : 'no';
+    const calls = `${a.calls.length}${tools.length > 0 ? ` (${tools.join(', ')})` : ''}`;
+    return `| ${x.model} | ${a.line} | ${waited} | ${fmtMs(a.typingMs)} | ${fmtMs(a.turnStartMs)} | ${calls} | ${fmtMs(a.calls[0]?.firstWordMs ?? null)} | ${fmtMs(a.parts.modelMs)} | ${fmtMs(a.parts.betweenMs)} | ${fmtMs(a.parts.afterModelMs)} | ${fmtMs(a.postMs)} |`;
+  });
+}
+
 /** One line per live run, from Go's own tables: what Jev answered, and what woke each model turn. */
 export function whyWoke(x: LiveRun): string | null {
   if (x.jev === undefined) return null;
@@ -93,6 +103,19 @@ export function renderSummary(r: BenchReport): string {
     lines.push('', r.pick ? `**Suggested COMPOSER_MODEL: ${r.pick.model}.** It ${r.pick.why}.` : 'No model to suggest.', '');
     const why = r.live.map(whyWoke).filter((l): l is string => l !== null);
     if (why.length > 0) lines.push('## Why Go woke', '', ...why, '');
+    const timed = r.live.flatMap(timingRows);
+    if (timed.length > 0) {
+      lines.push(
+        '## Where reply time goes',
+        '',
+        'Per ask, in time after its last line reached the simulator: whether it waited for more lines, typing, the turn\'s start, the model calls (and the tools they asked for), the first call\'s first word, the time inside model calls, the time between them (the tools ran there), from the last call to the post, and the post.',
+        '',
+        '| Model | Ask (line) | Waited | Typing | Turn starts | Model calls | First word | In model calls | Between calls | Last call to post | Post |',
+        '|---|---|---|---|---|---|---|---|---|---|---|',
+        ...timed,
+        '',
+      );
+    }
   }
   lines.push('## Checks', '', '| Chat | Check | Value | Bar | Result |', '|---|---|---|---|---|');
   for (const c of [...failing, ...r.verdict.checks.filter((x) => x.ok)]) {
