@@ -234,6 +234,8 @@ export function createComposer(d: ComposerDeps): Composer {
               text,
               cards: ctx.cards,
               ...(replyTo ? { replyTo } : {}),
+              // People Go's words name get a push.
+              people: pack.trip.people,
             })
           : [];
       posted = ids.length > 0;

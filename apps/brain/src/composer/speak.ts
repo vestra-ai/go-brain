@@ -12,7 +12,34 @@ export interface PostArgs {
   text: string | null;
   cards: C.Card[];
   replyTo?: string;
+  /** Given, it is sent as it is; left out, it comes from `people` named in the text. */
   mentions?: string[];
+  /** The trip's people: the ones Go's text names go in mentions, so they get a push. */
+  people?: ReadonlyArray<Pick<C.Person, 'person_id' | 'name' | 'go_paused'>>;
+}
+
+/**
+ * The people Go's words name, as whole words: a first name ("Asha, you're the payer") or a full name, in any case and
+ * next to any punctuation ("Rahul bhai, Priya ko bolo!"). "Asha" in "Ashanti" is not Asha. A first name two people share
+ * goes only to the one named in full. Never someone who paused Go, never a member whose name is Go, at most 30.
+ */
+export function mentionsIn(text: string, people: ReadonlyArray<Pick<C.Person, 'person_id' | 'name' | 'go_paused'>>): string[] {
+  const words = text.toLowerCase();
+  const said = (name: string): boolean => {
+    const n = name.trim().toLowerCase();
+    if (n.length < 2 || n === 'go') return false;
+    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'u').test(words);
+  };
+  const first = (name: string): string => name.trim().split(/\s+/)[0] ?? '';
+  const out: string[] = [];
+  for (const p of people) {
+    if (p.go_paused) continue;
+    const shared = people.filter((q) => first(q.name).toLowerCase() === first(p.name).toLowerCase()).length > 1;
+    const full = p.name.trim().includes(' ') && said(p.name);
+    if (full || (!shared && said(first(p.name)))) out.push(p.person_id);
+  }
+  return [...new Set(out)].slice(0, 30);
 }
 
 export interface Speak {
@@ -88,6 +115,7 @@ export function createSpeak(o: {
       const cards = p.cards.map((c) => sanitizeDeep(c));
       const first = cards.shift();
       const ids: string[] = [];
+      const mentions = p.mentions ?? (text && p.people ? mentionsIn(text, p.people) : []);
       if (text || first) {
         const r = await p.link.request('post_message', {
           request_id: p.requestId('post'),
@@ -95,7 +123,7 @@ export function createSpeak(o: {
           ...(text ? { text } : {}),
           ...(first ? { card: first } : {}),
           ...(p.replyTo ? { reply_to: p.replyTo } : {}),
-          ...(p.mentions?.length ? { mentions: p.mentions } : {}),
+          ...(mentions.length ? { mentions } : {}),
         });
         ids.push(r.message_id);
       }

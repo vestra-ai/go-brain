@@ -711,6 +711,15 @@ describe('show the options and put them to a vote in one reply', () => {
   });
 });
 
+describe('people Go names', () => {
+  it('get a push: the turn posts them as mentions, worked out in code from the trip, not by the model', async () => {
+    const ask = msg(3, 'p_arjun', '@Go who pays for the villa?');
+    const r = room({ messages: [ask], script: [{ text: 'Priya, you are the payer, so tap Yes, book it. Arjun, nothing for you to do.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.posts()[0]?.params.mentions).toEqual(['p_priya', 'p_arjun']);
+  });
+});
+
 describe('an ask that lands while Go writes its hello', () => {
   it('is never lost: when the hello passed over it, it gets a turn of its own and is answered', async () => {
     // Trip t_35e02e110dfa4980: Priya's ask was in Go's copy of the trip when the hello's prompt was built (it shows in
