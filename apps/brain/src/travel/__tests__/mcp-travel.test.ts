@@ -42,9 +42,15 @@ describe('FakeTravel', () => {
     await expect(fake.search('flights', { from: 'Delhi', date: FRIDAY })).rejects.toBeInstanceOf(TravelError);
   });
 
-  it('says plainly that Go cannot search trains or buses yet', async () => {
-    await expect(fake.search('trains', { from: 'Delhi', to: 'Goa', date: FRIDAY })).rejects.toMatchObject({ code: 'refused', message: 'Go cannot search trains yet.' });
-    await expect(fake.search('buses', { from: 'Mumbai', to: 'Goa', date: FRIDAY })).rejects.toMatchObject({ code: 'refused', message: 'Go cannot search buses yet.' });
+  it('finds trains with one fare per class, and overnight buses, as journeys with offer ids', async () => {
+    const trains = await fake.search('trains', { from: 'Delhi', to: 'Goa', date: FRIDAY });
+    const rajdhani = trains.results.find((o) => o.offerId === 'fake:tr-NZM-MAO-20261106-22414-3A')!;
+    expect(rajdhani).toMatchObject({ kind: 'train', title: 'Madgaon Rajdhani Express 22414', priceMinor: 412000, priceNote: 'per person, 3A' });
+    expect(rajdhani.journey).toMatchObject({ mode: 'train', number: '22414', origin: { code: 'NZM' }, destination: { code: 'MAO' } });
+    expect(rajdhani.highlights[0]).toBe('AC 3 Tier');
+    const buses = await fake.search('buses', { from: 'Mumbai', to: 'Goa', date: FRIDAY });
+    expect(buses.results.map((o) => o.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
+    expect(buses.results[0]!.journey).toMatchObject({ mode: 'bus', carrier_name: 'Kadamba Transport (KTCL)' });
   });
 
   it('holds a flight for the people named and confirms it, paid on the rail PAY_RAIL names', async () => {

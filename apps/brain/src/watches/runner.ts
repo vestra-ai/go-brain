@@ -4,9 +4,8 @@
 import type pg from 'pg';
 import type { Candidate } from '../proactive/policy.js';
 import type { ProactiveStore } from '../proactive/store.js';
-import type { Travel } from '../travel/travel.js';
+import type { StatusQuery, StatusResult, Travel } from '../travel/travel.js';
 import { diffReading, type WatchChange, type WatchKind } from './diff.js';
-import type { StatusQuery, StatusResult } from './status.js';
 
 type WatchRow = {
   watch_id: string;
@@ -98,8 +97,7 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
       }
       let reading: StatusResult;
       try {
-        // P4's own StatusResult once travel/travel.ts lands; the same shape as ./status.js.
-        reading = (await travel.status(w.query)) as StatusResult;
+        reading = await travel.status(w.query);
       } catch (err) {
         const errors = w.errors + 1;
         d.log.warn({ err, watchId: w.watch_id }, 'watches: a check failed; backing off');

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { goaTrip, seedTrip } from '../../proactive/fakes.js';
 import { ProactiveStore } from '../../proactive/store.js';
-import type { StatusQuery, StatusResult } from '../status.js';
+import type { StatusQuery, StatusResult } from '../../travel/travel.js';
 import { syncWatches } from '../plan.js';
 import { backoffMs, createWatchRunner, nextCheckIn } from '../runner.js';
 

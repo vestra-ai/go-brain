@@ -20,6 +20,8 @@ header { position: sticky; top: 0; z-index: 2; background: var(--panel); border-
 .person.me { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 650; font-size: 12px; flex: none; }
 .avatar.go { background: var(--go); }
+.you { display: flex; gap: 8px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 13px; }
+.you button.act { margin-top: 0; font-size: 14px; padding: 8px 12px; }
 main { flex: 1; padding: 12px 12px 16px; }
 .needs { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 14px; padding: 10px 14px; margin-bottom: 16px; }
 .needs h2 { font-size: 12px; margin: 0 0 6px; color: var(--warn); text-transform: uppercase; letter-spacing: .04em; }
@@ -64,6 +66,7 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
 <header>
   <div class="title" id="title">Go dev room<small>connecting</small></div>
   <div class="people" id="people"></div>
+  <div class="you" id="you"></div>
 </header>
 <main>
   <div id="needs"></div>
@@ -290,6 +293,8 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
     $('people').innerHTML = t.people.map(function (p) {
       return '<button class="person' + (p.person_id === me ? ' me' : '') + '" data-me="' + esc(p.person_id) + '">' + avatar({ kind: 'person', person_id: p.person_id }) + esc(p.name) + '</button>';
     }).join('');
+    // The App's You screen, for whoever is "me": only the person can forget themselves.
+    $('you').innerHTML = '<span>You are ' + esc(nameOf(me)) + '</span><button class="act secondary" data-forget="' + esc(me) + '">Forget me in this trip</button>';
     var needs = state.needs[me] || [];
     $('needs').innerHTML = needs.length ? '<div class="needs"><h2>Needs you, ' + esc(nameOf(me)) + '</h2>' + needs.map(function (n) { return '<div>' + esc(n.text) + '</div>'; }).join('') + '</div>' : '';
     var atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
@@ -316,6 +321,8 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
       send({ type: 'decline', decisionId: d.decline });
     } else if (d.react) {
       send({ type: 'react', personId: me, messageId: d.react, emoji: '👍' });
+    } else if (d.forget) {
+      send({ type: 'forget', personId: d.forget });
     }
   });
 
@@ -344,6 +351,8 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
         } else {
           toast(r.toast || (r.result === 'done' ? 'Done' : 'Not allowed'));
         }
+      } else if (data.type === 'forget_result') {
+        toast(data.toast);
       } else if (data.type === 'error') {
         toast(data.message);
       }

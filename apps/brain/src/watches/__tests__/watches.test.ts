@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { goaTrip } from '../../proactive/fakes.js';
-import type { StatusResult } from '../status.js';
+import type { StatusResult } from '../../travel/travel.js';
 import { diffReading, type WatchInfo } from '../diff.js';
 import { flightNumber, noteWatchNotice, planWatches, syncWatches } from '../plan.js';
 

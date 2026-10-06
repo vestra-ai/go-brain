@@ -1,5 +1,5 @@
 /**
- * The fake ixigo: deterministic flights into Goa, North and South Goa villas, live flight status,
+ * The fake ixigo: deterministic flights, trains and buses into Goa, North and South Goa villas, live flight status,
  * and a two-step booking (hold, then confirm), answered in raw shapes like a partner API's. One table of tools
  * serves both the standalone MCP server (server.ts) and Go's in-process backend (mcp-caller.ts). Ids carry the route,
  * the date and the item, so a search and a hold read the same after a restart. Everything it sells is labelled
@@ -122,6 +122,92 @@ export function searchFlights(a: { origin: string; destination: string; date: st
   return { flights: flights.sort((x, y) => x.depart_at.localeCompare(y.depart_at)) };
 }
 
+// ── trains ───────────────────────────────────────────────────────────────────
+
+const STATIONS: Record<string, string> = { NZM: 'Delhi Hazrat Nizamuddin', MAO: 'Madgaon', THVM: 'Thivim (North Goa)', CSMT: 'Mumbai CSMT' };
+const STATION_WORDS: Record<string, string[]> = {
+  delhi: ['NZM'], 'new delhi': ['NZM'], goa: ['MAO', 'THVM'], madgaon: ['MAO'], margao: ['MAO'], thivim: ['THVM'], 'north goa': ['THVM'], mumbai: ['CSMT'],
+};
+
+function stationCodes(place: string): string[] {
+  const words = STATION_WORDS[place.trim().toLowerCase()];
+  if (words) return words;
+  const code = place.trim().toUpperCase();
+  return code in STATIONS ? [code] : [];
+}
+
+interface Train { from: string; to: string; no: string; name: string; dep: string; arr: string; days: number; fares: Record<string, number> }
+
+const TRAINS: Train[] = [
+  { from: 'NZM', to: 'MAO', no: '22414', name: 'Madgaon Rajdhani Express', dep: '10:55', arr: '10:20', days: 1, fares: { '3A': 412000, '2A': 565000 } },
+  { from: 'NZM', to: 'MAO', no: '12450', name: 'Goa Sampark Kranti Express', dep: '06:00', arr: '12:40', days: 1, fares: { '3A': 301000, '2A': 425000 } },
+  { from: 'NZM', to: 'THVM', no: '12780', name: 'Goa Express', dep: '15:00', arr: '15:45', days: 1, fares: { SL: 105000, '3A': 279000 } },
+  { from: 'CSMT', to: 'THVM', no: '12051', name: 'Jan Shatabdi Express', dep: '05:10', arr: '12:45', days: 0, fares: { CC: 77500 } },
+  { from: 'CSMT', to: 'THVM', no: '10103', name: 'Mandovi Express', dep: '07:10', arr: '17:30', days: 0, fares: { SL: 41000, '3A': 112000 } },
+];
+
+export interface RawTrain {
+  fare_id: string; train_no: string; train_name: string; from_code: string; from_name: string; to_code: string; to_name: string;
+  depart_at: string; arrive_at: string; duration_min: number; class_code: string; fare_paise: number; availability: string;
+}
+
+function rawTrain(t: Train, date: string, cls: string, fare: number): RawTrain {
+  const fareId = `tr-${t.from}-${t.to}-${compactDate(date)}-${t.no}-${cls}`;
+  const left = seeded(fareId, 30);
+  return {
+    fare_id: fareId, train_no: t.no, train_name: t.name, from_code: t.from, from_name: STATIONS[t.from]!, to_code: t.to, to_name: STATIONS[t.to]!,
+    ...leg(date, t.dep, t.arr, t.days), class_code: cls, fare_paise: fare, availability: left > 3 ? `AVL ${left}` : `WL ${4 - left}`,
+  };
+}
+
+export function searchTrains(a: { from_station: string; to_station: string; date: string }): { trains: RawTrain[] } {
+  const from = stationCodes(a.from_station);
+  const to = stationCodes(a.to_station);
+  const trains: RawTrain[] = [];
+  for (const t of TRAINS.filter((x) => from.includes(x.from) && to.includes(x.to))) {
+    for (const [cls, fare] of Object.entries(t.fares)) trains.push(rawTrain(t, a.date, cls, fare));
+  }
+  return { trains: trains.sort((x, y) => x.depart_at.localeCompare(y.depart_at) || x.fare_paise - y.fare_paise) };
+}
+
+// ── buses ────────────────────────────────────────────────────────────────────
+
+const BUS_CITY_WORDS: Record<string, string> = {
+  mumbai: 'Mumbai', bombay: 'Mumbai', goa: 'Goa', panaji: 'Goa', mapusa: 'Goa', 'north goa': 'Goa', bangalore: 'Bengaluru', bengaluru: 'Bengaluru', pune: 'Pune',
+};
+
+interface Bus { from: string; to: string; operator: string; type: string; dep: string; arr: string; fare: number; rating: number }
+
+const BUSES: Bus[] = [
+  { from: 'Mumbai', to: 'Goa', operator: 'Paulo Travels', type: 'Volvo AC Sleeper', dep: '20:30', arr: '07:30', fare: 145000, rating: 4.4 },
+  { from: 'Mumbai', to: 'Goa', operator: 'Neeta Tours and Travels', type: 'AC Sleeper', dep: '21:15', arr: '08:45', fare: 125000, rating: 4.1 },
+  { from: 'Mumbai', to: 'Goa', operator: 'Kadamba Transport (KTCL)', type: 'Non-AC Seater', dep: '18:00', arr: '06:30', fare: 98000, rating: 3.8 },
+  { from: 'Bengaluru', to: 'Goa', operator: 'VRL Travels', type: 'AC Sleeper', dep: '21:00', arr: '08:00', fare: 139000, rating: 4.2 },
+  { from: 'Pune', to: 'Goa', operator: 'Atmaram Travels', type: 'AC Sleeper', dep: '22:00', arr: '08:30', fare: 115000, rating: 4.0 },
+];
+
+export interface RawBus {
+  fare_id: string; operator: string; bus_type: string; from_city: string; to_city: string;
+  depart_at: string; arrive_at: string; duration_min: number; fare_paise: number; seats_left: number; rating: number;
+}
+
+const slug = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const busKey = (b: Bus): string => `${slug(b.operator)}-${slug(b.from)}-${slug(b.to)}`;
+
+function rawBus(b: Bus, date: string): RawBus {
+  const fareId = `bus-${busKey(b)}-${compactDate(date)}`;
+  return {
+    fare_id: fareId, operator: b.operator, bus_type: b.type, from_city: b.from, to_city: b.to,
+    ...leg(date, b.dep, b.arr, b.arr < b.dep ? 1 : 0), fare_paise: b.fare, seats_left: 3 + seeded(fareId, 20), rating: b.rating,
+  };
+}
+
+export function searchBuses(a: { from_city: string; to_city: string; date: string }): { buses: RawBus[] } {
+  const from = BUS_CITY_WORDS[a.from_city.trim().toLowerCase()];
+  const to = BUS_CITY_WORDS[a.to_city.trim().toLowerCase()];
+  return { buses: BUSES.filter((b) => b.from === from && b.to === to).map((b) => rawBus(b, a.date)).sort((x, y) => x.depart_at.localeCompare(y.depart_at)) };
+}
+
 // ── stays ────────────────────────────────────────────────────────────────────
 
 interface Stay {
@@ -192,6 +278,30 @@ export function findFare(fareId: string): FareFound | null {
       kind: 'flight', title: `${f.airline} ${f.code} ${f.number}`, unitPaise: f.fare, perTraveller: true, startsAt: r.depart_at, endsAt: r.arrive_at,
       refundableUntil: r.refundable_until, imageUrl: null, place: null,
       journey: { mode: 'flight', from_name: r.from_city, from_code: f.from, to_name: r.to_city, to_code: f.to, depart_at: r.depart_at, arrive_at: r.arrive_at, carrier: f.airline, carrier_code: f.code, number: `${f.code} ${f.number}` },
+    };
+  }
+  if (parts[0] === 'tr' && parts.length === 6) {
+    const [, from, to, day, no, cls] = parts as [string, string, string, string, string, string];
+    const t = TRAINS.find((x) => x.from === from && x.to === to && x.no === no);
+    const fare = t?.fares[cls];
+    if (!t || fare === undefined || !/^\d{8}$/.test(day)) return null;
+    const r = rawTrain(t, expandDate(day), cls, fare);
+    return {
+      kind: 'train', title: `${t.name} ${t.no}`, unitPaise: fare, perTraveller: true, startsAt: r.depart_at, endsAt: r.arrive_at,
+      refundableUntil: null, imageUrl: null, place: null,
+      journey: { mode: 'train', from_name: r.from_name, from_code: t.from, to_name: r.to_name, to_code: t.to, depart_at: r.depart_at, arrive_at: r.arrive_at, carrier: 'Indian Railways', carrier_code: null, number: t.no },
+    };
+  }
+  if (parts[0] === 'bus') {
+    const day = fareId.slice(-8);
+    const key = fareId.slice(4, -9);
+    const b = BUSES.find((x) => busKey(x) === key);
+    if (!b || !/^\d{8}$/.test(day)) return null;
+    const r = rawBus(b, expandDate(day));
+    return {
+      kind: 'bus', title: b.operator, unitPaise: b.fare, perTraveller: true, startsAt: r.depart_at, endsAt: r.arrive_at,
+      refundableUntil: null, imageUrl: null, place: null,
+      journey: { mode: 'bus', from_name: b.from, from_code: null, to_name: b.to, to_code: null, depart_at: r.depart_at, arrive_at: r.arrive_at, carrier: b.operator, carrier_code: null, number: null },
     };
   }
   if (parts[0] === 'st' && parts.length >= 5) {
@@ -299,6 +409,8 @@ export class FakeIxigoStore {
 const Day = z.iso.date();
 export const FAKE_IXIGO_ARGS = {
   search_flights: z.object({ origin: z.string().min(2).max(60), destination: z.string().min(2).max(60), date: Day, adults: z.int().min(1).max(9).optional() }),
+  search_trains: z.object({ from_station: z.string().min(2).max(60), to_station: z.string().min(2).max(60), date: Day }),
+  search_buses: z.object({ from_city: z.string().min(2).max(60), to_city: z.string().min(2).max(60), date: Day }),
   search_stays: z.object({ location: z.string().min(2).max(60), check_in: Day, check_out: Day, guests: z.int().min(1).max(30).optional() }),
   flight_status: z.object({ airline_code: z.string().min(2).max(3), flight_no: z.string().min(1).max(5), date: Day }),
   pnr_status: z.object({ pnr: z.string().min(4).max(20) }),
@@ -312,6 +424,8 @@ export interface FakeIxigoTool { name: FakeIxigoToolName; description: string; a
 
 export const FAKE_IXIGO_TOOLS: FakeIxigoTool[] = [
   { name: 'search_flights', description: 'Flights between two cities or airports on a date, with fares in paise. Read-only.', annotations: { readOnlyHint: true } },
+  { name: 'search_trains', description: 'Trains between two stations or cities on a date, one fare per class, in paise. Read-only.', annotations: { readOnlyHint: true } },
+  { name: 'search_buses', description: 'Buses between two cities on a date, with fares in paise. Read-only.', annotations: { readOnlyHint: true } },
   { name: 'search_stays', description: 'Villas and hotels in a place for check-in and check-out dates, with nightly and whole-stay prices in paise. Read-only.', annotations: { readOnlyHint: true } },
   { name: 'flight_status', description: 'Live status of a flight on a date: on schedule or late, with the expected departure. Read-only.', annotations: { readOnlyHint: true } },
   { name: 'pnr_status', description: 'The status of a booking by its reference. Read-only.', annotations: { readOnlyHint: true } },
@@ -323,6 +437,8 @@ export const FAKE_IXIGO_TOOLS: FakeIxigoTool[] = [
 function runTool(store: FakeIxigoStore, name: FakeIxigoToolName, a: Record<string, unknown>): unknown {
   switch (name) {
     case 'search_flights': return searchFlights(a as z.infer<typeof FAKE_IXIGO_ARGS.search_flights>);
+    case 'search_trains': return searchTrains(a as z.infer<typeof FAKE_IXIGO_ARGS.search_trains>);
+    case 'search_buses': return searchBuses(a as z.infer<typeof FAKE_IXIGO_ARGS.search_buses>);
     case 'search_stays': return searchStays(a as z.infer<typeof FAKE_IXIGO_ARGS.search_stays>);
     case 'flight_status': return store.flightStatus(a as z.infer<typeof FAKE_IXIGO_ARGS.flight_status>);
     case 'pnr_status': return store.pnr(a as z.infer<typeof FAKE_IXIGO_ARGS.pnr_status>);

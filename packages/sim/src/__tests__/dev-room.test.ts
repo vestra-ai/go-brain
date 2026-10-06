@@ -74,6 +74,12 @@ describe('the dev room page', () => {
     expect(PAGE_HTML).toMatch(/input\[type=text\] \{[^}]*font-size: 16px/);
     expect(PAGE_HTML).toContain('<div class="app">');
   });
+
+  it('has "Forget me in this trip" for whoever is "me", as on the App\'s You screen, and shows its toast', () => {
+    expect(PAGE_HTML).toContain('data-forget="\' + esc(me) + \'">Forget me in this trip</button>');
+    expect(PAGE_HTML).toContain("send({ type: 'forget', personId: d.forget })");
+    expect(PAGE_HTML).toContain("data.type === 'forget_result'");
+  });
 });
 
 describe('the live socket', () => {
@@ -113,6 +119,37 @@ describe('the live socket', () => {
     expect(g.taps[0]).toMatchObject({ card_id: 'c_w', action_id: 'watch', person_id: 'p_arjun' });
   });
 
+  it('"Forget me in this trip": forget_person to Go first, then the join answers cleared, and the toast says nothing is left', async () => {
+    const { go: g, fake: f, room: r } = await setUp();
+    const { ws, got } = await live(r.url);
+    ws.send(JSON.stringify({ type: 'forget', personId: 'p_meher' }));
+    await until(() => got.some((m) => m.type === 'forget_result'));
+    expect(got.find((m) => m.type === 'forget_result')).toEqual({ type: 'forget_result', personId: 'p_meher', toast: 'Done. Nothing about Meher is left.' });
+    expect(g.forgets).toEqual([{ person_id: 'p_meher', trip_id: 't_goa' }]);
+    // The Server's half, after Go answered: her join answers are gone, and Go hears it as person.updated.
+    expect(f.trip().people.find((p) => p.person_id === 'p_meher')).toMatchObject({ from_city: null, know: [] });
+    const order = g.frames
+      .filter((x) => x.method === 'forget_person' || (x.method === 'send_event' && x.params.type === 'person.updated'))
+      .map((x) => x.method);
+    expect(order).toEqual(['forget_person', 'send_event']);
+    expect(g.events.at(-1)).toMatchObject({ type: 'person.updated', data: { person: { person_id: 'p_meher', from_city: null, know: [] }, changed: ['from_city', 'know'] } });
+    // Nothing is said in the room: the toast is only for the person who tapped.
+    expect(f.messages()).toEqual([]);
+  });
+
+  for (const [why, answer] of [['Go fails', 'fail'], ['Go says something is left', { deleted_facts: 1, remaining_facts: 1 }]] as const) {
+    it(`never says "Done" when ${why}, and keeps the join answers`, async () => {
+      const { go: g, fake: f, room: r } = await setUp();
+      g.forget = answer;
+      const { ws, got } = await live(r.url);
+      ws.send(JSON.stringify({ type: 'forget', personId: 'p_meher' }));
+      await until(() => got.some((m) => m.type === 'forget_result'));
+      expect(got.find((m) => m.type === 'forget_result').toast).toBe("Go couldn't forget you just now. Try again.");
+      expect(f.trip().people.find((p) => p.person_id === 'p_meher')).toMatchObject({ from_city: 'Mumbai', know: ['Birthday on 7 Nov'] });
+      expect(g.events.some((e) => e.type === 'person.updated')).toBe(false);
+    });
+  }
+
   it('shrugs off junk, and tells the page when an action is refused', async () => {
     const { fake: f, room: r } = await setUp();
     const { ws, got } = await live(r.url);
@@ -121,6 +158,10 @@ describe('the live socket', () => {
     ws.send(JSON.stringify({ type: 'say', personId: 'p_stranger', text: 'hi' }));
     await until(() => got.some((m) => m.type === 'error'));
     expect(got.find((m) => m.type === 'error').message).toContain('p_stranger');
+    ws.send(JSON.stringify({ type: 'forget', personId: 'p_stranger' }));
+    await until(() => got.filter((m) => m.type === 'error').length === 2);
+    expect(got.filter((m) => m.type === 'error')[1].message).toContain('p_stranger');
+    expect(got.some((m) => m.type === 'forget_result')).toBe(false);
     ws.send(JSON.stringify({ type: 'say', personId: 'p_rahul', text: 'still here' }));
     await until(() => f.messages().some((m) => m.text === 'still here'));
   });

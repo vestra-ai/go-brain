@@ -27,9 +27,16 @@ const tap = (over: Partial<{ tap_id: string; action_id: string; person_id: strin
 });
 
 describe('registerTravel', () => {
-  it('sets brain.travel and registers the four travel tools, the two options taps, the tap wake and the image route', async () => {
+  it('runs before proactive in LANES, so the watches find brain.travel set when they start', async () => {
+    const { LANES } = await import('../../main.js');
+    const { registerProactive } = await import('../../proactive/register.js');
+    expect(LANES.indexOf(registerTravel)).toBeGreaterThanOrEqual(0);
+    expect(LANES.indexOf(registerTravel)).toBeLessThan(LANES.indexOf(registerProactive));
+  });
+
+  it('sets brain.travel and registers the six travel tools, the two options taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
-    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_stays', 'show_options', 'put_to_vote']);
+    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual(['options/pick', 'options/vote']);
     expect(lb.context.wakes.has('tap')).toBe(true);
     expect((await lb.http.inject({ method: 'GET', url: `/img/u${'0'.repeat(32)}.jpg` })).statusCode).toBe(404);

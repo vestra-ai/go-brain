@@ -341,6 +341,28 @@ export class TripState {
     return { result: undefined, events: [ev] };
   }
 
+  /** "Forget me in this trip", the Server's half: the person's join answers are cleared, so Go cannot learn them again. */
+  clearJoinAnswers(personId: string): Change<void> {
+    const person = this.trip.people.find((p) => p.person_id === personId);
+    if (!person) throw fail('invalid', `personId: ${personId} is not in this trip`);
+    const changed: Array<'from_city' | 'earliest_leave' | 'know'> = [];
+    if (person.from_city != null) {
+      person.from_city = null;
+      changed.push('from_city');
+    }
+    if (person.earliest_leave != null) {
+      person.earliest_leave = null;
+      changed.push('earliest_leave');
+    }
+    if (person.know.length > 0) {
+      person.know = [];
+      changed.push('know');
+    }
+    if (changed.length === 0) return { result: undefined, events: [] };
+    const ev = this.bump('person.updated', { person: structuredClone(person), changed });
+    return { result: undefined, events: [ev] };
+  }
+
   /** What the App's "needs you" strip shows this person, worked out from the trip like the Server does. */
   needsYou(personId: string): NeedsItem[] {
     const out: NeedsItem[] = [];
