@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { GO_DENY_TOOLS, GO_TASK_INSTRUCTIONS, GO_WEBHOOK_EVENTS, goTaskManifest } from '../instructions.js';
+import { DEMO_LISTINGS, GO_DENY_TOOLS, GO_TASK_INSTRUCTIONS, GO_WEBHOOK_EVENTS, goTaskManifest } from '../instructions.js';
 
 describe("Go's job instructions", () => {
   it('fit in the 8,000 characters a deployment allows, in plain words with no dashes', () => {
     expect(GO_TASK_INSTRUCTIONS.length).toBeLessThan(8000);
     expect(GO_TASK_INSTRUCTIONS).not.toMatch(/[—–]/);
+  });
+
+  it('in demo mode say plainly that the listings are simulated, to take them as they are and use their own facts', () => {
+    expect(DEMO_LISTINGS).toContain("The listings from Go's search tools are simulated for this demo. Choose from them as they are, and don't check them against public websites.");
+    for (const words of ['reviews', 'beach distance', 'own facts']) expect(DEMO_LISTINGS, words).toContain(words);
+    expect(DEMO_LISTINGS).not.toMatch(/[—–]/);
   });
 
   it('say the job, the to-do list, Go\'s tools, offer ids, the answer shape, and never paying or signing in with saved cards', () => {

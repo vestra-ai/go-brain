@@ -139,6 +139,8 @@ export interface Travel {
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   /** Safe to repeat: the same hold confirmed twice gives the same answer. */
   confirm(holdId: string, paid: { approvalId: string; railRef: string }): Promise<Confirmed>;
+  /** True while searches come from the fake ixigo (TRAVEL_MODE is fake, or ixigo is not set up): the listings are simulated. */
+  simulated?(): boolean;
   /** Present while the fake ixigo runs: makes a flight late, for the demo's labelled "simulated" watch. */
   simulate?: { setFlightDelay(carrierCode: string, number: string, date: string, minutes: number): void };
 }

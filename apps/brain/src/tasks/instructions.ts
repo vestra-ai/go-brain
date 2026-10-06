@@ -46,6 +46,14 @@ export const GO_TASK_INSTRUCTIONS = `You are the trip's computer for Go, the AI 
 - If nothing fits, return an empty list and say why in the summary.
 - Keep the summary to two plain sentences.`;
 
+/**
+ * Said in a job's message while Go's travel search is the simulator: the job takes the listings as they are instead of
+ * looking for them on the open web, where they do not exist. Honest, because every card already says "ixigo (simulated)".
+ */
+export const DEMO_LISTINGS =
+  "The listings from Go's search tools are simulated for this demo. Choose from them as they are, and don't check them against public websites. " +
+  "For reviews, beach distance and the rest, use each listing's own facts: its rating, its number of reviews and its minutes to the beach.";
+
 /** Bash's own tools a Go job never uses: house features, other sessions, sub-agents, paid media, apps. */
 export const GO_DENY_TOOLS = [
   'Skill', 'Ability', 'search_abilities', 'install_item', 'resolve_install_source', 'resolve_mcp_source', 'connect_mcp',

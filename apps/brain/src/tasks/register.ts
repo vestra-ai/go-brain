@@ -59,7 +59,10 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   const cards = createCardUpdater({ link: brain.door.link, log: brain.log, ...(o.cardGapMs !== undefined ? { gapMs: o.cardGapMs } : {}) });
   let following: Follower | null = null;
   const follow = (conversationId: string, tripId: string): void => following?.ensure(conversationId, tripId);
-  const tasks = createTasks({ store, v1, computer, cards, link: brain.door.link, desk: brain.desk, packs: brain.packs, now: brain.now, log: brain.log, follow });
+  const tasks = createTasks({
+    store, v1, computer, cards, link: brain.door.link, desk: brain.desk, packs: brain.packs, now: brain.now, log: brain.log, follow,
+    listingsSimulated: () => brain.travel?.simulated?.() === true,
+  });
   const events = createTaskEvents({ store, tasks, v1, desk: brain.desk, results, packs: brain.packs, now: brain.now, log: brain.log });
   const screens = createScreens({ v1, store, images, tasks, userIdFor: computer.userIdFor, now: brain.now, log: brain.log });
   const follower = createFollower({ v1, store, streams: eventStore, apply: events.apply, screens, log: brain.log, ...(o.follower ?? {}) });
