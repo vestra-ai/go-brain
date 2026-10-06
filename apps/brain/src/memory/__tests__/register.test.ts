@@ -92,7 +92,7 @@ function setup(
   const wired = wireMemory(brain, { jev, timers: t.timers, clock: t.clock });
   return { brain, pack, handlers, tools, nows, warnings, stops, link, model, t, wired, story: () => story };
 }
-const read = (over: Partial<ReflexRead>): ReflexRead => ({ ...codeOnly({ namesGo: false, secretKinds: [], hasTasks: false }), ...over });
+const read = (over: Partial<ReflexRead>): ReflexRead => ({ ...codeOnly({ namesGo: false, secretKinds: [], hasTasks: false, money: false }), ...over });
 
 describe('joinFacts', () => {
   it('turns join answers into facts with plain topics', () => {

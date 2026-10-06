@@ -9,7 +9,8 @@ export const BARS = {
    * (Jev 1.13.0, recorded 2026-10-06: recall 0.77, 0 wrong of 13). 0.8 also had no wrong answer, but an ask read as chatter
    * goes unanswered while a needless wake costs one model call, so the bar keeps the margin. notAddressedMax: a line Jev
    * is sure no one spoke to Go in is not for Go either, chatter or not (a fact, a plan); on the same recordings it skips
-   * 20 of 50 lines and none labelled for Go, whose lowest answer was 0.57. The other three are Bash's.
+   * 18 of 50 lines (a line about money always wakes) and none labelled for Go, whose lowest answer was 0.57. The other
+   * three are Bash's.
    */
   for_go: { chatterMin: 0.85, addressedMaxForChatter: 0.2, notAddressedMax: 0.1, addressedMin: 0.9, chatterMaxForAddressed: 0.1 },
   /** Q2. Answering mid-thought is visible; unsure only costs the 2 s wait. */
