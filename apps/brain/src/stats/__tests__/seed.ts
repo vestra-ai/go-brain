@@ -27,6 +27,10 @@ export interface SeedTurn {
   at: number;
   /** Woken by a person's message (default) or by something else, such as setup. */
   message?: boolean;
+  /** Whether that message named Go (default true): the board times only turns a message named Go in. */
+  namesGo?: boolean;
+  /** A chatter line that landed this long before the waking message and joined the same turn. */
+  chatterBeforeMs?: number;
   /** The desk's wait before the turn began. */
   waitMs?: number;
   /** Times after the landing. */
@@ -46,10 +50,15 @@ export async function seedTurn(pool: pg.Pool, o: SeedTurn): Promise<void> {
   const landed = minutesAgo(o.at);
   const after = (ms: number | undefined): Date | null => (ms === undefined ? null : new Date(landed.getTime() + ms));
   const byMessage = o.message ?? true;
-  if (byMessage) {
-    const messageId = await personMessage(pool, { tripId, at: landed });
-    await pool.query("insert into desk_items (id, trip_id, kind, ref, due_at, turn_id, done_at) values ($1, $2, 'message', $3, $4, $5, $4)", [`msg:${tripId}:${messageId}`, tripId, messageId, landed, o.id]);
-  }
+  const deskItem = async (at: Date, namesGo: boolean): Promise<void> => {
+    const messageId = await personMessage(pool, { tripId, at });
+    await pool.query(
+      "insert into desk_items (id, trip_id, kind, ref, due_at, payload, turn_id, done_at) values ($1, $2, 'message', $3, $4, $5, $6, $4)",
+      [`msg:${tripId}:${messageId}`, tripId, messageId, at, JSON.stringify({ messageId, namesGo }), o.id],
+    );
+  };
+  if (byMessage && o.chatterBeforeMs !== undefined) await deskItem(new Date(landed.getTime() - o.chatterBeforeMs), false);
+  if (byMessage) await deskItem(landed, o.namesGo ?? true);
   await pool.query(
     `insert into turns (turn_id, trip_id, woke_for, started_at, typing_at, posted_at, model, rounds, input_tokens, cached_tokens, cache_write_tokens, output_tokens, cost_usd, outcome)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
