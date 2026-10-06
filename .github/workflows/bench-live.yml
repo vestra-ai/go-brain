@@ -1,0 +1,73 @@
+# The live bench: real models and real Jev. By hand (any branch) or nightly at 03:00 IST (from main). Never on a push.
+name: bench-live
+on:
+  workflow_dispatch:
+    inputs:
+      chats:
+        description: Chats to replay, comma separated
+        default: goa-50,goa-300
+      models:
+        description: Composer models to compare, comma separated
+        default: claude-sonnet-5-5,claude-haiku-4-5
+      gate_model:
+        description: The model the bars are judged on
+        default: claude-sonnet-5-5
+      record_jev:
+        description: Write chats/<chat>.jev.json from real Jev (in the artifact)
+        type: boolean
+        default: false
+  schedule:
+    - cron: '30 21 * * *'
+concurrency:
+  group: bench-live
+  cancel-in-progress: false
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: go_bench
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/go_bench
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      GO_BOARD_URL: ${{ secrets.GO_BOARD_URL }}
+      GO_BOARD_TOKEN: ${{ secrets.GO_BOARD_TOKEN }}
+      CHATS: ${{ inputs.chats || 'goa-50,goa-300' }}
+      MODELS: ${{ inputs.models || 'claude-sonnet-5-5,claude-haiku-4-5' }}
+      GATE_MODEL: ${{ inputs.gate_model || 'claude-sonnet-5-5' }}
+      RECORD_JEV: ${{ inputs.record_jev && '--record-jev' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Live bench
+        run: node packages/bench/dist/run-live.js --chats "$CHATS" --models "$MODELS" --gate-model "$GATE_MODEL" $RECORD_JEV --post-board
+      - name: Summary on the job page
+        if: always()
+        run: if [ -f packages/bench/out/live-report.md ]; then cat packages/bench/out/live-report.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Keep the report and any Jev recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-bench
+          path: |
+            packages/bench/out/
+            packages/bench/chats/*.jev.json
+          if-no-files-found: ignore

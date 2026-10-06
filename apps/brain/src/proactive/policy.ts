@@ -36,6 +36,8 @@ export interface TripMood {
   tz: string;
   postsToday: number;
   lastProactivePostAt: Date | null;
+  /** Go's newest message of any kind in the chat (answers too), from the pack. */
+  lastGoMessageAt?: Date | null;
   lastPersonMessageAt: Date | null;
   hushCount: number;
   lastHushAt: Date | null;
@@ -69,10 +71,11 @@ export function barRaise(m: TripMood, now: Date): { night: number; mood: number 
   return { night, mood: hush + ignored };
 }
 
-/** True when Go's last unprompted post has had no person speak after it. */
+/** True when nobody has spoken since Go last did: its last unprompted post, or any message of Go's in the chat. */
 export function lastWordIsGos(m: TripMood): boolean {
-  if (m.lastProactivePostAt === null) return false;
-  return m.lastPersonMessageAt === null || m.lastPersonMessageAt.getTime() <= m.lastProactivePostAt.getTime();
+  const go = Math.max(m.lastProactivePostAt?.getTime() ?? Number.NEGATIVE_INFINITY, m.lastGoMessageAt?.getTime() ?? Number.NEGATIVE_INFINITY);
+  if (go === Number.NEGATIVE_INFINITY) return false;
+  return m.lastPersonMessageAt === null || m.lastPersonMessageAt.getTime() <= go;
 }
 
 export type Decision =

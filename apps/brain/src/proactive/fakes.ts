@@ -75,7 +75,7 @@ export function goaTrip(over: Partial<Trip> = {}): Trip {
         journey: {
           mode: 'flight', origin: { name: 'Delhi', code: 'DEL' }, destination: { name: 'Goa', code: 'GOX' },
           depart_at: '2026-11-06T18:15:00+05:30', arrive_at: '2026-11-06T20:45:00+05:30',
-          carrier_name: 'IndiGo', carrier_code: '6E', number: '2134',
+          carrier_name: 'IndiGo', carrier_code: '6E', number: '6E 2134',
         },
         created_at: '2026-10-05T10:00:00Z',
       },

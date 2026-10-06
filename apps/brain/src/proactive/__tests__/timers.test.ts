@@ -93,6 +93,21 @@ describe('stillTrue', () => {
     expect(stillTrue(settle, goaPack({ trip: owed }))).toMatchObject({ ok: true });
   });
 
+  it('drops a watch nudge once its booking is cancelled or a later reading replaced it', () => {
+    const delay = { tripId: 't_goa', dedupeKey: 'flight:t_goa:b_flight:delay:120', source: 'watch' as const, topic: 'flight_status', dueAt: NOON, expiresAt: null,
+      importance: 0.9, confidence: 1, urgency: 0.9, useful: ['pin' as const], personIds: ['p_rahul'], facts: { watchId: 'flight:t_goa:b_flight', delayMinutes: 120 }, simulated: false, small: false };
+    const current = new Map([['flight:t_goa:b_flight', 'flight:t_goa:b_flight:delay:120']]);
+    expect(stillTrue(delay, goaPack(), current)).toMatchObject({ ok: true });
+    // The flight is back on time: the watch's newest change is another one.
+    expect(stillTrue(delay, goaPack(), new Map([['flight:t_goa:b_flight', 'flight:t_goa:b_flight:on_time']]))).toEqual({ ok: false });
+    // The booking was cancelled.
+    const base = goaTrip();
+    const cancelled = goaTrip({ bookings: base.bookings.map((b) => (b.booking_id === 'b_flight' ? { ...b, status: 'cancelled' as const } : b)) });
+    expect(stillTrue(delay, goaPack({ trip: cancelled }), current)).toEqual({ ok: false });
+    // The demo's simulated delay has no watch behind it.
+    expect(stillTrue({ ...delay, simulated: true, facts: { delayMinutes: 120 } }, goaPack())).toMatchObject({ ok: true });
+  });
+
   it('drops a chat opening whose message was deleted', () => {
     const c = { ...vote, topic: 'chat', source: 'opening' as const, facts: { message_id: 'm_7', seq: 7 } };
     expect(stillTrue(c, goaPack({ messages: [msg({ id: 'm_7', seq: 7 })] }))).toMatchObject({ ok: true });
