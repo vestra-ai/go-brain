@@ -159,6 +159,30 @@ describe('put_to_vote', () => {
     expect(await lb.tools.run('put_to_vote', { card_id: shown.card_id }, lb.ctx({ turnId: 'turn_w4' }))).toMatchObject({ error: 'already_voting', decision_id: a.decision_id });
   });
 
+  it('with no card_id, votes on the options card shown earlier in the same reply', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_r1' }))) as any;
+    const reply = lb.ctx({ turnId: 'turn_r2' });
+    await lb.tools.run('show_options', { results_id: found.results_id, title: 'Villas' }, reply);
+    const out = (await lb.tools.run('put_to_vote', {}, reply)) as any;
+    expect(out.decision_id).toBeDefined();
+    const card = C.OptionsCard.parse(reply.cards[0]);
+    const vote = lb.link.sent('open_vote').at(-1)!;
+    expect((vote.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
+    expect(reply.cards.map((c) => c.kind)).toEqual(['options', 'vote']);
+  });
+
+  it('with no card_id, refuses when the reply showed two options cards, or none, and opens nothing', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_r3' }))) as any;
+    const two = lb.ctx({ turnId: 'turn_r4' });
+    await lb.tools.run('show_options', { results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, two);
+    await lb.tools.run('show_options', { results_id: found.results_id, option_numbers: [3, 4], title: 'Two more villas' }, two);
+    const opened = lb.link.sent('open_vote').length;
+    expect(await lb.tools.run('put_to_vote', {}, two)).toMatchObject({ error: 'which_card' });
+    expect(await lb.tools.run('put_to_vote', {}, lb.ctx({ turnId: 'turn_r5' }))).toMatchObject({ error: 'no_card' });
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+    expect(two.cards.map((c) => c.kind)).toEqual(['options', 'options']);
+  });
+
   it('puts trains to a vote at their per-person fares, each option answering travel.offer as a train, which is never booked for the group', async () => {
     const found = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_tr1' }))) as any;
     const showCtx = lb.ctx({ turnId: 'turn_tr2' });

@@ -1,6 +1,7 @@
 import { goaFreshTrip } from '@go/sim';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { TurnRunner } from '../../desk/desk.js';
+import type { PacksImpl } from '../../trips/pack.js';
 import { fakeAnthropic, type Reply } from '../fixtures/fake-anthropic.js';
 import {
   appliedCount, newSince, postsWith, rightNow, sleep, startRoom, waitTyping, waitWrite, type Room,
@@ -28,7 +29,12 @@ function script(body: any): Reply {
   return { tools: [{ name: 'stay_silent', input: { reason: 'chatter' } }] };
 }
 
+// The burst test holds every turn until its five lines are all in, so however slow the runner, the turn the desk
+// fires reads all five (otherwise a fifth line that lands after the prompt is built joins in a second round).
+let burstIn: Promise<void> = Promise.resolve();
+
 const dieAfterPosting = (run: TurnRunner): TurnRunner => async (t) => {
+  await burstIn;
   await run(t);
   if (!crashed && crashAfterPosting && t.items.some((i) => i.ref === crashAfterPosting)) {
     crashed = true;
@@ -37,10 +43,11 @@ const dieAfterPosting = (run: TurnRunner): TurnRunner => async (t) => {
 };
 
 const model = fakeAnthropic(script);
+const trip = goaFreshTrip();
 let room: Room;
 beforeAll(async () => {
   room = await startRoom({ anthropic: model.client, wrapTurn: dieAfterPosting });
-  await room.fake.createTrip(goaFreshTrip());
+  await room.fake.createTrip(trip);
   await waitWrite(room.fake, (w) => w.method === 'post_message' && w.params.text === 'Hi all, I am Go!');
 }, 30_000);
 afterAll(async () => {
@@ -52,11 +59,17 @@ const askedAbout = (from: number, text: string) => model.bodies.slice(from).filt
 describe('G1: Go holds up', () => {
   it('a burst of five gets one turn that reads all five', async () => {
     const before = model.bodies.length;
+    let allIn: () => void = () => undefined;
+    burstIn = new Promise<void>((resolve) => { allIn = resolve; });
     await room.fake.say('p_rahul', 'burst-1 scuba on Sunday?');
     await room.fake.say('p_priya', 'burst-2 yes!!');
     await room.fake.say('p_arjun', 'burst-3 @Go is scuba safe in November?');
     await room.fake.say('p_meher', "burst-4 I can't swim lol");
-    await room.fake.say('p_kabir', 'burst-5 snorkelling then');
+    const fifth = await room.fake.say('p_kabir', 'burst-5 snorkelling then');
+    // The Server's answer comes before Go handles the event: wait until the fifth line is in Go's copy of the trip.
+    const packs = room.built.brain.packs as PacksImpl;
+    await vi.waitFor(() => expect(packs.peek(trip.trip_id)?.messages.some((m) => m.message_id === fifth.message_id)).toBe(true), { timeout: 5_000, interval: 20 });
+    allIn();
     const reply = await waitWrite(room.fake, (w) => w.method === 'post_message' && /^Read \d new messages\.$/.test(w.params.text ?? ''));
     expect(reply.params.text).toBe('Read 5 new messages.');
     expect(askedAbout(before, 'burst-')).toHaveLength(1);
