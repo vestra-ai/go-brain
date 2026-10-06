@@ -230,10 +230,44 @@ With `claude-haiku-4-5`: reply p50 8.67 s and p90 8.89 s, recall 5 of 5, cost $0
 
 ### Measured offline since
 
-Two more changes, measured on the chats and the 50 labelled lines before they were built. The next live run will show them.
+Two more changes, measured on the chats and the 50 labelled lines before they were built. The final run below ran with both.
 
 - **No wait for an ask that ends.** A message that names Go and ends with ?, !, one full stop or an emoji goes to the model at once; one that trails off ("@Go can you") still waits 2 seconds for the rest. Asks whose last line ends that way, by the bench's own grouping of asks: 3 of 6 on `goa-50`, 8 of 12 on `goa-300`, 8 of 13 on `goa-2000`. Asks that would be answered before their next line arrived, from the chats' timestamps: none; in every multi-line ask the line that names Go has no end mark. Of the 22 labelled lines that name Go, code calls 6 finished, and none of them is labelled unfinished. The case the chats do not have: "@Go flights to Goa?" then "from Delhi". A second line that lands before Go posts joins the same turn (one more round, tested); one that lands after it gets its own.
 - **A line about money always wakes the model.** An amount that is plainly money (₹500, 3,200, 8k) or a word for paying or owing wakes Go even when Jev is sure no one spoke to it, so an expense is recorded and an unclear one gets its question. The wakes it adds: 2 of the 50 labelled lines, in both recordings; 1 on `goa-50` with the after run's own Jev answers ("agreed, pool villa it is. Under 8k a head"), 0 in its `claude-haiku-4-5` run; and at most 1 on `goa-300` and 2 on `goa-2000`, the lines there that look like money and do not name Go.
+
+### Final run: `goa-50` with every fix
+
+`bench-live-2026-10-06-final.json` (and its summary, `bench-live-2026-10-06-final.md`) is the third live run, unedited, on `goa-50` only, on the code that also has the two changes measured offline above: no wait for an ask that ends (#77), and a line about money always waking the model (#79).
+
+- **Run:** bench-live run [37457403482](https://github.com/vestra-ai/go-brain/actions/runs/37457403482), job `live`, artifact `live-bench`, written at 2026-10-06 11:39 UTC. Its two replays took 3.6 minutes and cost $0.46.
+- **Code:** `build` at commit `ad71bca`, with pull request #80 merged on top (GitHub's test commit `9f2379c`, which the report names). The pull request adds only documents, so the Go measured is `build`'s. Between the after run and this one, `build` also took #73, #75, #76 and #78, which change what Go says and keeps (the year in dates, a turn keeping an answer it already paid for, one ✅ for a recorded expense, a correction about yourself getting a ✅ and no post).
+- **Verdict:** 5 of 14 checks pass (`verdict.ok` is `false`). The run suggests `claude-haiku-4-5`, whose reply p50 was the lower of the two this time.
+
+`claude-sonnet-5-5` on `goa-50`, the three runs side by side:
+
+| | First | After | Final | Live bar |
+|---|---|---|---|---|
+| Typing p90 | 5 ms | 5 ms | 4 ms | under 500 ms |
+| Reply p50 | 4.39 s | 5.22 s | 7.64 s | under 2.5 s |
+| Reply p90 | 13.47 s | 10.44 s | 9.68 s | under 5 s |
+| Model's first word, p50 | 1.27 s | 1.15 s | 1.42 s | none |
+| Requests to the model, for its turns | 66 for 43 | 27 for 16 | 34 for 18 | none |
+| Cache hit (the provider's own) | 83.8% | 85.9% | 86.6% | 85% or more |
+| Woke the model | 86.0% | 32.0% | 36.0% | under 25% |
+| Asks answered | 6 of 6 | 6 of 6 | 6 of 6 | every one |
+| Posts nobody asked for | 5 of 21 | 1 of 12 | 1 of 12 | none (no wrong speak) |
+| Recall | 4 of 5 | 5 of 5 | 5 of 5 | no misses |
+| Cost of the chat | $0.5314 | $0.2476 | $0.3106 | none |
+
+Why Go woke in the final run, from its own tables: Jev answered all 50 messages, in 95 ms at p50 and 128 ms at p90, and read 31 as sure not for Go; of the 18 model turns, 17 were woken by messages and 1 by the trip's setup. Two more turns than the after run: the money check keeps "agreed, pool villa it is. Under 8k a head" awake, as measured offline, and the rest is one run against another.
+
+What still misses, plainly:
+
+- **Reply time:** 7.64 seconds at p50 and 9.68 at p90, against 2.5 and 5. The p50 is higher than the after run's 5.22, although three of the six asks no longer wait 2 seconds. The run does not keep each ask's own times, so it cannot say how much of that is the hold saved and how much is the model: its first word took longer (1.42 seconds at p50), its turns made more rounds (34 requests for 18 turns, against 27 for 16), and with six asks one run moves a lot against another.
+- **Woke the model:** 36%, against 25%.
+- **Posts nobody asked for:** 1, against none on this hand-labelled chat.
+
+With `claude-haiku-4-5`: reply p50 6.52 s and p90 8.74 s, 5 of 6 asks answered (it missed "for 5 people with luggage", the end of a multi-line ask), no post nobody asked for, recall 5 of 5, cost $0.1466. Its wake rate (60%) counts its side passes, as explained above.
 
 ## Running it yourself
 
