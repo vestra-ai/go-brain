@@ -67,9 +67,11 @@ describe('task rows', () => {
     expect(await store.insertCapped(task('gt_cap0', { tripId: 't_cap' }), 3)).toBeNull();
     const first = (await store.listLive('t_cap')).find((r) => r.state === 'starting')!;
     await store.transition(first.id, ['starting'], 'done', { endedAt: T0 });
-    const promoted = await Promise.all([store.promoteQueued('t_cap', 3, T0), store.promoteQueued('t_cap', 3, T0)]);
+    const later = new Date(T0.getTime() + 60_000);
+    const deadline = new Date(T0.getTime() + 540_000);
+    const promoted = await Promise.all([store.promoteQueued('t_cap', 3, later, deadline), store.promoteQueued('t_cap', 3, later, deadline)]);
     expect(promoted.filter((r) => r !== null)).toHaveLength(1);
-    expect(promoted.find((r) => r !== null)).toMatchObject({ state: 'starting', deadlineAt: T0 });
+    expect(promoted.find((r) => r !== null)).toMatchObject({ state: 'starting', startingAt: later, deadlineAt: deadline });
     expect(await store.countActive('t_cap')).toBe(3);
   });
 

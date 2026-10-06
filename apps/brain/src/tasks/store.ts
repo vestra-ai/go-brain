@@ -39,6 +39,8 @@ export interface TaskRow {
   startedAt: Date | null;
   endedAt: Date | null;
   stopRequestedAt: Date | null;
+  /** When the job entered starting (made with a free slot, or taken off the queue). */
+  startingAt: Date | null;
   todosAt: Date | null;
   costUsd: number | null;
 }
@@ -66,7 +68,7 @@ export interface TaskStore {
    */
   insertCapped(row: NewTask, maxActive: number): Promise<TaskState | null>;
   /** Moves the trip's oldest queued job to starting when a slot is free, under the same per-trip lock. */
-  promoteQueued(tripId: string, maxActive: number, deadlineAt: Date): Promise<TaskRow | null>;
+  promoteQueued(tripId: string, maxActive: number, now: Date, deadlineAt: Date): Promise<TaskRow | null>;
   get(id: string): Promise<TaskRow | null>;
   byV1Task(v1TaskId: string): Promise<TaskRow | null>;
   listLive(tripId?: string): Promise<TaskRow[]>;
@@ -93,7 +95,7 @@ interface TaskDb {
   success_criteria: string | null; asked_by: string | null; state: TaskState; card_id: string; message_id: string | null; steps: TaskStep[];
   screenshot_url: string | null; needs_person_id: string | null; conversation_id: string | null; v1_turn_id: string | null; v1_task_id: string | null;
   deadline_at: Date | null; result: unknown; results_id: string | null; error: string | null; end_reason: string | null; created_at: Date;
-  started_at: Date | null; ended_at: Date | null; stop_requested_at: Date | null; todos_at: Date | null; cost_usd: string | null;
+  started_at: Date | null; ended_at: Date | null; stop_requested_at: Date | null; starting_at: Date | null; todos_at: Date | null; cost_usd: string | null;
 }
 
 const rowOf = (r: TaskDb): TaskRow => ({
@@ -101,7 +103,7 @@ const rowOf = (r: TaskDb): TaskRow => ({
   successCriteria: r.success_criteria, askedBy: r.asked_by, state: r.state, cardId: r.card_id, messageId: r.message_id, steps: r.steps,
   screenshotUrl: r.screenshot_url, needsPersonId: r.needs_person_id, conversationId: r.conversation_id, v1TurnId: r.v1_turn_id, v1TaskId: r.v1_task_id,
   deadlineAt: r.deadline_at, result: r.result, resultsId: r.results_id, error: r.error, endReason: r.end_reason, createdAt: r.created_at,
-  startedAt: r.started_at, endedAt: r.ended_at, stopRequestedAt: r.stop_requested_at, todosAt: r.todos_at, costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
+  startedAt: r.started_at, endedAt: r.ended_at, stopRequestedAt: r.stop_requested_at, startingAt: r.starting_at, todosAt: r.todos_at, costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
 });
 
 interface InteractionDb {
@@ -133,8 +135,8 @@ function setClause(patch: TaskPatch, offset: number): { sql: string; values: unk
   return { sql: parts.join(', '), values };
 }
 
-const INSERT_TASK = `insert into tasks (id, trip_id, title, goal, returns_kind, returns, context, success_criteria, asked_by, state, card_id, steps, deadline_at, created_at)
-  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) on conflict (id) do nothing`;
+const INSERT_TASK = `insert into tasks (id, trip_id, title, goal, returns_kind, returns, context, success_criteria, asked_by, state, card_id, steps, deadline_at, created_at, starting_at)
+  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, case when $10 = 'starting' then $14::timestamptz end) on conflict (id) do nothing`;
 
 const insertValues = (t: NewTask): unknown[] => [
   t.id, t.tripId, t.title, t.goal, t.returnsKind, JSON.stringify(t.returns), JSON.stringify(t.context), t.successCriteria, t.askedBy, t.state, t.cardId,
@@ -176,13 +178,13 @@ export function createTaskStore(pool: pg.Pool): TaskStore {
         const r = await c.query(INSERT_TASK, insertValues(row));
         return r.rowCount === 1 ? row.state : null;
       }),
-    promoteQueued: (tripId, maxActive, deadlineAt) =>
+    promoteQueued: (tripId, maxActive, now, deadlineAt) =>
       lockedTrip(tripId, async (c) => {
         if ((await activeIn(c, tripId)) >= maxActive) return null;
         const { rows } = await c.query<TaskDb>(
-          `update tasks set state = 'starting', deadline_at = $2
+          `update tasks set state = 'starting', starting_at = $2, deadline_at = $3
             where id = (select id from tasks where trip_id = $1 and state = 'queued' order by created_at limit 1) returning *`,
-          [tripId, deadlineAt],
+          [tripId, now, deadlineAt],
         );
         return rows[0] ? rowOf(rows[0]) : null;
       }),

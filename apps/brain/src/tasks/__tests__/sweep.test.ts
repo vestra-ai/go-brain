@@ -118,6 +118,19 @@ describe('the sweep', () => {
     expect(await h.store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
   });
 
+  it('times the hand-off grace from when a job left the queue, so a job just taken off it is not handed over twice', async () => {
+    const now = h.lb.clock.now();
+    const queued = {
+      id: 'gt_sw10promoted', tripId: 't_sw10', title: 'Finding villas', goal: 'Find villas', returnsKind: 'stays', returns: {}, context: {}, successCriteria: null,
+      askedBy: null, state: 'starting' as const, cardId: 'c_work_sw10promoted', steps: [], deadlineAt: null, createdAt: new Date(now.getTime() - 10 * 60_000),
+    };
+    expect(await h.store.insertCapped(queued, 0)).toBe('queued');
+    expect(await h.store.promoteQueued('t_sw10', 3, now, new Date(now.getTime() + 8 * 60_000))).toMatchObject({ id: queued.id, state: 'starting' });
+    await sweep.runOnce();
+    await h.tasks.settled();
+    expect(h.fake.callsTo('POST', /\/messages$/).some((c) => c.headers['idempotency-key'] === `go-msg-${queued.id}`)).toBe(false);
+  });
+
   it('revokes the tokens of a trip with no job running', async () => {
     await h.computer.armToken('t_sw9', new Date(h.lb.clock.now().getTime() + 30 * 60_000));
     const token = h.fake.callsTo('PUT', /TRIP_TOKEN/).at(-1)!.body.value as string;

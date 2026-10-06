@@ -113,6 +113,8 @@ export function createTasks(d: TasksDeps): TasksService {
     void p.finally(() => inFlight.delete(p));
   };
   const isLive = (state: TaskState): boolean => LIVE_STATES.includes(state);
+  /** Jobs being handed to /v1 right now in this process: a second dispatch of one (the sweep, a retry) waits its turn out. */
+  const dispatching = new Set<string>();
 
   async function live(taskId: string): Promise<TaskRow> {
     const row = await d.store.get(taskId);
@@ -126,6 +128,43 @@ export function createTasks(d: TasksDeps): TasksService {
     if (row.v1TaskId) return service.stopV1(row.v1TaskId);
     if (!row.v1TurnId) return;
     await service.findStart(row).catch((err: unknown) => d.log.warn({ err, taskId: row.id }, "tasks: looking up a stopped job's start failed; the sweep tries again"));
+  }
+
+  /** Hands one starting job to the trip's computer: a fresh trip token, the trip's conversation, one hand_off message. */
+  async function handOver(taskId: string): Promise<void> {
+    const row = await d.store.get(taskId);
+    if (!row || row.state !== 'starting' || row.stopRequestedAt) return;
+    try {
+      const deadline = row.deadlineAt?.getTime() ?? d.now().getTime() + deadlineMs;
+      await d.computer.armToken(row.tripId, new Date(deadline + TOKEN_MARGIN_MS));
+      // A stop that landed while the token was being armed: no hand-off, and no token left live for nothing.
+      const current = await d.store.get(row.id);
+      if (!current || current.state !== 'starting' || current.stopRequestedAt) {
+        if ((await d.store.countActive(row.tripId)) === 0) await d.computer.releaseTokens(row.tripId);
+        return;
+      }
+      const { conversationId } = await d.computer.conversation(row.tripId);
+      const turn = await d.v1.call<{ id: string }>('POST', `/v1/conversations/${conversationId}/messages`, {
+        idempotencyKey: `go-msg-${row.id}`,
+        body: {
+          message: row.goal,
+          context: row.context,
+          output_schema: row.returns,
+          ...(row.successCriteria ? { success_criteria: row.successCriteria } : {}),
+          hand_off: 'always',
+          metadata: { go_task_id: row.id },
+        },
+      });
+      await d.store.setTurn(row.id, conversationId, turn.id);
+      await service.mapStarts();
+      d.follow(conversationId, row.tripId);
+    } catch (err) {
+      d.log.warn({ err, taskId }, "tasks: handing the job to the trip's computer failed");
+      // The message may have reached /v1 all the same: once /v1 names the job, mapStarts stops it there.
+      await d.store.update(row.id, { stopRequestedAt: d.now() });
+      const reason = err instanceof V1Error && err.code === 'wallet_empty' ? "Go's account for the trip's computer is out of credit." : "It could not start on the trip's computer.";
+      await service.fail(row, 'dispatch_failed', reason);
+    }
   }
 
   async function backToWork(row: TaskRow): Promise<void> {
@@ -186,36 +225,12 @@ export function createTasks(d: TasksDeps): TasksService {
     },
 
     async dispatch(taskId) {
-      const row = await d.store.get(taskId);
-      if (!row || row.state !== 'starting' || row.stopRequestedAt) return;
+      if (dispatching.has(taskId)) return;
+      dispatching.add(taskId);
       try {
-        const deadline = row.deadlineAt?.getTime() ?? d.now().getTime() + deadlineMs;
-        await d.computer.armToken(row.tripId, new Date(deadline + TOKEN_MARGIN_MS));
-        // A stop that landed while the token was being armed: no hand-off, and no token left live for nothing.
-        const current = await d.store.get(row.id);
-        if (!current || current.state !== 'starting' || current.stopRequestedAt) {
-          if ((await d.store.countActive(row.tripId)) === 0) await d.computer.releaseTokens(row.tripId);
-          return;
-        }
-        const { conversationId } = await d.computer.conversation(row.tripId);
-        const turn = await d.v1.call<{ id: string }>('POST', `/v1/conversations/${conversationId}/messages`, {
-          idempotencyKey: `go-msg-${row.id}`,
-          body: {
-            message: row.goal,
-            context: row.context,
-            output_schema: row.returns,
-            ...(row.successCriteria ? { success_criteria: row.successCriteria } : {}),
-            hand_off: 'always',
-            metadata: { go_task_id: row.id },
-          },
-        });
-        await d.store.setTurn(row.id, conversationId, turn.id);
-        await service.mapStarts();
-        d.follow(conversationId, row.tripId);
-      } catch (err) {
-        d.log.warn({ err, taskId }, "tasks: handing the job to the trip's computer failed");
-        const reason = err instanceof V1Error && err.code === 'wallet_empty' ? "Go's account for the trip's computer is out of credit." : "It could not start on the trip's computer.";
-        await service.fail(row, 'dispatch_failed', reason);
+        await handOver(taskId);
+      } finally {
+        dispatching.delete(taskId);
       }
     },
 
@@ -223,7 +238,8 @@ export function createTasks(d: TasksDeps): TasksService {
       for (const m of await d.store.matchStarts()) {
         const row = await d.store.get(m.id);
         if (!row) continue;
-        if (row.stopRequestedAt) {
+        // Stopped, failed or already over in Go: /v1 must not keep running it.
+        if (row.stopRequestedAt || !isLive(row.state)) {
           await service.stopV1(m.v1TaskId);
           continue;
         }
@@ -237,7 +253,8 @@ export function createTasks(d: TasksDeps): TasksService {
     async startQueued(tripId) {
       for (;;) {
         // A free slot and the oldest waiting job are taken together, under the trip's lock.
-        const next = await d.store.promoteQueued(tripId, MAX_ACTIVE_PER_TRIP, new Date(d.now().getTime() + deadlineMs));
+        const now = d.now();
+        const next = await d.store.promoteQueued(tripId, MAX_ACTIVE_PER_TRIP, now, new Date(now.getTime() + deadlineMs));
         if (!next) return;
         await service.pushCard(next, true);
         track(service.dispatch(next.id));

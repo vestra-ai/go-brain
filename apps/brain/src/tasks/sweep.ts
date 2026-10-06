@@ -171,7 +171,8 @@ export function createSweep(d: SweepDeps): Sweep {
       try {
         let row = await d.store.get(seen.id);
         if (!row || !LIVE_STATES.includes(row.state)) continue;
-        if (row.state === 'starting' && !row.v1TurnId && nowMs - row.createdAt.getTime() > DISPATCH_GRACE_MS) {
+        // Timed from when it entered starting: a job just taken off the queue is not handed over twice.
+        if (row.state === 'starting' && !row.v1TurnId && nowMs - (row.startingAt ?? row.createdAt).getTime() > DISPATCH_GRACE_MS) {
           await d.tasks.dispatch(row.id);
           row = await d.store.get(row.id);
         }

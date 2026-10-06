@@ -28,6 +28,8 @@ create table tasks (
   started_at timestamptz,
   ended_at timestamptz,
   stop_requested_at timestamptz,
+  -- When the job last entered starting (made, or taken off the queue): the hand-off's grace is timed from here.
+  starting_at timestamptz,
   todos_at timestamptz,
   cost_usd numeric
 );

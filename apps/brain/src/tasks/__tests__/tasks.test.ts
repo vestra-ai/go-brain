@@ -96,6 +96,13 @@ describe('starting a job', () => {
     expect(states.filter((st) => st === 'starting' || st === 'running')).toHaveLength(3);
   });
 
+  it('hands a job to /v1 once, even when it is dispatched again while its hand-off is still going', async () => {
+    const r = await tasks.start('t_once', { ...VILLAS, key: 'once' });
+    await Promise.all([tasks.dispatch(r.taskId), tasks.dispatch(r.taskId)]);
+    await tasks.settled();
+    expect(fake.callsTo('POST', /\/messages$/).filter((c) => c.headers['idempotency-key'] === `go-msg-${r.taskId}`)).toHaveLength(1);
+  });
+
   it('keeps a fourth job waiting until one of three ends', async () => {
     const ids: string[] = [];
     for (let i = 0; i < 3; i += 1) ids.push((await tasks.start('t_q', { ...VILLAS, key: `q${i}` })).taskId);
@@ -201,6 +208,36 @@ describe('stopping a job', () => {
     await tasks.stop(r.taskId);
     expect(fake.tasks.get(t.id)?.stopped).toBe(true);
     expect(await store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
+  });
+
+  it('stops on /v1 a job whose hand-off failed after its message got through, once /v1 names it', async () => {
+    const v1 = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
+    const computer = createComputer({ pool: db.pool, v1, tokens: createTokenStore(db.pool, lb.clock.now), env: { VESTRA_DEPLOYMENT_ID: 'dep_go', VESTRA_MCP_SERVER_ID: 'mcp_go' }, now: lb.clock.now, log: lb.brain.log });
+    // The message reached /v1, then the hand-off failed in Go (here: following the conversation threw).
+    const own = createTasks({ store, v1, computer, cards, link: lb.link, desk: lb.desk, packs: lb.brain.packs, now: lb.clock.now, log: lb.brain.log, follow: () => {
+      throw new Error('the follower is down');
+    } });
+    const r = await own.start('t_failed_handoff', { ...VILLAS, key: 'fh1' });
+    await own.settled();
+    const row = (await store.get(r.taskId))!;
+    expect(row).toMatchObject({ state: 'failed', endReason: 'dispatch_failed' });
+    expect(row.stopRequestedAt).not.toBeNull();
+    const t = fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
+    await store.recordStart(row.v1TurnId!, t.id, row.title);
+    await own.mapStarts();
+    expect(fake.tasks.get(t.id)?.stopped).toBe(true);
+  });
+
+  it('stops on /v1 a job /v1 names after Go has ended it, even with no stop asked', async () => {
+    const r = await tasks.start('t_ended', { ...VILLAS, key: 'ended1' });
+    await tasks.settled();
+    const row = (await store.get(r.taskId))!;
+    await store.transition(row.id, ['starting'], 'failed', { endedAt: lb.clock.now(), endReason: 'card_failed' });
+    const t = fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
+    await store.recordStart(row.v1TurnId!, t.id, row.title);
+    await tasks.mapStarts();
+    expect(fake.tasks.get(t.id)?.stopped).toBe(true);
+    expect((await store.get(row.id))?.state).toBe('failed');
   });
 
   it('hands nothing over and leaves no live token when the stop lands while the token is being armed', async () => {
