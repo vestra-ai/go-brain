@@ -70,7 +70,8 @@ export async function startProactive(brain: Brain, opts: StartProactiveOpts = {}
   /** Level-triggered: every active trip's timers and watches are re-planned from the trip as it is now. */
   const sweep = async (): Promise<void> => {
     const since = new Date(brain.now().getTime() - ACTIVE_TRIP_DAYS * 86_400_000);
-    const trips = await brain.pool.query<{ trip_id: string }>(`select trip_id from trips where created_at > $1`, [since]);
+    // A trip the Server no longer has (gone_at) is never re-planned: its timers and watches were retired with it.
+    const trips = await brain.pool.query<{ trip_id: string }>(`select trip_id from trips where created_at > $1 and gone_at is null`, [since]);
     for (const { trip_id } of trips.rows) {
       try {
         await replan(trip_id, await readTrip(trip_id));

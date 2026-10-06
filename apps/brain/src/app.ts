@@ -23,6 +23,7 @@ import type { Pay } from './money/pay.js';
 import { unsureReflex, type Reflex } from './reflex/reflex.js';
 import type { Tasks } from './tasks/tasks.js';
 import type { Travel } from './travel/travel.js';
+import { createGoneTrips } from './trips/gone.js';
 import { createMessageHooks, type MessageHooks } from './trips/hooks.js';
 import { createIntake } from './trips/intake.js';
 import { createTripLog, type TripLog } from './trips/log.js';
@@ -145,8 +146,18 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   await migrate(pool);
 
   const cards = createCardStore({ pool, now });
+  // A trip the Server answers 404 for is gone: its pack goes, and every sweep leaves it alone (trips.gone_at).
+  const gone = createGoneTrips({ pool, log, now, dropped: (tripId) => packs.invalidate(tripId) });
   const link = createServerLink({
-    pool, log, now, timeoutMs: t.linkTimeoutMs, waitForSocketMs: t.waitForSocketMs, onSend: cards.sending, onResult: cards.observe, onFail: cards.failed,
+    pool, log, now, timeoutMs: t.linkTimeoutMs, waitForSocketMs: t.waitForSocketMs, onSend: cards.sending,
+    onResult: async (method, params, result, stored) => {
+      await cards.observe(method, params, result, stored);
+      await gone.answered(method, params);
+    },
+    onFail: async (method, params, err) => {
+      await cards.failed(method, params);
+      await gone.failed(method, params, err);
+    },
   });
   const guard = createReplayGuard({ pool, now });
   const door = createDoor({ http, secret: env.GO_SIGNING_SECRET, guard, link, log, now, pingMs: t.pingMs, idleMs: t.idleMs });

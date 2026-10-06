@@ -160,4 +160,19 @@ describe('createPromoter', () => {
     expect(warned.length).toBeGreaterThan(0);
     expect((await store.status('t_ghost', 'ghost:1'))?.status).toBe('pending');
   });
+
+  it('retires the candidates of a trip the Server no longer has, and never reads its pack again', async () => {
+    const read: string[] = [];
+    const desk = fakeDesk();
+    await seedTrip(db.pool, 't_forgotten');
+    await db.pool.query(`update trips set gone_at = $2 where trip_id = $1`, ['t_forgotten', NOON]);
+    const packs = { get: async (tripId: string) => { read.push(tripId); throw new Error(`trip ${tripId} does not exist`); } };
+    const p = createPromoter({ store, desk, packs, now: manualTime(NOON).now, log });
+    await store.add(candidate({ tripId: 't_forgotten', dedupeKey: 'forgotten:1', dueAt: new Date(Date.parse(NOON) - 1000) }));
+    await p.tick();
+    await p.tick();
+    expect(await store.status('t_forgotten', 'forgotten:1')).toMatchObject({ status: 'dropped', reason: 'trip_gone' });
+    expect(read).not.toContain('t_forgotten');
+    expect(desk.items.filter((i) => i.tripId === 't_forgotten')).toEqual([]);
+  });
 });

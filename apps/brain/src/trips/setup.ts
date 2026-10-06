@@ -108,7 +108,7 @@ export function createSetup(o: { pool: pg.Pool; log: Log; now: () => Date; retry
       if (steps.length === 0) return 0;
       const { rows } = await o.pool.query<{ trip_id: string }>(
         `select t.trip_id from trips t
-         where exists (
+         where t.gone_at is null and exists (
            select 1 from unnest($1::text[]) as s(step)
            where not exists (select 1 from trip_setup ts where ts.trip_id = t.trip_id and ts.step = s.step and ts.done_at is not null))
          order by t.active_at desc limit 50`,
