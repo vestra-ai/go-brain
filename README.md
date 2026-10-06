@@ -75,12 +75,12 @@ CI runs on every pull request ([`.github/workflows/ci.yml`](.github/workflows/ci
 
 The live bench ([`.github/workflows/bench-live.yml`](.github/workflows/bench-live.yml)) runs the same replay with the real models and real Jev, by hand or nightly, never on a push.
 
-The tests in each package, from [CI run 37410550541](https://github.com/vestra-ai/go-brain/actions/runs/37410550541) (all passed):
+The tests in each package, from [CI run 37414383964](https://github.com/vestra-ai/go-brain/actions/runs/37414383964) (all passed):
 
 | Package | Test files | Tests |
 |---|---|---|
-| `apps/brain` | 67 | 595 |
-| `apps/vault` | 10 | 105 |
+| `apps/brain` | 117 | 952 |
+| `apps/vault` | 11 | 122 |
 | `apps/fake-go` | 4 | 42 |
 | `packages/bench` | 10 | 91 |
 | `packages/sim` | 8 | 71 |
