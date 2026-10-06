@@ -23,8 +23,8 @@ export function createMemory(d: { pool: Pool; packs: Packs }): Memory {
         env,
       );
       if (!c.ok) return 'refused';
-      await saveFact(d.pool, { ...c.value, source: 'note' });
-      return 'saved';
+      const saved = await saveFact(d.pool, { ...c.value, source: 'note' });
+      return 'refused' in saved ? 'refused' : 'saved';
     },
   };
 }

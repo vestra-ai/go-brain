@@ -166,3 +166,49 @@ describe('deletes, forgets and the safety net', () => {
     expect(view.tokens).toBeLessThanOrEqual(2_000);
   });
 });
+
+describe('redaction finds every line about a person', () => {
+  it('also takes lines that cite a message they wrote, and lines that use only their first name', async () => {
+    const { fold } = setup('t_f8', longChat(10), []);
+    await seedMessages(db.pool, 't_f8', [msg(4, 'p_kabir', 'I get seasick on boats'), msg(5, 'p_meher', "I'm allergic to peanuts")]);
+    await db.pool.query(
+      `INSERT INTO story_lines (trip_id, idx, text, refs, ref_ids, people) VALUES
+         ('t_f8', 0, 'Someone gets seasick, so no cruise', '{4}', '{m_0004}', '{}'),
+         ('t_f8', 1, 'Kabir pays the villa deposit', '{6}', '{m_0006}', '{}'),
+         ('t_f8', 2, 'Meher is allergic to peanuts', '{5}', '{m_0005}', '{p_meher}')`,
+    );
+    // The trip knows him as "Kabir Singh"; the story calls him "Kabir".
+    expect(await fold.storyMentions(db.pool, 'p_kabir', ['t_f8'], ['Kabir Singh'])).toBe(2);
+    expect(await withTx(db.pool, (c) => fold.redactPerson(c, 'p_kabir', ['t_f8'], ['Kabir Singh']))).toBe(2);
+    expect(await fold.storyMentions(db.pool, 'p_kabir', ['t_f8'], ['Kabir Singh'])).toBe(0);
+    expect((await db.pool.query('SELECT text FROM story_lines WHERE trip_id = $1', ['t_f8'])).rows).toEqual([{ text: 'Meher is allergic to peanuts' }]);
+  });
+});
+
+describe('a message that changes while the fold is writing', () => {
+  it('takes its story lines with it: deleted or edited messages leave no line behind', async () => {
+    const messages = longChat();
+    await seedMessages(db.pool, 't_f9', messages);
+    const answer = story([
+      { text: 'Meher is allergic to peanuts', refs: [142], people: ['p_meher'] },
+      { text: 'Kabir books the airport cab', refs: [400], people: ['p_kabir'] },
+      { text: 'Picked North Goa', refs: [5] },
+    ]);
+    const side = {
+      async complete(): Promise<string> {
+        // While the model writes: Meher deletes #142 and someone edits #400.
+        await db.pool.query(`UPDATE messages SET deleted_at = now(), text = NULL WHERE trip_id = 't_f9' AND message_id = 'm_0142'`);
+        await db.pool.query(`UPDATE messages SET updated_seq = 3000, text = 'cab sorted, I booked it' WHERE trip_id = 't_f9' AND message_id = 'm_0400'`);
+        return answer;
+      },
+    };
+    const fold = createFold({
+      pool: db.pool, packs: fakePacks({ t_f9: packOf(messages, goaTrip({ trip_id: 't_f9' })) }), side, log: silentLog,
+      now: () => new Date('2026-10-07T10:00:00Z'), foldAtTokens: 60_000, storyTokens: 5_000, hardCapTokens: 90_000,
+    });
+    expect(await fold.maybeFold('t_f9')).toBe('folded');
+    const rows = (await db.pool.query('SELECT text FROM story_lines WHERE trip_id = $1 ORDER BY idx', ['t_f9'])).rows;
+    expect(rows).toEqual([{ text: 'Picked North Goa' }]);
+    expect((await fold.get('t_f9')).foldedToSeq).toBe(1000);
+  });
+});
