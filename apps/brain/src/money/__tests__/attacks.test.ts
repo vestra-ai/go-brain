@@ -184,6 +184,9 @@ describe('a key used twice', () => {
     const url = await approveUrl(card);
     k.advance(11 * 60_000);
     expect(await vault.approve(url, rahul)).toMatchObject({ state: 'refused' });
+    // Inside the 120 s grace the vault's own expiry is the answer; after it, Approve starts a fresh payment.
+    expect(await seen.taps.get('pay:approve')?.(tap(card.card_id, 'p_rahul'), card)).toMatchObject({ result: 'refused' });
+    k.advance(61_000);
     expect(await seen.taps.get('pay:approve')?.(tap(card.card_id, 'p_rahul'), card)).toMatchObject({ result: 'done' });
     await pay.settled();
     expect(payCards()).toHaveLength(2);

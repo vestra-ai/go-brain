@@ -154,8 +154,11 @@ export async function unsettled(db: Db, limit = 50): Promise<string[]> {
   return r.rows.map((x) => x.payment_id);
 }
 
+/** How long after its approval runs out a waiting payment is left alone: the vault may still finish a charge at the edge. */
+export const EXPIRY_GRACE_MS = 120_000;
+
 /** A waiting payment whose approval ran out more than graceMs ago. The vault may still finish a charge at the edge. */
-export async function expireOverdue(db: Db, now: Date, graceMs = 120_000): Promise<string[]> {
+export async function expireOverdue(db: Db, now: Date, graceMs = EXPIRY_GRACE_MS): Promise<string[]> {
   const r = await db.query<{ payment_id: string }>(
     `update payments set state = 'expired', release_reason = 'expired', updated_at = $1
      where state = 'waiting' and approval_expires_at < $2 returning payment_id`,
