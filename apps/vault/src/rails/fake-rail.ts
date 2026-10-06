@@ -6,11 +6,13 @@ export class FakeRail implements Rail {
   readonly charges: ChargeInput[] = [];
   private readonly done = new Map<string, ChargeResult>();
 
-  constructor(public outcome: 'ok' | RailFailReason = 'ok') {}
+  constructor(public outcome: 'ok' | 'unknown' | RailFailReason = 'ok') {}
 
   async charge(input: ChargeInput): Promise<ChargeResult> {
     const seen = this.done.get(input.idempotencyKey);
     if (seen) return seen;
+    // No clear answer: nothing is recorded, so asking again with the same key can still settle it.
+    if (this.outcome === 'unknown') return { unknown: 'fake' };
     this.charges.push(input);
     const result: ChargeResult =
       this.outcome === 'ok' ? { railRef: `fake_${input.idempotencyKey}` } : { failed: this.outcome };

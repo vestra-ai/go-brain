@@ -33,15 +33,17 @@ afterAll(async () => {
   await db.drop();
 });
 
-function make(tripId: string, o: { mode?: string; twilioFails?: boolean } = {}) {
+function make(tripId: string, o: { mode?: string; twilioFails?: boolean; placing?: Promise<void> } = {}) {
   const time = manualTime('2026-10-06T10:00:00Z');
   const link = fakeLink();
   const values: Record<string, string> = { CALLS_MODE: o.mode ?? 'allowlist' };
   const twilioCalls: CreateCall[] = [];
   const hangUps: string[] = [];
+  const logs: string[] = [];
   const twilio: TwilioClient = {
     createCall: async (p) => {
       twilioCalls.push(p);
+      if (o.placing) await o.placing;
       if (o.twilioFails) throw new TwilioError(400, 21215, 'Account not authorized to call +919800000001');
       return { sid: `CA_${tripId}` };
     },
@@ -53,12 +55,13 @@ function make(tripId: string, o: { mode?: string; twilioFails?: boolean } = {}) 
   });
   const service = new CallService({
     store, link, packs: fakePacks(pack), switches: { get: (n: string) => values[n] ?? '' }, config: loadCallsConfig(env), twilio,
-    now: time.now, schedule: time.schedule, log: { info: () => {}, warn: () => {} },
+    now: time.now, schedule: time.schedule,
+    log: { info: (obj: object, m: string) => { logs.push(`${m} ${JSON.stringify(obj)}`); }, warn: (obj: object, m: string) => { logs.push(`${m} ${JSON.stringify(obj)}`); } },
   });
   let n = 0;
   /** As the tool does: a fresh call id per new request (the turn's stableId('call')). */
   const request = (over: Partial<CallRequest> = {}) => service.request(tripId, pack, { ...base, callId: `call_${tripId}_${++n}`, ...over });
-  return { time, link, values, twilioCalls, hangUps, service, pack, request };
+  return { time, link, values, twilioCalls, hangUps, service, pack, request, logs };
 }
 
 async function dialed(tripId: string) {
@@ -90,6 +93,28 @@ describe('request', () => {
     expect(await m.request({ factsAllowed: ["Rahul's card 4111 1111 1111 1111"] })).toHaveProperty('refused');
     expect(await m.request({ goal: 'Pay the deposit by UPI' })).toHaveProperty('refused');
     expect(m.link.calls).toHaveLength(0);
+  });
+
+  it('counts card digits however they are written, and screens the business name too', async () => {
+    const m = make('t_digits');
+    for (const fact of ['card 4111.1111.1111.1111', 'card 4111  1111  1111  1111', '4111/1111/1111/1111', 'call me on +91 98000 00001']) {
+      expect(await m.request({ factsAllowed: [fact] }), fact).toHaveProperty('refused');
+    }
+    expect(await m.request({ business: 'Villa Sol, card 4111 1111 1111 1111' })).toHaveProperty('refused');
+    expect(await m.request({ business: 'HDFC bank' })).toHaveProperty('refused');
+    expect(m.link.calls).toHaveLength(0);
+    expect(await m.request({ factsAllowed: ['Staying 6 to 9 November', 'Group of 5, 2 rooms'] })).toMatchObject({ ok: true });
+  });
+
+  it("names the business the way the allowlist does, whatever the model wrote", async () => {
+    const byName = make('t_name');
+    const a = await byName.request({ business: 'villa sol' });
+    if (!('ok' in a)) throw new Error('refused');
+    expect((await store.get(a.callId))?.business).toBe('Villa Sol');
+    const byNumber = make('t_number');
+    const b = await byNumber.request({ business: 'the villa', phone: '+91 98000 00001' });
+    if (!('ok' in b)) throw new Error('refused');
+    expect((await store.get(b.callId))?.business).toBe('Villa Sol');
   });
 
   it('says who and why with the stop line, waits 30 s, and allows one call at a time', async () => {
@@ -152,6 +177,77 @@ describe('the stop window', () => {
   });
 });
 
+describe('the 30 seconds can never be skipped, and a stop is never lost', () => {
+  const dialedFor = (m: { twilioCalls: CreateCall[] }, callId: string) => m.twilioCalls.filter((c) => c.statusCallback.endsWith(`/${callId}`));
+
+  it('starts the 30 s when Go\'s line is in the room, however slow posting it was', async () => {
+    const m = make('t_slow');
+    const post = m.link.request.bind(m.link);
+    m.link.request = (async (method: string, params: Record<string, unknown>) => {
+      if (method === 'post_message' && String(params.request_id).endsWith('_announce')) m.time.advance(20_000);
+      return post(method, params);
+    }) as typeof m.link.request;
+    expect(await m.request()).toMatchObject({ ok: true, callId: 'call_t_slow_1', dialAt: '2026-10-06T10:00:50.000Z' });
+    m.time.advance(10_000); // 30 s after Go was asked, but only 10 s after its line landed
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_slow_1')).toHaveLength(0);
+    m.time.advance(20_000);
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_slow_1')).toHaveLength(1);
+  });
+
+  it('never dials a call whose line did not reach the room; a rerun of the turn posts the line and starts the 30 s then', async () => {
+    const m = make('t_crash');
+    // The turn crashed after it stored the call and before Go's line went out.
+    await store.create({
+      callId: 'call_t_crash_9', tripId: 't_crash', business: 'Villa Sol', phone: '+919800000001', goal: 'Ask about check-in', factsAllowed: [],
+      forWhom: 'a group of 5 friends travelling together', askedByPersonId: null, askedMessageId: null, cardId: 'c_call_t_crash_9',
+      dialAt: new Date(m.time.now().getTime() + 30_000),
+    });
+    m.time.advance(30_000);
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_crash_9')).toHaveLength(0);
+    expect(await m.service.request('t_crash', m.pack, { ...base, callId: 'call_t_crash_9' })).toMatchObject({ ok: true, dialAt: '2026-10-06T10:01:00.000Z' });
+    expect(m.link.of('post_message')).toHaveLength(1);
+    m.time.advance(30_000);
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_crash_9')).toHaveLength(1);
+  });
+
+  it('calls off a call whose line never went out, a minute after it was asked for, and says nothing', async () => {
+    const m = make('t_lost');
+    await store.create({
+      callId: 'call_t_lost_1', tripId: 't_lost', business: 'Villa Sol', phone: '+919800000001', goal: 'Ask about check-in', factsAllowed: [],
+      forWhom: 'a group of 5 friends travelling together', askedByPersonId: null, askedMessageId: null, cardId: 'c_call_t_lost_1',
+      dialAt: new Date(m.time.now().getTime() + 30_000),
+    });
+    m.time.advance(61_000);
+    await m.service.tick();
+    expect(await store.get('call_t_lost_1')).toMatchObject({ state: 'cancelled', endReason: 'not_announced' });
+    expect(m.link.of('post_message')).toHaveLength(0);
+  });
+
+  it('looks at the room once more before dialing: a stop the message hook missed calls it off', async () => {
+    const m = make('t_missed');
+    await m.request();
+    m.pack.messages.push(msg({ id: 'm_missed', seq: 1003, by: 'p_kabir', text: 'band karo' }));
+    m.time.advance(30_000);
+    await m.service.tick();
+    expect(dialedFor(m, 'call_t_missed_1')).toHaveLength(0);
+    expect(m.link.of('post_message').at(-1)).toMatchObject({ text: "Okay, I won't call Villa Sol.", reply_to: 'm_missed' });
+  });
+
+  it('a stop sent inside the window that reaches Go after dialing began still hangs up; one sent after it does not', async () => {
+    const m = await dialed('t_late_stop');
+    await m.service.onMessage(msg({ id: 'm_after', seq: 1500, by: 'p_priya', text: 'stop', sentAt: '2026-10-06T10:00:40Z' }), m.pack);
+    expect((await store.get(m.callId))?.state).toBe('dialing');
+    await m.service.onMessage(msg({ id: 'm_late', seq: 1501, by: 'p_priya', text: 'ruko!', sentAt: '2026-10-06T10:00:20Z' }), m.pack);
+    await waitFor(() => m.link.of('post_message').some((p) => p.text === 'Okay, I hung up on Villa Sol.'));
+    expect(m.hangUps).toEqual(['CA_t_late_stop']);
+    expect((await store.get(m.callId))?.state).toBe('ended');
+  });
+});
+
 describe('dialing', () => {
   it('posts the dialing card and calls through Twilio with a one-use token', async () => {
     const m = await dialed('t_dial');
@@ -166,6 +262,39 @@ describe('dialing', () => {
     expect(await m.service.claim(m.callId, m.token)).toBeNull();
   });
 
+  it('a Stop while Twilio is still placing the call hangs it up as soon as its sid is known', async () => {
+    let placed = (): void => {};
+    const m = make('t_early_stop', { placing: new Promise<void>((resolve) => { placed = resolve; }) });
+    const r = await m.request();
+    if (!('ok' in r)) throw new Error('refused');
+    m.time.advance(30_000);
+    const ticking = m.service.tick();
+    await waitFor(() => m.twilioCalls.some((c) => c.statusCallback.endsWith(`/${r.callId}`)));
+    const tap = { tap_id: 'tap_early', trip_id: 't_early_stop', card_id: `c_${r.callId}`, action_id: 'stop', person_id: 'p_priya' };
+    expect(await m.service.stopTap(tap)).toEqual({ result: 'done', toast: 'Hanging up.' });
+    await waitFor(() => m.link.of('post_message').some((p) => p.text === 'Okay, I hung up on Villa Sol.'));
+    expect(m.hangUps).toEqual([]); // no sid yet
+    placed();
+    await ticking;
+    expect(m.hangUps).toEqual(['CA_t_early_stop']);
+    expect((await store.get(r.callId))?.state).toBe('ended');
+  });
+
+  it('measures "nobody picked up" from when the call was placed, not from when the window ended', async () => {
+    const m = make('t_slow_place');
+    const r = await m.request();
+    if (!('ok' in r)) throw new Error('refused');
+    m.time.advance(90_000); // the tick runs a minute late: the call is placed at 10:01:30, a minute after its dial time
+    await m.service.tick();
+    expect((await store.get(r.callId))?.placedAt?.toISOString()).toBe('2026-10-06T10:01:30.000Z');
+    m.time.advance(40_000); // 100 s after the dial time, 40 s after it was placed
+    await m.service.tick();
+    expect((await store.get(r.callId))?.state).toBe('dialing');
+    m.time.advance(60_000); // 100 s after it was placed
+    await m.service.tick();
+    expect(await store.get(r.callId)).toMatchObject({ state: 'failed', endReason: 'no_answer' });
+  });
+
   it('turns a Twilio refusal into a failed card and one line', async () => {
     const m = make('t_refused', { twilioFails: true });
     await m.request();
@@ -173,6 +302,9 @@ describe('dialing', () => {
     await m.service.tick();
     expect(m.link.of('replace_card').at(-1)).toMatchObject({ card: { state: 'failed', outcome: "Couldn't connect the call." } });
     expect(m.link.of('post_message').at(-1)?.text).toBe("I couldn't get through to Villa Sol.");
+    // Twilio's error names the number it could not call; the logs never carry it whole.
+    expect(m.logs.some((l) => l.includes('Twilio refused the call') && l.includes('+91***001'))).toBe(true);
+    expect(m.logs.join('\n')).not.toContain('9800000001');
   });
 });
 

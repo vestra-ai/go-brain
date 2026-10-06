@@ -49,6 +49,8 @@ describe('the follower', () => {
     h.fake.progress(row.v1TaskId!, [['Search stays', 'completed'], ['Read reviews', 'in_progress']]);
     h.fake.complete(row.v1TaskId!, OPTIONS, 'Three villas.');
     await eventually(async () => (await stateOf(r.taskId)) === 'done');
+    // The row reads done a moment before its wake is on the desk (the card goes first).
+    await eventually(() => h.lb.desk.items.some((i) => i.id === `task:${r.taskId}:done`));
     expect(h.lb.desk.items.filter((i) => i.id === `task:${r.taskId}:done`)).toHaveLength(1);
   });
 

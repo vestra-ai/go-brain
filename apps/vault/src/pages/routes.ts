@@ -200,6 +200,7 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (app, {
       response: body.data.response as unknown as AuthenticationResponseJSON,
     });
     if (result.state === 'paid') return { state: 'paid', message: PAY_MESSAGES.paid };
+    if (result.state === 'confirming') return { state: 'confirming', message: PAY_MESSAGES.confirming, retry: false };
     if (result.state === 'failed') return { state: 'failed', message: PAY_MESSAGES[result.reason], retry: false };
     return { state: 'refused', message: PAY_MESSAGES[result.reason], retry: result.reason === 'passkey_failed' };
   });
