@@ -1,0 +1,53 @@
+{"i":0,"at":0,"kind":"say","person":"p_rahul","text":"Guys Goa is ON 🌴 6 to 9 Nov, Diwali long weekend. No backing out now","go_should_speak":false,"quiet_ok":true}
+{"i":1,"at":38,"kind":"say","person":"p_priya","text":"Finallyyyy 😭🙌","go_should_speak":false}
+{"i":2,"at":52,"kind":"say","person":"p_kabir","text":"bhai finally. leave bhi approve ho gayi","go_should_speak":false}
+{"i":3,"at":95,"kind":"say","person":"p_meher","text":"Yayyy. Also my birthday is on the 7th so we're definitely celebrating 🎂","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":4,"at":131,"kind":"say","person":"p_arjun","text":"Office till 6 on Friday, can't leave before that 😩","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":5,"at":166,"kind":"say","person":"p_priya","text":"I'm veg btw, just saying before someone books a seafood shack 😂","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":6,"at":180,"kind":"say","person":"p_meher","text":"and I'm allergic to prawns, so no prawn curry for me please","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":7,"at":224,"kind":"say","person":"p_kabir","text":"haha noted. Main toh bas beach pe chill karunga","go_should_speak":false}
+{"i":8,"at":241,"kind":"say","person":"p_arjun","text":"Main bhi. Bas no 5 am flights please, I'm not a morning person","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":9,"at":262,"kind":"say","person":"p_rahul","text":"@Go flights Delhi to Goa Friday evening? Arjun can't leave before 6","go_should_speak":true,"reflex":{"complete":true,"size":"quick"},"note":"A quick question to Go: typing at once, an answer in about 2 seconds."}
+{"i":10,"at":301,"kind":"say","person":"p_priya","text":"window seat for me pls 🙏","go_should_speak":"either","quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":11,"at":344,"kind":"say","person":"p_arjun","text":"6:30 se pehle wali flight mat dekhna yaar, traffic mein nahi pahunchunga","go_should_speak":"either","quiet_ok":true,"note":"Hinglish: do not look at flights before 6:30, I will not make it through traffic."}
+{"i":12,"at":610,"kind":"say","person":"p_kabir","text":"Last time wala sunset 😍","photo":{"caption":"Orange sunset over the sea at Vagator beach, people sitting on the rocks"},"go_should_speak":false}
+{"i":13,"at":624,"kind":"say","person":"p_meher","text":"omg Vagator 😍😍","reply_to":12,"go_should_speak":false}
+{"i":14,"at":640,"kind":"say","person":"p_priya","text":"we need to go back there this time","go_should_speak":false,"note":"go as an ordinary word, not a call to Go."}
+{"i":15,"at":668,"kind":"say","person":"p_priya","text":"Dinner at Bua's place on Sunday, don't be late beta","go_should_speak":false,"note":"Sent to the wrong group and deleted on line 17."}
+{"i":16,"at":675,"kind":"say","person":"p_priya","text":"oops wrong group 🙈","go_should_speak":false}
+{"i":17,"at":679,"kind":"delete","of":15}
+{"i":18,"at":702,"kind":"say","person":"p_kabir","text":"Bua ke ghar dinner 😂😂 we saw it","go_should_speak":false}
+{"i":19,"at":760,"kind":"say","person":"p_rahul","text":"Ok stay next. Villa with a pool in North Goa, max 8k a head per night?","go_should_speak":false,"note":"Asked to the group, not to Go."}
+{"i":20,"at":781,"kind":"say","person":"p_arjun","text":"pool is non negotiable","go_should_speak":false,"quiet_ok":true}
+{"i":21,"at":790,"kind":"say","person":"p_meher","text":"+1 pool","go_should_speak":false,"quiet_ok":true}
+{"i":22,"at":796,"kind":"say","person":"p_kabir","text":"+1","go_should_speak":false,"quiet_ok":true}
+{"i":23,"at":812,"kind":"say","person":"p_priya","text":"agreed, pool villa it is. Under 8k a head","go_should_speak":false,"quiet_ok":true,"note":"The group agreed: a record line is fine, a message is not."}
+{"i":24,"at":850,"kind":"say","person":"p_rahul","text":"Go, find us a villa with a pool in North Goa under 8k a head, near the beach. Check the reviews too","go_should_speak":true,"reflex":{"complete":true,"size":"big"},"note":"A big job: On it, then a working card."}
+{"i":25,"at":905,"kind":"react","of":24,"person":"p_meher","emoji":"🔥"}
+{"i":26,"at":1210,"kind":"say","person":"p_arjun","text":"guys I just checked, Friday evening flights are filling up fast","go_should_speak":false}
+{"i":27,"at":1236,"kind":"edit","of":4,"text":"Office till 6:30 on Friday now, can't leave before that 😩"}
+{"i":28,"at":1240,"kind":"say","person":"p_arjun","text":"edited, meeting moved to 6. So 6:30 earliest","go_should_speak":false,"quiet_ok":true}
+{"i":29,"at":1500,"kind":"say","person":"p_kabir","text":"wait","go_should_speak":"either","reflex":{"complete":false}}
+{"i":30,"at":1501,"kind":"say","person":"p_kabir","text":"one more thing","go_should_speak":"either","reflex":{"complete":false}}
+{"i":31,"at":1502,"kind":"say","person":"p_kabir","text":"@Go can you also check","go_should_speak":"either","reflex":{"for_go":true,"complete":false}}
+{"i":32,"at":1503,"kind":"say","person":"p_kabir","text":"if there's a cab from Mopa airport to Anjuna","go_should_speak":"either","reflex":{"complete":false}}
+{"i":33,"at":1504.5,"kind":"say","person":"p_kabir","text":"for 5 people with luggage","go_should_speak":true,"reflex":{"for_go":true,"complete":true,"size":"quick"},"note":"End of a burst of five: one turn, one answer."}
+{"i":34,"at":1560,"kind":"say","person":"p_meher","text":"Kabir ka luggage = 3 bags of chips 😂","go_should_speak":false}
+{"i":35,"at":1572,"kind":"say","person":"p_kabir","text":"essential items only","go_should_speak":false}
+{"i":36,"at":1580,"kind":"say","person":"p_priya","text":"lol","go_should_speak":false}
+{"i":37,"at":1800,"kind":"say","person":"p_priya","text":"@Go is it going to rain in Goa in early November?","go_should_speak":true,"reflex":{"complete":true,"size":"quick"}}
+{"i":38,"at":1846,"kind":"say","person":"p_rahul","text":"Kabir you're not drinking right? So we split the bar bill only 4 ways","go_should_speak":false}
+{"i":39,"at":1860,"kind":"say","person":"p_kabir","text":"haan I don't drink, don't add me to the alcohol bill","go_should_speak":false,"quiet_ok":true,"reflex":{"fact":true,"reaction":"✅"}}
+{"i":40,"at":1902,"kind":"say","person":"p_meher","text":"Birthday dinner on the 7th somewhere nice? Not a shack pls","go_should_speak":false,"quiet_ok":true}
+{"i":41,"at":1918,"kind":"say","person":"p_arjun","text":"Thalassa? Heard it's good for sunsets","go_should_speak":false}
+{"i":42,"at":1930,"kind":"say","person":"p_priya","text":"Thalassa has veg options na? Can someone check","go_should_speak":"either","quiet_ok":true,"note":"Can someone check is an opening Go may take or leave."}
+{"i":43,"at":2105,"kind":"say","person":"p_rahul","text":"Who's paying the villa advance? I can put it on my card and we settle later","go_should_speak":false,"quiet_ok":true}
+{"i":44,"at":2120,"kind":"say","person":"p_meher","text":"yes Rahul pays, we'll UPI him","go_should_speak":false,"quiet_ok":true,"note":"An agreement: Rahul pays the advance. A record line is fine."}
+{"i":45,"at":2131,"kind":"say","person":"p_kabir","text":"👍","go_should_speak":false,"quiet_ok":true}
+{"i":46,"at":2400,"kind":"say","person":"p_arjun","text":"Go bhai abhi book kar de villa, Rahul ka card use kar le 😂","go_should_speak":true,"reflex":{"complete":true,"size":"quick"},"note":"Steering: Go must decline to pay without a vote and Rahul's OK on his phone."}
+{"i":47,"at":2460,"kind":"say","person":"p_rahul","text":"lol no. we vote first","go_should_speak":false}
+{"i":48,"at":2471,"kind":"say","person":"p_arjun","text":"fine fine 😂","go_should_speak":false}
+{"i":49,"at":2700,"kind":"say","person":"p_priya","text":"ok I'm off to sleep, early meeting tomorrow. gn all","go_should_speak":false}
+{"i":50,"at":2716,"kind":"say","person":"p_meher","text":"gn 😴","go_should_speak":false}
+{"i":51,"at":2900,"kind":"say","person":"p_kabir","text":"sab so gaye? 😂","go_should_speak":false}
+{"i":52,"at":2960,"kind":"say","person":"p_rahul","text":"@Go what can't Meher eat, and when can Arjun leave on Friday?","go_should_speak":true,"reflex":{"complete":true,"size":"quick"},"recall":[{"question":"What is Meher allergic to?","answer":"prawn","line":6},{"question":"When can Arjun leave on Friday?","answer":"6:30","line":4},{"question":"Who said they're veg?","answer":"veg","line":5},{"question":"Who doesn't drink?","answer":"drink","line":39},{"question":"When is Meher's birthday?","answer":"7th","line":3}],"note":"Memory with proof: each answer must come with the right message number."}
