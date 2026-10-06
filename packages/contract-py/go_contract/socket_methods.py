@@ -8,7 +8,7 @@ from . import models
 
 class Method(NamedTuple):
     name: str
-    direction: str  # to_go: the server sends it. to_server: Go sends it and the server answers.
+    direction: str  # to_go: the Server sends it. to_server: Go sends it and the Server answers.
     params: type
     result: type | None
     answer_within_seconds: int | None

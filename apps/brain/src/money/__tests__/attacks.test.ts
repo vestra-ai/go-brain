@@ -17,19 +17,19 @@ let seen: ReturnType<typeof fakeBrain>['seen'];
 let pay: PayEngine;
 let rahul: TestAuthenticator;
 let priya: TestAuthenticator;
-let goApp: FastifyInstance | null = null;
+let goHttp: FastifyInstance | null = null;
 let taps = 0;
 
 const goFetch = ((input: string | URL | Request, init?: RequestInit) => {
-  if (!goApp) throw new Error('Go is not up');
-  return injectFetch(goApp)(input, init);
+  if (!goHttp) throw new Error('Go is not up');
+  return injectFetch(goHttp)(input, init);
 }) as typeof fetch;
 
 async function setUp(stage: Parameters<typeof goaTrip>[0] = 'confirmed') {
   k = await moneyKit({ trip: goaTrip(stage) });
   vault = await startTestVault({ goFetch, now: k.now });
   ({ brain, seen } = fakeBrain({ pool: k.pool, link: k.server, travel: k.travel, trips: k.server.trips, now: k.now }));
-  goApp = brain.http;
+  goHttp = brain.http;
   await registerMoneyWith({ fetch: vault.fetch, sweepEveryMs: 0 })(brain);
   pay = brain.pay as PayEngine;
   rahul = await vault.passkeyFor('p_rahul', { withCard: true });
@@ -40,7 +40,7 @@ afterEach(async () => {
   await pay?.settled();
   await vault?.close();
   await k?.drop();
-  goApp = null;
+  goHttp = null;
 });
 
 const model = (calls: Array<{ name: string; input: unknown }>) => runToolCalls(seen.tools, turnCtx('t_goa', k.server, k.server.trip('t_goa')), calls);

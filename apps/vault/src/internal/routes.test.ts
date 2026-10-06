@@ -163,7 +163,7 @@ describe('POST /internal/pay-links', () => {
   });
 
   it('refuses a token meant for another audience', async () => {
-    const approval = signRawApproval({ ...spendVector().claims, aud: 'go-server' });
+    const approval = signRawApproval({ ...spendVector().claims, aud: 'another-service' });
     expect(await reasonOf(payBody({ approval }))).toBe('bad_approval');
   });
 

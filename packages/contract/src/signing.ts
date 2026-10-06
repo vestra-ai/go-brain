@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /**
- * The server signs the request that opens the socket to Go (GET /v1/socket) with this header.
+ * The Server signs the request that opens the socket to Go (GET /v1/socket) with this header.
  * Everything after that travels on the open socket and is not signed again.
  *
  *   x-go-signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, signing string)>

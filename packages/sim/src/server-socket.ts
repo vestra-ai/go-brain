@@ -59,7 +59,7 @@ export class SocketTimeoutError extends Error {
 /**
  * Answers one of Go's methods. `params` is checked against the contract; `raw` is the frame's params exactly as
  * they arrived. Read everything from `params`; store a card from `raw.card`, so a card field Go adds later
- * still reaches the app. Return the result, or throw SocketCallError to answer with an error.
+ * still reaches the App. Return the result, or throw SocketCallError to answer with an error.
  */
 export type Handler = (params: any, raw: Record<string, unknown>) => Promise<object | void> | object | void;
 
