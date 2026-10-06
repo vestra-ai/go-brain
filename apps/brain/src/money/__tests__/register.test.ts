@@ -140,6 +140,14 @@ describe('the payments block of right now', () => {
     );
   });
 
+  it('a check that failed just now does not mark the winner unbookable: the usual set_mandate line', async () => {
+    k.travel.failOffer = true;
+    const text = await paymentsNow({ pool: k.pool, packs: packs(goaTrip('closed')), now: k.now, travel: () => k.travel }).render('t_goa', []);
+    expect(k.travel.looked).toEqual(['opt_villa_sol']);
+    expect(text).toContain('Vote d_villa closed and Villa Sol won. Once the group says who pays, use set_mandate');
+    expect(text).not.toContain("Go can't book it");
+  });
+
   it('tells the composer a vote is ready to pay, with the ids ask_to_pay needs', async () => {
     const text = await paymentsNow({ pool: k.pool, packs: packs(), now: k.now }).render('t_goa', []);
     expect(text).toContain('Ready to pay for Villa Sol: Rahul said yes. ask_to_pay with decision_id d_villa and option_ref opt_villa_sol.');

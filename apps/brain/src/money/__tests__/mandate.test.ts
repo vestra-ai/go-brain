@@ -169,6 +169,19 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
     expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 
+  it('a check that failed just now is not unbookable: a plain try again, no flag, nothing set', async () => {
+    k.travel.failOffer = true;
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({ refused: "I couldn't check Villa Sol just now. Try again in a moment." });
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+    const [out] = await runToolCalls([setMandateTool((ctx, o) => setMandate(k.deps, ctx, o))], ctxWith(), [
+      { name: 'set_mandate', input: { decision_id: 'd_villa', choice_index: 0, refundable_only: false, payer_person_id: 'p_rahul' } },
+    ]);
+    expect(out).toEqual({
+      refused: "I couldn't check Villa Sol just now. Try again in a moment.",
+      tell_the_room: 'Say this in your own short words. Never offer another way to pay.',
+    });
+  });
+
   it('the tool tells the model to say so before anything about who pays', async () => {
     winnerIs('ixigo:flight:6e-2134', flight);
     const [out] = await runToolCalls([setMandateTool((ctx, o) => setMandate(k.deps, ctx, o))], ctxWith(), [

@@ -352,6 +352,8 @@ export class FakeTravel implements Travel {
   readonly confirms: Array<{ holdId: string; paid: { approvalId: string; railRef: string } }> = [];
   failHold = false;
   failConfirm = false;
+  /** offer() throws, as when the travel results cannot be read just now. */
+  failOffer = false;
   private readonly confirmed = new Map<string, Confirmed>();
 
   constructor(private readonly now: () => Date) {}
@@ -369,6 +371,7 @@ export class FakeTravel implements Travel {
 
   async offer(optionId: string): Promise<Awaited<ReturnType<Travel['offer']>>> {
     this.looked.push(optionId);
+    if (this.failOffer) throw new Error('travel results are down');
     if (!this.options.has(optionId)) return null;
     const offerId = this.options.get(optionId) ?? null;
     const o = offerId ? this.offers.get(offerId) : undefined;

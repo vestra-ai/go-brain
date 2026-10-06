@@ -54,20 +54,26 @@ export function amountsSaid(messages: Message[], group: { heads: number; nights:
 /**
  * Why Go cannot book an option for the group, in the words to say, or null when it can: Go books only an offer the travel
  * layer can hold for the whole group. A place found on the web has no offer; a flight, train or bus fare is per person
- * (booking those for a group is cut this week); an option with no option_ref is not one Go found at all.
+ * (booking those for a group is cut this week); an option with no option_ref is not one Go found at all. Those are
+ * unbookable. A check that failed is not: the option may well be bookable, so it is only "try again", with no flag.
  */
-export async function whyNotBookable(d: Pick<MoneyDeps, 'travel'>, option: Trip['decisions'][number]['options'][number]): Promise<string | null> {
+export async function whyNotBookable(
+  d: Pick<MoneyDeps, 'travel'>,
+  option: Trip['decisions'][number]['options'][number],
+): Promise<{ refused: string; unbookable?: true } | null> {
   const words = { payer: 'The payer', what: option.label };
   const travel = d.travel();
-  if (!option.option_ref || !travel) return `${option.label} isn't something I can book here, so there's nothing to set up for paying.`;
+  if (!option.option_ref || !travel) return { refused: `${option.label} isn't something I can book here, so there's nothing to set up for paying.`, unbookable: true };
   let offer: Awaited<ReturnType<Travel['offer']>>;
   try {
     offer = await travel.offer(option.option_ref);
   } catch {
-    return `I couldn't check ${option.label} just now. Try again in a moment.`;
+    return { refused: `I couldn't check ${option.label} just now. Try again in a moment.` };
   }
-  if (offer && GROUP_FARES.has(offer.kind)) return refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(offer.link ? { link: offer.link } : {}) }).text;
-  if (!offer?.offerId) return refusalWords('not_bookable', words).text;
+  if (offer && GROUP_FARES.has(offer.kind)) {
+    return { refused: refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(offer.link ? { link: offer.link } : {}) }).text, unbookable: true };
+  }
+  if (!offer?.offerId) return { refused: refusalWords('not_bookable', words).text, unbookable: true };
   return null;
 }
 
@@ -99,9 +105,9 @@ export async function setMandate(
   const chosen = decision.options[o.choiceIndex];
   if (!allowed || !chosen) return { refused: `The group picked ${winnerLabel}. I can only set that.` };
 
-  // Something Go cannot book needs no payer: say so before anyone is asked who pays.
-  const unbookable = await whyNotBookable(d, chosen);
-  if (unbookable) return { refused: unbookable, unbookable: true };
+  // Something Go cannot book needs no payer: say so before anyone is asked who pays. A failed check only says try again.
+  const cannot = await whyNotBookable(d, chosen);
+  if (cannot) return cannot;
 
   const payer = trip.people.find((p) => p.person_id === o.payerPersonId);
   if (!payer) return { refused: "That person isn't in this trip." };
