@@ -1,10 +1,10 @@
 /** Quick tools for the composer: read memory (trip, person, recall) and write one checked record line (record). */
 import type { Pool } from 'pg';
 import { z } from 'zod';
+import { dataBlock, defuse, inlineData, oneLine, personName } from '../composer/fence.js';
 import type { QuickTool, TurnCtx } from '../composer/tools.js';
 import { checkLine } from './checker.js';
 import { forgottenUpTo } from './facts.js';
-import { fenceText } from './fence.js';
 import type { Memory } from './memory.js';
 import { renderRecord } from './now.js';
 import { mirrorSnapshot, recordLines, writeLine } from './record.js';
@@ -35,7 +35,7 @@ export function memoryTools(d: { pool: Pool; memory: Memory }): QuickTool<any>[]
         status: t.status,
         destination: t.destination?.name ?? null,
         dates: t.dates ?? null,
-        people: t.people.map((p) => ({ person_id: p.person_id, name: p.name, organizer: p.person_id === t.organizer_person_id })),
+        people: t.people.map((p) => ({ person_id: p.person_id, name: personName(p.name), organizer: p.person_id === t.organizer_person_id })),
         record: record ?? 'The record is empty.',
       };
     },
@@ -54,7 +54,11 @@ export function memoryTools(d: { pool: Pool; memory: Memory }): QuickTool<any>[]
       if (matches.length > 1) return { error: `More than one person matches ${name}: ${matches.map((p) => p.name).join(', ')}.` };
       const p = matches[0]!;
       const page = await d.memory.page(ctx.tripId, p.person_id, 'go');
-      return { person_id: p.person_id, name: p.name, page: page ? page.split('\n').map(fenceText).join('\n') : 'Go knows nothing about them yet.' };
+      return {
+        person_id: p.person_id,
+        name: personName(p.name),
+        page: page ? dataBlock('facts', page.split('\n').map((l) => defuse(oneLine(l)))) : 'Go knows nothing about them yet.',
+      };
     },
   };
 
@@ -64,7 +68,7 @@ export function memoryTools(d: { pool: Pool; memory: Memory }): QuickTool<any>[]
     input: RecallInput,
     async run({ question }, ctx: TurnCtx) {
       const hits = await d.memory.recall(ctx.tripId, question, 'go');
-      return { hits: hits.map((h) => ({ ...h, text: fenceText(h.text) })) };
+      return { hits: hits.map((h) => ({ ...h, text: inlineData(h.text, 300) })) };
     },
   };
 

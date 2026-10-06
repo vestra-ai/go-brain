@@ -102,3 +102,22 @@ describe('carry-over and forgotten marks', () => {
     expect((await forgottenUpTo(db.pool, 't_goa')).get('p_h')).toBe(120);
   });
 });
+
+describe('an older statement', () => {
+  it('joins the history at its place in time and never replaces a newer fact', async () => {
+    const at = (h: number) => new Date(`2026-10-05T0${h}:00:00Z`);
+    await saveFact(db.pool, fact({ personId: 'p_i', text: 'Vegetarian', messageId: 'm_0401', saidAt: at(6) }));
+    const fish = await saveFact(db.pool, fact({ personId: 'p_i', text: 'Eats fish now', messageId: 'm_0403', saidAt: at(8) }));
+    // A notes pass that ran late reads a message from 07:00.
+    const late = await saveFact(db.pool, fact({ personId: 'p_i', text: 'Vegan', messageId: 'm_0402', saidAt: at(7) }));
+    expect(late).toMatchObject({ changed: false });
+    expect((await currentFacts(db.pool, { personId: 'p_i' })).map((f) => f.text)).toEqual(['Eats fish now']);
+    const rows = await allRows('p_i');
+    const id = (text: string) => rows.find((r) => r.text === text)!.fact_id;
+    expect(rows.find((r) => r.text === 'Vegetarian')!.superseded_by).toBe(id('Vegan'));
+    expect(rows.find((r) => r.text === 'Vegan')!.superseded_by).toBe(fish.factId);
+    // Taking back the newest message brings back the newest one before it.
+    await dropFactsFromMessage(db.pool, 't_goa', 'm_0403');
+    expect((await currentFacts(db.pool, { personId: 'p_i' })).map((f) => f.text)).toEqual(['Vegan']);
+  });
+});
