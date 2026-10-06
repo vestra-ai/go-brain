@@ -10,7 +10,8 @@
     "test": "vitest run",
     "start": "node dist/main.js",
     "jev:record": "tsx scripts/record-jev-answers.ts",
-    "fake-ixigo": "node dist/travel/fake-ixigo/main.js"
+    "fake-ixigo": "node dist/travel/fake-ixigo/main.js",
+    "setup-v1": "tsx scripts/setup-v1.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.93.0",
