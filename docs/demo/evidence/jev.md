@@ -14,7 +14,7 @@ This page explains the recording in this folder: where it comes from, how each q
 
 - **Run:** jev-record run [37437189211](https://github.com/vestra-ai/go-brain/actions/runs/37437189211), job `record`, artifact `jev-record`, recorded at 2026-10-06 08:37 UTC (`recorded_at` in the file).
 - **Code:** pull request #51 at `9bc86f9`, merged onto `build` at `5225799` (the run's test commit `444429e`). The pull request adds only the recording workflow and a test, so the questions asked are `build`'s; `versions` in the file holds each question's wording version, and CI marks a question stale if its wording changes.
-- **Jev:** model `jev-1.13.0` at Jev's default address, the same settings as the `brain-rehearsal` service, with Vestra's staging Jev key from the repository's secrets. The key is never printed.
+- **Jev:** model `jev-1.13.0` at Jev's default address, the same settings as Go's deployment, with Vestra's staging Jev key from the repository's secrets. The key is never printed.
 - **The recording runs in CI** (`.github/workflows/jev-record.yml`) when a pull request gets the label `jev-record`: one Jev call per line.
 
 ## The test set
