@@ -1,5 +1,6 @@
 import * as C from '@go/contract';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { reactionRequestId, reactOnce } from '../../memory/reactions.js';
 import { amountsIn, readExpensesTool, recordExpenseTool } from '../expenses.js';
 import { goaTrip, moneyKit, runToolCalls, say, turnCtx, type MoneyKit } from './kit.js';
 
@@ -16,7 +17,7 @@ afterEach(async () => {
 /** A turn whose chat holds these lines, #1 onward, with the two expense tools. */
 function turn(lines: Array<[string, string]>) {
   const ctx = turnCtx('t_goa', k.server, k.server.trip('t_goa'), lines.map(([who, text], i) => say(i + 1, who, text)));
-  return { ctx, run: (calls: Array<{ name: string; input: unknown }>) => runToolCalls([recordExpenseTool(), readExpensesTool()], ctx, calls) };
+  return { ctx, run: (calls: Array<{ name: string; input: unknown }>) => runToolCalls([recordExpenseTool({ pool: k.pool }), readExpensesTool()], ctx, calls) };
 }
 
 const expenses = () => k.server.writesOf('add_expense').map((w) => w.params);
@@ -73,7 +74,19 @@ describe('record_expense', () => {
     await turn([['p_rahul', 'I paid 3,200 for the cab']]).run([call]);
     await turn([['p_rahul', 'I paid 3,200 for the cab']]).run([call]);
     expect(expenses()).toHaveLength(1);
+    expect(reactions()).toHaveLength(1);
     expect(k.server.trip('t_goa').expenses).toHaveLength(1);
+  });
+
+  it("joins the reflex's quick ✅ on the same line: exactly one ✅ request, never a second one or a 409", async () => {
+    const { ctx, run } = turn([['p_rahul', 'I paid 3,200 for the cab']]);
+    // The reflex is quicker than a turn: its ✅ went first.
+    expect(await reactOnce(k.pool, k.server, 't_goa', ctx.pack.messages[0]!, '✅')).toBe('sent');
+    const [out] = await run([{ name: 'record_expense', input: { message_id: '#1', amount_minor: 320000, for_what: 'Cab' } }]);
+    expect(out).toMatchObject({ recorded: true });
+    expect(expenses()).toHaveLength(1);
+    expect(reactions()).toEqual([expect.objectContaining({ message_id: 'm_1', emoji: '✅', request_id: reactionRequestId('t_goa', 'm_1', '✅') })]);
+    expect(ctx.outcome.reactions).toBe(0);
   });
 
   it('records nothing from an amount the message does not say, and says to ask', async () => {
@@ -140,7 +153,7 @@ describe('who_owes_what', () => {
     k.server.trips.set('t_goa', trip);
     // The turn's own copy of the trip knows nothing about money: the answer must come from the Server.
     const ctx = turnCtx('t_goa', k.server, goaTrip('confirmed'), [say(1, 'p_meher', 'who owes what so far?')]);
-    const [out] = await runToolCalls([recordExpenseTool(), readExpensesTool()], ctx, [{ name: 'who_owes_what', input: {} }]);
+    const [out] = await runToolCalls([recordExpenseTool({ pool: k.pool }), readExpensesTool()], ctx, [{ name: 'who_owes_what', input: {} }]);
     expect(out).toMatchObject({
       spent_in_all: '₹4,700',
       paid_by: [{ name: 'Rahul', paid: '₹3,200' }, { name: 'Priya', paid: '₹1,500' }],
@@ -162,7 +175,7 @@ describe('who_owes_what', () => {
 
 describe('the tools say what they do', () => {
   it('record and read, and never move money between people, with no em dash and no model name', () => {
-    for (const t of [recordExpenseTool(), readExpensesTool()]) {
+    for (const t of [recordExpenseTool({ pool: k.pool }), readExpensesTool()]) {
       expect(t.description).toContain('never move money between people');
       expect(t.description).not.toMatch(/[—–]|Claude/);
     }

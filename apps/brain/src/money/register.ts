@@ -19,7 +19,7 @@ const railOf = (value: string): PaymentKind => (value === 'ixigo' || value === '
 export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: number } = {}): RegisterLane {
   return async (brain) => {
     // What people say they paid needs no vault: Go records it and reads who owes whom whether or not paying is on.
-    brain.tools.register(recordExpenseTool());
+    brain.tools.register(recordExpenseTool({ pool: brain.pool }));
     brain.tools.register(readExpensesTool());
     const env = readMoneyEnv(brain.env);
     if (!env) {

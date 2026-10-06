@@ -232,6 +232,17 @@ describe('a composer turn', () => {
     expect(rows[0]).toMatchObject({ outcome: 'spoke', rounds: 1 });
   });
 
+  it('with no answer at all (the first hold does not fit), someone who asked hears the limit line, and the model is never called', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights Friday?');
+    // Room is left today (allows), but less than one call's hold.
+    const budget = createBudget({ pool: db.pool, now: () => new Date(), capUsd: 0.000_001, log: silentLog });
+    const r = room({ messages: [ask], script: [{ text: 'never asked' }], budget });
+    expect(budget.allows()).toBe(true);
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(0);
+    expect(r.posts().map((p) => p.params.text)).toEqual([OVER_BUDGET]);
+  });
+
   it('typing goes off when the turn ends, also when the message that named Go was pulled in, or the turn posted', async () => {
     const ask = msg(3, 'p_arjun', '@Go and flights?');
     let claimed = false;
