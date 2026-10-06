@@ -54,13 +54,16 @@ describe('the chat generator', () => {
     expect((burst[4]?.at ?? 0) - (burst[0]?.at ?? 0)).toBeLessThan(5);
   });
 
-  it('the 2,000 chat asks eight recall questions near the end about facts from the first evening', () => {
+  it('the 2,000 chat asks eight recall questions near the end, seven about facts from the first evening', () => {
     const chat = loadChat('goa-2000');
     expect(chatCounts(chat).messages).toBe(2000);
     const asker = saysOf(chat.lines).find((l) => l.recall !== undefined);
     expect(asker?.i).toBeGreaterThan(1500);
     expect(asker?.recall?.length).toBe(8);
-    for (const p of asker?.recall ?? []) expect(p.line).toBeLessThan(300);
+    // Seven facts were said on the first evening; who pays the villa advance was agreed on day 3. All of them long before the end.
+    const proofs = (asker?.recall ?? []).map((p) => p.line);
+    expect(proofs.filter((n) => n < 300)).toHaveLength(7);
+    for (const n of proofs) expect(n).toBeLessThan(1000);
   });
 
   it('puts no chatter into a night marked quiet', () => {
