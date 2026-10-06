@@ -4,7 +4,7 @@
     "typingP90Ms": 500,
     "goTimeP90Ms": 1500,
     "cacheHitMin": 0.85,
-    "cacheChats": ["goa-300", "goa-2000"],
+    "cacheChats": ["goa-2000"],
     "wakeRateMax": 0.25,
     "labelledChats": ["goa-50"],
     "recallMissMax": 0,

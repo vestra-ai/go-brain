@@ -33,7 +33,7 @@ describe('the bars and the verdict', () => {
 
   it('judges the cache on long chats and only reports it on the short one', () => {
     const low = { ...base.cache, hitRate: 0.8 };
-    expect(failed([{ ...base, chat: 'goa-300', cache: low }])).toEqual(['goa-300: cache hit']);
+    expect(failed([{ ...base, chat: 'goa-2000', cache: low }])).toEqual(['goa-2000: cache hit']);
     const short = compareFast([{ ...base, cache: low }], bars.fast).checks.find((c) => c.name === 'cache hit');
     expect(short).toMatchObject({ ok: true, value: '80.0%' });
   });
@@ -105,11 +105,11 @@ describe('the live verdict and the model pick', () => {
 
 describe('the summary', () => {
   it('puts failures first and never prints NaN, undefined, Infinity or an em dash', () => {
-    const scores = [base, { ...base, chat: 'goa-300', cache: { ...base.cache, hitRate: 0.8 } }, { ...base, chat: 'empty', wake: { turns: 0, messages: 0, rate: null }, typing: { n: 0, p50Ms: null, p90Ms: null, missing: 0, withoutPost: 0 }, prompt: { maxTokens: null, lastTokens: null, average: null }, costUsd: null }];
+    const scores = [base, { ...base, chat: 'goa-2000', cache: { ...base.cache, hitRate: 0.8 } }, { ...base, chat: 'empty', wake: { turns: 0, messages: 0, rate: null }, typing: { n: 0, p50Ms: null, p90Ms: null, missing: 0, withoutPost: 0 }, prompt: { maxTokens: null, lastTokens: null, average: null }, costUsd: null }];
     const report: BenchReport = { schema: 'go.bench-report/v1', mode: 'fast', at: '2026-10-06T18:00:00Z', commit: 'abc1234', scores, verdict: compareFast(scores, bars.fast) };
     const md = renderSummary(report);
     expect(md).toContain('1 of');
-    expect(md.indexOf('goa-300 | cache hit')).toBeLessThan(md.indexOf('goa-50 | typing p90'));
+    expect(md.indexOf('goa-2000 | cache hit')).toBeLessThan(md.indexOf('goa-50 | typing p90'));
     for (const bad of ['NaN', 'undefined', 'Infinity', '\u2014']) expect(md).not.toContain(bad);
   });
 });
