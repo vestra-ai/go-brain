@@ -201,7 +201,7 @@ A notification tells the other side something and gets no answer. Notifications 
 
 An "on" lasts 10 seconds. Go sends it again every 5 seconds while it works, and sends `"on": false` when it stops. The server also hides it as soon as Go's next message lands. A lost "off" just runs out after 10 seconds.
 
-The server does not tell Go when people are typing. Go handles that on its own: after a message for Go, it waits about 2 seconds in case the same person sends more, and just before it posts, it checks for anything new for it in the room and answers that too.
+The server does not tell Go when people are typing. Go handles that on its own: after a message for Go, it waits about 2 seconds in case the same person sends more (unless the message plainly ends with a question mark, a full stop, an exclamation mark or an emoji), and just before it posts, it checks for anything new for it in the room and answers that too.
 
 Good to know:
 - A frame with `result` or `error` is always the answer to a request you sent. Match it to your request by `id`.

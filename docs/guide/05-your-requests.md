@@ -29,7 +29,7 @@ Good to know:
 
 The server tells Go about every change to a trip with a `send_event` request, whoever made the change: a person, Go or the server itself. Its params are the whole event (a `MessageCreated`, a `DecisionClosed` and so on), and Go answers `{"accepted": true, "duplicate": false}` within 2 seconds, then does the real work afterwards. The server sends each trip's events one at a time, in change-number order, from an outbox written in the same transaction as the change, and it sends a failed event again on a fixed schedule. Every event type, the outbox and the sender are on their own page: [Events](03-events.md).
 
-When a message for Go arrives (someone mentions Go, names it, or replies to it), Go waits about 2 seconds in case the same person sends more. Just before it posts its answer, it checks the room for anything new for it and answers that too. This is Go's own behaviour: the server has nothing to send for it.
+When a message for Go arrives (someone mentions Go, names it, or replies to it), Go waits about 2 seconds in case the same person sends more, unless the message plainly ends with a question mark, a full stop, an exclamation mark or an emoji. Just before it posts its answer, it checks the room for anything new for it and answers that too. This is Go's own behaviour: the server has nothing to send for it.
 
 ## Card taps: `card_tap`
 

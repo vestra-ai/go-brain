@@ -97,12 +97,12 @@ describe('intake', () => {
     expect(h.f.calls.filter((c) => c.method === 'read_trip')).toHaveLength(0);
   });
 
-  it('"@Go ..." turns typing on at once, before the reflex answers, and waits 2 s on the desk', async () => {
+  it('"@Go ..." turns typing on at once, before the reflex answers, and waits 2 s on the desk while the thought may go on', async () => {
     const h = harness({ reflex: (order) => ({ read: async () => { await sleep(100); order.push('reflex'); return UNSURE_READ; } }) });
     const T = 't_in_3';
     await h.send(created(T));
     const sentAt = Date.now();
-    await h.send(ev(2, 'message.created', { message: msg(2, 'p_arjun', '@Go flights Friday?') }, T));
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_arjun', '@Go flights Friday') }, T));
     await h.intake.idle();
     expect(h.order).toEqual([`typing:${T}`, 'reflex', 'hook:m_2']);
     const item = (await open(T)).find((r) => r.kind === 'message');
@@ -110,6 +110,22 @@ describe('intake', () => {
     const wait = item.due_at.getTime() - sentAt;
     expect(wait).toBeGreaterThan(1_800);
     expect(wait).toBeLessThan(2_500);
+  });
+
+  it('a message to Go that plainly ends a thought is due at once, whatever the reflex says; one not to Go still waits', async () => {
+    const h = harness({ reflex: () => ({ read: async () => UNSURE_READ }) });
+    const T = 't_in_3b';
+    await h.send(created(T));
+    const sentAt = Date.now();
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_arjun', '@Go flights Friday?') }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_priya', 'Go bhai book kar de 😂') }, T));
+    await h.send(ev(4, 'message.created', { message: msg(4, 'p_meher', 'what time is check-in?') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref)).toEqual(['m_2', 'm_3', 'm_4']);
+    expect(items[0]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
+    expect(items[1]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
+    expect(items[2]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
   });
 
   it('a sure-complete read is due at once; sure chatter gets no item unless it names Go', async () => {

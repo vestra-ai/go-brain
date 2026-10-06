@@ -79,7 +79,7 @@ The second recording ([run 37439332584](https://github.com/vestra-ai/go-brain/ac
 - **Question 1:** a message Jev is sure is chatter, or sure no one spoke to Go in, does not wake the main model; the notes pass and the quiet reactions still run for it. A message that names Go always does.
 - **Questions 5, 6 and 7:** the notes pass runs at once for a sure fact or record line instead of after a quiet spell, and a sure 👍 or 🙌 goes on the message without any model. A ✅ goes on at once when questions 5 and 7 are both sure.
 - **Questions 4 and 8:** no part of Go acts on these readings yet; acting live records them as acted in `reflex_reads`.
-- **Question 2, in shadow:** no message reads as finished, so Go waits 2 seconds (longer while more lines keep coming, up to 6) before the main model answers.
+- **Question 2, in shadow:** Jev never marks a message finished, so Go waits 2 seconds (longer while more lines keep coming, up to 6) before the main model answers, unless the message names Go and plainly ends with ?, ., ! or an emoji.
 - **Question 9, in shadow:** Go does not offer help on its own from an opening.
 - **Question 3, in shadow:** no part of Go acts on it yet.
 

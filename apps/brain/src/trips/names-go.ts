@@ -13,6 +13,15 @@ export function namesGoInText(text: string | null | undefined): boolean {
   return AT.test(text) || STARTS.test(text) || ENDS.test(text) || CALLS.test(text);
 }
 
+// A thought plainly ended: ?, ! or one full stop (not "..." or "…"), or an emoji, with trailing spaces, emoji joiners and
+// skin tones aside.
+const ENDED = /(?:[?!]|(?<!\.)\.|\p{Extended_Pictographic})[\s\uFE0F\u200D\p{Emoji_Modifier}]*$/u;
+
+/** True when the text plainly ends a thought: "@Go flights Friday?" does, "@Go can you" and "@Go one thing..." do not. */
+export function endsThought(text: string | null | undefined): boolean {
+  return !!text && ENDED.test(text);
+}
+
 /** True when a message plainly names Go: the Server's mentions_go, a reply to Go, or Go spoken to in the text. */
 export function plainlyNamesGo(m: Message, pack: TripPack): boolean {
   if (m.mentions_go || namesGoInText(m.text)) return true;

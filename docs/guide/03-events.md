@@ -418,7 +418,7 @@ Most events change what Go knows without making it speak. Go speaks in the room 
 
 Otherwise Go stays quiet and takes notes. In each trip, Go speaks without being asked at most once every 30 minutes.
 
-After a message for Go, Go waits about 2 seconds in case the same person sends more. Just before it posts its answer, it checks for anything new for it in the room (events that arrived while it worked) and answers that too. This is Go's own behaviour, and the server has nothing to do for it. While it works, Go shows "Go is typing..." by sending the `typing` notification, and repeats it every 5 seconds.
+After a message for Go, Go waits about 2 seconds in case the same person sends more, unless the message plainly ends with a question mark, a full stop, an exclamation mark or an emoji. Just before it posts its answer, it checks for anything new for it in the room (events that arrived while it worked) and answers that too. This is Go's own behaviour, and the server has nothing to do for it. While it works, Go shows "Go is typing..." by sending the `typing` notification, and repeats it every 5 seconds.
 
 After it replies, or after a message it only took notes on, Go saves what it learned in two places:
 

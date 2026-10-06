@@ -25,7 +25,7 @@ sequenceDiagram
   server->>app: the message, to everyone in the room
   server->>go: send_event (message.created, seq 57, mentions_go true)
   go-->>server: answer: accepted
-  Note over go: waits 2 s in case Priya adds more
+  Note over go: ends with ?, so no wait (a message that trails off waits 2 s)
   go-)server: typing (on)
   server->>app: "Go is typing..."
   go->>server: read_trip (t_goa)
@@ -41,7 +41,7 @@ sequenceDiagram
   go-->>server: answer: accepted
 ```
 
-Priya's message mentions Go, so Go answers. Go answers the `send_event` at once and does the work afterwards. Go waits about 2 seconds in case Priya sends more. Then it sends the `typing` notification, so the room shows "Go is typing...", and repeats it every 5 seconds. It reads the trip with `read_trip` to learn the dates and who flies from Delhi, and searches. Just before it posts, it checks for anything new for it in the room, so a follow-up from Priya or someone else gets answered in the same reply. Then it posts one message with `post_message`: a line of text and an options card with three flights. The server answers with the new message's id and change number, pushes Priya because Go named her, and sends the message back to Go as an event with that change number.
+Priya's message mentions Go, so Go answers. Go answers the `send_event` at once and does the work afterwards. Her message ends with a question mark, so Go starts at once; a message for Go that trails off ("@Go can you") waits about 2 seconds in case she sends more. Go sends the `typing` notification, so the room shows "Go is typing...", and repeats it every 5 seconds. It reads the trip with `read_trip` to learn the dates and who flies from Delhi, and searches. Just before it posts, it checks for anything new for it in the room, so a follow-up from Priya or someone else gets answered in the same reply. Then it posts one message with `post_message`: a line of text and an options card with three flights. The server answers with the new message's id and change number, pushes Priya because Go named her, and sends the message back to Go as an event with that change number.
 
 ## 2. A trip starts
 
