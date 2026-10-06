@@ -143,4 +143,17 @@ describe('startProactive', () => {
     expect(watches.rows.length).toBeGreaterThan(0);
     await expect(h.sweep()).resolves.toBeUndefined();
   });
+
+  it('the sweep never reads or re-plans a trip the Server no longer has', async () => {
+    const time = manualTime('2026-10-06T06:30:00Z');
+    const { brain } = fakeBrain({ pool: db.pool, now: time.now });
+    const h = await startProactive(brain, { intervals: false, travel: null });
+    await seedTrip(db.pool, 't_swept_gone');
+    await db.pool.query(`update trips set gone_at = $2, created_at = $2 where trip_id = 't_swept_gone'`, [time.now()]);
+    await h.sweep();
+    const link = brain.door.link as unknown as { of(method: string): Array<Record<string, unknown>> };
+    expect(link.of('read_trip').map((p) => p.trip_id)).not.toContain('t_swept_gone');
+    const timers = await db.pool.query(`select 1 from proactive_candidates where trip_id = 't_swept_gone'`);
+    expect(timers.rowCount).toBe(0);
+  });
 });

@@ -94,4 +94,20 @@ describe('createWatchRunner', () => {
     expect(w.rows[0]?.active).toBe(false);
     expect(await createWatchRunner({ pool: db.pool, travel: null, store, now: () => late, log: { warn: () => {} } }).tick()).toBe(0);
   });
+
+  it('turns off the watches of a trip the Server no longer has, and never asks about them; a re-plan turns them back on', async () => {
+    await seedTrip(db.pool, 't_gone_w');
+    await syncWatches(db.pool, goaTrip({ trip_id: 't_gone_w' }), START);
+    await db.pool.query(`update trips set gone_at = $2 where trip_id = $1`, ['t_gone_w', START]);
+    const asked: StatusQuery[] = [];
+    const travel = { status: async (q: StatusQuery): Promise<StatusResult> => { asked.push(q); return flight(0); } };
+    // Its one flight watch is due now; the Goa trip's own watch was stopped by the test before.
+    await createWatchRunner({ pool: db.pool, travel, store, now: () => START, log: { warn: () => {} } }).tick();
+    const active = async () => (await db.pool.query<{ active: boolean }>(`select active from watches where trip_id = 't_gone_w'`)).rows.map((r) => r.active);
+    expect(await active()).toEqual([false]);
+    expect(asked).toEqual([]);
+    await db.pool.query(`update trips set gone_at = null where trip_id = $1`, ['t_gone_w']);
+    await syncWatches(db.pool, goaTrip({ trip_id: 't_gone_w' }), START);
+    expect(await active()).toEqual([true]);
+  });
 });

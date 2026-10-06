@@ -100,6 +100,7 @@ export function createPromoter(deps: PromoterDeps): Promoter {
 
   async function once(): Promise<number> {
     const now = deps.now();
+    await deps.store.retireGone(now);
     const byTrip = new Map<string, Candidate[]>();
     for (const c of await deps.store.due(now)) byTrip.set(c.tripId, [...(byTrip.get(c.tripId) ?? []), c]);
     let promoted = 0;

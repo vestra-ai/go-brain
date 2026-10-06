@@ -355,6 +355,26 @@ describe('the 5-minute sweep after a restart', () => {
   });
 });
 
+describe('a trip the Server no longer has', () => {
+  it('gets no notes pass and no fold from the sweep, with unread words or heard from lately', async () => {
+    const live = msg(90, 'p_priya', 'Friday works');
+    const old = msg(91, 'p_arjun', 'Saturday then');
+    const w = setup('t_r15', [live], [JSON.stringify({ facts: [], lines: [] })]);
+    for (const [trip, m] of [['t_r15', live], ['t_r16', old]] as const) {
+      await db.pool.query(`INSERT INTO trips (trip_id) VALUES ($1) ON CONFLICT DO NOTHING`, [trip]);
+      await seedMessages(db.pool, trip, [m]);
+    }
+    // Heard from just before the Server dropped it.
+    await w.wired.onRead(old, read({}), packOf([old], goaTrip({ trip_id: 't_r16' })));
+    await db.pool.query(`UPDATE trips SET gone_at = now() WHERE trip_id = 't_r16'`);
+    w.t.advance(61_000);
+    const ran = await w.wired.sweep();
+    expect(ran).toContain('t_r15');
+    expect(ran).not.toContain('t_r16');
+    expect(await w.wired.sweep()).not.toContain('t_r16');
+  });
+});
+
 describe('registerMemory', () => {
   it('hands brain.onStop one stopper that clears the 5-minute sweep and the quiet timers', async () => {
     const w = setup('t_r9', [], []);
