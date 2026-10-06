@@ -156,6 +156,13 @@ describe('decide', () => {
     expect(decide(cand({ useful: ['pin'] }), spoke, NOON)).toMatchObject({ kind: 'go', allowed: ['pin'] });
   });
 
+  it('counts any message of Go\'s as its last word: an answer, then nobody, means no unprompted post yet', () => {
+    const answered = mood({ lastGoMessageAt: new Date('2026-10-06T06:10:00Z'), lastPersonMessageAt: new Date('2026-10-06T06:00:00Z') });
+    expect(decide(cand({ useful: ['pin'] }), answered, NOON)).toEqual({ kind: 'wait', until: new Date(NOON.getTime() + RECHECK_MS), reason: 'two_in_a_row' });
+    const spoke = mood({ lastGoMessageAt: new Date('2026-10-06T06:10:00Z'), lastPersonMessageAt: new Date('2026-10-06T06:20:00Z') });
+    expect(decide(cand({ useful: ['pin'] }), spoke, NOON)).toMatchObject({ kind: 'go', allowed: ['pin'] });
+  });
+
   it('lets a hush lower how chatty Go is', () => {
     const hushed = mood({ hushCount: 1, lastHushAt: NOON });
     expect(decide(chat(), hushed, NOON)).toMatchObject({ kind: 'go', allowed: ['react', 'record'], counted: false });

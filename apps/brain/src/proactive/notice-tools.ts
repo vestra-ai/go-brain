@@ -34,7 +34,18 @@ export interface NoticeToolDeps {
   onPosted?: (p: ProactivePayload, cardId: string) => Promise<void>;
 }
 
+/** The people a simulated item in the wake names, or null when there is none or it names nobody. */
+function simulatedPins(wake: TurnCtx['wake']): string[] | null {
+  const ids = new Set<string>();
+  for (const item of wake) {
+    const p = proactiveOf(item);
+    if (p?.candidate.simulated) for (const id of p.forPersonIds) ids.add(id);
+  }
+  return ids.size > 0 ? [...ids] : null;
+}
+
 const NOT_NOW = 'Not now: the bar for speaking up unprompted is not met for this. Use an allowed action or stay_silent.';
+const ONE_NOTICE = 'This turn already posted its one notice. Put everything in that notice, or stay_silent.';
 
 export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, QuickTool<UpdateNoticeArgs>] {
   const post: QuickTool<PostNoticeArgs> = {
@@ -45,10 +56,14 @@ export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, Q
     async run(args: PostNoticeArgs, ctx: TurnCtx): Promise<unknown> {
       const rules = rulesForTurn(ctx.wake);
       if (rules && !rules.tools.includes('post_notice')) return { refused: NOT_NOW };
+      // An unprompted turn spends one post of the budget: one notice, however many times the model asks.
+      if (rules && ctx.cards.some((c) => (c as { kind?: unknown }).kind === 'notice')) return { refused: ONE_NOTICE };
       const reachable = new Set(ctx.pack.trip.people.filter((p) => !p.go_paused).map((p) => p.person_id));
       let pins = (args.for_person_ids ?? []).filter((id) => reachable.has(id));
-      if (rules?.pinOnlyFor) {
-        const named = rules.pinOnlyFor.filter((id) => reachable.has(id));
+      // Simulated news stays pinned to the people it names, even in a turn a person woke (no rules then).
+      const pinOnlyFor = rules?.pinOnlyFor ?? simulatedPins(ctx.wake);
+      if (pinOnlyFor) {
+        const named = pinOnlyFor.filter((id) => reachable.has(id));
         pins = pins.filter((id) => named.includes(id));
         if (pins.length === 0) pins = named;
         if (pins.length === 0) return { refused: 'Nobody this concerns can be pinged right now.' };
@@ -90,10 +105,16 @@ export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, Q
       if (rules && !rules.tools.includes('update_notice')) return { refused: NOT_NOW };
       const saved = await deps.store.notice(ctx.tripId, args.card_id);
       if (!saved) return { refused: 'Go has no notice card with that id in this trip.' };
+      // Someone who paused Go since the notice went out is no longer pinged by it.
+      const reachable = new Set(ctx.pack.trip.people.filter((p) => !p.go_paused).map((p) => p.person_id));
+      const pinned = saved.card.for_person_ids;
+      const pins = pinned ? pinned.filter((id) => reachable.has(id)) : null;
+      if (pinned && pinned.length > 0 && pins?.length === 0) return { refused: 'Nobody this notice is for can be pinged right now.' };
       const title = args.title ? clip(plain(args.title), 80) : saved.card.title;
       const body = args.body ? clip(plain(args.body), 500) : saved.card.body;
       const card: NoticeIn = {
         ...saved.card,
+        ...(pins ? { for_person_ids: pins } : {}),
         title,
         body,
         fallback_text: clip(`${title}. ${body}`, 300),

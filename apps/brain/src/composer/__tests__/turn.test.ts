@@ -279,6 +279,23 @@ describe('a composer turn', () => {
     expect(rows[0].outcome).toBe('acted');
   });
 
+  it('a turn under limits never pulls in people\'s new messages: they wait for their own turn, under the normal rules', async () => {
+    let asked = false;
+    const r = room({
+      messages: [msg(3, 'p_arjun', 'what time is check-in?')],
+      limits: (wake) => (wake.every((w) => w.kind === 'opening') ? { tools: ['react'], mayPostText: true } : null),
+      script: [{ text: 'Check-in is from 2 pm.' }],
+      claimNew: async () => {
+        asked = true;
+        return [];
+      },
+    });
+    await turn(r, [{ id: `opening:${r.tripId}:chat`, tripId: r.tripId, kind: 'opening', ref: 'chat', dueAt: new Date(), payload: {} }]);
+    expect(asked).toBe(false);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts()[0]?.params.text).toBe('Check-in is from 2 pm.');
+  });
+
   it('a tool outside the limits never reaches the Server, and the text still posts when it may', async () => {
     const ask = msg(3, 'p_priya', '@Go any news?');
     const r = room({

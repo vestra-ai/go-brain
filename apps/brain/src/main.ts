@@ -6,6 +6,7 @@ import { registerMemory } from './memory/register.js';
 import { registerProactive } from './proactive/register.js';
 import { registerReflex } from './reflex/register.js';
 import { registerRoom } from './room.js';
+import { registerStats } from './stats/index.js';
 import { registerTasks } from './tasks/register.js';
 import { registerTravel } from './travel/register.js';
 
@@ -14,7 +15,7 @@ import { registerTravel } from './travel/register.js';
  * registerTasks, registerMoney, registerProactive, registerCalls, registerAdmin. Each lane adds its one
  * line here, in that order, in its own PR.
  */
-export const LANES: RegisterLane[] = [registerRoom, registerReflex, registerMemory, registerTravel, registerTasks, registerProactive, registerCalls];
+export const LANES: RegisterLane[] = [registerRoom, registerReflex, registerMemory, registerStats, registerTravel, registerTasks, registerProactive, registerCalls];
 
 export async function main(): Promise<void> {
   const env = loadEnv();
