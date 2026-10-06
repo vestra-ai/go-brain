@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { fakeAnthropic, type Script } from '../../__tests__/fixtures/fake-anthropic.js';
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
 import { createBudget, type Budget } from '../../budget.js';
@@ -12,7 +13,7 @@ import type { TripPack } from '../../trips/pack.js';
 import { createContext, type TurnLimits } from '../context.js';
 import { roomTools } from '../room-tools.js';
 import { createSpeak } from '../speak.js';
-import { createTools } from '../tools.js';
+import { createTools, type QuickTool } from '../tools.js';
 import { createComposer, OVER_BUDGET, TROUBLE } from '../turn.js';
 import { ASK_HOW_MUCH, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
@@ -30,6 +31,8 @@ function room(o: {
   claimNew?: (tripId: string, turnId: string) => Promise<DeskItem[]>;
   limits?: (wake: DeskItem[]) => TurnLimits | null;
   budget?: Budget;
+  /** More quick tools, as a lane would register them. */
+  extraTools?: QuickTool<any>[];
 }) {
   const tripId = `t_turn_${++rooms}`;
   const calls: Array<{ method: string; params: any }> = [];
@@ -60,6 +63,7 @@ function room(o: {
   const pack: TripPack = { trip: goaSnapshot({ trip_id: tripId }), messages: [...o.messages], seq: 100 };
   const tools = createTools();
   for (const t of roomTools({ now: () => new Date(), pool: db.pool })) tools.register(t);
+  for (const t of o.extraTools ?? []) tools.register(t);
   const context = createContext(silentLog);
   context.addWake('message', renderMessageWake);
   context.addWake('trip_change', renderTripChangeWake);
@@ -490,5 +494,144 @@ describe('a line that says someone paid but not how much', () => {
     expect(r.model.bodies).toHaveLength(1);
     expect(r.posts().map((p) => p.params.text)).toEqual(['How much was it, and who was it for?']);
     expect(r.calls.filter((c) => c.method === 'add_expense' || c.method === 'add_reaction')).toEqual([]);
+  });
+});
+
+describe('a reply of card tools ends the turn on its cards', () => {
+  // Like travel's tools: a search that returns data, and show_options, a card tool that needs nothing back.
+  const search: QuickTool<{ to: string }> = {
+    name: 'search_flights', description: 'Searches flights.', input: z.object({ to: z.string() }),
+    run: async () => ({ results_id: 'rs_1', found: 3 }),
+  };
+  const show: QuickTool<{ results_id: string }> = {
+    name: 'show_options', description: 'Shows an options card.', input: z.object({ results_id: z.string() }), endsTurn: true,
+    async run(a, ctx) {
+      if (a.results_id !== 'rs_1') return { error: 'unknown_results', note: 'Search again.' };
+      const cardId = ctx.stableId('c_opt');
+      ctx.cards.push({ kind: 'vote', card_id: cardId, fallback_text: 'Friday flights', decision_id: 'd_flights' });
+      return { card_id: cardId };
+    },
+  };
+  const searchCall = { name: 'search_flights', input: { to: 'Goa' } };
+  const showCall = (results_id = 'rs_1') => ({ name: 'show_options', input: { results_id } });
+
+  it('search, then the card with its line: two model calls and one post with the line and the card', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights Friday evening?');
+    const r = room({ messages: [ask], extraTools: [search, show], script: [{ tools: [searchCall] }, { text: 'Three flights after 6 pm.', tools: [showCall()] }, { text: 'never asked' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Three flights after 6 pm.', card: { card_id: `c_opt_turn_${r.tripId}_1` } });
+    const { rows } = await db.pool.query('select outcome, rounds from turns where turn_id = $1', [`turn_${r.tripId}`]);
+    expect(rows[0]).toMatchObject({ outcome: 'spoke', rounds: 2 });
+  });
+
+  it('a card with no line goes up alone, with no model call for a line', async () => {
+    const ask = msg(3, 'p_arjun', '@Go show the flights again');
+    const r = room({ messages: [ask], extraTools: [show], script: [{ tools: [showCall()] }, { text: 'never asked' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]?.params.text).toBeUndefined();
+    expect(r.posts()[0]?.params.card).toMatchObject({ kind: 'vote', decision_id: 'd_flights' });
+  });
+
+  it('open_vote is a card tool too: the vote and its line in one reply, one model call', async () => {
+    const ask = msg(3, 'p_arjun', '@Go villa or resort? put it to a vote');
+    const vote = { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }] } };
+    const r = room({ messages: [ask], script: [{ text: 'Vote is up, tap your pick.', tools: [vote] }, { text: 'never asked' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Vote is up, tap your pick.', card: { kind: 'vote', decision_id: 'd_first' } });
+  });
+
+  it('a reply with a card tool and a tool that returns data still goes back to the model', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights?');
+    const r = room({ messages: [ask], extraTools: [search, show], script: [{ tools: [showCall(), searchCall] }, { text: 'Here they are.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Here they are.', card: { decision_id: 'd_flights' } });
+  });
+
+  it('a card tool that put no card up goes back to the model, like any result', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights?');
+    const r = room({ messages: [ask], extraTools: [search, show], script: [{ tools: [showCall('rs_old')] }, { text: 'Let me search again.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    expect(r.model.bodies[1].messages.at(-1).content[0].content).toContain('unknown_results');
+    expect(r.posts()[0]?.params.text).toBe('Let me search again.');
+    expect(r.posts()[0]?.params.card).toBeUndefined();
+  });
+
+  it('lines that arrive while the card goes up join the same turn, in the one user turn after the card', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights Friday?');
+    const more = msg(5, 'p_kabir', 'also Saturday?');
+    let claimed = false;
+    const r = room({
+      messages: [ask],
+      extraTools: [show],
+      script: [{ text: 'Friday: three flights after 6 pm.', tools: [showCall()] }, { text: 'Friday has three after 6 pm; Saturday I can check next.' }],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(more);
+        return [item(tripId, more, false)];
+      },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    const sent = r.model.bodies[1].messages as Array<{ role: string; content: Array<{ type: string; text?: string }> }>;
+    // Roles still alternate: the new lines ride in the user turn that holds the card's result.
+    for (let k = 1; k < sent.length; k++) expect(sent[k]!.role).not.toBe(sent[k - 1]!.role);
+    expect(sent.at(-1)!.content.map((b) => b.type)).toEqual(['tool_result', 'text']);
+    expect(sent.at(-1)!.content[1]!.text).toContain('#5 Kabir: also Saturday?');
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Friday has three after 6 pm; Saturday I can check next.', card: { decision_id: 'd_flights' } });
+  });
+
+  it('a rerun after a crash repeats the same ids: one vote opened, one card posted', async () => {
+    const ask = msg(3, 'p_arjun', '@Go put villa or resort to a vote');
+    const vote = { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }] } };
+    const r = room({ messages: [ask], script: [{ text: 'Vote is up.', tools: [vote] }, { text: 'Vote is up.', tools: [vote] }] });
+    // The first post never gets an answer the turn can use: the turn fails after the vote opened.
+    const posted = r.speak.post.bind(r.speak);
+    let first = true;
+    r.speak.post = async (p) => {
+      if (first) {
+        first = false;
+        throw new Error('the post failed');
+      }
+      return posted(p);
+    };
+    await expect(turn(r, [item(r.tripId, ask, true)])).rejects.toThrow('the post failed');
+    await turn(r, [item(r.tripId, ask, true)], `turn_${r.tripId}`, 2);
+    expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(1);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]?.params.card).toMatchObject({ card_id: `c_vote_turn_${r.tripId}_1`, decision_id: 'd_first' });
+  });
+
+  it('under a budget: the card turn spends one hold, and the arrived-meanwhile round the cap refuses keeps the card and its line', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights Friday?');
+    const more = msg(5, 'p_kabir', '@Go and Saturday?');
+    let claimed = false;
+    const budget = createBudget({ pool: db.pool, now: () => new Date(), capUsd: 1, log: silentLog });
+    const r = room({
+      messages: [ask],
+      extraTools: [show],
+      budget,
+      script: [{ text: 'Friday: three flights after 6 pm.', tools: [showCall()], usage: { input_tokens: 600_000 } }, { text: 'never asked' }],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(more);
+        return [item(tripId, more, true)];
+      },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts().map((p) => [p.params.text, p.params.card?.decision_id])).toEqual([
+      ['Friday: three flights after 6 pm.', 'd_flights'],
+      [OVER_BUDGET, undefined],
+    ]);
   });
 });

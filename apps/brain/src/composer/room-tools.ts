@@ -97,9 +97,10 @@ export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] 
   const openVote: QuickTool<z.infer<typeof OpenVoteInput>> = {
     name: 'open_vote',
     description:
-      'Open a vote in the room, with 2 to 10 short options. The vote card goes out with your message. ' +
-      'Never open a second vote on a question that already has an open one.',
+      'Open a vote in the room, with 2 to 10 short options. The vote card goes out with your message: write your one ' +
+      'short line in the same reply. Never open a second vote on a question that already has an open one.',
     input: OpenVoteInput,
+    endsTurn: true,
     async run(a, ctx) {
       if (a.closes_at && Date.parse(a.closes_at) <= o.now().getTime()) return { ok: false, error: 'closes_at must be in the future.' };
       const r = await ctx.link.request('open_vote', {

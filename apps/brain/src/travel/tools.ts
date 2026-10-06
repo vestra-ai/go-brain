@@ -190,8 +190,9 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   };
   const showOptions: QuickTool<z.infer<typeof ShowArgs>> = {
     name: 'show_options',
-    description: 'Shows an options card from a results_id (a search, or a finished job), with up to 5 option_numbers, best first, and a short title. The card goes out with your message and shows the checked prices, so never type prices yourself. Add one short line about it.',
+    description: 'Shows an options card from a results_id (a search, or a finished job), with up to 5 option_numbers, best first, and a short title. The card goes out with your message and shows the checked prices, so never type prices yourself. Write your one short line about it in the same reply.',
     input: ShowArgs,
+    endsTurn: true,
     async run(a, ctx) {
       const set = await d.results.get(ctx.tripId, a.results_id);
       if (!set || set.options.length === 0) return { error: 'unknown_results', note: 'Search again, then show the new results.' };
@@ -215,8 +216,9 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   };
   const putToVote: QuickTool<z.infer<typeof VoteArgs>> = {
     name: 'put_to_vote',
-    description: 'Opens a vote on the options of an options card Go showed (card_id). The vote card goes out with your message. Use it when the group should decide together.',
+    description: 'Opens a vote on the options of an options card Go showed (card_id). The vote card goes out with your message: write your one short line in the same reply. Use it when the group should decide together.',
     input: VoteArgs,
+    endsTurn: true,
     async run(a, ctx) {
       const r = await openVoteFromCard(
         { results: d.results, link: ctx.link, now: d.now },

@@ -31,6 +31,12 @@ describe("Go's rules", () => {
     expect(section).toContain(`${privateRule}\n${noNames}`);
   });
 
+  it('the one line that goes with a card is written in the same reply as the card', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
+    expect(section).toContain('Text you write before a tool call is never shown, except with a card.\n');
+    expect(section).toContain('- When you show options or open a vote, write your one line in the same reply as the card.');
+  });
+
   it('never tell the group about a tool, what it returned or a refusal; tell_the_room is what to say', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
     expect(section).toContain(

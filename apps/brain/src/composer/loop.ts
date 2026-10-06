@@ -7,6 +7,8 @@ import type { TextBlock } from './context.js';
 import { SAY_NOTHING, STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
 
 export const MAX_ROUNDS = 4;
+/** The stop reason of a turn that ended on its cards: every call in the last reply was a card tool that put its card up. */
+export const CARDS_UP = 'cards_up';
 export const MAX_TOKENS = 1_024;
 const ROLLING = { type: 'ephemeral' } as const; // 5 minutes: it only has to last the turn
 
@@ -45,7 +47,10 @@ export interface LoopInput {
 }
 
 export interface LoopResult {
-  /** What to post: the last round's text, or the latest text an earlier round wrote. Empty when silent. */
+  /**
+   * What to post: the last round's text, or the latest text an earlier round wrote. Empty when silent. A turn that ended
+   * on its cards posts only that reply's own text, which may be none: the cards carry their own words.
+   */
   text: string;
   silent: boolean;
   rounds: number;
@@ -181,7 +186,8 @@ async function underHold<T>(hold: Reservation | null, model: string, call: (bill
 
 /**
  * One composer turn's model rounds: a direct Messages tool loop. At most 4 rounds; the tools of a round
- * run together; stay_silent ends the turn with no extra call; every round's usage is summed.
+ * run together; stay_silent ends the turn with no extra call, and so does a reply whose calls are all card tools that
+ * put their cards up; every round's usage is summed.
  */
 export async function runLoop(i: LoopInput): Promise<LoopResult> {
   const maxRounds = Math.min(i.maxRounds ?? MAX_ROUNDS, MAX_ROUNDS);
@@ -242,12 +248,27 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     if (reply.stop_reason !== 'tool_use' || calls.length === 0) {
       return { text: text || latestText, silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason };
     }
-    const results = await Promise.all(calls.map((c) => runTool(byName.get(c.name), c, i)));
+    // A reply of card tools only: they run one by one, so each one's card is counted, and once every card is up the
+    // turn ends with this reply's text. A card tool that failed (no card) goes back to the model as any result does.
+    const cardsOnly = calls.every((c) => byName.get(c.name)?.endsTurn === true);
+    let allUp = cardsOnly;
+    const results: Anthropic.ToolResultBlockParam[] = [];
+    if (cardsOnly) {
+      for (const c of calls) {
+        const before = i.ctx.cards.length;
+        const r = await runTool(byName.get(c.name), c, i);
+        if (r.is_error || i.ctx.cards.length === before) allUp = false;
+        results.push(r);
+      }
+    } else {
+      results.push(...(await Promise.all(calls.map((c) => runTool(byName.get(c.name), c, i)))));
+    }
     messages.push({ role: 'user', content: results });
     if (calls.some((c) => c.name === STAY_SILENT)) {
       i.ctx.outcome.silent = true;
       return { text: '', silent: true, rounds: round, usage, messages, stopReason: STAY_SILENT };
     }
+    if (allUp) return { text, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP };
   }
   return { text: latestText, silent: i.ctx.outcome.silent, rounds: maxRounds, usage, messages, stopReason: 'max_rounds' };
 }

@@ -56,6 +56,8 @@ export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, Q
       'Post a notice card: news worth knowing, or a heads-up (a deadline, a delay, a clash), that you bring on your own. Never to ask the group something: that is a vote. ' +
       'Set for_person_ids to pin it for just the people it concerns instead of the whole group.',
     input: PostNoticeArgs,
+    // The card carries its own words: once it is up, the turn ends without another model call.
+    endsTurn: true,
     async run(args: PostNoticeArgs, ctx: TurnCtx): Promise<unknown> {
       const rules = rulesForTurn(ctx.wake);
       if (rules && !rules.tools.includes('post_notice')) return refuse(NOT_NOW);

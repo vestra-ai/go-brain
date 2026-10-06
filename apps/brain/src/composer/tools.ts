@@ -15,6 +15,12 @@ export interface QuickTool<A = unknown> {
   input: z.ZodType<A>;
   /** Must finish in a few seconds; slow work is start_task. */
   run(args: A, ctx: TurnCtx): Promise<unknown>;
+  /**
+   * A card tool that needs nothing back (show_options, put_to_vote, open_vote, post_notice): when every call in a reply
+   * is one of these and each put its card up, the turn ends there. The reply's own text goes out with the cards, and no
+   * model call is spent on a line.
+   */
+  endsTurn?: boolean;
 }
 
 export interface TurnCtx {
