@@ -1,0 +1,33 @@
+{
+  "name": "@go/vault",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/app.js",
+  "types": "dist/app.d.ts",
+  "exports": {
+    ".": { "types": "./dist/app.d.ts", "default": "./dist/app.js" },
+    "./testing": { "types": "./dist/testing/index.d.ts", "default": "./dist/testing/index.js" }
+  },
+  "scripts": {
+    "build": "tsc && node -e \"require('node:fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@go/contract": "workspace:*",
+    "@simplewebauthn/browser": "13.3.0",
+    "@simplewebauthn/server": "13.3.3",
+    "fastify": "^5.12.5",
+    "pg": "^8.23.1",
+    "stripe": "^22.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.17"
+  }
+}

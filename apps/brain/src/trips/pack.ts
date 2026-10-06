@@ -67,7 +67,19 @@ export function createPacks(o: { pool: pg.Pool; link: ServerLink; log: Log; now:
     return rows[0]?.n ?? 0;
   }
 
-  /** Reads messages changed after `after`, page by page while has_more; screens and stores them; returns the ones Go never stored. */
+  /**
+   * Where a cold load starts reading. A trip whose events Go never finished processing (its first event, or a trip Go
+   * meets for the first time) is read from the start: the one message its first event stored is not its history.
+   */
+  async function loadFrom(tripId: string): Promise<number> {
+    const { rows } = await o.pool.query<{ processed_seq: number }>('select processed_seq from trips where trip_id = $1', [tripId]);
+    return (rows[0]?.processed_seq ?? 0) > 0 ? storedUpTo(tripId) : 0;
+  }
+
+  /**
+   * Reads messages changed after `after`, page by page while has_more; screens and stores them; returns the ones Go never
+   * stored. It only stores: waking Go for what it returns is the caller's choice.
+   */
   async function pull(tripId: string, after: number, pack: TripPack): Promise<Message[]> {
     const fresh: Message[] = [];
     let cursor = after;
@@ -91,7 +103,8 @@ export function createPacks(o: { pool: pg.Pool; link: ServerLink; log: Log; now:
       [tripId],
     );
     const pack: TripPack = { trip, messages: rows.map((r) => r.payload), seq: trip.seq };
-    await pull(tripId, await storedUpTo(tripId), pack);
+    // History read at load is stored only, never handed to intake, so it never wakes Go.
+    await pull(tripId, await loadFrom(tripId), pack);
     packs.set(tripId, pack);
     return pack;
   }

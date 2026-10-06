@@ -21,7 +21,10 @@ export function defuse(text: string): string {
   return text.replace(/<\s*\/?\s*data\b[^>]*>/gi, '[tag removed]');
 }
 
-export const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+/** Every line break a model may read as one: \r\n, \r, \n, the Unicode line and paragraph separators, NEL, \v and \f. */
+const BREAK = /\r\n|[\r\n\u2028\u2029\u0085\v\f]/g;
+
+export const oneLine = (text: string): string => text.replace(BREAK, ' ').replace(/\s+/g, ' ').trim();
 
 /** Lines of people's text, fenced as data. */
 export function dataBlock(source: string, lines: string[]): string {
@@ -48,7 +51,10 @@ export function chatLine(
   const parts: string[] = [];
   const replyTo = m.reply_to ? seqOf(m.reply_to) : undefined;
   if (replyTo !== undefined) parts.push(`(reply to #${replyTo})`);
-  if (m.text) parts.push(defuse(m.text).replace(/\r?\n/g, '\n  '));
+  // "Ask Go about this": the message it asks about is its subject.
+  const about = m.about_message_id ? seqOf(m.about_message_id) : undefined;
+  if (about !== undefined) parts.push(`(about #${about})`);
+  if (m.text) parts.push(defuse(m.text).replace(BREAK, '\n  '));
   for (const at of m.attachments) {
     if (at.kind === 'photo') parts.push(at.caption ? `[photo: ${defuse(oneLine(at.caption)).slice(0, 200)}]` : '[photo]');
     else parts.push(`[file: ${defuse(oneLine(at.name)).slice(0, 80)}]`);

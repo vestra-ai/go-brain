@@ -86,20 +86,21 @@ export function createIntake(d: IntakeDeps) {
       read = UNSURE_READ;
     }
     await d.hooks.run(m, read, pack);
-    // Remembered only once read: if anything above failed, the next gap check or a restart handles it again.
-    remember(key);
     // Sure chatter never wakes the model, but a message that names Go always does.
-    if (!namesGo && read.forGo.sure && read.forGo.value === false) return;
-    const now = d.now();
-    const complete = read.complete.sure && read.complete.value === true;
-    await d.desk.put({
-      id: `msg:${tripId}:${m.message_id}`,
-      tripId,
-      kind: 'message',
-      ref: m.message_id,
-      dueAt: complete ? now : new Date(now.getTime() + waitMs),
-      payload: { messageId: m.message_id, seq: m.seq, namesGo },
-    });
+    if (namesGo || !(read.forGo.sure && read.forGo.value === false)) {
+      const now = d.now();
+      const complete = read.complete.sure && read.complete.value === true;
+      await d.desk.put({
+        id: `msg:${tripId}:${m.message_id}`,
+        tripId,
+        kind: 'message',
+        ref: m.message_id,
+        dueAt: complete ? now : new Date(now.getTime() + waitMs),
+        payload: { messageId: m.message_id, seq: m.seq, namesGo },
+      });
+    }
+    // Remembered only once read and on the desk: if anything above failed, the next gap check or a restart handles it again.
+    remember(key);
   }
 
   /** P1's own reactions to an event; lanes add theirs with tripLog.onEvent. */

@@ -90,6 +90,9 @@ export function createComposer(d: ComposerDeps): Composer {
     const times: { firstToken: Date | null } = { firstToken: null };
     const usage = noUsage();
     let rounds = 0;
+    // Typing may also be on for a message the turn pulled in, or one intake turned it on for: a turn that posted answered it.
+    const pulled: DeskItem[] = [];
+    let posted = false;
     try {
       const trip = await d.pool.query<{ composer_seen_seq: number; tz: string }>('select composer_seen_seq, tz from trips where trip_id = $1', [t.tripId]);
       const seenSeq = trip.rows[0]?.composer_seen_seq ?? 0;
@@ -124,7 +127,8 @@ export function createComposer(d: ComposerDeps): Composer {
       // Just before posting: messages that arrived meanwhile join this turn (one more round), instead of a stale answer.
       // A turn that may not post text skips it: those messages wait on the desk for their own turn.
       if (!r.silent && r.text && ctx.mayPostText !== false && rounds < MAX_ROUNDS) {
-        const fresh = linesFor(await d.claimNew(t.tripId, t.turnId), pack);
+        pulled.push(...(await d.claimNew(t.tripId, t.turnId)));
+        const fresh = linesFor(pulled, pack);
         if (fresh.lines.length) {
           r = await runLoop({
             ...base,
@@ -153,6 +157,7 @@ export function createComposer(d: ComposerDeps): Composer {
               ...(replyTo ? { replyTo } : {}),
             })
           : [];
+      posted = ids.length > 0;
       ctx.outcome.posts.push(...ids);
       ctx.outcome.spoke = text !== null && ids.length > 0;
       const outcome = ctx.outcome.spoke ? 'spoke' : ids.length > 0 || ctx.outcome.reactions > 0 ? 'acted' : 'silent';
@@ -171,7 +176,7 @@ export function createComposer(d: ComposerDeps): Composer {
         .catch(() => undefined);
       throw e;
     } finally {
-      if (forGo) d.speak.typingOff(t.tripId);
+      if (forGo || posted || pulled.some(isForGo)) d.speak.typingOff(t.tripId);
     }
   }
 
