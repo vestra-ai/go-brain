@@ -180,6 +180,32 @@ describe('a composer turn', () => {
     expect(posted.notes.map((x) => x.params.on)).toEqual([true, false]);
   });
 
+  it('the pre-post check never sends an empty assistant message when the last round wrote nothing', async () => {
+    const ask = msg(3, 'p_arjun', '@Go is the villa free?');
+    const more = msg(5, 'p_kabir', 'and pets?');
+    let claimed = false;
+    const r = room({
+      messages: [ask],
+      script: [
+        { text: 'Checking the villa now.', tools: [{ name: 'react', input: { message_id: '#3', emoji: '👀' } }] },
+        {},
+        { text: 'The villa is free, and pets are welcome.' },
+      ],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(more);
+        return [item(tripId, more, false)];
+      },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(3);
+    const sent = r.model.bodies[2].messages as Array<{ role: string; content: unknown[] }>;
+    for (const m of sent) expect(m.content.length).toBeGreaterThan(0);
+    expect(sent[3]).toEqual({ role: 'assistant', content: [{ type: 'text', text: 'Checking the villa now.' }] });
+    expect(r.posts()[0]?.params.text).toBe('The villa is free, and pets are welcome.');
+  });
+
   it('a rerun after the message went out posts nothing more and asks the model nothing', async () => {
     const ask = msg(3, 'p_arjun', '@Go hi');
     const r = room({ messages: [ask], script: [{ text: 'Hey!' }] });
