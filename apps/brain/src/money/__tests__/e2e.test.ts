@@ -34,7 +34,8 @@ describe('G4: Go books with two keys', () => {
     for (const [person, option] of [['p_rahul', 0], ['p_priya', 0], ['p_arjun', 1], ['p_meher', 0], ['p_kabir', 0]] as const) {
       await s.vote('d_villa', person, option);
     }
-    await s.closeVoteByTime('d_villa');
+    // The fifth vote closes it in the simulator (everyone voted); close it by time only if it is still open.
+    if (s.trip().decisions.find((d) => d.decision_id === 'd_villa')?.status === 'open') await s.closeVoteByTime('d_villa');
     // Whether or not the closed vote woke Go, Rahul's message does.
     await s.say('p_rahul', '@Go Villa Sol it is, I will pay for it');
 
