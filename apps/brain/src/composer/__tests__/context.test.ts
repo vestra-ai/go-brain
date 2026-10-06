@@ -7,7 +7,7 @@ import type { TripPack } from '../../trips/pack.js';
 import { createContext, formatTime, type TextBlock } from '../context.js';
 import { GO_RULES } from '../rules.js';
 import { tripNow } from '../trip-now.js';
-import { renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
+import { ASK_HOW_MUCH, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
 const PEOPLE = ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'];
 /** n messages, seq 2 to n + 1, round the five friends. */
@@ -268,6 +268,19 @@ describe('why Go woke, and the trip block', () => {
     // No winner, nothing to save: the group settles it first.
     expect(closed('d_split')).toContain('no clear winner');
     expect(closed('d_split')).not.toContain('update_trip');
+  });
+
+  it('a line that says someone paid but not how much tells Go to ask, after the cache point; one with an amount does not', async () => {
+    const p = packOf([msg(3, 'p_priya', 'paid something for the snacks'), msg(4, 'p_rahul', 'I paid 3,200 for the cab'), msg(5, 'p_arjun', 'beach tomorrow?')]);
+    const woke = (id: string) => wake({ ref: id, payload: { messageId: id, namesGo: false } });
+    expect(context().renderWake(woke('m_3'), p)).toBe(`message #3 from Priya. ${ASK_HOW_MUCH}`);
+    expect(context().renderWake(woke('m_4'), p)).toBe('message #4 from Rahul');
+    expect(context().renderWake(woke('m_5'), p)).toBe('message #5 from Arjun');
+    // Wake text rides in the right-now block, never in the cached rules.
+    const built = await context().build(input(p, 2, [woke('m_3')]));
+    expect(built.user.at(-2)?.text).toContain(ASK_HOW_MUCH);
+    expect(built.user.at(-2)?.cache_control).toBeUndefined();
+    expect(built.system[0]?.text).not.toContain(ASK_HOW_MUCH);
   });
 
   it('the trip block names everyone, fences what they said, and lists open votes', async () => {

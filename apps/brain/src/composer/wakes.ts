@@ -1,6 +1,12 @@
 import type { DeskItem } from '../desk/desk.js';
+import { amountsIn } from '../money/expenses.js';
+import { looksLikeMoney } from '../reflex/money-line.js';
 import type { TripPack } from '../trips/pack.js';
 import { inlineData, personName } from './fence.js';
+
+/** For a line that says someone paid but no amount: record_expense would ask, but with no amount the model never calls it. */
+export const ASK_HOW_MUCH =
+  "This says someone paid but not how much: ask them, in one short line, how much it was and who it was for. Don't record anything yet.";
 
 export function renderMessageWake(item: DeskItem, pack: TripPack): string {
   const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean };
@@ -12,7 +18,8 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
     const id = a.person_id;
     who = personName(pack.trip.people.find((x) => x.person_id === id)?.name ?? 'Someone who left');
   }
-  return `message #${m.seq} from ${who}${p.namesGo ? ', it names you' : ''}`;
+  const line = `message #${m.seq} from ${who}${p.namesGo ? ', it names you' : ''}`;
+  return a.kind === 'person' && m.text && looksLikeMoney(m.text) && amountsIn(m.text).length === 0 ? `${line}. ${ASK_HOW_MUCH}` : line;
 }
 
 export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
