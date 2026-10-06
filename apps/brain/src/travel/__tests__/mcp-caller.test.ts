@@ -95,7 +95,7 @@ describe('createInProcessCaller', () => {
     expect((r.data as { stays: unknown[] }).stays.length).toBeGreaterThan(5);
     expect((await caller.call('search_stays', { location: 'x' })).isError).toBe(true);
     const tools = await caller.listTools();
-    expect(tools).toHaveLength(7);
+    expect(tools).toHaveLength(9);
     expect(tools.find((t) => t.name === 'hold_booking')?.inputSchema).toMatchObject({ type: 'object' });
   });
 });

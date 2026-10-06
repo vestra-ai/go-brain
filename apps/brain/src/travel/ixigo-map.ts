@@ -20,7 +20,7 @@ export interface HoldMapped {
   refundableUntil?: string;
 }
 export interface IxigoMap {
-  /** Flights and stays always; trains and buses once the stretch Task 8b maps them. A kind with no map is refused plainly. */
+  /** Flights and stays always; trains and buses when the backend has them. A kind with no map is refused plainly. */
   search: { flights: SearchMap; stays: SearchMap; trains?: SearchMap; buses?: SearchMap };
   flightStatus: { tool: string; args(q: Extract<StatusQuery, { kind: 'flight' }>): Record<string, unknown>; result(data: unknown, checkedAt: string): StatusResult };
   pnrStatus: { tool: string; args(q: Extract<StatusQuery, { kind: 'pnr' }>): Record<string, unknown>; result(data: unknown, checkedAt: string): StatusResult };
@@ -40,6 +40,15 @@ const RawFlight = z.object({
   fare_id: z.string(), airline: z.string(), airline_code: z.string(), flight_no: z.string(), from_code: z.string(), from_city: z.string(),
   to_code: z.string(), to_city: z.string(), depart_at: z.string(), arrive_at: z.string(), duration_min: z.number(),
   stops: z.int().nonnegative(), fare_paise: z.int().nonnegative(), refundable_until: z.string().nullable(), seats_left: z.int(),
+});
+const RawTrain = z.object({
+  fare_id: z.string(), train_no: z.string(), train_name: z.string(), from_code: z.string(), from_name: z.string(), to_code: z.string(),
+  to_name: z.string(), depart_at: z.string(), arrive_at: z.string(), duration_min: z.number(), class_code: z.string(),
+  fare_paise: z.int().nonnegative(), availability: z.string(),
+});
+const RawBus = z.object({
+  fare_id: z.string(), operator: z.string(), bus_type: z.string(), from_city: z.string(), to_city: z.string(), depart_at: z.string(),
+  arrive_at: z.string(), duration_min: z.number(), fare_paise: z.int().nonnegative(), seats_left: z.int(), rating: z.number(),
 });
 const RawStay = z.object({
   stay_id: z.string(), name: z.string(), area: z.string(), region: z.string(), address: z.string(), lat: z.number(), lng: z.number(),
@@ -68,6 +77,8 @@ const RawBooking = z.object({
 });
 
 // ── small helpers ────────────────────────────────────────────────────────────
+
+const CLASS_WORDS: Record<string, string> = { '1A': 'AC First Class', '2A': 'AC 2 Tier', '3A': 'AC 3 Tier', SL: 'Sleeper', CC: 'AC Chair Car', '2S': 'Second Sitting' };
 
 /** "2 h 35 m". */
 export function hoursMinutes(min: number): string {
@@ -116,6 +127,50 @@ function flightOption(f: z.infer<typeof RawFlight>): MappedOption {
   };
 }
 
+function trainOption(t: z.infer<typeof RawTrain>): MappedOption {
+  return {
+    backendId: t.fare_id,
+    kind: 'train',
+    title: `${t.train_name} ${t.train_no}`,
+    priceMinor: t.fare_paise,
+    currency: 'INR',
+    priceNote: `per person, ${t.class_code}`,
+    journey: {
+      mode: 'train',
+      origin: { name: t.from_name, code: t.from_code },
+      destination: { name: t.to_name, code: t.to_code },
+      depart_at: t.depart_at,
+      arrive_at: t.arrive_at,
+      carrier_name: 'Indian Railways',
+      number: t.train_no,
+    },
+    highlights: highlights(CLASS_WORDS[t.class_code] ?? t.class_code, t.availability, hoursMinutes(t.duration_min)),
+    facts: { class_code: t.class_code, availability: t.availability, duration_min: t.duration_min },
+  };
+}
+
+function busOption(b: z.infer<typeof RawBus>): MappedOption {
+  return {
+    backendId: b.fare_id,
+    kind: 'bus',
+    title: b.operator.slice(0, 80),
+    priceMinor: b.fare_paise,
+    currency: 'INR',
+    priceNote: 'per person',
+    journey: {
+      mode: 'bus',
+      origin: { name: b.from_city },
+      destination: { name: b.to_city },
+      depart_at: b.depart_at,
+      arrive_at: b.arrive_at,
+      carrier_name: b.operator.slice(0, 60),
+    },
+    rating: b.rating,
+    highlights: highlights(b.bus_type, hoursMinutes(b.duration_min), b.seats_left <= 5 ? `${b.seats_left} seats left` : null),
+    facts: { bus_type: b.bus_type, seats_left: b.seats_left, duration_min: b.duration_min },
+  };
+}
+
 function stayOption(s: z.infer<typeof RawStay>): MappedOption {
   return {
     backendId: s.stay_id,
@@ -157,6 +212,16 @@ export const DEFAULT_IXIGO_MAP: IxigoMap = {
       tool: 'search_flights',
       args: (q) => (q.from && q.to && q.date ? { origin: q.from, destination: q.to, date: q.date, ...(q.guests ? { adults: Math.min(q.guests, 9) } : {}) } : null),
       results: (data) => z.object({ flights: z.array(RawFlight) }).parse(data).flights.map(flightOption),
+    },
+    trains: {
+      tool: 'search_trains',
+      args: (q) => (q.from && q.to && q.date ? { from_station: q.from, to_station: q.to, date: q.date } : null),
+      results: (data) => z.object({ trains: z.array(RawTrain) }).parse(data).trains.map(trainOption),
+    },
+    buses: {
+      tool: 'search_buses',
+      args: (q) => (q.from && q.to && q.date ? { from_city: q.from, to_city: q.to, date: q.date } : null),
+      results: (data) => z.object({ buses: z.array(RawBus) }).parse(data).buses.map(busOption),
     },
     stays: {
       tool: 'search_stays',

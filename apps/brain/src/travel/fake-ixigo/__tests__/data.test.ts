@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FAKE_VENDOR, FakeIxigoStore, callFakeIxigo, findFare, searchFlights, searchStays } from '../data.js';
+import { FAKE_VENDOR, FakeIxigoStore, callFakeIxigo, findFare, searchBuses, searchFlights, searchStays, searchTrains } from '../data.js';
 
 const NOW = new Date('2026-10-07T12:00:00Z');
 const FRIDAY = '2026-11-06';
@@ -24,6 +24,30 @@ describe('flights', () => {
   it('is the same on every call and has nothing for a route it does not fly', () => {
     expect(searchFlights({ origin: 'DEL', destination: 'GOX', date: FRIDAY })).toEqual(searchFlights({ origin: 'delhi', destination: 'North Goa', date: FRIDAY }));
     expect(searchFlights({ origin: 'Delhi', destination: 'Paris', date: FRIDAY }).flights).toEqual([]);
+  });
+});
+
+describe('trains and buses', () => {
+  it('gives each class of a train as its own fare, arriving the next day', () => {
+    const { trains } = searchTrains({ from_station: 'Delhi', to_station: 'Goa', date: FRIDAY });
+    const rajdhani = trains.filter((t) => t.train_no === '22414');
+    expect(rajdhani.map((t) => t.class_code).sort()).toEqual(['2A', '3A']);
+    expect(rajdhani[0]!.arrive_at.startsWith('2026-11-07T10:20')).toBe(true);
+    expect(trains.every((t) => /^(AVL|WL) \d+$/.test(t.availability))).toBe(true);
+  });
+
+  it('has overnight buses from Mumbai to Goa and none from Delhi', () => {
+    expect(searchBuses({ from_city: 'Mumbai', to_city: 'Goa', date: FRIDAY }).buses).toHaveLength(3);
+    expect(searchBuses({ from_city: 'Delhi', to_city: 'Goa', date: FRIDAY }).buses).toEqual([]);
+  });
+
+  it('finds a train fare and a bus fare by their ids, and holds a train per traveller', () => {
+    expect(findFare('tr-NZM-MAO-20261106-22414-3A')).toMatchObject({ kind: 'train', unitPaise: 412000 });
+    expect(findFare('bus-paulo-travels-mumbai-goa-20261106')).toMatchObject({ kind: 'bus', unitPaise: 145000 });
+    const store = new FakeIxigoStore({ now: () => NOW });
+    const hold = store.hold({ fare_id: 'tr-NZM-MAO-20261106-22414-3A', lead_name: 'Rahul', travellers: 2 });
+    if ('error' in hold) throw new Error(hold.error);
+    expect(hold.amount_paise).toBe(824000);
   });
 });
 
@@ -87,7 +111,6 @@ describe('the store: status, holds and bookings', () => {
     expect(findFare('fl-DEL-GOI-20261106-6E2134')).toMatchObject({ kind: 'flight', unitPaise: 592000 });
     expect(findFare('st-villa-sol-anjuna-20261106-20261109-5')).toMatchObject({ kind: 'stay', unitPaise: 3840000 });
     expect(findFare('fl-DEL-GOI-20261106-XX0000')).toBeNull();
-    expect(findFare('tr-NZM-MAO-20261106-22414-3A')).toBeNull(); // trains arrive with Task 8b
   });
 
   it('says on the hold until when a refundable villa is free to cancel, and nothing for one that is not', () => {

@@ -32,6 +32,15 @@ export const FlightsArgs = z.object({
   non_stop: z.boolean().optional(),
   travellers: z.int().min(1).max(9).optional(),
 });
+export const JourneyArgs = z.object({
+  from: Where,
+  to: Where,
+  date: z.iso.date().describe('YYYY-MM-DD'),
+  depart_after: Clock.optional().describe('24-hour HH:MM'),
+  depart_before: Clock.optional(),
+  arrive_before: Clock.optional(),
+  max_price_per_person: Rupees.optional().describe('In rupees'),
+});
 export const StaysArgs = z.object({
   area: Where.describe('A place or a part of Goa, e.g. "North Goa" or "Anjuna"'),
   check_in: z.iso.date(),
@@ -53,6 +62,18 @@ export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
     ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
     ...(a.non_stop ? { mustHave: ['non_stop' as const] } : {}),
     ...(a.travellers ? { guests: a.travellers } : {}),
+  };
+}
+
+export function journeyQuery(a: z.infer<typeof JourneyArgs>): TravelQuery {
+  return {
+    from: a.from,
+    to: a.to,
+    date: a.date,
+    ...(a.depart_after ? { departAfter: a.depart_after } : {}),
+    ...(a.depart_before ? { departBefore: a.depart_before } : {}),
+    ...(a.arrive_before ? { arriveBefore: a.arrive_before } : {}),
+    ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
   };
 }
 
@@ -147,6 +168,18 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     input: FlightsArgs,
     run: (a, ctx) => runSearch('flights', flightsQuery(a), ctx, d),
   };
+  const searchTrains: QuickTool<z.infer<typeof JourneyArgs>> = {
+    name: 'search_trains',
+    description: `Searches trains on one date, one fare per class. ${SEARCH_RULE}`,
+    input: JourneyArgs,
+    run: (a, ctx) => runSearch('trains', journeyQuery(a), ctx, d),
+  };
+  const searchBuses: QuickTool<z.infer<typeof JourneyArgs>> = {
+    name: 'search_buses',
+    description: `Searches buses on one date. ${SEARCH_RULE}`,
+    input: JourneyArgs,
+    run: (a, ctx) => runSearch('buses', journeyQuery(a), ctx, d),
+  };
   const searchStays: QuickTool<z.infer<typeof StaysArgs>> = {
     name: 'search_stays',
     description: `Searches villas and hotels for check-in and check-out dates. ${SEARCH_RULE} For a deep comparison (reviews, many sites), use start_task instead.`,
@@ -200,6 +233,5 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       return { decision_id: r.decisionId, note: 'The vote card goes out with your message. Add one short line.' };
     },
   };
-  // Flights and stays first; the stretch Task 8b adds search_trains and search_buses after search_flights.
-  return [searchFlights, searchStays, showOptions, putToVote];
+  return [searchFlights, searchTrains, searchBuses, searchStays, showOptions, putToVote];
 }

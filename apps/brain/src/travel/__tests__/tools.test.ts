@@ -57,6 +57,16 @@ describe('search tools', () => {
     expect(missing.count).toBe(0);
     expect(missing.note).toContain('Nothing matched');
   });
+
+  it('search_trains and search_buses answer journeys, and nothing that misses arrive_before', async () => {
+    const trains = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_t1' }))) as any;
+    expect(trains.count).toBe(6);
+    expect(trains.card.title).toBe('Trains, Delhi to Goa');
+    const late = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06', arrive_before: '09:00' }, lb.ctx())) as any;
+    expect(late.count).toBe(0);
+    const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_b1' }))) as any;
+    expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
+  });
 });
 
 describe('show_options', () => {

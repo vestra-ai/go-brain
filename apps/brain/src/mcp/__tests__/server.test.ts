@@ -62,10 +62,10 @@ async function connect(token: string): Promise<Client> {
 const body = (r: unknown): any => JSON.parse((r as { content: Array<{ text: string }> }).content[0]!.text);
 
 describe("Go's MCP server", () => {
-  it('lists six tools; everything but note is marked read-only', async () => {
+  it('lists eight tools; everything but note is marked read-only', async () => {
     const c = await connect(await tokens.mint('t_goa', LATER));
     const { tools } = await c.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(['note', 'person', 'recall', 'search_flights', 'search_stays', 'trip']);
+    expect(tools.map((t) => t.name).sort()).toEqual(['note', 'person', 'recall', 'search_buses', 'search_flights', 'search_stays', 'search_trains', 'trip']);
     for (const t of tools) expect(t.annotations?.readOnlyHint === true, t.name).toBe(t.name !== 'note');
     await c.close();
   });
@@ -106,6 +106,11 @@ describe("Go's MCP server", () => {
     // Saved for this trip, so a job's offer ids resolve to these checked prices when it finishes.
     expect(await results.findOffer('t_goa', sol.offer_id)).toMatchObject({ option: { offerId: sol.offer_id, priceMinor: 1280000, totalMinor: 3840000 }, checkedAt: '2026-10-07T12:00:00.000Z' });
     expect(await results.findOffer('t_manali', sol.offer_id)).toBeNull();
+  });
+
+  it('searches trains for the job too, read-only, with offer ids and checked prices', async () => {
+    const r = await searchAsTheJob({ goUrl: base, token: await tokens.mint('t_goa', LATER), tool: 'search_trains', args: { from: 'Delhi', to: 'Goa', date: '2026-11-06' } });
+    expect(r.results.find((x) => x.offer_id === 'fake:tr-NZM-MAO-20261106-22414-3A')).toMatchObject({ price_minor: 412000, price_note: 'per person, 3A' });
   });
 
   it("finds the TRIP_TOKEN Go armed for a trip on the fake /v1, and says so when there is none", () => {
