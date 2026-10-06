@@ -15,9 +15,15 @@ importers:
 
   apps/brain:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: 0.93.0
+        version: 0.93.0(zod@4.3.6)
       '@go/contract':
         specifier: workspace:*
         version: link:../../packages/contract
+      '@vestra/agent-sdk':
+        specifier: workspace:*
+        version: link:../../packages/agent-sdk
       fastify:
         specifier: ^5.12.5
         version: 5.12.5
