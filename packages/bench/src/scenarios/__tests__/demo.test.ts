@@ -204,7 +204,10 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     await fake().waitFor(() => ((cardNow(callCard.card_id) as Card<'call'> | null)?.state === 'ended' ? true : null), 40_000);
     expect(cardNow(callCard.card_id)).toMatchObject({ state: 'ended', outcome: CALL_OUTCOME });
     mark('call_outcome', await goAfter(line.seq, (m) => m.text === CALL_OUTCOME));
-    expect(fake().writes.filter((w) => w.method === 'add_record_line' && w.applied).map((w) => (w.params as { text: string }).text)).toContain(CALL_RECORD);
+    // P6 writes the record line right after the outcome line, so it can land a moment later.
+    const records = (): string[] => fake().writes.filter((w) => w.method === 'add_record_line' && w.applied).map((w) => (w.params as { text: string }).text);
+    await fake().waitFor(() => (records().includes(CALL_RECORD) ? true : null), 5_000).catch(() => null);
+    expect(records()).toContain(CALL_RECORD);
     expect(d().twilio.hangUps).toHaveLength(1);
     // The villa job browsed through the whole call.
     expect(jobState()).toBe('running');
