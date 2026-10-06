@@ -28,6 +28,8 @@ export interface ComposerDeps {
   model: string;
   /** The desk's claimNew: message items that arrived while this turn ran. */
   claimNew: (tripId: string, turnId: string) => Promise<DeskItem[]>;
+  /** The desk's release: items this turn took go back, for a turn of their own. */
+  release: (turnId: string, ids: string[]) => Promise<void>;
   /** The daily model budget; without it, no cap. */
   budget?: Budget;
   turnTimeoutMs?: number;
@@ -88,6 +90,9 @@ function citedMessageId(text: string, pack: TripPack): string | null {
   }
   return null;
 }
+
+/** The change number of a desk item's message in the pack, or null when it is not there (deleted since). */
+const seqOf = (i: DeskItem, pack: TripPack): number | null => pack.messages.find((m) => m.message_id === messageIdOf(i))?.seq ?? null;
 
 /** The chat lines of desk items' messages, as the context draws them, past `shownUpTo`: the prompt already holds the rest. */
 function linesFor(items: DeskItem[], pack: TripPack, shownUpTo: number): { lines: string[]; seqs: number[] } {
@@ -187,9 +192,14 @@ export function createComposer(d: ComposerDeps): Composer {
       // Just before posting: messages that arrived meanwhile join this turn (one more round), instead of a stale answer.
       // A turn under limits (Go woke for itself) skips it: people's messages wait on the desk for their own turn,
       // which runs under the normal rules, never this turn's. A message the prompt already held (it landed before the
-      // prompt was built, its desk item after) needs no extra round.
+      // prompt was built, its desk item after) needs no extra round. But one that names Go was never a reason this turn
+      // woke, so the model may have passed over it (a hello that only says hello): it goes back on the desk for a turn
+      // of its own, which sees what Go just said.
       if (!r.silent && r.text && ctx.mayPostText !== false && ctx.allowedTools === undefined && rounds < MAX_ROUNDS) {
-        pulled.push(...(await d.claimNew(t.tripId, t.turnId)));
+        const claimed = await d.claimNew(t.tripId, t.turnId);
+        const passedOver = claimed.filter((i) => isForGo(i) && (seqOf(i, pack) ?? Number.POSITIVE_INFINITY) <= prompt.newestSeq);
+        await d.release(t.turnId, passedOver.map((i) => i.id));
+        pulled.push(...claimed.filter((i) => !passedOver.includes(i)));
         const fresh = linesFor(pulled, pack, prompt.newestSeq);
         if (fresh.lines.length) {
           const more = await runLoop({

@@ -124,6 +124,63 @@ describe('set_mandate', () => {
   });
 });
 
+describe('set_mandate refuses, in code, what Go cannot book', () => {
+  /** The villa vote's winner, resolving to another kind of offer. */
+  const winnerIs = (offerId: string | null, offer?: Parameters<MoneyKit['travel']['offers']['set']>[1]) => {
+    k.travel.options.set('opt_villa_sol', offerId);
+    if (offerId && offer) k.travel.offers.set(offerId, offer);
+  };
+  const flight = { amountMinor: 592000, currency: 'INR', merchant: 'ixigo: IndiGo 6E 2134', refundableUntil: null, title: 'IndiGo 6E 2134', kind: 'flight' as const };
+
+  it('a flight: group fares are not booked, so it says so with the link, and sets nothing', async () => {
+    winnerIs('ixigo:flight:6e-2134', { ...flight, link: 'https://www.ixigo.com/flights/6e-2134' });
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
+      refused: "I can't book flights for the whole group yet. Here's the link to book them yourselves: https://www.ixigo.com/flights/6e-2134",
+      unbookable: true,
+    });
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+  });
+
+  it('a train or a bus: the same, for trains and buses', async () => {
+    winnerIs('ixigo:train:12432', { ...flight, title: 'Rajdhani 12432', kind: 'train' });
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toMatchObject({ refused: "I can't book trains for the whole group yet.", unbookable: true });
+    winnerIs('ixigo:bus:volvo', { ...flight, title: 'Volvo sleeper', kind: 'bus' });
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toMatchObject({ refused: "I can't book buses for the whole group yet.", unbookable: true });
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+  });
+
+  it('a place a job found on the web: no offer to hold, so nothing to set', async () => {
+    winnerIs(null);
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toMatchObject({ refused: expect.stringContaining('found this one on the web'), unbookable: true });
+    k.travel.options.delete('opt_villa_sol');
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toMatchObject({ refused: expect.stringContaining('found this one on the web'), unbookable: true });
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+  });
+
+  it('an option Go never found (no option_ref), or no travel layer at all', async () => {
+    const trip = goaTrip('closed');
+    const d = trip.decisions[0];
+    if (!d) throw new Error('no vote');
+    d.options = d.options.map(({ option_ref: _ref, ...rest }) => rest);
+    k.server.trips.set('t_goa', trip);
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toMatchObject({ refused: "Villa Sol isn't something I can book here, so there's nothing to set up for paying.", unbookable: true });
+    k.server.trips.set('t_goa', goaTrip('closed'));
+    expect(await setMandate({ ...k.deps, travel: () => undefined }, ctxWith(), mandate)).toMatchObject({ unbookable: true });
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+  });
+
+  it('the tool tells the model to say so before anything about who pays', async () => {
+    winnerIs('ixigo:flight:6e-2134', flight);
+    const [out] = await runToolCalls([setMandateTool((ctx, o) => setMandate(k.deps, ctx, o))], ctxWith(), [
+      { name: 'set_mandate', input: { decision_id: 'd_villa', choice_index: 0, refundable_only: false, payer_person_id: 'p_rahul' } },
+    ]);
+    expect(out).toEqual({
+      refused: "I can't book flights for the whole group yet.",
+      tell_the_room: 'Say this in one short line, before anything about who pays: there is nothing to set up for paying for this option.',
+    });
+  });
+});
+
 describe('the quick tools', () => {
   const tools = () => [
     askToPayTool((ctx, o) => askToPay(k.deps, ctx.tripId, o, idsFromTurn(ctx), withTurn(ctx))),

@@ -14,7 +14,7 @@ There is one exception. When Go replaces one of its cards in place (`replace_car
 
 Typing is not an event either. "Go is typing..." travels from Go to the server as the `typing` notification, which takes no change number and is not sent again if the socket drops. People's typing never reaches Go, so the server sends nothing to Go while someone types.
 
-When a person has paused Go, the server still sends their messages as `message.created`, so the change numbers stay in order. It sets `withheld` to `true` and leaves out the text and the attachments. Go learns that a message was posted, but not what it says.
+When a person has paused Go, the server still sends their messages as `message.created`, so the change numbers stay in order. It sets `withheld` to `true` and leaves out the text, the attachments and what the message replies to (`reply_to` is null). Go learns that a message was posted, but not what it says.
 
 ## The envelope
 
@@ -599,7 +599,7 @@ Go's reply comes back as an event too, with its card. Go does not answer its own
 }
 ```
 
-A message from someone who paused Go comes with `withheld: true`, no text and no attachments. Kabir paused Go at change 115, so his next message reaches Go like this, and it learns only that change 116 was a message from Kabir:
+A message from someone who paused Go comes with `withheld: true`, no text, no attachments and no `reply_to`. Kabir paused Go at change 115, so his next message reaches Go like this, and it learns only that change 116 was a message from Kabir:
 
 <!-- schema: MessageCreated -->
 ```json

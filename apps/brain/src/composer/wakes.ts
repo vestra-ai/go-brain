@@ -28,12 +28,14 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
     const d = pack.trip.decisions.find((x) => x.decision_id === p.decisionId);
     if (!d) return 'a vote closed';
     const won = d.result_index != null ? d.options[d.result_index] : undefined;
+    // The counts from the Server's own tally, so the result line never gets a number wrong.
+    const tally = `${d.options.map((op, k) => `${inlineData(op.label)} ${d.tally[k] ?? 0}`).join(', ')}; ${d.voted} of ${d.of} voted`;
     // An option is only a label (DecisionOption has no dates or place fields), so the model reads the winner and saves it.
     return won
-      ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${d.voted} of ${d.of} voted). ` +
+      ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${tally}). ` +
           "If it settled the trip's dates or place, save them with update_trip first (days without a year are the next ones from today). " +
-          'Then say the result in one line and the next step.'
-      : `the vote ${inlineData(d.question)} closed with no clear winner (${d.voted} of ${d.of} voted). Ask the group how to settle it.`;
+          'Then say the result in one line, using exactly these numbers, and the next step.'
+      : `the vote ${inlineData(d.question)} closed with no clear winner (${tally}). Ask the group how to settle it.`;
   }
   return `the trip changed (${p.type ?? item.ref})`;
 }

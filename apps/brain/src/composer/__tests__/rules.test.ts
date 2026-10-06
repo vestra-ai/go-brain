@@ -58,6 +58,13 @@ describe("Go's rules", () => {
     expect(GO_RULES).not.toMatch(/not tracking|don't track|do not track/i);
   });
 
+  it("never narrates its own steps, reasons or tools, nor announces a card: \"I'll show the options card now\" is the case that reached the room", () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
+    const line =
+      "- Never describe your own steps, reasons or tools, and never announce a card or a vote (\"I'll show the options card now\", \"I'll open a vote\"): the card shows itself. Say only what the group needs: the answer, the card, the next step.";
+    expect(section).toContain(line);
+  });
+
   it('use no em dashes or en dashes, as they ask of Go', () => {
     expect(GO_RULES).not.toMatch(/[—–]/);
   });

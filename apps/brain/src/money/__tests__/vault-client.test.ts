@@ -76,7 +76,9 @@ describe('vaultClient', () => {
     answer = { status: 409, body: { error: { code: 'conflict', message: 'x', reason: 'over_amount' } } };
     expect(await client.payLink(input)).toEqual({ ok: false, reason: 'over_amount' });
     answer = { status: 500, body: {} };
-    expect(await client.payLink(input)).toEqual({ ok: false, reason: 'unavailable' });
+    expect(await client.payLink(input)).toEqual({ ok: false, reason: 'unavailable', detail: 'the vault answered 500' });
+    answer = { status: 409, body: { error: { code: 'conflict', message: 'x', reason: 'bad_approval', detail: 'the signature is not valid for this key' } } };
+    expect(await client.payLink(input)).toEqual({ ok: false, reason: 'bad_approval', detail: 'the signature is not valid for this key' });
   });
 
   it('gives up on a vault that does not answer in time', async () => {
@@ -85,7 +87,7 @@ describe('vaultClient', () => {
         init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
       })) as typeof fetch;
     const slow = vaultClient({ baseUrl: 'https://vault.test', secret, fetch: hanging, now: () => now });
-    expect(await slow.payLink(input, { timeoutMs: 50 })).toEqual({ ok: false, reason: 'unavailable' });
+    expect(await slow.payLink(input, { timeoutMs: 50 })).toMatchObject({ ok: false, reason: 'unavailable', detail: expect.stringContaining('could not be reached') });
   });
 
   it('voids an approval\'s pay links with a signed POST, and throws when the vault does not take it', async () => {

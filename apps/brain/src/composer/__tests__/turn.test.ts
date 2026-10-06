@@ -4,7 +4,7 @@ import { fakeAnthropic, type Script } from '../../__tests__/fixtures/fake-anthro
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
 import { createBudget, type Budget } from '../../budget.js';
 import { withSchema } from '../../db/test-db.js';
-import type { DeskItem } from '../../desk/desk.js';
+import { createDesk, type DeskItem } from '../../desk/desk.js';
 import type { Message } from '../../door/methods.js';
 import { createServerLink } from '../../door/server-link.js';
 import { reactOnce } from '../../memory/reactions.js';
@@ -35,6 +35,7 @@ function room(o: {
   messages: Message[];
   script: Script;
   claimNew?: (tripId: string, turnId: string) => Promise<DeskItem[]>;
+  release?: (turnId: string, ids: string[]) => Promise<void>;
   limits?: (wake: DeskItem[]) => TurnLimits | null;
   budget?: Budget;
   /** More quick tools, as a lane would register them. */
@@ -43,6 +44,7 @@ function room(o: {
   const tripId = `t_turn_${++rooms}`;
   const calls: Array<{ method: string; params: any }> = [];
   const notes: Array<{ method: string; params: any }> = [];
+  const released: string[] = [];
   const link = createServerLink({ pool: db.pool, log: silentLog, timeoutMs: 1_000 });
   const answers: Record<string, () => Record<string, unknown>> = {
     post_message: () => ({ message_id: `m_go_${calls.length}`, seq: 100 + calls.length }),
@@ -82,9 +84,10 @@ function room(o: {
     packs: { get: async () => pack, invalidate: () => undefined },
     tools, context, speak,
     client: model.client, model: 'claude-sonnet-5-5', claimNew: o.claimNew ?? (async () => []),
+    release: o.release ?? (async (_turnId, ids) => { released.push(...ids); }),
     ...(o.budget ? { budget: o.budget } : {}),
   });
-  return { tripId, calls, notes, link, model, composer, pack, speak, posts: () => calls.filter((c) => c.method === 'post_message') };
+  return { tripId, calls, notes, link, model, composer, pack, speak, released, posts: () => calls.filter((c) => c.method === 'post_message') };
 }
 
 const item = (tripId: string, m: Message, namesGo: boolean): DeskItem => ({
@@ -233,6 +236,8 @@ describe('a composer turn', () => {
     expect(r.posts().map((p) => p.params.text)).toEqual(['The villa is free, and pets are welcome.']);
     const seen = await db.pool.query('select composer_seen_seq from trips where trip_id = $1', [r.tripId]);
     expect(seen.rows[0].composer_seen_seq).toBe(4);
+    // It names Go but was no reason this turn woke: it goes back on the desk for a turn of its own.
+    expect(r.released).toEqual([`msg:${r.tripId}:m_4`]);
   });
 
   it('a budget that runs out before the extra round: the answer round 1 paid for still goes out, and the unread ask hears the limit', async () => {
@@ -712,5 +717,35 @@ describe('people Go names', () => {
     const r = room({ messages: [ask], script: [{ text: 'Priya, you are the payer, so tap Yes, book it. Arjun, nothing for you to do.' }] });
     await turn(r, [item(r.tripId, ask, true)]);
     expect(r.posts()[0]?.params.mentions).toEqual(['p_priya', 'p_arjun']);
+  });
+});
+
+describe('an ask that lands while Go writes its hello', () => {
+  it('is never lost: when the hello passed over it, it gets a turn of its own and is answered', async () => {
+    // Trip t_35e02e110dfa4980: Priya's ask was in Go's copy of the trip when the hello's prompt was built (it shows in
+    // "new since"), but its desk item came after, so the hello turn took it at the pre-post check. The hello only said
+    // hello, and the ask was never answered.
+    const ask = msg(3, 'p_priya', '@Go can you show us 2 or 3 stay options?');
+    const woke = (body: any): string => String(body.messages[0].content.at(-2)?.text ?? '');
+    let desk: ReturnType<typeof createDesk> | null = null;
+    let landed = false;
+    const r = room({
+      messages: [ask],
+      script: (body) => (woke(body).includes('you just joined this trip') ? { text: 'Hi all, I am Go!' } : { text: 'Here are three stays.' }),
+      claimNew: async (tripId, turnId) => {
+        if (!landed) {
+          landed = true;
+          await desk!.put({ id: `msg:${tripId}:${ask.message_id}`, tripId, kind: 'message', ref: ask.message_id, dueAt: new Date(), payload: { messageId: ask.message_id, seq: ask.seq, namesGo: true } });
+        }
+        return desk!.claimNew(tripId, turnId);
+      },
+      release: (turnId, ids) => desk!.release(turnId, ids),
+    });
+    desk = createDesk({ pool: db.pool, log: silentLog, now: () => new Date(), holder: 'test', inProcessWake: false });
+    desk.setRunner(r.composer.runTurn, r.composer.giveUp);
+    await db.pool.query('insert into trips (trip_id) values ($1) on conflict do nothing', [r.tripId]);
+    await desk.put({ id: `setup:${r.tripId}:greet`, tripId: r.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} });
+    await desk.tick();
+    expect(r.posts().map((p) => p.params.text)).toEqual(['Hi all, I am Go!', 'Here are three stays.']);
   });
 });

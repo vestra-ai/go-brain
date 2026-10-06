@@ -109,7 +109,8 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
     case 'rail_not_ready':
       return yes("Paying this way isn't ready yet. Nothing was charged.");
     case 'vault_refused':
-      return yes('The payment page refused this one. Nothing was charged. Want me to try again?');
+      // No pay page was opened: the payment never started.
+      return yes("I couldn't start this payment, so nothing was charged.");
     case 'server_down':
       return yes("I couldn't reach the trip just now. Nothing was charged. Ask me again in a moment.");
     case 'closed':
