@@ -5,6 +5,7 @@ import { goaSnapshot, msg, vote } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
 import { SocketCallError } from '../../door/rpc.js';
 import { reactionRequestId, reactOnce } from '../../memory/reactions.js';
+import type { Travel } from '../../travel/travel.js';
 import { nextDates, roomTools } from '../room-tools.js';
 import { createTools, makeTurnCtx, SAY_NOTHING, type QuickTool } from '../tools.js';
 
@@ -162,6 +163,47 @@ describe('the room\'s tools', () => {
     });
     expect(calls[0]?.params).toEqual({
       request_id: 'go_trip_turn_T_1', trip_id: 't_goa', destination: { name: 'North Goa' }, dates: { start: '2026-11-06', end: '2026-11-09' },
+    });
+  });
+
+  describe('update_trip and a decided vote', () => {
+    const sol = { kind: 'stay', title: 'Villa Sol', place: { name: 'Villa Sol', address: 'Anjuna, North Goa' }, area: 'Anjuna' };
+    const casa = { kind: 'stay', title: 'Casa Mareia', place: { name: 'Casa Mareia', address: 'Vagator, North Goa' }, area: 'Vagator' };
+    const north = { kind: 'place', title: 'North Goa', place: { name: 'North Goa', address: null }, area: null };
+    const options: Record<string, unknown> = { opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } } };
+    const travel = { placeOf: async (id: string) => options[id] ?? null } as unknown as Travel;
+    // Built in each test: the database is ready only once beforeAll has run.
+    const updateTrip = { run: (a: unknown, ctx: Parameters<QuickTool['run']>[1]) => roomTools({ now: () => new Date('2026-10-06T09:00:00Z'), pool: db.pool, travel: () => travel }).find((x) => x.name === 'update_trip')!.run(a, ctx) };
+    const closed = (id: string, refs: string[], won: number, at: string) =>
+      vote({ decision_id: id, status: 'closed', result_index: won, closed_at: at, options: refs.map((r) => ({ label: r, option_ref: r })), tally: refs.map(() => 0) });
+    const run = (decisions: ReturnType<typeof vote>[]) => {
+      const f = fakeLink({ update_trip: () => ({ seq: 70 }) });
+      const p = pack();
+      p.trip.decisions = decisions;
+      return { ...f, ctx: makeTurnCtx({ tripId: 't_goa', turnId: 'turn_S', link: f.link, pack: p, wake: [], signal: new AbortController().signal }) };
+    };
+
+    it('saves the stay the vote picked from the option\'s own data, not the words it was given, and refuses a different stay', async () => {
+      const { ctx, calls } = run([closed('d_stay', ['opt_sol', 'opt_casa'], 0, '2026-10-05T18:00:00Z')]);
+      expect(await updateTrip.run({ stay: 'Villa Sol, Assagao' }, ctx)).toEqual({ ok: true, changed: ['stay'], stay: 'Villa Sol, Anjuna' });
+      expect(calls[0]?.params).toMatchObject({ stay: 'Villa Sol, Anjuna' });
+      expect(await updateTrip.run({ stay: 'Casa Mareia, Vagator' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Villa Sol in Anjuna'), tell_the_room: SAY_NOTHING });
+      expect(calls).toHaveLength(1);
+    });
+
+    it('goes by the latest closed vote whose winner is a stay', async () => {
+      const { ctx, calls } = run([closed('d_old', ['opt_sol', 'opt_casa'], 0, '2026-10-04T18:00:00Z'), closed('d_new', ['opt_sol', 'opt_casa'], 1, '2026-10-05T18:00:00Z')]);
+      expect(await updateTrip.run({ stay: 'casa mareia' }, ctx)).toEqual({ ok: true, changed: ['stay'], stay: 'Casa Mareia, Vagator' });
+      expect(calls).toHaveLength(1);
+    });
+
+    it('saves a place the vote picked from the option, refuses another, and leaves words alone when no vote decided one', async () => {
+      const { ctx, calls } = run([closed('d_area', ['opt_north', 'opt_south'], 0, '2026-10-05T18:00:00Z')]);
+      expect(await updateTrip.run({ destination: 'north goa' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(calls[0]?.params).toMatchObject({ destination: { name: 'North Goa' } });
+      expect(await updateTrip.run({ destination: 'South Goa' }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
+      const none = run([]);
+      expect(await updateTrip.run({ stay: 'Villa Sol, Assagao' }, none.ctx)).toEqual({ ok: true, changed: ['stay'], stay: 'Villa Sol, Assagao' });
     });
   });
 

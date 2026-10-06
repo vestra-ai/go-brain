@@ -20,7 +20,7 @@ export interface TravelLayerDeps {
   now: () => Date;
   fake: TravelBackend;
   ixigo: TravelBackend | null;
-  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor'>>;
+  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor' | 'placeOf'>>;
   /** Today (YYYY-MM-DD) in the trip's time zone. Default: India's. */
   today?: (tripId: string | null) => Promise<string>;
   simulate?: NonNullable<Travel['simulate']>;
@@ -101,6 +101,9 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     },
     async confirm(holdId, paid) {
       return byPrefix(holdId).confirm(holdId, paid);
+    },
+    async placeOf(optionId) {
+      return d.results.placeOf ? d.results.placeOf(optionId) : null;
     },
     async offer(optionId): Promise<OfferRef | null> {
       const o = await d.results.offer(optionId);

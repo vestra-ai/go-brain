@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import type { Booking, Journey, Place } from '@go/contract';
+import type { OptionPlace } from './results.js';
 
 export const TravelKind = z.enum(['flights', 'trains', 'buses', 'stays']);
 export type TravelKind = z.infer<typeof TravelKind>;
@@ -136,6 +137,8 @@ export interface Travel {
    * for a stay, the fare per person for a journey. Null when Go never showed that option.
    */
   offer(optionId: string): Promise<{ offerId: string | null; title: string; priceMinor: number | null; currency: string | null; kind: 'flight' | 'train' | 'bus' | 'stay'; link: string | null } | null>;
+  /** The option's own name, place and area, for saving a stay or place a vote picked (composer/room-tools.ts). */
+  placeOf?(optionId: string): Promise<OptionPlace | null>;
   /** Booking is two steps so card details only ever travel between the vault and the rail. Composer and P5 only. */
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   /** Safe to repeat: the same hold confirmed twice gives the same answer. */
