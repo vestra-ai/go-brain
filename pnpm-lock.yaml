@@ -135,6 +135,9 @@ importers:
       '@go/contract':
         specifier: workspace:*
         version: link:../contract
+      '@vestra/agent-sdk':
+        specifier: workspace:*
+        version: link:../agent-sdk
       zod:
         specifier: 4.3.6
         version: 4.3.6

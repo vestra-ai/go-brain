@@ -7,3 +7,5 @@ export * from './cache-estimate.js';
 export * from './policy-model.js';
 export * from './recorder.js';
 export * from './bench-reflex.js';
+export * from './stats-math.js';
+export * from './score.js';
