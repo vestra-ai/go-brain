@@ -129,6 +129,12 @@ importers:
 
   packages/bench:
     dependencies:
+      '@go/brain':
+        specifier: workspace:*
+        version: link:../../apps/brain
+      '@go/contract':
+        specifier: workspace:*
+        version: link:../contract
       zod:
         specifier: 4.3.6
         version: 4.3.6

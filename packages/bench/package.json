@@ -20,6 +20,8 @@
     "bench:live": "tsx src/run-live.ts"
   },
   "dependencies": {
+    "@go/brain": "workspace:*",
+    "@go/contract": "workspace:*",
     "zod": "^4.0.0"
   },
   "devDependencies": {
