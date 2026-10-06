@@ -1,9 +1,12 @@
 /**
  * brain.travel. Picks the backend on every call from the TRAVEL_MODE switch (the fake when ixigo is not set up),
  * caches each search for three minutes with the time it was checked, applies constraints in code on every call,
- * and routes a hold or a confirm to the backend that made the offer.
+ * and routes a hold or a confirm to the backend that made the offer. A search or a hold for a check-in or departure
+ * before today in the trip's time zone is refused before any backend sees it, with the date to use instead.
  */
 import type { Switches } from '../admin/switches.js';
+import { localDay } from '../proactive/clock.js';
+import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
 import { applyConstraints } from './filters.js';
 import { TravelError } from './mcp-travel.js';
 import type { ResultsStore } from './results.js';
@@ -17,7 +20,9 @@ export interface TravelLayerDeps {
   now: () => Date;
   fake: TravelBackend;
   ixigo: TravelBackend | null;
-  results: Pick<ResultsStore, 'offer'>;
+  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor'>>;
+  /** Today (YYYY-MM-DD) in the trip's time zone. Default: India's. */
+  today?: (tripId: string | null) => Promise<string>;
   simulate?: NonNullable<Travel['simulate']>;
   cacheMs?: number;
 }
@@ -40,6 +45,7 @@ const keyOf = (q: TravelQuery): string =>
 
 export function createTravelLayer(d: TravelLayerDeps): Travel {
   const ttl = d.cacheMs ?? SEARCH_CACHE_MS;
+  const today = d.today ?? (async () => localDay(d.now(), DEFAULT_TRIP_TZ));
   const cache = new Map<string, { at: number; value: TravelSearch }>();
   const pick = (): { name: 'fake' | 'ixigo'; b: TravelBackend } =>
     d.switches.get('TRAVEL_MODE') === 'ixigo' && d.ixigo ? { name: 'ixigo', b: d.ixigo } : { name: 'fake', b: d.fake };
@@ -49,8 +55,18 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     throw new TravelError('unknown_offer', `No travel backend for ${id}.`);
   };
   return {
-    async search(kind: TravelKind, q: TravelQuery) {
+    async search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }) {
       const parsed = TravelQuery.parse(q);
+      const day = parsed.checkIn ?? parsed.date;
+      if (day) {
+        const todayIs = await today(o?.tripId ?? null);
+        if (day < todayIs) {
+          throw new TravelError(
+            'past_date',
+            `The ${parsed.checkIn ? 'check-in' : 'departure'} ${day} is before today (${todayIs} in the trip's time zone). Use this year's or next year's date, such as ${nextOccurrence(day, todayIs)}, and search again.`,
+          );
+        }
+      }
       const { name, b } = pick();
       const base = backendQuery(parsed);
       const key = `${name}|${kind}|${keyOf(base)}`;
@@ -73,6 +89,14 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     },
     simulated: () => pick().name === 'fake',
     async hold(offerId, lead) {
+      // The day the offer was searched for: a vote that outlived it cannot book the past.
+      const searched = await d.results.searchedFor?.(offerId);
+      if (searched?.day) {
+        const todayIs = await today(searched.tripId);
+        if (searched.day < todayIs) {
+          throw new TravelError('past_date', `That offer is for ${searched.day}, which has passed (today is ${todayIs} in the trip's time zone). Search again for this year's or next year's date.`);
+        }
+      }
       return byPrefix(offerId).hold(offerId, lead);
     },
     async confirm(holdId, paid) {

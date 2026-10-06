@@ -63,6 +63,8 @@ export interface ResultsStore {
    * Go's MCP server), with that check's time; null when no search of this trip showed it. A job's answer is never a source.
    */
   findOffer(tripId: string, offerId: string): Promise<{ option: ResultOption; checkedAt: string } | null>;
+  /** The trip and the check-in or departure day of the newest search that showed this offer. */
+  searchedFor(offerId: string): Promise<{ tripId: string; day: string | null } | null>;
   saveCard(
     row: Pick<OptionsCardRow, 'cardId' | 'tripId' | 'resultsId' | 'title' | 'optionKind' | 'card'>,
     picks: Array<{ optionId: string; n: number; option: ResultOption }>,
@@ -128,6 +130,17 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
       const r = rows[0];
       const option = r?.options.find((o) => o.offerId === offerId);
       return r && option ? { option, checkedAt: r.checked_at.toISOString() } : null;
+    },
+
+    async searchedFor(offerId) {
+      const { rows } = await pool.query<{ trip_id: string; day: string | null }>(
+        `select trip_id, coalesce(query->>'checkIn', query->>'date') as day from travel_results
+          where source = 'search' and options @> $1::jsonb
+          order by checked_at desc, created_at desc limit 1`,
+        [JSON.stringify([{ offerId }])],
+      );
+      const r = rows[0];
+      return r ? { tripId: r.trip_id, day: r.day } : null;
     },
 
     async saveCard(row, picks, checkedAt) {

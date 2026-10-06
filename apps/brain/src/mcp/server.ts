@@ -65,7 +65,7 @@ async function searchFor(tripId: string, kind: TravelKind, q: TravelQuery, d: Go
   const travel = d.travel();
   if (!travel) return refuse({ error: 'not_available', note: 'Travel search is not set up.' });
   try {
-    const found = await travel.search(kind, q);
+    const found = await travel.search(kind, q, { tripId });
     const shown = found.results.slice(0, 10);
     if (shown.length > 0) {
       await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: { via: 'trip_computer', kind, ...q }, options: shown.map(toResultOption), checkedAt: found.checkedAt });

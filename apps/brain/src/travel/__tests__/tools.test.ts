@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
+import { SAY_NOTHING } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import { makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
@@ -40,6 +41,15 @@ describe('search tools', () => {
     expect(out.card).toEqual({ results_id: out.results_id, option_numbers: [1, 2, 3], title: 'Flights, Delhi to Goa' });
     const saved = await results.get('t_goa', out.results_id);
     expect(saved?.options.every((o) => (o.journey?.depart_at.slice(11, 16) ?? '') >= '18:00')).toBe(true);
+  });
+
+  it("refuses a check-in before today without a word to the room, naming this year's date, and that date goes through", async () => {
+    const past = (await lb.tools.run('search_stays', { ...STAYS, check_in: '2025-11-06', check_out: '2025-11-09' }, lb.ctx({ turnId: 'turn_past1' }))) as any;
+    expect(past).toMatchObject({ count: 0, tell_the_room: SAY_NOTHING });
+    expect(past.refused).toContain("Use this year's or next year's date, such as 2026-11-06");
+    expect(past.results_id).toBeUndefined();
+    const next = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_past2' }))) as any;
+    expect(next.count).toBeGreaterThan(0);
   });
 
   it('says how old a cached check is', async () => {

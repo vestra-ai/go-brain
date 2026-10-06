@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FakeClock, FakeSwitches } from '../../tasks/testing/lane-brain.js';
-import { createTravelLayer } from '../layer.js';
+import { FakeIxigoStore } from '../fake-ixigo/data.js';
+import { createTravelLayer, type TravelLayerDeps } from '../layer.js';
+import { createFakeTravel, TravelError } from '../mcp-travel.js';
 import type { TravelBackend, TravelOption } from '../travel.js';
 
 const opt = (offerId: string, clock: string): TravelOption => ({
@@ -30,7 +32,7 @@ function backend(name: 'fake' | 'ixigo', clock: FakeClock) {
   return { b, calls };
 }
 
-function setup(withIxigo = true) {
+function setup(withIxigo = true, extra: Partial<TravelLayerDeps> = {}) {
   const clock = new FakeClock(Date.parse('2026-10-07T12:00:00Z'));
   const switches = new FakeSwitches();
   const fake = backend('fake', clock);
@@ -48,6 +50,7 @@ function setup(withIxigo = true) {
       },
     },
     simulate: { setFlightDelay: (c, n, d, m) => { delays.push(`${c}${n}@${d}+${m}`); } },
+    ...extra,
   });
   return { clock, switches, fake, ixigo, layer, delays };
 }
@@ -106,5 +109,57 @@ describe('the travel layer', () => {
     expect(await layer.offer('opt_2')).toBeNull();
     layer.simulate?.setFlightDelay('6E', '2134', '2026-11-06', 120);
     expect(delays).toEqual(['6E2134@2026-11-06+120']);
+  });
+});
+
+describe('dates in the past', () => {
+  // The clock reads 2026-10-07 12:00 UTC: 5:30 pm on 7 Oct in India, the default trip zone.
+  const STAY = { area: 'North Goa', checkOut: '2026-11-09', guests: 5 };
+
+  it('refuses a past check-in or departure before any backend sees it, naming the date to use; that date goes through', async () => {
+    const { fake, layer } = setup();
+    const past = layer.search('stays', { ...STAY, checkIn: '2025-11-06', checkOut: '2025-11-09' });
+    await expect(past).rejects.toBeInstanceOf(TravelError);
+    await expect(past).rejects.toMatchObject({ code: 'past_date', message: expect.stringContaining('such as 2026-11-06') });
+    await expect(layer.search('flights', { from: 'Delhi', to: 'Goa', date: '2026-10-06' })).rejects.toMatchObject({ code: 'past_date', message: expect.stringContaining('such as 2027-10-06') });
+    expect(fake.calls).toEqual([]);
+    await layer.search('stays', { ...STAY, checkIn: '2026-11-06' });
+    await layer.search('flights', { from: 'Delhi', to: 'Goa', date: '2026-10-07' });
+    expect(fake.calls).toHaveLength(2);
+  });
+
+  it("counts today in the trip's own time zone", async () => {
+    const asked: Array<string | null> = [];
+    const { layer } = setup(true, { today: async (tripId) => {
+      asked.push(tripId);
+      return tripId === 't_ahead' ? '2026-10-08' : '2026-10-07';
+    } });
+    await expect(layer.search('flights', { from: 'Delhi', to: 'Goa', date: '2026-10-07' }, { tripId: 't_ahead' })).rejects.toMatchObject({ code: 'past_date' });
+    await layer.search('flights', { from: 'Delhi', to: 'Goa', date: '2026-10-07' }, { tripId: 't_goa' });
+    expect(asked).toEqual(['t_ahead', 't_goa']);
+  });
+
+  it('refuses a hold on an offer searched for a day that has passed, and holds one still ahead', async () => {
+    const days: Record<string, string> = { 'fake:old': '2026-10-01', 'fake:a': '2026-11-06' };
+    const { fake, layer } = setup(true);
+    const withDays = createTravelLayer({
+      switches: new FakeSwitches(), now: () => new Date('2026-10-07T12:00:00Z'), fake: fake.b, ixigo: null,
+      results: { offer: async () => null, searchedFor: async (offerId) => (days[offerId] ? { tripId: 't_goa', day: days[offerId]! } : null) },
+    });
+    await expect(withDays.hold('fake:old', { name: 'Priya', personIds: ['p_priya'] })).rejects.toMatchObject({ code: 'past_date', message: expect.stringContaining('2026-10-01') });
+    expect(fake.calls).not.toContain('hold');
+    expect(await withDays.hold('fake:a', { name: 'Priya', personIds: ['p_priya'] })).toMatchObject({ holdId: 'fake:h1' });
+    expect(await layer.hold('fake:unknown', { name: 'Priya', personIds: ['p_priya'] })).toMatchObject({ holdId: 'fake:h1' });
+  });
+
+  it("still answers the fake ixigo's stays for dates ahead", async () => {
+    const now = () => new Date('2026-10-07T12:00:00Z');
+    const layer = createTravelLayer({
+      switches: new FakeSwitches(), now, fake: createFakeTravel({ store: new FakeIxigoStore({ now }), now, payRail: () => 'fake' }), ixigo: null, results: { offer: async () => null },
+    });
+    for (const [checkIn, checkOut] of [['2026-11-06', '2026-11-09'], ['2027-01-15', '2027-01-18']] as const) {
+      const found = await layer.search('stays', { area: 'North Goa', checkIn, checkOut, guests: 5 });
+      expect(found.results.map((o) => o.title), checkIn).toContain('Villa Sol');
+    }
   });
 });

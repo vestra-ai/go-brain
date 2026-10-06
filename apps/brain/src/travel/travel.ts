@@ -127,7 +127,8 @@ export interface TravelBackend {
 
 /** brain.travel: the master plan's methods (search, status, offer, hold, confirm), plus the demo's flight-delay switch. */
 export interface Travel {
-  search(kind: TravelKind, q: TravelQuery): Promise<TravelSearch>;
+  /** Refuses (TravelError past_date) a check-in or departure before today in the trip's time zone. */
+  search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<TravelSearch>;
   status(q: StatusQuery): Promise<StatusResult>;
   /**
    * The offer behind an options card's option_id (which is also a vote option's option_ref); offerId null when the option
