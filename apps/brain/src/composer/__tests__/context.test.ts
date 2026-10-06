@@ -209,6 +209,11 @@ describe('why Go woke, and the trip block', () => {
     expect(c.renderWake(wake(), p)).toBe('message #61 from Kabir, it names you');
     expect(c.renderWake(wake({ payload: { messageId: 'm_60', namesGo: false }, ref: 'm_60' }), p)).toBe('message #60 from Meher');
     expect(c.renderWake(wake({ kind: 'setup', ref: 'greet', payload: {} }), p)).toContain('you just joined this trip');
+    const hello = c.renderWake(wake({ kind: 'setup', ref: 'greet', payload: {} }), p);
+    // Joining is hello only: an ask in the same turn is answered first, and no vote opens unless someone asks for one.
+    expect(hello).toContain('answer that first');
+    expect(hello).toContain('Do not open a vote unless someone asks for one');
+    expect(hello).not.toMatch(/open_vote|first vote/);
     expect(c.renderWake(wake({ kind: 'trip_change', ref: 'decision:d_stay', payload: { type: 'decision.closed', decisionId: 'd_stay' } }), p)).toBe(
       'the vote <data>Where do we stay?</data> closed: <data>Villa Sol</data> won (4 of 5 voted). Say the result in one line and the next step.',
     );

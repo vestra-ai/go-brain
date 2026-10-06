@@ -45,7 +45,7 @@ Priya's message mentions Go, so Go answers. Go answers the `send_event` at once 
 
 ## 2. A trip starts
 
-This flow runs once per trip: the organizer creates the trip, and Go greets the room and opens the first vote.
+This flow runs once per trip: the organizer creates the trip, and Go says hello to the room.
 
 ```mermaid
 sequenceDiagram
@@ -61,11 +61,8 @@ sequenceDiagram
   server->>go: send_event (trip.created, seq 1, the whole trip)
   go-->>server: answer: accepted
   Note over go: sets the trip up: Go's memory, a page per person,<br/>its queue and conversation, and starts the trip's computer
-  go->>server: open_vote (When do we go? three date options)
-  server-->>go: answer: decision_id d_when, seq 2
-  server->>go: send_event (decision.opened, d_when, seq 2)
-  go->>server: post_message (a hello and the vote card)
-  server->>app: Go's hello with the dates vote
+  go->>server: post_message (a hello: what Go can do for the group)
+  server->>app: Go's hello
   Rahul->>app: shares the invite link with his friends
   Priya->>app: joins with the link and answers the join questions
   app->>server: join t_goa
@@ -73,7 +70,7 @@ sequenceDiagram
   Note over go: notes what Priya told Go and stays quiet
 ```
 
-`trip.created` carries the whole trip, so Go can start without reading anything else. Go answers at once, then sets the trip up: its memory, a page for each person, its queue and the composer's conversation take a few seconds, and the trip's own computer starts in the background so it is ready for the first task (see [How Go sets itself up for a new trip](03-events.md#how-go-sets-itself-up-for-a-new-trip)). Go says hello and opens the first vote. Here it asks about the dates, which are not set yet. It could instead open a yes/no "Who's in?" vote. Opening a vote takes two requests: `open_vote` creates the vote, then `post_message` with a vote card shows it in the room. As friends join through the invite link, the server sends `person.joined` for each of them. Go keeps what they said about themselves and does not post a welcome for every person. When the vote `d_when` closes, the server writes the decided line "6 to 9 Nov" (`r_dates`) itself.
+`trip.created` carries the whole trip, so Go can start without reading anything else. Go answers at once, then sets the trip up: its memory, a page for each person, its queue and the composer's conversation take a few seconds, and the trip's own computer starts in the background so it is ready for the first task (see [How Go sets itself up for a new trip](03-events.md#how-go-sets-itself-up-for-a-new-trip)). Go says hello in one or two lines and opens no vote. If someone asks Go something before the hello goes out, Go answers that first, in the same message. Votes come later, when the group is choosing: opening one takes two requests, `open_vote` to create the vote and then `post_message` with a vote card to show it in the room (see `open_vote` in [Go's requests](04-gos-requests.md)). As friends join through the invite link, the server sends `person.joined` for each of them. Go keeps what they said about themselves and does not post a welcome for every person. When a vote closes, the server writes its decided line itself, such as "6 to 9 Nov" (`r_dates`) for the dates vote `d_when`.
 
 ## 3. The group agrees in the chat without a vote
 

@@ -904,7 +904,7 @@ Rahul has just created "Goa 🌴". He is the only person in it so far, nobody ha
 
 `trip.created` is the moment Go joins a trip. Go answers `accepted` at once and does the setting up after it has answered, so setting up never holds up the server:
 
-1. **Go's side of the trip, in a few seconds.** Go makes the trip's home: its memory for this trip, a page for each person (someone who was in an earlier trip keeps their page), the queue of things it has to do, and the composer's conversation for this trip. Then Go says hello and opens the first vote.
+1. **Go's side of the trip, in a few seconds.** Go makes the trip's home: its memory for this trip, a page for each person (someone who was in an earlier trip keeps their page), the queue of things it has to do, and the composer's conversation for this trip. Then Go says hello. If someone has already asked Go something, Go answers that first in the same message. Go opens no vote when it joins: votes come later, when the group is choosing.
 2. **Go's computer for the trip, in about a minute, in the background.** Each trip gets its own computer: a Bash from Vestra, which Go uses for longer jobs such as searching many sites, filling in forms or watching a fare. Go asks for it as soon as the trip exists and starts it, so it is ready before anyone asks for a task.
 
 Nobody waits for the computer. Go says hello before it is ready, and a task someone asks for in the first minute starts as soon as it is up.
