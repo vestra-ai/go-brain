@@ -3,6 +3,7 @@ import { registerAdmin } from './admin/register.js';
 import { buildBrain, type RegisterLane } from './app.js';
 import { loadEnv } from './env.js';
 import { registerMemory } from './memory/register.js';
+import { registerProactive } from './proactive/register.js';
 import { registerReflex } from './reflex/register.js';
 import { registerRoom } from './room.js';
 import { registerStats } from './stats/index.js';
@@ -12,7 +13,7 @@ import { registerStats } from './stats/index.js';
  * registerTasks, registerMoney, registerProactive, registerCalls, registerAdmin. Each lane adds its one
  * line here, in that order, in its own PR.
  */
-export const LANES: RegisterLane[] = [registerRoom, registerReflex, registerMemory, registerStats, registerAdmin];
+export const LANES: RegisterLane[] = [registerRoom, registerReflex, registerMemory, registerStats, registerProactive, registerAdmin];
 
 export async function main(): Promise<void> {
   const env = loadEnv();
