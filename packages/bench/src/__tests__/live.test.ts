@@ -46,7 +46,7 @@ describe('the live bench', () => {
     expect(s).toMatchObject({ chat: 'goa-300', mode: 'live', cacheHit: 0.92, wakeRate: 0.11, replyP50Ms: 1850, recall: { passed: 7, probes: 7 }, wrongSpeak: 0, messages: 300 });
     expect(s).toMatchObject({ commit: '1a2b3c4d5e', branch: 'build', model: run.model });
     expect(BenchSummary.safeParse(s).success).toBe(true);
-    const noUsage = toBoardSummary({ ...run, provider: { ...run.provider, cacheHit: null } }, '2026-10-06T22:00:00Z');
+    const noUsage = toBoardSummary({ ...run, provider: { ...run.provider, cacheHit: null } }, '2026-10-06T22:00:00Z', FROM);
     expect(noUsage.cacheHit).toBe(0.9);
   });
 
