@@ -1,7 +1,7 @@
 // The two voice models a call can use, behind one shape. A wire turns the bridge's few needs into the model's
 // own events, and the model's events back into the few the bridge acts on. Neither wire turns on input
-// transcription, and neither passes on the business's words: Go hears with the voice model's own ears only and
-// the card shows Go's side (Keshav's ruling). One wire per call: the Live wire keeps Go's words between events.
+// transcription, and neither passes on the business's words: by design, Go hears the call only through the voice
+// model, and the card shows Go's side. One wire per call: the Live wire keeps Go's words between events.
 import { voiceKind, type VoiceKind } from './config.js';
 import { REPORT_OUTCOME_TOOL, callInstructions, greeting, type CallBrief, type SessionSettings } from './realtime.js';
 

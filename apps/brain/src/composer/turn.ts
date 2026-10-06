@@ -1,10 +1,10 @@
-import { classifyAnthropicError } from '@vestra/agent-sdk/engine';
 import type pg from 'pg';
 import type { DeskItem, TurnInput, TurnRunner } from '../desk/desk.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import type { AnthropicLike } from './anthropic.js';
+import { classifyAnthropicError } from './anthropic-helpers.js';
 import type { ContextImpl } from './context.js';
 import { chatLine, dataBlock, personName } from './fence.js';
 import { addUsage, MAX_ROUNDS, noUsage, runLoop } from './loop.js';

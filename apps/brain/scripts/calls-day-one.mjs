@@ -156,7 +156,7 @@ function checkVoice(model, required) {
       if (!live && ev.type === 'session.updated') {
         const out = ev.session?.audio?.output?.format?.type;
         if (ev.session?.audio?.input?.transcription) {
-          bad('input transcription is on', "Go hears with the voice model's own ears only (Keshav's ruling): the session must carry no audio.input.transcription.");
+          bad('input transcription is on', "By design, Go hears the call only through the voice model: the session must carry no audio.input.transcription.");
         } else if (out !== 'audio/pcmu') {
           bad(`session output format is ${out}`, 'The model did not take audio/pcmu: check the model id and the realtime docs.');
         } else pass(name, 'mu-law in and out, no input transcription');

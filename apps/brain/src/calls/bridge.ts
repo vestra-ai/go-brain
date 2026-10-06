@@ -1,6 +1,7 @@
 // The live call: Twilio's media socket on one side, the voice model on the other. μ-law audio passes through
 // untouched both ways. Go's own lines become the card's transcript; the model's report ends the call politely;
-// the cap ends it regardless. Nothing here transcribes the business or keeps their words (Keshav's ruling).
+// the cap ends it regardless. By design, Go hears the call only through the voice model: nothing here transcribes the
+// business or keeps their words.
 import WebSocket, { type RawData } from 'ws';
 import { z } from 'zod';
 import type { Schedule } from '../proactive/clock.js';

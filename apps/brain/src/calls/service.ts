@@ -317,7 +317,7 @@ export class CallService {
     return true;
   }
 
-  /** Go's own lines only: the card never shows the business's words (Keshav's ruling; showing them needs his explicit OK). */
+  /** Go's own lines only: by design, the card never shows the business's words; showing them is a product decision. */
   line(callId: string, line: CallLine): void {
     if (line.who !== 'go') return;
     const live = this.live.get(callId);

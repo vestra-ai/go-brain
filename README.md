@@ -27,7 +27,6 @@ All three teams are the Vestra team. What travels between the Server and Go is f
 | [`packages/contract-py`](packages/contract-py) | The same contract for Python: models generated from the OpenAPI file, signing and spend approvals. |
 | [`packages/sim`](packages/sim) | The simulator: a fake Server that holds trips in memory with the Server's rules, and the dev room, a one-page App in the browser. |
 | [`packages/bench`](packages/bench) | The replay bench: recorded Goa chats of 50, 300 and 2,000 messages replayed through the real Go with a scripted model, scored against the bars in `bars.json` (typing, reply time, cache hit, wake rate, recall), in CI on every pull request. A live run uses the real models and Jev. |
-| [`packages/agent-sdk`](packages/agent-sdk) | An agent loop copied from Vestra's Bash (see its `PROVENANCE.md`). Go's composer uses a few of its helpers: model capabilities, usage, cost and error kinds. |
 | [`docs/guide`](docs/guide) | The guide to the contract, for the Server and App teams. Start here to build against Go. |
 | [`docs/spec`](docs/spec) | Go's design: how it works inside. |
 | [`docs/plans`](docs/plans) | The week's build plans: the master plan and one plan per lane, with the code and tests for every task. |

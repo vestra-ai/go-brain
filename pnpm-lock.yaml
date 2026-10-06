@@ -24,9 +24,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(zod@4.3.6)
-      '@vestra/agent-sdk':
-        specifier: workspace:*
-        version: link:../../packages/agent-sdk
       fastify:
         specifier: ^5.12.5
         version: 5.12.5
@@ -139,40 +136,6 @@ importers:
         specifier: ^4.0.17
         version: 4.1.11(@types/node@22.20.5)(@vitest/coverage-v8@4.1.11)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.0))
 
-  packages/agent-sdk:
-    dependencies:
-      '@anthropic-ai/sdk':
-        specifier: ^0.93.0
-        version: 0.93.0(zod@4.3.6)
-      openai:
-        specifier: 6.39.1
-        version: 6.39.1(ws@8.22.0)(zod@4.3.6)
-      undici:
-        specifier: 7.30.0
-        version: 7.30.0
-      yaml:
-        specifier: 2.9.0
-        version: 2.9.0
-      zod:
-        specifier: 4.3.6
-        version: 4.3.6
-    devDependencies:
-      '@types/node':
-        specifier: ^20.14.0
-        version: 20.19.43
-      '@vitest/coverage-v8':
-        specifier: ^4.0.17
-        version: 4.1.11(vitest@4.1.11)
-      tsx:
-        specifier: ^4.21.0
-        version: 4.23.15
-      typescript:
-        specifier: ^5.5.0
-        version: 5.9.3
-      vitest:
-        specifier: ^4.0.17
-        version: 4.1.11(@types/node@20.19.43)(@vitest/coverage-v8@4.1.11)(vite@8.3.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.0))
-
   packages/bench:
     dependencies:
       '@anthropic-ai/sdk':
@@ -190,9 +153,6 @@ importers:
       '@go/vault':
         specifier: workspace:*
         version: link:../../apps/vault
-      '@vestra/agent-sdk':
-        specifier: workspace:*
-        version: link:../agent-sdk
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -1201,18 +1161,6 @@ packages:
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
-  openai@6.39.1:
-    resolution: {integrity: sha512-z3dO9fEWOXBzlXynVb/xZ/tujzUjFWQWn3C0n0mw6Vo0zJTbEkaN4b2cLWjhJ6haJQx8LlREoafHRl+Gu/Hl+A==}
-    hasBin: true
-    peerDependencies:
-      ws: ^8.18.0
-      zod: 4.3.6
-    peerDependenciesMeta:
-      ws:
-        optional: true
-      zod:
-        optional: true
-
   parseurl@1.3.3:
     resolution: {integrity: sha512-CiyeOxFT/JZyN5m0z9PfXw4SCBJ6Sygz1Dpl0wqjlhDEGGBP1GnsUVEL0p63hoG1fcj3fHynXi9NYO4nWOL+qQ==}
     engines: {node: '>= 0.8'}
@@ -1661,13 +1609,16 @@ snapshots:
     optionalDependencies:
       zod: 4.3.6
 
-  '@babel/helper-string-parser@7.29.7': {}
+  '@babel/helper-string-parser@7.29.7':
+    optional: true
 
-  '@babel/helper-validator-identifier@7.29.7': {}
+  '@babel/helper-validator-identifier@7.29.7':
+    optional: true
 
   '@babel/parser@7.29.9':
     dependencies:
       '@babel/types': 7.29.8
+    optional: true
 
   '@babel/runtime@7.29.7': {}
 
@@ -1675,8 +1626,10 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+    optional: true
 
-  '@bcoe/v8-coverage@1.0.2': {}
+  '@bcoe/v8-coverage@1.0.2':
+    optional: true
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true
@@ -1785,7 +1738,8 @@ snapshots:
     dependencies:
       hono: 4.13.13
 
-  '@jridgewell/resolve-uri@3.1.2': {}
+  '@jridgewell/resolve-uri@3.1.2':
+    optional: true
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
 
@@ -1793,6 +1747,7 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+    optional: true
 
   '@levischuck/tiny-cbor@0.2.11': {}
 
@@ -2024,6 +1979,7 @@ snapshots:
       std-env: 4.3.0
       tinyrainbow: 3.2.0
       vitest: 4.1.11(@types/node@20.19.43)(@vitest/coverage-v8@4.1.11)(vite@8.3.2(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.0))
+    optional: true
 
   '@vitest/expect@4.1.11':
     dependencies:
@@ -2105,6 +2061,7 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.31
       estree-walker: 3.0.3
       js-tokens: 10.0.0
+    optional: true
 
   atomic-sleep@1.0.0: {}
 
@@ -2375,7 +2332,8 @@ snapshots:
 
   gopd@1.2.0: {}
 
-  has-flag@4.0.0: {}
+  has-flag@4.0.0:
+    optional: true
 
   has-symbols@1.1.0: {}
 
@@ -2385,7 +2343,8 @@ snapshots:
 
   hono@4.13.13: {}
 
-  html-escaper@2.0.2: {}
+  html-escaper@2.0.2:
+    optional: true
 
   http-errors@2.0.1:
     dependencies:
@@ -2411,22 +2370,26 @@ snapshots:
 
   isexe@2.0.0: {}
 
-  istanbul-lib-coverage@3.2.2: {}
+  istanbul-lib-coverage@3.2.2:
+    optional: true
 
   istanbul-lib-report@3.0.1:
     dependencies:
       istanbul-lib-coverage: 3.2.2
       make-dir: 4.0.0
       supports-color: 7.2.0
+    optional: true
 
   istanbul-reports@3.2.0:
     dependencies:
       html-escaper: 2.0.2
       istanbul-lib-report: 3.0.1
+    optional: true
 
   jose@6.2.12: {}
 
-  js-tokens@10.0.0: {}
+  js-tokens@10.0.0:
+    optional: true
 
   json-schema-ref-resolver@3.0.0:
     dependencies:
@@ -2505,10 +2468,12 @@ snapshots:
       '@babel/parser': 7.29.9
       '@babel/types': 7.29.8
       source-map-js: 1.2.2
+    optional: true
 
   make-dir@4.0.0:
     dependencies:
       semver: 7.8.5
+    optional: true
 
   math-intrinsics@1.1.0: {}
 
@@ -2545,11 +2510,6 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
-
-  openai@6.39.1(ws@8.22.0)(zod@4.3.6):
-    optionalDependencies:
-      ws: 8.22.0
-      zod: 4.3.6
 
   parseurl@1.3.3: {}
 
@@ -2808,6 +2768,7 @@ snapshots:
   supports-color@7.2.0:
     dependencies:
       has-flag: 4.0.0
+    optional: true
 
   thread-stream@4.2.0:
     dependencies:
@@ -2959,7 +2920,8 @@ snapshots:
 
   xtend@4.0.2: {}
 
-  yaml@2.9.0: {}
+  yaml@2.9.0:
+    optional: true
 
   zod-to-json-schema@3.25.2(zod@4.3.6):
     dependencies:

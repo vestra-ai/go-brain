@@ -13,7 +13,7 @@ export const REALTIME_MODEL = 'gpt-realtime-2.1';
 /** A voice both models have. */
 export const REALTIME_VOICE = 'marin';
 export const VOICE_MODEL = /^gpt-(realtime|live)(-[a-z0-9.]+)*$/;
-/** A voice model, never a transcriber: Go hears with the voice model's own ears only (Keshav's ruling). */
+/** A voice model, never a transcriber: by design, Go hears the call only through the voice model. */
 export const isVoiceModel = (model: string): boolean => VOICE_MODEL.test(model) && !/transcri/i.test(model);
 export type VoiceKind = 'realtime' | 'live';
 export const voiceKind = (model: string): VoiceKind => (model.startsWith('gpt-live') ? 'live' : 'realtime');

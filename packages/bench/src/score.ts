@@ -4,7 +4,7 @@
  * did recall find the right message, did a deleted message come back. Latencies use the wall
  * clock at both ends; the cache uses chat time.
  */
-import { computeAnthropicCostUsd } from '@vestra/agent-sdk';
+import { computeAnthropicCostUsd } from '@go/brain/dist/composer/anthropic-helpers.js';
 import { cacheTurns, summarizeCache, type CacheSummary, type ChatEvent, type TurnCache } from './cache-estimate.js';
 import { addressesGo, chatCounts, type Chat, type RecallProbe, type SayLine, type Speak } from './chat.js';
 import { promptParts, type RecordedRequest } from './requests.js';
