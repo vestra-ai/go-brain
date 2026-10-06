@@ -4,10 +4,11 @@ import { z } from 'zod';
 import type { Message } from '../door/methods.js';
 import { SocketCallError } from '../door/rpc.js';
 import { reactOnce } from '../memory/reactions.js';
+import { DEFAULT_TZ, localDay } from '../proactive/clock.js';
 import type { TripPack } from '../trips/pack.js';
 import { inlineData } from './fence.js';
 import { clip } from './sanitize.js';
-import { STAY_SILENT, type QuickTool } from './tools.js';
+import { SAY_NOTHING, STAY_SILENT, type QuickTool } from './tools.js';
 
 /** "#57", "57" or a message id. */
 function findMessage(pack: TripPack, ref: string): Message | undefined {
@@ -63,6 +64,14 @@ const StaySilentInput = z.object({
   reason: z.string().min(1).max(200).describe('A few words for the log. Never shown to anyone.'),
 });
 
+/** Days said without a year mean the next ones: the same days this year, or next year when this year's have passed. */
+export function nextDates(d: { start: string; end: string }, today: string): { start: string; end: string } {
+  const year = Number(today.slice(0, 4));
+  const shift = (`${year}${d.start.slice(4)}` >= today ? year : year + 1) - Number(d.start.slice(0, 4));
+  const move = (day: string) => `${Number(day.slice(0, 4)) + shift}${day.slice(4)}`;
+  return { start: move(d.start), end: move(d.end) };
+}
+
 /** The room's quick tools. None of them can pay, book or see a card: those are never composer tools in P1. */
 export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] {
   const react: QuickTool<z.infer<typeof ReactInput>> = {
@@ -78,6 +87,7 @@ export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] 
       // id per message and emoji, so a reaction Go already holds, or is sending right now, is not sent again.
       const r = await reactOnce(o.pool, ctx.link, ctx.tripId, m, a.emoji);
       if (r === 'failed') return { ok: false, error: 'The reaction did not go through. Carry on without it.' };
+      if (a.emoji === '✅') (ctx.outcome.noted ??= []).push(m.message_id);
       if (r === 'skipped') return { ok: true, note: 'Nothing to do: you already hold that reaction, or the message cannot take one.' };
       ctx.outcome.reactions += 1;
       return { ok: true };
@@ -145,6 +155,19 @@ export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] 
       };
       if (Object.keys(fields).length === 0) return { ok: false, error: 'Nothing to change.' };
       if (a.dates && a.dates.start > a.dates.end) return { ok: false, error: 'The start date is after the end date.' };
+      if (a.dates) {
+        const tz = (await o.pool.query<{ tz: string }>('select tz from trips where trip_id = $1', [ctx.tripId])).rows[0]?.tz ?? DEFAULT_TZ;
+        const today = localDay(o.now(), tz);
+        // A trip under way keeps the start it already has; any other day before today is a guessed year.
+        if (a.dates.end < today || (a.dates.start < today && a.dates.start !== ctx.pack.trip.dates?.start)) {
+          const next = nextDates(a.dates, today);
+          return {
+            ok: false,
+            error: `Those dates are before today (${today} where the trip is). Use this year or next: ${next.start} to ${next.end}, if that is what the group meant.`,
+            tell_the_room: SAY_NOTHING,
+          };
+        }
+      }
       await ctx.link.request('update_trip', { request_id: ctx.stableId('go_trip'), trip_id: ctx.tripId, ...fields });
       return { ok: true, changed: Object.keys(fields) };
     },

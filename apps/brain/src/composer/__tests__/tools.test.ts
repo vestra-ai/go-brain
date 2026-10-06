@@ -5,8 +5,8 @@ import { goaSnapshot, msg, vote } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
 import { SocketCallError } from '../../door/rpc.js';
 import { reactionRequestId, reactOnce } from '../../memory/reactions.js';
-import { roomTools } from '../room-tools.js';
-import { createTools, makeTurnCtx, type QuickTool } from '../tools.js';
+import { nextDates, roomTools } from '../room-tools.js';
+import { createTools, makeTurnCtx, SAY_NOTHING, type QuickTool } from '../tools.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -155,6 +155,43 @@ describe('the room\'s tools', () => {
     expect(calls[0]?.params).toEqual({
       request_id: 'go_trip_turn_T_1', trip_id: 't_goa', destination: { name: 'North Goa' }, dates: { start: '2026-11-06', end: '2026-11-09' },
     });
+  });
+
+  it('update_trip refuses dates before today where the trip is, says nothing in the chat, and names the days it likely meant', async () => {
+    const { ctx, calls } = ctxWith({ update_trip: () => ({ seq: 65 }) });
+    // 6 Oct 2026, 2:30 pm in Goa. The vote said "6-9 Nov" and the model guessed the year.
+    expect(await tool('update_trip').run({ dates: { start: '2025-11-06', end: '2025-11-09' } }, ctx)).toEqual({
+      ok: false,
+      error: 'Those dates are before today (2026-10-06 where the trip is). Use this year or next: 2026-11-06 to 2026-11-09, if that is what the group meant.',
+      tell_the_room: SAY_NOTHING,
+    });
+    expect(await tool('update_trip').run({ dates: { start: '2026-10-05', end: '2026-10-09' } }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
+    expect(calls).toHaveLength(0);
+    expect(await tool('update_trip').run({ dates: { start: '2026-10-06', end: '2026-10-09' } }, ctx)).toMatchObject({ ok: true });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("update_trip reads today in the trip's own time zone, and a trip under way keeps the start it has", async () => {
+    // 8 pm on 5 Oct in UTC: already 6 Oct in Goa, still 5 Oct in Los Angeles.
+    const late = (name: string) => roomTools({ now: () => new Date('2026-10-05T20:00:00Z'), pool: db.pool }).find((x) => x.name === name)!;
+    await db.pool.query(`insert into trips (trip_id, tz) values ('t_la', 'America/Los_Angeles') on conflict do nothing`);
+    const goa = ctxWith({ update_trip: () => ({ seq: 66 }) });
+    expect(await late('update_trip').run({ dates: { start: '2026-10-05', end: '2026-10-07' } }, goa.ctx)).toMatchObject({ ok: false });
+    const f = fakeLink({ update_trip: () => ({ seq: 67 }) });
+    const la = makeTurnCtx({ tripId: 't_la', turnId: 'turn_la', link: f.link, pack: pack(), wake: [], signal: new AbortController().signal });
+    expect(await late('update_trip').run({ dates: { start: '2026-10-05', end: '2026-10-07' } }, la)).toMatchObject({ ok: true });
+    // Under way since 4 Oct: the end may move, the start stays as it is.
+    const away = ctxWith({ update_trip: () => ({ seq: 68 }) });
+    away.ctx.pack.trip = { ...away.ctx.pack.trip, dates: { start: '2026-10-04', end: '2026-10-08' } };
+    expect(await tool('update_trip').run({ dates: { start: '2026-10-04', end: '2026-10-09' } }, away.ctx)).toMatchObject({ ok: true });
+    expect(await tool('update_trip').run({ dates: { start: '2026-10-03', end: '2026-10-09' } }, away.ctx)).toMatchObject({ ok: false });
+  });
+
+  it('a "6-9 Nov" decision means 2026-11-06 to 2026-11-09 when today is 6 Oct 2026; days already past this year mean next year', () => {
+    expect(nextDates({ start: '2025-11-06', end: '2025-11-09' }, '2026-10-06')).toEqual({ start: '2026-11-06', end: '2026-11-09' });
+    expect(nextDates({ start: '2025-10-06', end: '2025-10-08' }, '2026-10-06')).toEqual({ start: '2026-10-06', end: '2026-10-08' });
+    expect(nextDates({ start: '2026-01-02', end: '2026-01-05' }, '2026-10-06')).toEqual({ start: '2027-01-02', end: '2027-01-05' });
+    expect(nextDates({ start: '2025-12-30', end: '2026-01-02' }, '2026-10-06')).toEqual({ start: '2026-12-30', end: '2027-01-02' });
   });
 
   it('stay_silent marks the turn silent', async () => {

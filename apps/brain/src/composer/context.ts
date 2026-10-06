@@ -82,9 +82,10 @@ export const CHUNK = 25;
 export const NEW_MAX = 25;
 const HOUR = { type: 'ephemeral', ttl: '1h' } as const;
 
-function formatTime(now: Date, tz: string): string {
+export function formatTime(now: Date, tz: string): string {
   return new Intl.DateTimeFormat('en-IN', {
-    timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true,
+    // With the year: a model that has to guess it dates a trip in the past.
+    timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
   }).format(now);
 }
 

@@ -24,7 +24,8 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
     // An option is only a label (DecisionOption has no dates or place fields), so the model reads the winner and saves it.
     return won
       ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${d.voted} of ${d.of} voted). ` +
-          "If it settled the trip's dates or place, save them with update_trip first. Then say the result in one line and the next step."
+          "If it settled the trip's dates or place, save them with update_trip first (days without a year are the next ones from today). " +
+          'Then say the result in one line and the next step.'
       : `the vote ${inlineData(d.question)} closed with no clear winner (${d.voted} of ${d.of} voted). Ask the group how to settle it.`;
   }
   return `the trip changed (${p.type ?? item.ref})`;

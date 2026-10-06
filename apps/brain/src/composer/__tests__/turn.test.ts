@@ -5,6 +5,7 @@ import { withSchema } from '../../db/test-db.js';
 import type { DeskItem } from '../../desk/desk.js';
 import type { Message } from '../../door/methods.js';
 import { createServerLink } from '../../door/server-link.js';
+import { reactOnce } from '../../memory/reactions.js';
 import { silentLog } from '../../log.js';
 import type { TripPack } from '../../trips/pack.js';
 import { createContext, type TurnLimits } from '../context.js';
@@ -35,6 +36,7 @@ function room(o: {
   const answers: Record<string, () => Record<string, unknown>> = {
     post_message: () => ({ message_id: `m_go_${calls.length}`, seq: 100 + calls.length }),
     add_reaction: () => ({ seq: 100 + calls.length }),
+    remove_reaction: () => ({ seq: 100 + calls.length }),
     open_vote: () => ({ decision_id: 'd_first', seq: 100 + calls.length }),
   };
   link.attach({
@@ -69,7 +71,7 @@ function room(o: {
     tools, context, speak,
     client: model.client, model: 'claude-sonnet-5-5', claimNew: o.claimNew ?? (async () => []),
   });
-  return { tripId, calls, notes, model, composer, pack, speak, posts: () => calls.filter((c) => c.method === 'post_message') };
+  return { tripId, calls, notes, link, model, composer, pack, speak, posts: () => calls.filter((c) => c.method === 'post_message') };
 }
 
 const item = (tripId: string, m: Message, namesGo: boolean): DeskItem => ({
@@ -318,5 +320,60 @@ describe('a composer turn', () => {
     await turn(r, [item(r.tripId, ask, true)]);
     expect(r.calls.map((c) => c.method)).toEqual(['post_message']);
     expect(r.posts()[0]?.params.text).toBe('Nothing new yet, I will say when the fares move.');
+  });
+});
+
+describe('no ✅ on a line Go asked about', () => {
+  const on = (r: ReturnType<typeof room>, method: string, messageId: string) =>
+    r.calls.filter((c) => c.method === method && c.params.message_id === messageId);
+
+  it("an unclear expense line gets the question and no ✅: the reflex's quick ✅ is taken back, and a later one never goes", async () => {
+    const snacks = msg(3, 'p_priya', 'paid something for the snacks');
+    const r = room({ messages: [snacks], script: [{ text: 'How much was it?' }] });
+    // The reflex is quicker than a turn: its ✅ is on the line before Go asks.
+    expect(await reactOnce(db.pool, r.link, r.tripId, snacks, '✅')).toBe('sent');
+    await turn(r, [item(r.tripId, snacks, false)]);
+    expect(r.posts()[0]?.params.text).toBe('How much was it?');
+    expect(on(r, 'remove_reaction', 'm_3')).toEqual([{ method: 'remove_reaction', params: expect.objectContaining({ trip_id: r.tripId, emoji: '✅' }) }]);
+    // The notes pass's own ✅ for the line, later on: nothing is sent.
+    expect(await reactOnce(db.pool, r.link, r.tripId, snacks, '✅')).toBe('skipped');
+    expect(on(r, 'add_reaction', 'm_3')).toHaveLength(1);
+  });
+
+  it('when Go asks before the reflex reacts, the ✅ never goes out and there is nothing to take back', async () => {
+    const snacks = msg(3, 'p_priya', 'paid something for the snacks');
+    const r = room({ messages: [snacks], script: [{ text: 'How much was it?' }] });
+    await turn(r, [item(r.tripId, snacks, false)]);
+    expect(await reactOnce(db.pool, r.link, r.tripId, snacks, '✅')).toBe('skipped');
+    expect(on(r, 'add_reaction', 'm_3')).toEqual([]);
+    expect(on(r, 'remove_reaction', 'm_3')).toEqual([]);
+  });
+
+  it('a clear fact still gets its quick ✅', async () => {
+    const veg = msg(3, 'p_meher', "I'm veg btw");
+    const r = room({ messages: [veg], script: [{ tools: [{ name: 'stay_silent', input: { reason: 'noted already' } }] }] });
+    expect(await reactOnce(db.pool, r.link, r.tripId, veg, '✅')).toBe('sent');
+    await turn(r, [item(r.tripId, veg, false)]);
+    expect(on(r, 'add_reaction', 'm_3')).toHaveLength(1);
+    expect(on(r, 'remove_reaction', 'm_3')).toEqual([]);
+  });
+
+  it("a question to one of several people keeps the ✅ on the others' lines", async () => {
+    const veg = msg(3, 'p_meher', "I'm veg btw");
+    const snacks = msg(4, 'p_priya', 'paid something for the snacks');
+    const r = room({ messages: [veg, snacks], script: [{ text: 'Priya, how much was it?' }] });
+    for (const m of [veg, snacks]) expect(await reactOnce(db.pool, r.link, r.tripId, m, '✅')).toBe('sent');
+    await turn(r, [item(r.tripId, veg, false), item(r.tripId, snacks, false)]);
+    expect(on(r, 'remove_reaction', 'm_4')).toHaveLength(1);
+    expect(on(r, 'remove_reaction', 'm_3')).toEqual([]);
+  });
+
+  it('a ✅ the turn puts on a line itself stays, even when it asks something too', async () => {
+    const veg = msg(3, 'p_meher', "I'm veg btw, any good thalis near the villa?");
+    const r = room({ messages: [veg], script: [{ tools: [{ name: 'react', input: { message_id: '#3', emoji: '✅' } }] }, { text: 'Noted. Want me to look for some?' }] });
+    await turn(r, [item(r.tripId, veg, false)]);
+    expect(r.posts()[0]?.params.text).toBe('Noted. Want me to look for some?');
+    expect(on(r, 'add_reaction', 'm_3')).toHaveLength(1);
+    expect(on(r, 'remove_reaction', 'm_3')).toEqual([]);
   });
 });

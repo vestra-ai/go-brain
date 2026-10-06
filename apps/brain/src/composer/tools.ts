@@ -43,6 +43,10 @@ export interface TurnOutcome {
   silent: boolean;
   reactions: number;
   posts: string[];
+  /** Messages a tool chose to ask about instead of recording (record_expense with an unclear amount): no ✅ goes on them. */
+  asked?: string[];
+  /** Messages this turn noted itself (a ✅ from the react tool, an expense recorded): a question in the same turn keeps their ✅. */
+  noted?: string[];
 }
 
 export interface Tools {
@@ -97,7 +101,7 @@ export function makeTurnCtx(a: {
     pack: a.pack,
     wake: a.wake,
     signal: a.signal,
-    outcome: { spoke: false, silent: false, reactions: 0, posts: [] },
+    outcome: { spoke: false, silent: false, reactions: 0, posts: [], asked: [], noted: [] },
     cards: [],
     ...(a.limits ? { allowedTools: [...a.limits.tools], mayPostText: a.limits.mayPostText } : {}),
     stableId(prefix) {
