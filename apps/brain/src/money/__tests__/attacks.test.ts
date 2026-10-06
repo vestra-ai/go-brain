@@ -194,6 +194,19 @@ describe('a key used twice', () => {
   });
 });
 
+describe('a payment Go let go', () => {
+  it('stops the vault page the moment the payer declines', async () => {
+    await setUp();
+    const card = await payCardUp();
+    const url = await approveUrl(card);
+    expect(await seen.taps.get('pay:decline')?.(tap(card.card_id, 'p_rahul', 'decline'), card)).toMatchObject({ result: 'done' });
+    await pay.settled();
+    expect(await vault.approve(url, rahul)).toEqual({ state: 'refused', message: 'This payment link was already used.' });
+    expect(vault.rail.charges).toEqual([]);
+    expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
+  });
+});
+
 describe('a charge the bank has not confirmed', () => {
   it('keeps the pay card waiting on the bank, never starts it again, and books once when the vault learns it went through', async () => {
     await setUp();

@@ -179,8 +179,10 @@ async function finishClosed(d: MoneyDeps, row: PaymentRow, state: 'declined' | '
   const key = row.approval_id ?? row.payment_id;
   const id = (step: string) => rid(`go_${state}`, key, step);
 
-  // 1. Let the Server's approval go, so the vote can be asked again.
+  // 1. Let the Server's approval go, so the vote can be asked again. The vault first stops every pay link for it, so no
+  //    page can pay after Go let it go; if the vault cannot be reached, nothing is released and the sweep tries again.
   if (row.approval_id && !row.released_at) {
+    await d.vault.voidPayLinks(row.approval_id);
     await d.link.request('cancel_spend_approval', {
       request_id: id('release'),
       trip_id: row.trip_id,

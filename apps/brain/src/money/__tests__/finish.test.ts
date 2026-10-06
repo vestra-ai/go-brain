@@ -138,8 +138,22 @@ describe('a payment that did not happen', () => {
     await reconcile(k.deps, paymentId);
     await reconcile(k.deps, paymentId);
     expect(k.server.writesOf('cancel_spend_approval').map((w) => w.params.reason)).toEqual(['payer_declined']);
+    expect(k.vault.voids).toEqual([approvalId]);
     expect(k.server.cards.get(cardId)).toMatchObject({ state: 'declined' });
     expect(k.server.posts.filter((p) => p.text === 'Holding off on Villa Sol for now.')).toHaveLength(1);
+  });
+
+  it('releases nothing until the vault has stopped the pay links, then does both once', async () => {
+    await transition(k.pool, paymentId, ['waiting'], 'declined', { release_reason: 'payer_declined' }, k.now());
+    k.vault.failVoid = true;
+    await reconcile(k.deps, paymentId);
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+    expect((await getPayment(k.pool, paymentId))?.released_at).toBeNull();
+    k.vault.failVoid = false;
+    await sweepPayments(k.deps);
+    await reconcile(k.deps, paymentId);
+    expect(k.vault.voids).toEqual([approvalId]);
+    expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
   });
 
   it('expires 120 s after the approval ran out, quietly, with a way to start again', async () => {
