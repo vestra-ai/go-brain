@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import type * as C from '@go/contract';
 import { FakeServer, goaFreshTrip } from '@go/sim';
 import { afterTools, newSince, rightNow, SECRET, TEST_TIMINGS } from '../../__tests__/e2e/harness.js';
@@ -194,6 +194,9 @@ describe('G3: Go does real work', () => {
     const { cardId, v1TaskId } = await newJob('p_arjun', 'Go, find a villa in Siolim with a pool');
     const resumes = (): number => fake.callsTo('GET', /^\/v1\/conversations\/[^/]+\/events$/).filter((c) => c.headers['last-event-id'] !== undefined).length;
     const before = resumes();
+    // Go has seen an event of the job's own conversation, so there is a place to resume from.
+    fake.progress(v1TaskId, [['Search stays in North Goa', 'in_progress'], ['Read the reviews', 'pending']]);
+    await server.waitFor(() => (cardOf(cardId)?.steps?.length === 2 ? true : null), 15_000);
     await eventually(() => fake.cutStreams() > 0, 5_000);
     fake.progress(v1TaskId, [['Search stays in North Goa', 'completed'], ['Read the reviews', 'in_progress']]);
     await server.waitFor(() => (cardOf(cardId)?.steps?.some((s: { text: string; state: string }) => s.text === 'Read the reviews' && s.state === 'doing') ? true : null), 15_000);
@@ -205,26 +208,11 @@ describe('G3: Go does real work', () => {
     expect(options()).toHaveLength(optionsBefore + 1);
   }, 60_000);
 
-  it('a hand-off nobody answers ends as "Didn\'t work" after 10 minutes, unpinned, and Go says so', async () => {
-    const { cardId, v1TaskId } = await newJob('p_meher', 'Go, find a villa in Vagator with a pool');
-    await server.waitFor(() => (cardOf(cardId)?.state === 'running' ? true : null), 10_000);
-    const toMeher = (): number => goMessages().filter((m) => (m.text ?? '').startsWith('Meher, the villa site')).length;
-    const linesBefore = toMeher();
-    const ask = fake.ask(v1TaskId, { type: 'handoff', kind: 'ask_question', summary: 'Sign in to the villa site', browser: { suggested_mode: 'control', url: null } });
-    await server.waitFor(() => (cardOf(cardId)?.state === 'needs_you' ? true : null), 10_000);
-    // Go has told Meher (its turn is over) before the clock jumps, so no turn is cut in half by the jump.
-    await server.waitFor(() => (toMeher() > linesBefore ? true : null), 20_000);
-    offset += 10.5 * 60_000;
-    await lane.sweep.runOnce();
-    await server.waitFor(() => (cardOf(cardId)?.state === 'failed' ? true : null), 10_000);
-    expect(cardOf(cardId)).toMatchObject({ fallback_text: "Didn't work: Finding villas with a pool in North Goa", actions: [] });
-    expect(cardOf(cardId)?.for_person_ids ?? undefined).toBeUndefined();
-    expect(fake.interactions.get(ask.id)?.status).toBe('cancelled');
-    await server.waitFor(() => goMessages().find((m) => m.text === "That didn't work. Want me to try again?") ?? null, 20_000);
-  }, 60_000);
-
   it("replays the rehearsal drill: a follow-up sent while the job is queued runs first, and only the job's last run ends it, with one options card", async () => {
     fake.autoStart = false;
+    onTestFinished(() => {
+      fake.autoStart = true;
+    });
     const messages = () => fake.callsTo('POST', /^\/v1\/conversations\/[^/]+\/messages$/);
     const sentBefore = messages().length;
     const cardsBefore = working().length;
@@ -285,6 +273,23 @@ describe('G3: Go does real work', () => {
     await eventually(async () => (await createTokenStore(db.pool, now).tripFor(token)) === null, 10_000);
     await new Promise((r) => setTimeout(r, 1_000));
     expect(options()).toHaveLength(optionsBefore + 1);
-    fake.autoStart = true;
   }, 90_000);
+
+  it('a hand-off nobody answers ends as "Didn\'t work" after 10 minutes, unpinned, and Go says so', async () => {
+    const { cardId, v1TaskId } = await newJob('p_meher', 'Go, find a villa in Vagator with a pool');
+    await server.waitFor(() => (cardOf(cardId)?.state === 'running' ? true : null), 10_000);
+    const toMeher = (): number => goMessages().filter((m) => (m.text ?? '').startsWith('Meher, the villa site')).length;
+    const linesBefore = toMeher();
+    const ask = fake.ask(v1TaskId, { type: 'handoff', kind: 'ask_question', summary: 'Sign in to the villa site', browser: { suggested_mode: 'control', url: null } });
+    await server.waitFor(() => (cardOf(cardId)?.state === 'needs_you' ? true : null), 10_000);
+    // Go has told Meher (its turn is over) before the clock jumps, so no turn is cut in half by the jump.
+    await server.waitFor(() => (toMeher() > linesBefore ? true : null), 20_000);
+    offset += 10.5 * 60_000;
+    await lane.sweep.runOnce();
+    await server.waitFor(() => (cardOf(cardId)?.state === 'failed' ? true : null), 10_000);
+    expect(cardOf(cardId)).toMatchObject({ fallback_text: "Didn't work: Finding villas with a pool in North Goa", actions: [] });
+    expect(cardOf(cardId)?.for_person_ids ?? undefined).toBeUndefined();
+    expect(fake.interactions.get(ask.id)?.status).toBe('cancelled');
+    await server.waitFor(() => goMessages().find((m) => m.text === "That didn't work. Want me to try again?") ?? null, 20_000);
+  }, 60_000);
 });
