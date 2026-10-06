@@ -2,7 +2,7 @@ import type * as C from '@go/contract';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Brain } from '../../app.js';
-import type { NowProvider } from '../../composer/context.js';
+import { createContext, type NowProvider } from '../../composer/context.js';
 import type { QuickTool } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import type { ToGoHandler } from '../../door/handlers.js';
@@ -14,7 +14,7 @@ import { codeOnly, sure } from '../../reflex/read.js';
 import type { ReflexRead } from '../../reflex/reflex.js';
 import type { TripPack } from '../../trips/pack.js';
 import { currentFacts, saveFact } from '../facts.js';
-import type { StoryProvider } from '../fold.js';
+import type { Fold, StoryProvider } from '../fold.js';
 import { joinFacts } from '../join-facts.js';
 import { reactionRequestId } from '../reactions.js';
 import { recordLines } from '../record.js';
@@ -271,13 +271,14 @@ describe('wireMemory', () => {
   });
 });
 
+/** Chatter of about 24 estimated tokens a line: 400 lines are about 9,600 tokens. */
+const chatter = (n: number): Message[] =>
+  Array.from({ length: n }, (_, i) =>
+    msg(i + 1, ['p_rahul', 'p_priya', 'p_arjun'][i % 3]!, `line ${i + 1}: chalo beach chalte hain, sunset dekhenge aur phir dinner, kal ka plan bhi`),
+  );
+
 describe('the fold in a chat that never goes quiet for a minute', () => {
   const STORY = JSON.stringify({ lines: [{ text: 'The group planned the Goa trip', refs: [1], people: [] }] });
-  /** Chatter of about 25 estimated tokens a line: 400 lines are well past a 5,000 token budget. */
-  const chatter = (n: number): Message[] =>
-    Array.from({ length: n }, (_, i) =>
-      msg(i + 1, ['p_rahul', 'p_priya', 'p_arjun'][i % 3]!, `line ${i + 1}: chalo beach chalte hain, sunset dekhenge aur phir dinner, kal ka plan bhi`),
-    );
 
   it('folds right after Go posts once the chat is past FOLD_AT_TOKENS, without waiting for a quiet minute', async () => {
     const w = setup('t_r22', chatter(400), Array<string>(20).fill(STORY), { env: { FOLD_AT_TOKENS: 5_000 } });
@@ -297,6 +298,47 @@ describe('the fold in a chat that never goes quiet for a minute', () => {
       w.t.advance(30_000);
     }
     await vi.waitFor(async () => expect((await w.story()!.get('t_r23')).foldedToSeq).toBeGreaterThan(0));
+  });
+});
+
+describe('a long trip in the prompt after its fold', () => {
+  it('folds once past FOLD_AT_TOKENS; the story stands in for the folded chat, which starts at chatFromSeq, under the same 1h markers', async () => {
+    const story = JSON.stringify({ lines: [{ text: 'Rahul wants a villa in Anjuna under 8k a head', refs: [7], people: ['p_rahul'] }] });
+    // One answer only: a second fold would find the model out of answers.
+    const w = setup('t_r24', chatter(400), [story], { env: { FOLD_AT_TOKENS: 8_000 } });
+    const goes = msg(401, 'go', 'On it!');
+    w.pack.messages.push(goes);
+    await w.wired.onEvent(ev('t_r24', 401, 'message.created', { message: goes }));
+    const fold = w.story() as Fold;
+    await vi.waitFor(async () => expect((await fold.get('t_r24')).foldedToSeq).toBe(200));
+    // The oldest half went into the story; the 201 messages left are under the budget, so there is no second fold.
+    expect(await fold.maybeFold('t_r24')).toBe('not_needed');
+    expect(w.model.prompts).toHaveLength(1);
+    expect((await db.pool.query("SELECT fold_no FROM stories WHERE trip_id = 't_r24'")).rows).toEqual([{ fold_no: 1 }]);
+
+    // P1's real context, handed the story the way wireMemory hands it.
+    const c = createContext(silentLog);
+    c.setStory(fold);
+    const p = await c.build({ tripId: 't_r24', pack: w.pack, wake: [], seenSeq: 401, now: new Date('2026-10-07T10:00:00Z'), tz: 'Asia/Kolkata' });
+    const hour = { type: 'ephemeral', ttl: '1h' };
+    // Breakpoint 1, Go's rules, comes before any of the trip.
+    expect(p.system.map((b) => b.cache_control)).toEqual([hour]);
+    expect(p.user[0]?.text).toBe('# The trip chat so far, oldest first');
+    // The story sits right before the chat chunks and stands in for messages 1 to 200.
+    expect(p.user[1]?.text.startsWith('<data source="the story so far">\nThe story so far (messages up to #200;')).toBe(true);
+    expect(p.user[1]?.text).toContain('Rahul wants a villa in Anjuna under 8k a head (#7)');
+    // The chat starts at chatFromSeq: 201 lines in nine blocks, none of them folded.
+    expect(p.user[2]?.text.startsWith('<data source="chat, part 1">\n#201 ')).toBe(true);
+    expect(p.chatLines).toBe(201);
+    const text = p.user.map((b) => b.text).join('\n');
+    for (let n = 1; n <= 200; n += 1) expect(text).not.toContain(`line ${n}:`);
+    expect(text).toContain('line 201:');
+    // The chat's 1h marker is on the last full block (part 8), after the story and before the blocks that change every turn.
+    const marks = p.user.flatMap((b, i) => (b.cache_control ? [i] : []));
+    expect(marks).toEqual([9]);
+    expect(p.user[9]?.cache_control).toEqual(hour);
+    expect(p.user[9]?.text.startsWith('<data source="chat, part 8">')).toBe(true);
+    expect(p.user[10]?.text.startsWith('<data source="chat, part 9">')).toBe(true);
   });
 });
 
