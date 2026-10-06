@@ -5,7 +5,8 @@
  *  - at once when Jev is sure a message holds a fact or a record line (or would get a ✅);
  *  - 2 s after Go posts (the after-turn pass);
  *  - after a quiet spell (20 s, at most 60 s in a busy chat) for everything else;
- *  - the fold after 60 s of quiet, and a sweep every 5 minutes that finishes anything a restart dropped.
+ *  - the fold right after Go posts, and after 60 s of quiet (at most 10 minutes in a busy chat);
+ *  - a sweep every 5 minutes that finishes anything a restart dropped.
  * A sure 👍 or 🙌 from the reflex is sent with add_reaction without any model. A sure ✅ on a message Jev is also
  * sure holds a fact (Q7 and Q5) is sent inside the hook, before the notes pass, which stays the fallback.
  * The side passes run on brain.anthropic (the client buildBrain was given) with SIDE_MODEL. That client
@@ -41,6 +42,7 @@ export interface WireDeps {
 const JOIN_FIELDS = new Set(['from_city', 'earliest_leave', 'know']);
 const AFTER_POST_MS = 2_000;
 const NOTES_LONGEST_WAIT_MS = 60_000;
+const FOLD_LONGEST_WAIT_MS = 10 * 60_000;
 const ACTIVE_FOR_MS = 6 * 60 * 60_000;
 
 export function wireMemory(brain: Brain, d: WireDeps): {
@@ -86,7 +88,8 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   const runFold = (tripId: string): void => {
     fold.maybeFold(tripId).catch((err: unknown) => brain.log.warn({ tripId, err: String(err) }, 'fold failed'));
   };
-  const foldWhenQuiet = (tripId: string): void => debounce.after(`fold:${tripId}`, env.FOLD_QUIET_MS, () => runFold(tripId));
+  const foldWhenQuiet = (tripId: string): void =>
+    debounce.after(`fold:${tripId}`, env.FOLD_QUIET_MS, () => runFold(tripId), FOLD_LONGEST_WAIT_MS);
 
   async function onEvent(ev: TripEvent): Promise<void> {
     try {
@@ -116,8 +119,12 @@ export function wireMemory(brain: Brain, d: WireDeps): {
           break;
         }
         case 'message.created':
-          // Go just spoke: read the turn's new lines once the burst has landed.
-          if (ev.data.message.author.kind === 'go') debounce.after(`notes:${ev.trip_id}`, AFTER_POST_MS, () => runNotes(ev.trip_id));
+          // Go just spoke: read the turn's new lines once the burst has landed, and fold now if the chat is past its
+          // budget, so the next turn starts from the story (a busy chat may never give the quiet fold its minute).
+          if (ev.data.message.author.kind === 'go') {
+            debounce.after(`notes:${ev.trip_id}`, AFTER_POST_MS, () => runNotes(ev.trip_id));
+            runFold(ev.trip_id);
+          }
           break;
         default:
           break;
