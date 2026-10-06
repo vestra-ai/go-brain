@@ -28,6 +28,7 @@ function makeApp(adminToken: string | undefined): { app: FastifyInstance; brain:
 const summary = {
   chat: 'goa-300', mode: 'live', cacheHit: 0.91, cacheStatus: 'ok', wakeRate: 0.12, typingP90Ms: 180, replyP50Ms: 1900,
   recall: { passed: 7, probes: 7 }, wrongSpeak: 0, messages: 300, at: '2026-10-08T17:00:00Z',
+  commit: '1a2b3c4d5e', branch: 'build', model: 'claude-sonnet-5-5',
 };
 
 beforeAll(async () => {
@@ -129,6 +130,12 @@ describe('the proof board routes', () => {
     expect(page.body).toContain('From the replay bench');
     expect(page.body).toContain('goa-300');
     expect(page.body).toContain('93%');
+    expect(page.body).toContain('build at 1a2b3c4');
+    expect(page.body).not.toContain('claude-');
+    const { rows: stored } = await db.pool.query<{ summary: Record<string, unknown> }>('select summary from bench_reports');
+    expect(stored[0]?.summary).toMatchObject({ commit: '1a2b3c4d5e', branch: 'build', model: 'claude-sonnet-5-5' });
+    const { model: _model, ...noModel } = summary;
+    expect((await app.inject({ method: 'POST', url: '/stats/bench', headers: AUTH, payload: noModel })).statusCode).toBe(422);
   });
 
   it('escapes text another lane gives it', async () => {

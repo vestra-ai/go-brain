@@ -25,6 +25,10 @@ export const BenchSummary = z.object({
   wrongSpeak: z.int().nonnegative(),
   messages: z.int().nonnegative(),
   at: z.iso.datetime({ offset: true }),
+  /** The commit and branch the bench ran, and the composer model it judged (kept, never shown on the board). */
+  commit: z.string().regex(/^[0-9a-f]{7,40}$/).nullable(),
+  branch: z.string().min(1).max(100).nullable(),
+  model: z.string().min(1).max(80),
 });
 export type BenchSummary = z.infer<typeof BenchSummary>;
 

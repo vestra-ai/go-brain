@@ -19,6 +19,14 @@ function tileHtml(t: Tile, k: number): string {
     + `${t.bar === '' ? '' : `<div class="bar">${esc(t.bar)}</div>`}</section>`;
 }
 
+/** ", build at 1a2b3c4": where the bench ran. The model it judged is kept in the summary but never shown on the board. */
+function ranFrom(summary: Record<string, unknown>): string {
+  const branch = typeof summary['branch'] === 'string' ? summary['branch'] : null;
+  const commit = typeof summary['commit'] === 'string' ? summary['commit'].slice(0, 7) : null;
+  if (branch === null && commit === null) return '';
+  return `, ${[branch, commit === null ? null : `at ${commit}`].filter((x) => x !== null).join(' ')}`;
+}
+
 function benchLine(summary: Record<string, unknown>): string {
   const n = (k: string): number | null => (typeof summary[k] === 'number' && Number.isFinite(summary[k]) ? (summary[k] as number) : null);
   const recall = summary['recall'] as { passed?: unknown; probes?: unknown } | undefined;
@@ -84,7 +92,7 @@ export function renderTiles(n: BoardNumbers): string {
     + `<p class="sub">${n.empty ? "Numbers appear after Go's first turn." : `${n.turns} turns, ${n.messages} messages from people. Updated ${esc(updated)} IST.`}</p></header>`;
   const bench = n.bench.length === 0
     ? ''
-    : `<section class="bench"><h2>From the replay bench</h2><ul>${n.bench.map((b) => `<li><strong>${esc(b.chat)}</strong> ${esc(benchLine(b.summary))}<span class="when">${esc(b.mode)} run, ${esc(b.receivedAt.slice(0, 16).replace('T', ' '))} UTC</span></li>`).join('')}</ul></section>`;
+    : `<section class="bench"><h2>From the replay bench</h2><ul>${n.bench.map((b) => `<li><strong>${esc(b.chat)}</strong> ${esc(benchLine(b.summary))}<span class="when">${esc(b.mode)} run, ${esc(b.receivedAt.slice(0, 16).replace('T', ' '))} UTC${esc(ranFrom(b.summary))}</span></li>`).join('')}</ul></section>`;
   return `${header}<div class="grid">${tiles.map(tileHtml).join('')}</div>${bench}`;
 }
 

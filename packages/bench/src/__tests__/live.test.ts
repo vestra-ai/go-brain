@@ -19,6 +19,7 @@ const score = {
   leaks: [], firstToken: { p50Ms: 700, p90Ms: 1100 }, side: { requests: 12, tokens: 30_000 }, costUsd: 0.21, unreadByReflex: 0, durationMs: 600_000,
 } satisfies ChatScore;
 const run: LiveRun = { model: 'claude-sonnet-5-5', chat: 'goa-300', score, provider: { requests: 40, cacheHit: 0.92, firstTokenP50Ms: 700, firstTokenP90Ms: 1100, costUsd: 0.21 } };
+const FROM = { commit: '1a2b3c4d5e', branch: 'build' };
 
 describe('the live bench', () => {
   it('reads its arguments, with the Tuesday comparison as the default', () => {
@@ -40,9 +41,10 @@ describe('the live bench', () => {
     expect(liveEnv(base, 'claude-haiku-4-5')['ADMIN_TOKEN']).not.toBe(env['ADMIN_TOKEN']);
   });
 
-  it('sends the board a summary it accepts, with the provider\'s own cache number', () => {
-    const s = toBoardSummary(run, '2026-10-06T22:00:00Z');
+  it('sends the board a summary it accepts, with the provider\'s own cache number, and where the run came from', () => {
+    const s = toBoardSummary(run, '2026-10-06T22:00:00Z', FROM);
     expect(s).toMatchObject({ chat: 'goa-300', mode: 'live', cacheHit: 0.92, wakeRate: 0.11, replyP50Ms: 1850, recall: { passed: 7, probes: 7 }, wrongSpeak: 0, messages: 300 });
+    expect(s).toMatchObject({ commit: '1a2b3c4d5e', branch: 'build', model: run.model });
     expect(BenchSummary.safeParse(s).success).toBe(true);
     const noUsage = toBoardSummary({ ...run, provider: { ...run.provider, cacheHit: null } }, '2026-10-06T22:00:00Z');
     expect(noUsage.cacheHit).toBe(0.9);
@@ -51,10 +53,10 @@ describe('the live bench', () => {
   it('posts with the bearer token and fails loudly when the board refuses', async () => {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
     const ok = (async (url: string, init?: RequestInit) => { calls.push({ url, init }); return new Response(null, { status: 204 }); }) as unknown as typeof fetch;
-    await postSummary('https://go.example/', 'board-token-0123456789', toBoardSummary(run, '2026-10-06T22:00:00Z'), ok);
+    await postSummary('https://go.example/', 'board-token-0123456789', toBoardSummary(run, '2026-10-06T22:00:00Z', FROM), ok);
     expect(calls[0]?.url).toBe('https://go.example/stats/bench');
     expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe('Bearer board-token-0123456789');
     const refused = (async () => new Response(null, { status: 401 })) as unknown as typeof fetch;
-    await expect(postSummary('https://go.example', 'x', toBoardSummary(run, '2026-10-06T22:00:00Z'), refused)).rejects.toThrow(/HTTP 401/);
+    await expect(postSummary('https://go.example', 'x', toBoardSummary(run, '2026-10-06T22:00:00Z', FROM), refused)).rejects.toThrow(/HTTP 401/);
   });
 });
