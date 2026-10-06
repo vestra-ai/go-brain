@@ -79,11 +79,21 @@ export function lineRequestId(line: CheckedLine): string {
   return `go_line_${writeKey(line).slice(0, 24)}`;
 }
 
+/** An update that leaves a line's words, kind, status and due time as they are now: it would change nothing anyone sees. */
+async function changesNothing(pool: Pool, tripId: string, lineId: string, line: CheckedLine): Promise<boolean> {
+  const r = await pool.query<{ line: C.RecordLine }>('SELECT line FROM record_lines WHERE trip_id = $1 AND line_id = $2', [tripId, lineId]);
+  const now = r.rows[0]?.line;
+  if (!now) return false;
+  return now.text === line.text && now.kind === line.kind && now.status === (line.status ?? now.status) && (line.dueAt === undefined || line.dueAt === now.due_at);
+}
+
 /**
  * Sends the line once. `requestId` comes from the caller: ctx.stableId('go_record') inside a turn,
- * lineRequestId(line) outside one. If this line was already planned, the stored request_id wins.
+ * lineRequestId(line) outside one. If this line was already planned, the stored request_id wins. An update that
+ * would change nothing is not sent at all, so the Server writes nothing and nobody gets a record.changed for it.
  */
 export async function writeLine(pool: Pool, link: ServerLink, tripId: string, line: CheckedLine, requestId: string): Promise<WriteOutcome> {
+  if (line.lineId && (await changesNothing(pool, tripId, line.lineId, line))) return { lineId: line.lineId };
   const key = writeKey(line);
   const planned = paramsFor(tripId, line);
   await pool.query(
