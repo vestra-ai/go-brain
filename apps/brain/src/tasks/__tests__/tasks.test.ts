@@ -292,3 +292,103 @@ describe('stopping a job', () => {
     expect(await tokens.tripFor(token)).toBeNull();
   });
 });
+
+describe('a stop and /v1 naming the job, in every order', () => {
+  /**
+   * Tasks over a store that runs `naming` (what the follower does when /v1's task.started arrives: record the start,
+   * then mapStarts) at one exact point inside stop(): just before it records the stop, or just before it moves the job
+   * to stopped. No sleeps: the start is held until that call.
+   */
+  function withNamingAt(at: 'update' | 'transition') {
+    let naming: (() => Promise<void>) | null = null;
+    const hooked: TaskStore = {
+      ...store,
+      async update(id, patch) {
+        if (at === 'update' && naming && patch.stopRequestedAt) {
+          const run = naming;
+          naming = null;
+          await run();
+        }
+        return store.update(id, patch);
+      },
+      async transition(id, from, to, patch) {
+        if (at === 'transition' && naming && to === 'stopped') {
+          const run = naming;
+          naming = null;
+          await run();
+        }
+        return store.transition(id, from, to, patch);
+      },
+    };
+    const v1 = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
+    const computer = createComputer({ pool: db.pool, v1, tokens: createTokenStore(db.pool, lb.clock.now), env: { VESTRA_DEPLOYMENT_ID: 'dep_go', VESTRA_MCP_SERVER_ID: 'mcp_go' }, now: lb.clock.now, log: lb.brain.log });
+    const own = createTasks({ store: hooked, v1, computer, cards, link: lb.link, desk: lb.desk, packs: lb.brain.packs, now: lb.clock.now, log: lb.brain.log, follow: () => undefined });
+    return { own, nameAt: (run: () => Promise<void>) => { naming = run; } };
+  }
+
+  /** A job handed to /v1, which has started it; Go has not heard yet. */
+  async function startedOnV1(own: TasksService, tripId: string): Promise<{ taskId: string; cardId: string; v1TaskId: string; turnId: string }> {
+    const r = await own.start(tripId, { ...VILLAS, key: `${tripId}_job` });
+    await own.settled();
+    const row = (await store.get(r.taskId))!;
+    const t = fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
+    return { taskId: r.taskId, cardId: r.cardId, v1TaskId: t.id, turnId: row.v1TurnId! };
+  }
+
+  const stopsSent = (v1TaskId: string) => fake.callsTo('POST', new RegExp(`^/v1/tasks/${v1TaskId}/stop$`)).length;
+
+  async function expectStoppedOnce(own: TasksService, job: { taskId: string; cardId: string; v1TaskId: string }) {
+    await own.settled();
+    await cards.flush();
+    expect(stopsSent(job.v1TaskId)).toBe(1);
+    expect(fake.tasks.get(job.v1TaskId)?.stopped).toBe(true);
+    expect(await store.get(job.taskId)).toMatchObject({ state: 'stopped', v1TaskId: job.v1TaskId });
+    expect(lb.link.card(job.cardId)).toMatchObject({ state: 'failed', fallback_text: `Stopped: ${TITLE}` });
+  }
+
+  it('(a) named before the stop: the stop sends /v1 one stop', async () => {
+    const { own } = withNamingAt('update');
+    const job = await startedOnV1(own, 't_order_a');
+    await store.recordStart(job.turnId, job.v1TaskId, TITLE);
+    await own.mapStarts();
+    expect((await store.get(job.taskId))?.state).toBe('running');
+    await own.stop(job.taskId);
+    await expectStoppedOnce(own, job);
+  });
+
+  it("(b) named between the stop's first read and the moment it records the stop: still one stop on /v1", async () => {
+    const { own, nameAt } = withNamingAt('update');
+    const job = await startedOnV1(own, 't_order_b1');
+    nameAt(async () => {
+      await store.recordStart(job.turnId, job.v1TaskId, TITLE);
+      await own.mapStarts();
+    });
+    await own.stop(job.taskId);
+    await expectStoppedOnce(own, job);
+  });
+
+  it('(b) named after the stop is recorded but before the job moves to stopped: one stop on /v1, not two', async () => {
+    const { own, nameAt } = withNamingAt('transition');
+    const job = await startedOnV1(own, 't_order_b2');
+    nameAt(async () => {
+      await store.recordStart(job.turnId, job.v1TaskId, TITLE);
+      await own.mapStarts();
+    });
+    await own.stop(job.taskId);
+    await expectStoppedOnce(own, job);
+  });
+
+  it('(c) named after the stop: mapStarts sees the stop and sends /v1 one stop', async () => {
+    const { own } = withNamingAt('update');
+    const r = await own.start('t_order_c', { ...VILLAS, key: 't_order_c_job' });
+    await own.settled();
+    const row = (await store.get(r.taskId))!;
+    await own.stop(r.taskId);
+    await own.settled();
+    // /v1 starts it only now, and Go hears of it afterwards.
+    const t = fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
+    await store.recordStart(row.v1TurnId!, t.id, row.title);
+    await own.mapStarts();
+    await expectStoppedOnce(own, { taskId: r.taskId, cardId: r.cardId, v1TaskId: t.id });
+  });
+});

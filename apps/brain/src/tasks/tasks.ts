@@ -115,6 +115,12 @@ export function createTasks(d: TasksDeps): TasksService {
   const isLive = (state: TaskState): boolean => LIVE_STATES.includes(state);
   /** Jobs being handed to /v1 right now in this process: a second dispatch of one (the sweep, a retry) waits its turn out. */
   const dispatching = new Set<string>();
+  /**
+   * /v1 jobs this process has asked to stop. A stop can reach /v1 from stop(), from mapStarts (a job stopped before /v1
+   * named it) or from expire(); whichever gets there first sends it, once.
+   */
+  const stoppingOnV1 = new Set<string>();
+  const STOPPING_KEPT = 10_000;
 
   async function live(taskId: string): Promise<TaskRow> {
     const row = await d.store.get(taskId);
@@ -287,7 +293,8 @@ export function createTasks(d: TasksDeps): TasksService {
         await d.v1.call('POST', `/v1/interactions/${i.interactionId}/cancel`, { body: { reason: 'Nobody could answer in time.' } }).catch(() => undefined);
         await d.store.setInteraction(i.interactionId, 'cancelled', d.now());
       }
-      await stopOnV1(row);
+      // Read again: the row read above may predate /v1 naming the job (see stop()).
+      await stopOnV1((await d.store.get(taskId)) ?? row);
     },
 
     async message(taskId, text) {
@@ -327,12 +334,15 @@ export function createTasks(d: TasksDeps): TasksService {
       if (fresh) await service.pushCard(fresh, true);
       await d.desk.cancel(row.tripId, taskId);
       for (const i of await d.store.openInteractions(taskId)) await d.store.setInteraction(i.interactionId, 'cancelled', d.now());
+      // The row as it is after the stop: if /v1's start was mapped meanwhile, it carries the /v1 id. If the mapping comes
+      // after this read, mapStarts finds the stop asked and stops the job on /v1 itself.
+      const stopped = fresh ?? row;
       // The job is stopped in Go and its card says so. Stopping it on /v1 and starting the next waiting job run behind,
       // so a Stop tap answers inside its 3 s however slow /v1 is; settled() waits for them, and the sweep finishes a stop
       // that failed here.
       track(
         (async () => {
-          await stopOnV1(row);
+          await stopOnV1(stopped);
           await service.afterEnd(row.tripId);
         })().catch((err: unknown) => d.log.warn({ err, taskId }, 'tasks: finishing a stop on /v1 failed; the sweep tries again')),
       );
@@ -354,10 +364,21 @@ export function createTasks(d: TasksDeps): TasksService {
     },
 
     async stopV1(v1TaskId) {
+      if (stoppingOnV1.has(v1TaskId)) return;
+      stoppingOnV1.add(v1TaskId);
+      while (stoppingOnV1.size > STOPPING_KEPT) {
+        const oldest = stoppingOnV1.values().next().value;
+        if (oldest === undefined) break;
+        stoppingOnV1.delete(oldest);
+      }
       try {
         await d.v1.call('POST', `/v1/tasks/${v1TaskId}/stop`, { idempotencyKey: `go-stop-${v1TaskId}` });
       } catch (err) {
-        if (!(err instanceof V1Error && (err.status === 404 || err.status === 409))) d.log.warn({ err, v1TaskId }, 'tasks: stopping a job on /v1 failed');
+        if (!(err instanceof V1Error && (err.status === 404 || err.status === 409))) {
+          // Not stopped on /v1: a later path may send it again.
+          stoppingOnV1.delete(v1TaskId);
+          d.log.warn({ err, v1TaskId }, 'tasks: stopping a job on /v1 failed');
+        }
       }
     },
 
