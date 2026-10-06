@@ -68,6 +68,8 @@ export interface TaskStore {
   activeIds(tripId: string): Promise<string[]>;
   hasActiveIn(conversationId: string): Promise<boolean>;
   oldestQueued(tripId: string): Promise<TaskRow | null>;
+  /** Jobs Go stopped since `since` that reached /v1 but were never named by it, so /v1 may still be running them. */
+  unnamedStops(since: Date): Promise<TaskRow[]>;
   update(id: string, patch: TaskPatch): Promise<void>;
   transition(id: string, from: TaskState[], to: TaskState, patch?: TaskPatch): Promise<boolean>;
   setTurn(id: string, conversationId: string, turnId: string): Promise<void>;
@@ -156,6 +158,8 @@ export function createTaskStore(pool: pg.Pool): TaskStore {
       return rows.length > 0;
     },
     oldestQueued: (tripId) => one("select * from tasks where trip_id = $1 and state = 'queued' order by created_at limit 1", [tripId]),
+    unnamedStops: (since) =>
+      many('select * from tasks where stop_requested_at > $1 and v1_turn_id is not null and v1_task_id is null order by created_at', [since]),
     async update(id, patch) {
       const { sql, values } = setClause(patch, 1);
       if (!sql) return;

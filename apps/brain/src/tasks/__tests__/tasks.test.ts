@@ -183,4 +183,15 @@ describe('stopping a job', () => {
     expect(fake.tasks.get(v1Id)?.stopped).toBe(true);
     expect((await store.get(early.taskId))?.state).toBe('stopped');
   });
+
+  it("looks the job up on /v1 when the stop lands after /v1 started it but before Go heard, and stops it there", async () => {
+    const r = await tasks.start('t_s2', { ...VILLAS, key: 'stop3' });
+    await tasks.settled();
+    const row = (await store.get(r.taskId))!;
+    // /v1 has started the job, but its task.started has not reached Go.
+    const t = fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
+    await tasks.stop(r.taskId);
+    expect(fake.tasks.get(t.id)?.stopped).toBe(true);
+    expect(await store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
+  });
 });

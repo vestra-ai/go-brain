@@ -23,6 +23,8 @@ export const ASK_TTL_MS = 10 * 60_000;
 const DISPATCH_GRACE_MS = 30_000;
 /** A job /v1 has not named after this long is looked up in /v1's events. */
 const START_GRACE_MS = 60_000;
+/** How far back the sweep looks for jobs Go stopped before /v1 named them. */
+const UNNAMED_STOP_MS = 60 * 60_000;
 const EVENTS_PAGE = 100;
 const EVENT_PAGES = 5;
 
@@ -47,8 +49,6 @@ export interface Sweep {
   /** Clears the timer and waits for a sweep in flight, so nothing reads the pool after Go stops. */
   stop(): Promise<void>;
 }
-
-const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 
 export function createSweep(d: SweepDeps): Sweep {
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -99,19 +99,6 @@ export function createSweep(d: SweepDeps): Sweep {
       if (got.data.length < EVENTS_PAGE) break;
     }
     return applied;
-  }
-
-  /** task.started for this trip's user since the job was made, from /v1's events. */
-  async function findStart(row: TaskRow): Promise<void> {
-    const found = await d.v1.call<{ data: PlatformEvent[] }>('GET', '/v1/events', {
-      query: { type: 'task.started', user_id: d.computer.userIdFor(row.tripId), created_after: new Date(row.createdAt.getTime() - 10_000).toISOString(), limit: 50 },
-    });
-    for (const e of found.data) {
-      const turnId = str(e.data?.turn_id);
-      const v1TaskId = str(e.data?.task_id) ?? str(e.task_id);
-      if (turnId && v1TaskId) await d.store.recordStart(turnId, v1TaskId, str(e.data?.title));
-    }
-    await d.tasks.mapStarts();
   }
 
   /** The job's status and to-do list, as /v1 has them. */
@@ -189,7 +176,7 @@ export function createSweep(d: SweepDeps): Sweep {
           row = await d.store.get(row.id);
         }
         if (row?.v1TurnId && !row.v1TaskId && nowMs - row.createdAt.getTime() > START_GRACE_MS) {
-          await findStart(row);
+          await d.tasks.findStart(row);
           row = await d.store.get(row.id);
         }
         if (row?.v1TaskId && (row.state === 'running' || row.state === 'needs_you')) {
@@ -205,6 +192,14 @@ export function createSweep(d: SweepDeps): Sweep {
         if (row?.conversationId && ACTIVE_STATES.includes(row.state)) conversations.set(row.conversationId, row.tripId);
       } catch (err) {
         d.log.warn({ err, taskId: seen.id }, 'tasks: the sweep could not check a job');
+      }
+    }
+    // Jobs stopped before Go heard /v1 name them: once their start is found, mapStarts stops them on /v1 too.
+    for (const row of await d.store.unnamedStops(new Date(nowMs - UNNAMED_STOP_MS))) {
+      try {
+        await d.tasks.findStart(row);
+      } catch (err) {
+        d.log.warn({ err, taskId: row.id }, "tasks: the sweep could not look up a stopped job's start");
       }
     }
     for (const [conversationId, tripId] of conversations) {

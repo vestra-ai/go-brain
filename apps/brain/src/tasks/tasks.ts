@@ -15,9 +15,11 @@ import type { Computer } from './computer.js';
 import type { ReturnsKind } from './returns.js';
 import { LIVE_STATES, type NewTask, type TaskRow, type TaskState, type TaskStore } from './store.js';
 import { V1Error, type V1Client } from './v1-client.js';
+import type { PlatformEvent } from './webhooks.js';
 import { buildWorkingCard, plannedSteps, type WorkingCardT } from './working-card.js';
 
 export const MAX_ACTIVE_PER_TRIP = 3;
+const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 export const DEFAULT_DEADLINE_MS = 8 * 60_000;
 /** While a job waits on a person, its deadline moves past the 10 minutes a question or hand-off may wait. */
 export const WAITING_GRACE_MS = 11 * 60_000;
@@ -95,6 +97,8 @@ export interface TasksService extends Tasks {
   cardFor(row: TaskRow): Promise<WorkingCardT>;
   pushCard(row: TaskRow, urgent: boolean): Promise<void>;
   stopV1(v1TaskId: string): Promise<void>;
+  /** Names a job /v1 started without Go hearing it, from /v1's task.started events for the trip's user since the job was made. */
+  findStart(row: TaskRow): Promise<void>;
   /** Waits for every hand-off running in the background. */
   settled(): Promise<void>;
 }
@@ -113,6 +117,13 @@ export function createTasks(d: TasksDeps): TasksService {
     if (!row) throw new TaskError('unknown_task', `There is no job ${taskId}.`);
     if (!isLive(row.state)) throw new TaskError('not_live', `That job has ended (${row.state}).`);
     return row;
+  }
+
+  /** Stops a job on /v1: by its task id, or, when Go never heard /v1 name it, by looking its start up (mapStarts then stops it). */
+  async function stopOnV1(row: TaskRow): Promise<void> {
+    if (row.v1TaskId) return service.stopV1(row.v1TaskId);
+    if (!row.v1TurnId) return;
+    await service.findStart(row).catch((err: unknown) => d.log.warn({ err, taskId: row.id }, "tasks: looking up a stopped job's start failed; the sweep tries again"));
   }
 
   async function backToWork(row: TaskRow): Promise<void> {
@@ -250,7 +261,7 @@ export function createTasks(d: TasksDeps): TasksService {
         await d.v1.call('POST', `/v1/interactions/${i.interactionId}/cancel`, { body: { reason: 'Nobody could answer in time.' } }).catch(() => undefined);
         await d.store.setInteraction(i.interactionId, 'cancelled', d.now());
       }
-      if (row.v1TaskId) await service.stopV1(row.v1TaskId);
+      await stopOnV1(row);
     },
 
     async message(taskId, text) {
@@ -290,7 +301,7 @@ export function createTasks(d: TasksDeps): TasksService {
       if (fresh) await service.pushCard(fresh, true);
       await d.desk.cancel(row.tripId, taskId);
       for (const i of await d.store.openInteractions(taskId)) await d.store.setInteraction(i.interactionId, 'cancelled', d.now());
-      if (row.v1TaskId) await service.stopV1(row.v1TaskId);
+      await stopOnV1(row);
       await service.afterEnd(row.tripId);
     },
 
@@ -313,6 +324,19 @@ export function createTasks(d: TasksDeps): TasksService {
       } catch (err) {
         if (!(err instanceof V1Error && (err.status === 404 || err.status === 409))) d.log.warn({ err, v1TaskId }, 'tasks: stopping a job on /v1 failed');
       }
+    },
+
+    async findStart(row) {
+      if (!row.v1TurnId || row.v1TaskId) return;
+      const found = await d.v1.call<{ data: PlatformEvent[] }>('GET', '/v1/events', {
+        query: { type: 'task.started', user_id: d.computer.userIdFor(row.tripId), created_after: new Date(row.createdAt.getTime() - 10_000).toISOString(), limit: 50 },
+      });
+      for (const e of found.data) {
+        const turnId = str(e.data?.turn_id);
+        const v1TaskId = str(e.data?.task_id) ?? str(e.task_id);
+        if (turnId && v1TaskId) await d.store.recordStart(turnId, v1TaskId, str(e.data?.title));
+      }
+      await service.mapStarts();
     },
 
     async settled() {

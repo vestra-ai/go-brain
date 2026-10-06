@@ -102,4 +102,18 @@ describe('the sweep', () => {
     expect((await h.store.get(ids[3]!))?.state).toBe('starting');
     expect(h.fake.callsTo('POST', /\/messages$/).some((c) => c.headers['idempotency-key'] === `go-msg-${ids[3]}`)).toBe(true);
   });
+
+  it('stops on /v1 a job Go stopped before /v1 named it, when no event about its start ever reached Go', async () => {
+    const r = await h.tasks.start('t_sw8', { ...VILLA_BRIEF, key: 'sw8' });
+    await h.tasks.settled();
+    await h.tasks.stop(r.taskId);
+    const row = (await h.store.get(r.taskId))!;
+    // /v1 starts it only now, and Go hears nothing: no stream, and the events poll is already past it.
+    const t = h.fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
+    await h.eventStore.setCursor('events', h.fake.platformEvents.at(-1)!.id);
+    expect(h.fake.tasks.get(t.id)?.stopped).toBe(false);
+    await sweep.runOnce();
+    expect(h.fake.tasks.get(t.id)?.stopped).toBe(true);
+    expect(await h.store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
+  });
 });
