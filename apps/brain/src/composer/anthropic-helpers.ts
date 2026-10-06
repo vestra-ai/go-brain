@@ -75,6 +75,17 @@ export function computeAnthropicCostUsd(u: AnthropicUsage, model: string): numbe
   );
 }
 
+/**
+ * An upper bound on what one request may cost, before it is sent, for the daily budget's hold: every input token at
+ * the 1-hour cache-write price (2x input, the dearest way input is billed) and the full max_tokens of output. Input
+ * tokens are counted as characters / 4 over the request as it goes out.
+ */
+export function estimateCostUsd(model: string, request: unknown, maxOutputTokens: number): number {
+  const r = rateFor(model);
+  const inputTokens = Math.ceil(JSON.stringify(request).length / 4);
+  return (inputTokens * r.in * ONE_HOUR_WRITE_INPUT_MULTIPLE + maxOutputTokens * r.out) / M;
+}
+
 /** What the composer needs to know about a model: its canonical id and its longest answer. */
 export interface ModelCapabilities {
   id: string;

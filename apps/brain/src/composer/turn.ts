@@ -129,6 +129,9 @@ export function createComposer(d: ComposerDeps): Composer {
       let r = await runLoop({ ...base, messages: [{ role: 'user', content: prompt.user }] });
       addUsage(usage, r.usage);
       rounds += r.rounds;
+      // The first round's hold did not fit today's budget (calls running at the same moment took the rest): no model
+      // call was made, so someone who asked Go hears the day's limit, once per trip.
+      if (r.stopReason === 'over_budget' && r.rounds === 0 && forGo) await limitLine(t);
       let newest = prompt.newestSeq;
 
       // Just before posting: messages that arrived meanwhile join this turn (one more round), instead of a stale answer.
@@ -195,19 +198,23 @@ export function createComposer(d: ComposerDeps): Composer {
    */
   async function overBudget(t: TurnInput, forGo: boolean): Promise<void> {
     try {
-      if (!forGo) return;
-      const day = utcDay(d.now());
-      await d.speak.post({
-        link: scopedLink(d.link, t.turnId),
-        tripId: t.tripId,
-        turnId: t.turnId,
-        requestId: () => limitRequestId(t.tripId, day),
-        text: OVER_BUDGET,
-        cards: [],
-      });
+      if (forGo) await limitLine(t);
     } finally {
       if (forGo) d.speak.typingOff(t.tripId);
     }
+  }
+
+  /** The one "today's limit" line in a trip on a UTC day. */
+  async function limitLine(t: TurnInput): Promise<void> {
+    const day = utcDay(d.now());
+    await d.speak.post({
+      link: scopedLink(d.link, t.turnId),
+      tripId: t.tripId,
+      turnId: t.turnId,
+      requestId: () => limitRequestId(t.tripId, day),
+      text: OVER_BUDGET,
+      cards: [],
+    });
   }
 
   /** After the last failed attempt: one calm line, only if someone asked Go something and nothing went out yet. */

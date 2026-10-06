@@ -1,8 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import type { Budget } from '../budget.js';
+import type { Budget, Reservation } from '../budget.js';
 import type { AnthropicLike } from './anthropic.js';
-import { computeAnthropicCostUsd, normalizeAnthropicUsage, resolveCapabilities, type AnthropicUsage } from './anthropic-helpers.js';
+import { computeAnthropicCostUsd, estimateCostUsd, normalizeAnthropicUsage, resolveCapabilities, type AnthropicUsage } from './anthropic-helpers.js';
 import type { TextBlock } from './context.js';
 import { STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
 
@@ -40,8 +40,8 @@ export interface LoopInput {
   continuing?: boolean;
   onFirstToken?: () => void;
   toolTimeoutMs?: number;
-  /** The daily model budget: checked before each round, and given each round's cost. */
-  budget?: Pick<Budget, 'allows' | 'spend'>;
+  /** The daily model budget: each round holds its estimate first, and settles to what it really cost. */
+  budget?: Pick<Budget, 'reserve'>;
 }
 
 export interface LoopResult {
@@ -167,6 +167,19 @@ async function runTool(tool: QuickTool<any> | undefined, call: Anthropic.ToolUse
 }
 
 /**
+ * One model call under a budget hold, settled to what Anthropic billed whether it finished or not: the final usage,
+ * else what message_start and message_delta said before the stream stopped, else (nothing arrived) the hold itself.
+ */
+async function underHold<T>(hold: Reservation | null, model: string, call: (billed: { usage: Anthropic.Usage | null }) => Promise<T>): Promise<T> {
+  const billed: { usage: Anthropic.Usage | null } = { usage: null };
+  try {
+    return await call(billed);
+  } finally {
+    await hold?.settle(billed.usage ? usageOf(billed.usage, model).costUsd : null);
+  }
+}
+
+/**
  * One composer turn's model rounds: a direct Messages tool loop. At most 4 rounds; the tools of a round
  * run together; stay_silent ends the turn with no extra call; every round's usage is summed.
  */
@@ -182,10 +195,6 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   let firstToken = false;
   let latestText = '';
   for (let round = 1; round <= maxRounds; round++) {
-    // Over today's model budget: no more model calls; the turn keeps what it has.
-    if (i.budget && !i.budget.allows()) {
-      return { text: latestText, silent: i.ctx.outcome.silent, rounds: round - 1, usage, messages, stopReason: 'over_budget' };
-    }
     let outgoing = round > 1 || i.continuing ? withRollingMarker(messages) : messages;
     if (countMarkers(i.system, tools, outgoing) > 4) outgoing = messages;
     const body = {
@@ -197,18 +206,28 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
       messages: outgoing,
       ...(thinking ? { thinking } : {}),
     };
-    // 'between_tools' is not in the SDK's types yet, so the body is cast.
-    const stream = i.client.messages.stream(body as unknown as Anthropic.MessageStreamParams, { signal: i.signal });
-    for await (const ev of stream) {
-      if (!firstToken && ev.type === 'content_block_delta') {
-        firstToken = true;
-        i.onFirstToken?.();
-      }
+    // The budget holds this round's upper-bound cost before the call; over today's cap there is no call, and the
+    // turn keeps what it has.
+    const hold = i.budget ? i.budget.reserve({ purpose: 'composer', model: i.model, usd: estimateCostUsd(i.model, body, body.max_tokens) }) : null;
+    if (i.budget && !hold) {
+      return { text: latestText, silent: i.ctx.outcome.silent, rounds: round - 1, usage, messages, stopReason: 'over_budget' };
     }
-    const reply = await stream.finalMessage();
-    const spent = usageOf(reply.usage, i.model);
-    addUsage(usage, spent);
-    await i.budget?.spend({ purpose: 'composer', model: i.model, usd: spent.costUsd });
+    const reply = await underHold(hold, i.model, async (billed) => {
+      // 'between_tools' is not in the SDK's types yet, so the body is cast.
+      const stream = i.client.messages.stream(body as unknown as Anthropic.MessageStreamParams, { signal: i.signal });
+      for await (const ev of stream) {
+        if (ev.type === 'message_start') billed.usage = ev.message.usage;
+        else if (ev.type === 'message_delta' && billed.usage) billed.usage = { ...billed.usage, output_tokens: ev.usage.output_tokens };
+        if (!firstToken && ev.type === 'content_block_delta') {
+          firstToken = true;
+          i.onFirstToken?.();
+        }
+      }
+      const final = await stream.finalMessage();
+      billed.usage = final.usage;
+      return final;
+    });
+    addUsage(usage, usageOf(reply.usage, i.model));
     const text = reply.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

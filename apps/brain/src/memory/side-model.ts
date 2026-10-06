@@ -5,7 +5,7 @@
  * use a scripted SideModel (test-kit.ts scriptedSide); the wiring tests use a scripted client (scriptedClient).
  */
 import { OverBudget, type Budget } from '../budget.js';
-import { computeAnthropicCostUsd } from '../composer/anthropic-helpers.js';
+import { computeAnthropicCostUsd, estimateCostUsd } from '../composer/anthropic-helpers.js';
 import type { Log } from '../log.js';
 
 export interface SideRequest {
@@ -45,39 +45,47 @@ export interface SideClient {
   };
 }
 
-/** With a budget: over today's cap the call is not made (OverBudget, which the passes treat as a skip), and each call's cost is kept. */
-export function anthropicSideModel(client: SideClient, model: string, log: Log, budget?: Pick<Budget, 'allows' | 'spend'>): SideModel {
+/**
+ * With a budget: each call holds its upper-bound cost first, and over today's cap it is not made (OverBudget, which the
+ * passes treat as a skip). The hold settles to the call's real cost, or stays as spent when the call failed with no usage.
+ */
+export function anthropicSideModel(client: SideClient, model: string, log: Log, budget?: Pick<Budget, 'reserve'>): SideModel {
   return {
     async complete(req) {
-      if (budget && !budget.allows()) throw new OverBudget();
-      const started = Date.now();
-      const res = await client.messages.create(
-        {
-          model,
-          max_tokens: req.maxTokens,
-          // The rules are the same every call, so they are cached.
-          system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
-          messages: [{ role: 'user', content: req.user }],
-        },
-        req.signal ? { signal: req.signal } : {},
-      );
-      log.info(
-        { purpose: req.purpose, model, inputTok: res.usage?.input_tokens ?? 0, outputTok: res.usage?.output_tokens ?? 0, ms: Date.now() - started },
-        'side model',
-      );
-      const u = res.usage;
-      const usd = computeAnthropicCostUsd(
-        {
-          input_tokens: u?.input_tokens ?? 0,
-          output_tokens: u?.output_tokens ?? 0,
-          cache_read_input_tokens: u?.cache_read_input_tokens ?? 0,
-          cache_creation_input_tokens: u?.cache_creation_input_tokens ?? 0,
-          ...(u?.cache_creation ? { cache_creation: u.cache_creation } : {}),
-        },
+      const body: SideBody = {
         model,
-      );
-      await budget?.spend({ purpose: req.purpose, model, usd });
-      return res.content.map((b) => (b.type === 'text' && typeof b.text === 'string' ? b.text : '')).join('');
+        max_tokens: req.maxTokens,
+        // The rules are the same every call, so they are cached.
+        system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: req.user }],
+      };
+      const hold = budget ? budget.reserve({ purpose: req.purpose, model, usd: estimateCostUsd(model, body, req.maxTokens) }) : null;
+      if (budget && !hold) throw new OverBudget();
+      let billed: number | null = null;
+      try {
+        const started = Date.now();
+        const res = await client.messages.create(body, req.signal ? { signal: req.signal } : {});
+        log.info(
+          { purpose: req.purpose, model, inputTok: res.usage?.input_tokens ?? 0, outputTok: res.usage?.output_tokens ?? 0, ms: Date.now() - started },
+          'side model',
+        );
+        const u = res.usage;
+        if (u) {
+          billed = computeAnthropicCostUsd(
+            {
+              input_tokens: u.input_tokens ?? 0,
+              output_tokens: u.output_tokens ?? 0,
+              cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
+              cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0,
+              ...(u.cache_creation ? { cache_creation: u.cache_creation } : {}),
+            },
+            model,
+          );
+        }
+        return res.content.map((b) => (b.type === 'text' && typeof b.text === 'string' ? b.text : '')).join('');
+      } finally {
+        await hold?.settle(billed);
+      }
     },
   };
 }
