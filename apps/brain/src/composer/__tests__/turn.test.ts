@@ -14,7 +14,7 @@ import { roomTools } from '../room-tools.js';
 import { createSpeak } from '../speak.js';
 import { createTools } from '../tools.js';
 import { createComposer, OVER_BUDGET, TROUBLE } from '../turn.js';
-import { renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
+import { ASK_HOW_MUCH, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -474,5 +474,21 @@ describe('no ✅ on a line Go asked about', () => {
     expect(r.posts()[0]?.params.text).toBe('Noted. Want me to look for some?');
     expect(on(r, 'add_reaction', 'm_3')).toHaveLength(1);
     expect(on(r, 'remove_reaction', 'm_3')).toEqual([]);
+  });
+});
+
+describe('a line that says someone paid but not how much', () => {
+  it('gets one short question from Go, and nothing is recorded', async () => {
+    const snacks = msg(3, 'p_priya', 'paid something for the snacks');
+    // The model follows the hint when its wake line carries it, and stays silent otherwise.
+    const hinted = (body: any): boolean => String(body.messages[0].content.at(-2)?.text ?? '').includes(ASK_HOW_MUCH);
+    const r = room({
+      messages: [snacks],
+      script: (body) => (hinted(body) ? { text: 'How much was it, and who was it for?' } : { tools: [{ name: 'stay_silent', input: { reason: 'nothing to add' } }] }),
+    });
+    await turn(r, [item(r.tripId, snacks, false)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts().map((p) => p.params.text)).toEqual(['How much was it, and who was it for?']);
+    expect(r.calls.filter((c) => c.method === 'add_expense' || c.method === 'add_reaction')).toEqual([]);
   });
 });
