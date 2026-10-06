@@ -269,6 +269,29 @@ What still misses, plainly:
 
 With `claude-haiku-4-5`: reply p50 6.52 s and p90 8.74 s, 5 of 6 asks answered (it missed "for 5 people with luggage", the end of a multi-line ask), no post nobody asked for, recall 5 of 5, cost $0.1466. Its wake rate (60%) counts its side passes, as explained above.
 
+### Diagnostic run: where reply time goes
+
+`bench-live-2026-10-06-diagnostic.json` (and its summary, `bench-live-2026-10-06-diagnostic.md`) is a fourth live run on `goa-50`, unedited. It is a diagnostic, not a new final: it ran to answer one question the final run could not, which is where each ask's reply time goes. The live report now keeps each ask's own times, from the moment its last line reached the simulator: when Go's desk had it due (whether it waited for more lines), the turn's start, each model call (start, first word, end) with the tools it asked for, and Go's post. Go's desk and turns come from Go's own tables.
+
+- **Run:** bench-live run [37461290957](https://github.com/vestra-ai/go-brain/actions/runs/37461290957), job `live`, artifact `live-bench`, written at 2026-10-06 12:14 UTC; both models on `goa-50`, $0.42.
+- **Code:** `build` at commit `4723dcc` (the final run's code plus #82, a single question for someone who paid without saying how much), with pull request #83 merged on top (GitHub's test commit `8011b28`). The pull request adds only the bench's timings, so the Go measured is `build`'s.
+- **Verdict:** 4 of 14 checks pass. With `claude-sonnet-5-5`: reply p50 2.94 s and p90 8.69 s, first word p50 1.28 s, provider cache 84.9%, woke the model 36%, 2 posts nobody asked for, recall 5 of 5, every ask answered, $0.2703.
+
+Where each of `claude-sonnet-5-5`'s six asks spent its time (from the "Where reply time goes" table of the run's summary):
+
+| Ask (line) | Waited for more lines | Before the turn | Model calls | In model calls | Between calls (tools) | Reply |
+|---|---|---|---|---|---|---|
+| 9 ("@Go flights Delhi to Goa Friday evening? Arjun can't leave before 6") | yes | 2.14 s | 3: search_flights, show_options, the line | 5.55 s | 24 ms | 7.73 s |
+| 24 ("Go, find us a villa with a pool … Check the reviews too") | yes | 2.13 s | 3: search_stays, show_options, the line | 6.54 s | 12 ms | 8.69 s |
+| 33 (the end of a five-line ask) | yes | 2.12 s | 1 | 5.62 s | 0 | 7.75 s |
+| 37 ("@Go is it going to rain in Goa in early November?") | no | 0.10 s | 1 | 2.05 s | 0 | 2.16 s |
+| 46 ("Go bhai abhi book kar de villa, … 😂") | no | 0.13 s | 1 | 1.92 s | 0 | 2.06 s |
+| 52 ("@Go what can't Meher eat, and when can Arjun leave on Friday?") | no | 0.11 s | 1 | 2.82 s | 0 | 2.94 s |
+
+Across the six: 31.3 seconds in all, of which 24.5 (78%) inside model calls, 6.7 (21%) before the turn (almost all of it the 2-second wait on the three asks without an end mark), 36 ms between calls, where the tools ran (they answer from the test inventory), and 25 ms from the last call to the post. Each model call took 1.5 to 2.8 seconds (one took 5.6, the single call on the five-line ask), much of it before its first word: a search ask makes three calls in a row (the search, the options card, the line), an ask answered from what Go knows makes one.
+
+With `claude-haiku-4-5` the run answered 4 of the 6 asks, posted 5 times unasked, and several of its asks show 4 to 11 seconds between its last model call and the post, which this run does not trace further.
+
 ## Running it yourself
 
 With a Postgres database to use, from the repo root:
