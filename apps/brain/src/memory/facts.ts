@@ -66,19 +66,71 @@ export function normTopic(t: string): string {
 
 const sameText = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-export async function saveFact(pool: Pool, f: NewFact): Promise<{ factId: string; changed: boolean }> {
+/**
+ * One person's writes and their forget take turns: saveFact and forget_person both take this lock inside their
+ * transaction, so a save that started before a forget either lands before it (and the forget removes it) or
+ * sees the forget and refuses.
+ */
+export async function lockPerson(db: Db, personId: string): Promise<void> {
+  await db.query(`SELECT pg_advisory_xact_lock(hashtext('person:' || $1))`, [personId]);
+}
+
+interface ChainRow {
+  fact_id: string;
+  text: string;
+  said_at: Date;
+  superseded_by: string | null;
+}
+
+/** One topic's chain, oldest first, ending at the current fact. */
+function chainOf(rows: ChainRow[], current: ChainRow): ChainRow[] {
+  const before = new Map<string, ChainRow>(rows.flatMap((r): Array<[string, ChainRow]> => (r.superseded_by ? [[r.superseded_by, r]] : [])));
+  const chain = [current];
+  for (let r = before.get(current.fact_id); r && chain.length <= rows.length; r = before.get(r.fact_id)) chain.unshift(r);
+  return chain;
+}
+
+export type SaveResult = { factId: string; changed: boolean } | { factId: null; changed: false; refused: 'forgotten' };
+
+export async function saveFact(pool: Pool, f: NewFact): Promise<SaveResult> {
   const topic = normTopic(f.topic);
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await withTx(pool, async (c) => {
-        const cur = await c.query<{ fact_id: string; text: string }>(
-          `SELECT fact_id, text FROM facts
-            WHERE person_id = $1 AND trip_id = $2 AND topic = $3 AND superseded_by IS NULL FOR UPDATE`,
+      return await withTx(pool, async (c): Promise<SaveResult> => {
+        await lockPerson(c, f.personId);
+        if (f.messageId !== null) {
+          // A forget for this trip covers every message up to its change number. A proof the messages table does not
+          // know cannot be placed after the forget, so it is refused too.
+          const gone = await c.query<{ up_to_seq: number; seq: number | null }>(
+            `SELECT g.up_to_seq, m.seq FROM forgotten g
+               LEFT JOIN messages m ON m.trip_id = g.trip_id AND m.message_id = $3
+              WHERE g.person_id = $1 AND g.trip_id = $2`,
+            [f.personId, f.tripId, f.messageId],
+          );
+          const g = gone.rows[0];
+          if (g && (g.seq === null || g.up_to_seq >= g.seq)) return { factId: null, changed: false, refused: 'forgotten' };
+        }
+        const rows = await c.query<ChainRow>(
+          `SELECT fact_id, text, said_at, superseded_by FROM facts
+            WHERE person_id = $1 AND trip_id = $2 AND topic = $3 FOR UPDATE`,
           [f.personId, f.tripId, topic],
         );
-        const old = cur.rows[0];
+        const old = rows.rows.find((r) => r.superseded_by === null);
         if (old && sameText(old.text, f.text)) return { factId: old.fact_id, changed: false };
         const factId = newFactId();
+        if (old && old.said_at.getTime() > f.saidAt.getTime()) {
+          // Said before the current fact (a late notes pass, a re-read): it joins the history at its place in time,
+          // and the newer fact stays current.
+          const chain = chainOf(rows.rows, old);
+          const at = chain.findIndex((r) => r.said_at.getTime() > f.saidAt.getTime());
+          const next = chain[at]!;
+          const prev = at > 0 ? chain[at - 1] : undefined;
+          await c.query(`INSERT INTO facts (${COLS}, superseded_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [
+            factId, f.personId, f.tripId, topic, f.text, f.messageId, f.saidAt, f.audience, f.source, next.fact_id,
+          ]);
+          if (prev) await c.query('UPDATE facts SET superseded_by = $1 WHERE fact_id = $2', [factId, prev.fact_id]);
+          return { factId, changed: false };
+        }
         if (old) await c.query('UPDATE facts SET superseded_by = $1 WHERE fact_id = $2', [factId, old.fact_id]);
         await c.query(`INSERT INTO facts (${COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [
           factId, f.personId, f.tripId, topic, f.text, f.messageId, f.saidAt, f.audience, f.source,

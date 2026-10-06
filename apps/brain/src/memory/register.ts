@@ -130,13 +130,12 @@ export function wireMemory(brain: Brain, d: WireDeps): {
     lastHeard.set(tripId, d.clock());
     const sureFact = read.fact.sure && read.fact.value === true;
     if (sureFact && read.reaction.sure && read.reaction.value === '✅') {
-      // The instant ✅ (Q5 and Q7 both sure): sent here, before the notes pass starts. Its request id comes from the
-      // trip, message and emoji, so the notes pass's own ✅ for this message finds it done (a 409 also counts as done).
-      try {
-        await reactOnce(brain.pool, brain.door.link, tripId, msg, '✅');
-      } catch (err) {
-        brain.log.warn({ tripId, err: String(err) }, 'instant ✅ failed; the notes pass will react');
-      }
+      // The instant ✅ (Q5 and Q7 both sure): started here, before the notes pass, and never awaited, so the trip's
+      // queue moves on at once. Its request id comes from the trip, message and emoji, so the notes pass's own ✅ for
+      // this message joins it or finds it done (a 409 also counts as done).
+      reactOnce(brain.pool, brain.door.link, tripId, msg, '✅').catch((err: unknown) =>
+        brain.log.warn({ tripId, err: String(err) }, 'instant ✅ failed; the notes pass will react'),
+      );
     } else if (read.reaction.sure && (read.reaction.value === '👍' || read.reaction.value === '🙌')) {
       reactOnce(brain.pool, brain.door.link, tripId, msg, read.reaction.value).catch((err: unknown) =>
         brain.log.warn({ tripId, err: String(err) }, 'quiet reaction failed'),
@@ -158,6 +157,17 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   /** Level-triggered: whatever a restart or a lost timer left, the next sweep finishes. Both passes are no-ops when there is nothing to do. */
   async function sweep(): Promise<void> {
     const now = d.clock();
+    // After a restart the map starts empty: the database says which trips were active lately, or still have
+    // people's words the notes pass has not read.
+    const waiting = await brain.pool.query<{ trip_id: string }>(
+      `SELECT t.trip_id FROM trips t
+         LEFT JOIN notes_cursor n ON n.trip_id = t.trip_id
+        WHERE t.active_at > $1
+           OR EXISTS (SELECT 1 FROM messages m
+                       WHERE m.trip_id = t.trip_id AND m.person_id IS NOT NULL AND m.text IS NOT NULL AND m.seq > coalesce(n.seq, 0))`,
+      [new Date(now - ACTIVE_FOR_MS)],
+    );
+    for (const { trip_id } of waiting.rows) if (!lastHeard.has(trip_id)) lastHeard.set(trip_id, now - env.FOLD_QUIET_MS);
     for (const [tripId, at] of lastHeard) {
       if (now - at > ACTIVE_FOR_MS) {
         lastHeard.delete(tripId);
