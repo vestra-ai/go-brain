@@ -1,8 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { computeAnthropicCostUsd, resolveCapabilities, type AnthropicUsage } from '@vestra/agent-sdk';
-import { normalizeAnthropicUsage } from '@vestra/agent-sdk/engine';
 import { z } from 'zod';
 import type { AnthropicLike } from './anthropic.js';
+import { computeAnthropicCostUsd, normalizeAnthropicUsage, resolveCapabilities, type AnthropicUsage } from './anthropic-helpers.js';
 import type { TextBlock } from './context.js';
 import { STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
 
