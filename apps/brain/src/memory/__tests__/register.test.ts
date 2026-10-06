@@ -138,6 +138,18 @@ describe('wireMemory', () => {
     expect((await recordLines(db.pool, 't_r3')).map((l) => l.line_id)).toEqual(['r_north']);
   });
 
+  it('a cleared join answer takes its history with it: no older answer comes back', async () => {
+    const w = setup('t_r14', [], []);
+    const priya = (know: string[]) => ({ ...goaPeople()[1]!, know });
+    await w.wired.onEvent(ev('t_r14', 1, 'trip.created', { trip: goaTrip({ trip_id: 't_r14', people: [priya(['Vegetarian'])] }) }));
+    await w.wired.onEvent(ev('t_r14', 2, 'person.updated', { person: priya(['Vegan']), changed: ['know'] }));
+    expect((await currentFacts(db.pool, { personId: 'p_priya', tripId: 't_r14' })).filter((f) => f.topic === 'food').map((f) => f.text)).toEqual(['Vegan']);
+    await w.wired.onEvent(ev('t_r14', 3, 'person.updated', { person: priya([]), changed: ['know'] }));
+    expect((await currentFacts(db.pool, { personId: 'p_priya', tripId: 't_r14' })).map((f) => f.topic)).toEqual(['from']);
+    const left = await db.pool.query(`SELECT text FROM facts WHERE person_id = 'p_priya' AND trip_id = 't_r14' AND topic = 'food'`);
+    expect(left.rows).toEqual([]);
+  });
+
   it('drops what a deleted message taught', async () => {
     const w = setup('t_r4', [], []);
     await saveFact(db.pool, {
