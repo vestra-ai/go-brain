@@ -5,6 +5,7 @@ import type { Brain } from '../../app.js';
 import type { NowProvider } from '../../composer/context.js';
 import type { QuickTool } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
+import type { ToGoHandler } from '../../door/handlers.js';
 import type { Message, TripEvent } from '../../door/methods.js';
 import { silentLog } from '../../log.js';
 import { fakePacks, goaPeople, goaTrip, msg, packOf } from '../../reflex/goa.fixture.js';
@@ -286,5 +287,15 @@ describe('registerMemory', () => {
     await w.stops[0]!();
     expect(cleared).toHaveBeenCalled();
     cleared.mockRestore();
+  });
+});
+
+describe('catch_up once Task 13 lands', () => {
+  it('answers what the person missed, not the empty answer Task 12 left in its place', async () => {
+    const mention = msg(171, 'p_priya', 'Meher are you okay with a 6 am start?', { mentions: ['p_meher'] });
+    const w = setup('t_r20', [mention], []);
+    const catchUp = w.handlers.get('catch_up') as ToGoHandler<'catch_up'>;
+    const res = await catchUp({ trip_id: 't_r20', person_id: 'p_meher', since: '2026-10-05T05:00:00Z' }, { instance: 'server-1', frameId: 'gs_3' });
+    expect(res.items).toEqual([{ kind: 'needs_you', text: 'Priya mentioned you: Meher are you okay with a 6 am start?', message_id: 'm_0171' }]);
   });
 });
