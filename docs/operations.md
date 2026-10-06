@@ -4,47 +4,52 @@ This page is for whoever runs Go this week. It says where Go runs, what each set
 
 Two words used below:
 
-- **The stage Go** is the `brain` service: the Go the real trip and the demo use.
+- **Production** and **staging** are the two environments of the Railway project `go`. Production's Go is the one the real trip and the demo use. Staging runs the same services and takes every new version first, with the live smoke and the rehearsals; production is never used for drills.
 - **A variable** is a setting on a Railway service. Values live only in Railway. Never paste a value into a chat, a doc, a commit or a log.
 
 ## The Railway project
 
-Every service runs in the Railway project `go`, environment `production`. Go's own databases are in the Supabase project `go` instead (see [Go's databases](#gos-databases-supabase)).
+Everything runs in the Railway project `go`, which has two environments, `staging` and `production`, in Railway's US East region (us-east4). Each environment has the same four services:
 
-| Service | What it is | Public address | Built from |
-|---|---|---|---|
-| `brain` | The stage Go. | https://brain-production-6b68.up.railway.app | `apps/brain/Dockerfile` |
-| `vault` | The vault: it keeps each payer's passkey and test card, and charges a payment once the Server and the payer both approved it. | https://vault-production-35aa.up.railway.app | Railpack, with the build and start commands in its variables |
-| `fake-go` | A stand-in for Go that the App and Server teams build and test against. It is not the stage Go. | https://fake-go-production.up.railway.app | `apps/fake-go/Dockerfile` |
-| `Postgres` | `brain`'s old database. No Go uses it; it is kept as a backup. | none (private network only) | Railway's Postgres template |
-| `Postgres-D6Kp` | The vault's own database. Only `vault` uses it; Go never reads it. | none (private network only) | Railway's Postgres template |
-| `brain-rehearsal` | The rehearsal Go: the same code as `brain`, with its own database, its own signing secret and its own admin token. Rehearsals and the live smoke go here, never to the stage. | https://brain-rehearsal-production.up.railway.app | `apps/brain/Dockerfile` |
-| `Postgres-ozV9` | `brain-rehearsal`'s old database. No Go uses it; it is kept as a backup. | none (private network only) | Railway's Postgres template |
-| `vault-rehearsal` | The rehearsal vault: the same code as `vault`, with its own database, master key and shared secret. It reports payments to `brain-rehearsal`, so a rehearsal can pay end to end. | https://vault-rehearsal-production.up.railway.app | Railpack, with the build and start commands in its variables |
-| `Postgres-hxd7` | `vault-rehearsal`'s database. | none (private network only) | Railway's Postgres template |
-| `Postgres-S3Ht` | `brain-try`'s old database. No Go uses it; it is kept as a backup. | none (private network only) | Railway's Postgres template |
+| Service | What it is | Built from |
+|---|---|---|
+| `brain` | Go. | `apps/brain/Dockerfile` |
+| `Postgres` | Go's database. Only `brain` uses it, over Railway's private network (`postgres.railway.internal`). | Railway's Postgres template |
+| `vault` | The vault: it keeps each payer's passkey and test card, and charges a payment once the Server and the payer both approved it. | Railpack, with the build and start commands in its variables |
+| `Postgres-D6Kp` | The vault's own database. Only `vault` uses it; Go never reads it. | Railway's Postgres template |
+
+Their public addresses:
+
+| | `staging` | `production` |
+|---|---|---|
+| `brain` | https://brain-staging-e92c.up.railway.app | https://brain-production-6b68.up.railway.app |
+| `vault` | https://vault-staging-9c77.up.railway.app | https://vault-production-35aa.up.railway.app |
+
+The databases have no public address. Outbound calls leave from Railway's shared static IPs for US East, which is what ixigo allows: 162.220.234.240, 152.55.180.240, 152.55.180.241 and 152.55.180.243.
 
 Go applies its database migrations itself when it starts, so a new version that needs a new table needs nothing extra.
 
+The Supabase project `go` belongs to the Server team and holds nothing of Go's.
+
 ### Health checks and restarts
 
-Each app service has a health check and a restart policy in its own Railway settings:
+Each app service has a health check and a restart policy in its own Railway settings, in both environments:
 
 | Service | Health check path | Timeout | Restart |
 |---|---|---|---|
-| `brain`, `brain-rehearsal`, `fake-go` | `/v1/health` | 60 s | on failure, up to 10 times |
-| `vault`, `vault-rehearsal` | `/health` | 60 s | on failure, up to 10 times |
+| `brain` | `/v1/health` | 60 s | on failure, up to 10 times |
+| `vault` | `/health` | 60 s | on failure, up to 10 times |
 
 Railway starts a new deploy, waits for the health check to answer, and only then moves traffic to it. A version that never becomes healthy fails its deploy and the old one keeps running. A setting changed on a service applies from that service's next deploy.
 
-The settings live on the services, not in the repo: no service has a config file path set, so the `railway.json` files in `apps/brain`, `apps/vault` and `apps/fake-go` are not read. Keep them in step with the settings anyway, so the repo says what runs.
+The settings live on the services, not in the repo: no service has a config file path set, so the `railway.json` files in `apps/brain` and `apps/vault` are not read. Keep them in step with the settings anyway, so the repo says what runs.
 
 To change a setting, use the service's Settings, Deploy in the dashboard, or Railway's API (the `serviceInstanceUpdate` mutation), from the deploy worktree:
 
 ```bash
 cd ~/workspace/agents/go-brain-worktrees/deploy
-env=$(railway status --json | jq -r '.environments.edges[0].node.id')
-sid=$(railway status --json | jq -r '.environments.edges[].node.serviceInstances.edges[].node | select(.serviceName=="brain") | .serviceId')
+env=$(railway status --json | jq -r '.environments.edges[].node | select(.name=="production") | .id')
+sid=$(railway status --json | jq -r '.environments.edges[].node | select(.name=="production") | .serviceInstances.edges[].node | select(.serviceName=="brain") | .serviceId')
 railway api "mutation { serviceInstanceUpdate(environmentId: \"$env\", serviceId: \"$sid\", input: { healthcheckPath: \"/v1/health\", healthcheckTimeout: 60, restartPolicyType: ON_FAILURE, restartPolicyMaxRetries: 10 }) }"
 ```
 
@@ -56,11 +61,11 @@ railway api "query { serviceInstance(environmentId: \"$env\", serviceId: \"$sid\
 
 ## Variables
 
-These are the names only. To read the names on a service:
+These are the names only. To read the names on a service, in one environment:
 
 ```bash
 cd ~/workspace/agents/go-brain-worktrees/deploy
-railway variables --service brain --json | jq -r 'keys[]'
+railway variables --service brain --environment production --json | jq -r 'keys[]'
 ```
 
 Use `jq` to list the keys rather than cutting the `--kv` output at `=`: a value that runs over several lines, like a PEM key, would print.
@@ -69,12 +74,14 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 
 ### brain
 
+The table is production's `brain`. Staging's differences follow it.
+
 | Variable | What it is for | State |
 |---|---|---|
-| `DATABASE_URL` | Go's database: the `go_stage` login and schema in the Supabase project `go`, through the session pooler (see [Go's databases](#gos-databases-supabase)). | Set |
-| `GO_SIGNING_SECRET` | Signs the socket between the Server and Go. The Server holds the same value. It is not the same as `fake-go`'s. | Set |
+| `DATABASE_URL` | Go's database: the environment's own `Postgres`, as the reference `${{Postgres.DATABASE_URL}}`, over the private network. | Set |
+| `GO_SIGNING_SECRET` | Signs the socket between the Server and Go. The Server holds the same value. | Set |
 | `GO_PUBLIC_URL` | Go's own https address: the links to the pictures on Go's cards, and where Twilio connects a call's audio to Go. | Set |
-| `GO_ROLE` | Which Go this is: `stage` here, `rehearsal` on `brain-rehearsal`. The admin page shows it, and the rehearsal runner refuses any Go that is not `rehearsal`. Without it, Go falls back to Railway's service name. | Set |
+| `GO_ROLE` | Which Go this is: `stage` in production, `rehearsal` in staging. The admin page shows it, and the rehearsal runner refuses any Go that is not `rehearsal`. Without it, Go falls back to Railway's service name. | Set: `stage` |
 | `ANTHROPIC_API_KEY` | The model Go thinks with: every turn, the notes and the trip summary. | Set: Vestra's staging key |
 | `COMPOSER_MODEL` | The model for Go's turns in the room. | Set |
 | `SIDE_MODEL` | The smaller model for notes and summaries. | Set |
@@ -95,25 +102,25 @@ In the tables, **Placeholder** means the variable holds a stand-in until Keshav'
 | `CALLS_VOICE_MODEL` | The voice model on a call. | Not set: the default applies |
 | `FOLD_AT_TOKENS`, `STORY_TOKENS`, `CHAT_HARD_CAP_TOKENS`, `NOTES_QUIET_MS`, `FOLD_QUIET_MS` | How long a chat grows before Go summarises it (right after Go posts, or after `FOLD_QUIET_MS` of quiet, at most 10 minutes in a busy chat), and how long Go waits after the last message before it takes notes. | Not set: the defaults apply |
 
-Railway also sets `RAILWAY_*` variables on every service (its domains and ids). On `brain` and `fake-go`, `RAILWAY_DOCKERFILE_PATH` picks the Dockerfile.
+Railway also sets `RAILWAY_*` variables on every service (its domains and ids). On `brain`, `RAILWAY_DOCKERFILE_PATH` picks the Dockerfile.
 
-### brain-rehearsal
+### brain in staging
 
-The same variable names as `brain`, with these differences:
+The same variable names, with these differences:
 
-- `DATABASE_URL` is the `go_rehearsal` login and schema, not the stage's `go_stage`.
-- `GO_SIGNING_SECRET` and `ADMIN_TOKEN` are its own: the stage's secret does not open it, and its secret does not open the stage.
-- `GO_ROLE` is `rehearsal`.
-- `VAULT_URL` and `VAULT_SHARED_SECRET` point at `vault-rehearsal`, not the stage's vault.
-- The `VESTRA_*` variables point at its own test org on staging `/v1`, not the stage Go's.
+- `DATABASE_URL` is staging's own `Postgres`.
+- `GO_SIGNING_SECRET` and `ADMIN_TOKEN` are its own: production's secret does not open it, and its secret does not open production.
+- `GO_ROLE` is `rehearsal`, so the rehearsal runner accepts it.
+- `GO_PUBLIC_URL`, `VAULT_URL` and `VAULT_SHARED_SECRET` are staging's own address and staging's vault.
+- The `VESTRA_*` variables point at its own test org on staging `/v1`, "Go rehearsal".
 
-**It has its own vault.** `vault-rehearsal` reports every payment to `brain-rehearsal` (its `GO_CALLBACK_URL`), so a payment approved on the vault page during a rehearsal reaches the Go that asked for it. Nothing a rehearsal pays touches the stage's vault or the stage Go.
+**It has its own vault.** Staging's `vault` reports every payment to staging's `brain` (its `GO_CALLBACK_URL`), so a payment approved on the vault page during a rehearsal reaches the Go that asked for it. Nothing staging pays touches production.
 
 ### vault
 
 | Variable | What it is for | State |
 |---|---|---|
-| `VAULT_DATABASE_URL` | The vault's own database, from `Postgres-D6Kp`. | Set |
+| `VAULT_DATABASE_URL` | The vault's own database, the environment's `Postgres-D6Kp`. | Set |
 | `VAULT_MASTER_KEY` | Encrypts what the vault stores. Changing it makes everything already stored unreadable. | Set |
 | `GO_SPEND_PUBLIC_KEY` | The Server's public key. The vault pays only on an approval the Server signed with the matching private key. With the contract's test key, the vault refuses to start unless it pays on the fake rail only. | Set |
 | `VAULT_SHARED_SECRET` | The same value as on `brain`. | Set |
@@ -124,89 +131,39 @@ The same variable names as `brain`, with these differences:
 | `VAULT_RAILS` | Which rails the vault may pay on: `fake`, `stripe_test`, `ixigo`. | Set |
 | `RAILPACK_BUILD_CMD`, `RAILPACK_START_CMD` | How Railway builds and starts the vault. | Set |
 
-### vault-rehearsal
+### vault in staging
 
-The same variable names as `vault`, with these differences:
+The same variable names as production's `vault`, with these differences:
 
-- `VAULT_DATABASE_URL` is `Postgres-hxd7`.
-- `VAULT_MASTER_KEY` and `VAULT_SHARED_SECRET` are its own; `brain-rehearsal` holds the same shared secret.
-- `VAULT_PUBLIC_URL`, `WEBAUTHN_ORIGIN` and `WEBAUTHN_RP_ID` are its own address, so a passkey made on the stage's vault does not work here: enroll again for a rehearsal.
-- `GO_CALLBACK_URL` is `brain-rehearsal`'s address.
-- `GO_SPEND_PUBLIC_KEY`, the Stripe keys, `VAULT_RAILS` and the Railpack commands are the same as on `vault`.
+- `VAULT_DATABASE_URL` is staging's own `Postgres-D6Kp`.
+- `VAULT_MASTER_KEY` and `VAULT_SHARED_SECRET` are its own; staging's `brain` holds the same shared secret.
+- `VAULT_PUBLIC_URL`, `WEBAUTHN_ORIGIN` and `WEBAUTHN_RP_ID` are its own address, so a passkey made on production's vault does not work here: enroll again for a rehearsal.
+- `GO_CALLBACK_URL` is staging's `brain`.
 
-### fake-go
+### The databases
 
-| Variable | What it is for | State |
-|---|---|---|
-| `GO_SIGNING_SECRET` | fake-go's own signing secret, the one the App and Server teams use in their tests. It does not open the stage Go. | Set |
-| `FAKE_GO_ADMIN_TOKEN` | Opens fake-go's admin routes. | Set |
-| `FAKE_GO_PUBLIC_URL` | fake-go's address for the links it hands out. Railway's domain is used when it is not set. | Not set |
-
-### The vaults' databases: Postgres-D6Kp, Postgres-hxd7
-
-Each vault keeps its own Railway database: `Postgres-D6Kp` for `vault` and `Postgres-hxd7` for `vault-rehearsal`. Both have Railway's template variables: `DATABASE_URL`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `PGDATA`, `SSL_CERT_DAYS`. Leave them alone: each vault reads its address from them.
-
-The old Railway databases of the Gos, `Postgres`, `Postgres-ozV9` and `Postgres-S3Ht`, are no longer used by any Go. They are kept as a backup.
-
-## Go's databases: Supabase
-
-Every Go keeps its database in the Supabase project `go`: ref `rbltcfpcqkefazsonzbb`, region us-east-1, organization Vestra Org. Dashboard: https://supabase.com/dashboard/project/rbltcfpcqkefazsonzbb.
-
-Each Go has one schema and one login of the same name:
-
-| Go | Login and schema |
-|---|---|
-| `brain` | `go_stage` |
-| `brain-rehearsal` | `go_rehearsal` |
-| `brain-try` | `go_try` |
-
-- Each login's `search_path` is its own schema, then `extensions`. A login can create only in its own schema and cannot see the others.
-- Each schema has 45 tables, which Go made with its own migrations on a fresh database.
-- `DATABASE_URL` on each Go points at Supabase's session pooler:
-
-  ```
-  postgresql://<login>.rbltcfpcqkefazsonzbb:<password>@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=no-verify
-  ```
-
-  Go uses the pooler because the project's direct host is IPv6 only, and Railway's outbound IPv6 is off.
-- **A known trade-off:** `sslmode=no-verify` encrypts the connection but does not check the server's certificate.
-- `pg_trgm`, the word search behind recall, lives in the schema `public`, because migration 2003 and `apps/brain/src/memory/recall.ts` name `public.gin_trgm_ops` and `public.word_similarity`. The logins have `USAGE` on `public`, not `CREATE`.
-
-### Adding a Go
-
-As `postgres`, in the project's SQL editor, for a new login and schema named `<role>`:
-
-```sql
-create role <role> login password '<a SCRAM-SHA-256 hash of the password, never the password itself>';
-grant <role> to postgres with set true;
-create schema <role> authorization <role>;
-alter role <role> set search_path to <role>, extensions;
-grant usage on schema public to <role>;
-grant usage on schema extensions to <role>;
-```
-
-Generate the password in the shell and put it straight into the new Go's `DATABASE_URL` on Railway, in the pooler form above. Never print it. Go makes its tables itself the first time it starts.
+Each environment has two Railway databases: `Postgres` for `brain` and `Postgres-D6Kp` for `vault`. Both have Railway's template variables: `DATABASE_URL`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `PGDATA`, `SSL_CERT_DAYS`. Leave them alone: `brain` and `vault` read their addresses from them.
 
 ## Deploy
 
-Ship what is on `build`, from the deploy worktree, one service at a time:
+Ship what is on `build`, from the deploy worktree, one service at a time, to staging first:
 
 ```bash
 cd ~/workspace/agents/go-brain-worktrees/deploy
 git fetch origin
 git checkout --detach origin/build
 git status --short          # railway up uploads the folder as it is on disk, so local edits would ship too
-railway up --service brain --detach -m "$(git rev-parse --short HEAD) $(git log -1 --format=%s)"
+railway up --service brain --environment staging --detach -m "$(git rev-parse --short HEAD) $(git log -1 --format=%s)"
 ```
 
-Use `--service brain-rehearsal`, `--service vault`, `--service vault-rehearsal` or `--service fake-go` for the others. Ship a new Go to `brain-rehearsal` first, run the live smoke there, then ship the same commit to `brain`. The `-m` message puts the commit on the deployment, so the deployment list shows which commit is live.
+Use `--service vault` for the vault. Ship a new version to staging first, run the live smoke there, then ship the same commit with `--environment production`. The `-m` message puts the commit on the deployment, so the deployment list shows which commit is live.
 
 Follow it:
 
 ```bash
-railway logs --service brain --build        # the build
-railway logs --service brain --deployment   # the running service
-railway deployment list --service brain --limit 5
+railway logs --service brain --environment staging --build        # the build
+railway logs --service brain --environment staging --deployment   # the running service
+railway deployment list --service brain --environment staging --limit 5
 ```
 
 A build takes a few minutes. Railway keeps the old version running until the new one has started.
@@ -216,11 +173,10 @@ A build takes a few minutes. Railway keeps the old version running until the new
 After every deploy, and before the demo:
 
 ```bash
-curl -s https://brain-production-6b68.up.railway.app/v1/health     # {"ok":true,"contract":"1.0.0"}
-curl -s https://brain-rehearsal-production.up.railway.app/v1/health   # the same
-curl -s https://vault-production-35aa.up.railway.app/health        # {"ok":true}
-curl -s https://vault-rehearsal-production.up.railway.app/health  # the same
-curl -s https://fake-go-production.up.railway.app/v1/health        # {"ok":true,"contract":"1.0.0"}
+curl -s https://brain-production-6b68.up.railway.app/v1/health   # {"ok":true,"contract":"1.0.0"}
+curl -s https://brain-staging-e92c.up.railway.app/v1/health       # the same
+curl -s https://vault-production-35aa.up.railway.app/health      # {"ok":true}
+curl -s https://vault-staging-9c77.up.railway.app/health         # the same
 ```
 
 `/v1/health` says Go is up and which contract it speaks. It does not check the model, Jev, `/v1`, ixigo or the vault. The admin page's health view checks each of those, at `/admin?token=...` and `/admin/health.json`.
@@ -234,10 +190,10 @@ The live smoke checks that a deployed Go answers people in time. It connects to 
 
 For each line it prints how long Go took to show typing, Go's reply, the cards Go posted, and the total time. It passes when typing shows within 1 second and a reply lands within 15 seconds on both lines.
 
-Run it against `brain-rehearsal`, from any worktree at `origin/build` after `pnpm install`:
+Run it against staging, never production, from any worktree at `origin/build` after `pnpm install`:
 
 ```bash
-GO_URL=https://brain-rehearsal-production.up.railway.app railway run --service brain-rehearsal -- pnpm --filter @go/sim live-smoke
+GO_URL=https://brain-staging-e92c.up.railway.app railway run --service brain --environment staging -- pnpm --filter @go/sim live-smoke
 ```
 
 `railway run` puts the service's variables, `GO_SIGNING_SECRET` among them, into the command's environment, so the secret never appears in your terminal or your shell history. The script reads `GO_URL` and `GO_SIGNING_SECRET` from the environment only. It exits 0 on a pass, 1 when typing was slow or a reply did not come, and 2 when it could not connect.
@@ -246,29 +202,28 @@ Things to know:
 
 - Each run leaves one smoke trip in Go's database. When jobs are on, it also gets its own trip computer on Vestra. Run it a few times, never in a loop.
 - The flights line searches whatever the `TRAVEL_MODE` switch says.
-- Smoke the stage Go (`GO_URL` set to `brain`'s address, `--service brain`) only when you must, and only after the real trip has had a message since Go last started. Go sends each trip's requests back on the socket that brought that trip's events, so the real trip stays on the real Server's socket. But right after a restart, before the real trip has had any event, a request for the real trip can go to the smoke's socket instead and fail.
 
 ## Rehearse
 
-The rehearsal runner plays the whole demo on `brain-rehearsal`, times every beat against the run sheet, and refuses any Go whose role is not `rehearsal`. It reads `GO_REHEARSAL_URL`, `GO_SIGNING_SECRET`, `GO_ADMIN_TOKEN` and `GO_STAGE_URL` from the environment. The service calls its admin token `ADMIN_TOKEN`, so pass it on inside the command:
+The rehearsal runner plays the whole demo on staging's Go, times every beat against the run sheet, and refuses any Go whose role is not `rehearsal`. It reads `GO_REHEARSAL_URL`, `GO_SIGNING_SECRET`, `GO_ADMIN_TOKEN` and `GO_STAGE_URL` from the environment. The service calls its admin token `ADMIN_TOKEN`, so pass it on inside the command:
 
 ```bash
-GO_REHEARSAL_URL=https://brain-rehearsal-production.up.railway.app GO_STAGE_URL=https://brain-production-6b68.up.railway.app \
-  railway run --service brain-rehearsal -- sh -c 'GO_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm --filter @go/bench rehearse'
+GO_REHEARSAL_URL=https://brain-staging-e92c.up.railway.app GO_STAGE_URL=https://brain-production-6b68.up.railway.app \
+  railway run --service brain --environment staging -- sh -c 'GO_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm --filter @go/bench rehearse'
 ```
 
-The single quotes matter: the token is read inside the command's environment, never typed or shown. The only thing the runner does to the stage Go is the warm-up before the demo (`--warm --trip <real trip id>`, with `--service brain` and `GO_STAGE_URL`): one health read, no trip and no message.
+The single quotes matter: the token is read inside the command's environment, never typed or shown. The only thing the runner does to production's Go is the warm-up before the demo (`--warm --trip <real trip id>`, with `--environment production` and `GO_STAGE_URL`): one health read, no trip and no message.
 
 ## Roll back
 
-1. Find the last good version: the deployment list (`railway deployment list --service brain`) and its messages, or `git log origin/build`.
-2. The fastest way: in the Railway dashboard, open the service, then Deployments, then the last good deployment's menu, then Rollback. Railway restores that deployment's build and its variables, so check the variables afterwards.
+1. Find the last good version: the deployment list (`railway deployment list --service brain --environment production`) and its messages, or `git log origin/build`.
+2. The fastest way: in the Railway dashboard, pick the environment, open the service, then Deployments, then the last good deployment's menu, then Rollback. Railway restores that deployment's build and its variables, so check the variables afterwards.
 3. From the command line, deploy the good commit again:
 
    ```bash
    cd ~/workspace/agents/go-brain-worktrees/deploy
    git checkout --detach <good commit>
-   railway up --service brain --detach -m "rollback to $(git rev-parse --short HEAD)"
+   railway up --service brain --environment production --detach -m "rollback to $(git rev-parse --short HEAD)"
    ```
 
 4. Check health, and run the live smoke.
@@ -289,19 +244,18 @@ Four switches change how Go behaves on stage without a redeploy. Go reads them o
 A switch takes the first of these that has a value:
 
 1. The value set on the admin page (stored in Go's database, in the `switches` table).
-2. The variable of the same name on `brain`.
+2. The variable of the same name on that environment's `brain`.
 3. The default in the table above.
 
 To flip a switch:
 
 - **On the admin page:** open `/admin?token=...`, pick the value, save. This is the way on stage.
-- **Until then, in the database:** in the Supabase project's SQL editor, set the stage Go's schema first, then:
+- **Until then, in the database:** `railway connect Postgres --environment production`, then:
 
   ```sql
-  set search_path to go_stage;
   insert into switches (name, value, updated_at) values ('TRAVEL_MODE', 'fake', now())
   on conflict (name) do update set value = excluded.value, updated_at = excluded.updated_at;
   ```
 
   To go back to the variable's value, remove the stored one: `delete from switches where name = 'TRAVEL_MODE';`
-- **By changing the variable on `brain`.** This restarts Go, and a value stored on the admin page still wins over it.
+- **By changing the variable on that environment's `brain`.** This restarts Go, and a value stored on the admin page still wins over it.
