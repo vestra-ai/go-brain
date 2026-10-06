@@ -5,7 +5,15 @@ import type { RailFailReason } from './rails/rail.js';
 
 export type GoOutcome =
   | { kind: 'paid'; trip_id: string; approval_id: string; rail_ref: string }
-  | { kind: 'failed'; trip_id: string; approval_id: string; reason: RailFailReason };
+  | { kind: 'failed'; trip_id: string; approval_id: string; reason: RailFailReason }
+  /** Not an outcome: the rail gave no clear answer yet, so Go keeps the pay card waiting on the bank. */
+  | { kind: 'confirming'; trip_id: string; approval_id: string };
+
+const PATHS: Record<GoOutcome['kind'], string> = {
+  paid: '/internal/vault/paid',
+  failed: '/internal/vault/failed',
+  confirming: '/internal/vault/confirming',
+};
 
 /** Answers from Go that a resend cannot change: the body or the request itself is wrong. Anything else is tried again. */
 const FINAL: ReadonlySet<number> = new Set([400, 409, 422]);
@@ -15,11 +23,13 @@ const FINAL: ReadonlySet<number> = new Set([400, 409, 422]);
  * not final: a paid outcome is never dropped because Go did not know the payment yet.
  */
 export async function tellGo(d: Pick<PayDeps, 'env' | 'fetch' | 'now'>, o: GoOutcome): Promise<'ok' | 'retry' | 'final'> {
-  const url = new URL(o.kind === 'paid' ? '/internal/vault/paid' : '/internal/vault/failed', d.env.GO_CALLBACK_URL);
+  const url = new URL(PATHS[o.kind], d.env.GO_CALLBACK_URL);
   const body = JSON.stringify(
     o.kind === 'paid'
       ? { trip_id: o.trip_id, approval_id: o.approval_id, rail_ref: o.rail_ref }
-      : { trip_id: o.trip_id, approval_id: o.approval_id, reason: o.reason },
+      : o.kind === 'failed'
+        ? { trip_id: o.trip_id, approval_id: o.approval_id, reason: o.reason }
+        : { trip_id: o.trip_id, approval_id: o.approval_id },
   );
   const signature = signRequest(
     { method: 'POST', target: url.pathname + url.search, body },
@@ -74,6 +84,23 @@ export async function reportOutcome(d: PayDeps, jti: string): Promise<void> {
   await d.pool.query('update used_approvals set callback_at = $2, callback_attempts = callback_attempts + 1 where jti = $1', [jti, d.now()]);
 }
 
+/**
+ * Tells Go, once, that a charge has no clear answer yet, so its pay card says the bank is being asked and nobody starts
+ * the payment again. The sweep sends it again until Go takes it, while the row is still charging.
+ */
+export async function tellConfirming(d: PayDeps, jti: string): Promise<void> {
+  const r = await d.pool.query<{ trip_id: string; approval_id: string }>(
+    "select trip_id, approval_id from used_approvals where jti = $1 and outcome = 'charging' and charge_tries > 0 and confirming_told_at is null",
+    [jti],
+  );
+  const row = r.rows[0];
+  if (!row) return;
+  const said = await tellGo(d, { kind: 'confirming', trip_id: row.trip_id, approval_id: row.approval_id });
+  if (said === 'retry') return;
+  if (said === 'final') d.log.error({ approval_id: row.approval_id }, 'Go refused a confirming notice; not sending it again');
+  await d.pool.query('update used_approvals set confirming_told_at = $2 where jti = $1', [jti, d.now()]);
+}
+
 /** Finishes what a crash or a lost call left behind. Safe to run any time, from any copy of the service. */
 export async function sweep(d: PayDeps): Promise<{ recharged: number; resent: number }> {
   const now = d.now();
@@ -100,6 +127,10 @@ export async function sweep(d: PayDeps): Promise<{ recharged: number; resent: nu
      order by used_at limit 50`,
   );
   for (const p of pending.rows) await reportOutcome(d, p.jti);
+  const confirming = await d.pool.query<{ jti: string }>(
+    "select jti from used_approvals where outcome = 'charging' and charge_tries > 0 and confirming_told_at is null order by used_at limit 50",
+  );
+  for (const c of confirming.rows) await tellConfirming(d, c.jti);
   await d.pool.query('delete from internal_seen where seen_at < $1', [new Date(now.getTime() - 600_000)]);
   return { recharged, resent: pending.rows.length };
 }
