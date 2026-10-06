@@ -1,5 +1,6 @@
-# The live bench: real models and real Jev. It runs when a pull request gets the label bench-live, by hand once this
-# file is on main (workflow_dispatch needs it there), or nightly at 03:00 IST from main. Never on a push.
+# The live bench: real models and real Jev. It runs when a pull request gets the label bench-live (or bench-live:goa-50,
+# which replays only the chats after the colon), by hand once this file is on main (workflow_dispatch needs it there),
+# or nightly at 03:00 IST from main. Never on a push.
 # Only a run from build or main posts its numbers to the board; a pull request or any other branch keeps them in the
 # job's report.
 name: bench-live
@@ -31,7 +32,7 @@ concurrency:
 jobs:
   live:
     # A pull request runs it only for the bench-live label, and never for a fork's pull request: the job holds the keys.
-    if: github.event_name != 'pull_request' || (github.event.label.name == 'bench-live' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.event_name != 'pull_request' || ((github.event.label.name == 'bench-live' || startsWith(github.event.label.name, 'bench-live:')) && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 120
     services:
@@ -78,7 +79,11 @@ jobs:
           GO_BOARD_URL: ${{ (github.ref == 'refs/heads/build' || github.ref == 'refs/heads/main') && secrets.GO_BOARD_URL || '' }}
           GO_BOARD_TOKEN: ${{ (github.ref == 'refs/heads/build' || github.ref == 'refs/heads/main') && secrets.GO_BOARD_TOKEN || '' }}
           POST_BOARD: ${{ (github.ref == 'refs/heads/build' || github.ref == 'refs/heads/main') && '--post-board' || '' }}
-        run: node packages/bench/dist/run-live.js --chats "$CHATS" --models "$MODELS" --gate-model "$GATE_MODEL" $RECORD_JEV $POST_BOARD
+          LABEL: ${{ github.event.label.name }}
+        run: |
+          # A pull request labelled bench-live:goa-50 replays only the chats after the colon (letters, digits, - and , only).
+          case "$LABEL" in bench-live:*) CHATS="$(printf '%s' "${LABEL#bench-live:}" | tr -cd 'a-z0-9,-')" ;; esac
+          node packages/bench/dist/run-live.js --chats "$CHATS" --models "$MODELS" --gate-model "$GATE_MODEL" $RECORD_JEV $POST_BOARD
       - name: Summary on the job page
         if: always()
         run: if [ -f packages/bench/out/live-report.md ]; then cat packages/bench/out/live-report.md >> "$GITHUB_STEP_SUMMARY"; fi
