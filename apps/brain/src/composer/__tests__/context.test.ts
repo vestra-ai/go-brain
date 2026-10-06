@@ -172,6 +172,19 @@ describe('the fence: people\'s text is data and nobody can pose as Go', () => {
   });
 });
 
+describe('"Ask Go about this"', () => {
+  it('keeps its subject: the line names the message it asks about', async () => {
+    const text = all(
+      (
+        await context().build(
+          input(packOf([msg(2, null, 'Villa Sol, ₹54,200 for 3 nights.'), msg(3, 'p_arjun', 'is this refundable?', { about_message_id: 'm_2', mentions_go: true })]), 0, []),
+        )
+      ).user,
+    );
+    expect(text).toContain('#3 Arjun: (about #2) is this refundable?');
+  });
+});
+
 describe('why Go woke, and the trip block', () => {
   it('reads each kind of wake', async () => {
     const trip = goaSnapshot({

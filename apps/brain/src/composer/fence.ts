@@ -48,6 +48,9 @@ export function chatLine(
   const parts: string[] = [];
   const replyTo = m.reply_to ? seqOf(m.reply_to) : undefined;
   if (replyTo !== undefined) parts.push(`(reply to #${replyTo})`);
+  // "Ask Go about this": the message it asks about is its subject.
+  const about = m.about_message_id ? seqOf(m.about_message_id) : undefined;
+  if (about !== undefined) parts.push(`(about #${about})`);
   if (m.text) parts.push(defuse(m.text).replace(/\r?\n/g, '\n  '));
   for (const at of m.attachments) {
     if (at.kind === 'photo') parts.push(at.caption ? `[photo: ${defuse(oneLine(at.caption)).slice(0, 200)}]` : '[photo]');
