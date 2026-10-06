@@ -13,7 +13,7 @@ import type { Packs, TripPack } from '../trips/pack.js';
 import type { EndReason } from './bridge.js';
 import { CardUpdater } from './card-updater.js';
 import {
-  CALL_WINDOW_MS, CARD_GAP_MS, RING_TIMEOUT_S, TWILIO_TIME_LIMIT_S, findCallee, maskPhone, mediaUrl, statusUrl, type CallsConfig,
+  CALL_WINDOW_MS, CARD_GAP_MS, RING_TIMEOUT_S, TWILIO_TIME_LIMIT_S, findCallee, maskNumbers, maskPhone, mediaUrl, statusUrl, type CallsConfig,
 } from './config.js';
 import type { CallBrief, ReportedOutcome } from './realtime.js';
 import { saysStop } from './stop-words.js';
@@ -25,8 +25,12 @@ export const STOP_LINE = "Say stop in the next 30 seconds if you'd rather I didn
 export const ORPHAN_AFTER_MS = 15_000;
 export const NO_MEDIA_AFTER_MS = 90_000;
 export const CLOSE_OUT_AFTER_MS = 10_000;
+/** A waiting call whose line never reached the room this long after it was asked for is called off. */
+export const NOT_ANNOUNCED_AFTER_MS = 60_000;
 const NOT_ON_A_CALL = /\b(card|cvv|otp|upi|pin|password|passcode|bank|account number|ifsc)\b/i;
-const LONG_DIGITS = /\d[\d\s-]{10,}\d/;
+const SEPARATORS = /[\s\-.,/()_+*#]/g;
+/** 12 or more digits once every separator is gone: a card, an account or a phone number, however it was typed. */
+const longDigits = (t: string): boolean => /\d{12,}/.test(t.replace(SEPARATORS, ''));
 
 type FailWhy = 'busy' | 'no_answer' | 'failed' | 'canceled';
 const FAIL_OUTCOME: Readonly<Record<FailWhy, string>> = {
@@ -55,7 +59,22 @@ function noOutcome(reason: string, stoppedBy: string | null): string {
   return 'The call ended before an answer.';
 }
 const rid = (callId: string, step: string): string => `go_${callId}_${step}`;
+/** An error for the logs, with any phone number in it masked (Twilio's errors name the number they could not call). */
+const logged = (err: unknown): object => {
+  const e = err as { status?: unknown; code?: unknown; message?: unknown };
+  return {
+    error: maskNumbers(err instanceof Error ? err.message : String(err)),
+    ...(typeof e?.status === 'number' ? { status: e.status } : {}),
+    ...(typeof e?.code === 'number' ? { code: e.code } : {}),
+  };
+};
 const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
+
+/** A person's message after Go's call line that says stop (a bare "no" counts only as a reply to that line). */
+function isStop(call: CallRow, msg: Message): boolean {
+  if (msg.author.kind !== 'person' || call.announceSeq === null || msg.seq <= call.announceSeq) return false;
+  return saysStop(msg.text, msg.reply_to != null && msg.reply_to === call.announceMessageId);
+}
 
 export function forWhom(pack: TripPack): string {
   const n = pack.trip.people.length;
@@ -125,7 +144,7 @@ export class CallService {
     if (!row) {
       if (this.mode() === 'off') return { refused: 'Calls are switched off right now.' };
       if (!this.d.twilio || this.d.config.missing.length > 0) return { refused: 'Calls are not set up yet.' };
-      if ([r.goal, ...r.factsAllowed].some((t) => NOT_ON_A_CALL.test(t) || LONG_DIGITS.test(t))) {
+      if ([r.business, r.goal, ...r.factsAllowed].some((t) => NOT_ON_A_CALL.test(t) || longDigits(t))) {
         return { refused: 'Calls never pay or share card, bank, OTP or login details. Leave those out.' };
       }
       const callee = findCallee(this.d.config, { business: r.business, phone: r.phone });
@@ -136,7 +155,8 @@ export class CallService {
       row = await this.d.store.create({
         callId: r.callId,
         tripId,
-        business: clip(plain(r.business), 80),
+        // The allowlist's own name for the number when it has one, never the model's spelling.
+        business: callee.name ?? clip(plain(r.business), 80),
         phone: callee.phone,
         goal: clip(plain(r.goal), 160),
         factsAllowed: r.factsAllowed.map((f) => clip(f, 200)),
@@ -154,26 +174,38 @@ export class CallService {
           trip_id: tripId,
           text: clip(`${plain(r.announce)} ${STOP_LINE}`, 2000),
         });
-        await this.d.store.announced(row.callId, posted.message_id, posted.seq);
+        // The window starts once the line is in the room, however long posting it took.
+        row = (await this.d.store.announced(row.callId, posted.message_id, posted.seq, new Date(this.d.now().getTime() + CALL_WINDOW_MS))) ?? row;
       } catch (err) {
         await this.d.store.cancel(row.callId, 'announce_failed', this.d.now());
         throw err;
       }
       this.d.log.info({ callId: row.callId, tripId, to: maskPhone(row.phone) }, 'calls: announced; dialing in 30 s unless someone says stop');
       this.d.schedule(() => {
-        this.tick().catch((err: unknown) => this.d.log.warn({ err }, 'calls: tick failed'));
+        this.tick().catch((err: unknown) => this.d.log.warn(logged(err), 'calls: tick failed'));
       }, Math.max(0, row.dialAt.getTime() - this.d.now().getTime()));
     }
     return { ok: true, callId: row.callId, dialAt: row.dialAt.toISOString() };
   }
 
-  /** In the window, a person's stop (or a bare "no" in reply to Go's line) cancels the call. */
+  /**
+   * In the window, a person's stop (or a bare "no" in reply to Go's line) cancels the call. A stop sent inside the
+   * window that reaches Go only after dialing began (a late event) still stops the call: Go hangs up.
+   */
   async onMessage(msg: Message, pack: TripPack): Promise<void> {
     if (msg.author.kind !== 'person') return;
     const call = await this.d.store.liveFor(pack.trip.trip_id);
-    if (!call || call.state !== 'waiting' || call.announceSeq === null || msg.seq <= call.announceSeq) return;
-    const repliesToLine = msg.reply_to != null && msg.reply_to === call.announceMessageId;
-    if (!saysStop(msg.text, repliesToLine)) return;
+    if (!call || !isStop(call, msg)) return;
+    if (call.state === 'waiting') {
+      await this.cancelFor(call, msg);
+      return;
+    }
+    if (Date.parse(msg.sent_at) < call.dialAt.getTime()) await this.stopLive(call, msg.author.person_id);
+  }
+
+  /** Calls off a waiting call because of this person's stop, and says so once. */
+  private async cancelFor(call: CallRow, msg: Message): Promise<void> {
+    if (msg.author.kind !== 'person') return;
     const cancelled = await this.d.store.cancel(call.callId, `stopped_by:${msg.author.person_id}`, this.d.now());
     if (!cancelled) return;
     await this.d.link.request('post_message', {
@@ -192,13 +224,26 @@ export class CallService {
 
   private async tickOnce(): Promise<void> {
     const now = this.d.now();
-    for (const row of await this.d.store.dueToDial(now)) await this.dial(row);
+    // dial_at is set to ask time + 30 s at create, so this is NOT_ANNOUNCED_AFTER_MS after the call was asked for.
+    await this.d.store.cancelUnannounced(new Date(now.getTime() - (NOT_ANNOUNCED_AFTER_MS - CALL_WINDOW_MS)), now);
+    for (const row of await this.d.store.dueToDial(now)) {
+      // One call that cannot be dialed never holds up the others; it stays due for the next tick.
+      await this.dial(row).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: dialing failed; trying again next tick'));
+    }
     for (const row of await this.d.store.inCall()) {
       if (this.live.has(row.callId)) continue;
-      if (row.state === 'talking' && row.startedAt && now.getTime() - row.startedAt.getTime() > ORPHAN_AFTER_MS) await this.finish(row.callId, 'dropped');
-      else if (row.state === 'dialing' && now.getTime() - row.dialAt.getTime() > NO_MEDIA_AFTER_MS) await this.fail(row.callId, 'no_answer');
+      await this.sweepOne(row, now).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: closing a stranded call failed'));
     }
-    for (const row of await this.d.store.toCloseOut(new Date(now.getTime() - CLOSE_OUT_AFTER_MS))) await this.closeOut(row, null);
+    for (const row of await this.d.store.toCloseOut(new Date(now.getTime() - CLOSE_OUT_AFTER_MS))) {
+      await this.closeOut(row, null).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: a close-out failed; trying again next tick'));
+    }
+  }
+
+  /** A call this process is not running: left talking by a restart, or dialed and never answered. */
+  private async sweepOne(row: CallRow, now: Date): Promise<void> {
+    if (row.state === 'talking' && row.startedAt && now.getTime() - row.startedAt.getTime() > ORPHAN_AFTER_MS) await this.finish(row.callId, 'dropped');
+    // No answer is measured from when Twilio placed the call (the dial time while it has not been placed yet).
+    else if (row.state === 'dialing' && now.getTime() - (row.placedAt ?? row.dialAt).getTime() > NO_MEDIA_AFTER_MS) await this.fail(row.callId, 'no_answer');
   }
 
   private async dial(due: CallRow): Promise<void> {
@@ -216,6 +261,13 @@ export class CallService {
       }
       return;
     }
+    // Last look before dialing: a stop in the room that the message hook missed still calls it off.
+    const pack = await this.d.packs.get(due.tripId);
+    const stop = pack.messages.find((m) => !m.deleted && isStop(due, m));
+    if (stop) {
+      await this.cancelFor(due, stop);
+      return;
+    }
     const row = await this.d.store.startDialing(due.callId);
     if (!row) return;
     const token = randomBytes(32).toString('base64url');
@@ -230,10 +282,16 @@ export class CallService {
         timeLimitS: TWILIO_TIME_LIMIT_S,
         ringTimeoutS: RING_TIMEOUT_S,
       });
-      await this.d.store.dialInfo(row.callId, { twilioSid: sid });
+      await this.d.store.placed(row.callId, sid, this.d.now());
+      const after = await this.d.store.get(row.callId);
+      if (after && after.state !== 'dialing' && after.state !== 'talking') {
+        // Stopped while Twilio was placing the call, before Go knew its sid: hang it up at once.
+        await twilio.hangUp(sid);
+        return;
+      }
       this.d.log.info({ callId: row.callId, to: maskPhone(row.phone) }, 'calls: dialing');
     } catch (err) {
-      this.d.log.warn({ err, callId: row.callId }, 'calls: Twilio refused the call');
+      this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: Twilio refused the call');
       await this.fail(row.callId, 'failed');
     }
   }
@@ -244,10 +302,10 @@ export class CallService {
     return row ? { business: row.business, goal: row.goal, factsAllowed: row.factsAllowed, forWhom: row.forWhom } : null;
   }
 
-  async talking(callId: string): Promise<void> {
+  async talking(callId: string): Promise<boolean> {
     const now = this.d.now();
     const row = await this.d.store.talking(callId, now);
-    if (!row) return;
+    if (!row) return false;
     const updater = new CardUpdater<CallCardIn>((card) => this.replace(row.tripId, card), {
       now: this.d.now,
       schedule: this.d.schedule,
@@ -256,6 +314,7 @@ export class CallService {
     });
     this.live.set(callId, { row, lines: [], outcome: null, startedAt: now, stoppedBy: null, updater });
     updater.update(this.card(row, { state: 'talking', startedAt: now }));
+    return true;
   }
 
   /** Go's own lines only: the card never shows the business's words (Keshav's ruling; showing them needs his explicit OK). */
@@ -286,16 +345,19 @@ export class CallService {
   async stopTap(tap: CardTapParams): Promise<CardTapResult> {
     const row = await this.d.store.byCard(tap.trip_id, tap.card_id);
     if (!row || (row.state !== 'dialing' && row.state !== 'talking')) return { result: 'refused', toast: 'The call has already ended.' };
+    // Answer the tap at once (3 s limit); hanging up and closing out run behind it.
+    void this.stopLive(row, tap.person_id).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId: row.callId }, 'calls: stopping the call failed'));
+    return { result: 'done', toast: 'Hanging up.' };
+  }
+
+  /** A person stopped a call that is dialing or talking: hang up, and close it out as stopped by them. */
+  private async stopLive(row: CallRow, personId: string): Promise<void> {
     const pack = await this.d.packs.get(row.tripId);
-    const name = pack.trip.people.find((p) => p.person_id === tap.person_id)?.name ?? 'someone';
+    const name = pack.trip.people.find((p) => p.person_id === personId)?.name ?? 'someone';
     const live = this.live.get(row.callId);
     if (live) live.stoppedBy = name;
-    // Answer the tap at once (3 s limit); hanging up and closing out run behind it.
-    void (async () => {
-      await this.hangUp(row.callId);
-      if (!live) await this.finish(row.callId, 'stopped');
-    })().catch((err: unknown) => this.d.log.warn({ err, callId: row.callId }, 'calls: stopping the call failed'));
-    return { result: 'done', toast: 'Hanging up.' };
+    await this.hangUp(row.callId);
+    if (!live) await this.finish(row.callId, 'stopped');
   }
 
   async onTwilioStatus(callId: string, status: string): Promise<void> {
@@ -328,7 +390,7 @@ export class CallService {
     });
     this.live.delete(callId);
     if (!row) return;
-    if (why === 'dropped') await this.hangUp(callId).catch((err: unknown) => this.d.log.warn({ err, callId }, 'calls: hanging up a dropped call failed'));
+    if (why === 'dropped') await this.hangUp(callId).catch((err: unknown) => this.d.log.warn({ ...logged(err), callId }, 'calls: hanging up a dropped call failed'));
     await this.closeOut(row, live?.updater ?? null);
   }
 

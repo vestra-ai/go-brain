@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
-import { findCallee, loadCallsConfig, maskPhone, mediaUrl, normalisePhone, parseAllowlist, statusUrl, voiceKind } from '../config.js';
+import { findCallee, loadCallsConfig, maskNumbers, maskPhone, mediaUrl, normalisePhone, parseAllowlist, statusUrl, voiceKind } from '../config.js';
 import { CallsEnv } from '../env.js';
 import { saysStop } from '../stop-words.js';
 import { CallStore, type NewCall } from '../store.js';
@@ -37,6 +37,8 @@ describe('config', () => {
     expect(statusUrl('https://brain.test', 'call_1')).toBe('https://brain.test/calls/twilio/status/call_1');
     expect(mediaUrl('https://brain.test', 'call_1')).toBe('wss://brain.test/calls/media/call_1');
     expect(maskPhone('+919800000001')).toBe('+91***001');
+    expect(maskNumbers('Account not authorized to call +91 98000-00001.')).toBe('Account not authorized to call +91***001.');
+    expect(maskNumbers('call 9800000001 at 10 am, 6 Nov')).toBe('call 980***001 at 10 am, 6 Nov');
   });
 
   it('picks the voice model: gpt-realtime-2.1 unless the day-one A/B says gpt-live-1, and never a transcriber', () => {
@@ -58,6 +60,14 @@ describe('saysStop', () => {
     for (const t of ['stop', 'STOP!!', 'Go ruko', 'ruk jao bhai', 'band karo', 'mat karo yaar', "don't call them", 'wait, hold on']) {
       expect(saysStop(t, false), t).toBe(true);
     }
+  });
+  it('hears a curly apostrophe, "rehne do", "chhodo" and stop in Devanagari', () => {
+    for (const t of ['don\u2019t call them', 'don\u2018t call', 'rehne do yaar', 'chhodo, abhi nahi', 'chodo', 'रुको', 'अभी मत करो', 'रहने दो', 'छोड़ो', '\u091B\u094B\u095C\u094B']) {
+      expect(saysStop(t, false), t).toBe(true);
+    }
+    expect(saysStop('नहीं', true)).toBe(true);
+    expect(saysStop('नहीं', false)).toBe(false);
+    for (const t of ['रुकना पड़ेगा थोड़ा', 'गोवा जाना है', 'do it']) expect(saysStop(t, false), t).toBe(false);
   });
   it('takes a bare no only as a reply to the call line', () => {
     expect(saysStop('nahi', true)).toBe(true);
@@ -92,7 +102,7 @@ describe('CallStore', () => {
     const row = await store.create(call());
     expect(row).toMatchObject({ state: 'waiting', business: 'Villa Sol', factsAllowed: ['Group of five', 'Staying 6 to 9 November'], transcript: [] });
     expect((await store.liveFor('t_goa'))?.callId).toBe('call_1');
-    await store.announced('call_1', 'm_go_1', 301);
+    await store.announced('call_1', 'm_go_1', 301, new Date(at.getTime() + 30_000));
     expect((await store.get('call_1'))?.announceSeq).toBe(301);
 
     expect(await store.dueToDial(at)).toEqual([]);

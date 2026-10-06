@@ -3,7 +3,8 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { withSchema } from '../../db/test-db.js';
-import { fakeBrain, goaPack, manualTime, msg, turnCtx, waitFor } from '../../proactive/fakes.js';
+import { fakeBrain, goaPack, goaTrip, manualTime, msg, turnCtx, waitFor } from '../../proactive/fakes.js';
+import { CallStore } from '../store.js';
 import { startCalls } from '../register.js';
 
 const env = {
@@ -152,6 +153,51 @@ describe('startCalls', () => {
 
     h.stop();
     model.server.close();
+    await app.close();
+  });
+  it('stopping Go ends a live call and waits until it is closed out', async () => {
+    const time = manualTime('2026-10-06T10:00:00Z');
+    const pack = goaPack({
+      trip: goaTrip({ trip_id: 't_shutdown' }),
+      messages: [msg({ id: 'm_400', seq: 400, by: 'p_arjun', text: '@Go ask the villa about check-in', mentionsGo: true })],
+    });
+    const { brain, app, reg, link } = fakeBrain({ pool: db.pool, now: time.now, env, switches: { CALLS_MODE: 'allowlist' }, pack });
+    // A voice model that says nothing, so the call stays live until Go stops.
+    const quiet = new WebSocketServer({ port: 0 });
+    let modelClosed = false;
+    quiet.on('connection', (ws) => ws.on('close', () => { modelClosed = true; }));
+    const forms: URLSearchParams[] = [];
+    const fetchFake = (async (_url: string | URL | Request, init?: RequestInit) => {
+      forms.push(new URLSearchParams(String(init?.body ?? '')));
+      return new Response(JSON.stringify({ sid: 'CA_shutdown', status: 'queued' }), { status: 201, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    const h = await startCalls(brain, {
+      intervals: false, fetch: fetchFake, schedule: time.schedule,
+      openVoice: () => new WebSocket(`ws://127.0.0.1:${(quiet.address() as AddressInfo).port}`),
+    });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as AddressInfo).port;
+    const tool = reg.tools.find((t) => t.name === 'call_business')!;
+    const out = (await tool.run(
+      tool.input.parse({ business: 'Villa Sol', goal: 'Ask about check-in', announce: "I'll call Villa Sol about check-in." }),
+      turnCtx({ link, pack, wake: [], turnId: 'turn_shutdown' }),
+    )) as { call_id: string };
+    time.advance(30_000);
+    await h.tick();
+    const token = /name="token" value="([^"]+)"/.exec(forms[0]?.get('Twiml') ?? '')?.[1] ?? '';
+    const twilio = new WebSocket(`ws://127.0.0.1:${port}/calls/media/${out.call_id}`);
+    let twilioClosed = false;
+    twilio.on('close', () => { twilioClosed = true; });
+    await new Promise((resolve) => twilio.once('open', resolve));
+    twilio.send(JSON.stringify({ event: 'start', streamSid: 'MZ_stop', start: { streamSid: 'MZ_stop', callSid: 'CA_shutdown', customParameters: { token } } }));
+    await waitFor(() => link.of('replace_card').some((p) => (p.card as { state?: string }).state === 'talking'));
+    await waitFor(() => quiet.clients.size === 1);
+
+    await h.stop();
+    expect(await new CallStore(db.pool).get(out.call_id)).toMatchObject({ state: 'ended' });
+    expect((link.of('replace_card').at(-1)?.card as { state?: string }).state).toBe('ended');
+    await waitFor(() => twilioClosed && modelClosed);
+    quiet.close();
     await app.close();
   });
 });
