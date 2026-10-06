@@ -12,12 +12,15 @@
   },
   "dependencies": {
     "@go/contract": "workspace:*",
+    "fastify": "^5.12.5",
     "pg": "^8.13.0",
+    "ws": "^8.22.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/pg": "^8.11.0",
+    "@types/ws": "^8.18.2",
     "typescript": "^5.5.0",
     "vitest": "^4.0.17"
   }
