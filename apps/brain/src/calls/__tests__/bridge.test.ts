@@ -337,9 +337,11 @@ describe('openVoice', () => {
     await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
     const port = (silent.address() as AddressInfo).port;
     const ws = openVoice({ model: 'gpt-realtime-2.1', apiKey: 'sk-test', url: `ws://127.0.0.1:${port}`, handshakeTimeoutMs: 200 });
+    // ws emits 'error' and then 'close' in the same tick: listen for both before either comes.
+    const closed = new Promise((resolve) => ws.once('close', resolve));
     const error = await new Promise<Error>((resolve) => ws.once('error', resolve));
     expect(error.message).toMatch(/handshake has timed out/i);
-    await new Promise((resolve) => ws.once('close', resolve));
+    await closed;
     silent.close();
   });
 });
