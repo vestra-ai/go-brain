@@ -294,7 +294,8 @@ export class TripState {
       author: { kind: 'person', person_id: personId },
       ...(withheld ? {} : { text }),
       attachments: withheld ? [] : (o.attachments ?? []),
-      ...(replyTo ? { reply_to: replyTo.message_id } : {}),
+      // A withheld message says nothing of what it answers: reply_to is null, as the guide's withheld example shows.
+      ...(withheld ? { reply_to: null } : replyTo ? { reply_to: replyTo.message_id } : {}),
       ...(!withheld && o.aboutMessageId != null ? { about_message_id: o.aboutMessageId } : {}),
       mentions_go: !withheld && mentionsGo(text, replyTo?.author.kind === 'go'),
       mentions: withheld ? [] : this.mentioned(text),

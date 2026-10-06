@@ -68,6 +68,17 @@ describe('people in the room', () => {
     expect(err(() => s.say('p_stranger', 'hi')).code).toBe(422);
   });
 
+  it("a paused person's reply carries reply_to null, so it never reads as a reply to Go", () => {
+    const { s } = setUp();
+    const goMessage = post(s, 'rq_1', { text: 'Here are three' }).result;
+    s.trip.people.find((p) => p.person_id === 'p_kabir')!.go_paused = true;
+    const hidden = s.say('p_kabir', 'yes please', { replyTo: goMessage.message_id }).result;
+    expect(hidden).toMatchObject({ withheld: true, reply_to: null, mentions_go: false, mentions: [], attachments: [] });
+    expect(hidden.text).toBeUndefined();
+    // The same reply from someone who has not paused Go keeps its reply_to.
+    expect(s.say('p_arjun', 'yes please', { replyTo: goMessage.message_id }).result).toMatchObject({ reply_to: goMessage.message_id, mentions_go: true });
+  });
+
   it('edits and deletes only the author\'s own message', () => {
     const { s } = setUp();
     const m = s.say('p_arjun', 'I land at 9').result;
