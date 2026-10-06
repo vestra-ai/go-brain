@@ -24,6 +24,7 @@ All three teams are the Vestra team. What travels between the Server and Go is f
 | [`packages/contract`](packages/contract) | The contract in zod, the single source of truth for the wire: every event, method, card and error, socket signing, the spend approval, and the OpenAPI and AsyncAPI files generated from it. |
 | [`packages/contract-py`](packages/contract-py) | The same contract for Python: models generated from the OpenAPI file, signing and spend approvals. |
 | [`packages/sim`](packages/sim) | The simulator: a fake Server that holds trips in memory with the Server's rules, and the dev room, a one-page App in the browser. |
+| [`packages/bench`](packages/bench) | The replay bench: recorded Goa chats of 50, 300 and 2,000 messages replayed through the real Go with a scripted model, scored against the bars in `bars.json` (typing, reply time, cache hit, wake rate, recall), in CI on every pull request. A live run uses the real models and Jev. |
 | [`packages/agent-sdk`](packages/agent-sdk) | An agent loop copied from Vestra's Bash (see its `PROVENANCE.md`). Go's composer uses a few of its helpers: model capabilities, usage, cost and error kinds. |
 | [`docs/guide`](docs/guide) | The guide to the contract, for the Server and App teams. Start here to build against Go. |
 | [`docs/spec`](docs/spec) | Go's design: how it works inside. |
@@ -68,9 +69,24 @@ Go applies its database migrations at boot and listens on port 8080. Then run th
 
 CI runs on every pull request ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
 
-- **build-and-test**: builds every package, then runs every package's tests against a Postgres 16 service. Every test that needs a database gets its own schema. It also fails if someone changed the contract without regenerating the OpenAPI, AsyncAPI and method files.
+- **build-and-test**: builds every package, then runs every package's tests against a Postgres 16 service. Every test that needs a database gets its own schema. This includes the fast bench, which replays the three recorded chats through the real Go with a scripted model and fails the run if a bar is missed; its report is kept with the run. It also fails if someone changed the contract without regenerating the OpenAPI, AsyncAPI and method files.
 - **contract-python**: the Python contract's tests, and a check that its models match the OpenAPI file.
 - **fake-go-image** and **brain-image**: build the Docker images Railway builds and check that each one boots and answers its health check.
+
+The live bench ([`.github/workflows/bench-live.yml`](.github/workflows/bench-live.yml)) runs the same replay with the real models and real Jev, by hand or nightly, never on a push.
+
+The tests in each package, from [CI run 37410550541](https://github.com/vestra-ai/go-brain/actions/runs/37410550541) (all passed):
+
+| Package | Test files | Tests |
+|---|---|---|
+| `apps/brain` | 67 | 595 |
+| `apps/vault` | 10 | 105 |
+| `apps/fake-go` | 4 | 42 |
+| `packages/bench` | 10 | 91 |
+| `packages/sim` | 8 | 71 |
+| `packages/contract` | 4 | 35 |
+| `packages/contract-py` | | 13 |
+| `packages/agent-sdk` | 588 (and 1 skipped) | 7,851 (and 4 skipped) |
 
 To run the tests on your own machine, start the Postgres above and run `DATABASE_URL=postgres://go:go@localhost:5432/go pnpm build && DATABASE_URL=postgres://go:go@localhost:5432/go pnpm test`. Each app's README says what its tests prove.
 
