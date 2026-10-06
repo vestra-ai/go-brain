@@ -2,6 +2,7 @@
 // and from trip changes. Also the two signals that make Go quieter: a hush, and nudges people ignored.
 import type { Message, Trip, TripEvent } from '../door/methods.js';
 import type { ReflexRead } from '../reflex/reflex.js';
+import { plainlyNamesGo } from '../trips/names-go.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import type { Action, Candidate } from './policy.js';
 import type { ProactiveStore } from './store.js';
@@ -21,20 +22,20 @@ export const REPLAN_ON: ReadonlySet<string> = new Set([
   'mandate.set', 'mandate.confirmed', 'mandate.declined', 'booking.changed',
 ]);
 
-export function talksToGo(msg: Message, pack: TripPack): boolean {
-  if (msg.mentions_go) return true;
-  if (!msg.reply_to) return false;
-  return pack.messages.some((m) => m.message_id === msg.reply_to && m.author.kind === 'go');
-}
-
+/** Said to Go: the Server's mention, a reply to Go, or Go named in the text ("Go chup kar"), the same test P1 uses. */
 export function isHush(msg: Message, pack: TripPack): boolean {
-  return msg.author.kind === 'person' && typeof msg.text === 'string' && talksToGo(msg, pack) && HUSH_RE.test(msg.text);
+  return msg.author.kind === 'person' && typeof msg.text === 'string' && plainlyNamesGo(msg, pack) && HUSH_RE.test(msg.text);
 }
 
-export function chatOpening(msg: Message, read: ReflexRead, now: Date, tripId: string): Candidate | null {
+/**
+ * A message that names Go is the composer's to answer (P1 wakes it). An opening is only for a message the reflex is
+ * sure is not for Go, so the same message never gets both an answer and an unprompted post.
+ */
+export function chatOpening(msg: Message, read: ReflexRead, pack: TripPack, now: Date): Candidate | null {
   if (msg.author.kind !== 'person' || msg.withheld || msg.deleted || msg.mentions_go) return null;
   if (!(read.opening.sure && read.opening.value === true)) return null;
-  if (read.forGo.sure && read.forGo.value === true) return null;
+  if (!(read.forGo.sure && read.forGo.value === false) || plainlyNamesGo(msg, pack)) return null;
+  const tripId = pack.trip.trip_id;
   return {
     tripId,
     dedupeKey: `chat:${msg.message_id}`,
@@ -83,12 +84,7 @@ export function tripChangeOpenings(ev: TripEvent, trip: Trip, now: Date): Candid
     );
 
   switch (ev.type) {
-    case 'decision.closed': {
-      if (ev.data.reason === 'closed_by_go') return [];
-      const d = ev.data.decision;
-      const winner = d.result_index != null ? (d.options[d.result_index]?.label ?? null) : null;
-      return [make({ key: `vote_closed:${d.decision_id}`, topic: 'vote_closed', importance: 0.8, urgency: 0.8, useful: ['message'], facts: { decision_id: d.decision_id, question: d.question, winner } })];
-    }
+    // A closed vote is not an opening: P1's intake already wakes the composer for it and Go announces the result.
     case 'booking.changed': {
       const b = ev.data.booking;
       if (ev.data.change === 'cancelled' && ev.data.by.kind !== 'go') {
@@ -141,7 +137,7 @@ export function createOpenings(d: OpeningsDeps) {
     async onRead(msg: Message, read: ReflexRead, pack: TripPack): Promise<void> {
       const tripId = pack.trip.trip_id;
       if (isHush(msg, pack)) await d.store.hush(tripId, d.now());
-      const c = chatOpening(msg, read, d.now(), tripId);
+      const c = chatOpening(msg, read, pack, d.now());
       if (c) await d.store.add(c);
     },
 

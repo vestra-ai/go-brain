@@ -171,8 +171,11 @@ export async function replanTimers(store: ProactiveStore, trip: Trip, tz: string
 
 export type Check = { ok: true; personIds: string[] } | { ok: false };
 
-/** Checked when a candidate comes due: is what Go noticed still true? Also refreshes who it concerns. */
-export function stillTrue(c: Candidate, pack: TripPack): Check {
+/**
+ * Checked when a candidate comes due: is what Go noticed still true? Also refreshes who it concerns.
+ * `watchKeys` is each watch's newest change key (watches.last_change_key), for the trip's watch nudges.
+ */
+export function stillTrue(c: Candidate, pack: TripPack, watchKeys: ReadonlyMap<string, string | null> = new Map()): Check {
   const trip = pack.trip;
   const f = c.facts;
   const yes = (personIds: string[] = c.personIds): Check => ({ ok: true, personIds });
@@ -202,6 +205,17 @@ export function stillTrue(c: Candidate, pack: TripPack): Check {
     }
     case 'dates_clash':
       return dateClashes(trip).some((x) => x.booking_id === f.booking_id) ? yes() : no;
+    case 'flight_status':
+    case 'pnr_status': {
+      // The demo's simulated delay has no watch behind it. A real watch's nudge holds while its booking is still
+      // confirmed and no later reading of the watch has replaced this change (watch ids are <kind>:<trip>:<booking>).
+      if (c.simulated || typeof f.watchId !== 'string') return yes();
+      const at = f.watchId.indexOf(`:${c.tripId}:`);
+      const bookingId = at < 0 ? '' : f.watchId.slice(at + c.tripId.length + 2);
+      const b = trip.bookings.find((x) => x.booking_id === bookingId);
+      if (!b || b.status !== 'confirmed') return no;
+      return watchKeys.get(f.watchId) === c.dedupeKey ? yes() : no;
+    }
     default:
       return yes();
   }
