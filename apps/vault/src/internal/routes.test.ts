@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildVault } from '../app.js';
+import { PayLinkBody, openPayLink } from './pay-links.js';
 import { withVaultSchema } from '../db/test-db.js';
 import { makeRails } from '../rails/index.js';
 import { FakeStripe } from '../testing/fake-stripe.js';
@@ -188,6 +189,11 @@ describe('POST /internal/pay-links', () => {
 
   it('refuses a hold that runs out within a minute', async () => {
     expect(await reasonOf(payBody({ hold: { ...hold, expires_at: '2026-10-05T09:01:30Z' } }))).toBe('hold_expiring');
+  });
+
+  it('says a rail this vault does not pay on is not ready, before writing anything', async () => {
+    const body = PayLinkBody.parse(payBody({ approval_id: 'ap_01JA7Q3V8Z' }));
+    expect(await openPayLink(pool, testVaultEnv({ VAULT_RAILS: ['fake'] }), now, body)).toEqual({ ok: false, reason: 'rail_not_ready' });
   });
 
   it('says the ixigo rail is not ready yet', async () => {
