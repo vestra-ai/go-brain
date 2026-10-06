@@ -2,7 +2,7 @@
 // bar allowed and nothing else. A turn a person (or a tap, or a task) woke follows the normal rules: null.
 import type { TurnLimits } from '../composer/context.js';
 import type { DeskItem } from '../desk/desk.js';
-import { proactiveOf } from './payload.js';
+import { PROACTIVE_KINDS, proactiveOf } from './payload.js';
 import { ACTIONS, type Action } from './policy.js';
 
 /** Tool names: `react` and `record` (P2), `post_notice` and `update_notice` (this plan). */
@@ -27,7 +27,13 @@ export interface TurnRules {
 
 export function rulesForTurn(wake: DeskItem[]): TurnRules | null {
   if (wake.length === 0) return null;
+  // A person, a tap or a task woke the turn too: the normal rules.
+  if (wake.some((item) => !(PROACTIVE_KINDS as readonly string[]).includes(item.kind))) return null;
   const payloads = wake.map(proactiveOf);
+  // A proactive item whose payload cannot be read allows nothing but reading and staying silent.
+  if (payloads.some((p) => p === null)) {
+    return { allowed: [], tools: [...ALWAYS], mayPostText: false, pinOnlyFor: [], dedupeKeys: payloads.flatMap((p) => (p ? [p.candidate.dedupeKey] : [])) };
+  }
   const allowed = new Set<Action>();
   const pins = new Set<string>();
   const dedupeKeys: string[] = [];

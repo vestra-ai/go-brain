@@ -70,6 +70,13 @@ describe('rulesForTurn', () => {
     expect(rulesForTurn([proItem(chat, ['react', 'record', 'message'])])?.mayPostText).toBe(true);
   });
 
+  it('gives a proactive item it cannot read the strictest rules: reading and stay_silent only, no text', () => {
+    const broken: DeskItem = { id: 'watch:t_goa:bad', tripId: 't_goa', kind: 'watch', ref: 'watch:t_goa:bad', dueAt: NOW, payload: { candidate: 'nonsense' } };
+    expect(rulesForTurn([broken])).toEqual({ allowed: [], tools: [...ALWAYS], mayPostText: false, pinOnlyFor: [], dedupeKeys: [] });
+    expect(composerRules([broken, proItem(chat, ['react', 'record', 'message'])])).toEqual({ tools: [...ALWAYS], mayPostText: false });
+    expect(rulesForTurn([messageItem, broken])).toBeNull();
+  });
+
   it('notices a simulated item even in a turn a person woke', () => {
     expect(simulatedIn([messageItem, proItem(delay, ['pin'], ['p_arjun'])])).toBe(true);
     expect(simulatedIn([messageItem])).toBe(false);
