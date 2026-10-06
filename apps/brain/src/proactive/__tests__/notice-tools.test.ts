@@ -56,6 +56,15 @@ describe('post_notice', () => {
     expect((ctx.cards[0] as Record<string, unknown>).for_person_ids).toEqual(['p_rahul']);
   });
 
+  it('posts one notice per unprompted turn, however many the model asks for', async () => {
+    const c = candidate({ dedupeKey: 'once:1', source: 'timer', topic: 'free_cancel', personIds: ['p_rahul'] });
+    const [post] = tools();
+    const ctx = turnCtx({ link: fakeLink(), pack: goaPack(), wake: [proItem(c, ['pin'], ['p_rahul'])], turnId: 'turn_once' });
+    expect(await post.run(post.input.parse({ tone: 'heads_up', title: 'Free cancellation ends tomorrow', body: 'Villa Sol is free to cancel until Sunday.' }), ctx)).toMatchObject({ posted: true });
+    expect(await post.run(post.input.parse({ tone: 'info', title: 'Also', body: 'One more thing.' }), ctx)).toHaveProperty('refused');
+    expect(ctx.cards).toHaveLength(1);
+  });
+
   it('refuses when the bar allowed only quiet actions', async () => {
     const c = candidate({ dedupeKey: 'quiet:1', source: 'opening', topic: 'chat', personIds: [] });
     const [post] = tools();

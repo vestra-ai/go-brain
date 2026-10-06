@@ -35,6 +35,7 @@ export interface NoticeToolDeps {
 }
 
 const NOT_NOW = 'Not now: the bar for speaking up unprompted is not met for this. Use an allowed action or stay_silent.';
+const ONE_NOTICE = 'This turn already posted its one notice. Put everything in that notice, or stay_silent.';
 
 export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, QuickTool<UpdateNoticeArgs>] {
   const post: QuickTool<PostNoticeArgs> = {
@@ -45,6 +46,8 @@ export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, Q
     async run(args: PostNoticeArgs, ctx: TurnCtx): Promise<unknown> {
       const rules = rulesForTurn(ctx.wake);
       if (rules && !rules.tools.includes('post_notice')) return { refused: NOT_NOW };
+      // An unprompted turn spends one post of the budget: one notice, however many times the model asks.
+      if (rules && ctx.cards.some((c) => (c as { kind?: unknown }).kind === 'notice')) return { refused: ONE_NOTICE };
       const reachable = new Set(ctx.pack.trip.people.filter((p) => !p.go_paused).map((p) => p.person_id));
       let pins = (args.for_person_ids ?? []).filter((id) => reachable.has(id));
       if (rules?.pinOnlyFor) {
