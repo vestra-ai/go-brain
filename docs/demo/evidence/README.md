@@ -319,65 +319,67 @@ With `claude-haiku-4-5`: reply p50 5.93 s and p90 8.29 s, every ask answered, 1 
 
 `bench-live-2026-10-06-definitive.json` (and its summary, `bench-live-2026-10-06-definitive.md`) is the live run to read for Go with the real model, unedited: the final build, `claude-sonnet-5-5` only (the model that writes Go's turns), on `goa-300` and `goa-50`, 18 asks in all, each with its own timings. The runs above are kept for how the numbers moved; this one has the most asks and the final code.
 
-- **Run:** bench-live run [37467336781](https://github.com/vestra-ai/go-brain/actions/runs/37467336781), job `live`, artifact `live-bench`, written at 2026-10-06 13:11 UTC. Its replays took 10.2 minutes and cost $1.42.
-- **Code:** `build` at commit `f95bdad` (with #86, a reply of cards ending the turn, and #88, the options card and its vote in one reply), with pull request #89 merged on top (GitHub's test commit `7d6ee32`). The pull request changes only how the live bench is started (the label can name the model), so the Go measured is `build`'s.
+- **Run:** bench-live run [37488230324](https://github.com/vestra-ai/go-brain/actions/runs/37488230324), job `live`, artifact `live-bench`, written at 2026-10-06 15:43 UTC. Its replays took 10.6 minutes and cost $1.55.
+- **Code:** `build` at commit `f4fbdf8`, the final build, with pull request #106 merged on top (GitHub's test commit `1c7cbd8`). The pull request's only commit is empty, so the Go measured is `build`'s.
 - **Jev:** real calls to `jev-1.13.0`, the questions acting live as above.
-- **Verdict:** 5 of 14 checks pass (`verdict.ok` is `false`).
+- **Verdict:** 6 of 14 checks pass (`verdict.ok` is `false`).
 
 | | `goa-300` | `goa-50` | Live bar |
 |---|---|---|---|
-| Typing p90 | 6 ms | 5 ms | under 500 ms |
-| Reply p50 | 3.02 s | 4.72 s | under 2.5 s |
-| Reply p90 | 6.98 s | 7.05 s | under 5 s |
-| Model's first word, p50 | 1.07 s | 1.03 s | none |
-| Cache hit (the provider's own) | 88.7% | 85.6% | 85% or more |
-| Woke the model | 37.0% (111 turns for 300 messages) | 32.0% (16 for 50) | under 25% |
+| Typing p90 | 5 ms | 7 ms | under 500 ms |
+| Reply p50 | 3.90 s | 3.98 s | under 2.5 s |
+| Reply p90 | 6.64 s | 6.80 s | under 5 s |
+| Model's first word, p50 | 1.20 s | 1.20 s | none |
+| Cache hit (the provider's own) | 87.6% | 85.0% (84.997%) | 85% or more |
+| Woke the model | 37.3% (112 turns for 300 messages) | 34.0% (17 for 50) | under 25% |
 | Asks answered | 12 of 12 | 6 of 6 | every one |
-| Posts nobody asked for | 11 of 75 | 0 of 13 | under 1 in 50 on `goa-300`; no wrong speak on `goa-50` |
-| Recall | 6 of 7 | 4 of 5 | no misses |
+| Posts nobody asked for | 15 of 77 | 0 of 11 | under 1 in 50 on `goa-300`; no wrong speak on `goa-50` |
+| Recall | 7 of 7 | 5 of 5 | no misses |
 | Deleted text in a later prompt | 0 | 0 | none |
-| Cost of the chat | $1.1967 | $0.2198 | none |
+| Cost of the chat | $1.3323 | $0.2154 | none |
 
-Why Go woke, from the run's own tables: Jev answered all 300 and all 50 messages (115 ms and 111 ms at p50, 146 ms and 136 ms at p90) and read 188 and 33 of them as sure not for Go; every model turn was woken by a message, apart from one setup turn in each chat.
+Why Go woke, from the run's own tables: Jev answered all 300 and all 50 messages (139 ms and 138 ms at p50, 175 ms and 161 ms at p90) and read 187 and 32 of them as sure not for Go; every model turn was woken by a message, apart from one setup turn in each chat.
 
 Reply time over the 18 asks, with the 2-second wait for more lines split out (percentiles the way the bench takes them):
 
 | | Asks | p50 | p90 |
 |---|---|---|---|
-| Every ask | 18 | 3.88 s | 7.05 s |
-| Asks that did not wait (an end mark, or not the end of a burst) | 11 | 2.54 s | 5.43 s |
-| Asks that waited 2.1 s for more lines | 7 | 6.08 s | 7.98 s |
-| Every ask, from its turn's start (the wait taken out) | 18 | 2.57 s | 5.86 s |
+| Every ask | 18 | 3.98 s | 6.80 s |
+| Asks that did not wait (an end mark, or not the end of a burst) | 11 | 2.77 s | 6.80 s |
+| Asks that waited 2.1 s for more lines | 7 | 6.36 s | 6.64 s |
+| Every ask, from its turn's start (the wait taken out) | 18 | 2.78 s | 6.66 s |
 
-Across the 18 asks, 77.6 seconds in all: 60.8 (78%) inside 27 model calls (1.7 to 3.8 seconds each, 2.15 at p50, the first word 1.09 seconds into a call at p50), 16.4 (21%) before the turn (the wait on the seven asks without an end mark), 54 ms between calls, where the tools ran (they answer from the test inventory), and 148 ms from the last call to the post. An ask answered from what Go knows makes one call; one that searches makes two (the search, then the card and its line together).
+Across the 18 asks, 80.9 seconds in all: 63.8 (79%) inside 26 model calls (1.7 to 5.6 seconds each, 2.16 at p50; in the 24 calls that wrote words, the first word came 1.22 seconds into the call at p50), 16.8 (21%) before the turn (the wait on the seven asks without an end mark), 57 ms between calls, where the tools ran (they answer from the test inventory), and 154 ms from the last call to the post. An ask answered from what Go knows makes one call; one that searches makes two (the search, then the card and its line together).
 
 | Ask (chat and line) | The line | Waited | Turn starts | Model calls | In model calls | Between calls | Reply |
 |---|---|---|---|---|---|---|---|
-| `goa-300` 9 | @Go which days are cheapest to fly Delhi to Goa… | no | 142 ms | 2 (search_flights) | 5.23 s | 19 ms | 5.42 s |
-| `goa-300` 20 | @Go any veg-friendly cafes in Assagao? | no | 142 ms | 1 | 2.48 s | 0 ms | 2.63 s |
-| `goa-300` 54 | @Go how far is Mopa airport from Anjuna? | no | 148 ms | 1 | 2.05 s | 0 ms | 2.21 s |
-| `goa-300` 73 | Go, find us a villa with a pool in North Goa un… | yes | 2.12 s | 2 (search_stays) | 3.93 s | 4 ms | 6.06 s |
-| `goa-300` 103 | is there a good bakery near Anjuna? | yes | 2.15 s | 1 | 2.22 s | 0 ms | 4.37 s |
-| `goa-300` 122 | @Go flights from Bangalore to Goa on Friday aft… | no | 124 ms | 2 (search_flights) | 3.73 s | 5 ms | 3.88 s |
-| `goa-300` 143 | @Go is it safe to swim at Vagator in November? | no | 150 ms | 1 | 2.86 s | 0 ms | 3.02 s |
-| `goa-300` 175 | @Go put the three villas to a vote please | yes | 2.12 s | 2 (search_stays) | 4.82 s | 5 ms | 6.98 s |
-| `goa-300` 209 | ok go, what's the best way from the airport, ca… | no | 123 ms | 1 | 2.40 s | 0 ms | 2.54 s |
-| `goa-300` 241 | @Go can you remind everyone to vote by tonight? | no | 127 ms | 1 | 1.91 s | 0 ms | 2.05 s |
-| `goa-300` 271 | Go bhai, scuba book kar de Rahul ke card se 😂 | no | 137 ms | 1 | 2.03 s | 0 ms | 2.19 s |
-| `goa-300` 298 | @Go quick recap please: allergies, seats, who p… | yes | 2.12 s | 2 (person) | 5.83 s | 5 ms | 7.98 s |
-| `goa-50` 9 | @Go flights Delhi to Goa Friday evening? Arjun… | yes | 2.11 s | 2 (search_flights) | 3.94 s | 5 ms | 6.08 s |
-| `goa-50` 24 | Go, find us a villa with a pool in North Goa un… | yes | 2.12 s | 2 (search_stays) | 4.90 s | 6 ms | 7.05 s |
-| `goa-50` 33 | for 5 people with luggage | yes | 2.15 s | 1 | 2.56 s | 0 ms | 4.72 s |
-| `goa-50` 37 | @Go is it going to rain in Goa in early Novembe… | no | 106 ms | 1 | 1.87 s | 0 ms | 1.99 s |
-| `goa-50` 46 | Go bhai abhi book kar de villa, Rahul ka card u… | no | 143 ms | 3 (put_to_vote, search_stays) | 6.35 s | 5 ms | 6.54 s |
-| `goa-50` 52 | @Go what can't Meher eat, and when can Arjun le… | no | 149 ms | 1 | 1.71 s | 0 ms | 1.87 s |
+| `goa-300` 9 | @Go which days are cheapest to fly Delhi to Goa… | no | 156 ms | 2 (search_flights) | 9.28 s | 20 ms | 9.48 s |
+| `goa-300` 20 | @Go any veg-friendly cafes in Assagao? | no | 131 ms | 1 | 2.14 s | 0 ms | 2.28 s |
+| `goa-300` 54 | @Go how far is Mopa airport from Anjuna? | no | 145 ms | 1 | 1.86 s | 0 ms | 2.02 s |
+| `goa-300` 73 | Go, find us a villa with a pool in North Goa un… | yes | 2.15 s | 2 (search_stays) | 4.43 s | 8 ms | 6.62 s |
+| `goa-300` 103 | is there a good bakery near Anjuna? | yes | 2.16 s | 1 | 2.32 s | 0 ms | 4.48 s |
+| `goa-300` 122 | @Go flights from Bangalore to Goa on Friday aft… | no | 155 ms | 2 (search_flights) | 4.24 s | 5 ms | 4.42 s |
+| `goa-300` 143 | @Go is it safe to swim at Vagator in November? | no | 150 ms | 1 | 2.87 s | 0 ms | 3.03 s |
+| `goa-300` 175 | @Go put the three villas to a vote please | yes | 2.16 s | 2 (search_stays) | 4.44 s | 7 ms | 6.64 s |
+| `goa-300` 209 | ok go, what's the best way from the airport, ca… | no | 158 ms | 1 | 3.73 s | 0 ms | 3.90 s |
+| `goa-300` 241 | @Go can you remind everyone to vote by tonight? | no | 172 ms | 1 | 2.14 s | 0 ms | 2.33 s |
+| `goa-300` 271 | Go bhai, scuba book kar de Rahul ke card se 😂 | no | 159 ms | 1 | 2.31 s | 0 ms | 2.48 s |
+| `goa-300` 298 | @Go quick recap please: allergies, seats, who p… | yes | 2.14 s | 1 | 2.77 s | 0 ms | 4.92 s |
+| `goa-50` 9 | @Go flights Delhi to Goa Friday evening? Arjun… | yes | 2.16 s | 2 (search_flights) | 4.36 s | 6 ms | 6.55 s |
+| `goa-50` 24 | Go, find us a villa with a pool in North Goa un… | yes | 2.19 s | 2 (search_stays) | 4.14 s | 4 ms | 6.36 s |
+| `goa-50` 33 | for 5 people with luggage | yes | 2.15 s | 1 | 1.82 s | 0 ms | 3.98 s |
+| `goa-50` 37 | @Go is it going to rain in Goa in early Novembe… | no | 135 ms | 1 | 2.62 s | 0 ms | 2.77 s |
+| `goa-50` 46 | Go bhai abhi book kar de villa, Rahul ka card u… | no | 138 ms | 3 (put_to_vote, search_stays) | 6.62 s | 7 ms | 6.80 s |
+| `goa-50` 52 | @Go what can't Meher eat, and when can Arjun le… | no | 148 ms | 1 | 1.69 s | 0 ms | 1.85 s |
 
 What still misses, plainly:
 
-- **Reply time:** p50 3.02 and 4.72 seconds, p90 6.98 and 7.05, against 2.5 and 5. The asks that did not wait have a p50 of 2.54 seconds, still just over 2.5. An ask that searches makes two model calls, about 4 to 6 seconds before its reply, and about half of each call (1.09 of 2.15 seconds at p50) passes before the model's first word.
-- **Woke the model:** 37% and 32%, against 25%.
-- **Posts nobody asked for on `goa-300`:** 11 of 75. Five are a catch-up for someone back in the chat ("Hey Rahul, quick catch-up: ..."); the rest answer lines nobody put to Go ("Not my department, Rahul ...", "Noted, Rahul, no 6 am alarms ...").
-- **Recall:** one miss in each chat. "When is Meher's birthday?" finds her fact, which names message #7 as earlier on its topic, but not message #7 itself: two of Go's own long messages that mention Meher and her birthday rank above it. "When can Arjun leave on Friday?" finds the asks that repeat the question's words, and Go's own answer, not Arjun's line.
+- **Reply time:** p50 3.90 and 3.98 seconds, p90 6.64 and 6.80, against 2.5 and 5. The asks that did not wait have a p50 of 2.77 seconds. An ask that searches makes two model calls (three for `goa-50` line 46) and takes 4.42 to 6.80 seconds to its reply, apart from `goa-300` line 9 at 9.48 seconds, whose second call alone took 5.6 seconds. About half of each call (1.22 of 2.16 seconds at p50) passes before the model's first word.
+- **Woke the model:** 37.3% and 34.0%, against 25%.
+- **Cache hit on `goa-50`:** 84.997%, just under the 85% bar; the report rounds it to 85.0%.
+- **Posts nobody asked for on `goa-300`:** 15 of 77. Five are a catch-up for someone back in the chat ("Hey Arjun, quick catch-up: ..."); the other ten answer lines nobody put to Go ("Nobody's claimed the speaker yet, so it's open. Who's bringing it?", "Noted, Priya, window seat it is ...").
+
+Recall answered every question with the message that proves it, 7 of 7 and 5 of 5. That includes "When is Meher's birthday?" and "When can Arjun leave on Friday?", where Go's own messages and the asks that repeat the question's words match the same words as the person's own message.
 
 ## Running it yourself
 
