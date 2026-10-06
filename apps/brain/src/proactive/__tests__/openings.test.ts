@@ -9,7 +9,7 @@ import { ProactiveStore } from '../store.js';
 const NOW = new Date('2026-10-06T06:30:00Z');
 const ev = (seq: number, type: string, data: unknown): TripEvent =>
   Event.parse({ event_id: `ev_${seq}`, trip_id: 't_goa', seq, occurred_at: '2026-10-06T06:30:00Z', type, data });
-const sureOpening = unsureRead({ opening: { value: true, sure: true } });
+const sureOpening = unsureRead({ opening: { value: true, sure: true }, forGo: { value: false, sure: true } });
 
 describe('isHush', () => {
   const goLine = msg({ id: 'm_go', by: 'go', text: 'Want me to put it to a vote?' });
@@ -19,6 +19,11 @@ describe('isHush', () => {
     expect(isHush(msg({ by: 'p_kabir', text: 'too many messages bro', replyTo: 'm_go' }), pack)).toBe(true);
     expect(isHush(msg({ by: 'p_kabir', text: 'Go, please be quiet for a bit', mentionsGo: true }), pack)).toBe(true);
   });
+  it('hears a hush that names Go in plain text, with no @ mention', () => {
+    expect(isHush(msg({ by: 'p_kabir', text: 'Go chup kar yaar' }), pack)).toBe(true);
+    expect(isHush(msg({ by: 'p_kabir', text: 'too many messages, Go!' }), pack)).toBe(true);
+    expect(isHush(msg({ by: 'p_kabir', text: 'chup kar yaar Arjun' }), pack)).toBe(false);
+  });
   it('ignores the same words not said to Go', () => {
     expect(isHush(msg({ by: 'p_kabir', text: 'shut up Arjun lol' }), pack)).toBe(false);
     expect(isHush(msg({ by: 'p_kabir', text: 'Go, is the beach quiet in November?', mentionsGo: true }), pack)).toBe(false);
@@ -27,24 +32,33 @@ describe('isHush', () => {
 
 describe('chatOpening', () => {
   it('opens a candidate when the reflex is sure, due in 15 s', () => {
-    const c = chatOpening(msg({ id: 'm_50', seq: 50, by: 'p_meher', text: 'what time is check-in?' }), sureOpening, NOW, 't_goa');
+    const c = chatOpening(msg({ id: 'm_50', seq: 50, by: 'p_meher', text: 'what time is check-in?' }), sureOpening, goaPack(), NOW);
     expect(c).toMatchObject({ dedupeKey: 'chat:m_50', source: 'opening', topic: 'chat', useful: ['react', 'record', 'message'], facts: { message_id: 'm_50', seq: 50 } });
     expect(c?.dueAt.toISOString()).toBe('2026-10-06T06:30:15.000Z');
   });
   it('does nothing when unsure, when the message is for Go, or for a paused person', () => {
-    expect(chatOpening(msg({ text: 'hmm' }), unsureRead(), NOW, 't_goa')).toBeNull();
-    expect(chatOpening(msg({ text: '@Go check-in?', mentionsGo: true }), sureOpening, NOW, 't_goa')).toBeNull();
-    expect(chatOpening(msg({ text: 'x' }), unsureRead({ opening: { value: true, sure: true }, forGo: { value: true, sure: true } }), NOW, 't_goa')).toBeNull();
-    expect(chatOpening(msg({ text: null, withheld: true }), sureOpening, NOW, 't_goa')).toBeNull();
+    expect(chatOpening(msg({ text: 'hmm' }), unsureRead(), goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ text: '@Go check-in?', mentionsGo: true }), sureOpening, goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ text: 'x' }), unsureRead({ opening: { value: true, sure: true }, forGo: { value: true, sure: true } }), goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ text: null, withheld: true }), sureOpening, goaPack(), NOW)).toBeNull();
+  });
+
+  it('leaves a message to the composer unless the reflex is sure it is not for Go and it does not name Go', () => {
+    // Unsure whether it is for Go: P1 may answer it, so no opening as well.
+    expect(chatOpening(msg({ text: 'what time is check-in?' }), unsureRead({ opening: { value: true, sure: true } }), goaPack(), NOW)).toBeNull();
+    // Names Go in plain text, or replies to Go: the composer answers it.
+    expect(chatOpening(msg({ text: 'Go, what time is check-in?' }), sureOpening, goaPack(), NOW)).toBeNull();
+    const goLine = msg({ id: 'm_go_q', by: 'go', text: 'Want me to check?' });
+    expect(chatOpening(msg({ text: 'yes please', replyTo: 'm_go_q' }), sureOpening, goaPack({ messages: [goLine] }), NOW)).toBeNull();
   });
 });
 
 describe('tripChangeOpenings', () => {
   const closed = { ...goaTrip().decisions[0]!, status: 'closed' as const, result_index: 0, closed_at: '2026-10-06T06:29:00Z' };
-  it('notices a vote a person closed, never one Go closed', () => {
-    const [c] = tripChangeOpenings(ev(130, 'decision.closed', { decision: closed, reason: 'closed_by_person' }), goaTrip(), NOW);
-    expect(c).toMatchObject({ dedupeKey: 'vote_closed:d_villa', topic: 'vote_closed', useful: ['message'], facts: { winner: 'Villa Sol' } });
-    expect(tripChangeOpenings(ev(131, 'decision.closed', { decision: closed, reason: 'closed_by_go' }), goaTrip(), NOW)).toEqual([]);
+  it('leaves a closed vote to the composer, which P1 already wakes to announce it, so it is never posted twice', () => {
+    expect(tripChangeOpenings(ev(130, 'decision.closed', { decision: closed, reason: 'closed_by_person' }), goaTrip(), NOW)).toEqual([]);
+    expect(tripChangeOpenings(ev(131, 'decision.closed', { decision: closed, reason: 'everyone_voted' }), goaTrip(), NOW)).toEqual([]);
+    expect(tripChangeOpenings(ev(132, 'decision.closed', { decision: closed, reason: 'closed_by_go' }), goaTrip(), NOW)).toEqual([]);
   });
 
   it('notices a booking someone else cancelled', () => {

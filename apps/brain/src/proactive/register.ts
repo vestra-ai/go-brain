@@ -65,7 +65,7 @@ export async function startProactive(brain: Brain, opts: StartProactiveOpts = {}
     if (typeof watchId === 'string') await noteWatchNotice(brain.pool, watchId, cardId);
   };
   for (const tool of noticeTools({ store, now: brain.now, onPosted })) brain.tools.register(tool);
-  registerFireRoute(brain.http, { adminToken: brain.env.ADMIN_TOKEN, store, now: brain.now, promote: () => promoter.tick() });
+  registerFireRoute(brain.http, { adminToken: brain.env.ADMIN_TOKEN, store, now: brain.now, promote: (tripId) => promoter.promoteTrip(tripId) });
 
   /** Level-triggered: every active trip's timers and watches are re-planned from the trip as it is now. */
   const sweep = async (): Promise<void> => {
