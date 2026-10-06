@@ -120,7 +120,9 @@ describe('the stop window', () => {
     expect(m.link.of('post_message').at(-1)).toMatchObject({ text: "Okay, I won't call Villa Sol.", reply_to: 'm_stop' });
     m.time.advance(30_000);
     await m.service.tick();
-    expect(m.twilioCalls).toHaveLength(0);
+    // The tick dials every trip's due calls (the store is shared by these tests), so look at this trip's call only.
+    expect(m.twilioCalls.filter((c) => c.statusCallback.endsWith('/call_t_ruko_1'))).toHaveLength(0);
+    expect((await store.get('call_t_ruko_1'))?.state).toBe('cancelled');
   });
 
   it('takes a bare "nahi" only as a reply to the call line', async () => {
