@@ -88,7 +88,7 @@ const KIND_WORDS: Record<OptionKind, [string, string]> = {
   place: ['place', 'places'], food: ['place to eat', 'places to eat'], activity: ['thing to do', 'things to do'],
 };
 
-/** The options card, checked against the contract: a bug here throws instead of posting a card the app cannot draw. */
+/** The options card, checked against the contract: a bug here throws instead of posting a card the App cannot draw. */
 export function buildOptionsCard(i: { cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[] }): OptionsCardT {
   const priced = i.picks.filter((p) => p.option.priceMinor !== undefined);
   const cheapest = [...priced].sort((a, b) => (a.option.priceMinor ?? 0) - (b.option.priceMinor ?? 0))[0];

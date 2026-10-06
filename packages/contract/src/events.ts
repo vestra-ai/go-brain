@@ -5,10 +5,10 @@ import { Message, Reaction } from './room.js';
 import { Booking, Decision, Expense, Mandate, RecordLine, TripSnapshot } from './trip.js';
 
 /**
- * Events: the server tells Go what happened in a trip, one send_event request per event on the socket.
+ * Events: the Server tells Go what happened in a trip, one send_event request per event on the socket.
  *
- * The server sends an event for every change it makes to a trip, whoever made it (a person, Go, or
- * the server itself), and stamps it with the trip's next change number (`seq`). Go's own changes
+ * The Server sends an event for every change it makes to a trip, whoever made it (a person, Go, or
+ * the Server itself), and stamps it with the trip's next change number (`seq`). Go's own changes
  * come back too: that is how Go learns their change numbers. The one exception: updating a
  * Go card in place (replace_card) is not a change and sends no event.
  */

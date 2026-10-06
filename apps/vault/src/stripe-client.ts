@@ -12,7 +12,7 @@ export interface SavedCard {
 export interface StripeLike {
   createCustomer(personId: string): Promise<{ id: string }>;
   createSetupIntent(customerId: string): Promise<{ id: string; clientSecret: string }>;
-  /** The SetupIntent as Stripe has it, read on the server, never taken from the page. */
+  /** The SetupIntent as Stripe has it, read by the vault, never taken from the page. */
   readSetupIntent(id: string): Promise<{ status: string; customerId: string | null; card: SavedCard | null }>;
   chargeSaved(input: {
     customerId: string;

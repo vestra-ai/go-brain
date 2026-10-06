@@ -1,6 +1,6 @@
-"""Sign and check the request that opens the socket from the server to Go.
+"""Sign and check the request that opens the socket from the Server to Go.
 
-The server signs GET /v1/socket with this header. Everything after that travels on the open socket
+The Server signs GET /v1/socket with this header. Everything after that travels on the open socket
 and is not signed again:
 
     x-go-signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, signing string)>

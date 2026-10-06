@@ -1,6 +1,6 @@
-"""The signed spend approval: the server's half of the two keys.
+"""The signed spend approval: the Server's half of the two keys.
 
-The server runs the spend check and signs the claims with its Ed25519 private key. Go's vault
+The Server runs the spend check and signs the claims with its Ed25519 private key. Go's vault
 pays only with a valid, unexpired, unused approval and the payer's own passkey.
 
 Wire format (a compact JWS):
@@ -62,7 +62,7 @@ def _claims_problem(claims: dict[str, Any]) -> str | None:
 
 
 def sign_spend_approval(claims: dict[str, Any], private_key_pem: str) -> str:
-    """Sign claims (a plain dict, serialised in its own key order) with the server's Ed25519 key."""
+    """Sign claims (a plain dict, serialised in its own key order) with the Server's Ed25519 key."""
     problem = _claims_problem(claims)
     if problem:
         raise ValueError(problem)

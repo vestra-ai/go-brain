@@ -15,7 +15,7 @@
     {
       "name": "card_tap",
       "direction": "to_go",
-      "summary": "Someone tapped a button on one of Go's cards. Go answers what the app should do.",
+      "summary": "Someone tapped a button on one of Go's cards. Go answers what the App should do.",
       "params": "CardTap",
       "result": "CardActionResult",
       "answer_within_seconds": 3,

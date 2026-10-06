@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { HttpUrl, Id, IsoDateTime } from './common.js';
 
 /**
- * Your requests: what the server asks Go over the socket. Events tell Go what happened;
+ * Your requests: what the Server asks Go over the socket. Events tell Go what happened;
  * the rest are questions that need an answer straight away, within the time limits in the guide.
  */
 
@@ -17,7 +17,7 @@ export const EventAccepted = z
 /** Someone tapped a button on a Go card. */
 export const CardTap = z
   .object({
-    /** The server's id for this tap. Go acts on each tap once, even if it arrives twice (a resend after a reconnect, or a double tap). */
+    /** The Server's id for this tap. Go acts on each tap once, even if it arrives twice (a resend after a reconnect, or a double tap). */
     tap_id: Id,
     trip_id: Id,
     card_id: Id,
@@ -98,7 +98,7 @@ export const ForgetResult = z
   })
   .meta({ id: 'ForgetResult' });
 
-/** A short-lived link to one of Go's pages, opened from the app's You screen. */
+/** A short-lived link to one of Go's pages, opened from the App's You screen. */
 export const CreateLink = z
   .object({
     kind: z.enum(['vault']),
