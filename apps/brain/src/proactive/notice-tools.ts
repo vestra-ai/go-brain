@@ -105,10 +105,16 @@ export function noticeTools(deps: NoticeToolDeps): [QuickTool<PostNoticeArgs>, Q
       if (rules && !rules.tools.includes('update_notice')) return { refused: NOT_NOW };
       const saved = await deps.store.notice(ctx.tripId, args.card_id);
       if (!saved) return { refused: 'Go has no notice card with that id in this trip.' };
+      // Someone who paused Go since the notice went out is no longer pinged by it.
+      const reachable = new Set(ctx.pack.trip.people.filter((p) => !p.go_paused).map((p) => p.person_id));
+      const pinned = saved.card.for_person_ids;
+      const pins = pinned ? pinned.filter((id) => reachable.has(id)) : null;
+      if (pinned && pinned.length > 0 && pins?.length === 0) return { refused: 'Nobody this notice is for can be pinged right now.' };
       const title = args.title ? clip(plain(args.title), 80) : saved.card.title;
       const body = args.body ? clip(plain(args.body), 500) : saved.card.body;
       const card: NoticeIn = {
         ...saved.card,
+        ...(pins ? { for_person_ids: pins } : {}),
         title,
         body,
         fallback_text: clip(`${title}. ${body}`, 300),

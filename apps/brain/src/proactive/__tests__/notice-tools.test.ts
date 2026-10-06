@@ -127,6 +127,22 @@ describe('update_notice', () => {
     expect(replaced).toMatchObject({ card_id: out.card_id, body: 'Three hours late now.', source: { name: SIMULATED_SOURCE } });
   });
 
+  it('leaves out someone who paused Go since the notice went out', async () => {
+    const c = candidate({ dedupeKey: 'pins:1', source: 'timer', topic: 'free_cancel', personIds: ['p_rahul', 'p_arjun'] });
+    const [post, update] = tools();
+    const link = fakeLink();
+    const ctx = turnCtx({ link, pack: goaPack(), wake: [proItem(c, ['pin'], ['p_rahul', 'p_arjun'])], turnId: 'turn_pins' });
+    const out = (await post.run(post.input.parse({ tone: 'heads_up', title: 'Free cancellation ends', body: 'Until Sunday.' }), ctx)) as { card_id: string };
+    const base = goaTrip();
+    const paused = goaTrip({ people: base.people.map((p) => (p.person_id === 'p_arjun' ? { ...p, go_paused: true } : p)) });
+    const ctx2 = turnCtx({ link, pack: goaPack({ trip: paused }), wake: [proItem({ ...c, dedupeKey: 'pins:2' }, ['update_card'])] });
+    expect(await update.run(update.input.parse({ card_id: out.card_id, body: 'Until Sunday night.' }), ctx2)).toMatchObject({ updated: true });
+    expect(link.of('replace_card').at(-1)?.card).toMatchObject({ for_person_ids: ['p_rahul'], body: 'Until Sunday night.' });
+    const allPaused = goaTrip({ people: base.people.map((p) => (['p_arjun', 'p_rahul'].includes(p.person_id) ? { ...p, go_paused: true } : p)) });
+    const ctx3 = turnCtx({ link, pack: goaPack({ trip: allPaused }), wake: [proItem({ ...c, dedupeKey: 'pins:3' }, ['update_card'])] });
+    expect(await update.run(update.input.parse({ card_id: out.card_id, body: 'x' }), ctx3)).toHaveProperty('refused');
+  });
+
   it('refuses a card it does not know', async () => {
     const [, update] = tools();
     const out = await update.run(update.input.parse({ card_id: 'c_nope', body: 'x' }), turnCtx({ link: fakeLink(), pack: goaPack(), wake: [messageItem] }));
