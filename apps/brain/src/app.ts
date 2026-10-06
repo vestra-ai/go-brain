@@ -1,4 +1,4 @@
-import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { createSwitches, type Switches } from './admin/switches.js';
 import { anthropicClient, type AnthropicLike } from './composer/anthropic.js';
@@ -122,10 +122,18 @@ export interface Built {
   stop(): Promise<void>;
 }
 
+/**
+ * How a request line is logged. A backstop: no route reads a token from a URL, and the routes that might see one log at
+ * warn, but any token= that still reaches a logged URL is blanked.
+ */
+export function logRequest(req: Pick<FastifyRequest, 'method' | 'url' | 'host' | 'ip'>): { method: string; url: string; host: string; remoteAddress: string } {
+  return { method: req.method, url: req.url.replace(/([?&;]token=)[^&;#]*/gi, '$1[hidden]'), host: req.host, remoteAddress: req.ip };
+}
+
 export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built> {
   const now = o.now ?? (() => new Date());
   const t: Timings = { ...DEFAULT_TIMINGS, ...o.timings };
-  const http = Fastify({ logger: o.logger === false ? false : { level: env.LOG_LEVEL } });
+  const http = Fastify({ logger: o.logger === false ? false : { level: env.LOG_LEVEL, serializers: { req: logRequest } } });
   const log = http.log;
   const pool = o.pool ?? createPool(env.DATABASE_URL);
   await migrate(pool);

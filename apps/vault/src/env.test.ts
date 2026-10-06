@@ -22,6 +22,23 @@ describe('readVaultEnv', () => {
     const env = readVaultEnv(good);
     expect(env.VAULT_PUBLIC_URL).toBe('https://vault.go.example');
     expect(env.PORT).toBe(8080);
+    expect(env.VAULT_RAILS).toEqual(['fake', 'stripe_test']);
+  });
+
+  it('reads the rails it pays on, and refuses one it does not know', () => {
+    expect(readVaultEnv({ ...good, VAULT_RAILS: 'fake, stripe_test' }).VAULT_RAILS).toEqual(['fake', 'stripe_test']);
+    expect(() => readVaultEnv({ ...good, VAULT_RAILS: 'paypal' })).toThrow(/VAULT_RAILS/);
+  });
+
+  it("refuses the contract's test spend key unless it pays on the fake rail only", () => {
+    const test = JSON.parse(readFileSync(new URL('../../../packages/contract/test-vectors/spend-approval.json', import.meta.url), 'utf8')) as {
+      public_key_pem: string;
+    };
+    expect(() => readVaultEnv({ ...good, GO_SPEND_PUBLIC_KEY: test.public_key_pem })).toThrow(/test key/);
+    expect(() => readVaultEnv({ ...good, GO_SPEND_PUBLIC_KEY: test.public_key_pem, VAULT_RAILS: 'fake,stripe_test' })).toThrow(/fake rail only/);
+    expect(readVaultEnv({ ...good, GO_SPEND_PUBLIC_KEY: test.public_key_pem, VAULT_RAILS: 'fake' }).VAULT_RAILS).toEqual(['fake']);
+    // The same key written a little differently is still the test key: the key itself is compared, not the text.
+    expect(() => readVaultEnv({ ...good, GO_SPEND_PUBLIC_KEY: test.public_key_pem.trim() })).toThrow(/test key/);
   });
 
   it('refuses a live Stripe secret key and never prints it', () => {

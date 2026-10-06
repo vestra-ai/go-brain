@@ -52,6 +52,7 @@ export async function openPayLink(
   if (body.hold.amount_minor > c.amount_minor) return refuse('over_amount');
   if (Date.parse(body.hold.expires_at) <= now.getTime() + 60_000) return refuse('hold_expiring');
   if (body.hold.payment_kind === 'ixigo') return refuse('rail_not_ready');
+  if (!env.VAULT_RAILS.includes(body.hold.payment_kind)) return refuse('rail_not_ready');
   const used = await db.query('select 1 from used_approvals where jti = $1', [c.jti]);
   if ((used.rowCount ?? 0) > 0) return refuse('used');
 

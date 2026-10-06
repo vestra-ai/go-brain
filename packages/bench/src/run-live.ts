@@ -79,9 +79,13 @@ export interface BoardSummary {
   wrongSpeak: number;
   messages: number;
   at: string;
+  /** The commit and branch this run came from, and the composer model it judged (the board keeps it, never shows it). */
+  commit: string | null;
+  branch: string | null;
+  model: string;
 }
 
-export function toBoardSummary(run: LiveRun, at: string): BoardSummary {
+export function toBoardSummary(run: LiveRun, at: string, from: { commit: string | null; branch: string | null }): BoardSummary {
   const s = run.score;
   const hit = run.provider.cacheHit ?? s.cache.hitRate;
   return {
@@ -96,6 +100,9 @@ export function toBoardSummary(run: LiveRun, at: string): BoardSummary {
     wrongSpeak: wrongSpeak(s),
     messages: s.messages.people,
     at,
+    commit: from.commit,
+    branch: from.branch,
+    model: run.model,
   };
 }
 
@@ -130,7 +137,10 @@ export async function runLive(args: LiveArgs, env: EnvSource): Promise<BenchRepo
       }
       const boardUrl = env['GO_BOARD_URL'];
       const boardToken = env['GO_BOARD_TOKEN'];
-      if (model === args.gateModel && args.postBoard && boardUrl && boardToken) await postSummary(boardUrl, boardToken, toBoardSummary(run, new Date().toISOString()));
+      if (model === args.gateModel && args.postBoard && boardUrl && boardToken) {
+        const from = { commit: commitSha(), branch: env['GITHUB_REF_NAME'] || null };
+        await postSummary(boardUrl, boardToken, toBoardSummary(run, new Date().toISOString(), from));
+      }
     }
   }
   const v = compareLive(runs, loadBars().live, args.gateModel);

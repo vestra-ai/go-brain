@@ -24,7 +24,14 @@ export interface ChargeInput {
   idempotencyKey: string;
 }
 
-export type ChargeResult = { railRef: string } | { failed: RailFailReason };
+/**
+ * `failed` is definite: nothing was charged. `unknown` means the rail gave no clear answer (a dropped connection, a
+ * server error, a payment still processing), so the money may or may not have moved: it is never settled as failed, and
+ * the sweep asks the rail again with the same idempotency key.
+ */
+export type ChargeResult = { railRef: string } | { failed: RailFailReason } | { unknown: string };
+/** A result the vault can record: paid, or a definite failure. */
+export type SettledResult = Exclude<ChargeResult, { unknown: string }>;
 
 export interface Rail {
   readonly kind: RailKind;

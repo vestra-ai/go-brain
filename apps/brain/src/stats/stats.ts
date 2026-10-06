@@ -25,9 +25,9 @@ export interface BoardNumbers {
   empty: boolean;
   turns: number;
   messages: number;
-  /** From the waking message landing to typing on. */
+  /** From the message that named Go landing to typing on; only turns a message named Go in. */
   typing: { n: number; p50Ms: number | null; p90Ms: number | null };
-  /** From the waking message landing to Go's post. */
+  /** From the message that named Go landing to Go's post; only turns a message named Go in. */
   reply: { n: number; p50Ms: number | null; p90Ms: number | null };
   cache: { status: 'ok' | 'not_cacheable_yet' | 'no_turns'; hit: number | null; turns: number; eligibleTurns: number };
   wake: { turns: number; messages: number; rate: number | null };
@@ -61,7 +61,8 @@ export async function computeBoard(pool: pg.Pool, registry: StatsRegistry, o: { 
   const window: StatsWindow = { from, to, hours: o.hours };
   const { rows } = await pool.query<TurnRow>(
     `select t.trip_id, t.typing_at, t.posted_at, t.model, t.rounds, t.input_tokens, t.cached_tokens, t.cache_write_tokens, t.cost_usd,
-            (select min(e.received_at)
+            -- The clock starts at the message that named Go, never at chatter the same turn took in with it.
+            (select min(e.received_at) filter (where d.payload->>'namesGo' = 'true')
                from desk_items d
                join trip_events e
                  on e.trip_id = d.trip_id and e.type = 'message.created' and e.payload #>> '{data,message,message_id}' = d.ref

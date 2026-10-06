@@ -1,5 +1,5 @@
 import { signRequest } from '@go/contract';
-import { chargeOnce, settle, type AttemptRow, type PayDeps } from './charge.js';
+import { chargeOnce, holdUnknown, settle, type AttemptRow, type PayDeps } from './charge.js';
 import { VAULT_SIGNATURE_HEADER } from './internal/auth.js';
 import type { RailFailReason } from './rails/rail.js';
 
@@ -7,7 +7,13 @@ export type GoOutcome =
   | { kind: 'paid'; trip_id: string; approval_id: string; rail_ref: string }
   | { kind: 'failed'; trip_id: string; approval_id: string; reason: RailFailReason };
 
-/** Calls Go back, signed with VAULT_SHARED_SECRET. 'final' means Go answered something a retry cannot change. */
+/** Answers from Go that a resend cannot change: the body or the request itself is wrong. Anything else is tried again. */
+const FINAL: ReadonlySet<number> = new Set([400, 409, 422]);
+
+/**
+ * Calls Go back, signed with VAULT_SHARED_SECRET. 'final' means Go answered something a retry cannot change. A 404 is
+ * not final: a paid outcome is never dropped because Go did not know the payment yet.
+ */
 export async function tellGo(d: Pick<PayDeps, 'env' | 'fetch' | 'now'>, o: GoOutcome): Promise<'ok' | 'retry' | 'final'> {
   const url = new URL(o.kind === 'paid' ? '/internal/vault/paid' : '/internal/vault/failed', d.env.GO_CALLBACK_URL);
   const body = JSON.stringify(
@@ -28,8 +34,7 @@ export async function tellGo(d: Pick<PayDeps, 'env' | 'fetch' | 'now'>, o: GoOut
       signal: AbortSignal.timeout(2_000),
     });
     if (res.ok) return 'ok';
-    if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 408 && res.status !== 429) return 'final';
-    return 'retry';
+    return FINAL.has(res.status) ? 'final' : 'retry';
   } catch {
     return 'retry';
   }
@@ -45,7 +50,7 @@ interface SettledRow extends AttemptRow {
 export async function reportOutcome(d: PayDeps, jti: string): Promise<void> {
   const r = await d.pool.query<SettledRow>(
     `select jti, approval_id, trip_id, payer_person_id, card_id, amount_minor, currency, merchant, rail, outcome, rail_ref, fail_reason
-     from used_approvals where jti = $1 and outcome in ('paid', 'failed') and callback_at is null`,
+     from used_approvals where jti = $1 and outcome in ('paid', 'failed') and callback_at is null and callback_refused_at is null`,
     [jti],
   );
   const row = r.rows[0];
@@ -60,7 +65,12 @@ export async function reportOutcome(d: PayDeps, jti: string): Promise<void> {
     await d.pool.query('update used_approvals set callback_attempts = callback_attempts + 1 where jti = $1', [jti]);
     return;
   }
-  if (said === 'final') d.log.error({ approval_id: row.approval_id }, 'Go refused a payment outcome; not sending it again');
+  if (said === 'final') {
+    // Kept apart from callback_at: Go never took this outcome, and a person has to look at it.
+    d.log.error({ approval_id: row.approval_id, outcome: row.outcome }, 'Go refused a payment outcome; not sending it again');
+    await d.pool.query('update used_approvals set callback_refused_at = $2, callback_attempts = callback_attempts + 1 where jti = $1', [jti, d.now()]);
+    return;
+  }
   await d.pool.query('update used_approvals set callback_at = $2, callback_attempts = callback_attempts + 1 where jti = $1', [jti, d.now()]);
 }
 
@@ -76,11 +86,17 @@ export async function sweep(d: PayDeps): Promise<{ recharged: number; resent: nu
   for (const a of stuck.rows) {
     // The same idempotency key: a charge that already went through is answered again, never made twice.
     const result = await chargeOnce(d, a);
+    if ('unknown' in result) {
+      // Still no clear answer: the row stays charging until the cap marks it unknown. Never failed.
+      await holdUnknown(d, d.now(), a, result.unknown);
+      continue;
+    }
     if (await settle(d.pool, d.now(), a, result)) recharged += 1;
     await reportOutcome(d, a.jti);
   }
   const pending = await d.pool.query<{ jti: string }>(
-    `select jti from used_approvals where outcome in ('paid', 'failed') and callback_at is null and callback_attempts < 50
+    `select jti from used_approvals
+     where outcome in ('paid', 'failed') and callback_at is null and callback_refused_at is null and callback_attempts < 50
      order by used_at limit 50`,
   );
   for (const p of pending.rows) await reportOutcome(d, p.jti);
