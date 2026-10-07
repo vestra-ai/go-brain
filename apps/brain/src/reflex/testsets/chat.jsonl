@@ -129,3 +129,34 @@
 {"id":"r79","lang":"en","speaker":"p_rahul","text":"Go split the villa advance between all 5 of us","mentions_go":true,"expect":{"recipe":null}}
 {"id":"r80","lang":"hinglish","speaker":"p_meher","text":"Go Goa mein scooty rent kahan milegi?","mentions_go":true,"expect":{"recipe":null}}
 {"id":"r81","lang":"en","speaker":"p_arjun","text":"Go recap the plan for Saturday please","mentions_go":true,"expect":{"recipe":null}}
+{"id":"h01","lang":"en","speaker":"p_kabir","text":"@Go can you also check","mentions_go":true,"before":[{"speaker":"p_kabir","text":"wait"},{"speaker":"p_kabir","text":"one more thing"}],"expect":{"complete":false}}
+{"id":"h02","lang":"en","speaker":"p_meher","text":"@Go one thing","mentions_go":true,"before":[{"speaker":"p_meher","text":"ok"},{"speaker":"p_meher","text":"wait"}],"expect":{"complete":false}}
+{"id":"h03","lang":"en","speaker":"p_rahul","text":"@Go can you","mentions_go":true,"before":[{"speaker":"p_rahul","text":"ok so"},{"speaker":"p_rahul","text":"about the villa"}],"expect":{"complete":false}}
+{"id":"h04","lang":"hinglish","speaker":"p_meher","text":"@Go ek sec","mentions_go":true,"before":[{"speaker":"p_meher","text":"guys"},{"speaker":"p_meher","text":"birthday plan"}],"expect":{"complete":false}}
+{"id":"h05","lang":"hinglish","speaker":"p_arjun","text":"Go ek second","expect":{"complete":false}}
+{"id":"h06","lang":"hinglish","speaker":"p_priya","text":"@Go sun na","mentions_go":true,"expect":{"complete":false}}
+{"id":"h07","lang":"hinglish","speaker":"p_kabir","text":"@Go aur haan","mentions_go":true,"expect":{"complete":false}}
+{"id":"h08","lang":"en","speaker":"p_rahul","text":"Go hold on, typing","expect":{"complete":false}}
+{"id":"h09","lang":"en","speaker":"p_priya","text":"@Go also","mentions_go":true,"expect":{"complete":false}}
+{"id":"h10","lang":"hinglish","speaker":"p_arjun","text":"Go ek aur cheez batani thi","expect":{"complete":false}}
+{"id":"h11","lang":"en","speaker":"p_meher","text":"@Go can you check if","mentions_go":true,"expect":{"complete":false}}
+{"id":"h12","lang":"hinglish","speaker":"p_kabir","text":"@Go mujhe ek cheez","mentions_go":true,"expect":{"complete":false}}
+{"id":"h13","lang":"en","speaker":"p_rahul","text":"Go, find us a villa with a pool in North Goa under 8k a head, near the beach","expect":{"complete":true}}
+{"id":"h14","lang":"en","speaker":"p_rahul","text":"@Go put the three villas to a vote please","mentions_go":true,"expect":{"complete":true}}
+{"id":"h15","lang":"en","speaker":"p_rahul","text":"@Go quick recap please: allergies, seats, who pays the advance","mentions_go":true,"expect":{"complete":true}}
+{"id":"h16","lang":"en","speaker":"p_rahul","text":"@Go flights Delhi to Goa Friday evening? Arjun can't leave before 6","mentions_go":true,"expect":{"complete":true}}
+{"id":"h17","lang":"en","speaker":"p_rahul","text":"Go, find us a villa with a pool in North Goa under 8k a head, near the beach. Check the reviews too","expect":{"complete":true}}
+{"id":"h18","lang":"en","speaker":"p_priya","text":"@Go put the villa options to a vote","mentions_go":true,"expect":{"complete":true}}
+{"id":"h19","lang":"en","speaker":"p_meher","text":"@Go remind everyone to vote by tonight","mentions_go":true,"expect":{"complete":true}}
+{"id":"h20","lang":"en","speaker":"p_rahul","text":"@Go full recap please: food, boats, scooters, flights, money","mentions_go":true,"expect":{"complete":true}}
+{"id":"h21","lang":"hinglish","speaker":"p_arjun","text":"Go Saturday ke liye beach shacks ki list bana do","expect":{"complete":true}}
+{"id":"h22","lang":"hinglish","speaker":"p_meher","text":"@Go sabko yaad dila do kal subah 6 baje nikalna hai","mentions_go":true,"expect":{"complete":true}}
+{"id":"h23","lang":"hinglish","speaker":"p_priya","text":"Go bhai Thalassa ka menu dekh ke batao veg hai ya nahi","expect":{"complete":true}}
+{"id":"h24","lang":"en","speaker":"p_kabir","text":"@Go split the dinner bill 4 ways, Kabir doesn't drink","mentions_go":true,"expect":{"complete":true}}
+{"id":"h25","lang":"en","speaker":"p_kabir","text":"if there's a cab from Mopa airport to Anjuna","before":[{"speaker":"p_kabir","text":"one more thing"},{"speaker":"p_kabir","text":"@Go can you also check"}],"expect":{"complete":false}}
+{"id":"h26","lang":"en","speaker":"p_kabir","text":"for 5 people with luggage","before":[{"speaker":"p_kabir","text":"@Go can you also check"},{"speaker":"p_kabir","text":"if there's a cab from Mopa airport to Anjuna"}],"expect":{"complete":true}}
+{"id":"h27","lang":"en","speaker":"p_meher","text":"for my birthday on the 7th","before":[{"speaker":"p_meher","text":"wait"},{"speaker":"p_meher","text":"@Go one thing"}],"expect":{"complete":false}}
+{"id":"h28","lang":"en","speaker":"p_rahul","text":"find options with a pool","before":[{"speaker":"p_rahul","text":"about the villa"},{"speaker":"p_rahul","text":"@Go can you"}],"expect":{"complete":false}}
+{"id":"h29","lang":"en","speaker":"p_meher","text":"can you find a rooftop place","before":[{"speaker":"p_meher","text":"birthday plan"},{"speaker":"p_meher","text":"@Go ek sec"}],"expect":{"complete":false}}
+{"id":"h30","lang":"en","speaker":"p_rahul","text":"in Anjuna or Vagator under 8k a head","before":[{"speaker":"p_rahul","text":"@Go can you"},{"speaker":"p_rahul","text":"find options with a pool"}],"expect":{"complete":true}}
+{"id":"h31","lang":"en","speaker":"p_meher","text":"for dinner on the 7th, veg options needed","before":[{"speaker":"p_meher","text":"@Go ek sec"},{"speaker":"p_meher","text":"can you find a rooftop place"}],"expect":{"complete":true}}

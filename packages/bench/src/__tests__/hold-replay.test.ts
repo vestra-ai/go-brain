@@ -1,22 +1,24 @@
-// Offline replay of the 2 s hold: the definitive live run's asks (run 37488230324, docs/demo/evidence), each with the read
-// Jev really gave it, and every burst in goa-50, goa-300 and goa-2000, through Go's "due at once" rule as it is now.
-// In that run 7 of 18 asks waited about 2.15 s for more lines, and none of the 7 people sent any.
+// Offline replay of the 2 s hold: the definitive live run's asks (run 37488230324, docs/demo/evidence), each with the
+// answers Jev really gave it, and every burst in goa-50, goa-300 and goa-2000, through Go's "due at once" rule and its
+// question 2 reader as they are now. In that run 7 of 18 asks waited about 2.15 s for more lines, and none of the 7
+// people sent any.
 import { readFileSync } from 'node:fs';
+import { readAnswers } from '@go/brain/dist/reflex/read.js';
 import { dueAtOnce } from '@go/brain/dist/trips/intake.js';
 import { namesGoInText, plainlyNamesGo } from '@go/brain/dist/trips/names-go.js';
 import { describe, expect, it } from 'vitest';
 import { loadChat, type Chat, type SayLine } from '../chat.js';
-import type { ReflexRead } from '../bench-reflex.js';
 
 interface LiveRun {
   chat: string;
-  jev: { reads: Array<{ line: number; acted: ReflexRead }> };
+  jev: { reads: Array<{ line: number; p: Record<string, number> }> };
   asks: Array<{ line: number; waited: boolean }>;
 }
 
 const evidence = JSON.parse(readFileSync(new URL('../../../../docs/demo/evidence/bench-live-2026-10-06-definitive.json', import.meta.url), 'utf8')) as { live: LiveRun[] };
 const START = Date.parse('2026-11-01T10:00:00Z');
-const unsure = { value: null, sure: false } as const;
+/** What Jev said about each line of each chat in that run: question 2's answer, when it has one. */
+const complete = new Map(evidence.live.map((run) => [run.chat, new Map(run.jev.reads.map((r) => [r.line, r.p['q2_complete']]))]));
 
 /** The chat as Go's pack holds it after line `upTo`: people's lines, numbered as the replay numbers them. */
 function packUpTo(chat: Chat, upTo: number) {
@@ -29,10 +31,15 @@ function packUpTo(chat: Chat, upTo: number) {
   return { trip: {}, messages, seq: upTo + 2 } as never;
 }
 
-function due(chat: Chat, l: SayLine, read: Pick<ReflexRead, 'complete'> = { complete: unsure }): boolean {
+/** Due at once, with question 2 read from Jev's recorded answer for the line (unsure when the chat has no recording). */
+function due(chat: Chat, l: SayLine): boolean {
   const pack = packUpTo(chat, l.i);
   const m = (pack as { messages: Array<{ message_id: string }> }).messages.find((x) => x.message_id === `m_${l.i}`)!;
-  return dueAtOnce(m as never, pack, read, plainlyNamesGo(m as never, pack), false);
+  const namesGo = plainlyNamesGo(m as never, pack);
+  const p = complete.get(chat.name)?.get(l.i);
+  const answers = p === undefined ? null : { q2_complete: { type: 'noul' as const, noul: p } };
+  const { would } = readAnswers(answers, { namesGo, secretKinds: [], hasTasks: false, money: false }, []);
+  return dueAtOnce(m as never, pack, would, namesGo, false);
 }
 
 /** Lines of one person no more than 3 s apart (the replay's burst window), with Go named on one of them. */
@@ -55,10 +62,9 @@ function bursts(chat: Chat): SayLine[][] {
 describe('the asks that waited in the definitive live run, through the hold as it is now', () => {
   const held = evidence.live.flatMap((run) => {
     const chat = loadChat(run.chat);
-    const reads = new Map(run.jev.reads.map((r) => [r.line, r.acted]));
     return run.asks.filter((a) => a.waited).map((a) => {
       const l = chat.lines[a.line] as SayLine;
-      return { chat: run.chat, line: a.line, text: l.text, dueNow: due(chat, l, reads.get(a.line)!) };
+      return { chat: run.chat, line: a.line, text: l.text, dueNow: due(chat, l) };
     });
   });
 
@@ -66,20 +72,19 @@ describe('the asks that waited in the definitive live run, through the hold as i
     expect(held.map((h) => `${h.chat}:${h.line}`)).toEqual(['goa-300:73', 'goa-300:103', 'goa-300:175', 'goa-300:298', 'goa-50:9', 'goa-50:24', 'goa-50:33']);
   });
 
-  it('the end of the burst that named Go, "is there a good bakery near Anjuna?", goes at once', () => {
-    expect(held.filter((h) => h.dueNow).map((h) => h.text)).toEqual(['is there a good bakery near Anjuna?']);
-  });
-
-  it('asks to Go with no end mark still wait for Jev or the clock: code alone cannot tell them from a line cut short', () => {
-    const waiting = held.filter((h) => !h.dueNow).map((h) => h.text);
-    expect(waiting).toEqual([
+  it('6 go at once: the end of the burst that named Go, and the five asks to Go Jev read as whole', () => {
+    expect(held.filter((h) => h.dueNow).map((h) => h.text)).toEqual([
       'Go, find us a villa with a pool in North Goa under 8k a head, near the beach',
+      'is there a good bakery near Anjuna?',
       '@Go put the three villas to a vote please',
       '@Go quick recap please: allergies, seats, who pays the advance',
       "@Go flights Delhi to Goa Friday evening? Arjun can't leave before 6",
       'Go, find us a villa with a pool in North Goa under 8k a head, near the beach. Check the reviews too',
-      'for 5 people with luggage',
     ]);
+  });
+
+  it('the end of a burst with no end mark that does not name Go still waits: nothing tells it from a line cut short', () => {
+    expect(held.filter((h) => !h.dueNow).map((h) => h.text)).toEqual(['for 5 people with luggage']);
   });
 });
 

@@ -46,10 +46,14 @@ describe('question 1: for Go', () => {
 });
 
 describe('questions 2 and 3', () => {
-  it('reads a complete thought and a cut-off one', () => {
-    expect(read({ q2_complete: n(0.9) }).complete).toEqual({ value: true, sure: true });
+  it('reads a whole ask to Go and one cut short; a line that does not name Go is never sure-complete', () => {
+    const named: CodeFacts = { ...plain, namesGo: true };
+    expect(read({ q2_complete: n(0.56) }, named).complete).toEqual({ value: true, sure: true });
+    expect(read({ q2_complete: n(0.39) }, named).complete.sure).toBe(false);
+    expect(read({ q2_complete: n(0.05) }, named).complete).toEqual({ value: false, sure: true });
+    expect(read({ q2_complete: n(0.95) }).complete.sure).toBe(false);
     expect(read({ q2_complete: n(0.05) }).complete).toEqual({ value: false, sure: true });
-    expect(read({ q2_complete: n(0.5) }).complete.sure).toBe(false);
+    expect(read({ q2_complete: n(Number.NaN) }, named).complete.sure).toBe(false);
   });
   it('is sure of a size only when one side clears and every other noul is present and low', () => {
     const quickLow = { q3_quick_answer: n(0.02), q3_quick_search: n(0.03), q3_quick_act: n(0.01) };
@@ -155,14 +159,14 @@ describe('question 8 is raise-only', () => {
 });
 
 describe('applyLive', () => {
-  const all = { q1_chatter: n(0.97), q1_addressed: n(0.01), q2_complete: n(0.95), q5_food: n(0.95), q5_dates: n(0.0), q5_travel: n(0.0), q5_other: n(0.0), q8_spend: n(0.9) };
+  const all = { q1_chatter: n(0.97), q1_addressed: n(0.01), q2_complete: n(0.05), q5_food: n(0.95), q5_dates: n(0.0), q5_travel: n(0.0), q5_other: n(0.0), q8_spend: n(0.9) };
   it('acts on live questions and leaves the rest unsure, keeping code facts', () => {
     const facts: CodeFacts = { namesGo: false, secretKinds: ['code'], hasTasks: false, money: false };
     const { would } = readAnswers(all, facts, []);
     const live = new Set<QuestionName>(['for_go', 'complete', 'size']);
     const acted = applyLive(would, live, facts);
     expect(acted.forGo).toEqual({ value: false, sure: true });
-    expect(acted.complete).toEqual({ value: true, sure: true });
+    expect(acted.complete).toEqual({ value: false, sure: true });
     expect(would.fact).toEqual({ value: true, sure: true });
     expect(acted.fact.sure).toBe(false);
     expect(acted.risky).toEqual({ value: true, sure: true });

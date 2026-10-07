@@ -10,7 +10,7 @@ export const ReflexEnv = z.object({
    * Which questions act live, "q1,q2,q3,q5,q7" (the switch's format); the rest run in shadow. A question named here acts
    * live only once its test set passes (reflex/live-gate.ts). "off" makes no Jev call at all.
    */
-  REFLEX_LIVE: z.string().regex(/^(off|q(?:10|[1-9])(,q(?:10|[1-9]))*)?$/).default('q1,q4,q5,q6,q7,q8,q10'),
+  REFLEX_LIVE: z.string().regex(/^(off|q(?:10|[1-9])(,q(?:10|[1-9]))*)?$/).default('q1,q2,q4,q5,q6,q7,q8,q10'),
   /** How long a message waits for Jev before every question reads "unsure". */
   JEV_DEADLINE_MS: z.coerce.number().int().min(100).max(5_000).default(450),
   /** Calls per trip per UTC day before the reflex stops asking (0 means no cap). */
