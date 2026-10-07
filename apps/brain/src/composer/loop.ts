@@ -38,8 +38,6 @@ export interface LoopInput {
   ctx: TurnCtx;
   signal: AbortSignal;
   maxRounds?: number;
-  /** True when this call continues an exchange (the pre-post check): its first round already carries the rolling marker. */
-  continuing?: boolean;
   onFirstToken?: () => void;
   toolTimeoutMs?: number;
   /** The daily model budget: each round holds its estimate first, and settles to what it really cost. */
@@ -222,7 +220,8 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   let firstToken = false;
   let latestText = '';
   for (let round = 1; round <= maxRounds; round++) {
-    let outgoing = round > 1 || i.continuing ? withRollingMarker(messages) : messages;
+    // Every round marks its newest block, the first too: a round after it reads the whole prompt so far from the cache.
+    let outgoing = withRollingMarker(messages);
     if (countMarkers(i.system, tools, outgoing) > 4) outgoing = messages;
     const body = {
       model: i.model,
