@@ -385,7 +385,7 @@ describe('a composer turn', () => {
       script: [
         {
           tools: [
-            { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }] } },
+            { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }], line: 'Villa or resort? Tap your pick.' } },
             { name: 'update_trip', input: { stay: 'resort' } },
           ],
         },
@@ -427,7 +427,7 @@ describe('a composer turn', () => {
       messages: [ask],
       limits: () => ({ tools: ['react'], mayPostText: true }),
       script: [
-        { tools: [{ name: 'open_vote', input: { question: 'When?', options: [{ label: 'Fri' }, { label: 'Sat' }] } }] },
+        { tools: [{ name: 'open_vote', input: { question: 'When?', options: [{ label: 'Fri' }, { label: 'Sat' }], line: 'When works? Tap your pick.' } }] },
         { text: 'Nothing new yet, I will say when the fares move.' },
       ],
     });
@@ -514,21 +514,27 @@ describe('a reply of card tools ends the turn on its cards', () => {
     name: 'search_flights', description: 'Searches flights.', input: z.object({ to: z.string() }),
     run: async () => ({ results_id: 'rs_1', found: 3 }),
   };
-  const show: QuickTool<{ results_id: string }> = {
-    name: 'show_options', description: 'Shows an options card.', input: z.object({ results_id: z.string() }), endsTurn: true,
+  const show: QuickTool<{ results_id: string; line?: string | undefined }> = {
+    name: 'show_options', description: 'Shows an options card.', input: z.object({ results_id: z.string(), line: z.string().optional() }), endsTurn: true,
     async run(a, ctx) {
       if (a.results_id !== 'rs_1') return { error: 'unknown_results', note: 'Search again.' };
       const cardId = ctx.stableId('c_opt');
       ctx.cards.push({ kind: 'vote', card_id: cardId, fallback_text: 'Friday flights', decision_id: 'd_flights' });
+      if (a.line) ctx.lines.push(a.line);
       return { card_id: cardId };
     },
   };
   const searchCall = { name: 'search_flights', input: { to: 'Goa' } };
-  const showCall = (results_id = 'rs_1') => ({ name: 'show_options', input: { results_id } });
+  const showCall = (results_id = 'rs_1', line?: string) => ({ name: 'show_options', input: { results_id, ...(line ? { line } : {}) } });
 
-  it('search, then the card with its line: two model calls and one post with the line and the card', async () => {
+  it("search, then the card with its line: two model calls and one post with the line and the card, never the reply's free text", async () => {
     const ask = msg(3, 'p_arjun', '@Go flights Friday evening?');
-    const r = room({ messages: [ask], extraTools: [search, show], script: [{ tools: [searchCall] }, { text: 'Three flights after 6 pm.', tools: [showCall()] }, { text: 'never asked' }] });
+    // The free text is written before the card is up (run 37586604675, goa-300:73: "I'll show the best three by rating and value.").
+    const r = room({
+      messages: [ask],
+      extraTools: [search, show],
+      script: [{ tools: [searchCall] }, { text: "I'll show the best three by rating and value.", tools: [showCall('rs_1', 'Three flights after 6 pm.')] }, { text: 'never asked' }],
+    });
     await turn(r, [item(r.tripId, ask, true)]);
     expect(r.model.bodies).toHaveLength(2);
     expect(r.posts()).toHaveLength(1);
@@ -549,8 +555,8 @@ describe('a reply of card tools ends the turn on its cards', () => {
 
   it('open_vote is a card tool too: the vote and its line in one reply, one model call', async () => {
     const ask = msg(3, 'p_arjun', '@Go villa or resort? put it to a vote');
-    const vote = { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }] } };
-    const r = room({ messages: [ask], script: [{ text: 'Vote is up, tap your pick.', tools: [vote] }, { text: 'never asked' }] });
+    const vote = { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }], line: 'Vote is up, tap your pick.' } };
+    const r = room({ messages: [ask], script: [{ text: "I'll open the vote.", tools: [vote] }, { text: 'never asked' }] });
     await turn(r, [item(r.tripId, ask, true)]);
     expect(r.model.bodies).toHaveLength(1);
     expect(r.posts()[0]?.params).toMatchObject({ text: 'Vote is up, tap your pick.', card: { kind: 'vote', decision_id: 'd_first' } });
@@ -558,7 +564,8 @@ describe('a reply of card tools ends the turn on its cards', () => {
 
   it('a reply with a card tool and a tool that returns data still goes back to the model', async () => {
     const ask = msg(3, 'p_arjun', '@Go flights?');
-    const r = room({ messages: [ask], extraTools: [search, show], script: [{ tools: [showCall(), searchCall] }, { text: 'Here they are.' }] });
+    // A later reply's own words still win over a card's line from an earlier one.
+    const r = room({ messages: [ask], extraTools: [search, show], script: [{ tools: [showCall('rs_1', 'Three flights.'), searchCall] }, { text: 'Here they are.' }] });
     await turn(r, [item(r.tripId, ask, true)]);
     expect(r.model.bodies).toHaveLength(2);
     expect(r.posts()[0]?.params).toMatchObject({ text: 'Here they are.', card: { decision_id: 'd_flights' } });
@@ -581,7 +588,7 @@ describe('a reply of card tools ends the turn on its cards', () => {
     const r = room({
       messages: [ask],
       extraTools: [show],
-      script: [{ text: 'Friday: three flights after 6 pm.', tools: [showCall()] }, { text: 'Friday has three after 6 pm; Saturday I can check next.' }],
+      script: [{ tools: [showCall('rs_1', 'Friday: three flights after 6 pm.')] }, { text: 'Friday has three after 6 pm; Saturday I can check next.' }],
       claimNew: async (tripId) => {
         if (claimed) return [];
         claimed = true;
@@ -602,8 +609,8 @@ describe('a reply of card tools ends the turn on its cards', () => {
 
   it('a rerun after a crash repeats the same ids: one vote opened, one card posted', async () => {
     const ask = msg(3, 'p_arjun', '@Go put villa or resort to a vote');
-    const vote = { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }] } };
-    const r = room({ messages: [ask], script: [{ text: 'Vote is up.', tools: [vote] }, { text: 'Vote is up.', tools: [vote] }] });
+    const vote = { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }], line: 'Vote is up.' } };
+    const r = room({ messages: [ask], script: [{ tools: [vote] }, { tools: [vote] }] });
     // The first post never gets an answer the turn can use: the turn fails after the vote opened.
     const posted = r.speak.post.bind(r.speak);
     let first = true;
@@ -630,7 +637,7 @@ describe('a reply of card tools ends the turn on its cards', () => {
       messages: [ask],
       extraTools: [show],
       budget,
-      script: [{ text: 'Friday: three flights after 6 pm.', tools: [showCall()], usage: { input_tokens: 600_000 } }, { text: 'never asked' }],
+      script: [{ tools: [showCall('rs_1', 'Friday: three flights after 6 pm.')], usage: { input_tokens: 600_000 } }, { text: 'never asked' }],
       claimNew: async (tripId) => {
         if (claimed) return [];
         claimed = true;
@@ -669,17 +676,23 @@ describe('show the options and put them to a vote in one reply', () => {
           ? { tools: [{ name: 'search_stays', input: STAYS }] }
           : call === 1
             ? {
-                text: 'Three villas with a pool, vote is up.',
-                tools: [{ name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool' } }, { name: 'put_to_vote', input: {} }],
+                // goa-50:24 in run 37586604675 posted this free text with its card.
+                text:
+                  'Five people at under 8k a head is ₹40,000 a night, so everything fits the cap. "Near the beach" rules out the 15 and 20 minute ones. ' +
+                  "I'll show the best-rated villas that are close to the beach.",
+                tools: [
+                  { name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool', line: 'Three villas with a pool.' } },
+                  { name: 'put_to_vote', input: { line: 'Vote is up, tap your pick.' } },
+                ],
               }
             : { text: 'never asked' },
     });
     await turn(r, [item(r.tripId, ask, true)]);
     expect(r.model.bodies).toHaveLength(2);
     expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(1);
-    // The line rides with the options card; the vote card follows it, as every second card does.
+    // Both lines ride with the options card, never the free text; the vote card follows it, as every second card does.
     expect(r.posts().map((p) => [p.params.text, p.params.card?.kind])).toEqual([
-      ['Three villas with a pool, vote is up.', 'options'],
+      ['Three villas with a pool.\nVote is up, tap your pick.', 'options'],
       [undefined, 'vote'],
     ]);
     expect(r.posts()[1]?.params.card).toMatchObject({ decision_id: 'd_first' });
@@ -698,9 +711,13 @@ describe('show the options and put them to a vote in one reply', () => {
         call === 0
           ? { tools: [{ name: 'search_stays', input: STAYS }] }
           : call === 1
-            ? { text: 'Three villas with a pool.', tools: [{ name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool' } }] }
+            ? { tools: [{ name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool', line: 'Three villas with a pool.' } }] }
             : call === 2 && cardIn(body)
-              ? { text: 'Vote is up, tap your pick.', tools: [{ name: 'put_to_vote', input: { card_id: cardIn(body) } }] }
+              ? {
+                  // goa-300:175 in run 37586604675 posted this, card id and all.
+                  text: "I'll put the most recent villa options card (" + cardIn(body) + ') to a vote.',
+                  tools: [{ name: 'put_to_vote', input: { card_id: cardIn(body), line: 'Vote is up, tap your pick.' } }],
+                }
               : { text: 'never asked' },
     });
     await turn(r, [item(r.tripId, find, true)]);
@@ -725,9 +742,9 @@ describe('show the options and put them to a vote in one reply', () => {
           : call === 1
             ? {
                 tools: [
-                  { name: 'show_options', input: { results_id: resultsIdOf(body), option_numbers: [1, 2], title: 'Two villas' } },
-                  { name: 'show_options', input: { results_id: resultsIdOf(body), option_numbers: [3, 4], title: 'Two more' } },
-                  { name: 'put_to_vote', input: {} },
+                  { name: 'show_options', input: { results_id: resultsIdOf(body), option_numbers: [1, 2], title: 'Two villas', line: 'Two villas.' } },
+                  { name: 'show_options', input: { results_id: resultsIdOf(body), option_numbers: [3, 4], title: 'Two more', line: 'Two more.' } },
+                  { name: 'put_to_vote', input: { line: 'Vote is up.' } },
                 ],
               }
             : { text: 'Which set should we vote on?' },

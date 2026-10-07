@@ -51,11 +51,46 @@ export function stripMessageRefs(text: string): { text: string; refs: number[] }
   return { text: out, refs: [...new Set(refs)] };
 }
 
-const KEEP = /(_id|_ids|url|_at)$/;
+// Go's own ids: a card, vote, turn, task, call or results id ("c_opt_turn_01M4…_1", "r_fr3169bw…", "gt_ab12cd"), that
+// is letters, an underscore and a body with a digit in it; a field name that holds one ("card_id"); a bare ULID. Not a
+// piece of a link, a path, an email address or a file name ("rahul_1@…", "plan_2.pdf").
+const ID = String.raw`[A-Za-z][A-Za-z0-9]{0,11}_[A-Za-z0-9_]*\d[A-Za-z0-9_]*|[a-z]+(?:_[a-z]+)*_ids?|[0-9A-HJKMNP-TV-Z]{26}`;
+const IDS = new RegExp(String.raw`(?<![\w./=?&#%@:-])(?:${ID})(?![\w@-])(?!\.\w)`, 'g');
+const LINK = /https?:\/\/\S+/g;
 
-/** sanitize() on every string inside a card, except ids, links and times. */
+/**
+ * Takes Go's internal ids out of words people read, the last line of defence at the post: "I'll put the most recent
+ * villa options card (c_opt_turn_01M4…) to a vote" loses the id and its brackets. Links are left as they are.
+ */
+export function stripIds(text: string): string {
+  let cut = false;
+  const outside = (part: string): string =>
+    part.replace(IDS, () => {
+      cut = true;
+      return '';
+    });
+  let out = '';
+  let at = 0;
+  for (const m of text.matchAll(LINK)) {
+    out += outside(text.slice(at, m.index)) + m[0];
+    at = m.index + m[0].length;
+  }
+  out += outside(text.slice(at));
+  // Text with no id in it is left exactly as it was.
+  if (!cut) return text;
+  return out
+    .replace(/\s*\(\s*\)|\s*\[\s*\]/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+([,.!?;:])/g, '$1')
+    .replace(/,([.!?])/g, '$1')
+    .trim();
+}
+
+const KEEP = /(^id|_id|_ids|url|_at)$/;
+
+/** sanitize() and stripIds() on every string inside a card, except ids, links and times. */
 export function sanitizeDeep<T>(value: T, key = ''): T {
-  if (typeof value === 'string') return (KEEP.test(key) ? value : sanitize(value)) as T;
+  if (typeof value === 'string') return (KEEP.test(key) ? value : sanitize(stripIds(value))) as T;
   if (Array.isArray(value)) return value.map((v) => sanitizeDeep(v, key)) as T;
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitizeDeep(v, k)])) as T;

@@ -1,7 +1,7 @@
 import type * as C from '@go/contract';
 import type pg from 'pg';
 import type { ServerLink } from '../door/server-link.js';
-import { clip, sanitize, sanitizeDeep, stripMessageRefs } from './sanitize.js';
+import { clip, sanitize, sanitizeDeep, stripIds, stripMessageRefs } from './sanitize.js';
 
 export interface PostArgs {
   link: ServerLink;
@@ -109,8 +109,8 @@ export function createSpeak(o: {
     },
     typingOff,
     async post(p) {
-      // Message numbers leave the words only; a card's "House #12" is an address.
-      const words = p.text && p.text.trim() ? sanitize(stripMessageRefs(p.text).text) : '';
+      // Go's ids never reach people. Message numbers leave the words only; a card's "House #12" is an address.
+      const words = p.text && p.text.trim() ? sanitize(stripMessageRefs(stripIds(p.text)).text) : '';
       const text = words ? clip(words, 2_000) : null;
       const cards = p.cards.map((c) => sanitizeDeep(c));
       const first = cards.shift();

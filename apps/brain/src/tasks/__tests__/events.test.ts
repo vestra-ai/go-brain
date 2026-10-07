@@ -130,7 +130,7 @@ describe('applying /v1 events', () => {
     const show = travelTools({ travel, results: h.results, images: createImages({ pool: h.pool, publicUrl: 'https://go.test' }), now: h.lb.clock.now })
       .find((t) => t.name === 'show_options')!;
     const ctx = h.lb.ctx({ tripId: row.tripId, turnId: 'turn_ev10' });
-    await show.run(show.input.parse({ results_id: done.resultsId, option_numbers: [1, 2, 3, 4], title: 'Villas with a pool' }), ctx);
+    await show.run(show.input.parse({ line: 'Four villas with a pool.', results_id: done.resultsId, option_numbers: [1, 2, 3, 4], title: 'Villas with a pool' }), ctx);
     const card = ctx.cards[0] as Extract<C.Card, { kind: 'options' }>;
     expect(card.checked_at).toBe(SEARCHED_AT);
     expect(await Promise.all(card.options.map((o) => travel.offer(o.option_id)))).toEqual([

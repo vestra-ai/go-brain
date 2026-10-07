@@ -5,7 +5,7 @@
  */
 import { z } from 'zod';
 import { CARD_LINE } from '../composer/rules.js';
-import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
+import { CardLineArg, SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
 import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, ixigoPage, subtitleFor } from './cards.js';
 import { asked } from './filters.js';
@@ -391,6 +391,7 @@ const ShowArgs = z.object({
   results_id: z.string().min(3).max(64),
   option_numbers: z.array(z.int().min(1).max(10)).min(1).max(5).optional().describe('From the results, best first. Default: the first three.'),
   title: z.string().min(1).max(80),
+  line: CardLineArg,
 });
 
 const VoteArgs = z.object({
@@ -403,6 +404,7 @@ const VoteArgs = z.object({
   question: z.string().min(3).max(200).optional(),
   closes_in_hours: z.number().min(0.5).max(72).optional(),
   anonymous: z.boolean().optional().describe('true for a secret ballot, only when someone asks for a secret or anonymous vote. Leave it out otherwise.'),
+  line: CardLineArg,
 });
 
 export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
@@ -442,7 +444,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     name: 'show_options',
     description:
       'Shows an options card from a results_id (a search, or a finished job), with up to 5 option_numbers, best first, and a short title. ' +
-      `The card goes out with your message and shows the checked prices, so never type prices yourself. Write your one short line about it in the same reply. ${CARD_LINE}`,
+      `The card goes out with your line and shows the checked prices, so never type prices yourself. ${CARD_LINE}`,
     input: ShowArgs,
     endsTurn: true,
     async run(a, ctx) {
@@ -464,15 +466,16 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
       const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
       ctx.cards.push(shown);
-      return { card_id: cardId, shown: shown.options.length, checked: ageText(set.checkedAt, d.now()), note: 'The card goes out with your message. Add one short line; quote prices only from the card.' };
+      ctx.lines.push(a.line);
+      return { card_id: cardId, shown: shown.options.length, checked: ageText(set.checkedAt, d.now()), note: 'The card goes out with your line.' };
     },
   };
   const putToVote: QuickTool<z.infer<typeof VoteArgs>> = {
     name: 'put_to_vote',
     description:
       'Opens a vote on the options of an options card Go showed (card_id). To show options and put them to a vote at once, ' +
-      'call show_options and then this with no card_id, in the same reply. The vote card goes out with your message: ' +
-      `write your one short line in the same reply. ${CARD_LINE} Use it when the group should decide together. ` +
+      'call show_options and then this with no card_id, in the same reply. The vote card goes out with the line you give it. ' +
+      `${CARD_LINE} Use it when the group should decide together. ` +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: VoteArgs,
     endsTurn: true,
@@ -503,7 +506,8 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       );
       if (!r.ok) return { error: r.reason, ...(r.decisionId ? { decision_id: r.decisionId } : {}) };
       ctx.cards.push(r.voteCard);
-      return { decision_id: r.decisionId, note: 'The vote card goes out with your message. Add one short line.' };
+      ctx.lines.push(a.line);
+      return { decision_id: r.decisionId, note: 'The vote card goes out with your line.' };
     },
   };
   return [searchFlights, searchTrains, searchBuses, searchStays, showOptions, putToVote];

@@ -97,7 +97,7 @@ describe('the room\'s tools', () => {
   it('open_vote opens the vote and puts its card on the turn\'s message', async () => {
     const { ctx, calls } = ctxWith({ open_vote: () => ({ decision_id: 'd_new', seq: 60 }) });
     const r = await tool('open_vote').run(
-      { question: 'Where do we stay?', options: [{ label: 'Villa Sol', note: '3 nights, pool' }, { label: 'Casa Azul' }] },
+      { question: 'Where do we stay?', options: [{ label: 'Villa Sol', note: '3 nights, pool' }, { label: 'Casa Azul' }], line: 'Vote is up, tap your pick.' },
       ctx,
     );
     expect(r).toMatchObject({ ok: true, decision_id: 'd_new' });
@@ -106,11 +106,13 @@ describe('the room\'s tools', () => {
       options: [{ label: 'Villa Sol', note: '3 nights, pool' }, { label: 'Casa Azul' }],
     });
     expect(ctx.cards).toEqual([{ kind: 'vote', card_id: 'c_vote_turn_T_1', fallback_text: 'Vote: Where do we stay?', decision_id: 'd_new' }]);
+    // Its line is the words posted with the card; the Server never sees it.
+    expect(ctx.lines).toEqual(['Vote is up, tap your pick.']);
   });
 
   it('open_vote asks for a secret ballot when the model sets anonymous, and an open one otherwise', async () => {
     const { ctx, calls } = ctxWith({ open_vote: () => ({ decision_id: 'd_secret', seq: 62 }) });
-    const args = tool('open_vote').input.parse({ question: 'Who should cook on Saturday?', options: [{ label: 'Rahul' }, { label: 'Priya' }], anonymous: true });
+    const args = tool('open_vote').input.parse({ question: 'Who should cook on Saturday?', options: [{ label: 'Rahul' }, { label: 'Priya' }], anonymous: true, line: 'Secret vote is up.' });
     expect(await tool('open_vote').run(args, ctx)).toMatchObject({ ok: true, decision_id: 'd_secret' });
     expect(calls[0]?.params).toMatchObject({ question: 'Who should cook on Saturday?', anonymous: true });
     expect(tool('open_vote').description).toContain('secret or anonymous vote');
@@ -127,7 +129,7 @@ describe('the room\'s tools', () => {
       option_ref: 'ixg_offer_82', note: null,
     };
     // Parsed the way the loop parses the model's arguments: no field is dropped on the way in.
-    const args = tool('open_vote').input.parse({ question: 'Which villa?', options: [sol, azul] });
+    const args = tool('open_vote').input.parse({ question: 'Which villa?', options: [sol, azul], line: 'Vote is up.' });
     expect(await tool('open_vote').run(args, ctx)).toMatchObject({ ok: true, decision_id: 'd_villa' });
     expect(calls[0]?.params.options).toEqual([
       sol,
@@ -137,9 +139,10 @@ describe('the room\'s tools', () => {
 
   it('open_vote refuses a closing time in the past without asking the Server', async () => {
     const { ctx, calls } = ctxWith({ open_vote: () => ({ decision_id: 'd_new', seq: 60 }) });
-    const r = await tool('open_vote').run({ question: 'When?', options: [{ label: 'Fri' }, { label: 'Sat' }], closes_at: '2026-10-06T08:00:00Z' }, ctx);
+    const r = await tool('open_vote').run({ question: 'When?', options: [{ label: 'Fri' }, { label: 'Sat' }], closes_at: '2026-10-06T08:00:00Z', line: 'Vote is up.' }, ctx);
     expect(r).toMatchObject({ ok: false });
     expect(calls).toHaveLength(0);
+    expect(ctx.lines).toEqual([]);
   });
 
   it('close_vote says who won, fenced; a vote that is not open goes back to the model', async () => {

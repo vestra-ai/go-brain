@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clip, sanitize, sanitizeDeep, stripMessageRefs } from '../sanitize.js';
+import { clip, sanitize, sanitizeDeep, stripIds, stripMessageRefs } from '../sanitize.js';
 
 describe('sanitize', () => {
   it('turns em and en dashes into commas, and number ranges into hyphens', () => {
@@ -62,5 +62,42 @@ describe('sanitize', () => {
     expect(t).toHaveLength(2_000);
     expect(t.endsWith('...')).toBe(true);
     expect(clip('short', 2_000)).toBe('short');
+  });
+});
+
+describe("Go's ids never reach people", () => {
+  it('takes out the id goa-300:175 posted in run 37586604675, with its brackets', () => {
+    expect(stripIds("I'll put the most recent villa options card (c_opt_turn_01M4AKVFEWCWYK4RFMB0MP8R97_1) to a vote.")).toBe(
+      "I'll put the most recent villa options card to a vote.",
+    );
+  });
+
+  it('takes out every kind: card, vote, turn, results, task, conversation and message ids, a field name, a bare ULID', () => {
+    expect(stripIds('Vote is up on c_vote_turn_t_35e02e110dfa4980_1.')).toBe('Vote is up on.');
+    expect(stripIds('From results_id r_fr3169bwfa43r3s31806: three villas.')).toBe('From: three villas.');
+    expect(stripIds('Job gt_8k2m4q is on it, turn turn_01M4AKVFEWCWYK4RFMB0MP8R97.')).toBe('Job is on it, turn.');
+    expect(stripIds('The call (conv_7f3a9c21) ended; see msg_01J9ZQ4 and task_42.')).toBe('The call ended; see and.');
+    expect(stripIds('Saved as 01M4AKVFEWCWYK4RFMB0MP8R97 for you [m_57].')).toBe('Saved as for you.');
+  });
+
+  it("leaves people's words alone: links, emails, files, flight numbers, prices, times, room numbers", () => {
+    for (const t of [
+      'Book it here: https://www.ixigo.com/hotels/villa_sol_123?ref=c_opt_turn_x_1 before 6 pm.',
+      'Mail rahul_1@gmail.com the plan_2.pdf, please.',
+      'IndiGo 6E 2134 leaves at 7:10 pm, ₹5,640.50 a head.',
+      'Room #12 at Villa_Sol, 6 to 9 Nov.',
+      'Chalo, kal milte hain 🌴',
+    ]) {
+      expect(stripIds(t)).toBe(t);
+    }
+  });
+
+  it("goes through every string of a card except its ids, links and times", () => {
+    const card = {
+      kind: 'options', card_id: 'c_opt_turn_A_1', title: 'Villas (c_opt_turn_A_1)', fallback_text: 'Options: villas',
+      options: [{ id: 'opt_c_opt_turn_A_1_1', option_id: 'opt_c_opt_turn_A_1_1', title: 'Villa Sol', image_url: 'https://go.test/img/u_1.jpg' }],
+      checked_at: '2026-10-07T09:00:00Z',
+    };
+    expect(sanitizeDeep(card)).toEqual({ ...card, title: 'Villas' });
   });
 });

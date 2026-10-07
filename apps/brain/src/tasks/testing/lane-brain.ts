@@ -289,6 +289,7 @@ export function makeLaneBrain(o: { pool: pg.Pool; env?: Record<string, string>; 
       outcome: { spoke: false, silent: false, reactions: 0, posts: [] },
       wake: [],
       cards: [],
+      lines: [],
       // The same ids P1's makeTurnCtx gives: a rerun of the same turn repeats them.
       stableId(prefix: string): string {
         const n = (counts.get(prefix) ?? 0) + 1;

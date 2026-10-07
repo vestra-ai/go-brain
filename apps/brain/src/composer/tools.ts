@@ -1,5 +1,5 @@
 import type * as C from '@go/contract';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { DeskItem } from '../desk/desk.js';
 import type { ToServerMethod, ToServerParams } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
@@ -19,8 +19,9 @@ export interface QuickTool<A = unknown> {
   timeoutMs?: number;
   /**
    * A card tool that needs nothing back (show_options, put_to_vote, open_vote, post_notice): when every call in a reply
-   * is one of these and each put its card up, the turn ends there. The reply's own text goes out with the cards, and no
-   * model call is spent on a line.
+   * is one of these and each put its card up, the turn ends there, and no model call is spent on a line. A card tool
+   * that takes a `line` pushes it to ctx.lines with its card: the lines are the reply's words, and its free text (written
+   * before the card went up, so often the model's working) is never posted.
    */
   endsTurn?: boolean;
   /**
@@ -40,6 +41,8 @@ export interface TurnCtx {
   wake: DeskItem[];
   /** Cards to post with this turn's message; the first rides with the text, the rest follow it. */
   cards: C.Card[];
+  /** The `line` of each card tool whose card went up (show_options, put_to_vote, open_vote): the words posted with it. */
+  lines: string[];
   /** A stable id for a write or a card, e.g. stableId('go_react'): the same on a rerun of this turn, so the Server does it once. */
   stableId(prefix: string): string;
   /** Aborts when the turn runs out of time (20 s); pass it to anything that waits. */
@@ -68,6 +71,13 @@ export interface Tools {
 }
 
 export const STAY_SILENT = 'stay_silent';
+
+/** A card tool's `line` (show_options, put_to_vote, open_vote): the message posted with its card. CARD_LINE says how it reads. */
+export const CardLineArg = z
+  .string()
+  .min(1)
+  .max(1_000)
+  .describe('The message posted with the card, the only words the group sees from this reply: the finished answer to whoever asked, in one or two sentences.');
 
 /** tell_the_room on a refusal that is Go's own business (a record line, a notice): the group never hears about Go's tools. */
 export const SAY_NOTHING = 'Say nothing about this in the chat, and carry on.';
@@ -116,6 +126,7 @@ export function makeTurnCtx(a: {
     signal: a.signal,
     outcome: { spoke: false, silent: false, reactions: 0, posts: [], asked: [], noted: [] },
     cards: [],
+    lines: [],
     ...(a.limits ? { allowedTools: [...a.limits.tools], mayPostText: a.limits.mayPostText } : {}),
     stableId(prefix) {
       const n = (counts.get(prefix) ?? 0) + 1;
