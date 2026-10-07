@@ -24,14 +24,14 @@ export function isForgotten(m: Message, forgotten: ReadonlyMap<string, number>):
   return upTo !== undefined && m.seq <= upTo;
 }
 
-export function chatLine(m: Message, pack: TripPack, hidden: boolean): string {
+export function chatLine(m: Message, pack: TripPack, hidden: boolean, toGo = false): string {
   if (hidden) return `#${m.seq} [hidden: someone asked Go to forget them]`;
   const body = fenceText(maskSecrets(messageText(m)).text);
   if (m.author.kind === 'go') return `#${m.seq} [Go]: ${body}`;
   if (m.author.kind === 'system') return `#${m.seq} [app]: ${body}`;
   const id = m.author.person_id;
   const name = pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone';
-  return `#${m.seq} [person ${nameLabel(name)} | ${id}]: ${body}`;
+  return `#${m.seq} [person ${nameLabel(name)} | ${id}${toGo ? ' | to Go' : ''}]: ${body}`;
 }
 
 export function peopleLegend(pack: TripPack): string {

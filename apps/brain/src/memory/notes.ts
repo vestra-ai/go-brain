@@ -10,6 +10,7 @@ import type { Message } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
 import { maskSecrets } from '../reflex/secrets.js';
+import { partOfAskToGo } from '../trips/names-go.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import { checkFact, checkLine, type CheckEnv } from './checker.js';
 import { decisionOf, linkLine } from './decision-lines.js';
@@ -21,8 +22,9 @@ import type { SideModel } from './side-model.js';
 
 export const NOTES_RULES = [
   'You keep notes for Go, the AI member of a trip group chat. You read the new lines of the chat and propose two kinds of notes.',
-  '1. facts: lasting things a person says about themselves that matter for planning the trip: food, drinks, when they can or cannot travel, seats, health, money limits they say openly, what they will not do. Only from that person\'s own line. topic is one or two lowercase words such as food, drinks, leaving, arriving, seats, flights, boats, health, budget, sleep, activities. text is short plain words without the name, such as "Vegetarian" or "Can\'t leave before 6 pm Friday". The trip\'s own plan (its dates, its place), said as the plan, is not a fact about whoever said it: it goes in the record.',
-  '2. lines for the trip record: "agreed" when people agreed in the chat (proof: the proposal and the yes lines; put any line that disagrees in objections). The organizer\'s own line that states a plan point as settled ("Goa trip is happening!! 6 to 9 Nov", "We\'re doing North Goa") is agreed on its own, with that line as proof; one from the organizer that proposes or asks ("6 to 9 Nov?", "how about North Goa?") is open. "open" when a question about the plan is still unsettled (person_ids: who is asked), "doing" when someone says they will sort something (person_ids: who said it); a request to Go is never a doing line, Go does it. To change one of Go\'s own record lines, give its line_id; for a job that is finished add "status": "done".',
+  '1. facts: lasting things a person says about themselves that matter for planning the trip: food, drinks, when they can or cannot travel, seats, health, money limits they say openly, what they will not do. Only from that person\'s own line, and never from a question or a request: "@Go is it hot in Goa in November?" or "how far is Thalassa from Anjuna" says nothing lasting about whoever asks it, not even an interest in the places it names. topic is one or two lowercase words such as food, drinks, leaving, arriving, seats, flights, boats, health, budget, sleep, activities. text is short plain words without the name, such as "Vegetarian" or "Can\'t leave before 6 pm Friday". The trip\'s own plan (its dates, its place), said as the plan, is not a fact about whoever said it: it goes in the record.',
+  '2. lines for the trip record: "agreed" when people agreed in the chat (proof: the proposal and the yes lines; put any line that disagrees in objections). The organizer\'s own line that states a plan point as settled ("Goa trip is happening!! 6 to 9 Nov", "We\'re doing North Goa") is agreed on its own, with that line as proof; one from the organizer that proposes or asks ("6 to 9 Nov?", "how about North Goa?") is open. "open" when a question about the plan is still unsettled among the group (person_ids: who is asked); a question put to Go is Go\'s to answer and is never open. "doing" when someone says they will sort something (person_ids: who said it); a request to Go is never a doing line, Go does it. To change one of Go\'s own record lines, give its line_id; for a job that is finished add "status": "done".',
+  'A line marked "to Go" is part of an ask to Go: Go answers it, so it is never an open line, and only a fact the person states in it is noted.',
   'Cite lines by their number (#142 is 142). Propose facts only from the new lines. Never propose anything from a [hidden] line. Never copy card numbers, codes or passwords. Do not repeat what the record already says.',
   FENCE_RULE,
   'Answer with one JSON object and nothing else, for example: {"facts":[{"person_id":"p_x","topic":"food","text":"Vegetarian","message":142}],"lines":[{"kind":"agreed","text":"North Goa, not South","person_ids":[],"proof":[122,124],"objections":[]}]}. Use empty lists when there is nothing to note.',
@@ -92,7 +94,8 @@ function promptFor(pack: TripPack, record: CheckEnv['record'], context: Message[
         .map((l) => `- ${fenceText(l.line_id)} [${l.kind}${l.source === 'go' ? ", Go's" : ''}${l.status === 'done' ? ', done' : ''}]: ${fenceText(maskSecrets(l.text).text)}`)
         .join('\n')
     : '(empty)';
-  const line = (m: Message) => chatLine(m, pack, isForgotten(m, forgotten));
+  // A line marked "to Go" is part of an ask to Go (it names Go, or sits in the same person's burst that does): Go answers it.
+  const line = (m: Message) => chatLine(m, pack, isForgotten(m, forgotten), partOfAskToGo(m, pack));
   return [
     '<chat_data>',
     'People in the trip:',

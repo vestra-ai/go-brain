@@ -169,13 +169,27 @@ describe('wireMemory', () => {
     expect(await currentFacts(db.pool, { personId: 'p_meher', tripId: 't_r4' })).toEqual([]);
   });
 
-  it('reacts 👍 at once, without the model, with a request_id derived from the message', async () => {
+  it('reacts 👍 once a burst could have landed, without the model, with a request_id derived from the message', async () => {
     const m = msg(10, 'p_priya', 'sounds good Go, thanks!');
     const w = setup('t_r5', [m], []);
     await w.wired.onRead(m, read({ reaction: sure('👍') }), w.pack);
+    expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toEqual([]);
+    w.t.advance(3_000);
     await vi.waitFor(() => expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toHaveLength(1));
     expect(w.link.calls[0]!.params).toMatchObject({ message_id: 'm_0010', emoji: '👍', request_id: expect.stringMatching(/^go_react_[0-9a-f]{24}$/) });
     expect(w.model.prompts).toHaveLength(0);
+  });
+
+  it('puts no 👍 on an "ok" that opens a burst to Go: the ask gets Go\'s answer, not a reaction', async () => {
+    // Meher's burst in the live drill (t_p1a_572dd322): Jev read "ok" as 👍, and it went on 0.2 s later.
+    const at = (s: number) => new Date(Date.parse('2026-10-07T09:00:00Z') + s * 1_000).toISOString();
+    const ok = msg(20, 'p_meher', 'ok', { sent_at: at(0) });
+    const w = setup('t_r15', [ok], []);
+    await w.wired.onRead(ok, read({ reaction: sure('👍') }), w.pack);
+    w.pack.messages.push(msg(21, 'p_meher', '@Go one thing', { sent_at: at(1), mentions_go: true }));
+    w.t.advance(3_000);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toEqual([]);
   });
 
   it('a sure fact + sure ✅ reacts within the hook, before any notes-pass timer, and the notes pass never doubles it', async () => {
