@@ -273,6 +273,7 @@ export const stays: Recipe<StaySlots> = {
   readyText: 'per night, per room',
   extract,
   agentExtractor: pageScript(readStaysPage, 2),
+  readPage: readStaysPage,
   fromAgent,
   ttlMs: RECIPE_TTL_MS,
 };

@@ -225,6 +225,7 @@ export const flights: Recipe<FlightSlots> = {
   readyText: 'Flights Available',
   extract,
   agentExtractor: pageScript(readFlightsPage, 3),
+  readPage: readFlightsPage,
   fromAgent,
   ttlMs: RECIPE_TTL_MS,
 };

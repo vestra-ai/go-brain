@@ -52,6 +52,8 @@ export interface Recipe<S> {
   extract(captures: Capture[], s: S): RecipeOption[];
   /** The fallback runner's page script: an expression whose value is the rows the page shows, at most 15, under 8 KB. */
   agentExtractor: string;
+  /** The reader inside that script, for page text that comes back another way (a snapshot, when the script is held). */
+  readPage: (text: string, links: string[]) => unknown[];
   /** The options in what agentExtractor returned. Throws TravelError('refused') when the rows don't read. */
   fromAgent(rows: unknown, s: S): RecipeOption[];
   /** How long a result is reused. */
@@ -114,6 +116,19 @@ export function pageScript(reader: (text: string, links: string[]) => unknown[],
   while (rows.length > 0 && JSON.stringify(rows).length > ${AGENT_MAX_CHARS}) rows.pop();
   return rows;
 })()`;
+}
+
+/**
+ * The page's text lines from a computer_snapshot (Bash's accessibility tree, one node a line: `- role "name" [@e3]`):
+ * the text nodes' names in order, which read as the page's own text does. A snapshot with no text nodes gives every name.
+ */
+export function snapshotText(snapshot: string): string {
+  const named = snapshot.split('\n').flatMap((line) => {
+    const m = /^\s*- (\S+) "((?:[^"\\]|\\.)*)"/.exec(line);
+    return m ? [{ role: m[1]!, name: m[2]!.replace(/\\"/g, '"') }] : [];
+  });
+  const text = named.filter((n) => n.role === 'StaticText');
+  return (text.length > 0 ? text : named).map((n) => n.name).join('\n');
 }
 
 /** "2026-11-06" as ixigo's "06112026". */

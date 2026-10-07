@@ -245,6 +245,7 @@ export const trains: Recipe<TrainSlots> = {
   readyText: 'SHOW AVAILABILITY',
   extract,
   agentExtractor: pageScript(readTrainsPage, 2),
+  readPage: readTrainsPage,
   fromAgent,
   ttlMs: RECIPE_TTL_MS,
 };
