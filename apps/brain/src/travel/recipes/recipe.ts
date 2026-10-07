@@ -15,6 +15,9 @@ export interface CaptureSpec {
   /** False when the options can be read without it, so a fetch that timed out with it missing still answers. */
   required: boolean;
   max_bytes?: number;
+  /** Bash waits for this many matching responses (pages) before it answers, and keeps at most max_count. */
+  min_count?: number;
+  max_count?: number;
 }
 
 /** One response the page received, as the browser fetch answers it. */
@@ -50,6 +53,8 @@ export interface Recipe<S> {
   url(s: S): string;
   capture: CaptureSpec[];
   steps?: Step[];
+  /** What the browser fetch keeps and does for these slots, when it differs from capture and steps (more pages). */
+  fetchFor?(s: S): { capture: CaptureSpec[]; steps?: Step[] };
   /** False when Bash's browser fetch can't read the page: its list loads only in a tab Chrome draws, so the agent job reads it. */
   fetchable: boolean;
   /** Text the page shows once its results are in: the agent job waits for it before it reads the page. */
