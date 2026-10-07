@@ -11,7 +11,7 @@ import type { TripPack } from '../trips/pack.js';
 import { inlineData } from './fence.js';
 import { CARD_LINE } from './rules.js';
 import { clip } from './sanitize.js';
-import { SAY_NOTHING, STAY_SILENT, type QuickTool } from './tools.js';
+import { CardLineArg, SAY_NOTHING, STAY_SILENT, type QuickTool } from './tools.js';
 
 /** "#57", "57" or a message id. */
 function findMessage(pack: TripPack, ref: string): Message | undefined {
@@ -50,6 +50,7 @@ const OpenVoteInput = z.object({
     .datetime({ offset: true })
     .optional()
     .describe('When the vote closes, an ISO time with its offset. Leave it out to close when everyone has voted.'),
+  line: CardLineArg,
 });
 
 const CloseVoteInput = z.object({
@@ -121,8 +122,8 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
   const openVote: QuickTool<z.infer<typeof OpenVoteInput>> = {
     name: 'open_vote',
     description:
-      'Open a vote in the room, with 2 to 10 short options. The vote card goes out with your message: write your one ' +
-      `short line in the same reply. ${CARD_LINE} Never open a second vote on a question that already has an open one. ` +
+      `Open a vote in the room, with 2 to 10 short options. The vote card goes out with the line you give it. ${CARD_LINE} ` +
+      'Never open a second vote on a question that already has an open one. ' +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: OpenVoteInput,
     endsTurn: true,
@@ -139,7 +140,8 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
         ...(a.closes_at ? { closes_at: a.closes_at } : {}),
       });
       ctx.cards.push({ kind: 'vote', card_id: ctx.stableId('c_vote'), fallback_text: clip(`Vote: ${a.question}`, 300), decision_id: r.decision_id });
-      return { ok: true, decision_id: r.decision_id, note: 'The vote card goes out with your message.' };
+      ctx.lines.push(a.line);
+      return { ok: true, decision_id: r.decision_id, note: 'The vote card goes out with your line.' };
     },
   };
 

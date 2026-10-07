@@ -78,6 +78,18 @@ describe('post', () => {
     expect(rows[0].posted_at).toBeInstanceOf(Date);
   });
 
+  it("never posts Go's own ids: the line goa-300:175 posted in run 37586604675 goes out without its card id", async () => {
+    const { link, calls } = fakeLink({ post_message: () => ({ message_id: 'm_go_8', seq: 8 }) });
+    const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
+    await speak.post({
+      link, tripId: 't_goa', turnId: 'turn_C', requestId: (tag) => `go_${tag}_turn_C_1`,
+      text: "I'll put the most recent villa options card (c_opt_turn_01M4AKVFEWCWYK4RFMB0MP8R97_1) to a vote.",
+      cards: [notice('c_8')],
+    });
+    expect(calls[0]?.params.text).toBe("I'll put the most recent villa options card to a vote.");
+    expect(calls[0]?.params.card.card_id).toBe('c_8');
+  });
+
   it('posts a card with no text, and nothing when there is nothing to post', async () => {
     const { link, calls } = fakeLink({ post_message: () => ({ message_id: 'm_go_9', seq: 9 }) });
     const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });

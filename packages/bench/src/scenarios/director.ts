@@ -138,9 +138,9 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
     const searched = result('search_flights');
     if (searched) {
       const id = field(searched.content, 'results_id');
-      // The line goes in the same reply as the card (Go's rules), and the turn ends on the card: no call for a line.
+      // The line goes in the card tool's line (Go's rules), and the turn ends on the card: no call for a line.
       return id
-        ? { text: DIRECTOR_WORDS.flights, tools: [{ name: 'show_options', input: { results_id: id, title: 'Friday flights, Delhi to Goa' } }] }
+        ? { tools: [{ name: 'show_options', input: { results_id: id, title: 'Friday flights, Delhi to Goa', line: DIRECTOR_WORDS.flights } }] }
         : { text: DIRECTOR_WORDS.noFlights };
     }
     // The villas go up as options only: the group opens the vote with the card's own "Put it to a vote" (the stage's way).
@@ -224,7 +224,7 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
     }
     const resultsId = /results_id "([^"]+)"/.exec(now)?.[1];
     if (resultsId && now.includes('finished with')) {
-      return { text: DIRECTOR_WORDS.villasShown, tools: [{ name: 'show_options', input: { results_id: resultsId, title: 'Villas with a pool in North Goa' } }] };
+      return { tools: [{ name: 'show_options', input: { results_id: resultsId, title: 'Villas with a pool in North Goa', line: DIRECTOR_WORDS.villasShown } }] };
     }
     return silent('nothing for Go');
   }

@@ -17,7 +17,7 @@ beforeAll(async () => {
   await registerTravel(lb.brain);
   const found = (await lb.tools.run('search_stays', { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5 }, lb.ctx({ turnId: 'turn_reg1' }))) as any;
   const ctx = lb.ctx({ turnId: 'turn_reg2' });
-  await lb.tools.run('show_options', { results_id: found.results_id, title: 'Villas in North Goa' }, ctx);
+  await lb.tools.run('show_options', { line: 'Here are villas in North Goa.', results_id: found.results_id, title: 'Villas in North Goa' }, ctx);
   card = C.Card.parse(ctx.cards[0]);
 });
 afterAll(async () => {
