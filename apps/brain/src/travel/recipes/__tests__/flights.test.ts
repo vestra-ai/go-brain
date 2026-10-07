@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
-import { flights, readFlightsPage } from '../flights.js';
+import { flights, readFlightsPage, withFlightFilters } from '../flights.js';
 import { capture, fixture } from './fixtures.js';
 
 const slots = flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 4 });
@@ -94,6 +94,13 @@ describe('the flights recipe', () => {
     const [o] = flights.fromAgent([{ airline: 'Air India', numbers: 'AI2985', depart: '23:10', from: 'DEL', arrive: '01:45', to: 'GOI', duration: '2h 35m', stops: 'Non-stop', price: 9000 }], slots);
     expect(o!.journey?.arrive_at).toBe('2026-11-07T01:45:00+05:30');
     expect(o!.facts).toMatchObject({ stops: 0, duration_min: 155 });
+  });
+
+  it("sets people's conditions in ixigo's own filter params, for the link", () => {
+    const url = flights.url(slots);
+    expect(withFlightFilters(url, { from: 'Delhi', to: 'Goa', date: '2026-11-06' })).toBe(url);
+    expect(withFlightFilters(url, { departAfter: '18:00', mustHave: ['non_stop'], maxPriceMinor: 900_050 })).toBe(`${url}&stops=0&takeOff=NIGHT&price=0,9000`);
+    expect(withFlightFilters(url, { departAfter: '10:00', departBefore: '15:00', arriveBefore: '12:00' })).toBe(`${url}&takeOff=MORNING,AFTERNOON&landing=EARLY_MORNING,MORNING`);
   });
 
   it('sends a page script that is one expression with the reader inside it', () => {

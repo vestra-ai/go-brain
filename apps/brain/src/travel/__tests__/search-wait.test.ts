@@ -19,7 +19,7 @@ const FOUND: TravelSearch = {
   }],
 };
 const BUSES = { from: 'Mumbai', to: 'Goa', date: '2026-11-06' };
-const ctx = { tripId: 't_goa', turnId: 'turn_w1' } as TurnCtx;
+const ctx = { tripId: 't_goa', turnId: 'turn_w1', cards: [], stableId: (p: string) => `${p}_turn_w1_1` } as unknown as TurnCtx;
 
 function setup(search: () => Promise<TravelSearch>, wait: number | null, withDesk = true) {
   const puts: Array<Omit<DeskItem, 'id'> & { id?: string }> = [];
@@ -76,6 +76,23 @@ describe('a search that outlives its turn', () => {
   it('waits for the search when there is no desk to wake Go on, as before', async () => {
     const w = setup(() => new Promise((r) => setTimeout(() => r(FOUND), 50)), 0, false);
     expect(await w.run()).toMatchObject({ count: 1 });
+  });
+});
+
+describe('a search ixigo will only show as a link', () => {
+  it("posts a card that links to the flights on ixigo with the conditions set, and never says there are none", async () => {
+    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
+    const cards: unknown[] = [];
+    const turn = { ...ctx, cards } as unknown as TurnCtx;
+    const travel = { search: async () => { throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", page); }, waitMs: async () => null } as unknown as Travel;
+    const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z') });
+    const out = (await tools.find((t) => t.name === 'search_flights')!.run({ from: 'Delhi', to: 'Goa', date: '2026-11-06', depart_after: '18:00' }, turn)) as Record<string, unknown>;
+    expect(out).toMatchObject({ count: 0, link: `${page}&takeOff=NIGHT` });
+    expect(out.note).toContain('Never say there are no flights');
+    expect(cards).toEqual([expect.objectContaining({
+      kind: 'notice', card_id: 'c_link_turn_w1_1', title: 'Flights, Delhi to Goa', source: { name: 'ixigo', url: `${page}&takeOff=NIGHT` },
+      actions: [{ action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' }],
+    })]);
   });
 });
 

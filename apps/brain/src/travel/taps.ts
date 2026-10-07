@@ -62,6 +62,13 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     return { result: 'done', toast: 'Noted. Go will reply in the room.' };
   });
 
+  // The flights link card: its own ixigo page, from the card itself.
+  taps.on('notice', 'see_on_ixigo', async (_tap, card) => {
+    const url = card.kind === 'notice' ? ixigoPage(card.source?.url) : null;
+    if (!url) return { result: 'refused', toast: 'This card has no ixigo page' };
+    return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
+  });
+
   taps.on('options', 'open', async (tap) => {
     const offer = tap.option_id ? await d.results.offer(tap.option_id) : null;
     if (!offer || offer.cardId !== tap.card_id || offer.tripId !== tap.trip_id) return { result: 'refused', toast: 'That option is no longer here' };

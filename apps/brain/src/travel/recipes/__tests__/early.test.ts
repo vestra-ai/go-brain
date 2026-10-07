@@ -63,6 +63,17 @@ describe('the early start', () => {
     expect(fake.warmed).toEqual([]);
   });
 
+  it('starts nothing for a kind that answers with a link, but the turn is still due now', async () => {
+    const searches: string[] = [];
+    const travel = { search: async (kind: string) => { searches.push(kind); return { results: [], checkedAt: '' }; } } as unknown as Travel;
+    const switches = new FakeSwitches();
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    const early = createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date(), log: { warn: vi.fn() }, linkOnly: (k) => k === 'flights' });
+    expect(await early.onRead(msg(53, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack())).toEqual({ dueNow: true });
+    expect(searches).toEqual([]);
+    expect(early.searchFor('t_goa', 'm_53')).toBeNull();
+  });
+
   it('remembers the search each message started, for ten minutes, for the turn it wakes', async () => {
     const w = world();
     await w.hook(msg(48, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());

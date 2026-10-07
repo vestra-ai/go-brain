@@ -28,7 +28,12 @@ export interface IxigoWebDeps {
   now: () => Date;
   /** The live search card for a run; absent in tests that don't look at it. */
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
+  /** Kinds whose page ixigo won't serve Go's computer: the search answers with the page's link and loads nothing. */
+  linkOnly?: (kind: TravelKind) => boolean;
 }
+
+/** Flights: ixigo answers our box egress with "No flights found", then a 403 (7 Oct), until Keshav decides the route. */
+export const LINK_ONLY_KINDS: ReadonlySet<TravelKind> = new Set(['flights']);
 
 const BOOK_ON_IXIGO = 'Options from ixigo.com are booked on ixigo, from their link.';
 const CACHE_MAX = 200;
@@ -50,6 +55,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): TravelBackend {
   return {
     async search(kind, q, o) {
       const { tripId, recipe, runner, slots, key } = await plan(kind, q, o?.tripId);
+      // Never "no flights" when ixigo refused us: the group gets the page itself, and ixigo gets no load from Go.
+      if (d.linkOnly?.(kind)) throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", recipe.url(slots));
       const nowMs = d.now().getTime();
       const hit = kept.get(key);
       if (hit && nowMs - hit.at < hit.ttl) return hit.search;
@@ -84,7 +91,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): TravelBackend {
     async waitMs(kind, q, o) {
       // A search that refuses does so at once: nothing to wait for.
       const p = await plan(kind, q, o?.tripId).catch(() => null);
-      if (!p) return null;
+      if (!p || d.linkOnly?.(kind)) return null;
       if (p.runner.name === 'agent_job') return 0;
       const started = kept.get(p.key)?.at ?? d.now().getTime();
       return Math.max(0, TRAVEL_WAIT_MS - (d.now().getTime() - started));

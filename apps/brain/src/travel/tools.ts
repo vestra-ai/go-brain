@@ -6,11 +6,12 @@
 import { z } from 'zod';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
-import { buildOptionsCard, clip, formatInr, subtitleFor } from './cards.js';
+import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, subtitleFor } from './cards.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
 import { TRAVEL_WAIT_MS } from './recipes/backend.js';
+import { withFlightFilters } from './recipes/flights.js';
 import { TravelError } from './mcp-travel.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
@@ -184,6 +185,7 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
     found = first;
   } catch (err) {
     const search = searchName(kind, q);
+    if (err instanceof TravelError && err.code === 'link_only' && err.link) return linkAnswer(kind, q, err.link, ctx);
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
     if (err instanceof TravelError && err.code === 'past_date') return { search, count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
     if (err instanceof TravelError) {
@@ -226,6 +228,20 @@ function goOnWithout(kind: TravelKind, q: TravelQuery, pending: Promise<TravelSe
     running: true,
     tell_the_room: SAY_NOTHING,
     note: 'This search is still running on ixigo, and the live card in the room already shows it. Post nothing about it now: you wake with its options when it finishes.',
+  };
+}
+
+/** ixigo won't show Go's computer these results: the card links the group to them on ixigo, with their conditions set. */
+function linkAnswer(kind: TravelKind, q: TravelQuery, link: string, ctx: TurnCtx): unknown {
+  const url = kind === 'flights' ? withFlightFilters(link, q) : link;
+  ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: suggestTitle(kind, q), url }));
+  return {
+    search: searchName(kind, q),
+    count: 0,
+    link: url,
+    note:
+      "ixigo won't show its flights to Go's computer right now. The card with the link to them on ixigo, with these conditions set, " +
+      'goes out with your message: add one short line. Never say there are no flights, and quote no prices or times.',
   };
 }
 

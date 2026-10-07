@@ -100,6 +100,8 @@ The search tool already turns each of these into a plain line.
 
 **Waiting.** A search may hold up the turn for `TRAVEL_WAIT_MS` (12 s) from its start, and only through the browser fetch (a train search on a sleeping box took about 8 s); the search tools may take 14 s in the composer's loop. Past that, and always for the agent job, the tool answers that the search is running, and the live card covers the wait. When the run finishes, Go saves its options and wakes on a `search` desk item to show them (`travel/search-wake.ts`). Searches that shared a run wake Go once.
 
+**Flights as a link, for now.** ixigo answers the boxes' shared egress with "No flights found", then a 403 on the flight data call. Under `ixigo_web`, flights load nothing (`LINK_ONLY_KINDS` in `backend.ts`): `search_flights` posts a notice card linking to ixigo's results page with what people asked for set in ixigo's own params (`stops=0`, the `takeOff` and `landing` windows, `price=0,{cap}`, from p1-b's flights map), and a "See flights on ixigo" button. It never says there are no flights. The early start skips the search for them and the turn still starts at once.
+
 **The live card.** On a cache miss, the backend starts p1-b's live search card ("On it." with its steps), passes the run's `onProgress` to the runner, and marks the card done (`finish`) before the search answers, so it is done before the options card. A joined search shares the card.
 
 ## 3. The travel layer
