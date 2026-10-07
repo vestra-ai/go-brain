@@ -28,6 +28,11 @@ export interface StaySlots {
 }
 
 const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+/**
+ * The most a two-page fetch may take. Page 2 sometimes never comes (re-drill 6: a cold North Goa search ran to Bash's
+ * 20 s and came back with page 1 only); at 10 s the timed-out fetch answers with page 1, which is read as it is.
+ */
+export const WIDE_FETCH_MS = 10_000;
 /** Two to a room, as ixigo's own search starts ("1 Room, 2 Guests"). */
 const PER_ROOM = 2;
 const MAX_ROOMS = 8;
@@ -314,7 +319,11 @@ export const stays: Recipe<StaySlots> = {
   capture: [{ match: SEARCH, required: true }],
   fetchFor: (s) =>
     s.wide
-      ? { capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }], steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }] }
+      ? {
+          capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
+          steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }],
+          timeoutMs: WIDE_FETCH_MS,
+        }
       : { capture: [{ match: SEARCH, required: true }] },
   fetchable: true,
   readyText: 'per night, per room',

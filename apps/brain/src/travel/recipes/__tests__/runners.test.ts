@@ -3,7 +3,7 @@ import { V1Error } from '../../../tasks/v1-client.js';
 import { TravelError } from '../../mcp-travel.js';
 import { buses, readBusesPage } from '../buses.js';
 import { flights } from '../flights.js';
-import { stays } from '../stays.js';
+import { stays, WIDE_FETCH_MS } from '../stays.js';
 import { trains } from '../trains.js';
 import {
   AGENT_POLL_MS, AGENT_WAIT_MS, createAgentJobRunner, createBrowserFetchRunner, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, recipeMessage, runnerFor,
@@ -50,8 +50,27 @@ describe('the browser fetch runner', () => {
     expect(w.calls[0]!.opts.body).toMatchObject({
       capture: [{ match: SEARCH, min_count: 2, max_count: 2 }],
       steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }],
+      timeout_ms: WIDE_FETCH_MS,
     });
     expect(r.options).toHaveLength(6);
+  });
+
+  it('answers a two-page fetch whose page 2 never came with page 1, and shows the pictures it took (re-drill 6)', async () => {
+    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+    const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
+    const frame = { label: 'results', at_ms: 6100, page_url: 'https://www.ixigo.com/hotels/search/result?locationId=32', jpeg_base64: '/9j/4AAQ' };
+    const w = world(() => {
+      throw new V1Error(504, 'timeout', 'The fetch timed out.', null, {
+        code: 'timeout',
+        partial: { final_url: 'x', elapsed_ms: 10_000, woke: true, captures: [capture(SEARCH, url, fixture('stays-goa-page1.json'))], frames: [frame, { label: 'broken' }] },
+      });
+    });
+    const north = stays.slotsFrom({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
+    const seen: RecipeProgress[] = [];
+    const r = await createBrowserFetchRunner(w.deps).run('t1', stays, north, { onProgress: (e) => seen.push(e) });
+    expect(r.options.map((o) => o.title)).toEqual(['Meritas Auberge Calangute Goa', 'De Mandarin Hotel']);
+    expect(seen.map((e) => e.type)).toEqual(['opening', 'frames', 'captured']);
+    expect(seen[1]).toEqual({ type: 'frames', frames: [frame] });
   });
 
   it("opens the page in the trip's browser with the recipe's captures, and reads the options from what came back", async () => {

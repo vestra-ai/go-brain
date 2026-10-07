@@ -34,6 +34,9 @@ export interface Capture {
 /** Page controls the browser fetch works through the accessibility tree. */
 export type Step = { op: 'click'; role?: string; name?: string; text?: string } | { op: 'scroll'; times: number } | { op: 'wait_for'; match: string };
 
+/** What the browser fetch keeps and does, and how long it may take when that is less than Bash's most. */
+export interface FetchPlan { capture: CaptureSpec[]; steps?: Step[]; timeoutMs?: number }
+
 /** An option as a recipe reads it: no offer id (booking stays on ixigo), and the option's own page on ixigo.com. */
 export type RecipeOption = Omit<TravelOption, 'offerId'> & { sourceUrl: string };
 
@@ -53,8 +56,9 @@ export interface Recipe<S> {
   url(s: S): string;
   capture: CaptureSpec[];
   steps?: Step[];
-  /** What the browser fetch keeps and does for these slots, when it differs from capture and steps (more pages). */
-  fetchFor?(s: S): { capture: CaptureSpec[]; steps?: Step[] };
+  /** What the browser fetch keeps and does for these slots, when it differs from capture and steps (more pages), and how
+   *  long it may take when that is less than Bash's most. */
+  fetchFor?(s: S): FetchPlan;
   /** False when Bash's browser fetch can't read the page: its list loads only in a tab Chrome draws, so the agent job reads it. */
   fetchable: boolean;
   /** Text the page shows once its results are in: the agent job waits for it before it reads the page. */
