@@ -15,10 +15,10 @@ const wakeFor = (messageId: string, seq: number): DeskItem => ({
   id: `msg:t_goa:${messageId}`, tripId: 't_goa', kind: 'message', ref: messageId, dueAt: new Date(), payload: { messageId, seq, namesGo: true },
 });
 
-function world(search: Promise<TravelSearch> | null, allowed: number | null = EARLY_WAIT_MS) {
+function world(search: Promise<TravelSearch> | null, allowed: number | null = EARLY_WAIT_MS, live = true) {
   const saved: unknown[] = [];
   const waits: number[] = [];
-  const early = { searchFor: (tripId: string, messageId: string): EarlySearch | null => (search && tripId === 't_goa' && messageId === 'm_57' ? { kind: 'flights', query: QUERY, search } : null) };
+  const early = { searchFor: (tripId: string, messageId: string): EarlySearch | null => (search && tripId === 't_goa' && messageId === 'm_57' ? { kind: 'flights', query: QUERY, search, live } : null) };
   const results = {
     save: vi.fn(async (s: Record<string, unknown>) => {
       saved.push(s);
@@ -82,6 +82,25 @@ describe('the early search block', () => {
     expect(await none.now.render('t_goa', [wakeFor('m_58', 58)])).toBeNull();
     expect(await none.now.render('t_goa', [{ ...wakeFor('m_57', 57), kind: 'tap' }])).toBeNull();
     expect(none.results.save).not.toHaveBeenCalled();
+  });
+
+  it('off ixigo_web, where no live card is in the room, never says one told the room or that the search wakes Go', async () => {
+    const done = (await world(Promise.resolve(FOUND), null, false).now.render('t_goa', [wakeFor('m_57', 57)]))!;
+    expect(done).toContain('Already searched for #57, checked just now: results_id r_early1, 2 options.');
+    expect(done).toContain('show_options');
+    expect(done).not.toContain('live card');
+    const slow = world(new Promise<TravelSearch>(() => undefined), null, false);
+    // A backend that does not say how long it may take: the block's own 12 s.
+    expect(await slow.now.render('t_goa', [wakeFor('m_57', 57)])).toBe(
+      'The search for #57 (flights from delhi to goa on 2026-10-09) started early and is still running. ' +
+        'Call the search tool for it now with what was asked: it joins that search and answers when it finishes.',
+    );
+    expect(slow.waits).toEqual([EARLY_WAIT_MS]);
+  });
+
+  it('lets the model search again when the group meant another day or place than the early read', async () => {
+    const block = (await world(Promise.resolve(FOUND)).now.render('t_goa', [wakeFor('m_57', 57)]))!;
+    expect(block.split('<data')[0]).toContain("If they meant another day or place than the summary's (the trip's Friday, not this week's), search for theirs instead.");
   });
 
   it('says what the summary says when nothing came back', async () => {

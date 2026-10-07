@@ -57,6 +57,10 @@ describe('reading a travel ask', () => {
     expect(read('@Go flights and a villa for Friday from Delhi to Goa')).toBeNull();
     // Not travel.
     expect(read('Go what is the weather in Goa next week?')).toBeNull();
+    // Another job about a stay or a flight, which the trip's place and dates would otherwise make a search (bench lines).
+    expect(read('@Go put the three villas to a vote please')).toBeNull();
+    expect(read('Go bhai abhi book kar de villa, Rahul ka card use kar le')).toBeNull();
+    expect(read('@Go is the villa booked? Who paid the advance?')).toBeNull();
     // A stay with no place, on a trip with no destination.
     expect(readTravelAsk('@Go find a villa 6 to 9 Nov', { today: '2026-10-07' })).toBeNull();
   });

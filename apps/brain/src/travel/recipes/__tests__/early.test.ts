@@ -41,15 +41,22 @@ describe('the early start', () => {
     expect(w.searches[0]).toMatchObject({ kind: 'trains', q: { from: 'mumbai', to: 'North Goa', date: '2026-10-08' } });
   });
 
-  it('does nothing for chatter, for less than a whole ask, for a place the recipes cannot fill, or off ixigo_web', async () => {
+  it('does nothing for chatter, for less than a whole ask, or for a place the recipes cannot fill', async () => {
     const w = world();
     expect(await w.hook(msg(43, 'p_kabir', 'can someone check trains from Mumbai on Thursday?'), UNSURE_READ, goaPack())).toBeUndefined();
     expect(await w.hook(msg(44, 'p_rahul', '@Go flights to Goa Friday'), UNSURE_READ, goaPack())).toBeUndefined();
     expect(await w.hook(msg(45, 'p_rahul', '@Go flights Delhi to Shimla Friday'), UNSURE_READ, goaPack())).toBeUndefined();
     expect(w.searches).toEqual([]);
-    const fake = world('fake');
-    expect(await fake.hook(msg(46, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack())).toBeUndefined();
-    expect(fake.searches).toEqual([]);
+  });
+
+  it('starts the search in every travel mode, so a search ask is one model call wherever the list comes from', async () => {
+    for (const mode of ['fake', 'ixigo']) {
+      const w = world(mode);
+      expect(await w.hook(msg(46, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack()), mode).toEqual({ dueNow: true });
+      expect(w.searches, mode).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-10-09' }, tripId: 't_goa' }]);
+      // No live card there: the right-now block won't say one told the room.
+      expect(w.early.searchFor('t_goa', 'm_46'), mode).toMatchObject({ kind: 'flights', live: false });
+    }
   });
 
   it("keeps the trip's computer awake on any line, from anyone, to Go or not, and only under ixigo_web", async () => {
@@ -64,7 +71,7 @@ describe('the early start', () => {
     expect(fake.warmed).toEqual([]);
   });
 
-  it('starts nothing for a kind that answers with a link, but the turn is still due now', async () => {
+  it('starts nothing for a kind that answers with a link, but the turn is still due now; off ixigo_web, flights are a search', async () => {
     const searches: string[] = [];
     const travel = { search: async (kind: string) => { searches.push(kind); return { results: [], checkedAt: '' }; } } as unknown as Travel;
     const switches = new FakeSwitches();
@@ -73,6 +80,9 @@ describe('the early start', () => {
     expect(await early.onRead(msg(53, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack())).toEqual({ dueNow: true });
     expect(searches).toEqual([]);
     expect(early.searchFor('t_goa', 'm_53')).toBeNull();
+    await switches.set('TRAVEL_MODE', 'fake');
+    expect(await early.onRead(msg(54, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack())).toEqual({ dueNow: true });
+    expect(searches).toEqual(['flights']);
   });
 
   it("follows Jev's sure pick (question 10): its kind wins, and its none starts nothing; unsure leaves it to the parser", async () => {
@@ -90,7 +100,7 @@ describe('the early start', () => {
     const w = world();
     await w.hook(msg(48, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
     const started = w.early.searchFor('t_goa', 'm_48');
-    expect(started).toMatchObject({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-10-09' } });
+    expect(started).toMatchObject({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-10-09' }, live: true });
     expect(await started!.search).toEqual({ results: [], checkedAt: '2026-10-07T12:00:00.000Z' });
     expect(w.early.searchFor('t_goa', 'm_49')).toBeNull();
     expect(w.early.searchFor('t_other', 'm_48')).toBeNull();

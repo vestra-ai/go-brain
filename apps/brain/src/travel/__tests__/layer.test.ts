@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FakeClock, FakeSwitches } from '../../tasks/testing/lane-brain.js';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
 import { createTravelLayer, type TravelLayerDeps } from '../layer.js';
@@ -68,6 +68,34 @@ describe('the travel layer', () => {
     const fresh = await layer.search('flights', { from: 'Delhi', to: 'Goa', date: '2026-11-06' });
     expect(fake.calls).toHaveLength(2);
     expect(fresh.checkedAt).not.toBe(all.checkedAt);
+  });
+
+  it("shares a search while it runs, so the composer's call joins the early start's; one that fails is not kept", async () => {
+    let release!: () => void;
+    let fail = true;
+    const calls: string[] = [];
+    const slow: TravelBackend = {
+      ...backend('fake', new FakeClock(0)).b,
+      async search(kind) {
+        calls.push(kind);
+        if (fail) throw new TravelError('unreachable', 'the fake is down');
+        await new Promise<void>((r) => { release = r; });
+        return { checkedAt: '2026-10-07T12:00:00.000Z', results: [opt('fake:a', '17:50'), opt('fake:b', '18:10')] };
+      },
+    };
+    const { layer } = setup(true, { fake: slow });
+    const q = { from: 'Delhi', to: 'Goa', date: '2026-11-06' };
+    await expect(layer.search('flights', q)).rejects.toMatchObject({ code: 'unreachable' });
+    fail = false;
+    const early = layer.search('flights', q);
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    const joined = layer.search('flights', { ...q, departAfter: '18:00' });
+    // The second call reaches the layer while the first still runs.
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    expect((await early).results).toHaveLength(2);
+    expect((await joined).results.map((o) => o.offerId)).toEqual(['fake:b']);
+    expect(calls).toHaveLength(2);
   });
 
   it('picks the backend on every call from TRAVEL_MODE, and stays on the fake when ixigo is not set up', async () => {

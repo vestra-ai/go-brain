@@ -1,11 +1,12 @@
 /**
  * The early start: when a whole travel ask to Go lands, its search begins on intake, before the composer's turn, and
- * the turn starts at once instead of waiting 2 s for more lines. Only under TRAVEL_MODE ixigo_web, where a search takes
- * seconds. The composer's own search_* call later joins the same search: ixigo_web shares one in flight, by recipe and
- * slots. A follow-up line ("after 6 pm") still reaches the turn, and its filter applies to the same list.
+ * the turn starts at once instead of waiting 2 s for more lines. In every TRAVEL_MODE, so a search ask is one model call
+ * wherever the list comes from: the right-now block hands the turn its answer. The composer's own search_* call later
+ * joins the same search (the layer shares one in flight, and ixigo_web by recipe and slots). A follow-up line ("after
+ * 6 pm") still reaches the turn, and its filter applies to the same list.
  *
- * Any line in the trip, from anyone, to Go or not, also holds the trip's computer awake (design 4b), so the first
- * search never waits on a sleeping box.
+ * Under ixigo_web, any line in the trip, from anyone, to Go or not, also holds the trip's computer awake (design 4b), so
+ * the first search never waits on a sleeping box, and flights answer with ixigo's link instead of a search.
  */
 import type { Switches } from '../../admin/switches.js';
 import type { Message } from '../../door/methods.js';
@@ -36,6 +37,8 @@ export interface EarlySearch {
   kind: TravelKind;
   query: TravelQuery;
   search: Promise<TravelSearch>;
+  /** A live card in the room shows the search (ixigo_web) and has already said "On it." */
+  live: boolean;
 }
 
 export interface EarlyStart {
@@ -51,10 +54,10 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
   const started = new Map<string, EarlySearch & { at: number }>();
   return {
     async onRead(msg, read, pack) {
-      if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web') return undefined;
+      const web = d.switches.get('TRAVEL_MODE') === 'ixigo_web';
       const tripId = pack.trip.trip_id;
       // Any line in a trip holds its computer awake (one call per hold), so the box is up before the first search.
-      d.keepWarm?.(tripId);
+      if (web) d.keepWarm?.(tripId);
       if (!msg.text) return undefined;
       const today = await d.today(tripId);
       // To Go: named plainly, or the quick read is sure it is for Go.
@@ -76,13 +79,13 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
         return undefined;
       }
       // A link answers at once: the turn starts now, with nothing to search early.
-      if (d.linkOnly?.(ask.kind)) return { dueNow: true };
+      if (web && d.linkOnly?.(ask.kind)) return { dueNow: true };
       // Not awaited: the hooks run one after another, and nothing should wait on the page.
       const search = travel.search(ask.kind, ask.query, { tripId });
       search.catch((err: unknown) => {
         d.log.warn({ err, tripId, kind: ask.kind }, 'travel: an early search failed; the composer searches again');
       });
-      started.set(`${tripId}:${msg.message_id}`, { ...ask, search, at: d.now().getTime() });
+      started.set(`${tripId}:${msg.message_id}`, { ...ask, search, live: web, at: d.now().getTime() });
       while (started.size > KEPT_MAX) {
         const oldest = started.keys().next().value;
         if (oldest === undefined) break;
@@ -93,7 +96,7 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
     searchFor(tripId, messageId) {
       const s = started.get(`${tripId}:${messageId}`);
       if (!s || d.now().getTime() - s.at >= RECIPE_TTL_MS) return null;
-      return { kind: s.kind, query: s.query, search: s.search };
+      return { kind: s.kind, query: s.query, search: s.search, live: s.live };
     },
   };
 }
