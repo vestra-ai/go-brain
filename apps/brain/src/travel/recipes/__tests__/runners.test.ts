@@ -49,7 +49,10 @@ describe('the browser fetch runner', () => {
     const r = await createBrowserFetchRunner(w.deps).run('t1', stays, north);
     expect(w.calls[0]!.opts.body).toMatchObject({
       capture: [{ match: SEARCH, min_count: 2, max_count: 2 }],
-      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }, { op: 'click', name: 'Close modal', optional: true }],
+      steps: [
+        { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true },
+        { op: 'scroll', times: 3 }, { op: 'click', name: 'Close modal', optional: true },
+      ],
       timeout_ms: WIDE_FETCH_MS,
       frames: { settle_ms: FRAMES_SETTLE_MS },
     });

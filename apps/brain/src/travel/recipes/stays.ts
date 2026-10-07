@@ -321,13 +321,14 @@ export const stays: Recipe<StaySlots> = {
   // Page 1 for an area. All of Goa or a half takes pages 1 and 2 (p5's proven shape on staging, about 5 s): page 1 alone,
   // in ixigo's popularity order, is the Calangute and Candolim strip. Either way, once the results are in, ixigo's "Best
   // Price Guarantee" popup (once a day per browser, about 2 s in) is closed if it is there, so the card's picture is the
-  // list, not the dark overlay.
+  // list, not the dark overlay: before the scrolls, which it can block, and again after them, for one that came late.
+  // Each look is one read of the page with no wait.
   capture: [{ match: SEARCH, required: true }],
   fetchFor: (s) =>
     s.wide
       ? {
           capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
-          steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }, CLOSE_POPUP],
+          steps: [{ op: 'wait_for', match: SEARCH }, CLOSE_POPUP, { op: 'scroll', times: 3 }, CLOSE_POPUP],
           timeoutMs: WIDE_FETCH_MS,
         }
       : { capture: [{ match: SEARCH, required: true }], steps: [{ op: 'wait_for', match: SEARCH }, CLOSE_POPUP] },
