@@ -1,5 +1,5 @@
-// Offline replay of the early start in the bench's own travel mode (fake): every ask in the definitive live run (run
-// 37488230324, docs/demo/evidence), as its line, through the early start and the right-now block as they are now, on
+// Offline replay of the early start in the bench's own travel mode (fake): every ask in the live run of 2026-10-06 (run
+// 37488230324, fixtures/live-2026-10-06.json), as its line, through the early start and the right-now block as they are now, on
 // the bench's trip and on the same trip with its dates (6 to 9 Nov) saved. In that run each search ask took two model
 // calls, search then show_options, because the early start ran only under ixigo_web and read none of the asks'
 // conditions. Here, the asks the early start reads get the search's answer in the turn, their conditions applied
@@ -24,7 +24,7 @@ interface LiveRun {
   asks: Array<{ line: number; calls: Array<{ toolsAfter: string[] }> }>;
 }
 
-const evidence = JSON.parse(readFileSync(new URL('../../../../docs/demo/evidence/bench-live-2026-10-06-definitive.json', import.meta.url), 'utf8')) as { at: string; live: LiveRun[] };
+const evidence = JSON.parse(readFileSync(new URL('./fixtures/live-2026-10-06.json', import.meta.url), 'utf8')) as { at: string; live: LiveRun[] };
 const now = (): Date => new Date(evidence.at);
 const TODAY = evidence.at.slice(0, 10);
 
@@ -71,7 +71,7 @@ async function replay(run: LiveRun, state: TripState) {
 
 const runs = async (state: TripState) => (await Promise.all(evidence.live.map((r) => replay(r, state)))).flat();
 
-describe('the early start, replayed on the definitive live run in the fake travel mode', () => {
+describe('the early start, replayed on the 2026-10-06 live run in the fake travel mode', () => {
   for (const [name, state] of [['the bench trip, no dates', BENCH], ['its dates agreed in the record', AGREED], ['the trip with its dates', DATED]] as const) {
     it(`${name}: starts only searches the model ran for that ask, of the kind it ran`, async () => {
       for (const a of await runs(state)) {
