@@ -16,7 +16,7 @@ import type { RecipeRunner } from '../recipes/runners.js';
 import type { TravelKind } from '../travel.js';
 import type { Book } from './book.js';
 import { evaluate } from './expr.js';
-import type { RecipeFile } from './format.js';
+import type { RecipeFile, Step } from './format.js';
 import { boxPlan, pickSuggestion, readSuggestions, type End, type Suggestion } from './lookup.js';
 import { readFacts, readOptions } from './read.js';
 import { fill } from './template.js';
@@ -326,12 +326,21 @@ export function createEngine(d: EngineDeps) {
         d.log?.warn({ recipe: recipe.id, err: String(err).slice(0, 200) }, 'book: the fast speed failed; the page speed runs');
       }
     }
+    // A step's words may be templates too: what to type ("{area}") or which control to click, filled like a box's.
+    const filledSteps = async (steps: Step[]): Promise<Step[]> =>
+      Promise.all(
+        steps.map(async (s) => ({
+          ...s,
+          ...('text' in s && s.text ? { text: await fill(s.text, inputs, { url: false, bindings }) } : {}),
+          ...('name' in s && s.name ? { name: await fill(s.name, inputs, { url: false, bindings }) } : {}),
+        }) as Step),
+      );
     let plan: FetchPlan = { capture: await captures(recipe.capture) };
     for (const f of recipe.fetch ?? []) {
       if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
       plan = {
         capture: await captures(f.capture ?? recipe.capture),
-        ...(f.steps ? { steps: f.steps } : {}),
+        ...(f.steps ? { steps: await filledSteps(f.steps) } : {}),
         ...(f.timeout_ms ? { timeoutMs: f.timeout_ms } : {}),
         ...(f.settle_ms ? { settleMs: f.settle_ms } : {}),
       };

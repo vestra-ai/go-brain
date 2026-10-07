@@ -55,6 +55,12 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
     templates.push(['read.rows.from', r.read.rows.from]);
     for (const [name, a] of Object.entries(r.read.also ?? {})) templates.push([`read.also.${name}.from`, a.from]);
   }
+  for (const [i, f] of (r.fetch ?? []).entries()) {
+    for (const [j, s] of (f.steps ?? []).entries()) {
+      if ('text' in s && s.text) templates.push([`fetch.${i}.steps.${j}.text`, s.text]);
+      if ('name' in s && s.name) templates.push([`fetch.${i}.steps.${j}.name`, s.name]);
+    }
+  }
   for (const [end, steps] of Object.entries(r.box?.type ?? {})) {
     for (const [i, s] of steps.entries()) if ('text' in s && s.text) templates.push([`box.type.${end}.${i}`, s.text]);
   }

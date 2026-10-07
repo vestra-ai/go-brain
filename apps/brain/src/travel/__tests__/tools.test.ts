@@ -132,8 +132,26 @@ describe('a train list', () => {
     const found = { results: ['SL', '3A', '2A', '1A'].map(fare), checkedAt: '2026-10-07T12:00:00.000Z', found: 4 };
     const results = { save: async () => ({ resultsId: 'r_t' }) } as unknown as ResultsStore;
     const out = await searchAnswer('trains', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, found, 't_goa', { results, now: () => new Date('2026-10-07T12:00:00Z') });
-    expect(out.summary).toBe('1 trains from Mumbai to Goa on 2026-11-06 (4 fares by class): ₹1,000 per person, SL.');
+    expect(out.summary).toBe('1 train from Mumbai to Goa on 2026-11-06 (4 fares by class): ₹1,000 per person, SL.');
     expect(out.card?.title).toBe('Trains, Mumbai to Goa, 6 Nov');
+  });
+});
+
+describe('a count in a summary', () => {
+  const results = { save: async () => ({ resultsId: 'r_c' }) } as unknown as ResultsStore;
+  const now = () => new Date('2026-10-07T12:00:00Z');
+  const stay = (title: string) => ({ kind: 'stay' as const, title, priceMinor: 900_000, currency: 'INR', priceNote: 'per night', highlights: [], facts: { area: 'Anjuna' } });
+  const bus = { kind: 'bus' as const, title: 'Paulo Travels', priceMinor: 270_000, currency: 'INR', priceNote: 'per seat, from', highlights: [], facts: {} };
+  const STAYS = { area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09' };
+
+  it('agrees with its noun, one or many: 1 stay, 1 bus, 1 of the 7 stays fits, the one stay that does not', async () => {
+    const say = async (kind: 'stays' | 'buses', q: Record<string, unknown>, found: Record<string, unknown>) =>
+      (await searchAnswer(kind, q as never, { checkedAt: '2026-10-07T12:00:00.000Z', ...found } as never, 't_goa', { results, now })).summary;
+    expect(await say('stays', STAYS, { results: [stay('Villa Sol')], found: 1 })).toBe('1 stay in Anjuna, 2026-11-06 to 2026-11-09: ₹9,000 per night, in Anjuna.');
+    expect(await say('stays', STAYS, { results: [stay('Villa Sol'), stay('Casa Mareia')], found: 2 })).toBe('2 stays in Anjuna, 2026-11-06 to 2026-11-09: ₹9,000 per night, in Anjuna.');
+    expect(await say('buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { results: [bus], found: 1 })).toBe('1 bus from Mumbai to Goa on 2026-11-06: ₹2,700 per seat, from.');
+    expect(await say('stays', { ...STAYS, mustHave: ['pool'] }, { results: [stay('Villa Sol')], found: 7 })).toBe('1 of the 7 stays in Anjuna, 2026-11-06 to 2026-11-09 fits with a pool: ₹9,000 per night, in Anjuna.');
+    expect(await say('stays', { ...STAYS, mustHave: ['pool'] }, { results: [], found: 1 })).toBe("The one stay in Anjuna, 2026-11-06 to 2026-11-09 doesn't fit with a pool.");
   });
 });
 

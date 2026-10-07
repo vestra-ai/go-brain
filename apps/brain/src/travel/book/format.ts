@@ -13,7 +13,8 @@ const SitePath = z
   .refine((t) => /^\/[^\s]*$/.test(t.replace(/\{[^{}]*\}/g, '')), 'a page or call is a path on www.ixigo.com, starting with /');
 
 export const Input = z.object({
-  kind: z.enum(['place', 'date', 'count', 'choice', 'text', 'money']),
+  /** option: one of Go's search results, which the ixigo tool gives the recipe as that option's own ixigo page. */
+  kind: z.enum(['place', 'date', 'count', 'choice', 'text', 'money', 'option']),
   /** A place's lookup recipe: ixigo's own search box for it. */
   lookup: Id.optional(),
   optional: z.boolean().default(false),
