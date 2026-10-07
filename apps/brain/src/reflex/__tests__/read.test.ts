@@ -21,7 +21,8 @@ describe('question 1: for Go', () => {
   });
   it('is sure not for Go when Jev is sure no one spoke to Go, chatter or not, so a fact or a plan wakes no model', () => {
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }).forGo).toEqual({ value: false, sure: true });
-    expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.12) }).forGo.sure).toBe(false);
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.22) }).forGo).toEqual({ value: false, sure: true });
+    expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.3) }).forGo.sure).toBe(false);
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
   });
   it('never reads a line about money as not for Go, so it reaches the model; a bare number or a fact without money still skips', () => {
