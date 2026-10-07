@@ -4,6 +4,7 @@
  * before 6") arrive as arguments and are applied in code by the travel layer.
  */
 import { z } from 'zod';
+import { CARD_LINE } from '../composer/rules.js';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
 import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, subtitleFor } from './cards.js';
@@ -332,7 +333,8 @@ export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: Trav
     note:
       'To show options, call show_options with this results_id. Quote prices only from these results, and say how long ago they were checked when it is not just now. ' +
       "Each option's area, time and price are as given here: name no other, and say no count the summary does not give. " +
-      'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator.',
+      'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
+      CARD_LINE,
   };
 }
 
@@ -418,7 +420,9 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   };
   const showOptions: QuickTool<z.infer<typeof ShowArgs>> = {
     name: 'show_options',
-    description: 'Shows an options card from a results_id (a search, or a finished job), with up to 5 option_numbers, best first, and a short title. The card goes out with your message and shows the checked prices, so never type prices yourself. Write your one short line about it in the same reply.',
+    description:
+      'Shows an options card from a results_id (a search, or a finished job), with up to 5 option_numbers, best first, and a short title. ' +
+      `The card goes out with your message and shows the checked prices, so never type prices yourself. Write your one short line about it in the same reply. ${CARD_LINE}`,
     input: ShowArgs,
     endsTurn: true,
     async run(a, ctx) {
@@ -447,7 +451,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     description:
       'Opens a vote on the options of an options card Go showed (card_id). To show options and put them to a vote at once, ' +
       'call show_options and then this with no card_id, in the same reply. The vote card goes out with your message: ' +
-      'write your one short line in the same reply. Use it when the group should decide together. ' +
+      `write your one short line in the same reply. ${CARD_LINE} Use it when the group should decide together. ` +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: VoteArgs,
     endsTurn: true,

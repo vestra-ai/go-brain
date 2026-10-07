@@ -40,6 +40,8 @@ export interface Context {
   addWake(kind: DeskKind, render: (item: DeskItem, pack: TripPack) => string | null): void;
   /** A line said once under "why Go woke", from all the wake items together (P1's note for messages that don't name Go). */
   addWakeNote(render: (items: DeskItem[], pack: TripPack) => string | null): void;
+  /** An order for this reply, said once at the very end of the prompt, after the newest messages and outside their fence (P1's note for an ask). */
+  addEndNote(render: (items: DeskItem[], pack: TripPack) => string | null): void;
   /** P2's fold: the story block sits right before the chat chunks (inside the data fence), and the chat starts at chatFromSeq. */
   setStory(p: StoryProvider): void;
   /** P6's proactive bar: limits for a turn Go woke for on its own; null means no limits. */
@@ -96,6 +98,7 @@ export function createContext(log: Log): ContextImpl {
   const wakes = new Map<DeskKind, Array<(item: DeskItem, pack: TripPack) => string | null>>();
   const rules: Array<(wake: DeskItem[]) => TurnLimits | null> = [];
   const notes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
+  const endNotes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
   let story: StoryProvider | null = null;
 
   function renderWake(item: DeskItem, pack: TripPack): string {
@@ -132,6 +135,9 @@ export function createContext(log: Log): ContextImpl {
     },
     addWakeNote(render) {
       notes.push(render);
+    },
+    addEndNote(render) {
+      endNotes.push(render);
     },
     setStory(p) {
       if (story) throw new Error('the story so far is already set');
@@ -208,21 +214,22 @@ export function createContext(log: Log): ContextImpl {
           log.warn({ err: e, block: p.name }, 'a right-now block failed; the turn goes on without it');
         }
       }
-      const woke = i.wake.map((w) => `- ${renderWake(w, i.pack)}`);
-      for (const n of notes) {
-        try {
-          const text = n(i.wake, i.pack);
-          if (text) woke.push(`- ${text}`);
-        } catch (e) {
-          log.warn({ err: e }, 'a wake note failed; the turn goes on without it');
-        }
-      }
+      const said = (renders: typeof notes): string[] =>
+        renders.flatMap((n) => {
+          try {
+            return n(i.wake, i.pack) || [];
+          } catch (e) {
+            log.warn({ err: e }, 'a wake note failed; the turn goes on without it');
+            return [];
+          }
+        });
+      const woke = [...i.wake.map((w) => renderWake(w, i.pack)), ...said(notes)].map((line) => `- ${line}`);
       now.push(`## Why you woke\n${woke.join('\n') || '- nothing in particular'}`);
       user.push({ type: 'text', text: now.join('\n\n') });
-      user.push({
-        type: 'text',
-        text: fresh.length ? `# New since your last turn\n${dataBlock('new messages', fresh)}` : '# New since your last turn\nNothing new.',
-      });
+      // The end notes close the last block, after the fence: the last thing read before the reply, in the same block, so
+      // the prompt's blocks and cache markers stay as they were.
+      const newest = fresh.length ? `# New since your last turn\n${dataBlock('new messages', fresh)}` : '# New since your last turn\nNothing new.';
+      user.push({ type: 'text', text: [newest, ...said(endNotes)].join('\n\n') });
 
       return {
         system: [{ type: 'text', text: GO_RULES, cache_control: HOUR }],

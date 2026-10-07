@@ -9,6 +9,7 @@ import type { OptionPlace } from '../travel/results.js';
 import type { Travel } from '../travel/travel.js';
 import type { TripPack } from '../trips/pack.js';
 import { inlineData } from './fence.js';
+import { CARD_LINE } from './rules.js';
 import { clip } from './sanitize.js';
 import { SAY_NOTHING, STAY_SILENT, type QuickTool } from './tools.js';
 
@@ -121,7 +122,7 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     name: 'open_vote',
     description:
       'Open a vote in the room, with 2 to 10 short options. The vote card goes out with your message: write your one ' +
-      'short line in the same reply. Never open a second vote on a question that already has an open one. ' +
+      `short line in the same reply. ${CARD_LINE} Never open a second vote on a question that already has an open one. ` +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: OpenVoteInput,
     endsTurn: true,

@@ -10,7 +10,7 @@ export const registerRoom: RegisterLane = (brain) => {
   brain.context.addWake('trip_change', renderTripChangeWake);
   brain.context.addWake('setup', renderSetupWake);
   brain.context.addWakeNote(quietNote);
-  brain.context.addWakeNote(askNote);
+  brain.context.addEndNote(askNote);
   brain.context.addNow(tripNow(brain.packs));
   // Go's side of setup: the trip row and pack, then hello, unless Go has already spoken here.
   brain.setup.addStep({

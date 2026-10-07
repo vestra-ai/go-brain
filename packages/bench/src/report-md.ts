@@ -62,6 +62,11 @@ export function slowPosts(x: LiveRun): string[] {
   });
 }
 
+/** One line per answered ask of a live run: what Go said, on one line. */
+export function replyTexts(x: LiveRun): string[] {
+  return (x.asks ?? []).flatMap((a) => (a.reply ? [`- ${x.model}, ${x.chat}, line ${a.line}: "${a.reply.text.replace(/\s*\n\s*/g, ' / ')}"`] : []));
+}
+
 /** One line per live run, from Go's own tables: what Jev answered, and what woke each model turn. */
 export function whyWoke(x: LiveRun): string | null {
   if (x.jev === undefined) return null;
@@ -152,6 +157,10 @@ export function renderSummary(r: BenchReport): string {
       if (lengths.length > 0) lines.push('How long the answers were (the reply posted, and the output tokens of the call that wrote it):', '', ...lengths, '');
       const slow = r.live.flatMap(slowPosts);
       if (slow.length > 0) lines.push('Posts that came half a second or more after the last call (times after the ask\'s line):', '', ...slow, '');
+      const said = r.live.flatMap(replyTexts);
+      if (said.length > 0) {
+        lines.push('What Go answered (the request of the call that wrote each answer is in the JSON report, at live[].asks[].request):', '', ...said, '');
+      }
     }
   }
   lines.push('## Checks', '', '| Chat | Check | Value | Bar | Result |', '|---|---|---|---|---|');

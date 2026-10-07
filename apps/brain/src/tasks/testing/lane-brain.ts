@@ -186,6 +186,9 @@ export class FakeContext implements Context {
   addWakeNote(): void {
     // Lane C's turns are scripted: no note under "why Go woke".
   }
+  addEndNote(): void {
+    // Nor an order at the end of the prompt.
+  }
 }
 
 type SetupStep = Parameters<Setup['addStep']>[0];
