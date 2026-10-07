@@ -28,10 +28,11 @@ describe('question 1: for Go', () => {
   it('never reads a line about money as not for Go, so it reaches the model; a bare number or a fact without money still skips', () => {
     const notToGo = { q1_chatter: n(0.9), q1_addressed: n(0.03) };
     const facts = (text: string): CodeFacts => ({ ...plain, money: looksLikeMoney(text) });
-    for (const text of ['I paid 3,200 for the cab', 'Rahul owes me 1,500', 'paid something for the snacks']) {
+    for (const text of ['I paid 3,200 for the cab', 'Rahul owes me 1,500', 'paid something for the snacks', 'Arjun owed me for the cab', 'maine paise bhej diye']) {
       expect(read(notToGo, facts(text)).forGo.sure, text).toBe(false);
     }
-    for (const text of ["we're 5 people", "I'm veg btw"]) {
+    // Talk about who will pay, with nothing moved, goes through Jev like any other line (goa-300's lines 198 and 199).
+    for (const text of ["we're 5 people", "I'm veg btw", "Who's paying the villa advance? I can put it on my card", 'yes Rahul pays the advance, we UPI him']) {
       expect(read(notToGo, facts(text)).forGo, text).toEqual({ value: false, sure: true });
     }
   });
