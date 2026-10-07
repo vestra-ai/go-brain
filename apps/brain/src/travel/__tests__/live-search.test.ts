@@ -7,6 +7,9 @@ const RESULTS = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date
 const BOOKING = 'https://www.ixigo.com/flight/booking/1044/1q4hf09hp?fareKey=DEL-GOI-6E5341-06112026&providers=1044';
 const jpeg = (n: number): string => Buffer.from([0xff, 0xd8, 0xff, 0xe0, n, n, n]).toString('base64');
 const frame = (at_ms: number, page_url: string, data = jpeg(at_ms % 250)): LiveFrame => ({ label: `at ${at_ms}`, at_ms, page_url, jpeg_base64: data });
+/** A JPEG of n bytes after its header, and a results-page frame of it with Bash's label. */
+const sized = (n: number): string => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(n, 5)]).toString('base64');
+const labelled = (label: string, at_ms: number, n: number): LiveFrame => ({ label, at_ms, page_url: RESULTS, jpeg_base64: sized(n) });
 
 interface Sent { method: string; params: { request_id?: string; text?: string; card: C.Card } }
 
@@ -101,11 +104,25 @@ describe('the live search card', () => {
   it('ends on the largest picture Bash took once the results were in, over a bigger one under ixigo\'s dark popup', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k2c', ...FLIGHTS });
-    const sized = (n: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(n, 5)]).toString('base64');
-    const at = (label: string, at_ms: number, n: number): LiveFrame => ({ label, at_ms, page_url: RESULTS, jpeg_base64: sized(n) });
-    live.progress({ type: 'frames', frames: [at('browsing', 1800, 1400), at('results', 3200, 700), at('results', 3800, 900), at('browsing', 4100, 1200)] });
+    live.progress({ type: 'frames', frames: [labelled('browsing', 1800, 1400), labelled('captured', 2900, 1300), labelled('results', 3200, 700), labelled('results', 3800, 900), labelled('browsing', 4100, 1200)] });
     await live.finish(true);
     expect(r.stored).toEqual([Buffer.from(sized(900), 'base64')]);
+  });
+
+  it('with no results picture (buses, trains: nothing settles), takes the largest captured one over a bigger browsing one', async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k2d', ...FLIGHTS });
+    live.progress({ type: 'frames', frames: [labelled('browsing', 1500, 1600), labelled('captured', 2400, 600), labelled('captured', 2500, 800), labelled('navigated', 900, 1100)] });
+    await live.finish(true);
+    expect(r.stored).toEqual([Buffer.from(sized(800), 'base64')]);
+  });
+
+  it('with neither, takes the largest picture of any label', async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k2e', ...FLIGHTS });
+    live.progress({ type: 'frames', frames: [labelled('navigated', 600, 500), labelled('browsing', 1500, 1000), labelled('after-click', 2100, 700)] });
+    await live.finish(true);
+    expect(r.stored).toEqual([Buffer.from(sized(1000), 'base64')]);
   });
 
   it('never stores or shows a picture of a booking page, even the newest one', async () => {

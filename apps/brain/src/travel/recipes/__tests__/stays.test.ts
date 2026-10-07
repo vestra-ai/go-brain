@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyConstraints } from '../../filters.js';
 import type { TravelOption } from '../../travel.js';
-import { readStaysPage, stays, WIDE_FETCH_MS } from '../stays.js';
+import { readStaysPage, stays, STAYS_SETTLE_MS, WIDE_FETCH_MS } from '../stays.js';
 import { capture, fixture } from './fixtures.js';
 
 const slots = stays.slotsFrom({ area: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
@@ -68,8 +68,11 @@ describe('the stays recipe', () => {
       ],
       // Page 2 sometimes never comes: at 12 s the fetch answers with page 1 (re-drill 6; a cold box gave both by 10 s).
       timeoutMs: WIDE_FETCH_MS,
+      // Bash's last picture 550 ms after the hotels are in: the drawn cards (#4585, about +0.55 s).
+      settleMs: STAYS_SETTLE_MS,
     };
     expect(WIDE_FETCH_MS).toBe(12_000);
+    expect(STAYS_SETTLE_MS).toBe(550);
     const at = (area: string) => stays.slotsFrom({ area, checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { people: 4 });
     for (const area of ['Goa', 'North Goa', 'South Goa']) expect(stays.fetchFor!(at(area)), area).toEqual(two);
     for (const area of ['Vagator', 'Anjuna', 'Candolim']) {
@@ -77,6 +80,7 @@ describe('the stays recipe', () => {
       expect(stays.fetchFor!(at(area)), area).toEqual({
         capture: stays.capture,
         steps: [{ op: 'wait_for', match: '/accommodation-search/api/v3/accommodations/search$' }, { op: 'click', name: 'Close modal', optional: true }],
+        settleMs: STAYS_SETTLE_MS,
       });
     }
   });

@@ -3,10 +3,10 @@ import { V1Error } from '../../../tasks/v1-client.js';
 import { TravelError } from '../../mcp-travel.js';
 import { buses, readBusesPage } from '../buses.js';
 import { flights } from '../flights.js';
-import { stays, WIDE_FETCH_MS } from '../stays.js';
+import { stays, STAYS_SETTLE_MS, WIDE_FETCH_MS } from '../stays.js';
 import { trains } from '../trains.js';
 import {
-  AGENT_POLL_MS, AGENT_WAIT_MS, createAgentJobRunner, createBrowserFetchRunner, FETCH_TIMEOUT_MS, FRAMES_SETTLE_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, recipeMessage, runnerFor,
+  AGENT_POLL_MS, AGENT_WAIT_MS, createAgentJobRunner, createBrowserFetchRunner, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, recipeMessage, runnerFor,
   type RecipeRunner,
 } from '../runners.js';
 import type { RecipeProgress } from '../progress.js';
@@ -54,7 +54,8 @@ describe('the browser fetch runner', () => {
         { op: 'scroll', times: 3 }, { op: 'click', name: 'Close modal', optional: true },
       ],
       timeout_ms: WIDE_FETCH_MS,
-      frames: { settle_ms: FRAMES_SETTLE_MS },
+      // Bash's last picture once the hotels have drawn (#4585).
+      frames: { settle_ms: STAYS_SETTLE_MS },
     });
     expect(r.options).toHaveLength(6);
   });
@@ -83,14 +84,13 @@ describe('the browser fetch runner', () => {
     expect(w.calls).toEqual([{
       method: 'POST',
       path: '/v1/users/u-t1/browser/fetch',
-      opts: { body: { url: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS, frames: { settle_ms: FRAMES_SETTLE_MS } } },
+      opts: { body: { url: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS, frames: {} } },
     }]);
     expect(r.options).toHaveLength(71);
     expect(r).toMatchObject({ checkedAt: '2026-11-01T10:00:00.000Z', ms: 0 });
     // Bash's most, for a sleeping box; it answers as soon as the captures are in.
     expect(FETCH_TIMEOUT_MS).toBe(20_000);
-    // Its last picture once the page settles, so the card shows the drawn list (#4585; p5 measures the cost).
-    expect(FRAMES_SETTLE_MS).toBe(550);
+    // No settle for buses: ixigo draws their list a second or more after the data, so a wait buys no drawn frame (#4585).
   });
 
   it("sends a capture's size limit, and never Go's own required flag", async () => {

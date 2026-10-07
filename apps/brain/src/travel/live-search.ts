@@ -47,24 +47,28 @@ export function liveSteps(kind: TravelKind, q: TravelQuery): string[] {
   ];
 }
 
+/** Bash's labels, best first: taken after the captures and the settle, then taken as the captures landed. */
+const frameRank = (label: string): number => (label === 'results' ? 2 : label === 'captured' ? 1 : 0);
+
 /**
- * The most drawn frame of a page Go may show, as JPEG bytes; null when there is none. Bash labels the frames it takes
- * once the results are in "results": the largest of those, else the largest of any. A JPEG's size is a cheap measure of
- * what it shows: ixigo's loading state (its header drawn, a grey list) is far smaller than its hotel cards (re-drill 6),
- * but an earlier frame under ixigo's dark popup can outweigh the list, hence results first. The newer of two the same size.
+ * The most drawn frame of a page Go may show, as JPEG bytes; null when there is none. The largest "results" frame (Bash
+ * takes those only after the captures), else the largest "captured" one (the frame at capture time, which can be the
+ * drawn list where nothing settles, as buses and trains), else the largest of any. A JPEG's size is a cheap measure of
+ * what it shows: ixigo's loading state is far smaller than its hotel cards (re-drill 6), but an earlier frame under
+ * ixigo's dark popup can outweigh the list, hence the labels first. The newer of two the same size.
  */
 export function frameToShow(frames: LiveFrame[]): { bytes: Buffer; pageUrl: string } | null {
-  let best: { bytes: Buffer; pageUrl: string; at: number; results: boolean } | null = null;
+  let best: { bytes: Buffer; pageUrl: string; at: number; rank: number } | null = null;
   for (const f of frames) {
     if (!isFramePage(f.page_url)) continue;
     const bytes = Buffer.from(f.jpeg_base64, 'base64');
     const jpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
     if (!jpeg || bytes.length > MAX_FRAME_BYTES) continue;
-    const results = f.label === 'results';
+    const rank = frameRank(f.label);
     const better = !best ||
-      (results && !best.results) ||
-      (results === best.results && (bytes.length > best.bytes.length || (bytes.length === best.bytes.length && f.at_ms > best.at)));
-    if (better) best = { bytes, pageUrl: f.page_url, at: f.at_ms, results };
+      rank > best.rank ||
+      (rank === best.rank && (bytes.length > best.bytes.length || (bytes.length === best.bytes.length && f.at_ms > best.at)));
+    if (better) best = { bytes, pageUrl: f.page_url, at: f.at_ms, rank };
   }
   return best && { bytes: best.bytes, pageUrl: best.pageUrl };
 }

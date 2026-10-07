@@ -35,6 +35,11 @@ const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
  * stays within the turn's 12 s inline wait, with the live card covering it.
  */
 export const WIDE_FETCH_MS = 12_000;
+/**
+ * How long Bash waits after the hotels are in before its last picture (#4585): about +0.55 s, and the results frames
+ * show real cards (p5's staging measurement). Buses get none: ixigo draws their list a second or more after the data.
+ */
+export const STAYS_SETTLE_MS = 550;
 /** ixigo's "Best Price Guarantee" popup's close button; not there most of the time, so optional. */
 const CLOSE_POPUP: Step = { op: 'click', name: 'Close modal', optional: true };
 /** Two to a room, as ixigo's own search starts ("1 Room, 2 Guests"). */
@@ -330,8 +335,9 @@ export const stays: Recipe<StaySlots> = {
           capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
           steps: [{ op: 'wait_for', match: SEARCH }, CLOSE_POPUP, { op: 'scroll', times: 3 }, CLOSE_POPUP],
           timeoutMs: WIDE_FETCH_MS,
+          settleMs: STAYS_SETTLE_MS,
         }
-      : { capture: [{ match: SEARCH, required: true }], steps: [{ op: 'wait_for', match: SEARCH }, CLOSE_POPUP] },
+      : { capture: [{ match: SEARCH, required: true }], steps: [{ op: 'wait_for', match: SEARCH }, CLOSE_POPUP], settleMs: STAYS_SETTLE_MS },
   fetchable: true,
   readyText: 'per night, per room',
   extract,
