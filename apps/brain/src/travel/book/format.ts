@@ -3,6 +3,7 @@
  * docs/design/ixigo-recipes.md, "The recipe book". Expressions (read, answer, templates) are JSONata (expr.ts).
  */
 import { z } from 'zod';
+import { BODY_FORMATS } from './bodies.js';
 
 const Id = z.string().regex(/^[a-z]+(\.[a-z][a-z0-9_]*)+$/, 'an id is section.capability, in lower case');
 const Expr = z.string().min(1);
@@ -80,8 +81,8 @@ export const Answer = z.discriminatedUnion('as', [
   z.object({ as: z.literal('options'), kind: z.enum(['stay', 'flight', 'train', 'bus']), each: Expr, keep: Expr.optional() }),
   /** A card that opens the page, with what was asked set on it. */
   z.object({ as: z.literal('link'), title: z.string().min(1), who: Expr.optional() }),
-  /** Short facts Go says in its own words. */
-  z.object({ as: z.literal('facts'), each: Expr }),
+  /** Facts Go says in its own words: each row as a plain object, at most max of them. */
+  z.object({ as: z.literal('facts'), title: z.string().min(1), each: Expr, max: z.int().positive().max(50).default(20) }),
   /** A lookup: ixigo's suggestions for the words, which the engine picks from. */
   z.object({ as: z.literal('places'), suggestions: Suggestions }),
 ]);
@@ -111,8 +112,11 @@ export const RecipeFile = z
     read: z
       .object({
         /** unique: a row's key, when a call came back more than once (pages 1 and 2) and a row may repeat. */
-        rows: z.object({ from: z.string().min(1), list: Expr, unique: Expr.optional() }),
-        also: z.record(z.string().regex(/^[a-z][a-z_]*$/), z.object({ from: z.string().min(1), value: Expr })).optional(),
+        /** format: json, or a Next.js flight payload (rsc), or a Next.js page with one in its scripts (next_html). */
+        rows: z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional() }),
+        also: z
+          .record(z.string().regex(/^[a-z][a-z_]*$/), z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), value: Expr }))
+          .optional(),
       })
       .optional(),
     answer: Answer,
@@ -126,7 +130,9 @@ export const RecipeFile = z
     if (path(r.page) || r.capture?.some((c) => path(c.match)) || path(r.box?.page)) {
       ctx.addIssue({ code: 'custom', message: 'no recipe may open or read anything under /payments/' });
     }
-    if (r.answer.as === 'options' && !(r.page && r.capture && r.read)) ctx.addIssue({ code: 'custom', message: 'an options answer needs page, capture and read' });
+    if ((r.answer.as === 'options' || r.answer.as === 'facts') && !(r.page && r.capture && r.read)) {
+      ctx.addIssue({ code: 'custom', message: `a${r.answer.as === 'options' ? 'n options' : ' facts'} answer needs page, capture and read` });
+    }
     if (r.answer.as === 'places' && !(r.box && r.capture && r.keeps)) ctx.addIssue({ code: 'custom', message: 'a lookup needs box, capture and keeps' });
     if (r.answer.as === 'link' && !r.page) ctx.addIssue({ code: 'custom', message: 'a link answer needs page' });
     for (const [name, input] of Object.entries(r.inputs)) {

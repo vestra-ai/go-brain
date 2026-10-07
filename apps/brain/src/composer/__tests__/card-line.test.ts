@@ -48,12 +48,15 @@ describe('the line that goes out with a card', () => {
 
 describe('what Go knows without a check', () => {
   // Run 37586604675: "I can't check live cafe listings from here, so I won't name specific places and risk a wrong one."
-  it('says well-known places, distances, tips and seasonal weather plainly; only prices, availability and hours need a check', () => {
+  // Drill 7 Oct: "Perch Coffee" and "Plum by Bohemian Cafe" in Assagao, which don't exist: a venue's name comes from ixigo.
+  it('says distances, the area, tips and seasonal weather plainly; names a venue only from ixigo or the group', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
     expect(section).toContain(
       '- Prices, availability and opening hours: only give what you checked in this turn, or say how old it is ("checked 10 min ago"). No check, no number.\n' +
-        '- Everything else a well-travelled friend knows, say plainly, with no "I can\'t check live" caveat: well-known places (a cafe, a beach, a bakery), ' +
-        'distances and travel times, local tips, and the usual weather for the season. Naming a well-known cafe or beach is fine; inventing a price is not.\n',
+        '- Everything else a well-travelled friend knows, say plainly, with no "I can\'t check live" caveat: distances and travel times, what an area is like, ' +
+        'local tips, and the usual weather for the season.\n' +
+        '- Name a particular cafe, restaurant, bar, beach or sight only when it came from ixigo in this turn (the destination guide through the ixigo tool, ' +
+        'or search results) or someone in the group named it. Without that, talk about the area, never a name from memory, and offer what ixigo has.\n',
     );
   });
 });

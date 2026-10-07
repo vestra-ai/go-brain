@@ -1,0 +1,39 @@
+id: plan.destination
+title: A destination's guide on ixigo, with the best time to go, the weather by month, places to visit and places to eat
+asks:
+  - best time to visit goa
+  - good places to eat in goa
+  - what to do in goa
+  - goa ke famous jagah kaun si hain
+inputs:
+  place: { kind: text, about: the destination as people said it, such as Goa }
+auth: none
+changes_state: false
+# ixigo's guide page, /plan/{slug}: server-rendered, its props in the Next.js flight payload the page carries in its
+# scripts. The same payload, asked with the header "RSC: 1", answers in about 0.4 s (the fast speed, to come).
+let:
+  slug: "$lowercase($replace($trim(place), /[^A-Za-z0-9]+/, '-'))"
+page: /plan/{$slug}
+capture:
+  - { match: /plan/, max_bytes: 2000000 }
+read:
+  rows: { from: /plan/, format: next_html, list: "$find($, 'bestTime')" }
+answer:
+  as: facts
+  title: "{place}"
+  max: 1
+  # Places To Visit and Places To Eat are ixigo's own, with ratings: the only places Go names for the destination.
+  each: |
+    {
+      "destination": destination,
+      "best_time": bestTime,
+      "weather_by_month": [weatherHistory.(month & ": " & $string(weatherAqi.min) & " to " & $string(weatherAqi.max) & " C. " & summary)],
+      "places_to_visit": [widgets[title = "Places To Visit"].data.(name & ($type(rating) = "number" ? " (" & $string(rating) & ")" : "") & (description ? ": " & description : ""))],
+      "places_to_eat": [widgets[title = "Places To Eat"].data.(name & ($type(rating) = "number" ? " (" & $string(rating) & ")" : ""))],
+      "ideas": [widgets[title = "Ideas To Plan Your Trip"].data.name],
+      "questions": [faq[[0..5]].(heading & " " & $replace(content, /<[^>]+>/, ""))]
+    }
+ttl_minutes: 60
+samples: { page: plan.destination.html }
+measured: { fast_ms: 437, page_ms: 5100, flow_ms: null }
+notes: The payload carries the page's apikey, deviceId and uuid; the engine drops them before anything reads the body.

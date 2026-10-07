@@ -18,7 +18,7 @@ import type { Book } from './book.js';
 import { evaluate } from './expr.js';
 import type { RecipeFile } from './format.js';
 import { boxPlan, pickSuggestion, readSuggestions, type End, type Suggestion } from './lookup.js';
-import { readOptions } from './read.js';
+import { readFacts, readOptions } from './read.js';
 import { fill } from './template.js';
 
 /** Whether an address or path is ixigo's payment page, or anything under it. */
@@ -59,8 +59,9 @@ export interface RecipeStat {
   p50_ms: number | null;
   p90_ms: number | null;
 }
-/** link: an answer that loads nothing; page: the browser fetch of a page (a lookup's box, or a results page). */
-export type Speed = 'link' | 'page';
+/** link: an answer that loads nothing; page: the browser fetch of a page (a lookup's box, or a results page); kept: a
+ *  facts answer from earlier, inside its recipe's TTL. */
+export type Speed = 'link' | 'page' | 'kept';
 /** The last runs a recipe's speeds are measured over. */
 const LAST_RUNS = 100;
 
@@ -69,7 +70,11 @@ const percentile = (sorted: number[], p: number): number | null =>
 
 export type EngineAnswer =
   | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number }
+  | { as: 'facts'; title: string; rows: Array<Record<string, unknown>>; page: string; checkedAt: string; ms: number }
   | { as: 'link'; link: string; title: string; who: string | null };
+
+/** Facts answers kept by recipe and inputs for the recipe's TTL: a second question about the same place is instant. */
+const KEPT_FACTS_MAX = 200;
 
 export interface RunFor {
   tripId: string;
@@ -103,6 +108,7 @@ const choiceLine = (s: Suggestion): string => (s.line ? `"${s.name}" (${s.line})
 
 export function createEngine(d: EngineDeps) {
   const offered = new Map<string, Offered>();
+  const keptFacts = new Map<string, { at: number; answer: Promise<EngineAnswer> }>();
   const timings = new Map<string, { recipe: string; speed: Speed; ms: number[]; runs: number; failed: number }>();
 
   /** One run, in the log and the numbers: recipe, speed, how long, and how it ended. */
@@ -270,7 +276,7 @@ export function createEngine(d: EngineDeps) {
       const who = recipe.answer.who ? await evaluate(recipe.answer.who, inputs, { inputs, ...bindings }) : null;
       return { as: 'link', link: page, title: await fill(recipe.answer.title, inputs, { url: false, bindings }), who: typeof who === 'string' ? who : null };
     }
-    if (recipe.answer.as !== 'options') throw new TravelError('refused', `${recipe.title} is not a search Go runs this way.`);
+    if (recipe.answer.as !== 'options' && recipe.answer.as !== 'facts') throw new TravelError('refused', `${recipe.title} is not a recipe Go runs this way.`);
     const runner = d.runner(o.tripId);
     if (!runner?.read) throw new TravelError('refused', "An ixigo.com search needs the trip's computer, which is not set up here.");
     let plan: FetchPlan = { capture: recipe.capture as CaptureSpec[] };
@@ -289,15 +295,52 @@ export function createEngine(d: EngineDeps) {
     const read = await runner.read(o.tripId, page, plan, { ...(o.signal ? { signal: o.signal } : {}), ...(o.onProgress ? { onProgress: o.onProgress } : {}) });
     refusePayments(read.finalUrl);
     o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
+    if (recipe.answer.as === 'facts') {
+      const rows = await readFacts(recipe, read.captures, inputs, page, bindings);
+      const at = d.now();
+      return { as: 'facts', title: await fill(recipe.answer.title, inputs, { url: false, bindings }), rows, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
+    }
     const options = await readOptions(recipe, read.captures, inputs, page, bindings);
     const at = d.now();
     return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
   }
 
+  const factsKey = (id: string, given: Record<string, unknown>): string =>
+    `${id}|${JSON.stringify(Object.entries(given).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, typeof v === 'string' ? norm(v) : v]))}`;
+
+  /** A facts answer kept from earlier, inside its recipe's TTL. */
+  function keptHit(recipe: RecipeFile, given: Record<string, unknown>): Promise<EngineAnswer> | null {
+    const hit = keptFacts.get(factsKey(recipe.id, given));
+    return hit && d.now().getTime() - hit.at < recipe.ttl_minutes * 60_000 ? hit.answer : null;
+  }
+
+  /** A facts answer, kept for its recipe's TTL by recipe and the words asked; one that fails is not kept. */
+  function kept(id: string, given: Record<string, unknown>, answer: Promise<EngineAnswer>): Promise<EngineAnswer> {
+    const key = factsKey(id, given);
+    const nowMs = d.now().getTime();
+    keptFacts.delete(key);
+    keptFacts.set(key, { at: nowMs, answer });
+    answer.catch(() => {
+      if (keptFacts.get(key)?.answer === answer) keptFacts.delete(key);
+    });
+    while (keptFacts.size > KEPT_FACTS_MAX) {
+      const oldest = keptFacts.keys().next().value;
+      if (oldest === undefined) break;
+      keptFacts.delete(oldest);
+    }
+    return answer;
+  }
+
   return {
     /** Runs a recipe for the given inputs (place inputs as the person's words), timed and recorded. */
     answer(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
-      const speed: Speed = d.book.get(id)?.answer.as === 'link' ? 'link' : 'page';
+      const recipe = d.book.get(id);
+      const speed: Speed = recipe?.answer.as === 'link' ? 'link' : 'page';
+      if (recipe?.answer.as === 'facts') {
+        const hit = keptHit(recipe, given);
+        if (hit) return timed(id, 'kept', () => hit);
+        return timed(id, speed, () => kept(id, given, run(id, given, o)));
+      }
       return timed(id, speed, () => run(id, given, o));
     },
     /** Each recipe's numbers at each speed, slowest middle first. */
