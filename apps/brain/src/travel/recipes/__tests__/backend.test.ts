@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
 import { createIxigoWebBackend, LINK_ONLY_KINDS, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
@@ -34,6 +34,7 @@ function runner(fail = false) {
 let nowMs = Date.parse('2026-10-07T12:00:00Z');
 const backend = (r: RecipeRunner | null) => createIxigoWebBackend({ runner: () => r, peopleOf: async () => 4, now: () => new Date(nowMs) });
 const FLIGHTS = { from: 'Delhi', to: 'Goa', date: '2026-11-06' };
+const TRAINS = { from: 'Delhi', to: 'Goa', date: '2026-11-06' };
 
 describe('the ixigo_web backend', () => {
   it("runs the kind's recipe in the trip's browser, for the trip's head count when nobody gave a number", async () => {
@@ -110,10 +111,42 @@ describe('the ixigo_web backend', () => {
     expect(cards[0]).toMatchObject({ tripId: 't_goa', kind: 'flights' });
     expect(cards[0]!.runKey).toBe((await first).runId);
     expect(events).toEqual(['opening', 'captured', 'extracted', 'finish:ok']);
-    const failing = createIxigoWebBackend({ runner: () => runner(true).r, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never });
+    const failing = createIxigoWebBackend({ runner: () => runner(true).r, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never, retryGraceMs: 0 });
     events.length = 0;
     await expect(failing.search('flights', FLIGHTS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
-    expect(events).toEqual(['failed', 'finish:failed']);
+    await vi.waitFor(() => expect(events).toEqual(['failed', 'finish:failed']));
+  });
+
+  it('carries a retry of a failed search on in the same card: one card, done once, never failed in between', async () => {
+    const events: string[] = [];
+    let made = 0;
+    const live = () => {
+      made += 1;
+      return { progress: (e: { type: string }) => events.push(e.type), finish: async (ok: boolean) => { events.push(ok ? 'finish:ok' : 'finish:failed'); } };
+    };
+    let calls = 0;
+    const flaky: RecipeRunner = {
+      name: 'browser_fetch',
+      async run() {
+        calls += 1;
+        if (calls === 1) throw new TravelError('unreachable', 'ixigo took too long to answer.');
+        return { options: [OPTION], checkedAt: '2026-10-07T12:00:30.000Z', ms: 9_000 };
+      },
+    };
+    const b = createIxigoWebBackend({ runner: () => flaky, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never, retryGraceMs: 60_000 });
+    await expect(b.search('trains', TRAINS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
+    expect(events).toEqual([]);
+    await b.search('trains', TRAINS, { tripId: 't_goa' });
+    expect(made).toBe(1);
+    expect(events).toEqual(['extracted', 'finish:ok']);
+  });
+
+  it('shows a failed card once when no retry comes', async () => {
+    const events: string[] = [];
+    const live = () => ({ progress: (e: { type: string }) => events.push(e.type), finish: async (ok: boolean) => { events.push(ok ? 'finish:ok' : 'finish:failed'); } });
+    const b = createIxigoWebBackend({ runner: () => runner(true).r, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never, retryGraceMs: 10 });
+    await expect(b.search('trains', TRAINS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
+    await vi.waitFor(() => expect(events).toEqual(['failed', 'finish:failed']));
   });
 
   it('runs each recipe on the runner chosen for it', async () => {

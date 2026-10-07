@@ -5,7 +5,9 @@
  *
  * A search is kept for its recipe's TTL (10 minutes), by recipe and slots, so "Delhi" and "DEL" are one search; while it
  * runs, the same search joins it, so an early start on intake and the composer's own call make one page load, and one
- * live search card: the card starts with the run and is marked done before the search answers.
+ * live search card: the card starts with the run and is marked done before the search answers. A run that fails leaves
+ * its card open a while (RETRY_GRACE_MS): a retry of the same search in the same trip carries on in it, so the room sees
+ * one card per search, ending done or failed once, never a failed card and then a second "On it.".
  *
  * A search answers inline only through the browser fetch, within TRAVEL_WAIT_MS of its start; past that (and always for
  * the agent job, 25 to 55 s) the search tool goes on and the options come when the run finishes (waitMs).
@@ -30,7 +32,12 @@ export interface IxigoWebDeps {
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
   /** Kinds whose page ixigo won't serve Go's computer: the search answers with the page's link and loads nothing. */
   linkOnly?: (kind: TravelKind) => boolean;
+  /** How long a failed run's card waits for a retry of the same search before it shows failed. */
+  retryGraceMs?: number;
 }
+
+/** About one composer turn: the early start's search fails, the turn wakes, and its own search_* call is the retry. */
+export const RETRY_GRACE_MS = 20_000;
 
 /** Flights: ixigo answers our box egress with "No flights found", then a 403 (7 Oct), until Keshav decides the route. */
 export const LINK_ONLY_KINDS: ReadonlySet<TravelKind> = new Set(['flights']);
@@ -40,6 +47,8 @@ const CACHE_MAX = 200;
 
 export function createIxigoWebBackend(d: IxigoWebDeps): TravelBackend {
   const kept = new Map<string, { at: number; ttl: number; search: Promise<TravelSearch> }>();
+  /** Failed runs' cards, by trip and search, still open for a retry. */
+  const open = new Map<string, { live: LiveSearch; timer: ReturnType<typeof setTimeout> }>();
 
   /** The recipe, its runner and the search's key, or a plain refusal before anything runs. */
   async function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
@@ -61,7 +70,14 @@ export function createIxigoWebBackend(d: IxigoWebDeps): TravelBackend {
       const hit = kept.get(key);
       if (hit && nowMs - hit.at < hit.ttl) return hit.search;
       const runId = `${key}|${nowMs}`;
-      const live = d.live?.(tripId, { runKey: runId, kind, query: q });
+      // A retry of a search whose run just failed carries on in its card; otherwise the run gets a card of its own.
+      const cardKey = `${tripId}|${key}`;
+      const waiting = open.get(cardKey);
+      if (waiting) {
+        clearTimeout(waiting.timer);
+        open.delete(cardKey);
+      }
+      const live = waiting?.live ?? d.live?.(tripId, { runKey: runId, kind, query: q });
       const search = runner.run(tripId, recipe, slots, live ? { onProgress: live.progress } : {}).then(
         async (run): Promise<TravelSearch> => {
           live?.progress({ type: 'extracted', count: run.options.length });
@@ -70,8 +86,16 @@ export function createIxigoWebBackend(d: IxigoWebDeps): TravelBackend {
           return { results: run.options, checkedAt: run.checkedAt, runId };
         },
         async (err: unknown): Promise<never> => {
-          live?.progress({ type: 'failed', code: err instanceof TravelError ? err.code : 'failed' });
-          await live?.finish(false);
+          if (live) {
+            // Shown failed only if no retry comes: the composer's own search after a failed early start is the usual one.
+            const timer = setTimeout(() => {
+              open.delete(cardKey);
+              live.progress({ type: 'failed', code: err instanceof TravelError ? err.code : 'failed' });
+              void live.finish(false);
+            }, d.retryGraceMs ?? RETRY_GRACE_MS);
+            timer.unref?.();
+            open.set(cardKey, { live, timer });
+          }
           throw err;
         },
       );

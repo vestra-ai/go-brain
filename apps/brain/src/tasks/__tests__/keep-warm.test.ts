@@ -17,8 +17,8 @@ function world(o: { fail?: boolean } = {}) {
   return { keeper, warms, log, advance: (ms: number) => { nowMs += ms; } };
 }
 
-describe('holding a computer awake through travel talk', () => {
-  it('asks Bash to hold the box for two minutes on the first travel line, and not again while the hold has time left', () => {
+describe('holding a computer awake while the trip talks', () => {
+  it('asks Bash to hold the box for two minutes on the first line, and not again while the hold has time left', () => {
     const w = world();
     w.keeper.touch('t_goa');
     w.keeper.touch('t_goa');
@@ -27,13 +27,13 @@ describe('holding a computer awake through travel talk', () => {
     expect(w.warms).toEqual([{ tripId: 't_goa', keepMs: KEEP_MS }]);
   });
 
-  it('extends the hold when travel talk goes on into its last 20 s: about one call per 100 s per trip', () => {
+  it('extends the hold when the talk goes on into its last 20 s: about one call per 100 s per trip', () => {
     const w = world();
     w.keeper.touch('t_goa');
     w.advance(KEEP_MS - EXTEND_WITHIN_MS + 1_000);
     w.keeper.touch('t_goa');
     expect(w.warms).toHaveLength(2);
-    // A quiet trip lets its hold end; the next travel line holds it again.
+    // A quiet trip lets its hold end; the next line holds it again.
     w.advance(10 * 60_000);
     w.keeper.touch('t_goa');
     expect(w.warms).toHaveLength(3);
@@ -41,7 +41,7 @@ describe('holding a computer awake through travel talk', () => {
     expect(w.warms.map((x) => x.tripId)).toEqual(['t_goa', 't_goa', 't_goa', 't_other']);
   });
 
-  it('asks again on the next travel line when a hold was refused', async () => {
+  it('asks again on the next line when a hold was refused', async () => {
     const w = world({ fail: true });
     w.keeper.touch('t_goa');
     await vi.waitFor(() => expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't_goa' }), expect.stringContaining('did not start')));

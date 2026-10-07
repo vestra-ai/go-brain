@@ -52,11 +52,12 @@ describe('the early start', () => {
     expect(fake.searches).toEqual([]);
   });
 
-  it("keeps the trip's computer awake on travel talk from anyone, to Go or not, and only under ixigo_web", async () => {
+  it("keeps the trip's computer awake on any line, from anyone, to Go or not, and only under ixigo_web", async () => {
     const w = world();
     await w.hook(msg(50, 'p_priya', 'trains from Mumbai on Thursday are cheaper I think'), UNSURE_READ, goaPack());
     await w.hook(msg(51, 'p_priya', "I'm veg btw"), UNSURE_READ, goaPack());
-    expect(w.warmed).toEqual(['t_goa']);
+    // The keeper holds it once per hold; the hook asks on every line.
+    expect(w.warmed).toEqual(['t_goa', 't_goa']);
     expect(w.searches).toEqual([]);
     const fake = world('fake');
     await fake.hook(msg(52, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());

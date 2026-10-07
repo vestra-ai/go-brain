@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readTravelAsk, travelTalk } from '../ask.js';
+import { readTravelAsk } from '../ask.js';
 import { RECIPES } from '../index.js';
 
 // Wednesday 7 Oct 2026, the Goa trip: North Goa, 6 to 9 Nov.
@@ -39,14 +39,6 @@ describe('reading a travel ask', () => {
     expect(read('@Go hotel in Candolim, non-refundable is fine')?.query).not.toHaveProperty('mustHave');
     // "Friday" said on a Friday is next week's.
     expect(readTravelAsk('@Go flights Delhi to Goa Friday', { ...CTX, today: '2026-10-09' })?.query).toMatchObject({ date: '2026-10-16' });
-  });
-
-  it('hears travel talk, to Go or not: a travel word with a place or a date', () => {
-    expect(travelTalk('can someone check trains from Mumbai?', CTX.today)).toBe(true);
-    expect(travelTalk('villa for Friday?', CTX.today)).toBe(true);
-    expect(travelTalk('flights Delhi to Goa kitne ke hain', CTX.today)).toBe(true);
-    expect(travelTalk('my flight was so bad lol', CTX.today)).toBe(false);
-    expect(travelTalk('Goa on Friday!', CTX.today)).toBe(false);
   });
 
   it("takes Jev's kind when it is sure, over the kind words", () => {

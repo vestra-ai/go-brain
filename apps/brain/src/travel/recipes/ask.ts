@@ -122,13 +122,6 @@ function guestsIn(lower: string): number | undefined {
   return n >= 1 && n <= 30 ? n : undefined;
 }
 
-/** Travel talk, to Go or not: a travel word with a place or a date ("trains from Mumbai?", "villa for Friday"). */
-export function travelTalk(text: string, today: string): boolean {
-  const kinds = KINDS.filter(([, re]) => re.test(text)).map(([k]) => k);
-  if (kinds.length === 0) return false;
-  return datesIn(text.toLowerCase(), today).length > 0 || kinds.some((k) => placesIn(text, k).length > 0);
-}
-
 /** The ask in a message, or null when it is not one whole search of one kind. */
 export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
   const kinds = ctx.kind ? [ctx.kind] : KINDS.filter(([, re]) => re.test(text)).map(([k]) => k);

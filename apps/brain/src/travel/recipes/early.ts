@@ -4,8 +4,8 @@
  * seconds. The composer's own search_* call later joins the same search: ixigo_web shares one in flight, by recipe and
  * slots. A follow-up line ("after 6 pm") still reaches the turn, and its filter applies to the same list.
  *
- * Travel talk from anyone, to Go or not, also keeps the trip's computer awake for the next two minutes (design 4b), so
- * the search that follows never waits on a sleeping box.
+ * Any line in the trip, from anyone, to Go or not, also holds the trip's computer awake (design 4b), so the first
+ * search never waits on a sleeping box.
  */
 import type { Switches } from '../../admin/switches.js';
 import type { Message } from '../../door/methods.js';
@@ -14,7 +14,7 @@ import type { HookAnswer } from '../../trips/hooks.js';
 import { plainlyNamesGo } from '../../trips/names-go.js';
 import type { TripPack } from '../../trips/pack.js';
 import type { Travel, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
-import { readTravelAsk, travelTalk } from './ask.js';
+import { readTravelAsk } from './ask.js';
 import { RECIPES } from './index.js';
 import { RECIPE_TTL_MS } from './recipe.js';
 
@@ -51,10 +51,12 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
   const started = new Map<string, EarlySearch & { at: number }>();
   return {
     async onRead(msg, read, pack) {
-      if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web' || !msg.text) return undefined;
+      if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web') return undefined;
       const tripId = pack.trip.trip_id;
+      // Any line in a trip holds its computer awake (one call per hold), so the box is up before the first search.
+      d.keepWarm?.(tripId);
+      if (!msg.text) return undefined;
       const today = await d.today(tripId);
-      if (travelTalk(msg.text, today)) d.keepWarm?.(tripId);
       // To Go: named plainly, or the quick read is sure it is for Go.
       if (!plainlyNamesGo(msg, pack) && !(read.forGo.sure && read.forGo.value === true)) return undefined;
       const travel = d.travel();
