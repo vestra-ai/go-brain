@@ -89,6 +89,28 @@ describe('the stays recipe', () => {
     expect(stays.capture).toEqual([{ match: '/accommodation-search/api/v3/accommodations/search$', required: true }]);
   });
 
+  it("reads a hotel with null details (O Hotel Goa's null image), and leaves out one it can't read, never the whole page", () => {
+    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+    const page = JSON.parse(fixture('stays-goa-page1.json'));
+    const list = page.data.result.inventoryInfoList as Array<Record<string, unknown>>;
+    const [first, second] = [list[0]!, list[1]!];
+    // p4's 12:58Z all-Goa pool search: imageInfoList[].urlMedium null, and other details null as ixigo sends them.
+    first['imageInfoList'] = [{ url: null, urlMedium: null }];
+    first['locality'] = null;
+    first['userRatingCount'] = null;
+    first['hotelInfoToken'] = null;
+    delete second['fareDetail'];
+    const options = stays.extract([capture(SEARCH, SEARCH_URL, JSON.stringify(page))], slots);
+    const read = stays.extract([capture(SEARCH, SEARCH_URL, fixture('stays-goa-page1.json'))], slots);
+    expect(options.map((o) => o.title)).toEqual(read.map((o) => o.title).filter((t) => t !== String(second['name']).trim()));
+    const o = options.find((x) => x.title === String(first['name']).trim())!;
+    expect(o).not.toHaveProperty('imageUrl');
+    expect(o.facts).not.toHaveProperty('area');
+    // Every hotel unreadable: a changed shape, said plainly, never "no stays".
+    for (const h of list) delete h['fareDetail'];
+    expect(() => stays.extract([capture(SEARCH, SEARCH_URL, JSON.stringify(page))], slots)).toThrow(/shape Go does not read/);
+  });
+
   it('reads both pages of hotels, priced per night and per room with taxes, the whole stay for every room', () => {
     const options = stays.extract(pages(), slots);
     expect(options.map((o) => o.title)).toEqual([
