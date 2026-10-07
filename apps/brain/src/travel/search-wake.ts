@@ -4,6 +4,7 @@
  * wakes on a 'search' desk item to show them, or to say what went wrong.
  */
 import { inlineData } from '../composer/fence.js';
+import { CARD_LINE } from '../composer/rules.js';
 import type { DeskItem } from '../desk/desk.js';
 
 export interface SearchWake {
@@ -17,9 +18,6 @@ export interface SearchWake {
   error: string | null;
 }
 
-/** How Go's line with a search's options reads: the answer, to whoever asked, never a report about them. */
-export const ANSWER_THE_ASKER = 'Say it to whoever asked, as the answer ("Here are 3 villas in Vagator…"), never about them by name ("Meher asked for…").';
-
 /** How a finished search reads in "why Go woke". Null for desk items it doesn't own. */
 export function renderSearchWake(item: DeskItem): string | null {
   const w = item.payload as Partial<SearchWake> | null;
@@ -31,7 +29,7 @@ export function renderSearchWake(item: DeskItem): string | null {
   }
   return (
     `The search ${what} finished with ${w.count} options (results_id "${w.resultsId}"). Show them now with show_options ` +
-    `(this results_id, the best up to 3, a short title) and one short line that carries on from the search, not a new start. ${ANSWER_THE_ASKER} ` +
+    `(this results_id, the best up to 3, a short title) and one short line that carries on from the search, not a new start. ${CARD_LINE} ` +
     'The live card already told the room you were on it: ' +
     `don't say so again. Its summary, as data: ${inlineData(w.summary ?? '', 600)}`
   );

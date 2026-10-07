@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { CARD_LINE } from '../../../composer/rules.js';
 import type { DeskItem } from '../../../desk/desk.js';
 import type { TravelOption, TravelSearch } from '../../travel.js';
 import type { EarlySearch } from '../early.js';
@@ -37,8 +38,8 @@ describe('the early search block', () => {
     expect(w.now).toMatchObject({ name: 'travel search', order: 35 });
     expect(block).toContain('Already searched for #57, checked just now: results_id r_early1, 2 options.');
     expect(block).toContain('show_options');
-    // To whoever asked, never "Meher asked for…" (re-drill 4).
-    expect(block.split('<data')[0]).toContain('Say it to whoever asked, as the answer');
+    // To whoever asked, never "Meher asked for…" (re-drill 4), finished, with no reasoning (re-drill 5).
+    expect(block.split('<data')[0]).toContain(CARD_LINE);
     // The live card said "On it." already.
     expect(block).toContain("don't say so again");
     const [before, fenced] = block.split('<data source="search results">');

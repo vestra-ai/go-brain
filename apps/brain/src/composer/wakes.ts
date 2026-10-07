@@ -51,10 +51,11 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
 }
 
 /**
- * Said once under "why you woke" when a message that names Go woke the turn: an ask. Answers ran four to six sentences
- * (about 1.2 s of the model's 2.3 s, run 37578789333) where the rules say one to three, so the turn is told the length
- * here, after the cache point, not in GO_RULES. A list, a recap or a comparison may be longer, and what someone said
- * keeps its message number, which recall's answers cite.
+ * The order for a turn that a message naming Go woke: an ask. Said at the very end of the prompt (context.addEndNote),
+ * after the newest messages, as the last thing read before the reply. Under "why you woke" it changed nothing (run
+ * 37582427795: still three sentences, writing time 1.30 s before and 1.31 s after), read as part of the turn's state
+ * while the rules said one to three. A list, a recap or a comparison may be longer, an offer the rules call for (a vote
+ * instead of paying) stays, and what someone said keeps its message number, which recall's answers cite.
  */
 export function askNote(items: DeskItem[], pack: TripPack): string | null {
   const seqs = items.flatMap((item) => {
@@ -65,10 +66,10 @@ export function askNote(items: DeskItem[], pack: TripPack): string | null {
   });
   if (seqs.length === 0) return null;
   const refs = seqs.map((s) => `#${s}`);
-  const which = refs.length === 1 ? `${refs[0]} asks you` : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]} ask you`;
+  const which = refs.length === 1 ? refs[0] : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]}`;
   return (
-    `${which}: answer in one or two short sentences, unless they asked for a list, a recap or a comparison. ` +
-    'When you cite what someone said, keep its message number.'
+    `Answer ${which} in one or two short sentences: the answer itself, no extra tips and no offer to do more unless your rules call for one. ` +
+    'A list, a recap or a comparison they asked for may be longer. When you cite what someone said, keep its message number.'
   );
 }
 

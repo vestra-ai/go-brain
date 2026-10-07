@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { CARD_LINE } from '../../composer/rules.js';
 import { SAY_NOTHING, type TurnCtx } from '../../composer/tools.js';
 import type { DeskItem } from '../../desk/desk.js';
 import type { Images } from '../images.js';
@@ -146,9 +147,10 @@ describe('the search wake line', () => {
     expect(line).toContain('finished with 3 options (results_id "r_1")');
     expect(line).toContain('show_options');
     expect(line).toContain("don't say so again");
-    // A continuation of the search, not a second "on it", said to whoever asked (re-drill 4: "Meher asked for…" to Meher).
+    // A continuation of the search, not a second "on it", said to whoever asked (re-drill 4: "Meher asked for…" to Meher),
+    // finished, with no reasoning and no options counted (re-drill 5).
     expect(line).toContain('carries on from the search, not a new start');
-    expect(line).toContain('Say it to whoever asked, as the answer ("Here are 3 villas in Vagator…"), never about them by name ("Meher asked for…").');
+    expect(line).toContain(CARD_LINE);
     expect(line).toContain('<data>3 buses: ₹1,500 to ₹5,000</data>');
   });
 

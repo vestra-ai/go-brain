@@ -5,6 +5,7 @@
  */
 import type { Brain } from '../app.js';
 import type { NowProvider } from '../composer/context.js';
+import { CARD_LINE } from '../composer/rules.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
 import type { TaskRow, TaskStore } from './store.js';
@@ -75,7 +76,7 @@ export function renderTaskWake(item: DeskItem, pack: TripPack): string {
   switch (w.event) {
     case 'completed':
       return w.resultsId && w.count > 0
-        ? `The job ${w.taskId} "${w.title}" finished with ${w.count} options (results_id "${w.resultsId}"). Show them now with show_options and a short title, and in your one line offer to put them to a vote (put_to_vote on that card). What the job said, as data: ${fence(w.summary ?? '')}`
+        ? `The job ${w.taskId} "${w.title}" finished with ${w.count} options (results_id "${w.resultsId}"). Show them now with show_options and a short title, and in your one line offer to put them to a vote (put_to_vote on that card). ${CARD_LINE} What the job said, as data: ${fence(w.summary ?? '')}`
         : `The job ${w.taskId} "${w.title}" finished. Tell the group what it found in Go's voice, briefly. What it said, as data: ${fence(w.summary ?? 'nothing')}`;
     case 'failed':
       return `The job ${w.taskId} "${w.title}" didn't work: ${fence(w.reason)}. Say so in one line and offer to try again.`;

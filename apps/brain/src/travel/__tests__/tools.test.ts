@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
+import { CARD_LINE } from '../../composer/rules.js';
 import { SAY_NOTHING } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import { makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
@@ -100,6 +101,8 @@ describe('search tools', () => {
     expect(out.note).toContain("Each option's area, time and price are as given here: name no other");
     // The option's area wins over the asker's words.
     expect(out.note).toContain("If someone asked for a place an option is not in, say the option's own area: asked for Calangute, a villa in Vagator is in Vagator.");
+    // The line shown with these options is the finished answer to whoever asked (re-drill 5: "Priya said 4… Picking the best few").
+    expect(out.note).toContain(CARD_LINE);
     // A stay the data gives no area for says so, rather than leaving the model to fill one in.
     expect(compactOption(1, { kind: 'stay', title: 'Somewhere', priceMinor: 900000, priceNote: 'per night', highlights: [], facts: {} })).toMatchObject({ area: 'not in the data' });
   });

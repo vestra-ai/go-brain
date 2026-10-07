@@ -1,10 +1,10 @@
 /**
  * Live only: where each ask's reply time goes, on the run's own clock. From the moment the ask's last line reached the
  * simulator: when Go's desk had it due (so whether it waited), typing, the turn's start, each model call (start, first
- * word, end, output tokens) with the tools it asked for, and Go's post with how long it was. Go's desk and turns come
- * from its own tables (Timeline); the rest from what the replay recorded.
+ * word, end, output tokens) with the tools it asked for, and Go's post: its text, how long it was, and the request of the
+ * call that wrote it. Go's desk and turns come from its own tables (Timeline); the rest from what the replay recorded.
  */
-import type { Block } from './requests.js';
+import type { Block, MessageBody } from './requests.js';
 import { groupsOf, type ReplayRecord } from './score.js';
 
 /** Read from Go's tables before the run's database is dropped. Times are wall clock (ms). */
@@ -26,8 +26,10 @@ export interface AskTiming {
   turnStartMs: number | null;
   calls: Array<{ startMs: number; firstWordMs: number | null; endMs: number | null; toolsAfter: string[]; outputTokens: number | null }>;
   postMs: number | null;
-  /** The answer Go posted: its length, and the output tokens of the call that wrote it (the turn's last). Null with no post. */
-  reply: { chars: number; sentences: number; outputTokens: number | null } | null;
+  /** The answer Go posted: its text, its length, and the output tokens of the call that wrote it (the turn's last). Null with no post. */
+  reply: { text: string; chars: number; sentences: number; outputTokens: number | null } | null;
+  /** The request of the call that wrote the answer (the turn's last), exactly as Go sent it. Null with no call. */
+  request: MessageBody | null;
   /** Before the turn (Go reading the line, any wait, the desk picking it up), the model calls, the gaps between them (the tools ran there), and from the last call to the post. */
   parts: { beforeTurnMs: number | null; modelMs: number; betweenMs: number; afterModelMs: number | null };
   /** The tools the turn's last call asked for (card tools such as put_to_vote run after it, and no request follows). */
@@ -110,7 +112,8 @@ export function askTimings(rec: ReplayRecord, tl: Timeline): AskTiming[] {
       turnStartMs,
       calls: timed,
       postMs,
-      reply: said === null ? null : { chars: [...said].length, sentences: sentencesIn(said), outputTokens: timed.at(-1)?.outputTokens ?? null },
+      reply: said === null ? null : { text: said, chars: [...said].length, sentences: sentencesIn(said), outputTokens: timed.at(-1)?.outputTokens ?? null },
+      request: inTurn.at(-1)?.body ?? null,
       parts: {
         beforeTurnMs: turnStartMs,
         modelMs,
