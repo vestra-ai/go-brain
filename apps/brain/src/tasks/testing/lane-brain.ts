@@ -183,6 +183,9 @@ export class FakeContext implements Context {
   addTurnRules(fn: Parameters<Context['addTurnRules']>[0]): void {
     this.turnRules.push(fn);
   }
+  addWakeNote(): void {
+    // Lane C's turns are scripted: no note under "why Go woke".
+  }
 }
 
 type SetupStep = Parameters<Setup['addStep']>[0];

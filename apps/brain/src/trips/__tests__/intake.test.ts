@@ -351,6 +351,19 @@ describe('intake', () => {
     expect((await open(T)).some((r) => r.ref === 'm_2')).toBe(true);
   });
 
+  it('"what did I miss" to the group wakes nobody (the App gives each person their own catch-up), but put to Go it does', async () => {
+    const h = harness();
+    const T = 't_in_missed';
+    await h.send(created(T));
+    // The real line from goa-300; the reflex was unsure, so it used to wake the composer, which posted a catch-up.
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_rahul', 'meeting khatam, what did I miss') }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_arjun', '@Go what did I miss?') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref)).toEqual(['m_3']);
+    expect(items[0]?.payload.namesGo).toBe(true);
+  });
+
   it('hides a card number before anything is written: the trip log, the messages table, the pack, the reflex', async () => {
     const texts: Array<string | null | undefined> = [];
     const h = harness({ reflex: () => ({ read: async (m) => { texts.push(m.text); return UNSURE_READ; } }) });
