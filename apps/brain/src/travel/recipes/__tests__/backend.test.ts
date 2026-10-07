@@ -192,6 +192,16 @@ describe('the ixigo_web backend', () => {
     expect(runs).toHaveLength(1);
   });
 
+  it("leaves out of a flight link's adults the members who live by another airport", async () => {
+    // Six people, five homes known: Arjun (Bangalore) and Meher (Mumbai) fly from elsewhere; the sixth may fly from Delhi.
+    const b = createIxigoWebBackend({
+      runner: () => runner().r, peopleOf: async () => 6, homesOf: async () => ['Delhi', 'Delhi', 'Bangalore', 'Mumbai', 'Delhi'],
+      now: () => new Date(nowMs), linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
+    });
+    const err = (await b.search('flights', FLIGHTS, { tripId: 't_goa' }).catch((e: unknown) => e)) as TravelError;
+    expect(err.link).toContain('&adults=4&');
+  });
+
   it('never holds, confirms or reads a status: the group books on ixigo, from the link', async () => {
     const b = backend(runner().r);
     await expect(b.hold('ixigo:x', { name: 'Meher', personIds: ['p_meher'] })).rejects.toBeInstanceOf(TravelError);

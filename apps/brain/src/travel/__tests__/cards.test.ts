@@ -42,6 +42,10 @@ describe('the options card', () => {
     expect(C.NoticeCard.safeParse(card).success).toBe(true);
     expect(card).toMatchObject({ tone: 'info', fallback_text: 'Flights, Delhi to Goa: see them on ixigo', source: { name: 'ixigo' } });
     expect(card.body).not.toMatch(/no flights/i);
+    const set = buildFlightsLinkCard({ cardId: 'c_link_2', title: 'Flights, Delhi to Goa', url: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI', who: 'for 3 from Delhi' });
+    expect(set.fallback_text).toBe('Flights, Delhi to Goa, for 3 from Delhi: see them on ixigo');
+    expect(set.body).toContain('set for 3 from Delhi');
+    expect(set.body).toContain('Book them there.');
   });
 
   it('opens only https pages on ixigo.com', () => {

@@ -227,6 +227,14 @@ function windows(after: string | undefined, before: string | undefined): string 
   return WINDOWS.filter(([, start, end]) => start < to && end > from).map(([name]) => name).join(',');
 }
 
+/** Who a results page is set for, read off its own link: "for 3 from Delhi". */
+export function flyingFor(url: string): string | null {
+  const page = new URL(url);
+  const adults = Number(page.searchParams.get('adults'));
+  const city = airportCity(page.searchParams.get('from') ?? '');
+  return adults > 0 && city ? `for ${adults} from ${city}` : null;
+}
+
 /**
  * The results URL with what people asked for already set, in ixigo's own filter params (p1-b's flights map): non-stop,
  * the departure and arrival windows, and the price cap per person. The page filters itself; nothing is clicked.
@@ -242,12 +250,29 @@ export function withFlightFilters(url: string, q: TravelQuery): string {
   return params.length ? `${url}&${params.join('&')}` : url;
 }
 
+/**
+ * How many members surely fly from somewhere else: their home city has another airport (Arjun, Bangalore, is not on a
+ * flight from Delhi). A member with no home city, or one Go has no airport for, may fly from here, so counts as flying.
+ */
+function flyingElsewhere(airport: string, homes: string[] | undefined): number {
+  return (homes ?? []).filter((home) => {
+    try {
+      return airportOf(home).code !== airport;
+    } catch {
+      return false;
+    }
+  }).length;
+}
+
 export const flights: Recipe<FlightSlots> = {
   id: 'ixigo.flights',
   kind: 'flights',
   slotsFrom(q: TravelQuery, trip) {
     if (!q.from || !q.to || !q.date) throw new TravelError('needs_more', 'A flight search needs where from, where to and the date.');
-    return { from: airportOf(q.from).code, to: airportOf(q.to).code, date: q.date, adults: clamp(q.guests ?? trip.people, 1, 9) };
+    const from = airportOf(q.from).code;
+    // Nobody left (a search from a city no member lives in) asks for the whole group.
+    const flying = trip.people - flyingElsewhere(from, trip.fromCities);
+    return { from, to: airportOf(q.to).code, date: q.date, adults: clamp(q.guests ?? (flying > 0 ? flying : trip.people), 1, 9) };
   },
   url: (s) =>
     `${IXIGO}/search/result/flight?from=${s.from}&to=${s.to}&date=${ddmmyyyy(s.date)}&returnDate=&adults=${s.adults}&children=0&infants=0&class=e&source=Search%20Form`,

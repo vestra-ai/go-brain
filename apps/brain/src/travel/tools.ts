@@ -11,7 +11,7 @@ import { asked } from './filters.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
 import { TRAVEL_WAIT_MS } from './recipes/backend.js';
-import { withFlightFilters } from './recipes/flights.js';
+import { flyingFor, withFlightFilters } from './recipes/flights.js';
 import { TravelError } from './mcp-travel.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
@@ -231,17 +231,24 @@ function goOnWithout(kind: TravelKind, q: TravelQuery, pending: Promise<TravelSe
   };
 }
 
-/** ixigo won't show Go's computer these results: the card links the group to them on ixigo, with their conditions set. */
+/**
+ * ixigo won't show Go's computer these results: the card links the group to them on ixigo, with their conditions set.
+ * Go books no flights, so the line it adds sends people to ixigo to book, and offers only to note their pick.
+ */
 function linkAnswer(kind: TravelKind, q: TravelQuery, link: string, ctx: TurnCtx): unknown {
   const url = kind === 'flights' ? withFlightFilters(link, q) : link;
-  ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: suggestTitle(kind, q), url }));
+  const who = kind === 'flights' ? flyingFor(url) : null;
+  ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: suggestTitle(kind, q), url, who }));
   return {
     search: searchName(kind, q),
     count: 0,
     link: url,
-    note:
-      "ixigo won't show its flights to Go's computer right now. The card with the link to them on ixigo, with these conditions set, " +
-      'goes out with your message: add one short line. Never say there are no flights, and quote no prices or times.',
+    ...(who ? { set_for: who } : {}),
+    note: "ixigo won't show its flights to Go's computer right now. The card with the link to them on ixigo, with these conditions set, goes out with your message.",
+    tell_the_room:
+      `Say in one short line that the flights are on the card${who ? `, set ${who}` : ''}, to book on ixigo, and that if they tell you ` +
+      "which one, you'll note it for the group. You can't book flights: never offer to book one or to take it from there. " +
+      'Never say there are no flights, and quote no prices or times.',
   };
 }
 
