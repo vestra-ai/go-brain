@@ -16,7 +16,6 @@ import { plainlyNamesGo } from '../../trips/names-go.js';
 import type { TripPack } from '../../trips/pack.js';
 import type { Travel, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
 import { agreedDates, readTravelAsk } from './ask.js';
-import { RECIPES } from './index.js';
 import { RECIPE_TTL_MS } from './recipe.js';
 
 export interface EarlyStartDeps {
@@ -50,6 +49,10 @@ export interface EarlyStart {
 
 const KEPT_MAX = 200;
 
+/** Whether an ask names all its search needs: the places and the date, or the stay's place and its two dates. */
+const complete = (kind: TravelKind, q: TravelQuery): boolean =>
+  kind === 'stays' ? !!((q.area ?? q.to) && q.checkIn && q.checkOut) : !!(q.from && q.to && q.date);
+
 export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
   const started = new Map<string, EarlySearch & { at: number }>();
   return {
@@ -74,12 +77,8 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
         today, destination: pack.trip.destination?.name ?? null, dates, ...(pick?.sure && pick.value ? { kind: pick.value } : {}),
       });
       if (!ask) return undefined;
-      try {
-        RECIPES[ask.kind].slotsFrom(ask.query, { people: Math.max(1, pack.trip.people.length) });
-      } catch {
-        // A place the recipes have no code for: the composer asks, or searches, as usual.
-        return undefined;
-      }
+      // An ask missing a place or a date: the composer asks, as usual.
+      if (!complete(ask.kind, ask.query)) return undefined;
       // A link answers at once: the turn starts now, with nothing to search early.
       if (web && d.linkOnly?.(ask.kind)) return { dueNow: true };
       // The parser found the ask without a sure kind from Jev: this search is the travel intent.

@@ -13,7 +13,7 @@ import { stableId } from './ids.js';
 import type { Images } from './images.js';
 import { guestsIn } from './recipes/ask.js';
 import { TRAVEL_WAIT_MS } from './recipes/backend.js';
-import { flyingFor, withFlightFilters } from './recipes/flights.js';
+import { airportCity } from './recipes/places.js';
 import { TravelError } from './mcp-travel.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
@@ -271,12 +271,20 @@ function goOnWithout(kind: TravelKind, q: TravelQuery, pending: Promise<TravelSe
   };
 }
 
+/** Who a flights results page is set for, read off its own link: "for 3 from Delhi". */
+export function flyingFor(url: string): string | null {
+  const page = new URL(url);
+  const adults = Number(page.searchParams.get('adults'));
+  const city = airportCity(page.searchParams.get('from') ?? '');
+  return adults > 0 && city ? `for ${adults} from ${city}` : null;
+}
+
 /**
- * ixigo won't show Go's computer these results: the card links the group to them on ixigo, with their conditions set.
+ * ixigo won't show Go's computer these results: the card links the group to them on ixigo, with their conditions set
+ * (the recipe's own link: ixigo's results page with what people asked for already on it).
  * Go books no flights, so the line it adds sends people to ixigo to book, and offers only to note their pick.
  */
-function linkAnswer(kind: TravelKind, q: TravelQuery, link: string, ctx: TurnCtx): unknown {
-  const url = kind === 'flights' ? withFlightFilters(link, q) : link;
+function linkAnswer(kind: TravelKind, q: TravelQuery, url: string, ctx: TurnCtx): unknown {
   const who = kind === 'flights' ? flyingFor(url) : null;
   ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: suggestTitle(kind, q), url, who }));
   return {

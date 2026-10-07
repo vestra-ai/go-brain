@@ -38,6 +38,13 @@ const Option = z.object({
   sourceUrl: z.url(),
 });
 
+/** ixigo sends a detail it doesn't have as null: a null is the same as missing, so it is left out before the check. */
+function withoutNulls(v: unknown): unknown {
+  if (Array.isArray(v)) return v.filter((x) => x !== null).map(withoutNulls);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== null).map(([k, x]) => [k, withoutNulls(x)]));
+  return v;
+}
+
 /** One response body a recipe reads, by its capture's match. */
 function body(captures: Capture[], match: string, required: boolean, what: string): unknown {
   const raw = bodiesFor(captures, match);
@@ -96,7 +103,7 @@ export async function readOptions(
       continue;
     }
     for (const o of Array.isArray(made) ? made : made === undefined ? [] : [made]) {
-      const checked = Option.safeParse(o);
+      const checked = Option.safeParse(withoutNulls(o));
       if (checked.success) out.push({ kind: recipe.answer.kind, ...checked.data } as RecipeOption);
     }
   }

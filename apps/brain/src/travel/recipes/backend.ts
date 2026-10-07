@@ -1,11 +1,12 @@
 /**
- * TRAVEL_MODE ixigo_web: Go's travel search on ixigo.com itself, through the recipes. Each search runs in the trip's own
- * browser, so it needs the trip. Its options carry their ixigo.com page and no offer id: the group books on ixigo, and
- * Go never holds or pays for them.
+ * TRAVEL_MODE ixigo_web: Go's travel search on ixigo.com itself, through the recipe book: each kind of search is a recipe
+ * file (flights.search, trains.between, buses.between, hotels.search), run by the recipe engine in the trip's own browser,
+ * so it needs the trip. Its options carry their ixigo.com page and no offer id: the group books on ixigo, and Go never
+ * holds or pays for them. A recipe that answers with a link (flights) loads nothing.
  *
- * A search is kept for its recipe's TTL (10 minutes), by recipe and slots, so "Delhi" and "DEL" are one search; while it
- * runs, the same search joins it, so an early start on intake and the composer's own call make one page load, and one
- * live search card: the card starts with the run and is marked done before the search answers.
+ * A search is kept for its recipe's TTL (10 minutes), by recipe and the words asked; while it runs, the same search joins
+ * it, so an early start on intake and the composer's own call make one page load, and one live search card: the card
+ * starts with the run and is marked done before the search answers.
  *
  * A live card belongs to the turn that handles its search: the turn for the message whose early start ran it, or the
  * composer turn whose search tool did. A failed early start leaves its card open, and the composer's search in that turn
@@ -14,33 +15,63 @@
  * and never after its turn; a search still running when its turn ends keeps its card until the run ends it. A card that
  * ended never reopens: a later ask gets a card of its own.
  *
- * A search answers inline only through the browser fetch, within TRAVEL_WAIT_MS of its start; past that (and always for
- * the agent job, 25 to 55 s) the search tool goes on and the options come when the run finishes (waitMs).
+ * A search answers inline within TRAVEL_WAIT_MS of its start; past that the search tool goes on and the options come when
+ * the run finishes (waitMs).
  */
 import type { TurnEnd } from '../../composer/context.js';
+import type { Book } from '../book/book.js';
+import type { Engine } from '../book/engine.js';
 import type { LiveSearch } from '../live-search.js';
 import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
-import { RECIPES } from './index.js';
-import type { Recipe } from './recipe.js';
-import type { RecipeRunner } from './runners.js';
+import { RECIPE_TTL_MS } from './recipe.js';
 
 /** How long a search may hold up the turn, from its start: a train search on a sleeping box took about 8 s on staging. */
 export const TRAVEL_WAIT_MS = 12_000;
 
 export interface IxigoWebDeps {
-  /** The runner for this recipe now; null while the trip's computer is not set up here (no /v1 settings). */
-  runner: (recipe: Recipe<unknown>) => RecipeRunner | null;
-  /** The trip's head count: the adults (and so the rooms) a search asks for when nobody gave a number. */
-  peopleOf: (tripId: string) => Promise<number>;
-  /** The members' home cities, where known: a flight's adults leave out the ones who live by another airport. */
-  homesOf?: (tripId: string) => Promise<string[]>;
+  book: Pick<Book, 'get'>;
+  /** Runs a recipe: the trip's head count and homes, its places and its page are the engine's. */
+  engine: Pick<Engine, 'answer'>;
   now: () => Date;
   /** The live search card for a run; absent in tests that don't look at it. */
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
-  /** Kinds whose page ixigo won't serve Go's computer: the search answers with the page's link and loads nothing. */
-  linkOnly?: (kind: TravelKind) => boolean;
 }
+
+/** Each kind of search's recipe in the book. */
+export const SEARCH_RECIPES: Record<TravelKind, string> = { flights: 'flights.search', trains: 'trains.between', buses: 'buses.between', stays: 'hotels.search' };
+
+/** The kind of search a recipe is, when it is one of the four. */
+export const searchKindOf = (recipeId: string): TravelKind | null =>
+  (Object.entries(SEARCH_RECIPES) as Array<[TravelKind, string]>).find(([, id]) => id === recipeId)?.[0] ?? null;
+
+/** A search's query as its recipe's inputs: the places as the person's words, and the conditions ixigo may filter on. */
+export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; conditions: string[] } {
+  const conditions = [...(q.mustHave ?? [])];
+  if (kind === 'stays') {
+    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, conditions };
+  }
+  if (kind === 'flights') {
+    return {
+      given: {
+        from: q.from, to: q.to, date: q.date, adults: q.guests,
+        depart_after: q.departAfter, depart_before: q.departBefore, arrive_before: q.arriveBefore, max_price: q.maxPriceMinor,
+      },
+      conditions,
+    };
+  }
+  return { given: { from: q.from, to: q.to, date: q.date }, conditions };
+}
+
+/** The same ask, whatever its spacing or case: "North Goa" and " north goa" are one search. */
+const keyOf = (given: Record<string, unknown>, conditions: string[]): string =>
+  JSON.stringify([
+    Object.entries(given)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => [k, typeof v === 'string' ? v.trim().toLowerCase().replace(/\s+/g, ' ') : v]),
+    [...conditions].sort(),
+  ]);
 
 /** The ixigo_web backend, and the hook a turn's end calls to end the live cards it left open. */
 export type IxigoWebBackend = TravelBackend & { turnEnded(t: TurnEnd): void };
@@ -60,7 +91,7 @@ interface OpenCard {
 /** Turns and messages remembered as over, so a run that fails after its turn ended ends its card at once. */
 const OVER_MAX = 2_000;
 
-/** Flights: ixigo answers our box egress with "No flights found", then a 403 (7 Oct), until Keshav decides the route. */
+/** Flights: ixigo answers our box egress with "No flights found", then a 403 (7 Oct), so flights.search is a link. */
 export const LINK_ONLY_KINDS: ReadonlySet<TravelKind> = new Set(['flights']);
 
 const BOOK_ON_IXIGO = 'Options from ixigo.com are booked on ixigo, from their link.';
@@ -81,22 +112,26 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     return card.live.finish(ok);
   }
 
-  /** The recipe, its runner and the search's key, or a plain refusal before anything runs. */
-  async function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
+  /** The recipe, its inputs and the search's key, or a plain refusal before anything runs. */
+  function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
     if (!tripId) throw new TravelError('refused', "An ixigo.com search runs on a trip's computer, so it needs the trip.");
-    const recipe = RECIPES[kind];
-    const runner = d.runner(recipe);
-    if (!runner) throw new TravelError('refused', "An ixigo.com search needs the trip's computer, which is not set up here.");
-    const slots = recipe.slotsFrom(q, { people: Math.max(1, await d.peopleOf(tripId)), fromCities: (await d.homesOf?.(tripId)) ?? [] });
-    // The page is ixigo's public results, the same in any trip's browser: the trip runs it, the slots key it.
-    return { tripId, recipe, runner, slots, key: `${recipe.id}|${JSON.stringify(slots)}` };
+    const id = SEARCH_RECIPES[kind];
+    const recipe = d.book.get(id);
+    if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
+    const { given, conditions } = recipeInputs(kind, q);
+    // The page is ixigo's public results, the same in any trip's browser: the trip runs it, the words key it.
+    const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
+    return { tripId, id, given, conditions, link: recipe.answer.as === 'link', ttl, key: `${id}|${keyOf(given, conditions)}` };
   }
 
   return {
     async search(kind, q, o?: SearchFor) {
-      const { tripId, recipe, runner, slots, key } = await plan(kind, q, o?.tripId);
-      // Never "no flights" when ixigo refused us: the group gets the page itself, and ixigo gets no load from Go.
-      if (d.linkOnly?.(kind)) throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", recipe.url(slots));
+      const { tripId, id, given, conditions, link, ttl, key } = plan(kind, q, o?.tripId);
+      // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
+      if (link) {
+        const a = await d.engine.answer(id, given, { tripId, conditions });
+        if (a.as === 'link') throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
+      }
       const owner: Owner = o?.turnId ? { kind: 'turn', id: o.turnId } : o?.messageId ? { kind: 'message', id: o.messageId } : null;
       const cardKey = `${tripId}|${key}`;
       const nowMs = d.now().getTime();
@@ -120,8 +155,9 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         card = null;
       }
       const live = card?.live;
-      const search = runner.run(tripId, recipe, slots, live ? { onProgress: live.progress } : {}).then(
+      const search = d.engine.answer(id, given, { tripId, conditions, ...(live ? { onProgress: live.progress } : {}) }).then(
         async (run): Promise<TravelSearch> => {
+          if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
           live?.progress({ type: 'extracted', count: run.options.length });
           // The card is done before the options card posts.
           if (card) await end(cardKey, card, true);
@@ -139,7 +175,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         },
       );
       kept.delete(key);
-      kept.set(key, { at: nowMs, ttl: recipe.ttlMs, search });
+      kept.set(key, { at: nowMs, ttl, search });
       while (kept.size > CACHE_MAX) {
         const oldest = kept.keys().next().value;
         if (oldest === undefined) break;
@@ -152,10 +188,14 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       return search;
     },
     async waitMs(kind, q, o) {
-      // A search that refuses does so at once: nothing to wait for.
-      const p = await plan(kind, q, o?.tripId).catch(() => null);
-      if (!p || d.linkOnly?.(kind)) return null;
-      if (p.runner.name === 'agent_job') return 0;
+      // A search that refuses does so at once, and a link loads nothing: nothing to wait for.
+      let p: ReturnType<typeof plan>;
+      try {
+        p = plan(kind, q, o?.tripId);
+      } catch {
+        return null;
+      }
+      if (p.link) return null;
       const started = kept.get(p.key)?.at ?? d.now().getTime();
       return Math.max(0, TRAVEL_WAIT_MS - (d.now().getTime() - started));
     },

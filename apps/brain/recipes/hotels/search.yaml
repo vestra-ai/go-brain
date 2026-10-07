@@ -52,14 +52,15 @@ answer:
   as: options
   kind: stay
   # A price is the room's nightly fare plus taxes and fees, per night and per room, as ixigo shows it; the whole stay is
-  # that times the nights and the rooms. What ixigo filtered on, every stay it gave has; the rest is what it lists.
+  # that times the nights and the rooms. What ixigo filtered on, every stay it gave has; the rest is what it lists. Every
+  # detail but the id, the name and the fare may be missing or null (O Hotel Goa came with a null image).
   each: |
     (
       $nights := $nights($inputs.check_in, $inputs.check_out);
       $rooms := $inputs.rooms;
       $name := $trim(name);
       $nightly := $paise(fareDetail.displayedBaseFare + fareDetail.taxesAndFees);
-      $offerings := $append(topOfferings, amenities.name);
+      $offerings := $append(topOfferings[$type($) = "string"], amenities.name[$type($) = "string"]);
       $said := function($re, $code) { $code in $filters or $count($offerings[$contains($, $re)]) > 0 };
       $pool := $said(/pool/i, "FL_HF_29");
       $breakfast := $said(/breakfast/i, "MP_FB");
@@ -71,8 +72,9 @@ answer:
       $beach := $walk ? $max([1, $ceil($number($walk[0]) * ($lowercase($walk[1]) = "km" ? 1000 : 1) / 80)]);
       $rating10 := $type(userRating) = "number" ? (userRating > 0 ? userRating) : ($type(userRating) = "string" and $contains(userRating, /^\d+(\.\d+)?$/) and $number(userRating) > 0) ? $number(userRating);
       $address := $join($distinct([$area, $town]), ", ");
-      $image := $exists(imageInfoList[0].urlMedium) ? imageInfoList[0].urlMedium : imageInfoList[0].url;
-      {
+      $medium := imageInfoList[0].urlMedium;
+      $image := ($medium != null) ? $medium : imageInfoList[0].url;
+      ($type(hotelId) = "number" and $type($name) = "string") ? {
         "title": $name,
         "priceMinor": $nightly,
         "totalMinor": $nightly * $nights * $rooms,
@@ -101,7 +103,7 @@ answer:
           "beach_minutes": $beach
         },
         "sourceUrl": "https://www.ixigo.com/hotels/" & $string(hotelId) & "/details?" & $query({
-          "locationId": locationId ? locationId : $inputs.place.location.locationId,
+          "locationId": $type(locationId) = "number" ? locationId : $inputs.place.location.locationId,
           "locationName": $inputs.place.location.locationName,
           "locationType": $inputs.place.location.locationType,
           "masterLocationId": $inputs.place.location.masterLocationId,

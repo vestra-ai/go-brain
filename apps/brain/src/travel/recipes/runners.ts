@@ -1,31 +1,19 @@
 /**
- * Two ways to run a recipe in the trip's own browser. The browser fetch is Bash's model-free call: the page opens in a
- * background tab and the page's own data calls come back, in 3 to 8 s. The agent job is the fallback: a /v1 job on the
- * go-recipe deployment opens the page and runs the recipe's page script, in 25 to 55 s, so nothing waits on it inline.
- * The TRAVEL_RUNNER switch picks one on every search. Either way, what comes back goes through the recipe's checks, and
- * the run reports its steps (onProgress) for the live search card.
+ * How Go reads a page in the trip's own browser: Bash's browser fetch, a model-free call. The page opens in a background
+ * tab, its steps are worked, and the page's own data calls come back with the address it ended on, in 3 to 8 s. The
+ * recipe engine (book/engine.ts) decides what to open and reads what comes back. The /v1 agent job is for the long tail,
+ * beyond the recipe book.
  */
-import { createHash } from 'node:crypto';
-import type { Switches } from '../../admin/switches.js';
 import { V1Error, type V1Client } from '../../tasks/v1-client.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveFrame, OnProgress } from './progress.js';
-import { AGENT_MAX_ROWS, bodiesFor, snapshotText, type Capture, type CaptureSpec, type FetchPlan, type Recipe, type RecipeOption } from './recipe.js';
-
-export interface RecipeRun {
-  options: RecipeOption[];
-  /** When the page was read. */
-  checkedAt: string;
-  ms: number;
-}
+import { bodiesFor, type Capture, type CaptureSpec, type FetchPlan } from './recipe.js';
 
 export interface RecipeRunner {
-  name: 'browser_fetch' | 'agent_job';
-  /** onProgress: the run's steps, for the live search card; called, never awaited. */
-  run<S>(tripId: string, recipe: Recipe<S>, slots: S, o?: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<RecipeRun>;
-  /** Opens a page, works its steps and brings back the calls the plan keeps, and the address the page ended on: ixigo's
-   *  own search box, or a recipe's page. Only the browser fetch can; the agent job reads results pages alone. */
-  read?(tripId: string, url: string, plan: FetchPlan, o?: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<{ captures: Capture[]; finalUrl: string }>;
+  name: 'browser_fetch';
+  /** Opens a page, works its steps and brings back the calls the plan keeps, and the address the page ended on.
+   *  onProgress: pictures of the page, for the live search card; called, never awaited. */
+  read(tripId: string, url: string, plan: FetchPlan, o?: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<{ captures: Capture[]; finalUrl: string }>;
 }
 
 export interface RunnerDeps {
@@ -65,11 +53,11 @@ const isCapture = (c: unknown): c is Capture =>
   typeof c === 'object' && c !== null && typeof (c as Capture).url === 'string' && typeof (c as Capture).body === 'string' && typeof (c as Capture).status === 'number';
 
 /** A failed fetch as Go says it; on a timeout, the captures it did get when every required one is among them. */
-function fetchFailed(err: V1Error, recipe: { id: string; capture: CaptureSpec[] }, tripId: string, log: RunnerDeps['log']): Capture[] {
+function fetchFailed(err: V1Error, what: { id: string; capture: CaptureSpec[] }, tripId: string, log: RunnerDeps['log']): Capture[] {
   if (err.status === 504) {
     const partial = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
     const got = Array.isArray(partial) ? partial.filter(isCapture).map((c) => ({ ...c, truncated: c.truncated === true })) : [];
-    if (recipe.capture.every((c) => !c.required || bodiesFor(got, c.match).length > 0)) return got;
+    if (what.capture.every((c) => !c.required || bodiesFor(got, c.match).length > 0)) return got;
     throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
   }
   if (err.status === 402) throw new TravelError('refused', OUT_OF_CREDIT);
@@ -77,7 +65,7 @@ function fetchFailed(err: V1Error, recipe: { id: string; capture: CaptureSpec[] 
   if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time. Try again in a moment.");
   if (err.status === 400 || err.status === 403) {
     // Go's own setup or request is wrong (ixigo.com not allowed, a bad recipe): the admin log says so, the room hears less.
-    log.warn({ tripId, recipe: recipe.id, code: err.code, message: err.message }, 'travel: the browser fetch refused a recipe');
+    log.warn({ tripId, page: what.id, code: err.code, message: err.message }, 'travel: the browser fetch refused a page');
     throw new TravelError('refused', err.status === 403 ? "The trip's computer is not allowed on ixigo.com yet." : 'This ixigo search could not start.');
   }
   throw new TravelError('unreachable', err.message.slice(0, 200));
@@ -138,138 +126,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
 
   return {
     name: 'browser_fetch',
-    async run(tripId, recipe, slots, o = {}) {
-      const started = d.now().getTime();
-      const url = recipe.url(slots);
-      o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
-      const plan: FetchPlan = recipe.fetchFor?.(slots) ?? { capture: recipe.capture, ...(recipe.steps ? { steps: recipe.steps } : {}) };
-      const { captures } = await fetchPage(tripId, url, plan, recipe, o);
-      o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
-      const options = recipe.extract(captures, slots);
-      const at = d.now();
-      return { options, checkedAt: at.toISOString(), ms: at.getTime() - started };
-    },
     async read(tripId, url, plan, o = {}) {
-      return fetchPage(tripId, url, plan, { id: `page ${new URL(url).pathname}`, capture: plan.capture }, o);
+      return fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o);
     },
   };
 }
-
-// ── the agent job (the fallback) ─────────────────────────────────────────────
-
-/** computer_snapshot answers up to 15,000 characters before it pages to a file. */
-const SNAPSHOT_MAX_CHARS = 16_000;
-
-/** /v1 allows about 60 calls a minute a key: one look a second, for one job, leaves room for everything else. */
-export const AGENT_POLL_MS = 1_000;
-/** A job took 25 to 53 s on staging; past this it is stopped. Nothing waits on it inline (the search tool goes on). */
-export const AGENT_WAIT_MS = 90_000;
-
-/** What the job returns: the script's rows, or, when computer_eval was held or refused, a snapshot's text to read in Go. */
-const ROWS_SCHEMA = {
-  type: 'object',
-  properties: {
-    rows: { type: 'array', items: { type: 'object' }, maxItems: AGENT_MAX_ROWS },
-    snapshot: { type: 'string', maxLength: SNAPSHOT_MAX_CHARS },
-  },
-  additionalProperties: false,
-};
-
-interface Turn { id: string; work?: Array<{ task_id: string }> }
-/** One line of a conversation, as GET /v1/conversations/{id}/messages lists them: the work is on Bash's line of the turn. */
-interface Line { turn_id: string; work?: Array<{ task_id: string }> }
-interface Task { status: 'queued' | 'working' | 'waiting' | 'done' | 'failed'; result?: { data?: unknown } | null }
-
-/** The job's one message: the page, the text that shows its results are in, and the script, exactly as Go wrote them. */
-export const recipeMessage = (url: string, readyText: string, script: string): string =>
-  `Open this page with computer_navigate:\n${url}\n\n` +
-  `Then call computer_wait with the text ${JSON.stringify(readyText)} and timeoutMs 15000, so the results are on the page.\n\n` +
-  'Then call computer_eval with this script as its `expression` argument, exactly as written, and return what it returns as rows:\n\n' +
-  `${script}\n\n` +
-  'If computer_eval is refused, or waits for a person to allow it, call computer_snapshot with full set to true instead, and return ' +
-  'what it shows, exactly as it shows it, as snapshot (and no rows).';
-
-export function createAgentJobRunner(d: RunnerDeps & { deploymentId: string | null }): RecipeRunner {
-  const sleep = d.sleep ?? nap;
-  async function runJob<S>(tripId: string, recipe: Recipe<S>, slots: S, o: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<RecipeRun> {
-    if (!d.deploymentId) throw new TravelError('refused', 'The fallback travel search is not set up yet (VESTRA_RECIPE_DEPLOYMENT_ID).');
-    const started = d.now().getTime();
-    const userId = await d.computer.ensureUser(tripId);
-    const url = recipe.url(slots);
-    o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
-    // One job per search: a resend of the same start finds the same conversation and message.
-    const run = createHash('sha256').update(`${tripId}|${url}|${started}`).digest('hex').slice(0, 24);
-    const metadata = { go_trip_id: tripId, go_recipe: recipe.id };
-    const conversation = await d.v1.call<{ id: string }>('POST', '/v1/conversations', {
-      idempotencyKey: `go-recipe-conv-${run}`,
-      body: { user_id: userId, deployment: d.deploymentId, metadata },
-    });
-    const turn = await d.v1.call<Turn>('POST', `/v1/conversations/${conversation.id}/messages`, {
-      idempotencyKey: `go-recipe-msg-${run}`,
-      body: { message: recipeMessage(url, recipe.readyText, recipe.agentExtractor), output_schema: ROWS_SCHEMA, hand_off: 'always', metadata },
-    });
-    let taskId = turn.work?.[0]?.task_id ?? null;
-    // The conversation is this search's alone, so stopping it stops its job, whether or not Go has learnt the job's id yet.
-    const stop = async (why: string): Promise<void> => {
-      try {
-        const r = await d.v1.call<{ stopped_work?: string[] }>('POST', `/v1/conversations/${conversation.id}/stop`, { idempotencyKey: `go-recipe-stop-${run}` });
-        d.log.warn({ tripId, recipe: recipe.id, conversationId: conversation.id, stopped: r?.stopped_work ?? [] }, `travel: stopped a recipe job (${why})`);
-      } catch (err) {
-        d.log.warn({ err, tripId, recipe: recipe.id, conversationId: conversation.id }, `travel: stopping a recipe job (${why}) failed`);
-      }
-    };
-    let data: unknown;
-    for (;;) {
-      if (o.signal?.aborted) {
-        await stop('called off');
-        throw new TravelError('unreachable', 'The search was called off.');
-      }
-      if (d.now().getTime() - started >= AGENT_WAIT_MS) {
-        await stop('too slow');
-        throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
-      }
-      await sleep(AGENT_POLL_MS);
-      if (!taskId) {
-        const lines = await d.v1.call<{ data: Line[] }>('GET', `/v1/conversations/${conversation.id}/messages`);
-        taskId = lines.data.find((l) => l.turn_id === turn.id && (l.work?.length ?? 0) > 0)?.work?.[0]?.task_id ?? null;
-        continue;
-      }
-      const task = await d.v1.call<Task>('GET', `/v1/tasks/${taskId}`);
-      if (task.status === 'done') {
-        data = task.result?.data;
-        break;
-      }
-      if (task.status === 'failed') throw new TravelError('refused', "The trip's computer could not read ixigo's page.");
-      // It waits on an approval or a question: a page read never needs one, so it is stopped, not left waiting.
-      if (task.status === 'waiting') {
-        await stop('it stopped to ask');
-        throw new TravelError('refused', "The trip's computer stopped to ask something while reading ixigo's page.");
-      }
-    }
-    o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
-    const out = data as { rows?: unknown; snapshot?: unknown } | null | undefined;
-    // The script's rows; else the snapshot's text, read by the recipe's own reader. Either way the rows are checked.
-    const rows = out?.rows === undefined && typeof out?.snapshot === 'string' ? recipe.readPage(snapshotText(out.snapshot), []).slice(0, AGENT_MAX_ROWS) : out?.rows;
-    const options = recipe.fromAgent(rows, slots);
-    const at = d.now();
-    return { options, checkedAt: at.toISOString(), ms: at.getTime() - started };
-  }
-
-  return {
-    name: 'agent_job',
-    async run(tripId, recipe, slots, o = {}) {
-      try {
-        return await runJob(tripId, recipe, slots, o);
-      } catch (err) {
-        if (!(err instanceof V1Error)) throw err;
-        throw err.status === 402 ? new TravelError('refused', OUT_OF_CREDIT) : new TravelError('unreachable', err.message.slice(0, 200));
-      }
-    },
-  };
-}
-
-/** The runner the TRAVEL_RUNNER switch names now. */
-export function runnerFor(switches: Pick<Switches, 'get'>, runners: { browserFetch: RecipeRunner; agentJob: RecipeRunner }): RecipeRunner {
-  return switches.get('TRAVEL_RUNNER') === 'browser_fetch' ? runners.browserFetch : runners.agentJob;
-}
-

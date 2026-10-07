@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
 import { airportOf, busCityOf, goaHalfOf, stationOf, stayPlaceOf } from '../places.js';
-import { RECIPES } from '../index.js';
-import { bodiesFor, ddmmyyyy, istAt, istOf, matches, snapshotText } from '../recipe.js';
+import { loadBook } from '../../book/book.js';
+import { dateAs, istAt, istOf } from '../../book/expr.js';
+import { SEARCH_RECIPES } from '../backend.js';
+import { bodiesFor, matches } from '../recipe.js';
 import { capture } from './fixtures.js';
 
 describe('the places tables', () => {
@@ -65,25 +67,22 @@ describe('the recipe helpers', () => {
     expect(bodiesFor([capture('/a', url, 'one'), capture('/a', url, 'two', 500), cut, capture('/a', url, 'three')], '/a')).toEqual(['one', 'three']);
   });
 
-  it("read a snapshot's text nodes in order, as the page's own text reads", () => {
-    const snap = ['- main', '  - link "IndiGo 6E5341 05:00 DEL" [@e4]', '    - StaticText "IndiGo"', '    - StaticText "6E5341"', '    - StaticText "say \\"hi\\""'].join('\n');
-    expect(snapshotText(snap)).toBe('IndiGo\n6E5341\nsay "hi"');
-    // With no text nodes, every name, in order.
-    expect(snapshotText('- heading "05:00" [level=6]\n- paragraph "DEL"')).toBe('05:00\nDEL');
-  });
-
   it('write dates and times as ixigo and India read them', () => {
-    expect(ddmmyyyy('2026-11-06')).toBe('06112026');
+    expect(dateAs('2026-11-06', 'DDMMYYYY')).toBe('06112026');
+    expect(dateAs('2026-11-06', 'DD-MM-YYYY')).toBe('06-11-2026');
+    expect(dateAs('2026-11-06', 'D Month YYYY')).toBe('6 November 2026');
     expect(istAt('2026-11-06', '05:00:00')).toBe('2026-11-06T05:00:00+05:30');
     expect(istOf(Date.parse('2026-11-06T13:00:00Z'))).toBe('2026-11-06T18:30:00+05:30');
   });
 
-  it('cover every kind of search, each reusing a result for 10 minutes', () => {
-    expect(Object.keys(RECIPES).sort()).toEqual(['buses', 'flights', 'stays', 'trains']);
-    for (const [kind, r] of Object.entries(RECIPES)) {
-      expect(r.kind).toBe(kind);
-      expect(r.ttlMs).toBe(600_000);
-      expect(r.capture.some((c) => c.required)).toBe(true);
+  it("cover every kind of search with a recipe in the book, each reusing a result for 10 minutes", () => {
+    const { book } = loadBook();
+    expect(Object.keys(SEARCH_RECIPES).sort()).toEqual(['buses', 'flights', 'stays', 'trains']);
+    for (const id of Object.values(SEARCH_RECIPES)) {
+      const r = book.get(id)!;
+      expect(r.ttl_minutes, id).toBe(10);
+      // Flights are a link: ixigo answers flight pages with a 403 from the boxes' shared egress.
+      expect(r.answer.as, id).toBe(id === 'flights.search' ? 'link' : 'options');
     }
   });
 });

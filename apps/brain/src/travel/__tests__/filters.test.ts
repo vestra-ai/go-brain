@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
 import { applyConstraints, misses } from '../filters.js';
 import { createFakeTravel } from '../mcp-travel.js';
+import { loadBook } from '../book/book.js';
+import { createEngine } from '../book/engine.js';
 import { capture, fixture } from '../recipes/__tests__/fixtures.js';
-import { stays } from '../recipes/stays.js';
 import type { TravelOption } from '../travel.js';
 
 const now = () => new Date('2026-10-07T12:00:00Z');
@@ -44,12 +45,16 @@ describe('constraints applied in code', () => {
     expect(titles({})).toEqual(['A', 'B', 'C', 'E', 'D']);
   });
 
-  it("puts three areas up front for North Goa from ixigo's own two pages, not the Candolim strip", () => {
+  it("puts three areas up front for North Goa from ixigo's own two pages, not the Candolim strip", async () => {
     const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
     const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
-    const north = stays.slotsFrom({ area: 'North Goa', checkIn: FRIDAY, checkOut: '2026-11-09' }, { people: 4 });
-    const options = stays.extract([capture(SEARCH, url, fixture('stays-goa-page1.json')), capture(SEARCH, url, fixture('stays-goa-page2.json'))], north)
-      .map((o, i) => ({ ...o, offerId: `ixigo-web:${i}` }));
+    const pages = [capture(SEARCH, url, fixture('stays-goa-page1.json')), capture(SEARCH, url, fixture('stays-goa-page2.json'))];
+    const engine = createEngine({
+      book: loadBook().book, runner: () => ({ read: async (_t: string, page: string) => ({ captures: pages, finalUrl: page }) }), trip: async () => ({ people: 4, homes: [] }), now,
+    });
+    const north = await engine.answer('hotels.search', { place: 'North Goa', check_in: FRIDAY, check_out: '2026-11-09' }, { tripId: 't_goa' });
+    if (north.as !== 'options') throw new Error('not options');
+    const options = north.options.map((o, i) => ({ ...o, offerId: `ixigo-web:${i}` }));
     const top = (q: { area?: string }) => applyConstraints('stays', q, options).slice(0, 3).map((o) => o.facts.area);
     expect(top({})).toEqual(['Vagator', 'Candolim', 'Candolim']);
     expect(top({ area: 'North Goa' })).toEqual(['Vagator', 'Candolim', 'Prabhu wada']);
