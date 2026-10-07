@@ -96,7 +96,7 @@ export async function setupV1(o: SetupV1Options): Promise<SetupV1Result> {
   const dep = await saveDeployment(GO_DEPLOYMENT_SLUG, 'Go trip task', "Go's jobs on a trip's computer", manifest, note ? `Go trip task, ${note}` : 'Go trip task');
   const version = dep.version;
   const recipe = o.recipeModel
-    ? await saveDeployment(GO_RECIPE_SLUG, 'Go travel search', "Go's fallback travel search: one page and one script on a trip's computer", goRecipeManifest({ model: o.recipeModel, denyTools: o.denyTools === true }), 'Go recipe')
+    ? await saveDeployment(GO_RECIPE_SLUG, 'Go travel search', "Go's fallback travel search: one page and one script on a trip's computer", goRecipeManifest({ model: o.recipeModel, denyTools: o.denyTools === true, browserFetch: o.browserFetch === true }), 'Go recipe')
     : null;
 
   const hooks = await v1.call<Page<{ id: string; url: string }>>('GET', '/v1/webhooks', { query: { limit: 100 } });

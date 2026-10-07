@@ -107,7 +107,8 @@ export const GO_RECIPE_INSTRUCTIONS = `You run one travel search for Go on this 
 - Do nothing else: no other pages, no clicks, no typing, no searching, no sign-in. Never book, pay or start a checkout.`;
 
 /** The go-recipe deployment: one page and one script per job, nothing else, on a fast model. */
-export function goRecipeManifest(o: { model: string; denyTools: boolean }): Record<string, unknown> {
+/** browserFetch: the same gate as go-trip-task's; Bash's block on ixigo's payment page covers the job's own browsing too. */
+export function goRecipeManifest(o: { model: string; denyTools: boolean; browserFetch?: boolean }): Record<string, unknown> {
   return {
     instructions: GO_RECIPE_INSTRUCTIONS,
     language: 'en',
@@ -117,5 +118,6 @@ export function goRecipeManifest(o: { model: string; denyTools: boolean }): Reco
     memory: { mode: 'none' },
     limits: { spend_per_task_usd: 0.5 },
     ...(o.denyTools ? { deny_tools: [...GO_DENY_TOOLS] } : {}),
+    ...(o.browserFetch ? { browser: { blocked_paths: [...GO_BLOCKED_PATHS] } } : {}),
   };
 }
