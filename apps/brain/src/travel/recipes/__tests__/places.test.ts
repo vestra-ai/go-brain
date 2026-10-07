@@ -19,16 +19,17 @@ describe('the places tables', () => {
     expect(busCityOf('Bombay')).toEqual({ name: 'Mumbai', id: 4 });
     const goa = { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 };
     // An area with ixigo's own filter keeps the Goa search to it; one without searches all of Goa.
-    expect(stayPlaceOf('Calangute')).toEqual({ location: goa, areas: ['PA_C_1047', 'PA_L_159635'], half: 'north' });
+    // One town code a place: two or more don't add up on ixigo, and ward codes change from load to load.
+    expect(stayPlaceOf('Calangute')).toEqual({ location: goa, areas: ['PA_C_1047'], half: 'north' });
     // Baga has no code of its own: it sits with Calangute.
     expect(stayPlaceOf('Baga')).toEqual(stayPlaceOf('Calangute'));
     expect(stayPlaceOf('Vagator, Goa')).toEqual({ location: goa, areas: ['PA_C_78528'], half: 'north' });
-    expect(stayPlaceOf('Colva')).toEqual({ location: goa, areas: ['PA_L_154689'], half: 'south' });
+    expect(stayPlaceOf('Colva')).toEqual({ location: goa, areas: ['PA_C_1489'], half: 'south' });
     expect(stayPlaceOf('Goa')).toEqual({ location: goa, areas: [], half: null });
-    // A half of Goa is all its areas ixigo has codes for.
-    expect(stayPlaceOf('South Goa')).toEqual({ location: goa, areas: ['PA_C_79088', 'PA_L_154689', 'PA_L_154858'], half: 'south' });
+    // A half of Goa is all of Goa, its stays checked against the half's places.
+    expect(stayPlaceOf('South Goa')).toEqual({ location: goa, areas: [], half: 'south' });
     // North Goa takes in Anjuna's wards and Baga's (Calangute's) codes too.
-    expect(stayPlaceOf('north goa').areas).toEqual(['PA_C_1047', 'PA_C_1067', 'PA_C_1091', 'PA_C_1096', 'PA_C_1169', 'PA_C_1216', 'PA_C_1459', 'PA_C_77993', 'PA_C_78528', 'PA_C_78550', 'PA_C_78647', 'PA_L_156530', 'PA_L_159632', 'PA_L_159635', 'PA_L_165727']);
+    expect(stayPlaceOf('north goa')).toEqual({ location: goa, areas: [], half: 'north' });
     expect(goaHalfOf('Vasco da Gama')).toBe('south');
     expect(goaHalfOf('Prabhu wada, Candolim')).toBe('north');
     expect(goaHalfOf('Fatona')).toBe('south');
