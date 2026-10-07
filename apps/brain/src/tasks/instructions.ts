@@ -6,8 +6,16 @@ export const GO_MCP_SLUG = 'go-trip';
 export const GO_DEPLOYMENT_SLUG = 'go-trip-task';
 /** The fallback travel search: one page opened and read on the trip's computer, on a model of its own. */
 export const GO_RECIPE_SLUG = 'go-recipe';
-/** Where Bash's browser fetch may go for Go's travel search ("ixigo.com" covers www.ixigo.com). */
-export const GO_BROWSER_DOMAINS = ['ixigo.com'] as const;
+/**
+ * Where Bash's browser fetch may go for Go's travel search ("ixigo.com" covers www.ixigo.com), with the trains API
+ * ixigo's own train pages call (a page_fetch reaches it from an ixigo tab, as the page's script does).
+ */
+export const GO_BROWSER_DOMAINS = ['ixigo.com', 'ixigotrainsapi.confirmtkt.com'] as const;
+/**
+ * Pages Bash's browser never opens or acts on for Go, enforced in Bash's code (browser.blocked_paths): ixigo's payment
+ * page opens with a saved card selected and no CVV asked, one click from paying.
+ */
+export const GO_BROWSER_BLOCKED_PATHS = ['ixigo.com/payments/'] as const;
 
 /** Go's MCP tools that only read. An approval for one of them is answered yes; anything else no. */
 export const GO_READ_ONLY_TOOLS = ['trip', 'person', 'recall', 'search_flights', 'search_trains', 'search_buses', 'search_stays'] as const;
@@ -69,8 +77,9 @@ export const GO_DENY_TOOLS = [
 export const GO_WEBHOOK_EVENTS = ['task.started', 'task.completed', 'task.failed', 'task.stopped', 'interaction.created', 'interaction.resolved', 'interaction.expired'] as const;
 
 /**
- * browserFetch: allow Bash's browser fetch on ixigo.com, through the trip user's default deployment. Only once Bash's
- * browser fetch is on the target, since /v1 refuses a manifest key it does not know.
+ * browserFetch: allow Bash's browser fetch on ixigo.com, through the trip user's default deployment, and close ixigo's
+ * payment pages to the browser. Only once Bash's browser fetch and browser.blocked_paths are on the target, since /v1
+ * refuses a manifest key it does not know.
  */
 export function goTaskManifest(o: { mcpServerId: string; model: string; denyTools: boolean; browserFetch?: boolean }): Record<string, unknown> {
   return {
@@ -84,7 +93,7 @@ export function goTaskManifest(o: { mcpServerId: string; model: string; denyTool
     memory: { mode: 'none' },
     limits: { spend_per_task_usd: 2 },
     ...(o.denyTools ? { deny_tools: [...GO_DENY_TOOLS] } : {}),
-    ...(o.browserFetch ? { browser: { allowed_domains: [...GO_BROWSER_DOMAINS] } } : {}),
+    ...(o.browserFetch ? { browser: { allowed_domains: [...GO_BROWSER_DOMAINS], blocked_paths: [...GO_BROWSER_BLOCKED_PATHS] } } : {}),
   };
 }
 
@@ -98,7 +107,8 @@ export const GO_RECIPE_INSTRUCTIONS = `You run one travel search for Go on this 
 - Do nothing else: no other pages, no clicks, no typing, no searching, no sign-in. Never book, pay or start a checkout.`;
 
 /** The go-recipe deployment: one page and one script per job, nothing else, on a fast model. */
-export function goRecipeManifest(o: { model: string; denyTools: boolean }): Record<string, unknown> {
+/** browserFetch: the target has Bash's browser work, so ixigo's payment pages are closed to this search's browser too. */
+export function goRecipeManifest(o: { model: string; denyTools: boolean; browserFetch?: boolean }): Record<string, unknown> {
   return {
     instructions: GO_RECIPE_INSTRUCTIONS,
     language: 'en',
@@ -108,5 +118,6 @@ export function goRecipeManifest(o: { model: string; denyTools: boolean }): Reco
     memory: { mode: 'none' },
     limits: { spend_per_task_usd: 0.5 },
     ...(o.denyTools ? { deny_tools: [...GO_DENY_TOOLS] } : {}),
+    ...(o.browserFetch ? { browser: { blocked_paths: [...GO_BROWSER_BLOCKED_PATHS] } } : {}),
   };
 }
