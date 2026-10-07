@@ -6,6 +6,13 @@ import { capture, fixture } from './fixtures.js';
 const slots = flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 4 });
 const STREAM_URL = 'https://www.ixigo.com/flights/v2/search/stream?origin=DEL&destination=GOI&leave=06112026&return=&adults=4&children=0&infants=0&class=e';
 const stream = () => [capture('/flights/v2/search/stream', STREAM_URL, fixture('flights-del-goi.sse'))];
+/** The saved stream with its event changed by `edit`. */
+function streamWith(edit: (data: any) => void) {
+  const line = fixture('flights-del-goi.sse').split('\n').find((l) => l.startsWith('data:'))!;
+  const ev = JSON.parse(line.slice(5));
+  edit(ev.data);
+  return [capture('/flights/v2/search/stream', STREAM_URL, `data:${JSON.stringify(ev)}\n\n`)];
+}
 
 describe('the flights recipe', () => {
   it('fills its slots from the query, with the trip head count as adults', () => {
@@ -82,6 +89,26 @@ describe('the flights recipe', () => {
     expect(first.highlights).toEqual(['1 stop', '6h 10m']);
   });
 
+  it('leaves out a fare it cannot read, reads null details as missing, and refuses only when no fare reads', () => {
+    const options = flights.extract(streamWith((d) => {
+      const fares = d.flightJourneys[0].flightFare;
+      fares[0].refundableType = null;
+      fares[0].fares[0].fareMetadata = null;
+      fares[0].flightDetails[0].duration = null;
+      fares[1].fares[0].fareDetails.displayFare = 0;
+      d.airportDetails.GOI = { city: null };
+    }), slots);
+    expect(options).toHaveLength(133);
+    const first = options.find((o) => o.title === 'IndiGo 6E 329, 6E 5106')!;
+    expect(first.facts).toEqual({ stops: 1 });
+    expect(first.highlights).toEqual(['1 stop']);
+    expect(first.journey?.destination).toEqual({ name: 'Goa (GOI)', code: 'GOI' });
+    const unreadable = streamWith((d) => {
+      for (const f of d.flightJourneys[0].flightFare) f.flightKeys = null;
+    });
+    expect(() => flights.extract(unreadable, slots)).toThrow(/shape Go does not read/);
+  });
+
   it('refuses when the stream is missing, failed or in a shape it does not read', () => {
     expect(() => flights.extract([], slots)).toThrow(/did not load its fares/);
     expect(() => flights.extract([capture('/flights/v2/search/stream', STREAM_URL, fixture('flights-del-goi.sse'), 503)], slots)).toThrow(/did not load/);
@@ -104,6 +131,11 @@ describe('the flights recipe', () => {
       expect(o.journey?.arrive_at).toBe(same.journey?.arrive_at);
       expect(o.journey?.destination.code).toBe(same.journey?.destination.code);
     }
+  });
+
+  it('leaves out a page row that does not check out and keeps the rest', () => {
+    const good = { airline: 'IndiGo', numbers: '6E5341', depart: '05:00', from: 'DEL', arrive: '07:35', to: 'GOI', duration: '2h 35m', stops: 'Non-stop', price: 7896 };
+    expect(flights.fromAgent([{ ...good, depart: '5 am' }, good], slots).map((o) => o.title)).toEqual(['IndiGo 6E 5341']);
   });
 
   it('refuses page rows that do not check out, so the fallback never shows a wrong flight', () => {

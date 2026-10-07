@@ -22,27 +22,31 @@ const CLASS_WORDS: Record<string, string> = {
   EC: 'Executive Chair Car', EV: 'Vistadome', FC: 'First Class',
 };
 
+/** One train as ixigo sends it. Every detail may be missing or null: the number, the stations, the dates and times are
+ *  what a train needs. */
 const Train = z.object({
   board: z.string(),
-  boardStation: z.string().optional(),
+  boardStation: z.string().nullish(),
   deboard: z.string(),
-  deboardStation: z.string().optional(),
+  deboardStation: z.string().nullish(),
   departDate: z.iso.date(),
   arrivalDate: z.iso.date(),
-  suspended: z.boolean().optional(),
+  suspended: z.boolean().nullish(),
   attributes: z.object({
     number: z.string(),
     localName: z.string(),
-    fareClasses: z.array(z.string()).optional(),
+    fareClasses: z.array(z.string()).nullish(),
     departTime: z.string().regex(/^\d{2}:\d{2}/),
     arrivalTime: z.string().regex(/^\d{2}:\d{2}/),
-    bookable: z.boolean().optional(),
+    bookable: z.boolean().nullish(),
   }),
-  fares: z.record(z.string(), z.object({ baseFare: z.number() })).optional(),
+  fares: z.record(z.string(), z.object({ baseFare: z.number().nullish() }).nullish()).nullish(),
 });
-const Between = z.object({ data: z.object({ trainsBetweenStations: z.array(Train) }) });
-const Seat = z.object({ c: z.string(), q: z.string(), a: z.string(), f: z.number().optional(), p: z.number().optional() });
-const Availability = z.object({ data: z.object({ routesData: z.array(z.object({ trainCode: z.string(), availabilities: z.array(Seat) })) }) });
+/** The train list, read train by train: one Go can't read is left out, never the whole list. */
+const Between = z.object({ data: z.object({ trainsBetweenStations: z.array(z.unknown()) }) });
+const Seat = z.object({ c: z.string(), q: z.string(), a: z.string(), f: z.number().nullish(), p: z.number().nullish() });
+const Route = z.object({ trainCode: z.string(), availabilities: z.array(z.unknown()) });
+const Availability = z.object({ data: z.object({ routesData: z.array(z.unknown()) }) });
 
 /** "MANDOVI EXPRESS" as "Mandovi Express"; codes and short words ("NZM ERS SF EXP") stay as ixigo writes them. */
 const nameOf = (name: string): string =>
@@ -114,12 +118,32 @@ function extract(captures: Capture[]): RecipeOption[] {
   if (list === undefined) throw new TravelError('refused', "ixigo's train results page did not load its trains.");
   const seats = new Map<string, z.infer<typeof Seat>[]>();
   const availability = bodiesFor(captures, AVAILABILITY)[0];
-  // Seat status is extra: without it the trains still show, with their fares.
+  // Seat status is extra: without it, or with parts Go can't read, the trains still show with their fares.
   if (availability !== undefined) {
-    for (const r of readBody(Availability, availability, 'train availability').data.routesData) seats.set(r.trainCode, r.availabilities);
+    let routes: unknown[] = [];
+    try {
+      routes = readBody(Availability, availability, 'train availability').data.routesData;
+    } catch {
+      // A seat list in a shape Go doesn't read drops the seat status, never the trains.
+    }
+    for (const raw of routes) {
+      const route = Route.safeParse(raw);
+      if (!route.success) continue;
+      seats.set(route.data.trainCode, route.data.availabilities.flatMap((x) => {
+        const seat = Seat.safeParse(x);
+        return seat.success ? [seat.data] : [];
+      }));
+    }
   }
   const out: RecipeOption[] = [];
-  for (const t of readBody(Between, list, 'the train search').data.trainsBetweenStations) {
+  let listed = 0;
+  let readable = 0;
+  for (const raw of readBody(Between, list, 'the train search').data.trainsBetweenStations) {
+    listed += 1;
+    const read = Train.safeParse(raw);
+    if (!read.success) continue;
+    readable += 1;
+    const t = read.data;
     if (t.suspended || t.attributes.bookable === false) continue;
     const mine = seats.get(t.attributes.number) ?? [];
     const classes = [...new Set([...(t.attributes.fareClasses ?? []), ...Object.keys(t.fares ?? {})])];
@@ -144,6 +168,8 @@ function extract(captures: Capture[]): RecipeOption[] {
       }));
     }
   }
+  // Trains listed and none readable: ixigo changed its shape, which is not "no trains".
+  if (listed > 0 && readable === 0) throw new TravelError('refused', 'ixigo answered the train search in a shape Go does not read.');
   return out;
 }
 
@@ -209,7 +235,14 @@ function dayOf(text: string, searched: string): string {
 }
 
 function fromAgent(rows: unknown, s: TrainSlots): RecipeOption[] {
-  return readRows(z.array(TrainRow), rows, 'trains').flatMap((r) => {
+  // Row by row: one Go can't read is left out. None read is refused, naming the first row's problem.
+  const listed = readRows(z.array(z.unknown()), rows, 'trains');
+  const read = listed.flatMap((row) => {
+    const r = TrainRow.safeParse(row);
+    return r.success ? [r.data] : [];
+  });
+  if (read.length === 0 && listed.length > 0) readRows(TrainRow, listed[0], 'trains');
+  return read.flatMap((r) => {
     const departDate = dayOf(r.depart_day, s.date);
     return r.classes.map((c) =>
       trainOption({

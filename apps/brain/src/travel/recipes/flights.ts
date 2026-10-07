@@ -16,32 +16,35 @@ export interface FlightSlots { from: string; to: string; date: string; adults: n
 
 const STREAM = '/flights/v2/search/stream';
 
+/** One leg of a fare. Every detail may be missing or null: a fare is read without it. */
 const Leg = z.object({
   origin: z.string(),
   destination: z.string(),
   departureTime: z.string(),
   arrivalTime: z.string(),
-  arrivingInDays: z.number().optional(),
-  duration: z.object({ text: z.string(), time: z.number() }).optional(),
+  arrivingInDays: z.number().nullish(),
+  duration: z.object({ text: z.string(), time: z.number() }).nullish(),
   stop: z.int().nonnegative(),
   headerTextWeb: z.string().min(1),
   subHeaderTextWeb: z.string(),
-  airlineCode: z.string().optional(),
-  departureTimeEpoch: z.number().optional(),
-  arrivalTimeEpoch: z.number().optional(),
+  airlineCode: z.string().nullish(),
+  departureTimeEpoch: z.number().nullish(),
+  arrivalTimeEpoch: z.number().nullish(),
 });
 const Fare = z.object({
   flightKeys: z.string(),
-  refundableType: z.string().optional(),
-  fares: z.array(z.object({ fareDetails: z.object({ displayFare: z.number().positive() }), fareMetadata: z.array(z.object({ seatRemaining: z.number().optional() })).optional() })).min(1),
+  refundableType: z.string().nullish(),
+  fares: z.array(z.object({ fareDetails: z.object({ displayFare: z.number().positive() }), fareMetadata: z.array(z.object({ seatRemaining: z.number().nullish() })).nullish() })).min(1),
   flightDetails: z.array(Leg).min(1),
 });
+/** The stream's event. Its fares are read one by one: one Go can't read is left out, never the whole stream. */
 const Event = z.object({
   data: z.object({
-    flightJourneys: z.array(z.object({ flightFare: z.array(Fare) })),
-    airportDetails: z.record(z.string(), z.object({ city: z.string() })).optional(),
+    flightJourneys: z.array(z.object({ flightFare: z.array(z.unknown()) })),
+    airportDetails: z.record(z.string(), z.unknown()).nullish(),
   }),
 });
+const AirportCity = z.object({ city: z.string() });
 
 /** "6E5341" as "6E 5341". */
 const spaced = (n: string): string => n.trim().replace(/^([A-Z0-9]{2})\s?(\d+)$/, '$1 $2');
@@ -116,11 +119,19 @@ function extract(captures: Capture[], s: FlightSlots): RecipeOption[] {
   const url = flights.url(s);
   const out: RecipeOption[] = [];
   const seen = new Set<string>();
+  let listed = 0;
   for (const body of bodies) {
     for (const line of events(body)) {
       const ev = readBody(Event, line, 'the flight search');
-      const cities = ev.data.airportDetails ?? {};
-      for (const fare of ev.data.flightJourneys.flatMap((j) => j.flightFare)) {
+      const cityOf = (code: string): string | null => {
+        const known = AirportCity.safeParse(ev.data.airportDetails?.[code]);
+        return known.success ? known.data.city : airportCity(code);
+      };
+      for (const raw of ev.data.flightJourneys.flatMap((j) => j.flightFare)) {
+        listed += 1;
+        const read = Fare.safeParse(raw);
+        if (!read.success) continue;
+        const fare = read.data;
         if (seen.has(fare.flightKeys)) continue;
         seen.add(fare.flightKeys);
         const leg = fare.flightDetails[0]!;
@@ -128,19 +139,21 @@ function extract(captures: Capture[], s: FlightSlots): RecipeOption[] {
         out.push(flightOption({
           airline: leg.headerTextWeb,
           numbers: leg.subHeaderTextWeb.split(',').map(spaced).filter((n) => n.length > 0),
-          from: { code: leg.origin, city: cities[leg.origin]?.city ?? airportCity(leg.origin) },
-          to: { code: leg.destination, city: cities[leg.destination]?.city ?? airportCity(leg.destination) },
+          from: { code: leg.origin, city: cityOf(leg.origin) },
+          to: { code: leg.destination, city: cityOf(leg.destination) },
           departAt: leg.departureTimeEpoch ? istOf(leg.departureTimeEpoch) : istAt(s.date, leg.departureTime),
           arriveAt: leg.arrivalTimeEpoch ? istOf(leg.arrivalTimeEpoch) : istAt(addDays(s.date, leg.arrivingInDays ?? 0), leg.arrivalTime),
           ...(leg.duration ? { durationText: leg.duration.text, durationMin: leg.duration.time } : {}),
           stops: leg.stop,
           fareRupees: fare.fares[0]!.fareDetails.displayFare,
-          ...(seats !== undefined ? { seatsLeft: seats } : {}),
+          ...(seats != null ? { seatsLeft: seats } : {}),
           ...(fare.refundableType ? { refundable: REFUNDABLE[fare.refundableType] ?? fare.refundableType.toLowerCase() } : {}),
         }, url));
       }
     }
   }
+  // Fares listed and none readable: ixigo changed its shape, which is not "no flights".
+  if (listed > 0 && seen.size === 0) throw new TravelError('refused', 'ixigo answered the flight search in a shape Go does not read.');
   return out;
 }
 
@@ -192,7 +205,14 @@ const FlightRow = z.object({
 
 function fromAgent(rows: unknown, s: FlightSlots): RecipeOption[] {
   const url = flights.url(s);
-  return readRows(z.array(FlightRow), rows, 'flights').map((r) => {
+  // Row by row: one Go can't read is left out. None read is refused, naming the first row's problem.
+  const listed = readRows(z.array(z.unknown()), rows, 'flights');
+  const read = listed.flatMap((row) => {
+    const r = FlightRow.safeParse(row);
+    return r.success ? [r.data] : [];
+  });
+  if (read.length === 0 && listed.length > 0) readRows(FlightRow, listed[0], 'flights');
+  return read.map((r) => {
     const stops = r.stops === null || /non-stop/i.test(r.stops) ? 0 : Number(/^(\d+)/.exec(r.stops)?.[1] ?? 0);
     const durationMin = r.duration ? minutesOf(r.duration) : undefined;
     return flightOption({
