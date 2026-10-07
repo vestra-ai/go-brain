@@ -1,4 +1,4 @@
-// Offline replay of the 2 s hold: the definitive live run's asks (run 37488230324, docs/demo/evidence), each with the
+// Offline replay of the 2 s hold: the 2026-10-06 live run's asks (run 37488230324, fixtures/live-2026-10-06.json), each with the
 // answers Jev really gave it, and every burst in goa-50, goa-300 and goa-2000, through Go's "due at once" rule and its
 // question 2 reader as they are now. In that run 7 of 18 asks waited about 2.15 s for more lines, and none of the 7
 // people sent any.
@@ -15,7 +15,7 @@ interface LiveRun {
   asks: Array<{ line: number; waited: boolean }>;
 }
 
-const evidence = JSON.parse(readFileSync(new URL('../../../../docs/demo/evidence/bench-live-2026-10-06-definitive.json', import.meta.url), 'utf8')) as { live: LiveRun[] };
+const evidence = JSON.parse(readFileSync(new URL('./fixtures/live-2026-10-06.json', import.meta.url), 'utf8')) as { live: LiveRun[] };
 const START = Date.parse('2026-11-01T10:00:00Z');
 /** What Jev said about each line of each chat in that run: question 2's answer, when it has one. */
 const complete = new Map(evidence.live.map((run) => [run.chat, new Map(run.jev.reads.map((r) => [r.line, r.p['q2_complete']]))]));
@@ -59,7 +59,7 @@ function bursts(chat: Chat): SayLine[][] {
   return out.filter((b) => b.some((l) => namesGoInText(l.text)));
 }
 
-describe('the asks that waited in the definitive live run, through the hold as it is now', () => {
+describe('the asks that waited in the 2026-10-06 live run, through the hold as it is now', () => {
   const held = evidence.live.flatMap((run) => {
     const chat = loadChat(run.chat);
     return run.asks.filter((a) => a.waited).map((a) => {

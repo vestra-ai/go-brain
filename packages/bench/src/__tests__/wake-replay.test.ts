@@ -1,4 +1,4 @@
-// Offline replay of the wake gate: each person's line in the definitive live run (run 37488230324, docs/demo/evidence),
+// Offline replay of the wake gate: each person's line in the live run of 2026-10-06 (run 37488230324, fixtures/live-2026-10-06.json),
 // with the answers Jev really gave it, through question 1's reader and Go's wake decision as they are now, against the
 // same with the "not spoken to Go" bar at 0.1. The run woke the model for 37.3% / 34.0% of messages, against under 25%.
 import { readFileSync } from 'node:fs';
@@ -16,7 +16,7 @@ interface LiveRun {
   jev: { reads: Array<{ line: number; ok: boolean; p: Record<string, number> }> };
 }
 
-const evidence = JSON.parse(readFileSync(new URL('../../../../docs/demo/evidence/bench-live-2026-10-06-definitive.json', import.meta.url), 'utf8')) as { live: LiveRun[] };
+const evidence = JSON.parse(readFileSync(new URL('./fixtures/live-2026-10-06.json', import.meta.url), 'utf8')) as { live: LiveRun[] };
 const BEFORE = { ...BARS, for_go: { ...BARS.for_go, notAddressedMax: 0.1 } };
 
 function replay(run: LiveRun) {
@@ -39,7 +39,7 @@ function replay(run: LiveRun) {
   return { lines, before, now, dropped: before.filter((l) => !now.includes(l)), named };
 }
 
-describe('the wake gate, replayed on the definitive live run', () => {
+describe('the wake gate, replayed on the 2026-10-06 live run', () => {
   for (const run of evidence.live) {
     const r = replay(run);
 

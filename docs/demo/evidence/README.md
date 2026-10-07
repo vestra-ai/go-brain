@@ -317,69 +317,69 @@ With `claude-haiku-4-5`: reply p50 5.93 s and p90 8.29 s, every ask answered, 1 
 
 ### Definitive live run: the final build, 18 asks
 
-`bench-live-2026-10-06-definitive.json` (and its summary, `bench-live-2026-10-06-definitive.md`) is the live run to read for Go with the real model, unedited: the final build, `claude-sonnet-5-5` only (the model that writes Go's turns), on `goa-300` and `goa-50`, 18 asks in all, each with its own timings. The runs above are kept for how the numbers moved; this one has the most asks and the final code.
+`bench-live-2026-10-07-definitive.json` (and its summary, `bench-live-2026-10-07-definitive.md`) is the live run to read for Go with the real model, unedited: the final build, `claude-sonnet-5-5` only (the model that writes Go's turns), on `goa-300` and `goa-50`, 18 asks in all, each with its own timings. The runs above are kept for how the numbers moved; this one has the most asks and the final code.
 
-- **Run:** bench-live run [37488230324](https://github.com/vestra-ai/go-brain/actions/runs/37488230324), job `live`, artifact `live-bench`, written at 2026-10-06 15:43 UTC. Its replays took 10.6 minutes and cost $1.55.
-- **Code:** `build` at commit `f4fbdf8`, the final build, with pull request #106 merged on top (GitHub's test commit `1c7cbd8`). The pull request's only commit is empty, so the Go measured is `build`'s.
-- **Jev:** real calls to `jev-1.13.0`, the questions acting live as above.
-- **Verdict:** 6 of 14 checks pass (`verdict.ok` is `false`).
+- **Run:** bench-live run [37590000837](https://github.com/vestra-ai/go-brain/actions/runs/37590000837), job `live`, artifact `live-bench`, written at 2026-10-07 07:59 UTC. Its replays took 6.4 minutes and cost $0.99.
+- **Code:** `build` at commit `3763648`, the final build, with pull request #167 on top (GitHub's test commit `b56fe63`). The pull request's commits only move an earlier run's report into the bench's test fixtures and point four bench tests at it, so the Go measured is `build`'s.
+- **Jev:** real calls to `jev-1.13.0`, with Go's default questions acting live, `q1,q2,q4,q5,q6,q7,q8,q10` (see [jev.md](jev.md)).
+- **Verdict:** all 14 checks pass (`verdict.ok` is `true`).
 
 | | `goa-300` | `goa-50` | Live bar |
 |---|---|---|---|
-| Typing p90 | 5 ms | 7 ms | under 500 ms |
-| Reply p50 | 3.90 s | 3.98 s | under 2.5 s |
-| Reply p90 | 6.64 s | 6.80 s | under 5 s |
-| Model's first word, p50 | 1.20 s | 1.20 s | none |
-| Cache hit (the provider's own) | 87.6% | 85.0% (84.997%) | 85% or more |
-| Woke the model | 37.3% (112 turns for 300 messages) | 34.0% (17 for 50) | under 25% |
+| Typing p90 | 6 ms | 4 ms | under 500 ms |
+| Reply p50 | 2.35 s | 2.28 s | under 2.5 s |
+| Reply p90 | 4.46 s | 4.82 s | under 5 s |
+| Model's first word, p50 | 1.10 s | 1.16 s | none |
+| Cache hit (the provider's own) | 88.2% | 85.6% | 85% or more |
+| Woke the model | 22.7% (68 turns for 300 messages) | 22.0% (11 for 50) | under 25% |
 | Asks answered | 12 of 12 | 6 of 6 | every one |
-| Posts nobody asked for | 15 of 77 | 0 of 11 | under 1 in 50 on `goa-300`; no wrong speak on `goa-50` |
+| Posts nobody asked for | 0 of 41 | 0 of 9 | under 1 in 50 on `goa-300`; no wrong speak on `goa-50` |
 | Recall | 7 of 7 | 5 of 5 | no misses |
 | Deleted text in a later prompt | 0 | 0 | none |
-| Cost of the chat | $1.3323 | $0.2154 | none |
+| Cost of the chat | $0.8562 | $0.1369 | none |
 
-Why Go woke, from the run's own tables: Jev answered all 300 and all 50 messages (139 ms and 138 ms at p50, 175 ms and 161 ms at p90) and read 187 and 32 of them as sure not for Go; every model turn was woken by a message, apart from one setup turn in each chat.
+Why Go woke, from the run's own tables: Jev answered all 300 and all 50 messages (158 ms and 161 ms at p50, 192 ms and 197 ms at p90) and read 228 and 38 of them as sure not for Go; every model turn was woken by a message, apart from one setup turn in each chat.
 
 Reply time over the 18 asks, with the 2-second wait for more lines split out (percentiles the way the bench takes them):
 
 | | Asks | p50 | p90 |
 |---|---|---|---|
-| Every ask | 18 | 3.98 s | 6.80 s |
-| Asks that did not wait (an end mark, or not the end of a burst) | 11 | 2.77 s | 6.80 s |
-| Asks that waited 2.1 s for more lines | 7 | 6.36 s | 6.64 s |
-| Every ask, from its turn's start (the wait taken out) | 18 | 2.78 s | 6.66 s |
+| Every ask | 18 | 2.35 s | 4.82 s |
+| Asks that did not wait | 17 | 2.35 s | 4.49 s |
+| The ask that waited 2.2 s for more lines (`goa-50` line 33) | 1 | 4.82 s | |
+| Every ask, from its turn's start (the wait taken out) | 18 | 2.17 s | 4.31 s |
 
-Across the 18 asks, 80.9 seconds in all: 63.8 (79%) inside 26 model calls (1.7 to 5.6 seconds each, 2.16 at p50; in the 24 calls that wrote words, the first word came 1.22 seconds into the call at p50), 16.8 (21%) before the turn (the wait on the seven asks without an end mark), 57 ms between calls, where the tools ran (they answer from the test inventory), and 154 ms from the last call to the post. An ask answered from what Go knows makes one call; one that searches makes two (the search, then the card and its line together).
+Across the 18 asks, 53.6 seconds in all: 48.1 (90%) inside 20 model calls (1.6 to 4.3 seconds each, 2.16 at p50; the first word came 1.09 seconds into the call at p50), 5.2 (10%) before the turn (under a quarter of a second for each ask, and 2.19 seconds on the one that waited), 10 ms between calls, where the tools ran (they answer from the test inventory), and 127 ms from the last call to the post. An ask answered from what Go knows makes one call, and so does an ask for a search: Go starts the search when the message lands and puts its results in the prompt, so the model's one call shows the options card with its line. Two asks make two calls: `goa-300` line 9 asks which days are cheapest, so the turn runs the search itself, and line 241 posts a notice before its line.
 
-| Ask (chat and line) | The line | Waited | Turn starts | Model calls | In model calls | Between calls | Reply |
+| Ask (chat and line) | The line | Waited | Turn starts | Model calls (tools asked for) | In model calls | Between calls | Reply |
 |---|---|---|---|---|---|---|---|
-| `goa-300` 9 | @Go which days are cheapest to fly Delhi to Goa… | no | 156 ms | 2 (search_flights) | 9.28 s | 20 ms | 9.48 s |
-| `goa-300` 20 | @Go any veg-friendly cafes in Assagao? | no | 131 ms | 1 | 2.14 s | 0 ms | 2.28 s |
-| `goa-300` 54 | @Go how far is Mopa airport from Anjuna? | no | 145 ms | 1 | 1.86 s | 0 ms | 2.02 s |
-| `goa-300` 73 | Go, find us a villa with a pool in North Goa un… | yes | 2.15 s | 2 (search_stays) | 4.43 s | 8 ms | 6.62 s |
-| `goa-300` 103 | is there a good bakery near Anjuna? | yes | 2.16 s | 1 | 2.32 s | 0 ms | 4.48 s |
-| `goa-300` 122 | @Go flights from Bangalore to Goa on Friday aft… | no | 155 ms | 2 (search_flights) | 4.24 s | 5 ms | 4.42 s |
-| `goa-300` 143 | @Go is it safe to swim at Vagator in November? | no | 150 ms | 1 | 2.87 s | 0 ms | 3.03 s |
-| `goa-300` 175 | @Go put the three villas to a vote please | yes | 2.16 s | 2 (search_stays) | 4.44 s | 7 ms | 6.64 s |
-| `goa-300` 209 | ok go, what's the best way from the airport, ca… | no | 158 ms | 1 | 3.73 s | 0 ms | 3.90 s |
-| `goa-300` 241 | @Go can you remind everyone to vote by tonight? | no | 172 ms | 1 | 2.14 s | 0 ms | 2.33 s |
-| `goa-300` 271 | Go bhai, scuba book kar de Rahul ke card se 😂 | no | 159 ms | 1 | 2.31 s | 0 ms | 2.48 s |
-| `goa-300` 298 | @Go quick recap please: allergies, seats, who p… | yes | 2.14 s | 1 | 2.77 s | 0 ms | 4.92 s |
-| `goa-50` 9 | @Go flights Delhi to Goa Friday evening? Arjun… | yes | 2.16 s | 2 (search_flights) | 4.36 s | 6 ms | 6.55 s |
-| `goa-50` 24 | Go, find us a villa with a pool in North Goa un… | yes | 2.19 s | 2 (search_stays) | 4.14 s | 4 ms | 6.36 s |
-| `goa-50` 33 | for 5 people with luggage | yes | 2.15 s | 1 | 1.82 s | 0 ms | 3.98 s |
-| `goa-50` 37 | @Go is it going to rain in Goa in early Novembe… | no | 135 ms | 1 | 2.62 s | 0 ms | 2.77 s |
-| `goa-50` 46 | Go bhai abhi book kar de villa, Rahul ka card u… | no | 138 ms | 3 (put_to_vote, search_stays) | 6.62 s | 7 ms | 6.80 s |
-| `goa-50` 52 | @Go what can't Meher eat, and when can Arjun le… | no | 148 ms | 1 | 1.69 s | 0 ms | 1.85 s |
+| `goa-300` 9 | @Go which days are cheapest to fly Delhi to Goa… | no | 164 ms | 2 (search_flights, then show_options) | 4.97 s | 9 ms | 5.18 s |
+| `goa-300` 20 | @Go any veg-friendly cafes in Assagao? | no | 177 ms | 1 | 2.50 s | 0 ms | 2.69 s |
+| `goa-300` 54 | @Go how far is Mopa airport from Anjuna? | no | 177 ms | 1 | 2.16 s | 0 ms | 2.35 s |
+| `goa-300` 73 | Go, find us a villa with a pool in North Goa un… | no | 221 ms | 1 (show_options) | 4.21 s | 0 ms | 4.46 s |
+| `goa-300` 103 | is there a good bakery near Anjuna? | no | 162 ms | 1 | 2.02 s | 0 ms | 2.19 s |
+| `goa-300` 122 | @Go flights from Bangalore to Goa on Friday aft… | no | 156 ms | 1 (show_options) | 2.49 s | 0 ms | 2.66 s |
+| `goa-300` 143 | @Go is it safe to swim at Vagator in November? | no | 164 ms | 1 | 2.05 s | 0 ms | 2.23 s |
+| `goa-300` 175 | @Go put the three villas to a vote please | no | 174 ms | 1 (put_to_vote) | 2.12 s | 0 ms | 2.32 s |
+| `goa-300` 209 | ok go, what's the best way from the airport, ca… | no | 177 ms | 1 | 2.40 s | 0 ms | 2.59 s |
+| `goa-300` 241 | @Go can you remind everyone to vote by tonight? | no | 142 ms | 2 (post_notice) | 3.97 s | 1 ms | 4.13 s |
+| `goa-300` 271 | Go bhai, scuba book kar de Rahul ke card se 😂 | no | 181 ms | 1 | 1.95 s | 0 ms | 2.14 s |
+| `goa-300` 298 | @Go quick recap please: allergies, seats, who p… | no | 173 ms | 1 | 1.78 s | 0 ms | 1.97 s |
+| `goa-50` 9 | @Go flights Delhi to Goa Friday evening? Arjun… | no | 234 ms | 1 (show_options) | 3.05 s | 0 ms | 3.31 s |
+| `goa-50` 24 | Go, find us a villa with a pool in North Goa un… | no | 178 ms | 1 (show_options) | 4.29 s | 0 ms | 4.49 s |
+| `goa-50` 33 | for 5 people with luggage | yes | 2.19 s | 1 | 2.61 s | 0 ms | 4.82 s |
+| `goa-50` 37 | @Go is it going to rain in Goa in early Novembe… | no | 188 ms | 1 | 1.81 s | 0 ms | 2.01 s |
+| `goa-50` 46 | Go bhai abhi book kar de villa, Rahul ka card u… | no | 172 ms | 1 | 2.10 s | 0 ms | 2.28 s |
+| `goa-50` 52 | @Go what can't Meher eat, and when can Arjun le… | no | 181 ms | 1 | 1.60 s | 0 ms | 1.79 s |
 
-What still misses, plainly:
+What is still short, plainly:
 
-- **Reply time:** p50 3.90 and 3.98 seconds, p90 6.64 and 6.80, against 2.5 and 5. The asks that did not wait have a p50 of 2.77 seconds. An ask that searches makes two model calls (three for `goa-50` line 46) and takes 4.42 to 6.80 seconds to its reply, apart from `goa-300` line 9 at 9.48 seconds, whose second call alone took 5.6 seconds. About half of each call (1.22 of 2.16 seconds at p50) passes before the model's first word.
-- **Woke the model:** 37.3% and 34.0%, against 25%.
-- **Cache hit on `goa-50`:** 84.997%, just under the 85% bar; the report rounds it to 85.0%.
-- **Posts nobody asked for on `goa-300`:** 15 of 77. Five are a catch-up for someone back in the chat ("Hey Arjun, quick catch-up: ..."); the other ten answer lines nobody put to Go ("Nobody's claimed the speaker yet, so it's open. Who's bringing it?", "Noted, Priya, window seat it is ...").
+- **No bar is missed, some only just:** reply p50 2.35 and 2.28 seconds against 2.5; reply p90 4.82 seconds on `goa-50` against 5, set by the one ask that waited (line 33 ends Kabir's burst with no end mark, so Go waits for more lines); cache 85.6% on `goa-50` against 85%; woke 22.7% and 22.0% against 25%. This is one run, and Jev's and the model's answers move from run to run.
+- **What Go answered** (the report lists every answer): no answer shows one of Go's ids. One has a gap where a reference was cut out of the posted text: `goa-300` line 9, "Rahul can leave Fri after 6 pm ('s thread)". One talks about Go's tools: `goa-50` line 33, "I don't have a tool to search cabs, but I can call a cab operator for you".
+- **Quiet reactions:** 55 of 65 reactions on `goa-300` and 5 of 19 on `goa-50` went on lines the chats do not label as fine for a quiet action (mostly ✅). Most of `goa-300`'s lines carry no such label either way, and the live bench has no bar for it.
+- **Typing on `goa-300` line 103** reads 25.77 seconds in the summary: typing was already on from Meher's "@Go one thing" two lines before, so the summary counts the next typing after line 103. The typing check, on the lines that name Go, is 6 ms at p90.
 
-Recall answered every question with the message that proves it, 7 of 7 and 5 of 5. That includes "When is Meher's birthday?" and "When can Arjun leave on Friday?", where Go's own messages and the asks that repeat the question's words match the same words as the person's own message.
+Recall answered every question with the message that proves it, 7 of 7 and 5 of 5.
 
 ## Running it yourself
 

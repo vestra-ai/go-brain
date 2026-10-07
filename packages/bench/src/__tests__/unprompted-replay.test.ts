@@ -1,4 +1,4 @@
-// Offline replay of the definitive live run's goa-300 (run 37488230324, docs/demo/evidence): each line with the reflex
+// Offline replay of the 2026-10-06 live run's goa-300 (run 37488230324, fixtures/live-2026-10-06.json): each line with the reflex
 // read Jev really gave it, through Go's wake decision and its "why you woke" note as they are now. Go posted 15 times
 // with nobody asking; each came from a turn woken by a line that didn't name Go and that Jev was unsure about.
 import { readFileSync } from 'node:fs';
@@ -16,9 +16,9 @@ interface LiveRun {
   asks: Array<{ line: number }>;
 }
 
-const evidence = JSON.parse(readFileSync(new URL('../../../../docs/demo/evidence/bench-live-2026-10-06-definitive.json', import.meta.url), 'utf8')) as { live: LiveRun[] };
+const evidence = JSON.parse(readFileSync(new URL('./fixtures/live-2026-10-06.json', import.meta.url), 'utf8')) as { live: LiveRun[] };
 const live = evidence.live.find((x) => x.chat === 'goa-300');
-if (!live) throw new Error('the definitive run has no goa-300');
+if (!live) throw new Error('the 2026-10-06 run has no goa-300');
 const chat = loadChat('goa-300');
 const reads = new Map(live.jev.reads.map((r) => [r.line, r.acted]));
 
