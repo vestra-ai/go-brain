@@ -30,9 +30,13 @@ function setup(search: () => Promise<TravelSearch>, wait: number | null, withDes
   const desk = { put: vi.fn(async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push(item); }) };
   const results = { save: async (s: Record<string, unknown>) => ({ ...s, resultsId: 'r_late1' }) } as unknown as ResultsStore;
   const travel = { search: vi.fn(search), waitMs: async () => wait } as unknown as Travel;
-  const tools = travelTools({ travel, results, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z'), ...(withDesk ? { desk } : {}) });
+  const warmed: string[] = [];
+  const warmForTravel = (tripId: string, kind: string): void => {
+    warmed.push(`${tripId}:${kind}`);
+  };
+  const tools = travelTools({ travel, results, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z'), warmForTravel, ...(withDesk ? { desk } : {}) });
   const searchBuses = tools.find((t) => t.name === 'search_buses')!;
-  return { run: () => searchBuses.run(BUSES, ctx) as Promise<Record<string, unknown>>, puts };
+  return { run: () => searchBuses.run(BUSES, ctx) as Promise<Record<string, unknown>>, puts, warmed };
 }
 
 function later<T>() {
@@ -49,6 +53,8 @@ describe('a search that outlives its turn', () => {
     const w = setup(() => run.p, 0);
     const out = await w.run();
     expect(out).toMatchObject({ search: 'buses from Mumbai to Goa on 2026-11-06', count: 0, running: true, tell_the_room: SAY_NOTHING });
+    // A search starting is travel intent: the trip's computer is held awake for it, once.
+    expect(w.warmed).toEqual(['t_goa:buses']);
     expect(w.puts).toEqual([]);
     run.resolve(FOUND);
     await vi.waitFor(() => expect(w.puts).toHaveLength(1));

@@ -131,7 +131,9 @@ function actionsBlock(v: AdminView): string {
 <div class="card"><b>Between rehearsals</b>
 <form method="post" action="${esc(link('/admin/stop-jobs', v))}">${trip}<button class="quiet">Stop all running jobs for this trip</button></form>
 <p></p>
-<form method="post" action="${esc(link('/admin/decline-pay', v))}">${trip}<button class="quiet">Decline the waiting pay card</button></form></div>`;
+<form method="post" action="${esc(link('/admin/decline-pay', v))}">${trip}<button class="quiet">Decline the waiting pay card</button></form>
+<p></p>
+<form method="post" action="${esc(link('/admin/check-computer', v))}">${trip}<button class="quiet">Check this trip's computer (wakes it)</button></form></div>`;
 }
 
 export function renderAdminPage(v: AdminView): string {

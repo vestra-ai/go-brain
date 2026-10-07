@@ -20,6 +20,8 @@ import { createResultsStore } from './results.js';
 import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
+import type { TravelKind } from './travel.js';
+import { warmForTravel } from './warm.js';
 
 export const registerTravel: RegisterLane = async (brain) => {
   const env = readTravelEnv(brain.env);
@@ -61,11 +63,13 @@ export const registerTravel: RegisterLane = async (brain) => {
     today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
   });
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log })) brain.tools.register(t);
+  // The one owner of waking the trip's computer for travel (see warmForTravel).
+  const warm = (tripId: string, kind: TravelKind): void => warmForTravel(brain, tripId, kind);
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm })) brain.tools.register(t);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
-    keepWarm: (tripId) => brain.recipeRunners?.keepWarm(tripId),
+    warmForTravel: warm,
     linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));

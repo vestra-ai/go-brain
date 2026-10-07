@@ -5,8 +5,8 @@
  * joins the same search (the layer shares one in flight, and ixigo_web by recipe and slots). A follow-up line ("after
  * 6 pm") still reaches the turn, and its filter applies to the same list.
  *
- * Under ixigo_web, any line in the trip, from anyone, to Go or not, also holds the trip's computer awake (design 4b), so
- * the first search never waits on a sleeping box, and flights answer with ixigo's link instead of a search.
+ * Travel intent wakes the trip's computer (warmForTravel): a line Jev's question 10 is sure asks for a search, from
+ * anyone, to Go or not, and the search this hook starts. Other lines never wake it. Flights answer with ixigo's link.
  */
 import type { Switches } from '../../admin/switches.js';
 import type { Message } from '../../door/methods.js';
@@ -26,8 +26,8 @@ export interface EarlyStartDeps {
   today: (tripId: string) => Promise<string>;
   now: () => Date;
   log: { warn(obj: object, msg: string): void };
-  /** Keeps the trip's computer awake for two minutes; absent while it is not set up here. */
-  keepWarm?: (tripId: string) => void;
+  /** Wakes the trip's computer for a search of this kind and holds it two minutes (travel/register.ts); absent in tests. */
+  warmForTravel?: (tripId: string, kind: TravelKind) => void;
   /** Kinds that answer with ixigo's link and load nothing (the backend's linkOnly): nothing to start early. */
   linkOnly?: (kind: TravelKind) => boolean;
 }
@@ -56,17 +56,17 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
     async onRead(msg, read, pack) {
       const web = d.switches.get('TRAVEL_MODE') === 'ixigo_web';
       const tripId = pack.trip.trip_id;
-      // Any line in a trip holds its computer awake (one call per hold), so the box is up before the first search.
-      if (web) d.keepWarm?.(tripId);
+      // Jev's question 10, when it is sure: its kind wins over the parser's; "none" (travel talk, not a search ask) starts
+      // nothing. A sure kind is travel intent, whoever the line is to: the box wakes for the search that follows.
+      const pick = read.recipe;
+      if (pick?.sure && pick.value) d.warmForTravel?.(tripId, pick.value);
       if (!msg.text) return undefined;
       const today = await d.today(tripId);
       // To Go: named plainly, or the quick read is sure it is for Go.
       if (!plainlyNamesGo(msg, pack) && !(read.forGo.sure && read.forGo.value === true)) return undefined;
       const travel = d.travel();
       if (!travel) return undefined;
-      // Jev's question 10, when it is sure: its kind wins over the parser's; "none" (travel talk, not a search ask) starts
-      // nothing. Unsure, the parser decides alone.
-      const pick = read.recipe;
+      // Jev sure it is not a search ask: nothing starts. Unsure, the parser decides alone.
       if (pick?.sure && pick.value === null) return undefined;
       // The trip's dates; before they are set, the ones the group agreed in its record ("6 to 9 Nov").
       const dates = pack.trip.dates ?? agreedDates(pack.trip.record, today);
@@ -82,6 +82,8 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       }
       // A link answers at once: the turn starts now, with nothing to search early.
       if (web && d.linkOnly?.(ask.kind)) return { dueNow: true };
+      // The parser found the ask without a sure kind from Jev: this search is the travel intent.
+      if (!(pick?.sure && pick.value)) d.warmForTravel?.(tripId, ask.kind);
       // Not awaited: the hooks run one after another, and nothing should wait on the page.
       const search = travel.search(ask.kind, ask.query, { tripId });
       search.catch((err: unknown) => {

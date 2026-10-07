@@ -1,6 +1,7 @@
 /**
  * The trip's computer on Vestra /v1: one user per trip (created with the admin key, its default deployment
- * go-trip-task), warmed in the background, one conversation per job, and the trip token armed before every job.
+ * go-trip-task), one conversation per job, and the trip token armed before every job. The box is woken only for travel
+ * intent (travel/register.ts warmForTravel) or by a job itself, never at setup.
  * A job's own conversation is idle on /v1 exactly when nothing of the job is left to run: its start and every
  * follow-up settled, and no work open. Each step is safe to repeat; what is done is recorded in trip_computers.
  */
@@ -133,8 +134,10 @@ export function createComputer(d: ComputerDeps): Computer {
   return computer;
 }
 
-/** Setup's two steps for the trip's computer; level-triggered, so the setup sweep finishes what stopped halfway. */
+/**
+ * Setup's step for the trip's computer: its /v1 user; level-triggered, so the setup sweep finishes what stopped halfway.
+ * A new trip's box is not woken: it wakes for the trip's first travel ask, or its first job.
+ */
 export function addComputerSteps(setup: Pick<Setup, 'addStep'>, computer: Computer): void {
   setup.addStep({ name: 'computer.user', run: async (tripId) => { await computer.ensureUser(tripId); } });
-  setup.addStep({ name: 'computer.warm', after: 'computer.user', run: async (tripId) => { await computer.warm(tripId); } });
 }

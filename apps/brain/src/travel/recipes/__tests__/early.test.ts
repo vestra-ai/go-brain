@@ -21,7 +21,7 @@ function world(mode = 'ixigo_web', fail = false) {
   const log = { warn: vi.fn() };
   let nowMs = Date.parse('2026-10-07T12:00:00Z');
   const warmed: string[] = [];
-  const early = createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date(nowMs), log, keepWarm: (tripId) => warmed.push(tripId) });
+  const early = createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date(nowMs), log, warmForTravel: (tripId, kind) => warmed.push(`${tripId}:${kind}`) });
   return { hook: (...a: Parameters<typeof early.onRead>) => early.onRead(...a), early, searches, log, warmed, advance: (ms: number) => { nowMs += ms; } };
 }
 
@@ -59,16 +59,22 @@ describe('the early start', () => {
     }
   });
 
-  it("keeps the trip's computer awake on any line, from anyone, to Go or not, and only under ixigo_web", async () => {
+  it("wakes the trip's computer only for travel intent: Jev sure of a search kind, or a search the hook starts", async () => {
     const w = world();
-    await w.hook(msg(50, 'p_priya', 'trains from Mumbai on Thursday are cheaper I think'), UNSURE_READ, goaPack());
-    await w.hook(msg(51, 'p_priya', "I'm veg btw"), UNSURE_READ, goaPack());
-    // The keeper holds it once per hold; the hook asks on every line.
-    expect(w.warmed).toEqual(['t_goa', 't_goa']);
+    // Chatter, and travel talk Jev isn't sure asks for a search: no wake, whatever the mode.
+    await w.hook(msg(50, 'p_priya', "I'm veg btw"), UNSURE_READ, goaPack());
+    await w.hook(msg(51, 'p_priya', 'trains from Mumbai on Thursday are cheaper I think'), UNSURE_READ, goaPack());
+    expect(w.warmed).toEqual([]);
+    // Jev sure it asks for trains, though nobody named Go: the box wakes for the search to come, and nothing starts.
+    const trains: ReflexRead = { ...UNSURE_READ, recipe: { value: 'trains', sure: true } };
+    await w.hook(msg(52, 'p_kabir', 'trains from Mumbai on Thursday are cheaper I think'), trains, goaPack());
+    expect(w.warmed).toEqual(['t_goa:trains']);
     expect(w.searches).toEqual([]);
-    const fake = world('fake');
-    await fake.hook(msg(52, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
-    expect(fake.warmed).toEqual([]);
+    // Jev sure it is not a search ask: no wake.
+    await w.hook(msg(53, 'p_kabir', '@Go is Thursday a holiday?'), { ...UNSURE_READ, recipe: { value: null, sure: true } }, goaPack());
+    // A whole ask to Go that the parser reads: the search it starts is the intent, one wake for it.
+    await w.hook(msg(54, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
+    expect(w.warmed).toEqual(['t_goa:trains', 't_goa:flights']);
   });
 
   it('starts nothing for a kind that answers with a link, but the turn is still due now; off ixigo_web, flights are a search', async () => {

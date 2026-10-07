@@ -10,7 +10,7 @@ export interface SetupStep {
 
 /** Level-triggered setup: every step is safe to repeat, and its done time is kept in trip_setup. */
 export interface Setup {
-  /** P1 adds 'brain.ready'; P4 adds 'computer.user' and 'computer.warm'. */
+  /** P1 adds 'brain.ready'; P4 adds 'computer.user'. */
   addStep(step: SetupStep): void;
   /** Runs every step not done yet, in order. Safe to repeat. */
   ensureTrip(tripId: string): Promise<void>;
