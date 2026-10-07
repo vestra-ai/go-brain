@@ -18,8 +18,9 @@ function bookWith(path: string, text: string): Book {
   return { get: (id) => (id === extra.id ? extra : book.get(id)), all: () => [...book.all(), extra] };
 }
 
-// A stay's details, from one of Go's search results: the option's own ixigo page, its ids read off it.
-const DETAILS = `id: hotels.details
+// A stay's details, from one of Go's search results: the option's own ixigo page, its ids read off it. An example id,
+// so it never meets the book's own hotels.details.
+const DETAILS = `id: example.option_details
 title: A stay's details, from one of Go's search results
 asks: [tell me more about option 2, does villa sol have a pool]
 inputs:
@@ -48,7 +49,7 @@ answer:
 describe('a fetch step filled from the inputs', () => {
   it("types the person's words and names the control from the inputs, as a box's steps do", async () => {
     const plans: FetchPlan[] = [];
-    const b = bookWith('hotels/details.yaml', DETAILS);
+    const b = bookWith('example/option_details.yaml', DETAILS);
     const runner = {
       read: async (_t: string, url: string, plan: FetchPlan) => {
         plans.push(plan);
@@ -56,7 +57,7 @@ describe('a fetch step filled from the inputs', () => {
       },
     };
     const engine = createEngine({ book: b, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
-    const got = await engine.answer('hotels.details', { hotel: 'https://www.ixigo.com/hotels/1384544/details?x=1', area: 'Old Manali' }, { tripId: 't' });
+    const got = await engine.answer('example.option_details', { hotel: 'https://www.ixigo.com/hotels/1384544/details?x=1', area: 'Old Manali' }, { tripId: 't' });
     expect(plans[0]!.steps).toEqual([{ op: 'type', role: 'textbox', name: 'Search within Old Manali', text: 'Old Manali' }, { op: 'wait_for', match: '/hotel-details$' }]);
     expect(got).toMatchObject({ as: 'facts', title: '1384544', page: 'https://www.ixigo.com/hotels/1384544/details', rows: [{ name: 'Villa Sol', pool: true }] });
   });
@@ -64,7 +65,7 @@ describe('a fetch step filled from the inputs', () => {
 
 describe('an option input', () => {
   it("is one of Go's search results, written results_id#n: the tool gives the recipe that option's own ixigo page", async () => {
-    const b = bookWith('hotels/details.yaml', DETAILS);
+    const b = bookWith('example/option_details.yaml', DETAILS);
     const given: unknown[] = [];
     const engine = {
       answer: async (_id: string, g: Record<string, unknown>) => {
@@ -81,11 +82,11 @@ describe('an option input', () => {
     const tool = ixigoTool({ book: b, engine, results, live: () => true })!;
     expect(tool.description).toContain('hotel (an option from search results, written results_id#n, like r_ab12#2)');
     const turn = { tripId: 't_goa', turnId: 'turn_1', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
-    expect(await tool.run({ recipe: 'hotels.details', inputs: { hotel: 'r_ab12#2' } }, turn)).toMatchObject({ recipe: 'hotels.details', facts: [{ name: 'Villa Sol' }] });
+    expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'r_ab12#2' } }, turn)).toMatchObject({ recipe: 'example.option_details', facts: [{ name: 'Villa Sol' }] });
     expect(given).toEqual([{ hotel: 'https://www.ixigo.com/hotels/2/details?b=2' }]);
     // Not an option of this trip's results: said plainly, nothing runs.
-    expect(await tool.run({ recipe: 'hotels.details', inputs: { hotel: 'r_ab12#9' } }, turn)).toMatchObject({ error: 'needs_more' });
-    expect(await tool.run({ recipe: 'hotels.details', inputs: { hotel: 'Villa Sol' } }, turn)).toMatchObject({ error: 'needs_more' });
+    expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'r_ab12#9' } }, turn)).toMatchObject({ error: 'needs_more' });
+    expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'Villa Sol' } }, turn)).toMatchObject({ error: 'needs_more' });
     expect(given).toHaveLength(1);
   });
 });
