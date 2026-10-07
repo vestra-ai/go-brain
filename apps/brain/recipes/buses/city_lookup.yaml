@@ -24,10 +24,10 @@ answer:
     list: $
     name: display_text
     line: "display_subtext ? display_subtext : state_name"
-    # A city's own entry is ixigo's "All boarding points"; the rest are boarding points inside one.
-    all: "$lowercase(alias_type) = 'city'"
+    # The entry with the city's boarding points is the one the box shows as "(All boarding points)".
+    all: "$count(boarding_points) > 0"
     country: "'India'"
     place: "{ 'name': $trim(city) ? $trim(city) : display_text, 'id': $number(id) }"
     place_name: name
-samples: { page: buses.city_lookup.bangalore.json }
+samples: { bangalore: buses.city_lookup.bangalore.json, hampi: buses.city_lookup.hampi.json }
 notes: AbhiBus's city ids go in the results address, /buses/bus_search/{name}/{id}/….

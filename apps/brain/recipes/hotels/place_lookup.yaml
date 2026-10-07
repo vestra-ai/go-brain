@@ -32,5 +32,5 @@ answer:
         "masterLocationId": $number(masterLocationId), "countryId": $number(countryId) }
     # A city or a state is the place by its name; an area ("Old Manali") is chosen by the words that fit.
     place_name: "locationType in ['C', 'S'] ? locationName : ''"
-samples: { page: hotels.place_lookup.manali.json }
+samples: { manali: hotels.place_lookup.manali.json, old_manali: hotels.place_lookup.old-manali.json }
 notes: The types are City (C), State (S), Region, Area (L, SL), Property (H) and landmark (POI); ids come as strings.

@@ -11,40 +11,50 @@ const call = (match: string, param: string, words: string, body: string): Captur
   match, url: `https://www.ixigo.com/suggest?${param}=${encodeURIComponent(words)}`, status: 200, content_type: 'application/json', body, truncated: false, at_ms: 300,
 });
 
-describe("ixigo's search box, read and picked as a person would", () => {
-  it('takes the "All airports" entry, in the country the words mean: London is England, not Ontario or Kentucky', async () => {
-    const r = book.get('flights.airport_lookup')!;
-    const list = await readSuggestions(r, [call('searchFor=airportSuggestions', 'value', 'London', sample('flights.airport_lookup.london.json'))], 'London');
-    expect(list.map((s) => [s.name, s.line, s.all])).toEqual([
+describe("ixigo's search box, read and picked as a person would (p4's raw answers, 7 Oct)", () => {
+  const pick = async (id: string, match: string, param: string, words: string, file: string) => {
+    const list = await readSuggestions(book.get(id)!, [call(match, param, words, sample(file))], words);
+    return { list, picked: pickSuggestion(words, list) };
+  };
+
+  it('takes the "All Airports" entry, in the country the words mean: London is England, not Ontario or Kentucky', async () => {
+    const { list, picked } = await pick('flights.airport_lookup', 'searchFor=airportSuggestions', 'value', 'London', 'flights.airport_lookup.london.json');
+    expect(list.slice(0, 2).map((s) => [s.name, s.line, s.all])).toEqual([
       ['LON All Airports', 'London, England, United Kingdom', true],
       ['LHR Heathrow', 'London, England, United Kingdom', false],
-      ['LGW Gatwick', 'London, England, United Kingdom', false],
-      ['YXU London', 'London, Ontario, Canada', false],
-      ['LOZ London-Corbin', 'London, Kentucky, United States', false],
     ]);
-    expect(pickSuggestion('London', list)).toEqual({ place: { code: 'LON', city: 'London' } });
+    expect(list.some((s) => s.line === 'London, Ontario, Canada')).toBe(true);
+    expect(picked).toEqual({ place: { code: 'LON', city: 'London' } });
+    // Delhi has no "All" entry: the one in India the words fit, never Delhi, Louisiana.
+    expect((await pick('flights.airport_lookup', 'searchFor=airportSuggestions', 'value', 'Delhi', 'flights.airport_lookup.delhi.json')).picked)
+      .toEqual({ place: { code: 'DEL', city: 'New Delhi' } });
   });
 
-  it('takes a city by its own name, and an area by the words that fit it; never a property', async () => {
-    const r = book.get('hotels.place_lookup')!;
-    const read = (words: string) => readSuggestions(r, [call('/hotels-autocompleter/api/v2/results', 'query', words, sample('hotels.place_lookup.manali.json'))], words);
-    const manali = await read('Manali');
-    expect(manali.map((s) => s.name)).toEqual(['Manali', 'Manali and Nearby', 'Old Manali']);
-    expect(pickSuggestion('Manali', manali)).toEqual({ place: { locationId: 184, locationName: 'Manali', locationType: 'C', masterLocationId: 9425, countryId: 1 } });
-    expect(pickSuggestion('Old Manali', await read('Old Manali'))).toEqual({ place: { locationId: 184001, locationName: 'Old Manali', locationType: 'SL', masterLocationId: 9425001, countryId: 1 } });
+  it('takes a city by its own name, and an area by the words that fit it, though ixigo lists the city first', async () => {
+    expect((await pick('hotels.place_lookup', '/hotels-autocompleter/api/v2/results', 'query', 'Manali', 'hotels.place_lookup.manali.json')).picked)
+      .toEqual({ place: { locationId: 184, locationName: 'Manali', locationType: 'C', masterLocationId: 9425, countryId: 1 } });
+    const old = await pick('hotels.place_lookup', '/hotels-autocompleter/api/v2/results', 'query', 'Old Manali', 'hotels.place_lookup.old-manali.json');
+    expect(old.list.map((s) => s.name)).toEqual(['Manali', 'Old Manali']);
+    expect(old.picked).toEqual({ place: { locationId: 3588, locationName: 'Old Manali', locationType: 'L', masterLocationId: 31346, countryId: 1 } });
   });
 
-  it('takes the "All boarding points" entry, with the city id the results address takes', async () => {
-    const r = book.get('buses.city_lookup')!;
-    const list = await readSuggestions(r, [call('/wap/abus-autocompleter/api/v1/results', 's', 'Bangalore', sample('buses.city_lookup.bangalore.json'))], 'Bangalore');
-    expect(pickSuggestion('Bangalore', list)).toEqual({ place: { name: 'Bengaluru', id: 7 } });
+  it('takes the "All boarding points" entry, and a town by its name when there is none: Bangalore is Bengaluru 7, Hampi is 1579', async () => {
+    const blr = await pick('buses.city_lookup', '/wap/abus-autocompleter/api/v1/results', 's', 'Bangalore', 'buses.city_lookup.bangalore.json');
+    expect(blr.list.map((s) => [s.name, s.all])).toEqual([
+      ['Bangalore', true], ['Bangalore Kempegowda Intl Airport', false], ['Chikkalsandra (Bangalore)', false], ['Mangalore', false],
+    ]);
+    expect(blr.picked).toEqual({ place: { name: 'Bengaluru', id: 7 } });
+    expect((await pick('buses.city_lookup', '/wap/abus-autocompleter/api/v1/results', 's', 'Hampi', 'buses.city_lookup.hampi.json')).picked)
+      .toEqual({ place: { name: 'Hampi', id: 1579 } });
   });
 
-  it('takes the station the words name, never one whose name only starts the same: Udaipur is Udaipur City (UDZ)', async () => {
-    const r = book.get('trains.station_lookup')!;
-    const list = await readSuggestions(r, [call('searchFor=trainstationsLatLon', 'value', 'Udaipur', sample('trains.station_lookup.udaipur.json'))], 'Udaipur');
-    expect(list.map((s) => s.name)).toEqual(['Udaipur City (UDZ)', 'Jai Samand Road (JYM)', 'Udaipura (UDPR)']);
-    expect(pickSuggestion('Udaipur', list)).toEqual({ place: { code: 'UDZ', name: 'Udaipur City' } });
+  it('takes the "All stations" entry, and hands the model the stations that fit when there is none: Udaipur City (UDZ) or Udaipur (UDPU)', async () => {
+    expect((await pick('trains.station_lookup', 'searchFor=trainstationsLatLon', 'value', 'Jaipur', 'trains.station_lookup.jaipur.json')).picked)
+      .toEqual({ place: { code: 'JP', name: 'Jaipur' } });
+    const udaipur = await pick('trains.station_lookup', 'searchFor=trainstationsLatLon', 'value', 'Udaipur', 'trains.station_lookup.udaipur.json');
+    expect(udaipur.list.map((s) => s.name)).toEqual(['Udaipur City (UDZ)', 'Jai Samand Road (JYM)', 'Udaipura (UDPR)', 'Udaipur (UDPU)', 'Udaypur Khurd (UDKN)']);
+    // A station's name is not its city's: the pick never takes one by name, so the model chooses, by meaning.
+    expect(udaipur.picked).toEqual({ choose: [udaipur.list[0], udaipur.list[3]] });
   });
 
   it('hands the model the entries that fit when more than one does, and nothing when ixigo knows nothing', () => {

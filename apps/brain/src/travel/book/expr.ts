@@ -4,6 +4,7 @@
  * more than one kind of answer needs it.
  */
 import jsonata from 'jsonata';
+import { TravelError } from '../mcp-travel.js';
 
 /** "2026-11-06" and "18:20" as 2026-11-06T18:20:00+05:30: a wall-clock time in India. */
 export const istAt = (date: string, hhmm: string): string => `${date}T${hhmm.slice(0, 5)}:00+05:30`;
@@ -43,6 +44,8 @@ const escaped = (text: string): string => text.replace(/[.*+?^$()|[\]\\{}]/g, '\
 const nothing = (x: unknown): boolean => x === undefined || x === null || x === false || (typeof x === 'string' && x.trim().length === 0);
 
 const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
+  /** A number, from a number or a numeric string ("1530"); nothing otherwise. */
+  num: { fn: (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && /^\s*-?\d+(\.\d+)?\s*$/.test(v) ? Number(v) : undefined) },
   /** Rupees as paise. */
   paise: { fn: (rupees: number) => Math.round(rupees * 100) },
   /** A date and a clock in India as an ISO time. */
@@ -102,19 +105,36 @@ const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
 };
 
 
+/**
+ * Every evaluation is timeboxed by JSONata's own guardrails, counted per evaluation: a recursive expression, a runaway
+ * loop or a huge sequence fails that run instead of stalling a turn. (A single regular expression can't be interrupted:
+ * recipe files are reviewed for that.)
+ */
+export const LIMITS = { timeout: 50, stack: 250, sequence: 20_000 };
+const GUARDRAILS = new Set(['D1011', 'D1012', 'D2015']);
+
 const compiled = new Map<string, jsonata.Expression>();
 
 /** A recipe's expression, compiled once with the generic functions. Throws on a syntax error (the loader's check). */
 export function expr(source: string): jsonata.Expression {
   const hit = compiled.get(source);
   if (hit) return hit;
-  const e = jsonata(source);
+  const e = jsonata(source, LIMITS);
   for (const [name, f] of Object.entries(FUNCTIONS)) e.registerFunction(name, f.fn as (...args: unknown[]) => unknown);
   compiled.set(source, e);
   return e;
 }
 
-/** Evaluates an expression over an input with the bindings ($inputs, $page and the recipe's own). */
+/**
+ * Evaluates an expression over an input with the bindings ($inputs, $page and the recipe's own). An evaluation past the
+ * limits is a TravelError, so the run fails as a whole and the next speed is tried; any other error is the expression's.
+ */
 export async function evaluate(source: string, input: unknown, bindings: Record<string, unknown> = {}): Promise<unknown> {
-  return expr(source).evaluate(input, bindings);
+  try {
+    return await expr(source).evaluate(input, bindings);
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    if (typeof code === 'string' && GUARDRAILS.has(code)) throw new TravelError('unreachable', `A recipe took too long to read ixigo's answer (${code}).`);
+    throw err;
+  }
 }

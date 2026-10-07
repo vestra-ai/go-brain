@@ -3,15 +3,17 @@ import type { CaptureSpec, FetchPlan } from '../../recipes/recipe.js';
 import { buses } from '../../recipes/buses.js';
 import { flights, flyingFor, withFlightFilters } from '../../recipes/flights.js';
 import { stays } from '../../recipes/stays.js';
-import { trains } from '../../recipes/trains.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import type { TravelQuery } from '../../travel.js';
-import { loadBook } from '../book.js';
+import { readFileSync } from 'node:fs';
+import { BOOK_DIR, loadBook } from '../book.js';
 import { createEngine } from '../engine.js';
 
 // The four searches as recipe files give what today's recipes give, on today's saved pages: the same address, the same
-// fetch, the same options. When the files take over, these become the samples' own checks.
+// fetch, the same options. Trains read ixigo's own train call, which the results page uses since October (p4's sample).
+// When the files take over, these become the samples' own checks.
 const { book, problems } = loadBook();
+const sample = (name: string): string => readFileSync(`${BOOK_DIR}samples/${name}`, 'utf8');
 // The Goa trip: three members live in Delhi, one in Bangalore, one in Mumbai.
 const HOMES = ['Delhi', 'Delhi', 'Bangalore', 'Mumbai', 'Delhi'];
 
@@ -57,18 +59,38 @@ describe('the four searches, as files, read as today', () => {
     }
   });
 
-  it('trains: the same address and the same option for every train and class', async () => {
-    const caps = [
-      capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/CSMT/MAO', fixture('trains-csmt-mao-between.json')),
-      capture('/api/v3/trains/availability', 'https://www.ixigo.com/api/v3/trains/availability', fixture('trains-csmt-mao-availability.json')),
-    ];
-    const slots = trains.slotsFrom({ from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { people: 5 });
-    const { engine } = engineWith(() => caps);
-    const got = await engine.answer('trains.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
+  it("trains: ixigo's own train call (confirmtkt.com since October), one option per train and class, with its seats and chance", async () => {
+    const MATCH = 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search';
+    const caps = [capture(MATCH, `https://${MATCH}?sourceStationCode=SBC&destinationStationCode=MAS&dateOfJourney=22-10-2026`, sample('trains.between.page.json'))];
+    const { engine, runs } = engineWith(() => caps);
+    const got = await engine.answer('trains.between', { from: 'Bangalore', to: 'Chennai', date: '2026-10-22' }, { tripId: 't_goa' });
     if (got.as !== 'options') throw new Error('not options');
-    expect(got.page).toBe(trains.url(slots));
-    expect(got.options).toHaveLength(60);
-    expect(got.options).toEqual(trains.extract(caps, slots));
+    expect(got.page).toBe('https://www.ixigo.com/trains/search-pwa/from/SBC/to/MAS/22-10-2026');
+    expect(runs[0]!.plan.capture).toEqual([{ match: MATCH, required: true }]);
+    expect(got.options.map((o) => `${o.title} ${o.facts.class_code} ${o.facts.availability}`)).toEqual([
+      'Muzaffarpur EXP 15227 1A WL 9', 'Muzaffarpur EXP 15227 2A Available 2', 'Muzaffarpur EXP 15227 3A Available 8',
+      'Muzaffarpur EXP 15227 3E Regret', 'Muzaffarpur EXP 15227 SL WL 127', 'Shatabdi EXP 12028 EC Available 25',
+      'Shatabdi EXP 12028 CC Available 659', 'Lalbagh SF EXP 12608 CC WL 7', 'Lalbagh SF EXP 12608 2S Available 291',
+    ]);
+    expect(got.options[0]).toEqual({
+      kind: 'train',
+      title: 'Muzaffarpur EXP 15227',
+      priceMinor: 145_500,
+      currency: 'INR',
+      priceNote: 'per person, 1A',
+      journey: {
+        mode: 'train',
+        origin: { name: 'Smvt Bengaluru', code: 'SMVB' },
+        destination: { name: 'Perambur', code: 'PER' },
+        depart_at: '2026-10-22T00:30:00+05:30',
+        arrive_at: '2026-10-22T06:35:00+05:30',
+        carrier_name: 'Indian Railways',
+        number: '15227',
+      },
+      highlights: ['AC First Class', 'WL 9', '76% chance to confirm', '6 h 5 m'],
+      facts: { class_code: '1A', availability: 'WL 9', chance: 76, duration_min: 365, rating: expect.any(Number) },
+      sourceUrl: 'https://www.ixigo.com/trains/15227?orgn=SMVB&dstn=PER&departDate=2026-10-22&quota=GN',
+    });
   });
 
   it('buses: the same address and every bus at the same price', async () => {

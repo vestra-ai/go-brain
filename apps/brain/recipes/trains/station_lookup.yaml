@@ -35,5 +35,5 @@ answer:
         $name := $replace($g[0], /\s*-?\s*all stations\s*$/i, "");
         { "code": $g[1], "name": $trim($name) ? $trim($name) : e }
       )
-samples: { page: trains.station_lookup.udaipur.json }
+samples: { udaipur: trains.station_lookup.udaipur.json, jaipur: trains.station_lookup.jaipur.json }
 notes: A station's name is not always its city's ("Udaipur City (UDZ)", not "Udaipur (UDPU)"), so the pick never matches stations by name.

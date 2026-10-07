@@ -90,7 +90,9 @@ export async function readOptions(
     let made: unknown;
     try {
       made = await evaluate(recipe.answer.each, row, bindings);
-    } catch {
+    } catch (err) {
+      // A row that doesn't read is skipped; a run past the limits fails as a whole.
+      if (err instanceof TravelError) throw err;
       continue;
     }
     for (const o of Array.isArray(made) ? made : made === undefined ? [] : [made]) {
