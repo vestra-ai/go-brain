@@ -6,7 +6,7 @@
  */
 import type * as C from '@go/contract';
 import type { ServerLink } from '../door/server-link.js';
-import { clip, formatInr } from './cards.js';
+import { clip, formatInr, ixigoPage, placeKindNotAll } from './cards.js';
 import type { OptionKind, ResultsStore } from './results.js';
 import type { StoredOffer } from './travel.js';
 
@@ -18,6 +18,18 @@ export type VoteOutcome =
 const QUESTIONS: Record<OptionKind, string> = {
   stay: 'Where do we stay?', flight: 'Which flight?', train: 'Which train?', bus: 'Which bus?', place: 'Where do we go?', food: 'Where do we eat?', activity: 'What do we do?',
 };
+
+/**
+ * A vote on ixigo.com's stays never asks "Which pool villa?" of hotels and resorts: a kind of place the question names
+ * that not every option is by its own name becomes "stay" ("Which pool stay for 6 to 9 Nov?"), as the options card's
+ * title does (re-drill 7). Other votes keep the question as asked.
+ */
+function stayQuestion(question: string, offers: StoredOffer[]): string {
+  if (!offers.some((of) => of.kind === 'stay' && ixigoPage(of.sourceUrl))) return question;
+  const kind = placeKindNotAll(question, offers.map((of) => of.title));
+  if (!kind) return question;
+  return question.replace(new RegExp(`\\b(${kind})(s?)\\b`, 'gi'), (_w, k: string, s: string) => `${k[0] === k[0]!.toUpperCase() ? 'S' : 's'}tay${s}`);
+}
 
 interface VoteOption { label: string; image_url?: string; price_minor?: number; currency?: string; option_ref: string; note?: string }
 
@@ -49,7 +61,7 @@ export async function openVoteFromCard(
   const offers = await d.results.offersOnCard(o.cardId);
   const shown = new Map(row.card.options.map((op) => [op.option_id, op]));
   const options = voteOptions(offers, shown);
-  const question = clip(o.question ?? QUESTIONS[row.optionKind], 200);
+  const question = clip(stayQuestion(o.question ?? QUESTIONS[row.optionKind], offers), 200);
   if (row.decisionId && !row.decisionId.startsWith('pending:')) {
     // The same key again is a rerun of the turn that opened it: show the same vote, open nothing new.
     if (row.voteKey === o.key) return { ok: true, decisionId: row.decisionId, voteCard: voteCardFor(o.voteCardId, row.decisionId, question, options) };

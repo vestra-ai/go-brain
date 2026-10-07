@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { CARD_LINE } from '../composer/rules.js';
 import { CardLineArg, SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
-import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, ixigoPage, subtitleFor } from './cards.js';
+import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
@@ -183,8 +183,6 @@ function priceRange(options: ResultOption[]): string | null {
   return `${low === high ? formatInr(low) : `${formatInr(low)} to ${formatInr(high)}`}${note ? ` ${note}` : ''}`;
 }
 
-/** The kinds of place a stays title can name. ixigo.com's results carry no kind, so a name has to say it. */
-const PLACE_KINDS = /\b(villa|resort|hotel|homestay|apartment|cottage)s?\b/i;
 const titleWords = (s: string): string => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 
 /**
@@ -193,9 +191,7 @@ const titleWords = (s: string): string => s.replace(/\b[a-z]/g, (c) => c.toUpper
  * ixigo has no villa type, and a pool search there gives hotels and resorts (re-drill 6). Other searches keep the title.
  */
 function stayCardTitle(title: string, query: Record<string, unknown>, shown: ResultOption[]): string {
-  const kind = PLACE_KINDS.exec(title)?.[1];
-  if (!kind || !shown.some((o) => o.kind === 'stay' && ixigoPage(o.sourceUrl ?? null))) return title;
-  if (shown.every((o) => new RegExp(`\\b${kind}`, 'i').test(o.title))) return title;
+  if (!shown.some((o) => o.kind === 'stay' && ixigoPage(o.sourceUrl ?? null)) || !placeKindNotAll(title, shown.map((o) => o.title))) return title;
   const needs = Array.isArray(query['mustHave']) ? (query['mustHave'] as string[]) : [];
   const withs = [needs.includes('pool') && 'a pool', needs.includes('breakfast') && 'breakfast', needs.includes('free_cancellation') && 'free cancellation']
     .filter((w): w is string => typeof w === 'string');
