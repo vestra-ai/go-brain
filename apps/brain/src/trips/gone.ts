@@ -1,6 +1,7 @@
 // A trip the Server no longer has (the try room forgets old trips, a trip is deleted): Go marks it gone the first time
 // the Server answers a read of it with 404 not_found, and every sweep leaves it alone. 5xx and timeouts are not an
-// answer, so they keep their retries. A later successful read_trip clears the mark.
+// answer, so they keep their retries. From the mark on, Go never reads the trip again on its own: loading its pack
+// throws TripGoneError instead. An event from the Server for the trip, or a successful read_trip, clears the mark.
 import type pg from 'pg';
 import type { ToServerMethod } from '../door/methods.js';
 import { SocketCallError } from '../door/rpc.js';
@@ -8,6 +9,14 @@ import type { Log } from '../log.js';
 
 /** The reads whose 404 not_found means the trip itself is gone (a 404 on a write can be a card or a vote). */
 const TRIP_READS: ReadonlySet<ToServerMethod> = new Set<ToServerMethod>(['read_trip', 'read_messages']);
+
+/** Thrown instead of reading a trip Go marked gone. Work for it ends here: nothing to retry, nobody in the room to tell. */
+export class TripGoneError extends Error {
+  constructor(readonly tripId: string) {
+    super(`The Server no longer has trip ${tripId}.`);
+    this.name = 'TripGoneError';
+  }
+}
 
 export const isNotFound = (err: unknown): boolean => err instanceof SocketCallError && err.code === 404 && err.dataCode === 'not_found';
 
