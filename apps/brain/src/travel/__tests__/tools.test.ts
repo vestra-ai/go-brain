@@ -194,7 +194,7 @@ describe('show_options', () => {
     const show = async (options: ReturnType<typeof stay>[], title: string, turnId: string) => {
       const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query, options, checkedAt: '2026-10-07T12:00:00.000Z' });
       const ctx = lb.ctx({ turnId });
-      await lb.tools.run('show_options', { results_id: set.resultsId, title }, ctx);
+      await lb.tools.run('show_options', { line: 'Here are the stays.', results_id: set.resultsId, title }, ctx);
       return C.OptionsCard.parse(ctx.cards[0]).title;
     };
     const hotels = [stay('Meritas Auberge Calangute Goa', 'Candolim'), stay('3102bce - A Vedic Resort', 'Vagator'), stay('Villa Mandrem', 'Mandrem')];
