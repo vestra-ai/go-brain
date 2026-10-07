@@ -15,7 +15,8 @@ import type { Packs, TripPack } from '../trips/pack.js';
 import { checkFact, checkLine, type CheckEnv } from './checker.js';
 import { decisionOf, linkLine } from './decision-lines.js';
 import { forgottenUpTo, saveFact } from './facts.js';
-import { chatLine, FENCE_RULE, fenceText, isForgotten, peopleLegend } from './fence.js';
+import { chatLine } from '../composer/fence.js';
+import { FENCE_RULE, fenceText, notesView, peopleLegend } from './fence.js';
 import { reactOnce } from './reactions.js';
 import { lineRequestId, mirrorLine, mirrorSnapshot, recordLines, writeLine } from './record.js';
 import type { SideModel } from './side-model.js';
@@ -95,7 +96,8 @@ function promptFor(pack: TripPack, record: CheckEnv['record'], context: Message[
         .join('\n')
     : '(empty)';
   // A line marked "to Go" is part of an ask to Go (it names Go, or sits in the same person's burst that does): Go answers it.
-  const line = (m: Message) => chatLine(m, pack, isForgotten(m, forgotten), partOfAskToGo(m, pack));
+  const view = notesView(pack, forgotten, (m) => partOfAskToGo(m, pack));
+  const line = (m: Message) => chatLine(m, view);
   return [
     '<chat_data>',
     'People in the trip:',

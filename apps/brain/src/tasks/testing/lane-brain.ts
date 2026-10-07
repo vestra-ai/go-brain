@@ -180,6 +180,9 @@ export class FakeContext implements Context {
   setStory(): void {
     // Lane C never folds the chat.
   }
+  setForgotten(): void {
+    // Nor forgets anyone.
+  }
   addTurnRules(fn: Parameters<Context['addTurnRules']>[0]): void {
     this.turnRules.push(fn);
   }

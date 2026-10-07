@@ -15,7 +15,8 @@ import { hasSecret } from '../reflex/secrets.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import { cleanText } from './checker.js';
 import { forgottenUpTo, withTx, type Db } from './facts.js';
-import { chatLine, FENCE_RULE, fenceText, isForgotten, peopleLegend } from './fence.js';
+import { chatLine, isForgotten } from '../composer/fence.js';
+import { FENCE_RULE, fenceText, notesView, peopleLegend } from './fence.js';
 import type { SideModel } from './side-model.js';
 
 export const CHUNK = 25;
@@ -173,7 +174,7 @@ export function createFold(d: FoldDeps): Fold {
           'The story so far:',
           old && old.lines.length ? old.lines.map(storyLineText).join('\n') : '(none yet)',
           'The next part of the chat:',
-          ...chunk.map((m) => chatLine(m, pack, isForgotten(m, forgotten))),
+          ...chunk.map((m) => chatLine(m, notesView(pack, forgotten))),
           '</chat_data>',
           `Write the new story so far, covering everything up to #${lastSeq}.`,
         ].join('\n');

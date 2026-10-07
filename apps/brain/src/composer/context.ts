@@ -1,7 +1,7 @@
 import type { DeskItem, DeskKind } from '../desk/desk.js';
 import type { Log } from '../log.js';
 import type { TripPack } from '../trips/pack.js';
-import { chatLine, dataBlock, defuse, oneLine, personName } from './fence.js';
+import { chatLine, dataBlock, defuse, oneLine, personName, roomView, type Forgotten } from './fence.js';
 import { GO_RULES } from './rules.js';
 
 export interface NowProvider {
@@ -24,6 +24,10 @@ export interface StoryView {
 }
 export interface StoryProvider {
   get(tripId: string): Promise<StoryView>;
+}
+/** P2's forget: who Go was asked to forget in a trip, read each turn. */
+export interface ForgottenProvider {
+  get(tripId: string): Promise<Forgotten>;
 }
 
 /** A turn that is over (it ran, or gave up after its last attempt), with the messages it handled. */
@@ -51,6 +55,8 @@ export interface Context {
   addEndNote(render: (items: DeskItem[], pack: TripPack) => string | null): void;
   /** P2's fold: the story block sits right before the chat chunks (inside the data fence), and the chat starts at chatFromSeq. */
   setStory(p: StoryProvider): void;
+  /** P2's forget: a forgotten person's earlier lines are hidden in the chat, and "right now" says who asked Go to forget them. */
+  setForgotten(p: ForgottenProvider): void;
   /** P6's proactive bar: limits for a turn Go woke for on its own; null means no limits. */
   addTurnRules(fn: (wake: DeskItem[]) => TurnLimits | null): void;
   /** Called once a turn is over, so a lane ends what the turn left open (P4's live search cards). */
@@ -82,6 +88,8 @@ export interface BuiltPrompt {
   /** The newest message number in this prompt; the turn stores it as seen. */
   newestSeq: number;
   chatLines: number;
+  /** Who was forgotten when the prompt was built: lines that arrive during the turn are drawn with the same. */
+  forgotten: Forgotten;
 }
 
 export type ContextImpl = Context & {
@@ -104,6 +112,22 @@ export function formatTime(now: Date, tz: string): string {
   }).format(now);
 }
 
+/**
+ * Said under "right now" while someone in the trip has used Forget me. Their earlier lines are hidden, but Go's own
+ * earlier answers about them are not (drill t_p1b_2c72baaa: "Kabir doesn't drink" right after Kabir's forget), and Go
+ * must know the forget is done, so it never sends them to Forget me again.
+ */
+export function forgottenNote(pack: TripPack, forgotten: Forgotten): string | null {
+  const names = [...forgotten.keys()].map((id) => personName(pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone who left'));
+  if (names.length === 0) return null;
+  const who = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return (
+    `${who} used "Forget me in this trip" in the App, so Go forgot what it knew about them, and their earlier messages are hidden. ` +
+    `Never repeat anything about ${names.length === 1 ? who : 'them'} from earlier in the chat, your own messages included. ` +
+    'If someone asks, say only that they asked you to forget what you knew about them, without naming any of it.'
+  );
+}
+
 export function createContext(log: Log): ContextImpl {
   const providers: NowProvider[] = [];
   const wakes = new Map<DeskKind, Array<(item: DeskItem, pack: TripPack) => string | null>>();
@@ -112,6 +136,7 @@ export function createContext(log: Log): ContextImpl {
   const endNotes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
   const turnEnds: Array<(t: TurnEnd) => void> = [];
   let story: StoryProvider | null = null;
+  let forgottenFrom: ForgottenProvider | null = null;
 
   function renderWake(item: DeskItem, pack: TripPack): string {
     for (const r of wakes.get(item.kind) ?? []) {
@@ -155,6 +180,10 @@ export function createContext(log: Log): ContextImpl {
       if (story) throw new Error('the story so far is already set');
       story = p;
     },
+    setForgotten(p) {
+      if (forgottenFrom) throw new Error('the forgotten provider is already set');
+      forgottenFrom = p;
+    },
     addTurnRules(fn) {
       rules.push(fn);
     },
@@ -184,8 +213,9 @@ export function createContext(log: Log): ContextImpl {
     },
     renderWake,
     async build(i) {
-      const names = new Map(i.pack.trip.people.map((p) => [p.person_id, personName(p.name)]));
-      const seqs = new Map(i.pack.messages.map((m) => [m.message_id, m.seq]));
+      // Never guessed: a turn that cannot read who was forgotten fails and runs again, rather than show their words.
+      const forgotten: Forgotten = forgottenFrom ? await forgottenFrom.get(i.tripId) : new Map();
+      const room = roomView(i.pack, forgotten);
       // After a fold, "the story so far" stands for every message before chatFromSeq.
       const view = await storyOf(i.tripId);
       const fromSeq = view?.chatFromSeq ?? 0;
@@ -194,7 +224,7 @@ export function createContext(log: Log): ContextImpl {
         .map((m) => ({
           seq: m.seq,
           go: m.author.kind === 'go',
-          line: chatLine(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)),
+          line: chatLine(m, room),
           mine: m.reactions.filter((r) => r.person_id == null).map((r) => defuse(oneLine(r.emoji))),
         }))
         .filter((x): x is { seq: number; go: boolean; line: string; mine: string[] } => x.line !== null);
@@ -238,6 +268,8 @@ export function createContext(log: Log): ContextImpl {
           log.warn({ err: e, block: p.name }, 'a right-now block failed; the turn goes on without it');
         }
       }
+      const gone = forgottenNote(i.pack, forgotten);
+      if (gone) now.push(`## asked Go to forget\n${gone}`);
       const said = (renders: typeof notes): string[] =>
         renders.flatMap((n) => {
           try {
@@ -260,6 +292,7 @@ export function createContext(log: Log): ContextImpl {
         user,
         newestSeq: Math.max(i.seenSeq, ...lines.map((x) => x.seq)),
         chatLines: chat.length,
+        forgotten,
       };
     },
   };

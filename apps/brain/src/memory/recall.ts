@@ -9,6 +9,7 @@
  * other trips and a forgotten person's earlier words never come back.
  */
 import type { Pool } from 'pg';
+import { forgottenAt } from '../composer/fence.js';
 import { maskSecrets } from '../reflex/secrets.js';
 import type { TripPack } from '../trips/pack.js';
 import type { Audience } from './facts.js';
@@ -217,11 +218,7 @@ export async function recall(
     const same = words.toLowerCase().replace(/\s+/g, ' ').trim();
     if (!had || had.score < score) best.set(hit.messageId, { hit, score, lexemes, same });
   };
-  const forgottenMessage = (personId: string | null, seq: number): boolean => {
-    if (!personId) return false;
-    const upTo = forgotten.get(personId);
-    return upTo !== undefined && seq <= upTo;
-  };
+  const forgottenMessage = (personId: string | null, seq: number): boolean => forgottenAt(forgotten, personId, seq);
   const messageHit = (m: { message_id: string; seq: number; person_id: string | null; text: string }): RecallHit => {
     const who = m.person_id ? (nameOf.get(m.person_id) ?? 'Someone') : 'Go';
     return { text: `${who}: ${maskSecrets(m.text).text.slice(0, 300)}`, messageId: m.message_id, seq: m.seq };
