@@ -10,7 +10,7 @@ import type { Switches } from '../../admin/switches.js';
 import { V1Error, type V1Client } from '../../tasks/v1-client.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveFrame, OnProgress } from './progress.js';
-import { AGENT_MAX_ROWS, bodiesFor, snapshotText, type Capture, type CaptureSpec, type FetchPlan, type Recipe, type RecipeOption } from './recipe.js';
+import { AGENT_MAX_ROWS, bodiesFor, snapshotText, type Capture, type FetchPlan, type Recipe, type RecipeOption } from './recipe.js';
 
 export interface RecipeRun {
   options: RecipeOption[];
@@ -23,9 +23,6 @@ export interface RecipeRunner {
   name: 'browser_fetch' | 'agent_job';
   /** onProgress: the run's steps, for the live search card; called, never awaited. */
   run<S>(tripId: string, recipe: Recipe<S>, slots: S, o?: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<RecipeRun>;
-  /** Opens a page, works its steps and brings back the calls the plan keeps: ixigo's own search box, for a place. Only the
-   *  browser fetch can; the agent job reads results pages alone. */
-  read?(tripId: string, url: string, plan: FetchPlan, o?: { signal?: AbortSignal }): Promise<Capture[]>;
 }
 
 export interface RunnerDeps {
@@ -65,7 +62,7 @@ const isCapture = (c: unknown): c is Capture =>
   typeof c === 'object' && c !== null && typeof (c as Capture).url === 'string' && typeof (c as Capture).body === 'string' && typeof (c as Capture).status === 'number';
 
 /** A failed fetch as Go says it; on a timeout, the captures it did get when every required one is among them. */
-function fetchFailed(err: V1Error, recipe: { id: string; capture: CaptureSpec[] }, tripId: string, log: RunnerDeps['log']): Capture[] {
+function fetchFailed<S>(err: V1Error, recipe: Recipe<S>, tripId: string, log: RunnerDeps['log']): Capture[] {
   if (err.status === 504) {
     const partial = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
     const got = Array.isArray(partial) ? partial.filter(isCapture).map((c) => ({ ...c, truncated: c.truncated === true })) : [];
@@ -85,56 +82,6 @@ function fetchFailed(err: V1Error, recipe: { id: string; capture: CaptureSpec[] 
 
 export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   const sleep = d.sleep ?? nap;
-  /** One browser fetch: the page opened, its steps worked, and the calls the plan names kept. */
-  async function fetchPage(
-    tripId: string,
-    url: string,
-    plan: FetchPlan,
-    what: { id: string; capture: CaptureSpec[] },
-    o: { signal?: AbortSignal; onProgress?: OnProgress },
-  ): Promise<Capture[]> {
-    const body = {
-      url,
-      // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer.
-      capture: plan.capture.map((c) => ({
-        match: c.match,
-        ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
-        ...(c.min_count ? { min_count: c.min_count } : {}),
-        ...(c.max_count ? { max_count: c.max_count } : {}),
-      })),
-      ...(plan.steps ? { steps: plan.steps } : {}),
-      timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
-      // Pictures of the page as it loads, about one every 700 ms, for the live search card.
-      frames: {},
-    };
-    let userId = d.computer.userIdFor(tripId);
-    for (let tries = 0; ; tries++) {
-      try {
-        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) });
-        // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
-        if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
-        return answer.captures;
-      } catch (err) {
-        if (!(err instanceof V1Error)) throw err;
-        // Once only: a trip whose user /v1 does not have yet, or a person who just used the browser.
-        if (tries === 0 && err.status === 404 && err.code === 'user_not_found') {
-          userId = await d.computer.ensureUser(tripId);
-          continue;
-        }
-        if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
-          await sleep(IN_USE_WAIT_MS);
-          continue;
-        }
-        // A timed-out fetch's pictures go to the card as a finished one's do, whatever its captures can answer.
-        if (err.status === 504) {
-          const frames = partialFrames(err);
-          if (frames.length > 0) o.onProgress?.({ type: 'frames', frames });
-        }
-        return fetchFailed(err, what, tripId, d.log);
-      }
-    }
-  }
-
   return {
     name: 'browser_fetch',
     async run(tripId, recipe, slots, o = {}) {
@@ -142,14 +89,53 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       const url = recipe.url(slots);
       o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
       const plan: FetchPlan = recipe.fetchFor?.(slots) ?? { capture: recipe.capture, ...(recipe.steps ? { steps: recipe.steps } : {}) };
-      const captures = await fetchPage(tripId, url, plan, recipe, o);
+      const body = {
+        url,
+        // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer.
+        capture: plan.capture.map((c) => ({
+          match: c.match,
+          ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
+          ...(c.min_count ? { min_count: c.min_count } : {}),
+          ...(c.max_count ? { max_count: c.max_count } : {}),
+        })),
+        ...(plan.steps ? { steps: plan.steps } : {}),
+        timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
+        // Pictures of the page as it loads, about one every 700 ms, for the live search card.
+        frames: {},
+      };
+      const fetchCaptures = async (): Promise<Capture[]> => {
+        let userId = d.computer.userIdFor(tripId);
+        for (let tries = 0; ; tries++) {
+          try {
+            const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) });
+            // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
+            if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
+            return answer.captures;
+          } catch (err) {
+            if (!(err instanceof V1Error)) throw err;
+            // Once only: a trip whose user /v1 does not have yet, or a person who just used the browser.
+            if (tries === 0 && err.status === 404 && err.code === 'user_not_found') {
+              userId = await d.computer.ensureUser(tripId);
+              continue;
+            }
+            if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
+              await sleep(IN_USE_WAIT_MS);
+              continue;
+            }
+            // A timed-out fetch's pictures go to the card as a finished one's do, whatever its captures can answer.
+            if (err.status === 504) {
+              const frames = partialFrames(err);
+              if (frames.length > 0) o.onProgress?.({ type: 'frames', frames });
+            }
+            return fetchFailed(err, recipe, tripId, d.log);
+          }
+        }
+      };
+      const captures = await fetchCaptures();
       o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
       const options = recipe.extract(captures, slots);
       const at = d.now();
       return { options, checkedAt: at.toISOString(), ms: at.getTime() - started };
-    },
-    async read(tripId, url, plan, o = {}) {
-      return fetchPage(tripId, url, plan, { id: `page ${new URL(url).pathname}`, capture: plan.capture }, o);
     },
   };
 }

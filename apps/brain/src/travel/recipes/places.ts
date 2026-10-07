@@ -9,7 +9,7 @@ import { TravelError } from '../mcp-travel.js';
 import type { TravelKind } from '../travel.js';
 
 /** "  North Goa (GOX) " as "north goa (gox)": lower case, single spaces. */
-export const norm = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ');
+const norm = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ');
 
 /** A code people or the model wrote in brackets, "Goa (GOX)", or the whole text when it is a code. */
 function codeIn(text: string): string | null {
