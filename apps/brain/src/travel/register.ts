@@ -4,6 +4,8 @@
  * early start of a search on intake (every TRAVEL_MODE) and the right-now block that hands its answer to the turn.
  */
 import type { RegisterLane } from '../app.js';
+import { loadBook } from './book/book.js';
+import { createEngine } from './book/engine.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
@@ -12,11 +14,10 @@ import { createTravelLayer } from './layer.js';
 import { startLiveSearch } from './live-search.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
-import { createIxigoWebBackend, LINK_ONLY_KINDS } from './recipes/backend.js';
+import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/backend.js';
 import { createEarlyStart } from './recipes/early.js';
 import { earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
-import { runnerFor } from './recipes/runners.js';
 import { createResultsStore } from './results.js';
 import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
@@ -41,20 +42,30 @@ export const registerTravel: RegisterLane = async (brain) => {
   const images = createImages({ pool: brain.pool, publicUrl: env.GO_PUBLIC_URL });
   const imageRoute = registerImageRoute(brain.http, { pool: brain.pool });
   brain.onStop(() => imageRoute.close());
-  // The tasks lane, which registers after this one, sets the runners: a search reads them when it runs. Bash's browser
-  // fetch reads a page when the TRAVEL_RUNNER switch says so and the page's list loads in a hidden tab; the agent job
-  // reads the rest.
-  const ixigoWeb = createIxigoWebBackend({
-    runner: (recipe) => {
-      const runners = brain.recipeRunners;
-      if (!runners) return null;
-      return recipe.fetchable ? runnerFor(brain.switches, runners) : runners.agentJob;
+  // The one owner of waking the trip's computer for travel (see warmForTravel).
+  const warm = (tripId: string, kind: TravelKind | null): void => warmForTravel(brain, tripId, kind);
+  // The recipe book, checked at boot: a file that fails is left out, and the log says why.
+  const { book, problems } = loadBook();
+  for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');
+  // The tasks lane, which registers after this one, sets the browser fetch: a recipe reads it when it runs.
+  const engine = createEngine({
+    book,
+    runner: () => brain.recipeRunners?.browserFetch ?? null,
+    pool: brain.pool,
+    trip: async (tripId) => {
+      const people = (await brain.packs.get(tripId)).trip.people;
+      return { people: Math.max(1, people.length), homes: people.flatMap((p) => (p.from_city ? [p.from_city] : [])) };
     },
-    peopleOf: async (tripId) => (await brain.packs.get(tripId)).trip.people.length,
-    homesOf: async (tripId) => (await brain.packs.get(tripId)).trip.people.flatMap((p) => (p.from_city ? [p.from_city] : [])),
+    // A run that opens a page warms for its kind of search; any other recipe's page, for no kind.
+    warm: (tripId, recipeId) => warm(tripId, searchKindOf(recipeId)),
+    now: brain.now,
+    log: brain.log,
+  });
+  const ixigoWeb = createIxigoWebBackend({
+    book,
+    engine,
     now: brain.now,
     live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log }, tripId, o),
-    linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
   });
   const travel = createTravelLayer({
     switches: brain.switches,
@@ -66,8 +77,6 @@ export const registerTravel: RegisterLane = async (brain) => {
     today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
   });
-  // The one owner of waking the trip's computer for travel (see warmForTravel).
-  const warm = (tripId: string, kind: TravelKind): void => warmForTravel(brain, tripId, kind);
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm })) brain.tools.register(t);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({

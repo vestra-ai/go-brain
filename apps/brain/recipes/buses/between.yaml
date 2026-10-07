@@ -21,14 +21,15 @@ answer:
   as: options
   kind: bus
   # A price is the lowest seat fare after the offer ixigo applies on its own ("₹3000, From ₹2700" is 2,700).
-  # arriveTimestamp is India's clock written as if it were UTC, so the arrival is the departure plus the journey time,
+  # Every detail but the operator, the fare and the start may be missing or null. arriveTimestamp is India's clock written
+  # as if it were UTC, so the arrival is the departure plus the journey time,
   # and that clock only when the journey time is missing. ixigo has no page per bus: "Select Seats" opens on the results.
   each: |
     (
       $mins := $minutes(timings.travelTime);
       $arrive := $exists($mins) ? $istPlus(timings.startTimeDateFormat, $mins) : (timings.arriveTimestamp ? $istFromWallSeconds(timings.arriveTimestamp));
       $operator := $trim(travelerAgentName);
-      $seats := seatStats.availableSeats;
+      $seats := $type(seatStats.availableSeats) = "number" ? seatStats.availableSeats;
       $exists($arrive) ? {
         "title": $operator,
         "priceMinor": $paise(fares.offerPrice ? fares.offerPrice : fares.fare),
@@ -42,7 +43,7 @@ answer:
           "arrive_at": $arrive,
           "carrier_name": $substring($operator, 0, 60)
         },
-        "rating": ($exists(rating) and ($exists(noOfRatings) ? noOfRatings : 1) > 0) ? rating,
+        "rating": ($type(rating) = "number" and ($type(noOfRatings) = "number" ? noOfRatings : 1) > 0) ? rating,
         "highlights": $highlights(busTypeName, $exists($mins) ? $hoursMinutes($mins), ($exists($seats) and $seats <= 5) ? $string($seats) & " seat" & ($seats = 1 ? "" : "s") & " left"),
         "facts": { "bus_type": busTypeName, "seats_left": $seats, "duration_min": $mins, "reviews": noOfRatings },
         "sourceUrl": $page

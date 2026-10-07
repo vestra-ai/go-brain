@@ -44,6 +44,8 @@ export interface EngineDeps {
   pool?: Pool;
   /** The trip as a recipe's inputs read it ($trip): its head count and the members' home cities. */
   trip: (tripId: string) => Promise<{ people: number; homes: string[] }>;
+  /** Holds the trip's computer awake for the travel the trip is talking: called once a run will open a page there. */
+  warm?: (tripId: string, recipeId: string) => void;
   now: () => Date;
   log?: { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
 }
@@ -214,6 +216,7 @@ export function createEngine(d: EngineDeps) {
       if (!recipe) throw new TravelError('refused', `There is no ixigo recipe ${id}.`);
       if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
       if (!recipe.page) throw new TravelError('refused', `${recipe.title} has no page to open.`);
+      if (recipe.answer.as !== 'link') d.warm?.(o.tripId, recipe.id);
       const inputs = await inputsOf(recipe, given, o);
       const bindings = await bindingsOf(recipe, inputs, o);
       const page = `${IXIGO}${await fill(recipe.page, inputs, { url: true, bindings })}`;

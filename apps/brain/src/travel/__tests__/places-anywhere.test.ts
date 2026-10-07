@@ -5,10 +5,11 @@ import type { TurnCtx } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import { goaPack } from '../../tasks/testing/goa.js';
 import type { Images } from '../images.js';
-import { createIxigoWebBackend, LINK_ONLY_KINDS } from '../recipes/backend.js';
+import { loadBook } from '../book/book.js';
+import { createEngine } from '../book/engine.js';
+import { createIxigoWebBackend } from '../recipes/backend.js';
 import { airportOf, forgetLearnedPlaces, stayPlaceOf } from '../recipes/places.js';
 import { learnFromPage, loadLearnedPlaces } from '../recipes/places-store.js';
-import { stays } from '../recipes/stays.js';
 import type { ResultsStore } from '../results.js';
 import { travelTools } from '../tools.js';
 import type { Travel } from '../travel.js';
@@ -23,13 +24,16 @@ const OTHER_SITES = /google flights|skyscanner|makemytrip|booking\.com|airbnb|cl
 
 // The Goa trip: Rahul, Priya and Kabir live in Delhi, Arjun in Bangalore, Meher in Mumbai.
 const pack = goaPack();
-const backend = createIxigoWebBackend({
-  runner: () => ({ name: 'browser_fetch', run: async () => { throw new Error('this test loads no page'); } }) as never,
-  peopleOf: async () => pack.trip.people.length,
-  homesOf: async () => pack.trip.people.flatMap((p) => (p.from_city ? [p.from_city] : [])),
-  now: () => new Date('2026-10-07T12:00:31Z'),
-  linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
+const { book } = loadBook();
+const now = () => new Date('2026-10-07T12:00:31Z');
+// No trip's computer here: a flight link loads nothing, and a place Go has not searched can't be asked of ixigo's box.
+const engine = createEngine({
+  book,
+  runner: () => null,
+  trip: async () => ({ people: pack.trip.people.length, homes: pack.trip.people.flatMap((p) => (p.from_city ? [p.from_city] : [])) }),
+  now,
 });
+const backend = createIxigoWebBackend({ book, engine, now });
 
 function tool(name: string) {
   const cards: Array<Record<string, unknown>> = [];
@@ -96,9 +100,14 @@ describe('the places ixigo resolved', () => {
     forgetLearnedPlaces();
     expect(() => stayPlaceOf('Manali')).toThrow(expect.objectContaining({ code: 'unknown_place' }));
     expect(await loadLearnedPlaces(db.pool)).toBe(1);
-    const slots = stays.slotsFrom({ area: 'Manali', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 5 });
-    expect(slots).toMatchObject({ location: manali, half: null, wide: false });
-    expect(stays.url(slots)).toContain('locationId=4567&locationName=Manali&locationType=C&masterLocationId=48890&countryId=1');
+    // The stays search goes straight to Manali's results page: no lookup, one page.
+    const opened: string[] = [];
+    const reading = createEngine({
+      book, runner: () => ({ read: async (_t: string, url: string) => { opened.push(url); return { captures: [], finalUrl: url }; } }), trip: async () => ({ people: 5, homes: [] }), now,
+    });
+    await reading.answer('hotels.search', { place: 'Manali', check_in: '2026-11-06', check_out: '2026-11-09' }, { tripId: 't_mnl' }).catch(() => undefined);
+    expect(opened).toHaveLength(1);
+    expect(opened[0]).toContain('/hotels/search/result?locationId=4567&locationName=Manali&locationType=C&masterLocationId=48890&countryId=1');
   });
 
   it("learn a flight's airports, and nothing from a page that isn't ixigo's results", async () => {

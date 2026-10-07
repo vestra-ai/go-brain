@@ -7,7 +7,9 @@ import { TravelError } from '../mcp-travel.js';
 import type { ResultsStore } from '../results.js';
 import { msg } from '../../__tests__/fixtures/goa.js';
 import { goaPack } from '../../tasks/testing/goa.js';
-import { createIxigoWebBackend, LINK_ONLY_KINDS } from '../recipes/backend.js';
+import { loadBook } from '../book/book.js';
+import { createEngine } from '../book/engine.js';
+import { createIxigoWebBackend } from '../recipes/backend.js';
 import { renderSearchWake } from '../search-wake.js';
 import { travelTools } from '../tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
@@ -115,13 +117,14 @@ describe('a search ixigo will only show as a link', () => {
 describe("a flight's travellers", () => {
   // The Goa trip: Rahul, Priya and Kabir live in Delhi, Arjun in Bangalore, Meher in Mumbai.
   const pack = goaPack();
-  const backend = createIxigoWebBackend({
-    runner: () => ({ name: 'browser_fetch', run: async () => { throw new Error('a link loads nothing'); } }) as never,
-    peopleOf: async () => pack.trip.people.length,
-    homesOf: async () => pack.trip.people.flatMap((p) => (p.from_city ? [p.from_city] : [])),
+  const { book } = loadBook();
+  const engine = createEngine({
+    book,
+    runner: () => ({ read: async () => { throw new Error('a link loads nothing'); } }),
+    trip: async () => ({ people: pack.trip.people.length, homes: pack.trip.people.flatMap((p) => (p.from_city ? [p.from_city] : [])) }),
     now: () => new Date('2026-10-07T12:00:31Z'),
-    linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
   });
+  const backend = createIxigoWebBackend({ book, engine, now: () => new Date('2026-10-07T12:00:31Z') });
   const travel = { search: (kind: never, q: never, o: never) => backend.search(kind, q, o), waitMs: async () => null } as unknown as Travel;
   const search = (ask: string, travellers?: number) => {
     const line = msg(90, 'p_rahul', ask);

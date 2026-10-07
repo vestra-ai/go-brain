@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agreedDates, readTravelAsk } from '../ask.js';
-import { RECIPES } from '../index.js';
+import { airportOf, stationOf } from '../places.js';
 
 // Wednesday 7 Oct 2026, the Goa trip: North Goa, 6 to 9 Nov.
 const CTX = { today: '2026-10-07', destination: 'North Goa', dates: { start: '2026-11-06', end: '2026-11-09' } };
@@ -19,7 +19,8 @@ describe('reading a travel ask', () => {
     // The day before the trip starts: an overnight train.
     expect(read('can someone check trains from Mumbai on Thursday?')).toEqual({ kind: 'trains', query: { from: 'mumbai', to: 'North Goa', date: '2026-11-05' } });
     for (const ask of [read("@Go flights Delhi to Goa Friday evening, Arjun can't leave before 6"), read('can someone check trains from Mumbai on Thursday?')]) {
-      expect(() => RECIPES[ask!.kind].slotsFrom(ask!.query, { people: 5 })).not.toThrow();
+      // Places Go has searched before: the search opens its results page with no lookup.
+      for (const words of [ask!.query.from!, ask!.query.to!]) expect(() => (ask!.kind === 'flights' ? airportOf : stationOf)(words)).not.toThrow();
     }
   });
 
