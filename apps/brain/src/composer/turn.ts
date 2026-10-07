@@ -204,7 +204,6 @@ export function createComposer(d: ComposerDeps): Composer {
         if (fresh.lines.length) {
           const more = await runLoop({
             ...base,
-            continuing: true,
             maxRounds: MAX_ROUNDS - rounds,
             messages: withNewLines(r.messages, foldText(fresh.lines)),
           });
