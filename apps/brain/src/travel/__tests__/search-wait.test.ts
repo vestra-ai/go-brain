@@ -4,6 +4,9 @@ import type { DeskItem } from '../../desk/desk.js';
 import type { Images } from '../images.js';
 import { TravelError } from '../mcp-travel.js';
 import type { ResultsStore } from '../results.js';
+import { msg } from '../../__tests__/fixtures/goa.js';
+import { goaPack } from '../../tasks/testing/goa.js';
+import { createIxigoWebBackend, LINK_ONLY_KINDS } from '../recipes/backend.js';
 import { renderSearchWake } from '../search-wake.js';
 import { travelTools } from '../tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
@@ -97,6 +100,41 @@ describe('a search ixigo will only show as a link', () => {
       body: expect.stringContaining('set for 4 from Delhi'),
       actions: [{ action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' }],
     })]);
+  });
+});
+
+describe("a flight's travellers", () => {
+  // The Goa trip: Rahul, Priya and Kabir live in Delhi, Arjun in Bangalore, Meher in Mumbai.
+  const pack = goaPack();
+  const backend = createIxigoWebBackend({
+    runner: () => ({ name: 'browser_fetch', run: async () => { throw new Error('a link loads nothing'); } }) as never,
+    peopleOf: async () => pack.trip.people.length,
+    homesOf: async () => pack.trip.people.flatMap((p) => (p.from_city ? [p.from_city] : [])),
+    now: () => new Date('2026-10-07T12:00:31Z'),
+    linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
+  });
+  const travel = { search: (kind: never, q: never, o: never) => backend.search(kind, q, o), waitMs: async () => null } as unknown as Travel;
+  const search = (ask: string, travellers?: number) => {
+    const line = msg(90, 'p_rahul', ask);
+    const turn = { ...ctx, cards: [], pack: { ...pack, messages: [...pack.messages, line] }, wake: [{ kind: 'message', payload: { messageId: line.message_id, seq: 90 } }] } as unknown as TurnCtx;
+    const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z') });
+    return tools.find((t) => t.name === 'search_flights')!.run({ from: 'Delhi', to: 'Goa', date: '2026-11-06', ...(travellers ? { travellers } : {}) }, turn) as Promise<Record<string, unknown>>;
+  };
+
+  it("never take the model's count for the whole trip: the link is for the 3 who live in Delhi (re-drill 5)", async () => {
+    for (const travellers of [5, 4, undefined]) {
+      const out = await search('@Go flights from Delhi to Goa on Friday', travellers);
+      expect(out.link, String(travellers)).toContain('&adults=3&');
+      expect(out.set_for).toBe('for 3 from Delhi');
+    }
+  });
+
+  it('take a number the ask itself says: "for 2 of us"', async () => {
+    const out = await search('@Go flights from Delhi to Goa on Friday for 2 of us', 2);
+    expect(out.link).toContain('&adults=2&');
+    expect(out.set_for).toBe('for 2 from Delhi');
+    // A different number from the model's than the ask's: the ask's people, counted by home.
+    expect((await search('@Go flights from Delhi to Goa on Friday for 2 of us', 5)).link).toContain('&adults=3&');
   });
 });
 
