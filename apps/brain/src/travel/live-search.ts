@@ -1,6 +1,6 @@
 /**
  * The live card for a search on ixigo.com: posted with "On it." the moment the search starts, its steps ticked as the
- * recipe run reports, the latest picture of the page in a small browser window with the page's address, and marked
+ * recipe run reports, the most drawn picture of the page in a small browser window with the page's address, and marked
  * done before the options card posts. Pictures are shown only of search, results and details pages (frame-pages.ts),
  * re-hosted in Go's image cache like every other picture on a card. Updates go out in order, folded into the newest.
  */
@@ -47,15 +47,21 @@ export function liveSteps(kind: TravelKind, q: TravelQuery): string[] {
   ];
 }
 
-/** The newest frame of a page Go may show, as JPEG bytes; null when there is none. */
+/**
+ * The most drawn frame of a page Go may show, as JPEG bytes; null when there is none. A JPEG's size is a cheap measure
+ * of what it shows: ixigo's loading state (its header drawn, a grey list) is far smaller than its hotel cards, and the
+ * newest frame is often that loading state (re-drill 6). The newer of two the same size.
+ */
 export function frameToShow(frames: LiveFrame[]): { bytes: Buffer; pageUrl: string } | null {
-  for (const f of [...frames].sort((a, b) => b.at_ms - a.at_ms)) {
+  let best: { bytes: Buffer; pageUrl: string; at: number } | null = null;
+  for (const f of frames) {
     if (!isFramePage(f.page_url)) continue;
     const bytes = Buffer.from(f.jpeg_base64, 'base64');
     const jpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-    if (jpeg && bytes.length <= MAX_FRAME_BYTES) return { bytes, pageUrl: f.page_url };
+    if (!jpeg || bytes.length > MAX_FRAME_BYTES) continue;
+    if (!best || bytes.length > best.bytes.length || (bytes.length === best.bytes.length && f.at_ms > best.at)) best = { bytes, pageUrl: f.page_url, at: f.at_ms };
   }
-  return null;
+  return best && { bytes: best.bytes, pageUrl: best.pageUrl };
 }
 
 /** Resolves when p settles or after ms, whichever comes first; never rejects. */
