@@ -50,6 +50,28 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   );
 }
 
+/**
+ * Said once under "why you woke" when a message that names Go woke the turn: an ask. Answers ran four to six sentences
+ * (about 1.2 s of the model's 2.3 s, run 37578789333) where the rules say one to three, so the turn is told the length
+ * here, after the cache point, not in GO_RULES. A list, a recap or a comparison may be longer, and what someone said
+ * keeps its message number, which recall's answers cite.
+ */
+export function askNote(items: DeskItem[], pack: TripPack): string | null {
+  const seqs = items.flatMap((item) => {
+    if (item.kind !== 'message' || (item.payload as { namesGo?: boolean } | null)?.namesGo !== true) return [];
+    const p = (item.payload ?? {}) as { messageId?: string };
+    const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
+    return m && m.author.kind === 'person' ? [m.seq] : [];
+  });
+  if (seqs.length === 0) return null;
+  const refs = seqs.map((s) => `#${s}`);
+  const which = refs.length === 1 ? `${refs[0]} asks you` : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]} ask you`;
+  return (
+    `${which}: answer in one or two short sentences, unless they asked for a list, a recap or a comparison. ` +
+    'When you cite what someone said, keep its message number.'
+  );
+}
+
 export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
   const p = (item.payload ?? {}) as { type?: string; decisionId?: string };
   if (p.type === 'decision.closed' && p.decisionId) {

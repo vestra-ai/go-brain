@@ -1,7 +1,7 @@
 import type { RegisterLane } from './app.js';
 import { roomTools } from './composer/room-tools.js';
 import { tripNow } from './composer/trip-now.js';
-import { quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from './composer/wakes.js';
+import { askNote, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from './composer/wakes.js';
 
 /** Lane A's own contributions, made through the same interfaces every lane uses. */
 export const registerRoom: RegisterLane = (brain) => {
@@ -10,6 +10,7 @@ export const registerRoom: RegisterLane = (brain) => {
   brain.context.addWake('trip_change', renderTripChangeWake);
   brain.context.addWake('setup', renderSetupWake);
   brain.context.addWakeNote(quietNote);
+  brain.context.addWakeNote(askNote);
   brain.context.addNow(tripNow(brain.packs));
   // Go's side of setup: the trip row and pack, then hello, unless Go has already spoken here.
   brain.setup.addStep({
