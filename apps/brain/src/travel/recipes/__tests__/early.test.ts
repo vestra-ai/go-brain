@@ -74,6 +74,17 @@ describe('the early start', () => {
     expect(early.searchFor('t_goa', 'm_53')).toBeNull();
   });
 
+  it("follows Jev's sure pick (question 10): its kind wins, and its none starts nothing; unsure leaves it to the parser", async () => {
+    const w = world();
+    const jev = (value: 'trains' | null): ReflexRead => ({ ...UNSURE_READ, recipe: { value, sure: true } });
+    // No kind word the parser knows; Jev reads it as trains.
+    expect(await w.hook(msg(60, 'p_rahul', '@Go Mumbai se Goa kal kuch hai kya'), jev('trains'), goaPack())).toEqual({ dueNow: true });
+    expect(w.searches).toEqual([{ kind: 'trains', q: { from: 'mumbai', to: 'goa', date: '2026-10-08' }, tripId: 't_goa' }]);
+    // Jev is sure it is no search ask, though the words look like one.
+    expect(await w.hook(msg(61, 'p_rahul', '@Go trains from Mumbai on Thursday were always late lol'), jev(null), goaPack())).toBeUndefined();
+    expect(w.searches).toHaveLength(1);
+  });
+
   it('remembers the search each message started, for ten minutes, for the turn it wakes', async () => {
     const w = world();
     await w.hook(msg(48, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());

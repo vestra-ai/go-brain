@@ -59,7 +59,13 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       if (!plainlyNamesGo(msg, pack) && !(read.forGo.sure && read.forGo.value === true)) return undefined;
       const travel = d.travel();
       if (!travel) return undefined;
-      const ask = readTravelAsk(msg.text, { today, destination: pack.trip.destination?.name ?? null, dates: pack.trip.dates ?? null });
+      // Jev's question 10, when it is sure: its kind wins over the parser's; "none" (travel talk, not a search ask) starts
+      // nothing. Unsure, the parser decides alone.
+      const pick = read.recipe;
+      if (pick?.sure && pick.value === null) return undefined;
+      const ask = readTravelAsk(msg.text, {
+        today, destination: pack.trip.destination?.name ?? null, dates: pack.trip.dates ?? null, ...(pick?.sure && pick.value ? { kind: pick.value } : {}),
+      });
       if (!ask) return undefined;
       try {
         RECIPES[ask.kind].slotsFrom(ask.query, { people: Math.max(1, pack.trip.people.length) });

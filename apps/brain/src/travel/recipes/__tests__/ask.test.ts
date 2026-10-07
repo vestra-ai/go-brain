@@ -49,6 +49,11 @@ describe('reading a travel ask', () => {
     expect(travelTalk('Goa on Friday!', CTX.today)).toBe(false);
   });
 
+  it("takes Jev's kind when it is sure, over the kind words", () => {
+    expect(readTravelAsk('@Go Mumbai se Goa kal kuch hai kya', { ...CTX, kind: 'buses' })).toEqual({ kind: 'buses', query: { from: 'mumbai', to: 'goa', date: '2026-10-08' } });
+    expect(readTravelAsk('@Go flights and a villa for Friday from Delhi to Goa', { ...CTX, kind: 'flights' })?.kind).toBe('flights');
+  });
+
   it('gives nothing for less than one whole search of one kind', () => {
     // No date.
     expect(read('@Go flights Delhi to Goa?')).toBeNull();
