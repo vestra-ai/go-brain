@@ -21,7 +21,7 @@ describe('the stays recipe', () => {
   it('searches all of Goa for Goa, two to a room', () => {
     expect(slots).toEqual({
       location: { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 },
-      checkIn: '2026-11-06', checkOut: '2026-11-09', adults: 4, rooms: 2, filters: [], half: null,
+      checkIn: '2026-11-06', checkOut: '2026-11-09', adults: 4, rooms: 2, filters: [], half: null, wide: true,
     });
     expect(stays.slotsFrom({ area: 'Anjuna, Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 5 }, { people: 4 })).toMatchObject({ adults: 5, rooms: 3 });
     expect(() => stays.slotsFrom({ area: 'Manali', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 })).toThrow(/Go can search ixigo stays in Goa/);
@@ -55,6 +55,19 @@ describe('the stays recipe', () => {
     const south = stays.slotsFrom({ area: 'South Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
     expect(south).toMatchObject({ half: 'south', filters: [] });
     expect(stays.extract(pages(), south).map((o) => o.title)).toEqual(['Soul Vacation Resort and Spa, Colva']);
+  });
+
+  it('takes pages 1 and 2 for all of Goa or a half of it, and page 1 for an area (re-drill 4)', () => {
+    const two = {
+      capture: [{ match: '/accommodation-search/api/v3/accommodations/search$', required: true, min_count: 2, max_count: 2 }],
+      steps: [{ op: 'wait_for', match: '/accommodation-search/api/v3/accommodations/search$' }, { op: 'scroll', times: 3 }],
+    };
+    const at = (area: string) => stays.slotsFrom({ area, checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { people: 4 });
+    for (const area of ['Goa', 'North Goa', 'South Goa']) expect(stays.fetchFor!(at(area)), area).toEqual(two);
+    for (const area of ['Vagator', 'Anjuna', 'Candolim']) {
+      expect(at(area).wide, area).toBe(false);
+      expect(stays.fetchFor!(at(area)), area).toEqual({ capture: stays.capture });
+    }
   });
 
   it('takes what ixigo filtered on as true of every stay it gave, even one that does not list it', () => {

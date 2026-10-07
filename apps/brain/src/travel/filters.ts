@@ -75,6 +75,35 @@ export function asked(kind: TravelKind, q: TravelQuery): string[] {
 
 const keeps = (kind: TravelKind, q: TravelQuery, o: TravelOption): boolean => misses(kind, q, o).length === 0;
 
+/** A region, not one area: the best stays should come from across it. */
+const REGION = /^(north |south )?goa$/;
+/** A good stay, out of 5: what the spread puts up front. */
+const GOOD_RATING = 4;
+
+/**
+ * For a region ("North Goa"), the best stays spread across its areas: the best good one in each area first, in rating
+ * order, then each area's second, then the rest. So the top three are three areas, not one strip. A stay with no
+ * area, or not rated good, keeps its place after them.
+ */
+function spreadAcrossAreas(sorted: TravelOption[]): TravelOption[] {
+  const areaOf = (o: TravelOption): string | null => (typeof o.facts.area === 'string' ? o.facts.area.trim().toLowerCase() : null);
+  const good = sorted.filter((o) => areaOf(o) !== null && (o.rating ?? 0) >= GOOD_RATING);
+  const taken = new Set<TravelOption>();
+  const up: TravelOption[] = [];
+  for (const round of [1, 2]) {
+    const seen = new Map<string, number>();
+    for (const o of good) {
+      const n = (seen.get(areaOf(o)!) ?? 0) + 1;
+      seen.set(areaOf(o)!, n);
+      if (n === round) {
+        up.push(o);
+        taken.add(o);
+      }
+    }
+  }
+  return [...up, ...sorted.filter((o) => !taken.has(o))];
+}
+
 /** When nothing fits: the option that misses the fewest constraints (then the cheapest), and what it misses. */
 export function closest(kind: TravelKind, q: TravelQuery, options: TravelOption[]): { option: TravelOption; misses: string[] } | null {
   let best: { option: TravelOption; misses: string[] } | null = null;
@@ -87,6 +116,9 @@ export function closest(kind: TravelKind, q: TravelQuery, options: TravelOption[
 
 export function applyConstraints(kind: TravelKind, q: TravelQuery, options: TravelOption[]): TravelOption[] {
   const kept = options.filter((o) => keeps(kind, q, o));
-  if (kind === 'stays') return kept.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || a.priceMinor - b.priceMinor);
+  if (kind === 'stays') {
+    const best = kept.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || a.priceMinor - b.priceMinor);
+    return REGION.test((q.area ?? '').trim().toLowerCase()) ? spreadAcrossAreas(best) : best;
+  }
   return kept.sort((a, b) => (a.journey?.depart_at ?? '').localeCompare(b.journey?.depart_at ?? '') || a.priceMinor - b.priceMinor);
 }

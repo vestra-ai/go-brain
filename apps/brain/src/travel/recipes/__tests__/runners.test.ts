@@ -3,6 +3,7 @@ import { V1Error } from '../../../tasks/v1-client.js';
 import { TravelError } from '../../mcp-travel.js';
 import { buses, readBusesPage } from '../buses.js';
 import { flights } from '../flights.js';
+import { stays } from '../stays.js';
 import { trains } from '../trains.js';
 import {
   AGENT_POLL_MS, AGENT_WAIT_MS, createAgentJobRunner, createBrowserFetchRunner, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, recipeMessage, runnerFor,
@@ -40,6 +41,19 @@ const fails = async (p: Promise<unknown>, code: TravelError['code'], words: RegE
 };
 
 describe('the browser fetch runner', () => {
+  it("asks for the pages and steps the recipe gives these slots: two pages of all of Goa for North Goa", async () => {
+    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+    const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
+    const w = world(() => fetched([capture(SEARCH, url, fixture('stays-goa-page1.json')), capture(SEARCH, url, fixture('stays-goa-page2.json'))]));
+    const north = stays.slotsFrom({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
+    const r = await createBrowserFetchRunner(w.deps).run('t1', stays, north);
+    expect(w.calls[0]!.opts.body).toMatchObject({
+      capture: [{ match: SEARCH, min_count: 2, max_count: 2 }],
+      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }],
+    });
+    expect(r.options).toHaveLength(6);
+  });
+
   it("opens the page in the trip's browser with the recipe's captures, and reads the options from what came back", async () => {
     const w = world(() => fetched([busCapture]));
     const r = await createBrowserFetchRunner(w.deps).run('t1', buses, busSlots);

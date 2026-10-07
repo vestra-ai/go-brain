@@ -79,11 +79,17 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       const started = d.now().getTime();
       const url = recipe.url(slots);
       o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
+      const plan = recipe.fetchFor?.(slots) ?? { capture: recipe.capture, steps: recipe.steps };
       const body = {
         url,
         // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer.
-        capture: recipe.capture.map((c) => ({ match: c.match, ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
-        ...(recipe.steps ? { steps: recipe.steps } : {}),
+        capture: plan.capture.map((c) => ({
+          match: c.match,
+          ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
+          ...(c.min_count ? { min_count: c.min_count } : {}),
+          ...(c.max_count ? { max_count: c.max_count } : {}),
+        })),
+        ...(plan.steps ? { steps: plan.steps } : {}),
         timeout_ms: FETCH_TIMEOUT_MS,
         // Pictures of the page as it loads, about one every 700 ms, for the live search card.
         frames: {},

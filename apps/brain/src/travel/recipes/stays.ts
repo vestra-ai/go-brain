@@ -23,6 +23,8 @@ export interface StaySlots {
   filters: string[];
   /** The half of Goa the stays must be in: a stay ixigo gives from the other half is dropped. */
   half: GoaHalf | null;
+  /** All of Goa, or a half of it: hundreds of stays, so the fetch takes two pages, not the top strip of one. */
+  wide: boolean;
 }
 
 const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
@@ -298,6 +300,8 @@ export const stays: Recipe<StaySlots> = {
     return {
       location: place.location, checkIn: q.checkIn, checkOut: q.checkOut, adults, rooms: clamp(Math.ceil(adults / PER_ROOM), 1, MAX_ROOMS), filters,
       half: place.half,
+      // The whole state with no area filter; an area (Vagator) or a location of its own (Anjuna) stays on page 1.
+      wide: place.location.locationType === 'S' && place.areas.length === 0,
     };
   },
   url: (s) =>
@@ -305,8 +309,13 @@ export const stays: Recipe<StaySlots> = {
     `&locationType=${s.location.locationType}&masterLocationId=${s.location.masterLocationId}&countryId=${s.location.countryId}` +
     `&checkinDate=${ddmmyyyy(s.checkIn)}&checkoutDate=${ddmmyyyy(s.checkOut)}&adultCount=${s.adults}&roomCount=${s.rooms}&childCount=0` +
     (s.filters.length ? `&filters=${encodeURIComponent(s.filters.join(','))}` : ''),
-  // Page 1 only: page 2 loads only in a drawn tab, and the browser fetch's tab is not drawn.
+  // Page 1 for an area. All of Goa or a half takes pages 1 and 2 (p5's proven shape on staging, about 5 s): page 1 alone,
+  // in ixigo's popularity order, is the Calangute and Candolim strip.
   capture: [{ match: SEARCH, required: true }],
+  fetchFor: (s) =>
+    s.wide
+      ? { capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }], steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }] }
+      : { capture: [{ match: SEARCH, required: true }] },
   fetchable: true,
   readyText: 'per night, per room',
   extract,
