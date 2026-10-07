@@ -230,6 +230,7 @@ class WorkingCard(BaseModel):
     state: Literal["running", "needs_you", "done", "failed"]
     steps: Annotated[list[Step], Field(max_length=8)]
     screenshot_url: str | None = None
+    page_url: str | None = None
     updated_at: AwareDatetime
     actions: list[CardAction] | None = None
 
