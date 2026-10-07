@@ -29,7 +29,7 @@ export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: st
     { value: '', label: 'none live, all watching' },
     { value: 'q1,q2,q3', label: 'q1,q2,q3' },
     { value: 'q1,q2,q3,q8', label: 'q1,q2,q3,q8' },
-    { value: 'q1,q2,q3,q4,q5,q6,q7,q8,q9', label: 'all nine' },
+    { value: 'q1,q2,q3,q4,q5,q6,q7,q8,q9,q10', label: 'all ten' },
   ],
 };
 

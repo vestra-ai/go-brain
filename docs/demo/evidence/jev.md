@@ -46,9 +46,9 @@ At the bars Go has now. Recall by language is right over labelled in that langua
 | 7 | A quiet reaction (✅ 👍 🙌), or none? | 10 | 9 | 0 | 0.90 | 1.00 / 0.67 | 0.3 | live |
 | 8 | Risky (spend, steering Go, a secret)? | 14 (5 risky) | 5 raised | 0 false alarms | 1.00 | 1.00 / 1.00 | 0.8 | live |
 | 9 | An opening for Go (a question it could answer, a choice going round in circles, someone asked to look something up)? | 6 | 0 | 0 | 0.00 | 0.00 / 0.00 | 0.3 | shadow |
-| 10 | Which ixigo search does it ask for (flights, stays, trains, buses), or none? | 106 (52 searches) | 96 | 0 | 0.91 (searches 0.88) | 0.92 / 0.89 | 0.5 | passed, shadow |
+| 10 | Which ixigo search does it ask for (flights, stays, trains, buses), or none? | 106 (52 searches) | 96 | 0 | 0.91 (searches 0.88) | 0.92 / 0.89 | 0.5 | live |
 
-So questions 1, 4, 5, 6, 7 and 8 act live (`PASSED_SETS` in `apps/brain/src/reflex/live-gate.ts`, and `REFLEX_LIVE` defaults to `q1,q4,q5,q6,q7,q8`). The admin page's `REFLEX_LIVE` switch can narrow that list or turn Jev off, but it cannot make a question in shadow act live. Jev gave no sure wrong answer on any question at these bars. Questions 2, 3 and 9 stay in shadow because Jev was too rarely sure on them: no value in the sweep brings them to their gate (the best, in the recording CI scores, are 0.18, 0.22 and 0.17). Question 10 passed its gate and runs in shadow until it is made live.
+So questions 1, 4, 5, 6, 7, 8 and 10 act live (`PASSED_SETS` in `apps/brain/src/reflex/live-gate.ts`, and `REFLEX_LIVE` defaults to `q1,q4,q5,q6,q7,q8,q10`). The admin page's `REFLEX_LIVE` switch can narrow that list or turn Jev off, but it cannot make a question in shadow act live. Jev gave no sure wrong answer on any question at these bars. Questions 2, 3 and 9 stay in shadow because Jev was too rarely sure on them: no value in the sweep brings them to their gate (the best, in the recording CI scores, are 0.18, 0.22 and 0.17).
 
 Rows 1 to 9 are the lines the recording printed. Row 10 is at the bar Go has now, 0.9; the recording printed it at 0.6, the bar it had then, where it made one wrong pick (see "Question 10" below).
 
@@ -111,7 +111,7 @@ The repeat ([run 37571925813](https://github.com/vestra-ai/go-brain/actions/runs
 - **Question 2, in shadow:** Jev never marks a message finished, so Go waits 2 seconds (longer while more lines keep coming, up to 6) before the main model answers, unless the message names Go and plainly ends with ?, ., ! or an emoji.
 - **Question 9, in shadow:** Go does not offer help on its own from an opening.
 - **Question 3, in shadow:** no part of Go acts on it yet.
-- **Question 10, in shadow:** the travel parser alone decides whether a message starts an ixigo search early.
+- **Question 10:** travel's early search reads it. A sure kind is the search to start, with the travel parser filling in its places and dates; a sure none starts no search, even one the parser found; unsure leaves the parser to decide alone. Until that hook is built, no part of Go acts on it; acting live records it as acted in `reflex_reads`.
 
 ## What this does not show
 

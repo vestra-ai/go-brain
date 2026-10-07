@@ -24,7 +24,7 @@ flowchart LR
   App -- "vault page: passkey, card form, Approve" --> Vault
   Vault -- "charge a saved test card" --> Stripe
   Go -- "one model turn" --> Models
-  Go -- "nine questions per message" --> Jev
+  Go -- "ten questions per message" --> Jev
   Go -- "call_business" --> Phone
   Go <-- "pay links, and paid or failed back, signed" --> Vault
   Go -- "long jobs" --> Bash
@@ -42,7 +42,7 @@ flowchart LR
 1. Someone types in the trip room. The App sends it to the Server, which stores it, gives it the trip's next change number and sends Go `send_event` with a `message.created` event.
 2. Go writes the event to its trip log once by `event_id` and answers at once: `{ accepted: true }`, or `duplicate: true` for an event it already has. The work happens after the answer, in change-number order per trip (`apps/brain/src/trips/intake.ts`). Card numbers, CVVs and one-time codes are hidden before anything is stored (`trips/screen.ts`).
 3. If the message names Go (an @mention, a reply to Go, or "Go, ..."), Go turns "Go is typing..." on at once, before thinking (`trips/names-go.ts`, `composer/speak.ts`).
-4. The reflex reads the message once: one call to Jev with nine closed questions and a 450 ms deadline. Any fault reads "unsure" (`apps/brain/src/reflex`).
+4. The reflex reads the message once: one call to Jev with ten closed questions and a 450 ms deadline. Any fault reads "unsure" (`apps/brain/src/reflex`).
 5. Lanes see the read message: memory schedules its notes pass, and speaking first looks for an opening or a hush.
 6. Unless the reflex is sure it is chatter between friends, the message goes on the desk: due now when the thought is complete (the reflex is sure, or a message to Go plainly ends with ?, ., ! or an emoji), otherwise after 2 seconds, in case the same person adds more (`apps/brain/src/desk`).
 7. When it is due, the desk takes the trip's lease and runs one composer turn for everything due in that trip, so a burst of messages gets one answer.
@@ -70,7 +70,7 @@ The tests in `apps/vault/src/pay.test.ts` walk every step, each refusing on its 
 | Piece | For real | Simulated, or off by default |
 |---|---|---|
 | The socket, the trip log and the composer | The real socket to the Server; model turns on Anthropic models (`COMPOSER_MODEL`, `SIDE_MODEL`). | The simulator ([`packages/sim`](../packages/sim)) plays the Server, and the fake Go ([`apps/fake-go`](../apps/fake-go)) plays Go, for building and tests. In tests every model is a scripted fake. |
-| The reflex | Jev is called on every person's message when `TYPESAFE_API_KEY` is set, and every answer is logged. | Questions 2, 3 and 9 run in shadow: a question acts only after its labelled test set passes on recorded answers (`reflex/live-gate.ts`), and six have passed: 1, 4, 5, 6, 7 and 8 ([the Jev evidence](demo/evidence/jev.md)). For the three in shadow, code alone decides. |
+| The reflex | Jev is called on every person's message when `TYPESAFE_API_KEY` is set, and every answer is logged. | Questions 2, 3 and 9 run in shadow: a question acts only after its labelled test set passes on recorded answers (`reflex/live-gate.ts`), and seven have passed: 1, 4, 5, 6, 7, 8 and 10 ([the Jev evidence](demo/evidence/jev.md)). For the three in shadow, code alone decides. |
 | Memory | Facts with proof, pages, recall, the trip record, "the story so far", forget me, and catch-up. | |
 | Speaking first | Timers (votes closing, free cancellation ending, travel day, settle-up, a waiting payer), openings in the chat, and flight and train watches through the travel layer's status, all through the bar and the daily budget. | On the fake ixigo, a watched flight's status is the fake's. The demo's watch is `POST /admin/watch/fire`, and every card it leads to says "Simulated for the demo". |
 | Calls | Real phone calls through Twilio with a realtime voice model, only to numbers on `CALLS_ALLOWLIST` while the `CALLS_MODE` switch says `allowlist`. Go says who it will call and why, and waits 30 seconds for a stop first. | Off by default (`CALLS_MODE=off`). |

@@ -16,7 +16,7 @@ export function parseLive(value: string, passed: readonly number[] = PASSED_SETS
   if (v === 'off') return { call: false, live: new Set() };
   const wanted = new Set<number>();
   for (const token of v.split(/[\s,]+/).filter(Boolean)) {
-    const m = /^q([1-9])$/.exec(token);
+    const m = /^q(10|[1-9])$/.exec(token);
     if (m) wanted.add(Number(m[1]));
   }
   return { call: true, live: new Set(QUESTION_NAMES.filter((q) => wanted.has(QUESTION_NUMBER[q]) && passed.includes(QUESTION_NUMBER[q]))) };
