@@ -81,8 +81,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm })) brain.tools.register(t);
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
-  const ixigo = ixigoTool({ book, engine, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
-  if (ixigo) brain.tools.register(ixigo);
+  const recipesTool = ixigoTool({ book, engine, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
+  if (recipesTool) brain.tools.register(recipesTool);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
