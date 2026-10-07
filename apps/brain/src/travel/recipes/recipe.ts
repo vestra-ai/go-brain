@@ -36,11 +36,17 @@ export type RecipeOption = Omit<TravelOption, 'offerId'> & { sourceUrl: string }
 
 export type RecipeId = 'ixigo.flights' | 'ixigo.stays' | 'ixigo.trains' | 'ixigo.buses';
 
+/** Who travels, for a search people gave no number for: the head count, and each member's home city when known. */
+export interface TripCount {
+  people: number;
+  fromCities?: string[];
+}
+
 export interface Recipe<S> {
   id: RecipeId;
   kind: TravelKind;
   /** What the URL needs, resolved to ixigo's codes. The same query always gives the same slots, so they key the cache. */
-  slotsFrom(q: TravelQuery, trip: { people: number }): S;
+  slotsFrom(q: TravelQuery, trip: TripCount): S;
   url(s: S): string;
   capture: CaptureSpec[];
   steps?: Step[];

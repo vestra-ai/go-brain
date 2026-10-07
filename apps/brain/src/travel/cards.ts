@@ -19,17 +19,18 @@ export const OPEN_ACTION = { action_id: 'open', label: 'See on ixigo', style: 's
 export const SEE_FLIGHTS_ACTION = { action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' } as const;
 
 /**
- * The flights Go couldn't read, as a link: ixigo's results page with what people asked for already set. It never says
- * there are no flights: ixigo refused Go's computer, and the page has them.
+ * The flights Go couldn't read, as a link: ixigo's results page with what people asked for already set, and who it is
+ * set for ("for 3 from Delhi"). It never says there are no flights: ixigo refused Go's computer, and the page has them.
  */
-export function buildFlightsLinkCard(i: { cardId: string; title: string; url: string }): NoticeCardT {
+export function buildFlightsLinkCard(i: { cardId: string; title: string; url: string; who?: string | null }): NoticeCardT {
+  const set = i.who ? `set ${i.who}, with what you asked for` : 'with what you asked for already set';
   return C.NoticeCard.parse({
     card_id: i.cardId,
     kind: 'notice',
-    fallback_text: clip(`${i.title}: see them on ixigo`, 300),
+    fallback_text: clip(`${i.title}${i.who ? `, ${i.who}` : ''}: see them on ixigo`, 300),
     tone: 'info',
     title: clip(i.title, 80),
-    body: "Go can't read ixigo's flights from its computer right now, so here they are on ixigo, with what you asked for already set.",
+    body: `Go can't read ixigo's flights from its computer right now, so here they are on ixigo, ${set}. Book them there.`,
     source: { name: 'ixigo', url: i.url },
     actions: [SEE_FLIGHTS_ACTION],
   });

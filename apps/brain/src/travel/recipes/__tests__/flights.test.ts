@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
-import { flights, readFlightsPage, withFlightFilters } from '../flights.js';
+import { flights, flyingFor, readFlightsPage, withFlightFilters } from '../flights.js';
 import { capture, fixture } from './fixtures.js';
 
 const slots = flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 4 });
@@ -11,6 +11,25 @@ describe('the flights recipe', () => {
   it('fills its slots from the query, with the trip head count as adults', () => {
     expect(slots).toEqual({ from: 'DEL', to: 'GOI', date: '2026-11-06', adults: 4 });
     expect(flights.slotsFrom({ from: 'BOM', to: 'North Goa', date: '2026-11-06', guests: 12 }, { people: 4 })).toEqual({ from: 'BOM', to: 'GOX', date: '2026-11-06', adults: 9 });
+  });
+
+  it('counts the members who fly from the origin, by their home city, before the head count', () => {
+    // The Goa trip: Rahul, Priya and Kabir live in Delhi, Arjun in Bangalore, Meher in Mumbai.
+    const goa = { people: 5, fromCities: ['Delhi', 'Delhi', 'Bangalore', 'Mumbai', 'New Delhi'] };
+    expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, goa).adults).toBe(3);
+    expect(flights.slotsFrom({ from: 'Bengaluru', to: 'Goa', date: '2026-11-06' }, goa).adults).toBe(1);
+    // A home Go has no airport for counts for nobody; nobody from the origin falls back to the head count.
+    expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 5, fromCities: ['Shimla', 'Delhi'] }).adults).toBe(1);
+    expect(flights.slotsFrom({ from: 'Chennai', to: 'Goa', date: '2026-11-06' }, goa).adults).toBe(5);
+    expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 5 }).adults).toBe(5);
+    // A number people gave wins.
+    expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06', guests: 6 }, goa).adults).toBe(6);
+  });
+
+  it('says who a results page is set for, from its own link', () => {
+    expect(flyingFor(withFlightFilters(flights.url(slots), { departAfter: '18:00' }))).toBe('for 4 from Delhi');
+    expect(flyingFor('https://www.ixigo.com/search/result/flight?from=XXX&adults=2')).toBeNull();
+    expect(flyingFor('https://www.ixigo.com/search/result/flight?from=DEL')).toBeNull();
   });
 
   it('opens the results page the map gives', () => {

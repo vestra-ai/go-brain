@@ -46,6 +46,7 @@ export const registerTravel: RegisterLane = async (brain) => {
       return recipe.fetchable ? runnerFor(brain.switches, runners) : runners.agentJob;
     },
     peopleOf: async (tripId) => (await brain.packs.get(tripId)).trip.people.length,
+    homesOf: async (tripId) => (await brain.packs.get(tripId)).trip.people.flatMap((p) => (p.from_city ? [p.from_city] : [])),
     now: brain.now,
     live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log }, tripId, o),
     linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),

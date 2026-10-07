@@ -27,6 +27,8 @@ export interface IxigoWebDeps {
   runner: (recipe: Recipe<unknown>) => RecipeRunner | null;
   /** The trip's head count: the adults (and so the rooms) a search asks for when nobody gave a number. */
   peopleOf: (tripId: string) => Promise<number>;
+  /** The members' home cities, where known: a flight's adults are the ones flying from its origin. */
+  homesOf?: (tripId: string) => Promise<string[]>;
   now: () => Date;
   /** The live search card for a run; absent in tests that don't look at it. */
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
@@ -56,7 +58,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): TravelBackend {
     const recipe = RECIPES[kind];
     const runner = d.runner(recipe);
     if (!runner) throw new TravelError('refused', "An ixigo.com search needs the trip's computer, which is not set up here.");
-    const slots = recipe.slotsFrom(q, { people: Math.max(1, await d.peopleOf(tripId)) });
+    const slots = recipe.slotsFrom(q, { people: Math.max(1, await d.peopleOf(tripId)), fromCities: (await d.homesOf?.(tripId)) ?? [] });
     // The page is ixigo's public results, the same in any trip's browser: the trip runs it, the slots key it.
     return { tripId, recipe, runner, slots, key: `${recipe.id}|${JSON.stringify(slots)}` };
   }
