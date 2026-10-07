@@ -25,8 +25,23 @@ export function timingRows(x: LiveRun): string[] {
     const tools = [...new Set(a.calls.flatMap((c) => c.toolsAfter))];
     const waited = a.waited === null ? 'n/a' : a.waited ? `yes (due at ${fmtMs(a.dueMs)})` : 'no';
     const calls = `${a.calls.length}${tools.length > 0 ? ` (${tools.join(', ')})` : ''}`;
-    return `| ${x.model} | ${a.line} | ${waited} | ${fmtMs(a.typingMs)} | ${fmtMs(a.turnStartMs)} | ${calls} | ${fmtMs(a.calls[0]?.firstWordMs ?? null)} | ${fmtMs(a.parts.modelMs)} | ${fmtMs(a.parts.betweenMs)} | ${fmtMs(a.parts.afterModelMs)} | ${fmtMs(a.postMs)} |`;
+    const reply = a.reply === undefined || a.reply === null ? 'n/a' : `${a.reply.chars} chars, ${a.reply.sentences} ${a.reply.sentences === 1 ? 'sentence' : 'sentences'}`;
+    const tokens = a.reply?.outputTokens ?? null;
+    return `| ${x.model} | ${a.line} | ${waited} | ${fmtMs(a.typingMs)} | ${fmtMs(a.turnStartMs)} | ${calls} | ${fmtMs(a.calls[0]?.firstWordMs ?? null)} | ${fmtMs(a.parts.modelMs)} | ${fmtMs(a.parts.betweenMs)} | ${fmtMs(a.parts.afterModelMs)} | ${fmtMs(a.postMs)} | ${reply} | ${tokens === null ? 'n/a' : fmtInt(tokens)} |`;
   });
+}
+
+/** One line per live run: the median answer to an ask, in characters, sentences and the writing call's output tokens. */
+export function replyLengths(x: LiveRun): string | null {
+  const replies = (x.asks ?? []).flatMap((a) => (a.reply ? [a.reply] : []));
+  if (replies.length === 0) return null;
+  const median = (xs: number[]): number => {
+    const s = [...xs].sort((p, q) => p - q);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m]! : Math.round((s[m - 1]! + s[m]!) / 2);
+  };
+  const tokens = replies.flatMap((r) => (r.outputTokens === null ? [] : [r.outputTokens]));
+  return `- ${x.model}, ${x.chat}: ${replies.length} ${replies.length === 1 ? 'answer' : 'answers'}, median ${median(replies.map((r) => r.chars))} characters, ${median(replies.map((r) => r.sentences))} sentences${tokens.length > 0 ? `, ${fmtInt(median(tokens))} output tokens` : ''}.`;
 }
 
 /** One line per live run, from Go's own tables: what Jev answered, and what woke each model turn. */
@@ -110,11 +125,13 @@ export function renderSummary(r: BenchReport): string {
         '',
         'Per ask, in time after its last line reached the simulator: whether it waited for more lines, typing, the turn\'s start, the model calls (and the tools they asked for), the first call\'s first word, the time inside model calls, the time between them (the tools ran there), from the last call to the post, and the post.',
         '',
-        '| Model | Ask (line) | Waited | Typing | Turn starts | Model calls | First word | In model calls | Between calls | Last call to post | Post |',
-        '|---|---|---|---|---|---|---|---|---|---|---|',
+        '| Model | Ask (line) | Waited | Typing | Turn starts | Model calls | First word | In model calls | Between calls | Last call to post | Post | Reply | Output tokens |',
+        '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
         ...timed,
         '',
       );
+      const lengths = r.live.map(replyLengths).filter((l): l is string => l !== null);
+      if (lengths.length > 0) lines.push('How long the answers were (the reply posted, and the output tokens of the call that wrote it):', '', ...lengths, '');
     }
   }
   lines.push('## Checks', '', '| Chat | Check | Value | Bar | Result |', '|---|---|---|---|---|');
