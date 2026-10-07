@@ -267,7 +267,10 @@ export const stays: Recipe<StaySlots> = {
     `${IXIGO}/hotels/search/result?locationId=${s.location.locationId}&locationName=${encodeURIComponent(s.location.locationName)}` +
     `&locationType=${s.location.locationType}&masterLocationId=${s.location.masterLocationId}&countryId=${s.location.countryId}` +
     `&checkinDate=${ddmmyyyy(s.checkIn)}&checkoutDate=${ddmmyyyy(s.checkOut)}&adultCount=${s.adults}&roomCount=${s.rooms}&childCount=0`,
+  // Page 1 only: page 2 loads only in a drawn tab, and the browser fetch's tab is not drawn.
   capture: [{ match: SEARCH, required: true }],
+  fetchable: true,
+  readyText: 'per night, per room',
   extract,
   agentExtractor: pageScript(readStaysPage, 2),
   fromAgent,

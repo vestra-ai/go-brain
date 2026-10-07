@@ -221,6 +221,8 @@ export const flights: Recipe<FlightSlots> = {
   url: (s) =>
     `${IXIGO}/search/result/flight?from=${s.from}&to=${s.to}&date=${ddmmyyyy(s.date)}&returnDate=&adults=${s.adults}&children=0&infants=0&class=e&source=Search%20Form`,
   capture: [{ match: STREAM, required: true, max_bytes: 2_000_000 }],
+  fetchable: true,
+  readyText: 'Flights Available',
   extract,
   agentExtractor: pageScript(readFlightsPage, 3),
   fromAgent,

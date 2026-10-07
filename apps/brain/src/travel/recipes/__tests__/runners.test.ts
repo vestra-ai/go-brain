@@ -5,8 +5,10 @@ import { buses, readBusesPage } from '../buses.js';
 import { flights } from '../flights.js';
 import { trains } from '../trains.js';
 import {
-  AGENT_WAIT_MS, createAgentJobRunner, createBrowserFetchRunner, IN_USE_WAIT_MS, OUT_OF_CREDIT, recipeMessage, runnerFor, type RecipeRunner,
+  AGENT_POLL_MS, AGENT_WAIT_MS, createAgentJobRunner, createBrowserFetchRunner, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, recipeMessage, runnerFor,
+  type RecipeRunner,
 } from '../runners.js';
+import type { RecipeProgress } from '../progress.js';
 import { capture, fixture } from './fixtures.js';
 
 type Call = { method: string; path: string; opts: Record<string, unknown> };
@@ -44,7 +46,7 @@ describe('the browser fetch runner', () => {
     expect(w.calls).toEqual([{
       method: 'POST',
       path: '/v1/users/u-t1/browser/fetch',
-      opts: { body: { url: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', capture: [{ match: '/buslist/v3/services$' }], timeout_ms: 8000 } },
+      opts: { body: { url: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS } },
     }]);
     expect(r.options).toHaveLength(71);
     expect(r).toMatchObject({ checkedAt: '2026-11-01T10:00:00.000Z', ms: 0 });
@@ -127,36 +129,44 @@ describe('the agent job runner (the fallback)', () => {
     expect(w.computer.ensureUser).toHaveBeenCalledWith('t1');
     expect(w.calls[0]!.opts['body']).toEqual({ user_id: 'u2-t1', deployment: 'dep_recipe', metadata: { go_trip_id: 't1', go_recipe: 'ixigo.buses' } });
     const message = w.calls[1]!.opts['body'] as { message: string; output_schema: { properties: { rows: { maxItems: number } } }; hand_off: string };
-    expect(message.message).toBe(recipeMessage(buses.url(busSlots), buses.agentExtractor));
+    expect(message.message).toBe(recipeMessage(buses.url(busSlots), 'Select Seats', buses.agentExtractor));
+    // Bash's computer_eval takes the script as `expression`: a model that sends `script` is refused, and retries for 7 s.
+    expect(message.message).toContain('computer_eval with this script as its `expression` argument');
+    expect(message.message).toContain('computer_wait with the text "Select Seats"');
     expect(message.output_schema.properties.rows.maxItems).toBe(15);
     expect(message.hand_off).toBe('always');
     expect(w.calls[0]!.opts['idempotencyKey']).toMatch(/^go-recipe-conv-/);
     expect(r.options).toHaveLength(16);
-    expect(r.ms).toBe(1_500);
+    expect(r.ms).toBe(3 * AGENT_POLL_MS);
   });
 
   it('finds the job on the turn when the first answer did not name it', async () => {
     const w = world((c) => {
       if (c.path === '/v1/conversations') return { id: 'conv_1' };
       if (c.method === 'POST' && c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [] };
-      if (c.method === 'GET' && c.path === '/v1/conversations/conv_1/messages') return { data: [{ id: 'turn_1', work: [{ task_id: 'task_1' }] }] };
+      // The list holds lines, not turns: the job is on Bash's line of the turn.
+      if (c.method === 'GET' && c.path === '/v1/conversations/conv_1/messages') {
+        return { data: [{ id: 'msg_1', turn_id: 'turn_1', role: 'user', work: [] }, { id: 'msg_2', turn_id: 'turn_1', role: 'assistant', work: [{ task_id: 'task_1' }] }], next_cursor: null };
+      }
       if (c.path === '/v1/tasks/task_1') return { status: 'done', result: { data: { rows } } };
       throw new Error(`unexpected ${c.method} ${c.path}`);
     });
     expect((await createAgentJobRunner({ ...w.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots)).options).toHaveLength(16);
   });
 
-  it('stops a job that is not done in 25 s', async () => {
+  it('stops a job that is not done in 90 s', async () => {
     const w = world((c) => {
       if (c.path === '/v1/conversations') return { id: 'conv_1' };
       if (c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [{ task_id: 'task_1' }] };
       if (c.path === '/v1/tasks/task_1') return { status: 'working' };
-      if (c.path === '/v1/tasks/task_1/stop') return { stopped: true };
+      if (c.path === '/v1/conversations/conv_1/stop') return { id: 'conv_1', object: 'conversation.stop', stopped_work: ['task_1'] };
       throw new Error(`unexpected ${c.method} ${c.path}`);
     });
     await fails(createAgentJobRunner({ ...w.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'unreachable', /took too long/);
-    expect(w.calls.at(-1)).toMatchObject({ method: 'POST', path: '/v1/tasks/task_1/stop' });
-    expect(w.calls.filter((c) => c.path === '/v1/tasks/task_1')).toHaveLength(AGENT_WAIT_MS / 500);
+    // Stopped by its own conversation, so the stop is sent even when the job's id never came.
+    expect(w.calls.at(-1)).toMatchObject({ method: 'POST', path: '/v1/conversations/conv_1/stop' });
+    expect(w.calls.filter((c) => c.path === '/v1/tasks/task_1')).toHaveLength(AGENT_WAIT_MS / AGENT_POLL_MS);
+    expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', stopped: ['task_1'] }), expect.stringContaining('too slow'));
   });
 
   it('fails closed: a failed job, a job that stops to ask, and rows that do not check out give no options', async () => {
@@ -170,7 +180,7 @@ describe('the agent job runner (the fallback)', () => {
     await fails(createAgentJobRunner({ ...job({ status: 'failed' }).deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'refused', /could not read/);
     const asks = job({ status: 'waiting' });
     await fails(createAgentJobRunner({ ...asks.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'refused', /stopped to ask/);
-    expect(asks.calls.at(-1)).toMatchObject({ path: '/v1/tasks/task_1/stop' });
+    expect(asks.calls.at(-1)).toMatchObject({ path: '/v1/conversations/conv_1/stop' });
     const bad = job({ status: 'done', result: { data: { rows: [{ operator: 'A bus', price: 'cheap' }] } } });
     await fails(createAgentJobRunner({ ...bad.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'refused', /did not check out/);
     const none = job({ status: 'done', result: { data: null } });
@@ -185,6 +195,34 @@ describe('the agent job runner (the fallback)', () => {
       throw new V1Error(402, 'wallet_empty', 'Empty.');
     });
     await fails(createAgentJobRunner({ ...broke.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'refused', /out of credit/);
+  });
+});
+
+describe('the steps a run reports, for the live search card', () => {
+  it('the browser fetch: opening, the pictures when Bash sends them, then captured', async () => {
+    const frame = { label: 'results', at_ms: 2100, page_url: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', jpeg_base64: '/9j/4AAQ' };
+    const w = world(() => ({ ...fetched([busCapture]), frames: [frame] }));
+    const seen: RecipeProgress[] = [];
+    await createBrowserFetchRunner(w.deps).run('t1', buses, busSlots, { onProgress: (e) => seen.push(e) });
+    expect(seen.map((e) => e.type)).toEqual(['opening', 'frames', 'captured']);
+    expect(seen[0]).toEqual({ type: 'opening', recipeId: 'ixigo.buses', url: buses.url(busSlots) });
+    expect(seen[1]).toEqual({ type: 'frames', frames: [frame] });
+    const none = world(() => fetched([busCapture]));
+    const quiet: RecipeProgress[] = [];
+    await createBrowserFetchRunner(none.deps).run('t1', buses, busSlots, { onProgress: (e) => quiet.push(e) });
+    expect(quiet.map((e) => e.type)).toEqual(['opening', 'captured']);
+  });
+
+  it('the agent job: opening, then captured when the job is done', async () => {
+    const rows = readBusesPage(fixture('buses-mumbai-goa.txt'));
+    const w = world((c) => {
+      if (c.path === '/v1/conversations') return { id: 'conv_1' };
+      if (c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [{ task_id: 'task_1' }] };
+      return { status: 'done', result: { data: { rows } } };
+    });
+    const seen: RecipeProgress[] = [];
+    await createAgentJobRunner({ ...w.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots, { onProgress: (e) => seen.push(e) });
+    expect(seen).toEqual([{ type: 'opening', recipeId: 'ixigo.buses', url: buses.url(busSlots) }, { type: 'captured', ms: AGENT_POLL_MS }]);
   });
 });
 

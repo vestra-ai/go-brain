@@ -185,7 +185,7 @@ async function runTool(tool: QuickTool<any> | undefined, call: Anthropic.ToolUse
   const args = tool.input.safeParse(call.input);
   if (!args.success) return result(`Invalid arguments for ${call.name}: ${z.prettifyError(args.error)}. Fix them and call it again.`, true);
   try {
-    const out = await withTimeout(tool.run(args.data, i.ctx), i.toolTimeoutMs ?? 8_000, i.signal);
+    const out = await withTimeout(tool.run(args.data, i.ctx), tool.timeoutMs ?? i.toolTimeoutMs ?? 8_000, i.signal);
     return result(typeof out === 'string' ? out : JSON.stringify(out ?? { ok: true }));
   } catch (e) {
     return result((e instanceof Error ? e.message : String(e)).slice(0, 500), true);

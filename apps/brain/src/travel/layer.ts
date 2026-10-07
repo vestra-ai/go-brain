@@ -98,7 +98,11 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       const all = found.results;
       const results = applyConstraints(kind, parsed, all);
       const near = results.length === 0 ? closest(kind, parsed, all) : null;
-      return { checkedAt: found.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}) };
+      return { checkedAt: found.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}), ...(found.runId ? { runId: found.runId } : {}) };
+    },
+    async waitMs(kind, q, o) {
+      const { b } = pick();
+      return b.waitMs ? b.waitMs(kind, backendQuery(TravelQuery.parse(q)), o) : null;
     },
     async status(q) {
       const { name, b } = pick();

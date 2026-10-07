@@ -1,22 +1,28 @@
 /**
  * One model call per search ask (design section 4d). When a turn woke for a message whose search started early, the
  * prompt's right-now part carries that search's answer: the results_id, the summary and the results, exactly as the
- * search tool would give them. So the model's first and only call is show_options with its line. The block waits up to
- * 4 s for the search; one still running is named, and the search tool joins it as usual.
+ * search tool would give them. So the model's first and only call is show_options with its line. The block waits for the
+ * search as long as it may hold up the turn (TravelBackend.waitMs: up to 12 s from its start through the browser fetch,
+ * none for the agent job); one still running is named, and the search tool hands it over so it wakes Go when it finishes.
+ * The live card already said "On it." in the room, so the block tells the model not to say it again.
  */
 import type { NowProvider } from '../../composer/context.js';
 import { dataBlock, defuse, oneLine } from '../../composer/fence.js';
 import type { ResultsStore } from '../results.js';
 import { searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
+import type { Travel } from '../travel.js';
+import { TRAVEL_WAIT_MS } from './backend.js';
 import type { EarlyStart } from './early.js';
 
-/** How long a turn waits for a search started early before it goes on without it. */
-export const EARLY_WAIT_MS = 4_000;
+/** The longest a turn waits for searches started early, all together. */
+export const EARLY_WAIT_MS = TRAVEL_WAIT_MS;
 const ANSWERED_MAX = 200;
 
 export interface EarlySearchNowDeps {
   early: Pick<EarlyStart, 'searchFor'>;
   results: Pick<ResultsStore, 'save'>;
+  /** How much longer each search may hold up the turn. */
+  travel: Pick<Travel, 'waitMs'>;
   now: () => Date;
   wait?: (ms: number) => Promise<void>;
 }
@@ -33,6 +39,7 @@ function answerBlock(seq: number | undefined, a: SearchAnswer): string {
   return (
     `Already searched for ${which}, checked ${a.checked}: results_id ${a.results_id}, ${a.count} options.\n` +
     'Show them now with show_options (this results_id, the best up to 3, a short title) and your one short line, in this reply: no need to search again. ' +
+    'The live card already told the room you are on it: don\'t say so again. ' +
     'Only if people gave a condition the summary does not name (a time, a price cap, non-stop), call the search tool with it first: it answers at once from this same search. ' +
     "Quote prices, times and areas only as given here.\n" +
     data
@@ -68,10 +75,18 @@ export function earlySearchNow(d: EarlySearchNowDeps): NowProvider {
         const p = item.payload as { messageId?: string; seq?: number };
         const early = p.messageId ? d.early.searchFor(tripId, p.messageId) : null;
         if (!early || !p.messageId) continue;
-        const left = Math.max(0, deadline - d.now().getTime());
-        const answer = await Promise.race([answerFor(tripId, p.messageId, early), wait(left).then(() => 'running' as const)]);
+        const asked = d.travel.waitMs ? await d.travel.waitMs(early.kind, early.query, { tripId }).catch(() => null) : null;
+        const allowed = asked ?? EARLY_WAIT_MS;
+        const left = Math.max(0, Math.min(allowed, deadline - d.now().getTime()));
+        // The race is on the search itself: one already finished is never "still running", however little wait is left.
+        const settled = await Promise.race([early.search.then(() => true, () => true), wait(left).then(() => false)]);
+        const answer = settled ? await answerFor(tripId, p.messageId, early) : 'running';
         if (answer === 'running') {
-          blocks.push(`The search for #${p.seq ?? '?'} (${searchScope(early.kind, early.query)}) started early and is still running: call the search tool as usual, and it joins that search.`);
+          blocks.push(
+            `The search for #${p.seq ?? '?'} (${searchScope(early.kind, early.query)}) started early and is still running, and the live card in the room shows it. ` +
+              'Call the search tool for it now with what was asked: it joins that search, answers at once, and you wake with its options when it finishes. ' +
+              'Post nothing else about it.',
+          );
         } else if (answer) {
           blocks.push(answerBlock(p.seq, answer));
         }

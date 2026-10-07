@@ -89,13 +89,18 @@ The search tool already turns each of these into a plain line.
 
 **AgentJobRunner**, the fallback until Bash ships, is a /v1 job on the trip's computer:
 - It runs on a deployment pinned to a fast model (`go-recipe`, created by `setup-v1.ts` like `go-trip-task`), so a recipe never runs on the trip job's model.
-- Go sends one message, straight to work (`hand_off: 'always'`), with an `output_schema` of rows. Its instructions: call `computer_navigate(url)`, then `computer_eval(recipe.agentExtractor)`, and return what the script returns, unchanged.
+- Go sends one message, straight to work (`hand_off: 'always'`), with an `output_schema` of rows. Its instructions: call `computer_navigate(url)`, then `computer_wait` for the recipe's `readyText`, then `computer_eval` with the recipe's script as its `expression` argument, and return what the script returns, unchanged.
 - The script scrolls a few screens so the page draws more results, then reads the page text (`document.body.innerText`) and links with the recipe's reader. It keeps at most 15 rows, under 8 KB (what `computer_eval` answers).
-- Go waits for the job (`GET /v1/tasks/{id}` every 500 ms, up to 25 s), then `recipe.fromAgent` checks every row with a schema. Rows that don't check out give no options, never wrong ones. A job that isn't done in 25 s, or stops to ask something, is stopped. It takes about 12 to 18 s.
+- Go waits for the job (`GET /v1/tasks/{id}` once a second, up to 90 s), then `recipe.fromAgent` checks every row with a schema. Rows that don't check out give no options, never wrong ones. A job that isn't done in 90 s, or stops to ask something, is stopped through its own conversation (`POST /v1/conversations/{id}/stop`). On staging a job took 25 to 53 s, so it never answers inline: see "Waiting" below.
+- The job's id is on Bash's line of the turn in `GET /v1/conversations/{id}/messages` (the list holds lines, matched by `turn_id`).
 - The script reads the page because a finished response body can't be read back from inside the page later, and the map says never to replay the page's calls.
 - The readers are tested on the page text saved by the mapping runs, cross-checked against the data calls for the same flights, hotels and buses.
 
-**One setting switches them.** That's an admin switch `TRAVEL_RUNNER` (`agent_job` | `browser_fetch`), read on every search like `TRAVEL_MODE`. It defaults to `agent_job` until Bash's call is live on staging.
+**One setting switches them.** That's an admin switch `TRAVEL_RUNNER` (`agent_job` | `browser_fetch`), read on every search like `TRAVEL_MODE`. It defaults to `agent_job` until Bash's call is live on staging. A recipe whose list loads only in a drawn tab (`fetchable: false`: buses) always runs on the agent job.
+
+**Waiting.** A search may hold up the turn for `TRAVEL_WAIT_MS` (12 s) from its start, and only through the browser fetch (a train search on a sleeping box took about 8 s); the search tools may take 14 s in the composer's loop. Past that, and always for the agent job, the tool answers that the search is running, and the live card covers the wait. When the run finishes, Go saves its options and wakes on a `search` desk item to show them (`travel/search-wake.ts`). Searches that shared a run wake Go once.
+
+**The live card.** On a cache miss, the backend starts p1-b's live search card ("On it." with its steps), passes the run's `onProgress` to the runner, and marks the card done (`finish`) before the search answers, so it is done before the options card. A joined search shares the card.
 
 ## 3. The travel layer
 
@@ -128,10 +133,10 @@ The search tool already turns each of these into a plain line.
 **(c) Reuse results for 10 minutes**, keyed by recipe and normalized slots, in the ixigo_web backend; the layer's own three-minute cache stays for the other backends. The in-flight promise is shared, so two people asking the same thing at once cause one page load. A failed search is not kept.
 
 **(d) One model call per search ask.**
-- When the turn was woken by a message the parser recognized, it waits up to 4 s for that search before building its prompt.
+- When the turn was woken by a message the parser recognized, it waits for that search, as long as the search may hold up the turn (see "Waiting" in section 2), before building its prompt.
 - The prompt then carries a right-now block, "travel search" (`travel/recipes/now.ts`): "Already searched for #57", with the `results_id`, the summary and the compact results, the same answer the search tool gives (`searchAnswer` in `tools.ts`). The results sit inside a data fence; what to do with them sits outside it.
 - The model's first and only call is `show_options` plus its line. The card ends the turn (#86). When people gave a condition the early search did not read (a time, a price cap), the block says to call the search tool with it first; it answers at once from the same search.
-- If the search isn't back in 4 s, the block says it is still running, the turn goes on, and the tool joins it as usual: two calls, as today. A failed early search says nothing, and the composer searches again.
+- If the search isn't back in time, the block says it is still running, and the model calls the search tool, which joins it, answers at once and hands it over to wake Go when it finishes. A failed early search says nothing, and the composer searches again. The live card already said "On it.", so neither the block nor the wake line lets the model say it again.
 - A turn that runs again for the same message shows the same `results_id`: the answer is built once per message.
 
 ## 5. Tests, no live calls in CI
@@ -170,7 +175,7 @@ Warm box, Bash's call, `claude-sonnet-5-5`. Times are from the message reaching 
 
 - **Warm box:** under 5 s only once Bash returns as soon as the capture matches. At today's "about 3.5 s warm" the reply lands near 5.3 s.
 - **Sleeping box:** add about 5.5 s, which is why (b) matters.
-- **Fallback runner:** 12 to 18 s for the job, so the reply lands at 14 to 20 s, with the working card showing meanwhile.
+- **Fallback runner:** 25 to 53 s for the job on staging, so the options come on a later wake, with the live card showing meanwhile.
 - **Without (a) and (d):** the 2 s wait plus two model calls add about 4 s to any of these.
 
 ## 7. Friday scope

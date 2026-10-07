@@ -88,10 +88,11 @@ export function goTaskManifest(o: { mcpServerId: string; model: string; denyTool
   };
 }
 
-export const GO_RECIPE_INSTRUCTIONS = `You run one travel search for Go on this computer's browser. Each message gives you a page and a script.
+export const GO_RECIPE_INSTRUCTIONS = `You run one travel search for Go on this computer's browser. Each message gives you a page, a text to wait for and a script.
 
 - Call computer_navigate with the page, exactly as given.
-- Call computer_eval with the script, exactly as given. It reads the results from the page and returns them as a list.
+- Call computer_wait with the text the message names, so the results are on the page.
+- Call computer_eval with the script as its \`expression\` argument, exactly as given. It reads the results from the page and returns them as a list.
 - Return that list as rows, unchanged. If the script fails or returns nothing, return an empty list.
 - Do nothing else: no other pages, no clicks, no typing, no searching, no sign-in. Never book, pay or start a checkout.`;
 

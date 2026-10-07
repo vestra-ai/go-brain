@@ -41,6 +41,8 @@ describe('registerTravel', () => {
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual(['options/open', 'options/pick', 'options/vote']);
     expect(lb.context.wakes.has('tap')).toBe(true);
+    // A search that outlived its turn wakes Go with its options.
+    expect(lb.context.wakes.has('search')).toBe(true);
     expect((await lb.http.inject({ method: 'GET', url: `/img/u${'0'.repeat(32)}.jpg` })).statusCode).toBe(404);
     expect(lb.brain.travel?.simulate).toBeDefined();
   });

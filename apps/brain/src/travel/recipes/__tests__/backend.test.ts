@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
-import { createIxigoWebBackend } from '../backend.js';
+import { createIxigoWebBackend, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
 import type { RecipeRunner } from '../runners.js';
 
@@ -40,7 +40,7 @@ describe('the ixigo_web backend', () => {
     const { r, runs } = runner();
     const found = await backend(r).search('flights', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
     expect(runs).toEqual([{ tripId: 't_goa', recipe: 'ixigo.flights', slots: { from: 'DEL', to: 'GOI', date: '2026-11-06', adults: 4 } }]);
-    expect(found).toEqual({ results: [OPTION], checkedAt: '2026-10-07T12:00:03.000Z' });
+    expect(found).toEqual({ results: [OPTION], checkedAt: '2026-10-07T12:00:03.000Z', runId: expect.stringMatching(/^ixigo\.flights\|/) });
     await backend(r).search('stays', { area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 7 }, { tripId: 't_goa' });
     expect(runs[1]).toMatchObject({ recipe: 'ixigo.stays', slots: { adults: 7, rooms: 4 } });
   });
@@ -85,6 +85,60 @@ describe('the ixigo_web backend', () => {
     await expect(b.search('flights', FLIGHTS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
     await expect(b.search('flights', FLIGHTS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
     expect(failing.runs).toHaveLength(2);
+  });
+
+  it('posts one live card per run: the steps go to it, and it is done before the search answers', async () => {
+    const events: string[] = [];
+    const cards: Array<{ tripId: string; runKey: string; kind: string }> = [];
+    const live = (tripId: string, o: { runKey: string; kind: string }) => {
+      cards.push({ tripId, runKey: o.runKey, kind: o.kind });
+      return { progress: (e: { type: string }) => events.push(e.type), finish: async (ok: boolean) => { events.push(ok ? 'finish:ok' : 'finish:failed'); } };
+    };
+    const reporting: RecipeRunner = {
+      name: 'browser_fetch',
+      async run(_t, recipe, _s, o) {
+        o?.onProgress?.({ type: 'opening', recipeId: recipe.id, url: 'https://www.ixigo.com/x' });
+        o?.onProgress?.({ type: 'captured', ms: 2_100 });
+        return { options: [OPTION], checkedAt: '2026-10-07T12:00:03.000Z', ms: 2_100 };
+      },
+    };
+    const b = createIxigoWebBackend({ runner: () => reporting, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never });
+    const first = b.search('flights', FLIGHTS, { tripId: 't_goa' });
+    const joined = b.search('flights', FLIGHTS, { tripId: 't_goa' });
+    await Promise.all([first, joined]);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ tripId: 't_goa', kind: 'flights' });
+    expect(cards[0]!.runKey).toBe((await first).runId);
+    expect(events).toEqual(['opening', 'captured', 'extracted', 'finish:ok']);
+    const failing = createIxigoWebBackend({ runner: () => runner(true).r, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never });
+    events.length = 0;
+    await expect(failing.search('flights', FLIGHTS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
+    expect(events).toEqual(['failed', 'finish:failed']);
+  });
+
+  it('runs each recipe on the runner chosen for it', async () => {
+    const asked: string[] = [];
+    const { r } = runner();
+    const b = createIxigoWebBackend({ runner: (recipe) => { asked.push(recipe.id); return r; }, peopleOf: async () => 4, now: () => new Date(nowMs) });
+    await b.search('buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
+    expect(asked).toEqual(['ixigo.buses']);
+  });
+
+  it("says how long a search may hold up the turn: 12 s from its start through the browser fetch, none for the agent job", async () => {
+    const fetchRunner: RecipeRunner = { ...runner().r, name: 'browser_fetch' };
+    const one = runner();
+    one.hold();
+    const b = createIxigoWebBackend({ runner: () => ({ ...one.r, name: 'browser_fetch' }), peopleOf: async () => 4, now: () => new Date(nowMs), });
+    expect(await b.waitMs!('flights', FLIGHTS, { tripId: 't_goa' })).toBe(TRAVEL_WAIT_MS);
+    void b.search('flights', FLIGHTS, { tripId: 't_goa' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    nowMs += 5_000;
+    expect(await b.waitMs!('flights', FLIGHTS, { tripId: 't_goa' })).toBe(TRAVEL_WAIT_MS - 5_000);
+    nowMs += 20_000;
+    expect(await b.waitMs!('flights', FLIGHTS, { tripId: 't_goa' })).toBe(0);
+    one.release();
+    expect(await createIxigoWebBackend({ runner: () => runner().r, peopleOf: async () => 4, now: () => new Date(nowMs) }).waitMs!('flights', FLIGHTS, { tripId: 't_goa' })).toBe(0);
+    expect(await createIxigoWebBackend({ runner: () => fetchRunner, peopleOf: async () => 4, now: () => new Date(nowMs) }).waitMs!('flights', FLIGHTS)).toBeNull();
   });
 
   it('never holds, confirms or reads a status: the group books on ixigo, from the link', async () => {

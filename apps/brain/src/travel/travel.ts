@@ -69,6 +69,8 @@ export interface TravelSearch {
   found?: number;
   /** When nothing fits: the option that misses the fewest constraints, and what it misses, in plain words. */
   closest?: { option: TravelOption; misses: string[] };
+  /** The run that read it, when a backend runs one per search (ixigo_web): searches that shared a run share its id. */
+  runId?: string;
 }
 
 export type StatusQuery =
@@ -136,6 +138,11 @@ export interface StoredOffer {
 export interface TravelBackend {
   /** tripId: the trip whose computer runs the search, for a backend that searches in the trip's browser (ixigo_web). */
   search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<TravelSearch>;
+  /**
+   * How much longer a search tool may wait for this search before it goes on and the options come when it finishes; null
+   * (or no method) waits for it.
+   */
+  waitMs?(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<number | null>;
   status(q: StatusQuery): Promise<StatusResult>;
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   confirm(holdId: string, paid: { approvalId: string; railRef: string }): Promise<Confirmed>;
@@ -145,6 +152,8 @@ export interface TravelBackend {
 export interface Travel {
   /** Refuses (TravelError past_date) a check-in or departure before today in the trip's time zone. */
   search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<TravelSearch>;
+  /** How much longer to wait for this search inline (TravelBackend.waitMs); null waits for it. */
+  waitMs?(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<number | null>;
   status(q: StatusQuery): Promise<StatusResult>;
   /**
    * The offer behind an options card's option_id (which is also a vote option's option_ref); offerId null when the option
