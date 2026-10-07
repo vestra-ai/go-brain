@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
-import { airportOf, busCityOf, stationOf, stayPlaceOf } from '../places.js';
+import { airportOf, busCityOf, goaHalfOf, stationOf, stayPlaceOf } from '../places.js';
 import { RECIPES } from '../index.js';
 import { bodiesFor, ddmmyyyy, istAt, istOf, matches, snapshotText } from '../recipe.js';
 import { capture } from './fixtures.js';
@@ -19,11 +19,18 @@ describe('the places tables', () => {
     expect(busCityOf('Bombay')).toEqual({ name: 'Mumbai', id: 4 });
     const goa = { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 };
     // An area with ixigo's own filter keeps the Goa search to it; one without searches all of Goa.
-    expect(stayPlaceOf('Calangute')).toEqual({ location: goa, area: 'PA_C_1047' });
-    expect(stayPlaceOf('Vagator, Goa')).toEqual({ location: goa, area: 'PA_C_78528' });
-    expect(stayPlaceOf('South Goa')).toEqual({ location: goa, area: null });
+    expect(stayPlaceOf('Calangute')).toEqual({ location: goa, areas: ['PA_C_1047'], half: 'north' });
+    expect(stayPlaceOf('Vagator, Goa')).toEqual({ location: goa, areas: ['PA_C_78528'], half: 'north' });
+    expect(stayPlaceOf('Colva')).toEqual({ location: goa, areas: [], half: 'south' });
+    expect(stayPlaceOf('Goa')).toEqual({ location: goa, areas: [], half: null });
+    // A half of Goa is all its areas ixigo has codes for.
+    expect(stayPlaceOf('South Goa')).toEqual({ location: goa, areas: ['PA_C_79088', 'PA_L_154858'], half: 'south' });
+    expect(stayPlaceOf('north goa').areas).toHaveLength(8);
+    expect(goaHalfOf('Vasco da Gama')).toBe('south');
+    expect(goaHalfOf('Prabhu wada, Candolim')).toBe('north');
+    expect(goaHalfOf('Fatona')).toBeNull();
     // Anjuna is a location of its own, which takes in the stays around it.
-    expect(stayPlaceOf('Anjuna')).toEqual({ location: { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 }, area: null });
+    expect(stayPlaceOf('Anjuna')).toEqual({ location: { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 }, areas: [], half: 'north' });
   });
 
   it('refuse a place they do not have, with the places that work, and never guess', () => {

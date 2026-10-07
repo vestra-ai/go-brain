@@ -95,18 +95,43 @@ export function busCityOf(text: string): BusCity {
 
 export interface StayLocation { locationId: number; locationName: string; locationType: string; masterLocationId: number; countryId: number }
 
-/** Where a stay search looks: ixigo's location, and its area filter inside Goa when the place has one. */
-export interface StayPlace { location: StayLocation; area: string | null }
+export type GoaHalf = 'north' | 'south';
+
+/** Where a stay search looks: ixigo's location, its area filters inside Goa, and the half of Goa the stays must be in. */
+export interface StayPlace { location: StayLocation; areas: string[]; half: GoaHalf | null }
 
 const GOA: StayLocation = { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 };
 /** Anjuna is a location of its own on ixigo, which takes in the stays around it (Morjim, Vagator, Assagao). */
 const ANJUNA: StayLocation = { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 };
 
-/** ixigo's area filters inside a Goa search (p1-a's hotels map): the search keeps to stays in that area. */
+/** ixigo's area filters inside a Goa search (p1-a's hotels map): the search keeps to stays in those areas. */
 const GOA_AREA_CODES: Record<string, string> = {
   candolim: 'PA_C_1459', calangute: 'PA_C_1047', vagator: 'PA_C_78528', morjim: 'PA_C_1067', palolem: 'PA_L_154858', arpora: 'PA_C_77993',
   mandrem: 'PA_C_1169', agonda: 'PA_C_79088', arambol: 'PA_C_1096', panaji: 'PA_C_1091', panjim: 'PA_C_1091',
 };
+
+/** The places in each half of Goa, as ixigo names a stay's area or town: what "North Goa" and "South Goa" are checked against. */
+const GOA_HALVES: Record<GoaHalf, string[]> = {
+  north: [
+    'calangute', 'candolim', 'baga', 'anjuna', 'vagator', 'chapora', 'morjim', 'ashwem', 'mandrem', 'arambol', 'querim', 'keri', 'assagao', 'siolim',
+    'arpora', 'nagoa', 'saligao', 'sangolda', 'parra', 'nerul', 'sinquerim', 'reis magos', 'pilerne', 'verla', 'porvorim', 'mapusa', 'aldona',
+    'thivim', 'tivim', 'pernem', 'mopa', 'bardez', 'panaji', 'panjim', 'miramar', 'caranzalem', 'dona paula', 'bambolim', 'old goa',
+  ],
+  south: [
+    'colva', 'benaulim', 'sernabatim', 'varca', 'cavelossim', 'mobor', 'betul', 'majorda', 'utorda', 'betalbatim', 'arossim', 'cansaulim', 'velsao',
+    'bogmalo', 'vasco', 'dabolim', 'chicalim', 'zuarinagar', 'verna', 'margao', 'madgaon', 'fatorda', 'navelim', 'nuvem', 'loutolim', 'salcete',
+    'canacona', 'palolem', 'patnem', 'agonda', 'galgibaga', 'cola', 'quepem', 'carmona',
+  ],
+};
+
+/** The half of Goa a place is in, from its name; null when the name doesn't say. */
+export function goaHalfOf(text: string): GoaHalf | null {
+  const t = norm(text);
+  for (const half of ['north', 'south'] as const) {
+    if (GOA_HALVES[half].some((place) => new RegExp(`(?<![a-z])${place}(?![a-z])`).test(t))) return half;
+  }
+  return null;
+}
 
 /** Goa's areas Go knows. One without its own location or area code searches all of Goa, and each stay says its own area. */
 const GOA_AREAS = [
@@ -119,8 +144,16 @@ export function stayPlaceOf(text: string): StayPlace {
   const short = norm(text).replace(/,?\s*goa$/, '');
   const name = GOA_AREAS.includes(short) ? short : GOA_AREAS.includes(norm(text)) ? norm(text) : null;
   if (!name) throw new TravelError('unknown_place', `Go can search ixigo stays in Goa and its areas (North Goa, South Goa, Anjuna, Vagator and others). "${text.slice(0, 60)}" is not one yet.`);
-  if (name === 'anjuna') return { location: ANJUNA, area: null };
-  return { location: GOA, area: GOA_AREA_CODES[name] ?? null };
+  if (name === 'goa') return { location: GOA, areas: [], half: null };
+  // A half of Goa is every area in it ixigo has a code for; the stays are then checked against the half's places too.
+  if (name === 'north goa' || name === 'south goa') {
+    const half: GoaHalf = name === 'north goa' ? 'north' : 'south';
+    const areas = [...new Set(GOA_HALVES[half].flatMap((place) => GOA_AREA_CODES[place] ?? []))].sort();
+    return { location: GOA, areas, half };
+  }
+  if (name === 'anjuna') return { location: ANJUNA, areas: [], half: 'north' };
+  const code = GOA_AREA_CODES[name];
+  return { location: GOA, areas: code ? [code] : [], half: goaHalfOf(name) };
 }
 
 /** An airport's city from the table, for a page that shows only codes. */
