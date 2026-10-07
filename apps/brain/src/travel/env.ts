@@ -7,6 +7,8 @@ import { z } from 'zod';
 export const TravelEnv = z.object({
   /** Which backend answers travel searches. The TRAVEL_MODE switch can change it at runtime; it falls back to fake. */
   TRAVEL_MODE: z.enum(['ixigo', 'fake']).optional(),
+  /** How Go reads ixigo.com: a job on the trip's computer, or Bash's browser fetch. The TRAVEL_RUNNER switch can change it. */
+  TRAVEL_RUNNER: z.enum(['agent_job', 'browser_fetch']).optional(),
   IXIGO_MCP_URL: z.url().optional(),
   IXIGO_MCP_TOKEN: z.string().min(1).optional(),
 });

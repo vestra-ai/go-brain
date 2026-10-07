@@ -7,7 +7,8 @@
 import { parseSseFrames, type SseFrame } from './sse.js';
 
 export class V1Error extends Error {
-  constructor(readonly status: number, readonly code: string, message: string, readonly retryAfterMs: number | null = null) {
+  /** detail: the rest of /v1's error object, such as a browser fetch's partial result on a 504; null when there is none. */
+  constructor(readonly status: number, readonly code: string, message: string, readonly retryAfterMs: number | null = null, readonly detail: Record<string, unknown> | null = null) {
     super(message);
     this.name = 'V1Error';
   }
@@ -55,14 +56,16 @@ function retryAfterMs(res: Response): number | null {
 async function errorOf(res: Response, retry: number | null = null): Promise<V1Error> {
   let code = `http_${res.status}`;
   let message = `Vestra answered HTTP ${res.status}.`;
+  let detail: Record<string, unknown> | null = null;
   try {
     const body = (await res.json()) as { error?: { code?: unknown; message?: unknown } };
     if (typeof body.error?.code === 'string') code = body.error.code;
     if (typeof body.error?.message === 'string') message = body.error.message;
+    if (body.error && typeof body.error === 'object') detail = body.error as Record<string, unknown>;
   } catch {
     // not a /v1 error body
   }
-  return new V1Error(res.status, code, message, retry);
+  return new V1Error(res.status, code, message, retry, detail);
 }
 
 interface ChunkReader {

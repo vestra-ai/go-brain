@@ -4,6 +4,10 @@
  */
 export const GO_MCP_SLUG = 'go-trip';
 export const GO_DEPLOYMENT_SLUG = 'go-trip-task';
+/** The fallback travel search: one page opened and read on the trip's computer, on a model of its own. */
+export const GO_RECIPE_SLUG = 'go-recipe';
+/** Where Bash's browser fetch may go for Go's travel search ("ixigo.com" covers www.ixigo.com). */
+export const GO_BROWSER_DOMAINS = ['ixigo.com'] as const;
 
 /** Go's MCP tools that only read. An approval for one of them is answered yes; anything else no. */
 export const GO_READ_ONLY_TOOLS = ['trip', 'person', 'recall', 'search_flights', 'search_trains', 'search_buses', 'search_stays'] as const;
@@ -64,7 +68,11 @@ export const GO_DENY_TOOLS = [
 
 export const GO_WEBHOOK_EVENTS = ['task.started', 'task.completed', 'task.failed', 'task.stopped', 'interaction.created', 'interaction.resolved', 'interaction.expired'] as const;
 
-export function goTaskManifest(o: { mcpServerId: string; model: string; denyTools: boolean }): Record<string, unknown> {
+/**
+ * browserFetch: allow Bash's browser fetch on ixigo.com, through the trip user's default deployment. Only once Bash's
+ * browser fetch is on the target, since /v1 refuses a manifest key it does not know.
+ */
+export function goTaskManifest(o: { mcpServerId: string; model: string; denyTools: boolean; browserFetch?: boolean }): Record<string, unknown> {
   return {
     instructions: GO_TASK_INSTRUCTIONS,
     language: 'en',
@@ -75,6 +83,28 @@ export function goTaskManifest(o: { mcpServerId: string; model: string; denyTool
     model: o.model,
     memory: { mode: 'none' },
     limits: { spend_per_task_usd: 2 },
+    ...(o.denyTools ? { deny_tools: [...GO_DENY_TOOLS] } : {}),
+    ...(o.browserFetch ? { browser: { allowed_domains: [...GO_BROWSER_DOMAINS] } } : {}),
+  };
+}
+
+export const GO_RECIPE_INSTRUCTIONS = `You run one travel search for Go on this computer's browser. Each message gives you a page and a script.
+
+- Call computer_navigate with the page, exactly as given.
+- Call computer_eval with the script, exactly as given. It reads the results from the page and returns them as a list.
+- Return that list as rows, unchanged. If the script fails or returns nothing, return an empty list.
+- Do nothing else: no other pages, no clicks, no typing, no searching, no sign-in. Never book, pay or start a checkout.`;
+
+/** The go-recipe deployment: one page and one script per job, nothing else, on a fast model. */
+export function goRecipeManifest(o: { model: string; denyTools: boolean }): Record<string, unknown> {
+  return {
+    instructions: GO_RECIPE_INSTRUCTIONS,
+    language: 'en',
+    apps: { allow: [] },
+    approvals: { always: ['payment', 'booking', 'cancellation'] },
+    model: o.model,
+    memory: { mode: 'none' },
+    limits: { spend_per_task_usd: 0.5 },
     ...(o.denyTools ? { deny_tools: [...GO_DENY_TOOLS] } : {}),
   };
 }

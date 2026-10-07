@@ -96,6 +96,15 @@ describe('requests', () => {
     expect(err).toBeInstanceOf(V1Error);
     expect(err).toMatchObject({ status: 402, code: 'wallet_empty', message: 'Top up.' });
   });
+
+  it("keeps the rest of /v1's error object, such as a timed-out browser fetch's partial result", async () => {
+    const partial = { final_url: 'https://www.ixigo.com/x', elapsed_ms: 8000, woke: true, captures: [] };
+    const { f, calls } = fakeFetch(() => json(504, { error: { type: 'upstream', code: 'timeout', message: 'Too slow.', request_id: 'req_1', partial } }));
+    const err = await createV1Client({ baseUrl: 'https://api.test', keys: KEYS, fetch: f }).call('POST', '/v1/users/u1/browser/fetch', { body: {} }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 504, code: 'timeout', detail: { request_id: 'req_1', partial } });
+    // A write with no idempotency key is never sent twice.
+    expect(calls).toHaveLength(1);
+  });
 });
 
 const frame = (seq: number, type: string, data: object) => `id: ${seq}\nevent: ${type}\ndata: ${JSON.stringify({ seq, type, data, created_at: '2026-10-07T12:00:00Z' })}\n\n`;

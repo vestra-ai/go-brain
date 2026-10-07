@@ -202,7 +202,7 @@ export class FakeSetup implements Setup {
   }
 }
 
-const SWITCH_DEFAULTS: Partial<Record<SwitchName, string>> = { TRAVEL_MODE: 'fake', PAY_RAIL: 'fake', CALLS_MODE: 'off', REFLEX_LIVE: '' };
+const SWITCH_DEFAULTS: Partial<Record<SwitchName, string>> = { TRAVEL_MODE: 'fake', TRAVEL_RUNNER: 'agent_job', PAY_RAIL: 'fake', CALLS_MODE: 'off', REFLEX_LIVE: '' };
 
 export class FakeSwitches implements Switches {
   private readonly values = new Map<SwitchName, string>();

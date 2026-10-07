@@ -173,7 +173,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   const context = createContext(log);
   const speak = createSpeak({ pool, link, now, everyMs: t.typingEveryMs });
   const switches = createSwitches({
-    pool, now, env: { TRAVEL_MODE: env.TRAVEL_MODE, PAY_RAIL: env.PAY_RAIL, CALLS_MODE: env.CALLS_MODE, REFLEX_LIVE: env.REFLEX_LIVE },
+    pool, now, env: { TRAVEL_MODE: env.TRAVEL_MODE, TRAVEL_RUNNER: env.TRAVEL_RUNNER, PAY_RAIL: env.PAY_RAIL, CALLS_MODE: env.CALLS_MODE, REFLEX_LIVE: env.REFLEX_LIVE },
   });
 
   // One model client for the composer and every lane's side passes: a test's fake or the bench's recorder reaches all of them.
