@@ -36,3 +36,24 @@ export function plainlyNamesGo(m: Message, pack: TripPack): boolean {
   if (!m.reply_to) return false;
   return pack.messages.find((x) => x.message_id === m.reply_to)?.author.kind === 'go';
 }
+
+/** The desk's longest wait (desk.ts maxWaitMs): a line to Go waits at most this long for the rest of its burst. */
+export const BURST_MS = 6_000;
+
+/**
+ * True when the same person named Go in the last few seconds: this line is the rest of that ask. "@Go one thing", "for
+ * my birthday on the 7th", "is there a good bakery near Anjuna?" is one ask in three lines.
+ */
+export function continuesAskToGo(m: Message, pack: TripPack): boolean {
+  if (m.author.kind !== 'person') return false;
+  const person = m.author.person_id;
+  const sent = Date.parse(m.sent_at);
+  return pack.messages.some(
+    (x) =>
+      x.seq < m.seq &&
+      x.author.kind === 'person' &&
+      x.author.person_id === person &&
+      sent - Date.parse(x.sent_at) <= BURST_MS &&
+      plainlyNamesGo(x, pack),
+  );
+}
