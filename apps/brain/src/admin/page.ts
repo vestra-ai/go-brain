@@ -22,6 +22,7 @@ export interface AdminView {
 
 export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: string }>> = {
   TRAVEL_MODE: [{ value: 'ixigo', label: 'ixigo' }, { value: 'fake', label: 'fake (test inventory)' }],
+  TRAVEL_RUNNER: [{ value: 'agent_job', label: "agent_job (a job on the trip's computer)" }, { value: 'browser_fetch', label: "browser_fetch (Bash's browser fetch)" }],
   PAY_RAIL: [{ value: 'ixigo', label: 'ixigo' }, { value: 'stripe_test', label: 'stripe_test (test card)' }, { value: 'fake', label: 'fake (no charge)' }],
   CALLS_MODE: [{ value: 'off', label: 'off' }, { value: 'allowlist', label: 'allowlist' }],
   REFLEX_LIVE: [
@@ -35,6 +36,7 @@ export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: st
 
 export const SWITCH_MEANING: Record<SwitchName, string> = {
   TRAVEL_MODE: 'Where flights and stays come from. fake is our test inventory: say so on stage.',
+  TRAVEL_RUNNER: "How Go reads ixigo.com. browser_fetch takes about 4 s and needs Bash's browser fetch; agent_job takes 12 to 18 s.",
   PAY_RAIL: 'How a payment is charged. stripe_test charges a test card; fake charges nothing.',
   CALLS_MODE: 'Whether Go may phone anyone. allowlist means only the numbers listed under Calls.',
   REFLEX_LIVE: 'Which quick-read questions act live; the others only watch. off stops the quick read altogether.',

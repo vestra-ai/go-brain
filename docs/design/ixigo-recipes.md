@@ -1,6 +1,6 @@
 # ixigo recipes: Go searches ixigo.com in the trip's browser
 
-Design for Friday. Nothing here is built yet.
+Design for Friday. Built so far: the recipes (section 1) and the runners (section 2).
 
 "@Go flights Delhi to Goa Friday" should get "Go is typing..." at once and an options card from ixigo.com in under 5 seconds. Each option opens on ixigo.com; booking stays there.
 
@@ -21,22 +21,24 @@ A recipe is a typed object, one per kind of search, in `apps/brain/src/travel/re
 interface Recipe<S> {
   id: 'ixigo.flights' | 'ixigo.stays' | 'ixigo.trains' | 'ixigo.buses';
   kind: TravelKind;                      // flights | stays | trains | buses
-  slots: z.ZodType<S>;                    // what the URL needs, already resolved to ixigo's codes
-  slotsFrom(q: TravelQuery, trip: { people: number }): S;   // throws TravelError('unknown_place') when a place has no code
+  slotsFrom(q: TravelQuery, trip: { people: number }): S;   // what the URL needs, in ixigo's codes; throws TravelError('unknown_place') when a place has no code
   url(s: S): string;
   capture: Array<{ match: string; required: boolean; max_bytes?: number }>;
   steps?: Step[];                         // page controls, only when the URL can't do it (none for Friday's four)
-  extract(captures: Capture[], s: S): TravelOption[];   // pure; tested on fixtures
+  extract(captures: Capture[], s: S): RecipeOption[];   // pure; tested on fixtures
   agentExtractor: string;                 // the fallback runner's in-page script (section 2)
+  fromAgent(rows: unknown, s: S): RecipeOption[];         // that script's rows, checked with a schema
   ttlMs: number;                          // how long a result is reused (section 4c)
 }
 ```
+
+A `RecipeOption` is a `TravelOption` with no offer id (booking stays on ixigo) and a `sourceUrl`, the option's own page on ixigo.com.
 
 Go's constraints stay in code, as today. These are times, price caps, non-stop, pool and rating: the travel layer applies them to the extracted options (`applyConstraints`). So a recipe fetches the whole list once, and "after 6 pm" or "under 8k" never needs a second page load.
 
 | Recipe | Slots | URL | Capture (path match) | Price and what it covers | Area or route | Deep link | TTL |
 |---|---|---|---|---|---|---|---|
-| ixigo.flights | from, to (IATA), date, adults | `/search/result/flight?from=…&to=…&date=DDMMYYYY&adults=…&children=0&infants=0&class=e` | `/flights/v2/search/stream` (one event, all fares, ~290 KB) | `fares[0].fareDetails.displayFare`, per person (the map thinks so; the page doesn't say: confirm before Friday) | origin to destination, stops, times from `flightDetails[0]` | none per flight: the results URL, with the flight named by `flightKeys` | 10 min |
+| ixigo.flights | from, to (IATA), date, adults | `/search/result/flight?from=…&to=…&date=DDMMYYYY&adults=…&children=0&infants=0&class=e` | `/flights/v2/search/stream` (one event, all fares, ~290 KB) | `fares[0].fareDetails.displayFare`, per person, taxes in, before coupons (4 adults saw 7,896 for 6E 5341; ixigo's review page charged 4 × 7,896) | origin to destination, stops, times from `flightDetails[0]` | none per flight: the results URL, with the flight named by `flightKeys` | 10 min |
 | ixigo.stays | location (Goa: 32 / 48569 / S), check-in, check-out, adults, rooms | `/hotels/search/result?locationId=…&checkinDate=…&checkoutDate=…&adultCount=…&roomCount=…` | `/accommodation-search/api/v3/accommodations/search` (paged: 3, then 4) | `displayedBaseFare + taxesAndFees`, per night, per room | `locality` as the option's own area (#104) | `/hotels/{hotelId}/details?…&hotelInfoToken=…` | 10 min |
 | ixigo.trains | from, to (station codes), date | `/search/result/train/{FROM}/{TO}/{DDMMYYYY}//1/0/0/0/ALL` | `/trains/v1/search/between/` and `/api/v3/trains/availability` | `fares.{class}.baseFare` per class, with the availability (`WL 11`, `RAC 70`, `Regret`) | the boarding station the train reports | `/trains/{number}?orgn=…&dstn=…&departDate=…&quota=GN` | 10 min |
 | ixigo.buses | from, to (name and AbhiBus id), date | `/buses/bus_search/{From}/{fromId}/{To}/{toId}/{DD-MM-YYYY}/O` | `/buslist/v3/services` (all buses, ~170 KB) | `fares.fare`, from price per seat | operator, bus type, seats left | none: the results URL | 10 min |
@@ -56,7 +58,7 @@ Stays need two captures, pages 1 and 2, because page 1 holds only 3 hotels. That
 ```ts
 interface RecipeRunner {
   name: 'browser_fetch' | 'agent_job';
-  run<S>(tripId: string, recipe: Recipe<S>, slots: S, o: { signal: AbortSignal }): Promise<{ options: TravelOption[]; checkedAt: string; ms: number }>;
+  run<S>(tripId: string, recipe: Recipe<S>, slots: S, o?: { signal?: AbortSignal }): Promise<{ options: RecipeOption[]; checkedAt: string; ms: number }>;
 }
 ```
 
@@ -64,24 +66,34 @@ interface RecipeRunner {
 
 ```
 POST /v1/users/{v1UserIdFor(tripId)}/browser/fetch
-{ url: recipe.url(slots), capture: recipe.capture, steps: recipe.steps, timeout_ms: 8000 }
+{ url: recipe.url(slots), capture: [{ match, max_bytes? }], steps: recipe.steps, timeout_ms: 8000 }
 ```
 
-It answers with the captures. Then `recipe.extract(captures, slots)` returns the options. About 3.5 s warm. Its errors:
+- It answers once every step is done and every capture has matched a finished response: `{ final_url, elapsed_ms, woke, captures: [{ match, url, status, content_type, body, truncated, at_ms }] }`.
+- Then `recipe.extract(captures, slots)` returns the options. A warm search takes about 3.5 s.
+- A capture's `match` is a part of the response URL. A match ending in `$` must end the URL's path. Stays and buses need that, because a longer URL on the same path answers first (`.../services/meta/105`, `.../search/static-metadata`). It has been asked of Bash (section 8).
+- `required` stays in Go. Bash waits for every capture; Go uses it to decide what a timed-out fetch can still answer.
+
+Its errors:
 
 | Bash says | Go does |
 |---|---|
-| `403 domain_not_allowed` | `TravelError('blocked')`. That is a setup fault, so Go says it in the admin log, not the room. |
-| `409 browser_in_use` | Waits its turn. Go keeps one queue per trip box, so two searches in one reply run back to back (section 8 asks for tabs). |
-| `504 timeout` with partial captures | Uses them when every required capture is there; otherwise `TravelError('timeout')`. |
-| `503 box_unavailable` | `TravelError('unavailable')`. The search tool already turns that into a plain line. |
+| `404 user_not_found` | Makes the trip user (`computer.ensureUser`) and asks once more. |
+| `409 browser_in_use` | A person used the browser in the last 4 s. Go waits 4 s and asks once more, then says so. Each fetch has its own background tab, so Go's own searches don't wait on each other. |
+| `504 timeout`, with partial captures | Uses them when every required capture is there; otherwise `TravelError('unreachable')`. |
+| `503 box_unavailable` | `TravelError('unreachable')`: the computer did not wake in time. |
+| `402 wallet_empty` or `spend_cap_reached` | `TravelError('refused')`, with the jobs lane's words: the account is out of credit. |
+| `403 domain_not_allowed`, `400 invalid_request` | `TravelError('refused')`. That is Go's own setup or request, so the details go in the admin log, not the room. |
+
+The search tool already turns each of these into a plain line.
 
 **AgentJobRunner**, the fallback until Bash ships, is a /v1 job on the trip's computer:
 - It runs on a deployment pinned to a fast model (`go-recipe`, created by `setup-v1.ts` like `go-trip-task`), so a recipe never runs on the trip job's model.
-- Go sends one message with an `output_schema` (an array of options). Its instructions: call `computer_navigate(url)`, then `computer_eval(recipe.agentExtractor)`, and return what the script returns, unchanged.
-- The script reads the rendered results from the page, keeps the fields the summary needs and caps the list at 15, staying under 8 KB.
-- Go waits for the job to finish (`GET /v1/tasks/{id}` every 500 ms, up to 25 s) and checks the output against the schema. It takes about 12 to 18 s.
+- Go sends one message, straight to work (`hand_off: 'always'`), with an `output_schema` of rows. Its instructions: call `computer_navigate(url)`, then `computer_eval(recipe.agentExtractor)`, and return what the script returns, unchanged.
+- The script scrolls a few screens so the page draws more results, then reads the page text (`document.body.innerText`) and links with the recipe's reader. It keeps at most 15 rows, under 8 KB (what `computer_eval` answers).
+- Go waits for the job (`GET /v1/tasks/{id}` every 500 ms, up to 25 s), then `recipe.fromAgent` checks every row with a schema. Rows that don't check out give no options, never wrong ones. A job that isn't done in 25 s, or stops to ask something, is stopped. It takes about 12 to 18 s.
 - The script reads the page because a finished response body can't be read back from inside the page later, and the map says never to replay the page's calls.
+- The readers are tested on the page text saved by the mapping runs, cross-checked against the data calls for the same flights, hotels and buses.
 
 **One setting switches them.** That's an admin switch `TRAVEL_RUNNER` (`agent_job` | `browser_fetch`), read on every search like `TRAVEL_MODE`. It defaults to `agent_job` until Bash's call is live on staging.
 
@@ -132,7 +144,7 @@ It answers with the captures. Then `recipe.extract(captures, slots)` returns the
   They're captured once by hand, through Bash's call when it's on staging, or by the mapper's browser run until then. The bodies hold no keys: the static web key and the page's ids are request headers, never in a body.
 - **Per recipe:** `url()` for the map's examples; `extract()` on each fixture (count, title, price and note, times, area, deep link); one test that the fallback script's output passes the same schema.
 - **Parser:** every phrasing in the 50-line test set's travel lines, Hinglish included. A place not in the tables gives no slots.
-- **Runners:** BrowserFetchRunner against a fake /v1 (each error code, partial captures on 504, the per-trip queue on 409); AgentJobRunner against the jobs lane's fake /v1 (output that fails the schema, a job that doesn't finish).
+- **Runners:** BrowserFetchRunner against a fake /v1 (each error code, partial captures on 504, one wait on 409); AgentJobRunner against a fake /v1 (rows that fail the schema, a job that doesn't finish, a job that stops to ask).
 - **Layer and turn:**
   - the prefetch and the tool share one fetch;
   - the 10-minute cache;
@@ -174,18 +186,22 @@ Warm box, Bash's call, `claude-sonnet-5-5`. Times are from the message reaching 
 
 ## 8. What Bash's call should add
 
-1. **Return as soon as every required capture has matched,** not at page idle. Flights answer at 1.2 to 2.1 s, so this is about 1 s per search, the difference between 5.3 s and 4.1 s above.
-2. **Capture every response that matches, up to a count** (`max_count`), so stays get pages 1 and 2 in one call. Better still, a step that scrolls until N matches arrive.
-3. **`max_bytes` of at least 512 KB** (flights ~290 KB, buses ~170 KB), or a server-side shrink (a list of JSON paths to keep) so less crosses the wire.
-4. **Two tabs per box,** or a `retry_after_ms` on 409, so a reply that searches flights and stays doesn't wait on itself.
-5. **A warm that lasts:** `POST /v1/users/{id}/warm { keep_ms }`, so Go doesn't ping every 5 s to hold a box up through a planning chat.
-6. **Timings in the answer** (wake, navigation, capture), so the live bench can split a slow search into box, page and model.
-7. **`www.ixigo.com` on the allow list** of every trip user Go makes, set through `PATCH /v1/users/{id}` or the deployment, so a new trip never meets `domain_not_allowed`.
+Bash's browser fetch has these already:
+- it returns as soon as every capture has matched, not at page idle;
+- `max_bytes` is 1 MB a capture by default, up to 4 MB, and 8 MB in all;
+- each fetch gets its own background tab;
+- the allow list comes from the trip user's default deployment. `setup-v1 --browser-fetch` adds `browser: { allowed_domains: ["ixigo.com"] }` to go-trip-task.
+
+Still asked:
+1. **A match that ends the path** (`$`), so stays and buses keep their search call, not the longer URL that answers first. Blocking for those two.
+2. **`min_count` on a capture,** so stays get pages 1 and 2 in one call.
+3. **A `type` step,** for p4's T17 train lookup by name. Not part of Friday's four searches.
+4. **A warm that lasts:** `POST /v1/users/{id}/warm { keep_ms }`, so Go doesn't ping every 5 s to hold a box up through a planning chat.
+5. **Timings in the answer** (wake, navigation, capture), so the live bench can split a slow search into box, page and model.
 
 ## 9. Risks
 
-- **Price per person for flights is unconfirmed:** the page doesn't label `displayFare`. Before Friday, one search for 1 adult and one for 4 settle it. Until then the summary says "per person, as ixigo shows it", never a group total.
 - **Bot protection:** nine loads from one Mac met no challenge. A datacentre IP at volume is untested, so the cache and the shared in-flight promise also keep the load low.
 - **Trains** wait about 2 s for ixigo's own reCAPTCHA token on every search, so a train search lands about 2 s after a flight search.
-- **Hotel paging:** 3 hotels on page 1. Without item 2 above, a stays search shows few options.
+- **Hotel paging:** 3 hotels on page 1. Without `min_count` (section 8), a stays search through the browser fetch shows few options.
 - **The fallback's script reads the rendered page,** so a redesign of ixigo's cards breaks it before it breaks the capture recipes. Its schema check fails closed: no options, never wrong ones.
