@@ -163,3 +163,74 @@ describe('dates in the past', () => {
     }
   });
 });
+
+describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
+  const Q = { from: 'Delhi', to: 'Goa', date: '2026-11-06' };
+  const PAGE = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026';
+  function web() {
+    const calls: Array<{ kind: string; tripId: string | undefined }> = [];
+    const refused = async (): Promise<never> => {
+      throw new TravelError('refused', 'Booked on ixigo.');
+    };
+    const b: TravelBackend = {
+      async search(kind, _q, o) {
+        calls.push({ kind, tripId: o?.tripId });
+        return {
+          checkedAt: '2026-10-07T12:00:00.000Z',
+          results: [{
+            kind: 'flight', title: 'IndiGo 6E 5341', priceMinor: 789600, currency: 'INR', priceNote: 'per person', highlights: [], facts: {}, sourceUrl: PAGE,
+            journey: { mode: 'flight', origin: { name: 'New Delhi (DEL)' }, destination: { name: 'Goa (GOI)' }, depart_at: '2026-11-06T05:00:00+05:30', arrive_at: '2026-11-06T07:35:00+05:30' },
+          }],
+        };
+      },
+      status: refused,
+      hold: refused,
+      confirm: refused,
+    };
+    return { b, calls };
+  }
+
+  it("searches in the trip's own browser: the trip goes with the search, each trip keeps its own results, and nothing is simulated", async () => {
+    const ixigoWeb = web();
+    const { switches, layer, fake } = setup(true, { ixigoWeb: ixigoWeb.b });
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    const found = await layer.search('flights', Q, { tripId: 't_goa' });
+    await layer.search('flights', { ...Q, departAfter: '04:00' }, { tripId: 't_goa' });
+    await layer.search('flights', Q, { tripId: 't_other' });
+    expect(ixigoWeb.calls).toEqual([{ kind: 'flights', tripId: 't_goa' }, { kind: 'flights', tripId: 't_other' }]);
+    expect(found.results[0]).not.toHaveProperty('offerId');
+    expect(found.results[0]!.sourceUrl).toBe(PAGE);
+    expect(layer.simulated?.()).toBe(false);
+    expect(fake.calls).toEqual([]);
+  });
+
+  it('stays on the fake, and says so, when ixigo_web is not set up here', async () => {
+    const { switches, layer, fake } = setup();
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    expect((await layer.search('flights', Q, { tripId: 't_goa' })).results[0]!.offerId).toBe('fake:a');
+    expect(fake.calls).toHaveLength(1);
+    expect(layer.simulated?.()).toBe(true);
+  });
+
+  it("reads status from ixigo's MCP server when it is set up, and never from the fake, whose readings are simulated", async () => {
+    const q = { kind: 'pnr' as const, pnr: '1234567890' };
+    const withIxigo = setup(true, { ixigoWeb: web().b });
+    await withIxigo.switches.set('TRAVEL_MODE', 'ixigo_web');
+    expect(await withIxigo.layer.status(q)).toMatchObject({ detail: 'ixigo' });
+    const alone = setup(false, { ixigoWeb: web().b });
+    await alone.switches.set('TRAVEL_MODE', 'ixigo_web');
+    await expect(alone.layer.status(q)).rejects.toMatchObject({ code: 'refused' });
+  });
+
+  it("answers offer() with the option's own page as its link, so the group can book it there", async () => {
+    const { layer } = setup(true, {
+      results: {
+        offer: async (id) => ({
+          tripId: 't_goa', cardId: 'c', resultsId: 'r', checkedAt: 'x', optionId: id, n: 1, offerId: null, kind: 'flight', title: 'IndiGo 6E 5341',
+          priceMinor: 789600, totalMinor: null, currency: 'INR', priceNote: 'per person', sourceUrl: PAGE,
+        }),
+      },
+    });
+    expect(await layer.offer('opt_ix')).toEqual({ offerId: null, title: 'IndiGo 6E 5341', priceMinor: 789600, currency: 'INR', kind: 'flight', link: PAGE });
+  });
+});

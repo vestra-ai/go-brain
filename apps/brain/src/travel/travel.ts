@@ -34,8 +34,11 @@ export type TravelQuery = z.infer<typeof TravelQuery>;
 export type TravelOptionKind = 'flight' | 'train' | 'bus' | 'stay';
 
 export interface TravelOption {
-  /** "<backend>:<the backend's own id>", e.g. "fake:fl-DEL-GOI-20261106-6E2134". hold() routes on the prefix. */
-  offerId: string;
+  /**
+   * "<backend>:<the backend's own id>", e.g. "fake:fl-DEL-GOI-20261106-6E2134". hold() routes on the prefix. Absent when Go
+   * cannot book the option: ixigo.com's own results (TRAVEL_MODE ixigo_web) are booked on ixigo, from sourceUrl.
+   */
+  offerId?: string;
   kind: TravelOptionKind;
   title: string;
   subtitle?: string;
@@ -55,6 +58,8 @@ export interface TravelOption {
   refundableUntil?: string;
   /** Short facts the filters and the model read: pool, beach_minutes, sleeps, seats_left, class_code. */
   facts: Record<string, string | number | boolean>;
+  /** The option's own page on the site it came from; an options card opens an ixigo.com one ("See on ixigo"). */
+  sourceUrl?: string;
 }
 
 export interface TravelSearch {
@@ -123,11 +128,14 @@ export interface StoredOffer {
   currency: string | null;
   priceNote: string | null;
   checkedAt: string;
+  /** The option's own page, when it has one. */
+  sourceUrl: string | null;
 }
 
-/** What answers behind the layer: the fake ixigo or ixigo's MCP server. */
+/** What answers behind the layer: the fake ixigo, ixigo's MCP server, or ixigo.com itself through the recipes. */
 export interface TravelBackend {
-  search(kind: TravelKind, q: TravelQuery): Promise<TravelSearch>;
+  /** tripId: the trip whose computer runs the search, for a backend that searches in the trip's browser (ixigo_web). */
+  search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<TravelSearch>;
   status(q: StatusQuery): Promise<StatusResult>;
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   confirm(holdId: string, paid: { approvalId: string; railRef: string }): Promise<Confirmed>;

@@ -3,7 +3,9 @@ import * as C from '@go/contract';
 import { withSchema } from '../../db/test-db.js';
 import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { goaPack } from '../../tasks/testing/goa.js';
+import { buildOptionsCard } from '../cards.js';
 import { registerTravel } from '../register.js';
+import { createResultsStore, type ResultOption } from '../results.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -34,10 +36,10 @@ describe('registerTravel', () => {
     expect(LANES.indexOf(registerTravel)).toBeLessThan(LANES.indexOf(registerProactive));
   });
 
-  it('sets brain.travel and registers the six travel tools, the two options taps, the tap wake and the image route', async () => {
+  it('sets brain.travel and registers the six travel tools, the three options taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote']);
-    expect([...lb.taps.handlers.keys()].sort()).toEqual(['options/pick', 'options/vote']);
+    expect([...lb.taps.handlers.keys()].sort()).toEqual(['options/open', 'options/pick', 'options/vote']);
     expect(lb.context.wakes.has('tap')).toBe(true);
     expect((await lb.http.inject({ method: 'GET', url: `/img/u${'0'.repeat(32)}.jpg` })).statusCode).toBe(404);
     expect(lb.brain.travel?.simulate).toBeDefined();
@@ -68,6 +70,24 @@ describe('registerTravel', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(lb.link.sent('open_vote')).toHaveLength(1);
     expect(await lb.taps.tap('options', 'vote', tap({ tap_id: 'tap_v3', action_id: 'vote' }), card)).toEqual({ result: 'done', toast: 'Already up for a vote' });
+  });
+
+  it('"See on ixigo" opens the option\'s own ixigo.com page, and refuses an option that has none', async () => {
+    if (card.kind !== 'options') throw new Error('expected an options card');
+    // The fake's villas have no ixigo page.
+    expect(await lb.taps.tap('options', 'open', tap({ tap_id: 'tap_o1', action_id: 'open', option_id: card.options[0]!.option_id }), card)).toEqual({ result: 'refused', toast: 'This option has no ixigo page' });
+    const results = createResultsStore(db.pool);
+    const page = 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&hName=Meritas';
+    const hotel: ResultOption = { kind: 'stay', title: 'Meritas', priceMinor: 810400, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {}, sourceUrl: page };
+    const checkedAt = '2026-10-07T12:00:00.000Z';
+    const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: {}, options: [hotel], checkedAt });
+    const picks = [{ optionId: 'opt_ixr1', n: 1, option: hotel, imageUrl: null }];
+    const ix = buildOptionsCard({ cardId: 'c_ixr', title: 'Meritas', optionKind: 'stay', checkedAt, picks });
+    await results.saveCard({ cardId: 'c_ixr', tripId: 't_goa', resultsId: set.resultsId, title: 'Meritas', optionKind: 'stay', card: ix }, picks, checkedAt);
+    const opened = await lb.taps.tap('options', 'open', { tap_id: 'tap_o2', trip_id: 't_goa', card_id: 'c_ixr', action_id: 'open', person_id: 'p_meher', option_id: 'opt_ixr1' }, ix);
+    expect(opened).toEqual({ result: 'open', url: page, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
+    // An option from another card is refused.
+    expect(await lb.taps.tap('options', 'open', tap({ tap_id: 'tap_o3', action_id: 'open', option_id: 'opt_ixr1' }), card)).toEqual({ result: 'refused', toast: 'That option is no longer here' });
   });
 
   it("closes the image fetcher's connections and the ixigo connection through brain.onStop", async () => {

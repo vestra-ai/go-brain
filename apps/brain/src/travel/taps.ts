@@ -1,11 +1,11 @@
 /**
  * Taps on Go's options cards. "Put it to a vote" opens the vote in code (fast and once); "I'll take this" goes on the
- * desk, so the composer answers the person in the room.
+ * desk, so the composer answers the person in the room; "See on ixigo" opens the option's own ixigo.com page.
  */
 import type { Brain } from '../app.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
-import { clip } from './cards.js';
+import { clip, ixigoPage } from './cards.js';
 import { stableId } from './ids.js';
 import type { ResultsStore } from './results.js';
 import { openVoteFromCard } from './votes.js';
@@ -17,6 +17,9 @@ export interface TravelTapDeps {
   now: () => Date;
   log: Brain['log'];
 }
+
+/** How long the App may hold an ixigo page it was told to open: the time its prices count as fresh. */
+export const OPEN_FOR_MS = 10 * 60_000;
 
 export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void {
   taps.on('options', 'vote', async (tap) => {
@@ -57,6 +60,14 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
       payload: { source: 'options', action: 'pick', cardId: tap.card_id, optionId: offer.optionId, n: offer.n, title: offer.title, personId: tap.person_id },
     });
     return { result: 'done', toast: 'Noted. Go will reply in the room.' };
+  });
+
+  taps.on('options', 'open', async (tap) => {
+    const offer = tap.option_id ? await d.results.offer(tap.option_id) : null;
+    if (!offer || offer.cardId !== tap.card_id || offer.tripId !== tap.trip_id) return { result: 'refused', toast: 'That option is no longer here' };
+    const url = ixigoPage(offer.sourceUrl);
+    if (!url) return { result: 'refused', toast: 'This option has no ixigo page' };
+    return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
   });
 }
 

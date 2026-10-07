@@ -22,6 +22,7 @@ import type { Memory } from './memory/memory.js';
 import type { Pay } from './money/pay.js';
 import { unsureReflex, type Reflex } from './reflex/reflex.js';
 import type { Tasks } from './tasks/tasks.js';
+import type { RecipeRunner } from './travel/recipes/runners.js';
 import type { Travel } from './travel/travel.js';
 import { createGoneTrips } from './trips/gone.js';
 import { createMessageHooks, type MessageHooks } from './trips/hooks.js';
@@ -66,6 +67,8 @@ export interface Brain {
   travel?: Travel;
   /** Set by P4. */
   tasks?: Tasks;
+  /** Set by P4's tasks lane, which owns the trip's computer: the two ways to run an ixigo.com recipe on it. */
+  recipeRunners?: { browserFetch: RecipeRunner; agentJob: RecipeRunner };
   /** Set by P5. */
   pay?: Pay;
   /** The daily model budget (MODEL_DAILY_BUDGET_USD). buildBrain always sets it; it is optional only so lane test doubles need not. */

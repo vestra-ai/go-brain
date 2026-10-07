@@ -1,6 +1,7 @@
 /**
- * Lane C's tasks at boot: the /v1 client, the trip's computer (its two setup steps), tasks, events, the follower, the
- * sweep, the webhook endpoint, Go's MCP server, the job tools, Watch and Stop, the tasks block and the task wake.
+ * Lane C's tasks at boot: the /v1 client, the trip's computer (its two setup steps) and its ixigo recipe runners, tasks,
+ * events, the follower, the sweep, the webhook endpoint, Go's MCP server, the job tools, Watch and Stop, the tasks block
+ * and the task wake.
  * With the /v1 settings missing, jobs stay off and Go says so in the log.
  */
 import type { Brain, RegisterLane } from '../app.js';
@@ -22,6 +23,7 @@ import { SWEEP_EVERY_MS, createSweep, type Sweep } from './sweep.js';
 import { registerTaskTaps } from './taps.js';
 import { createTasks, type TasksService } from './tasks.js';
 import { taskTools } from './tools.js';
+import { createAgentJobRunner, createBrowserFetchRunner } from '../travel/recipes/runners.js';
 import { createV1Client, type V1Client } from './v1-client.js';
 import { registerV1Webhooks } from './webhooks.js';
 
@@ -53,6 +55,11 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   const tokens = createTokenStore(brain.pool, brain.now);
   const computer = createComputer({ pool: brain.pool, v1, tokens, env, now: brain.now, log: brain.log });
   addComputerSteps(brain.setup, computer);
+  // ixigo.com searches (TRAVEL_MODE ixigo_web) run on the trip's computer too; the travel lane picks one per search.
+  brain.recipeRunners = {
+    browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log }),
+    agentJob: createAgentJobRunner({ v1, computer, now: brain.now, log: brain.log, deploymentId: env.VESTRA_RECIPE_DEPLOYMENT_ID ?? null }),
+  };
   const store = createTaskStore(brain.pool);
   const eventStore = createEventStore(brain.pool, brain.now);
   const results = createResultsStore(brain.pool);
