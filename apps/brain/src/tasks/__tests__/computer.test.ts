@@ -50,6 +50,17 @@ describe("the trip's computer", () => {
     expect(fake.callsTo('POST', /\/warm$/)).toHaveLength(2);
   });
 
+  it('asks Bash to hold the box with keep_ms, never skipped as a repeat, and still counted as a wake', async () => {
+    const before = fake.callsTo('POST', /\/warm$/).length;
+    await computer.warm('t_goa', { keepMs: 120_000 });
+    await computer.warm('t_goa', { keepMs: 120_000 });
+    const warms = fake.callsTo('POST', /\/warm$/).slice(before);
+    expect(warms).toHaveLength(2);
+    expect(warms[0]!.body).toEqual({ keep_ms: 120_000 });
+    // A plain warm right after is still a repeat.
+    expect(await computer.warm('t_goa')).toBe('skipped');
+  });
+
   it('keeps to 8 computers waking at once across trips', async () => {
     clock.advance(120_000);
     for (let i = 0; i < 8; i += 1) await computer.warm(`t_warm_${i}`);

@@ -3,6 +3,7 @@ import { fakeLink, type FakeAnswers } from '../../__tests__/fixtures/fake-link.j
 import { ev, goaSnapshot, msg, vote } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
 import { silentLog } from '../../log.js';
+import { TripGoneError } from '../gone.js';
 import { createPacks } from '../pack.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -129,6 +130,23 @@ describe('Packs', () => {
     const pack = await packs.get(T);
     expect(pack.trip.seq).toBe(43);
     expect(pack.messages.map((m) => m.seq)).toEqual([10, 41, 42]);
+  });
+
+  it('never reads a trip marked gone: loading or refilling it stops before any request', async () => {
+    const T = 't_pack_gone';
+    const { packs, calls } = make({ read_trip: () => goaSnapshot({ trip_id: T, seq: 1 }), read_messages: () => ({ messages: [], has_more: false }) });
+    await packs.get(T);
+    const asked = calls.length;
+    await db.pool.query('insert into trips (trip_id, gone_at) values ($1, now()) on conflict (trip_id) do update set gone_at = now()', [T]);
+    // The pack still in hand: the refill doesn't read either.
+    await expect(packs.refill(T)).rejects.toBeInstanceOf(TripGoneError);
+    packs.invalidate(T);
+    await expect(packs.get(T)).rejects.toBeInstanceOf(TripGoneError);
+    expect(calls).toHaveLength(asked);
+    // Once the mark is cleared (the Server sent an event for it), it loads again.
+    await db.pool.query('update trips set gone_at = null where trip_id = $1', [T]);
+    await packs.get(T);
+    expect(calls.filter((c) => c.method === 'read_trip')).toHaveLength(2);
   });
 
   it('invalidate drops a pack so the next get reads it fresh', async () => {

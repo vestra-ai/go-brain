@@ -1,8 +1,9 @@
 import type pg from 'pg';
 import { newUlid } from '../door/ulid.js';
 import type { Log } from '../log.js';
+import { TripGoneError } from '../trips/gone.js';
 
-export type DeskKind = 'message' | 'trip_change' | 'tap' | 'task' | 'timer' | 'watch' | 'opening' | 'setup';
+export type DeskKind = 'message' | 'trip_change' | 'tap' | 'task' | 'timer' | 'watch' | 'opening' | 'setup' | 'search';
 
 export interface DeskItem {
   id: string;
@@ -49,6 +50,8 @@ export type DeskImpl = Desk & {
   setRunner(run: TurnRunner, giveUp: TurnRunner): void;
   /** For the pre-post check: message items that arrived while a turn ran join that turn. */
   claimNew(tripId: string, turnId: string): Promise<DeskItem[]>;
+  /** Gives items a turn took back to the desk, for a turn of their own once this one ends. */
+  release(turnId: string, ids: string[]): Promise<void>;
   /** One poll: runs every trip with something due. */
   tick(): Promise<void>;
   start(): void;
@@ -138,6 +141,11 @@ export function createDesk(o: DeskOptions): DeskImpl {
       await o.pool.query('update desk_items set done_at = $2, error = null where turn_id = $1 and done_at is null', [b.turnId, o.now()]);
     } catch (e) {
       const message = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+      // The Server no longer has the trip: no retry, and no giving-up line, which would go to a room that isn't there.
+      if (e instanceof TripGoneError) {
+        await o.pool.query('update desk_items set done_at = $2, error = $3 where turn_id = $1 and done_at is null', [b.turnId, o.now(), message]);
+        return;
+      }
       o.log.warn({ err: e, trip: b.tripId, turn: b.turnId, attempt: b.attempt }, 'a turn failed');
       if (b.attempt >= maxAttempts) {
         try {
@@ -241,6 +249,14 @@ export function createDesk(o: DeskOptions): DeskImpl {
         [tripId, turnId],
       );
       return rows.map(toItem).sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime() || a.id.localeCompare(b.id));
+    },
+    async release(turnId, ids) {
+      if (ids.length === 0) return;
+      await o.pool.query(
+        `update desk_items set turn_id = null, attempts = greatest(attempts - 1, 0)
+         where turn_id = $1 and id = any($2::text[]) and done_at is null`,
+        [turnId, ids],
+      );
     },
     tick,
     start() {

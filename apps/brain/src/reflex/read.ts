@@ -4,7 +4,7 @@
  * read "unsure". Question 8 can only raise caution.
  */
 import type { JevAnswer } from './jev.js';
-import { REACTIONS, type QuestionName } from './questions.js';
+import { REACTIONS, RECIPE_CHOICES, type QuestionName, type RecipeChoice } from './questions.js';
 import type { ReflexRead, Sure } from './reflex.js';
 import type { SecretKind } from './secrets.js';
 import { BARS, type Bars } from './thresholds.js';
@@ -17,6 +17,8 @@ export interface CodeFacts {
   hasTasks: boolean;
   /** A line about money (money-line.ts): it always reaches the model, whatever Jev says. */
   money: boolean;
+  /** Only emoji, a laugh, an ok, or a greeting or sign-off (small-talk.ts): read only when Jev has no answer. */
+  smallTalk?: boolean;
 }
 export type RiskWhy = 'spend' | 'steer' | 'secret';
 type Answers = Record<string, JevAnswer> | null;
@@ -56,14 +58,22 @@ function readForGo(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
     // No one spoke to Go (a fact, a plan, friends talking): not for Go, though not chatter. The chatter answer must be
     // well formed too, so an odd answer still reads unsure.
     if (atMost(addressed, b.for_go.notAddressedMax) && Number.isFinite(chatter)) return sure(false);
+    // No answer from Jev (a timeout or an error): small talk ("gn 😴", "haha 😂") says nothing to Go; any other line wakes.
+    if (!Number.isFinite(addressed) && !Number.isFinite(chatter) && f.smallTalk) return sure(false);
   }
   if (atLeast(addressed, b.for_go.addressedMin) && atMost(chatter, b.for_go.chatterMaxForAddressed)) return sure(true);
   return unsure();
 }
 
-function readYesNo(p: number, yesMin: number, noMax: number): Sure<boolean> {
-  if (atLeast(p, yesMin)) return sure(true);
-  if (atMost(p, noMax)) return sure(false);
+/**
+ * Sure complete only for a line that names Go: an ask to Go Jev leans complete on is whole, while one cut short reads low
+ * ("@Go can you", "@Go one thing"). A line that doesn't name Go can sit mid-burst and read as complete as the burst's end
+ * ("if there's a cab from Mopa airport to Anjuna" 0.54, "for 5 people with luggage" 0.53), so it is never sure-complete.
+ */
+function readComplete(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
+  const p = noulP(a, 'q2_complete');
+  if (f.namesGo && atLeast(p, b.complete.namedMin)) return sure(true);
+  if (atMost(p, b.complete.noMax)) return sure(false);
   return unsure();
 }
 
@@ -112,6 +122,18 @@ function readReaction(a: Answers, b: Bars): Sure<string | null> {
   return top.o === 'none' ? sure(null) : sure(REACTIONS[top.o]);
 }
 
+/** One clear winner: at least the pick bar, and no other option up to the rival bar. */
+function readRecipe(a: Answers, b: Bars): Sure<RecipeChoice | null> {
+  const ranked = [...RECIPE_CHOICES, 'none' as const]
+    .map((o) => ({ o, m: massOf(a, 'q10_recipe', o) }))
+    .filter((x) => Number.isFinite(x.m))
+    .sort((x, y) => y.m - x.m);
+  const top = ranked[0];
+  if (!top || top.m < b.recipe.pickMin) return unsure();
+  if (ranked.slice(1).some((x) => x.m >= b.recipe.rivalMax)) return unsure();
+  return top.o === 'none' ? sure(null) : sure(top.o);
+}
+
 function readRisky(a: Answers, f: CodeFacts, b: Bars): { risky: Sure<boolean>; why: RiskWhy[] } {
   const why = new Set<RiskWhy>();
   if (f.secretKinds.length) why.add('secret');
@@ -145,7 +167,7 @@ export function readAnswers(
   const opening = [noulP(a, 'q9_group_question'), noulP(a, 'q9_circles'), noulP(a, 'q9_someone_look')];
   const would: ReflexRead = {
     forGo: readForGo(a, facts, bars),
-    complete: readYesNo(noulP(a, 'q2_complete'), bars.complete.yesMin, bars.complete.noMax),
+    complete: readComplete(a, facts, bars),
     size: readSize(a, bars),
     taskId: readTask(a, facts, taskKeys, bars),
     fact: anyAtLeast(fact, bars.fact.yesMin) ? sure(true) : allAtMost(fact, bars.fact.noMax) ? sure(false) : unsure(),
@@ -153,6 +175,7 @@ export function readAnswers(
     reaction: readReaction(a, bars),
     risky: risk.risky,
     opening: anyAtLeast(opening, bars.opening.yesMin) ? sure(true) : allAtMost(opening, bars.opening.noMax) ? sure(false) : unsure(),
+    recipe: readRecipe(a, bars),
     riskWhy: risk.why,
   };
   return { would, p: flatten(a) };
@@ -170,6 +193,7 @@ export function codeOnly(facts: CodeFacts): ReflexRead {
     reaction: unsure(),
     risky: facts.secretKinds.length ? sure(true) : unsure(),
     opening: unsure(),
+    recipe: unsure(),
     riskWhy: facts.secretKinds.length ? ['secret'] : [],
   };
 }
@@ -187,6 +211,7 @@ export function applyLive(would: ReflexRead, live: ReadonlySet<QuestionName>, fa
     reaction: live.has('reaction') ? would.reaction : base.reaction,
     risky: live.has('risky') ? would.risky : base.risky,
     opening: live.has('opening') ? would.opening : base.opening,
+    recipe: (live.has('recipe') ? would.recipe : base.recipe) ?? unsure(),
     riskWhy: live.has('risky') ? (would.riskWhy ?? []) : (base.riskWhy ?? []),
   };
 }

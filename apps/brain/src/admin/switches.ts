@@ -1,7 +1,7 @@
 import type pg from 'pg';
 
 /** Demo fallbacks that flip at runtime with no redeploy. P7 adds the admin page. */
-export type SwitchName = 'TRAVEL_MODE' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE';
+export type SwitchName = 'TRAVEL_MODE' | 'TRAVEL_RUNNER' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE';
 
 export interface Switches {
   /** The stored value, else the environment's, else the safe default. Read on every use, cached 2 s. */
@@ -14,11 +14,13 @@ const oneOf = (...values: string[]) => (v: string): boolean => values.includes(v
 
 /** What each switch may hold, and its value when nothing sets it. */
 export const SWITCH_RULES: Record<SwitchName, { valid: (v: string) => boolean; fallback: string }> = {
-  TRAVEL_MODE: { valid: oneOf('ixigo', 'fake'), fallback: 'fake' },
+  TRAVEL_MODE: { valid: oneOf('ixigo', 'ixigo_web', 'fake'), fallback: 'fake' },
+  // agent_job until Bash's browser fetch is live: it needs nothing new from Bash.
+  TRAVEL_RUNNER: { valid: oneOf('agent_job', 'browser_fetch'), fallback: 'agent_job' },
   PAY_RAIL: { valid: oneOf('ixigo', 'stripe_test', 'fake'), fallback: 'fake' },
   CALLS_MODE: { valid: oneOf('off', 'allowlist'), fallback: 'off' },
   // "q1,q2,..." names the live Jev questions, empty keeps all in shadow, "off" makes no Jev call (P2's kill switch).
-  REFLEX_LIVE: { valid: (v) => /^(off|q[1-9](,q[1-9])*)?$/.test(v), fallback: '' },
+  REFLEX_LIVE: { valid: (v) => /^(off|q(?:10|[1-9])(,q(?:10|[1-9]))*)?$/.test(v), fallback: '' },
 };
 
 export function createSwitches(o: {

@@ -7,6 +7,8 @@ import type { TextBlock } from './context.js';
 import { SAY_NOTHING, STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
 
 export const MAX_ROUNDS = 4;
+/** The stop reason of a turn that ended on its cards: every call in the last reply was a card tool that put its card up. */
+export const CARDS_UP = 'cards_up';
 export const MAX_TOKENS = 1_024;
 const ROLLING = { type: 'ephemeral' } as const; // 5 minutes: it only has to last the turn
 
@@ -36,8 +38,6 @@ export interface LoopInput {
   ctx: TurnCtx;
   signal: AbortSignal;
   maxRounds?: number;
-  /** True when this call continues an exchange (the pre-post check): its first round already carries the rolling marker. */
-  continuing?: boolean;
   onFirstToken?: () => void;
   toolTimeoutMs?: number;
   /** The daily model budget: each round holds its estimate first, and settles to what it really cost. */
@@ -45,7 +45,10 @@ export interface LoopInput {
 }
 
 export interface LoopResult {
-  /** What to post: the last round's text, or the latest text an earlier round wrote. Empty when silent. */
+  /**
+   * What to post: the last round's text, or the latest text an earlier round wrote. Empty when silent. A turn that ended
+   * on its cards posts only that reply's own text, which may be none: the cards carry their own words.
+   */
   text: string;
   silent: boolean;
   rounds: number;
@@ -142,6 +145,27 @@ function withTimeout<T>(p: Promise<T>, ms: number, signal: AbortSignal): Promise
   });
 }
 
+/** The tallies for a reply's calls: one line for each summary that two or more of its calls share (see summarizeRound). */
+export function roundNotes(
+  calls: Anthropic.ToolUseBlock[],
+  results: Anthropic.ToolResultBlockParam[],
+  byName: ReadonlyMap<string, QuickTool<any>>,
+): Anthropic.TextBlockParam[] {
+  const groups = new Map<NonNullable<QuickTool['summarizeRound']>, Array<{ content: string; isError: boolean }>>();
+  calls.forEach((c, k) => {
+    const summarize = byName.get(c.name)?.summarizeRound;
+    const r = results[k];
+    if (!summarize || !r) return;
+    groups.set(summarize, [...(groups.get(summarize) ?? []), { content: typeof r.content === 'string' ? r.content : '', isError: r.is_error === true }]);
+  });
+  const notes: Anthropic.TextBlockParam[] = [];
+  for (const [summarize, rs] of groups) {
+    const line = rs.length > 1 ? summarize(rs) : null;
+    if (line) notes.push({ type: 'text', text: line });
+  }
+  return notes;
+}
+
 async function runTool(tool: QuickTool<any> | undefined, call: Anthropic.ToolUseBlock, i: LoopInput): Promise<Anthropic.ToolResultBlockParam> {
   const result = (content: string, isError = false): Anthropic.ToolResultBlockParam => ({
     type: 'tool_result',
@@ -159,7 +183,7 @@ async function runTool(tool: QuickTool<any> | undefined, call: Anthropic.ToolUse
   const args = tool.input.safeParse(call.input);
   if (!args.success) return result(`Invalid arguments for ${call.name}: ${z.prettifyError(args.error)}. Fix them and call it again.`, true);
   try {
-    const out = await withTimeout(tool.run(args.data, i.ctx), i.toolTimeoutMs ?? 8_000, i.signal);
+    const out = await withTimeout(tool.run(args.data, i.ctx), tool.timeoutMs ?? i.toolTimeoutMs ?? 8_000, i.signal);
     return result(typeof out === 'string' ? out : JSON.stringify(out ?? { ok: true }));
   } catch (e) {
     return result((e instanceof Error ? e.message : String(e)).slice(0, 500), true);
@@ -181,7 +205,8 @@ async function underHold<T>(hold: Reservation | null, model: string, call: (bill
 
 /**
  * One composer turn's model rounds: a direct Messages tool loop. At most 4 rounds; the tools of a round
- * run together; stay_silent ends the turn with no extra call; every round's usage is summed.
+ * run together; stay_silent ends the turn with no extra call, and so does a reply whose calls are all card tools that
+ * put their cards up; every round's usage is summed.
  */
 export async function runLoop(i: LoopInput): Promise<LoopResult> {
   const maxRounds = Math.min(i.maxRounds ?? MAX_ROUNDS, MAX_ROUNDS);
@@ -195,7 +220,8 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   let firstToken = false;
   let latestText = '';
   for (let round = 1; round <= maxRounds; round++) {
-    let outgoing = round > 1 || i.continuing ? withRollingMarker(messages) : messages;
+    // Every round marks its newest block, the first too: a round after it reads the whole prompt so far from the cache.
+    let outgoing = withRollingMarker(messages);
     if (countMarkers(i.system, tools, outgoing) > 4) outgoing = messages;
     const body = {
       model: i.model,
@@ -242,12 +268,33 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     if (reply.stop_reason !== 'tool_use' || calls.length === 0) {
       return { text: text || latestText, silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason };
     }
-    const results = await Promise.all(calls.map((c) => runTool(byName.get(c.name), c, i)));
-    messages.push({ role: 'user', content: results });
+    // A reply of card tools only: they run one by one, so each one's card is counted, and once every card is up the
+    // turn ends with this reply's words. A card tool that failed (no card) goes back to the model as any result does.
+    const cardsOnly = calls.every((c) => byName.get(c.name)?.endsTurn === true);
+    let allUp = cardsOnly;
+    const results: Anthropic.ToolResultBlockParam[] = [];
+    const linesBefore = i.ctx.lines.length;
+    if (cardsOnly) {
+      for (const c of calls) {
+        const before = i.ctx.cards.length;
+        const r = await runTool(byName.get(c.name), c, i);
+        if (r.is_error || i.ctx.cards.length === before) allUp = false;
+        results.push(r);
+      }
+    } else {
+      results.push(...(await Promise.all(calls.map((c) => runTool(byName.get(c.name), c, i)))));
+    }
+    messages.push({ role: 'user', content: [...results, ...roundNotes(calls, results, byName)] });
     if (calls.some((c) => c.name === STAY_SILENT)) {
       i.ctx.outcome.silent = true;
       return { text: '', silent: true, rounds: round, usage, messages, stopReason: STAY_SILENT };
     }
+    // A card that went up with its line: the line is this reply's words. The reply's free text was written before the
+    // card was up ("I'll show the best three…"), so it never goes out.
+    const lines = [...new Set(i.ctx.lines.slice(linesBefore).map((l) => l.trim()).filter((l) => l !== ''))];
+    const words = lines.length > 0 ? lines.join('\n') : text;
+    if (lines.length > 0) latestText = words;
+    if (allUp) return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP };
   }
   return { text: latestText, silent: i.ctx.outcome.silent, rounds: maxRounds, usage, messages, stopReason: 'max_rounds' };
 }

@@ -22,7 +22,7 @@ afterAll(() => db.drop());
 const sure = <T>(value: T) => ({ value, sure: true as const });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers; failFirstPut?: boolean } = {}) {
+function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers; failFirstPut?: boolean; dueNow?: (text: string | null | undefined) => boolean } = {}) {
   const now = () => new Date();
   const order: string[] = [];
   const f = fakeLink({
@@ -46,7 +46,10 @@ function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswer
     cancel: (tripId, ref) => desk.cancel(tripId, ref),
   };
   const hooks = createMessageHooks(silentLog);
-  hooks.onRead(async (m) => { order.push(`hook:${m.message_id}`); });
+  hooks.onRead(async (m) => {
+    order.push(`hook:${m.message_id}`);
+    return o.dueNow?.(m.text) ? { dueNow: true } : undefined;
+  });
   const emitted: string[] = [];
   tripLog.onEvent((e) => { emitted.push(e.event_id); });
   const speak: Speak = {
@@ -126,6 +129,54 @@ describe('intake', () => {
     expect(items[0]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
     expect(items[1]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
     expect(items[2]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
+  });
+
+  it('the last line of a burst that named Go is due at once when it plainly ends, and the lines before it still wait for it', async () => {
+    const h = harness({ reflex: () => ({ read: async () => UNSURE_READ }) });
+    const T = 't_in_3d';
+    await h.send(created(T));
+    const sentAt = Date.now();
+    // goa-300's burst, lines 99 to 103, one second apart.
+    const burst = ['ok', 'wait', '@Go one thing', 'for my birthday on the 7th', 'is there a good bakery near Anjuna?'];
+    for (const [n, text] of burst.entries()) await h.send(ev(n + 2, 'message.created', { message: msg(n + 2, 'p_meher', text) }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref)).toEqual(['m_2', 'm_3', 'm_4', 'm_5', 'm_6']);
+    for (const r of items.slice(0, 4)) expect(r.due_at.getTime() - sentAt, r.ref).toBeGreaterThan(1_500);
+    // Due now: the desk's next turn takes it with every message still waiting, so the five lines go as one.
+    expect(items[4]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
+  });
+
+  it('a burst whose last line does not plainly end waits as before, and a plain end only counts after the same person named Go', async () => {
+    const h = harness({ reflex: () => ({ read: async () => UNSURE_READ }) });
+    const T = 't_in_3e';
+    await h.send(created(T));
+    const sentAt = Date.now();
+    // goa-50's burst, lines 29 to 33: nothing in it plainly ends, so all five wait and go as one turn.
+    const burst = ['wait', 'one more thing', '@Go can you also check', "if there's a cab from Mopa airport to Anjuna", 'for 5 people with luggage'];
+    for (const [n, text] of burst.entries()) await h.send(ev(n + 2, 'message.created', { message: msg(n + 2, 'p_kabir', text) }, T));
+    // Someone else's question right after it, and Kabir's own question 7 s after he named Go.
+    await h.send(ev(7, 'message.created', { message: msg(7, 'p_priya', 'is there a good bakery near Anjuna?') }, T));
+    const later = new Date(Date.parse(msg(4, 'p_kabir', 'x').sent_at) + 7_000).toISOString();
+    await h.send(ev(8, 'message.created', { message: msg(8, 'p_kabir', 'is it hot in Goa in November?', { sent_at: later }) }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref)).toEqual(['m_2', 'm_3', 'm_4', 'm_5', 'm_6', 'm_7', 'm_8']);
+    for (const r of items) expect(r.due_at.getTime() - sentAt, r.ref).toBeGreaterThan(1_500);
+  });
+
+  it('a message a hook reads as a whole ask is due at once, even one that does not plainly end', async () => {
+    const h = harness({ reflex: () => ({ read: async () => UNSURE_READ }), dueNow: (text) => text === '@Go flights Delhi to Goa Friday' });
+    const T = 't_in_3c';
+    await h.send(created(T));
+    const sentAt = Date.now();
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_arjun', '@Go flights Delhi to Goa Friday') }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_arjun', '@Go one more thing') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref)).toEqual(['m_2', 'm_3']);
+    expect(items[0]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
+    expect(items[1]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
   });
 
   it('a sure-complete read is due at once; sure chatter gets no item unless it names Go', async () => {
@@ -282,6 +333,69 @@ describe('intake', () => {
     await h.intake.refreshActive();
     await h.intake.idle();
     expect((await open(T)).some((r) => r.ref === 'm_9' && r.payload.namesGo === true)).toBe(true);
+  });
+
+  it('one refresh waits per trip, and a refresh that waited reads nothing for a trip marked gone meanwhile', async () => {
+    const T = 't_in_gone_1';
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const h = harness({
+      answers: {
+        read_trip: async (p) => {
+          await gate;
+          return goaSnapshot({ trip_id: p.trip_id, seq: 1 });
+        },
+      },
+    });
+    await h.send(created(T));
+    await h.intake.idle();
+    const reads = (method: string) => h.f.calls.filter((c) => c.method === method && c.params.trip_id === T).length;
+    // The first refresh is slow; three more ticks go by meanwhile, and only one of them waits behind it.
+    await h.intake.refreshActive();
+    await vi.waitFor(() => expect(reads('read_trip')).toBe(1));
+    await h.intake.refreshActive();
+    await h.intake.refreshActive();
+    await h.intake.refreshActive();
+    // The Server forgets the trip, and Go marks it gone (the link does this on a 404): its pack goes.
+    await db.pool.query('update trips set gone_at = now() where trip_id = $1', [T]);
+    h.packs.invalidate(T);
+    release();
+    await h.intake.idle();
+    expect(reads('read_trip')).toBe(1);
+    expect(reads('read_messages')).toBe(1);
+    // Later ticks don't see it at all.
+    await h.intake.refreshActive();
+    await h.intake.idle();
+    expect(reads('read_trip')).toBe(1);
+  });
+
+  it('an event from the Server for a trip marked gone brings it back before anything reads it', async () => {
+    const T = 't_in_gone_2';
+    const h = harness();
+    await h.send(created(T));
+    await h.intake.idle();
+    await db.pool.query('update trips set gone_at = now() where trip_id = $1', [T]);
+    h.packs.invalidate(T);
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_priya', '@Go are we still on?') }, T));
+    await h.intake.idle();
+    const { rows } = await db.pool.query<{ gone_at: Date | null }>('select gone_at from trips where trip_id = $1', [T]);
+    expect(rows[0]?.gone_at).toBeNull();
+    expect((await open(T)).some((r) => r.ref === 'm_2')).toBe(true);
+  });
+
+  it('"what did I miss" to the group wakes nobody (the App gives each person their own catch-up), but put to Go it does', async () => {
+    const h = harness();
+    const T = 't_in_missed';
+    await h.send(created(T));
+    // The real line from goa-300; the reflex was unsure, so it used to wake the composer, which posted a catch-up.
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_rahul', 'meeting khatam, what did I miss') }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_arjun', '@Go what did I miss?') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref)).toEqual(['m_3']);
+    expect(items[0]?.payload.namesGo).toBe(true);
   });
 
   it('hides a card number before anything is written: the trip log, the messages table, the pack, the reflex', async () => {

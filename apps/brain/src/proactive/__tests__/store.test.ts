@@ -61,6 +61,28 @@ describe('ProactiveStore', () => {
     expect((await store.status('t_goa', 'timer:1'))?.status).toBe('promoted');
   });
 
+  it('retires every pending candidate of a trip the Server no longer has, and a re-plan revives its timer if it comes back', async () => {
+    await seedTrip(db.pool, 't_gone_store', 'Asia/Kolkata');
+    const timer = candidate({ tripId: 't_gone_store', dedupeKey: 'timer:gone', source: 'timer', topic: 'travel_day', dueAt: NOON });
+    const watch = candidate({ tripId: 't_gone_store', dedupeKey: 'watch:gone', dueAt: NOON });
+    const live = candidate({ dedupeKey: 'live:1', dueAt: NOON });
+    await store.plan(timer);
+    await store.add(watch);
+    await store.add(live);
+    await db.pool.query(`update trips set gone_at = $2 where trip_id = $1`, ['t_gone_store', NOON]);
+    expect(await store.retireGone(NOON)).toBe(2);
+    expect(await store.status('t_gone_store', 'timer:gone')).toMatchObject({ status: 'dropped', reason: 'trip_gone' });
+    expect(await store.status('t_gone_store', 'watch:gone')).toMatchObject({ status: 'dropped', reason: 'trip_gone' });
+    expect((await store.due(NOON)).map((c) => c.tripId)).not.toContain('t_gone_store');
+    expect((await store.status('t_goa', 'live:1'))?.status).toBe('pending');
+    expect(await store.retireGone(NOON)).toBe(0);
+    // The Server has it again: the next re-plan brings the timer back.
+    await db.pool.query(`update trips set gone_at = null where trip_id = $1`, ['t_gone_store']);
+    await store.plan(timer);
+    expect((await store.status('t_gone_store', 'timer:gone'))?.status).toBe('pending');
+    await store.drop(live, 'test_done', NOON);
+  });
+
   it('defers a candidate to a later time with a reason', async () => {
     const c = candidate({ dedupeKey: 'defer:1', dueAt: NOON });
     await store.add(c);

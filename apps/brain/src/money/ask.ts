@@ -1,5 +1,6 @@
 import type { TurnCtx } from '../composer/tools.js';
 import type { ToServerResult, Trip } from '../door/methods.js';
+import { ixigoPage } from '../travel/cards.js';
 import type { Hold, Travel } from '../travel/travel.js';
 import { payCard, type PayCard, type PayCardLook } from './cards.js';
 import type { MoneyDeps } from './deps.js';
@@ -53,7 +54,7 @@ interface Words {
   what: string;
   amount?: string;
   cap?: string;
-  /** For not_bookable_yet: the offer's kind and its booking page, when the travel layer has one. */
+  /** For not_bookable_yet: the offer's kind. For it and not_bookable: the option's own page, only ever on ixigo.com. */
   kind?: string;
   link?: string;
 }
@@ -71,10 +72,10 @@ const CODES: ReadonlySet<string> = new Set<RefusalCode>([
 ]);
 
 /** Fares Go does not book for the whole group this week (master §9 "Cut now"): they are per person. */
-const GROUP_FARES: ReadonlySet<string> = new Set(['flight', 'train', 'bus']);
+export const GROUP_FARES: ReadonlySet<string> = new Set(['flight', 'train', 'bus']);
 
 function codeOf(reason: string | null): RefusalCode {
-  if (reason === 'vault_rail_not_ready') return 'rail_not_ready';
+  if (reason?.startsWith('vault_rail_not_ready')) return 'rail_not_ready';
   if (reason?.startsWith('vault_')) return 'vault_refused';
   return reason && CODES.has(reason) ? (reason as RefusalCode) : 'server_down';
 }
@@ -164,11 +165,12 @@ export async function askToPay(
   }
   // Group flights, trains and buses are cut this week: a fare is per person, so Go hands over the link instead of paying
   // one fare for the whole group. Nothing is held.
+  const link = ixigoPage(offer?.link);
   if (offer && GROUP_FARES.has(offer.kind)) {
-    return refuse(d, 'not_bookable_yet', { ...words, kind: offer.kind, ...(offer.link ? { link: offer.link } : {}) });
+    return refuse(d, 'not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}) });
   }
   const offerId = offer?.offerId ?? null;
-  if (!offerId) return refuse(d, 'not_bookable', words);
+  if (!offerId) return refuse(d, 'not_bookable', { ...words, ...(link ? { link } : {}) });
 
   // The live price, checked now.
   const people = trip.people.map((p) => p.person_id);
@@ -293,7 +295,16 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
       expiresAt: row.hold_expires_at.toISOString(),
     },
   });
-  if (!link.ok) return fail(`vault_${link.reason}`, link.reason === 'rail_not_ready' ? 'rail_not_ready' : 'vault_refused');
+  if (!link.ok) {
+    // No pay page was ever opened: the vault turned the approval down first. Why is kept on the row (for the admin view)
+    // and in the log, e.g. a signature not valid for the vault's key; the room only hears that Go couldn't start it.
+    const why = link.detail ? `vault_${link.reason}: ${link.detail}` : `vault_${link.reason}`;
+    d.log.warn(
+      { payment_id: row.payment_id, approval_id: approvalId, reason: link.reason, detail: link.detail ?? null },
+      'the vault refused the approval before any pay page opened',
+    );
+    return fail(why, link.reason === 'rail_not_ready' ? 'rail_not_ready' : 'vault_refused');
+  }
 
   // 3. The pay card, for the payer only.
   const cardId = row.card_id ?? ids.cardId;
@@ -313,11 +324,14 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
     },
     'waiting',
   );
+  // Waiting before the card can show: the Server shows it to the room before its answer reaches Go, and a tap in between
+  // (a quick payer, or a send repeated after a dropped socket) must find it ready.
+  await transition(d.pool, row.payment_id, ['asking'], 'waiting', { card_state: 'waiting' }, d.now());
   try {
     await deliver(card);
   } catch (e) {
-    return fail('server_down', 'server_down', e);
+    await transition(d.pool, row.payment_id, ['waiting'], 'refused', { refused_reason: 'server_down', release_reason: 'other' }, d.now());
+    return refuse(d, 'server_down', words, e);
   }
-  await transition(d.pool, row.payment_id, ['asking'], 'waiting', { card_state: 'waiting' }, d.now());
   return { cardId, paymentId: row.payment_id };
 }

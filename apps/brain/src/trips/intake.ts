@@ -7,8 +7,9 @@ import type { Log } from '../log.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../reflex/reflex.js';
 import type { HooksImpl } from './hooks.js';
 import type { TripLogImpl } from './log.js';
-import { endsThought, namesGoInText, plainlyNamesGo } from './names-go.js';
-import type { PacksImpl } from './pack.js';
+import { asksWhatTheyMissed, continuesAskToGo, endsThought, namesGoInText, plainlyNamesGo } from './names-go.js';
+import { TripGoneError } from './gone.js';
+import type { PacksImpl, TripPack } from './pack.js';
 import { screenEvent } from './screen.js';
 import type { SetupImpl } from './setup.js';
 
@@ -25,13 +26,36 @@ export interface IntakeDeps {
   /** Read at call time: P2 replaces brain.reflex after boot wiring. */
   reflex: () => Reflex;
   runningTasks: (tripId: string) => Promise<Array<{ id: string; brief: string }>>;
-  /** The wait after a message for Go, unless the reflex is sure the thought is complete or it names Go and plainly ends one. */
+  /** The wait after a message for Go, unless it is a whole thought (dueAtOnce). */
   waitMs?: number;
+}
+
+/**
+ * Whether a person's message wakes the composer. One that names Go always does. Sure chatter never does, and neither
+ * does asking the group what you missed: the App gives each person their own catch-up (the Server's catch_up).
+ */
+export function wakesComposer(namesGo: boolean, read: Pick<ReflexRead, 'forGo'>, text: string | null | undefined): boolean {
+  if (namesGo) return true;
+  return !((read.forGo.sure && read.forGo.value === false) || asksWhatTheyMissed(text));
+}
+
+/**
+ * Whether a message that wakes the composer is a whole thought, due at once instead of waiting for more lines: the reflex
+ * is sure it is complete; it plainly ends ("...?") and names Go, or ends a burst that named Go; or a hook read it as a
+ * whole ask (a travel search it has already started). Lines that stop mid-burst ("@Go can you", "for my birthday on the
+ * 7th") don't end plainly, so they still wait.
+ */
+export function dueAtOnce(m: Message, pack: TripPack, read: Pick<ReflexRead, 'complete'>, namesGo: boolean, hookDueNow: boolean): boolean {
+  if (read.complete.sure && read.complete.value === true) return true;
+  if (endsThought(m.text) && (namesGo || continuesAskToGo(m, pack))) return true;
+  return hookDueNow;
 }
 
 export function createIntake(d: IntakeDeps) {
   const waitMs = d.waitMs ?? 2_000;
   const queues = new Map<string, Promise<void>>();
+  /** Trips with a refresh waiting in their queue. */
+  const refreshing = new Set<string>();
   const processed = new Map<string, number>();
   const handled = new Set<string>();
 
@@ -85,12 +109,10 @@ export function createIntake(d: IntakeDeps) {
       d.log.warn({ err: e, message: m.message_id }, 'the reflex failed; the composer decides');
       read = UNSURE_READ;
     }
-    await d.hooks.run(m, read, pack);
-    // Sure chatter never wakes the model, but a message that names Go always does.
-    if (namesGo || !(read.forGo.sure && read.forGo.value === false)) {
+    const said = await d.hooks.run(m, read, pack);
+    if (wakesComposer(namesGo, read, m.text)) {
       const now = d.now();
-      // No wait for a thought that is over: the reflex is sure, or the message names Go and plainly ends ("...?").
-      const complete = (read.complete.sure && read.complete.value === true) || (namesGo && endsThought(m.text));
+      const complete = dueAtOnce(m, pack, read, namesGo, said.dueNow === true);
       await d.desk.put({
         id: `msg:${tripId}:${m.message_id}`,
         tripId,
@@ -143,6 +165,9 @@ export function createIntake(d: IntakeDeps) {
     const tripId = ev.trip_id;
     const before = await processedSeq(tripId);
     if (ev.seq <= before) return;
+    // The Server sent an event for the trip, so it has it: a trip marked gone comes back before anything reads it.
+    const back = await d.pool.query('update trips set gone_at = null where trip_id = $1 and gone_at is not null', [tripId]);
+    if ((back.rowCount ?? 0) > 0) d.log.info({ trip: tripId }, 'the Server has this trip again: Go picks it back up');
     if (ev.type !== 'trip.created' && before > 0 && ev.seq > before + 1) await fillGap(tripId, before, ev.seq);
     await d.packs.apply(ev);
     // Setup runs on trip.created and on any event for a trip not set up yet; it never holds up the events.
@@ -175,9 +200,19 @@ export function createIntake(d: IntakeDeps) {
     /** Once a minute: read every active trip again, as a net for anything both sides missed. */
     async refreshActive(): Promise<void> {
       for (const tripId of d.packs.active()) {
+        // One refresh waits per trip; behind a slow one, a second would only read the trip again.
+        if (refreshing.has(tripId)) continue;
+        refreshing.add(tripId);
         void enqueue(tripId, async () => {
-          const fresh = await d.packs.refill(tripId);
-          for (const m of fresh.sort((a, b) => a.seq - b.seq)) await onMessage(tripId, m);
+          refreshing.delete(tripId);
+          // Marked gone while this waited (its pack went with the mark): it is not read again.
+          if (!d.packs.peek(tripId)) return;
+          try {
+            const fresh = await d.packs.refill(tripId);
+            for (const m of fresh.sort((a, b) => a.seq - b.seq)) await onMessage(tripId, m);
+          } catch (e) {
+            if (!(e instanceof TripGoneError)) throw e;
+          }
         });
       }
     },

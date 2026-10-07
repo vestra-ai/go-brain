@@ -1,0 +1,178 @@
+{
+ "data": {
+  "result": {
+   "inventoryInfoList": [
+    {
+     "locationId": 1121439,
+     "hotelId": 1137777,
+     "name": "Zone Connect by The Park, Parra, Goa",
+     "locality": "Candolim",
+     "city": "Candolim",
+     "userRating": "8.2",
+     "starRating": 4,
+     "userRatingCount": 578,
+     "accommodationType": "Hotel",
+     "topOfferings": [
+      "Book with ₹0 payment",
+      "Free Cancellation",
+      "Free Wifi",
+      "Swimming pool at the property"
+     ],
+     "roomsCountLeft": 1,
+     "distanceFromSearchedEntity": "5.8 km from Candolim Beach",
+     "hotelInfoToken": "true|2023|1",
+     "geoLocationInfo": {
+      "lat": 15.5656223,
+      "lon": 73.78509989999999
+     },
+     "imageInfoList": [
+      {
+       "url": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/377925732.jpg?k=f8ca2452381070ab28761c504aa3d5326722aca8e3fcec686c2d5f4ebd487d43&o=",
+       "urlMedium": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/377925732.jpg?k=f8ca2452381070ab28761c504aa3d5326722aca8e3fcec686c2d5f4ebd487d43&o="
+      }
+     ],
+     "amenities": [
+      {
+       "name": "Restaurants"
+      },
+      {
+       "name": "Room Service"
+      }
+     ],
+     "fareDetail": {
+      "displayedBaseFare": 7770,
+      "taxesAndFees": 2142,
+      "method": "PRPN"
+     }
+    },
+    {
+     "locationId": 2708280,
+     "hotelId": 4014848,
+     "name": "3102bce - A Vedic Resort",
+     "locality": "Vagator",
+     "city": "Vagator",
+     "userRating": "9.2",
+     "starRating": 4,
+     "userRatingCount": 676,
+     "accommodationType": "Resort",
+     "topOfferings": [
+      "Breakfast Included",
+      "Free Wifi",
+      "Swimming pool at the property"
+     ],
+     "roomsCountLeft": 1,
+     "distanceFromSearchedEntity": "550 m from Vagator City Center",
+     "hotelInfoToken": "true|3001|1",
+     "geoLocationInfo": {
+      "lat": 15.5983725,
+      "lon": 73.7475051
+     },
+     "imageInfoList": [
+      {
+       "url": "https://pix8.agoda.net/hotelImages/23086774/-1/d2a6dd217e0e30fef6bf090caf8056e1.jpg?ce=0&s=1024x768",
+       "urlMedium": "https://pix8.agoda.net/hotelImages/23086774/-1/d2a6dd217e0e30fef6bf090caf8056e1.jpg?ce=0&s=840x460"
+      }
+     ],
+     "amenities": [
+      {
+       "name": "Restaurants"
+      },
+      {
+       "name": "24*7 Room Service"
+      }
+     ],
+     "fareDetail": {
+      "displayedBaseFare": 12482,
+      "taxesAndFees": 3268,
+      "method": "PRPN"
+     }
+    },
+    {
+     "locationId": 1117685,
+     "hotelId": 1134006,
+     "name": "Calux Joia Do Mar Resort",
+     "locality": "Prabhu wada",
+     "city": "Candolim",
+     "userRating": "8.5",
+     "starRating": 4,
+     "userRatingCount": 434,
+     "accommodationType": "Resort",
+     "topOfferings": [
+      "Free Wifi",
+      "Swimming pool at the property"
+     ],
+     "roomsCountLeft": 8,
+     "distanceFromSearchedEntity": "3.7 km from Candolim Beach",
+     "hotelInfoToken": "true|2022|1",
+     "geoLocationInfo": {
+      "lat": 15.551231384277344,
+      "lon": 73.7647476196289
+     },
+     "imageInfoList": [
+      {
+       "url": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/687053689.jpg?k=1d9a7a1175b8aea510d77e336fbc3820866a77ee378d3c6f4c46eb8ad94c6c3f&o=",
+       "urlMedium": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/687053689.jpg?k=1d9a7a1175b8aea510d77e336fbc3820866a77ee378d3c6f4c46eb8ad94c6c3f&o="
+      }
+     ],
+     "amenities": [
+      {
+       "name": "Restaurants"
+      },
+      {
+       "name": "Room Service"
+      }
+     ],
+     "fareDetail": {
+      "displayedBaseFare": 4894,
+      "taxesAndFees": 696,
+      "method": "PRPN"
+     }
+    },
+    {
+     "locationId": 2959230,
+     "hotelId": 4643265,
+     "name": "HOLITEL ANJUNA GOA ",
+     "locality": "Vagator",
+     "city": "Vagator",
+     "userRating": "8.6",
+     "starRating": 4,
+     "userRatingCount": 75,
+     "accommodationType": "Hotel",
+     "topOfferings": [
+      "Book with ₹0 payment",
+      "Breakfast Included",
+      "Free Cancellation",
+      "Free Wifi",
+      "Swimming pool at the property"
+     ],
+     "roomsCountLeft": 1,
+     "distanceFromSearchedEntity": "1.4 km from Vagator City Center",
+     "hotelInfoToken": "true|2023|1",
+     "geoLocationInfo": {
+      "lat": 15.58423805236816,
+      "lon": 73.75825500488281
+     },
+     "imageInfoList": [
+      {
+       "url": "https://pix8.agoda.net/hotelImages/51820838/-1/27fd4973ec968fca2f067be0aae53cf5.jpg?ce=0&s=1024x768",
+       "urlMedium": "https://pix8.agoda.net/hotelImages/51820838/-1/27fd4973ec968fca2f067be0aae53cf5.jpg?ce=0&s=840x460"
+      }
+     ],
+     "amenities": [
+      {
+       "name": "Restaurants"
+      },
+      {
+       "name": "Room Service"
+      }
+     ],
+     "fareDetail": {
+      "displayedBaseFare": 16357,
+      "taxesAndFees": 3962,
+      "method": "PRPN"
+     }
+    }
+   ]
+  }
+ }
+}

@@ -1,13 +1,17 @@
 /**
- * brain.travel. Picks the backend on every call from the TRAVEL_MODE switch (the fake when ixigo is not set up),
- * caches each search for three minutes with the time it was checked, applies constraints in code on every call,
+ * brain.travel. Picks the backend on every call from the TRAVEL_MODE switch (the fake when the one it names is not set
+ * up), caches each search for three minutes with the time it was checked (ixigo_web keeps its own, for ten minutes, by
+ * recipe and slots), applies constraints in code on every call,
  * and routes a hold or a confirm to the backend that made the offer. A search or a hold for a check-in or departure
  * before today in the trip's time zone is refused before any backend sees it, with the date to use instead.
+ * ixigo_web searches ixigo.com itself, in the trip's browser: its options are link only, and status comes from ixigo's
+ * MCP server when that is set up (never from the fake, whose readings are simulated).
  */
 import type { Switches } from '../admin/switches.js';
 import { localDay } from '../proactive/clock.js';
+import { ixigoPage } from './cards.js';
 import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
-import { applyConstraints } from './filters.js';
+import { applyConstraints, closest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
 import type { ResultsStore } from './results.js';
 import { TravelQuery, type OfferRef, type Travel, type TravelBackend, type TravelKind, type TravelOptionKind, type TravelSearch } from './travel.js';
@@ -20,7 +24,9 @@ export interface TravelLayerDeps {
   now: () => Date;
   fake: TravelBackend;
   ixigo: TravelBackend | null;
-  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor'>>;
+  /** ixigo.com through the recipes (TRAVEL_MODE ixigo_web). */
+  ixigoWeb?: TravelBackend | null;
+  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor' | 'placeOf'>>;
   /** Today (YYYY-MM-DD) in the trip's time zone. Default: India's. */
   today?: (tripId: string | null) => Promise<string>;
   simulate?: NonNullable<Travel['simulate']>;
@@ -40,15 +46,43 @@ function backendQuery(q: TravelQuery): TravelQuery {
   };
 }
 
+/** What a backend sees. ixigo_web also sees the must-haves: ixigo filters on some itself, so its list holds the right stays. */
+const queryFor = (backend: string, q: TravelQuery): TravelQuery =>
+  backend === 'ixigo_web' && q.mustHave ? { ...backendQuery(q), mustHave: q.mustHave } : backendQuery(q);
+
 const keyOf = (q: TravelQuery): string =>
   JSON.stringify(Object.entries(q).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, typeof v === 'string' ? v.trim().toLowerCase() : v]));
 
 export function createTravelLayer(d: TravelLayerDeps): Travel {
   const ttl = d.cacheMs ?? SEARCH_CACHE_MS;
   const today = d.today ?? (async () => localDay(d.now(), DEFAULT_TRIP_TZ));
-  const cache = new Map<string, { at: number; value: TravelSearch }>();
-  const pick = (): { name: 'fake' | 'ixigo'; b: TravelBackend } =>
-    d.switches.get('TRAVEL_MODE') === 'ixigo' && d.ixigo ? { name: 'ixigo', b: d.ixigo } : { name: 'fake', b: d.fake };
+  const cache = new Map<string, { at: number; value: Promise<TravelSearch> }>();
+  /**
+   * A search kept for three minutes from its start, and shared while it runs: the composer's search_* call joins the
+   * one the early start began. One that fails is not kept. ixigo_web keeps its own (by recipe and slots, ten minutes).
+   */
+  const kept = (key: string, search: () => Promise<TravelSearch>): Promise<TravelSearch> => {
+    const nowMs = d.now().getTime();
+    const hit = cache.get(key);
+    if (hit && nowMs - hit.at <= ttl) return hit.value;
+    const value = search();
+    cache.delete(key);
+    cache.set(key, { at: nowMs, value });
+    value.catch(() => {
+      if (cache.get(key)?.value === value) cache.delete(key);
+    });
+    while (cache.size > CACHE_MAX) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
+    return value;
+  };
+  const pick = (): { name: 'fake' | 'ixigo' | 'ixigo_web'; b: TravelBackend } => {
+    const mode = d.switches.get('TRAVEL_MODE');
+    if (mode === 'ixigo_web' && d.ixigoWeb) return { name: 'ixigo_web', b: d.ixigoWeb };
+    return mode === 'ixigo' && d.ixigo ? { name: 'ixigo', b: d.ixigo } : { name: 'fake', b: d.fake };
+  };
   const byPrefix = (id: string): TravelBackend => {
     if (id.startsWith('fake:')) return d.fake;
     if (id.startsWith('ixigo:') && d.ixigo) return d.ixigo;
@@ -68,24 +102,20 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
         }
       }
       const { name, b } = pick();
-      const base = backendQuery(parsed);
-      const key = `${name}|${kind}|${keyOf(base)}`;
-      const nowMs = d.now().getTime();
-      let hit = cache.get(key);
-      if (!hit || nowMs - hit.at > ttl) {
-        hit = { at: nowMs, value: await b.search(kind, base) };
-        cache.delete(key);
-        cache.set(key, hit);
-        while (cache.size > CACHE_MAX) {
-          const oldest = cache.keys().next().value;
-          if (oldest === undefined) break;
-          cache.delete(oldest);
-        }
-      }
-      return { checkedAt: hit.value.checkedAt, results: applyConstraints(kind, parsed, hit.value.results) };
+      const base = queryFor(name, parsed);
+      const found = name === 'ixigo_web' ? await b.search(kind, base, o) : await kept(`${name}|${kind}|${keyOf(base)}`, () => b.search(kind, base, o));
+      const all = found.results;
+      const results = applyConstraints(kind, parsed, all);
+      const near = results.length === 0 ? closest(kind, parsed, all) : null;
+      return { checkedAt: found.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}), ...(found.runId ? { runId: found.runId } : {}) };
+    },
+    async waitMs(kind, q, o) {
+      const { name, b } = pick();
+      return b.waitMs ? b.waitMs(kind, queryFor(name, TravelQuery.parse(q)), o) : null;
     },
     async status(q) {
-      return pick().b.status(q);
+      const { name, b } = pick();
+      return name === 'ixigo_web' && d.ixigo ? d.ixigo.status(q) : b.status(q);
     },
     simulated: () => pick().name === 'fake',
     async hold(offerId, lead) {
@@ -102,13 +132,16 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     async confirm(holdId, paid) {
       return byPrefix(holdId).confirm(holdId, paid);
     },
+    async placeOf(optionId) {
+      return d.results.placeOf ? d.results.placeOf(optionId) : null;
+    },
     async offer(optionId): Promise<OfferRef | null> {
       const o = await d.results.offer(optionId);
       if (!o) return null;
       // A vote and a payment use the whole stay; the card shows the nightly price.
-      // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is ixigo's own page for
-      // the offer, filled once ixigo's tools are mapped (Task 23), and null until then.
-      return { offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: null };
+      // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is the option's own page on
+      // ixigo.com (ixigo_web), where the group can book it, and null otherwise: a page a job found elsewhere is not handed out.
+      return { offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl) };
     },
     ...(d.simulate ? { simulate: d.simulate } : {}),
   };

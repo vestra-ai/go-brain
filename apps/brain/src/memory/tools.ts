@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { dataBlock, defuse, inlineData, oneLine, personName } from '../composer/fence.js';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import { checkLine } from './checker.js';
+import { decisionOf, linkLine } from './decision-lines.js';
 import { forgottenUpTo } from './facts.js';
 import type { Memory } from './memory.js';
 import { renderRecord } from './now.js';
@@ -83,7 +84,10 @@ export function memoryTools(d: { pool: Pool; memory: Memory }): QuickTool<any>[]
       const c = checkLine({ kind: args.kind, text: args.text, person_ids: args.person_ids, proof: args.proof_message_ids }, env);
       if (!c.ok) return { refused: c.reason, tell_the_room: SAY_NOTHING };
       const out = await writeLine(d.pool, ctx.link, ctx.tripId, c.value, ctx.stableId('go_record'));
-      return 'failed' in out ? { refused: `the Server said ${out.failed}`, tell_the_room: SAY_NOTHING } : { saved: out.lineId, kind: c.value.kind };
+      if ('failed' in out) return { refused: `the Server said ${out.failed}`, tell_the_room: SAY_NOTHING };
+      const vote = decisionOf(c.value, ctx.pack, { cards: ctx.cards, wake: ctx.wake });
+      if (vote) await linkLine(d.pool, ctx.tripId, out.lineId, vote, ctx.pack);
+      return { saved: out.lineId, kind: c.value.kind };
     },
   };
 

@@ -138,14 +138,18 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
     const searched = result('search_flights');
     if (searched) {
       const id = field(searched.content, 'results_id');
-      return id ? { tools: [{ name: 'show_options', input: { results_id: id, title: 'Friday flights, Delhi to Goa' } }] } : { text: DIRECTOR_WORDS.noFlights };
+      // The line goes in the card tool's line (Go's rules), and the turn ends on the card: no call for a line.
+      return id
+        ? { tools: [{ name: 'show_options', input: { results_id: id, title: 'Friday flights, Delhi to Goa', line: DIRECTOR_WORDS.flights } }] }
+        : { text: DIRECTOR_WORDS.noFlights };
     }
     // The villas go up as options only: the group opens the vote with the card's own "Put it to a vote" (the stage's way).
+    // Only lines that arrived meanwhile bring Go back after a card: it says its line again.
     if (result('show_options')) return { text: now.includes('finished with') ? DIRECTOR_WORDS.villasShown : DIRECTOR_WORDS.flights };
     if (result('start_task')) return { text: DIRECTOR_WORDS.villaStarted };
     if (result('set_mandate')) return { text: DIRECTOR_WORDS.mandate };
     if (result('ask_to_pay')) return { text: DIRECTOR_WORDS.refusal };
-    // call_business and post_notice say what they need to themselves.
+    // call_business says what it needs to itself; post_notice ends the turn on its card.
     return silent('done');
   }
 
@@ -220,7 +224,7 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
     }
     const resultsId = /results_id "([^"]+)"/.exec(now)?.[1];
     if (resultsId && now.includes('finished with')) {
-      return { tools: [{ name: 'show_options', input: { results_id: resultsId, title: 'Villas with a pool in North Goa' } }] };
+      return { tools: [{ name: 'show_options', input: { results_id: resultsId, title: 'Villas with a pool in North Goa', line: DIRECTOR_WORDS.villasShown } }] };
     }
     return silent('nothing for Go');
   }

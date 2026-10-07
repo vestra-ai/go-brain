@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
+import { CARD_LINE } from '../../composer/rules.js';
 import { SAY_NOTHING } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import { makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
@@ -8,7 +9,7 @@ import { createImages } from '../images.js';
 import { createTravelLayer } from '../layer.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import { createResultsStore, type ResultsStore } from '../results.js';
-import { travelTools } from '../tools.js';
+import { compactOption, searchRoundSummary, travelTools } from '../tools.js';
 import type { Travel } from '../travel.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -65,9 +66,52 @@ describe('search tools', () => {
     expect(out.results[1]).toMatchObject({ price: '₹12,800 per night', total: '₹38,400 for 3 nights' });
     const missing = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_night: 5000 }, lb.ctx())) as any;
     expect(missing.count).toBe(0);
-    expect(missing.note).toContain('Nothing matched');
+    // The fake gives 7 that sleep 5; none is under ₹5,000 a night.
+    expect(missing.summary).toMatch(/^None of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹5,000 a night, sleeping 5, with a pool and within 10 minutes of the beach\. Closest: /);
+    expect(missing.note).toContain('keeping every condition in it');
   });
 
+  it('nothing fits a pool villa under ₹10,000 a night: the summary keeps the pool and names the closest miss and why', async () => {
+    const none = (await lb.tools.run(
+      'search_stays',
+      { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', must_have: ['pool'], max_price_per_night: 10000 },
+      lb.ctx({ turnId: 'turn_pf1' }),
+    )) as any;
+    expect(none).toMatchObject({ count: 0, search: 'stays in North Goa, 2026-11-06 to 2026-11-09, at most ₹10,000 a night, with a pool' });
+    // The ₹9,800 villa the next search can show is named here, with the pool it lacks, so "nothing at ₹8 to 10k" cannot be said.
+    expect(none.summary).toBe(
+      'None of the 8 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹10,000 a night and with a pool. Closest: Saudade Villa (Parra), ₹9,800 per night, but no pool.',
+    );
+    expect(none.results_id).toBeUndefined();
+  });
+
+  it('an area with no stays at all says nothing came back, not that nothing fit', async () => {
+    const none = (await lb.tools.run('search_stays', { area: 'Calangute', check_in: '2026-11-06', check_out: '2026-11-09' }, lb.ctx({ turnId: 'turn_pf2' }))) as any;
+    expect(none).toMatchObject({ count: 0, summary: 'Nothing came back: there are no stays in Calangute, 2026-11-06 to 2026-11-09 at all.' });
+  });
+
+  it('every stay carries its own area as the data gives it, and the summary names the areas and the price range', async () => {
+    const out = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_pf3' }))) as any;
+    expect(out.results.map((r: { title: string; area: string }) => [r.title, r.area])).toEqual([
+      ['Casa Mareia', 'Morjim'], ['Villa Sol', 'Anjuna'], ['The Palms Villa', 'Vagator'], ['Ocean Breeze Villa', 'Candolim'],
+    ]);
+    expect(out.summary).toBe(
+      '4 of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fit sleeping 5, with a pool and within 10 minutes of the beach: ₹12,200 to ₹16,900 per night, in Morjim, Anjuna, Vagator and Candolim.',
+    );
+    expect(out.note).toContain("Each option's area, time and price are as given here: name no other");
+    // The option's area wins over the asker's words.
+    expect(out.note).toContain("If someone asked for a place an option is not in, say the option's own area: asked for Calangute, a villa in Vagator is in Vagator.");
+    // The line shown with these options is the finished answer to whoever asked (re-drill 5: "Priya said 4… Picking the best few").
+    expect(out.note).toContain(CARD_LINE);
+    // A stay the data gives no area for says so, rather than leaving the model to fill one in.
+    expect(compactOption(1, { kind: 'stay', title: 'Somewhere', priceMinor: 900000, priceNote: 'per night', highlights: [], facts: {} })).toMatchObject({ area: 'not in the data' });
+  });
+
+  it('flights carry their route, and a search with no conditions just counts what came back', async () => {
+    const out = (await lb.tools.run('search_flights', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_pf4' }))) as any;
+    expect(out.results[0]).toMatchObject({ route: expect.stringMatching(/ to /) });
+    expect(out.summary).toMatch(new RegExp(`^${out.count} flights from Delhi to Goa on 2026-11-06: ₹[\\d,]+ to ₹[\\d,]+ per person\\.$`));
+  });
   it('search_trains and search_buses answer journeys, and nothing that misses arrive_before', async () => {
     const trains = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_t1' }))) as any;
     expect(trains.count).toBe(6);
@@ -79,14 +123,33 @@ describe('search tools', () => {
   });
 });
 
+describe('a reply of several searches', () => {
+  it('says how many came back with options, and which found nothing or failed, so prose can only count what came back', () => {
+    const line = searchRoundSummary([
+      { content: JSON.stringify({ search: 'flights from Delhi to Goa on 2026-11-06, leaving after 6:00 pm', count: 4 }), isError: false },
+      { content: JSON.stringify({ search: 'flights from Mumbai to Goa on 2026-11-06', count: 0, summary: 'Nothing came back.' }), isError: false },
+      { content: JSON.stringify({ search: 'flights from Pune to Goa on 2026-11-06', count: 0, error: 'unreachable' }), isError: false },
+    ]);
+    expect(line).toBe(
+      '1 of 3 searches came back with options: flights from Delhi to Goa on 2026-11-06, leaving after 6:00 pm (4). ' +
+        'Nothing came back for flights from Mumbai to Goa on 2026-11-06. Failed: flights from Pune to Goa on 2026-11-06. Count only what came back.',
+    );
+    expect(searchRoundSummary([{ content: 'socket timeout', isError: true }, { content: JSON.stringify({ search: 'stays in Goa', count: 3 }), isError: false }])).toBe(
+      '1 of 2 searches came back with options: stays in Goa (3). Failed: one search. Count only what came back.',
+    );
+  });
+});
+
 describe('show_options', () => {
   it('puts a valid options card built from the saved set into ctx.cards, with re-hosted images, so it rides with the message', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_o1' }))) as any;
     const ctx = lb.ctx({ turnId: 'turn_o2' });
     const posts = lb.link.sent('post_message').length;
-    const shown = (await lb.tools.run('show_options', { results_id: found.results_id, option_numbers: [2, 3, 4], title: 'Villas with a pool in North Goa' }, ctx)) as any;
+    const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [2, 3, 4], title: 'Villas with a pool in North Goa' }, ctx)) as any;
     expect(shown.card_id).toBe('c_opt_turn_o2_1');
     expect(ctx.cards).toHaveLength(1);
+    // Its line is the words posted with it (the model's free text in that reply never is).
+    expect(ctx.lines).toEqual(['Here are the villas.']);
     const card = C.OptionsCard.parse(ctx.cards[0]);
     expect(card.card_id).toBe(shown.card_id);
     expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
@@ -99,7 +162,7 @@ describe('show_options', () => {
 
   it('gives the same card when the same turn runs again, and keeps one set of offers', async () => {
     const found = (await lb.tools.run('search_flights', FLIGHTS, lb.ctx({ turnId: 'turn_r1' }))) as any;
-    const args = { results_id: found.results_id, title: 'Friday flights, Delhi to Goa' };
+    const args = { line: 'Friday evening flights.', results_id: found.results_id, title: 'Friday flights, Delhi to Goa' };
     const first = lb.ctx({ turnId: 'turn_r2' });
     const again = lb.ctx({ turnId: 'turn_r2' });
     await lb.tools.run('show_options', args, first);
@@ -111,9 +174,9 @@ describe('show_options', () => {
   it('shows the card it saved first when a rerun of the same turn asks for other options, so the card always matches its offers', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_c1' }))) as any;
     const first = lb.ctx({ turnId: 'turn_c2' });
-    await lb.tools.run('show_options', { results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, first);
+    await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, first);
     const again = lb.ctx({ turnId: 'turn_c2' });
-    const out = (await lb.tools.run('show_options', { results_id: found.results_id, option_numbers: [3, 4], title: 'Two other villas' }, again)) as any;
+    const out = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two other villas' }, again)) as any;
     expect(out.shown).toBe(2);
     expect(again.cards).toEqual(first.cards);
     const card = C.OptionsCard.parse(again.cards[0]);
@@ -122,10 +185,38 @@ describe('show_options', () => {
     expect(offers.map((o) => [o.optionId, o.title])).toEqual(card.options.map((o) => [o.option_id, o.title]));
   });
 
+  it('titles ixigo.com stays from the search when the title names villas they are not, and keeps it when every one is (re-drill 6)', async () => {
+    const stay = (title: string, area: string) => ({
+      kind: 'stay' as const, title, priceMinor: 900_000, currency: 'INR', priceNote: 'per night, per room', highlights: ['Pool'], facts: { area, pool: true },
+      sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
+    });
+    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
+    const show = async (options: ReturnType<typeof stay>[], title: string, turnId: string) => {
+      const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query, options, checkedAt: '2026-10-07T12:00:00.000Z' });
+      const ctx = lb.ctx({ turnId });
+      await lb.tools.run('show_options', { line: 'Here are the stays.', results_id: set.resultsId, title }, ctx);
+      return C.OptionsCard.parse(ctx.cards[0]).title;
+    };
+    const hotels = [stay('Meritas Auberge Calangute Goa', 'Candolim'), stay('3102bce - A Vedic Resort', 'Vagator'), stay('Villa Mandrem', 'Mandrem')];
+    expect(await show(hotels, 'Pool villas in North Goa', 'turn_t1')).toBe('Stays with a pool in North Goa');
+    expect(await show(hotels, 'Resorts with a pool', 'turn_t2')).toBe('Stays with a pool in North Goa');
+    // Every option a villa by its name, or a title that names no kind of place: the model's title stands.
+    expect(await show([stay('Villa Mandrem', 'Mandrem'), stay('The Palms Villa', 'Vagator')], 'Pool villas in North Goa', 'turn_t3')).toBe('Pool villas in North Goa');
+    expect(await show(hotels, 'Top picks near the beach', 'turn_t4')).toBe('Top picks near the beach');
+  });
+
   it("refuses results it does not have, or another trip's", async () => {
     const other = await results.save({ tripId: 't_other', optionKind: 'flight', source: 'search', query: {}, options: [], checkedAt: '2026-10-07T12:00:00.000Z' });
-    expect(await lb.tools.run('show_options', { results_id: other.resultsId, title: 'x' }, lb.ctx())).toMatchObject({ error: 'unknown_results' });
-    expect(await lb.tools.run('show_options', { results_id: 'r_nope', title: 'x' }, lb.ctx())).toMatchObject({ error: 'unknown_results' });
+    expect(await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: other.resultsId, title: 'x' }, lb.ctx())).toMatchObject({ error: 'unknown_results' });
+    const none = lb.ctx();
+    expect(await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: 'r_nope', title: 'x' }, none)).toMatchObject({ error: 'unknown_results' });
+    // No card went up, so its line goes nowhere.
+    expect(none.lines).toEqual([]);
+  });
+
+  it('takes a line, the message posted with the card, and refuses a call without one', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_l1' }))) as any;
+    await expect(lb.tools.run('show_options', { results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_l2' }))).rejects.toThrow(/line/);
   });
 });
 
@@ -133,39 +224,91 @@ describe('put_to_vote', () => {
   it('opens one vote with option_ref set to each option id and the whole-stay price, and puts the vote card in ctx.cards', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_v1' }))) as any;
     const showCtx = lb.ctx({ turnId: 'turn_v2' });
-    const shown = (await lb.tools.run('show_options', { results_id: found.results_id, title: 'Villas' }, showCtx)) as any;
+    const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, showCtx)) as any;
     const card = C.OptionsCard.parse(showCtx.cards[0]);
     const ctx = lb.ctx({ turnId: 'turn_v3' });
-    const out = (await lb.tools.run('put_to_vote', { card_id: shown.card_id, closes_in_hours: 2 }, ctx)) as any;
+    const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id, closes_in_hours: 2 }, ctx)) as any;
     const vote = lb.link.sent('open_vote').at(-1)!;
     expect(vote).toMatchObject({ request_id: 'go_vote_turn_v3_1', question: 'Where do we stay?', kind: 'choice', anonymous: false, closes_at: '2026-10-07T14:00:00.000Z' });
     expect((vote.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
     expect((vote.options as Array<{ price_minor: number }>)[0]!.price_minor).toBe(card.options[0]!.price_minor! * 3);
     expect(ctx.cards).toEqual([expect.objectContaining({ kind: 'vote', card_id: 'c_vote_turn_v3_1', decision_id: out.decision_id })]);
+    expect(ctx.lines).toEqual(['Vote is up.']);
     expect((ctx.cards[0] as { fallback_text: string }).fallback_text).toMatch(/^Vote: Where do we stay\?/);
+  });
+
+  it("never asks \"which villa\" of ixigo.com's hotels: the kind of place becomes \"stay\", unless every option is one (re-drill 7)", async () => {
+    const stay = (title: string) => ({
+      kind: 'stay' as const, title, priceMinor: 900_000, currency: 'INR', priceNote: 'per night, per room', highlights: ['Pool'], facts: { pool: true },
+      sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
+    });
+    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
+    const asked = async (names: string[], question: string, turn: string) => {
+      const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query, options: names.map(stay), checkedAt: '2026-10-07T12:00:00.000Z' });
+      const show = lb.ctx({ turnId: `${turn}a` });
+      const shown = (await lb.tools.run('show_options', { line: 'Here they are.', results_id: set.resultsId, title: 'Pool stays in North Goa, 6 to 9 Nov' }, show)) as any;
+      await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id, question }, lb.ctx({ turnId: `${turn}b` }));
+      return lb.link.sent('open_vote').at(-1)!.question;
+    };
+    expect(await asked(['Meritas Auberge Calangute Goa', '3102bce - A Vedic Resort', 'Villa Mandrem'], 'Which pool villa for 6 to 9 Nov?', 'turn_q1')).toBe('Which pool stay for 6 to 9 Nov?');
+    expect(await asked(['Meritas Auberge Calangute Goa', 'De Mandarin Hotel'], 'Villas: which one?', 'turn_q2')).toBe('Stays: which one?');
+    // Every option a villa by its name, or a question that names no kind of place: asked as it is.
+    expect(await asked(['Villa Mandrem', 'The Palms Villa'], 'Which pool villa for 6 to 9 Nov?', 'turn_q3')).toBe('Which pool villa for 6 to 9 Nov?');
+    expect(await asked(['Meritas Auberge Calangute Goa', 'De Mandarin Hotel'], 'Which one for 6 to 9 Nov?', 'turn_q4')).toBe('Which one for 6 to 9 Nov?');
+  });
+
+  it('asks for a secret ballot when the model sets anonymous', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_anon1' }))) as any;
+    const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_anon2' }))) as any;
+    await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id, anonymous: true }, lb.ctx({ turnId: 'turn_anon3' }));
+    expect(lb.link.sent('open_vote').at(-1)).toMatchObject({ request_id: 'go_vote_turn_anon3_1', anonymous: true });
   });
 
   it('shows the same vote again when the same turn runs again, and refuses a second vote from another turn', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_w1' }))) as any;
-    const shown = (await lb.tools.run('show_options', { results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_w2' }))) as any;
+    const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_w2' }))) as any;
     const first = lb.ctx({ turnId: 'turn_w3' });
-    const a = (await lb.tools.run('put_to_vote', { card_id: shown.card_id }, first)) as any;
+    const a = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, first)) as any;
     const opened = lb.link.sent('open_vote').length;
     const rerun = lb.ctx({ turnId: 'turn_w3' });
-    const b = (await lb.tools.run('put_to_vote', { card_id: shown.card_id }, rerun)) as any;
+    const b = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, rerun)) as any;
     expect(b.decision_id).toBe(a.decision_id);
     expect(rerun.cards).toEqual(first.cards);
     expect(lb.link.sent('open_vote')).toHaveLength(opened);
-    expect(await lb.tools.run('put_to_vote', { card_id: shown.card_id }, lb.ctx({ turnId: 'turn_w4' }))).toMatchObject({ error: 'already_voting', decision_id: a.decision_id });
+    expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, lb.ctx({ turnId: 'turn_w4' }))).toMatchObject({ error: 'already_voting', decision_id: a.decision_id });
+  });
+
+  it('with no card_id, votes on the options card shown earlier in the same reply', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_r1' }))) as any;
+    const reply = lb.ctx({ turnId: 'turn_r2' });
+    await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, reply);
+    const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, reply)) as any;
+    expect(out.decision_id).toBeDefined();
+    const card = C.OptionsCard.parse(reply.cards[0]);
+    const vote = lb.link.sent('open_vote').at(-1)!;
+    expect((vote.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
+    expect(reply.cards.map((c) => c.kind)).toEqual(['options', 'vote']);
+  });
+
+  it('with no card_id, refuses when the reply showed two options cards, or none, and opens nothing', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_r3' }))) as any;
+    const two = lb.ctx({ turnId: 'turn_r4' });
+    await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, two);
+    await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two more villas' }, two);
+    const opened = lb.link.sent('open_vote').length;
+    expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, two)).toMatchObject({ error: 'which_card' });
+    expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, lb.ctx({ turnId: 'turn_r5' }))).toMatchObject({ error: 'no_card' });
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+    expect(two.cards.map((c) => c.kind)).toEqual(['options', 'options']);
   });
 
   it('puts trains to a vote at their per-person fares, each option answering travel.offer as a train, which is never booked for the group', async () => {
     const found = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_tr1' }))) as any;
     const showCtx = lb.ctx({ turnId: 'turn_tr2' });
-    const shown = (await lb.tools.run('show_options', { results_id: found.results_id, title: 'Trains to Goa' }, showCtx)) as any;
+    const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Trains to Goa' }, showCtx)) as any;
     const card = C.OptionsCard.parse(showCtx.cards[0]);
     expect(card.option_kind).toBe('train');
-    const out = (await lb.tools.run('put_to_vote', { card_id: shown.card_id }, lb.ctx({ turnId: 'turn_tr3' }))) as any;
+    const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, lb.ctx({ turnId: 'turn_tr3' }))) as any;
     expect(out.decision_id).toBeDefined();
     const vote = lb.link.sent('open_vote').at(-1)!;
     expect(vote).toMatchObject({ question: 'Which train?' });

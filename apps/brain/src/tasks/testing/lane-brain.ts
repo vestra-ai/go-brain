@@ -183,6 +183,12 @@ export class FakeContext implements Context {
   addTurnRules(fn: Parameters<Context['addTurnRules']>[0]): void {
     this.turnRules.push(fn);
   }
+  addWakeNote(): void {
+    // Lane C's turns are scripted: no note under "why Go woke".
+  }
+  addEndNote(): void {
+    // Nor an order at the end of the prompt.
+  }
 }
 
 type SetupStep = Parameters<Setup['addStep']>[0];
@@ -202,7 +208,7 @@ export class FakeSetup implements Setup {
   }
 }
 
-const SWITCH_DEFAULTS: Partial<Record<SwitchName, string>> = { TRAVEL_MODE: 'fake', PAY_RAIL: 'fake', CALLS_MODE: 'off', REFLEX_LIVE: '' };
+const SWITCH_DEFAULTS: Partial<Record<SwitchName, string>> = { TRAVEL_MODE: 'fake', TRAVEL_RUNNER: 'agent_job', PAY_RAIL: 'fake', CALLS_MODE: 'off', REFLEX_LIVE: '' };
 
 export class FakeSwitches implements Switches {
   private readonly values = new Map<SwitchName, string>();
@@ -283,6 +289,7 @@ export function makeLaneBrain(o: { pool: pg.Pool; env?: Record<string, string>; 
       outcome: { spoke: false, silent: false, reactions: 0, posts: [] },
       wake: [],
       cards: [],
+      lines: [],
       // The same ids P1's makeTurnCtx gives: a rerun of the same turn repeats them.
       stableId(prefix: string): string {
         const n = (counts.get(prefix) ?? 0) + 1;

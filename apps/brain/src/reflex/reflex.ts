@@ -1,5 +1,6 @@
 import type { Message } from '../door/methods.js';
 import type { TripPack } from '../trips/pack.js';
+import type { RecipeChoice } from './questions.js';
 
 /** Lane B (P2) owns this file; P1 ships the all-unsure stub so the rest of Go can be built first. */
 export type Sure<T> = { value: T; sure: true } | { value: T | null; sure: false };
@@ -14,6 +15,8 @@ export interface ReflexRead {
   reaction: Sure<string | null>;
   risky: Sure<boolean>;
   opening: Sure<boolean>;
+  /** Question 10: the ixigo search the message asks for (travel/recipes starts it early). Absent reads unsure. */
+  recipe?: Sure<RecipeChoice | null>;
   /** Why question 8 raised caution. Set by P2's reflex. */
   riskWhy?: Array<'spend' | 'steer' | 'secret'>;
   /** The reflex_reads row of this read. Set by P2's reflex. */
@@ -26,7 +29,7 @@ export interface Reflex {
 
 const unsure = { value: null, sure: false } as const;
 
-/** All nine answers unsure: the composer decides everything, exactly as if Jev were not there. */
+/** Every answer unsure: the composer decides everything, exactly as if Jev were not there. */
 export const UNSURE_READ: ReflexRead = {
   forGo: unsure,
   complete: unsure,
@@ -37,6 +40,7 @@ export const UNSURE_READ: ReflexRead = {
   reaction: unsure,
   risky: unsure,
   opening: unsure,
+  recipe: unsure,
 };
 
 export const unsureReflex: Reflex = {

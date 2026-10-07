@@ -5,6 +5,7 @@ import { goaSnapshot, msg, vote } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
 import { SocketCallError } from '../../door/rpc.js';
 import { reactionRequestId, reactOnce } from '../../memory/reactions.js';
+import type { Travel } from '../../travel/travel.js';
 import { nextDates, roomTools } from '../room-tools.js';
 import { createTools, makeTurnCtx, SAY_NOTHING, type QuickTool } from '../tools.js';
 
@@ -96,7 +97,7 @@ describe('the room\'s tools', () => {
   it('open_vote opens the vote and puts its card on the turn\'s message', async () => {
     const { ctx, calls } = ctxWith({ open_vote: () => ({ decision_id: 'd_new', seq: 60 }) });
     const r = await tool('open_vote').run(
-      { question: 'Where do we stay?', options: [{ label: 'Villa Sol', note: '3 nights, pool' }, { label: 'Casa Azul' }] },
+      { question: 'Where do we stay?', options: [{ label: 'Villa Sol', note: '3 nights, pool' }, { label: 'Casa Azul' }], line: 'Vote is up, tap your pick.' },
       ctx,
     );
     expect(r).toMatchObject({ ok: true, decision_id: 'd_new' });
@@ -105,6 +106,16 @@ describe('the room\'s tools', () => {
       options: [{ label: 'Villa Sol', note: '3 nights, pool' }, { label: 'Casa Azul' }],
     });
     expect(ctx.cards).toEqual([{ kind: 'vote', card_id: 'c_vote_turn_T_1', fallback_text: 'Vote: Where do we stay?', decision_id: 'd_new' }]);
+    // Its line is the words posted with the card; the Server never sees it.
+    expect(ctx.lines).toEqual(['Vote is up, tap your pick.']);
+  });
+
+  it('open_vote asks for a secret ballot when the model sets anonymous, and an open one otherwise', async () => {
+    const { ctx, calls } = ctxWith({ open_vote: () => ({ decision_id: 'd_secret', seq: 62 }) });
+    const args = tool('open_vote').input.parse({ question: 'Who should cook on Saturday?', options: [{ label: 'Rahul' }, { label: 'Priya' }], anonymous: true, line: 'Secret vote is up.' });
+    expect(await tool('open_vote').run(args, ctx)).toMatchObject({ ok: true, decision_id: 'd_secret' });
+    expect(calls[0]?.params).toMatchObject({ question: 'Who should cook on Saturday?', anonymous: true });
+    expect(tool('open_vote').description).toContain('secret or anonymous vote');
   });
 
   it('open_vote passes every option field through, so a vote made from search results carries the offer', async () => {
@@ -118,7 +129,7 @@ describe('the room\'s tools', () => {
       option_ref: 'ixg_offer_82', note: null,
     };
     // Parsed the way the loop parses the model's arguments: no field is dropped on the way in.
-    const args = tool('open_vote').input.parse({ question: 'Which villa?', options: [sol, azul] });
+    const args = tool('open_vote').input.parse({ question: 'Which villa?', options: [sol, azul], line: 'Vote is up.' });
     expect(await tool('open_vote').run(args, ctx)).toMatchObject({ ok: true, decision_id: 'd_villa' });
     expect(calls[0]?.params.options).toEqual([
       sol,
@@ -128,9 +139,10 @@ describe('the room\'s tools', () => {
 
   it('open_vote refuses a closing time in the past without asking the Server', async () => {
     const { ctx, calls } = ctxWith({ open_vote: () => ({ decision_id: 'd_new', seq: 60 }) });
-    const r = await tool('open_vote').run({ question: 'When?', options: [{ label: 'Fri' }, { label: 'Sat' }], closes_at: '2026-10-06T08:00:00Z' }, ctx);
+    const r = await tool('open_vote').run({ question: 'When?', options: [{ label: 'Fri' }, { label: 'Sat' }], closes_at: '2026-10-06T08:00:00Z', line: 'Vote is up.' }, ctx);
     expect(r).toMatchObject({ ok: false });
     expect(calls).toHaveLength(0);
+    expect(ctx.lines).toEqual([]);
   });
 
   it('close_vote says who won, fenced; a vote that is not open goes back to the model', async () => {
@@ -154,6 +166,47 @@ describe('the room\'s tools', () => {
     });
     expect(calls[0]?.params).toEqual({
       request_id: 'go_trip_turn_T_1', trip_id: 't_goa', destination: { name: 'North Goa' }, dates: { start: '2026-11-06', end: '2026-11-09' },
+    });
+  });
+
+  describe('update_trip and a decided vote', () => {
+    const sol = { kind: 'stay', title: 'Villa Sol', place: { name: 'Villa Sol', address: 'Anjuna, North Goa' }, area: 'Anjuna' };
+    const casa = { kind: 'stay', title: 'Casa Mareia', place: { name: 'Casa Mareia', address: 'Vagator, North Goa' }, area: 'Vagator' };
+    const north = { kind: 'place', title: 'North Goa', place: { name: 'North Goa', address: null }, area: null };
+    const options: Record<string, unknown> = { opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } } };
+    const travel = { placeOf: async (id: string) => options[id] ?? null } as unknown as Travel;
+    // Built in each test: the database is ready only once beforeAll has run.
+    const updateTrip = { run: (a: unknown, ctx: Parameters<QuickTool['run']>[1]) => roomTools({ now: () => new Date('2026-10-06T09:00:00Z'), pool: db.pool, travel: () => travel }).find((x) => x.name === 'update_trip')!.run(a, ctx) };
+    const closed = (id: string, refs: string[], won: number, at: string) =>
+      vote({ decision_id: id, status: 'closed', result_index: won, closed_at: at, options: refs.map((r) => ({ label: r, option_ref: r })), tally: refs.map(() => 0) });
+    const run = (decisions: ReturnType<typeof vote>[]) => {
+      const f = fakeLink({ update_trip: () => ({ seq: 70 }) });
+      const p = pack();
+      p.trip.decisions = decisions;
+      return { ...f, ctx: makeTurnCtx({ tripId: 't_goa', turnId: 'turn_S', link: f.link, pack: p, wake: [], signal: new AbortController().signal }) };
+    };
+
+    it('saves the stay the vote picked from the option\'s own data, not the words it was given, and refuses a different stay', async () => {
+      const { ctx, calls } = run([closed('d_stay', ['opt_sol', 'opt_casa'], 0, '2026-10-05T18:00:00Z')]);
+      expect(await updateTrip.run({ stay: 'Villa Sol, Assagao' }, ctx)).toEqual({ ok: true, changed: ['stay'], stay: 'Villa Sol, Anjuna' });
+      expect(calls[0]?.params).toMatchObject({ stay: 'Villa Sol, Anjuna' });
+      expect(await updateTrip.run({ stay: 'Casa Mareia, Vagator' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Villa Sol in Anjuna'), tell_the_room: SAY_NOTHING });
+      expect(calls).toHaveLength(1);
+    });
+
+    it('goes by the latest closed vote whose winner is a stay', async () => {
+      const { ctx, calls } = run([closed('d_old', ['opt_sol', 'opt_casa'], 0, '2026-10-04T18:00:00Z'), closed('d_new', ['opt_sol', 'opt_casa'], 1, '2026-10-05T18:00:00Z')]);
+      expect(await updateTrip.run({ stay: 'casa mareia' }, ctx)).toEqual({ ok: true, changed: ['stay'], stay: 'Casa Mareia, Vagator' });
+      expect(calls).toHaveLength(1);
+    });
+
+    it('saves a place the vote picked from the option, refuses another, and leaves words alone when no vote decided one', async () => {
+      const { ctx, calls } = run([closed('d_area', ['opt_north', 'opt_south'], 0, '2026-10-05T18:00:00Z')]);
+      expect(await updateTrip.run({ destination: 'north goa' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(calls[0]?.params).toMatchObject({ destination: { name: 'North Goa' } });
+      expect(await updateTrip.run({ destination: 'South Goa' }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
+      const none = run([]);
+      expect(await updateTrip.run({ stay: 'Villa Sol, Assagao' }, none.ctx)).toEqual({ ok: true, changed: ['stay'], stay: 'Villa Sol, Assagao' });
     });
   });
 

@@ -87,4 +87,16 @@ describe('setup', () => {
     s.ensureSoon('t_setup_5');
     await vi.waitFor(() => expect(runs).toBe(2));
   });
+
+  it('the sweep leaves a trip the Server no longer has alone', async () => {
+    const ran: string[] = [];
+    const s = createSetup({ pool: db.pool, log: silentLog, now: () => new Date() });
+    s.addStep({ name: 'brain.ready', run: async (tripId) => { ran.push(tripId); } });
+    await db.pool.query(`insert into trips (trip_id, gone_at) values ('t_setup_gone', now())`);
+    await db.pool.query(`insert into trips (trip_id) values ('t_setup_live')`);
+    await s.sweep();
+    expect(ran).toContain('t_setup_live');
+    expect(ran).not.toContain('t_setup_gone');
+    expect(await steps('t_setup_gone')).toEqual([]);
+  });
 });

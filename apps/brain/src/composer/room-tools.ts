@@ -5,10 +5,13 @@ import type { Message } from '../door/methods.js';
 import { SocketCallError } from '../door/rpc.js';
 import { reactOnce } from '../memory/reactions.js';
 import { DEFAULT_TZ, localDay } from '../proactive/clock.js';
+import type { OptionPlace } from '../travel/results.js';
+import type { Travel } from '../travel/travel.js';
 import type { TripPack } from '../trips/pack.js';
 import { inlineData } from './fence.js';
+import { CARD_LINE } from './rules.js';
 import { clip } from './sanitize.js';
-import { SAY_NOTHING, STAY_SILENT, type QuickTool } from './tools.js';
+import { CardLineArg, SAY_NOTHING, STAY_SILENT, type QuickTool } from './tools.js';
 
 /** "#57", "57" or a message id. */
 function findMessage(pack: TripPack, ref: string): Message | undefined {
@@ -42,10 +45,12 @@ const OpenVoteInput = z.object({
   question: z.string().min(1).max(200),
   options: z.array(VoteOption).min(2).max(10),
   kind: z.enum(['choice', 'yesno']).optional().describe('choice (the default) or yesno.'),
+  anonymous: z.boolean().optional().describe('true for a secret ballot, only when someone asks for a secret or anonymous vote. Leave it out otherwise.'),
   closes_at: z.iso
     .datetime({ offset: true })
     .optional()
     .describe('When the vote closes, an ISO time with its offset. Leave it out to close when everyone has voted.'),
+  line: CardLineArg,
 });
 
 const CloseVoteInput = z.object({
@@ -73,7 +78,27 @@ export function nextDates(d: { start: string; end: string }, today: string): { s
 }
 
 /** The room's quick tools. None of them can pay, book or see a card: those are never composer tools in P1. */
-export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] {
+/** Lowercase letters and digits only, so "Villa Sol," and "villa sol" compare equal. */
+const plain = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/** travel: brain.travel, read when a tool runs (the travel lane registers after this one). */
+export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Travel | undefined }): QuickTool<any>[] {
+  /** The winner of the latest closed vote whose winning option is of this kind, with the option's own data. */
+  async function decided(pack: TripPack, kind: 'stay' | 'place'): Promise<OptionPlace | null> {
+    const travel = o.travel?.();
+    if (!travel?.placeOf) return null;
+    const closed = pack.trip.decisions
+      .filter((d) => d.status === 'closed' && d.result_index !== null && d.result_index !== undefined)
+      .sort((a, b) => (b.closed_at ?? '').localeCompare(a.closed_at ?? ''));
+    for (const d of closed) {
+      const ref = d.options[d.result_index!]?.option_ref;
+      if (!ref) continue;
+      const option = await travel.placeOf(ref);
+      if (option?.kind === kind) return option;
+    }
+    return null;
+  }
+
   const react: QuickTool<z.infer<typeof ReactInput>> = {
     name: 'react',
     description:
@@ -97,9 +122,11 @@ export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] 
   const openVote: QuickTool<z.infer<typeof OpenVoteInput>> = {
     name: 'open_vote',
     description:
-      'Open a vote in the room, with 2 to 10 short options. The vote card goes out with your message. ' +
-      'Never open a second vote on a question that already has an open one.',
+      `Open a vote in the room, with 2 to 10 short options. The vote card goes out with the line you give it. ${CARD_LINE} ` +
+      'Never open a second vote on a question that already has an open one. ' +
+      'Set anonymous when someone asks for a secret or anonymous vote.',
     input: OpenVoteInput,
+    endsTurn: true,
     async run(a, ctx) {
       if (a.closes_at && Date.parse(a.closes_at) <= o.now().getTime()) return { ok: false, error: 'closes_at must be in the future.' };
       const r = await ctx.link.request('open_vote', {
@@ -107,13 +134,14 @@ export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] 
         trip_id: ctx.tripId,
         question: a.question,
         kind: a.kind ?? 'choice',
-        anonymous: false,
+        anonymous: a.anonymous ?? false,
         // Every DecisionOption field the model filled goes through as it is: option_ref is how P5 finds the offer to book.
         options: a.options.map(filledOnly),
         ...(a.closes_at ? { closes_at: a.closes_at } : {}),
       });
       ctx.cards.push({ kind: 'vote', card_id: ctx.stableId('c_vote'), fallback_text: clip(`Vote: ${a.question}`, 300), decision_id: r.decision_id });
-      return { ok: true, decision_id: r.decision_id, note: 'The vote card goes out with your message.' };
+      ctx.lines.push(a.line);
+      return { ok: true, decision_id: r.decision_id, note: 'The vote card goes out with your line.' };
     },
   };
 
@@ -154,6 +182,27 @@ export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] 
         ...(a.stay ? { stay: a.stay } : {}),
       };
       if (Object.keys(fields).length === 0) return { ok: false, error: 'Nothing to change.' };
+      // A stay or place a vote decided is saved from the winning option's own data, never from the model's words, and a
+      // different one is refused: "Villa Sol, Assagao" for the Villa Sol in Anjuna the group voted for saves "Villa Sol, Anjuna".
+      if (a.stay) {
+        const won = await decided(ctx.pack, 'stay');
+        if (won) {
+          if (!` ${plain(a.stay)} `.includes(` ${plain(won.title)} `)) {
+            return { ok: false, error: `The group voted for ${won.title}${won.area ? ` in ${won.area}` : ''}. Save that, or ask the group before changing the stay.`, tell_the_room: SAY_NOTHING };
+          }
+          fields.stay = clip(won.area ? `${won.title}, ${won.area}` : won.title, 60);
+        }
+      }
+      if (a.destination) {
+        const won = await decided(ctx.pack, 'place');
+        if (won) {
+          const name = won.place?.name ?? won.title;
+          if (!` ${plain(a.destination)} `.includes(` ${plain(name)} `)) {
+            return { ok: false, error: `The group voted for ${name}. Save that, or ask the group before changing the place.`, tell_the_room: SAY_NOTHING };
+          }
+          fields.destination = { name };
+        }
+      }
       if (a.dates && a.dates.start > a.dates.end) return { ok: false, error: 'The start date is after the end date.' };
       if (a.dates) {
         const tz = (await o.pool.query<{ tz: string }>('select tz from trips where trip_id = $1', [ctx.tripId])).rows[0]?.tz ?? DEFAULT_TZ;
@@ -169,7 +218,7 @@ export function roomTools(o: { now: () => Date; pool: Pool }): QuickTool<any>[] 
         }
       }
       await ctx.link.request('update_trip', { request_id: ctx.stableId('go_trip'), trip_id: ctx.tripId, ...fields });
-      return { ok: true, changed: Object.keys(fields) };
+      return { ok: true, changed: Object.keys(fields), ...(fields.stay ? { stay: fields.stay } : {}) };
     },
   };
 

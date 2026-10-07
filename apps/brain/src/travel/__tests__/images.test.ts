@@ -21,6 +21,18 @@ const images = () => createImages({ pool: db.pool, publicUrl: 'https://go.test/'
 const publicDns: Lookup = async () => ['93.184.216.34'];
 
 describe("Go's image cache", () => {
+  it('forgets a picture it stored, and never an outside image or another host\'s URL', async () => {
+    const idOf = (url: string): string => url.split('/img/')[1]!.split('.')[0]!;
+    const has = async (url: string): Promise<boolean> => ((await db.pool.query('select 1 from go_images where id = $1', [idOf(url)])).rowCount ?? 0) > 0;
+    const shot = await images().putBytes(Buffer.from([0xff, 0xd8, 0xff, 0x61]), 'image/jpeg');
+    const outside = (await images().rehostUrl('https://example.com/forget-me-not.jpg'))!;
+    await images().forget(outside);
+    await images().forget(`https://elsewhere.test/img/${idOf(shot)}.jpg`);
+    expect([await has(shot), await has(outside)]).toEqual([true, true]);
+    await images().forget(shot);
+    expect([await has(shot), await has(outside)]).toEqual([false, true]);
+  });
+
   it('stores bytes under their hash, so the same screen gives the same URL', async () => {
     const a = await images().putBytes(JPEG, 'image/jpeg');
     expect(a).toMatch(/^https:\/\/go\.test\/img\/i[0-9a-f]{32}\.jpg$/);

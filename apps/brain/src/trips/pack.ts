@@ -3,6 +3,7 @@ import type { Message, Trip, TripEvent } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
 import { applyEvent, upsertMessage } from './apply.js';
+import { TripGoneError } from './gone.js';
 import { screenMessage } from './screen.js';
 
 /** An active trip's working set, kept fresh from events. */
@@ -96,7 +97,14 @@ export function createPacks(o: { pool: pg.Pool; link: ServerLink; log: Log; now:
     return fresh;
   }
 
+  /** A trip marked gone is never read again from here: a stale refresh, a waiting turn or its retry all stop at this. */
+  async function notGone(tripId: string): Promise<void> {
+    const { rowCount } = await o.pool.query('select 1 from trips where trip_id = $1 and gone_at is not null', [tripId]);
+    if ((rowCount ?? 0) > 0) throw new TripGoneError(tripId);
+  }
+
   async function load(tripId: string): Promise<TripPack> {
+    await notGone(tripId);
     const trip = await o.link.request('read_trip', { trip_id: tripId });
     const { rows } = await o.pool.query<{ payload: Message }>(
       'select payload from messages where trip_id = $1 and deleted_at is null order by seq',
@@ -150,6 +158,7 @@ export function createPacks(o: { pool: pg.Pool; link: ServerLink; log: Log; now:
     },
     async refill(tripId, after) {
       const pack = await get(tripId);
+      await notGone(tripId);
       pack.trip = await o.link.request('read_trip', { trip_id: tripId });
       pack.seq = Math.max(pack.seq, pack.trip.seq);
       return pull(tripId, after ?? (await storedUpTo(tripId)), pack);

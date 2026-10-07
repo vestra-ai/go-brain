@@ -3,6 +3,8 @@
  *   VESTRA_API_URL=https://api-staging.vestra.ai VESTRA_SETUP_KEY=vk_test_... GO_PUBLIC_URL=https://<go's public host> \
  *     pnpm --filter ./apps/brain setup-v1 [--deny-tools] [--model <model id>]
  * Run it again with --deny-tools once Bash PR 2 (deny_tools on deployments) is on the target: it saves a new version.
+ * --browser-fetch allows Bash's browser fetch on ixigo.com, once that is on the target. --recipe-model <model id> saves
+ * the go-recipe deployment (the fallback travel search) on that model: put the id it prints in VESTRA_RECIPE_DEPLOYMENT_ID.
  */
 import { setupV1 } from '../src/tasks/setup-v1.js';
 
@@ -17,11 +19,15 @@ const need = (name: string): string => {
 };
 const modelAt = args.indexOf('--model');
 const model = modelAt >= 0 ? args[modelAt + 1] : undefined;
+const recipeModelAt = args.indexOf('--recipe-model');
+const recipeModel = recipeModelAt >= 0 ? args[recipeModelAt + 1] : undefined;
 
 await setupV1({
   baseUrl: need('VESTRA_API_URL'),
   key: need('VESTRA_SETUP_KEY'),
   publicUrl: need('GO_PUBLIC_URL'),
   denyTools: args.includes('--deny-tools'),
+  browserFetch: args.includes('--browser-fetch'),
   ...(model ? { model } : {}),
+  ...(recipeModel ? { recipeModel } : {}),
 });

@@ -30,14 +30,18 @@ export interface PayLinkInput {
 
 export interface VaultClient {
   homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' }): Promise<{ url: string; expiresAt: string }>;
-  payLink(i: PayLinkInput, o?: { timeoutMs?: number }): Promise<{ ok: true; url: string; expiresAt: string } | { ok: false; reason: PayLinkRefusal }>;
+  /** A refusal's `detail` says why, in words for the logs and the payments row (never for the room). */
+  payLink(
+    i: PayLinkInput,
+    o?: { timeoutMs?: number },
+  ): Promise<{ ok: true; url: string; expiresAt: string } | { ok: false; reason: PayLinkRefusal; detail?: string }>;
   bothKeys(): Promise<{ chargedApprovalIds: string[]; withoutBothKeys: number }>;
   /** Stops every pay link for an approval Go let go, so no page can pay with it. Safe to repeat. */
   voidPayLinks(approvalId: string): Promise<void>;
 }
 
 const LinkAnswer = z.object({ url: z.url({ protocol: /^https?$/ }), expires_at: z.iso.datetime({ offset: true }) });
-const Refusal = z.object({ error: z.object({ reason: z.string() }) });
+const Refusal = z.object({ error: z.object({ reason: z.string(), detail: z.string().max(300).optional() }) });
 const BothKeys = z.object({ charged_approval_ids: z.array(z.string()), without_both_keys: z.int().nonnegative() });
 
 export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof fetch; now?: () => Date; timeoutMs?: number }): VaultClient {
@@ -98,11 +102,12 @@ export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof
         if (r.status === 409) {
           const refusal = Refusal.safeParse(r.data);
           const reason = refusal.success && KNOWN.has(refusal.data.error.reason) ? (refusal.data.error.reason as PayLinkRefusal) : 'unavailable';
-          return { ok: false, reason };
+          const detail = refusal.success ? refusal.data.error.detail : undefined;
+          return { ok: false, reason, ...(detail ? { detail } : {}) };
         }
-        return { ok: false, reason: 'unavailable' };
-      } catch {
-        return { ok: false, reason: 'unavailable' };
+        return { ok: false, reason: 'unavailable', detail: `the vault answered ${r.status}` };
+      } catch (e) {
+        return { ok: false, reason: 'unavailable', detail: `the vault could not be reached${e instanceof Error ? `: ${e.message.slice(0, 120)}` : ''}` };
       }
     },
     async voidPayLinks(approvalId) {

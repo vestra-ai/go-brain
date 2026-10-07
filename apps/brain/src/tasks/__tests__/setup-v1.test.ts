@@ -23,6 +23,8 @@ function fakeVestra(state: State) {
       state.servers.push(s);
       return json(201, s);
     }
+    if (route === 'GET /v1/deployments/go-recipe') return json(404, { error: { code: 'deployment_not_found', message: 'none' } });
+    if (route === 'POST /v1/deployments' && body.slug === 'go-recipe') return json(201, { id: 'dep_recipe1', draft_version: 1 });
     if (route === 'GET /v1/deployments/go-trip-task') return state.deployment ? json(200, state.deployment) : json(404, { error: { code: 'deployment_not_found', message: 'none' } });
     if (route === 'POST /v1/deployments') {
       state.deployment = { id: 'dep_go1', draft_version: 1 };
@@ -56,6 +58,8 @@ describe('setupV1', () => {
     const dep = calls.find((c) => c.method === 'POST' && c.path === '/v1/deployments')!;
     expect(dep.body).toMatchObject({ slug: 'go-trip-task', manifest: { mcp_servers: ['mcp_go1'], apps: { allow: [] } } });
     expect(dep.body.manifest).not.toHaveProperty('deny_tools');
+    expect(dep.body.manifest).not.toHaveProperty('browser');
+    expect(calls.some((c) => c.path === '/v1/deployments/go-recipe')).toBe(false);
     const hook = calls.find((c) => c.method === 'POST' && c.path === '/v1/webhooks')!;
     expect(hook.body).toMatchObject({ url: 'https://go.example/v1-webhooks', events: ['task.started', 'task.completed', 'task.failed', 'task.stopped', 'interaction.created', 'interaction.resolved', 'interaction.expired'] });
     expect(r).toEqual({ deploymentId: 'dep_go1', version: 1, promoted: false, mcpServerId: 'mcp_go1', webhookId: 'whk_go1', webhookSecret: 'whsec_test_secret_0123456789' });
@@ -73,6 +77,19 @@ describe('setupV1', () => {
     const version = calls.find((c) => c.path === '/v1/deployments/dep_go1/versions')!;
     expect(version.body.manifest.deny_tools).toEqual([...GO_DENY_TOOLS]);
     expect(r).toMatchObject({ version: 2, webhookSecret: null });
+  });
+
+  it('with the browser fetch and a recipe model: ixigo.com allowed for the trip user, and go-recipe on that model', async () => {
+    const { f, calls } = fakeVestra({ servers: [], deployment: null, hooks: [] });
+    const lines: string[] = [];
+    const r = await setupV1({ baseUrl: 'https://api.test', key: KEY, publicUrl: 'https://go.example', browserFetch: true, recipeModel: 'fast-model', fetch: f, log: (l) => lines.push(l) });
+    const trip = calls.find((c) => c.method === 'POST' && c.path === '/v1/deployments' && c.body.slug === 'go-trip-task')!;
+    expect(trip.body.manifest.browser).toEqual({ allowed_domains: ['ixigo.com'] });
+    const recipe = calls.find((c) => c.method === 'POST' && c.path === '/v1/deployments' && c.body.slug === 'go-recipe')!;
+    expect(recipe.body.manifest).toMatchObject({ model: 'fast-model', memory: { mode: 'none' }, limits: { spend_per_task_usd: 0.5 } });
+    expect(recipe.body.manifest.instructions).toContain('computer_eval');
+    expect(r.recipeDeploymentId).toBe('dep_recipe1');
+    expect(lines).toContain('VESTRA_RECIPE_DEPLOYMENT_ID=dep_recipe1');
   });
 
   it('promotes the new version when the key is live', async () => {

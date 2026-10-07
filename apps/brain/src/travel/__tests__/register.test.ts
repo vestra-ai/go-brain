@@ -3,7 +3,9 @@ import * as C from '@go/contract';
 import { withSchema } from '../../db/test-db.js';
 import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { goaPack } from '../../tasks/testing/goa.js';
+import { buildFlightsLinkCard, buildOptionsCard } from '../cards.js';
 import { registerTravel } from '../register.js';
+import { createResultsStore, type ResultOption } from '../results.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -15,7 +17,7 @@ beforeAll(async () => {
   await registerTravel(lb.brain);
   const found = (await lb.tools.run('search_stays', { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5 }, lb.ctx({ turnId: 'turn_reg1' }))) as any;
   const ctx = lb.ctx({ turnId: 'turn_reg2' });
-  await lb.tools.run('show_options', { results_id: found.results_id, title: 'Villas in North Goa' }, ctx);
+  await lb.tools.run('show_options', { line: 'Here are villas in North Goa.', results_id: found.results_id, title: 'Villas in North Goa' }, ctx);
   card = C.Card.parse(ctx.cards[0]);
 });
 afterAll(async () => {
@@ -34,11 +36,13 @@ describe('registerTravel', () => {
     expect(LANES.indexOf(registerTravel)).toBeLessThan(LANES.indexOf(registerProactive));
   });
 
-  it('sets brain.travel and registers the six travel tools, the two options taps, the tap wake and the image route', async () => {
+  it('sets brain.travel and registers the six travel tools, the three options taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote']);
-    expect([...lb.taps.handlers.keys()].sort()).toEqual(['options/pick', 'options/vote']);
+    expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/open', 'options/pick', 'options/vote']);
     expect(lb.context.wakes.has('tap')).toBe(true);
+    // A search that outlived its turn wakes Go with its options.
+    expect(lb.context.wakes.has('search')).toBe(true);
     expect((await lb.http.inject({ method: 'GET', url: `/img/u${'0'.repeat(32)}.jpg` })).statusCode).toBe(404);
     expect(lb.brain.travel?.simulate).toBeDefined();
   });
@@ -68,6 +72,32 @@ describe('registerTravel', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(lb.link.sent('open_vote')).toHaveLength(1);
     expect(await lb.taps.tap('options', 'vote', tap({ tap_id: 'tap_v3', action_id: 'vote' }), card)).toEqual({ result: 'done', toast: 'Already up for a vote' });
+  });
+
+  it('"See on ixigo" opens the option\'s own ixigo.com page, and refuses an option that has none', async () => {
+    if (card.kind !== 'options') throw new Error('expected an options card');
+    // The fake's villas have no ixigo page.
+    expect(await lb.taps.tap('options', 'open', tap({ tap_id: 'tap_o1', action_id: 'open', option_id: card.options[0]!.option_id }), card)).toEqual({ result: 'refused', toast: 'This option has no ixigo page' });
+    const results = createResultsStore(db.pool);
+    const page = 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&hName=Meritas';
+    const hotel: ResultOption = { kind: 'stay', title: 'Meritas', priceMinor: 810400, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {}, sourceUrl: page };
+    const checkedAt = '2026-10-07T12:00:00.000Z';
+    const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: {}, options: [hotel], checkedAt });
+    const picks = [{ optionId: 'opt_ixr1', n: 1, option: hotel, imageUrl: null }];
+    const ix = buildOptionsCard({ cardId: 'c_ixr', title: 'Meritas', optionKind: 'stay', checkedAt, picks });
+    await results.saveCard({ cardId: 'c_ixr', tripId: 't_goa', resultsId: set.resultsId, title: 'Meritas', optionKind: 'stay', card: ix }, picks, checkedAt);
+    const opened = await lb.taps.tap('options', 'open', { tap_id: 'tap_o2', trip_id: 't_goa', card_id: 'c_ixr', action_id: 'open', person_id: 'p_meher', option_id: 'opt_ixr1' }, ix);
+    expect(opened).toEqual({ result: 'open', url: page, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
+    // An option from another card is refused.
+    expect(await lb.taps.tap('options', 'open', tap({ tap_id: 'tap_o3', action_id: 'open', option_id: 'opt_ixr1' }), card)).toEqual({ result: 'refused', toast: 'That option is no longer here' });
+  });
+
+  it('"See flights on ixigo" opens the link card\'s own ixigo page', async () => {
+    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026';
+    const link = buildFlightsLinkCard({ cardId: 'c_link_r1', title: 'Flights, Delhi to Goa', url: page });
+    const tapIt = (c: C.Card) => lb.taps.tap('notice', 'see_on_ixigo', { tap_id: 'tap_l1', trip_id: 't_goa', card_id: c.card_id, action_id: 'see_on_ixigo', person_id: 'p_meher' }, c);
+    expect(await tapIt(link)).toEqual({ result: 'open', url: page, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
+    expect(await tapIt({ ...link, source: { name: 'elsewhere', url: 'https://fares.example/x' } })).toEqual({ result: 'refused', toast: 'This card has no ixigo page' });
   });
 
   it("closes the image fetcher's connections and the ixigo connection through brain.onStop", async () => {

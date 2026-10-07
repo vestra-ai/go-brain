@@ -55,9 +55,9 @@ export interface LinkOptions {
   /**
    * Runs when a request failed for sure: the frame never left Go (no socket, Go shutting down before it was sent) or the
    * Server refused it. Never when it was sent and no answer came (out of retries, Go shutting down mid-flight): the
-   * Server may have done it. The card store drops a pending card here.
+   * Server may have done it. The card store drops a pending card here; a read of a trip refused 404 marks the trip gone.
    */
-  onFail?: (method: ToServerMethod, params: Record<string, unknown>) => void | Promise<void>;
+  onFail?: (method: ToServerMethod, params: Record<string, unknown>, err: unknown) => void | Promise<void>;
 }
 
 export type ServerLinkImpl = ServerLink & {
@@ -242,7 +242,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
     } catch (e) {
       // Failed for sure: the frame never left Go, or the Server refused it. Sent and then no answer is unknown, never
       // failed: the Server may have done it.
-      if (!answered && (refused || !p.sent)) await listen(() => o.onFail?.(method, body), method, 'a failure listener failed');
+      if (!answered && (refused || !p.sent)) await listen(() => o.onFail?.(method, body, e), method, 'a failure listener failed');
       throw e;
     } finally {
       pending.delete(rpcId);

@@ -75,7 +75,8 @@ async function searchFor(tripId: string, kind: TravelKind, q: TravelQuery, d: Go
       results: shown.map((o) => {
         const when = subtitleFor(toResultOption(o));
         return {
-          offer_id: o.offerId,
+          offer_id: o.offerId ?? null,
+          ...(o.sourceUrl ? { source_url: o.sourceUrl } : {}),
           title: o.title,
           ...(when ? { when } : {}),
           price_minor: o.priceMinor,

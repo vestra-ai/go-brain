@@ -31,6 +31,8 @@ export interface RecordedRequest {
   firstTokenMs?: number;
   doneMs?: number;
   usage?: ProviderUsage;
+  /** The tools the model asked for in its answer (live runs record it; the next request shows it too, but a turn's last call has none). */
+  toolsOut?: string[];
   error?: string;
 }
 
@@ -93,7 +95,8 @@ export function positions(body: MessageBody): Position[] {
     h = sha(`${h}\nrole:${m.role}`);
     const blocks = blocksOf(m.content);
     let lastBreakpoint = -1;
-    if (k === 0) blocks.forEach((b, j) => { if (b['cache_control'] !== undefined && b['cache_control'] !== null) lastBreakpoint = j; });
+    // The chat ends at its one-hour marker. The rolling five-minute marker on the newest block marks the round, not the chat.
+    if (k === 0) blocks.forEach((b, j) => { if ((b['cache_control'] as { ttl?: unknown } | null | undefined)?.ttl === '1h') lastBreakpoint = j; });
     blocks.forEach((b, j) => push(k > 0 ? 'rounds' : j <= lastBreakpoint ? 'chat' : 'now', b));
   });
   return out;

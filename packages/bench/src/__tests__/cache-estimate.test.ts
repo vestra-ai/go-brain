@@ -7,10 +7,11 @@ const TOOLS = [{ name: 'stay_silent', description: 'End the turn without a messa
 const line = (s: number): string => `#${s} Priya: message number ${s} about the villa and the beach`;
 const chunk = (from: number, to: number): string => Array.from({ length: to - from + 1 }, (_, k) => line(from + k)).join('\n');
 
-function body(o: { chunks: string[]; open?: string; model?: string; rules?: string; thinking?: unknown; rounds?: boolean }): MessageBody {
+function body(o: { chunks: string[]; open?: string; model?: string; rules?: string; thinking?: unknown; rounds?: boolean; rolling?: boolean }): MessageBody {
   const content = [
     ...o.chunks.map((text, k) => ({ type: 'text', text, ...(k === o.chunks.length - 1 ? { cache_control: { type: 'ephemeral', ttl: '1h' } } : {}) })),
-    { type: 'text', text: `Right now: nothing new.\n${o.open ?? ''}` },
+    // The composer's rolling five-minute marker sits on the newest block of a first round.
+    { type: 'text', text: `Right now: nothing new.\n${o.open ?? ''}`, ...(o.rolling ? { cache_control: { type: 'ephemeral' } } : {}) },
   ];
   const messages: MessageBody['messages'] = [{ role: 'user', content }];
   if (o.rounds) {
@@ -39,6 +40,12 @@ describe('prompt parts', () => {
     expect(p.total).toBe(p.tools + p.system + p.chat + p.now + p.rounds);
   });
 
+  it('ends the chat at its one-hour marker, not at the rolling marker on the newest block', () => {
+    const p = promptParts(body({ chunks: [chunk(1, 25)], open: chunk(26, 30), rolling: true }));
+    expect(p.chatBlocks).toBe(1);
+    expect(p.now).toBeGreaterThan(0);
+  });
+
   it('treats a first user message with no breakpoint as all "right now"', () => {
     const b = body({ chunks: [], open: chunk(1, 10) });
     expect(promptParts(b).chatBlocks).toBe(0);
@@ -51,6 +58,15 @@ describe('the cache estimate', () => {
     expect(minCacheableTokens('claude-sonnet-5-5')).toBe(512);
     expect(minCacheableTokens('claude-haiku-4-5')).toBe(4096);
     expect(minCacheableTokens('claude-sonnet-5')).toBe(1024);
+  });
+
+  it('first rounds that mark their newest block still read the chat, and a second round reads its first round whole', () => {
+    const first = body({ chunks: [chunk(1, 25)], open: chunk(26, 30), rolling: true });
+    const second = body({ chunks: [chunk(1, 25)], open: chunk(26, 30), rounds: true });
+    const turns = cacheTurns([req(0, first, 0), req(1, second, 10), req(2, body({ chunks: [chunk(1, 25)], open: chunk(26, 35), rolling: true }), 60)]);
+    expect(turns.map((t) => t.result)).toEqual(['first', 'hit', 'hit']);
+    // Round 2 reads the whole first message, right now included, from round 1's rolling marker.
+    expect(turns[1]!.estimate.readTokens).toBe(turns[0]!.estimate.totalTokens);
   });
 
   it('a growing chat reads everything the last turn cached', () => {

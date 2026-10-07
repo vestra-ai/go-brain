@@ -103,6 +103,18 @@ describe('ServerLink', () => {
     await expect(p).rejects.toMatchObject({ code: 404, dataCode: 'not_found' });
   });
 
+  it("hands the Server's refusal to onFail, so a 404 on a read can mark the trip gone", async () => {
+    const failed: Array<{ method: string; err: unknown }> = [];
+    const { l } = link({ onFail: (method, _params, err) => { failed.push({ method, err }); } });
+    const a = socket('a');
+    l.attach(a);
+    const p = l.request('read_trip', { trip_id: 't_forgotten' });
+    await vi.waitFor(() => expect(a.sent).toHaveLength(1));
+    fail(l, a.sent[0]!.id!, 404, 'trip t_forgotten does not exist', { dataCode: 'not_found' });
+    await expect(p).rejects.toMatchObject({ code: 404 });
+    expect(failed).toEqual([{ method: 'read_trip', err: expect.objectContaining({ code: 404, dataCode: 'not_found' }) }]);
+  });
+
   it('waits for a socket, and gives up with 503 when none opens', async () => {
     const { l, slept } = link({ waitForSocketMs: 20, retryDelaysMs: [0, 0, 0] });
     await expect(l.request('read_trip', { trip_id: 't_goa' })).rejects.toMatchObject({ code: 503, dataCode: 'unavailable' });

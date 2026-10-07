@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -7,7 +7,7 @@ import { PayLinkBody, openPayLink } from './pay-links.js';
 import { withVaultSchema } from '../db/test-db.js';
 import { makeRails } from '../rails/index.js';
 import { FakeStripe } from '../testing/fake-stripe.js';
-import { signRequest } from '@go/contract';
+import { signRequest, signSpendApproval } from '@go/contract';
 import {
   TEST_SHARED_SECRET,
   signedInject,
@@ -45,6 +45,11 @@ const reasonOf = async (body: unknown, at = now) => {
   const res = await payLink(body, at);
   expect(res.statusCode).toBe(409);
   return (res.json() as { error: { reason: string } }).error.reason;
+};
+const refusalOf = async (body: unknown, at = now) => {
+  const res = await payLink(body, at);
+  expect(res.statusCode).toBe(409);
+  return (res.json() as { error: { reason: string; detail?: string; message: string } }).error;
 };
 
 beforeAll(async () => {
@@ -164,7 +169,15 @@ describe('POST /internal/pay-links', () => {
 
   it('refuses a token meant for another audience', async () => {
     const approval = signRawApproval({ ...spendVector().claims, aud: 'another-service' });
-    expect(await reasonOf(payBody({ approval }))).toBe('bad_approval');
+    expect(await refusalOf(payBody({ approval }))).toMatchObject({ reason: 'bad_approval', detail: "the approval's claims are not valid" });
+  });
+
+  it('says plainly when an approval is signed with a key other than the one this vault has', async () => {
+    const other = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    const approval = signSpendApproval({ ...spendVector().claims, jti: 'ap_otherkey_01' }, other);
+    const refusal = await refusalOf(payBody({ approval, approval_id: 'ap_otherkey_01' }));
+    expect(refusal).toMatchObject({ reason: 'bad_approval', detail: "the approval's signature is not valid for this vault's GO_SPEND_PUBLIC_KEY" });
+    expect(refusal.message).toContain('not valid for this vault');
   });
 
   it('refuses a token whose jti is not the approval id Go named', async () => {

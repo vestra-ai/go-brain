@@ -32,7 +32,7 @@ const ctx = (link = fakeLink()): TurnCtx => {
   let n = 0;
   return {
     tripId: 't_goa', turnId: 'turn_1', link, pack, outcome: { spoke: false, silent: false, reactions: 0, posts: [] }, wake: [],
-    cards: [], stableId: (prefix: string) => `${prefix}_turn_1_${(n += 1)}`, signal: new AbortController().signal,
+    cards: [], lines: [], stableId: (prefix: string) => `${prefix}_turn_1_${(n += 1)}`, signal: new AbortController().signal,
   };
 };
 const tool = (name: string) => memoryTools({ pool: db.pool, memory: memory() }).find((t) => t.name === name)!;

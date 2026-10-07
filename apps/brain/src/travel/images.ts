@@ -81,6 +81,8 @@ export type ImageMime = 'image/jpeg' | 'image/png' | 'image/webp';
 
 export interface Images {
   putBytes(bytes: Uint8Array, mime: ImageMime): Promise<string>;
+  /** Drops a picture putBytes stored (a superseded screenshot); any other URL is left alone. */
+  forget(url: string): Promise<void>;
   /** Null when the URL is not an https image on a public name. */
   rehostUrl(sourceUrl: string): Promise<string | null>;
 }
@@ -107,6 +109,11 @@ export function createImages(d: { pool: pg.Pool; publicUrl: string }): Images {
       const id = `i${createHash('sha256').update(bytes).digest('hex').slice(0, 32)}`;
       await d.pool.query('insert into go_images (id, mime, bytes) values ($1, $2, $3) on conflict (id) do nothing', [id, mime, Buffer.from(bytes)]);
       return `${base}/img/${id}.${EXT[mime]}`;
+    },
+    async forget(url) {
+      if (!url.startsWith(`${base}/img/`)) return;
+      const id = /^(i[0-9a-f]{32})\.(?:jpg|png|webp)$/.exec(url.slice(base.length + 5))?.[1];
+      if (id) await d.pool.query('delete from go_images where id = $1 and bytes is not null', [id]);
     },
     async rehostUrl(sourceUrl) {
       if (!isFetchableImageUrl(sourceUrl)) return null;

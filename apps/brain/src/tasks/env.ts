@@ -15,6 +15,8 @@ export const TasksEnv = z.object({
   VESTRA_ADMIN_KEY: z.string().min(1).optional(),
   /** Go's MCP server as /v1 knows it (mcp_...), printed by scripts/setup-v1.ts. Used to check a trip's token reaches Go. */
   VESTRA_MCP_SERVER_ID: z.string().min(1).optional(),
+  /** The go-recipe deployment (dep_...), printed by scripts/setup-v1.ts --recipe-model: the fallback travel search runs on it. */
+  VESTRA_RECIPE_DEPLOYMENT_ID: z.string().min(1).optional(),
 });
 
 const KEY = /^vk_(live|test)_[A-Za-z0-9_-]{43}$/;
@@ -32,6 +34,7 @@ const TasksRuntime = z.object({
   VESTRA_WEBHOOK_SECRET: commaList(z.string().min(16)),
   VESTRA_DEPLOYMENT_ID: z.string().min(3),
   VESTRA_MCP_SERVER_ID: z.string().min(3).optional(),
+  VESTRA_RECIPE_DEPLOYMENT_ID: z.string().min(3).optional(),
 });
 export type TasksRuntime = z.infer<typeof TasksRuntime>;
 

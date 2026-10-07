@@ -15,6 +15,7 @@ import { replayChat, SimClock } from './replay.js';
 import { writeReport, type BenchReport } from './report-md.js';
 import { RequestLog } from './requests.js';
 import { commitSha, OUT_DIR } from './run-fast.js';
+import { askTimings } from './timings.js';
 import { providerNumbers, scoreReplay, wrongSpeak } from './score.js';
 
 type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -133,6 +134,7 @@ export async function runLive(args: LiveArgs, env: EnvSource): Promise<BenchRepo
       });
       const run: LiveRun = {
         model, chat: name, score: scoreReplay(out.record), provider: providerNumbers(out.record.requests), ...(out.jev !== null ? { jev: out.jev } : {}),
+        ...(out.timeline !== null ? { asks: askTimings(out.record, out.timeline) } : {}),
       };
       runs.push(run);
       console.log(`${model} on ${name}: reply p50 ${run.score.reply.p50Ms ?? 'n/a'} ms, provider cache ${run.provider.cacheHit ?? 'n/a'}`);

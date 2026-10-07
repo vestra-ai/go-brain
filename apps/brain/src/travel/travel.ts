@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import type { Booking, Journey, Place } from '@go/contract';
+import type { OptionPlace } from './results.js';
 
 export const TravelKind = z.enum(['flights', 'trains', 'buses', 'stays']);
 export type TravelKind = z.infer<typeof TravelKind>;
@@ -33,8 +34,11 @@ export type TravelQuery = z.infer<typeof TravelQuery>;
 export type TravelOptionKind = 'flight' | 'train' | 'bus' | 'stay';
 
 export interface TravelOption {
-  /** "<backend>:<the backend's own id>", e.g. "fake:fl-DEL-GOI-20261106-6E2134". hold() routes on the prefix. */
-  offerId: string;
+  /**
+   * "<backend>:<the backend's own id>", e.g. "fake:fl-DEL-GOI-20261106-6E2134". hold() routes on the prefix. Absent when Go
+   * cannot book the option: ixigo.com's own results (TRAVEL_MODE ixigo_web) are booked on ixigo, from sourceUrl.
+   */
+  offerId?: string;
   kind: TravelOptionKind;
   title: string;
   subtitle?: string;
@@ -54,9 +58,20 @@ export interface TravelOption {
   refundableUntil?: string;
   /** Short facts the filters and the model read: pool, beach_minutes, sleeps, seats_left, class_code. */
   facts: Record<string, string | number | boolean>;
+  /** The option's own page on the site it came from; an options card opens an ixigo.com one ("See on ixigo"). */
+  sourceUrl?: string;
 }
 
-export interface TravelSearch { results: TravelOption[]; checkedAt: string }
+export interface TravelSearch {
+  results: TravelOption[];
+  checkedAt: string;
+  /** How many the backend found before the constraints were applied (set by the travel layer). */
+  found?: number;
+  /** When nothing fits: the option that misses the fewest constraints, and what it misses, in plain words. */
+  closest?: { option: TravelOption; misses: string[] };
+  /** The run that read it, when a backend runs one per search (ixigo_web): searches that shared a run share its id. */
+  runId?: string;
+}
 
 export type StatusQuery =
   | { kind: 'flight'; carrierCode: string; number: string; date: string }
@@ -115,11 +130,19 @@ export interface StoredOffer {
   currency: string | null;
   priceNote: string | null;
   checkedAt: string;
+  /** The option's own page, when it has one. */
+  sourceUrl: string | null;
 }
 
-/** What answers behind the layer: the fake ixigo or ixigo's MCP server. */
+/** What answers behind the layer: the fake ixigo, ixigo's MCP server, or ixigo.com itself through the recipes. */
 export interface TravelBackend {
-  search(kind: TravelKind, q: TravelQuery): Promise<TravelSearch>;
+  /** tripId: the trip whose computer runs the search, for a backend that searches in the trip's browser (ixigo_web). */
+  search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<TravelSearch>;
+  /**
+   * How much longer a search tool may wait for this search before it goes on and the options come when it finishes; null
+   * (or no method) waits for it.
+   */
+  waitMs?(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<number | null>;
   status(q: StatusQuery): Promise<StatusResult>;
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   confirm(holdId: string, paid: { approvalId: string; railRef: string }): Promise<Confirmed>;
@@ -129,6 +152,8 @@ export interface TravelBackend {
 export interface Travel {
   /** Refuses (TravelError past_date) a check-in or departure before today in the trip's time zone. */
   search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<TravelSearch>;
+  /** How much longer to wait for this search inline (TravelBackend.waitMs); null waits for it. */
+  waitMs?(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<number | null>;
   status(q: StatusQuery): Promise<StatusResult>;
   /**
    * The offer behind an options card's option_id (which is also a vote option's option_ref); offerId null when the option
@@ -136,6 +161,8 @@ export interface Travel {
    * for a stay, the fare per person for a journey. Null when Go never showed that option.
    */
   offer(optionId: string): Promise<{ offerId: string | null; title: string; priceMinor: number | null; currency: string | null; kind: 'flight' | 'train' | 'bus' | 'stay'; link: string | null } | null>;
+  /** The option's own name, place and area, for saving a stay or place a vote picked (composer/room-tools.ts). */
+  placeOf?(optionId: string): Promise<OptionPlace | null>;
   /** Booking is two steps so card details only ever travel between the vault and the rail. Composer and P5 only. */
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   /** Safe to repeat: the same hold confirmed twice gives the same answer. */

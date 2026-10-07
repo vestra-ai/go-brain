@@ -1,6 +1,7 @@
 /**
- * Lane C's tasks at boot: the /v1 client, the trip's computer (its two setup steps), tasks, events, the follower, the
- * sweep, the webhook endpoint, Go's MCP server, the job tools, Watch and Stop, the tasks block and the task wake.
+ * Lane C's tasks at boot: the /v1 client, the trip's computer (its two setup steps) and its ixigo recipe runners, tasks,
+ * events, the follower, the sweep, the webhook endpoint, Go's MCP server, the job tools, Watch and Stop, the tasks block
+ * and the task wake.
  * With the /v1 settings missing, jobs stay off and Go says so in the log.
  */
 import type { Brain, RegisterLane } from '../app.js';
@@ -16,12 +17,14 @@ import { readTasksEnv } from './env.js';
 import { createEventStore } from './event-store.js';
 import { createTaskEvents, type TaskEvents } from './events.js';
 import { createFollower, type Follower, type FollowerDeps } from './follower.js';
-import { createScreens, type Screens } from './screens.js';
+import { createKeepWarm } from './keep-warm.js';
+import { createScreens, SCREENS_PER_MINUTE_PER_KEY, type Screens } from './screens.js';
 import { createTaskStore, type TaskStore } from './store.js';
 import { SWEEP_EVERY_MS, createSweep, type Sweep } from './sweep.js';
 import { registerTaskTaps } from './taps.js';
 import { createTasks, type TasksService } from './tasks.js';
 import { taskTools } from './tools.js';
+import { createAgentJobRunner, createBrowserFetchRunner } from '../travel/recipes/runners.js';
 import { createV1Client, type V1Client } from './v1-client.js';
 import { registerV1Webhooks } from './webhooks.js';
 
@@ -53,6 +56,14 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   const tokens = createTokenStore(brain.pool, brain.now);
   const computer = createComputer({ pool: brain.pool, v1, tokens, env, now: brain.now, log: brain.log });
   addComputerSteps(brain.setup, computer);
+  // ixigo.com searches (TRAVEL_MODE ixigo_web) run on the trip's computer too; the travel lane picks one per search, and
+  // keeps the computer awake while people talk travel.
+  const keeper = createKeepWarm({ warm: (tripId, keepMs) => computer.warm(tripId, { keepMs }), now: brain.now, log: brain.log });
+  brain.recipeRunners = {
+    browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log }),
+    agentJob: createAgentJobRunner({ v1, computer, now: brain.now, log: brain.log, deploymentId: env.VESTRA_RECIPE_DEPLOYMENT_ID ?? null }),
+    keepWarm: (tripId) => keeper.touch(tripId),
+  };
   const store = createTaskStore(brain.pool);
   const eventStore = createEventStore(brain.pool, brain.now);
   const results = createResultsStore(brain.pool);
@@ -65,7 +76,10 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     listingsSimulated: () => brain.travel?.simulated?.() === true,
   });
   const events = createTaskEvents({ store, tasks, v1, desk: brain.desk, results, packs: brain.packs, now: brain.now, log: brain.log });
-  const screens = createScreens({ v1, store, images, tasks, userIdFor: computer.userIdFor, now: brain.now, log: brain.log });
+  const screens = createScreens({
+    v1, store, images, tasks, userIdFor: computer.userIdFor, now: brain.now, log: brain.log,
+    perMinute: SCREENS_PER_MINUTE_PER_KEY * env.VESTRA_API_KEYS.length,
+  });
   const follower = createFollower({ v1, store, streams: eventStore, apply: events.apply, screens, log: brain.log, ...(o.follower ?? {}) });
   following = follower;
   const sweep = createSweep({ v1, store, eventStore, tasks, events, computer, follow, desk: brain.desk, packs: brain.packs, now: brain.now, log: brain.log });

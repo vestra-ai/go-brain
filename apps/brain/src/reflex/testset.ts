@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { goaTrip, msg, packOf } from './goa.fixture.js';
 import type { JevAnswer } from './jev.js';
 import { codeFacts } from './jev-reflex.js';
-import { buildQuestions, QUESTION_NAMES, QUESTION_VERSIONS, type QuestionName, type ReflexInput } from './questions.js';
+import { buildQuestions, QUESTION_NAMES, QUESTION_VERSIONS, RECIPE_CHOICES, type QuestionName, type ReflexInput } from './questions.js';
 import { readAnswers } from './read.js';
 import { BARS, type Bars } from './thresholds.js';
 
@@ -30,6 +30,7 @@ export const TestRow = z.object({
     reaction: z.enum(['✅', '👍', '🙌']).nullable().optional(),
     risky: z.boolean().optional(),
     opening: z.boolean().optional(),
+    recipe: z.enum(RECIPE_CHOICES).nullable().optional(),
   }),
 });
 export type TestRow = z.infer<typeof TestRow>;
@@ -76,7 +77,7 @@ export function rowInput(row: TestRow): ReflexInput {
 
 const FIELD = {
   for_go: 'forGo', complete: 'complete', size: 'size', task: 'taskId', fact: 'fact',
-  record: 'recordKind', reaction: 'reaction', risky: 'risky', opening: 'opening',
+  record: 'recordKind', reaction: 'reaction', risky: 'risky', opening: 'opening', recipe: 'recipe',
 } as const satisfies Record<QuestionName, string>;
 
 export interface QuestionScore {
@@ -93,9 +94,15 @@ export interface QuestionScore {
   stale: boolean;
   /** Labelled rows with no recorded answers. */
   missing: number;
+  /** Per expected value ("none" for null): rows, right, sure and wrong, and unsure. Reaction and recipe only. */
+  byValue?: Record<string, { labelled: number; right: number; wrong: number; unsure: number }>;
 }
 
-/** What a question must reach on the set before it may act live. Wrong sure answers are never allowed, except question 8's false alarms, which only add caution. */
+/**
+ * What a question must reach on the set before it may act live. Wrong sure answers are never allowed, except question 8's
+ * false alarms, which only add caution. Question 10 must also reach minRecall on the rows that ask for a search, so a
+ * reader that always says none cannot pass on the none rows alone.
+ */
 export const GATES: Record<QuestionName, { minRecall: number; maxWrong: number }> = {
   for_go: { minRecall: 0.5, maxWrong: 0 },
   complete: { minRecall: 0.5, maxWrong: 0 },
@@ -106,7 +113,10 @@ export const GATES: Record<QuestionName, { minRecall: number; maxWrong: number }
   reaction: { minRecall: 0.3, maxWrong: 0 },
   risky: { minRecall: 0.8, maxWrong: 2 },
   opening: { minRecall: 0.3, maxWrong: 0 },
+  recipe: { minRecall: 0.5, maxWrong: 0 },
 };
+
+const BY_VALUE: ReadonlySet<QuestionName> = new Set(['reaction', 'recipe']);
 
 export function scoreSet(rows: TestRow[], rec: Recorded | null, bars: Bars = BARS): QuestionScore[] {
   return QUESTION_NAMES.map((name) => {
@@ -123,7 +133,7 @@ export function scoreSet(rows: TestRow[], rec: Recorded | null, bars: Bars = BAR
       const answers = rec?.answers[row.id] ?? null;
       if (!answers) s.missing += 1;
       const facts = codeFacts(input.message, input.pack, input.runningTasks);
-      const got = readAnswers(answers, facts, buildQuestions(input).taskKeys, bars).would[FIELD[name]];
+      const got = readAnswers(answers, facts, buildQuestions(input).taskKeys, bars).would[FIELD[name]] ?? { value: null, sure: false };
       if (name === 'risky') {
         const raised = got.sure && got.value === true;
         if (expected === true) {
@@ -142,13 +152,21 @@ export function scoreSet(rows: TestRow[], rec: Recorded | null, bars: Bars = BAR
       }
       s.labelled += 1;
       s.byLang[row.lang].labelled += 1;
-      if (!got.sure) continue;
+      const key = String(expected ?? 'none');
+      const v = BY_VALUE.has(name) ? ((s.byValue ??= {})[key] ??= { labelled: 0, right: 0, wrong: 0, unsure: 0 }) : null;
+      if (v) v.labelled += 1;
+      if (!got.sure) {
+        if (v) v.unsure += 1;
+        continue;
+      }
       s.sure += 1;
       if (got.value === expected) {
         s.right += 1;
         s.byLang[row.lang].right += 1;
+        if (v) v.right += 1;
       } else {
         s.wrong.push(row.id);
+        if (v) v.wrong += 1;
       }
     }
     s.recall = s.labelled ? s.right / s.labelled : 0;
@@ -156,16 +174,24 @@ export function scoreSet(rows: TestRow[], rec: Recorded | null, bars: Bars = BAR
   });
 }
 
+/** Recall on the rows that expect a search (question 10), leaving the none rows out. */
+export function searchRecall(s: QuestionScore): number {
+  const asks = Object.entries(s.byValue ?? {}).filter(([value]) => value !== 'none').map(([, v]) => v);
+  const labelled = asks.reduce((n, v) => n + v.labelled, 0);
+  return labelled ? asks.reduce((n, v) => n + v.right, 0) / labelled : 0;
+}
+
 export function gatePasses(s: QuestionScore): boolean {
   const g = GATES[s.name];
+  if (s.name === 'recipe' && searchRecall(s) < g.minRecall) return false;
   return !s.stale && s.missing === 0 && s.wrong.length <= g.maxWrong && s.recall >= g.minRecall;
 }
 
 export const SWEEPS: Array<{ name: QuestionName; bar: string; values: number[]; apply: (b: Bars, v: number) => Bars }> = [
   { name: 'for_go', bar: 'chatterMin', values: [0.8, 0.85, 0.9, 0.95], apply: (b, v) => ({ ...b, for_go: { ...b.for_go, chatterMin: v } }) },
-  { name: 'for_go', bar: 'notAddressedMax', values: [0.05, 0.1, 0.15, 0.2], apply: (b, v) => ({ ...b, for_go: { ...b.for_go, notAddressedMax: v } }) },
+  { name: 'for_go', bar: 'notAddressedMax', values: [0.05, 0.1, 0.15, 0.2, 0.25, 0.3], apply: (b, v) => ({ ...b, for_go: { ...b.for_go, notAddressedMax: v } }) },
   { name: 'for_go', bar: 'addressedMin', values: [0.8, 0.85, 0.9, 0.95], apply: (b, v) => ({ ...b, for_go: { ...b.for_go, addressedMin: v } }) },
-  { name: 'complete', bar: 'yesMin', values: [0.75, 0.8, 0.85, 0.9], apply: (b, v) => ({ ...b, complete: { ...b.complete, yesMin: v } }) },
+  { name: 'complete', bar: 'namedMin', values: [0.4, 0.45, 0.5, 0.55, 0.6, 0.7], apply: (b, v) => ({ ...b, complete: { ...b.complete, namedMin: v } }) },
   { name: 'size', bar: 'kindMin', values: [0.8, 0.85, 0.9, 0.95], apply: (b, v) => ({ ...b, size: { ...b.size, kindMin: v } }) },
   { name: 'size', bar: 'otherMax', values: [0.1, 0.2, 0.3], apply: (b, v) => ({ ...b, size: { ...b.size, otherMax: v } }) },
   { name: 'task', bar: 'pickMin', values: [0.7, 0.8, 0.85, 0.9], apply: (b, v) => ({ ...b, task: { ...b.task, pickMin: v } }) },
@@ -174,6 +200,8 @@ export const SWEEPS: Array<{ name: QuestionName; bar: string; values: number[]; 
   { name: 'reaction', bar: 'pickMin', values: [0.8, 0.85, 0.9, 0.95], apply: (b, v) => ({ ...b, reaction: { ...b.reaction, pickMin: v } }) },
   { name: 'risky', bar: 'raiseAt', values: [0.3, 0.4, 0.5, 0.6], apply: (b, v) => ({ ...b, risky: { ...b.risky, raiseAt: v } }) },
   { name: 'opening', bar: 'yesMin', values: [0.8, 0.85, 0.9, 0.95], apply: (b, v) => ({ ...b, opening: { ...b.opening, yesMin: v } }) },
+  { name: 'recipe', bar: 'pickMin', values: [0.5, 0.6, 0.7, 0.8, 0.9], apply: (b, v) => ({ ...b, recipe: { ...b.recipe, pickMin: v } }) },
+  { name: 'recipe', bar: 'rivalMax', values: [0.1, 0.2, 0.3, 0.4], apply: (b, v) => ({ ...b, recipe: { ...b.recipe, rivalMax: v } }) },
 ];
 
 /** One line per bar value: how recall and wrong answers move. Pick the value with zero wrong and the best recall. */
@@ -182,15 +210,20 @@ export function sweep(rows: TestRow[], rec: Recorded): string[] {
   for (const sw of SWEEPS) {
     for (const v of sw.values) {
       const s = scoreSet(rows, rec, sw.apply(BARS, v)).find((x) => x.name === sw.name)!;
-      lines.push(`${sw.name.padEnd(9)} ${sw.bar}=${v.toFixed(2)} recall=${s.recall.toFixed(2)} wrong=${s.wrong.length}${s.wrong.length ? ` (${s.wrong.join(',')})` : ''}`);
+      const asks = sw.name === 'recipe' ? ` search_recall=${searchRecall(s).toFixed(2)}` : '';
+      lines.push(`${sw.name.padEnd(9)} ${sw.bar}=${v.toFixed(2)} recall=${s.recall.toFixed(2)}${asks} wrong=${s.wrong.length}${s.wrong.length ? ` (${s.wrong.join(',')})` : ''}`);
     }
   }
   return lines;
 }
 
 export function formatScores(scores: QuestionScore[]): string[] {
-  return scores.map((s) => {
+  return scores.flatMap((s) => {
     const lang = (l: 'en' | 'hinglish') => (s.byLang[l].labelled ? (s.byLang[l].right / s.byLang[l].labelled).toFixed(2) : '-');
-    return `${gatePasses(s) ? 'PASS' : 'FAIL'} ${s.name.padEnd(9)} recall=${s.recall.toFixed(2)} (en ${lang('en')}, hinglish ${lang('hinglish')}) sure=${s.sure}/${s.labelled} wrong=${s.wrong.length}${s.wrong.length ? ` (${s.wrong.join(',')})` : ''}${s.stale ? ' STALE' : ''}${s.missing ? ` missing=${s.missing}` : ''}`;
+    const line = `${gatePasses(s) ? 'PASS' : 'FAIL'} ${s.name.padEnd(9)} recall=${s.recall.toFixed(2)} (en ${lang('en')}, hinglish ${lang('hinglish')}) sure=${s.sure}/${s.labelled} wrong=${s.wrong.length}${s.wrong.length ? ` (${s.wrong.join(',')})` : ''}${s.stale ? ' STALE' : ''}${s.missing ? ` missing=${s.missing}` : ''}${s.name === 'recipe' ? ` search_recall=${searchRecall(s).toFixed(2)}` : ''}`;
+    const values = Object.entries(s.byValue ?? {}).map(
+      ([value, v]) => `     ${s.name}=${value.padEnd(7)} right=${v.right}/${v.labelled} (${(v.right / v.labelled).toFixed(2)}) wrong=${v.wrong} unsure=${v.unsure}`,
+    );
+    return [line, ...values];
   });
 }

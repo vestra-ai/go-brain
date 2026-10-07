@@ -38,7 +38,7 @@ describe('result sets', () => {
     expect(await store.card('t_other', 'c_opt_t')).toBeNull();
     expect(await store.offer('opt_t1')).toEqual({
       optionId: 'opt_t1', tripId: 't_goa', cardId: 'c_opt_t', resultsId: set.resultsId, n: 1, offerId: 'fake:st-villa-sol-20261106-20261109-5',
-      kind: 'stay', title: 'Villa Sol', priceMinor: 1280000, totalMinor: 3840000, currency: 'INR', priceNote: 'per night', checkedAt: CHECKED,
+      kind: 'stay', title: 'Villa Sol', priceMinor: 1280000, totalMinor: 3840000, currency: 'INR', priceNote: 'per night', checkedAt: CHECKED, sourceUrl: null,
     });
     expect((await store.offersOnCard('c_opt_t')).map((o) => o.n)).toEqual([1, 2]);
     expect(await store.offer('opt_missing')).toBeNull();
@@ -79,6 +79,18 @@ describe('result sets', () => {
     const card = buildOptionsCard({ cardId: 'c_opt_w', title: 'Casa Lua', optionKind: 'stay', checkedAt: CHECKED, picks });
     await store.saveCard({ cardId: 'c_opt_w', tripId: 't_goa', resultsId: set.resultsId, title: 'Casa Lua', optionKind: 'stay', card }, picks, CHECKED);
     expect(await store.offer('opt_w1')).toMatchObject({ offerId: null, priceMinor: null, totalMinor: 4500000, currency: 'INR' });
+  });
+
+  it("keeps an ixigo.com option's own page with its offer, and no offer id: it is booked on ixigo", async () => {
+    const store = createResultsStore(db.pool);
+    const page = 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&hName=Meritas';
+    const hotel: ResultOption = { kind: 'stay', title: 'Meritas', priceMinor: 810400, totalMinor: 4862400, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: { area: 'Candolim' }, sourceUrl: page };
+    const set = await store.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: {}, options: [hotel], checkedAt: CHECKED });
+    const picks = [{ optionId: 'opt_ix1', n: 1, option: hotel, imageUrl: null }];
+    const card = buildOptionsCard({ cardId: 'c_opt_ix', title: 'Meritas', optionKind: 'stay', checkedAt: CHECKED, picks });
+    await store.saveCard({ cardId: 'c_opt_ix', tripId: 't_goa', resultsId: set.resultsId, title: 'Meritas', optionKind: 'stay', card }, picks, CHECKED);
+    expect(await store.offer('opt_ix1')).toMatchObject({ offerId: null, priceMinor: 810400, totalMinor: 4862400, sourceUrl: page });
+    expect((await store.offersOnCard('c_opt_ix'))[0]!.sourceUrl).toBe(page);
   });
 
   it('lets one vote claim a card at a time, and the same claim again (a rerun of the same turn)', async () => {

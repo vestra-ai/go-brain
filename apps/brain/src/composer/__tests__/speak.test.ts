@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeLink } from '../../__tests__/fixtures/fake-link.js';
 import { withSchema } from '../../db/test-db.js';
-import { createSpeak } from '../speak.js';
+import { createSpeak, mentionsIn } from '../speak.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -78,6 +78,29 @@ describe('post', () => {
     expect(rows[0].posted_at).toBeInstanceOf(Date);
   });
 
+  it("never posts Go's own ids: the line goa-300:175 posted in run 37586604675 goes out without its card id", async () => {
+    const { link, calls } = fakeLink({ post_message: () => ({ message_id: 'm_go_8', seq: 8 }) });
+    const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
+    await speak.post({
+      link, tripId: 't_goa', turnId: 'turn_C', requestId: (tag) => `go_${tag}_turn_C_1`,
+      text: "I'll put the most recent villa options card (c_opt_turn_01M4AKVFEWCWYK4RFMB0MP8R97_1) to a vote.",
+      cards: [notice('c_8')],
+    });
+    expect(calls[0]?.params.text).toBe("I'll put the most recent villa options card to a vote.");
+    expect(calls[0]?.params.card.card_id).toBe('c_8');
+  });
+
+  it("cuts a cited message whole, bracket and all: goa-300:9 in run 37590000837 posted \"after 6 pm ('s thread), so\"", async () => {
+    const { link, calls } = fakeLink({ post_message: () => ({ message_id: 'm_go_7', seq: 7 }) });
+    const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
+    await speak.post({
+      link, tripId: 't_goa', turnId: 'turn_D', requestId: (tag) => `go_${tag}_turn_D_1`,
+      text: "Rahul can leave Fri after 6 pm (#7's thread), so here are the evening flights that fit; the 6:15 am one is cheapest but too early for Arjun.",
+      cards: [],
+    });
+    expect(calls[0]?.params.text).toBe('Rahul can leave Fri after 6 pm, so here are the evening flights that fit; the 6:15 am one is cheapest but too early for Arjun.');
+  });
+
   it('posts a card with no text, and nothing when there is nothing to post', async () => {
     const { link, calls } = fakeLink({ post_message: () => ({ message_id: 'm_go_9', seq: 9 }) });
     const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
@@ -87,5 +110,44 @@ describe('post', () => {
     expect(calls).toHaveLength(0);
     expect(await speak.post({ ...base, text: null, cards: [notice('c_9')] })).toEqual(['m_go_9']);
     expect(calls[0]?.params.text).toBeUndefined();
+  });
+});
+
+describe('mentions: the people Go names get a push', () => {
+  const person = (person_id: string, name: string, go_paused = false) => ({ person_id, name, go_paused });
+  const trip = [person('p_asha', 'Asha'), person('p_priya', 'Priya Shah'), person('p_rahul', 'Rahul'), person('p_meher', 'Meher', true)];
+
+  it('a person Go names by first name goes in, as a whole word, next to any punctuation', () => {
+    expect(mentionsIn("Asha, you're the payer, so tap Yes, book it.", trip)).toEqual(['p_asha']);
+    expect(mentionsIn('Rahul bhai, Priya ko bolo!', trip)).toEqual(['p_priya', 'p_rahul']);
+    expect(mentionsIn('@asha?', trip)).toEqual(['p_asha']);
+  });
+
+  it('a name inside another word is not that person: Asha is not in Ashanti', () => {
+    expect(mentionsIn('Ashanti says hi, and the Rahulpur bus leaves at 6.', trip)).toEqual([]);
+  });
+
+  it('two people both go in, each once; never someone who paused Go, never a member named Go', () => {
+    expect(mentionsIn('Priya and Rahul are in. Priya, you pay.', trip)).toEqual(['p_priya', 'p_rahul']);
+    expect(mentionsIn('Meher, the villa wants a code.', trip)).toEqual([]);
+    expect(mentionsIn('Go here, Go there.', [...trip, person('p_go', 'Go')])).toEqual([]);
+  });
+
+  it('a first name two people share goes only to the one named in full', () => {
+    const twins = [person('p_r1', 'Rahul Mehta'), person('p_r2', 'Rahul Kapoor')];
+    expect(mentionsIn('Rahul, can you check?', twins)).toEqual([]);
+    expect(mentionsIn('Rahul Kapoor, can you check?', twins)).toEqual(['p_r2']);
+  });
+
+  it('post sends the named people as mentions with the text, and given mentions as they are', async () => {
+    const { link, calls } = fakeLink({ post_message: () => ({ message_id: `m_go_${calls.length}`, seq: 20 + calls.length }) });
+    const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
+    const base = { link, tripId: 't_goa', turnId: 'turn_M', requestId: (tag: string) => `go_${tag}_turn_M_${calls.length + 1}`, cards: [] };
+    await speak.post({ ...base, text: "Asha, you're the payer, so tap Yes, book it.", people: trip });
+    expect(calls[0]?.params.mentions).toEqual(['p_asha']);
+    await speak.post({ ...base, text: 'Nobody named here.', people: trip });
+    expect(calls[1]?.params.mentions).toBeUndefined();
+    await speak.post({ ...base, text: 'Asha!', people: trip, mentions: ['p_rahul'] });
+    expect(calls[2]?.params.mentions).toEqual(['p_rahul']);
   });
 });

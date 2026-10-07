@@ -59,7 +59,8 @@ export function chatLine(
     if (at.kind === 'photo') parts.push(at.caption ? `[photo: ${defuse(oneLine(at.caption)).slice(0, 200)}]` : '[photo]');
     else parts.push(`[file: ${defuse(oneLine(at.name)).slice(0, 80)}]`);
   }
-  if (m.card) parts.push(`[card: ${defuse(oneLine(m.card.fallback_text))}]`);
+  // An options card keeps its id, so "put the villas to a vote" names it (put_to_vote card_id) instead of searching again.
+  if (m.card) parts.push(`[${m.card.kind === 'options' ? `options card ${m.card.card_id}` : 'card'}: ${defuse(oneLine(m.card.fallback_text))}]`);
   if (parts.length === 0) return null;
   return `#${m.seq} ${who}: ${parts.join(' ')}`.slice(0, LINE_MAX);
 }

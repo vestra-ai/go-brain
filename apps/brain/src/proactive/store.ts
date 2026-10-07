@@ -85,7 +85,7 @@ export class ProactiveStore {
          due_at = excluded.due_at, expires_at = excluded.expires_at, person_ids = excluded.person_ids,
          facts = excluded.facts, useful = excluded.useful, status = 'pending', reason = null, decided_at = null
        where proactive_candidates.status = 'pending'
-          or (proactive_candidates.status = 'dropped' and proactive_candidates.reason = 'replanned')`,
+          or (proactive_candidates.status = 'dropped' and proactive_candidates.reason in ('replanned', 'trip_gone'))`,
       values(c),
     );
   }
@@ -96,6 +96,19 @@ export class ProactiveStore {
       `update proactive_candidates set status = 'dropped', reason = 'replanned', decided_at = $3
        where trip_id = $1 and source = 'timer' and status = 'pending' and not (dedupe_key = any($2::text[]))`,
       [tripId, keep, now],
+    );
+    return r.rowCount ?? 0;
+  }
+
+  /**
+   * Retires every pending candidate (timers included) of a trip the Server no longer has (trips.gone_at), so the
+   * promoter never reads it again. A re-plan revives a timer if the trip comes back.
+   */
+  async retireGone(now: Date): Promise<number> {
+    const r = await this.pool.query(
+      `update proactive_candidates c set status = 'dropped', reason = 'trip_gone', decided_at = $1
+       from trips t where t.trip_id = c.trip_id and t.gone_at is not null and c.status = 'pending'`,
+      [now],
     );
     return r.rowCount ?? 0;
   }

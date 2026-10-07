@@ -84,6 +84,8 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
     const travel = d.travel;
     if (!travel) return 0;
     const now = d.now();
+    // A trip the Server no longer has keeps no watches (a re-plan turns them back on if it comes back).
+    await d.pool.query(`update watches w set active = false from trips t where t.trip_id = w.trip_id and t.gone_at is not null and w.active`);
     const due = await d.pool.query<WatchRow>(
       `select watch_id, trip_id, kind, query, person_ids, label, last_reading, last_change_key, ends_at, errors, notice_card_id
        from watches where active and next_check_at <= $1 order by next_check_at limit 20`,

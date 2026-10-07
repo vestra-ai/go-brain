@@ -40,7 +40,9 @@ function goScript(body: any): Reply {
   }
   if (now.includes('you just joined this trip')) return { text: 'Hi all, I am Go.' };
   const results = /results_id "([^"]+)"/.exec(now)?.[1];
-  if (results && now.includes('finished with')) return { tools: [{ name: 'show_options', input: { results_id: results, title: 'Villas with a pool in North Goa' } }] };
+  if (results && now.includes('finished with')) {
+    return { tools: [{ name: 'show_options', input: { results_id: results, title: 'Villas with a pool in North Goa', line: 'Three villas that fit. Want a vote?' } }] };
+  }
   if (now.includes("didn't work")) return { text: "That didn't work. Want me to try again?" };
   if (now.includes('needs Meher for something only they can do')) return { text: 'Meher, the villa site wants a one-time code. Send it here, or tap Watch on the card.' };
   const job = /\b(gt_[0-9a-z]{6,40})\b/.exec(now)?.[1];

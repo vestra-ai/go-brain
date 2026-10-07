@@ -1,7 +1,7 @@
 import { BenchSummary } from '@go/brain/dist/stats/index.js';
 import { describe, expect, it } from 'vitest';
 import type { LiveRun } from '../compare.js';
-import { whyWoke } from '../report-md.js';
+import { renderSummary, whyWoke } from '../report-md.js';
 import { liveEnv, parseArgs, postSummary, toBoardSummary } from '../run-live.js';
 import type { ChatScore } from '../score.js';
 
@@ -37,6 +37,24 @@ describe('the live bench', () => {
     expect(whyWoke({ ...run, jev })).toBe(
       '- claude-sonnet-5-5 on goa-300: Jev read 3 messages and answered 2 (not answered: timeout 1), in 400 ms p50 and 450 ms p90; 1 read sure not for Go. Model turns by what woke them: message 5, task_done 1.',
     );
+  });
+
+  it('says what Go answered each ask, and where the request that wrote it is', () => {
+    const reply = { text: 'Mopa is about 35 km from Anjuna, around an hour by cab.', chars: 56, sentences: 1, outputTokens: 40 };
+    const ask = {
+      line: 54, dueMs: 20, waited: false, typingMs: 5, turnStartMs: 190, calls: [], postMs: 2_380, reply,
+      request: { model: 'claude-sonnet-5-5', messages: [] }, parts: { beforeTurnMs: 190, modelMs: 2_170, betweenMs: 0, afterModelMs: 3 },
+      lastTools: [], afterModel: [],
+    };
+    const md = renderSummary({
+      schema: 'go.bench-report/v1', mode: 'live', at: '2026-10-07T09:00:00Z', commit: null, scores: [], live: [{ ...run, asks: [ask, { ...ask, line: 73, reply: null }] }],
+      verdict: { ok: true, checks: [] },
+    });
+    expect(md).toContain(
+      'What Go answered (the request of the call that wrote each answer is in the JSON report, at live[].asks[].request):\n\n' +
+        '- claude-sonnet-5-5, goa-300, line 54: "Mopa is about 35 km from Anjuna, around an hour by cab."\n\n',
+    );
+    expect(md).not.toContain('line 73:');
   });
 
   it('reads its arguments, with the Tuesday comparison as the default', () => {

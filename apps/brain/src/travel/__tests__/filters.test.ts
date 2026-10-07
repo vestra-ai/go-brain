@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
-import { applyConstraints } from '../filters.js';
+import { applyConstraints, misses } from '../filters.js';
 import { createFakeTravel } from '../mcp-travel.js';
+import { capture, fixture } from '../recipes/__tests__/fixtures.js';
+import { stays } from '../recipes/stays.js';
 import type { TravelOption } from '../travel.js';
 
 const now = () => new Date('2026-10-07T12:00:00Z');
@@ -29,12 +31,44 @@ describe('constraints applied in code', () => {
     expect(applyConstraints('stays', { guests: 5, mustHave: ['pool', 'beach'], maxPriceMinor: 1300000 }, results).map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa']);
   });
 
+  it('spreads a region ask across its areas: the best good stay of each area first, then each one\'s second (re-drill 4)', () => {
+    const stay = (title: string, area: string, rating: number): TravelOption => ({
+      offerId: `fake:${title}`, kind: 'stay', title, priceMinor: 900_000, currency: 'INR', priceNote: 'per night', rating, highlights: [], facts: { area },
+    });
+    const all = [stay('A', 'Calangute', 4.8), stay('B', 'Calangute', 4.7), stay('C', 'Calangute', 4.6), stay('D', 'Baga', 3.5), stay('E', 'Candolim', 4.5)];
+    const titles = (q: { area?: string }) => applyConstraints('stays', q, all).map((o) => o.title);
+    expect(titles({ area: 'North Goa' })).toEqual(['A', 'E', 'B', 'C', 'D']);
+    expect(titles({ area: 'Goa' })).toEqual(['A', 'E', 'B', 'C', 'D']);
+    // One area asked for, or none: best rated first, as before. Baga's 3.5 is not good, so it never jumps the queue.
+    expect(titles({ area: 'Calangute' })).toEqual(['A', 'B', 'C', 'E', 'D']);
+    expect(titles({})).toEqual(['A', 'B', 'C', 'E', 'D']);
+  });
+
+  it("puts three areas up front for North Goa from ixigo's own two pages, not the Candolim strip", () => {
+    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+    const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
+    const north = stays.slotsFrom({ area: 'North Goa', checkIn: FRIDAY, checkOut: '2026-11-09' }, { people: 4 });
+    const options = stays.extract([capture(SEARCH, url, fixture('stays-goa-page1.json')), capture(SEARCH, url, fixture('stays-goa-page2.json'))], north)
+      .map((o, i) => ({ ...o, offerId: `ixigo-web:${i}` }));
+    const top = (q: { area?: string }) => applyConstraints('stays', q, options).slice(0, 3).map((o) => o.facts.area);
+    expect(top({})).toEqual(['Vagator', 'Candolim', 'Candolim']);
+    expect(top({ area: 'North Goa' })).toEqual(['Vagator', 'Candolim', 'Prabhu wada']);
+  });
+
   it('drops a journey that arrives the next day when it must arrive before a time', () => {
     const overnight: TravelOption = {
       offerId: 'fake:x', kind: 'flight', title: 'Late flight', priceMinor: 500000, currency: 'INR', priceNote: 'per person', highlights: [], facts: {},
       journey: { mode: 'flight', origin: { name: 'Delhi' }, destination: { name: 'Goa' }, depart_at: '2026-11-06T22:50:00+05:30', arrive_at: '2026-11-07T01:25:00+05:30' },
     };
     expect(applyConstraints('flights', { arriveBefore: '23:00' }, [overnight])).toEqual([]);
+  });
+
+  it('says the day a train arrives when it is two days later, not "the next day"', () => {
+    const longTrain: TravelOption = {
+      offerId: 'fake:22634', kind: 'train', title: '22634 NZM TVC SF Exp', priceMinor: 218500, currency: 'INR', priceNote: 'per person', highlights: [], facts: {},
+      journey: { mode: 'train', origin: { name: 'Delhi' }, destination: { name: 'Thiruvananthapuram' }, depart_at: '2026-11-06T22:15:00+05:30', arrive_at: '2026-11-08T02:00:00+05:30' },
+    };
+    expect(misses('trains', { arriveBefore: '23:00' }, longTrain)).toEqual(['arrives at 2:00 am on Sun 8 Nov, after 11:00 pm']);
   });
 
   it('drops a train that arrives the next day when it must arrive before a time', async () => {

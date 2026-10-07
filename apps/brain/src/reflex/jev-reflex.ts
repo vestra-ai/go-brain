@@ -1,5 +1,5 @@
 /**
- * Jev on every person's message: one call with all nine questions, about 150 ms, at most the deadline.
+ * Jev on every person's message: one call with every question, about 150 ms, at most the deadline.
  * Live questions act; shadow questions only log what they would have done. Any fault reads "unsure",
  * so the worst case is the composer deciding as if Jev were not there.
  */
@@ -16,6 +16,7 @@ import { buildQuestions, buildState, messageText, QUESTION_VERSIONS } from './qu
 import { applyLive, codeOnly, readAnswers, type CodeFacts } from './read.js';
 import type { Reflex, ReflexRead } from './reflex.js';
 import { secretKinds } from './secrets.js';
+import { isSmallTalk } from './small-talk.js';
 
 export interface JevReflexDeps {
   jev: Pick<JevClient, 'ask'>;
@@ -33,11 +34,14 @@ export type JevReflex = Reflex & { settled(): Promise<void> };
 
 /**
  * What code knows without Jev: Go plainly named (P1's rule, the same one that turns typing on), a secret
- * in the text (still there, or already hidden by P1's intake: secretKinds reads the marks), tasks running.
+ * in the text (still there, or already hidden by P1's intake: secretKinds reads the marks), tasks running, a line about
+ * money, and small talk.
  */
 export function codeFacts(msg: Message, pack: TripPack, runningTasks: Array<{ id: string }>): CodeFacts {
   const text = messageText(msg);
-  return { namesGo: plainlyNamesGo(msg, pack), secretKinds: secretKinds(text), hasTasks: runningTasks.length > 0, money: looksLikeMoney(text) };
+  return {
+    namesGo: plainlyNamesGo(msg, pack), secretKinds: secretKinds(text), hasTasks: runningTasks.length > 0, money: looksLikeMoney(text), smallTalk: isSmallTalk(text),
+  };
 }
 
 export function createJevReflex(d: JevReflexDeps): JevReflex {

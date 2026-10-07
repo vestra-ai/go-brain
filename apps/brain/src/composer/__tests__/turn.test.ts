@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { fakeAnthropic, type Script } from '../../__tests__/fixtures/fake-anthropic.js';
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
 import { createBudget, type Budget } from '../../budget.js';
 import { withSchema } from '../../db/test-db.js';
-import type { DeskItem } from '../../desk/desk.js';
+import { createDesk, type DeskItem } from '../../desk/desk.js';
 import type { Message } from '../../door/methods.js';
 import { createServerLink } from '../../door/server-link.js';
 import { reactOnce } from '../../memory/reactions.js';
@@ -12,7 +13,13 @@ import type { TripPack } from '../../trips/pack.js';
 import { createContext, type TurnLimits } from '../context.js';
 import { roomTools } from '../room-tools.js';
 import { createSpeak } from '../speak.js';
-import { createTools } from '../tools.js';
+import { createTools, type QuickTool } from '../tools.js';
+import { FakeIxigoStore } from '../../travel/fake-ixigo/data.js';
+import { createImages } from '../../travel/images.js';
+import { createTravelLayer } from '../../travel/layer.js';
+import { createFakeTravel } from '../../travel/mcp-travel.js';
+import { createResultsStore } from '../../travel/results.js';
+import { travelTools } from '../../travel/tools.js';
 import { createComposer, OVER_BUDGET, TROUBLE } from '../turn.js';
 import { ASK_HOW_MUCH, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
@@ -28,12 +35,16 @@ function room(o: {
   messages: Message[];
   script: Script;
   claimNew?: (tripId: string, turnId: string) => Promise<DeskItem[]>;
+  release?: (turnId: string, ids: string[]) => Promise<void>;
   limits?: (wake: DeskItem[]) => TurnLimits | null;
   budget?: Budget;
+  /** More quick tools, as a lane would register them. */
+  extraTools?: QuickTool<any>[];
 }) {
   const tripId = `t_turn_${++rooms}`;
   const calls: Array<{ method: string; params: any }> = [];
   const notes: Array<{ method: string; params: any }> = [];
+  const released: string[] = [];
   const link = createServerLink({ pool: db.pool, log: silentLog, timeoutMs: 1_000 });
   const answers: Record<string, () => Record<string, unknown>> = {
     post_message: () => ({ message_id: `m_go_${calls.length}`, seq: 100 + calls.length }),
@@ -60,6 +71,7 @@ function room(o: {
   const pack: TripPack = { trip: goaSnapshot({ trip_id: tripId }), messages: [...o.messages], seq: 100 };
   const tools = createTools();
   for (const t of roomTools({ now: () => new Date(), pool: db.pool })) tools.register(t);
+  for (const t of o.extraTools ?? []) tools.register(t);
   const context = createContext(silentLog);
   context.addWake('message', renderMessageWake);
   context.addWake('trip_change', renderTripChangeWake);
@@ -72,9 +84,10 @@ function room(o: {
     packs: { get: async () => pack, invalidate: () => undefined },
     tools, context, speak,
     client: model.client, model: 'claude-sonnet-5-5', claimNew: o.claimNew ?? (async () => []),
+    release: o.release ?? (async (_turnId, ids) => { released.push(...ids); }),
     ...(o.budget ? { budget: o.budget } : {}),
   });
-  return { tripId, calls, notes, link, model, composer, pack, speak, posts: () => calls.filter((c) => c.method === 'post_message') };
+  return { tripId, calls, notes, link, model, composer, pack, speak, released, posts: () => calls.filter((c) => c.method === 'post_message') };
 }
 
 const item = (tripId: string, m: Message, namesGo: boolean): DeskItem => ({
@@ -223,6 +236,8 @@ describe('a composer turn', () => {
     expect(r.posts().map((p) => p.params.text)).toEqual(['The villa is free, and pets are welcome.']);
     const seen = await db.pool.query('select composer_seen_seq from trips where trip_id = $1', [r.tripId]);
     expect(seen.rows[0].composer_seen_seq).toBe(4);
+    // It names Go but was no reason this turn woke: it goes back on the desk for a turn of its own.
+    expect(r.released).toEqual([`msg:${r.tripId}:m_4`]);
   });
 
   it('a budget that runs out before the extra round: the answer round 1 paid for still goes out, and the unread ask hears the limit', async () => {
@@ -370,7 +385,7 @@ describe('a composer turn', () => {
       script: [
         {
           tools: [
-            { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }] } },
+            { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }], line: 'Villa or resort? Tap your pick.' } },
             { name: 'update_trip', input: { stay: 'resort' } },
           ],
         },
@@ -412,7 +427,7 @@ describe('a composer turn', () => {
       messages: [ask],
       limits: () => ({ tools: ['react'], mayPostText: true }),
       script: [
-        { tools: [{ name: 'open_vote', input: { question: 'When?', options: [{ label: 'Fri' }, { label: 'Sat' }] } }] },
+        { tools: [{ name: 'open_vote', input: { question: 'When?', options: [{ label: 'Fri' }, { label: 'Sat' }], line: 'When works? Tap your pick.' } }] },
         { text: 'Nothing new yet, I will say when the fares move.' },
       ],
     });
@@ -490,5 +505,293 @@ describe('a line that says someone paid but not how much', () => {
     expect(r.model.bodies).toHaveLength(1);
     expect(r.posts().map((p) => p.params.text)).toEqual(['How much was it, and who was it for?']);
     expect(r.calls.filter((c) => c.method === 'add_expense' || c.method === 'add_reaction')).toEqual([]);
+  });
+});
+
+describe('a reply of card tools ends the turn on its cards', () => {
+  // Like travel's tools: a search that returns data, and show_options, a card tool that needs nothing back.
+  const search: QuickTool<{ to: string }> = {
+    name: 'search_flights', description: 'Searches flights.', input: z.object({ to: z.string() }),
+    run: async () => ({ results_id: 'rs_1', found: 3 }),
+  };
+  const show: QuickTool<{ results_id: string; line?: string | undefined }> = {
+    name: 'show_options', description: 'Shows an options card.', input: z.object({ results_id: z.string(), line: z.string().optional() }), endsTurn: true,
+    async run(a, ctx) {
+      if (a.results_id !== 'rs_1') return { error: 'unknown_results', note: 'Search again.' };
+      const cardId = ctx.stableId('c_opt');
+      ctx.cards.push({ kind: 'vote', card_id: cardId, fallback_text: 'Friday flights', decision_id: 'd_flights' });
+      if (a.line) ctx.lines.push(a.line);
+      return { card_id: cardId };
+    },
+  };
+  const searchCall = { name: 'search_flights', input: { to: 'Goa' } };
+  const showCall = (results_id = 'rs_1', line?: string) => ({ name: 'show_options', input: { results_id, ...(line ? { line } : {}) } });
+
+  it("search, then the card with its line: two model calls and one post with the line and the card, never the reply's free text", async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights Friday evening?');
+    // The free text is written before the card is up (run 37586604675, goa-300:73: "I'll show the best three by rating and value.").
+    const r = room({
+      messages: [ask],
+      extraTools: [search, show],
+      script: [{ tools: [searchCall] }, { text: "I'll show the best three by rating and value.", tools: [showCall('rs_1', 'Three flights after 6 pm.')] }, { text: 'never asked' }],
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Three flights after 6 pm.', card: { card_id: `c_opt_turn_${r.tripId}_1` } });
+    const { rows } = await db.pool.query('select outcome, rounds from turns where turn_id = $1', [`turn_${r.tripId}`]);
+    expect(rows[0]).toMatchObject({ outcome: 'spoke', rounds: 2 });
+  });
+
+  it('a card with no line goes up alone, with no model call for a line', async () => {
+    const ask = msg(3, 'p_arjun', '@Go show the flights again');
+    const r = room({ messages: [ask], extraTools: [show], script: [{ tools: [showCall()] }, { text: 'never asked' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]?.params.text).toBeUndefined();
+    expect(r.posts()[0]?.params.card).toMatchObject({ kind: 'vote', decision_id: 'd_flights' });
+  });
+
+  it('open_vote is a card tool too: the vote and its line in one reply, one model call', async () => {
+    const ask = msg(3, 'p_arjun', '@Go villa or resort? put it to a vote');
+    const vote = { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }], line: 'Vote is up, tap your pick.' } };
+    const r = room({ messages: [ask], script: [{ text: "I'll open the vote.", tools: [vote] }, { text: 'never asked' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Vote is up, tap your pick.', card: { kind: 'vote', decision_id: 'd_first' } });
+  });
+
+  it('a reply with a card tool and a tool that returns data still goes back to the model', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights?');
+    // A later reply's own words still win over a card's line from an earlier one.
+    const r = room({ messages: [ask], extraTools: [search, show], script: [{ tools: [showCall('rs_1', 'Three flights.'), searchCall] }, { text: 'Here they are.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Here they are.', card: { decision_id: 'd_flights' } });
+  });
+
+  it('a card tool that put no card up goes back to the model, like any result', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights?');
+    const r = room({ messages: [ask], extraTools: [search, show], script: [{ tools: [showCall('rs_old')] }, { text: 'Let me search again.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    expect(r.model.bodies[1].messages.at(-1).content[0].content).toContain('unknown_results');
+    expect(r.posts()[0]?.params.text).toBe('Let me search again.');
+    expect(r.posts()[0]?.params.card).toBeUndefined();
+  });
+
+  it('lines that arrive while the card goes up join the same turn, in the one user turn after the card', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights Friday?');
+    const more = msg(5, 'p_kabir', 'also Saturday?');
+    let claimed = false;
+    const r = room({
+      messages: [ask],
+      extraTools: [show],
+      script: [{ tools: [showCall('rs_1', 'Friday: three flights after 6 pm.')] }, { text: 'Friday has three after 6 pm; Saturday I can check next.' }],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(more);
+        return [item(tripId, more, false)];
+      },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    const sent = r.model.bodies[1].messages as Array<{ role: string; content: Array<{ type: string; text?: string }> }>;
+    // Roles still alternate: the new lines ride in the user turn that holds the card's result.
+    for (let k = 1; k < sent.length; k++) expect(sent[k]!.role).not.toBe(sent[k - 1]!.role);
+    expect(sent.at(-1)!.content.map((b) => b.type)).toEqual(['tool_result', 'text']);
+    expect(sent.at(-1)!.content[1]!.text).toContain('#5 Kabir: also Saturday?');
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]?.params).toMatchObject({ text: 'Friday has three after 6 pm; Saturday I can check next.', card: { decision_id: 'd_flights' } });
+  });
+
+  it('a rerun after a crash repeats the same ids: one vote opened, one card posted', async () => {
+    const ask = msg(3, 'p_arjun', '@Go put villa or resort to a vote');
+    const vote = { name: 'open_vote', input: { question: 'Villa or resort?', options: [{ label: 'Villa' }, { label: 'Resort' }], line: 'Vote is up.' } };
+    const r = room({ messages: [ask], script: [{ tools: [vote] }, { tools: [vote] }] });
+    // The first post never gets an answer the turn can use: the turn fails after the vote opened.
+    const posted = r.speak.post.bind(r.speak);
+    let first = true;
+    r.speak.post = async (p) => {
+      if (first) {
+        first = false;
+        throw new Error('the post failed');
+      }
+      return posted(p);
+    };
+    await expect(turn(r, [item(r.tripId, ask, true)])).rejects.toThrow('the post failed');
+    await turn(r, [item(r.tripId, ask, true)], `turn_${r.tripId}`, 2);
+    expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(1);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]?.params.card).toMatchObject({ card_id: `c_vote_turn_${r.tripId}_1`, decision_id: 'd_first' });
+  });
+
+  it('under a budget: the card turn spends one hold, and the arrived-meanwhile round the cap refuses keeps the card and its line', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights Friday?');
+    const more = msg(5, 'p_kabir', '@Go and Saturday?');
+    let claimed = false;
+    const budget = createBudget({ pool: db.pool, now: () => new Date(), capUsd: 1, log: silentLog });
+    const r = room({
+      messages: [ask],
+      extraTools: [show],
+      budget,
+      script: [{ tools: [showCall('rs_1', 'Friday: three flights after 6 pm.')], usage: { input_tokens: 600_000 } }, { text: 'never asked' }],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(more);
+        return [item(tripId, more, true)];
+      },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts().map((p) => [p.params.text, p.params.card?.decision_id])).toEqual([
+      ['Friday: three flights after 6 pm.', 'd_flights'],
+      [OVER_BUDGET, undefined],
+    ]);
+  });
+});
+
+describe('show the options and put them to a vote in one reply', () => {
+  // Travel's own tools on the fake travel backend, as the brain registers them.
+  const now = (): Date => new Date('2026-10-07T12:00:00Z');
+  const travelOf = () => {
+    const results = createResultsStore(db.pool);
+    const fake = createFakeTravel({ store: new FakeIxigoStore({ now }), now, payRail: () => 'fake' });
+    const travel = createTravelLayer({ switches: { get: () => 'fake' }, now, fake, ixigo: null, results });
+    return travelTools({ travel, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now });
+  };
+  const STAYS = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5, must_have: ['pool', 'beach'] };
+  const resultsIdOf = (body: any): string => JSON.parse(body.messages.at(-1).content[0].content).results_id;
+
+  it('the card, the vote and the line in one reply: one model call after the search, one vote opened', async () => {
+    const ask = msg(3, 'p_priya', '@Go find villas with a pool and put them to a vote');
+    const r = room({
+      messages: [ask],
+      extraTools: travelOf(),
+      script: (body, call) =>
+        call === 0
+          ? { tools: [{ name: 'search_stays', input: STAYS }] }
+          : call === 1
+            ? {
+                // goa-50:24 in run 37586604675 posted this free text with its card.
+                text:
+                  'Five people at under 8k a head is ₹40,000 a night, so everything fits the cap. "Near the beach" rules out the 15 and 20 minute ones. ' +
+                  "I'll show the best-rated villas that are close to the beach.",
+                tools: [
+                  { name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool', line: 'Three villas with a pool.' } },
+                  { name: 'put_to_vote', input: { line: 'Vote is up, tap your pick.' } },
+                ],
+              }
+            : { text: 'never asked' },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(2);
+    expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(1);
+    // Both lines ride with the options card, never the free text; the vote card follows it, as every second card does.
+    expect(r.posts().map((p) => [p.params.text, p.params.card?.kind])).toEqual([
+      ['Three villas with a pool.\nVote is up, tap your pick.', 'options'],
+      [undefined, 'vote'],
+    ]);
+    expect(r.posts()[1]?.params.card).toMatchObject({ decision_id: 'd_first' });
+  });
+
+  it('"put the three villas to a vote" on a card shown earlier: the chat line names the card, so one model call opens the vote', async () => {
+    // goa-300 line 175 in live run 37578789333: three model calls (recall, trip, search_stays) and 9.88 s, because the
+    // chat showed the villas card without its id.
+    const find = msg(3, 'p_rahul', 'Go, find us a villa with a pool in North Goa under 8k a head, near the beach');
+    const ask = msg(6, 'p_rahul', '@Go put the three villas to a vote please');
+    const cardIn = (body: any): string | undefined => /\[options card (c_opt_[\w-]+): /.exec(JSON.stringify(body.messages[0].content))?.[1];
+    const r = room({
+      messages: [find],
+      extraTools: travelOf(),
+      script: (body, call) =>
+        call === 0
+          ? { tools: [{ name: 'search_stays', input: STAYS }] }
+          : call === 1
+            ? { tools: [{ name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool', line: 'Three villas with a pool.' } }] }
+            : call === 2 && cardIn(body)
+              ? {
+                  // goa-300:175 in run 37586604675 posted this, card id and all.
+                  text: "I'll put the most recent villa options card (" + cardIn(body) + ') to a vote.',
+                  tools: [{ name: 'put_to_vote', input: { card_id: cardIn(body), line: 'Vote is up, tap your pick.' } }],
+                }
+              : { text: 'never asked' },
+    });
+    await turn(r, [item(r.tripId, find, true)]);
+    const shown = r.posts()[0]!.params.card;
+    expect(shown.kind).toBe('options');
+    r.pack.messages.push(msg(5, null, 'Three villas with a pool.', { card: shown }), ask);
+    await turn(r, [item(r.tripId, ask, true)], `turn_${r.tripId}_vote`);
+    expect(r.model.bodies).toHaveLength(3);
+    expect(cardIn(r.model.bodies[2])).toBe(shown.card_id);
+    expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(1);
+    expect(r.posts().slice(1).map((p) => [p.params.text, p.params.card?.kind])).toEqual([['Vote is up, tap your pick.', 'vote']]);
+  });
+
+  it('a vote with no card_id after two options cards is refused, opens nothing, and goes back to the model', async () => {
+    const ask = msg(3, 'p_priya', '@Go villas, two sets, and a vote');
+    const r = room({
+      messages: [ask],
+      extraTools: travelOf(),
+      script: (body, call) =>
+        call === 0
+          ? { tools: [{ name: 'search_stays', input: STAYS }] }
+          : call === 1
+            ? {
+                tools: [
+                  { name: 'show_options', input: { results_id: resultsIdOf(body), option_numbers: [1, 2], title: 'Two villas', line: 'Two villas.' } },
+                  { name: 'show_options', input: { results_id: resultsIdOf(body), option_numbers: [3, 4], title: 'Two more', line: 'Two more.' } },
+                  { name: 'put_to_vote', input: { line: 'Vote is up.' } },
+                ],
+              }
+            : { text: 'Which set should we vote on?' },
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(3);
+    expect(r.calls.filter((c) => c.method === 'open_vote')).toEqual([]);
+    expect(JSON.stringify(r.model.bodies[2].messages.at(-1).content)).toContain('which_card');
+    expect(r.posts()[0]?.params.text).toBe('Which set should we vote on?');
+  });
+});
+
+describe('people Go names', () => {
+  it('get a push: the turn posts them as mentions, worked out in code from the trip, not by the model', async () => {
+    const ask = msg(3, 'p_arjun', '@Go who pays for the villa?');
+    const r = room({ messages: [ask], script: [{ text: 'Priya, you are the payer, so tap Yes, book it. Arjun, nothing for you to do.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.posts()[0]?.params.mentions).toEqual(['p_priya', 'p_arjun']);
+  });
+});
+
+describe('an ask that lands while Go writes its hello', () => {
+  it('is never lost: when the hello passed over it, it gets a turn of its own and is answered', async () => {
+    // Trip t_35e02e110dfa4980: Priya's ask was in Go's copy of the trip when the hello's prompt was built (it shows in
+    // "new since"), but its desk item came after, so the hello turn took it at the pre-post check. The hello only said
+    // hello, and the ask was never answered.
+    const ask = msg(3, 'p_priya', '@Go can you show us 2 or 3 stay options?');
+    const woke = (body: any): string => String(body.messages[0].content.at(-2)?.text ?? '');
+    let desk: ReturnType<typeof createDesk> | null = null;
+    let landed = false;
+    const r = room({
+      messages: [ask],
+      script: (body) => (woke(body).includes('you just joined this trip') ? { text: 'Hi all, I am Go!' } : { text: 'Here are three stays.' }),
+      claimNew: async (tripId, turnId) => {
+        if (!landed) {
+          landed = true;
+          await desk!.put({ id: `msg:${tripId}:${ask.message_id}`, tripId, kind: 'message', ref: ask.message_id, dueAt: new Date(), payload: { messageId: ask.message_id, seq: ask.seq, namesGo: true } });
+        }
+        return desk!.claimNew(tripId, turnId);
+      },
+      release: (turnId, ids) => desk!.release(turnId, ids),
+    });
+    desk = createDesk({ pool: db.pool, log: silentLog, now: () => new Date(), holder: 'test', inProcessWake: false });
+    desk.setRunner(r.composer.runTurn, r.composer.giveUp);
+    await db.pool.query('insert into trips (trip_id) values ($1) on conflict do nothing', [r.tripId]);
+    await desk.put({ id: `setup:${r.tripId}:greet`, tripId: r.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} });
+    await desk.tick();
+    expect(r.posts().map((p) => p.params.text)).toEqual(['Hi all, I am Go!', 'Here are three stays.']);
   });
 });

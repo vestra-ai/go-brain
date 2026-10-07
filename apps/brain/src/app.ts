@@ -22,7 +22,9 @@ import type { Memory } from './memory/memory.js';
 import type { Pay } from './money/pay.js';
 import { unsureReflex, type Reflex } from './reflex/reflex.js';
 import type { Tasks } from './tasks/tasks.js';
+import type { RecipeRunner } from './travel/recipes/runners.js';
 import type { Travel } from './travel/travel.js';
+import { createGoneTrips } from './trips/gone.js';
 import { createMessageHooks, type MessageHooks } from './trips/hooks.js';
 import { createIntake } from './trips/intake.js';
 import { createTripLog, type TripLog } from './trips/log.js';
@@ -65,6 +67,11 @@ export interface Brain {
   travel?: Travel;
   /** Set by P4. */
   tasks?: Tasks;
+  /**
+   * Set by P4's tasks lane, which owns the trip's computer: the two ways to run an ixigo.com recipe on it, and keepWarm,
+   * which holds the computer awake while the trip talks (Bash's warm keep_ms).
+   */
+  recipeRunners?: { browserFetch: RecipeRunner; agentJob: RecipeRunner; keepWarm(tripId: string): void };
   /** Set by P5. */
   pay?: Pay;
   /** The daily model budget (MODEL_DAILY_BUDGET_USD). buildBrain always sets it; it is optional only so lane test doubles need not. */
@@ -145,8 +152,18 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   await migrate(pool);
 
   const cards = createCardStore({ pool, now });
+  // A trip the Server answers 404 for is gone: its pack goes, and every sweep leaves it alone (trips.gone_at).
+  const gone = createGoneTrips({ pool, log, now, dropped: (tripId) => packs.invalidate(tripId) });
   const link = createServerLink({
-    pool, log, now, timeoutMs: t.linkTimeoutMs, waitForSocketMs: t.waitForSocketMs, onSend: cards.sending, onResult: cards.observe, onFail: cards.failed,
+    pool, log, now, timeoutMs: t.linkTimeoutMs, waitForSocketMs: t.waitForSocketMs, onSend: cards.sending,
+    onResult: async (method, params, result, stored) => {
+      await cards.observe(method, params, result, stored);
+      await gone.answered(method, params);
+    },
+    onFail: async (method, params, err) => {
+      await cards.failed(method, params);
+      await gone.failed(method, params, err);
+    },
   });
   const guard = createReplayGuard({ pool, now });
   const door = createDoor({ http, secret: env.GO_SIGNING_SECRET, guard, link, log, now, pingMs: t.pingMs, idleMs: t.idleMs });
@@ -162,7 +179,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   const context = createContext(log);
   const speak = createSpeak({ pool, link, now, everyMs: t.typingEveryMs });
   const switches = createSwitches({
-    pool, now, env: { TRAVEL_MODE: env.TRAVEL_MODE, PAY_RAIL: env.PAY_RAIL, CALLS_MODE: env.CALLS_MODE, REFLEX_LIVE: env.REFLEX_LIVE },
+    pool, now, env: { TRAVEL_MODE: env.TRAVEL_MODE, TRAVEL_RUNNER: env.TRAVEL_RUNNER, PAY_RAIL: env.PAY_RAIL, CALLS_MODE: env.CALLS_MODE, REFLEX_LIVE: env.REFLEX_LIVE },
   });
 
   // One model client for the composer and every lane's side passes: a test's fake or the bench's recorder reaches all of them.
@@ -183,6 +200,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     model: env.COMPOSER_MODEL,
     budget,
     claimNew: desk.claimNew,
+    release: desk.release,
     turnTimeoutMs: t.turnTimeoutMs,
   });
   desk.setRunner(o.wrapTurn ? o.wrapTurn(composer.runTurn) : composer.runTurn, composer.giveUp);

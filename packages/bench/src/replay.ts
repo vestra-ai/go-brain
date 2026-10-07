@@ -11,6 +11,7 @@ import type { Chat, ChatLine, SayLine } from './chat.js';
 import type { RequestLog } from './requests.js';
 import { assertWallClock, type Delivered, type RecallRun, type ReplayRecord } from './score.js';
 import { simPort } from './sim-port.js';
+import type { Timeline } from './timings.js';
 
 /** Chat time in seconds. The model stand-in and the recorder read it for the cache TTL. */
 export class SimClock {
@@ -63,6 +64,8 @@ export interface ReplayOutcome {
   recorded: Map<string, ReflexRead> | null;
   /** Live only: why Go woke the model. */
   jev: JevTrace | null;
+  /** Live only: Go's desk and turns, for where each ask's reply time goes (timings.ts). */
+  timeline: Timeline | null;
 }
 
 /**
@@ -190,6 +193,7 @@ export async function replayChat(o: ReplayOptions): Promise<ReplayOutcome> {
     assertWallClock(frames, startedMs, endedMs);
     const board = await fetchBoard(goUrl, o.rawEnv['ADMIN_TOKEN']);
     let jev: JevTrace | null = null;
+    let timeline: Timeline | null = null;
     if (live !== null) {
       // The reflex writes its reads off the message path; wait for the last ones.
       await realReflex.settled?.();
@@ -206,6 +210,27 @@ export async function replayChat(o: ReplayOptions): Promise<ReplayOutcome> {
         reads: reads.rows.map((x) => ({ line: lineOf.get(x.seq) ?? null, seq: x.seq, ok: x.ok, fault: x.fault, totalMs: x.total_ms, p: x.p, would: x.would, acted: x.acted })),
         turns: turns.rows.map((x) => ({ wokeFor: x.woke_for, n: x.n })),
       };
+      const desk = await db.pool.query<{ ref: string; kind: string; due_at: Date; turn_id: string | null }>(
+        'SELECT ref, kind, due_at, turn_id FROM desk_items WHERE trip_id = $1 ORDER BY created_at, id',
+        [tripId],
+      );
+      const turnTimes = await db.pool.query<{ turn_id: string; started_at: Date; posted_at: Date | null; ended_at: Date | null }>(
+        'SELECT turn_id, started_at, posted_at, ended_at FROM turns WHERE trip_id = $1 ORDER BY started_at',
+        [tripId],
+      );
+      // Go's own log of its writes to the Server: a retry shows as more than one attempt, and its error stays.
+      const writes = await db.pool.query<{ request_id: string; turn_id: string | null; method: string; attempts: number; sent_at: Date | null; answered_at: Date | null; error: { code?: unknown; message?: unknown } | null }>(
+        'SELECT request_id, turn_id, method, attempts, sent_at, answered_at, error FROM go_requests WHERE trip_id = $1 ORDER BY created_at',
+        [tripId],
+      );
+      timeline = {
+        desk: desk.rows.map((x) => ({ ref: x.ref, kind: x.kind, dueMs: x.due_at.getTime(), turnId: x.turn_id })),
+        turns: turnTimes.rows.map((x) => ({ turnId: x.turn_id, startedMs: x.started_at.getTime(), postedMs: x.posted_at?.getTime() ?? null, endedMs: x.ended_at?.getTime() ?? null })),
+        writes: writes.rows.map((x) => ({
+          requestId: x.request_id, turnId: x.turn_id, method: x.method, attempts: x.attempts, sentMs: x.sent_at?.getTime() ?? null, answeredMs: x.answered_at?.getTime() ?? null,
+          error: x.error ? `${String(x.error.code ?? '')} ${String(x.error.message ?? '')}`.trim() : null,
+        })),
+      };
     }
     return {
       record: {
@@ -216,6 +241,7 @@ export async function replayChat(o: ReplayOptions): Promise<ReplayOutcome> {
       board,
       recorded: live?.recorded ?? null,
       jev,
+      timeline,
     };
   } finally {
     await room.stop();

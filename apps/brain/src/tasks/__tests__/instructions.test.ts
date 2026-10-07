@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { DEMO_LISTINGS, GO_DENY_TOOLS, GO_TASK_INSTRUCTIONS, GO_WEBHOOK_EVENTS, goTaskManifest } from '../instructions.js';
+import { DEMO_LISTINGS, GO_DENY_TOOLS, GO_RECIPE_INSTRUCTIONS, GO_TASK_INSTRUCTIONS, GO_WEBHOOK_EVENTS, goTaskManifest } from '../instructions.js';
+
+describe('the travel search job (go-recipe)', () => {
+  it('passes the script to computer_eval as its expression, waits for the results first, and returns rows unchanged', () => {
+    // Bash's computer_eval takes `expression`: a call with `script` is refused, and the model's retry costs about 7 s.
+    expect(GO_RECIPE_INSTRUCTIONS).toContain('Call computer_eval with the script as its `expression` argument, exactly as given.');
+    expect(GO_RECIPE_INSTRUCTIONS).toContain('Call computer_wait with the text the message names, so the results are on the page.');
+    expect(GO_RECIPE_INSTRUCTIONS).toContain('Return that list as rows, unchanged.');
+    // When computer_eval is held for a person's yes, a read-only snapshot instead; never a looser money guard.
+    expect(GO_RECIPE_INSTRUCTIONS).toContain('call computer_snapshot with full set to true instead');
+    expect(GO_RECIPE_INSTRUCTIONS).not.toMatch(/[—–]/);
+  });
+});
 
 describe("Go's job instructions", () => {
   it('fit in the 8,000 characters a deployment allows, in plain words with no dashes', () => {

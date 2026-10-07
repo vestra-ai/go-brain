@@ -76,6 +76,8 @@ export interface TaskStore {
   countActive(tripId: string): Promise<number>;
   activeIds(tripId: string): Promise<string[]>;
   hasActiveIn(conversationId: string): Promise<boolean>;
+  /** Whether any job's card still shows this picture of the screen. */
+  showsScreenshot(url: string): Promise<boolean>;
   /** The live jobs in one /v1 conversation. */
   liveIn(conversationId: string): Promise<TaskRow[]>;
   oldestQueued(tripId: string): Promise<TaskRow | null>;
@@ -209,6 +211,10 @@ export function createTaskStore(pool: pg.Pool): TaskStore {
     },
     async hasActiveIn(conversationId) {
       const { rows } = await pool.query('select 1 from tasks where conversation_id = $1 and state = any($2::text[]) limit 1', [conversationId, ACTIVE_STATES]);
+      return rows.length > 0;
+    },
+    async showsScreenshot(url) {
+      const { rows } = await pool.query('select 1 from tasks where screenshot_url = $1 limit 1', [url]);
       return rows.length > 0;
     },
     liveIn: (conversationId) => many('select * from tasks where conversation_id = $1 and state = any($2::text[]) order by created_at', [conversationId, LIVE_STATES]),

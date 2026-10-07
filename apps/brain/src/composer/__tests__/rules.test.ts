@@ -31,6 +31,12 @@ describe("Go's rules", () => {
     expect(section).toContain(`${privateRule}\n${noNames}`);
   });
 
+  it("the one line that goes with a card is the card tool's line", () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
+    expect(section).toContain('Text you write before a tool call is never shown.\n');
+    expect(section).toContain("- When you show options or open a vote, say it in the card tool's line, not in your reply's text.");
+  });
+
   it('never tell the group about a tool, what it returned or a refusal; tell_the_room is what to say', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
     expect(section).toContain(
@@ -50,6 +56,13 @@ describe("Go's rules", () => {
     expect(section).toContain('only from who_owes_what');
     expect(section).toContain('You never move money between people.');
     expect(GO_RULES).not.toMatch(/not tracking|don't track|do not track/i);
+  });
+
+  it("never narrates its own steps, reasons or tools, nor announces a card: \"I'll show the options card now\" is the case that reached the room", () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
+    const line =
+      "- Never describe your own steps, reasons or tools, and never announce a card or a vote (\"I'll show the options card now\", \"I'll open a vote\"): the card shows itself. Say only what the group needs: the answer, the card, the next step.";
+    expect(section).toContain(line);
   });
 
   it('use no em dashes or en dashes, as they ask of Go', () => {

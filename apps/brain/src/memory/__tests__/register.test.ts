@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Brain } from '../../app.js';
 import { createContext, type NowProvider } from '../../composer/context.js';
 import type { QuickTool } from '../../composer/tools.js';
+import { vote } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
 import type { ToGoHandler } from '../../door/handlers.js';
 import type { Message, TripEvent } from '../../door/methods.js';
@@ -13,11 +14,12 @@ import { SocketCallError } from '../../door/rpc.js';
 import { codeOnly, sure } from '../../reflex/read.js';
 import type { ReflexRead } from '../../reflex/reflex.js';
 import type { TripPack } from '../../trips/pack.js';
+import { linkLine } from '../decision-lines.js';
 import { currentFacts, saveFact } from '../facts.js';
 import type { Fold, StoryProvider } from '../fold.js';
 import { joinFacts } from '../join-facts.js';
 import { reactionRequestId } from '../reactions.js';
-import { recordLines } from '../record.js';
+import { mirrorLine, recordLines } from '../record.js';
 import { registerMemory, wireMemory } from '../register.js';
 import type { Timers } from '../schedule.js';
 import { fakeLink, scriptedClient, seedMessages } from './test-kit.js';
@@ -342,6 +344,40 @@ describe('a long trip in the prompt after its fold', () => {
   });
 });
 
+describe('open lines a vote settles', () => {
+  const at = '2026-10-06T10:00:00Z';
+  const line = (lineId: string): C.RecordLine => ({
+    line_id: lineId, kind: 'open', text: 'Which villa: Casa Mareia, Villa Sol or The Palms?', status: 'active',
+    proof: [{ message_id: 'm_0041', person_id: 'p_priya' }], person_ids: ['p_rahul', 'p_priya'], source: 'go', created_at: at, updated_at: at,
+  });
+  const closed = vote({ decision_id: 'd_villa', status: 'closed', result_index: 1 });
+  const doneCalls = (w: ReturnType<typeof setup>) =>
+    w.link.calls.filter((c) => c.method === 'update_record_line').map((c) => [c.params['line_id'], c.params['status']]);
+
+  it('decision.closed marks Go\'s open line about that vote done', async () => {
+    const w = setup('t_r30', [msg(41, 'p_priya', 'Casa Mareia looks nice')], []);
+    w.pack.trip.decisions = [vote({ decision_id: 'd_villa' })];
+    await mirrorLine(db.pool, 't_r30', line('r_v30'), 5);
+    await linkLine(db.pool, 't_r30', 'r_v30', 'd_villa', w.pack);
+    w.pack.trip.decisions = [closed];
+    await w.wired.onEvent(ev('t_r30', 9, 'decision.closed', { decision: closed, reason: 'deadline' }));
+    expect(doneCalls(w)).toEqual([['r_v30', 'done']]);
+  });
+
+  it('the sweep marks it done when the event was missed', async () => {
+    const w = setup('t_r31', [msg(41, 'p_priya', 'Casa Mareia looks nice')], []);
+    await db.pool.query(`INSERT INTO trips (trip_id) VALUES ('t_r31') ON CONFLICT DO NOTHING`);
+    w.pack.trip.decisions = [vote({ decision_id: 'd_villa' })];
+    await mirrorLine(db.pool, 't_r31', line('r_v31'), 5);
+    await linkLine(db.pool, 't_r31', 'r_v31', 'd_villa', w.pack);
+    w.pack.trip.decisions = [closed];
+    await w.wired.sweep();
+    expect(doneCalls(w)).toEqual([['r_v31', 'done']]);
+    // The Server's record.changed would follow; without it the line stays active in the copy and other sweeps here would try again.
+    await db.pool.query(`UPDATE record_lines SET status = 'done' WHERE trip_id = 't_r31'`);
+  });
+});
+
 describe('the 5-minute sweep after a restart', () => {
   it('finds a trip with unread words in the database, with nothing heard since the restart', async () => {
     const m = msg(80, 'p_priya', 'I can only do Friday night');
@@ -352,6 +388,26 @@ describe('the 5-minute sweep after a restart', () => {
     await vi.waitFor(() => expect(w.model.prompts).toHaveLength(1));
     expect(w.model.prompts[0]!.user).toContain('#80 [person Priya | p_priya]: I can only do Friday night');
     await vi.waitFor(async () => expect((await db.pool.query<{ seq: number }>("SELECT seq FROM notes_cursor WHERE trip_id = 't_r13'")).rows[0]?.seq).toBe(80));
+  });
+});
+
+describe('a trip the Server no longer has', () => {
+  it('gets no notes pass and no fold from the sweep, with unread words or heard from lately', async () => {
+    const live = msg(90, 'p_priya', 'Friday works');
+    const old = msg(91, 'p_arjun', 'Saturday then');
+    const w = setup('t_r15', [live], [JSON.stringify({ facts: [], lines: [] })]);
+    for (const [trip, m] of [['t_r15', live], ['t_r16', old]] as const) {
+      await db.pool.query(`INSERT INTO trips (trip_id) VALUES ($1) ON CONFLICT DO NOTHING`, [trip]);
+      await seedMessages(db.pool, trip, [m]);
+    }
+    // Heard from just before the Server dropped it.
+    await w.wired.onRead(old, read({}), packOf([old], goaTrip({ trip_id: 't_r16' })));
+    await db.pool.query(`UPDATE trips SET gone_at = now() WHERE trip_id = 't_r16'`);
+    w.t.advance(61_000);
+    const ran = await w.wired.sweep();
+    expect(ran).toContain('t_r15');
+    expect(ran).not.toContain('t_r16');
+    expect(await w.wired.sweep()).not.toContain('t_r16');
   });
 });
 

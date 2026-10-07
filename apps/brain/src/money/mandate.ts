@@ -1,5 +1,8 @@
 import type { TurnCtx } from '../composer/tools.js';
 import type { Message, Trip } from '../door/methods.js';
+import { ixigoPage } from '../travel/cards.js';
+import type { Travel } from '../travel/travel.js';
+import { GROUP_FARES } from './ask.js';
 import { mandateCard } from './cards.js';
 import type { MoneyDeps } from './deps.js';
 import { money, refusalWords } from './words.js';
@@ -50,6 +53,34 @@ export function amountsSaid(messages: Message[], group: { heads: number; nights:
 }
 
 /**
+ * Why Go cannot book an option for the group, in the words to say, or null when it can: Go books only an offer the travel
+ * layer can hold for the whole group. A place found on the web has no offer; a flight, train or bus fare is per person
+ * (booking those for a group is cut this week); an option with no option_ref is not one Go found at all. Those are
+ * unbookable. A check that failed is not: the option may well be bookable, so it is only "try again", with no flag.
+ */
+export async function whyNotBookable(
+  d: Pick<MoneyDeps, 'travel'>,
+  option: Trip['decisions'][number]['options'][number],
+): Promise<{ refused: string; unbookable?: true } | null> {
+  const words = { payer: 'The payer', what: option.label };
+  const travel = d.travel();
+  if (!option.option_ref || !travel) return { refused: `${option.label} isn't something I can book here, so there's nothing to set up for paying.`, unbookable: true };
+  let offer: Awaited<ReturnType<Travel['offer']>>;
+  try {
+    offer = await travel.offer(option.option_ref);
+  } catch {
+    return { refused: `I couldn't check ${option.label} just now. Try again in a moment.` };
+  }
+  // The option's own page, said only when it is on ixigo.com.
+  const link = ixigoPage(offer?.link);
+  if (offer && GROUP_FARES.has(offer.kind)) {
+    return { refused: refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}) }).text, unbookable: true };
+  }
+  if (!offer?.offerId) return { refused: refusalWords('not_bookable', { ...words, ...(link ? { link } : {}) }).text, unbookable: true };
+  return null;
+}
+
+/**
  * Records what the group allowed after a closed choice vote, and puts the mandate card in the turn.
  * It cannot pay anything: the payer still taps "Yes, book it", and paying still needs both keys.
  */
@@ -57,7 +88,7 @@ export async function setMandate(
   d: MoneyDeps,
   ctx: Pick<TurnCtx, 'tripId' | 'stableId' | 'cards' | 'pack'>,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
-): Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string }> {
+): Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true }> {
   const vague = { payer: 'The payer', what: 'it' };
   let trip: Trip;
   try {
@@ -76,6 +107,10 @@ export async function setMandate(
   const winnerLabel = winner !== null ? (decision.options[winner]?.label ?? 'the winner') : 'one of the options that tied';
   const chosen = decision.options[o.choiceIndex];
   if (!allowed || !chosen) return { refused: `The group picked ${winnerLabel}. I can only set that.` };
+
+  // Something Go cannot book needs no payer: say so before anyone is asked who pays. A failed check only says try again.
+  const cannot = await whyNotBookable(d, chosen);
+  if (cannot) return cannot;
 
   const payer = trip.people.find((p) => p.person_id === o.payerPersonId);
   if (!payer) return { refused: "That person isn't in this trip." };

@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import * as C from '@go/contract';
 import { injectFetch, startTestVault, type TestAuthenticator, type TestVault } from '@go/vault/testing';
 import type { FastifyInstance } from 'fastify';
@@ -25,8 +26,8 @@ const goFetch = ((input: string | URL | Request, init?: RequestInit) => {
   return injectFetch(goHttp)(input, init);
 }) as typeof fetch;
 
-async function setUp(stage: Parameters<typeof goaTrip>[0] = 'confirmed') {
-  k = await moneyKit({ trip: goaTrip(stage) });
+async function setUp(stage: Parameters<typeof goaTrip>[0] = 'confirmed', o: { spendKeyPem?: string } = {}) {
+  k = await moneyKit({ trip: goaTrip(stage), ...(o.spendKeyPem ? { spendKeyPem: o.spendKeyPem } : {}) });
   vault = await startTestVault({ goFetch, now: k.now });
   ({ brain, seen } = fakeBrain({ pool: k.pool, link: k.server, travel: k.travel, trips: k.server.trips, now: k.now }));
   goHttp = brain.http;
@@ -325,6 +326,23 @@ describe('a charge the bank has not confirmed', () => {
     expect(k.server.posts.filter((p) => p.text?.includes("didn't go through"))).toHaveLength(1);
     expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
     expect(k.server.writesOf('add_booking')).toEqual([]);
+  });
+});
+
+describe('the Server signs with a key the vault does not have', () => {
+  it('opens no pay page, tells the room Go could not start the payment, and keeps why on the payment', async () => {
+    const otherKey = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    await setUp('confirmed', { spendKeyPem: otherKey });
+    const yes = C.Event.parse({ event_id: 'ev_yes_otherkey', trip_id: 't_goa', seq: 150, occurred_at: k.now().toISOString(), type: 'mandate.confirmed', data: { decision_id: 'd_villa', person_id: 'p_rahul' } });
+    await seen.listeners[0]?.(yes);
+    await pay.settled();
+    expect(payCards()).toEqual([]);
+    expect(k.server.posts.at(-1)?.text).toBe("I couldn't start this payment, so nothing was charged.");
+    expect(k.server.posts.some((p) => p.text?.includes('payment page'))).toBe(false);
+    const row = (await k.pool.query('select state, refused_reason from payments')).rows[0];
+    expect(row.state).toBe('refused');
+    expect(row.refused_reason).toBe("vault_bad_approval: the approval's signature is not valid for this vault's GO_SPEND_PUBLIC_KEY");
+    expect(vault.rail.charges).toEqual([]);
   });
 });
 

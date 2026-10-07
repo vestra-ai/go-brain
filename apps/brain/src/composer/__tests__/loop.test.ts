@@ -49,6 +49,25 @@ function setup(script: Script, more: Partial<LoopInput> = {}, limits: TurnLimits
 const markersIn = (body: any) => countMarkers(body.system, body.tools, body.messages);
 
 describe('the composer loop', () => {
+  it('two or more calls in a reply that share a round summary get one tally line after their results; a lone call gets none', async () => {
+    const tally = (rs: Array<{ content: string; isError: boolean }>): string => `${rs.length} looks: ${rs.map((r) => (JSON.parse(r.content) as { said: string }).said).join(', ')}`;
+    const look: QuickTool<{ say: string }> = { ...echo, name: 'look', summarizeRound: tally };
+    const lookAgain: QuickTool<{ say: string }> = { ...echo, name: 'look_again', summarizeRound: tally };
+    const { bodies, run } = setup(
+      [
+        { tools: [{ name: 'look', input: { say: 'a' } }, { name: 'look_again', input: { say: 'b' } }, echoCall('c')] },
+        { tools: [{ name: 'look', input: { say: 'd' } }] },
+        { text: 'done' },
+      ],
+      { tools: [echo, look, lookAgain] },
+    );
+    await run();
+    const second = bodies[1].messages.at(-1).content;
+    expect(second.map((b: { type: string }) => b.type)).toEqual(['tool_result', 'tool_result', 'tool_result', 'text']);
+    expect(second.at(-1).text).toBe('2 looks: a, b');
+    expect(bodies[2].messages.at(-1).content.map((b: { type: string }) => b.type)).toEqual(['tool_result']);
+  });
+
   it('one round: the final text is the answer, and the wire body is what Go needs', async () => {
     const { bodies, run } = setup([{ text: 'Hello!' }]);
     const r = await run();
@@ -58,13 +77,13 @@ describe('the composer loop', () => {
     expect(body.thinking).toEqual({ type: 'between_tools' });
     expect(body.tool_choice).toEqual({ type: 'auto' });
     expect(body.system).toEqual([{ type: 'text', text: 'You are Go.', cache_control: { type: 'ephemeral', ttl: '1h' } }]);
-    expect(body.messages).toEqual([{ role: 'user', content: USER }]);
+    expect(body.messages).toEqual([{ role: 'user', content: [...USER.slice(0, -1), { ...USER.at(-1), cache_control: { type: 'ephemeral' } }] }]);
     expect(body.tools.map((t: any) => t.name)).toEqual(['echo', 'react', 'open_vote', 'close_vote', 'update_trip', 'stay_silent']);
     for (const t of body.tools) {
       expect(t.input_schema.type).toBe('object');
       expect(t.input_schema.$schema).toBeUndefined();
     }
-    expect(markersIn(body)).toBe(2);
+    expect(markersIn(body)).toBe(3);
   });
 
   it('sends no thinking field on Haiku 4.5', async () => {
@@ -176,10 +195,17 @@ describe('the composer loop', () => {
     expect(n).toBe(1);
   });
 
-  it('a continued exchange carries the rolling marker from its first round', async () => {
-    const { bodies, run } = setup([{ text: 'ok' }], { continuing: true });
+  it('the first round marks its newest block too, so the second reads the first one\'s whole prompt from the cache', async () => {
+    const { bodies, run } = setup([{ tools: [echoCall('a')] }, { text: 'Done.' }]);
     await run();
-    expect(bodies[0].messages[0].content.at(-1).cache_control).toEqual({ type: 'ephemeral' });
-    expect(markersIn(bodies[0])).toBe(3);
+    const [first, second] = bodies;
+    const unmarked = (blocks: any[]) => blocks.map(({ cache_control, ...b }: any) => (cache_control?.ttl === '1h' ? { ...b, cache_control } : b));
+    // Round 1 writes the cache up to "New since your last turn"; round 2 sends those same bytes first, then its tool round.
+    expect(first.messages[0].content.at(-1).cache_control).toEqual({ type: 'ephemeral' });
+    expect(unmarked(second.messages[0].content)).toEqual(unmarked(first.messages[0].content));
+    expect(second.messages[0].content.at(-1).cache_control).toBeUndefined();
+    expect(second.messages.at(-1).content.at(-1).cache_control).toEqual({ type: 'ephemeral' });
+    for (const body of bodies) expect(markersIn(body)).toBeLessThanOrEqual(4);
+    expect(markersIn(first)).toBe(3);
   });
 });

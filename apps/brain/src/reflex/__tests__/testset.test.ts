@@ -3,7 +3,7 @@ import type { JevAnswer } from '../jev.js';
 import { PASSED_SETS } from '../live-gate.js';
 import { buildQuestions, QUESTION_NAMES, QUESTION_NUMBER, QUESTION_VERSIONS } from '../questions.js';
 import { hasSecret } from '../secrets.js';
-import { gatePasses, loadRecorded, loadRows, rowInput, scoreSet, TestRow, type Recorded } from '../testset.js';
+import { gatePasses, loadRecorded, loadRows, rowInput, scoreSet, searchRecall, TestRow, type Recorded } from '../testset.js';
 
 const rows = loadRows();
 
@@ -70,6 +70,50 @@ describe('scoreSet', () => {
   it('counts a missing recording as a failure', () => {
     const s = scoreSet(two, null).find((x) => x.name === 'for_go')!;
     expect(s.missing).toBe(2);
+    expect(gatePasses(s)).toBe(false);
+  });
+});
+
+describe('question 10 on the set', () => {
+  const choice = (probabilities: Record<string, number>): JevAnswer => {
+    const [top, confidence] = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0]!;
+    return { type: 'choice', choice: top, confidence, probabilities };
+  };
+  const row = (id: string, recipe: string | null) => TestRow.parse({ id, lang: 'en', speaker: 'p_rahul', text: `line ${id}`, expect: { recipe } });
+  const set = [row('f1', 'flights'), row('b1', 'buses'), row('x1', null), row('x2', null), row('x3', null)];
+  const none = choice({ flights: 0.01, stays: 0.01, trains: 0.01, buses: 0.01, none: 0.96 });
+  const rec = (answers: Record<string, JevAnswer>): Recorded => ({
+    model: 'jev-1.13.0',
+    recorded_at: '2026-10-07T10:00:00Z',
+    versions: QUESTION_VERSIONS,
+    answers: Object.fromEntries(set.map((r) => [r.id, { q10_recipe: answers[r.id] ?? none }])),
+  });
+  const recipe = (r: Recorded) => scoreSet(set, r).find((s) => s.name === 'recipe')!;
+
+  it('scores each choice on its own', () => {
+    const s = recipe(rec({ f1: choice({ flights: 0.93, stays: 0.02, trains: 0.02, buses: 0.02, none: 0.01 }), b1: choice({ trains: 0.5, buses: 0.45, flights: 0, stays: 0, none: 0.05 }) }));
+    expect(s.byValue).toEqual({
+      flights: { labelled: 1, right: 1, wrong: 0, unsure: 0 },
+      buses: { labelled: 1, right: 0, wrong: 0, unsure: 1 },
+      none: { labelled: 3, right: 3, wrong: 0, unsure: 0 },
+    });
+    expect(searchRecall(s)).toBe(0.5);
+    expect(gatePasses(s)).toBe(true);
+  });
+
+  it('never passes a reader that is only ever sure of none, however many none rows it gets right', () => {
+    const torn = choice({ flights: 0.45, stays: 0.05, trains: 0.0, buses: 0.45, none: 0.05 });
+    const s = recipe(rec({ f1: torn, b1: torn }));
+    expect(s.recall).toBe(0.6);
+    expect(s.wrong).toEqual([]);
+    expect(searchRecall(s)).toBe(0);
+    expect(gatePasses(s)).toBe(false);
+  });
+
+  it('fails on one wrong pick', () => {
+    const s = recipe(rec({ f1: choice({ flights: 0.93, stays: 0.02, trains: 0.02, buses: 0.02, none: 0.01 }), b1: choice({ flights: 0.01, stays: 0.01, trains: 0.9, buses: 0.07, none: 0.01 }) }));
+    expect(s.wrong).toEqual(['b1']);
+    expect(s.byValue!.buses).toEqual({ labelled: 1, right: 0, wrong: 1, unsure: 0 });
     expect(gatePasses(s)).toBe(false);
   });
 });

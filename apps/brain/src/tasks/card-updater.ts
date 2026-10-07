@@ -1,16 +1,19 @@
 /**
  * replace_card for working cards: at most one update every 6 seconds per card, the updates in between folded into the
- * newest. A change of state (needs you, done, didn't work, stopped) goes out at once. Updates to one card go in order.
+ * newest; a new picture of the screen may go 1 second after the last update, so the card's window looks live. A change
+ * of state (needs you, done, didn't work, stopped) goes out at once. Updates to one card go in order.
  */
 import type { ServerLink } from '../door/server-link.js';
 import type { WorkingCardT } from './working-card.js';
 
 export const CARD_GAP_MS = 6_000;
+/** The gap before an update that carries a new picture of the screen. */
+export const FRAME_GAP_MS = 1_000;
 /** A failed update is tried once more after this long: a card that rides with a turn's message may not be posted yet. */
 export const CARD_RETRY_MS = 3_000;
 
 export interface CardUpdater {
-  push(tripId: string, card: WorkingCardT, opts?: { now?: boolean }): void;
+  push(tripId: string, card: WorkingCardT, opts?: { now?: boolean; gapMs?: number }): void;
   /** Sends every waiting update now and waits for all of them. */
   flush(): Promise<void>;
 }
@@ -21,6 +24,8 @@ interface Slot {
   lastAt: number;
   pending: { tripId: string; card: WorkingCardT } | null;
   timer: ReturnType<typeof setTimeout> | null;
+  /** When the waiting timer fires. */
+  dueAt: number;
   chain: Promise<void>;
 }
 
@@ -63,14 +68,14 @@ export function createCardUpdater(d: {
     push(tripId, card, opts) {
       let slot = slots.get(card.card_id);
       if (!slot) {
-        slot = { ended: false, lastAt: Number.NEGATIVE_INFINITY, pending: null, timer: null, chain: Promise.resolve() };
+        slot = { ended: false, lastAt: Number.NEGATIVE_INFINITY, pending: null, timer: null, dueAt: 0, chain: Promise.resolve() };
         slots.set(card.card_id, slot);
       }
       const ends = card.state === 'done' || card.state === 'failed';
       if (slot.ended && !ends) return;
       if (ends) slot.ended = true;
       slot.pending = { tripId, card };
-      const wait = slot.lastAt + gap - clock();
+      const wait = slot.lastAt + (opts?.gapMs ?? gap) - clock();
       if (opts?.now || wait <= 0) {
         if (slot.timer) {
           clearTimeout(slot.timer);
@@ -79,8 +84,14 @@ export function createCardUpdater(d: {
         send(slot, card.card_id);
         return;
       }
+      // A waiting update goes no later than the newest one asks: a new picture brings a step update's 6 s forward.
+      if (slot.timer && clock() + wait < slot.dueAt) {
+        clearTimeout(slot.timer);
+        slot.timer = null;
+      }
       if (!slot.timer) {
         const s = slot;
+        s.dueAt = clock() + wait;
         s.timer = setTimeout(() => {
           s.timer = null;
           send(s, card.card_id);

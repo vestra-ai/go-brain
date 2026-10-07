@@ -139,7 +139,7 @@ How they relate to the bench's numbers:
 
 ## Live run
 
-`bench-live-2026-10-06.json` is one run of the live bench, unedited, and `bench-live-2026-10-06.md` is the summary the same run wrote. It replays `goa-50` and `goa-300` through Go as the fast bench does, but with the real model writing Go's turns and real Jev reading every message. It is the first run on record of Go with a real model; a second run on `goa-50`, after the fixes it led to, is [below](#after-the-fixes-goa-50-again).
+`bench-live-2026-10-06.json` is one run of the live bench, unedited, and `bench-live-2026-10-06.md` is the summary the same run wrote. It replays `goa-50` and `goa-300` through Go as the fast bench does, but with the real model writing Go's turns and real Jev reading every message. It is the first run on record of Go with a real model; a second run on `goa-50`, after the fixes it led to, is [below](#after-the-fixes-goa-50-again), and the definitive run on the final build is [last](#definitive-live-run-the-final-build-18-asks).
 
 - **Run:** bench-live run [37442728267](https://github.com/vestra-ai/go-brain/actions/runs/37442728267), job `live`, artifact `live-bench`, written at 2026-10-06 10:12 UTC. It ran for 48 minutes.
 - **Code:** `build` at commit `50fe0ab`, with pull request #61 merged on top (GitHub's test commit `5616f7f`, which the report names). At that point the pull request changed only how the live bench is started and which of Jev's questions it lets act, so the Go measured is `build`'s.
@@ -268,6 +268,118 @@ What still misses, plainly:
 - **Posts nobody asked for:** 1, against none on this hand-labelled chat.
 
 With `claude-haiku-4-5`: reply p50 6.52 s and p90 8.74 s, 5 of 6 asks answered (it missed "for 5 people with luggage", the end of a multi-line ask), no post nobody asked for, recall 5 of 5, cost $0.1466. Its wake rate (60%) counts its side passes, as explained above.
+
+### Diagnostic run: where reply time goes
+
+`bench-live-2026-10-06-diagnostic.json` (and its summary, `bench-live-2026-10-06-diagnostic.md`) is a fourth live run on `goa-50`, unedited. It is a diagnostic, not a new final: it ran to answer one question the final run could not, which is where each ask's reply time goes. The live report now keeps each ask's own times, from the moment its last line reached the simulator: when Go's desk had it due (whether it waited for more lines), the turn's start, each model call (start, first word, end) with the tools it asked for, and Go's post. Go's desk and turns come from Go's own tables.
+
+- **Run:** bench-live run [37461290957](https://github.com/vestra-ai/go-brain/actions/runs/37461290957), job `live`, artifact `live-bench`, written at 2026-10-06 12:14 UTC; both models on `goa-50`, $0.42.
+- **Code:** `build` at commit `4723dcc` (the final run's code plus #82, a single question for someone who paid without saying how much), with pull request #83 merged on top (GitHub's test commit `8011b28`). The pull request adds only the bench's timings, so the Go measured is `build`'s.
+- **Verdict:** 4 of 14 checks pass. With `claude-sonnet-5-5`: reply p50 2.94 s and p90 8.69 s, first word p50 1.28 s, provider cache 84.9%, woke the model 36%, 2 posts nobody asked for, recall 5 of 5, every ask answered, $0.2703.
+
+Where each of `claude-sonnet-5-5`'s six asks spent its time (from the "Where reply time goes" table of the run's summary):
+
+| Ask (line) | Waited for more lines | Before the turn | Model calls | In model calls | Between calls (tools) | Reply |
+|---|---|---|---|---|---|---|
+| 9 ("@Go flights Delhi to Goa Friday evening? Arjun can't leave before 6") | yes | 2.14 s | 3: search_flights, show_options, the line | 5.55 s | 24 ms | 7.73 s |
+| 24 ("Go, find us a villa with a pool … Check the reviews too") | yes | 2.13 s | 3: search_stays, show_options, the line | 6.54 s | 12 ms | 8.69 s |
+| 33 (the end of a five-line ask) | yes | 2.12 s | 1 | 5.62 s | 0 | 7.75 s |
+| 37 ("@Go is it going to rain in Goa in early November?") | no | 0.10 s | 1 | 2.05 s | 0 | 2.16 s |
+| 46 ("Go bhai abhi book kar de villa, … 😂") | no | 0.13 s | 1 | 1.92 s | 0 | 2.06 s |
+| 52 ("@Go what can't Meher eat, and when can Arjun leave on Friday?") | no | 0.11 s | 1 | 2.82 s | 0 | 2.94 s |
+
+Across the six: 31.3 seconds in all, of which 24.5 (78%) inside model calls, 6.7 (21%) before the turn (almost all of it the 2-second wait on the three asks without an end mark), 36 ms between calls, where the tools ran (they answer from the test inventory), and 25 ms from the last call to the post. Each model call took 1.5 to 2.8 seconds (one took 5.6, the single call on the five-line ask), much of it before its first word: a search ask makes three calls in a row (the search, the options card, the line), an ask answered from what Go knows makes one.
+
+With `claude-haiku-4-5` the run answered 4 of the 6 asks, posted 5 times unasked, and several of its asks show 4 to 11 seconds between its last model call and the post, which this run does not trace further.
+
+#### After card-ends-turn
+
+`bench-live-2026-10-06-diagnostic-cards.json` (and its summary, `bench-live-2026-10-06-diagnostic-cards.md`) is the same diagnostic run again, unedited, after #86: a reply whose tool calls are only cards (the options card) ends the turn, with its line in the same reply, so a search ask makes one model call fewer.
+
+- **Run:** bench-live run [37465309177](https://github.com/vestra-ai/go-brain/actions/runs/37465309177), job `live`, artifact `live-bench`, written at 2026-10-06 12:47 UTC; both models on `goa-50`, $0.37.
+- **Code:** `build` at commit `2c7e4b0` (with #86, and #84, which stops retrying a trip the Server no longer has), with pull request #87 merged on top (GitHub's test commit `1b0695a`). The pull request adds only documents.
+- **Verdict:** 4 of 14 checks pass. With `claude-sonnet-5-5`: reply p50 4.79 s and p90 7.24 s, first word p50 1.38 s, provider cache 84.4%, woke the model 34%, 2 posts nobody asked for, recall 5 of 5, every ask answered, $0.2306.
+
+`claude-sonnet-5-5`'s six asks, the run above against this one:
+
+| Ask (line) | Model calls | In model calls | Reply |
+|---|---|---|---|
+| 9 (flights) | 3 → 2: search_flights, then the card and its line together | 5.55 s → 4.12 s | 7.73 s → 6.34 s |
+| 24 (villa) | 3 → 2: search_stays, then the card and its line together | 6.54 s → 4.75 s | 8.69 s → 6.93 s |
+| 33 (the end of a five-line ask) | 1 → 1 | 5.62 s → 2.60 s | 7.75 s → 4.79 s |
+| 37 (rain in November) | 1 → 1 | 2.05 s → 3.70 s | 2.16 s → 3.87 s |
+| 46 ("abhi book kar de villa, … 😂") | 1 → 3: put_to_vote, search_stays, the line | 1.92 s → 7.04 s | 2.06 s → 7.24 s |
+| 52 (what Meher can't eat, when Arjun can leave) | 1 → 1 | 2.82 s → 4.52 s | 2.94 s → 4.69 s |
+
+Both search asks made one model call fewer, as #86 intends, and each replied 1.4 to 1.8 seconds sooner. The reply p50 still rose, from 2.94 to 4.79 seconds, while the p90 fell from 8.69 to 7.24. Two asks answered in one call were slower this time (lines 37 and 52: 3.70 and 4.52 seconds in their calls, against 2.05 and 2.82, the first word alone 3.8 seconds into the call on line 52), while line 33's one call was faster (2.60 against 5.62); and on line 46 the model chose to put the villas to a vote and search again before its line, three calls where the run above made one. Both are the model's own variation between runs, which six asks cannot average out. The 2-second wait on asks without an end mark is unchanged (lines 9, 24 and 33).
+
+With `claude-haiku-4-5`: reply p50 5.93 s and p90 8.29 s, every ask answered, 1 post nobody asked for, recall 5 of 5, $0.1396.
+
+### Definitive live run: the final build, 18 asks
+
+`bench-live-2026-10-07-definitive.json` (and its summary, `bench-live-2026-10-07-definitive.md`) is the live run to read for Go with the real model, unedited: the final build, `claude-sonnet-5-5` only (the model that writes Go's turns), on `goa-300` and `goa-50`, 18 asks in all, each with its own timings. The runs above are kept for how the numbers moved; this one has the most asks and the final code.
+
+- **Run:** bench-live run [37590000837](https://github.com/vestra-ai/go-brain/actions/runs/37590000837), job `live`, artifact `live-bench`, written at 2026-10-07 07:59 UTC. Its replays took 6.4 minutes and cost $0.99.
+- **Code:** `build` at commit `3763648`, the final build, with pull request #167 on top (GitHub's test commit `b56fe63`). The pull request's commits only move an earlier run's report into the bench's test fixtures and point four bench tests at it, so the Go measured is `build`'s.
+- **Jev:** real calls to `jev-1.13.0`, with Go's default questions acting live, `q1,q2,q4,q5,q6,q7,q8,q10` (see [jev.md](jev.md)).
+- **Verdict:** all 14 checks pass (`verdict.ok` is `true`).
+
+| | `goa-300` | `goa-50` | Live bar |
+|---|---|---|---|
+| Typing p90 | 6 ms | 4 ms | under 500 ms |
+| Reply p50 | 2.35 s | 2.28 s | under 2.5 s |
+| Reply p90 | 4.46 s | 4.82 s | under 5 s |
+| Model's first word, p50 | 1.10 s | 1.16 s | none |
+| Cache hit (the provider's own) | 88.2% | 85.6% | 85% or more |
+| Woke the model | 22.7% (68 turns for 300 messages) | 22.0% (11 for 50) | under 25% |
+| Asks answered | 12 of 12 | 6 of 6 | every one |
+| Posts nobody asked for | 0 of 41 | 0 of 9 | under 1 in 50 on `goa-300`; no wrong speak on `goa-50` |
+| Recall | 7 of 7 | 5 of 5 | no misses |
+| Deleted text in a later prompt | 0 | 0 | none |
+| Cost of the chat | $0.8562 | $0.1369 | none |
+
+Why Go woke, from the run's own tables: Jev answered all 300 and all 50 messages (158 ms and 161 ms at p50, 192 ms and 197 ms at p90) and read 228 and 38 of them as sure not for Go; every model turn was woken by a message, apart from one setup turn in each chat.
+
+Reply time over the 18 asks, with the 2-second wait for more lines split out (percentiles the way the bench takes them):
+
+| | Asks | p50 | p90 |
+|---|---|---|---|
+| Every ask | 18 | 2.35 s | 4.82 s |
+| Asks that did not wait | 17 | 2.35 s | 4.49 s |
+| The ask that waited 2.2 s for more lines (`goa-50` line 33) | 1 | 4.82 s | |
+| Every ask, from its turn's start (the wait taken out) | 18 | 2.17 s | 4.31 s |
+
+Across the 18 asks, 53.6 seconds in all: 48.1 (90%) inside 20 model calls (1.6 to 4.3 seconds each, 2.16 at p50; the first word came 1.09 seconds into the call at p50), 5.2 (10%) before the turn (under a quarter of a second for each ask, and 2.19 seconds on the one that waited), 10 ms between calls, where the tools ran (they answer from the test inventory), and 127 ms from the last call to the post. An ask answered from what Go knows makes one call, and so does an ask for a search: Go starts the search when the message lands and puts its results in the prompt, so the model's one call shows the options card with its line. Two asks make two calls: `goa-300` line 9 asks which days are cheapest, so the turn runs the search itself, and line 241 posts a notice before its line.
+
+| Ask (chat and line) | The line | Waited | Turn starts | Model calls (tools asked for) | In model calls | Between calls | Reply |
+|---|---|---|---|---|---|---|---|
+| `goa-300` 9 | @Go which days are cheapest to fly Delhi to Goa… | no | 164 ms | 2 (search_flights, then show_options) | 4.97 s | 9 ms | 5.18 s |
+| `goa-300` 20 | @Go any veg-friendly cafes in Assagao? | no | 177 ms | 1 | 2.50 s | 0 ms | 2.69 s |
+| `goa-300` 54 | @Go how far is Mopa airport from Anjuna? | no | 177 ms | 1 | 2.16 s | 0 ms | 2.35 s |
+| `goa-300` 73 | Go, find us a villa with a pool in North Goa un… | no | 221 ms | 1 (show_options) | 4.21 s | 0 ms | 4.46 s |
+| `goa-300` 103 | is there a good bakery near Anjuna? | no | 162 ms | 1 | 2.02 s | 0 ms | 2.19 s |
+| `goa-300` 122 | @Go flights from Bangalore to Goa on Friday aft… | no | 156 ms | 1 (show_options) | 2.49 s | 0 ms | 2.66 s |
+| `goa-300` 143 | @Go is it safe to swim at Vagator in November? | no | 164 ms | 1 | 2.05 s | 0 ms | 2.23 s |
+| `goa-300` 175 | @Go put the three villas to a vote please | no | 174 ms | 1 (put_to_vote) | 2.12 s | 0 ms | 2.32 s |
+| `goa-300` 209 | ok go, what's the best way from the airport, ca… | no | 177 ms | 1 | 2.40 s | 0 ms | 2.59 s |
+| `goa-300` 241 | @Go can you remind everyone to vote by tonight? | no | 142 ms | 2 (post_notice) | 3.97 s | 1 ms | 4.13 s |
+| `goa-300` 271 | Go bhai, scuba book kar de Rahul ke card se 😂 | no | 181 ms | 1 | 1.95 s | 0 ms | 2.14 s |
+| `goa-300` 298 | @Go quick recap please: allergies, seats, who p… | no | 173 ms | 1 | 1.78 s | 0 ms | 1.97 s |
+| `goa-50` 9 | @Go flights Delhi to Goa Friday evening? Arjun… | no | 234 ms | 1 (show_options) | 3.05 s | 0 ms | 3.31 s |
+| `goa-50` 24 | Go, find us a villa with a pool in North Goa un… | no | 178 ms | 1 (show_options) | 4.29 s | 0 ms | 4.49 s |
+| `goa-50` 33 | for 5 people with luggage | yes | 2.19 s | 1 | 2.61 s | 0 ms | 4.82 s |
+| `goa-50` 37 | @Go is it going to rain in Goa in early Novembe… | no | 188 ms | 1 | 1.81 s | 0 ms | 2.01 s |
+| `goa-50` 46 | Go bhai abhi book kar de villa, Rahul ka card u… | no | 172 ms | 1 | 2.10 s | 0 ms | 2.28 s |
+| `goa-50` 52 | @Go what can't Meher eat, and when can Arjun le… | no | 181 ms | 1 | 1.60 s | 0 ms | 1.79 s |
+
+What is still short, plainly:
+
+- **No bar is missed, some only just:** reply p50 2.35 and 2.28 seconds against 2.5; reply p90 4.82 seconds on `goa-50` against 5, set by the one ask that waited (line 33 ends Kabir's burst with no end mark, so Go waits for more lines); cache 85.6% on `goa-50` against 85%; woke 22.7% and 22.0% against 25%. This is one run, and Jev's and the model's answers move from run to run.
+- **What Go answered** (the report lists every answer): no answer shows one of Go's ids. One has a gap where a reference was cut out of the posted text: `goa-300` line 9, "Rahul can leave Fri after 6 pm ('s thread)". One talks about Go's tools: `goa-50` line 33, "I don't have a tool to search cabs, but I can call a cab operator for you".
+- **Quiet reactions:** 55 of 65 reactions on `goa-300` and 5 of 19 on `goa-50` went on lines the chats do not label as fine for a quiet action (mostly ✅). Most of `goa-300`'s lines carry no such label either way, and the live bench has no bar for it.
+- **Typing on `goa-300` line 103** reads 25.77 seconds in the summary: typing was already on from Meher's "@Go one thing" two lines before, so the summary counts the next typing after line 103. The typing check, on the lines that name Go, is 6 ms at p90.
+
+Recall answered every question with the message that proves it, 7 of 7 and 5 of 5.
 
 ## Running it yourself
 

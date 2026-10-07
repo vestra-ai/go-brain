@@ -21,19 +21,31 @@ describe('question 1: for Go', () => {
   });
   it('is sure not for Go when Jev is sure no one spoke to Go, chatter or not, so a fact or a plan wakes no model', () => {
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }).forGo).toEqual({ value: false, sure: true });
-    expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.12) }).forGo.sure).toBe(false);
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.22) }).forGo).toEqual({ value: false, sure: true });
+    expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.3) }).forGo.sure).toBe(false);
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
   });
   it('never reads a line about money as not for Go, so it reaches the model; a bare number or a fact without money still skips', () => {
     const notToGo = { q1_chatter: n(0.9), q1_addressed: n(0.03) };
     const facts = (text: string): CodeFacts => ({ ...plain, money: looksLikeMoney(text) });
-    for (const text of ['I paid 3,200 for the cab', 'Rahul owes me 1,500', 'paid something for the snacks']) {
+    for (const text of ['I paid 3,200 for the cab', 'Rahul owes me 1,500', 'paid something for the snacks', 'Arjun owed me for the cab', 'maine paise bhej diye']) {
       expect(read(notToGo, facts(text)).forGo.sure, text).toBe(false);
     }
-    for (const text of ["we're 5 people", "I'm veg btw"]) {
+    // Talk about who will pay, with nothing moved, goes through Jev like any other line (goa-300's lines 198 and 199).
+    for (const text of ["we're 5 people", "I'm veg btw", "Who's paying the villa advance? I can put it on my card", 'yes Rahul pays the advance, we UPI him']) {
       expect(read(notToGo, facts(text)).forGo, text).toEqual({ value: false, sure: true });
     }
   });
+  it('with no answer from Jev, reads small talk as not for Go and leaves every other line unsure', () => {
+    const talk: CodeFacts = { ...plain, smallTalk: true };
+    expect(read(null, talk).forGo).toEqual({ value: false, sure: true });
+    expect(read({ q1_addressed: n(Number.NaN), q1_chatter: n(Number.NaN) }, talk).forGo).toEqual({ value: false, sure: true });
+    expect(read(null).forGo.sure).toBe(false);
+    expect(read(null, { ...talk, namesGo: true }).forGo).toEqual({ value: true, sure: true });
+    // Jev answered: its reading decides, small talk or not.
+    expect(read({ q1_addressed: n(0.95), q1_chatter: n(0.02) }, talk).forGo).toEqual({ value: true, sure: true });
+  });
+
   it('is sure for Go when code saw Go named, whatever Jev says', () => {
     expect(read({ q1_chatter: n(0.99), q1_addressed: n(0.0) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
   });
@@ -46,10 +58,14 @@ describe('question 1: for Go', () => {
 });
 
 describe('questions 2 and 3', () => {
-  it('reads a complete thought and a cut-off one', () => {
-    expect(read({ q2_complete: n(0.9) }).complete).toEqual({ value: true, sure: true });
+  it('reads a whole ask to Go and one cut short; a line that does not name Go is never sure-complete', () => {
+    const named: CodeFacts = { ...plain, namesGo: true };
+    expect(read({ q2_complete: n(0.56) }, named).complete).toEqual({ value: true, sure: true });
+    expect(read({ q2_complete: n(0.39) }, named).complete.sure).toBe(false);
+    expect(read({ q2_complete: n(0.05) }, named).complete).toEqual({ value: false, sure: true });
+    expect(read({ q2_complete: n(0.95) }).complete.sure).toBe(false);
     expect(read({ q2_complete: n(0.05) }).complete).toEqual({ value: false, sure: true });
-    expect(read({ q2_complete: n(0.5) }).complete.sure).toBe(false);
+    expect(read({ q2_complete: n(Number.NaN) }, named).complete.sure).toBe(false);
   });
   it('is sure of a size only when one side clears and every other noul is present and low', () => {
     const quickLow = { q3_quick_answer: n(0.02), q3_quick_search: n(0.03), q3_quick_act: n(0.01) };
@@ -98,6 +114,23 @@ describe('questions 5, 6, 7 and 9', () => {
   });
 });
 
+describe('question 10: which ixigo search', () => {
+  const recipe = (probabilities: Record<string, number>) => read({ q10_recipe: ch(probabilities) }).recipe;
+  it('picks a search only with one clear winner', () => {
+    expect(recipe({ flights: 0.9, stays: 0.04, trains: 0.03, buses: 0.02, none: 0.01 })).toEqual({ value: 'flights', sure: true });
+    expect(recipe({ flights: 0.02, stays: 0.01, trains: 0.03, buses: 0.62, none: 0.32 }).sure).toBe(false);
+    expect(recipe({ flights: 0.1, stays: 0.55, trains: 0.0, buses: 0.0, none: 0.35 }).sure).toBe(false);
+  });
+  it('is sure there is no search when none wins', () => {
+    expect(recipe({ flights: 0.05, stays: 0.02, trains: 0.01, buses: 0.0, none: 0.92 })).toEqual({ value: null, sure: true });
+  });
+  it('reads a missing or malformed answer as unsure', () => {
+    expect(read(null).recipe).toEqual({ value: null, sure: false });
+    expect(read({ q10_recipe: n(0.9) }).recipe).toEqual({ value: null, sure: false });
+    expect(recipe({ flights: 1.4, none: 0.1 }).sure).toBe(false);
+  });
+});
+
 describe('question 8 is raise-only', () => {
   // mulberry32: a small seeded generator so the run is the same every time.
   function rng(seed: number): () => number {
@@ -138,23 +171,30 @@ describe('question 8 is raise-only', () => {
 });
 
 describe('applyLive', () => {
-  const all = { q1_chatter: n(0.97), q1_addressed: n(0.01), q2_complete: n(0.95), q5_food: n(0.95), q5_dates: n(0.0), q5_travel: n(0.0), q5_other: n(0.0), q8_spend: n(0.9) };
+  const all = { q1_chatter: n(0.97), q1_addressed: n(0.01), q2_complete: n(0.05), q5_food: n(0.95), q5_dates: n(0.0), q5_travel: n(0.0), q5_other: n(0.0), q8_spend: n(0.9) };
   it('acts on live questions and leaves the rest unsure, keeping code facts', () => {
     const facts: CodeFacts = { namesGo: false, secretKinds: ['code'], hasTasks: false, money: false };
     const { would } = readAnswers(all, facts, []);
     const live = new Set<QuestionName>(['for_go', 'complete', 'size']);
     const acted = applyLive(would, live, facts);
     expect(acted.forGo).toEqual({ value: false, sure: true });
-    expect(acted.complete).toEqual({ value: true, sure: true });
+    expect(acted.complete).toEqual({ value: false, sure: true });
     expect(would.fact).toEqual({ value: true, sure: true });
     expect(acted.fact.sure).toBe(false);
     expect(acted.risky).toEqual({ value: true, sure: true });
     expect(acted.riskWhy).toEqual(['secret']);
     expect(acted.taskId).toEqual({ value: null, sure: true });
   });
+  it('keeps question 10 unsure in shadow, and acts on it live', () => {
+    const { would } = readAnswers({ q10_recipe: ch({ flights: 0.02, stays: 0.01, trains: 0.94, buses: 0.02, none: 0.01 }) }, plain, []);
+    expect(would.recipe).toEqual({ value: 'trains', sure: true });
+    expect(applyLive(would, new Set<QuestionName>(['for_go']), plain).recipe).toEqual({ value: null, sure: false });
+    expect(applyLive(would, new Set<QuestionName>(['recipe']), plain).recipe).toEqual({ value: 'trains', sure: true });
+  });
   it('codeOnly has no Jev opinion at all', () => {
     const out = codeOnly(plain);
     expect(out.taskId).toEqual({ value: null, sure: true });
     expect(out.forGo.sure || out.complete.sure || out.size.sure || out.fact.sure || out.reaction.sure || out.risky.sure || out.opening.sure).toBe(false);
+    expect(out.recipe).toEqual({ value: null, sure: false });
   });
 });
