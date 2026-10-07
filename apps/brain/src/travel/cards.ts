@@ -69,6 +69,30 @@ export function localClock(iso: string, timeZone = 'Asia/Kolkata'): string {
   return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
 }
 
+/** The date of a journey time where it happens ("2026-11-08"): as written when the time carries an offset, else in India. */
+export function localDate(iso: string, timeZone = 'Asia/Kolkata'): string {
+  const m = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2}:\d{2}$/.exec(iso);
+  if (m) return m[1]!;
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+}
+
+/** How many days after it leaves a journey arrives, by the date at each end where it happens. */
+export function daysLater(departAt: string, arriveAt: string): number {
+  return Math.round((Date.parse(`${localDate(arriveAt)}T00:00:00Z`) - Date.parse(`${localDate(departAt)}T00:00:00Z`)) / 86_400_000);
+}
+
+/**
+ * What follows the arrival clock: nothing on the same day, "next day" on the day after, and the day itself when it is
+ * later still ("on Sun 8 Nov"): a 27-hour train is never "next day".
+ */
+export function arrivalWords(departAt: string, arriveAt: string, nextDay = 'next day'): string {
+  const later = daysLater(departAt, arriveAt);
+  if (later === 1) return ` ${nextDay}`;
+  if (later < 2) return '';
+  const day = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${localDate(arriveAt)}T00:00:00Z`));
+  return ` on ${day.replace(',', '')}`;
+}
+
 export function formatClock(hhmm: string): string {
   const h = Number(hhmm.slice(0, 2));
   const h12 = h % 12 === 0 ? 12 : h % 12;
@@ -81,12 +105,11 @@ export function subtitleFor(o: ResultOption): string | null {
   if (o.subtitle) return o.subtitle;
   if (o.journey) {
     const j = o.journey;
-    const nextDay = j.arrive_at.slice(0, 10) !== j.depart_at.slice(0, 10) ? ' next day' : '';
     let extra: string | null = null;
     if (o.kind === 'flight' && typeof j.stops === 'number') extra = j.stops === 0 ? 'non-stop' : `${j.stops} stop`;
     if (o.kind === 'train' && typeof o.facts.class_code === 'string') extra = CLASS_WORDS[o.facts.class_code] ?? o.facts.class_code;
     if (o.kind === 'bus' && typeof o.facts.bus_type === 'string') extra = o.facts.bus_type;
-    return `${formatClock(localClock(j.depart_at))} to ${formatClock(localClock(j.arrive_at))}${nextDay}${extra ? `, ${extra}` : ''}`;
+    return `${formatClock(localClock(j.depart_at))} to ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}${extra ? `, ${extra}` : ''}`;
   }
   if (o.kind === 'stay') {
     const area = typeof o.facts.area === 'string' ? o.facts.area : null;

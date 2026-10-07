@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
-import { buildFlightsLinkCard, buildOptionsCard, clip, formatClock, formatInr, ixigoPage, localClock, plain, subtitleFor } from '../cards.js';
+import { arrivalWords, buildFlightsLinkCard, buildOptionsCard, clip, daysLater, formatClock, formatInr, ixigoPage, localClock, plain, subtitleFor } from '../cards.js';
 import type { ResultOption } from '../results.js';
 
 const flight = (title: string, dep: string, arr: string, price: number): ResultOption => ({
@@ -57,6 +57,38 @@ describe('the options card', () => {
   it('describes a stay by its area and whole-stay price', () => {
     const stay: ResultOption = { kind: 'stay', title: 'Villa Sol', priceMinor: 1280000, totalMinor: 3840000, priceNote: 'per night', highlights: [], facts: { nights: 3, area: 'Anjuna' } };
     expect(subtitleFor(stay)).toBe('Anjuna, ₹38,400 for 3 nights');
+  });
+});
+
+describe('when a journey arrives, on its card', () => {
+  const journey = (kind: 'flight' | 'train' | 'bus', depart_at: string, arrive_at: string, facts: Record<string, string> = {}, stops?: number): ResultOption => ({
+    kind, title: 'x', priceMinor: 100000, currency: 'INR', priceNote: 'per person', highlights: [], facts,
+    journey: { mode: kind, origin: { name: 'A' }, destination: { name: 'B' }, depart_at, arrive_at, ...(stops !== undefined ? { stops } : {}) },
+  });
+
+  it('says the day it arrives when that is two or more days later: 22634 NZM to TVC runs 27 h 45 m', () => {
+    // p4's re-drill: the card said "10:15 pm to 2:00 am next day" for a train that arrives on Sunday 8 Nov.
+    expect(subtitleFor(journey('train', '2026-11-06T22:15:00+05:30', '2026-11-08T02:00:00+05:30', { class_code: '3A' }))).toBe('10:15 pm to 2:00 am on Sun 8 Nov, AC 3 Tier');
+    expect(daysLater('2026-11-06T22:15:00+05:30', '2026-11-08T02:00:00+05:30')).toBe(2);
+    expect(arrivalWords('2026-11-06T05:00:00+05:30', '2026-11-09T05:30:00+05:30')).toBe(' on Mon 9 Nov');
+  });
+
+  it('"next day" for the day after, and nothing on the same day, for trains, flights and buses alike', () => {
+    // 22656 NZM to MAO, Fri 6 Nov 5:00 am to Sat 7 Nov 10:10 am (ixigo's results for that day).
+    expect(subtitleFor(journey('train', '2026-11-06T05:00:00+05:30', '2026-11-07T10:10:00+05:30', { class_code: 'SL' }))).toBe('5:00 am to 10:10 am next day, Sleeper');
+    // 6E 5341 DEL to GOI, and 6E 329 + 6E 5106 through Mumbai landing after midnight.
+    expect(subtitleFor(journey('flight', '2026-11-06T05:00:00+05:30', '2026-11-06T07:35:00+05:30', {}, 0))).toBe('5:00 am to 7:35 am, non-stop');
+    expect(subtitleFor(journey('flight', '2026-11-06T18:30:00+05:30', '2026-11-07T00:40:00+05:30', {}, 1))).toBe('6:30 pm to 12:40 am next day, 1 stop');
+    // Naik Tours, Mumbai to Goa overnight.
+    expect(subtitleFor(journey('bus', '2026-11-06T15:30:00+05:30', '2026-11-07T06:30:00+05:30', { bus_type: 'NON-AC Sleeper (2 + 1)' }))).toBe('3:30 pm to 6:30 am next day, NON-AC Sleeper (2 + 1)');
+  });
+
+  it('counts days where the journey happens, not in UTC', () => {
+    // The same 22634, written in UTC: 16:45Z on the 6th is 10:15 pm in India, 20:30Z on the 7th is 2:00 am on the 8th.
+    expect(subtitleFor(journey('train', '2026-11-06T16:45:00Z', '2026-11-07T20:30:00Z', { class_code: '3A' }))).toBe('10:15 pm to 2:00 am on Sun 8 Nov, AC 3 Tier');
+    // 9:00 pm to 11:30 pm in India the same evening, though the UTC dates differ.
+    expect(daysLater('2026-11-06T15:30:00Z', '2026-11-06T18:00:00Z')).toBe(0);
+    expect(daysLater('2026-11-06T18:00:00Z', '2026-11-06T19:00:00Z')).toBe(1);
   });
 });
 
