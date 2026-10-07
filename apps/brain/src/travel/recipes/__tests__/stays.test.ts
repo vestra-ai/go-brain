@@ -24,7 +24,7 @@ describe('the stays recipe', () => {
       checkIn: '2026-11-06', checkOut: '2026-11-09', adults: 4, rooms: 2, filters: [], half: null, wide: true,
     });
     expect(stays.slotsFrom({ area: 'Anjuna, Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 5 }, { people: 4 })).toMatchObject({ adults: 5, rooms: 3 });
-    expect(() => stays.slotsFrom({ area: 'Manali', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 })).toThrow(/Go can search ixigo stays in Goa/);
+    expect(() => stays.slotsFrom({ area: 'Manali', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 })).toThrow('Go has no ixigo hotel location code for "Manali" yet.');
     expect(() => stays.slotsFrom({ area: 'Goa', checkIn: '2026-11-06' }, { people: 4 })).toThrow(/needs the place, check-in and check-out/);
   });
 

@@ -85,7 +85,7 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       // The parser found the ask without a sure kind from Jev: this search is the travel intent.
       if (!(pick?.sure && pick.value)) d.warmForTravel?.(tripId, ask.kind);
       // Not awaited: the hooks run one after another, and nothing should wait on the page.
-      const search = travel.search(ask.kind, ask.query, { tripId });
+      const search = travel.search(ask.kind, ask.query, { tripId, messageId: msg.message_id });
       search.catch((err: unknown) => {
         d.log.warn({ err, tripId, kind: ask.kind }, 'travel: an early search failed; the composer searches again');
       });

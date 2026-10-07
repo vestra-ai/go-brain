@@ -15,6 +15,7 @@ import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
 import { createIxigoWebBackend, LINK_ONLY_KINDS } from './recipes/backend.js';
 import { createEarlyStart } from './recipes/early.js';
 import { earlySearchNow } from './recipes/now.js';
+import { loadLearnedPlaces } from './recipes/places-store.js';
 import { runnerFor } from './recipes/runners.js';
 import { createResultsStore } from './results.js';
 import { renderSearchWake } from './search-wake.js';
@@ -35,6 +36,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   if (ixigoCaller) brain.onStop(() => ixigoCaller.close());
   if (!ixigo) brain.log.info('travel: IXIGO_MCP_URL is not set, so TRAVEL_MODE ixigo searches the fake ixigo (ixigo_web and fake are not affected)');
   const results = createResultsStore(brain.pool);
+  // The places ixigo's forms resolved before this boot: a cache, so a failed load only means slower first searches.
+  await loadLearnedPlaces(brain.pool).catch((err: unknown) => brain.log.warn({ err: String(err) }, 'travel: could not load the places ixigo resolved'));
   const images = createImages({ pool: brain.pool, publicUrl: env.GO_PUBLIC_URL });
   const imageRoute = registerImageRoute(brain.http, { pool: brain.pool });
   brain.onStop(() => imageRoute.close());
@@ -76,6 +79,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
   // A search that outlived its turn wakes Go with its options.
   brain.context.addWake('search', renderSearchWake);
+  // A turn that ends ends the live search cards it left open.
+  brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));
   // Null for taps on other cards (pay, call): the next lane's renderer, or P1's generic line, reads those.
   brain.context.addWake('tap', renderOptionsTap);
   brain.travel = travel;
