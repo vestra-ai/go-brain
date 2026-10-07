@@ -1,0 +1,34 @@
+id: flights.fare_calendar
+title: The cheapest fare on each day around a date, for one route
+asks:
+  - which day is cheapest to fly delhi to goa around 6 nov
+  - sasta din kaunsa hai mumbai se goa flight ke liye
+inputs:
+  from: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly from }
+  to: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly to }
+  date: { kind: date, about: the day they would like to fly; the calendar runs a month from about two weeks before }
+auth: none
+changes_state: false
+# The results page asks ixigo's fare calendar for the month around the date (one adult, economy, non-stop or not).
+# ixigo answers flight pages with a 403 from the boxes' shared egress, so this runs where flights load: the fast speed
+# from the trip's warm tab, once Bash's page_fetch is here.
+page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&adults=1&children=0&infants=0&class=e&source=Search%20Form
+capture:
+  - /outlook/v1/onward/ranged
+read:
+  rows: { from: /outlook/v1/onward/ranged, list: data.going.results }
+answer:
+  as: facts
+  title: "Cheapest fares, {from.words} to {to.words}"
+  max: 35
+  each: |
+    $type(fare) = "number" ? {
+      "date": date,
+      "cheapest_fare": $rupees($round(fare)) & " per person",
+      "airline": airline,
+      "flight": flightNumber
+    }
+ttl_minutes: 30
+samples: { page: flights.fare_calendar.json }
+measured: { fast_ms: null, page_ms: null, flow_ms: null }
+notes: Each day's lowest fare ixigo found, with when it found it (found, epoch ms). Not a price check of the day itself.
