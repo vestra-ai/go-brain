@@ -11,7 +11,7 @@ import { stableId } from './ids.js';
 import type { Images } from './images.js';
 import { TravelError } from './mcp-travel.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultsStore } from './results.js';
-import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery } from './travel.js';
+import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelToolDeps { travel: Travel; results: ResultsStore; images: Images; now: () => Date }
@@ -160,13 +160,11 @@ const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '')
  * never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
  */
 async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
-  const scope = searchScope(kind, q);
-  const terms = asked(kind, q);
-  const search = terms.length ? `${scope}, ${terms.join(', ')}` : scope;
   let found;
   try {
     found = await d.travel.search(kind, q, { tripId: ctx.tripId });
   } catch (err) {
+    const search = searchName(kind, q);
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
     if (err instanceof TravelError && err.code === 'past_date') return { search, count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
     if (err instanceof TravelError) {
@@ -174,6 +172,36 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
     }
     throw err;
   }
+  return searchAnswer(kind, q, found, ctx.tripId, d);
+}
+
+/** What was searched, with the conditions people gave: "flights from Delhi to Goa on 2026-11-06, leaving after 6:00 pm". */
+const searchName = (kind: TravelKind, q: TravelQuery): string => {
+  const terms = asked(kind, q);
+  return terms.length ? `${searchScope(kind, q)}, ${terms.join(', ')}` : searchScope(kind, q);
+};
+
+/** What a search answers the model, the same from the search tools and from a search started early. */
+export interface SearchAnswer {
+  search: string;
+  count: number;
+  summary: string;
+  checked: string;
+  results_id?: string;
+  results?: Array<Record<string, unknown>>;
+  /** The card the model may show: the results_id, the best three, a title. */
+  card?: { results_id: string; option_numbers: number[]; title: string };
+  note: string;
+}
+
+/**
+ * A search's answer: the results saved as a set (so show_options builds its card from them), the summary built in code,
+ * and the best ten in short.
+ */
+export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: TravelSearch, tripId: string, d: { results: Pick<ResultsStore, 'save'>; now: () => Date }): Promise<SearchAnswer> {
+  const scope = searchScope(kind, q);
+  const terms = asked(kind, q);
+  const search = searchName(kind, q);
   const before = found.found ?? found.results.length;
   const options = found.results.slice(0, 10).map(toResultOption);
   if (options.length === 0) {
@@ -190,7 +218,7 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
       note: 'Nothing to show. Say what the summary says in one line, keeping every condition in it, and suggest loosening one thing.',
     };
   }
-  const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt });
+  const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt });
   const fit = found.results.length;
   const prices = priceRange(options);
   const areas = kind === 'stays' ? [...new Set(options.map(areaOf))] : [];

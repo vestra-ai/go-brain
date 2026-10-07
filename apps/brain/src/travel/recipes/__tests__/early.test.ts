@@ -5,7 +5,7 @@ import { FakeSwitches } from '../../../tasks/testing/lane-brain.js';
 import { goaPack } from '../../../tasks/testing/goa.js';
 import { TravelError } from '../../mcp-travel.js';
 import type { Travel, TravelKind, TravelQuery } from '../../travel.js';
-import { earlyStart } from '../early.js';
+import { createEarlyStart } from '../early.js';
 
 function world(mode = 'ixigo_web', fail = false) {
   const searches: Array<{ kind: TravelKind; q: TravelQuery; tripId: string | undefined }> = [];
@@ -19,8 +19,9 @@ function world(mode = 'ixigo_web', fail = false) {
   const switches = new FakeSwitches();
   void switches.set('TRAVEL_MODE', mode);
   const log = { warn: vi.fn() };
-  const hook = earlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', log });
-  return { hook, searches, log };
+  let nowMs = Date.parse('2026-10-07T12:00:00Z');
+  const early = createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date(nowMs), log });
+  return { hook: (...a: Parameters<typeof early.onRead>) => early.onRead(...a), early, searches, log, advance: (ms: number) => { nowMs += ms; } };
 }
 
 const forGo: ReflexRead = { ...UNSURE_READ, forGo: { value: true, sure: true } };
@@ -48,6 +49,18 @@ describe('the early start', () => {
     const fake = world('fake');
     expect(await fake.hook(msg(46, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack())).toBeUndefined();
     expect(fake.searches).toEqual([]);
+  });
+
+  it('remembers the search each message started, for ten minutes, for the turn it wakes', async () => {
+    const w = world();
+    await w.hook(msg(48, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
+    const started = w.early.searchFor('t_goa', 'm_48');
+    expect(started).toMatchObject({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-10-09' } });
+    expect(await started!.search).toEqual({ results: [], checkedAt: '2026-10-07T12:00:00.000Z' });
+    expect(w.early.searchFor('t_goa', 'm_49')).toBeNull();
+    expect(w.early.searchFor('t_other', 'm_48')).toBeNull();
+    w.advance(10 * 60_000);
+    expect(w.early.searchFor('t_goa', 'm_48')).toBeNull();
   });
 
   it('never fails the message: a search that fails is logged, and the composer searches again', async () => {

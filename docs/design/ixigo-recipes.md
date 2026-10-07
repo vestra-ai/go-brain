@@ -1,6 +1,6 @@
 # ixigo recipes: Go searches ixigo.com in the trip's browser
 
-Design for Friday. Built so far: the recipes (section 1), the runners (section 2), the travel layer with the "See on ixigo" card (section 3), and the early start and the 10-minute cache (section 4a and 4c).
+Design for Friday. Built so far: the recipes (section 1), the runners (section 2), the travel layer with the "See on ixigo" card (section 3), the early start, the 10-minute cache and the one-call prompt (section 4a, 4c and 4d).
 
 "@Go flights Delhi to Goa Friday" should get "Go is typing..." at once and an options card from ixigo.com in under 5 seconds. Each option opens on ixigo.com; booking stays there.
 
@@ -129,9 +129,10 @@ The search tool already turns each of these into a plain line.
 
 **(d) One model call per search ask.**
 - When the turn was woken by a message the parser recognized, it waits up to 4 s for that search before building its prompt.
-- The prompt then carries a right-now block: "Already searched for #57", with the `results_id`, the summary and the compact results.
-- The model's first and only call is `show_options` plus its line. The card ends the turn (#86).
-- If the search isn't back in 4 s, the turn goes on without it and the tool awaits it as usual: two calls, as today.
+- The prompt then carries a right-now block, "travel search" (`travel/recipes/now.ts`): "Already searched for #57", with the `results_id`, the summary and the compact results, the same answer the search tool gives (`searchAnswer` in `tools.ts`). The results sit inside a data fence; what to do with them sits outside it.
+- The model's first and only call is `show_options` plus its line. The card ends the turn (#86). When people gave a condition the early search did not read (a time, a price cap), the block says to call the search tool with it first; it answers at once from the same search.
+- If the search isn't back in 4 s, the block says it is still running, the turn goes on, and the tool joins it as usual: two calls, as today. A failed early search says nothing, and the composer searches again.
+- A turn that runs again for the same message shows the same `results_id`: the answer is built once per message.
 
 ## 5. Tests, no live calls in CI
 
