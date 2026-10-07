@@ -173,7 +173,7 @@ describe("the trip's screen on the card", () => {
       h.fake.screen = null;
     });
 
-    it('never reads one trip's screen twice at once', async () => {
+    it("never reads one trip's screen twice at once", async () => {
       let release!: () => void;
       const gate = new Promise<void>((r) => {
         release = r;
