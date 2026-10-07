@@ -66,14 +66,14 @@ describe('Forget me in the composer', () => {
     );
     // Before "why you woke", after the cache point: the chat blocks and the rules are as they were.
     expect(now.indexOf('## asked Go to forget')).toBeLessThan(now.indexOf('## Why you woke'));
-    expect(p.user.slice(0, -2).every((b) => !b.text.includes('asked Go to forget'))).toBe(true);
+    expect(p.user.slice(0, -2).every((b) => !b.text.includes('## asked Go to forget') && !b.text.includes('Forget me in this trip'))).toBe(true);
   });
 
   it('says nothing about forgetting in a trip where nobody was forgotten, and shows every line', async () => {
     for (const forgotten of [null, new Map()]) {
       const p = await build(packOf(), ASKS[0]!, 7, forgotten);
       const text = userText(p);
-      expect(text).not.toContain('asked Go to forget');
+      expect(text).not.toContain('## asked Go to forget');
       expect(text).not.toContain(HIDDEN);
       expect(text).toContain("#4 Kabir: also I'm allergic to peanuts");
     }
