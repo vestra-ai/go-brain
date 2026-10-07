@@ -47,24 +47,27 @@ const FREE_CANCELLATION = 'MP_FC';
 const BREAKFAST = 'MP_FB';
 const MUST_HAVE_CODES: Partial<Record<(typeof MUST_HAVES)[number], string>> = { pool: POOL, free_cancellation: FREE_CANCELLATION, breakfast: BREAKFAST };
 
+/** One hotel as ixigo sends it. Every detail may be missing or null (O Hotel Goa came with a null image): only the id,
+ *  the name and the fare are needed to show it. */
 const Hotel = z.object({
   hotelId: z.number(),
-  locationId: z.number().optional(),
+  locationId: z.number().nullish(),
   name: z.string().min(1),
-  locality: z.string().optional(),
-  city: z.string().optional(),
-  userRating: z.union([z.string(), z.number()]).optional(),
-  starRating: z.number().optional(),
-  userRatingCount: z.number().optional(),
-  topOfferings: z.array(z.string()).optional(),
-  amenities: z.array(z.object({ name: z.string() })).optional(),
+  locality: z.string().nullish(),
+  city: z.string().nullish(),
+  userRating: z.union([z.string(), z.number()]).nullish(),
+  starRating: z.number().nullish(),
+  userRatingCount: z.number().nullish(),
+  topOfferings: z.array(z.string()).nullish(),
+  amenities: z.array(z.object({ name: z.string() })).nullish(),
   distanceFromSearchedEntity: z.string().nullish(),
-  hotelInfoToken: z.string().optional(),
+  hotelInfoToken: z.string().nullish(),
   geoLocationInfo: z.object({ lat: z.number(), lon: z.number() }).nullish(),
-  imageInfoList: z.array(z.object({ url: z.string().optional(), urlMedium: z.string().optional() })).optional(),
+  imageInfoList: z.array(z.object({ url: z.string().nullish(), urlMedium: z.string().nullish() })).nullish(),
   fareDetail: z.object({ displayedBaseFare: z.number().nonnegative(), taxesAndFees: z.number().nonnegative() }),
 });
-const Page = z.object({ data: z.object({ result: z.object({ inventoryInfoList: z.array(Hotel) }) }) });
+/** The page's list is read hotel by hotel: one Go can't read is left out, never the whole page (p4's 12:58Z search). */
+const Page = z.object({ data: z.object({ result: z.object({ inventoryInfoList: z.array(z.unknown()) }) }) });
 
 interface StayRead {
   name: string;
@@ -155,9 +158,9 @@ function stayOption(h: StayRead, s: StaySlots): RecipeOption {
   };
 }
 
-const ratingOf = (r: string | number | undefined): number | undefined => {
+const ratingOf = (r: string | number | null | undefined): number | undefined => {
   const n = typeof r === 'string' ? Number(r) : r;
-  return n !== undefined && Number.isFinite(n) && n > 0 ? n : undefined;
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
 };
 
 /**
@@ -179,8 +182,13 @@ function extract(captures: Capture[], s: StaySlots): RecipeOption[] {
   if (bodies.length === 0) throw new TravelError('refused', "ixigo's hotel results page did not load its hotels.");
   const seen = new Set<number>();
   const out: RecipeOption[] = [];
+  let listed = 0;
   for (const body of bodies) {
-    for (const h of readBody(Page, body, 'the hotel search').data.result.inventoryInfoList) {
+    for (const raw of readBody(Page, body, 'the hotel search').data.result.inventoryInfoList) {
+      listed += 1;
+      const read = Hotel.safeParse(raw);
+      if (!read.success) continue;
+      const h = read.data;
       if (seen.has(h.hotelId)) continue;
       seen.add(h.hotelId);
       const rating10 = ratingOf(h.userRating);
@@ -191,18 +199,20 @@ function extract(captures: Capture[], s: StaySlots): RecipeOption[] {
         ...(h.city ? { city: h.city } : {}),
         ...(h.distanceFromSearchedEntity ? { distance: h.distanceFromSearchedEntity } : {}),
         ...(rating10 !== undefined ? { rating10 } : {}),
-        ...(h.userRatingCount !== undefined ? { reviews: h.userRatingCount } : {}),
+        ...(h.userRatingCount != null ? { reviews: h.userRatingCount } : {}),
         ...(h.starRating ? { stars: h.starRating } : {}),
         nightlyRupees: h.fareDetail.displayedBaseFare + h.fareDetail.taxesAndFees,
         offerings: [...(h.topOfferings ?? []), ...(h.amenities ?? []).map((a) => a.name)],
         hotelId: h.hotelId,
-        ...(h.locationId !== undefined ? { locationId: h.locationId } : {}),
+        ...(h.locationId != null ? { locationId: h.locationId } : {}),
         ...(h.hotelInfoToken ? { token: h.hotelInfoToken } : {}),
         ...(h.geoLocationInfo ? { lat: h.geoLocationInfo.lat, lng: h.geoLocationInfo.lon } : {}),
         ...(imageUrl ? { imageUrl } : {}),
       }, s));
     }
   }
+  // Hotels listed, none readable: ixigo changed its shape, which is not "no stays".
+  if (listed > 0 && seen.size === 0) throw new TravelError('refused', 'ixigo answered the hotel search in a shape Go does not read.');
   return inHalf(out, s.half);
 }
 
