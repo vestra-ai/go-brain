@@ -20,7 +20,7 @@ export const SWITCH_RULES: Record<SwitchName, { valid: (v: string) => boolean; f
   PAY_RAIL: { valid: oneOf('ixigo', 'stripe_test', 'fake'), fallback: 'fake' },
   CALLS_MODE: { valid: oneOf('off', 'allowlist'), fallback: 'off' },
   // "q1,q2,..." names the live Jev questions, empty keeps all in shadow, "off" makes no Jev call (P2's kill switch).
-  REFLEX_LIVE: { valid: (v) => /^(off|q[1-9](,q[1-9])*)?$/.test(v), fallback: '' },
+  REFLEX_LIVE: { valid: (v) => /^(off|q(?:10|[1-9])(,q(?:10|[1-9]))*)?$/.test(v), fallback: '' },
 };
 
 export function createSwitches(o: {

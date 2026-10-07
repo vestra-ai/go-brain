@@ -1,5 +1,5 @@
 /**
- * The nine questions Go asks Jev about every person's message, in one call.
+ * The ten questions Go asks Jev about every person's message, in one call.
  * Question texts are product constants: a reworded question is a different question and needs its
  * test set recorded again (QUESTION_VERSIONS). People's words never sit inside a question; they ride
  * in the state, with the message last.
@@ -10,10 +10,10 @@ import type { TripPack } from '../trips/pack.js';
 import type { JevQuestion } from './jev.js';
 import { maskSecrets } from './secrets.js';
 
-export const QUESTION_NAMES = ['for_go', 'complete', 'size', 'task', 'fact', 'record', 'reaction', 'risky', 'opening'] as const;
+export const QUESTION_NAMES = ['for_go', 'complete', 'size', 'task', 'fact', 'record', 'reaction', 'risky', 'opening', 'recipe'] as const;
 export type QuestionName = (typeof QUESTION_NAMES)[number];
 export const QUESTION_NUMBER: Record<QuestionName, number> = {
-  for_go: 1, complete: 2, size: 3, task: 4, fact: 5, record: 6, reaction: 7, risky: 8, opening: 9,
+  for_go: 1, complete: 2, size: 3, task: 4, fact: 5, record: 6, reaction: 7, risky: 8, opening: 9, recipe: 10,
 };
 
 export const FENCE =
@@ -21,6 +21,10 @@ export const FENCE =
 
 export const REACTIONS = { noted: '✅', thumbs: '👍', cheer: '🙌' } as const;
 export type ReactionEmoji = (typeof REACTIONS)[keyof typeof REACTIONS];
+
+/** The ixigo searches Go can start before the model call (travel/recipes): Jev picks one, the travel parser fills its slots. */
+export const RECIPE_CHOICES = ['flights', 'stays', 'trains', 'buses'] as const;
+export type RecipeChoice = (typeof RECIPE_CHOICES)[number];
 
 function noul(instructions: string, yes: string, no: string): JevQuestion {
   return { type: 'noul', instructions: `${FENCE} ${instructions}`, criteria: { true: yes, false: no } };
@@ -157,6 +161,19 @@ const STATIC: Record<Exclude<QuestionName, 'task'>, Record<string, JevQuestion>>
       'For example: can someone check trains?; koi dekh lo hotel; who is booking the cab?; someone find a kayaking place.',
       'Asking a named friend about themselves, or chatter.',
     ),
+  },
+  recipe: {
+    q10_recipe: {
+      type: 'choice',
+      instructions: `${FENCE} Which one travel search on ixigo does the last message ask Go or the group to run now, if any?`,
+      criteria: {
+        flights: 'Flights. A search for flights from one place to another on a day: which flights there are, their times or their prices. For example: @Go Hyderabad to Goa flights on Saturday morning; Go Chennai se Goa flight kitne ki hai 12 tareekh ko; any direct flights Kolkata to Goa on the 14th?',
+        stays: 'Stays. A search for hotels, villas, resorts or homestays in a place for some nights, with wishes such as a pool, an area or a budget. For example: Go hotels near Colva beach for 3 nights; Go Morjim mein villa dikhao jisme 6 log so sakein; any resorts in Palolem under 5k a night?',
+        trains: 'Trains. A search for trains from one station or city to another on a day: which trains run, their seats or waitlist by class, and their fares. For example: Go Pune se Kudal train hai kya Friday ko?; trains from Bengaluru to Karwar on the 12th; 2A mein seat milegi kya Hazrat Nizamuddin se?',
+        buses: 'Buses. A search for buses from one city to another on a day: which buses run, sleeper or AC, their fares and seats. For example: Go Hubli se Goa bus dikhao Saturday ki; any AC sleeper buses Kolhapur to Panjim tonight?; Belgaum to Goa bus kitne ki hai?',
+        none: 'No search, or more than one kind at once: talk about travel, seats or a past journey; the status of a flight, train or booking; booking, paying or cancelling; a question about one chosen hotel; how a running search is going, or stopping it; coupons; any other question or chatter.',
+      },
+    },
   },
 };
 

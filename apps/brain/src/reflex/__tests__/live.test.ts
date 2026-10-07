@@ -20,6 +20,13 @@ describe('parseLive', () => {
     expect(SWITCH_RULES.REFLEX_LIVE.valid('q1,q2,q3')).toBe(true);
     expect(SWITCH_RULES.REFLEX_LIVE.valid('all')).toBe(false);
   });
+  it('reads question 10, and still nothing past it', () => {
+    expect([...parseLive('q1,q10', [1, 10]).live]).toEqual(['for_go', 'recipe']);
+    expect([...parseLive('q10', [1]).live]).toEqual([]);
+    expect(parseLive('q11,q100', [1, 10]).live.size).toBe(0);
+    expect(SWITCH_RULES.REFLEX_LIVE.valid('q1,q10')).toBe(true);
+    expect(SWITCH_RULES.REFLEX_LIVE.valid('q1,q11')).toBe(false);
+  });
 });
 
 describe('registerReflex', () => {
