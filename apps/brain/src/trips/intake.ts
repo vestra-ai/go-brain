@@ -7,9 +7,9 @@ import type { Log } from '../log.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../reflex/reflex.js';
 import type { HooksImpl } from './hooks.js';
 import type { TripLogImpl } from './log.js';
-import { asksWhatTheyMissed, endsThought, namesGoInText, plainlyNamesGo } from './names-go.js';
+import { asksWhatTheyMissed, continuesAskToGo, endsThought, namesGoInText, plainlyNamesGo } from './names-go.js';
 import { TripGoneError } from './gone.js';
-import type { PacksImpl } from './pack.js';
+import type { PacksImpl, TripPack } from './pack.js';
 import { screenEvent } from './screen.js';
 import type { SetupImpl } from './setup.js';
 
@@ -26,7 +26,7 @@ export interface IntakeDeps {
   /** Read at call time: P2 replaces brain.reflex after boot wiring. */
   reflex: () => Reflex;
   runningTasks: (tripId: string) => Promise<Array<{ id: string; brief: string }>>;
-  /** The wait after a message for Go, unless the reflex is sure the thought is complete or it names Go and plainly ends one. */
+  /** The wait after a message for Go, unless it is a whole thought (dueAtOnce). */
   waitMs?: number;
 }
 
@@ -37,6 +37,18 @@ export interface IntakeDeps {
 export function wakesComposer(namesGo: boolean, read: Pick<ReflexRead, 'forGo'>, text: string | null | undefined): boolean {
   if (namesGo) return true;
   return !((read.forGo.sure && read.forGo.value === false) || asksWhatTheyMissed(text));
+}
+
+/**
+ * Whether a message that wakes the composer is a whole thought, due at once instead of waiting for more lines: the reflex
+ * is sure it is complete; it plainly ends ("...?") and names Go, or ends a burst that named Go; or a hook read it as a
+ * whole ask (a travel search it has already started). Lines that stop mid-burst ("@Go can you", "for my birthday on the
+ * 7th") don't end plainly, so they still wait.
+ */
+export function dueAtOnce(m: Message, pack: TripPack, read: Pick<ReflexRead, 'complete'>, namesGo: boolean, hookDueNow: boolean): boolean {
+  if (read.complete.sure && read.complete.value === true) return true;
+  if (endsThought(m.text) && (namesGo || continuesAskToGo(m, pack))) return true;
+  return hookDueNow;
 }
 
 export function createIntake(d: IntakeDeps) {
@@ -100,9 +112,7 @@ export function createIntake(d: IntakeDeps) {
     const said = await d.hooks.run(m, read, pack);
     if (wakesComposer(namesGo, read, m.text)) {
       const now = d.now();
-      // No wait for a thought that is over: the reflex is sure, the message names Go and plainly ends ("...?"), or a hook
-      // read it as a whole ask (a travel search it has already started).
-      const complete = (read.complete.sure && read.complete.value === true) || (namesGo && endsThought(m.text)) || said.dueNow === true;
+      const complete = dueAtOnce(m, pack, read, namesGo, said.dueNow === true);
       await d.desk.put({
         id: `msg:${tripId}:${m.message_id}`,
         tripId,

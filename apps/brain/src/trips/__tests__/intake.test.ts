@@ -131,6 +131,40 @@ describe('intake', () => {
     expect(items[2]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
   });
 
+  it('the last line of a burst that named Go is due at once when it plainly ends, and the lines before it still wait for it', async () => {
+    const h = harness({ reflex: () => ({ read: async () => UNSURE_READ }) });
+    const T = 't_in_3d';
+    await h.send(created(T));
+    const sentAt = Date.now();
+    // goa-300's burst, lines 99 to 103, one second apart.
+    const burst = ['ok', 'wait', '@Go one thing', 'for my birthday on the 7th', 'is there a good bakery near Anjuna?'];
+    for (const [n, text] of burst.entries()) await h.send(ev(n + 2, 'message.created', { message: msg(n + 2, 'p_meher', text) }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref)).toEqual(['m_2', 'm_3', 'm_4', 'm_5', 'm_6']);
+    for (const r of items.slice(0, 4)) expect(r.due_at.getTime() - sentAt, r.ref).toBeGreaterThan(1_500);
+    // Due now: the desk's next turn takes it with every message still waiting, so the five lines go as one.
+    expect(items[4]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
+  });
+
+  it('a burst whose last line does not plainly end waits as before, and a plain end only counts after the same person named Go', async () => {
+    const h = harness({ reflex: () => ({ read: async () => UNSURE_READ }) });
+    const T = 't_in_3e';
+    await h.send(created(T));
+    const sentAt = Date.now();
+    // goa-50's burst, lines 29 to 33: nothing in it plainly ends, so all five wait and go as one turn.
+    const burst = ['wait', 'one more thing', '@Go can you also check', "if there's a cab from Mopa airport to Anjuna", 'for 5 people with luggage'];
+    for (const [n, text] of burst.entries()) await h.send(ev(n + 2, 'message.created', { message: msg(n + 2, 'p_kabir', text) }, T));
+    // Someone else's question right after it, and Kabir's own question 7 s after he named Go.
+    await h.send(ev(7, 'message.created', { message: msg(7, 'p_priya', 'is there a good bakery near Anjuna?') }, T));
+    const later = new Date(Date.parse(msg(4, 'p_kabir', 'x').sent_at) + 7_000).toISOString();
+    await h.send(ev(8, 'message.created', { message: msg(8, 'p_kabir', 'is it hot in Goa in November?', { sent_at: later }) }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref)).toEqual(['m_2', 'm_3', 'm_4', 'm_5', 'm_6', 'm_7', 'm_8']);
+    for (const r of items) expect(r.due_at.getTime() - sentAt, r.ref).toBeGreaterThan(1_500);
+  });
+
   it('a message a hook reads as a whole ask is due at once, even one that does not plainly end', async () => {
     const h = harness({ reflex: () => ({ read: async () => UNSURE_READ }), dueNow: (text) => text === '@Go flights Delhi to Goa Friday' });
     const T = 't_in_3c';
