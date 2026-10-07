@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { silentLog } from '../../log.js';
+import { TripGoneError } from '../../trips/gone.js';
 import { createDesk, type DeskItem, type TurnInput, type TurnRunner } from '../desk.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -160,6 +161,21 @@ describe('the desk', () => {
     const { rows } = await db.pool.query('select done_at, error from desk_items where id = $1', [`msg:${T}:m_1`]);
     expect(rows[0].done_at).toBeInstanceOf(Date);
     expect(rows[0].error).toMatch(/^gave up after 3 attempts/);
+  });
+
+  it('a turn for a trip the Server no longer has is closed at once: no retry, and no giving-up line to an empty room', async () => {
+    const c = clock();
+    const T = newTrip();
+    const { desk, of, gaveUp } = make(c, { run: async (t) => { if (t.tripId === T) throw new TripGoneError(T); } });
+    await desk.put(msgItem(T, 1, c.now()));
+    await desk.tick();
+    c.advance(20_000);
+    await desk.tick();
+    expect(of(T).map((r) => r.attempt)).toEqual([1]);
+    expect(gaveUp.filter((g) => g.tripId === T)).toEqual([]);
+    const { rows } = await db.pool.query('select done_at, error from desk_items where id = $1', [`msg:${T}:m_1`]);
+    expect(rows[0].done_at).toBeInstanceOf(Date);
+    expect(rows[0].error).toBe(`The Server no longer has trip ${T}.`);
   });
 
   it('a message that lands while a failed turn waits for its retry joins the retry, so nothing is answered twice', async () => {

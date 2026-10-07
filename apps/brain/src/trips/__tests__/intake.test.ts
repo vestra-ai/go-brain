@@ -301,6 +301,56 @@ describe('intake', () => {
     expect((await open(T)).some((r) => r.ref === 'm_9' && r.payload.namesGo === true)).toBe(true);
   });
 
+  it('one refresh waits per trip, and a refresh that waited reads nothing for a trip marked gone meanwhile', async () => {
+    const T = 't_in_gone_1';
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const h = harness({
+      answers: {
+        read_trip: async (p) => {
+          await gate;
+          return goaSnapshot({ trip_id: p.trip_id, seq: 1 });
+        },
+      },
+    });
+    await h.send(created(T));
+    await h.intake.idle();
+    const reads = (method: string) => h.f.calls.filter((c) => c.method === method && c.params.trip_id === T).length;
+    // The first refresh is slow; three more ticks go by meanwhile, and only one of them waits behind it.
+    await h.intake.refreshActive();
+    await vi.waitFor(() => expect(reads('read_trip')).toBe(1));
+    await h.intake.refreshActive();
+    await h.intake.refreshActive();
+    await h.intake.refreshActive();
+    // The Server forgets the trip, and Go marks it gone (the link does this on a 404): its pack goes.
+    await db.pool.query('update trips set gone_at = now() where trip_id = $1', [T]);
+    h.packs.invalidate(T);
+    release();
+    await h.intake.idle();
+    expect(reads('read_trip')).toBe(1);
+    expect(reads('read_messages')).toBe(1);
+    // Later ticks don't see it at all.
+    await h.intake.refreshActive();
+    await h.intake.idle();
+    expect(reads('read_trip')).toBe(1);
+  });
+
+  it('an event from the Server for a trip marked gone brings it back before anything reads it', async () => {
+    const T = 't_in_gone_2';
+    const h = harness();
+    await h.send(created(T));
+    await h.intake.idle();
+    await db.pool.query('update trips set gone_at = now() where trip_id = $1', [T]);
+    h.packs.invalidate(T);
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_priya', '@Go are we still on?') }, T));
+    await h.intake.idle();
+    const { rows } = await db.pool.query<{ gone_at: Date | null }>('select gone_at from trips where trip_id = $1', [T]);
+    expect(rows[0]?.gone_at).toBeNull();
+    expect((await open(T)).some((r) => r.ref === 'm_2')).toBe(true);
+  });
+
   it('hides a card number before anything is written: the trip log, the messages table, the pack, the reflex', async () => {
     const texts: Array<string | null | undefined> = [];
     const h = harness({ reflex: () => ({ read: async (m) => { texts.push(m.text); return UNSURE_READ; } }) });
