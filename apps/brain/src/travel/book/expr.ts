@@ -91,7 +91,9 @@ const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
   /** An address's query from an object, in order, as a browser writes it (a space is %20); empty values left out. */
   query: {
     fn: (o: Record<string, unknown> | undefined) =>
-      new URLSearchParams(Object.entries(o ?? {}).flatMap(([k, v]) => (v === undefined || v === null ? [] : [[k, String(v)]]))).toString().replace(/\+/g, '%20'),
+      new URLSearchParams(Object.entries(o ?? {}).flatMap(([k, v]): Array<[string, string]> => (v === undefined || v === null ? [] : [[k, String(v)]])))
+        .toString()
+        .replace(/\+/g, '%20'),
   },
   /** Rupees as people write them in India: "₹1,44,653". */
   rupees: { fn: (n: number) => `₹${n.toLocaleString('en-IN')}` },

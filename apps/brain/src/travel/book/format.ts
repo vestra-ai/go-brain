@@ -27,16 +27,15 @@ export const Input = z.object({
 });
 export type Input = z.infer<typeof Input>;
 
-export const Capture = z.union([
-  z.string().min(1).transform((match) => ({ match, required: true })),
-  z.object({
-    match: z.string().min(1),
-    required: z.boolean().default(true),
-    min_count: z.int().positive().optional(),
-    max_count: z.int().positive().optional(),
-    max_bytes: z.int().positive().optional(),
-  }),
-]);
+const CaptureObject = z.object({
+  match: z.string().min(1),
+  required: z.boolean().default(true),
+  min_count: z.int().positive().optional(),
+  max_count: z.int().positive().optional(),
+  max_bytes: z.int().positive().optional(),
+});
+/** A call the page makes that the fetch keeps: its match alone, or with its counts and size. */
+export const Capture = z.union([z.string().min(1).transform((match) => CaptureObject.parse({ match })), CaptureObject]);
 
 /** optional: a control that may not be there (a popup shown once a day), skipped instead of failing. */
 const Step = z.union([
