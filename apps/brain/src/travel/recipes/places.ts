@@ -111,3 +111,9 @@ export function stayLocationOf(text: string): StayLocation {
 
 /** An airport's city from the table, for a page that shows only codes. */
 export const airportCity = (code: string): string | null => AIRPORTS[code]?.city ?? null;
+
+/** The place names (not codes) Go knows for a kind of search, longest first: what the travel ask reader looks for. */
+export function placeWords(kind: 'flights' | 'trains' | 'buses' | 'stays'): string[] {
+  const words = { flights: Object.keys(AIRPORT_WORDS), trains: Object.keys(STATION_WORDS), buses: Object.keys(BUS_WORDS), stays: GOA_AREAS }[kind];
+  return [...words].sort((a, b) => b.length - a.length);
+}

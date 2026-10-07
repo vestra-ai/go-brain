@@ -85,12 +85,13 @@ export function createIntake(d: IntakeDeps) {
       d.log.warn({ err: e, message: m.message_id }, 'the reflex failed; the composer decides');
       read = UNSURE_READ;
     }
-    await d.hooks.run(m, read, pack);
+    const said = await d.hooks.run(m, read, pack);
     // Sure chatter never wakes the model, but a message that names Go always does.
     if (namesGo || !(read.forGo.sure && read.forGo.value === false)) {
       const now = d.now();
-      // No wait for a thought that is over: the reflex is sure, or the message names Go and plainly ends ("...?").
-      const complete = (read.complete.sure && read.complete.value === true) || (namesGo && endsThought(m.text));
+      // No wait for a thought that is over: the reflex is sure, the message names Go and plainly ends ("...?"), or a hook
+      // read it as a whole ask (a travel search it has already started).
+      const complete = (read.complete.sure && read.complete.value === true) || (namesGo && endsThought(m.text)) || said.dueNow === true;
       await d.desk.put({
         id: `msg:${tripId}:${m.message_id}`,
         tripId,
