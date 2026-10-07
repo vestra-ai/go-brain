@@ -2,6 +2,13 @@
  * The trip's screen on the working cards: read while a job runs, re-hosted only when its bytes changed, so a card's
  * picture changes only with the screen. While a job has written no to-do list 20 s after it started, its last steps
  * from /v1's trace stand in (read at most every 15 s), in Go's own words: nothing the job read is echoed.
+ *
+ * Live, but bounded. The screen is read about once a second for the first 5 minutes of the trip's newest job, and less
+ * often while it doesn't change (2, 4, then 7 s), back to once a second on the next change. After 5 minutes, or 120
+ * changed pictures in a stretch of jobs, it is read every 7 s. Never while someone is signing in (needs you), never
+ * twice at once for a trip, and never after the jobs end. A screenshot spends no credits, but each is one of /v1's 60
+ * requests a minute per key: all trips together take at most half of that (`perMinute`), so the jobs' own calls and
+ * the browser fetch keep the rest, and a tick over the budget is skipped.
  */
 import { createHash } from 'node:crypto';
 import { clip } from '../travel/cards.js';
@@ -20,6 +27,8 @@ export interface ScreensDeps {
   log: { warn(obj: object, msg: string): void };
   traceAfterMs?: number;
   traceEveryMs?: number;
+  /** Screenshots in a minute across every trip. Default: half of /v1's 60 for one key. */
+  perMinute?: number;
 }
 export interface Screens { tick(tripId: string): Promise<void> }
 
@@ -39,9 +48,41 @@ export function stepWords(name: string | null, summary: string | null): string {
 
 interface TraceStep { name?: string | null; input_summary?: string | null; is_error?: boolean; finished_at?: string | null }
 
+export const LIVE_GAP_MS = 1_000;
+export const SLOW_GAP_MS = 7_000;
+export const LIVE_FOR_MS = 5 * 60_000;
+export const MAX_LIVE_FRAMES = 120;
+/** Half of /v1's 60 requests a minute per key. */
+export const SCREENS_PER_MINUTE_PER_KEY = 30;
+/** A tick a little early still counts: the follower's timer and the screenshot's own time drift by a few ms. */
+const DUE_SLACK_MS = 150;
+
+/** How often one trip's screen is read, and what this stretch of its jobs has taken. */
+interface Pace {
+  dueAt: number;
+  gapMs: number;
+  busy: boolean;
+  frames: number;
+}
+
 export function createScreens(d: ScreensDeps): Screens {
   const lastHash = new Map<string, string>();
   const traceAt = new Map<string, number>();
+  const paces = new Map<string, Pace>();
+  const perMinute = d.perMinute ?? SCREENS_PER_MINUTE_PER_KEY;
+  let minuteStart = Number.NEGATIVE_INFINITY;
+  let taken = 0;
+
+  /** One screenshot from this minute's budget, shared by every trip; false when it is spent. */
+  function takeBudget(nowMs: number): boolean {
+    if (nowMs - minuteStart >= 60_000) {
+      minuteStart = nowMs;
+      taken = 0;
+    }
+    if (taken >= perMinute) return false;
+    taken += 1;
+    return true;
+  }
 
   async function traceFallback(r: TaskRow): Promise<void> {
     const nowMs = d.now().getTime();
@@ -65,20 +106,37 @@ export function createScreens(d: ScreensDeps): Screens {
   }
 
   async function screenshot(tripId: string, rows: TaskRow[]): Promise<void> {
+    const startMs = d.now().getTime();
+    let pace = paces.get(tripId);
+    if (!pace) {
+      pace = { dueAt: 0, gapMs: LIVE_GAP_MS, busy: false, frames: 0 };
+      paces.set(tripId, pace);
+    }
+    if (pace.busy || startMs + DUE_SLACK_MS < pace.dueAt || !takeBudget(startMs)) return;
+    const newestStart = Math.max(...rows.map((r) => r.startedAt?.getTime() ?? startMs));
+    const live = startMs - newestStart < LIVE_FOR_MS && pace.frames < MAX_LIVE_FRAMES;
+    let changed = false;
+    pace.busy = true;
     try {
       const shot = await d.v1.bytes(`/v1/users/${d.userIdFor(tripId)}/screenshot`);
       const hash = createHash('sha256').update(shot.bytes).digest('hex');
       if (shot.bytes.length > 0 && hash !== lastHash.get(tripId)) {
+        changed = true;
+        pace.frames += 1;
         lastHash.set(tripId, hash);
         const url = await d.images.putBytes(shot.bytes, 'image/jpeg');
         for (const r of rows) {
           if (r.screenshotUrl === url) continue;
           await d.store.update(r.id, { screenshotUrl: url });
-          await d.tasks.pushCard({ ...r, screenshotUrl: url }, false);
+          await d.tasks.pushCard({ ...r, screenshotUrl: url }, false, { frame: true });
         }
       }
     } catch (err) {
       if (!(err instanceof V1Error && err.code === 'browser_not_open')) d.log.warn({ err, tripId }, "tasks: reading the trip's screen failed");
+    } finally {
+      pace.gapMs = !live ? SLOW_GAP_MS : changed ? LIVE_GAP_MS : Math.min(pace.gapMs * 2, SLOW_GAP_MS);
+      pace.dueAt = startMs + pace.gapMs;
+      pace.busy = false;
     }
   }
 
@@ -87,6 +145,7 @@ export function createScreens(d: ScreensDeps): Screens {
       const rows = (await d.store.listLive(tripId)).filter((r) => r.state === 'running' || r.state === 'needs_you');
       if (rows.length === 0) {
         lastHash.delete(tripId);
+        paces.delete(tripId);
         return;
       }
       // One computer per trip: while anyone is signing in on it, Go takes no picture of its screen for any job.

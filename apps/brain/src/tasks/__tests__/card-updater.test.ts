@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeLink } from '../testing/lane-brain.js';
-import { createCardUpdater } from '../card-updater.js';
+import { createCardUpdater, FRAME_GAP_MS } from '../card-updater.js';
 import type { WorkingCardT } from '../working-card.js';
 
 const card = (n: number, state: WorkingCardT['state'] = 'running'): WorkingCardT => ({
@@ -37,6 +37,29 @@ describe('the card updater', () => {
     await cards.flush();
     expect(link.sent('replace_card').map((p) => (p.card as WorkingCardT).fallback_text)).toEqual(['v1', 'v3', 'v5']);
     expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it('lets a new picture of the screen go 1 s after the last update, bringing a waiting step update forward with it', async () => {
+    const link = new FakeLink();
+    await posted(link, 3);
+    const cards = createCardUpdater({ link, log: { warn: vi.fn() } });
+    const sent = () => link.sent('replace_card').map((p) => (p.card as WorkingCardT).fallback_text);
+    cards.push('t_goa', card(1));
+    await vi.advanceTimersByTimeAsync(0);
+    cards.push('t_goa', card(2));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(sent()).toEqual(['v1']);
+    cards.push('t_goa', card(3), { gapMs: FRAME_GAP_MS });
+    await vi.advanceTimersByTimeAsync(499);
+    expect(sent()).toEqual(['v1']);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sent()).toEqual(['v1', 'v3']);
+    // Without a new picture, the next update waits the full 6 s again.
+    cards.push('t_goa', card(4));
+    await vi.advanceTimersByTimeAsync(5_999);
+    expect(sent()).toEqual(['v1', 'v3']);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sent()).toEqual(['v1', 'v3', 'v4']);
   });
 
   it('tries a failed update once more a little later, for a card that rides with a turn and is not posted yet', async () => {

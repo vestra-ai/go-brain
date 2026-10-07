@@ -11,7 +11,7 @@ import type { Brain } from '../app.js';
 import type { ServerLink } from '../door/server-link.js';
 import { clip } from '../travel/cards.js';
 import { mintId, stableId } from '../travel/ids.js';
-import type { CardUpdater } from './card-updater.js';
+import { FRAME_GAP_MS, type CardUpdater } from './card-updater.js';
 import type { Computer } from './computer.js';
 import { DEMO_LISTINGS } from './instructions.js';
 import type { ReturnsKind } from './returns.js';
@@ -101,7 +101,8 @@ export interface TasksService extends Tasks {
   /** Stops a live job on /v1 and ends it as "Didn't work" (a deadline, a hand-off nobody answered). */
   expire(taskId: string, endReason: 'deadline' | 'handoff_expired', reason: string): Promise<void>;
   cardFor(row: TaskRow): Promise<WorkingCardT>;
-  pushCard(row: TaskRow, urgent: boolean): Promise<void>;
+  /** `frame`: the update carries a new picture of the screen, so it may follow the last one sooner. */
+  pushCard(row: TaskRow, urgent: boolean, o?: { frame?: boolean }): Promise<void>;
   stopV1(v1TaskId: string): Promise<void>;
   /** Names a job /v1 started without Go hearing it, from /v1's task.started events for the trip's user since the job was made. */
   findStart(row: TaskRow): Promise<void>;
@@ -382,10 +383,10 @@ export function createTasks(d: TasksDeps): TasksService {
       return buildWorkingCard(row, { now: d.now(), nameOf: (id) => pack.trip.people.find((p) => p.person_id === id)?.name });
     },
 
-    async pushCard(row, urgent) {
+    async pushCard(row, urgent, o) {
       // Built from the row as it is now: a caller's copy read before a wait may be stale (a job that finished meanwhile).
       const fresh = (await d.store.get(row.id)) ?? row;
-      d.cards.push(fresh.tripId, await service.cardFor(fresh), { now: urgent });
+      d.cards.push(fresh.tripId, await service.cardFor(fresh), { now: urgent, ...(o?.frame ? { gapMs: FRAME_GAP_MS } : {}) });
     },
 
     async stopV1(v1TaskId) {

@@ -16,7 +16,7 @@ import { readTasksEnv } from './env.js';
 import { createEventStore } from './event-store.js';
 import { createTaskEvents, type TaskEvents } from './events.js';
 import { createFollower, type Follower, type FollowerDeps } from './follower.js';
-import { createScreens, type Screens } from './screens.js';
+import { createScreens, SCREENS_PER_MINUTE_PER_KEY, type Screens } from './screens.js';
 import { createTaskStore, type TaskStore } from './store.js';
 import { SWEEP_EVERY_MS, createSweep, type Sweep } from './sweep.js';
 import { registerTaskTaps } from './taps.js';
@@ -65,7 +65,10 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     listingsSimulated: () => brain.travel?.simulated?.() === true,
   });
   const events = createTaskEvents({ store, tasks, v1, desk: brain.desk, results, packs: brain.packs, now: brain.now, log: brain.log });
-  const screens = createScreens({ v1, store, images, tasks, userIdFor: computer.userIdFor, now: brain.now, log: brain.log });
+  const screens = createScreens({
+    v1, store, images, tasks, userIdFor: computer.userIdFor, now: brain.now, log: brain.log,
+    perMinute: SCREENS_PER_MINUTE_PER_KEY * env.VESTRA_API_KEYS.length,
+  });
   const follower = createFollower({ v1, store, streams: eventStore, apply: events.apply, screens, log: brain.log, ...(o.follower ?? {}) });
   following = follower;
   const sweep = createSweep({ v1, store, eventStore, tasks, events, computer, follow, desk: brain.desk, packs: brain.packs, now: brain.now, log: brain.log });
