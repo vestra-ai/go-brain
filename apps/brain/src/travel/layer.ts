@@ -56,22 +56,27 @@ const keyOf = (q: TravelQuery): string =>
 export function createTravelLayer(d: TravelLayerDeps): Travel {
   const ttl = d.cacheMs ?? SEARCH_CACHE_MS;
   const today = d.today ?? (async () => localDay(d.now(), DEFAULT_TRIP_TZ));
-  const cache = new Map<string, { at: number; value: TravelSearch }>();
-  /** A search kept for three minutes. ixigo_web keeps its own (by recipe and slots, ten minutes) and shares one in flight. */
-  const kept = async (key: string, search: () => Promise<TravelSearch>): Promise<TravelSearch> => {
+  const cache = new Map<string, { at: number; value: Promise<TravelSearch> }>();
+  /**
+   * A search kept for three minutes from its start, and shared while it runs: the composer's search_* call joins the
+   * one the early start began. One that fails is not kept. ixigo_web keeps its own (by recipe and slots, ten minutes).
+   */
+  const kept = (key: string, search: () => Promise<TravelSearch>): Promise<TravelSearch> => {
     const nowMs = d.now().getTime();
-    let hit = cache.get(key);
-    if (!hit || nowMs - hit.at > ttl) {
-      hit = { at: nowMs, value: await search() };
-      cache.delete(key);
-      cache.set(key, hit);
-      while (cache.size > CACHE_MAX) {
-        const oldest = cache.keys().next().value;
-        if (oldest === undefined) break;
-        cache.delete(oldest);
-      }
+    const hit = cache.get(key);
+    if (hit && nowMs - hit.at <= ttl) return hit.value;
+    const value = search();
+    cache.delete(key);
+    cache.set(key, { at: nowMs, value });
+    value.catch(() => {
+      if (cache.get(key)?.value === value) cache.delete(key);
+    });
+    while (cache.size > CACHE_MAX) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
     }
-    return hit.value;
+    return value;
   };
   const pick = (): { name: 'fake' | 'ixigo' | 'ixigo_web'; b: TravelBackend } => {
     const mode = d.switches.get('TRAVEL_MODE');

@@ -1,7 +1,7 @@
 /**
  * Lane C's travel at boot: the fake ixigo, ixigo's MCP server when configured, and ixigo.com through the recipes, behind
  * one layer (brain.travel); the composer's travel tools, the options taps, the tap wake line, Go's image route, the
- * early start of an ixigo.com search on intake and the right-now block that hands its answer to the turn.
+ * early start of a search on intake (every TRAVEL_MODE) and the right-now block that hands its answer to the turn.
  */
 import type { RegisterLane } from '../app.js';
 import { tripToday } from './dates.js';

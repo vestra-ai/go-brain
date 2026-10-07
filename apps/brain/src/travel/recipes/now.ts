@@ -1,10 +1,11 @@
 /**
- * One model call per search ask (design section 4d). When a turn woke for a message whose search started early, the
- * prompt's right-now part carries that search's answer: the results_id, the summary and the results, exactly as the
- * search tool would give them. So the model's first and only call is show_options with its line. The block waits for the
- * search as long as it may hold up the turn (TravelBackend.waitMs: up to 12 s from its start through the browser fetch,
- * none for the agent job); one still running is named, and the search tool hands it over so it wakes Go when it finishes.
- * The live card already said "On it." in the room, so the block tells the model not to say it again.
+ * One model call per search ask (design section 4d), in every TRAVEL_MODE. When a turn woke for a message whose search
+ * started early, the prompt's right-now part carries that search's answer: the results_id, the summary and the results,
+ * exactly as the search tool would give them. So the model's first and only call is show_options with its line. The
+ * block waits for the search as long as it may hold up the turn (TravelBackend.waitMs: up to 12 s from its start through
+ * the browser fetch, none for the agent job, 12 s for a backend that does not say); one still running is named, and the
+ * search tool joins it. Under ixigo_web the live card already said "On it." in the room, so the block tells the model
+ * not to say it again, and the search tool hands the running search over so it wakes Go when it finishes.
  */
 import type { NowProvider } from '../../composer/context.js';
 import { dataBlock, defuse, oneLine } from '../../composer/fence.js';
@@ -30,7 +31,7 @@ export interface EarlySearchNowDeps {
 const nap = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms).unref());
 
 /** A search's answer for the prompt: what to do with it outside the fence, what came back inside it. */
-function answerBlock(seq: number | undefined, a: SearchAnswer): string {
+function answerBlock(seq: number | undefined, a: SearchAnswer, live: boolean): string {
   const which = seq !== undefined ? `#${seq}` : 'the message you woke for';
   const data = dataBlock('search results', [defuse(oneLine(a.summary)), ...(a.results ?? []).map((r) => defuse(JSON.stringify(r)))]);
   if (!a.results_id || a.count === 0) {
@@ -39,8 +40,9 @@ function answerBlock(seq: number | undefined, a: SearchAnswer): string {
   return (
     `Already searched for ${which}, checked ${a.checked}: results_id ${a.results_id}, ${a.count} options.\n` +
     'Show them now with show_options (this results_id, the best up to 3, a short title) and your one short line, in this reply: no need to search again. ' +
-    'The live card already told the room you are on it: don\'t say so again. ' +
+    (live ? 'The live card already told the room you are on it: don\'t say so again. ' : '') +
     'Only if people gave a condition the summary does not name (a time, a price cap, non-stop), call the search tool with it first: it answers at once from this same search. ' +
+    'If they meant another day or place than the summary\'s (the trip\'s Friday, not this week\'s), search for theirs instead. ' +
     "Quote prices, times and areas only as given here.\n" +
     data
   );
@@ -82,13 +84,16 @@ export function earlySearchNow(d: EarlySearchNowDeps): NowProvider {
         const settled = await Promise.race([early.search.then(() => true, () => true), wait(left).then(() => false)]);
         const answer = settled ? await answerFor(tripId, p.messageId, early) : 'running';
         if (answer === 'running') {
+          const scope = `The search for #${p.seq ?? '?'} (${searchScope(early.kind, early.query)}) started early and is still running`;
           blocks.push(
-            `The search for #${p.seq ?? '?'} (${searchScope(early.kind, early.query)}) started early and is still running, and the live card in the room shows it. ` +
-              'Call the search tool for it now with what was asked: it joins that search, answers at once, and you wake with its options when it finishes. ' +
-              'Post nothing else about it.',
+            early.live
+              ? `${scope}, and the live card in the room shows it. ` +
+                  'Call the search tool for it now with what was asked: it joins that search, answers at once, and you wake with its options when it finishes. ' +
+                  'Post nothing else about it.'
+              : `${scope}. Call the search tool for it now with what was asked: it joins that search and answers when it finishes.`,
           );
         } else if (answer) {
-          blocks.push(answerBlock(p.seq, answer));
+          blocks.push(answerBlock(p.seq, answer, early.live));
         }
         // A search that failed says nothing here: the composer searches again, and the tool says what went wrong.
       }
