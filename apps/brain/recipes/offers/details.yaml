@@ -13,6 +13,8 @@ changes_state: false
 let:
   slug: "$replace($trim($replace(offer, /^.*\\/offers\\//, '')), /[^A-Za-z0-9_-]+/, '')"
 page: /offers/{$slug}
+# The fast speed takes the same page's document from the trip's warm tab.
+fast: { url: "/offers/{$slug}", format: next_data }
 capture:
   - { match: "/offers/{$slug}$", max_bytes: 1000000 }
 read:

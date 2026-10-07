@@ -7,6 +7,7 @@ auth: none
 changes_state: false
 # /plan asks for its popular places as it opens.
 page: /plan
+fast: { url: /itinerary-planner/api/itinerary/getTopLocations?country=IN }
 capture:
   - /itinerary-planner/api/itinerary/getTopLocations?country=IN
 read:

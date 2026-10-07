@@ -16,6 +16,7 @@ changes_state: false
 # page makes it.
 page: >-
   /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={rooms}&childCount=0
+fast: { url: /upahaar-inventory/api/deals?productType=HOTELS&source=SRP&isProductOnly=true&journeyType=DOMESTIC, headers: { ixisrc: ixiweb, clientid: ixiweb } }
 capture:
   - /upahaar-inventory/api/deals?productType=HOTELS
 read:

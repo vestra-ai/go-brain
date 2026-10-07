@@ -26,6 +26,8 @@ let:
     ($t := $lowercase($trim(topic)); $t in ['account-faq', 'money-faq', 'pre-booking', 'money-max-faq', 'ixigo-assured',
     'au-credit-card', 'payment-faq', 'metro', 'tourpackages'] ? $t : 'about-ixigo')
 page: /support
+# The fast speed asks for the topic's answers straight away: no card to click.
+fast: { url: "/support/helpcenter/api/v1/questions/general?tags={$tag}", headers: { ixisrc: ixiweb, clientid: ixiweb } }
 capture:
   - "/support/helpcenter/api/v1/questions/general?tags={$tag}"
 fetch:

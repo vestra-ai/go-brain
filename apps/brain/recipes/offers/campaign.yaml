@@ -11,6 +11,7 @@ changes_state: false
 let:
   slug: "$replace($trim($replace(campaign, /^.*\\/campaigns\\//, '')), /[^A-Za-z0-9_-]+/, '')"
 page: /offers/campaigns/{$slug}
+fast: { url: "/offers/campaigns/{$slug}", format: next_data }
 capture:
   - { match: "/offers/campaigns/{$slug}$", max_bytes: 1000000 }
 read:

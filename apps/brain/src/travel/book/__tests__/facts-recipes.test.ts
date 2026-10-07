@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { Capture, FetchPlan } from '../../recipes/recipe.js';
+import { matches, type Capture, type FetchPlan } from '../../recipes/recipe.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { readBodyAs } from '../bodies.js';
 import { BOOK_DIR, checkRecipe, loadBook } from '../book.js';
 import { createEngine } from '../engine.js';
+import { readFacts } from '../read.js';
 
 // The facts recipes for a stay's own page, its place's filters and offers, ixigo's trip explorer, its help centre and its
 // offers pages, each read from its own sample: the address each opens, what its fetch keeps, and the facts it answers.
@@ -261,6 +262,16 @@ describe("ixigo's offers pages", () => {
     expect(got.rows).toHaveLength(11);
   });
 
+  it("offers.list reads its fast call, every domestic offer at once, the same way as the page", async () => {
+    const r = book.get('offers.list')!;
+    expect(r.fast).toEqual({ url: '/upahaar-inventory/api/offers/v2/list?journeyType=DOMESTIC&page=1&limit=50', method: 'GET', headers: { ixisrc: 'ixiweb', clientid: 'ixiweb' }, format: 'json' });
+    // The fast speed reads its call with the recipe's own read, in the fast call's format.
+    const fast = { ...r, read: { ...r.read!, rows: { ...r.read!.rows, format: r.fast!.format } } };
+    const rows = await readFacts(fast, [capture('/x', `${IXIGO}${r.fast!.url}`, sample('offers.list.fast.json'))], {}, `${IXIGO}/offers`);
+    expect(rows[0]).toEqual({ offers_on_ixigo: 49 });
+    expect(rows.slice(2).map((o) => o['code'] ?? o['campaign'])).toEqual(['grandtravelfest', 'grandtravelfest_', 'FLAT80', 'hsbc_flight', 'IDFCEMI3', 'IXAXIS']);
+  });
+
   it("offers.details opens the offer's own page, from its name or its link, and answers its terms one line an item", async () => {
     const got = await facts('offers.details', { offer: 'https://www.ixigo.com/offers/hdfc-campaign_hotels' }, [capture('/x', `${IXIGO}/offers/hdfc-campaign_hotels`, sample('offers.details.html'))]);
     expect(got.page).toBe(`${IXIGO}/offers/hdfc-campaign_hotels`);
@@ -277,6 +288,23 @@ describe("ixigo's offers pages", () => {
     const got = await facts('offers.campaign', { campaign: 'grandtravelfest' }, [capture('/x', `${IXIGO}/offers/campaigns/grandtravelfest`, sample('offers.campaign.html'))]);
     expect(got.page).toBe(`${IXIGO}/offers/campaigns/grandtravelfest`);
     expect(got.rows.map((r) => `${r['code']} ${r['bank']} ${r['until']}`)).toEqual(['AUSFD AU Bank 10 Oct 2026', 'RBLD RBL Bank 10 Oct 2026', 'AUSFN AU Bank 10 Oct 2026', 'RBLN RBL Bank 10 Oct 2026']);
+  });
+});
+
+describe('the fast speed', () => {
+  it("asks for the page's own call with ixigo's two client headers only, and each recipe's read takes that call", () => {
+    const fast = (id: string) => book.get(id)!.fast;
+    const CLIENT = { ixisrc: 'ixiweb', clientid: 'ixiweb' };
+    for (const id of ['help.services', 'help.downtime', 'help.faq', 'hotels.offers', 'offers.list']) expect(fast(id)?.headers, id).toEqual(CLIENT);
+    for (const id of ['help.services', 'help.downtime', 'hotels.offers', 'offers.list', 'plan.top_locations']) {
+      expect(matches(book.get(id)!.read!.rows.from, `${IXIGO}${fast(id)!.url}`), id).toBe(true);
+    }
+    // The ones by name ask for the same address their read takes.
+    expect(fast('help.faq')!.url).toBe(book.get('help.faq')!.read!.rows.from);
+    expect(fast('offers.details')).toMatchObject({ url: '/offers/{$slug}', format: 'next_data' });
+    expect(fast('offers.campaign')).toMatchObject({ url: '/offers/campaigns/{$slug}', format: 'next_data' });
+    // A stay's own page and the explorer have no fast call yet: their calls need a body, or a theme's click.
+    for (const id of ['hotels.details', 'hotels.rooms', 'hotels.reviews', 'hotels.similar', 'hotels.search_filters', 'plan.explore']) expect(fast(id), id).toBeUndefined();
   });
 });
 

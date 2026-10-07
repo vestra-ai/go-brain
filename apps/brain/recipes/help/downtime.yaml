@@ -7,6 +7,7 @@ auth: none
 changes_state: false
 # /support asks for ongoing outages as it opens: an empty list when nothing is down.
 page: /support
+fast: { url: /support/helpcenter/api/v1/downtime?ongoing=true, headers: { ixisrc: ixiweb, clientid: ixiweb } }
 capture:
   - /support/helpcenter/api/v1/downtime?ongoing=true
 read:
