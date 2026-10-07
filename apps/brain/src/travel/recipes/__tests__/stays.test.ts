@@ -44,8 +44,8 @@ describe('the stays recipe', () => {
 
   it("searches North Goa as all its areas ixigo has codes for, and drops a stay ixigo gives from South Goa", () => {
     const north = stays.slotsFrom({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
-    expect(north).toMatchObject({ half: 'north', filters: ['PA_C_1047', 'PA_C_1067', 'PA_C_1091', 'PA_C_1096', 'PA_C_1169', 'PA_C_1459', 'PA_C_77993', 'PA_C_78528'] });
-    expect(stays.url(north)).toContain('&filters=PA_C_1047%2CPA_C_1067%2CPA_C_1091%2CPA_C_1096%2CPA_C_1169%2CPA_C_1459%2CPA_C_77993%2CPA_C_78528');
+    expect(north).toMatchObject({ half: 'north', filters: ['PA_C_1047', 'PA_C_1067', 'PA_C_1091', 'PA_C_1096', 'PA_C_1169', 'PA_C_1216', 'PA_C_1459', 'PA_C_77993', 'PA_C_78528', 'PA_C_78550', 'PA_C_78647', 'PA_L_156530', 'PA_L_159632', 'PA_L_159635', 'PA_L_165727'] });
+    expect(stays.url(north)).toContain(`&filters=${['PA_C_1047', 'PA_C_1067', 'PA_C_1091', 'PA_C_1096', 'PA_C_1169', 'PA_C_1216', 'PA_C_1459', 'PA_C_77993', 'PA_C_78528', 'PA_C_78550', 'PA_C_78647', 'PA_L_156530', 'PA_L_159632', 'PA_L_159635', 'PA_L_165727'].join('%2C')}`);
     // Soul Vacation is in Fatona, Colva: South Goa.
     const titles = stays.extract(pages(), north).map((o) => o.title);
     expect(titles).toHaveLength(6);
@@ -53,7 +53,7 @@ describe('the stays recipe', () => {
     const rows = readStaysPage(fixture('stays-goa.txt'), JSON.parse(fixture('stays-goa-links.json')) as string[]);
     expect(stays.fromAgent(rows, north).map((o) => o.title)).toEqual(titles);
     const south = stays.slotsFrom({ area: 'South Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
-    expect(south).toMatchObject({ half: 'south', filters: ['PA_C_79088', 'PA_L_154858'] });
+    expect(south).toMatchObject({ half: 'south', filters: ['PA_C_79088', 'PA_L_154689', 'PA_L_154858'] });
     expect(stays.extract(pages(), south).map((o) => o.title)).toEqual(['Soul Vacation Resort and Spa, Colva']);
   });
 

@@ -104,10 +104,20 @@ const GOA: StayLocation = { locationId: 32, locationName: 'Goa', locationType: '
 /** Anjuna is a location of its own on ixigo, which takes in the stays around it (Morjim, Vagator, Assagao). */
 const ANJUNA: StayLocation = { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 };
 
-/** ixigo's area filters inside a Goa search (p1-a's hotels map): the search keeps to stays in those areas. */
-const GOA_AREA_CODES: Record<string, string> = {
-  candolim: 'PA_C_1459', calangute: 'PA_C_1047', vagator: 'PA_C_78528', morjim: 'PA_C_1067', palolem: 'PA_L_154858', arpora: 'PA_C_77993',
-  mandrem: 'PA_C_1169', agonda: 'PA_C_79088', arambol: 'PA_C_1096', panaji: 'PA_C_1091', panjim: 'PA_C_1091',
+/**
+ * ixigo's area filters inside a Goa search: all twenty from its search metadata (6 to 9 Nov), by the place each sits in.
+ * The search keeps to stays in those areas. Baga has no code of its own and sits with Calangute; Anjuna's stays sit in
+ * its wards (Monteiro and D'Mello Vaddo) inside a Goa search, and Anjuna asked for alone is a location of its own.
+ */
+const GOA_AREA_CODES: Record<string, string[]> = {
+  candolim: ['PA_C_1459', 'PA_L_159632'], // Prabhu wada is in Candolim
+  calangute: ['PA_C_1047', 'PA_L_159635'], // Khobra Waddo is in Calangute
+  baga: ['PA_C_1047', 'PA_L_159635'],
+  vagator: ['PA_C_78528'], morjim: ['PA_C_1067'], arpora: ['PA_C_77993'], mandrem: ['PA_C_1169'], arambol: ['PA_C_1096'],
+  assagao: ['PA_C_78550'], siolim: ['PA_C_1216'], panaji: ['PA_C_1091'], panjim: ['PA_C_1091'],
+  anjuna: ['PA_L_165727', 'PA_L_156530'], // Monteiro Vaddo and D'Mello Vaddo
+  'north goa': ['PA_C_78647'], // ixigo's own "North Goa" area
+  palolem: ['PA_L_154858'], agonda: ['PA_C_79088'], colva: ['PA_L_154689'], // Fatona is in Colva
 };
 
 /** The places in each half of Goa, as ixigo names a stay's area or town: what "North Goa" and "South Goa" are checked against. */
@@ -116,11 +126,12 @@ const GOA_HALVES: Record<GoaHalf, string[]> = {
     'calangute', 'candolim', 'baga', 'anjuna', 'vagator', 'chapora', 'morjim', 'ashwem', 'mandrem', 'arambol', 'querim', 'keri', 'assagao', 'siolim',
     'arpora', 'nagoa', 'saligao', 'sangolda', 'parra', 'nerul', 'sinquerim', 'reis magos', 'pilerne', 'verla', 'porvorim', 'mapusa', 'aldona',
     'thivim', 'tivim', 'pernem', 'mopa', 'bardez', 'panaji', 'panjim', 'miramar', 'caranzalem', 'dona paula', 'bambolim', 'old goa',
+    'prabhu wada', 'khobra waddo', 'khobra vaddo', 'monteiro vaddo', 'montero waddo', 'dmello vaddo', 'north goa',
   ],
   south: [
     'colva', 'benaulim', 'sernabatim', 'varca', 'cavelossim', 'mobor', 'betul', 'majorda', 'utorda', 'betalbatim', 'arossim', 'cansaulim', 'velsao',
     'bogmalo', 'vasco', 'dabolim', 'chicalim', 'zuarinagar', 'verna', 'margao', 'madgaon', 'fatorda', 'navelim', 'nuvem', 'loutolim', 'salcete',
-    'canacona', 'palolem', 'patnem', 'agonda', 'galgibaga', 'cola', 'quepem', 'carmona',
+    'canacona', 'palolem', 'patnem', 'agonda', 'galgibaga', 'cola', 'quepem', 'carmona', 'fatona', 'south goa',
   ],
 };
 
@@ -152,8 +163,7 @@ export function stayPlaceOf(text: string): StayPlace {
     return { location: GOA, areas, half };
   }
   if (name === 'anjuna') return { location: ANJUNA, areas: [], half: 'north' };
-  const code = GOA_AREA_CODES[name];
-  return { location: GOA, areas: code ? [code] : [], half: goaHalfOf(name) };
+  return { location: GOA, areas: [...(GOA_AREA_CODES[name] ?? [])].sort(), half: goaHalfOf(name) };
 }
 
 /** An airport's city from the table, for a page that shows only codes. */
