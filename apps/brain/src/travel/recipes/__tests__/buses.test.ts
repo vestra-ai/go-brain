@@ -15,6 +15,8 @@ describe('the buses recipe', () => {
     expect(slots).toEqual({ from: { name: 'Mumbai', id: 4 }, to: { name: 'Goa', id: 102 }, date: '2026-11-06' });
     expect(buses.url(slots)).toBe(RESULTS);
     expect(buses.capture).toEqual([{ match: '/buslist/v3/services$', required: true }]);
+    // Bash's browser fetch draws its window now, so the list loads there: the TRAVEL_RUNNER switch picks the runner.
+    expect(buses.fetchable).toBe(true);
     expect(() => buses.slotsFrom({ from: 'Pune', to: 'Goa', date: '2026-11-06' }, { people: 4 })).toThrow(/Go can search ixigo buses between Mumbai, Goa/);
   });
 
