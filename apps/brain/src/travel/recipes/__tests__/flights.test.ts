@@ -119,9 +119,9 @@ describe('the flights recipe', () => {
 
   it("sets people's conditions in ixigo's own filter params, for the link", () => {
     const url = flights.url(slots);
-    expect(withFlightFilters(url, { from: 'Delhi', to: 'Goa', date: '2026-11-06' })).toBe(url);
-    expect(withFlightFilters(url, { departAfter: '18:00', mustHave: ['non_stop'], maxPriceMinor: 900_050 })).toBe(`${url}&stops=0&takeOff=NIGHT&price=0,9000`);
-    expect(withFlightFilters(url, { departAfter: '10:00', departBefore: '15:00', arriveBefore: '12:00' })).toBe(`${url}&takeOff=MORNING,AFTERNOON&landing=EARLY_MORNING,MORNING`);
+    expect(withFlightFilters(url, { from: 'Delhi', to: 'Goa', date: '2026-11-06' })).toBe(`${url}&sort_type=cheapest`);
+    expect(withFlightFilters(url, { departAfter: '18:00', mustHave: ['non_stop'], maxPriceMinor: 900_050 })).toBe(`${url}&stops=0&takeOff=NIGHT&price=0,9000&sort_type=cheapest`);
+    expect(withFlightFilters(url, { departAfter: '10:00', departBefore: '15:00', arriveBefore: '12:00' })).toBe(`${url}&takeOff=MORNING,AFTERNOON&landing=EARLY_MORNING,MORNING&sort_type=cheapest`);
   });
 
   it('sends a page script that is one expression with the reader inside it', () => {

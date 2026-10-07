@@ -38,7 +38,7 @@ describe('the places tables', () => {
     expect(stayPlaceOf('Anjuna')).toEqual({ location: { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 }, areas: [], half: 'north' });
   });
 
-  it('refuse a place they do not have, with the places that work, and never guess', () => {
+  it('refuse a place nobody resolved on ixigo yet, and never guess', () => {
     for (const ask of [() => airportOf('Genoa'), () => stationOf('Shimla'), () => busCityOf('Pune'), () => stayPlaceOf('Manali')]) {
       try {
         ask();
