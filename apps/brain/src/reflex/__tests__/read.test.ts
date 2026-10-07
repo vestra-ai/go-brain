@@ -98,6 +98,23 @@ describe('questions 5, 6, 7 and 9', () => {
   });
 });
 
+describe('question 10: which ixigo search', () => {
+  const recipe = (probabilities: Record<string, number>) => read({ q10_recipe: ch(probabilities) }).recipe;
+  it('picks a search only with one clear winner', () => {
+    expect(recipe({ flights: 0.9, stays: 0.04, trains: 0.03, buses: 0.02, none: 0.01 })).toEqual({ value: 'flights', sure: true });
+    expect(recipe({ flights: 0.02, stays: 0.01, trains: 0.03, buses: 0.62, none: 0.32 }).sure).toBe(false);
+    expect(recipe({ flights: 0.1, stays: 0.55, trains: 0.0, buses: 0.0, none: 0.35 }).sure).toBe(false);
+  });
+  it('is sure there is no search when none wins', () => {
+    expect(recipe({ flights: 0.05, stays: 0.02, trains: 0.01, buses: 0.0, none: 0.92 })).toEqual({ value: null, sure: true });
+  });
+  it('reads a missing or malformed answer as unsure', () => {
+    expect(read(null).recipe).toEqual({ value: null, sure: false });
+    expect(read({ q10_recipe: n(0.9) }).recipe).toEqual({ value: null, sure: false });
+    expect(recipe({ flights: 1.4, none: 0.1 }).sure).toBe(false);
+  });
+});
+
 describe('question 8 is raise-only', () => {
   // mulberry32: a small seeded generator so the run is the same every time.
   function rng(seed: number): () => number {
@@ -152,9 +169,16 @@ describe('applyLive', () => {
     expect(acted.riskWhy).toEqual(['secret']);
     expect(acted.taskId).toEqual({ value: null, sure: true });
   });
+  it('keeps question 10 unsure in shadow, and acts on it live', () => {
+    const { would } = readAnswers({ q10_recipe: ch({ flights: 0.02, stays: 0.01, trains: 0.94, buses: 0.02, none: 0.01 }) }, plain, []);
+    expect(would.recipe).toEqual({ value: 'trains', sure: true });
+    expect(applyLive(would, new Set<QuestionName>(['for_go']), plain).recipe).toEqual({ value: null, sure: false });
+    expect(applyLive(would, new Set<QuestionName>(['recipe']), plain).recipe).toEqual({ value: 'trains', sure: true });
+  });
   it('codeOnly has no Jev opinion at all', () => {
     const out = codeOnly(plain);
     expect(out.taskId).toEqual({ value: null, sure: true });
     expect(out.forGo.sure || out.complete.sure || out.size.sure || out.fact.sure || out.reaction.sure || out.risky.sure || out.opening.sure).toBe(false);
+    expect(out.recipe).toEqual({ value: null, sure: false });
   });
 });

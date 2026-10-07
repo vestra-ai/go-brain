@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { goaTrip, msg, packOf } from '../goa.fixture.js';
-import { buildQuestions, buildState, QUESTION_NAMES, QUESTION_VERSIONS, speakerLabel } from '../questions.js';
+import { buildQuestions, buildState, QUESTION_NAMES, QUESTION_VERSIONS, RECIPE_CHOICES, speakerLabel } from '../questions.js';
 
 describe('buildState', () => {
   it('puts the message last, after at most three earlier lines, and skips withheld ones', () => {
@@ -81,6 +81,13 @@ describe('buildQuestions', () => {
     expect(Object.keys((questions.q4_task as { criteria: Record<string, string> }).criteria)).toEqual(['t1', 't2', 'none']);
     expect(questions).toHaveProperty('q4_is_t1');
     expect(questions).toHaveProperty('q4_is_t2');
+  });
+
+  it('asks question 10 as one Choice over the ixigo recipes, plus none', () => {
+    const m = msg(1, 'p_meher', 'Go Mumbai se Goa bus kal ki');
+    const q = buildQuestions({ message: m, pack: packOf([m]), runningTasks: [] }).questions.q10_recipe as { type: string; criteria: Record<string, string> };
+    expect(q.type).toBe('choice');
+    expect(Object.keys(q.criteria)).toEqual([...RECIPE_CHOICES, 'none']);
   });
 
   it('writes Hinglish phrasings into the criteria', () => {

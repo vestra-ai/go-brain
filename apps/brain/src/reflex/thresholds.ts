@@ -29,5 +29,10 @@ export const BARS = {
   risky: { raiseAt: 0.5 },
   /** Q9. Nominates a wake only; the composer decides. */
   opening: { yesMin: 0.9, noMax: 0.1 },
+  /**
+   * Q10, a Choice. Bash's Mac recipe pick (recipe-reader.ts RECIPE_BARS.recipe, RECIPE_RIVAL_BAR): the winner at least 0.6
+   * and every other option below 0.3. A wrong pick costs one ixigo page load; none stops a search the parser would start.
+   */
+  recipe: { pickMin: 0.6, rivalMax: 0.3 },
 };
 export type Bars = typeof BARS;

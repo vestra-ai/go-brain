@@ -22,6 +22,7 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const rows = loadRows();
 const answers: Record<string, Record<string, JevAnswer>> = {};
+const times: number[] = [];
 for (const row of rows) {
   const input = rowInput(row);
   const req = { state: buildState(input), questions: buildQuestions(input).questions, deadlineMs: 5_000 };
@@ -35,6 +36,7 @@ for (const row of rows) {
     process.exit(1);
   }
   answers[row.id] = res.answers;
+  times.push(res.totalMs);
   await pause(150);
 }
 
@@ -43,5 +45,7 @@ const out = fileURLToPath(RECORDED_PATH);
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, `${JSON.stringify(recorded, null, 1)}\n`);
 console.log(`wrote ${out}`);
+const at = (q: number) => Math.round([...times].sort((x, y) => x - y)[Math.min(times.length - 1, Math.floor(q * times.length))]!);
+console.log(`jev call, all questions: p50 ${at(0.5)} ms, p90 ${at(0.9)} ms, max ${at(1)} ms over ${times.length} calls`);
 console.log(formatScores(scoreSet(rows, recorded)).join('\n'));
 console.log(sweep(rows, recorded).join('\n'));

@@ -4,7 +4,7 @@
  * read "unsure". Question 8 can only raise caution.
  */
 import type { JevAnswer } from './jev.js';
-import { REACTIONS, type QuestionName } from './questions.js';
+import { REACTIONS, RECIPE_CHOICES, type QuestionName, type RecipeChoice } from './questions.js';
 import type { ReflexRead, Sure } from './reflex.js';
 import type { SecretKind } from './secrets.js';
 import { BARS, type Bars } from './thresholds.js';
@@ -112,6 +112,18 @@ function readReaction(a: Answers, b: Bars): Sure<string | null> {
   return top.o === 'none' ? sure(null) : sure(REACTIONS[top.o]);
 }
 
+/** One clear winner: at least the pick bar, and no other option up to the rival bar. */
+function readRecipe(a: Answers, b: Bars): Sure<RecipeChoice | null> {
+  const ranked = [...RECIPE_CHOICES, 'none' as const]
+    .map((o) => ({ o, m: massOf(a, 'q10_recipe', o) }))
+    .filter((x) => Number.isFinite(x.m))
+    .sort((x, y) => y.m - x.m);
+  const top = ranked[0];
+  if (!top || top.m < b.recipe.pickMin) return unsure();
+  if (ranked.slice(1).some((x) => x.m >= b.recipe.rivalMax)) return unsure();
+  return top.o === 'none' ? sure(null) : sure(top.o);
+}
+
 function readRisky(a: Answers, f: CodeFacts, b: Bars): { risky: Sure<boolean>; why: RiskWhy[] } {
   const why = new Set<RiskWhy>();
   if (f.secretKinds.length) why.add('secret');
@@ -153,6 +165,7 @@ export function readAnswers(
     reaction: readReaction(a, bars),
     risky: risk.risky,
     opening: anyAtLeast(opening, bars.opening.yesMin) ? sure(true) : allAtMost(opening, bars.opening.noMax) ? sure(false) : unsure(),
+    recipe: readRecipe(a, bars),
     riskWhy: risk.why,
   };
   return { would, p: flatten(a) };
@@ -170,6 +183,7 @@ export function codeOnly(facts: CodeFacts): ReflexRead {
     reaction: unsure(),
     risky: facts.secretKinds.length ? sure(true) : unsure(),
     opening: unsure(),
+    recipe: unsure(),
     riskWhy: facts.secretKinds.length ? ['secret'] : [],
   };
 }
@@ -187,6 +201,7 @@ export function applyLive(would: ReflexRead, live: ReadonlySet<QuestionName>, fa
     reaction: live.has('reaction') ? would.reaction : base.reaction,
     risky: live.has('risky') ? would.risky : base.risky,
     opening: live.has('opening') ? would.opening : base.opening,
+    recipe: (live.has('recipe') ? would.recipe : base.recipe) ?? unsure(),
     riskWhy: live.has('risky') ? (would.riskWhy ?? []) : (base.riskWhy ?? []),
   };
 }

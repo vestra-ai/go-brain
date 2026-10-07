@@ -1,5 +1,5 @@
 /**
- * Jev on every person's message: one call with all nine questions, about 150 ms, at most the deadline.
+ * Jev on every person's message: one call with every question, about 150 ms, at most the deadline.
  * Live questions act; shadow questions only log what they would have done. Any fault reads "unsure",
  * so the worst case is the composer deciding as if Jev were not there.
  */
