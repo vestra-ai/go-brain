@@ -1,8 +1,12 @@
 import * as C from '@go/contract';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { askToPay, idsFrom, idsFromTurn, withTurn } from '../ask.js';
+import type { CardTapResult } from '../../door/methods.js';
+import type { ServerLink } from '../../door/server-link.js';
+import { askOutsideTurn, askToPay, idsFrom, idsFromTurn, withTurn } from '../ask.js';
+import { Later } from '../deps.js';
 import { getPayment } from '../store.js';
-import { goaTrip, moneyKit, turnCtx, VILLA, type MoneyKit } from './kit.js';
+import { approveTap } from '../taps.js';
+import { FakeCallError, goaTrip, moneyKit, turnCtx, VILLA, type MoneyKit } from './kit.js';
 
 let k: MoneyKit;
 const payCards = () => [...k.server.cards.values()].filter((c) => c.kind === 'pay');
@@ -48,6 +52,33 @@ describe('askToPay, when everything is in place', () => {
     expect(spendAsks()[0]?.params.request_id).toBe('go_spend_turn_test_1');
     expect(ctx.cards).toEqual([expect.objectContaining({ kind: 'pay', card_id: 'c_pay_turn_test_1' })]);
     expect(payCards()).toEqual([]);
+  });
+
+  it('is ready the moment the card shows: the payer taps Approve before the Server has answered Go, and the pay page opens', async () => {
+    // The Server shows the card to the room, then answers Go. A quick payer, or a socket that drops before the answer
+    // and makes Go send again, puts the tap in between.
+    const later = new Later();
+    const taps: CardTapResult[] = [];
+    const server = k.server;
+    const link: ServerLink = {
+      isOpen: () => server.isOpen(),
+      notify: () => undefined,
+      request: async (method, params) => {
+        const answer = await server.request(method, params);
+        const card = (params as { card?: C.Card }).card;
+        if (method === 'post_message' && card?.kind === 'pay') {
+          const t = { d: k.deps, ask: (tripId: string, o: typeof VILLA, trigger: string) => askOutsideTurn(k.deps, tripId, o, trigger), later, reconcile: async () => undefined };
+          taps.push(await approveTap(t, { tap_id: 'tap_quick', trip_id: 't_goa', card_id: card.card_id, action_id: 'approve', person_id: 'p_rahul' }, card));
+        }
+        return answer;
+      },
+    };
+    k.deps.link = link;
+    const r = await k.ask();
+    if (!('cardId' in r)) throw new Error(r.refused);
+    expect(taps).toEqual([{ result: 'open', url: 'https://vault.test/p/pay_1', expires_at: '2026-10-05T09:05:00.000Z' }]);
+    await later.settled();
+    expect((await getPayment(k.pool, r.paymentId))?.state).toBe('waiting');
   });
 
   it('does nothing twice when the same ask runs again, and carries on from where it stopped', async () => {
@@ -210,6 +241,15 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     const row = (await k.pool.query('select state, refused_reason, release_reason, approval_id from payments')).rows[0];
     expect(row).toMatchObject({ state: 'refused', refused_reason: 'vault_over_amount', release_reason: 'other' });
     expect(row.approval_id).toMatch(/^ap_/);
+  });
+
+  it('when the Server cannot post the pay card: the payment is closed, so it cannot be paid from a card nobody saw', async () => {
+    k.server.failNext.set('post_message', new FakeCallError(503, 'the Server is down'));
+    expect(await k.ask()).toMatchObject({ code: 'server_down' });
+    expect(payCards()).toEqual([]);
+    expect((await k.pool.query('select state, refused_reason, release_reason from payments')).rows).toEqual([
+      { state: 'refused', refused_reason: 'server_down', release_reason: 'other' },
+    ]);
   });
 
   it('once the vote is already paid for', async () => {
