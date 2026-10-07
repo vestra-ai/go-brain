@@ -1,7 +1,7 @@
 /**
  * Lane C's travel at boot: the fake ixigo, ixigo's MCP server when configured, and ixigo.com through the recipes, behind
- * one layer (brain.travel); the composer's travel tools, the options taps, the tap wake line, Go's image route and the
- * early start of an ixigo.com search on intake.
+ * one layer (brain.travel); the composer's travel tools, the options taps, the tap wake line, Go's image route, the
+ * early start of an ixigo.com search on intake and the right-now block that hands its answer to the turn.
  */
 import type { RegisterLane } from '../app.js';
 import { tripToday } from './dates.js';
@@ -12,7 +12,8 @@ import { createTravelLayer } from './layer.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
 import { createIxigoWebBackend } from './recipes/backend.js';
-import { earlyStart } from './recipes/early.js';
+import { createEarlyStart } from './recipes/early.js';
+import { earlySearchNow } from './recipes/now.js';
 import { runnerFor } from './recipes/runners.js';
 import { createResultsStore } from './results.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
@@ -51,7 +52,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   for (const t of travelTools({ travel, results, images, now: brain.now })) brain.tools.register(t);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
-  brain.hooks.onRead(earlyStart({ travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), log: brain.log }));
+  const early = createEarlyStart({ travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log });
+  brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
+  brain.context.addNow(earlySearchNow({ early, results, now: brain.now }));
   // Null for taps on other cards (pay, call): the next lane's renderer, or P1's generic line, reads those.
   brain.context.addWake('tap', renderOptionsTap);
   brain.travel = travel;
