@@ -10,6 +10,7 @@ import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, subtitleFor } 
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
+import { guestsIn } from './recipes/ask.js';
 import { TRAVEL_WAIT_MS } from './recipes/backend.js';
 import { flyingFor, withFlightFilters } from './recipes/flights.js';
 import { TravelError } from './mcp-travel.js';
@@ -43,7 +44,7 @@ export const FlightsArgs = z.object({
   arrive_before: Clock.optional(),
   max_price_per_person: Rupees.optional().describe('In rupees'),
   non_stop: z.boolean().optional(),
-  travellers: z.int().min(1).max(9).optional(),
+  travellers: z.int().min(1).max(9).optional().describe('Only when the ask says how many fly ("for 3 of us"). Leave it out otherwise: Go counts who lives near the origin.'),
 });
 export const JourneyArgs = z.object({
   from: Where,
@@ -76,6 +77,23 @@ export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
     ...(a.non_stop ? { mustHave: ['non_stop' as const] } : {}),
     ...(a.travellers ? { guests: a.travellers } : {}),
   };
+}
+
+/**
+ * A flight's travellers count only when the ask itself says how many fly ("for 3 of us from Delhi"), in a line of this
+ * turn's. A count the model took from the whole trip ("the trip has 5 people") is dropped, so the search counts the
+ * members who live by the origin instead: Arjun, in Bangalore, is not on a flight from Delhi (re-drill 5).
+ */
+function askedTravellers(q: TravelQuery, ctx: TurnCtx): TravelQuery {
+  if (q.guests === undefined) return q;
+  const woke = new Set(ctx.wake.flatMap((w) => (w.kind === 'message' ? [(w.payload as { messageId?: string } | null)?.messageId] : [])));
+  const first = Math.min(...ctx.pack.messages.filter((m) => woke.has(m.message_id)).map((m) => m.seq));
+  // The asking lines, and any later line of the turn: "@Go flights Delhi to Goa Friday", then "for 3 of us".
+  const said = ctx.pack.messages.some((m) => m.seq >= first && m.author.kind === 'person' && guestsIn((m.text ?? '').toLowerCase()) === q.guests);
+  if (said) return q;
+  const rest = { ...q };
+  delete rest.guests;
+  return rest;
 }
 
 export function journeyQuery(a: z.infer<typeof JourneyArgs>): TravelQuery {
@@ -370,7 +388,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     name: 'search_flights',
     description: `Searches flights on one date. ${SEARCH_RULE} For example depart_after "18:00" when someone cannot leave before 6 pm.`,
     input: FlightsArgs,
-    run: (a, ctx) => runSearch('flights', flightsQuery(a), ctx, d),
+    run: (a, ctx) => runSearch('flights', askedTravellers(flightsQuery(a), ctx), ctx, d),
     summarizeRound: searchRoundSummary,
     timeoutMs: SEARCH_TOOL_MS,
   };

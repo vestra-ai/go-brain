@@ -196,7 +196,7 @@ const STAY_NEEDS: Array<[NonNullable<TravelQuery['mustHave']>[number], RegExp]> 
 ];
 
 /** People said how many: "4 people", "5 log", "6 of us". */
-function guestsIn(lower: string): number | undefined {
+export function guestsIn(lower: string): number | undefined {
   const m = /\b(\d{1,2})\s*(people|persons|adults|log|logon|of us|travellers|travelers|guests|pax|members)\b/.exec(lower);
   const n = m ? Number(m[1]) : NaN;
   return n >= 1 && n <= 30 ? n : undefined;
