@@ -322,11 +322,14 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
     },
     'waiting',
   );
+  // Waiting before the card can show: the Server shows it to the room before its answer reaches Go, and a tap in between
+  // (a quick payer, or a send repeated after a dropped socket) must find it ready.
+  await transition(d.pool, row.payment_id, ['asking'], 'waiting', { card_state: 'waiting' }, d.now());
   try {
     await deliver(card);
   } catch (e) {
-    return fail('server_down', 'server_down', e);
+    await transition(d.pool, row.payment_id, ['waiting'], 'refused', { refused_reason: 'server_down', release_reason: 'other' }, d.now());
+    return refuse(d, 'server_down', words, e);
   }
-  await transition(d.pool, row.payment_id, ['asking'], 'waiting', { card_state: 'waiting' }, d.now());
   return { cardId, paymentId: row.payment_id };
 }
