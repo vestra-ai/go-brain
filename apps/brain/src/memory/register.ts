@@ -7,8 +7,9 @@
  *  - after a quiet spell (20 s, at most 60 s in a busy chat) for everything else;
  *  - the fold right after Go posts, and after 60 s of quiet (at most 10 minutes in a busy chat);
  *  - a sweep every 5 minutes that finishes anything a restart dropped.
- * A sure 👍 or 🙌 from the reflex is sent with add_reaction without any model. A sure ✅ on a message Jev is also
- * sure holds a fact (Q7 and Q5) is sent inside the hook, before the notes pass, which stays the fallback.
+ * A sure 👍 or 🙌 from the reflex is sent with add_reaction without any model, 3 s later unless the line is part of a burst to
+ * Go. A sure ✅ on a message Jev is also sure holds a fact (Q7 and Q5) is sent inside the hook, before the notes pass, which
+ * stays the fallback.
  * The side passes run on brain.anthropic (the client buildBrain was given) with SIDE_MODEL. That client
  * does not retry; a failed pass keeps its cursor and the next quiet spell or sweep runs it again.
  */
@@ -16,6 +17,7 @@ import type { Brain, RegisterLane } from '../app.js';
 import type { Message, TripEvent } from '../door/methods.js';
 import { createJev, type JevClient } from '../reflex/jev.js';
 import type { ReflexRead } from '../reflex/reflex.js';
+import { inBurstToGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
 import { catchUpHandler } from './catch-up.js';
 import { createMemory } from './create-memory.js';
@@ -42,6 +44,8 @@ export interface WireDeps {
 
 const JOIN_FIELDS = new Set(['from_city', 'earliest_leave', 'know']);
 const AFTER_POST_MS = 2_000;
+/** A quiet 👍 or 🙌 waits this long: a burst's next line comes within a second or two (the intake waits 2 s for it). */
+const QUIET_HOLD_MS = 3_000;
 const NOTES_LONGEST_WAIT_MS = 60_000;
 const FOLD_LONGEST_WAIT_MS = 10 * 60_000;
 const ACTIVE_FOR_MS = 6 * 60 * 60_000;
@@ -156,9 +160,15 @@ export function wireMemory(brain: Brain, d: WireDeps): {
         brain.log.warn({ tripId, err: String(err) }, 'instant ✅ failed; the notes pass will react'),
       );
     } else if (read.reaction.sure && (read.reaction.value === '👍' || read.reaction.value === '🙌')) {
-      reactOnce(brain.pool, brain.door.link, tripId, msg, read.reaction.value).catch((err: unknown) =>
-        brain.log.warn({ tripId, err: String(err) }, 'quiet reaction failed'),
-      );
+      // It waits for the burst to land: an "ok" that opens an ask to Go ("ok", "@Go one thing", ...) is part of the ask,
+      // and gets Go's answer, not a reaction.
+      const emoji = read.reaction.value;
+      d.timers.set(() => {
+        void brain.packs
+          .get(tripId)
+          .then((now) => (inBurstToGo(msg, now) ? 'skipped' : reactOnce(brain.pool, brain.door.link, tripId, msg, emoji)))
+          .catch((err: unknown) => brain.log.warn({ tripId, err: String(err) }, 'quiet reaction failed'));
+      }, QUIET_HOLD_MS);
     }
     const noteNow =
       sureFact ||

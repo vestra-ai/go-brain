@@ -13,7 +13,7 @@ import * as C from '@go/contract';
 import type { Message } from '../door/methods.js';
 import { messageText } from '../reflex/questions.js';
 import { hasSecret } from '../reflex/secrets.js';
-import { plainlyNamesGo } from '../trips/names-go.js';
+import { partOfAskToGo, plainlyNamesGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
 import { normTopic, type Audience } from './facts.js';
 
@@ -138,6 +138,13 @@ export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> 
     proof.push(m);
   }
   const authors = proof.flatMap((m) => (m.author.kind === 'person' ? [m.author.person_id] : []));
+  // "@Go what's planned for Sunday?" is a question put to Go, and Go answers it: an open line is for what the group still
+  // has to settle among themselves. Lines of a burst that asked Go count the same. An agreement that fell short of a yes
+  // still becomes open below, as before.
+  const asked = proof.filter((m) => m.author.kind === 'person');
+  if (p.kind === 'open' && asked.length > 0 && asked.every((m) => partOfAskToGo(m, pack))) {
+    return no('an open line cannot rest on a question put to Go: Go answers it');
+  }
 
   const named = [...new Set(p.person_ids)];
   if (named.some((id) => !inTrip.has(id))) return no('someone named is not in the trip');

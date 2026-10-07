@@ -45,15 +45,33 @@ export const BURST_MS = 6_000;
  * my birthday on the 7th", "is there a good bakery near Anjuna?" is one ask in three lines.
  */
 export function continuesAskToGo(m: Message, pack: TripPack): boolean {
+  return namedGoNearby(m, pack, 'before');
+}
+
+/**
+ * True when the line is part of an ask to Go: it names Go, or the same person named Go a few seconds before or after it.
+ * "ok", "@Go one thing", "for my birthday on the 7th", "is there a good bakery near Anjuna?" are all one ask, and Go's
+ * answer is what each of them gets.
+ */
+export function partOfAskToGo(m: Message, pack: TripPack): boolean {
+  return plainlyNamesGo(m, pack) || inBurstToGo(m, pack);
+}
+
+/** True when the same person named Go in another line a few seconds before or after this one: a burst to Go. */
+export function inBurstToGo(m: Message, pack: TripPack): boolean {
+  return namedGoNearby(m, pack, 'before') || namedGoNearby(m, pack, 'after');
+}
+
+function namedGoNearby(m: Message, pack: TripPack, side: 'before' | 'after'): boolean {
   if (m.author.kind !== 'person') return false;
   const person = m.author.person_id;
   const sent = Date.parse(m.sent_at);
   return pack.messages.some(
     (x) =>
-      x.seq < m.seq &&
+      (side === 'before' ? x.seq < m.seq : x.seq > m.seq) &&
       x.author.kind === 'person' &&
       x.author.person_id === person &&
-      sent - Date.parse(x.sent_at) <= BURST_MS &&
+      Math.abs(sent - Date.parse(x.sent_at)) <= BURST_MS &&
       plainlyNamesGo(x, pack),
   );
 }

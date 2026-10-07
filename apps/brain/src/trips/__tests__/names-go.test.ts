@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
-import { asksWhatTheyMissed, continuesAskToGo, endsThought, plainlyNamesGo } from '../names-go.js';
+import { asksWhatTheyMissed, continuesAskToGo, endsThought, inBurstToGo, partOfAskToGo, plainlyNamesGo } from '../names-go.js';
 
 const pack = { trip: goaSnapshot(), messages: [msg(2, null, 'Want a vote on the villa?')], seq: 2 };
 
@@ -45,6 +45,24 @@ describe('continuesAskToGo: the rest of an ask to Go, sent in a burst', () => {
     expect(continuesAskToGo(late, packWith(late))).toBe(false);
     const m = msg(6, 'p_meher', 'is there a good bakery near Anjuna?');
     expect(continuesAskToGo(m, { trip: goaSnapshot(), messages: [msg(2, 'p_meher', 'ok'), msg(5, 'p_meher', 'for my birthday'), m], seq: 6 })).toBe(false);
+  });
+});
+
+describe('partOfAskToGo: every line of an ask to Go, before and after the line that names Go', () => {
+  const lines = [msg(2, 'p_meher', 'ok'), msg(3, 'p_meher', '@Go one thing'), msg(4, 'p_meher', 'for my birthday on the 7th'), msg(5, 'p_priya', 'lol')];
+  const askPack = { trip: goaSnapshot(), messages: lines, seq: 5 };
+
+  it('takes the line that names Go, and the same person\'s lines a few seconds either side of it', () => {
+    expect(lines.map((m) => partOfAskToGo(m, askPack))).toEqual([true, true, true, false]);
+    // The line that names Go is not in a burst by itself; the lines around it are.
+    expect(lines.map((m) => inBurstToGo(m, askPack))).toEqual([true, false, true, false]);
+  });
+
+  it('leaves a line by the same person minutes away, and any line when nobody named Go', () => {
+    const late = msg(9, 'p_meher', 'ok', { sent_at: msg(20, 'p_meher', 'x').sent_at });
+    expect(partOfAskToGo(late, { trip: goaSnapshot(), messages: [...lines, late], seq: 9 })).toBe(false);
+    const quiet = [msg(2, 'p_meher', 'ok'), msg(3, 'p_meher', 'for my birthday on the 7th')];
+    expect(quiet.map((m) => partOfAskToGo(m, { trip: goaSnapshot(), messages: quiet, seq: 3 }))).toEqual([false, false]);
   });
 });
 

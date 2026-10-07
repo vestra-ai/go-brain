@@ -77,6 +77,58 @@ describe('the notes pass', () => {
     expect(adds).toEqual([['doing', 'Kabir books the airport cab', ['p_kabir']]]);
   });
 
+  it('an ask to Go gets Go\'s answer, not a receipt: no open line and no ✅ on it; a plan stated to Go and a group question are noted', async () => {
+    // Live drill (t_p1a_572dd322): "@Go what's planned for Sunday?" got an open line and a ✅ after Go had answered it.
+    const said = [
+      msg(200, 'p_arjun', "@Go what's planned for Sunday?"),
+      msg(201, 'go', 'Nothing is planned for Sunday yet.'),
+      msg(202, 'p_rahul', "@Go we're doing 6 to 9 Nov"),
+      msg(203, 'p_priya', 'how about we stay in Candolim?'),
+    ];
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [
+        { kind: 'open', text: 'What is planned for Sunday?', person_ids: ['p_arjun'], proof: [200] },
+        { kind: 'agreed', text: 'Trip dates 6 to 9 Nov', person_ids: [], proof: [202] },
+        { kind: 'open', text: 'Stay in Candolim?', person_ids: [], proof: [203] },
+      ],
+    });
+    const { link, side, notes } = setup('t_n20', said, [answer]);
+    const out = await notes.run('t_n20');
+    expect(out.refused).toEqual(['line: an open line cannot rest on a question put to Go: Go answers it']);
+    expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => [c.params.kind, c.params.text])).toEqual([
+      ['agreed', 'Trip dates 6 to 9 Nov'],
+      ['open', 'Stay in Candolim?'],
+    ]);
+    expect(link.calls.filter((c) => c.method === 'add_reaction').map((c) => c.params.message_id).sort()).toEqual(['m_0202', 'm_0203']);
+    // The model is told which lines ask Go, and that a question is never a fact.
+    expect(side.prompts[0]!.user).toContain("#200 [person Arjun | p_arjun | to Go]: @Go what's planned for Sunday?");
+    expect(side.prompts[0]!.user).toContain('#203 [person Priya | p_priya]: how about we stay in Candolim?');
+    expect(side.prompts[0]!.system).toContain('never from a question or a request');
+  });
+
+  it('a burst that asks Go: no open line from its question, and the fact said in it keeps its ✅', async () => {
+    // Meher's burst in the live drill: "ok", "@Go one thing", "for my birthday on the 7th", "is there a good bakery near Anjuna?".
+    const at = (s: number) => new Date(Date.parse('2026-10-06T09:00:00Z') + s * 1_000).toISOString();
+    const said = [
+      msg(210, 'p_meher', 'ok', { sent_at: at(0) }),
+      msg(211, 'p_meher', '@Go one thing', { sent_at: at(1) }),
+      msg(212, 'p_meher', 'for my birthday on the 7th', { sent_at: at(2) }),
+      msg(213, 'p_meher', 'is there a good bakery near Anjuna?', { sent_at: at(3) }),
+      msg(214, 'go', 'Try German Bakery in Anjuna for the cake.', { sent_at: at(6) }),
+    ];
+    const answer = JSON.stringify({
+      facts: [{ person_id: 'p_meher', topic: 'birthday', text: 'Birthday on the 7th', message: 212 }],
+      lines: [{ kind: 'open', text: 'A bakery near Anjuna for the birthday', person_ids: ['p_meher'], proof: [213] }],
+    });
+    const { link, side, notes } = setup('t_n21', said, [answer]);
+    const out = await notes.run('t_n21');
+    expect(out).toMatchObject({ facts: 1, lines: 0, reacted: 1 });
+    expect(link.calls.filter((c) => c.method === 'add_record_line')).toEqual([]);
+    expect(link.calls.filter((c) => c.method === 'add_reaction').map((c) => [c.params.message_id, c.params.emoji])).toEqual([['m_0212', '✅']]);
+    for (const seq of [210, 211, 212, 213]) expect(side.prompts[0]!.user).toMatch(new RegExp(`#${seq} \\[person Meher \\| p_meher \\| to Go\\]`));
+  });
+
   it('fences the chat: one fence, no way to close it or pose as Go, secrets masked', async () => {
     const { side, notes } = setup('t_n2', chat(), [JSON.stringify({ facts: [], lines: [] })]);
     await notes.run('t_n2');
