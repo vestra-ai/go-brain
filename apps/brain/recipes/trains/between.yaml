@@ -14,6 +14,9 @@ changes_state: false
 # ixigo's train results page reads ixigo's own train service (on confirmtkt.com) since October: one call, every train,
 # with each class's fare, seats and ixigo's confirmation chance (p4's map).
 page: /trains/search-pwa/from/{from.code}/to/{to.code}/{date|DD-MM-YYYY}
+# The same call from the trip's warm tab (366 ms in p4's map): confirmtkt.com is on the deployment's allowed sites.
+fast:
+  url: https://ixigotrainsapi.confirmtkt.com/api/v1/trains/search?sourceStationCode={from.code}&destinationStationCode={to.code}&addAvailabilityCache=true&excludeMultiTicketAlternates=false&excludeBoostAlternates=false&sortBy=DEFAULT&dateOfJourney={date|DD-MM-YYYY}&enableNearby=true&enableTG=true&tGPlan=ITG-A50&showTGPrediction=false&tgColor=DEFAULT&showPredictionGlobal=true&showNewAlternates=true&showNewAltText=true
 capture:
   - ixigotrainsapi.confirmtkt.com/api/v1/trains/search
 read:

@@ -90,6 +90,50 @@ describe('a place Go has not searched before', () => {
   });
 });
 
+describe('the fast speed', () => {
+  const RSC = sample('plan.destination.rsc.txt');
+  const PAGE = sample('plan.destination.html');
+
+  it("makes the page's own call from the warm tab first, and loads no page when it answers", async () => {
+    const calls: unknown[] = [];
+    const pages: string[] = [];
+    const runner = {
+      read: async (_t: string, url: string) => {
+        pages.push(url);
+        return { captures: [capture('/plan/goa$', url, PAGE)], finalUrl: url };
+      },
+      pageFetch: async (_t: string, call: { url: string; method: string; headers?: Record<string, string> }) => {
+        calls.push(call);
+        return { ...capture('fast', '/plan/goa', RSC), content_type: 'text/x-component' };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
+    const got = await engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_fast' });
+    expect(calls).toEqual([{ url: '/plan/goa', method: 'GET', headers: { RSC: '1' } }]);
+    expect(pages).toEqual([]);
+    expect(got.as === 'facts' && got.rows[0]).toMatchObject({ destination: 'Goa, India', best_time: 'November - March' });
+    expect(engine.stats().map((s) => [s.recipe, s.speed, s.runs, s.failed])).toEqual([['plan.destination', 'fast', 1, 0]]);
+  });
+
+  it('falls to the page speed when the call fails, and counts the failed call', async () => {
+    const runner = {
+      read: async (_t: string, url: string) => ({ captures: [capture('/plan/goa$', url, PAGE)], finalUrl: url }),
+      pageFetch: async () => {
+        throw new TravelError('unreachable', "ixigo's page call answered 403.");
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
+    const got = await engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_fast' });
+    expect(got.as === 'facts' && got.rows[0]).toMatchObject({ best_time: 'November - March' });
+    expect(engine.stats().map((s) => [s.recipe, s.speed, s.runs, s.failed]).sort()).toEqual([['plan.destination', 'fast', 1, 1], ['plan.destination', 'page', 1, 0]]);
+  });
+
+  it('never makes a page call to the payment page', async () => {
+    const file = readFileSync(`${BOOK_DIR}plan/destination.yaml`, 'utf8').replace('fast: { url: "/plan/{$slug}"', 'fast: { url: "/payments/{$slug}"');
+    expect(checkRecipe('plan/destination.yaml', file)).toEqual({ problems: ['plan/destination.yaml: file: no recipe may open or read anything under /payments/'] });
+  });
+});
+
 describe('the numbers', () => {
   it('logs and counts every run by recipe and speed: the middle and slow end of its last runs, and how many failed', async () => {
     let nowMs = Date.parse('2026-10-07T12:00:00Z');

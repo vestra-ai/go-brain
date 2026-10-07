@@ -11,7 +11,7 @@ import { TravelError } from '../mcp-travel.js';
 import { airportOf, busCityOf, goaHalves, norm, stationOf, stayPlaceOf, wordsOf } from '../recipes/places.js';
 import { keepPlace } from '../recipes/places-store.js';
 import type { OnProgress } from '../recipes/progress.js';
-import { IXIGO, type CaptureSpec, type FetchPlan, type RecipeOption } from '../recipes/recipe.js';
+import { IXIGO, type Capture, type CaptureSpec, type FetchPlan, type RecipeOption } from '../recipes/recipe.js';
 import type { RecipeRunner } from '../recipes/runners.js';
 import type { TravelKind } from '../travel.js';
 import type { Book } from './book.js';
@@ -39,7 +39,7 @@ function refusePayments(where: string): void {
 export interface EngineDeps {
   book: Book;
   /** The trip's browser fetch; null while the trip's computer is not set up here. */
-  runner: (tripId: string) => Pick<RecipeRunner, 'read'> | null;
+  runner: (tripId: string) => Pick<RecipeRunner, 'read' | 'pageFetch'> | null;
   /** Keeps a place ixigo resolved; absent in tests that keep nothing. */
   pool?: Pool;
   /** The trip as a recipe's inputs read it ($trip): its head count and the members' home cities. */
@@ -59,9 +59,9 @@ export interface RecipeStat {
   p50_ms: number | null;
   p90_ms: number | null;
 }
-/** link: an answer that loads nothing; page: the browser fetch of a page (a lookup's box, or a results page); kept: a
- *  facts answer from earlier, inside its recipe's TTL. */
-export type Speed = 'link' | 'page' | 'kept';
+/** link: an answer that loads nothing; fast: the page's own call from the trip's warm tab; page: the browser fetch of a
+ *  page (a lookup's box, or a results page); kept: a facts answer from earlier, inside its recipe's TTL. */
+export type Speed = 'link' | 'fast' | 'page' | 'kept';
 /** The last runs a recipe's speeds are measured over. */
 const LAST_RUNS = 100;
 
@@ -127,14 +127,16 @@ export function createEngine(d: EngineDeps) {
   }
 
   /** Times a run and records it, whatever it ends in. */
-  async function timed<T>(recipe: string, speed: Speed, run: () => Promise<T>): Promise<T> {
+  /** speed: the speed the run took, read when it ends (a run that tried fast and fell to the page says page). */
+  async function timed<T>(recipe: string, speed: Speed | (() => Speed), run: () => Promise<T>): Promise<T> {
     const started = d.now().getTime();
+    const speedNow = (): Speed => (typeof speed === 'function' ? speed() : speed);
     try {
       const out = await run();
-      record(recipe, speed, d.now().getTime() - started, 'ok');
+      record(recipe, speedNow(), d.now().getTime() - started, 'ok');
       return out;
     } catch (err) {
-      record(recipe, speed, d.now().getTime() - started, err instanceof TravelError ? err.code : 'failed');
+      record(recipe, speedNow(), d.now().getTime() - started, err instanceof TravelError ? err.code : 'failed');
       throw err;
     }
   }
@@ -262,7 +264,7 @@ export function createEngine(d: EngineDeps) {
   }
 
   /** Runs a recipe for the given inputs (place inputs as the person's words). */
-  async function run(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
+  async function run(id: string, given: Record<string, unknown>, o: RunFor, took: (s: Speed) => void = () => undefined): Promise<EngineAnswer> {
     const recipe = d.book.get(id);
     if (!recipe) throw new TravelError('refused', `There is no ixigo recipe ${id}.`);
     if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
@@ -292,6 +294,38 @@ export function createEngine(d: EngineDeps) {
         ...(read.also ? { also: Object.fromEntries(await Promise.all(Object.entries(read.also).map(async ([k, a]) => [k, { ...a, from: await match(a.from) }]))) } : {}),
       },
     };
+    const answerFrom = async (caps: Capture[], recipeRead: RecipeFile, started: number): Promise<EngineAnswer> => {
+      if (recipe.answer.as === 'facts') {
+        const rows = await readFacts(recipeRead, caps, inputs, page, bindings);
+        const at = d.now();
+        return { as: 'facts', title: await fill(recipe.answer.title, inputs, { url: false, bindings }), rows, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
+      }
+      const options = await readOptions(recipeRead, caps, inputs, page, bindings);
+      const at = d.now();
+      return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
+    };
+    // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
+    if (recipe.fast && runner.pageFetch) {
+      const started = d.now().getTime();
+      try {
+        const url = await fill(recipe.fast.url, inputs, { url: true, bindings });
+        refusePayments(url);
+        const call = {
+          url, method: recipe.fast.method,
+          ...(recipe.fast.headers ? { headers: recipe.fast.headers } : {}),
+          ...(recipe.fast.body ? { body: await fill(recipe.fast.body, inputs, { url: false, bindings }) } : {}),
+        };
+        const got = await runner.pageFetch(o.tripId, call, o.signal ? { signal: o.signal } : {});
+        const absolute = new URL(got.url || url, IXIGO).toString();
+        refusePayments(absolute);
+        const answer = await answerFrom([{ ...got, url: absolute }], { ...filled, read: { ...filled.read!, rows: { ...filled.read!.rows, format: recipe.fast.format } } }, started);
+        took('fast');
+        return answer;
+      } catch (err) {
+        record(recipe.id, 'fast', d.now().getTime() - started, err instanceof TravelError ? err.code : 'failed');
+        d.log?.warn({ recipe: recipe.id, err: String(err).slice(0, 200) }, 'book: the fast speed failed; the page speed runs');
+      }
+    }
     let plan: FetchPlan = { capture: await captures(recipe.capture) };
     for (const f of recipe.fetch ?? []) {
       if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
@@ -308,14 +342,7 @@ export function createEngine(d: EngineDeps) {
     const got = await runner.read(o.tripId, page, plan, { ...(o.signal ? { signal: o.signal } : {}), ...(o.onProgress ? { onProgress: o.onProgress } : {}) });
     refusePayments(got.finalUrl);
     o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
-    if (recipe.answer.as === 'facts') {
-      const rows = await readFacts(filled, got.captures, inputs, page, bindings);
-      const at = d.now();
-      return { as: 'facts', title: await fill(recipe.answer.title, inputs, { url: false, bindings }), rows, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
-    }
-    const options = await readOptions(filled, got.captures, inputs, page, bindings);
-    const at = d.now();
-    return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
+    return answerFrom(got.captures, filled, started);
   }
 
   const factsKey = (id: string, given: Record<string, unknown>): string =>
@@ -348,13 +375,16 @@ export function createEngine(d: EngineDeps) {
     /** Runs a recipe for the given inputs (place inputs as the person's words), timed and recorded. */
     answer(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
       const recipe = d.book.get(id);
-      const speed: Speed = recipe?.answer.as === 'link' ? 'link' : 'page';
+      let speed: Speed = recipe?.answer.as === 'link' ? 'link' : 'page';
+      const took = (s: Speed): void => {
+        speed = s;
+      };
       if (recipe?.answer.as === 'facts') {
         const hit = keptHit(recipe, given);
         if (hit) return timed(id, 'kept', () => hit);
-        return timed(id, speed, () => kept(id, given, run(id, given, o)));
+        return timed(id, () => speed, () => kept(id, given, run(id, given, o, took)));
       }
-      return timed(id, speed, () => run(id, given, o));
+      return timed(id, () => speed, () => run(id, given, o, took));
     },
     /** Each recipe's numbers at each speed, slowest middle first. */
     stats(): RecipeStat[] {

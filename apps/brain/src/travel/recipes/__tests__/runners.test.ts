@@ -3,7 +3,7 @@ import { V1Error } from '../../../tasks/v1-client.js';
 import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
-import { createBrowserFetchRunner, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT } from '../runners.js';
+import { createBrowserFetchRunner, FAST_TIMEOUT_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, WARM_TAB_MS } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
 type Call = { method: string; path: string; opts: Record<string, unknown> };
@@ -91,6 +91,29 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       throw timedOut([]);
     });
     await fails(createBrowserFetchRunner(missing.deps).read('t1', 'https://www.ixigo.com/hotels/search/result', plan), 'unreachable', /took too long/);
+  });
+
+  it("makes a page's own call from the warm tab, keeping it open; with no tab kept, from a tab opened at ixigo's home", async () => {
+    const answer = (status = 200) => ({ ...fetched([{ ...capture('fast', 'https://www.ixigo.com/plan/goa', '0:{}'), status }]), final_url: 'https://www.ixigo.com/' });
+    const w = world((_, n) => {
+      if (n === 1) throw new V1Error(409, 'no_open_tab', 'No tab is kept.');
+      return answer();
+    });
+    const runner = createBrowserFetchRunner(w.deps);
+    const got = await runner.pageFetch!('t1', { url: '/plan/goa', method: 'GET', headers: { RSC: '1' } });
+    expect(got).toMatchObject({ match: 'fast', status: 200, body: '0:{}' });
+    const step = { op: 'page_fetch', url: '/plan/goa', method: 'GET', headers: { RSC: '1' }, capture_as: 'fast', max_bytes: 1_000_000 };
+    expect(w.calls.map((c) => c.opts['body'])).toEqual([
+      { steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS },
+      { url: 'https://www.ixigo.com/', steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS },
+    ]);
+    // ixigo answering the call with an error is a failed call: the run falls to the page.
+    const refused = world(() => answer(403));
+    await fails(createBrowserFetchRunner(refused.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }), 'unreachable', /answered 403/);
+    const blocked = world(() => {
+      throw new V1Error(403, 'page_blocked', 'ixigo.com/payments/ is blocked.');
+    });
+    await fails(createBrowserFetchRunner(blocked.deps).pageFetch!('t1', { url: '/payments/x', method: 'GET' }), 'unreachable', /blocked/);
   });
 
   it('makes the trip user when /v1 does not have it, then asks once more', async () => {
