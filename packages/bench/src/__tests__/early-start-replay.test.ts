@@ -76,7 +76,7 @@ describe('the early start, replayed on the definitive live run in the fake trave
     const started = (await runs(null)).filter((a) => a.started).map((a) => [a.line, a.started]);
     expect(started).toEqual([
       ['goa-300 L9', { kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-11-06' } }],
-      // "Friday", read as the coming one; the block lets the model search again for the trip's.
+      // The bench trip has no dates, so "Friday" is the coming one; the block lets the model search again for the trip's.
       ['goa-300 L122', { kind: 'flights', query: { from: 'bangalore', to: 'goa', date: '2026-10-09', departAfter: '19:00' } }],
       ['goa-50 L9', { kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-10-09', departAfter: '18:00' } }],
     ]);
@@ -93,6 +93,9 @@ describe('the early start, replayed on the definitive live run in the fake trave
     const started = all.filter((a) => a.started).map((a) => a.line);
     expect(started).toEqual(['goa-300 L9', 'goa-300 L73', 'goa-300 L122', 'goa-50 L9', 'goa-50 L24']);
     expect(all.find((a) => a.line === 'goa-50 L24')!.started).toEqual({ kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] } });
+    // "Friday" is the trip's Friday on a trip with its dates.
+    expect(all.find((a) => a.line === 'goa-50 L9')!.started!.query).toMatchObject({ date: '2026-11-06', departAfter: '18:00' });
+    expect(all.find((a) => a.line === 'goa-300 L122')!.started!.query).toMatchObject({ date: '2026-11-06', departAfter: '19:00' });
     // The model searched stays for these, to put them to a vote and to book: not a search ask.
     for (const line of ['goa-300 L175', 'goa-50 L46']) expect(all.find((a) => a.line === line)!.started, line).toBeNull();
   });
