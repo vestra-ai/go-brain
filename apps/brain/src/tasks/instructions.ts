@@ -11,6 +11,11 @@ export const GO_RECIPE_SLUG = 'go-recipe';
  * their data from ixigotrainsapi.confirmtkt.com (p4's train recipes time out without it).
  */
 export const GO_BROWSER_DOMAINS = ['ixigo.com', 'ixigotrainsapi.confirmtkt.com'] as const;
+/**
+ * Where the trip's browser never goes, enforced by Bash (#4591): ixigo's payment page opens with a saved card chosen and
+ * "Securely Pay" one click away. Go never pays on ixigo; the payer finishes there on their own phone.
+ */
+export const GO_BLOCKED_PATHS = ['ixigo.com/payments/'] as const;
 
 /** Go's MCP tools that only read. An approval for one of them is answered yes; anything else no. */
 export const GO_READ_ONLY_TOOLS = ['trip', 'person', 'recall', 'search_flights', 'search_trains', 'search_buses', 'search_stays'] as const;
@@ -72,8 +77,9 @@ export const GO_DENY_TOOLS = [
 export const GO_WEBHOOK_EVENTS = ['task.started', 'task.completed', 'task.failed', 'task.stopped', 'interaction.created', 'interaction.resolved', 'interaction.expired'] as const;
 
 /**
- * browserFetch: allow Bash's browser fetch on ixigo.com, through the trip user's default deployment. Only once Bash's
- * browser fetch is on the target, since /v1 refuses a manifest key it does not know.
+ * browserFetch: allow Bash's browser fetch on ixigo.com, through the trip user's default deployment, and block ixigo's
+ * payment page. Only once Bash's browser fetch and blocked_paths (#4591) are on the target, since /v1 refuses a manifest
+ * key it does not know.
  */
 export function goTaskManifest(o: { mcpServerId: string; model: string; denyTools: boolean; browserFetch?: boolean }): Record<string, unknown> {
   return {
@@ -87,7 +93,7 @@ export function goTaskManifest(o: { mcpServerId: string; model: string; denyTool
     memory: { mode: 'none' },
     limits: { spend_per_task_usd: 2 },
     ...(o.denyTools ? { deny_tools: [...GO_DENY_TOOLS] } : {}),
-    ...(o.browserFetch ? { browser: { allowed_domains: [...GO_BROWSER_DOMAINS] } } : {}),
+    ...(o.browserFetch ? { browser: { allowed_domains: [...GO_BROWSER_DOMAINS], blocked_paths: [...GO_BLOCKED_PATHS] } } : {}),
   };
 }
 

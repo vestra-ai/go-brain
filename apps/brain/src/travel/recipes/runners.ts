@@ -140,6 +140,7 @@ function busyWaitMs(err: V1Error): number {
 const isBusy = (err: unknown): boolean => err instanceof V1Error && err.status === 409 && err.code === 'browser_busy';
 
 export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of credit.";
+export const PAYMENT_PAGE_BLOCKED = "That's the payment page, and Go never opens it; the payer finishes on ixigo.";
 
 // ── the browser fetch ────────────────────────────────────────────────────────
 
@@ -198,6 +199,8 @@ function fetchFailed(err: V1Error, what: { id: string; capture: CaptureSpec[] },
   if (isBusy(err)) throw new TravelError('unreachable', "The trip's computer is busy with other searches. Try again in a moment.");
   if (err.status === 409) throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment.");
   if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time. Try again in a moment.");
+  // Bash's block on ixigo's payment page (#4591): never a fault of Go's setup, and never a page Go opens.
+  if (err.status === 403 && err.code === 'page_blocked') throw new TravelError('refused', PAYMENT_PAGE_BLOCKED);
   if (err.status === 400 || err.status === 403) {
     // Go's own setup or request is wrong (ixigo.com not allowed, a bad recipe): the admin log says so, the room hears less.
     log.warn({ tripId, page: what.id, code: err.code, message: err.message }, 'travel: the browser fetch refused a page');
