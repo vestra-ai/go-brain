@@ -257,7 +257,8 @@ export function flyingFor(url: string): string | null {
 
 /**
  * The results URL with what people asked for already set, in ixigo's own filter params (p1-b's flights map): non-stop,
- * the departure and arrival windows, and the price cap per person. The page filters itself; nothing is clicked.
+ * the departure and arrival windows, and the price cap per person, with the cheapest first (the param ixigo's own
+ * "Price / Low to High" sort writes). The page filters and sorts itself; nothing is clicked.
  */
 export function withFlightFilters(url: string, q: TravelQuery): string {
   const params: string[] = [];
@@ -267,7 +268,8 @@ export function withFlightFilters(url: string, q: TravelQuery): string {
   const landing = windows(undefined, q.arriveBefore);
   if (landing) params.push(`landing=${landing}`);
   if (q.maxPriceMinor !== undefined) params.push(`price=0,${Math.floor(q.maxPriceMinor / 100)}`);
-  return params.length ? `${url}&${params.join('&')}` : url;
+  params.push('sort_type=cheapest');
+  return `${url}&${params.join('&')}`;
 }
 
 /**

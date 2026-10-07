@@ -30,7 +30,7 @@ describe('the trains recipe', () => {
     expect(csmt).toEqual({ from: 'CSMT', to: 'MAO', date: '2026-10-08' });
     expect(trains.url(ndls)).toBe('https://www.ixigo.com/search/result/train/NDLS/MAO/06112026//1/0/0/0/ALL');
     expect(trains.capture.map((c) => [c.match, c.required])).toEqual([['/trains/v1/search/between/', true], ['/api/v3/trains/availability', false]]);
-    expect(() => trains.slotsFrom({ from: 'Delhi', to: 'Shimla', date: '2026-11-06' }, { people: 4 })).toThrow(/Go can search ixigo trains/);
+    expect(() => trains.slotsFrom({ from: 'Delhi', to: 'Shimla', date: '2026-11-06' }, { people: 4 })).toThrow('Go has no ixigo station code for "Shimla" yet.');
   });
 
   it('gives one option per train and class, per person, with its status, from where the train really boards', () => {

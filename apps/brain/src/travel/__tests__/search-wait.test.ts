@@ -93,13 +93,13 @@ describe('a search ixigo will only show as a link', () => {
     const travel = { search: async () => { throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", page); }, waitMs: async () => null } as unknown as Travel;
     const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z') });
     const out = (await tools.find((t) => t.name === 'search_flights')!.run({ from: 'Delhi', to: 'Goa', date: '2026-11-06', depart_after: '18:00' }, turn)) as Record<string, unknown>;
-    expect(out).toMatchObject({ count: 0, link: `${page}&takeOff=NIGHT`, set_for: 'for 4 from Delhi' });
+    expect(out).toMatchObject({ count: 0, link: `${page}&takeOff=NIGHT&sort_type=cheapest`, set_for: 'for 4 from Delhi' });
     // Go books no flights: the room line sends people to ixigo and offers only to note their pick.
     expect(out.tell_the_room).toContain("to book on ixigo, and that if they tell you which one, you'll note it for the group");
     expect(out.tell_the_room).toContain('never offer to book one or to take it from there');
     expect(out.tell_the_room).toContain('Never say there are no flights');
     expect(cards).toEqual([expect.objectContaining({
-      kind: 'notice', card_id: 'c_link_turn_w1_1', title: 'Flights, Delhi to Goa', source: { name: 'ixigo', url: `${page}&takeOff=NIGHT` },
+      kind: 'notice', card_id: 'c_link_turn_w1_1', title: 'Flights, Delhi to Goa', source: { name: 'ixigo', url: `${page}&takeOff=NIGHT&sort_type=cheapest` },
       body: expect.stringContaining('set for 4 from Delhi'),
       actions: [{ action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' }],
     })]);
