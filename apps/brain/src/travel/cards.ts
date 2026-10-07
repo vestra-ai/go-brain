@@ -11,6 +11,19 @@ type CardOption = OptionsCardT['options'][number];
 
 export const PICK_ACTION = { action_id: 'pick', label: "I'll take this", style: 'primary', per_option: true } as const;
 export const VOTE_ACTION = { action_id: 'vote', label: 'Put it to a vote', style: 'secondary' } as const;
+/** On options from ixigo.com: opens the option's own page there, where the group books it. */
+export const OPEN_ACTION = { action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true } as const;
+
+/** The option's own https page on ixigo.com, or null: the only pages "See on ixigo" opens. */
+export function ixigoPage(sourceUrl: string | null | undefined): string | null {
+  if (!sourceUrl) return null;
+  try {
+    const u = new URL(sourceUrl);
+    return u.protocol === 'https:' && (u.hostname === 'ixigo.com' || u.hostname.endsWith('.ixigo.com')) ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
 export function plain(text: string): string {
   // A number range keeps its meaning as a hyphen ("6–9 Nov" is "6-9 Nov"), as sanitize() does; any other dash is a comma.
@@ -103,6 +116,6 @@ export function buildOptionsCard(i: { cardId: string; title: string; optionKind:
     option_kind: i.optionKind,
     checked_at: i.checkedAt,
     options: i.picks.map(cardOption),
-    actions: i.picks.length >= 2 ? [PICK_ACTION, VOTE_ACTION] : [PICK_ACTION],
+    actions: [PICK_ACTION, ...(i.picks.length >= 2 ? [VOTE_ACTION] : []), ...(i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [])],
   });
 }

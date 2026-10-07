@@ -14,7 +14,7 @@ const oneOf = (...values: string[]) => (v: string): boolean => values.includes(v
 
 /** What each switch may hold, and its value when nothing sets it. */
 export const SWITCH_RULES: Record<SwitchName, { valid: (v: string) => boolean; fallback: string }> = {
-  TRAVEL_MODE: { valid: oneOf('ixigo', 'fake'), fallback: 'fake' },
+  TRAVEL_MODE: { valid: oneOf('ixigo', 'ixigo_web', 'fake'), fallback: 'fake' },
   // agent_job until Bash's browser fetch is live: it needs nothing new from Bash.
   TRAVEL_RUNNER: { valid: oneOf('agent_job', 'browser_fetch'), fallback: 'agent_job' },
   PAY_RAIL: { valid: oneOf('ixigo', 'stripe_test', 'fake'), fallback: 'fake' },

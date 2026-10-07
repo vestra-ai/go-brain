@@ -1,6 +1,6 @@
 /**
- * Lane C's travel at boot: the fake ixigo and, when configured, ixigo's MCP server behind one layer (brain.travel),
- * the composer's travel tools, the options taps, the tap wake line and Go's image route.
+ * Lane C's travel at boot: the fake ixigo, ixigo's MCP server when configured, and ixigo.com through the recipes, behind
+ * one layer (brain.travel); the composer's travel tools, the options taps, the tap wake line and Go's image route.
  */
 import type { RegisterLane } from '../app.js';
 import { tripToday } from './dates.js';
@@ -10,6 +10,8 @@ import { createImages, registerImageRoute } from './images.js';
 import { createTravelLayer } from './layer.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
+import { createIxigoWebBackend } from './recipes/backend.js';
+import { runnerFor } from './recipes/runners.js';
 import { createResultsStore } from './results.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
@@ -29,11 +31,17 @@ export const registerTravel: RegisterLane = async (brain) => {
   const images = createImages({ pool: brain.pool, publicUrl: env.GO_PUBLIC_URL });
   const imageRoute = registerImageRoute(brain.http, { pool: brain.pool });
   brain.onStop(() => imageRoute.close());
+  // The tasks lane, which registers after this one, sets the runners: a search reads them when it runs.
+  const ixigoWeb = createIxigoWebBackend({
+    runner: () => (brain.recipeRunners ? runnerFor(brain.switches, brain.recipeRunners) : null),
+    peopleOf: async (tripId) => (await brain.packs.get(tripId)).trip.people.length,
+  });
   const travel = createTravelLayer({
     switches: brain.switches,
     now: brain.now,
     fake,
     ixigo,
+    ixigoWeb,
     results,
     today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },

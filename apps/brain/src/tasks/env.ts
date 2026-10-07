@@ -34,6 +34,7 @@ const TasksRuntime = z.object({
   VESTRA_WEBHOOK_SECRET: commaList(z.string().min(16)),
   VESTRA_DEPLOYMENT_ID: z.string().min(3),
   VESTRA_MCP_SERVER_ID: z.string().min(3).optional(),
+  VESTRA_RECIPE_DEPLOYMENT_ID: z.string().min(3).optional(),
 });
 export type TasksRuntime = z.infer<typeof TasksRuntime>;
 

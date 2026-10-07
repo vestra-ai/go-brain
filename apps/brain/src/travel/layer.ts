@@ -1,11 +1,14 @@
 /**
- * brain.travel. Picks the backend on every call from the TRAVEL_MODE switch (the fake when ixigo is not set up),
- * caches each search for three minutes with the time it was checked, applies constraints in code on every call,
+ * brain.travel. Picks the backend on every call from the TRAVEL_MODE switch (the fake when the one it names is not set
+ * up), caches each search for three minutes with the time it was checked, applies constraints in code on every call,
  * and routes a hold or a confirm to the backend that made the offer. A search or a hold for a check-in or departure
  * before today in the trip's time zone is refused before any backend sees it, with the date to use instead.
+ * ixigo_web searches ixigo.com itself, in the trip's browser: its options are link only, and status comes from ixigo's
+ * MCP server when that is set up (never from the fake, whose readings are simulated).
  */
 import type { Switches } from '../admin/switches.js';
 import { localDay } from '../proactive/clock.js';
+import { ixigoPage } from './cards.js';
 import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
 import { applyConstraints, closest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
@@ -20,6 +23,8 @@ export interface TravelLayerDeps {
   now: () => Date;
   fake: TravelBackend;
   ixigo: TravelBackend | null;
+  /** ixigo.com through the recipes (TRAVEL_MODE ixigo_web). */
+  ixigoWeb?: TravelBackend | null;
   results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor' | 'placeOf'>>;
   /** Today (YYYY-MM-DD) in the trip's time zone. Default: India's. */
   today?: (tripId: string | null) => Promise<string>;
@@ -47,8 +52,11 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
   const ttl = d.cacheMs ?? SEARCH_CACHE_MS;
   const today = d.today ?? (async () => localDay(d.now(), DEFAULT_TRIP_TZ));
   const cache = new Map<string, { at: number; value: TravelSearch }>();
-  const pick = (): { name: 'fake' | 'ixigo'; b: TravelBackend } =>
-    d.switches.get('TRAVEL_MODE') === 'ixigo' && d.ixigo ? { name: 'ixigo', b: d.ixigo } : { name: 'fake', b: d.fake };
+  const pick = (): { name: 'fake' | 'ixigo' | 'ixigo_web'; b: TravelBackend } => {
+    const mode = d.switches.get('TRAVEL_MODE');
+    if (mode === 'ixigo_web' && d.ixigoWeb) return { name: 'ixigo_web', b: d.ixigoWeb };
+    return mode === 'ixigo' && d.ixigo ? { name: 'ixigo', b: d.ixigo } : { name: 'fake', b: d.fake };
+  };
   const byPrefix = (id: string): TravelBackend => {
     if (id.startsWith('fake:')) return d.fake;
     if (id.startsWith('ixigo:') && d.ixigo) return d.ixigo;
@@ -69,11 +77,12 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       }
       const { name, b } = pick();
       const base = backendQuery(parsed);
-      const key = `${name}|${kind}|${keyOf(base)}`;
+      // ixigo_web reads the page in the trip's own browser, for the trip's head count: its results are the trip's.
+      const key = `${name}|${name === 'ixigo_web' ? (o?.tripId ?? '') : ''}|${kind}|${keyOf(base)}`;
       const nowMs = d.now().getTime();
       let hit = cache.get(key);
       if (!hit || nowMs - hit.at > ttl) {
-        hit = { at: nowMs, value: await b.search(kind, base) };
+        hit = { at: nowMs, value: await b.search(kind, base, o) };
         cache.delete(key);
         cache.set(key, hit);
         while (cache.size > CACHE_MAX) {
@@ -88,7 +97,8 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       return { checkedAt: hit.value.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}) };
     },
     async status(q) {
-      return pick().b.status(q);
+      const { name, b } = pick();
+      return name === 'ixigo_web' && d.ixigo ? d.ixigo.status(q) : b.status(q);
     },
     simulated: () => pick().name === 'fake',
     async hold(offerId, lead) {
@@ -112,9 +122,9 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       const o = await d.results.offer(optionId);
       if (!o) return null;
       // A vote and a payment use the whole stay; the card shows the nightly price.
-      // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is ixigo's own page for
-      // the offer, filled once ixigo's tools are mapped (Task 23), and null until then.
-      return { offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: null };
+      // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is the option's own page on
+      // ixigo.com (ixigo_web), where the group can book it, and null otherwise: a page a job found elsewhere is not handed out.
+      return { offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl) };
     },
     ...(d.simulate ? { simulate: d.simulate } : {}),
   };

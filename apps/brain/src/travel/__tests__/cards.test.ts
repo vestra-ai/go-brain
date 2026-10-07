@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
-import { buildOptionsCard, clip, formatClock, formatInr, localClock, plain, subtitleFor } from '../cards.js';
+import { buildOptionsCard, clip, formatClock, formatInr, ixigoPage, localClock, plain, subtitleFor } from '../cards.js';
 import type { ResultOption } from '../results.js';
 
 const flight = (title: string, dep: string, arr: string, price: number): ResultOption => ({
@@ -25,6 +25,26 @@ describe('the options card', () => {
     expect(one.actions?.map((a) => a.action_id)).toEqual(['pick']);
     expect(JSON.stringify(one)).not.toMatch(/[—–]/);
     expect(one.options[0]!.image_url).toBe('https://go.test/img/u1.jpg');
+  });
+
+  it('adds "See on ixigo" when an option has an ixigo.com page, and only then', () => {
+    const onIxigo = picks.map((p, i) => ({ ...p, option: { ...p.option, ...(i === 1 ? { sourceUrl: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI' } : {}) } }));
+    const card = buildOptionsCard({ cardId: 'c_ix', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: onIxigo });
+    expect(C.OptionsCard.safeParse(card).success).toBe(true);
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote', 'open']);
+    expect(card.actions?.[2]).toEqual({ action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true });
+    const elsewhere = picks.map((p) => ({ ...p, option: { ...p.option, sourceUrl: 'https://www.airbnb.co.in/rooms/1' } }));
+    expect(buildOptionsCard({ cardId: 'c_web', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: elsewhere }).actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+  });
+
+  it('opens only https pages on ixigo.com', () => {
+    expect(ixigoPage('https://www.ixigo.com/trains/10103?orgn=CSMT')).toBe('https://www.ixigo.com/trains/10103?orgn=CSMT');
+    expect(ixigoPage('https://ixigo.com/hotels/1/details')).toBe('https://ixigo.com/hotels/1/details');
+    expect(ixigoPage('http://www.ixigo.com/x')).toBeNull();
+    expect(ixigoPage('https://ixigo.com.example.net/x')).toBeNull();
+    expect(ixigoPage('https://notixigo.com/x')).toBeNull();
+    expect(ixigoPage('javascript:alert(1)')).toBeNull();
+    expect(ixigoPage(null)).toBeNull();
   });
 
   it('describes a stay by its area and whole-stay price', () => {

@@ -1,6 +1,6 @@
 # ixigo recipes: Go searches ixigo.com in the trip's browser
 
-Design for Friday. Built so far: the recipes (section 1) and the runners (section 2).
+Design for Friday. Built so far: the recipes (section 1), the runners (section 2) and the travel layer with the "See on ixigo" card (section 3).
 
 "@Go flights Delhi to Goa Friday" should get "Go is typing..." at once and an options card from ixigo.com in under 5 seconds. Each option opens on ixigo.com; booking stays there.
 
