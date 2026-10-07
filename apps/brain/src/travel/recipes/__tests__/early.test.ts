@@ -20,8 +20,9 @@ function world(mode = 'ixigo_web', fail = false) {
   void switches.set('TRAVEL_MODE', mode);
   const log = { warn: vi.fn() };
   let nowMs = Date.parse('2026-10-07T12:00:00Z');
-  const early = createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date(nowMs), log });
-  return { hook: (...a: Parameters<typeof early.onRead>) => early.onRead(...a), early, searches, log, advance: (ms: number) => { nowMs += ms; } };
+  const warmed: string[] = [];
+  const early = createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date(nowMs), log, keepWarm: (tripId) => warmed.push(tripId) });
+  return { hook: (...a: Parameters<typeof early.onRead>) => early.onRead(...a), early, searches, log, warmed, advance: (ms: number) => { nowMs += ms; } };
 }
 
 const forGo: ReflexRead = { ...UNSURE_READ, forGo: { value: true, sure: true } };
@@ -49,6 +50,17 @@ describe('the early start', () => {
     const fake = world('fake');
     expect(await fake.hook(msg(46, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack())).toBeUndefined();
     expect(fake.searches).toEqual([]);
+  });
+
+  it("keeps the trip's computer awake on travel talk from anyone, to Go or not, and only under ixigo_web", async () => {
+    const w = world();
+    await w.hook(msg(50, 'p_priya', 'trains from Mumbai on Thursday are cheaper I think'), UNSURE_READ, goaPack());
+    await w.hook(msg(51, 'p_priya', "I'm veg btw"), UNSURE_READ, goaPack());
+    expect(w.warmed).toEqual(['t_goa']);
+    expect(w.searches).toEqual([]);
+    const fake = world('fake');
+    await fake.hook(msg(52, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
+    expect(fake.warmed).toEqual([]);
   });
 
   it('remembers the search each message started, for ten minutes, for the turn it wakes', async () => {

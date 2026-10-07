@@ -17,6 +17,7 @@ import { readTasksEnv } from './env.js';
 import { createEventStore } from './event-store.js';
 import { createTaskEvents, type TaskEvents } from './events.js';
 import { createFollower, type Follower, type FollowerDeps } from './follower.js';
+import { createKeepWarm } from './keep-warm.js';
 import { createScreens, SCREENS_PER_MINUTE_PER_KEY, type Screens } from './screens.js';
 import { createTaskStore, type TaskStore } from './store.js';
 import { SWEEP_EVERY_MS, createSweep, type Sweep } from './sweep.js';
@@ -55,10 +56,13 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   const tokens = createTokenStore(brain.pool, brain.now);
   const computer = createComputer({ pool: brain.pool, v1, tokens, env, now: brain.now, log: brain.log });
   addComputerSteps(brain.setup, computer);
-  // ixigo.com searches (TRAVEL_MODE ixigo_web) run on the trip's computer too; the travel lane picks one per search.
+  // ixigo.com searches (TRAVEL_MODE ixigo_web) run on the trip's computer too; the travel lane picks one per search, and
+  // keeps the computer awake while people talk travel.
+  const keeper = createKeepWarm({ warm: (tripId, keepMs) => computer.warm(tripId, { keepMs }), now: brain.now, log: brain.log });
   brain.recipeRunners = {
     browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log }),
     agentJob: createAgentJobRunner({ v1, computer, now: brain.now, log: brain.log, deploymentId: env.VESTRA_RECIPE_DEPLOYMENT_ID ?? null }),
+    keepWarm: (tripId) => keeper.touch(tripId),
   };
   const store = createTaskStore(brain.pool);
   const eventStore = createEventStore(brain.pool, brain.now);

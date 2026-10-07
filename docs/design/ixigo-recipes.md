@@ -1,6 +1,6 @@
 # ixigo recipes: Go searches ixigo.com in the trip's browser
 
-Design for Friday. Built so far: the recipes (section 1), the runners (section 2), the travel layer with the "See on ixigo" card (section 3), the early start, the 10-minute cache and the one-call prompt (section 4a, 4c and 4d).
+Design for Friday. Built so far: the recipes (section 1), the runners (section 2), the travel layer with the "See on ixigo" card (section 3), and all of section 4: the early start, the warm, the 10-minute cache and the one-call prompt.
 
 "@Go flights Delhi to Goa Friday" should get "Go is typing..." at once and an options card from ixigo.com in under 5 seconds. Each option opens on ixigo.com; booking stays there.
 
@@ -127,8 +127,8 @@ The search tool already turns each of these into a plain line.
 
 **(b) Warm the box when travel talk starts.**
 - A sleeping box takes about 5.5 s to wake, and goes back to sleep about 7 s after a warm.
-- Go warms it on the first line of travel talk: any travel word with a place or a date, to Go or not. It warms again every 5 s while travel talk goes on, for at most 2 minutes after the last such line, inside Go's warm limit (`WARM_LIMIT` 8 per org).
-- Section 8 asks Bash for a warm with a duration instead.
+- Go warms it on the first line of travel talk: any travel word with a place or a date, to Go or not (`travelTalk` in `ask.ts`). That one warm asks Bash to hold the box awake for 2 minutes once it is up (`keep_ms: 120000`, Bash #4574).
+- A travel line that comes when the hold has under 20 s left extends it with one more warm (`tasks/keep-warm.ts`): about one call per 100 s per trip, inside /v1's rate. Each counts as one wake toward `WARM_LIMIT`; a hold is never skipped by Go's 60 s repeat check.
 
 **(c) Reuse results for 10 minutes**, keyed by recipe and normalized slots, in the ixigo_web backend; the layer's own three-minute cache stays for the other backends. The in-flight promise is shared, so two people asking the same thing at once cause one page load. A failed search is not kept.
 
@@ -202,8 +202,7 @@ Still asked:
 1. **A match that ends the path** (`$`), so stays and buses keep their search call, not the longer URL that answers first. Blocking for those two.
 2. **`min_count` on a capture,** so stays get pages 1 and 2 in one call.
 3. **A `type` step,** for p4's T17 train lookup by name. Not part of Friday's four searches.
-4. **A warm that lasts:** `POST /v1/users/{id}/warm { keep_ms }`, so Go doesn't ping every 5 s to hold a box up through a planning chat.
-5. **Timings in the answer** (wake, navigation, capture), so the live bench can split a slow search into box, page and model.
+4. **Timings in the answer** (wake, navigation, capture), so the live bench can split a slow search into box, page and model.
 
 ## 9. Risks
 
