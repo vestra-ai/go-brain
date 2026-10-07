@@ -13,3 +13,8 @@ const VERB = /\b(?:paid|pay|owe|owes|spent|gave|transferred|diya|bheja|dena|lena
 export function looksLikeMoney(text: string | null | undefined): boolean {
   return !!text && (AMOUNT.test(text) || VERB.test(text));
 }
+
+/** Someone paid, owes or sent money: a line for record_expense, not just a price or a budget ("villa under 8k"). */
+export function saysMoneyMoved(text: string | null | undefined): boolean {
+  return !!text && VERB.test(text);
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
-import { endsThought, plainlyNamesGo } from '../names-go.js';
+import { asksWhatTheyMissed, endsThought, plainlyNamesGo } from '../names-go.js';
 
 const pack = { trip: goaSnapshot(), messages: [msg(2, null, 'Want a vote on the villa?')], seq: 2 };
 
@@ -47,5 +47,25 @@ describe('endsThought: a message to Go that needs no wait for more', () => {
   it('reads no text as unfinished', () => {
     expect(endsThought(null)).toBe(false);
     expect(endsThought(undefined)).toBe(false);
+  });
+});
+
+describe('asksWhatTheyMissed: someone back from a break asking the group, which the App answers privately', () => {
+  it.each([
+    // The five lines from goa-300 (bench run 37488230324) that each got a room "quick catch-up" nobody asked Go for.
+    ['meeting khatam, what did I miss', true],
+    ["what'd I miss guys", true],
+    ['what have I missed?', true],
+    ['kya miss kiya maine?', true],
+    ['catch me up pls', true],
+    ['someone fill me in', true],
+    // Not that: a real question, or "miss" meaning something else.
+    ['did I miss the deadline for the villa advance?', false],
+    ['what did we decide for Saturday?', false],
+    ['I miss Goa already', false],
+    ["we'll miss the sunset if we're late", false],
+    ['catch the 6 am flight?', false],
+  ])('%s', (text, want) => {
+    expect(asksWhatTheyMissed(text)).toBe(want);
   });
 });

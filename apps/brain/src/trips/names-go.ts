@@ -22,6 +22,14 @@ export function endsThought(text: string | null | undefined): boolean {
   return !!text && ENDED.test(text);
 }
 
+// Someone back from a break asking the group what they missed: "meeting khatam, what did I miss", "kya miss kiya",
+// "catch me up". The App gives each person their own catch-up (the Server's catch_up), so Go never posts one unasked.
+const MISSED = /\bwhat(?:'?d| did| have)? i miss(?:ed)?\b|\bkya (?:kya )?miss (?:kiya|hua|ho gaya)\b|\b(?:catch|fill) me (?:up|in)\b/i;
+
+export function asksWhatTheyMissed(text: string | null | undefined): boolean {
+  return !!text && MISSED.test(text);
+}
+
 /** True when a message plainly names Go: the Server's mentions_go, a reply to Go, or Go spoken to in the text. */
 export function plainlyNamesGo(m: Message, pack: TripPack): boolean {
   if (m.mentions_go || namesGoInText(m.text)) return true;

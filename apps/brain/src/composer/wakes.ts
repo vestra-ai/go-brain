@@ -1,6 +1,6 @@
 import type { DeskItem } from '../desk/desk.js';
 import { amountsIn } from '../money/expenses.js';
-import { looksLikeMoney } from '../reflex/money-line.js';
+import { looksLikeMoney, saysMoneyMoved } from '../reflex/money-line.js';
 import type { TripPack } from '../trips/pack.js';
 import { inlineData, personName } from './fence.js';
 
@@ -20,6 +20,34 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
   }
   const line = `message #${m.seq} from ${who}${p.namesGo ? ', it names you' : ''}`;
   return a.kind === 'person' && m.text && looksLikeMoney(m.text) && amountsIn(m.text).length === 0 ? `${line}. ${ASK_HOW_MUCH}` : line;
+}
+
+/**
+ * Said once under "why you woke" when a person's message woke Go without naming it: the reflex wasn't sure it was for
+ * the group, so the turn decides. Here, after the cache point, not in GO_RULES: the rules' cached bytes never change.
+ * A line saying someone paid or owes keeps its own instruction (record_expense from the rules, or ASK_HOW_MUCH); a
+ * price or a budget ("villa under 8k a head") gets the note like any other line. A line by someone who named Go in
+ * the same turn goes on with what they asked ("@Go one thing" ... "is there a good bakery near Anjuna?").
+ */
+export function quietNote(items: DeskItem[], pack: TripPack): string | null {
+  const messages = items.flatMap((item) => {
+    if (item.kind !== 'message') return [];
+    const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean };
+    const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
+    return m && m.author.kind === 'person' ? [{ m, person: m.author.person_id, namesGo: p.namesGo === true }] : [];
+  });
+  const named = new Set(messages.filter((x) => x.namesGo).map((x) => x.person));
+  const seqs = messages.filter((x) => !named.has(x.person) && !saysMoneyMoved(x.m.text)).map((x) => x.m.seq);
+  if (seqs.length === 0) return null;
+  const refs = seqs.map((s) => `#${s}`);
+  const one = refs.length === 1;
+  const which = one ? `${refs[0]} doesn't name you, so it is` : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]} don't name you, so they are`;
+  return (
+    `${which} the group talking. Answer ${one ? 'it' : 'one'} only if it asks something you can answer with facts or a check ` +
+    '(weather, distances, timings, prices, what the group decided). The friends settle their own questions to each other ' +
+    '(what to do, who brings, pays or does what), and the App gives anyone asking what they missed their own catch-up, ' +
+    "so stay quiet on those. Someone saying what they'd like, or agreeing, gets a ✅ at most. Otherwise call stay_silent."
+  );
 }
 
 export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {

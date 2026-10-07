@@ -7,7 +7,7 @@ import type { Log } from '../log.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../reflex/reflex.js';
 import type { HooksImpl } from './hooks.js';
 import type { TripLogImpl } from './log.js';
-import { endsThought, namesGoInText, plainlyNamesGo } from './names-go.js';
+import { asksWhatTheyMissed, endsThought, namesGoInText, plainlyNamesGo } from './names-go.js';
 import { TripGoneError } from './gone.js';
 import type { PacksImpl } from './pack.js';
 import { screenEvent } from './screen.js';
@@ -28,6 +28,15 @@ export interface IntakeDeps {
   runningTasks: (tripId: string) => Promise<Array<{ id: string; brief: string }>>;
   /** The wait after a message for Go, unless the reflex is sure the thought is complete or it names Go and plainly ends one. */
   waitMs?: number;
+}
+
+/**
+ * Whether a person's message wakes the composer. One that names Go always does. Sure chatter never does, and neither
+ * does asking the group what you missed: the App gives each person their own catch-up (the Server's catch_up).
+ */
+export function wakesComposer(namesGo: boolean, read: Pick<ReflexRead, 'forGo'>, text: string | null | undefined): boolean {
+  if (namesGo) return true;
+  return !((read.forGo.sure && read.forGo.value === false) || asksWhatTheyMissed(text));
 }
 
 export function createIntake(d: IntakeDeps) {
@@ -89,8 +98,7 @@ export function createIntake(d: IntakeDeps) {
       read = UNSURE_READ;
     }
     const said = await d.hooks.run(m, read, pack);
-    // Sure chatter never wakes the model, but a message that names Go always does.
-    if (namesGo || !(read.forGo.sure && read.forGo.value === false)) {
+    if (wakesComposer(namesGo, read, m.text)) {
       const now = d.now();
       // No wait for a thought that is over: the reflex is sure, the message names Go and plainly ends ("...?"), or a hook
       // read it as a whole ask (a travel search it has already started).
