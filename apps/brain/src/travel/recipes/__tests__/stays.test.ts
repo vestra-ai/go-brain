@@ -60,7 +60,8 @@ describe('the stays recipe', () => {
   it('takes pages 1 and 2 for all of Goa or a half of it, and page 1 for an area (re-drill 4)', () => {
     const two = {
       capture: [{ match: '/accommodation-search/api/v3/accommodations/search$', required: true, min_count: 2, max_count: 2 }],
-      steps: [{ op: 'wait_for', match: '/accommodation-search/api/v3/accommodations/search$' }, { op: 'scroll', times: 3 }],
+      // Once the results are in, ixigo's once-a-day "Best Price Guarantee" popup is closed if it is there.
+      steps: [{ op: 'wait_for', match: '/accommodation-search/api/v3/accommodations/search$' }, { op: 'scroll', times: 3 }, { op: 'click', name: 'Close modal', optional: true }],
       // Page 2 sometimes never comes: at 12 s the fetch answers with page 1 (re-drill 6; a cold box gave both by 10 s).
       timeoutMs: WIDE_FETCH_MS,
     };
@@ -69,7 +70,10 @@ describe('the stays recipe', () => {
     for (const area of ['Goa', 'North Goa', 'South Goa']) expect(stays.fetchFor!(at(area)), area).toEqual(two);
     for (const area of ['Vagator', 'Anjuna', 'Candolim']) {
       expect(at(area).wide, area).toBe(false);
-      expect(stays.fetchFor!(at(area)), area).toEqual({ capture: stays.capture });
+      expect(stays.fetchFor!(at(area)), area).toEqual({
+        capture: stays.capture,
+        steps: [{ op: 'wait_for', match: '/accommodation-search/api/v3/accommodations/search$' }, { op: 'click', name: 'Close modal', optional: true }],
+      });
     }
   });
 

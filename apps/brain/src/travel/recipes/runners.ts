@@ -44,6 +44,11 @@ export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of cre
  * matters for a sleeping box, where a stays search ran past 13 s on staging.
  */
 export const FETCH_TIMEOUT_MS = 20_000;
+/**
+ * How long Bash waits after the data is in before its last picture, so the card's picture is the drawn list, not the
+ * loading state (#4585). p5 measures what it costs on buses and stays; this is the one number to change.
+ */
+export const FRAMES_SETTLE_MS = 550;
 /** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
 export const IN_USE_WAIT_MS = 4_000;
 
@@ -100,8 +105,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         })),
         ...(plan.steps ? { steps: plan.steps } : {}),
         timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
-        // Pictures of the page as it loads, about one every 700 ms, for the live search card.
-        frames: {},
+        // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles.
+        frames: { settle_ms: FRAMES_SETTLE_MS },
       };
       const fetchCaptures = async (): Promise<Capture[]> => {
         let userId = d.computer.userIdFor(tripId);

@@ -10,7 +10,7 @@ import type { MUST_HAVES, TravelQuery } from '../travel.js';
 import { goaHalfOf, stayPlaceOf, type GoaHalf, type StayLocation } from './places.js';
 import {
   bodiesFor, clamp, ddmmyyyy, highlights, IXIGO, nightsBetween, paise, pageScript, readBody, readRows, RECIPE_TTL_MS,
-  type Capture, type Recipe, type RecipeOption,
+  type Capture, type Recipe, type RecipeOption, type Step,
 } from './recipe.js';
 
 export interface StaySlots {
@@ -35,6 +35,8 @@ const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
  * stays within the turn's 12 s inline wait, with the live card covering it.
  */
 export const WIDE_FETCH_MS = 12_000;
+/** ixigo's "Best Price Guarantee" popup's close button; not there most of the time, so optional. */
+const CLOSE_POPUP: Step = { op: 'click', name: 'Close modal', optional: true };
 /** Two to a room, as ixigo's own search starts ("1 Room, 2 Guests"). */
 const PER_ROOM = 2;
 const MAX_ROOMS = 8;
@@ -317,16 +319,18 @@ export const stays: Recipe<StaySlots> = {
     `&checkinDate=${ddmmyyyy(s.checkIn)}&checkoutDate=${ddmmyyyy(s.checkOut)}&adultCount=${s.adults}&roomCount=${s.rooms}&childCount=0` +
     (s.filters.length ? `&filters=${encodeURIComponent(s.filters.join(','))}` : ''),
   // Page 1 for an area. All of Goa or a half takes pages 1 and 2 (p5's proven shape on staging, about 5 s): page 1 alone,
-  // in ixigo's popularity order, is the Calangute and Candolim strip.
+  // in ixigo's popularity order, is the Calangute and Candolim strip. Either way, once the results are in, ixigo's "Best
+  // Price Guarantee" popup (once a day per browser, about 2 s in) is closed if it is there, so the card's picture is the
+  // list, not the dark overlay.
   capture: [{ match: SEARCH, required: true }],
   fetchFor: (s) =>
     s.wide
       ? {
           capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
-          steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }],
+          steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }, CLOSE_POPUP],
           timeoutMs: WIDE_FETCH_MS,
         }
-      : { capture: [{ match: SEARCH, required: true }] },
+      : { capture: [{ match: SEARCH, required: true }], steps: [{ op: 'wait_for', match: SEARCH }, CLOSE_POPUP] },
   fetchable: true,
   readyText: 'per night, per room',
   extract,

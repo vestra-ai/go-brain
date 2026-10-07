@@ -98,6 +98,16 @@ describe('the live search card', () => {
     expect(r.cards().at(-1)).toMatchObject({ state: 'done', page_url: RESULTS });
   });
 
+  it('ends on the largest picture Bash took once the results were in, over a bigger one under ixigo\'s dark popup', async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k2c', ...FLIGHTS });
+    const sized = (n: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(n, 5)]).toString('base64');
+    const at = (label: string, at_ms: number, n: number): LiveFrame => ({ label, at_ms, page_url: RESULTS, jpeg_base64: sized(n) });
+    live.progress({ type: 'frames', frames: [at('browsing', 1800, 1400), at('results', 3200, 700), at('results', 3800, 900), at('browsing', 4100, 1200)] });
+    await live.finish(true);
+    expect(r.stored).toEqual([Buffer.from(sized(900), 'base64')]);
+  });
+
   it('never stores or shows a picture of a booking page, even the newest one', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k3', ...FLIGHTS });

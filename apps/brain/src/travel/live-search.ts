@@ -48,18 +48,23 @@ export function liveSteps(kind: TravelKind, q: TravelQuery): string[] {
 }
 
 /**
- * The most drawn frame of a page Go may show, as JPEG bytes; null when there is none. A JPEG's size is a cheap measure
- * of what it shows: ixigo's loading state (its header drawn, a grey list) is far smaller than its hotel cards, and the
- * newest frame is often that loading state (re-drill 6). The newer of two the same size.
+ * The most drawn frame of a page Go may show, as JPEG bytes; null when there is none. Bash labels the frames it takes
+ * once the results are in "results": the largest of those, else the largest of any. A JPEG's size is a cheap measure of
+ * what it shows: ixigo's loading state (its header drawn, a grey list) is far smaller than its hotel cards (re-drill 6),
+ * but an earlier frame under ixigo's dark popup can outweigh the list, hence results first. The newer of two the same size.
  */
 export function frameToShow(frames: LiveFrame[]): { bytes: Buffer; pageUrl: string } | null {
-  let best: { bytes: Buffer; pageUrl: string; at: number } | null = null;
+  let best: { bytes: Buffer; pageUrl: string; at: number; results: boolean } | null = null;
   for (const f of frames) {
     if (!isFramePage(f.page_url)) continue;
     const bytes = Buffer.from(f.jpeg_base64, 'base64');
     const jpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
     if (!jpeg || bytes.length > MAX_FRAME_BYTES) continue;
-    if (!best || bytes.length > best.bytes.length || (bytes.length === best.bytes.length && f.at_ms > best.at)) best = { bytes, pageUrl: f.page_url, at: f.at_ms };
+    const results = f.label === 'results';
+    const better = !best ||
+      (results && !best.results) ||
+      (results === best.results && (bytes.length > best.bytes.length || (bytes.length === best.bytes.length && f.at_ms > best.at)));
+    if (better) best = { bytes, pageUrl: f.page_url, at: f.at_ms, results };
   }
   return best && { bytes: best.bytes, pageUrl: best.pageUrl };
 }
