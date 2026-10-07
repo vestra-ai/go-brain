@@ -1,0 +1,100 @@
+import { describe, expect, it } from 'vitest';
+import { applyConstraints } from '../../filters.js';
+import type { TravelOption } from '../../travel.js';
+import { readStaysPage, stays } from '../stays.js';
+import { capture, fixture } from './fixtures.js';
+
+const slots = stays.slotsFrom({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
+const SEARCH_URL = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
+const pages = () => [
+  // The page's first call ends in the same path plus "/static-metadata": it must never be read as hotels.
+  capture('/accommodation-search/api/v3/accommodations/search$', `${SEARCH_URL}/static-metadata`, '{"data":{"filters":[]}}'),
+  capture('/accommodation-search/api/v3/accommodations/search$', SEARCH_URL, fixture('stays-goa-page1.json')),
+  capture('/accommodation-search/api/v3/accommodations/search$', SEARCH_URL, fixture('stays-goa-page2.json')),
+];
+const MERITAS =
+  'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&locationName=Goa&locationType=S&masterLocationId=48569&countryId=1' +
+  '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0&searchLocationId=32&hotelInfoToken=true%7C3001%7C1' +
+  '&hName=Meritas%20Auberge%20Calangute%20Goa';
+
+describe('the stays recipe', () => {
+  it('searches all of Goa for any part of it, two to a room', () => {
+    expect(slots).toEqual({
+      location: { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 },
+      checkIn: '2026-11-06', checkOut: '2026-11-09', adults: 4, rooms: 2,
+    });
+    expect(stays.slotsFrom({ area: 'Anjuna, Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 5 }, { people: 4 })).toMatchObject({ adults: 5, rooms: 3 });
+    expect(() => stays.slotsFrom({ area: 'Manali', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 })).toThrow(/Go can search ixigo stays in Goa/);
+    expect(() => stays.slotsFrom({ area: 'Goa', checkIn: '2026-11-06' }, { people: 4 })).toThrow(/needs the place, check-in and check-out/);
+  });
+
+  it('opens the hotel results page the map gives, and keeps only the search call itself', () => {
+    expect(stays.url(slots)).toBe(
+      'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&locationType=S&masterLocationId=48569&countryId=1' +
+      '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0',
+    );
+    expect(stays.capture).toEqual([{ match: '/accommodation-search/api/v3/accommodations/search$', required: true }]);
+  });
+
+  it('reads both pages of hotels, priced per night and per room with taxes, the whole stay for every room', () => {
+    const options = stays.extract(pages(), slots);
+    expect(options.map((o) => o.title)).toEqual([
+      'Meritas Auberge Calangute Goa', 'Soul Vacation Resort and Spa, Colva', 'De Mandarin Hotel',
+      'Zone Connect by The Park, Parra, Goa', '3102bce - A Vedic Resort', 'Calux Joia Do Mar Resort', 'HOLITEL ANJUNA GOA',
+    ]);
+    expect(options[0]).toMatchObject({
+      kind: 'stay',
+      priceMinor: 810_400,
+      totalMinor: 810_400 * 3 * 2,
+      currency: 'INR',
+      priceNote: 'per night, per room',
+      place: { name: 'Meritas Auberge Calangute Goa', address: 'Candolim', lat: 15.538268089294434, lng: 73.76802062988281 },
+      rating: 4.5,
+      highlights: ['2.3 km from Candolim Beach', 'Free cancellation', 'Pool'],
+      facts: { nights: 3, rooms: 2, area: 'Candolim', stars: 4, rating_out_of_10: 9, reviews: 331, pool: true, breakfast: false, free_cancellation: true, beach_minutes: 29 },
+      sourceUrl: MERITAS,
+    });
+    expect(options[0]!.imageUrl).toMatch(/^https:\/\/q-xx\.bstatic\.com\//);
+    expect(options[1]).toMatchObject({ place: { address: 'Fatona, Colva' }, facts: { area: 'Fatona', beach_minutes: 4, breakfast: true } });
+    expect(options[4]!.facts).not.toHaveProperty('beach_minutes');
+  });
+
+  it('takes page 1 alone when that is all that came back', () => {
+    expect(stays.extract(pages().slice(0, 2), slots)).toHaveLength(3);
+  });
+
+  it('refuses when the page never loaded its hotels', () => {
+    expect(() => stays.extract(pages().slice(0, 1), slots)).toThrow(/did not load its hotels/);
+  });
+
+  it('lets the filters keep a stated free cancellation and a beach within 10 minutes', () => {
+    const options = stays.extract(pages(), slots).map((o) => ({ ...o, offerId: 'x' }) as TravelOption);
+    const near = applyConstraints('stays', { mustHave: ['beach', 'free_cancellation'] }, options);
+    expect(near.map((o) => o.title)).toEqual(['Soul Vacation Resort and Spa, Colva']);
+  });
+
+  it('reads the same hotels at the same prices and links from the page text, for the fallback runner', () => {
+    const rows = readStaysPage(fixture('stays-goa.txt'), JSON.parse(fixture('stays-goa-links.json')) as string[]);
+    expect(rows).toHaveLength(7);
+    expect(rows[0]).toEqual({
+      name: 'Meritas Auberge Calangute Goa', area: 'Candolim', distance: '2.3 km from Candolim Beach', rating: 9, reviews: 331,
+      offerings: ['Free Cancellation'], price: 6426, taxes: 1678, hotel_id: 1384544, location_id: 1366415, token: 'true|3001|1',
+    });
+    const fromPage = stays.fromAgent(rows, slots);
+    const fromCalls = stays.extract(pages(), slots);
+    expect(fromPage.map((o) => o.title)).toEqual(fromCalls.map((o) => o.title));
+    expect(fromPage.map((o) => o.priceMinor)).toEqual(fromCalls.map((o) => o.priceMinor));
+    expect(fromPage.map((o) => o.sourceUrl)).toEqual(fromCalls.map((o) => o.sourceUrl));
+    expect(fromPage[0]).toMatchObject({ rating: 4.5, facts: { area: 'Candolim', free_cancellation: true, beach_minutes: 29 } });
+  });
+
+  it('falls back to the results page for a hotel whose link the page did not show', () => {
+    const rows = readStaysPage(fixture('stays-goa.txt'), []);
+    expect(rows[0]).not.toHaveProperty('hotel_id');
+    expect(stays.fromAgent(rows, slots)[0]!.sourceUrl).toBe(stays.url(slots));
+  });
+
+  it('refuses page rows that do not check out', () => {
+    expect(() => stays.fromAgent([{ name: 'A villa', price: 'cheap' }], slots)).toThrow(/did not check out/);
+  });
+});

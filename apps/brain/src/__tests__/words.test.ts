@@ -18,6 +18,11 @@ const PEOPLE_READ: readonly string[] = [
   'apps/brain/src/travel/cards.ts', // options cards
   'apps/brain/src/travel/taps.ts',
   'apps/brain/src/travel/votes.ts',
+  'apps/brain/src/travel/recipes/flights.ts', // ixigo options: titles, highlights, price notes, and the places refusals
+  'apps/brain/src/travel/recipes/stays.ts',
+  'apps/brain/src/travel/recipes/trains.ts',
+  'apps/brain/src/travel/recipes/buses.ts',
+  'apps/brain/src/travel/recipes/places.ts',
   'apps/brain/src/tasks/working-card.ts', // the working card
   'apps/brain/src/tasks/taps.ts',
   'apps/brain/src/money/cards.ts', // pay and ticket cards

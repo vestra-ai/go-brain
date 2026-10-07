@@ -1,0 +1,136 @@
+{
+ "data": {
+  "result": {
+   "inventoryInfoList": [
+    {
+     "locationId": 1366415,
+     "hotelId": 1384544,
+     "name": "Meritas Auberge Calangute Goa",
+     "locality": "Candolim",
+     "city": "Candolim",
+     "userRating": "9.0",
+     "starRating": 4,
+     "userRatingCount": 331,
+     "accommodationType": "Hotel",
+     "topOfferings": [
+      "Free Cancellation",
+      "Free Wifi",
+      "Swimming pool at the property"
+     ],
+     "roomsCountLeft": 6,
+     "distanceFromSearchedEntity": "2.3 km from Candolim Beach",
+     "hotelInfoToken": "true|3001|1",
+     "geoLocationInfo": {
+      "lat": 15.538268089294434,
+      "lon": 73.76802062988281
+     },
+     "imageInfoList": [
+      {
+       "url": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/650324347.jpg?k=fa63b59086ff1060b86a52b8dd47b1e12ed93a80cc560748164054cc4ae3666a&o=",
+       "urlMedium": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/650324347.jpg?k=fa63b59086ff1060b86a52b8dd47b1e12ed93a80cc560748164054cc4ae3666a&o="
+      }
+     ],
+     "amenities": [
+      {
+       "name": "Restaurants"
+      },
+      {
+       "name": "Room Service"
+      }
+     ],
+     "fareDetail": {
+      "displayedBaseFare": 6426,
+      "taxesAndFees": 1678,
+      "method": "PRPN"
+     }
+    },
+    {
+     "locationId": 2634282,
+     "hotelId": 4020863,
+     "name": "Soul Vacation Resort and Spa, Colva",
+     "locality": "Fatona",
+     "city": "Colva",
+     "userRating": "8.1",
+     "starRating": 4,
+     "userRatingCount": 1367,
+     "accommodationType": "Resort",
+     "topOfferings": [
+      "Breakfast Included",
+      "Free Cancellation",
+      "Free Wifi",
+      "Swimming pool at the property"
+     ],
+     "roomsCountLeft": 0,
+     "distanceFromSearchedEntity": "310 m from Colva Beach, Goa",
+     "hotelInfoToken": "true|2029|2",
+     "geoLocationInfo": {
+      "lat": 15.278228759765623,
+      "lon": 73.91508483886719
+     },
+     "imageInfoList": [
+      {
+       "url": "https://pix8.agoda.net/hotelImages/91812/0/bd4586a1e1251e4f6eca37b491cae585.jpg?ce=3&s=1024x768",
+       "urlMedium": "https://pix8.agoda.net/hotelImages/91812/0/bd4586a1e1251e4f6eca37b491cae585.jpg?ce=3&s=840x460"
+      }
+     ],
+     "amenities": [
+      {
+       "name": "Restaurants"
+      },
+      {
+       "name": "Room Service"
+      }
+     ],
+     "fareDetail": {
+      "displayedBaseFare": 17919,
+      "taxesAndFees": 4312,
+      "method": "PRPN"
+     }
+    },
+    {
+     "locationId": 2972698,
+     "hotelId": 4656452,
+     "name": "De Mandarin Hotel",
+     "locality": "Candolim",
+     "city": "Candolim",
+     "userRating": "8.7",
+     "starRating": 4,
+     "userRatingCount": 429,
+     "accommodationType": "Hotel",
+     "topOfferings": [
+      "Breakfast Included",
+      "Free Cancellation",
+      "Free Wifi",
+      "Swimming pool at the property"
+     ],
+     "roomsCountLeft": 7,
+     "distanceFromSearchedEntity": "1.1 km from Candolim Beach",
+     "hotelInfoToken": "true|3001|1",
+     "geoLocationInfo": {
+      "lat": 15.51126480102539,
+      "lon": 73.77006530761719
+     },
+     "imageInfoList": [
+      {
+       "url": "https://pix8.agoda.net/hotelImages/28796659/-1/87e289ad2b9c0d3c7cd3726f8e259011.jpg?ce=0&s=1024x768",
+       "urlMedium": "https://pix8.agoda.net/hotelImages/28796659/-1/87e289ad2b9c0d3c7cd3726f8e259011.jpg?ce=0&s=840x460"
+      }
+     ],
+     "amenities": [
+      {
+       "name": "Restaurants"
+      },
+      {
+       "name": "24*7 Room Service"
+      }
+     ],
+     "fareDetail": {
+      "displayedBaseFare": 23263,
+      "taxesAndFees": 5274,
+      "method": "PRPN"
+     }
+    }
+   ]
+  }
+ }
+}

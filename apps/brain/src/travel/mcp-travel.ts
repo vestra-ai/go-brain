@@ -13,7 +13,7 @@ import type { Confirmed, Hold, TravelBackend, TravelKind, TravelOption } from '.
 const CONFIRMED_MAX = 1_000;
 
 export class TravelError extends Error {
-  constructor(readonly code: 'needs_more' | 'unreachable' | 'refused' | 'unknown_offer' | 'past_date', message: string) {
+  constructor(readonly code: 'needs_more' | 'unreachable' | 'refused' | 'unknown_offer' | 'past_date' | 'unknown_place', message: string) {
     super(message);
     this.name = 'TravelError';
   }
