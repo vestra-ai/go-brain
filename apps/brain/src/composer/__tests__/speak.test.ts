@@ -90,6 +90,17 @@ describe('post', () => {
     expect(calls[0]?.params.card.card_id).toBe('c_8');
   });
 
+  it("cuts a cited message whole, bracket and all: goa-300:9 in run 37590000837 posted \"after 6 pm ('s thread), so\"", async () => {
+    const { link, calls } = fakeLink({ post_message: () => ({ message_id: 'm_go_7', seq: 7 }) });
+    const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
+    await speak.post({
+      link, tripId: 't_goa', turnId: 'turn_D', requestId: (tag) => `go_${tag}_turn_D_1`,
+      text: "Rahul can leave Fri after 6 pm (#7's thread), so here are the evening flights that fit; the 6:15 am one is cheapest but too early for Arjun.",
+      cards: [],
+    });
+    expect(calls[0]?.params.text).toBe('Rahul can leave Fri after 6 pm, so here are the evening flights that fit; the 6:15 am one is cheapest but too early for Arjun.');
+  });
+
   it('posts a card with no text, and nothing when there is nothing to post', async () => {
     const { link, calls } = fakeLink({ post_message: () => ({ message_id: 'm_go_9', seq: 9 }) });
     const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
