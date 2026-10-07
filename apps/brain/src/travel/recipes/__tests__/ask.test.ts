@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readTravelAsk } from '../ask.js';
+import { agreedDates, readTravelAsk } from '../ask.js';
 import { RECIPES } from '../index.js';
 
 // Wednesday 7 Oct 2026, the Goa trip: North Goa, 6 to 9 Nov.
@@ -39,9 +39,30 @@ describe('reading a travel ask', () => {
     // The must-haves ixigo filters a stay on; "non-refundable" is not free cancellation.
     expect(read('@Go hotel in Candolim with breakfast and free cancellation')?.query.mustHave).toEqual(['breakfast', 'free_cancellation']);
     expect(read('@Go hotel in Candolim, non-refundable is fine')?.query).not.toHaveProperty('mustHave');
-    // On a trip with no dates, "Friday" is the coming one, and "Friday" said on a Friday is next week's.
-    expect(readTravelAsk('@Go flights Delhi to Goa Friday', { ...CTX, dates: null })?.query).toMatchObject({ date: '2026-10-09' });
-    expect(readTravelAsk('@Go flights Delhi to Goa Friday', { ...CTX, today: '2026-10-09', dates: null })?.query).toMatchObject({ date: '2026-10-16' });
+    // Once the trip is over, "Friday" is the coming one, and "Friday" said on a Friday is next week's.
+    expect(readTravelAsk('@Go flights Delhi to Goa Friday', { ...CTX, today: '2026-11-13' })?.query).toMatchObject({ date: '2026-11-20' });
+  });
+
+  it("leaves a day of the week to the model on a trip with no dates yet: this week's or the trip's, only the chat says", () => {
+    // Measurement run 37582427795: "Friday" read as 9 Oct on the 6 to 9 Nov trip, and the model searched again for 6 Nov.
+    const undated = { ...CTX, dates: null };
+    expect(readTravelAsk("@Go flights Delhi to Goa Friday evening? Arjun can't leave before 6", undated)).toBeNull();
+    expect(readTravelAsk('Go find us a villa with a pool in North Goa', undated)).toBeNull();
+    // A date of its own, or "tomorrow", needs no trip.
+    expect(readTravelAsk('@Go which days are cheapest to fly Delhi to Goa around 6 Nov?', undated)?.query).toEqual({ from: 'delhi', to: 'goa', date: '2026-11-06' });
+    expect(readTravelAsk('Go Delhi se Goa flights kal ke dikhao', undated)?.query).toMatchObject({ date: '2026-10-08' });
+  });
+
+  it("finds the trip's dates in its record when the trip has none set: the one range its decided or agreed lines give", () => {
+    const line = (kind: string, text: string, status = 'active') => ({ kind, text, status });
+    expect(agreedDates([line('agreed', '6 to 9 Nov, Diwali long weekend'), line('agreed', 'North Goa, not South')], CTX.today)).toEqual({ start: '2026-11-06', end: '2026-11-09' });
+    expect(agreedDates([line('decided', '6 to 9 Nov'), line('agreed', 'Diwali weekend, 6-9 Nov')], CTX.today)).toEqual({ start: '2026-11-06', end: '2026-11-09' });
+    // An open question, a line someone undid, one day, or two ranges that disagree: none.
+    expect(agreedDates([line('open', '6 to 9 Nov?')], CTX.today)).toBeNull();
+    expect(agreedDates([line('agreed', '6 to 9 Nov', 'undone')], CTX.today)).toBeNull();
+    expect(agreedDates([line('agreed', 'Candolim on 7 Nov')], CTX.today)).toBeNull();
+    expect(agreedDates([line('agreed', '6 to 9 Nov'), line('decided', '13 to 16 Nov')], CTX.today)).toBeNull();
+    expect(agreedDates([], CTX.today)).toBeNull();
   });
 
   it("reads a day of the week as the trip's day while the trip is ahead, from the day before it starts to its last", () => {

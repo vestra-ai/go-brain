@@ -1,8 +1,9 @@
 /**
  * A cheap read of a travel ask, in English and Hinglish, so Go can start the search the moment the message lands:
- * "@Go flights Delhi to Goa Friday" is flights from Delhi to Goa on the trip's Friday, or the coming one on a trip with
- * no dates ahead. It reads only the places the recipes' tables know and plain dates; anything less than a whole ask
- * gives null, and the composer searches as usual.
+ * "@Go flights Delhi to Goa Friday" is flights from Delhi to Goa on the trip's Friday, or the coming one once the trip's
+ * dates are past. On a trip with no dates yet, a day of the week is not read: "Friday" could be this week's or the
+ * trip's, and only the chat says which. It reads only the places the recipes' tables know and plain dates; anything
+ * less than a whole ask gives null, and the composer searches as usual.
  * A journey's clear conditions are read too, so the answer the turn gets already holds them and show_options is the one
  * call: a clock time with am or pm ("after 7 pm", "arriving by 10 am"), "evening" (after 5 pm), "can't leave before 6"
  * (after 6 pm), non-stop, and a price cap per person ("under 6k"). A bare "after 7" is not read: it could be either.
@@ -93,12 +94,30 @@ function datesIn(lower: string, today: string, trip: AskContext['dates'] = null)
   for (const m of lower.matchAll(/\b(today|tonight|aaj)\b/g)) add(m.index, m.index + m[0].length, today);
   for (const m of lower.matchAll(/\b(tomorrow|kal)\b/g)) add(m.index, m.index + m[0].length, addDays(today, 1));
   const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  // A trip with no dates yet: a day of the week could be this week's or the trip's, so it is left to the model.
+  if (!trip) return out.sort((a, b) => a.at - b.at);
   for (const m of lower.matchAll(new RegExp(`\\b(${Object.keys(WEEKDAYS).join('|')})\\b`, 'g'))) {
-    // The trip's, when it has one; else the coming one: "Friday" said on a Friday is next week's.
+    // The trip's; once that is past, the coming one: "Friday" said on a Friday is next week's.
     const ahead = ((WEEKDAYS[m[1]!]! - weekday + 7) % 7) || 7;
     add(m.index, m.index + m[0].length, tripsWeekday(WEEKDAYS[m[1]!]!, today, trip) ?? addDays(today, ahead));
   }
   return out.sort((a, b) => a.at - b.at);
+}
+
+/**
+ * The trip's dates as the group settled them in its record, for a trip whose own dates are not set yet: the one range
+ * ("6 to 9 Nov") in its active decided or agreed lines. Null when there is none, or when two lines give different ones.
+ */
+export function agreedDates(record: ReadonlyArray<{ kind: string; status: string; text: string }>, today: string): { start: string; end: string } | null {
+  const ranges = new Set<string>();
+  for (const line of record) {
+    if (line.status !== 'active' || (line.kind !== 'decided' && line.kind !== 'agreed')) continue;
+    const days = datesIn(line.text.toLowerCase(), today);
+    if (days.length === 2 && days[0]!.day < days[1]!.day) ranges.add(`${days[0]!.day}|${days[1]!.day}`);
+  }
+  if (ranges.size !== 1) return null;
+  const [start, end] = [...ranges][0]!.split('|') as [string, string];
+  return { start, end };
 }
 
 /** The places of this kind the text names, in order, by their names in the tables (and airport or station codes in capitals). */

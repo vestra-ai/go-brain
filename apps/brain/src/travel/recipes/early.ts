@@ -15,7 +15,7 @@ import type { HookAnswer } from '../../trips/hooks.js';
 import { plainlyNamesGo } from '../../trips/names-go.js';
 import type { TripPack } from '../../trips/pack.js';
 import type { Travel, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
-import { readTravelAsk } from './ask.js';
+import { agreedDates, readTravelAsk } from './ask.js';
 import { RECIPES } from './index.js';
 import { RECIPE_TTL_MS } from './recipe.js';
 
@@ -68,8 +68,10 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       // nothing. Unsure, the parser decides alone.
       const pick = read.recipe;
       if (pick?.sure && pick.value === null) return undefined;
+      // The trip's dates; before they are set, the ones the group agreed in its record ("6 to 9 Nov").
+      const dates = pack.trip.dates ?? agreedDates(pack.trip.record, today);
       const ask = readTravelAsk(msg.text, {
-        today, destination: pack.trip.destination?.name ?? null, dates: pack.trip.dates ?? null, ...(pick?.sure && pick.value ? { kind: pick.value } : {}),
+        today, destination: pack.trip.destination?.name ?? null, dates, ...(pick?.sure && pick.value ? { kind: pick.value } : {}),
       });
       if (!ask) return undefined;
       try {
