@@ -31,7 +31,8 @@ describe('the places tables', () => {
     expect(stayPlaceOf('north goa').areas).toEqual(['PA_C_1047', 'PA_C_1067', 'PA_C_1091', 'PA_C_1096', 'PA_C_1169', 'PA_C_1216', 'PA_C_1459', 'PA_C_77993', 'PA_C_78528', 'PA_C_78550', 'PA_C_78647', 'PA_L_156530', 'PA_L_159632', 'PA_L_159635', 'PA_L_165727']);
     expect(goaHalfOf('Vasco da Gama')).toBe('south');
     expect(goaHalfOf('Prabhu wada, Candolim')).toBe('north');
-    expect(goaHalfOf('Fatona')).toBeNull();
+    expect(goaHalfOf('Fatona')).toBe('south');
+    expect(goaHalfOf('Bouta Waddo')).toBeNull();
     // Anjuna is a location of its own, which takes in the stays around it.
     expect(stayPlaceOf('Anjuna')).toEqual({ location: { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 }, areas: [], half: 'north' });
   });
