@@ -36,6 +36,16 @@ describe('question 1: for Go', () => {
       expect(read(notToGo, facts(text)).forGo, text).toEqual({ value: false, sure: true });
     }
   });
+  it('with no answer from Jev, reads small talk as not for Go and leaves every other line unsure', () => {
+    const talk: CodeFacts = { ...plain, smallTalk: true };
+    expect(read(null, talk).forGo).toEqual({ value: false, sure: true });
+    expect(read({ q1_addressed: n(Number.NaN), q1_chatter: n(Number.NaN) }, talk).forGo).toEqual({ value: false, sure: true });
+    expect(read(null).forGo.sure).toBe(false);
+    expect(read(null, { ...talk, namesGo: true }).forGo).toEqual({ value: true, sure: true });
+    // Jev answered: its reading decides, small talk or not.
+    expect(read({ q1_addressed: n(0.95), q1_chatter: n(0.02) }, talk).forGo).toEqual({ value: true, sure: true });
+  });
+
   it('is sure for Go when code saw Go named, whatever Jev says', () => {
     expect(read({ q1_chatter: n(0.99), q1_addressed: n(0.0) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
   });

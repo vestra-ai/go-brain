@@ -17,6 +17,8 @@ export interface CodeFacts {
   hasTasks: boolean;
   /** A line about money (money-line.ts): it always reaches the model, whatever Jev says. */
   money: boolean;
+  /** Only emoji, a laugh, an ok, or a greeting or sign-off (small-talk.ts): read only when Jev has no answer. */
+  smallTalk?: boolean;
 }
 export type RiskWhy = 'spend' | 'steer' | 'secret';
 type Answers = Record<string, JevAnswer> | null;
@@ -56,6 +58,8 @@ function readForGo(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
     // No one spoke to Go (a fact, a plan, friends talking): not for Go, though not chatter. The chatter answer must be
     // well formed too, so an odd answer still reads unsure.
     if (atMost(addressed, b.for_go.notAddressedMax) && Number.isFinite(chatter)) return sure(false);
+    // No answer from Jev (a timeout or an error): small talk ("gn 😴", "haha 😂") says nothing to Go; any other line wakes.
+    if (!Number.isFinite(addressed) && !Number.isFinite(chatter) && f.smallTalk) return sure(false);
   }
   if (atLeast(addressed, b.for_go.addressedMin) && atMost(chatter, b.for_go.chatterMaxForAddressed)) return sure(true);
   return unsure();
