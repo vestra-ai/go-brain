@@ -7,12 +7,33 @@ import type { z } from 'zod';
 import type { OptionKind, ResultOption } from './results.js';
 
 export type OptionsCardT = z.infer<typeof C.OptionsCard>;
+export type NoticeCardT = z.infer<typeof C.NoticeCard>;
 type CardOption = OptionsCardT['options'][number];
 
 export const PICK_ACTION = { action_id: 'pick', label: "I'll take this", style: 'primary', per_option: true } as const;
 export const VOTE_ACTION = { action_id: 'vote', label: 'Put it to a vote', style: 'secondary' } as const;
 /** On options from ixigo.com: opens the option's own page there, where the group books it. */
 export const OPEN_ACTION = { action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true } as const;
+
+/** On the card that links to flights on ixigo, when Go can't read them itself. */
+export const SEE_FLIGHTS_ACTION = { action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' } as const;
+
+/**
+ * The flights Go couldn't read, as a link: ixigo's results page with what people asked for already set. It never says
+ * there are no flights: ixigo refused Go's computer, and the page has them.
+ */
+export function buildFlightsLinkCard(i: { cardId: string; title: string; url: string }): NoticeCardT {
+  return C.NoticeCard.parse({
+    card_id: i.cardId,
+    kind: 'notice',
+    fallback_text: clip(`${i.title}: see them on ixigo`, 300),
+    tone: 'info',
+    title: clip(i.title, 80),
+    body: "Go can't read ixigo's flights from its computer right now, so here they are on ixigo, with what you asked for already set.",
+    source: { name: 'ixigo', url: i.url },
+    actions: [SEE_FLIGHTS_ACTION],
+  });
+}
 
 /** The option's own https page on ixigo.com, or null: the only pages "See on ixigo" opens. */
 export function ixigoPage(sourceUrl: string | null | undefined): string | null {

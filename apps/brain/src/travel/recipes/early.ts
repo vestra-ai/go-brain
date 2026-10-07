@@ -27,6 +27,8 @@ export interface EarlyStartDeps {
   log: { warn(obj: object, msg: string): void };
   /** Keeps the trip's computer awake for two minutes; absent while it is not set up here. */
   keepWarm?: (tripId: string) => void;
+  /** Kinds that answer with ixigo's link and load nothing (the backend's linkOnly): nothing to start early. */
+  linkOnly?: (kind: TravelKind) => boolean;
 }
 
 /** A search a message started on intake. */
@@ -65,6 +67,8 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
         // A place the recipes have no code for: the composer asks, or searches, as usual.
         return undefined;
       }
+      // A link answers at once: the turn starts now, with nothing to search early.
+      if (d.linkOnly?.(ask.kind)) return { dueNow: true };
       // Not awaited: the hooks run one after another, and nothing should wait on the page.
       const search = travel.search(ask.kind, ask.query, { tripId });
       search.catch((err: unknown) => {
