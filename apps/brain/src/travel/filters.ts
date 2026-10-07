@@ -2,7 +2,7 @@
  * Constraints people gave, applied in code to what the backend found. The model passes them as arguments; it is never
  * trusted to drop an option itself. Journeys sort by departure, stays by rating then price.
  */
-import { formatClock, formatInr, localClock } from './cards.js';
+import { arrivalWords, daysLater, formatClock, formatInr, localClock } from './cards.js';
 import type { TravelKind, TravelOption, TravelQuery } from './travel.js';
 
 /** "Near the beach" means this many minutes or less. */
@@ -43,8 +43,8 @@ export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): strin
   const leaves = j ? formatClock(localClock(j.depart_at)) : null;
   if (q.departAfter && (!j || localClock(j.depart_at) < q.departAfter)) out.push(leaves ? `leaves at ${leaves}, before ${formatClock(q.departAfter)}` : 'no departure time');
   if (q.departBefore && (!j || localClock(j.depart_at) > q.departBefore)) out.push(leaves ? `leaves at ${leaves}, after ${formatClock(q.departBefore)}` : 'no departure time');
-  if (q.arriveBefore && (!j || j.arrive_at.slice(0, 10) !== j.depart_at.slice(0, 10) || localClock(j.arrive_at) > q.arriveBefore)) {
-    out.push(j ? `arrives at ${formatClock(localClock(j.arrive_at))}${j.arrive_at.slice(0, 10) !== j.depart_at.slice(0, 10) ? ' the next day' : ''}, after ${formatClock(q.arriveBefore)}` : 'no arrival time');
+  if (q.arriveBefore && (!j || daysLater(j.depart_at, j.arrive_at) > 0 || localClock(j.arrive_at) > q.arriveBefore)) {
+    out.push(j ? `arrives at ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at, 'the next day')}, after ${formatClock(q.arriveBefore)}` : 'no arrival time');
   }
   if (q.maxPriceMinor !== undefined && o.priceMinor > q.maxPriceMinor) out.push(`${formatInr(o.priceMinor)}${per(kind)}, over ${formatInr(q.maxPriceMinor)}`);
   if (q.minRating !== undefined && (o.rating ?? 0) < q.minRating) out.push(o.rating === undefined ? 'no rating' : `rated ${o.rating}, under ${q.minRating}`);

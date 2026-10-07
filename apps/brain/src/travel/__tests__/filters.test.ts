@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
-import { applyConstraints } from '../filters.js';
+import { applyConstraints, misses } from '../filters.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import type { TravelOption } from '../travel.js';
 
@@ -35,6 +35,14 @@ describe('constraints applied in code', () => {
       journey: { mode: 'flight', origin: { name: 'Delhi' }, destination: { name: 'Goa' }, depart_at: '2026-11-06T22:50:00+05:30', arrive_at: '2026-11-07T01:25:00+05:30' },
     };
     expect(applyConstraints('flights', { arriveBefore: '23:00' }, [overnight])).toEqual([]);
+  });
+
+  it('says the day a train arrives when it is two days later, not "the next day"', () => {
+    const longTrain: TravelOption = {
+      offerId: 'fake:22634', kind: 'train', title: '22634 NZM TVC SF Exp', priceMinor: 218500, currency: 'INR', priceNote: 'per person', highlights: [], facts: {},
+      journey: { mode: 'train', origin: { name: 'Delhi' }, destination: { name: 'Thiruvananthapuram' }, depart_at: '2026-11-06T22:15:00+05:30', arrive_at: '2026-11-08T02:00:00+05:30' },
+    };
+    expect(misses('trains', { arriveBefore: '23:00' }, longTrain)).toEqual(['arrives at 2:00 am on Sun 8 Nov, after 11:00 pm']);
   });
 
   it('drops a train that arrives the next day when it must arrive before a time', async () => {
