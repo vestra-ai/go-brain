@@ -17,6 +17,8 @@ export interface AskContext {
   destination?: string | null;
   /** The trip's dates, for a stay asked for without its own. */
   dates?: { start: string; end: string } | null;
+  /** The kind of search, when Jev is sure of it (question 10): it wins over the kind words, which miss some Hinglish. */
+  kind?: TravelKind;
 }
 
 const KINDS: Array<[TravelKind, RegExp]> = [
@@ -121,7 +123,7 @@ export function travelTalk(text: string, today: string): boolean {
 
 /** The ask in a message, or null when it is not one whole search of one kind. */
 export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
-  const kinds = KINDS.filter(([, re]) => re.test(text)).map(([k]) => k);
+  const kinds = ctx.kind ? [ctx.kind] : KINDS.filter(([, re]) => re.test(text)).map(([k]) => k);
   if (kinds.length !== 1) return null;
   const kind = kinds[0]!;
   const lower = text.toLowerCase();
