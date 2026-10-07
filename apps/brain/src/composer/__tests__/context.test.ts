@@ -465,4 +465,15 @@ describe('turn rules (P6\'s proactive bar)', () => {
     expect(c.turnRules([wake({ kind: 'opening', ref: 'opening:t_goa:quiet', payload: {} })])).toEqual({ tools: ['react', 'post_notice'], mayPostText: false });
     expect(c.turnRules([wake()])).toEqual({ tools: ['react'], mayPostText: true });
   });
+
+  it('tells every lane once a turn is over; a lane that throws never stops the next', () => {
+    const c = createContext(silentLog);
+    const seen: string[] = [];
+    c.addTurnEnd(() => {
+      throw new Error('a broken lane');
+    });
+    c.addTurnEnd((t) => seen.push(`${t.tripId} ${t.turnId} ${t.messageIds.join(',')}`));
+    c.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41', 'm_42'] });
+    expect(seen).toEqual(['t_goa turn_1 m_41,m_42']);
+  });
 });

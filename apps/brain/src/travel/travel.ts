@@ -134,10 +134,20 @@ export interface StoredOffer {
   sourceUrl: string | null;
 }
 
+/**
+ * Who a search is for. tripId: the trip whose computer runs it. messageId: the message whose early start ran it. turnId:
+ * the composer turn whose search tool ran it. The last two say whose live card it is (ixigo_web).
+ */
+export interface SearchFor {
+  tripId?: string;
+  messageId?: string;
+  turnId?: string;
+}
+
 /** What answers behind the layer: the fake ixigo, ixigo's MCP server, or ixigo.com itself through the recipes. */
 export interface TravelBackend {
   /** tripId: the trip whose computer runs the search, for a backend that searches in the trip's browser (ixigo_web). */
-  search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<TravelSearch>;
+  search(kind: TravelKind, q: TravelQuery, o?: SearchFor): Promise<TravelSearch>;
   /**
    * How much longer a search tool may wait for this search before it goes on and the options come when it finishes; null
    * (or no method) waits for it.
@@ -151,7 +161,7 @@ export interface TravelBackend {
 /** brain.travel: the master plan's methods (search, status, offer, hold, confirm), plus the demo's flight-delay switch. */
 export interface Travel {
   /** Refuses (TravelError past_date) a check-in or departure before today in the trip's time zone. */
-  search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<TravelSearch>;
+  search(kind: TravelKind, q: TravelQuery, o?: SearchFor): Promise<TravelSearch>;
   /** How much longer to wait for this search inline (TravelBackend.waitMs); null waits for it. */
   waitMs?(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }): Promise<number | null>;
   status(q: StatusQuery): Promise<StatusResult>;

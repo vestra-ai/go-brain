@@ -72,6 +72,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
   // A search that outlived its turn wakes Go with its options.
   brain.context.addWake('search', renderSearchWake);
+  // A turn that ends ends the live search cards it left open.
+  brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));
   // Null for taps on other cards (pay, call): the next lane's renderer, or P1's generic line, reads those.
   brain.context.addWake('tap', renderOptionsTap);
   brain.travel = travel;

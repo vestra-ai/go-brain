@@ -189,6 +189,11 @@ export class FakeContext implements Context {
   addEndNote(): void {
     // Nor an order at the end of the prompt.
   }
+  /** The lanes' turn-end hooks: a test ends a turn as P1's composer does, by calling each one. */
+  readonly turnEnds: Array<Parameters<Context['addTurnEnd']>[0]> = [];
+  addTurnEnd(fn: Parameters<Context['addTurnEnd']>[0]): void {
+    this.turnEnds.push(fn);
+  }
 }
 
 type SetupStep = Parameters<Setup['addStep']>[0];
