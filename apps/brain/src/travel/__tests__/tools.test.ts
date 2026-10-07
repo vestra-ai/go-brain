@@ -183,6 +183,26 @@ describe('show_options', () => {
     expect(offers.map((o) => [o.optionId, o.title])).toEqual(card.options.map((o) => [o.option_id, o.title]));
   });
 
+  it('titles ixigo.com stays from the search when the title names villas they are not, and keeps it when every one is (re-drill 6)', async () => {
+    const stay = (title: string, area: string) => ({
+      kind: 'stay' as const, title, priceMinor: 900_000, currency: 'INR', priceNote: 'per night, per room', highlights: ['Pool'], facts: { area, pool: true },
+      sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
+    });
+    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
+    const show = async (options: ReturnType<typeof stay>[], title: string, turnId: string) => {
+      const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query, options, checkedAt: '2026-10-07T12:00:00.000Z' });
+      const ctx = lb.ctx({ turnId });
+      await lb.tools.run('show_options', { results_id: set.resultsId, title }, ctx);
+      return C.OptionsCard.parse(ctx.cards[0]).title;
+    };
+    const hotels = [stay('Meritas Auberge Calangute Goa', 'Candolim'), stay('3102bce - A Vedic Resort', 'Vagator'), stay('Villa Mandrem', 'Mandrem')];
+    expect(await show(hotels, 'Pool villas in North Goa', 'turn_t1')).toBe('Stays with a pool in North Goa');
+    expect(await show(hotels, 'Resorts with a pool', 'turn_t2')).toBe('Stays with a pool in North Goa');
+    // Every option a villa by its name, or a title that names no kind of place: the model's title stands.
+    expect(await show([stay('Villa Mandrem', 'Mandrem'), stay('The Palms Villa', 'Vagator')], 'Pool villas in North Goa', 'turn_t3')).toBe('Pool villas in North Goa');
+    expect(await show(hotels, 'Top picks near the beach', 'turn_t4')).toBe('Top picks near the beach');
+  });
+
   it("refuses results it does not have, or another trip's", async () => {
     const other = await results.save({ tripId: 't_other', optionKind: 'flight', source: 'search', query: {}, options: [], checkedAt: '2026-10-07T12:00:00.000Z' });
     expect(await lb.tools.run('show_options', { results_id: other.resultsId, title: 'x' }, lb.ctx())).toMatchObject({ error: 'unknown_results' });
