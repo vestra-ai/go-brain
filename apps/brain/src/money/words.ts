@@ -94,7 +94,12 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
     case 'wrong_offer':
       return yes(`That isn't what the group voted for. I can only pay for ${c.what}.`);
     case 'not_bookable':
-      return yes("I found this one on the web, so I can't book it here. Want me to call them instead?");
+      // An option from ixigo.com (TRAVEL_MODE ixigo_web) carries its own page there, where the group books it.
+      return yes(
+        c.link
+          ? `${c.what} is booked on ixigo, not here. Here's the link to book it yourselves: ${c.link}`
+          : "I found this one on the web, so I can't book it here. Want me to call them instead?",
+      );
     case 'not_bookable_yet': {
       // A fare is per person, so one payment for the group would be wrong: the group books these on ixigo themselves.
       const first = `I can't book ${c.kind === 'train' ? 'trains' : c.kind === 'bus' ? 'buses' : 'flights'} for the whole group yet.`;

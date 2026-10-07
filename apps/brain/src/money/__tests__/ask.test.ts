@@ -152,6 +152,20 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     expect(k.travel.holds).toEqual([]);
   });
 
+  it('for a stay from ixigo.com: no offer to hold, so Go hands over its ixigo page to book it there, and holds nothing', async () => {
+    k.travel.options.set('opt_villa_sol', null);
+    k.travel.pages.set('opt_villa_sol', 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1');
+    expect(await k.ask()).toMatchObject({
+      code: 'not_bookable',
+      refused: "Villa Sol is booked on ixigo, not here. Here's the link to book it yourselves: https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1",
+    });
+    // A page anywhere but ixigo.com is never handed out.
+    k.travel.pages.set('opt_villa_sol', 'https://villa-sol.example.com/book');
+    expect(await k.ask()).toMatchObject({ code: 'not_bookable', refused: "I found this one on the web, so I can't book it here. Want me to call them instead?" });
+    expectNothingPosted();
+    expect(k.travel.holds).toEqual([]);
+  });
+
   it('for a flight, train or bus: group travel is cut this week, so Go hands over the link and holds nothing', async () => {
     // The group's winner resolves to a per-person flight fare.
     k.travel.options.set('opt_villa_sol', 'ixigo:flight:6e-2134');

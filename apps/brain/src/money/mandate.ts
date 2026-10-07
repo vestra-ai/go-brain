@@ -1,5 +1,6 @@
 import type { TurnCtx } from '../composer/tools.js';
 import type { Message, Trip } from '../door/methods.js';
+import { ixigoPage } from '../travel/cards.js';
 import type { Travel } from '../travel/travel.js';
 import { GROUP_FARES } from './ask.js';
 import { mandateCard } from './cards.js';
@@ -70,10 +71,12 @@ export async function whyNotBookable(
   } catch {
     return { refused: `I couldn't check ${option.label} just now. Try again in a moment.` };
   }
+  // The option's own page, said only when it is on ixigo.com.
+  const link = ixigoPage(offer?.link);
   if (offer && GROUP_FARES.has(offer.kind)) {
-    return { refused: refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(offer.link ? { link: offer.link } : {}) }).text, unbookable: true };
+    return { refused: refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}) }).text, unbookable: true };
   }
-  if (!offer?.offerId) return { refused: refusalWords('not_bookable', words).text, unbookable: true };
+  if (!offer?.offerId) return { refused: refusalWords('not_bookable', { ...words, ...(link ? { link } : {}) }).text, unbookable: true };
   return null;
 }
 
