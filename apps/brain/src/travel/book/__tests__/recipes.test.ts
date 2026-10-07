@@ -30,7 +30,7 @@ describe('the recipe book', () => {
   it('loads every file, with nothing left out', () => {
     expect(problems).toEqual([]);
     expect(book.all().map((r) => r.id).sort()).toEqual([
-      'buses.between', 'buses.city_lookup', 'flights.airport_lookup', 'flights.search',
+      'buses.between', 'buses.city_lookup', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.search',
       'hotels.place_lookup', 'hotels.search', 'plan.destination', 'trains.between', 'trains.station_lookup',
     ]);
   });

@@ -68,11 +68,29 @@ describe('plan.destination', () => {
   });
 });
 
+describe('flights.fare_calendar', () => {
+  it("answers with each day's cheapest fare around the date, from ixigo's own fare calendar", async () => {
+    const body = sample('flights.fare_calendar.json');
+    const runner = { read: async (_t: string, url: string) => ({ captures: [capture('/outlook/v1/onward/ranged', 'https://www.ixigo.com/outlook/v1/onward/ranged?origin=DEL', body)], finalUrl: url }) };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
+    const got = await engine.answer('flights.fare_calendar', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
+    if (got.as !== 'facts') throw new Error('not facts');
+    expect(got.title).toBe('Cheapest fares, Delhi to Goa');
+    expect(got.page).toBe('https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&adults=1&children=0&infants=0&class=e&source=Search%20Form');
+    expect(got.rows).toHaveLength(10);
+    expect(got.rows.slice(0, 3)).toEqual([
+      { date: '22-10-2026', cheapest_fare: '₹10,194 per person', airline: 'Air-India Express', flight: 'IX1817' },
+      { date: '23-10-2026', cheapest_fare: '₹10,194 per person', airline: 'Air-India Express', flight: 'IX1049' },
+      { date: '24-10-2026', cheapest_fare: '₹8,618 per person', airline: 'IndiGo', flight: '6E2271' },
+    ]);
+  });
+});
+
 describe('the ixigo tool', () => {
   const turn = { tripId: 't_goa', turnId: 'turn_1', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
 
   it("offers the book's facts recipes, never a search, a lookup or one that changes something", () => {
-    expect(toolRecipes(book).map((r) => r.id)).toEqual(['plan.destination']);
+    expect(toolRecipes(book).map((r) => r.id)).toEqual(['flights.fare_calendar', 'plan.destination']);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
     expect(tool.description).toContain('- plan.destination: A destination');
     expect(tool.description).toContain('Asked as: "best time to visit goa", "good places to eat in goa"');
