@@ -87,7 +87,7 @@ function room(o: {
     release: o.release ?? (async (_turnId, ids) => { released.push(...ids); }),
     ...(o.budget ? { budget: o.budget } : {}),
   });
-  return { tripId, calls, notes, link, model, composer, pack, speak, released, posts: () => calls.filter((c) => c.method === 'post_message') };
+  return { tripId, calls, notes, link, model, composer, pack, speak, released, context, posts: () => calls.filter((c) => c.method === 'post_message') };
 }
 
 const item = (tripId: string, m: Message, namesGo: boolean): DeskItem => ({
@@ -352,6 +352,37 @@ describe('a composer turn', () => {
     await turn(r, [item(r.tripId, ask, true)], `turn_${r.tripId}`, 2);
     expect(r.calls.filter((c) => c.method === 'add_reaction')).toHaveLength(1);
     expect(r.posts()).toHaveLength(1);
+  });
+
+  it('tells the lanes once the turn is over, with the messages it handled, pulled ones too; a failed attempt is not the end', async () => {
+    const ask = msg(3, 'p_arjun', '@Go flights Friday?');
+    const more = msg(5, 'p_kabir', 'also Saturday?');
+    let claimed = false;
+    const r = room({
+      messages: [ask],
+      script: [{ throws: new Error('overloaded') }, { text: 'Friday: three flights after 6 pm.' }, { text: 'Friday has three flights after 6 pm, Saturday has two.' }],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(more);
+        return [item(tripId, more, false)];
+      },
+    });
+    const ended: unknown[] = [];
+    r.context.addTurnEnd((t) => ended.push(t));
+    await expect(turn(r, [item(r.tripId, ask, true)])).rejects.toThrow('overloaded');
+    expect(ended).toEqual([]);
+    await turn(r, [item(r.tripId, ask, true)], `turn_${r.tripId}`, 2);
+    expect(ended).toEqual([{ tripId: r.tripId, turnId: `turn_${r.tripId}`, messageIds: ['m_3', 'm_5'] }]);
+  });
+
+  it('giving up ends the turn for the lanes too', async () => {
+    const ask = msg(3, 'p_arjun', '@Go hello?');
+    const r = room({ messages: [ask], script: [] });
+    const ended: unknown[] = [];
+    r.context.addTurnEnd((t) => ended.push(t));
+    await r.composer.giveUp({ tripId: r.tripId, turnId: 'turn_g', items: [item(r.tripId, ask, true)], attempt: 3 });
+    expect(ended).toEqual([{ tripId: r.tripId, turnId: 'turn_g', messageIds: ['m_3'] }]);
   });
 
   it('giving up: one calm message, only when someone was waiting', async () => {

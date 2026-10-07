@@ -26,6 +26,13 @@ export interface StoryProvider {
   get(tripId: string): Promise<StoryView>;
 }
 
+/** A turn that is over (it ran, or gave up after its last attempt), with the messages it handled. */
+export interface TurnEnd {
+  tripId: string;
+  turnId: string;
+  messageIds: string[];
+}
+
 /** A turn's limits: the only tools it may call (stay_silent always works) and whether its text may be posted. */
 export interface TurnLimits {
   tools: string[];
@@ -46,6 +53,8 @@ export interface Context {
   setStory(p: StoryProvider): void;
   /** P6's proactive bar: limits for a turn Go woke for on its own; null means no limits. */
   addTurnRules(fn: (wake: DeskItem[]) => TurnLimits | null): void;
+  /** Called once a turn is over, so a lane ends what the turn left open (P4's live search cards). */
+  addTurnEnd(fn: (t: TurnEnd) => void): void;
 }
 
 /** A text block as the Messages API takes it. */
@@ -80,6 +89,8 @@ export type ContextImpl = Context & {
   renderWake(item: DeskItem, pack: TripPack): string;
   /** The first rule's answer for these wake items, or null for no limits. */
   turnRules(wake: DeskItem[]): TurnLimits | null;
+  /** Tells every addTurnEnd lane the turn is over; never throws. */
+  turnEnded(t: TurnEnd): void;
 };
 
 export const CHUNK = 25;
@@ -99,6 +110,7 @@ export function createContext(log: Log): ContextImpl {
   const rules: Array<(wake: DeskItem[]) => TurnLimits | null> = [];
   const notes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
   const endNotes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
+  const turnEnds: Array<(t: TurnEnd) => void> = [];
   let story: StoryProvider | null = null;
 
   function renderWake(item: DeskItem, pack: TripPack): string {
@@ -157,6 +169,18 @@ export function createContext(log: Log): ContextImpl {
         }
       }
       return null;
+    },
+    addTurnEnd(fn) {
+      turnEnds.push(fn);
+    },
+    turnEnded(t) {
+      for (const fn of turnEnds) {
+        try {
+          fn(t);
+        } catch (e) {
+          log.warn({ err: e, trip: t.tripId, turn: t.turnId }, 'a turn-end hook failed');
+        }
+      }
     },
     renderWake,
     async build(i) {

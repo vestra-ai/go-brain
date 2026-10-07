@@ -32,7 +32,7 @@ function setup(search: () => Promise<TravelSearch>, wait: number | null, withDes
   const travel = { search: vi.fn(search), waitMs: async () => wait } as unknown as Travel;
   const tools = travelTools({ travel, results, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z'), ...(withDesk ? { desk } : {}) });
   const searchBuses = tools.find((t) => t.name === 'search_buses')!;
-  return { run: () => searchBuses.run(BUSES, ctx) as Promise<Record<string, unknown>>, puts };
+  return { run: () => searchBuses.run(BUSES, ctx) as Promise<Record<string, unknown>>, puts, travel };
 }
 
 function later<T>() {
@@ -49,6 +49,8 @@ describe('a search that outlives its turn', () => {
     const w = setup(() => run.p, 0);
     const out = await w.run();
     expect(out).toMatchObject({ search: 'buses from Mumbai to Goa on 2026-11-06', count: 0, running: true, tell_the_room: SAY_NOTHING });
+    // The turn's own search: its live card is this turn's.
+    expect(w.travel.search).toHaveBeenCalledWith('buses', expect.anything(), { tripId: 't_goa', turnId: 'turn_w1' });
     expect(w.puts).toEqual([]);
     run.resolve(FOUND);
     await vi.waitFor(() => expect(w.puts).toHaveLength(1));

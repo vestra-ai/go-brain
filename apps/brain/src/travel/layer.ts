@@ -14,7 +14,7 @@ import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
 import { applyConstraints, closest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
 import type { ResultsStore } from './results.js';
-import { TravelQuery, type OfferRef, type Travel, type TravelBackend, type TravelKind, type TravelOptionKind, type TravelSearch } from './travel.js';
+import { TravelQuery, type OfferRef, type SearchFor, type Travel, type TravelBackend, type TravelKind, type TravelOptionKind, type TravelSearch } from './travel.js';
 
 export const SEARCH_CACHE_MS = 180_000;
 const CACHE_MAX = 500;
@@ -89,7 +89,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     throw new TravelError('unknown_offer', `No travel backend for ${id}.`);
   };
   return {
-    async search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }) {
+    async search(kind: TravelKind, q: TravelQuery, o?: SearchFor) {
       const parsed = TravelQuery.parse(q);
       const day = parsed.checkIn ?? parsed.date;
       if (day) {

@@ -130,6 +130,8 @@ const foldText = (lines: string[]): string =>
 
 export function createComposer(d: ComposerDeps): Composer {
   const turnTimeoutMs = d.turnTimeoutMs ?? 20_000;
+  /** The messages a running turn pulled in after it started: they are the turn's too when it ends. */
+  const pulledBy = new Map<string, DeskItem[]>();
 
   async function alreadyPosted(turnId: string): Promise<boolean> {
     const r = await d.pool.query(
@@ -200,6 +202,7 @@ export function createComposer(d: ComposerDeps): Composer {
         const passedOver = claimed.filter((i) => isForGo(i) && (seqOf(i, pack) ?? Number.POSITIVE_INFINITY) <= prompt.newestSeq);
         await d.release(t.turnId, passedOver.map((i) => i.id));
         pulled.push(...claimed.filter((i) => !passedOver.includes(i)));
+        pulledBy.set(t.turnId, pulled);
         const fresh = linesFor(pulled, pack, prompt.newestSeq);
         if (fresh.lines.length) {
           const more = await runLoop({
@@ -311,5 +314,27 @@ export function createComposer(d: ComposerDeps): Composer {
     });
   }
 
-  return { runTurn, giveUp };
+  /**
+   * A turn is over when it ran, or gave up after its last attempt (a failed attempt runs again under the same turn id):
+   * the lanes end what it left open, such as a live search card (context.turnEnded).
+   */
+  function ended(t: TurnInput): void {
+    const items = [...t.items, ...(pulledBy.get(t.turnId) ?? [])];
+    pulledBy.delete(t.turnId);
+    d.context.turnEnded({ tripId: t.tripId, turnId: t.turnId, messageIds: items.filter((i) => i.kind === 'message').map(messageIdOf) });
+  }
+
+  return {
+    async runTurn(t) {
+      await runTurn(t);
+      ended(t);
+    },
+    async giveUp(t) {
+      try {
+        await giveUp(t);
+      } finally {
+        ended(t);
+      }
+    },
+  };
 }

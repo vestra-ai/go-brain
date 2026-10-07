@@ -9,9 +9,12 @@ import { createEarlyStart } from '../early.js';
 
 function world(mode = 'ixigo_web', fail = false) {
   const searches: Array<{ kind: TravelKind; q: TravelQuery; tripId: string | undefined }> = [];
+  /** The message each search was started for: its live card belongs to that message's turn. */
+  const forMessages: Array<string | undefined> = [];
   const travel = {
-    async search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }) {
+    async search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string; messageId?: string }) {
       searches.push({ kind, q, tripId: o?.tripId });
+      forMessages.push(o?.messageId);
       if (fail) throw new TravelError('unreachable', 'ixigo took too long to answer.');
       return { results: [], checkedAt: '2026-10-07T12:00:00.000Z' };
     },
@@ -22,7 +25,7 @@ function world(mode = 'ixigo_web', fail = false) {
   let nowMs = Date.parse('2026-10-07T12:00:00Z');
   const warmed: string[] = [];
   const early = createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date(nowMs), log, keepWarm: (tripId) => warmed.push(tripId) });
-  return { hook: (...a: Parameters<typeof early.onRead>) => early.onRead(...a), early, searches, log, warmed, advance: (ms: number) => { nowMs += ms; } };
+  return { hook: (...a: Parameters<typeof early.onRead>) => early.onRead(...a), early, searches, forMessages, log, warmed, advance: (ms: number) => { nowMs += ms; } };
 }
 
 const forGo: ReflexRead = { ...UNSURE_READ, forGo: { value: true, sure: true } };
@@ -33,6 +36,7 @@ describe('the early start', () => {
     const answer = await w.hook(msg(41, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
     expect(answer).toEqual({ dueNow: true });
     expect(w.searches).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '17:00' }, tripId: 't_goa' }]);
+    expect(w.forMessages).toEqual(['m_41']);
   });
 
   it('takes an ask the quick read is sure is for Go, even without its name', async () => {
