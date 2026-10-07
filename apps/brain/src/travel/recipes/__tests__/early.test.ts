@@ -96,6 +96,22 @@ describe('the early start', () => {
     expect(w.searches).toHaveLength(1);
   });
 
+  it("on a trip with no dates set, reads the dates the group agreed in its record, and leaves \"Friday\" alone without them", async () => {
+    const at = '2026-10-05T03:00:00Z';
+    const agreed = { line_id: 'r_dates', kind: 'agreed', text: '6 to 9 Nov, Diwali long weekend', status: 'active', proof: [], person_ids: ['p_rahul'], source: 'go', created_at: at, updated_at: at };
+    const undated = (record: unknown[]) => ({ ...goaPack(), trip: { ...goaPack().trip, dates: null, record } }) as never;
+    const w = world('fake');
+    expect(await w.hook(msg(70, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, undated([agreed]))).toEqual({ dueNow: true });
+    expect(await w.hook(msg(71, 'p_rahul', 'Go, find us a villa with a pool in North Goa'), UNSURE_READ, undated([agreed]))).toEqual({ dueNow: true });
+    expect(w.searches.map((s) => s.q)).toEqual([
+      { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '17:00' },
+      { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] },
+    ]);
+    // No dates anywhere: "Friday" could be this week's or the trip's, so the composer reads the chat.
+    expect(await w.hook(msg(72, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, undated([]))).toBeUndefined();
+    expect(w.searches).toHaveLength(2);
+  });
+
   it('remembers the search each message started, for ten minutes, for the turn it wakes', async () => {
     const w = world();
     await w.hook(msg(48, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
