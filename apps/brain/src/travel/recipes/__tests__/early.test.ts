@@ -32,7 +32,7 @@ describe('the early start', () => {
     const w = world();
     const answer = await w.hook(msg(41, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
     expect(answer).toEqual({ dueNow: true });
-    expect(w.searches).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-10-09' }, tripId: 't_goa' }]);
+    expect(w.searches).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-10-09', departAfter: '17:00' }, tripId: 't_goa' }]);
   });
 
   it('takes an ask the quick read is sure is for Go, even without its name', async () => {
@@ -53,7 +53,7 @@ describe('the early start', () => {
     for (const mode of ['fake', 'ixigo']) {
       const w = world(mode);
       expect(await w.hook(msg(46, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack()), mode).toEqual({ dueNow: true });
-      expect(w.searches, mode).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-10-09' }, tripId: 't_goa' }]);
+      expect(w.searches, mode).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-10-09', departAfter: '17:00' }, tripId: 't_goa' }]);
       // No live card there: the right-now block won't say one told the room.
       expect(w.early.searchFor('t_goa', 'm_46'), mode).toMatchObject({ kind: 'flights', live: false });
     }

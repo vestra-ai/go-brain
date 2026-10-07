@@ -1,8 +1,9 @@
 // Offline replay of the early start in the bench's own travel mode (fake): every ask in the definitive live run (run
 // 37488230324, docs/demo/evidence), as its line, through the early start and the right-now block as they are now, on
 // the bench's trip and on the same trip with its dates (6 to 9 Nov) saved. In that run each search ask took two model
-// calls, search then show_options, because the early start ran only under ixigo_web. Here, the asks the early start
-// reads get the search's answer in the turn, so show_options can be the one call; the rest search as before.
+// calls, search then show_options, because the early start ran only under ixigo_web and read none of the asks'
+// conditions. Here, the asks the early start reads get the search's answer in the turn, their conditions applied
+// ("after 7 pm", "can't leave before 6"), so show_options can be the one call; the rest search as before.
 import { readFileSync } from 'node:fs';
 import * as C from '@go/contract';
 import { UNSURE_READ } from '@go/brain/dist/reflex/reflex.js';
@@ -49,7 +50,7 @@ async function replay(run: LiveRun, dates: { start: string; end: string } | null
       ? await block.render(trip.trip_id, [{ id: `msg:${l.i}`, tripId: trip.trip_id, kind: 'message', ref: m.message_id, dueAt: now(), payload: { messageId: m.message_id, seq: l.i } } as never])
       : null;
     const searched = [...new Set(ask.calls.flatMap((c) => c.toolsAfter).filter((t) => t.startsWith('search_')).map((t) => t.slice('search_'.length)))];
-    out.push({ line: `${run.chat} L${l.i}`, searched, started: started ? { kind: started.kind, query: started.query } : null, first: said?.split('\n')[0] ?? null });
+    out.push({ line: `${run.chat} L${l.i}`, searched, started: started ? { kind: started.kind, query: started.query } : null, first: said?.split('\n')[0] ?? null, said });
   }
   return out;
 }
@@ -76,9 +77,15 @@ describe('the early start, replayed on the definitive live run in the fake trave
     expect(started).toEqual([
       ['goa-300 L9', { kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-11-06' } }],
       // "Friday", read as the coming one; the block lets the model search again for the trip's.
-      ['goa-300 L122', { kind: 'flights', query: { from: 'bangalore', to: 'goa', date: '2026-10-09' } }],
-      ['goa-50 L9', { kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-10-09' } }],
+      ['goa-300 L122', { kind: 'flights', query: { from: 'bangalore', to: 'goa', date: '2026-10-09', departAfter: '19:00' } }],
+      ['goa-50 L9', { kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-10-09', departAfter: '18:00' } }],
     ]);
+  });
+
+  it("the flights asks' answers hold their conditions, so the model has none left to search for", async () => {
+    const all = await runs(null);
+    expect(all.find((a) => a.line === 'goa-50 L9')!.said).toContain('4 of the 10 flights from delhi to goa on 2026-10-09 fit leaving after 6');
+    expect(all.find((a) => a.line === 'goa-300 L122')!.said).toContain('2 of the 3 flights from bangalore to goa on 2026-10-09 fit leaving after 7');
   });
 
   it('the trip with its dates: the villa asks start too; the vote and the booking ask start nothing', async () => {

@@ -2,8 +2,11 @@
  * A cheap read of a travel ask, in English and Hinglish, so Go can start the search the moment the message lands:
  * "@Go flights Delhi to Goa Friday" is flights from Delhi to Goa on the coming Friday. It reads only the places the
  * recipes' tables know and plain dates; anything less than a whole ask gives null, and the composer searches as usual.
- * Constraints ("after 6 pm", "under 8k") are not read: the search fetches the whole list and the tool applies them.
- * A stay's pool, breakfast or free cancellation is read, since ixigo filters on those and the list depends on them.
+ * A journey's clear conditions are read too, so the answer the turn gets already holds them and show_options is the one
+ * call: a clock time with am or pm ("after 7 pm", "arriving by 10 am"), "evening" (after 5 pm), "can't leave before 6"
+ * (after 6 pm), non-stop, and a price cap per person ("under 6k"). A bare "after 7" is not read: it could be either.
+ * A stay's pool, breakfast or free cancellation is read, since ixigo filters on those and the list depends on them; its
+ * price ("8k a head") and "near the beach" are left to the model.
  */
 import type { TravelKind, TravelQuery } from '../travel.js';
 import { addDays } from './recipe.js';
@@ -111,6 +114,48 @@ function placesIn(text: string, kind: TravelKind): Array<Found & { name: string 
   return out.sort((a, b) => a.at - b.at);
 }
 
+const TIME = '(\\d{1,2})(?::([0-5]\\d))?\\s*(am|pm)';
+
+/** "7 pm", "7:30pm" as 19:00 and 19:30; a bare hour (no am or pm) only where the words make it the evening. */
+function clock(hour: string, minutes: string | undefined, half: string | undefined): string | null {
+  let h = Number(hour);
+  if (h < 1 || h > 12) return null;
+  if (half === 'pm' || (half === undefined && h < 12)) h = h === 12 ? 12 : h + 12;
+  else if (half === 'am' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${minutes ?? '00'}`;
+}
+
+/** A journey's clear conditions. Each one read goes into the search, which applies it in code like the tool's own. */
+function conditionsIn(lower: string, kind: TravelKind): Partial<TravelQuery> {
+  const out: Partial<TravelQuery> = {};
+  const later = (t: string | null): void => {
+    if (t && (!out.departAfter || t > out.departAfter)) out.departAfter = t;
+  };
+  // "can't leave before 6": the end of a working day, so the evening, unless it says am.
+  let rest = lower;
+  for (const m of lower.matchAll(/\b(?:can'?t|cannot|can not|won'?t)\s+(?:leave|go|fly|start)\s+(?:before|till|until)\s+(\d{1,2})(?::([0-5]\d))?\s*(am|pm)?\b/g)) {
+    later(clock(m[1]!, m[2], m[3]));
+    rest = rest.replace(m[0], ' ');
+  }
+  for (const m of rest.matchAll(new RegExp(`\\b(?:after|post)\\s+${TIME}\\b`, 'g'))) later(clock(m[1]!, m[2], m[3]));
+  if (/\b(evening|shaam)\b/.test(rest)) later('17:00');
+  for (const m of rest.matchAll(new RegExp(`\\b(?:before|by)\\s+${TIME}\\b`, 'g'))) {
+    const t = clock(m[1]!, m[2], m[3]);
+    if (!t) continue;
+    // "arriving by 10 am", "reach Goa before 2 pm": the arrival; otherwise the departure.
+    if (/\b(arriv|reach|land|pahunch|there)\w*\b[^.?!]{0,24}$/.test(rest.slice(0, m.index))) out.arriveBefore = t;
+    else out.departBefore = t;
+  }
+  if (kind === 'flights' && /\b(non[\s-]?stop|direct)\b/.test(rest)) out.mustHave = ['non_stop'];
+  // A cap per person: "under 6k", "below ₹5,500". Not one for everyone together, and not hours or kilometres.
+  const cap = /\b(?:under|below|less than|within|max|upto|up to)\s*(?:rs\.?\s*|₹\s*|inr\s*)?(\d[\d,]*(?:\.\d+)?)\s*(k|thousand)?(?![a-z\d])(?!\s*(?:hours?|hrs?|mins?|minutes?|km|kms|stops?|people|log)\b)/.exec(rest);
+  if (cap && !/\b(total|in all|for all|altogether|for everyone)\b/.test(rest)) {
+    const rupees = Number(cap[1]!.replace(/,/g, '')) * (cap[2] ? 1000 : 1);
+    if (Number.isFinite(rupees) && rupees >= 500) out.maxPriceMinor = Math.round(rupees * 100);
+  }
+  return out;
+}
+
 /** The must-haves ixigo filters a stay search on, as people say them. */
 const STAY_NEEDS: Array<[NonNullable<TravelQuery['mustHave']>[number], RegExp]> = [
   ['pool', /\bpool\b/],
@@ -164,5 +209,5 @@ export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
     [from, to] = [places[0]!.name, ctx.destination];
   }
   if (!from || !to || from === to) return null;
-  return { kind, query: { from, to, date, ...extra } };
+  return { kind, query: { from, to, date, ...extra, ...conditionsIn(lower, kind) } };
 }
