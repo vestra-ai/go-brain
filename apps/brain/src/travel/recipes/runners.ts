@@ -10,7 +10,7 @@ import type { Switches } from '../../admin/switches.js';
 import { V1Error, type V1Client } from '../../tasks/v1-client.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveFrame, OnProgress } from './progress.js';
-import { AGENT_MAX_ROWS, bodiesFor, type Capture, type Recipe, type RecipeOption } from './recipe.js';
+import { AGENT_MAX_ROWS, bodiesFor, snapshotText, type Capture, type Recipe, type RecipeOption } from './recipe.js';
 
 export interface RecipeRun {
   options: RecipeOption[];
@@ -117,15 +117,21 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
 
 // ── the agent job (the fallback) ─────────────────────────────────────────────
 
+/** computer_snapshot answers up to 15,000 characters before it pages to a file. */
+const SNAPSHOT_MAX_CHARS = 16_000;
+
 /** /v1 allows about 60 calls a minute a key: one look a second, for one job, leaves room for everything else. */
 export const AGENT_POLL_MS = 1_000;
 /** A job took 25 to 53 s on staging; past this it is stopped. Nothing waits on it inline (the search tool goes on). */
 export const AGENT_WAIT_MS = 90_000;
 
+/** What the job returns: the script's rows, or, when computer_eval was held or refused, a snapshot's text to read in Go. */
 const ROWS_SCHEMA = {
   type: 'object',
-  properties: { rows: { type: 'array', items: { type: 'object' }, maxItems: AGENT_MAX_ROWS } },
-  required: ['rows'],
+  properties: {
+    rows: { type: 'array', items: { type: 'object' }, maxItems: AGENT_MAX_ROWS },
+    snapshot: { type: 'string', maxLength: SNAPSHOT_MAX_CHARS },
+  },
   additionalProperties: false,
 };
 
@@ -139,7 +145,9 @@ export const recipeMessage = (url: string, readyText: string, script: string): s
   `Open this page with computer_navigate:\n${url}\n\n` +
   `Then call computer_wait with the text ${JSON.stringify(readyText)} and timeoutMs 15000, so the results are on the page.\n\n` +
   'Then call computer_eval with this script as its `expression` argument, exactly as written, and return what it returns as rows:\n\n' +
-  script;
+  `${script}\n\n` +
+  'If computer_eval is refused, or waits for a person to allow it, call computer_snapshot with full set to true instead, and return ' +
+  'what it shows, exactly as it shows it, as snapshot (and no rows).';
 
 export function createAgentJobRunner(d: RunnerDeps & { deploymentId: string | null }): RecipeRunner {
   const sleep = d.sleep ?? nap;
@@ -199,7 +207,10 @@ export function createAgentJobRunner(d: RunnerDeps & { deploymentId: string | nu
       }
     }
     o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
-    const options = recipe.fromAgent((data as { rows?: unknown } | null | undefined)?.rows, slots);
+    const out = data as { rows?: unknown; snapshot?: unknown } | null | undefined;
+    // The script's rows; else the snapshot's text, read by the recipe's own reader. Either way the rows are checked.
+    const rows = out?.rows === undefined && typeof out?.snapshot === 'string' ? recipe.readPage(snapshotText(out.snapshot), []).slice(0, AGENT_MAX_ROWS) : out?.rows;
+    const options = recipe.fromAgent(rows, slots);
     const at = d.now();
     return { options, checkedAt: at.toISOString(), ms: at.getTime() - started };
   }

@@ -7,6 +7,8 @@ describe('the travel search job (go-recipe)', () => {
     expect(GO_RECIPE_INSTRUCTIONS).toContain('Call computer_eval with the script as its `expression` argument, exactly as given.');
     expect(GO_RECIPE_INSTRUCTIONS).toContain('Call computer_wait with the text the message names, so the results are on the page.');
     expect(GO_RECIPE_INSTRUCTIONS).toContain('Return that list as rows, unchanged.');
+    // When computer_eval is held for a person's yes, a read-only snapshot instead; never a looser money guard.
+    expect(GO_RECIPE_INSTRUCTIONS).toContain('call computer_snapshot with full set to true instead');
     expect(GO_RECIPE_INSTRUCTIONS).not.toMatch(/[—–]/);
   });
 });

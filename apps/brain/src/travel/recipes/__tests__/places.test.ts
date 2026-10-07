@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
 import { airportOf, busCityOf, stationOf, stayPlaceOf } from '../places.js';
 import { RECIPES } from '../index.js';
-import { bodiesFor, ddmmyyyy, istAt, istOf, matches } from '../recipe.js';
+import { bodiesFor, ddmmyyyy, istAt, istOf, matches, snapshotText } from '../recipe.js';
 import { capture } from './fixtures.js';
 
 describe('the places tables', () => {
@@ -51,6 +51,13 @@ describe('the recipe helpers', () => {
     const url = 'https://www.ixigo.com/a';
     const cut = { ...capture('/a', url, '{"half":'), truncated: true };
     expect(bodiesFor([capture('/a', url, 'one'), capture('/a', url, 'two', 500), cut, capture('/a', url, 'three')], '/a')).toEqual(['one', 'three']);
+  });
+
+  it("read a snapshot's text nodes in order, as the page's own text reads", () => {
+    const snap = ['- main', '  - link "IndiGo 6E5341 05:00 DEL" [@e4]', '    - StaticText "IndiGo"', '    - StaticText "6E5341"', '    - StaticText "say \\"hi\\""'].join('\n');
+    expect(snapshotText(snap)).toBe('IndiGo\n6E5341\nsay "hi"');
+    // With no text nodes, every name, in order.
+    expect(snapshotText('- heading "05:00" [level=6]\n- paragraph "DEL"')).toBe('05:00\nDEL');
   });
 
   it('write dates and times as ixigo and India read them', () => {
