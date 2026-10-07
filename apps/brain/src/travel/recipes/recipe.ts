@@ -44,6 +44,10 @@ export interface Recipe<S> {
   url(s: S): string;
   capture: CaptureSpec[];
   steps?: Step[];
+  /** False when Bash's browser fetch can't read the page: its list loads only in a tab Chrome draws, so the agent job reads it. */
+  fetchable: boolean;
+  /** Text the page shows once its results are in: the agent job waits for it before it reads the page. */
+  readyText: string;
   /** The options in the captured data calls. Throws TravelError('refused') when a required call is missing or unreadable. */
   extract(captures: Capture[], s: S): RecipeOption[];
   /** The fallback runner's page script: an expression whose value is the rows the page shows, at most 15, under 8 KB. */

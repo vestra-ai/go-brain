@@ -183,6 +183,9 @@ export const buses: Recipe<BusSlots> = {
   },
   url: (s) => `${IXIGO}/buses/bus_search/${encodeURIComponent(s.from.name)}/${s.from.id}/${encodeURIComponent(s.to.name)}/${s.to.id}/${dashed(s.date)}/O`,
   capture: [{ match: SERVICES, required: true }],
+  // The bus list loads only in a tab Chrome draws (p5's staging drill): the browser fetch's tab never gets it.
+  fetchable: false,
+  readyText: 'Select Seats',
   extract,
   agentExtractor: pageScript(readBusesPage, 3),
   fromAgent,

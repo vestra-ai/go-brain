@@ -1,13 +1,15 @@
 /**
  * Two ways to run a recipe in the trip's own browser. The browser fetch is Bash's model-free call: the page opens in a
- * background tab and the page's own data calls come back, in about 4 s. The agent job is the fallback until that call is
- * live: a /v1 job on the go-recipe deployment opens the page and runs the recipe's page script, in 12 to 18 s. The
- * TRAVEL_RUNNER switch picks one on every search. Either way, what comes back goes through the recipe's checks.
+ * background tab and the page's own data calls come back, in 3 to 8 s. The agent job is the fallback: a /v1 job on the
+ * go-recipe deployment opens the page and runs the recipe's page script, in 25 to 55 s, so nothing waits on it inline.
+ * The TRAVEL_RUNNER switch picks one on every search. Either way, what comes back goes through the recipe's checks, and
+ * the run reports its steps (onProgress) for the live search card.
  */
 import { createHash } from 'node:crypto';
 import type { Switches } from '../../admin/switches.js';
 import { V1Error, type V1Client } from '../../tasks/v1-client.js';
 import { TravelError } from '../mcp-travel.js';
+import type { LiveFrame, OnProgress } from './progress.js';
 import { AGENT_MAX_ROWS, bodiesFor, type Capture, type Recipe, type RecipeOption } from './recipe.js';
 
 export interface RecipeRun {
@@ -19,7 +21,8 @@ export interface RecipeRun {
 
 export interface RecipeRunner {
   name: 'browser_fetch' | 'agent_job';
-  run<S>(tripId: string, recipe: Recipe<S>, slots: S, o?: { signal?: AbortSignal }): Promise<RecipeRun>;
+  /** onProgress: the run's steps, for the live search card; called, never awaited. */
+  run<S>(tripId: string, recipe: Recipe<S>, slots: S, o?: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<RecipeRun>;
 }
 
 export interface RunnerDeps {
@@ -36,12 +39,12 @@ export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of cre
 
 // ── the browser fetch ────────────────────────────────────────────────────────
 
-/** How long Bash may take, the box's wake included. */
-export const FETCH_TIMEOUT_MS = 8_000;
+/** How long Bash may take, the box's wake included: a train search on a sleeping box took about 8 s on staging. */
+export const FETCH_TIMEOUT_MS = 12_000;
 /** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
 export const IN_USE_WAIT_MS = 4_000;
 
-interface FetchAnswer { final_url: string; elapsed_ms: number; woke: boolean; captures: Capture[] }
+interface FetchAnswer { final_url: string; elapsed_ms: number; woke: boolean; captures: Capture[]; frames?: LiveFrame[] }
 
 const isCapture = (c: unknown): c is Capture =>
   typeof c === 'object' && c !== null && typeof (c as Capture).url === 'string' && typeof (c as Capture).body === 'string' && typeof (c as Capture).status === 'number';
@@ -71,8 +74,10 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     name: 'browser_fetch',
     async run(tripId, recipe, slots, o = {}) {
       const started = d.now().getTime();
+      const url = recipe.url(slots);
+      o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
       const body = {
-        url: recipe.url(slots),
+        url,
         // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer.
         capture: recipe.capture.map((c) => ({ match: c.match, ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
         ...(recipe.steps ? { steps: recipe.steps } : {}),
@@ -83,6 +88,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         for (let tries = 0; ; tries++) {
           try {
             const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) });
+            // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
+            if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
             return answer.captures;
           } catch (err) {
             if (!(err instanceof V1Error)) throw err;
@@ -99,7 +106,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           }
         }
       };
-      const options = recipe.extract(await fetchCaptures(), slots);
+      const captures = await fetchCaptures();
+      o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
+      const options = recipe.extract(captures, slots);
       const at = d.now();
       return { options, checkedAt: at.toISOString(), ms: at.getTime() - started };
     },
@@ -108,8 +117,10 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
 
 // ── the agent job (the fallback) ─────────────────────────────────────────────
 
-export const AGENT_POLL_MS = 500;
-export const AGENT_WAIT_MS = 25_000;
+/** /v1 allows about 60 calls a minute a key: one look a second, for one job, leaves room for everything else. */
+export const AGENT_POLL_MS = 1_000;
+/** A job took 25 to 53 s on staging; past this it is stopped. Nothing waits on it inline (the search tool goes on). */
+export const AGENT_WAIT_MS = 90_000;
 
 const ROWS_SCHEMA = {
   type: 'object',
@@ -119,19 +130,25 @@ const ROWS_SCHEMA = {
 };
 
 interface Turn { id: string; work?: Array<{ task_id: string }> }
+/** One line of a conversation, as GET /v1/conversations/{id}/messages lists them: the work is on Bash's line of the turn. */
+interface Line { turn_id: string; work?: Array<{ task_id: string }> }
 interface Task { status: 'queued' | 'working' | 'waiting' | 'done' | 'failed'; result?: { data?: unknown } | null }
 
-/** The job's one message: the page and the script, exactly as Go wrote them. */
-export const recipeMessage = (url: string, script: string): string =>
-  `Open this page with computer_navigate:\n${url}\n\nThen run this script with computer_eval, exactly as written, and return what it returns as rows:\n\n${script}`;
+/** The job's one message: the page, the text that shows its results are in, and the script, exactly as Go wrote them. */
+export const recipeMessage = (url: string, readyText: string, script: string): string =>
+  `Open this page with computer_navigate:\n${url}\n\n` +
+  `Then call computer_wait with the text ${JSON.stringify(readyText)} and timeoutMs 15000, so the results are on the page.\n\n` +
+  'Then call computer_eval with this script as its `expression` argument, exactly as written, and return what it returns as rows:\n\n' +
+  script;
 
 export function createAgentJobRunner(d: RunnerDeps & { deploymentId: string | null }): RecipeRunner {
   const sleep = d.sleep ?? nap;
-  async function runJob<S>(tripId: string, recipe: Recipe<S>, slots: S, o: { signal?: AbortSignal }): Promise<RecipeRun> {
+  async function runJob<S>(tripId: string, recipe: Recipe<S>, slots: S, o: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<RecipeRun> {
     if (!d.deploymentId) throw new TravelError('refused', 'The fallback travel search is not set up yet (VESTRA_RECIPE_DEPLOYMENT_ID).');
     const started = d.now().getTime();
     const userId = await d.computer.ensureUser(tripId);
     const url = recipe.url(slots);
+    o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
     // One job per search: a resend of the same start finds the same conversation and message.
     const run = createHash('sha256').update(`${tripId}|${url}|${started}`).digest('hex').slice(0, 24);
     const metadata = { go_trip_id: tripId, go_recipe: recipe.id };
@@ -141,26 +158,32 @@ export function createAgentJobRunner(d: RunnerDeps & { deploymentId: string | nu
     });
     const turn = await d.v1.call<Turn>('POST', `/v1/conversations/${conversation.id}/messages`, {
       idempotencyKey: `go-recipe-msg-${run}`,
-      body: { message: recipeMessage(url, recipe.agentExtractor), output_schema: ROWS_SCHEMA, hand_off: 'always', metadata },
+      body: { message: recipeMessage(url, recipe.readyText, recipe.agentExtractor), output_schema: ROWS_SCHEMA, hand_off: 'always', metadata },
     });
     let taskId = turn.work?.[0]?.task_id ?? null;
-    const stop = async (): Promise<void> => {
-      if (taskId) await d.v1.call('POST', `/v1/tasks/${taskId}/stop`, { idempotencyKey: `go-stop-${taskId}` }).catch(() => undefined);
+    // The conversation is this search's alone, so stopping it stops its job, whether or not Go has learnt the job's id yet.
+    const stop = async (why: string): Promise<void> => {
+      try {
+        const r = await d.v1.call<{ stopped_work?: string[] }>('POST', `/v1/conversations/${conversation.id}/stop`, { idempotencyKey: `go-recipe-stop-${run}` });
+        d.log.warn({ tripId, recipe: recipe.id, conversationId: conversation.id, stopped: r?.stopped_work ?? [] }, `travel: stopped a recipe job (${why})`);
+      } catch (err) {
+        d.log.warn({ err, tripId, recipe: recipe.id, conversationId: conversation.id }, `travel: stopping a recipe job (${why}) failed`);
+      }
     };
     let data: unknown;
     for (;;) {
       if (o.signal?.aborted) {
-        await stop();
+        await stop('called off');
         throw new TravelError('unreachable', 'The search was called off.');
       }
       if (d.now().getTime() - started >= AGENT_WAIT_MS) {
-        await stop();
+        await stop('too slow');
         throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
       }
       await sleep(AGENT_POLL_MS);
       if (!taskId) {
-        const turns = await d.v1.call<{ data: Turn[] }>('GET', `/v1/conversations/${conversation.id}/messages`);
-        taskId = turns.data.find((t) => t.id === turn.id)?.work?.[0]?.task_id ?? null;
+        const lines = await d.v1.call<{ data: Line[] }>('GET', `/v1/conversations/${conversation.id}/messages`);
+        taskId = lines.data.find((l) => l.turn_id === turn.id && (l.work?.length ?? 0) > 0)?.work?.[0]?.task_id ?? null;
         continue;
       }
       const task = await d.v1.call<Task>('GET', `/v1/tasks/${taskId}`);
@@ -171,10 +194,11 @@ export function createAgentJobRunner(d: RunnerDeps & { deploymentId: string | nu
       if (task.status === 'failed') throw new TravelError('refused', "The trip's computer could not read ixigo's page.");
       // It waits on an approval or a question: a page read never needs one, so it is stopped, not left waiting.
       if (task.status === 'waiting') {
-        await stop();
+        await stop('it stopped to ask');
         throw new TravelError('refused', "The trip's computer stopped to ask something while reading ixigo's page.");
       }
     }
+    o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
     const options = recipe.fromAgent((data as { rows?: unknown } | null | undefined)?.rows, slots);
     const at = d.now();
     return { options, checkedAt: at.toISOString(), ms: at.getTime() - started };

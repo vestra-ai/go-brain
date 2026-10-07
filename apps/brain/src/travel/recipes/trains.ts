@@ -241,6 +241,8 @@ export const trains: Recipe<TrainSlots> = {
     { match: BETWEEN, required: true },
     { match: AVAILABILITY, required: false },
   ],
+  fetchable: true,
+  readyText: 'SHOW AVAILABILITY',
   extract,
   agentExtractor: pageScript(readTrainsPage, 2),
   fromAgent,

@@ -9,6 +9,7 @@ import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { createImages, registerImageRoute } from './images.js';
 import { createTravelLayer } from './layer.js';
+import { startLiveSearch } from './live-search.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
 import { createIxigoWebBackend } from './recipes/backend.js';
@@ -16,6 +17,7 @@ import { createEarlyStart } from './recipes/early.js';
 import { earlySearchNow } from './recipes/now.js';
 import { runnerFor } from './recipes/runners.js';
 import { createResultsStore } from './results.js';
+import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 
@@ -29,16 +31,23 @@ export const registerTravel: RegisterLane = async (brain) => {
     : null;
   const ixigo = env.IXIGO_MCP_URL && ixigoCaller ? createIxigoTravel({ url: env.IXIGO_MCP_URL, now: brain.now, caller: ixigoCaller }) : null;
   if (ixigoCaller) brain.onStop(() => ixigoCaller.close());
-  if (!ixigo) brain.log.info('travel: IXIGO_MCP_URL is not set, so searches use the fake ixigo whatever TRAVEL_MODE says');
+  if (!ixigo) brain.log.info('travel: IXIGO_MCP_URL is not set, so TRAVEL_MODE ixigo searches the fake ixigo (ixigo_web and fake are not affected)');
   const results = createResultsStore(brain.pool);
   const images = createImages({ pool: brain.pool, publicUrl: env.GO_PUBLIC_URL });
   const imageRoute = registerImageRoute(brain.http, { pool: brain.pool });
   brain.onStop(() => imageRoute.close());
-  // The tasks lane, which registers after this one, sets the runners: a search reads them when it runs.
+  // The tasks lane, which registers after this one, sets the runners: a search reads them when it runs. Bash's browser
+  // fetch reads a page when the TRAVEL_RUNNER switch says so and the page's list loads in a hidden tab; the agent job
+  // reads the rest.
   const ixigoWeb = createIxigoWebBackend({
-    runner: () => (brain.recipeRunners ? runnerFor(brain.switches, brain.recipeRunners) : null),
+    runner: (recipe) => {
+      const runners = brain.recipeRunners;
+      if (!runners) return null;
+      return recipe.fetchable ? runnerFor(brain.switches, runners) : runners.agentJob;
+    },
     peopleOf: async (tripId) => (await brain.packs.get(tripId)).trip.people.length,
     now: brain.now,
+    live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log }, tripId, o),
   });
   const travel = createTravelLayer({
     switches: brain.switches,
@@ -50,11 +59,13 @@ export const registerTravel: RegisterLane = async (brain) => {
     today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
   });
-  for (const t of travelTools({ travel, results, images, now: brain.now })) brain.tools.register(t);
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log })) brain.tools.register(t);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({ travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
-  brain.context.addNow(earlySearchNow({ early, results, now: brain.now }));
+  brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
+  // A search that outlived its turn wakes Go with its options.
+  brain.context.addWake('search', renderSearchWake);
   // Null for taps on other cards (pay, call): the next lane's renderer, or P1's generic line, reads those.
   brain.context.addWake('tap', renderOptionsTap);
   brain.travel = travel;

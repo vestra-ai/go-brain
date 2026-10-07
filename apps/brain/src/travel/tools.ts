@@ -5,16 +5,27 @@
  */
 import { z } from 'zod';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
+import type { Desk } from '../desk/desk.js';
 import { buildOptionsCard, clip, formatInr, subtitleFor } from './cards.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
+import { TRAVEL_WAIT_MS } from './recipes/backend.js';
 import { TravelError } from './mcp-travel.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultsStore } from './results.js';
+import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
 import { openVoteFromCard } from './votes.js';
 
-export interface TravelToolDeps { travel: Travel; results: ResultsStore; images: Images; now: () => Date }
+export interface TravelToolDeps {
+  travel: Travel;
+  results: ResultsStore;
+  images: Images;
+  now: () => Date;
+  /** Where a search that outlives its turn wakes Go with its options; without it, every search is waited for. */
+  desk?: Pick<Desk, 'put'>;
+  log?: { warn(obj: object, msg: string): void };
+}
 
 export const OPTION_KIND: Record<TravelKind, OptionKind> = { flights: 'flight', trains: 'train', buses: 'bus', stays: 'stay' };
 
@@ -160,9 +171,17 @@ const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '')
  * never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
  */
 async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
+  const pending = d.travel.search(kind, q, { tripId: ctx.tripId });
+  // Handled at once, so a refusal that lands while the wait is worked out is never an unhandled rejection; it is read below.
+  pending.catch(() => undefined);
+  // A search that can't answer in time (an ixigo.com page on a slow box, or the agent job) goes on without the turn.
+  const budget = d.desk && d.travel.waitMs ? await d.travel.waitMs(kind, q, { tripId: ctx.tripId }).catch(() => null) : null;
   let found;
   try {
-    found = await d.travel.search(kind, q, { tripId: ctx.tripId });
+    // At least a second: a search kept from earlier answers in that, even when the run itself would never answer inline.
+    const first = budget === null ? await pending : await Promise.race([pending, nap(Math.max(budget, KEPT_ANSWERS_MS)).then(() => STILL_RUNNING)]);
+    if (first === STILL_RUNNING) return goOnWithout(kind, q, pending, ctx, d);
+    found = first;
   } catch (err) {
     const search = searchName(kind, q);
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
@@ -173,6 +192,41 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
     throw err;
   }
   return searchAnswer(kind, q, found, ctx.tripId, d);
+}
+
+/** The loop waits this long for a search tool: the search's own wait (TRAVEL_WAIT_MS) and its answer fit inside. */
+const SEARCH_TOOL_MS = TRAVEL_WAIT_MS + 2_000;
+const STILL_RUNNING = Symbol('still running');
+const KEPT_ANSWERS_MS = 1_000;
+const nap = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms).unref());
+
+/**
+ * The turn goes on while the search runs; when it finishes, its answer is saved and Go wakes on a 'search' desk item to
+ * show it. Searches that shared one run (the early start and this call, or two turns) wake Go once.
+ */
+function goOnWithout(kind: TravelKind, q: TravelQuery, pending: Promise<TravelSearch>, ctx: TurnCtx, d: TravelToolDeps): unknown {
+  const search = searchName(kind, q);
+  const wake = (id: string, payload: SearchWake): Promise<void> => d.desk!.put({ id, tripId: ctx.tripId, kind: 'search', ref: kind, dueAt: d.now(), payload });
+  pending
+    .then(
+      async (found) => {
+        const a = await searchAnswer(kind, q, found, ctx.tripId, d);
+        const payload: SearchWake = { source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null };
+        await wake(`search:${ctx.tripId}:${found.runId ?? `${ctx.turnId}:${kind}`}`, payload);
+      },
+      async (err: unknown) => {
+        const code = err instanceof TravelError ? err.code : 'failed';
+        await wake(`search:${ctx.tripId}:${ctx.turnId}:${kind}:failed`, { source: 'travel_search', search, count: 0, resultsId: null, summary: '', error: code });
+      },
+    )
+    .catch((err: unknown) => d.log?.warn({ err, tripId: ctx.tripId, kind }, 'travel: a search that outlived its turn could not wake Go'));
+  return {
+    search,
+    count: 0,
+    running: true,
+    tell_the_room: SAY_NOTHING,
+    note: 'This search is still running on ixigo, and the live card in the room already shows it. Post nothing about it now: you wake with its options when it finishes.',
+  };
 }
 
 /** What was searched, with the conditions people gave: "flights from Delhi to Goa on 2026-11-06, leaving after 6:00 pm". */
@@ -295,6 +349,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     input: FlightsArgs,
     run: (a, ctx) => runSearch('flights', flightsQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,
+    timeoutMs: SEARCH_TOOL_MS,
   };
   const searchTrains: QuickTool<z.infer<typeof JourneyArgs>> = {
     name: 'search_trains',
@@ -302,6 +357,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     input: JourneyArgs,
     run: (a, ctx) => runSearch('trains', journeyQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,
+    timeoutMs: SEARCH_TOOL_MS,
   };
   const searchBuses: QuickTool<z.infer<typeof JourneyArgs>> = {
     name: 'search_buses',
@@ -309,6 +365,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     input: JourneyArgs,
     run: (a, ctx) => runSearch('buses', journeyQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,
+    timeoutMs: SEARCH_TOOL_MS,
   };
   const searchStays: QuickTool<z.infer<typeof StaysArgs>> = {
     name: 'search_stays',
@@ -316,6 +373,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     input: StaysArgs,
     run: (a, ctx) => runSearch('stays', staysQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,
+    timeoutMs: SEARCH_TOOL_MS,
   };
   const showOptions: QuickTool<z.infer<typeof ShowArgs>> = {
     name: 'show_options',

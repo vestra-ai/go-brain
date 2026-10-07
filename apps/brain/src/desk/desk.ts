@@ -3,7 +3,7 @@ import { newUlid } from '../door/ulid.js';
 import type { Log } from '../log.js';
 import { TripGoneError } from '../trips/gone.js';
 
-export type DeskKind = 'message' | 'trip_change' | 'tap' | 'task' | 'timer' | 'watch' | 'opening' | 'setup';
+export type DeskKind = 'message' | 'trip_change' | 'tap' | 'task' | 'timer' | 'watch' | 'opening' | 'setup' | 'search';
 
 export interface DeskItem {
   id: string;

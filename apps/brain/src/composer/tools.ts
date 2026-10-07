@@ -15,6 +15,8 @@ export interface QuickTool<A = unknown> {
   input: z.ZodType<A>;
   /** Must finish in a few seconds; slow work is start_task. */
   run(args: A, ctx: TurnCtx): Promise<unknown>;
+  /** How long the loop waits for it; 8 s when absent. The travel searches take up to 12 s on a sleeping box. */
+  timeoutMs?: number;
   /**
    * A card tool that needs nothing back (show_options, put_to_vote, open_vote, post_notice): when every call in a reply
    * is one of these and each put its card up, the turn ends there. The reply's own text goes out with the cards, and no
