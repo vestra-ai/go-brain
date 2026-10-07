@@ -24,6 +24,7 @@ describe('the pages Go may show a picture of', () => {
       'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&adults=4&loginVisible=true',
       'https://www.ixigo.com/hotels/search/result?locationId=32&bookingId=7',
       'https://www.ixigo.com/payments/cbcc',
+      'https://www.ixigo.com/hotels/checkout?hotelId=1384544&checkinDate=06112026&checkoutDate=09112026',
       'https://www.ixigo.com/account/farealerts/',
       'https://www.ixigo.com/trains/booking/traveller-details',
       'https://www.ixigo.com/hotels/1384544/details/review',

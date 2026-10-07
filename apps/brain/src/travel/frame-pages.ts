@@ -5,8 +5,10 @@
  * refuses it even then.
  */
 
-/** In a path or a query parameter's name, these mean the page is past search: refused whatever else matches. */
+/** In a path, these mean the page is past search: refused whatever else matches. */
 const NEVER = /book|pay|checkout|travell?er|passenger|login|signin|sign-in|account|otp|wallet|review/i;
+/** The same in a query parameter's name, less "checkout": a hotel search names its dates checkinDate and checkoutDate. */
+const NEVER_IN_NAMES = /book|pay|travell?er|passenger|login|signin|sign-in|account|otp|wallet|review/i;
 
 /** ixigo.com's search, results and details pages, by path. */
 const IXIGO_PAGES: readonly RegExp[] = [
@@ -28,6 +30,6 @@ export function isFramePage(raw: string): boolean {
   }
   if (u.protocol !== 'https:' || u.hostname !== 'www.ixigo.com' || u.username !== '' || u.password !== '' || u.port !== '') return false;
   const names = [...u.searchParams.keys()].join(' ');
-  if (NEVER.test(u.pathname) || NEVER.test(names)) return false;
+  if (NEVER.test(u.pathname) || NEVER_IN_NAMES.test(names)) return false;
   return IXIGO_PAGES.some((p) => p.test(u.pathname));
 }
