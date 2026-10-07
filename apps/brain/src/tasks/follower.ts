@@ -2,7 +2,8 @@
  * One live event stream per trip conversation while any of its jobs runs, resumed from the last event number after
  * a drop. A resume point too old for /v1 (410) is replaced by the conversation's head (the sweep fills the gap); with
  * every key's streams in use, the same events are polled as JSON. Every event goes through apply(), so webhooks and
- * the sweep can deliver the same moments without doubling anything. The screen is read while a conversation is followed.
+ * the sweep can deliver the same moments without doubling anything. The screen is read while a conversation is followed:
+ * the timer ticks every second, and screens.ts decides when a picture is due.
  */
 import type { EventStore } from './event-store.js';
 import type { TaskEvents } from './events.js';
@@ -82,7 +83,7 @@ export function createFollower(d: FollowerDeps): Follower {
   async function run(conversationId: string, tripId: string, signal: AbortSignal): Promise<void> {
     const screenTimer = setInterval(() => {
       void d.screens.tick(tripId).catch(() => undefined);
-    }, d.screenMs ?? 7_000);
+    }, d.screenMs ?? 1_000);
     screenTimer.unref();
     let failures = 0;
     try {
