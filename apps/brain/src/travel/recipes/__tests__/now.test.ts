@@ -37,6 +37,8 @@ describe('the early search block', () => {
     expect(w.now).toMatchObject({ name: 'travel search', order: 35 });
     expect(block).toContain('Already searched for #57, checked just now: results_id r_early1, 2 options.');
     expect(block).toContain('show_options');
+    // To whoever asked, never "Meher asked for…" (re-drill 4).
+    expect(block.split('<data')[0]).toContain('Say it to whoever asked, as the answer');
     // The live card said "On it." already.
     expect(block).toContain("don't say so again");
     const [before, fenced] = block.split('<data source="search results">');

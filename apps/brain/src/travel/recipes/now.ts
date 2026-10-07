@@ -10,6 +10,7 @@
 import type { NowProvider } from '../../composer/context.js';
 import { dataBlock, defuse, oneLine } from '../../composer/fence.js';
 import type { ResultsStore } from '../results.js';
+import { ANSWER_THE_ASKER } from '../search-wake.js';
 import { searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
 import type { Travel } from '../travel.js';
 import { TRAVEL_WAIT_MS } from './backend.js';
@@ -40,6 +41,7 @@ function answerBlock(seq: number | undefined, a: SearchAnswer, live: boolean): s
   return (
     `Already searched for ${which}, checked ${a.checked}: results_id ${a.results_id}, ${a.count} options.\n` +
     'Show them now with show_options (this results_id, the best up to 3, a short title) and your one short line, in this reply: no need to search again. ' +
+    `${ANSWER_THE_ASKER} ` +
     (live ? 'The live card already told the room you are on it: don\'t say so again. ' : '') +
     'Only if people gave a condition the summary does not name (a time, a price cap, non-stop), call the search tool with it first: it answers at once from this same search. ' +
     'If they meant another day or place than the summary\'s (the trip\'s Friday, not this week\'s), search for theirs instead. ' +
