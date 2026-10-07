@@ -118,6 +118,8 @@ export const WorkingCard = z
     steps: z.array(z.object({ text: z.string().min(1).max(80), state: z.enum(['todo', 'doing', 'done', 'failed']) })).max(8),
     /** The latest picture of Go's screen while it works, if any. */
     screenshot_url: HttpUrl.nullish(),
+    /** The address of the page in that picture, for the App's address bar. Only ever a search, results or details page. */
+    page_url: HttpUrl.nullish(),
     updated_at: IsoDateTime,
     actions,
   })

@@ -270,8 +270,10 @@ ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete=
       var label = { running: 'Working on it', needs_you: 'Needs you', done: 'Done', failed: "Didn't work" }[c.state] || c.state;
       var mark = { todo: '○', doing: '◐', done: '●', failed: '×' };
       var shot = safeUrl(c.screenshot_url);
+      var page = safeUrl(c.page_url);
       return '<span class="tag' + (c.state === 'needs_you' ? ' warn' : '') + '">' + esc(label) + '</span><h3>' + esc(c.title) + '</h3><div class="steps">' +
         c.steps.map(function (s) { return '<div>' + (mark[s.state] || '') + ' ' + esc(s.text) + '</div>'; }).join('') + '</div>' +
+        (shot && page ? '<div class="meta" style="margin-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(page) + '</div>' : '') +
         (shot ? '<img alt="" src="' + esc(shot) + '" style="max-width:100%;border-radius:10px;margin-top:8px">' : '') +
         '<div class="meta">Updated ' + esc(ago(c.updated_at)) + '</div>' + goActions(c);
     },
