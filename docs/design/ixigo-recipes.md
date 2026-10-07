@@ -47,7 +47,7 @@ Places resolve through small tables in `places.ts`, covering this week's trips:
 - airports: Delhi DEL; Goa GOI and GOX; Mumbai BOM; Bengaluru BLR;
 - stations: NDLS, NZM, MAO, CSMT and others;
 - bus city ids: Mumbai 4, Goa 102;
-- the Goa hotel location, Anjuna's own, and all twenty of ixigo's area filters in Goa (from its search metadata; Baga sits with Calangute, and Anjuna's wards stand in for it inside a Goa search). "North Goa" and "South Goa" search all their areas that have codes, and each stay is checked against the half's places (its area, then its town, then what it is near): one known to be in the other half is dropped, so "North Goa" never answers with a hotel in Vasco.
+- the Goa hotel location, Anjuna's own, and one town code (PA_C_*) per Goa area as ixigo's area filter (Baga sits with Calangute). ixigo's codes don't add up: North Goa with fifteen gave 3 stays, all in Candolim, and with one area applied every other area counts 0; ward codes (PA_L_*) change between loads. So "North Goa" and "South Goa" search all of Goa, and each stay is checked against the half's places (its area, then its town, then what it is near): one known to be in the other half is dropped, so "North Goa" never answers with a hotel in Vasco.
 
 A place missing from the tables is refused with a plain message ("Go can search ixigo for these places: ..."), never guessed. Live lookups (ixigo's place and city search) come later.
 

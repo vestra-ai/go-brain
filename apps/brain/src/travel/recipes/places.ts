@@ -105,19 +105,16 @@ const GOA: StayLocation = { locationId: 32, locationName: 'Goa', locationType: '
 const ANJUNA: StayLocation = { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 };
 
 /**
- * ixigo's area filters inside a Goa search: all twenty from its search metadata (6 to 9 Nov), by the place each sits in.
- * The search keeps to stays in those areas. Baga has no code of its own and sits with Calangute; Anjuna's stays sit in
- * its wards (Monteiro and D'Mello Vaddo) inside a Goa search, and Anjuna asked for alone is a location of its own.
+ * ixigo's area filter for one place inside a Goa search: its town code (PA_C_*), which is the same on every load. A
+ * search takes one: two or more don't add up (North Goa with fifteen gave 3 stays, all in Candolim), and ward codes
+ * (PA_L_*) change from load to load. Baga has no code of its own and sits with Calangute; Anjuna is a location of its own.
  */
-const GOA_AREA_CODES: Record<string, string[]> = {
-  candolim: ['PA_C_1459', 'PA_L_159632'], // Prabhu wada is in Candolim
-  calangute: ['PA_C_1047', 'PA_L_159635'], // Khobra Waddo is in Calangute
-  baga: ['PA_C_1047', 'PA_L_159635'],
-  vagator: ['PA_C_78528'], morjim: ['PA_C_1067'], arpora: ['PA_C_77993'], mandrem: ['PA_C_1169'], arambol: ['PA_C_1096'],
-  assagao: ['PA_C_78550'], siolim: ['PA_C_1216'], panaji: ['PA_C_1091'], panjim: ['PA_C_1091'],
-  anjuna: ['PA_L_165727', 'PA_L_156530'], // Monteiro Vaddo and D'Mello Vaddo
-  'north goa': ['PA_C_78647'], // ixigo's own "North Goa" area
-  palolem: ['PA_L_154858'], agonda: ['PA_C_79088'], colva: ['PA_L_154689'], // Fatona is in Colva
+const GOA_AREA_CODES: Record<string, string> = {
+  candolim: 'PA_C_1459', calangute: 'PA_C_1047', baga: 'PA_C_1047', vagator: 'PA_C_78528', morjim: 'PA_C_1067', arpora: 'PA_C_77993',
+  mandrem: 'PA_C_1169', arambol: 'PA_C_1096', assagao: 'PA_C_78550', siolim: 'PA_C_1216', mapusa: 'PA_C_1060', panaji: 'PA_C_1091',
+  panjim: 'PA_C_1091', colva: 'PA_C_1489', benaulim: 'PA_C_1057', varca: 'PA_C_1017', agonda: 'PA_C_79088',
+  // Palolem's code is a ward code, but it stayed the same across the saved loads.
+  palolem: 'PA_L_154858',
 };
 
 /** The places in each half of Goa, as ixigo names a stay's area or town: what "North Goa" and "South Goa" are checked against. */
@@ -156,14 +153,12 @@ export function stayPlaceOf(text: string): StayPlace {
   const name = GOA_AREAS.includes(short) ? short : GOA_AREAS.includes(norm(text)) ? norm(text) : null;
   if (!name) throw new TravelError('unknown_place', `Go can search ixigo stays in Goa and its areas (North Goa, South Goa, Anjuna, Vagator and others). "${text.slice(0, 60)}" is not one yet.`);
   if (name === 'goa') return { location: GOA, areas: [], half: null };
-  // A half of Goa is every area in it ixigo has a code for; the stays are then checked against the half's places too.
-  if (name === 'north goa' || name === 'south goa') {
-    const half: GoaHalf = name === 'north goa' ? 'north' : 'south';
-    const areas = [...new Set(GOA_HALVES[half].flatMap((place) => GOA_AREA_CODES[place] ?? []))].sort();
-    return { location: GOA, areas, half };
-  }
+  // A half of Goa is all of Goa, its stays then checked against the half's places: ixigo's area codes don't add up.
+  if (name === 'north goa') return { location: GOA, areas: [], half: 'north' };
+  if (name === 'south goa') return { location: GOA, areas: [], half: 'south' };
   if (name === 'anjuna') return { location: ANJUNA, areas: [], half: 'north' };
-  return { location: GOA, areas: [...(GOA_AREA_CODES[name] ?? [])].sort(), half: goaHalfOf(name) };
+  const code = GOA_AREA_CODES[name];
+  return { location: GOA, areas: code ? [code] : [], half: goaHalfOf(name) };
 }
 
 /** An airport's city from the table, for a page that shows only codes. */
