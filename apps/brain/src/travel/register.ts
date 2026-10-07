@@ -61,6 +61,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     now: brain.now,
     log: brain.log,
   });
+  brain.recipeStats = () => engine.stats();
   const ixigoWeb = createIxigoWebBackend({
     book,
     engine,

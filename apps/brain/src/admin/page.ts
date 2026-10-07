@@ -1,5 +1,6 @@
 // The admin page: one screen for the operator at the side of the stage. Plain HTML forms and no script, light and
 // readable on a laptop. Everything shown is escaped, and phone numbers are masked.
+import type { RecipeStat } from '../travel/book/engine.js';
 import type { ProbeResult } from './health.js';
 import type { SwitchName } from './switches.js';
 
@@ -18,6 +19,8 @@ export interface AdminView {
   calls: { mode: string; deployed: boolean; allowlist: Array<{ name: string | null; masked: string }> };
   note: string | null;
   docsUrl: string;
+  /** How fast each ixigo recipe answers, at each speed, since Go started. */
+  recipes: RecipeStat[];
 }
 
 export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: string }>> = {
@@ -136,6 +139,16 @@ function actionsBlock(v: AdminView): string {
 <form method="post" action="${esc(link('/admin/check-computer', v))}">${trip}<button class="quiet">Check this trip's computer (wakes it)</button></form></div>`;
 }
 
+/** Each ixigo recipe's numbers: the middle and slow end of its last runs, at each speed, and how many failed. */
+function recipesBlock(recipes: RecipeStat[]): string {
+  if (recipes.length === 0) return '<p>No recipe has run since Go started.</p>';
+  const ms = (n: number | null): string => (n === null ? 'none yet' : `${n} ms`);
+  const rows = recipes
+    .map((r) => `<tr><td>${esc(r.recipe)}</td><td>${esc(r.speed)}</td><td class="num">${ms(r.p50_ms)}</td><td class="num">${ms(r.p90_ms)}</td><td class="num">${r.runs}</td><td class="num">${r.failed}</td></tr>`)
+    .join('\n');
+  return `<table><tr><th>Recipe</th><th>Speed</th><th>p50</th><th>p90</th><th>Runs</th><th>Failed</th></tr>\n${rows}</table>`;
+}
+
 export function renderAdminPage(v: AdminView): string {
   const time = v.at.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
   const health = v.health
@@ -156,6 +169,8 @@ ${v.note ? `<p class="note">${esc(v.note)}</p>` : ''}
 <h2>Health</h2>
 <table>${health}</table>
 <p>Each check waits at most 1.5 s. Reload the page to check again.</p>
+<h2>Recipes</h2>
+${recipesBlock(v.recipes)}
 <h2>Switches</h2>
 ${v.switches.map((s) => switchRow(v, s)).join('\n')}
 <div class="row"><div><b>DEMO_ROOM</b><p>Which room is on stage: the App on the phones, or the dev room (pnpm --filter @go/sim room). Chosen on the laptop, not in Go.</p></div><div class="now">on the laptop</div><div></div><div></div></div>

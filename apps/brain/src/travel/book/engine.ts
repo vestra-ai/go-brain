@@ -50,6 +50,23 @@ export interface EngineDeps {
   log?: { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
 }
 
+/** How fast a recipe answers at one speed: its runs, its failures, and the middle and slow end of its last runs. */
+export interface RecipeStat {
+  recipe: string;
+  speed: Speed;
+  runs: number;
+  failed: number;
+  p50_ms: number | null;
+  p90_ms: number | null;
+}
+/** link: an answer that loads nothing; page: the browser fetch of a page (a lookup's box, or a results page). */
+export type Speed = 'link' | 'page';
+/** The last runs a recipe's speeds are measured over. */
+const LAST_RUNS = 100;
+
+const percentile = (sorted: number[], p: number): number | null =>
+  sorted.length === 0 ? null : sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))]!;
+
 export type EngineAnswer =
   | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number }
   | { as: 'link'; link: string; title: string; who: string | null };
@@ -86,6 +103,35 @@ const choiceLine = (s: Suggestion): string => (s.line ? `"${s.name}" (${s.line})
 
 export function createEngine(d: EngineDeps) {
   const offered = new Map<string, Offered>();
+  const timings = new Map<string, { recipe: string; speed: Speed; ms: number[]; runs: number; failed: number }>();
+
+  /** One run, in the log and the numbers: recipe, speed, how long, and how it ended. */
+  function record(recipe: string, speed: Speed, ms: number, outcome: string): void {
+    const key = `${recipe}|${speed}`;
+    const t = timings.get(key) ?? { recipe, speed, ms: [], runs: 0, failed: 0 };
+    t.runs += 1;
+    if (outcome === 'ok') {
+      t.ms.push(ms);
+      if (t.ms.length > LAST_RUNS) t.ms.shift();
+    } else {
+      t.failed += 1;
+    }
+    timings.set(key, t);
+    d.log?.info({ recipe, speed, ms, outcome }, 'book: run');
+  }
+
+  /** Times a run and records it, whatever it ends in. */
+  async function timed<T>(recipe: string, speed: Speed, run: () => Promise<T>): Promise<T> {
+    const started = d.now().getTime();
+    try {
+      const out = await run();
+      record(recipe, speed, d.now().getTime() - started, 'ok');
+      return out;
+    } catch (err) {
+      record(recipe, speed, d.now().getTime() - started, err instanceof TravelError ? err.code : 'failed');
+      throw err;
+    }
+  }
   /** $known(lookup, words): the place Go keeps for the words, or nothing; never a load (a member's home city). */
   const knownBy = (lookupId: string, words: string): Record<string, unknown> | undefined => {
     const kind = d.book.get(lookupId)?.keeps;
@@ -148,9 +194,9 @@ export function createEngine(d: EngineDeps) {
       if (!runner?.read) throw new TravelError('unknown_place', `Go can't ask ixigo's box about ${ends.map((e) => `"${e.words}"`).join(' and ')} from here.`);
       const plan = await boxPlan(lookup, ends.map((e) => ({ end: e.end, words: e.words })));
       refusePayments(plan.path);
-      const started = d.now().getTime();
-      const { captures } = await runner.read(o.tripId, `${IXIGO}${plan.path}`, { capture: plan.capture, steps: plan.steps }, o.signal ? { signal: o.signal } : {});
-      d.log?.info({ lookup: lookupId, ms: d.now().getTime() - started, ends: ends.length }, 'book: asked ixigo\'s box');
+      const { captures } = await timed(lookupId, 'page', () =>
+        runner.read(o.tripId, `${IXIGO}${plan.path}`, { capture: plan.capture, steps: plan.steps }, o.signal ? { signal: o.signal } : {}),
+      );
       for (const e of ends) {
         const list = await readSuggestions(lookup, captures, e.words);
         const picked = pickSuggestion(e.words, list);
@@ -209,44 +255,59 @@ export function createEngine(d: EngineDeps) {
     return bindings;
   }
 
+  /** Runs a recipe for the given inputs (place inputs as the person's words). */
+  async function run(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
+    const recipe = d.book.get(id);
+    if (!recipe) throw new TravelError('refused', `There is no ixigo recipe ${id}.`);
+    if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
+    if (!recipe.page) throw new TravelError('refused', `${recipe.title} has no page to open.`);
+    if (recipe.answer.as !== 'link') d.warm?.(o.tripId, recipe.id);
+    const inputs = await inputsOf(recipe, given, o);
+    const bindings = await bindingsOf(recipe, inputs, o);
+    const page = `${IXIGO}${await fill(recipe.page, inputs, { url: true, bindings })}`;
+    refusePayments(page);
+    if (recipe.answer.as === 'link') {
+      const who = recipe.answer.who ? await evaluate(recipe.answer.who, inputs, { inputs, ...bindings }) : null;
+      return { as: 'link', link: page, title: await fill(recipe.answer.title, inputs, { url: false, bindings }), who: typeof who === 'string' ? who : null };
+    }
+    if (recipe.answer.as !== 'options') throw new TravelError('refused', `${recipe.title} is not a search Go runs this way.`);
+    const runner = d.runner(o.tripId);
+    if (!runner?.read) throw new TravelError('refused', "An ixigo.com search needs the trip's computer, which is not set up here.");
+    let plan: FetchPlan = { capture: recipe.capture as CaptureSpec[] };
+    for (const f of recipe.fetch ?? []) {
+      if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
+      plan = {
+        capture: (f.capture ?? recipe.capture) as CaptureSpec[],
+        ...(f.steps ? { steps: f.steps } : {}),
+        ...(f.timeout_ms ? { timeoutMs: f.timeout_ms } : {}),
+        ...(f.settle_ms ? { settleMs: f.settle_ms } : {}),
+      };
+      break;
+    }
+    const started = d.now().getTime();
+    o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
+    const read = await runner.read(o.tripId, page, plan, { ...(o.signal ? { signal: o.signal } : {}), ...(o.onProgress ? { onProgress: o.onProgress } : {}) });
+    refusePayments(read.finalUrl);
+    o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
+    const options = await readOptions(recipe, read.captures, inputs, page, bindings);
+    const at = d.now();
+    return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
+  }
+
   return {
-    /** Runs a recipe for the given inputs (place inputs as the person's words). */
-    async answer(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
-      const recipe = d.book.get(id);
-      if (!recipe) throw new TravelError('refused', `There is no ixigo recipe ${id}.`);
-      if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
-      if (!recipe.page) throw new TravelError('refused', `${recipe.title} has no page to open.`);
-      if (recipe.answer.as !== 'link') d.warm?.(o.tripId, recipe.id);
-      const inputs = await inputsOf(recipe, given, o);
-      const bindings = await bindingsOf(recipe, inputs, o);
-      const page = `${IXIGO}${await fill(recipe.page, inputs, { url: true, bindings })}`;
-      refusePayments(page);
-      if (recipe.answer.as === 'link') {
-        const who = recipe.answer.who ? await evaluate(recipe.answer.who, inputs, { inputs, ...bindings }) : null;
-        return { as: 'link', link: page, title: await fill(recipe.answer.title, inputs, { url: false, bindings }), who: typeof who === 'string' ? who : null };
-      }
-      if (recipe.answer.as !== 'options') throw new TravelError('refused', `${recipe.title} is not a search Go runs this way.`);
-      const runner = d.runner(o.tripId);
-      if (!runner?.read) throw new TravelError('refused', "An ixigo.com search needs the trip's computer, which is not set up here.");
-      let plan: FetchPlan = { capture: recipe.capture as CaptureSpec[] };
-      for (const f of recipe.fetch ?? []) {
-        if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
-        plan = {
-          capture: (f.capture ?? recipe.capture) as CaptureSpec[],
-          ...(f.steps ? { steps: f.steps } : {}),
-          ...(f.timeout_ms ? { timeoutMs: f.timeout_ms } : {}),
-          ...(f.settle_ms ? { settleMs: f.settle_ms } : {}),
-        };
-        break;
-      }
-      const started = d.now().getTime();
-      o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
-      const read = await runner.read(o.tripId, page, plan, { ...(o.signal ? { signal: o.signal } : {}), ...(o.onProgress ? { onProgress: o.onProgress } : {}) });
-      refusePayments(read.finalUrl);
-      o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
-      const options = await readOptions(recipe, read.captures, inputs, page, bindings);
-      const at = d.now();
-      return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
+    /** Runs a recipe for the given inputs (place inputs as the person's words), timed and recorded. */
+    answer(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
+      const speed: Speed = d.book.get(id)?.answer.as === 'link' ? 'link' : 'page';
+      return timed(id, speed, () => run(id, given, o));
+    },
+    /** Each recipe's numbers at each speed, slowest middle first. */
+    stats(): RecipeStat[] {
+      return [...timings.values()]
+        .map((t) => {
+          const sorted = [...t.ms].sort((a, b) => a - b);
+          return { recipe: t.recipe, speed: t.speed, runs: t.runs, failed: t.failed, p50_ms: percentile(sorted, 50), p90_ms: percentile(sorted, 90) };
+        })
+        .sort((a, b) => (b.p50_ms ?? 0) - (a.p50_ms ?? 0));
     },
   };
 }

@@ -371,9 +371,17 @@ describe('which Go this is', () => {
     expect(roleOf({ RAILWAY_SERVICE_NAME: 'brain-try' })).toBe('try');
     const page = renderAdminPage({
       tripId: null, role: 'try', trips: [], at: new Date('2026-10-06T10:00:00Z'), health: [], switches: [], people: [],
-      calls: { mode: 'off', deployed: false, allowlist: [] }, note: null, docsUrl: DOCS_URL,
+      calls: { mode: 'off', deployed: false, allowlist: [] }, note: null, docsUrl: DOCS_URL, recipes: [],
     });
     expect(page).toContain('This is the try-room Go, where visitors chat with Go.');
+    expect(page).toContain('No recipe has run since Go started.');
+    // Numbers, not adjectives: each ixigo recipe's middle and slow end, at each speed.
+    const timed = renderAdminPage({
+      tripId: null, role: 'stage', trips: [], at: new Date('2026-10-06T10:00:00Z'), health: [], switches: [], people: [],
+      calls: { mode: 'off', deployed: false, allowlist: [] }, note: null, docsUrl: DOCS_URL,
+      recipes: [{ recipe: 'trains.between', speed: 'page', runs: 3, failed: 1, p50_ms: 1605, p90_ms: 2400 }],
+    });
+    expect(timed).toContain('<td>trains.between</td><td>page</td><td class="num">1605 ms</td><td class="num">2400 ms</td><td class="num">3</td><td class="num">1</td>');
     expect(roleOf({ RAILWAY_SERVICE_NAME: 'something-else' })).toBeNull();
     expect(roleOf({})).toBeNull();
   });
@@ -387,6 +395,7 @@ describe('a lane that is not on this Go yet', () => {
     expect(health.probes.find((p: { name: string }) => p.name === 'ixigo')).toMatchObject({ dot: 'red', detail: `the ixigo connection is ${NOT_DEPLOYED}` });
     expect(health.calls).toEqual({ mode: 'allowlist', allowlist: [], allowlist_count: 0 });
     expect(health.role).toBe('stage');
+    expect(health.recipes).toEqual([]);
 
     const page = (await http.inject({ method: 'GET', url: '/admin?trip=t_goa', headers: SIGNED_IN })).body;
     expect(page).toContain('Calls are not deployed on this Go yet');
