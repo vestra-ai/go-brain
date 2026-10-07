@@ -116,14 +116,35 @@ export function v1Probe(
         const res = await f(`${base}/v1/users?limit=1`, { headers, signal });
         return res.ok ? { ok: true, detail: "reachable; pick a trip to check its computer" } : { ok: false, detail: `HTTP ${res.status}` };
       }
-      // Warming is the check: 200 means the computer is up, 202 that it is waking. A warm spends no credits.
-      const res = await f(`${base}/v1/users/${user}/warm`, { method: 'POST', headers, signal });
-      if (res.status === 200) return { ok: true, detail: 'computer ready' };
-      if (res.status === 202) return { ok: true, degraded: true, detail: 'computer waking, check again in a minute' };
+      // Reading the trip's /v1 user never wakes its box (a warm would: /v1 has no read of a box's state). The box itself is
+      // checked only on purpose, with "Check this trip's computer" (checkComputer).
+      const res = await f(`${base}/v1/users/${user}`, { headers, signal });
+      if (res.ok) return { ok: true, detail: "the trip's computer is set up; checking it wakes it, so use \"Check this trip's computer\"" };
       if (res.status === 404) return { ok: false, detail: 'this trip has no computer yet' };
       return { ok: false, detail: `HTTP ${res.status}` };
     },
   };
+}
+
+/** How long the explicit check waits for /v1's warm. */
+export const CHECK_TIMEOUT_MS = 10_000;
+
+/**
+ * The admin's explicit "Check this trip's computer": a warm, which is the only way /v1 tells whether a box is up, and which
+ * wakes it. 200 means it was up, 202 that it is waking. A warm spends no credits. Never run by the health view.
+ */
+export async function checkComputer(
+  env: Pick<Env, 'VESTRA_API_URL' | 'VESTRA_API_KEYS'>,
+  f: Fetch,
+  user: string,
+): Promise<{ ok: boolean; detail: string }> {
+  const key = env.VESTRA_API_KEYS?.split(',')[0]?.trim();
+  if (!env.VESTRA_API_URL || !key) return { ok: false, detail: 'VESTRA_API_URL or VESTRA_API_KEYS is not set' };
+  const res = await f(`${trimSlash(env.VESTRA_API_URL)}/v1/users/${user}/warm`, { method: 'POST', headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) });
+  if (res.status === 200) return { ok: true, detail: "The trip's computer is up." };
+  if (res.status === 202) return { ok: true, detail: "The trip's computer was asleep and is waking now; check again in a minute." };
+  if (res.status === 404) return { ok: false, detail: 'This trip has no computer yet.' };
+  return { ok: false, detail: `The check failed (HTTP ${res.status}).` };
 }
 
 export function ixigoProbe(env: Pick<Env, 'IXIGO_MCP_URL' | 'IXIGO_MCP_TOKEN'>, list: AdminLanes['listIxigoTools']): Probe {

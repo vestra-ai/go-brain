@@ -32,6 +32,12 @@ const fired: Array<{ auth: string | undefined; body: unknown }> = [];
 const declined: CardTapParams[] = [];
 const routes: Array<{ method: unknown; url: string; logLevel: unknown }> = [];
 const stopped: string[] = [];
+/** The /v1 warms the admin page made: only "Check this trip's computer" may make one. */
+const warms: string[] = [];
+const warmFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  warms.push(`${init?.method ?? 'GET'} ${String(input instanceof Request ? input.url : input)}`);
+  return new Response('{"status":"waking"}', { status: 202 });
+}) as typeof fetch;
 
 /** Two checks that answer at once, so the page and health.json need no network. */
 const probes = (_brain: unknown, tripId: string | null): Probe[] => [
@@ -75,7 +81,10 @@ const payCard = (cardId: string, state: string) => ({
 beforeAll(async () => {
   db = await withSchema();
   const model = fakeAnthropic([]);
-  built = await buildBrain(loadEnv({ ...base, ADMIN_TOKEN: TOKEN, GO_ROLE: 'rehearsal' }), { pool: db.pool, anthropic: model.client, logger: false });
+  built = await buildBrain(
+    loadEnv({ ...base, ADMIN_TOKEN: TOKEN, GO_ROLE: 'rehearsal', VESTRA_API_URL: 'https://api.vestra.test', VESTRA_API_KEYS: `vk_test_${'a'.repeat(43)}` }),
+    { pool: db.pool, anthropic: model.client, logger: false },
+  );
   built.brain.tasks = fakeTasks;
   built.brain.taps.on('pay', 'decline', async (tap) => {
     declined.push(tap);
@@ -90,7 +99,7 @@ beforeAll(async () => {
   built.brain.http.addHook('onRoute', (r) => {
     routes.push({ method: r.method, url: r.url, logLevel: r.logLevel });
   });
-  await registerAdminWith({ probes, lanes })(built.brain);
+  await registerAdminWith({ probes, lanes, fetch: warmFetch })(built.brain);
 
   closed = await buildBrain(loadEnv(base), { pool: db.pool, anthropic: model.client, logger: false });
   await registerAdmin(closed.brain);
@@ -240,6 +249,17 @@ describe('the admin page', () => {
     expect(stopped).toEqual(['gt_villa', 'gt_cab']);
   });
 
+  it("checks a trip's computer only when asked: one /v1 warm, and the note says what it found", async () => {
+    await built.brain.http.inject({ method: 'GET', url: '/admin/health.json?trip=t_goa', headers: AUTH });
+    await built.brain.http.inject({ method: 'GET', url: '/admin?trip=t_goa', headers: SIGNED_IN });
+    expect(warms).toEqual([]);
+    const res = await built.brain.http.inject({ method: 'POST', url: '/admin/check-computer', headers: AUTH, payload: { trip_id: 't_goa' } });
+    expect(res.json()).toEqual({ ok: true, detail: "The trip's computer was asleep and is waking now; check again in a minute." });
+    expect(warms).toEqual(['POST https://api.vestra.test/v1/users/vu_t_goa/warm']);
+    const form = await built.brain.http.inject({ method: 'POST', url: '/admin/check-computer', headers: FORM, payload: 'trip_id=t_goa' });
+    expect(new URL(String(form.headers.location), 'http://go.local').searchParams.get('note')).toMatch(/waking now/);
+  });
+
   it('a job that will not stop never keeps the others running, and says so', async () => {
     const res = await built.brain.http.inject({ method: 'POST', url: '/admin/stop-jobs', headers: AUTH, payload: { trip_id: 't_stuck' } });
     expect(res.statusCode).toBe(502);
@@ -273,7 +293,7 @@ describe('the admin page', () => {
     for (const text of [
       'The Server&#39;s socket', 'computer waking for t_goa', 'TRAVEL_MODE', 'PAY_RAIL', 'CALLS_MODE', 'REFLEX_LIVE', 'DEMO_ROOM',
       '<option value="stripe_test"', 'Villa Sol (+91***001)', 'Fire a watch', 'Stop all running jobs for this trip',
-      'Decline the waiting pay card', 'href="/board"', DOCS_URL, 'This is the rehearsal Go.', 'action="/admin/sign-out"',
+      'Decline the waiting pay card', "Check this trip's computer (wakes it)", 'href="/board"', DOCS_URL, 'This is the rehearsal Go.', 'action="/admin/sign-out"',
     ]) expect(html, text).toContain(text);
     expect(html).not.toContain('fontshare');
     expect(html).not.toContain('9800000001');
@@ -375,6 +395,10 @@ describe('a lane that is not on this Go yet', () => {
     const jobs = await http.inject({ method: 'POST', url: '/admin/stop-jobs', headers: AUTH, payload: { trip_id: 't_goa' } });
     expect(jobs.statusCode).toBe(409);
     expect(jobs.json().error.message).toBe(`Jobs are ${NOT_DEPLOYED}.`);
+
+    const check = await http.inject({ method: 'POST', url: '/admin/check-computer', headers: AUTH, payload: { trip_id: 't_goa' } });
+    expect(check.statusCode).toBe(404);
+    expect(check.json().error.message).toBe(`Trip computers are ${NOT_DEPLOYED}.`);
 
     const watch = await http.inject({ method: 'POST', url: '/admin/fire-watch', headers: AUTH, payload: { trip_id: 't_goa', person_id: 'p_arjun' } });
     expect(watch.statusCode).toBe(404);

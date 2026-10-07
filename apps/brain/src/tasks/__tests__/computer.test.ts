@@ -106,12 +106,14 @@ describe("the trip's computer", () => {
     expect(await tokens.tripFor(token)).toBeNull();
   });
 
-  it('adds the setup steps computer.user, then computer.warm', async () => {
+  it("adds the setup step computer.user, and a new trip's box is not woken", async () => {
     const setup = new FakeSetup();
     addComputerSteps(setup, computer);
-    expect(setup.steps.map((s) => [s.name, s.after])).toEqual([['computer.user', undefined], ['computer.warm', 'computer.user']]);
+    expect(setup.steps.map((s) => [s.name, s.after])).toEqual([['computer.user', undefined]]);
+    const warmsBefore = fake.callsTo('POST', /\/warm$/).length;
     clock.advance(120_000);
     await setup.ensureTrip('t_new');
     expect(fake.users.has(v1UserIdFor('t_new'))).toBe(true);
+    expect(fake.callsTo('POST', /\/warm$/)).toHaveLength(warmsBefore);
   });
 });

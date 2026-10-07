@@ -128,10 +128,10 @@ The search tool already turns each of these into a plain line.
 - The parser's query and the tool's arguments go through one function, `recipe.slotsFrom`, so "Delhi" and "DEL" make the same key.
 - A complete search ask also skips the 2 s wait for more lines: a hook can answer `{ dueNow: true }` (P1's `trips/hooks.ts` and `intake.ts`). A follow-up line ("after 6 pm") still joins the turn through its arrived-meanwhile round, and the time filter is applied to the same captured list.
 
-**(b) Warm the box when travel talk starts.**
+**(b) Warm the box on travel intent, and only then.**
 - A sleeping box takes about 5.5 s to wake, and goes back to sleep about 7 s after a warm.
-- Go warms it on any line in the trip, from anyone, to Go or not, so the box is up before the first search. That one warm asks Bash to hold the box awake for 2 minutes once it is up (`keep_ms: 120000`, Bash #4574).
-- A line that comes when the hold has under 20 s left extends it with one more warm (`tasks/keep-warm.ts`): about one call per 100 s per trip, inside /v1's rate. Each counts as one wake toward `WARM_LIMIT`; a hold is never skipped by Go's 60 s repeat check.
+- One function owns waking it, `travel/warm.ts` `warmForTravel(tripId, kind)`. It is called on travel intent: a line Jev's question 10 is sure asks for a search (from anyone, to Go or not), a search the early start or a search tool starts, and the recipe engine's runs. Chatter never wakes the box, nor does a new trip's setup, nor the admin's health view (its "Check this trip's computer" button is the one explicit warm there).
+- Under `ixigo_web` only, and never for a link-only kind (flights load nothing). The warm asks Bash to hold the box awake for 2 minutes once it is up (`keep_ms`); intent that comes when the hold has under 20 s left extends it with one more warm (`tasks/keep-warm.ts`). Each counts as one wake toward Go's warm limit.
 
 **(c) Reuse results for 10 minutes**, keyed by recipe and normalized slots, in the ixigo_web backend; the layer's own three-minute cache stays for the other backends. The in-flight promise is shared, so two people asking the same thing at once cause one page load. A failed search is not kept.
 

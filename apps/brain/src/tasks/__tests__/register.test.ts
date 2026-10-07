@@ -47,7 +47,7 @@ describe('registerTasks', () => {
     expect([...lb.taps.handlers.keys()].sort()).toEqual(['working/stop', 'working/watch']);
     expect(lb.context.nows.map((n) => [n.name, n.order])).toEqual([['tasks', 30]]);
     expect(lb.context.wakes.has('task')).toBe(true);
-    expect(lb.setup.steps.map((s) => s.name)).toEqual(['computer.user', 'computer.warm']);
+    expect(lb.setup.steps.map((s) => s.name)).toEqual(['computer.user']);
     expect((await lb.http.inject({ method: 'POST', url: '/mcp', payload: {} })).statusCode).toBe(401);
     expect((await lb.http.inject({ method: 'POST', url: '/v1-webhooks', headers: { 'content-type': 'application/json' }, payload: '{}' })).statusCode).toBe(401);
   });

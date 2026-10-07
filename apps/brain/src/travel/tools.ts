@@ -28,6 +28,8 @@ export interface TravelToolDeps {
   /** Where a search that outlives its turn wakes Go with its options; without it, every search is waited for. */
   desk?: Pick<Desk, 'put'>;
   log?: { warn(obj: object, msg: string): void };
+  /** Wakes the trip's computer for a search of this kind (travel/warm.ts); absent in tests that don't look at it. */
+  warmForTravel?: (tripId: string, kind: TravelKind) => void;
 }
 
 export const OPTION_KIND: Record<TravelKind, OptionKind> = { flights: 'flight', trains: 'train', buses: 'bus', stays: 'stay' };
@@ -207,6 +209,8 @@ const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '')
  * never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
  */
 async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
+  // A search starting is travel intent: the trip's computer stays awake for the follow-ups too.
+  d.warmForTravel?.(ctx.tripId, kind);
   const pending = d.travel.search(kind, q, { tripId: ctx.tripId, turnId: ctx.turnId });
   // Handled at once, so a refusal that lands while the wait is worked out is never an unhandled rejection; it is read below.
   pending.catch(() => undefined);

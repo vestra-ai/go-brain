@@ -7,7 +7,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Brain, RegisterLane } from '../app.js';
 import { newUlid } from '../door/ulid.js';
-import { checkAll, defaultProbes, type Probe, type ProbeResult } from './health.js';
+import { checkAll, checkComputer, defaultProbes, type Probe, type ProbeResult } from './health.js';
 import { ADMIN_LANES, NOT_DEPLOYED, type AdminLanes } from './lanes.js';
 import { renderAdminPage } from './page.js';
 import { PAGE_HEADERS, registerSessionRoute, signedIn, signInPage, type SessionOptions } from './session.js';
@@ -224,6 +224,21 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         const note = running.length === 0 ? 'No job was running.'
           : failed.length === 0 ? `Stopped ${plural(ids.length)}.` : `Stopped ${plural(ids.length)}; ${failed.length} did not stop.`;
         return answer(req, reply, failed.length === 0 ? 200 : 502, { ok: failed.length === 0, stopped: ids, ...(failed.length ? { failed } : {}) }, note, tripId);
+      });
+
+      // The one place the admin wakes a trip's computer: on purpose, never from the health view.
+      scope.post<{ Querystring: Query; Body: unknown }>('/admin/check-computer', async (req, reply) => {
+        const parsed = TripForm.safeParse(filled(req.body));
+        if (!parsed.success) return answer(req, reply, 422, err('invalid', 'trip_id is required'), 'Pick a trip first.', req.query.trip ?? null);
+        const tripId = parsed.data.trip_id;
+        if (!lanes.v1UserIdFor) {
+          const message = `Trip computers are ${NOT_DEPLOYED}.`;
+          return answer(req, reply, 404, err('not_found', message), message, tripId);
+        }
+        const checked = await checkComputer(brain.env, o.fetch ?? fetch, lanes.v1UserIdFor(tripId)).catch((e: unknown) => ({
+          ok: false, detail: `The check failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200),
+        }));
+        return answer(req, reply, checked.ok ? 200 : 502, { ok: checked.ok, detail: checked.detail }, checked.detail, tripId);
       });
 
       scope.post<{ Querystring: Query; Body: unknown }>('/admin/decline-pay', async (req, reply) => {
