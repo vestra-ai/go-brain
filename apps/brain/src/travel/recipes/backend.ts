@@ -82,13 +82,9 @@ export function createIxigoWebBackend(d: IxigoWebDeps): TravelBackend {
       return search;
     },
     async waitMs(kind, q, o) {
-      let p;
-      try {
-        p = await plan(kind, q, o?.tripId);
-      } catch {
-        // The search itself refuses at once.
-        return null;
-      }
+      // A search that refuses does so at once: nothing to wait for.
+      const p = await plan(kind, q, o?.tripId).catch(() => null);
+      if (!p) return null;
       if (p.runner.name === 'agent_job') return 0;
       const started = kept.get(p.key)?.at ?? d.now().getTime();
       return Math.max(0, TRAVEL_WAIT_MS - (d.now().getTime() - started));
