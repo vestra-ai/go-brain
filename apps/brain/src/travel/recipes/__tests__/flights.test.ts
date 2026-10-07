@@ -13,15 +13,17 @@ describe('the flights recipe', () => {
     expect(flights.slotsFrom({ from: 'BOM', to: 'North Goa', date: '2026-11-06', guests: 12 }, { people: 4 })).toEqual({ from: 'BOM', to: 'GOX', date: '2026-11-06', adults: 9 });
   });
 
-  it('counts the members who fly from the origin, by their home city, before the head count', () => {
+  it('leaves out of the head count the members whose home has another airport', () => {
     // The Goa trip: Rahul, Priya and Kabir live in Delhi, Arjun in Bangalore, Meher in Mumbai.
     const goa = { people: 5, fromCities: ['Delhi', 'Delhi', 'Bangalore', 'Mumbai', 'New Delhi'] };
     expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, goa).adults).toBe(3);
     expect(flights.slotsFrom({ from: 'Bengaluru', to: 'Goa', date: '2026-11-06' }, goa).adults).toBe(1);
-    // A home Go has no airport for counts for nobody; nobody from the origin falls back to the head count.
-    expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 5, fromCities: ['Shimla', 'Delhi'] }).adults).toBe(1);
-    expect(flights.slotsFrom({ from: 'Chennai', to: 'Goa', date: '2026-11-06' }, goa).adults).toBe(5);
+    // A member with no home city, or a home Go has no airport for, may fly from here: 4 people, only one said Delhi.
+    expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 4, fromCities: ['Delhi'] }).adults).toBe(4);
+    expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 5, fromCities: ['Shimla', 'Bangalore'] }).adults).toBe(4);
     expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 5 }).adults).toBe(5);
+    // Everyone lives by another airport: the search is for the whole group.
+    expect(flights.slotsFrom({ from: 'Chennai', to: 'Goa', date: '2026-11-06' }, goa).adults).toBe(5);
     // A number people gave wins.
     expect(flights.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06', guests: 6 }, goa).adults).toBe(6);
   });

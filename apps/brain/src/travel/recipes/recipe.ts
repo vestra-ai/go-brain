@@ -36,7 +36,7 @@ export type RecipeOption = Omit<TravelOption, 'offerId'> & { sourceUrl: string }
 
 export type RecipeId = 'ixigo.flights' | 'ixigo.stays' | 'ixigo.trains' | 'ixigo.buses';
 
-/** Who travels, for a search people gave no number for: the head count, and each member's home city when known. */
+/** Who travels, for a search people gave no number for: the head count, and the home cities of the members who gave one. */
 export interface TripCount {
   people: number;
   fromCities?: string[];

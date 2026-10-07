@@ -27,7 +27,7 @@ export interface IxigoWebDeps {
   runner: (recipe: Recipe<unknown>) => RecipeRunner | null;
   /** The trip's head count: the adults (and so the rooms) a search asks for when nobody gave a number. */
   peopleOf: (tripId: string) => Promise<number>;
-  /** The members' home cities, where known: a flight's adults are the ones flying from its origin. */
+  /** The members' home cities, where known: a flight's adults leave out the ones who live by another airport. */
   homesOf?: (tripId: string) => Promise<string[]>;
   now: () => Date;
   /** The live search card for a run; absent in tests that don't look at it. */

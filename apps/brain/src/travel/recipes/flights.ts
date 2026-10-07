@@ -250,11 +250,14 @@ export function withFlightFilters(url: string, q: TravelQuery): string {
   return params.length ? `${url}&${params.join('&')}` : url;
 }
 
-/** How many members' home city flies from this airport: a flight from Delhi is for the ones who live in Delhi. */
-function flyingFrom(airport: string, homes: string[] | undefined): number {
+/**
+ * How many members surely fly from somewhere else: their home city has another airport (Arjun, Bangalore, is not on a
+ * flight from Delhi). A member with no home city, or one Go has no airport for, may fly from here, so counts as flying.
+ */
+function flyingElsewhere(airport: string, homes: string[] | undefined): number {
   return (homes ?? []).filter((home) => {
     try {
-      return airportOf(home).code === airport;
+      return airportOf(home).code !== airport;
     } catch {
       return false;
     }
@@ -267,7 +270,9 @@ export const flights: Recipe<FlightSlots> = {
   slotsFrom(q: TravelQuery, trip) {
     if (!q.from || !q.to || !q.date) throw new TravelError('needs_more', 'A flight search needs where from, where to and the date.');
     const from = airportOf(q.from).code;
-    return { from, to: airportOf(q.to).code, date: q.date, adults: clamp(q.guests ?? (flyingFrom(from, trip.fromCities) || trip.people), 1, 9) };
+    // Nobody left (a search from a city no member lives in) asks for the whole group.
+    const flying = trip.people - flyingElsewhere(from, trip.fromCities);
+    return { from, to: airportOf(q.to).code, date: q.date, adults: clamp(q.guests ?? (flying > 0 ? flying : trip.people), 1, 9) };
   },
   url: (s) =>
     `${IXIGO}/search/result/flight?from=${s.from}&to=${s.to}&date=${ddmmyyyy(s.date)}&returnDate=&adults=${s.adults}&children=0&infants=0&class=e&source=Search%20Form`,
