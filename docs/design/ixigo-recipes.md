@@ -39,7 +39,7 @@ Go's constraints stay in code, as today. These are times, price caps, non-stop, 
 | Recipe | Slots | URL | Capture (path match) | Price and what it covers | Area or route | Deep link | TTL |
 |---|---|---|---|---|---|---|---|
 | ixigo.flights | from, to (IATA), date, adults | `/search/result/flight?from=…&to=…&date=DDMMYYYY&adults=…&children=0&infants=0&class=e` | `/flights/v2/search/stream` (one event, all fares, ~290 KB) | `fares[0].fareDetails.displayFare`, per person, taxes in, before coupons (4 adults saw 7,896 for 6E 5341; ixigo's review page charged 4 × 7,896) | origin to destination, stops, times from `flightDetails[0]` | none per flight: the results URL, with the flight named by `flightKeys` | 10 min |
-| ixigo.stays | location (Goa: 32 / 48569 / S), check-in, check-out, adults, rooms | `/hotels/search/result?locationId=…&checkinDate=…&checkoutDate=…&adultCount=…&roomCount=…` | `/accommodation-search/api/v3/accommodations/search` (paged: 3, then 4) | `displayedBaseFare + taxesAndFees`, per night, per room | `locality` as the option's own area (#104) | `/hotels/{hotelId}/details?…&hotelInfoToken=…` | 10 min |
+| ixigo.stays | location (Goa: 32 / 48569 / S; Anjuna: 1026 / 50347 / C), check-in, check-out, adults, rooms, filters (an area code, and pool, breakfast or free cancellation) | `/hotels/search/result?locationId=…&checkinDate=…&checkoutDate=…&adultCount=…&roomCount=…&filters=…` | `/accommodation-search/api/v3/accommodations/search$` (10 a page) | `displayedBaseFare + taxesAndFees`, per night, per room | `locality` as the option's own area (#104) | `/hotels/{hotelId}/details?…&hotelInfoToken=…` | 10 min |
 | ixigo.trains | from, to (station codes), date | `/search/result/train/{FROM}/{TO}/{DDMMYYYY}//1/0/0/0/ALL` | `/trains/v1/search/between/` and `/api/v3/trains/availability` | `fares.{class}.baseFare` per class, with the availability (`WL 11`, `RAC 70`, `Regret`) | the boarding station the train reports | `/trains/{number}?orgn=…&dstn=…&departDate=…&quota=GN` | 10 min |
 | ixigo.buses | from, to (name and AbhiBus id), date | `/buses/bus_search/{From}/{fromId}/{To}/{toId}/{DD-MM-YYYY}/O` | `/buslist/v3/services` (all buses, ~170 KB) | `fares.fare`, from price per seat | operator, bus type, seats left | none: the results URL | 10 min |
 
@@ -47,11 +47,11 @@ Places resolve through small tables in `places.ts`, covering this week's trips:
 - airports: Delhi DEL; Goa GOI and GOX; Mumbai BOM; Bengaluru BLR;
 - stations: NDLS, NZM, MAO, CSMT and others;
 - bus city ids: Mumbai 4, Goa 102;
-- the Goa hotel location, with the area tags as data for the summary.
+- the Goa hotel location, Anjuna's own, and ixigo's area filters for ten Goa areas (p1-a's hotels map).
 
 A place missing from the tables is refused with a plain message ("Go can search ixigo for these places: ..."), never guessed. Live lookups (ixigo's place and city search) come later.
 
-Stays need two captures, pages 1 and 2, because page 1 holds only 3 hotels. That needs a Bash change (section 8). Until then the stays recipe takes page 1 alone and says so in its summary.
+Stays take page 1, which holds 10 hotels (p1-a's hotels map; the first web map saw 3). ixigo filters the search itself, in the URL: to the area asked for, and on pool (`FL_HF_29`), breakfast (`MP_FB`) and free cancellation (`MP_FC`). So page 1 holds the right stays. What ixigo filtered on counts as true of every stay it gave; Go's own filters still run on the list.
 
 ## 2. Runners: one interface, two ways to run it
 
@@ -92,6 +92,7 @@ The search tool already turns each of these into a plain line.
 - Go sends one message, straight to work (`hand_off: 'always'`), with an `output_schema` of rows. Its instructions: call `computer_navigate(url)`, then `computer_wait` for the recipe's `readyText`, then `computer_eval` with the recipe's script as its `expression` argument, and return what the script returns, unchanged.
 - The script scrolls a few screens so the page draws more results, then reads the page text (`document.body.innerText`) and links with the recipe's reader. It keeps at most 15 rows, under 8 KB (what `computer_eval` answers).
 - Go waits for the job (`GET /v1/tasks/{id}` once a second, up to 90 s), then `recipe.fromAgent` checks every row with a schema. Rows that don't check out give no options, never wrong ones. A job that isn't done in 90 s, or stops to ask something, is stopped through its own conversation (`POST /v1/conversations/{id}/stop`). On staging a job took 25 to 53 s, so it never answers inline: see "Waiting" below.
+- If `computer_eval` is ever refused or held for a person's yes (Bash's approvals gate), the job calls `computer_snapshot` with `full` instead and returns its text as `snapshot`. Go reads the snapshot's text nodes (`snapshotText`) with the recipe's own reader (`readPage`), and checks the rows the same way. go-recipe keeps its default approvals: the money guard is never loosened for speed.
 - The job's id is on Bash's line of the turn in `GET /v1/conversations/{id}/messages` (the list holds lines, matched by `turn_id`).
 - The script reads the page because a finished response body can't be read back from inside the page later, and the map says never to replay the page's calls.
 - The readers are tested on the page text saved by the mapping runs, cross-checked against the data calls for the same flights, hotels and buses.
@@ -99,6 +100,8 @@ The search tool already turns each of these into a plain line.
 **One setting switches them.** That's an admin switch `TRAVEL_RUNNER` (`agent_job` | `browser_fetch`), read on every search like `TRAVEL_MODE`. It defaults to `agent_job` until Bash's call is live on staging. A recipe whose list loads only in a drawn tab (`fetchable: false`: buses) always runs on the agent job.
 
 **Waiting.** A search may hold up the turn for `TRAVEL_WAIT_MS` (12 s) from its start, and only through the browser fetch (a train search on a sleeping box took about 8 s); the search tools may take 14 s in the composer's loop. Past that, and always for the agent job, the tool answers that the search is running, and the live card covers the wait. When the run finishes, Go saves its options and wakes on a `search` desk item to show them (`travel/search-wake.ts`). Searches that shared a run wake Go once.
+
+**Flights as a link, for now.** ixigo answers the boxes' shared egress with "No flights found", then a 403 on the flight data call. Under `ixigo_web`, flights load nothing (`LINK_ONLY_KINDS` in `backend.ts`): `search_flights` posts a notice card linking to ixigo's results page with what people asked for set in ixigo's own params (`stops=0`, the `takeOff` and `landing` windows, `price=0,{cap}`, from p1-b's flights map), and a "See flights on ixigo" button. It never says there are no flights. The early start skips the search for them and the turn still starts at once.
 
 **The live card.** On a cache miss, the backend starts p1-b's live search card ("On it." with its steps), passes the run's `onProgress` to the runner, and marks the card done (`finish`) before the search answers, so it is done before the options card. A joined search shares the card.
 
@@ -185,7 +188,6 @@ Warm box, Bash's call, `claude-sonnet-5-5`. Times are from the message reaching 
 **Out:**
 - round trips;
 - booking on ixigo;
-- hotel filters sent to ixigo (`filterCriteria`): pool and area are filtered in code on what came back;
 - live place lookups;
 - seat maps;
 - anything behind a login.
@@ -200,7 +202,7 @@ Bash's browser fetch has these already:
 
 Still asked:
 1. **A match that ends the path** (`$`), so stays and buses keep their search call, not the longer URL that answers first. Blocking for those two.
-2. **`min_count` on a capture,** so stays get pages 1 and 2 in one call.
+2. **`min_count` on a capture,** so stays can get page 2 in one call when page 1 is short.
 3. **A `type` step,** for p4's T17 train lookup by name. Not part of Friday's four searches.
 4. **Timings in the answer** (wake, navigation, capture), so the live bench can split a slow search into box, page and model.
 
@@ -208,5 +210,5 @@ Still asked:
 
 - **Bot protection:** nine loads from one Mac met no challenge. A datacentre IP at volume is untested, so the cache and the shared in-flight promise also keep the load low.
 - **Trains** wait about 2 s for ixigo's own reCAPTCHA token on every search, so a train search lands about 2 s after a flight search.
-- **Hotel paging:** 3 hotels on page 1. Without `min_count` (section 8), a stays search through the browser fetch shows few options.
+- **Hotel paging:** the first web map saw 3 hotels on page 1 and p1-a's map saw 10. If a load gives 3 again, a stays search shows few options until `min_count` (section 8) lets it wait for page 2.
 - **The fallback's script reads the rendered page,** so a redesign of ixigo's cards breaks it before it breaks the capture recipes. Its schema check fails closed: no options, never wrong ones.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
-import { asksWhatTheyMissed, endsThought, plainlyNamesGo } from '../names-go.js';
+import { asksWhatTheyMissed, continuesAskToGo, endsThought, plainlyNamesGo } from '../names-go.js';
 
 const pack = { trip: goaSnapshot(), messages: [msg(2, null, 'Want a vote on the villa?')], seq: 2 };
 
@@ -24,6 +24,27 @@ describe('plainlyNamesGo: when "Go is typing..." shows at once', () => {
   it('a reply to Go names Go, and so does the Server\'s mentions_go', () => {
     expect(plainlyNamesGo(msg(3, 'p_priya', 'yes please', { reply_to: 'm_2' }), pack)).toBe(true);
     expect(plainlyNamesGo(msg(3, 'p_priya', 'ok', { mentions_go: true }), pack)).toBe(true);
+  });
+});
+
+describe('continuesAskToGo: the rest of an ask to Go, sent in a burst', () => {
+  const burst = [msg(2, 'p_meher', 'ok'), msg(3, 'p_meher', '@Go one thing'), msg(4, 'p_priya', 'lol'), msg(5, 'p_meher', 'for my birthday on the 7th')];
+  const sentLater = (seq: number, sentSeq: number, person: string, text: string) =>
+    msg(seq, person, text, { sent_at: msg(sentSeq, person, text).sent_at });
+  const packWith = (m: ReturnType<typeof msg>) => ({ trip: goaSnapshot(), messages: [...burst, m], seq: m.seq });
+
+  it('is true for a line from the person who named Go a few seconds before, others talking in between', () => {
+    const m = msg(6, 'p_meher', 'is there a good bakery near Anjuna?');
+    expect(continuesAskToGo(m, packWith(m))).toBe(true);
+  });
+
+  it('is false for someone else, for a line more than 6 s after, and when nobody named Go', () => {
+    const other = msg(6, 'p_priya', 'is there a good bakery near Anjuna?');
+    expect(continuesAskToGo(other, packWith(other))).toBe(false);
+    const late = sentLater(6, 10, 'p_meher', 'is there a good bakery near Anjuna?');
+    expect(continuesAskToGo(late, packWith(late))).toBe(false);
+    const m = msg(6, 'p_meher', 'is there a good bakery near Anjuna?');
+    expect(continuesAskToGo(m, { trip: goaSnapshot(), messages: [msg(2, 'p_meher', 'ok'), msg(5, 'p_meher', 'for my birthday'), m], seq: 6 })).toBe(false);
   });
 });
 

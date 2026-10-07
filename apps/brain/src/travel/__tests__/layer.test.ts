@@ -3,7 +3,7 @@ import { FakeClock, FakeSwitches } from '../../tasks/testing/lane-brain.js';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
 import { createTravelLayer, type TravelLayerDeps } from '../layer.js';
 import { createFakeTravel, TravelError } from '../mcp-travel.js';
-import type { TravelBackend, TravelOption } from '../travel.js';
+import type { TravelBackend, TravelOption, TravelQuery } from '../travel.js';
 
 const opt = (offerId: string, clock: string): TravelOption => ({
   offerId, kind: 'flight', title: offerId, priceMinor: 500000, currency: 'INR', priceNote: 'per person', highlights: [], facts: {},
@@ -169,12 +169,14 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
   const PAGE = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026';
   function web() {
     const calls: Array<{ kind: string; tripId: string | undefined }> = [];
+    const queries: TravelQuery[] = [];
     const refused = async (): Promise<never> => {
       throw new TravelError('refused', 'Booked on ixigo.');
     };
     const b: TravelBackend = {
-      async search(kind, _q, o) {
+      async search(kind, q, o) {
         calls.push({ kind, tripId: o?.tripId });
+        queries.push(q);
         return {
           checkedAt: '2026-10-07T12:00:00.000Z',
           results: [{
@@ -187,8 +189,16 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
       hold: refused,
       confirm: refused,
     };
-    return { b, calls };
+    return { b, calls, queries };
   }
+
+  it('lets ixigo_web see the must-haves, since ixigo filters on them itself; the other conditions stay in code', async () => {
+    const ixigoWeb = web();
+    const { switches, layer } = setup(true, { ixigoWeb: ixigoWeb.b });
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    await layer.search('stays', { area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'], maxPriceMinor: 800000 }, { tripId: 't_goa' });
+    expect(ixigoWeb.queries).toEqual([{ area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }]);
+  });
 
   it("searches in the trip's own browser: the trip goes with every search (ixigo_web keeps its own), and nothing is simulated", async () => {
     const ixigoWeb = web();

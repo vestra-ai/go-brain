@@ -1,19 +1,27 @@
 /**
  * Stays on ixigo.com: the hotel results page and its search call. A price is the room's nightly fare plus taxes and
- * fees, per night and per room, as ixigo shows it; the whole stay is that times the nights and the rooms. The page asks
- * for 3 hotels first and 4 more about 3 s later: the recipe takes what came back (page 1 until the browser fetch can
- * wait for a second match).
+ * fees, per night and per room, as ixigo shows it; the whole stay is that times the nights and the rooms. ixigo filters
+ * the search itself, in the URL (p1-a's hotels map): to the area asked for, and on the must-haves it has codes for, so
+ * the first page holds the right stays. The recipe takes the pages that came back.
  */
 import { z } from 'zod';
 import { TravelError } from '../mcp-travel.js';
-import type { TravelQuery } from '../travel.js';
-import { stayLocationOf, type StayLocation } from './places.js';
+import type { MUST_HAVES, TravelQuery } from '../travel.js';
+import { stayPlaceOf, type StayLocation } from './places.js';
 import {
   bodiesFor, clamp, ddmmyyyy, highlights, IXIGO, nightsBetween, paise, pageScript, readBody, readRows, RECIPE_TTL_MS,
   type Capture, type Recipe, type RecipeOption,
 } from './recipe.js';
 
-export interface StaySlots { location: StayLocation; checkIn: string; checkOut: string; adults: number; rooms: number }
+export interface StaySlots {
+  location: StayLocation;
+  checkIn: string;
+  checkOut: string;
+  adults: number;
+  rooms: number;
+  /** ixigo's filter codes, sorted: the area, and the must-haves ixigo filters on. */
+  filters: string[];
+}
 
 const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
 /** Two to a room, as ixigo's own search starts ("1 Room, 2 Guests"). */
@@ -21,6 +29,12 @@ const PER_ROOM = 2;
 const MAX_ROOMS = 8;
 /** Walking pace, for "310 m from Colva Beach" as minutes to the beach. */
 const METRES_A_MINUTE = 80;
+
+/** The must-haves ixigo filters on, as its codes. "Beach" has none: it is a distance, read from each stay. */
+const POOL = 'FL_HF_29';
+const FREE_CANCELLATION = 'MP_FC';
+const BREAKFAST = 'MP_FB';
+const MUST_HAVE_CODES: Partial<Record<(typeof MUST_HAVES)[number], string>> = { pool: POOL, free_cancellation: FREE_CANCELLATION, breakfast: BREAKFAST };
 
 const Hotel = z.object({
   hotelId: z.number(),
@@ -90,7 +104,11 @@ function detailsUrl(h: StayRead, s: StaySlots): string {
 function stayOption(h: StayRead, s: StaySlots): RecipeOption {
   const nights = nightsBetween(s.checkIn, s.checkOut);
   const nightly = paise(h.nightlyRupees);
-  const said = (re: RegExp): boolean => h.offerings.some((o) => re.test(o));
+  // What ixigo filtered on, every stay it gave has; the rest is what it lists for the stay.
+  const said = (re: RegExp, code: string): boolean => s.filters.includes(code) || h.offerings.some((o) => re.test(o));
+  const pool = said(/pool/i, POOL);
+  const breakfast = said(/breakfast/i, BREAKFAST);
+  const freeCancellation = said(/free cancellation/i, FREE_CANCELLATION);
   const beach = beachMinutes(h.distance);
   const address = [...new Set([h.area, h.city].filter((x): x is string => typeof x === 'string' && x.length > 0))].join(', ');
   return {
@@ -107,12 +125,7 @@ function stayOption(h: StayRead, s: StaySlots): RecipeOption {
     },
     ...(h.imageUrl ? { imageUrl: h.imageUrl } : {}),
     ...(h.rating10 !== undefined ? { rating: Math.round(h.rating10 * 5) / 10 } : {}),
-    highlights: highlights(
-      h.distance,
-      said(/free cancellation/i) && 'Free cancellation',
-      said(/breakfast/i) && 'Breakfast included',
-      said(/pool/i) && 'Pool',
-    ),
+    highlights: highlights(h.distance, freeCancellation && 'Free cancellation', breakfast && 'Breakfast included', pool && 'Pool'),
     facts: {
       nights,
       rooms: s.rooms,
@@ -120,10 +133,10 @@ function stayOption(h: StayRead, s: StaySlots): RecipeOption {
       ...(h.stars !== undefined ? { stars: h.stars } : {}),
       ...(h.rating10 !== undefined ? { rating_out_of_10: h.rating10 } : {}),
       ...(h.reviews !== undefined ? { reviews: h.reviews } : {}),
-      // Only what ixigo lists for the hotel: one it doesn't list counts as without.
-      pool: said(/pool/i),
-      breakfast: said(/breakfast/i),
-      free_cancellation: said(/free cancellation/i),
+      // Only what ixigo filtered on or lists for the hotel: one it doesn't list counts as without.
+      pool,
+      breakfast,
+      free_cancellation: freeCancellation,
       ...(beach !== null ? { beach_minutes: beach } : {}),
     },
     sourceUrl: h.hotelId !== undefined ? detailsUrl(h, s) : stays.url(s),
@@ -261,18 +274,23 @@ export const stays: Recipe<StaySlots> = {
     const where = q.area ?? q.to;
     if (!where || !q.checkIn || !q.checkOut) throw new TravelError('needs_more', 'A stay search needs the place, check-in and check-out.');
     const adults = clamp(q.guests ?? trip.people, 1, 30);
-    return { location: stayLocationOf(where), checkIn: q.checkIn, checkOut: q.checkOut, adults, rooms: clamp(Math.ceil(adults / PER_ROOM), 1, MAX_ROOMS) };
+    const place = stayPlaceOf(where);
+    const codes = (q.mustHave ?? []).flatMap((m) => MUST_HAVE_CODES[m] ?? []);
+    const filters = [...new Set([...(place.area ? [place.area] : []), ...codes])].sort();
+    return { location: place.location, checkIn: q.checkIn, checkOut: q.checkOut, adults, rooms: clamp(Math.ceil(adults / PER_ROOM), 1, MAX_ROOMS), filters };
   },
   url: (s) =>
     `${IXIGO}/hotels/search/result?locationId=${s.location.locationId}&locationName=${encodeURIComponent(s.location.locationName)}` +
     `&locationType=${s.location.locationType}&masterLocationId=${s.location.masterLocationId}&countryId=${s.location.countryId}` +
-    `&checkinDate=${ddmmyyyy(s.checkIn)}&checkoutDate=${ddmmyyyy(s.checkOut)}&adultCount=${s.adults}&roomCount=${s.rooms}&childCount=0`,
+    `&checkinDate=${ddmmyyyy(s.checkIn)}&checkoutDate=${ddmmyyyy(s.checkOut)}&adultCount=${s.adults}&roomCount=${s.rooms}&childCount=0` +
+    (s.filters.length ? `&filters=${encodeURIComponent(s.filters.join(','))}` : ''),
   // Page 1 only: page 2 loads only in a drawn tab, and the browser fetch's tab is not drawn.
   capture: [{ match: SEARCH, required: true }],
   fetchable: true,
   readyText: 'per night, per room',
   extract,
   agentExtractor: pageScript(readStaysPage, 2),
+  readPage: readStaysPage,
   fromAgent,
   ttlMs: RECIPE_TTL_MS,
 };

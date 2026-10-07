@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
-import { airportOf, busCityOf, stationOf, stayLocationOf } from '../places.js';
+import { airportOf, busCityOf, stationOf, stayPlaceOf } from '../places.js';
 import { RECIPES } from '../index.js';
-import { bodiesFor, ddmmyyyy, istAt, istOf, matches } from '../recipe.js';
+import { bodiesFor, ddmmyyyy, istAt, istOf, matches, snapshotText } from '../recipe.js';
 import { capture } from './fixtures.js';
 
 describe('the places tables', () => {
@@ -17,12 +17,17 @@ describe('the places tables', () => {
     expect(stationOf('NZM').code).toBe('NZM');
     expect(stationOf('Pune').code).toBe('PUNE');
     expect(busCityOf('Bombay')).toEqual({ name: 'Mumbai', id: 4 });
-    expect(stayLocationOf('Calangute').locationId).toBe(32);
-    expect(stayLocationOf('South Goa').locationId).toBe(32);
+    const goa = { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 };
+    // An area with ixigo's own filter keeps the Goa search to it; one without searches all of Goa.
+    expect(stayPlaceOf('Calangute')).toEqual({ location: goa, area: 'PA_C_1047' });
+    expect(stayPlaceOf('Vagator, Goa')).toEqual({ location: goa, area: 'PA_C_78528' });
+    expect(stayPlaceOf('South Goa')).toEqual({ location: goa, area: null });
+    // Anjuna is a location of its own, which takes in the stays around it.
+    expect(stayPlaceOf('Anjuna')).toEqual({ location: { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 }, area: null });
   });
 
   it('refuse a place they do not have, with the places that work, and never guess', () => {
-    for (const ask of [() => airportOf('Genoa'), () => stationOf('Shimla'), () => busCityOf('Pune'), () => stayLocationOf('Manali')]) {
+    for (const ask of [() => airportOf('Genoa'), () => stationOf('Shimla'), () => busCityOf('Pune'), () => stayPlaceOf('Manali')]) {
       try {
         ask();
         expect.unreachable();
@@ -46,6 +51,13 @@ describe('the recipe helpers', () => {
     const url = 'https://www.ixigo.com/a';
     const cut = { ...capture('/a', url, '{"half":'), truncated: true };
     expect(bodiesFor([capture('/a', url, 'one'), capture('/a', url, 'two', 500), cut, capture('/a', url, 'three')], '/a')).toEqual(['one', 'three']);
+  });
+
+  it("read a snapshot's text nodes in order, as the page's own text reads", () => {
+    const snap = ['- main', '  - link "IndiGo 6E5341 05:00 DEL" [@e4]', '    - StaticText "IndiGo"', '    - StaticText "6E5341"', '    - StaticText "say \\"hi\\""'].join('\n');
+    expect(snapshotText(snap)).toBe('IndiGo\n6E5341\nsay "hi"');
+    // With no text nodes, every name, in order.
+    expect(snapshotText('- heading "05:00" [level=6]\n- paragraph "DEL"')).toBe('05:00\nDEL');
   });
 
   it('write dates and times as ixigo and India read them', () => {

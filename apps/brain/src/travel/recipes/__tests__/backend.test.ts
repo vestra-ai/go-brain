@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
-import { createIxigoWebBackend, TRAVEL_WAIT_MS } from '../backend.js';
+import { createIxigoWebBackend, LINK_ONLY_KINDS, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
 import type { RecipeRunner } from '../runners.js';
 
@@ -139,6 +139,24 @@ describe('the ixigo_web backend', () => {
     one.release();
     expect(await createIxigoWebBackend({ runner: () => runner().r, peopleOf: async () => 4, now: () => new Date(nowMs) }).waitMs!('flights', FLIGHTS, { tripId: 't_goa' })).toBe(0);
     expect(await createIxigoWebBackend({ runner: () => fetchRunner, peopleOf: async () => 4, now: () => new Date(nowMs) }).waitMs!('flights', FLIGHTS)).toBeNull();
+  });
+
+  it("answers a link-only kind with ixigo's page, loading nothing and posting no card", async () => {
+    const { r, runs } = runner();
+    const cards: string[] = [];
+    const b = createIxigoWebBackend({
+      runner: () => r, peopleOf: async () => 4, now: () => new Date(nowMs),
+      live: ((tripId: string) => { cards.push(tripId); return { progress: () => undefined, finish: async () => undefined }; }) as never,
+      linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
+    });
+    const err = (await b.search('flights', FLIGHTS, { tripId: 't_goa' }).catch((e: unknown) => e)) as TravelError;
+    expect(err).toMatchObject({ code: 'link_only', link: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form' });
+    expect(await b.waitMs!('flights', FLIGHTS, { tripId: 't_goa' })).toBeNull();
+    expect(runs).toEqual([]);
+    expect(cards).toEqual([]);
+    // Other kinds still search.
+    await b.search('trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
+    expect(runs).toHaveLength(1);
   });
 
   it('never holds, confirms or reads a status: the group books on ixigo, from the link', async () => {

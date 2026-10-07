@@ -95,18 +95,32 @@ export function busCityOf(text: string): BusCity {
 
 export interface StayLocation { locationId: number; locationName: string; locationType: string; masterLocationId: number; countryId: number }
 
-const GOA: StayLocation = { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 };
+/** Where a stay search looks: ixigo's location, and its area filter inside Goa when the place has one. */
+export interface StayPlace { location: StayLocation; area: string | null }
 
-/** Every part of Goa searches all of Goa; each option then says its own area, so a stay is never placed where it isn't. */
+const GOA: StayLocation = { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 };
+/** Anjuna is a location of its own on ixigo, which takes in the stays around it (Morjim, Vagator, Assagao). */
+const ANJUNA: StayLocation = { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 };
+
+/** ixigo's area filters inside a Goa search (p1-a's hotels map): the search keeps to stays in that area. */
+const GOA_AREA_CODES: Record<string, string> = {
+  candolim: 'PA_C_1459', calangute: 'PA_C_1047', vagator: 'PA_C_78528', morjim: 'PA_C_1067', palolem: 'PA_L_154858', arpora: 'PA_C_77993',
+  mandrem: 'PA_C_1169', agonda: 'PA_C_79088', arambol: 'PA_C_1096', panaji: 'PA_C_1091', panjim: 'PA_C_1091',
+};
+
+/** Goa's areas Go knows. One without its own location or area code searches all of Goa, and each stay says its own area. */
 const GOA_AREAS = [
   'goa', 'north goa', 'south goa', 'anjuna', 'vagator', 'calangute', 'candolim', 'baga', 'morjim', 'arambol', 'assagao', 'siolim', 'ashwem',
   'mandrem', 'panaji', 'panjim', 'mapusa', 'porvorim', 'colva', 'benaulim', 'varca', 'cavelossim', 'palolem', 'agonda', 'majorda', 'dona paula',
+  'arpora',
 ];
 
-export function stayLocationOf(text: string): StayLocation {
-  const t = norm(text).replace(/,?\s*goa$/, '');
-  if (GOA_AREAS.includes(t) || GOA_AREAS.includes(norm(text))) return GOA;
-  throw new TravelError('unknown_place', `Go can search ixigo stays in Goa and its areas (North Goa, South Goa, Anjuna, Vagator and others). "${text.slice(0, 60)}" is not one yet.`);
+export function stayPlaceOf(text: string): StayPlace {
+  const short = norm(text).replace(/,?\s*goa$/, '');
+  const name = GOA_AREAS.includes(short) ? short : GOA_AREAS.includes(norm(text)) ? norm(text) : null;
+  if (!name) throw new TravelError('unknown_place', `Go can search ixigo stays in Goa and its areas (North Goa, South Goa, Anjuna, Vagator and others). "${text.slice(0, 60)}" is not one yet.`);
+  if (name === 'anjuna') return { location: ANJUNA, area: null };
+  return { location: GOA, area: GOA_AREA_CODES[name] ?? null };
 }
 
 /** An airport's city from the table, for a page that shows only codes. */

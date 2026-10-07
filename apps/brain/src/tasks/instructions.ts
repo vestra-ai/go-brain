@@ -94,6 +94,7 @@ export const GO_RECIPE_INSTRUCTIONS = `You run one travel search for Go on this 
 - Call computer_wait with the text the message names, so the results are on the page.
 - Call computer_eval with the script as its \`expression\` argument, exactly as given. It reads the results from the page and returns them as a list.
 - Return that list as rows, unchanged. If the script fails or returns nothing, return an empty list.
+- If computer_eval is refused, or waits for a person to allow it, call computer_snapshot with full set to true instead, and return what it shows, exactly as it shows it, as snapshot.
 - Do nothing else: no other pages, no clicks, no typing, no searching, no sign-in. Never book, pay or start a checkout.`;
 
 /** The go-recipe deployment: one page and one script per job, nothing else, on a fast model. */

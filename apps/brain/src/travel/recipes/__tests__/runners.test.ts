@@ -140,6 +140,22 @@ describe('the agent job runner (the fallback)', () => {
     expect(r.ms).toBe(3 * AGENT_POLL_MS);
   });
 
+  it("reads a snapshot's text with the recipe's own reader when the job could not run the script", async () => {
+    // As Bash's computer_snapshot shows the page: a link's name holds the whole card, its text nodes the lines.
+    const page = fixture('buses-mumbai-goa.txt').split('\n').filter((l) => l.trim().length > 0);
+    const snapshot = ['- link "Paulo Travels Express VE AC Sleeper (2 + 1) 18:20 Mumbai 16h.25m 10:45 Goa" [@e3]', ...page.map((l) => `  - StaticText "${l.trim()}"`)].join('\n');
+    const w = world((c) => {
+      if (c.path === '/v1/conversations') return { id: 'conv_1' };
+      if (c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [{ task_id: 'task_1' }] };
+      return { status: 'done', result: { data: { snapshot } } };
+    });
+    const r = await createAgentJobRunner({ ...w.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots);
+    expect(r.options).toHaveLength(15);
+    expect(r.options[0]).toMatchObject({ title: 'Paulo Travels Express', priceMinor: 270_000 });
+    const message = (w.calls[1]!.opts['body'] as { message: string }).message;
+    expect(message).toContain('call computer_snapshot with full set to true instead');
+  });
+
   it('finds the job on the turn when the first answer did not name it', async () => {
     const w = world((c) => {
       if (c.path === '/v1/conversations') return { id: 'conv_1' };

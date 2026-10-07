@@ -3,7 +3,7 @@ import * as C from '@go/contract';
 import { withSchema } from '../../db/test-db.js';
 import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { goaPack } from '../../tasks/testing/goa.js';
-import { buildOptionsCard } from '../cards.js';
+import { buildFlightsLinkCard, buildOptionsCard } from '../cards.js';
 import { registerTravel } from '../register.js';
 import { createResultsStore, type ResultOption } from '../results.js';
 
@@ -39,7 +39,7 @@ describe('registerTravel', () => {
   it('sets brain.travel and registers the six travel tools, the three options taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote']);
-    expect([...lb.taps.handlers.keys()].sort()).toEqual(['options/open', 'options/pick', 'options/vote']);
+    expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/open', 'options/pick', 'options/vote']);
     expect(lb.context.wakes.has('tap')).toBe(true);
     // A search that outlived its turn wakes Go with its options.
     expect(lb.context.wakes.has('search')).toBe(true);
@@ -90,6 +90,14 @@ describe('registerTravel', () => {
     expect(opened).toEqual({ result: 'open', url: page, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
     // An option from another card is refused.
     expect(await lb.taps.tap('options', 'open', tap({ tap_id: 'tap_o3', action_id: 'open', option_id: 'opt_ixr1' }), card)).toEqual({ result: 'refused', toast: 'That option is no longer here' });
+  });
+
+  it('"See flights on ixigo" opens the link card\'s own ixigo page', async () => {
+    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026';
+    const link = buildFlightsLinkCard({ cardId: 'c_link_r1', title: 'Flights, Delhi to Goa', url: page });
+    const tapIt = (c: C.Card) => lb.taps.tap('notice', 'see_on_ixigo', { tap_id: 'tap_l1', trip_id: 't_goa', card_id: c.card_id, action_id: 'see_on_ixigo', person_id: 'p_meher' }, c);
+    expect(await tapIt(link)).toEqual({ result: 'open', url: page, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
+    expect(await tapIt({ ...link, source: { name: 'elsewhere', url: 'https://fares.example/x' } })).toEqual({ result: 'refused', toast: 'This card has no ixigo page' });
   });
 
   it("closes the image fetcher's connections and the ixigo connection through brain.onStop", async () => {

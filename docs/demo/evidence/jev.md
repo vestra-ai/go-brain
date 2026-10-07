@@ -108,7 +108,7 @@ The repeat ([run 37571925813](https://github.com/vestra-ai/go-brain/actions/runs
 - **Question 1:** a message Jev is sure is chatter, or sure no one spoke to Go in, does not wake the main model; the notes pass and the quiet reactions still run for it. A message that names Go always does.
 - **Questions 5, 6 and 7:** the notes pass runs at once for a sure fact or record line instead of after a quiet spell, and a sure 👍 or 🙌 goes on the message without any model. A ✅ goes on at once when questions 5 and 7 are both sure.
 - **Questions 4 and 8:** no part of Go acts on these readings yet; acting live records them as acted in `reflex_reads`.
-- **Question 2, in shadow:** Jev never marks a message finished, so Go waits 2 seconds (longer while more lines keep coming, up to 6) before the main model answers, unless the message names Go and plainly ends with ?, ., ! or an emoji.
+- **Question 2, in shadow:** Jev never marks a message finished, so Go waits 2 seconds (longer while more lines keep coming, up to 6) before the main model answers, unless the message names Go, or ends a burst of lines that named Go, and plainly ends with ?, ., ! or an emoji.
 - **Question 9, in shadow:** Go does not offer help on its own from an opening.
 - **Question 3, in shadow:** no part of Go acts on it yet.
 - **Question 10:** travel's early search reads it. A sure kind is the search to start, with the travel parser filling in its places and dates; a sure none starts no search, even one the parser found; unsure leaves the parser to decide alone. Until that hook is built, no part of Go acts on it; acting live records it as acted in `reflex_reads`.

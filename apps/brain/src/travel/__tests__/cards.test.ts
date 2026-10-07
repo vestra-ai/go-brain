@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
-import { buildOptionsCard, clip, formatClock, formatInr, ixigoPage, localClock, plain, subtitleFor } from '../cards.js';
+import { buildFlightsLinkCard, buildOptionsCard, clip, formatClock, formatInr, ixigoPage, localClock, plain, subtitleFor } from '../cards.js';
 import type { ResultOption } from '../results.js';
 
 const flight = (title: string, dep: string, arr: string, price: number): ResultOption => ({
@@ -35,6 +35,13 @@ describe('the options card', () => {
     expect(card.actions?.[2]).toEqual({ action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true });
     const elsewhere = picks.map((p) => ({ ...p, option: { ...p.option, sourceUrl: 'https://www.airbnb.co.in/rooms/1' } }));
     expect(buildOptionsCard({ cardId: 'c_web', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: elsewhere }).actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+  });
+
+  it('builds the flights link card as a valid notice with its one button', () => {
+    const card = buildFlightsLinkCard({ cardId: 'c_link_1', title: 'Flights, Delhi to Goa', url: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI' });
+    expect(C.NoticeCard.safeParse(card).success).toBe(true);
+    expect(card).toMatchObject({ tone: 'info', fallback_text: 'Flights, Delhi to Goa: see them on ixigo', source: { name: 'ixigo' } });
+    expect(card.body).not.toMatch(/no flights/i);
   });
 
   it('opens only https pages on ixigo.com', () => {

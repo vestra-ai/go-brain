@@ -27,6 +27,8 @@ export interface EarlyStartDeps {
   log: { warn(obj: object, msg: string): void };
   /** Keeps the trip's computer awake for two minutes; absent while it is not set up here. */
   keepWarm?: (tripId: string) => void;
+  /** Kinds that answer with ixigo's link and load nothing (the backend's linkOnly): nothing to start early. */
+  linkOnly?: (kind: TravelKind) => boolean;
 }
 
 /** A search a message started on intake. */
@@ -57,7 +59,13 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       if (!plainlyNamesGo(msg, pack) && !(read.forGo.sure && read.forGo.value === true)) return undefined;
       const travel = d.travel();
       if (!travel) return undefined;
-      const ask = readTravelAsk(msg.text, { today, destination: pack.trip.destination?.name ?? null, dates: pack.trip.dates ?? null });
+      // Jev's question 10, when it is sure: its kind wins over the parser's; "none" (travel talk, not a search ask) starts
+      // nothing. Unsure, the parser decides alone.
+      const pick = read.recipe;
+      if (pick?.sure && pick.value === null) return undefined;
+      const ask = readTravelAsk(msg.text, {
+        today, destination: pack.trip.destination?.name ?? null, dates: pack.trip.dates ?? null, ...(pick?.sure && pick.value ? { kind: pick.value } : {}),
+      });
       if (!ask) return undefined;
       try {
         RECIPES[ask.kind].slotsFrom(ask.query, { people: Math.max(1, pack.trip.people.length) });
@@ -65,6 +73,8 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
         // A place the recipes have no code for: the composer asks, or searches, as usual.
         return undefined;
       }
+      // A link answers at once: the turn starts now, with nothing to search early.
+      if (d.linkOnly?.(ask.kind)) return { dueNow: true };
       // Not awaited: the hooks run one after another, and nothing should wait on the page.
       const search = travel.search(ask.kind, ask.query, { tripId });
       search.catch((err: unknown) => {

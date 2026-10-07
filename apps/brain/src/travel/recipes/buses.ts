@@ -188,6 +188,7 @@ export const buses: Recipe<BusSlots> = {
   readyText: 'Select Seats',
   extract,
   agentExtractor: pageScript(readBusesPage, 3),
+  readPage: readBusesPage,
   fromAgent,
   ttlMs: RECIPE_TTL_MS,
 };

@@ -211,6 +211,37 @@ function fromAgent(rows: unknown, s: FlightSlots): RecipeOption[] {
   });
 }
 
+/** ixigo's departure and arrival windows (p1-b's flights map), as the page's own filter shows them. */
+const WINDOWS: Array<[name: string, from: string, to: string]> = [
+  ['EARLY_MORNING', '00:00', '06:00'],
+  ['MORNING', '06:00', '12:00'],
+  ['AFTERNOON', '12:00', '18:00'],
+  ['NIGHT', '18:00', '24:00'],
+];
+
+/** The windows a time range touches; null when there is no range. */
+function windows(after: string | undefined, before: string | undefined): string | null {
+  if (!after && !before) return null;
+  const from = after ?? '00:00';
+  const to = before ?? '24:00';
+  return WINDOWS.filter(([, start, end]) => start < to && end > from).map(([name]) => name).join(',');
+}
+
+/**
+ * The results URL with what people asked for already set, in ixigo's own filter params (p1-b's flights map): non-stop,
+ * the departure and arrival windows, and the price cap per person. The page filters itself; nothing is clicked.
+ */
+export function withFlightFilters(url: string, q: TravelQuery): string {
+  const params: string[] = [];
+  if (q.mustHave?.includes('non_stop')) params.push('stops=0');
+  const takeOff = windows(q.departAfter, q.departBefore);
+  if (takeOff) params.push(`takeOff=${takeOff}`);
+  const landing = windows(undefined, q.arriveBefore);
+  if (landing) params.push(`landing=${landing}`);
+  if (q.maxPriceMinor !== undefined) params.push(`price=0,${Math.floor(q.maxPriceMinor / 100)}`);
+  return params.length ? `${url}&${params.join('&')}` : url;
+}
+
 export const flights: Recipe<FlightSlots> = {
   id: 'ixigo.flights',
   kind: 'flights',
@@ -225,6 +256,7 @@ export const flights: Recipe<FlightSlots> = {
   readyText: 'Flights Available',
   extract,
   agentExtractor: pageScript(readFlightsPage, 3),
+  readPage: readFlightsPage,
   fromAgent,
   ttlMs: RECIPE_TTL_MS,
 };

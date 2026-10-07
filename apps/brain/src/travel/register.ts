@@ -12,7 +12,7 @@ import { createTravelLayer } from './layer.js';
 import { startLiveSearch } from './live-search.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
-import { createIxigoWebBackend } from './recipes/backend.js';
+import { createIxigoWebBackend, LINK_ONLY_KINDS } from './recipes/backend.js';
 import { createEarlyStart } from './recipes/early.js';
 import { earlySearchNow } from './recipes/now.js';
 import { runnerFor } from './recipes/runners.js';
@@ -48,6 +48,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     peopleOf: async (tripId) => (await brain.packs.get(tripId)).trip.people.length,
     now: brain.now,
     live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log }, tripId, o),
+    linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
   });
   const travel = createTravelLayer({
     switches: brain.switches,
@@ -64,6 +65,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
     keepWarm: (tripId) => brain.recipeRunners?.keepWarm(tripId),
+    linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
