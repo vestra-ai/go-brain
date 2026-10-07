@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { CARD_LINE } from '../composer/rules.js';
 import { CardLineArg, SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
+import { dateAs } from './book/expr.js';
 import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
@@ -154,7 +155,8 @@ function suggestTitle(kind: TravelKind, q: TravelQuery): string {
     case 'flights':
       return clip(`Flights, ${q.from ?? ''} to ${q.to ?? ''}`, 80);
     case 'trains':
-      return clip(`Trains, ${q.from ?? ''} to ${q.to ?? ''}`, 80);
+      // A train list is for one day: the card says which ("Trains, Delhi to Goa, 6 Nov").
+      return clip(`Trains, ${q.from ?? ''} to ${q.to ?? ''}${q.date ? `, ${dateAs(q.date, 'D Mon')}` : ''}`, 80);
     case 'buses':
       return clip(`Buses, ${q.from ?? ''} to ${q.to ?? ''}`, 80);
     case 'stays':
@@ -363,10 +365,14 @@ export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: Trav
   }
   const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt });
   const fit = found.results.length;
+  // A train comes back once a class: the summary counts trains, and says how many fares by class they hold.
+  const trains = kind === 'trains' ? new Set(found.results.map((o) => o.journey?.number ?? o.title)).size : fit;
+  const counted = trains === fit ? `${fit}` : `${trains}`;
+  const byClass = trains === fit ? '' : ` (${fit} fares by class)`;
   const prices = priceRange(options);
   const areas = kind === 'stays' ? [...new Set(options.map(areaOf))] : [];
   const summary =
-    `${terms.length ? `${fit} of the ${before} ${scope} fit ${listOf(terms)}` : `${fit} ${scope}`}` +
+    `${terms.length ? `${counted} of the ${before} ${scope} fit ${listOf(terms)}${byClass}` : `${counted} ${scope}${byClass}`}` +
     `${prices ? `: ${prices}` : ''}${areas.length ? `, in ${listOf(areas)}` : ''}.` +
     `${fit > options.length ? ` The best ${options.length} are below.` : ''}`;
   return {

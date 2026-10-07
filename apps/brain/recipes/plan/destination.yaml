@@ -14,26 +14,33 @@ changes_state: false
 let:
   slug: "$lowercase($replace($trim(place), /[^A-Za-z0-9]+/, '-'))"
 page: /plan/{$slug}
+fast: { url: "/plan/{$slug}", headers: { RSC: "1" }, format: rsc }
+# The page's own document, up to Bash's 1 MB (a guide page is about 333 KB). Its parts carry the guide in pieces: the
+# best time and the weather by month in one, each list ("Places To Visit", "Places To Eat") as a widget of its own. A
+# place with no guide still answers, with no bestTime in it: no rows, which the ixigo tool says plainly.
 capture:
-  - { match: /plan/, max_bytes: 2000000 }
+  - { match: "/plan/{$slug}$", max_bytes: 1000000 }
 read:
-  rows: { from: /plan/, format: next_html, list: "$find($, 'bestTime')" }
+  rows: { from: "/plan/{$slug}$", format: next_html, list: "$exists($find($, 'bestTime')) ? { 'page': $ }" }
 answer:
   as: facts
   title: "{place}"
   max: 1
   # Places To Visit and Places To Eat are ixigo's own, with ratings: the only places Go names for the destination.
   each: |
-    {
-      "destination": destination,
-      "best_time": bestTime,
-      "weather_by_month": [weatherHistory.(month & ": " & $string(weatherAqi.min) & " to " & $string(weatherAqi.max) & " C. " & summary)],
-      "places_to_visit": [widgets[title = "Places To Visit"].data.(name & ($type(rating) = "number" ? " (" & $string(rating) & ")" : "") & (description ? ": " & description : ""))],
-      "places_to_eat": [widgets[title = "Places To Eat"].data.(name & ($type(rating) = "number" ? " (" & $string(rating) & ")" : ""))],
-      "ideas": [widgets[title = "Ideas To Plan Your Trip"].data.name],
-      "questions": [faq[[0..5]].(heading & " " & $replace(content, /<[^>]+>/, ""))]
-    }
+    (
+      $guide := $find(page, 'bestTime');
+      $widget := function($t) { $findAll(page, 'widget').widget[title = $t] };
+      {
+        "destination": $find(page, 'destination').destination,
+        "best_time": $guide.bestTime,
+        "weather_by_month": [$guide.weatherHistory.(month & ": " & $string(weatherAqi.min) & " to " & $string(weatherAqi.max) & " C. " & summary)],
+        "places_to_visit": [$widget("Places To Visit").data.(name & ($type(rating) = "number" ? " (" & $string(rating) & ")" : "") & (description ? ": " & description : ""))],
+        "places_to_eat": [$widget("Places To Eat").data.(name & ($type(rating) = "number" ? " (" & $string(rating) & ")" : ""))],
+        "ideas": [$widget("Ideas To Plan Your Trip").data.name]
+      }
+    )
 ttl_minutes: 60
-samples: { page: plan.destination.html }
+samples: { page: plan.destination.html, fast: plan.destination.rsc.txt }
 measured: { fast_ms: 437, page_ms: 5100, flow_ms: null }
 notes: The payload carries the page's apikey, deviceId and uuid; the engine drops them before anything reads the body.

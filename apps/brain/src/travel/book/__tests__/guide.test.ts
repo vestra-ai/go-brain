@@ -9,13 +9,14 @@ import { ixigoTool, NAMES_ONLY_FROM_IXIGO, toolRecipes } from '../tool.js';
 
 const { book } = loadBook();
 const sample = (name: string): string => readFileSync(`${BOOK_DIR}samples/${name}`, 'utf8');
-/** The page's own credentials, as the samples carry them (their values replaced). */
-const CREDENTIALS = /apikey|deviceId|"uuid"|REDACTED|token/;
+/** The page's own credentials, as the samples carry them (p1-b's raw payload, their values replaced). */
+const CREDENTIALS = /apikey|deviceId|"uuid"|REDACTED|otpless/i;
 
 describe("a page's body", () => {
   it("drops the page's own credentials wherever they are, before anything reads it", () => {
-    expect(withoutCredentials({ apikey: 'k', data: [{ deviceId: 'd', uuid: 'u', name: 'Baga Beach', auth: { token: 't' } }], api_key: 'k2' }))
+    expect(withoutCredentials({ apiKey: 'k', data: [{ deviceId: 'd', uuid: 'u', name: 'Baga Beach', auth: { token: 't' } }], api_key: 'k2', OTPlessInId: 'o' }))
       .toEqual({ data: [{ name: 'Baga Beach' }] });
+    expect(sample('plan.destination.rsc.txt')).toMatch(/"apiKey":"REDACTED"/);
     expect(JSON.stringify(readBodyAs(sample('plan.destination.rsc.txt'), 'rsc', 'the guide'))).not.toMatch(CREDENTIALS);
     expect(JSON.stringify(readBodyAs(sample('plan.destination.html'), 'next_html', 'the guide'))).not.toMatch(CREDENTIALS);
   });
@@ -34,7 +35,7 @@ describe('plan.destination', () => {
     const runner = {
       read: async (_t: string, url: string) => {
         reads += 1;
-        return { captures: [capture('/plan/', url, sample('plan.destination.html'))], finalUrl: url };
+        return { captures: [capture('/plan/goa$', url, sample('plan.destination.html'))], finalUrl: url };
       },
     };
     const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
@@ -48,15 +49,34 @@ describe('plan.destination', () => {
     expect(got.page).toBe('https://www.ixigo.com/plan/goa');
     expect(got.title).toBe('Goa');
     expect(got.rows).toHaveLength(1);
-    expect(got.rows[0]).toMatchObject({
-      destination: 'Goa, India',
-      best_time: 'November - March',
-      places_to_visit: ['Baga Beach (4.5): Water sports and nightlife', 'Dudhsagar Falls (4.6): Spectacular waterfall in the jungle', 'Cape Goa Cliff (4.6): Great place for influencers'],
-      places_to_eat: ['The Bodhi Tree Cafe and Bar (4.8)', 'THE SINGH FAMILY RESTAURANT & BAR PALOLEM GOA (4.7)', 'Cafe de port (4.8)'],
-    });
-    expect(got.rows[0]!['weather_by_month']).toContain('JAN: 16 to 34 C. January in Goa is characterized by mild temperatures with clear skies and good air quality.');
-    expect(got.rows[0]!['questions']).toContain('How can you reach Goa? By air to Dabolim or Mopa, by train to Madgaon, or by road.');
+    const guide = got.rows[0]!;
+    expect(guide).toMatchObject({ destination: 'Goa, India', best_time: 'November - March' });
+    expect(guide['weather_by_month']).toHaveLength(12);
+    expect(guide['weather_by_month']).toContain('JAN: 16 to 34 C. January in Goa is characterized by mild temperatures with clear skies and good air quality.');
+    expect(guide['places_to_visit']).toHaveLength(36);
+    expect((guide['places_to_visit'] as string[]).slice(0, 3)).toEqual(['Baga Beach (4.5): Water sports and nightlife', 'Dudhsagar Falls (4.6): Spectacular waterfall in the jungle', 'Cape Goa Cliff (4.6): Great place for influencers']);
+    expect(guide['places_to_eat']).toHaveLength(20);
+    expect((guide['places_to_eat'] as string[]).slice(0, 3)).toEqual(['The Bodhi Tree Cafe and Bar (4.8)', 'THE SINGH FAMILY RESTAURANT & BAR PALOLEM GOA (4.7)', 'Cafe de port (4.8)']);
+    expect(guide['ideas']).toEqual(['Beachfront Meditation Retreat', 'Goan Culinary Adventure', 'Wildlife Safari Excursion', 'Water Sports Extravaganza', 'Heritage Village Exploration']);
     expect(JSON.stringify(got)).not.toMatch(CREDENTIALS);
+  });
+
+  it("keeps the one page's document, whatever the place, and answers no guide with no rows, never an error", async () => {
+    const plans: Array<{ url: string; match: string }> = [];
+    const notFound = `<html><body><script>self.__next_f.push([1,${JSON.stringify('0:{"notFound":true}\n')}])</script></body></html>`;
+    const runner = {
+      read: async (_t: string, url: string, plan: { capture: Array<{ match: string }> }) => {
+        plans.push({ url, match: plan.capture[0]!.match });
+        return { captures: [capture('/plan/north-goa$', url, notFound)], finalUrl: url };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
+    const got = await engine.answer('plan.destination', { place: 'North Goa' }, { tripId: 't_goa' });
+    expect(plans).toEqual([{ url: 'https://www.ixigo.com/plan/north-goa', match: '/plan/north-goa$' }]);
+    expect(got).toMatchObject({ as: 'facts', rows: [] });
+    const tool = ixigoTool({ book, engine, live: () => true })!;
+    expect(await tool.run({ recipe: 'plan.destination', inputs: { place: 'North Goa' } }, { tripId: 't_goa' } as unknown as TurnCtx))
+      .toMatchObject({ facts: [], note: expect.stringContaining('name no place from memory') });
   });
 
   it('keeps the guide per destination: the second question about the same place is instant, and counted as kept', async () => {
@@ -97,7 +117,7 @@ describe('the ixigo tool', () => {
   });
 
   it("answers with the guide's facts, and tells the model to name only the places in them", async () => {
-    const runner = { read: async (_t: string, url: string) => ({ captures: [capture('/plan/', url, sample('plan.destination.html'))], finalUrl: url }) };
+    const runner = { read: async (_t: string, url: string) => ({ captures: [capture('/plan/goa$', url, sample('plan.destination.html'))], finalUrl: url }) };
     const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date() });
     const tool = ixigoTool({ book, engine, live: () => true })!;
     const out = (await tool.run({ recipe: 'plan.destination', inputs: { place: 'Goa' } }, turn)) as Record<string, unknown>;

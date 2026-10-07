@@ -279,11 +279,24 @@ export function createEngine(d: EngineDeps) {
     if (recipe.answer.as !== 'options' && recipe.answer.as !== 'facts') throw new TravelError('refused', `${recipe.title} is not a recipe Go runs this way.`);
     const runner = d.runner(o.tripId);
     if (!runner?.read) throw new TravelError('refused', "An ixigo.com search needs the trip's computer, which is not set up here.");
-    let plan: FetchPlan = { capture: recipe.capture as CaptureSpec[] };
+    // A capture's match may be a template too: "/plan/{$slug}$" keeps that one page's document, whatever the place.
+    const match = (m: string): Promise<string> => (m.includes('{') ? fill(m, inputs, { url: false, bindings }) : Promise.resolve(m));
+    const captures = async (cs: RecipeFile['capture']): Promise<CaptureSpec[]> =>
+      Promise.all((cs ?? []).map(async (c) => ({ ...c, match: await match(c.match) }) as CaptureSpec));
+    const read = recipe.read!;
+    const filled: RecipeFile = {
+      ...recipe,
+      read: {
+        ...read,
+        rows: { ...read.rows, from: await match(read.rows.from) },
+        ...(read.also ? { also: Object.fromEntries(await Promise.all(Object.entries(read.also).map(async ([k, a]) => [k, { ...a, from: await match(a.from) }]))) } : {}),
+      },
+    };
+    let plan: FetchPlan = { capture: await captures(recipe.capture) };
     for (const f of recipe.fetch ?? []) {
       if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
       plan = {
-        capture: (f.capture ?? recipe.capture) as CaptureSpec[],
+        capture: await captures(f.capture ?? recipe.capture),
         ...(f.steps ? { steps: f.steps } : {}),
         ...(f.timeout_ms ? { timeoutMs: f.timeout_ms } : {}),
         ...(f.settle_ms ? { settleMs: f.settle_ms } : {}),
@@ -292,15 +305,15 @@ export function createEngine(d: EngineDeps) {
     }
     const started = d.now().getTime();
     o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
-    const read = await runner.read(o.tripId, page, plan, { ...(o.signal ? { signal: o.signal } : {}), ...(o.onProgress ? { onProgress: o.onProgress } : {}) });
-    refusePayments(read.finalUrl);
+    const got = await runner.read(o.tripId, page, plan, { ...(o.signal ? { signal: o.signal } : {}), ...(o.onProgress ? { onProgress: o.onProgress } : {}) });
+    refusePayments(got.finalUrl);
     o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
     if (recipe.answer.as === 'facts') {
-      const rows = await readFacts(recipe, read.captures, inputs, page, bindings);
+      const rows = await readFacts(filled, got.captures, inputs, page, bindings);
       const at = d.now();
       return { as: 'facts', title: await fill(recipe.answer.title, inputs, { url: false, bindings }), rows, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
     }
-    const options = await readOptions(recipe, read.captures, inputs, page, bindings);
+    const options = await readOptions(filled, got.captures, inputs, page, bindings);
     const at = d.now();
     return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
   }

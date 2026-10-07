@@ -52,6 +52,13 @@ function findWith(v: unknown, key: string, depth = 0): unknown {
   return undefined;
 }
 
+function findAllWith(v: unknown, key: string, out: unknown[], depth = 0): unknown[] {
+  if (depth > 64 || v === null || typeof v !== 'object') return out;
+  if (!Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, key)) out.push(v);
+  for (const x of Array.isArray(v) ? v : Object.values(v)) findAllWith(x, key, out, depth + 1);
+  return out;
+}
+
 const nothing = (x: unknown): boolean => x === undefined || x === null || x === false || (typeof x === 'string' && x.trim().length === 0);
 
 const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
@@ -111,6 +118,8 @@ const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
   },
   /** The first object, at any depth, that has the key: the props a page's flight payload carries, wherever they sit. */
   find: { fn: (v: unknown, key: string) => findWith(v, key) },
+  /** Every object, at any depth, that has the key, in the order they come: the widgets a page spreads across its parts. */
+  findAll: { fn: (v: unknown, key: string) => findAllWith(v, key, []) },
   /** Rupees as people write them in India: "₹1,44,653". */
   rupees: { fn: (n: number) => `₹${n.toLocaleString('en-IN')}` },
   /** "2026-11-06" as "06112026", "06-11-2026", "6 November 2026" or "6 Nov". */

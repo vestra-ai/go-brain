@@ -46,6 +46,15 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
     for (const [k, v] of Object.entries(a.suggestions)) if (k !== 'words_param' && typeof v === 'string') out.push([`answer.suggestions.${k}`, v]);
   }
   if (r.page) templates.push(['page', r.page]);
+  if (r.fast) {
+    templates.push(['fast.url', r.fast.url]);
+    if (r.fast.body) templates.push(['fast.body', r.fast.body]);
+  }
+  for (const [i, c] of [...(r.capture ?? []), ...(r.fetch ?? []).flatMap((f) => f.capture ?? [])].entries()) templates.push([`capture.${i}`, c.match]);
+  if (r.read) {
+    templates.push(['read.rows.from', r.read.rows.from]);
+    for (const [name, a] of Object.entries(r.read.also ?? {})) templates.push([`read.also.${name}.from`, a.from]);
+  }
   for (const [end, steps] of Object.entries(r.box?.type ?? {})) {
     for (const [i, s] of steps.entries()) if ('text' in s && s.text) templates.push([`box.type.${end}.${i}`, s.text]);
   }

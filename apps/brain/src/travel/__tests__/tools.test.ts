@@ -9,7 +9,7 @@ import { createImages } from '../images.js';
 import { createTravelLayer } from '../layer.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import { createResultsStore, type ResultsStore } from '../results.js';
-import { compactOption, searchRoundSummary, travelTools } from '../tools.js';
+import { compactOption, searchAnswer, searchRoundSummary, travelTools } from '../tools.js';
 import type { Travel } from '../travel.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -115,11 +115,25 @@ describe('search tools', () => {
   it('search_trains and search_buses answer journeys, and nothing that misses arrive_before', async () => {
     const trains = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_t1' }))) as any;
     expect(trains.count).toBe(6);
-    expect(trains.card.title).toBe('Trains, Delhi to Goa');
+    expect(trains.card.title).toBe('Trains, Delhi to Goa, 6 Nov');
     const late = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06', arrive_before: '09:00' }, lb.ctx())) as any;
     expect(late.count).toBe(0);
     const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_b1' }))) as any;
     expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
+  });
+});
+
+describe('a train list', () => {
+  it('counts trains, not a train once a class: one train in four classes is one train with four fares, on the day the card names', async () => {
+    const fare = (cls: string) => ({
+      kind: 'train' as const, title: 'Mandovi Express 10103', priceMinor: 100_000, currency: 'INR', priceNote: `per person, ${cls}`, highlights: [], facts: { class_code: cls },
+      journey: { mode: 'train' as const, origin: { name: 'Mumbai CSMT' }, destination: { name: 'Madgaon' }, depart_at: '2026-11-06T07:10:00+05:30', arrive_at: '2026-11-06T19:00:00+05:30', number: '10103' },
+    });
+    const found = { results: ['SL', '3A', '2A', '1A'].map(fare), checkedAt: '2026-10-07T12:00:00.000Z', found: 4 };
+    const results = { save: async () => ({ resultsId: 'r_t' }) } as unknown as ResultsStore;
+    const out = await searchAnswer('trains', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, found, 't_goa', { results, now: () => new Date('2026-10-07T12:00:00Z') });
+    expect(out.summary).toBe('1 trains from Mumbai to Goa on 2026-11-06 (4 fares by class): ₹1,000 per person, SL.');
+    expect(out.card?.title).toBe('Trains, Mumbai to Goa, 6 Nov');
   });
 });
 
