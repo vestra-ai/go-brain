@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseChat } from '../chat.js';
 import type { MessageBody, RecordedRequest } from '../requests.js';
 import type { GoFrame, ReplayRecord } from '../score.js';
-import { askTimings, type Timeline } from '../timings.js';
+import { replyLengths } from '../report-md.js';
+import { askTimings, sentencesIn, type Timeline } from '../timings.js';
 
 const T0 = 1_800_000_000_000;
 const chat = parseChat('t', [
@@ -41,10 +42,11 @@ describe('where an ask\'s reply time goes', () => {
       {
         line: 1, dueMs: 20, waited: false, typingMs: 10, turnStartMs: 250,
         calls: [
-          { startMs: 300, firstWordMs: 1_300, endMs: 2_000, toolsAfter: ['search_flights'] },
-          { startMs: 2_600, firstWordMs: 3_200, endMs: 3_900, toolsAfter: [] },
+          { startMs: 300, firstWordMs: 1_300, endMs: 2_000, toolsAfter: ['search_flights'], outputTokens: null },
+          { startMs: 2_600, firstWordMs: 3_200, endMs: 3_900, toolsAfter: [], outputTokens: null },
         ],
         postMs: 4_100,
+        reply: { chars: 24, sentences: 1, outputTokens: null },
         parts: { beforeTurnMs: 250, modelMs: 3_000, betweenMs: 600, afterModelMs: 200 },
       },
     ]);
@@ -57,5 +59,29 @@ describe('where an ask\'s reply time goes', () => {
     };
     const [a] = askTimings({ ...record, requests: [], frames: [] }, timeline);
     expect(a).toMatchObject({ line: 1, dueMs: 2_000, waited: true, turnStartMs: 2_050, calls: [], postMs: null });
+  });
+
+  it('records how long the answer was, and the output tokens of the call that wrote it', () => {
+    const timeline: Timeline = {
+      desk: [{ ref: 'm1', kind: 'message', dueMs: t1 + 20, turnId: 'tu1' }],
+      turns: [{ turnId: 'tu1', startedMs: t1 + 250, postedMs: t1 + 4_100, endedMs: t1 + 4_200 }],
+    };
+    const withUsage = requests.map((r, k) => ({ ...r, usage: { input_tokens: 9_000, output_tokens: [61, 5, 118][k]! } }));
+    const said = 'Friday evening flights from Delhi, all after 6 pm. The cheapest is IndiGo at ₹5,640.50 a head! Want a vote?';
+    const posted: GoFrame[] = [frames[0]!, { method: 'post_message', params: { trip_id: 't_goa', request_id: 'rq1', text: said }, at: t1 + 4_100 }];
+    const [a] = askTimings({ ...record, requests: withUsage, frames: posted }, timeline);
+    expect(a?.calls.map((c) => c.outputTokens)).toEqual([61, 118]);
+    expect(a?.reply).toEqual({ chars: [...said].length, sentences: 3, outputTokens: 118 });
+    expect(replyLengths({ model: 'claude-sonnet-5-5', chat: 'goa-50', asks: [a!] } as never)).toBe(
+      `- claude-sonnet-5-5, goa-50: 1 answer, median ${[...said].length} characters, 3 sentences, 118 output tokens.`,
+    );
+  });
+
+  it('counts sentences by their ends, not by a decimal point, and a last one with no mark', () => {
+    expect(sentencesIn('Three flights on Friday.')).toBe(1);
+    expect(sentencesIn('Arjun can leave after 6.30 pm. Meher has no prawns (#5).')).toBe(2);
+    expect(sentencesIn("Everyone, please vote by tonight 🗳️")).toBe(1);
+    expect(sentencesIn('Done! Want a vote? Or should I wait...')).toBe(3);
+    expect(sentencesIn('  ')).toBe(0);
   });
 });

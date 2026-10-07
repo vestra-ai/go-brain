@@ -1,8 +1,8 @@
 /**
  * Live only: where each ask's reply time goes, on the run's own clock. From the moment the ask's last line reached the
  * simulator: when Go's desk had it due (so whether it waited), typing, the turn's start, each model call (start, first
- * word, end) with the tools it asked for, and Go's post. Go's desk and turns come from its own tables (Timeline); the
- * rest from what the replay recorded.
+ * word, end, output tokens) with the tools it asked for, and Go's post with how long it was. Go's desk and turns come
+ * from its own tables (Timeline); the rest from what the replay recorded.
  */
 import type { Block } from './requests.js';
 import { groupsOf, type ReplayRecord } from './score.js';
@@ -22,13 +22,26 @@ export interface AskTiming {
   waited: boolean | null;
   typingMs: number | null;
   turnStartMs: number | null;
-  calls: Array<{ startMs: number; firstWordMs: number | null; endMs: number | null; toolsAfter: string[] }>;
+  calls: Array<{ startMs: number; firstWordMs: number | null; endMs: number | null; toolsAfter: string[]; outputTokens: number | null }>;
   postMs: number | null;
+  /** The answer Go posted: its length, and the output tokens of the call that wrote it (the turn's last). Null with no post. */
+  reply: { chars: number; sentences: number; outputTokens: number | null } | null;
   /** Before the turn (Go reading the line, any wait, the desk picking it up), the model calls, the gaps between them (the tools ran there), and from the last call to the post. */
   parts: { beforeTurnMs: number | null; modelMs: number; betweenMs: number; afterModelMs: number | null };
 }
 
 const WAITED_MS = 500;
+
+/**
+ * The sentences in a reply: each run ending in ".", "!" or "?" before a space or the end (so "6.30" or "₹5,640.50" is
+ * not an end), and a last one that ends without a mark ("see you there 🎉").
+ */
+export function sentencesIn(text: string): number {
+  const t = text.trim();
+  if (!t) return 0;
+  const ends = t.match(/[.!?]+(?=\s|$)/g)?.length ?? 0;
+  return ends + (/[.!?]$/.test(t) ? 0 : 1);
+}
 
 /** The tool calls the model made in the round before this request: the tool_use blocks of its last assistant message. */
 function toolsIn(content: string | Block[] | undefined): string[] {
@@ -56,6 +69,7 @@ export function askTimings(rec: ReplayRecord, tl: Timeline): AskTiming[] {
       firstWordMs: rel(r.firstTokenMs),
       endMs: rel(r.doneMs),
       toolsAfter: toolsIn(inTurn[k + 1]?.body.messages.filter((m) => m.role === 'assistant').at(-1)?.content),
+      outputTokens: r.usage?.output_tokens ?? null,
     }));
     const typing = rec.frames.find((f) => f.method === 'typing' && f.params['on'] === true && f.at >= t0);
     const post = rec.frames.find((f) => f.method === 'post_message' && f.at >= (turn?.startedMs ?? t0));
@@ -68,6 +82,7 @@ export function askTimings(rec: ReplayRecord, tl: Timeline): AskTiming[] {
       if (prevEnd !== null) betweenMs += timed[k]!.startMs - prevEnd;
     }
     const lastEnd = timed.at(-1)?.endMs ?? null;
+    const said = typeof post?.params['text'] === 'string' ? post.params['text'] : null;
     out.push({
       line,
       dueMs: rel(item?.dueMs),
@@ -76,6 +91,7 @@ export function askTimings(rec: ReplayRecord, tl: Timeline): AskTiming[] {
       turnStartMs,
       calls: timed,
       postMs,
+      reply: said === null ? null : { chars: [...said].length, sentences: sentencesIn(said), outputTokens: timed.at(-1)?.outputTokens ?? null },
       parts: {
         beforeTurnMs: turnStartMs,
         modelMs,
