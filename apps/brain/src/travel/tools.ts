@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { CARD_LINE } from '../composer/rules.js';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
-import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, subtitleFor } from './cards.js';
+import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, ixigoPage, subtitleFor } from './cards.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
@@ -181,6 +181,26 @@ function priceRange(options: ResultOption[]): string | null {
   const high = Math.max(...prices);
   const note = options.find((o) => o.priceNote)?.priceNote;
   return `${low === high ? formatInr(low) : `${formatInr(low)} to ${formatInr(high)}`}${note ? ` ${note}` : ''}`;
+}
+
+/** The kinds of place a stays title can name. ixigo.com's results carry no kind, so a name has to say it. */
+const PLACE_KINDS = /\b(villa|resort|hotel|homestay|apartment|cottage)s?\b/i;
+const titleWords = (s: string): string => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+
+/**
+ * An options card's title for stays from ixigo.com: the model's, unless it names a kind of place ("Pool villas in North
+ * Goa") that not every option on the card is by its own name; then what was searched ("Stays with a pool in North Goa").
+ * ixigo has no villa type, and a pool search there gives hotels and resorts (re-drill 6). Other searches keep the title.
+ */
+function stayCardTitle(title: string, query: Record<string, unknown>, shown: ResultOption[]): string {
+  const kind = PLACE_KINDS.exec(title)?.[1];
+  if (!kind || !shown.some((o) => o.kind === 'stay' && ixigoPage(o.sourceUrl ?? null))) return title;
+  if (shown.every((o) => new RegExp(`\\b${kind}`, 'i').test(o.title))) return title;
+  const needs = Array.isArray(query['mustHave']) ? (query['mustHave'] as string[]) : [];
+  const withs = [needs.includes('pool') && 'a pool', needs.includes('breakfast') && 'breakfast', needs.includes('free_cancellation') && 'free cancellation']
+    .filter((w): w is string => typeof w === 'string');
+  const area = typeof query['area'] === 'string' ? titleWords(query['area']) : '';
+  return clip(`Stays${withs.length ? ` with ${listOf(withs)}` : ''}${needs.includes('beach') ? ' near the beach' : ''}${area ? ` in ${area}` : ''}`, 80);
 }
 
 const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
@@ -437,7 +457,8 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
           return { n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null };
         }),
       );
-      const card = buildOptionsCard({ cardId, title: a.title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks });
+      const title = stayCardTitle(a.title, set.query, picks.map((p) => p.option));
+      const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks });
       // Saved before it is shown, so a tap on it always finds its offers.
       await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
       // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
