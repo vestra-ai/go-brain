@@ -10,6 +10,7 @@
  *  - a person Go was asked to forget is never proof for anything said before the forget.
  */
 import * as C from '@go/contract';
+import { isForgotten } from '../composer/fence.js';
 import type { Message } from '../door/methods.js';
 import { messageText } from '../reflex/questions.js';
 import { hasSecret } from '../reflex/secrets.js';
@@ -88,18 +89,12 @@ function holdsSecret(m: Message): boolean {
   return hasSecret(t) || MASKED.test(t);
 }
 
-function forgottenAt(env: CheckEnv, m: Message): boolean {
-  if (m.author.kind !== 'person') return false;
-  const upTo = env.forgotten.get(m.author.person_id);
-  return upTo !== undefined && m.seq <= upTo;
-}
-
 export function checkFact(p: FactProposal, env: CheckEnv): Checked<CheckedFact> {
   const m = env.pack.messages.find((x) => x.message_id === p.message_id);
   if (!m || m.deleted || m.withheld || !m.text) return no('the proof is not a message in this trip');
   if (m.author.kind !== 'person' || m.author.person_id !== p.person_id) return no('the proof is not a message by that person');
   if (!env.pack.trip.people.some((x) => x.person_id === p.person_id)) return no('that person is not in the trip');
-  if (forgottenAt(env, m)) return no('that person asked Go to forget this');
+  if (isForgotten(m, env.forgotten)) return no('that person asked Go to forget this');
   if (holdsSecret(m)) return no('the message holds a secret');
   const text = cleanText(p.text, 200);
   if (!text) return no('the fact text is empty or too long');
@@ -133,7 +128,7 @@ export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> 
     if (!m || m.deleted || m.withheld) return no('a proof is not a message in this trip');
     if (m.author.kind === 'system') return no('a proof is not a message in this trip');
     if (m.author.kind === 'go' && p.kind !== 'open') return no('only an open question may cite Go');
-    if (forgottenAt(env, m)) return no('a proof is from someone Go was asked to forget');
+    if (isForgotten(m, env.forgotten)) return no('a proof is from someone Go was asked to forget');
     if (holdsSecret(m)) return no('a proof message holds a secret');
     proof.push(m);
   }

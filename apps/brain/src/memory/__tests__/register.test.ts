@@ -2,7 +2,7 @@ import type * as C from '@go/contract';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Brain } from '../../app.js';
-import { createContext, type NowProvider } from '../../composer/context.js';
+import { createContext, type ForgottenProvider, type NowProvider } from '../../composer/context.js';
 import type { QuickTool } from '../../composer/tools.js';
 import { vote } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
@@ -15,7 +15,7 @@ import { codeOnly, sure } from '../../reflex/read.js';
 import type { ReflexRead } from '../../reflex/reflex.js';
 import type { TripPack } from '../../trips/pack.js';
 import { linkLine } from '../decision-lines.js';
-import { currentFacts, saveFact } from '../facts.js';
+import { currentFacts, markForgotten, saveFact } from '../facts.js';
 import type { Fold, StoryProvider } from '../fold.js';
 import { joinFacts } from '../join-facts.js';
 import { reactionRequestId } from '../reactions.js';
@@ -62,12 +62,14 @@ function setup(
   const warnings: string[] = [];
   const stops: Array<() => Promise<void> | void> = [];
   let story: StoryProvider | undefined;
+  let forgotten: ForgottenProvider | undefined;
   const link = fakeLink(o.fail ? { fail: o.fail } : {});
   // The fake model goes where buildBrain puts the real one: brain.anthropic.
   const model = scriptedClient(answers);
   const t = manualTimers();
   const context: Record<string, unknown> = { addNow: (p: NowProvider) => nows.push(p), addWake: () => undefined };
   if (o.story !== false) context.setStory = (p: StoryProvider) => { story = p; };
+  context.setForgotten = (p: ForgottenProvider) => { forgotten = p; };
   const brain = {
     env: {
       SIDE_MODEL: 'side-test', FOLD_AT_TOKENS: 60_000, STORY_TOKENS: 5_000, CHAT_HARD_CAP_TOKENS: 90_000, NOTES_QUIET_MS: 20_000, FOLD_QUIET_MS: 60_000,
@@ -92,7 +94,7 @@ function setup(
   } as unknown as Brain;
   const jev = { ask: async () => ({ ok: false as const, fault: 'timeout' as const, totalMs: 1 }) };
   const wired = wireMemory(brain, { jev, timers: t.timers, clock: t.clock });
-  return { brain, pack, handlers, tools, nows, warnings, stops, link, model, t, wired, story: () => story };
+  return { brain, pack, handlers, tools, nows, warnings, stops, link, model, t, wired, story: () => story, forgotten: () => forgotten };
 }
 const read = (over: Partial<ReflexRead>): ReflexRead => ({ ...codeOnly({ namesGo: false, secretKinds: [], hasTasks: false, money: false }), ...over });
 
@@ -314,6 +316,26 @@ describe('the fold in a chat that never goes quiet for a minute', () => {
       w.t.advance(30_000);
     }
     await vi.waitFor(async () => expect((await w.story()!.get('t_r23')).foldedToSeq).toBeGreaterThan(0));
+  });
+});
+
+describe('Forget me in the composer', () => {
+  it("hands the composer who was forgotten: after Kabir's forget, P1's real context hides his earlier lines and names him", async () => {
+    const w = setup('t_rf1', [
+      msg(2, 'p_kabir', "I'll book the cab from Mopa airport for all of us"),
+      msg(3, 'p_kabir', "also I'm allergic to peanuts"),
+      msg(4, 'p_meher', 'my birthday is on the 7th'),
+    ], []);
+    await markForgotten(db.pool, 'p_kabir', 't_rf1', 3, new Date('2026-10-07T10:00:00Z'));
+    const c = createContext(silentLog);
+    c.setForgotten(w.forgotten()!);
+    const p = await c.build({ tripId: 't_rf1', pack: w.pack, wake: [], seenSeq: 4, now: new Date('2026-10-07T10:00:00Z'), tz: 'Asia/Kolkata' });
+    const text = p.user.map((b) => b.text).join('\n');
+    expect(text).toContain('#2 [hidden: someone asked Go to forget them]');
+    expect(text).toContain('#3 [hidden: someone asked Go to forget them]');
+    expect(text).not.toContain('peanuts');
+    expect(text).toContain('#4 Meher: my birthday is on the 7th');
+    expect(text).toContain('Kabir used "Forget me in this trip" in the App');
   });
 });
 
