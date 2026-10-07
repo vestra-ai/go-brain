@@ -179,7 +179,7 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
   let found;
   try {
     // At least a second: a search kept from earlier answers in that, even when the run itself would never answer inline.
-    const first = budget === null ? await pending : await Promise.race([pending, nap(Math.max(budget, KEPT_ANSWERS_MS)).then(() => STILL_RUNNING)]);
+    const first = budget === null ? await pending : await Promise.race([pending, nap(Math.max(budget, KEPT_ANSWERS_MS)).then((): typeof STILL_RUNNING => STILL_RUNNING)]);
     if (first === STILL_RUNNING) return goOnWithout(kind, q, pending, ctx, d);
     found = first;
   } catch (err) {
