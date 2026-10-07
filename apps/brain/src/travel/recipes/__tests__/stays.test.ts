@@ -4,7 +4,7 @@ import type { TravelOption } from '../../travel.js';
 import { readStaysPage, stays } from '../stays.js';
 import { capture, fixture } from './fixtures.js';
 
-const slots = stays.slotsFrom({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
+const slots = stays.slotsFrom({ area: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
 const SEARCH_URL = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
 const pages = () => [
   // The page's first call ends in the same path plus "/static-metadata": it must never be read as hotels.
@@ -18,10 +18,10 @@ const MERITAS =
   '&hName=Meritas%20Auberge%20Calangute%20Goa';
 
 describe('the stays recipe', () => {
-  it('searches all of Goa for any part of it, two to a room', () => {
+  it('searches all of Goa for Goa, two to a room', () => {
     expect(slots).toEqual({
       location: { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 },
-      checkIn: '2026-11-06', checkOut: '2026-11-09', adults: 4, rooms: 2, filters: [],
+      checkIn: '2026-11-06', checkOut: '2026-11-09', adults: 4, rooms: 2, filters: [], half: null,
     });
     expect(stays.slotsFrom({ area: 'Anjuna, Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 5 }, { people: 4 })).toMatchObject({ adults: 5, rooms: 3 });
     expect(() => stays.slotsFrom({ area: 'Manali', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 })).toThrow(/Go can search ixigo stays in Goa/);
@@ -40,6 +40,21 @@ describe('the stays recipe', () => {
       'https://www.ixigo.com/hotels/search/result?locationId=1026&locationName=Anjuna&locationType=C&masterLocationId=50347&countryId=1' +
       '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0&filters=MP_FB%2CMP_FC',
     );
+  });
+
+  it("searches North Goa as all its areas ixigo has codes for, and drops a stay ixigo gives from South Goa", () => {
+    const north = stays.slotsFrom({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
+    expect(north).toMatchObject({ half: 'north', filters: ['PA_C_1047', 'PA_C_1067', 'PA_C_1091', 'PA_C_1096', 'PA_C_1169', 'PA_C_1459', 'PA_C_77993', 'PA_C_78528'] });
+    expect(stays.url(north)).toContain('&filters=PA_C_1047%2CPA_C_1067%2CPA_C_1091%2CPA_C_1096%2CPA_C_1169%2CPA_C_1459%2CPA_C_77993%2CPA_C_78528');
+    // Soul Vacation is in Fatona, Colva: South Goa.
+    const titles = stays.extract(pages(), north).map((o) => o.title);
+    expect(titles).toHaveLength(6);
+    expect(titles).not.toContain('Soul Vacation Resort and Spa, Colva');
+    const rows = readStaysPage(fixture('stays-goa.txt'), JSON.parse(fixture('stays-goa-links.json')) as string[]);
+    expect(stays.fromAgent(rows, north).map((o) => o.title)).toEqual(titles);
+    const south = stays.slotsFrom({ area: 'South Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
+    expect(south).toMatchObject({ half: 'south', filters: ['PA_C_79088', 'PA_L_154858'] });
+    expect(stays.extract(pages(), south).map((o) => o.title)).toEqual(['Soul Vacation Resort and Spa, Colva']);
   });
 
   it('takes what ixigo filtered on as true of every stay it gave, even one that does not list it', () => {

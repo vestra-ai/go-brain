@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { TravelError } from '../mcp-travel.js';
 import type { MUST_HAVES, TravelQuery } from '../travel.js';
-import { stayPlaceOf, type StayLocation } from './places.js';
+import { goaHalfOf, stayPlaceOf, type GoaHalf, type StayLocation } from './places.js';
 import {
   bodiesFor, clamp, ddmmyyyy, highlights, IXIGO, nightsBetween, paise, pageScript, readBody, readRows, RECIPE_TTL_MS,
   type Capture, type Recipe, type RecipeOption,
@@ -19,8 +19,10 @@ export interface StaySlots {
   checkOut: string;
   adults: number;
   rooms: number;
-  /** ixigo's filter codes, sorted: the area, and the must-haves ixigo filters on. */
+  /** ixigo's filter codes, sorted: the areas, and the must-haves ixigo filters on. */
   filters: string[];
+  /** The half of Goa the stays must be in: a stay ixigo gives from the other half is dropped. */
+  half: GoaHalf | null;
 }
 
 const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
@@ -130,6 +132,7 @@ function stayOption(h: StayRead, s: StaySlots): RecipeOption {
       nights,
       rooms: s.rooms,
       ...(h.area ? { area: h.area } : {}),
+      ...(h.distance ? { distance: h.distance } : {}),
       ...(h.stars !== undefined ? { stars: h.stars } : {}),
       ...(h.rating10 !== undefined ? { rating_out_of_10: h.rating10 } : {}),
       ...(h.reviews !== undefined ? { reviews: h.reviews } : {}),
@@ -147,6 +150,20 @@ const ratingOf = (r: string | number | undefined): number | undefined => {
   const n = typeof r === 'string' ? Number(r) : r;
   return n !== undefined && Number.isFinite(n) && n > 0 ? n : undefined;
 };
+
+/**
+ * The stays in the half of Goa asked for: one whose area or town is known to be in the other half is dropped ("North
+ * Goa" never answers with a hotel in Vasco). One whose place isn't known either way is kept, with its own area.
+ */
+function inHalf(options: RecipeOption[], half: GoaHalf | null): RecipeOption[] {
+  if (!half) return options;
+  return options.filter((o) => {
+    const fact = (k: string): string => (typeof o.facts[k] === 'string' ? (o.facts[k] as string) : '');
+    // Its area first, then its town, then what it is near ("310 m from Colva Beach").
+    const seen = goaHalfOf(fact('area')) ?? goaHalfOf(o.place?.address ?? '') ?? goaHalfOf(fact('distance'));
+    return seen === null || seen === half;
+  });
+}
 
 function extract(captures: Capture[], s: StaySlots): RecipeOption[] {
   const bodies = bodiesFor(captures, SEARCH);
@@ -177,7 +194,7 @@ function extract(captures: Capture[], s: StaySlots): RecipeOption[] {
       }, s));
     }
   }
-  return out;
+  return inHalf(out, s.half);
 }
 
 /**
@@ -251,7 +268,7 @@ const StayRow = z.object({
 });
 
 function fromAgent(rows: unknown, s: StaySlots): RecipeOption[] {
-  return readRows(z.array(StayRow), rows, 'stays').map((r) =>
+  const options = readRows(z.array(StayRow), rows, 'stays').map((r) =>
     stayOption({
       name: r.name,
       area: r.area,
@@ -265,6 +282,7 @@ function fromAgent(rows: unknown, s: StaySlots): RecipeOption[] {
       ...(r.token ? { token: r.token } : {}),
     }, s),
   );
+  return inHalf(options, s.half);
 }
 
 export const stays: Recipe<StaySlots> = {
@@ -276,8 +294,11 @@ export const stays: Recipe<StaySlots> = {
     const adults = clamp(q.guests ?? trip.people, 1, 30);
     const place = stayPlaceOf(where);
     const codes = (q.mustHave ?? []).flatMap((m) => MUST_HAVE_CODES[m] ?? []);
-    const filters = [...new Set([...(place.area ? [place.area] : []), ...codes])].sort();
-    return { location: place.location, checkIn: q.checkIn, checkOut: q.checkOut, adults, rooms: clamp(Math.ceil(adults / PER_ROOM), 1, MAX_ROOMS), filters };
+    const filters = [...new Set([...place.areas, ...codes])].sort();
+    return {
+      location: place.location, checkIn: q.checkIn, checkOut: q.checkOut, adults, rooms: clamp(Math.ceil(adults / PER_ROOM), 1, MAX_ROOMS), filters,
+      half: place.half,
+    };
   },
   url: (s) =>
     `${IXIGO}/hotels/search/result?locationId=${s.location.locationId}&locationName=${encodeURIComponent(s.location.locationName)}` +
