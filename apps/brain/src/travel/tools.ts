@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { CARD_LINE } from '../composer/rules.js';
 import { CardLineArg, SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
-import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
+import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
@@ -37,8 +37,8 @@ const Rupees = z.number().positive().max(10_000_000);
 const toPaise = (rupees: number): number => Math.round(rupees * 100);
 
 export const FlightsArgs = z.object({
-  from: Where.describe('City or airport code, e.g. "Delhi" or "DEL"'),
-  to: Where.describe('City or airport code, e.g. "Goa"'),
+  from: Where.describe('City or airport code, e.g. "Delhi" or "DEL"; a city abroad with its airport code, e.g. "London (LHR)"'),
+  to: Where.describe('City or airport code, e.g. "Goa" or "Dubai (DXB)"'),
   date: z.iso.date().describe('YYYY-MM-DD'),
   depart_after: Clock.optional().describe('24-hour HH:MM. Someone who can only leave after 6 pm is "18:00".'),
   depart_before: Clock.optional(),
@@ -57,7 +57,7 @@ export const JourneyArgs = z.object({
   max_price_per_person: Rupees.optional().describe('In rupees'),
 });
 export const StaysArgs = z.object({
-  area: Where.describe('A place or a part of Goa, e.g. "North Goa" or "Anjuna"'),
+  area: Where.describe('A city, town or area, e.g. "Manali", "North Goa" or "Anjuna"'),
   check_in: z.iso.date(),
   check_out: z.iso.date(),
   guests: z.int().min(1).max(30).optional(),
@@ -221,6 +221,7 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
   } catch (err) {
     const search = searchName(kind, q);
     if (err instanceof TravelError && err.code === 'link_only' && err.link) return linkAnswer(kind, q, err.link, ctx);
+    if (err instanceof TravelError && err.code === 'unknown_place') return pageAnswer(kind, q, ctx);
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
     if (err instanceof TravelError && err.code === 'past_date') return { search, count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
     if (err instanceof TravelError) {
@@ -284,6 +285,24 @@ function linkAnswer(kind: TravelKind, q: TravelQuery, link: string, ctx: TurnCtx
       `Say in one short line that the flights are on the card${who ? `, set ${who}` : ''}, to book on ixigo, and that if they tell you ` +
       "which one, you'll note it for the group. You can't book flights: never offer to book one or to take it from there. " +
       'Never say there are no flights, and quote no prices or times.',
+  };
+}
+
+/**
+ * A place Go has no ixigo code for, even after asking ixigo's own search box: the card opens ixigo's page for this kind
+ * of search, where the group searches it. Go never sends anyone to another site.
+ */
+function pageAnswer(kind: TravelKind, q: TravelQuery, ctx: TurnCtx): unknown {
+  const page = IXIGO_SEARCH_PAGES[kind];
+  ctx.cards.push(buildIxigoPageCard({ cardId: ctx.stableId('c_link'), title: suggestTitle(kind, q), kind }));
+  return {
+    search: searchName(kind, q),
+    count: 0,
+    link: page.url,
+    note: `Go can't search this place on ixigo itself, so the card opens ixigo's ${page.noun} page, to search it there.`,
+    tell_the_room:
+      `Say in one short line that the card opens ixigo's ${page.noun} page, where they can search ${searchScope(kind, q)} and book it. ` +
+      'Never name or suggest any other travel or booking site or app, and quote no prices or times.',
   };
 }
 
