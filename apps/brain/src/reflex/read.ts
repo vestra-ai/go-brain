@@ -61,9 +61,15 @@ function readForGo(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
   return unsure();
 }
 
-function readYesNo(p: number, yesMin: number, noMax: number): Sure<boolean> {
-  if (atLeast(p, yesMin)) return sure(true);
-  if (atMost(p, noMax)) return sure(false);
+/**
+ * Sure complete only for a line that names Go: an ask to Go Jev leans complete on is whole, while one cut short reads low
+ * ("@Go can you", "@Go one thing"). A line that doesn't name Go can sit mid-burst and read as complete as the burst's end
+ * ("if there's a cab from Mopa airport to Anjuna" 0.54, "for 5 people with luggage" 0.53), so it is never sure-complete.
+ */
+function readComplete(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
+  const p = noulP(a, 'q2_complete');
+  if (f.namesGo && atLeast(p, b.complete.namedMin)) return sure(true);
+  if (atMost(p, b.complete.noMax)) return sure(false);
   return unsure();
 }
 
@@ -157,7 +163,7 @@ export function readAnswers(
   const opening = [noulP(a, 'q9_group_question'), noulP(a, 'q9_circles'), noulP(a, 'q9_someone_look')];
   const would: ReflexRead = {
     forGo: readForGo(a, facts, bars),
-    complete: readYesNo(noulP(a, 'q2_complete'), bars.complete.yesMin, bars.complete.noMax),
+    complete: readComplete(a, facts, bars),
     size: readSize(a, bars),
     taskId: readTask(a, facts, taskKeys, bars),
     fact: anyAtLeast(fact, bars.fact.yesMin) ? sure(true) : allAtMost(fact, bars.fact.noMax) ? sure(false) : unsure(),

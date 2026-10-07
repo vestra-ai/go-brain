@@ -13,8 +13,11 @@ export const BARS = {
    * three are Bash's.
    */
   for_go: { chatterMin: 0.85, addressedMaxForChatter: 0.2, notAddressedMax: 0.1, addressedMin: 0.9, chatterMaxForAddressed: 0.1 },
-  /** Q2. Answering mid-thought is visible; unsure only costs the 2 s wait. */
-  complete: { yesMin: 0.85, noMax: 0.1 },
+  /**
+   * Q2, for a line that names Go only (read.ts readComplete). Answering mid-thought is visible; unsure only costs the 2 s
+   * wait. Set on the recorded test set (Task 5): Jev rarely reaches Bash-style 0.85 on a whole ask.
+   */
+  complete: { namedMin: 0.5, noMax: 0.1 },
   /** Q3. Bash moment-vs-work: work 0.9 with every moment noul at most 0.1. */
   size: { kindMin: 0.9, otherMax: 0.1 },
   /** Q4. Bash task pick: pick 0.85, own noul 0.4, lead over the loudest other 0.25. */
