@@ -10,7 +10,7 @@ import type { Switches } from '../../admin/switches.js';
 import { V1Error, type V1Client } from '../../tasks/v1-client.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveFrame, OnProgress } from './progress.js';
-import { AGENT_MAX_ROWS, bodiesFor, snapshotText, type Capture, type Recipe, type RecipeOption } from './recipe.js';
+import { AGENT_MAX_ROWS, bodiesFor, snapshotText, type Capture, type FetchPlan, type Recipe, type RecipeOption } from './recipe.js';
 
 export interface RecipeRun {
   options: RecipeOption[];
@@ -49,6 +49,15 @@ export const IN_USE_WAIT_MS = 4_000;
 
 interface FetchAnswer { final_url: string; elapsed_ms: number; woke: boolean; captures: Capture[]; frames?: LiveFrame[] }
 
+const isFrame = (f: unknown): f is LiveFrame =>
+  typeof f === 'object' && f !== null && typeof (f as LiveFrame).jpeg_base64 === 'string' && typeof (f as LiveFrame).page_url === 'string';
+
+/** The pictures a timed-out fetch did take, which Bash sends with its partial captures. */
+function partialFrames(err: V1Error): LiveFrame[] {
+  const frames = (err.detail?.['partial'] as { frames?: unknown } | undefined)?.frames;
+  return Array.isArray(frames) ? frames.filter(isFrame) : [];
+}
+
 const isCapture = (c: unknown): c is Capture =>
   typeof c === 'object' && c !== null && typeof (c as Capture).url === 'string' && typeof (c as Capture).body === 'string' && typeof (c as Capture).status === 'number';
 
@@ -79,7 +88,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       const started = d.now().getTime();
       const url = recipe.url(slots);
       o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
-      const plan = recipe.fetchFor?.(slots) ?? { capture: recipe.capture, steps: recipe.steps };
+      const plan: FetchPlan = recipe.fetchFor?.(slots) ?? { capture: recipe.capture, ...(recipe.steps ? { steps: recipe.steps } : {}) };
       const body = {
         url,
         // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer.
@@ -90,7 +99,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           ...(c.max_count ? { max_count: c.max_count } : {}),
         })),
         ...(plan.steps ? { steps: plan.steps } : {}),
-        timeout_ms: FETCH_TIMEOUT_MS,
+        timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
         // Pictures of the page as it loads, about one every 700 ms, for the live search card.
         frames: {},
       };
@@ -112,6 +121,11 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
             if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
               await sleep(IN_USE_WAIT_MS);
               continue;
+            }
+            // A timed-out fetch's pictures go to the card as a finished one's do, whatever its captures can answer.
+            if (err.status === 504) {
+              const frames = partialFrames(err);
+              if (frames.length > 0) o.onProgress?.({ type: 'frames', frames });
             }
             return fetchFailed(err, recipe, tripId, d.log);
           }
