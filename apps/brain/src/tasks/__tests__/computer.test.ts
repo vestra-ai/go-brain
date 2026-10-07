@@ -50,6 +50,13 @@ describe("the trip's computer", () => {
     expect(fake.callsTo('POST', /\/warm$/)).toHaveLength(2);
   });
 
+  it('pings with no cooldown, for a box Go is keeping awake', async () => {
+    const before = fake.callsTo('POST', /\/warm$/).length;
+    await computer.ping('t_goa');
+    await computer.ping('t_goa');
+    expect(fake.callsTo('POST', /\/warm$/)).toHaveLength(before + 2);
+  });
+
   it('keeps to 8 computers waking at once across trips', async () => {
     clock.advance(120_000);
     for (let i = 0; i < 8; i += 1) await computer.warm(`t_warm_${i}`);

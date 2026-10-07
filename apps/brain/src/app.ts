@@ -67,8 +67,11 @@ export interface Brain {
   travel?: Travel;
   /** Set by P4. */
   tasks?: Tasks;
-  /** Set by P4's tasks lane, which owns the trip's computer: the two ways to run an ixigo.com recipe on it. */
-  recipeRunners?: { browserFetch: RecipeRunner; agentJob: RecipeRunner };
+  /**
+   * Set by P4's tasks lane, which owns the trip's computer: the two ways to run an ixigo.com recipe on it, and keepWarm,
+   * which keeps the computer awake for two minutes of travel talk.
+   */
+  recipeRunners?: { browserFetch: RecipeRunner; agentJob: RecipeRunner; keepWarm(tripId: string): void };
   /** Set by P5. */
   pay?: Pay;
   /** The daily model budget (MODEL_DAILY_BUDGET_USD). buildBrain always sets it; it is optional only so lane test doubles need not. */

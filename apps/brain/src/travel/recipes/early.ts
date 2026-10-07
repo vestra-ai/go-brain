@@ -3,6 +3,9 @@
  * the turn starts at once instead of waiting 2 s for more lines. Only under TRAVEL_MODE ixigo_web, where a search takes
  * seconds. The composer's own search_* call later joins the same search: ixigo_web shares one in flight, by recipe and
  * slots. A follow-up line ("after 6 pm") still reaches the turn, and its filter applies to the same list.
+ *
+ * Travel talk from anyone, to Go or not, also keeps the trip's computer awake for the next two minutes (design 4b), so
+ * the search that follows never waits on a sleeping box.
  */
 import type { Switches } from '../../admin/switches.js';
 import type { Message } from '../../door/methods.js';
@@ -11,7 +14,7 @@ import type { HookAnswer } from '../../trips/hooks.js';
 import { plainlyNamesGo } from '../../trips/names-go.js';
 import type { TripPack } from '../../trips/pack.js';
 import type { Travel, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
-import { readTravelAsk } from './ask.js';
+import { readTravelAsk, travelTalk } from './ask.js';
 import { RECIPES } from './index.js';
 import { RECIPE_TTL_MS } from './recipe.js';
 
@@ -22,6 +25,8 @@ export interface EarlyStartDeps {
   today: (tripId: string) => Promise<string>;
   now: () => Date;
   log: { warn(obj: object, msg: string): void };
+  /** Keeps the trip's computer awake for two minutes; absent while it is not set up here. */
+  keepWarm?: (tripId: string) => void;
 }
 
 /** A search a message started on intake. */
@@ -45,12 +50,14 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
   return {
     async onRead(msg, read, pack) {
       if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web' || !msg.text) return undefined;
+      const tripId = pack.trip.trip_id;
+      const today = await d.today(tripId);
+      if (travelTalk(msg.text, today)) d.keepWarm?.(tripId);
       // To Go: named plainly, or the quick read is sure it is for Go.
       if (!plainlyNamesGo(msg, pack) && !(read.forGo.sure && read.forGo.value === true)) return undefined;
       const travel = d.travel();
       if (!travel) return undefined;
-      const tripId = pack.trip.trip_id;
-      const ask = readTravelAsk(msg.text, { today: await d.today(tripId), destination: pack.trip.destination?.name ?? null, dates: pack.trip.dates ?? null });
+      const ask = readTravelAsk(msg.text, { today, destination: pack.trip.destination?.name ?? null, dates: pack.trip.dates ?? null });
       if (!ask) return undefined;
       try {
         RECIPES[ask.kind].slotsFrom(ask.query, { people: Math.max(1, pack.trip.people.length) });

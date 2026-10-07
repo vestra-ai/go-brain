@@ -52,7 +52,10 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   for (const t of travelTools({ travel, results, images, now: brain.now })) brain.tools.register(t);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
-  const early = createEarlyStart({ travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log });
+  const early = createEarlyStart({
+    travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
+    keepWarm: (tripId) => brain.recipeRunners?.keepWarm(tripId),
+  });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, now: brain.now }));
   // Null for taps on other cards (pay, call): the next lane's renderer, or P1's generic line, reads those.

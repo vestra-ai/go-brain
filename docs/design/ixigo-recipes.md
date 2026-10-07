@@ -1,6 +1,6 @@
 # ixigo recipes: Go searches ixigo.com in the trip's browser
 
-Design for Friday. Built so far: the recipes (section 1), the runners (section 2), the travel layer with the "See on ixigo" card (section 3), the early start, the 10-minute cache and the one-call prompt (section 4a, 4c and 4d).
+Design for Friday. Built so far: the recipes (section 1), the runners (section 2), the travel layer with the "See on ixigo" card (section 3), and all of section 4: the early start, the warm, the 10-minute cache and the one-call prompt.
 
 "@Go flights Delhi to Goa Friday" should get "Go is typing..." at once and an options card from ixigo.com in under 5 seconds. Each option opens on ixigo.com; booking stays there.
 
@@ -122,7 +122,8 @@ The search tool already turns each of these into a plain line.
 
 **(b) Warm the box when travel talk starts.**
 - A sleeping box takes about 5.5 s to wake, and goes back to sleep about 7 s after a warm.
-- Go warms it on the first line of travel talk: any travel word with a place or a date, to Go or not. It warms again every 5 s while travel talk goes on, for at most 2 minutes after the last such line, inside Go's warm limit (`WARM_LIMIT` 8 per org).
+- Go warms it on the first line of travel talk: any travel word with a place or a date, to Go or not (`travelTalk` in `ask.ts`). It warms again every 5 s while travel talk goes on, for at most 2 minutes after the last such line (`tasks/keep-warm.ts`).
+- The first warm is a wake and goes through `computer.warm` and its limit (`WARM_LIMIT` 8 per org). The pings after it keep an awake box up, so they skip the 60 s cooldown (`computer.ping`). At most 8 trips are kept warm at once.
 - Section 8 asks Bash for a warm with a duration instead.
 
 **(c) Reuse results for 10 minutes**, keyed by recipe and normalized slots, in the ixigo_web backend; the layer's own three-minute cache stays for the other backends. The in-flight promise is shared, so two people asking the same thing at once cause one page load. A failed search is not kept.
