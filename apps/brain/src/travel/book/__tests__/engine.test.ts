@@ -27,7 +27,8 @@ function browser(box: (url: string, plan: FetchPlan) => Capture[], results: Capt
     runner: {
       read: async (_trip: string, url: string, plan: FetchPlan) => {
         runs.push({ url, plan });
-        return { captures: url.includes('/search/result') || url.includes('/bus_search/') ? results : box(url, plan), finalUrl: url };
+        const resultsPage = ['/search/result', '/bus_search/', '/search-pwa/'].some((p) => url.includes(p));
+        return { captures: resultsPage ? results : box(url, plan), finalUrl: url };
       },
     },
   };
@@ -65,7 +66,8 @@ describe('a place Go has not searched before', () => {
 
   it('hands the model ixigo\'s list when more than one place fits, and takes the one it names, for the words asked too', async () => {
     const two = JSON.stringify([{ e: 'Udaipur City (UDZ)', c: '' }, { e: 'Udaipur Junction (UDPU)', c: '' }]);
-    const trains = [capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/JP/UDZ', fixture('trains-csmt-mao-between.json'))];
+    const MATCH = 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search';
+    const trains = [capture(MATCH, `https://${MATCH}?sourceStationCode=JP&destinationStationCode=UDZ`, sample('trains.between.page.json'))];
     const b = browser(() => [capture('searchFor=trainstationsLatLon', 'https://www.ixigo.com/action/content/trainstation?searchFor=trainstationsLatLon&anchor=false&value=Udaipur', two)], trains);
     const engine = engineFor(book, b.runner);
     const err = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur', date: '2026-10-20' }, { tripId: 't_udr' }).catch((e: unknown) => e);
@@ -75,10 +77,10 @@ describe('a place Go has not searched before', () => {
     expect(b.runs).toHaveLength(1);
     // The model names one: no second load, and "Udaipur" now means that one.
     const named = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur City (UDZ)', date: '2026-10-20' }, { tripId: 't_udr' });
-    expect(named.as === 'options' && named.page).toBe('https://www.ixigo.com/search/result/train/JP/UDZ/20102026//1/0/0/0/ALL');
+    expect(named.as === 'options' && named.page).toBe('https://www.ixigo.com/trains/search-pwa/from/JP/to/UDZ/20-10-2026');
     const again = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur', date: '2026-10-20' }, { tripId: 't_udr' });
-    expect(again.as === 'options' && again.page).toBe('https://www.ixigo.com/search/result/train/JP/UDZ/20102026//1/0/0/0/ALL');
-    expect(b.runs.filter((r) => !r.url.includes('/search/result'))).toHaveLength(1);
+    expect(again.as === 'options' && again.page).toBe('https://www.ixigo.com/trains/search-pwa/from/JP/to/UDZ/20-10-2026');
+    expect(b.runs.filter((r) => !r.url.includes('/search-pwa/'))).toHaveLength(1);
   });
 
   it('is unknown_place when ixigo knows nothing for the words, so the search answers with ixigo\'s own page', async () => {
