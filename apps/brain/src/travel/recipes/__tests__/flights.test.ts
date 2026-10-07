@@ -43,7 +43,7 @@ describe('the flights recipe', () => {
 
   it('refuses a search without a date, and a place it has no airport for', () => {
     expect(() => flights.slotsFrom({ from: 'Delhi', to: 'Goa' }, { people: 4 })).toThrow(TravelError);
-    expect(() => flights.slotsFrom({ from: 'Shimla', to: 'Goa', date: '2026-11-06' }, { people: 4 })).toThrow(/Go can search ixigo flights for these places/);
+    expect(() => flights.slotsFrom({ from: 'Shimla', to: 'Goa', date: '2026-11-06' }, { people: 4 })).toThrow('Go has no ixigo airport code for "Shimla" yet.');
   });
 
   it('reads every fare in the stream, per person, with its times in India', () => {
