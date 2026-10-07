@@ -339,6 +339,8 @@ export class FakeTravel implements Travel {
     ['opt_casa_azul', 'ixigo:stay:casa-azul-assagao'],
     ['opt_the_palms', 'ixigo:stay:the-palms-vagator'],
   ]);
+  /** An option's own page on ixigo.com, for one with no offer (an ixigo_web search), by its option_id. */
+  readonly pages = new Map<string, string>();
   /** Live prices, by travel offer id. */
   readonly offers = new Map<string, FakeOffer>([
     [
@@ -377,7 +379,7 @@ export class FakeTravel implements Travel {
     const o = offerId ? this.offers.get(offerId) : undefined;
     return {
       offerId, title: o?.title ?? optionId, priceMinor: o?.amountMinor ?? null, currency: o?.currency ?? null,
-      kind: offerKind(o?.kind ?? 'stay'), link: o?.link ?? null,
+      kind: offerKind(o?.kind ?? 'stay'), link: o?.link ?? this.pages.get(optionId) ?? null,
     };
   }
 

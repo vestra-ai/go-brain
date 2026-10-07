@@ -1,5 +1,6 @@
 import type { TurnCtx } from '../composer/tools.js';
 import type { ToServerResult, Trip } from '../door/methods.js';
+import { ixigoPage } from '../travel/cards.js';
 import type { Hold, Travel } from '../travel/travel.js';
 import { payCard, type PayCard, type PayCardLook } from './cards.js';
 import type { MoneyDeps } from './deps.js';
@@ -53,7 +54,7 @@ interface Words {
   what: string;
   amount?: string;
   cap?: string;
-  /** For not_bookable_yet: the offer's kind and its booking page, when the travel layer has one. */
+  /** For not_bookable_yet: the offer's kind. For it and not_bookable: the option's own page, only ever on ixigo.com. */
   kind?: string;
   link?: string;
 }
@@ -164,11 +165,12 @@ export async function askToPay(
   }
   // Group flights, trains and buses are cut this week: a fare is per person, so Go hands over the link instead of paying
   // one fare for the whole group. Nothing is held.
+  const link = ixigoPage(offer?.link);
   if (offer && GROUP_FARES.has(offer.kind)) {
-    return refuse(d, 'not_bookable_yet', { ...words, kind: offer.kind, ...(offer.link ? { link: offer.link } : {}) });
+    return refuse(d, 'not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}) });
   }
   const offerId = offer?.offerId ?? null;
-  if (!offerId) return refuse(d, 'not_bookable', words);
+  if (!offerId) return refuse(d, 'not_bookable', { ...words, ...(link ? { link } : {}) });
 
   // The live price, checked now.
   const people = trip.people.map((p) => p.person_id);

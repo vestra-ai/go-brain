@@ -157,6 +157,16 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
     expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 
+  it('a stay from ixigo.com: no offer to hold, so it says where to book it, and sets nothing', async () => {
+    winnerIs(null);
+    k.travel.pages.set('opt_villa_sol', 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1');
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
+      refused: "Villa Sol is booked on ixigo, not here. Here's the link to book it yourselves: https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1",
+      unbookable: true,
+    });
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+  });
+
   it('an option Go never found (no option_ref), or no travel layer at all', async () => {
     const trip = goaTrip('closed');
     const d = trip.decisions[0];
