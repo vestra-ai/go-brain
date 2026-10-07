@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseChat } from '../chat.js';
 import type { MessageBody, RecordedRequest } from '../requests.js';
 import type { GoFrame, ReplayRecord } from '../score.js';
-import { replyLengths } from '../report-md.js';
+import { replyLengths, slowPosts } from '../report-md.js';
 import { askTimings, sentencesIn, type Timeline } from '../timings.js';
 
 const T0 = 1_800_000_000_000;
@@ -48,6 +48,8 @@ describe('where an ask\'s reply time goes', () => {
         postMs: 4_100,
         reply: { chars: 24, sentences: 1, outputTokens: null },
         parts: { beforeTurnMs: 250, modelMs: 3_000, betweenMs: 600, afterModelMs: 200 },
+        lastTools: [],
+        afterModel: [],
       },
     ]);
   });
@@ -75,6 +77,39 @@ describe('where an ask\'s reply time goes', () => {
     expect(replyLengths({ model: 'claude-sonnet-5-5', chat: 'goa-50', asks: [a!] } as never)).toBe(
       `- claude-sonnet-5-5, goa-50: 1 answer, median ${[...said].length} characters, 3 sentences, 118 output tokens.`,
     );
+  });
+
+  it('names what the last call asked for and each write after it, so a slow post shows a retry', () => {
+    // goa-300:175 in run 37582427795: one call, then 3.02 s to the post.
+    const timeline: Timeline = {
+      desk: [{ ref: 'm1', kind: 'message', dueMs: t1 + 20, turnId: 'tu1' }],
+      turns: [{ turnId: 'tu1', startedMs: t1 + 250, postedMs: t1 + 7_000, endedMs: t1 + 7_100 }],
+      writes: [
+        { requestId: 'rq_react', turnId: 'tu1', method: 'add_reaction', attempts: 1, sentMs: t1 + 1_000, answeredMs: t1 + 1_010, error: null },
+        { requestId: 'rq_vote', turnId: 'tu1', method: 'open_vote', attempts: 2, sentMs: t1 + 3_910, answeredMs: t1 + 6_920, error: null },
+        { requestId: 'rq1', turnId: 'tu1', method: 'post_message', attempts: 1, sentMs: t1 + 6_930, answeredMs: t1 + 6_940, error: null },
+        { requestId: 'rq2', turnId: 'tu2', method: 'post_message', attempts: 1, sentMs: t1 + 9_000, answeredMs: t1 + 9_010, error: null },
+      ],
+    };
+    const withTools = requests.map((r, k) => (k === 2 ? { ...r, toolsOut: ['put_to_vote'] } : r));
+    // The first open_vote never reached the simulator; the second did, 3 s later.
+    const posted: GoFrame[] = [
+      frames[0]!,
+      { method: 'open_vote', params: { trip_id: 't_goa', request_id: 'rq_vote' }, at: t1 + 6_916 },
+      { method: 'post_message', params: { trip_id: 't_goa', request_id: 'rq1', text: 'Vote is up.' }, at: t1 + 6_930 },
+    ];
+    const [a] = askTimings({ ...record, requests: withTools, frames: posted }, timeline);
+    expect(a?.lastTools).toEqual(['put_to_vote']);
+    expect(a?.afterModel).toEqual([
+      { method: 'open_vote', sentMs: 3_910, arrivedMs: [6_916], answeredMs: 6_920, attempts: 2, error: null },
+      { method: 'post_message', sentMs: 6_930, arrivedMs: [6_930], answeredMs: 6_940, attempts: 1, error: null },
+    ]);
+    expect(a?.parts.afterModelMs).toBe(3_030);
+    expect(slowPosts({ model: 'claude-sonnet-5-5', chat: 'goa-300', asks: [a!] } as never)).toEqual([
+      '- claude-sonnet-5-5, goa-300, ask 1: 3.03 s from the last call to the post. The last call asked for put_to_vote. ' +
+        "Go's writes after it: open_vote sent at 3.91 s, reached the simulator at 6.92 s, answered at 6.92 s after 2 attempts; " +
+        'post_message sent at 6.93 s, reached the simulator at 6.93 s, answered at 6.94 s.',
+    ]);
   });
 
   it('counts sentences by their ends, not by a decimal point, and a last one with no mark', () => {
