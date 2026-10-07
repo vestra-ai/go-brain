@@ -21,8 +21,9 @@ function streamReply(res: import('node:http').ServerResponse): void {
 }
 beforeAll(async () => {
   server = createServer((req, res) => (req.url?.startsWith('/v1/messages') ? streamReply(res) : res.end('ok')));
-  // The server keeps an idle connection 5 s, longer than undici's default 4 s, as Anthropic's edge keeps them longer still.
-  server.keepAliveTimeout = 5_000;
+  // Like Anthropic's edge (Cloudflare): over HTTP/1.1 it answers "Connection: keep-alive" with no "Keep-Alive: timeout"
+  // hint, so the client's own idle timeout decides how long a connection lives. 0 sends no hint and never times out.
+  server.keepAliveTimeout = 0;
   server.on('connection', () => {
     connections += 1;
   });
@@ -30,6 +31,7 @@ beforeAll(async () => {
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
 });
 afterAll(async () => {
+  server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
