@@ -62,6 +62,9 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
       try {
         const answer = await d.engine.answer(a.recipe, a.inputs, { tripId: ctx.tripId });
         if (answer.as !== 'facts') return { recipe: a.recipe, error: 'refused', note: 'This recipe answers with options: use the search tools.' };
+        if (answer.rows.length === 0) {
+          return { recipe: a.recipe, title: answer.title, facts: [], note: 'ixigo has nothing for this. Say so in one line, and name no place from memory.' };
+        }
         return { recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows, tell_the_room: NAMES_ONLY_FROM_IXIGO };
       } catch (err) {
         if (!(err instanceof TravelError)) throw err;

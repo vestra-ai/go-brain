@@ -10,7 +10,7 @@ export const BODY_FORMATS = ['json', 'rsc', 'next_html'] as const;
 export type BodyFormat = (typeof BODY_FORMATS)[number];
 
 /** Keys that hold the page's own credentials: dropped wherever they are. */
-const CREDENTIAL = /^(api[-_]?key|x[-_]api[-_]?key|device[-_]?id|uuid|token|access[-_]?token|refresh[-_]?token|id[-_]?token|auth|authorization|cookie|set[-_]?cookie|secret|client[-_]?secret|password|session[-_]?id)$/i;
+const CREDENTIAL = /^(api[-_]?key|x[-_]api[-_]?key|device[-_]?id|uuid|token|access[-_]?token|refresh[-_]?token|id[-_]?token|auth|authorization|cookie|set[-_]?cookie|secret|client[-_]?secret|password|session[-_]?id|otpless\w*)$/i;
 
 /** A value with every credential key left out, at any depth. */
 export function withoutCredentials(v: unknown): unknown {

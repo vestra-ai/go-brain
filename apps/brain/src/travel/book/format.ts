@@ -101,6 +101,19 @@ export const RecipeFile = z
     /** A search page on ixigo with a box (lookups): the steps that type the words, per end of the search. */
     box: z.object({ page: SitePath, type: z.partialRecord(z.enum(['from', 'to', 'place']), z.array(Step)) }).optional(),
     page: SitePath.optional(),
+    /**
+     * The fast speed: the page's own call, made from the trip's warm ixigo tab (Bash's page_fetch): a path on ixigo, or a
+     * full https address on a site the deployment allows. Its answer reads with `read`, its format as given here.
+     */
+    fast: z
+      .object({
+        url: z.string().regex(/^(\/|https:\/\/)/, 'a fast call is a path on ixigo or a full https address'),
+        method: z.enum(['GET', 'POST']).default('GET'),
+        headers: z.record(z.string(), z.string()).optional(),
+        body: z.string().optional(),
+        format: z.enum(BODY_FORMATS).default('json'),
+      })
+      .optional(),
     capture: z.array(Capture).optional(),
     fetch: z.array(Fetch).optional(),
     /** The person's conditions ixigo filters on itself, each as the page's own code or param ({pool: "'FL_HF_29'"}); the
@@ -127,7 +140,7 @@ export const RecipeFile = z
   })
   .superRefine((r, ctx) => {
     const path = (p: string | undefined): boolean => !!p && /(^|\/)payments(\/|$)/i.test(p);
-    if (path(r.page) || r.capture?.some((c) => path(c.match)) || path(r.box?.page)) {
+    if (path(r.page) || r.capture?.some((c) => path(c.match)) || path(r.box?.page) || path(r.fast?.url)) {
       ctx.addIssue({ code: 'custom', message: 'no recipe may open or read anything under /payments/' });
     }
     if ((r.answer.as === 'options' || r.answer.as === 'facts') && !(r.page && r.capture && r.read)) {
