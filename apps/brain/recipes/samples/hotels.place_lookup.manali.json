@@ -1,0 +1,50 @@
+{
+ "data": {
+  "suggestions": [
+   {
+    "name": "Manali",
+    "region": "Manali, Himachal Pradesh",
+    "locationType": "C",
+    "locationId": "184",
+    "masterLocationId": "9425",
+    "hotelsCount": 942,
+    "stateId": "8",
+    "stateName": "Himachal Pradesh",
+    "country": "India",
+    "countryId": 1,
+    "cityId": "184"
+   },
+   {
+    "name": "Manali and Nearby",
+    "region": "Himachal Pradesh",
+    "locationType": "R",
+    "locationId": "90184",
+    "masterLocationId": "99425",
+    "hotelsCount": 1200,
+    "country": "India",
+    "countryId": 1
+   },
+   {
+    "name": "Old Manali",
+    "region": "Manali, Himachal Pradesh",
+    "locationType": "SL",
+    "locationId": "184001",
+    "masterLocationId": "9425001",
+    "hotelsCount": 120,
+    "country": "India",
+    "countryId": 1,
+    "cityId": "184"
+   },
+   {
+    "name": "Manali Inn",
+    "region": "Manali, Himachal Pradesh",
+    "locationType": "H",
+    "locationId": "5551",
+    "masterLocationId": "5551",
+    "hotelsCount": 1,
+    "country": "India",
+    "countryId": 1
+   }
+  ]
+ }
+}

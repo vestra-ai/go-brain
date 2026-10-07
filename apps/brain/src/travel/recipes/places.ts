@@ -169,6 +169,9 @@ const GOA_HALVES: Record<GoaHalf, string[]> = {
   ],
 };
 
+/** The places in each half of Goa, for a stays search inside one half (until areas come from ixigo's own filter). */
+export const goaHalves = (): Record<GoaHalf, string[]> => GOA_HALVES;
+
 /** The half of Goa a place is in, from its name; null when the name doesn't say. */
 export function goaHalfOf(text: string): GoaHalf | null {
   const t = norm(text);

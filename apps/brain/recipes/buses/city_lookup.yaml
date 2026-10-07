@@ -1,0 +1,33 @@
+id: buses.city_lookup
+title: A city or boarding point for a bus search, as ixigo's bus box knows it
+asks:
+  - mumbai
+  - bangalore, all boarding points
+inputs:
+  words: { kind: text, about: the place as the person said it }
+keeps: buses
+box:
+  page: /buses
+  type:
+    from:
+      - { op: type, role: textbox, name: Leaving From, text: "{words}" }
+      - { op: wait_for, match: /wap/abus-autocompleter/api/v1/results }
+    to:
+      - { op: type, role: textbox, name: Going To, text: "{words}" }
+      - { op: wait_for, match: /wap/abus-autocompleter/api/v1/results }
+capture:
+  - { match: /wap/abus-autocompleter/api/v1/results, min_count: 1, max_count: 6, max_bytes: 200000 }
+answer:
+  as: places
+  suggestions:
+    words_param: s
+    list: $
+    name: display_text
+    line: "display_subtext ? display_subtext : state_name"
+    # A city's own entry is ixigo's "All boarding points"; the rest are boarding points inside one.
+    all: "$lowercase(alias_type) = 'city'"
+    country: "'India'"
+    place: "{ 'name': $trim(city) ? $trim(city) : display_text, 'id': $number(id) }"
+    place_name: name
+samples: { page: buses.city_lookup.bangalore.json }
+notes: AbhiBus's city ids go in the results address, /buses/bus_search/{name}/{id}/….

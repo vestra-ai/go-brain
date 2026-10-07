@@ -1,0 +1,116 @@
+import { readFileSync } from 'node:fs';
+import type { Pool } from 'pg';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { withSchema } from '../../../db/test-db.js';
+import { TravelError } from '../../mcp-travel.js';
+import { forgetLearnedPlaces } from '../../recipes/places.js';
+import { loadLearnedPlaces } from '../../recipes/places-store.js';
+import type { Capture, FetchPlan } from '../../recipes/recipe.js';
+import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
+import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book.js';
+import { createEngine, isPayments } from '../engine.js';
+
+let db: { pool: Pool; drop: () => Promise<void> };
+beforeAll(async () => { db = await withSchema(); });
+afterAll(async () => { await db.drop(); });
+afterEach(() => forgetLearnedPlaces());
+
+const { book } = loadBook();
+const sample = (name: string): string => readFileSync(`${BOOK_DIR}samples/${name}`, 'utf8');
+const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+
+/** A trip's browser that answers ixigo's box with a sample, and any results page with a saved page. */
+function browser(box: (url: string, plan: FetchPlan) => Capture[], results: Capture[] = []) {
+  const runs: Array<{ url: string; plan: FetchPlan }> = [];
+  return {
+    runs,
+    runner: {
+      read: async (_trip: string, url: string, plan: FetchPlan) => {
+        runs.push({ url, plan });
+        return { captures: url.includes('/search/result') || url.includes('/bus_search/') ? results : box(url, plan), finalUrl: url };
+      },
+    },
+  };
+}
+
+const engineFor = (b: Book, runner: ReturnType<typeof browser>['runner']) =>
+  createEngine({ book: b, runner: () => runner, pool: db.pool, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
+
+describe('a place Go has not searched before', () => {
+  it("is asked of ixigo's own box, picked, kept, and gone straight to the next time, after a restart too", async () => {
+    const b = browser(
+      (url) => (url.endsWith('/hotels') ? [capture('/hotels-autocompleter/api/v2/results', 'https://www.ixigo.com/hotels-autocompleter/api/v2/results?query=Manali&size=10&v=3', sample('hotels.place_lookup.manali.json'))] : []),
+      [capture(SEARCH, 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', fixture('stays-goa-page1.json'))],
+    );
+    const engine = engineFor(book, b.runner);
+    const ask = { place: 'Manali', check_in: '2026-11-06', check_out: '2026-11-09' };
+    const got = await engine.answer('hotels.search', ask, { tripId: 't_mnl' });
+    expect(b.runs.map((r) => r.url)).toEqual([
+      'https://www.ixigo.com/hotels',
+      'https://www.ixigo.com/hotels/search/result?locationId=184&locationName=Manali&locationType=C&masterLocationId=9425&countryId=1&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0',
+    ]);
+    expect(b.runs[0]!.plan.steps).toEqual([
+      { op: 'click', name: 'Close modal', optional: true },
+      { op: 'type', role: 'textbox', name: 'Enter city, area or property name', text: 'Manali' },
+      { op: 'wait_for', match: '/hotels-autocompleter/api/v2/results' },
+    ]);
+    expect(got.as === 'options' && got.options.length).toBeGreaterThan(0);
+    // Kept: after a restart, the same words go straight to the results page.
+    forgetLearnedPlaces();
+    expect(await loadLearnedPlaces(db.pool)).toBe(1);
+    b.runs.length = 0;
+    await engine.answer('hotels.search', ask, { tripId: 't_mnl' });
+    expect(b.runs.map((r) => r.url.split('?')[0])).toEqual(['https://www.ixigo.com/hotels/search/result']);
+  });
+
+  it('hands the model ixigo\'s list when more than one place fits, and takes the one it names, for the words asked too', async () => {
+    const two = JSON.stringify([{ e: 'Udaipur City (UDZ)', c: '' }, { e: 'Udaipur Junction (UDPU)', c: '' }]);
+    const trains = [capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/JP/UDZ', fixture('trains-csmt-mao-between.json'))];
+    const b = browser(() => [capture('searchFor=trainstationsLatLon', 'https://www.ixigo.com/action/content/trainstation?searchFor=trainstationsLatLon&anchor=false&value=Udaipur', two)], trains);
+    const engine = engineFor(book, b.runner);
+    const err = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur', date: '2026-10-20' }, { tripId: 't_udr' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TravelError);
+    expect(err).toMatchObject({ code: 'pick_place' });
+    expect((err as TravelError).message).toContain('"Udaipur City (UDZ)"; "Udaipur Junction (UDPU)"');
+    expect(b.runs).toHaveLength(1);
+    // The model names one: no second load, and "Udaipur" now means that one.
+    const named = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur City (UDZ)', date: '2026-10-20' }, { tripId: 't_udr' });
+    expect(named.as === 'options' && named.page).toBe('https://www.ixigo.com/search/result/train/JP/UDZ/20102026//1/0/0/0/ALL');
+    const again = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur', date: '2026-10-20' }, { tripId: 't_udr' });
+    expect(again.as === 'options' && again.page).toBe('https://www.ixigo.com/search/result/train/JP/UDZ/20102026//1/0/0/0/ALL');
+    expect(b.runs.filter((r) => !r.url.includes('/search/result'))).toHaveLength(1);
+  });
+
+  it('is unknown_place when ixigo knows nothing for the words, so the search answers with ixigo\'s own page', async () => {
+    const b = browser(() => [capture('/wap/abus-autocompleter/api/v1/results', 'https://www.ixigo.com/wap/abus-autocompleter/api/v1/results?s=Atlantis', '[]')]);
+    const err = await engineFor(book, b.runner).answer('buses.between', { from: 'Atlantis', to: 'Goa', date: '2026-11-06' }, { tripId: 't_x' }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'unknown_place' });
+  });
+});
+
+describe("ixigo's payment page", () => {
+  it('is never a recipe\'s page, a lookup\'s box, or a page a run may land on', async () => {
+    expect(isPayments('https://www.ixigo.com/payments/view/home/abc')).toBe(true);
+    expect(isPayments('/payment/confirm')).toBe(true);
+    expect(isPayments('https://www.ixigo.com/flights')).toBe(false);
+    const file = readFileSync(`${BOOK_DIR}buses/between.yaml`, 'utf8').replace('page: /buses/bus_search/', 'page: /payments/bus_search/');
+    expect(checkRecipe('buses/between.yaml', file)).toEqual({ problems: ['buses/between.yaml: file: no recipe may open or read anything under /payments/'] });
+    // A run whose page moved on to the payment page is refused, and nothing it read is used.
+    const runner = {
+      read: async () => ({ captures: [capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', fixture('buses-mumbai-goa.json'))], finalUrl: 'https://www.ixigo.com/payments/view/home/x' }),
+    };
+    const err = await engineFor(book, runner).answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { tripId: 't_pay' }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'refused', message: expect.stringContaining("never opens ixigo's payment page") });
+  });
+
+  it('a recipe that changes something on ixigo never runs without the group\'s yes', async () => {
+    const file = readFileSync(`${BOOK_DIR}buses/between.yaml`, 'utf8').replace('changes_state: false', 'changes_state: true');
+    const checked = checkRecipe('buses/between.yaml', file);
+    if (!('recipe' in checked)) throw new Error('the file should check out');
+    const locked: Book = { get: (id) => (id === 'buses.between' ? checked.recipe : book.get(id)), all: () => book.all() };
+    const b = browser(() => []);
+    const err = await engineFor(locked, b.runner).answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { tripId: 't_lock' }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'refused', message: expect.stringContaining('runs only after the group says yes') });
+    expect(b.runs).toEqual([]);
+  });
+});

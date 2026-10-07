@@ -1,0 +1,22 @@
+[
+ {
+  "id": 7,
+  "label": "Bangalore",
+  "display_text": "Bangalore (All boarding points)",
+  "display_subtext": "Bengaluru, Karnataka",
+  "city": "Bengaluru",
+  "state_name": "Karnataka",
+  "state_code": "KA",
+  "alias_type": "City"
+ },
+ {
+  "id": 7,
+  "label": "Majestic",
+  "display_text": "Majestic",
+  "display_subtext": "Bangalore, Karnataka",
+  "city": "Bengaluru",
+  "state_name": "Karnataka",
+  "state_code": "KA",
+  "alias_type": "BoardingPoint"
+ }
+]

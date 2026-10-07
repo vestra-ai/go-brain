@@ -13,9 +13,10 @@ import type { Confirmed, Hold, TravelBackend, TravelKind, TravelOption } from '.
 const CONFIRMED_MAX = 1_000;
 
 export class TravelError extends Error {
-  /** link: for link_only, the page that has the results, for the group to open there. */
+  /** link: for link_only, the page that has the results, for the group to open there. pick_place: ixigo knows more
+   *  than one place for the words, and the message lists them for the model to choose. */
   constructor(
-    readonly code: 'needs_more' | 'unreachable' | 'refused' | 'unknown_offer' | 'past_date' | 'unknown_place' | 'link_only',
+    readonly code: 'needs_more' | 'unreachable' | 'refused' | 'unknown_offer' | 'past_date' | 'unknown_place' | 'link_only' | 'pick_place',
     message: string,
     readonly link: string | null = null,
   ) {

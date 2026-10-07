@@ -23,9 +23,9 @@ export interface RecipeRunner {
   name: 'browser_fetch' | 'agent_job';
   /** onProgress: the run's steps, for the live search card; called, never awaited. */
   run<S>(tripId: string, recipe: Recipe<S>, slots: S, o?: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<RecipeRun>;
-  /** Opens a page, works its steps and brings back the calls the plan keeps: ixigo's own search box, for a place. Only the
-   *  browser fetch can; the agent job reads results pages alone. */
-  read?(tripId: string, url: string, plan: FetchPlan, o?: { signal?: AbortSignal }): Promise<Capture[]>;
+  /** Opens a page, works its steps and brings back the calls the plan keeps, and the address the page ended on: ixigo's
+   *  own search box, or a recipe's page. Only the browser fetch can; the agent job reads results pages alone. */
+  read?(tripId: string, url: string, plan: FetchPlan, o?: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<{ captures: Capture[]; finalUrl: string }>;
 }
 
 export interface RunnerDeps {
@@ -92,7 +92,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     plan: FetchPlan,
     what: { id: string; capture: CaptureSpec[] },
     o: { signal?: AbortSignal; onProgress?: OnProgress },
-  ): Promise<Capture[]> {
+  ): Promise<{ captures: Capture[]; finalUrl: string }> {
     const body = {
       url,
       // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer.
@@ -113,7 +113,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) });
         // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
         if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
-        return answer.captures;
+        return { captures: answer.captures, finalUrl: typeof answer.final_url === 'string' ? answer.final_url : url };
       } catch (err) {
         if (!(err instanceof V1Error)) throw err;
         // Once only: a trip whose user /v1 does not have yet, or a person who just used the browser.
@@ -130,7 +130,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           const frames = partialFrames(err);
           if (frames.length > 0) o.onProgress?.({ type: 'frames', frames });
         }
-        return fetchFailed(err, what, tripId, d.log);
+        return { captures: fetchFailed(err, what, tripId, d.log), finalUrl: url };
       }
     }
   }
@@ -142,7 +142,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       const url = recipe.url(slots);
       o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
       const plan: FetchPlan = recipe.fetchFor?.(slots) ?? { capture: recipe.capture, ...(recipe.steps ? { steps: recipe.steps } : {}) };
-      const captures = await fetchPage(tripId, url, plan, recipe, o);
+      const { captures } = await fetchPage(tripId, url, plan, recipe, o);
       o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
       const options = recipe.extract(captures, slots);
       const at = d.now();

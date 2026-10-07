@@ -40,7 +40,8 @@ const int = (s: string | null | undefined): number => Number.parseInt(s ?? '', 1
 
 /**
  * The places a results page's URL carries, by the end of the search they belong to. The URL shapes are ixigo's own,
- * the same ones each recipe opens: /search/result/flight?from=LHR&to=DEL…, /search/result/train/NDLS/MAO/…,
+ * the same ones each recipe opens: /search/result/flight?from=LHR&to=DEL…, /search/result/train/NDLS/MAO/… (or the form's
+ * /trains/search-pwa/from/JP/to/UDZ/…),
  * /buses/bus_search/Mumbai/4/Goa/102/…, /hotels/search/result?locationId=…. Null when the URL is none of these.
  */
 export function placesOnPage(kind: TravelKind, url: string, words: SearchWords): Partial<Record<keyof SearchWords, unknown>> | null {
@@ -59,10 +60,15 @@ export function placesOnPage(kind: TravelKind, url: string, words: SearchWords):
         from: { code: q.get('from') ?? '', city: titled(words.from ?? '') },
         to: { code: q.get('to') ?? '', city: titled(words.to ?? '') },
       };
-    case 'trains':
-      // /search/result/train/{from}/{to}/{date}/…
-      if (path[1] !== 'search' || path[2] !== 'result' || path[3] !== 'train') return null;
-      return { from: { code: path[4] ?? '', name: titled(words.from ?? '') }, to: { code: path[5] ?? '', name: titled(words.to ?? '') } };
+    case 'trains': {
+      // /search/result/train/{from}/{to}/{date}/…, or ixigo's own form's /trains/search-pwa/from/{from}/to/{to}/{date}
+      const codes =
+        path[1] === 'search' && path[2] === 'result' && path[3] === 'train' ? [path[4], path[5]]
+          : path[1] === 'trains' && path[2] === 'search-pwa' && path[3] === 'from' && path[5] === 'to' ? [path[4], path[6]]
+            : null;
+      if (!codes) return null;
+      return { from: { code: codes[0] ?? '', name: titled(words.from ?? '') }, to: { code: codes[1] ?? '', name: titled(words.to ?? '') } };
+    }
     case 'buses':
       // /buses/bus_search/{FromName}/{fromId}/{ToName}/{toId}/{DD-MM-YYYY}/O
       if (path[1] !== 'buses' || path[2] !== 'bus_search') return null;
@@ -79,6 +85,22 @@ export function placesOnPage(kind: TravelKind, url: string, words: SearchWords):
 }
 
 /**
+ * Keeps one place ixigo resolved for the words people used: in the cache at once, and in travel_places when there is a
+ * pool. A place that doesn't read as its kind's place is not kept. Returns whether it was.
+ */
+export async function keepPlace(pool: Pool | null, kind: TravelKind, words: string, place: unknown, from: string): Promise<boolean> {
+  const checked = Places[kind].safeParse(place);
+  if (!checked.success) return false;
+  learnPlace(kind, words, checked.data as LearnedPlace[typeof kind]);
+  await pool?.query(
+    `INSERT INTO travel_places (kind, words, place, page_url) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (kind, words) DO UPDATE SET place = EXCLUDED.place, page_url = EXCLUDED.page_url, learned_at = now()`,
+    [kind, wordsOf(words), JSON.stringify(checked.data), from],
+  );
+  return true;
+}
+
+/**
  * Learns each place a results page carries for the words people used, in the cache and in travel_places. A place that
  * doesn't read (a URL ixigo changed) is not learnt. Returns how many were.
  */
@@ -88,15 +110,7 @@ export async function learnFromPage(pool: Pool, kind: TravelKind, words: SearchW
   let n = 0;
   for (const end of ['from', 'to', 'area'] as const) {
     const said = words[end];
-    const place = said === undefined ? null : Places[kind].safeParse(found[end]);
-    if (!said || !place?.success) continue;
-    learnPlace(kind, said, place.data as LearnedPlace[typeof kind]);
-    await pool.query(
-      `INSERT INTO travel_places (kind, words, place, page_url) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (kind, words) DO UPDATE SET place = EXCLUDED.place, page_url = EXCLUDED.page_url, learned_at = now()`,
-      [kind, wordsOf(said), JSON.stringify(place.data), url],
-    );
-    n += 1;
+    if (said && (await keepPlace(pool, kind, said, found[end], url))) n += 1;
   }
   return n;
 }

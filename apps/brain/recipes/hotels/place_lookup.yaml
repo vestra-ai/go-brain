@@ -1,0 +1,36 @@
+id: hotels.place_lookup
+title: A city, region or area to stay in, as ixigo's hotel box knows it
+asks:
+  - manali
+  - old manali
+inputs:
+  words: { kind: text, about: the place as the person said it }
+keeps: stays
+box:
+  page: /hotels
+  type:
+    place:
+      # A "Best Price Guarantee" modal opens on the first visit of the day.
+      - { op: click, name: Close modal, optional: true }
+      - { op: type, role: textbox, name: "Enter city, area or property name", text: "{words}" }
+      - { op: wait_for, match: /hotels-autocompleter/api/v2/results }
+capture:
+  - { match: /hotels-autocompleter/api/v2/results, min_count: 1, max_count: 6, max_bytes: 200000 }
+answer:
+  as: places
+  suggestions:
+    words_param: query
+    list: data.suggestions
+    name: name
+    line: "region ? region : ''"
+    all: "false"
+    country: country
+    # A property or a landmark is not a place to search around.
+    skip: "locationType in ['H', 'POI']"
+    place: |
+      { "locationId": $number(locationId), "locationName": name, "locationType": locationType,
+        "masterLocationId": $number(masterLocationId), "countryId": $number(countryId) }
+    # A city or a state is the place by its name; an area ("Old Manali") is chosen by the words that fit.
+    place_name: "locationType in ['C', 'S'] ? locationName : ''"
+samples: { page: hotels.place_lookup.manali.json }
+notes: The types are City (C), State (S), Region, Area (L, SL), Property (H) and landmark (POI); ids come as strings.
