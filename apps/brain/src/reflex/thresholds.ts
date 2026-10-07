@@ -15,7 +15,8 @@ export const BARS = {
   for_go: { chatterMin: 0.85, addressedMaxForChatter: 0.2, notAddressedMax: 0.1, addressedMin: 0.9, chatterMaxForAddressed: 0.1 },
   /**
    * Q2, for a line that names Go only (read.ts readComplete). Answering mid-thought is visible; unsure only costs the 2 s
-   * wait. Set on the recorded test set (Task 5): Jev rarely reaches Bash-style 0.85 on a whole ask.
+   * wait. On Go's set (Jev 1.13.0, two recordings on 2026-10-07) lines to Go cut short read 0.04 to 0.41 and whole asks
+   * 0.52 to 0.74: 0.4 makes wrong answers ("Go suno"), 0.5 none.
    */
   complete: { namedMin: 0.5, noMax: 0.1 },
   /** Q3. Bash moment-vs-work: work 0.9 with every moment noul at most 0.1. */
