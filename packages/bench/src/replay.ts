@@ -218,9 +218,18 @@ export async function replayChat(o: ReplayOptions): Promise<ReplayOutcome> {
         'SELECT turn_id, started_at, posted_at, ended_at FROM turns WHERE trip_id = $1 ORDER BY started_at',
         [tripId],
       );
+      // Go's own log of its writes to the Server: a retry shows as more than one attempt, and its error stays.
+      const writes = await db.pool.query<{ request_id: string; turn_id: string | null; method: string; attempts: number; sent_at: Date | null; answered_at: Date | null; error: { code?: unknown; message?: unknown } | null }>(
+        'SELECT request_id, turn_id, method, attempts, sent_at, answered_at, error FROM go_requests WHERE trip_id = $1 ORDER BY created_at',
+        [tripId],
+      );
       timeline = {
         desk: desk.rows.map((x) => ({ ref: x.ref, kind: x.kind, dueMs: x.due_at.getTime(), turnId: x.turn_id })),
         turns: turnTimes.rows.map((x) => ({ turnId: x.turn_id, startedMs: x.started_at.getTime(), postedMs: x.posted_at?.getTime() ?? null, endedMs: x.ended_at?.getTime() ?? null })),
+        writes: writes.rows.map((x) => ({
+          requestId: x.request_id, turnId: x.turn_id, method: x.method, attempts: x.attempts, sentMs: x.sent_at?.getTime() ?? null, answeredMs: x.answered_at?.getTime() ?? null,
+          error: x.error ? `${String(x.error.code ?? '')} ${String(x.error.message ?? '')}`.trim() : null,
+        })),
       };
     }
     return {

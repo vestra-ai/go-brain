@@ -31,6 +31,8 @@ export interface RecordedRequest {
   firstTokenMs?: number;
   doneMs?: number;
   usage?: ProviderUsage;
+  /** The tools the model asked for in its answer (live runs record it; the next request shows it too, but a turn's last call has none). */
+  toolsOut?: string[];
   error?: string;
 }
 

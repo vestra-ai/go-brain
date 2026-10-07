@@ -2,7 +2,7 @@
 import type { MessageBody, ProviderUsage, RequestLog } from './requests.js';
 
 export interface StreamLike extends AsyncIterable<unknown> {
-  finalMessage(): Promise<{ usage: ProviderUsage }>;
+  finalMessage(): Promise<{ usage: ProviderUsage; content?: unknown }>;
   abort?(): void;
 }
 export interface ClientLike {
@@ -11,6 +11,12 @@ export interface ClientLike {
     /** Side passes (P2's notes and fold) call create. */
     create?(body: MessageBody, opts?: unknown): Promise<{ usage: ProviderUsage; content?: unknown }>;
   };
+}
+
+/** The names of the tool_use blocks in a model's answer. */
+function toolsOut(content: unknown): string[] {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((b: { type?: unknown; name?: unknown }) => (b?.type === 'tool_use' && typeof b.name === 'string' ? [b.name] : []));
 }
 
 function isTextDelta(ev: unknown): boolean {
@@ -49,6 +55,7 @@ export function recordingClient(real: ClientLike, log: RequestLog, simNow: () =>
             try {
               const m = await inner.finalMessage();
               rec.usage = m.usage;
+              rec.toolsOut = toolsOut(m.content);
               rec.doneMs ??= Date.now();
               return m;
             } catch (e) {

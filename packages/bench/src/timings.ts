@@ -11,6 +11,8 @@ import { groupsOf, type ReplayRecord } from './score.js';
 export interface Timeline {
   desk: Array<{ ref: string; kind: string; dueMs: number; turnId: string | null }>;
   turns: Array<{ turnId: string; startedMs: number; postedMs: number | null; endedMs: number | null }>;
+  /** Go's writes to the Server (go_requests): when each first went out, when its answer came, and how many attempts it took. */
+  writes?: Array<{ requestId: string; turnId: string | null; method: string; attempts: number; sentMs: number | null; answeredMs: number | null; error: string | null }>;
 }
 
 export interface AskTiming {
@@ -28,6 +30,13 @@ export interface AskTiming {
   reply: { chars: number; sentences: number; outputTokens: number | null } | null;
   /** Before the turn (Go reading the line, any wait, the desk picking it up), the model calls, the gaps between them (the tools ran there), and from the last call to the post. */
   parts: { beforeTurnMs: number | null; modelMs: number; betweenMs: number; afterModelMs: number | null };
+  /** The tools the turn's last call asked for (card tools such as put_to_vote run after it, and no request follows). */
+  lastTools: string[];
+  /**
+   * The turn's writes to the Server sent after its last call ended, in ms after the ask's line: a retry shows as attempts > 1,
+   * and each time the frame reached the simulator shows whether the first one got there.
+   */
+  afterModel: Array<{ method: string; sentMs: number | null; arrivedMs: number[]; answeredMs: number | null; attempts: number; error: string | null }>;
 }
 
 const WAITED_MS = 500;
@@ -82,6 +91,16 @@ export function askTimings(rec: ReplayRecord, tl: Timeline): AskTiming[] {
       if (prevEnd !== null) betweenMs += timed[k]!.startMs - prevEnd;
     }
     const lastEnd = timed.at(-1)?.endMs ?? null;
+    const afterModel = (tl.writes ?? [])
+      .filter((w) => turn !== undefined && w.turnId === turn.turnId && w.sentMs !== null && (lastEnd === null || w.sentMs - t0 >= lastEnd))
+      .map((w) => ({
+        method: w.method,
+        sentMs: rel(w.sentMs),
+        arrivedMs: rec.frames.filter((f) => f.params['request_id'] === w.requestId).map((f) => f.at - t0),
+        answeredMs: rel(w.answeredMs),
+        attempts: w.attempts,
+        error: w.error,
+      }));
     const said = typeof post?.params['text'] === 'string' ? post.params['text'] : null;
     out.push({
       line,
@@ -98,6 +117,8 @@ export function askTimings(rec: ReplayRecord, tl: Timeline): AskTiming[] {
         betweenMs,
         afterModelMs: postMs !== null && lastEnd !== null ? postMs - lastEnd : null,
       },
+      lastTools: inTurn.at(-1)?.toolsOut ?? [],
+      afterModel,
     });
   }
   return out;

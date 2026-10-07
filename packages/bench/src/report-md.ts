@@ -44,6 +44,24 @@ export function replyLengths(x: LiveRun): string | null {
   return `- ${x.model}, ${x.chat}: ${replies.length} ${replies.length === 1 ? 'answer' : 'answers'}, median ${median(replies.map((r) => r.chars))} characters, ${median(replies.map((r) => r.sentences))} sentences${tokens.length > 0 ? `, ${fmtInt(median(tokens))} output tokens` : ''}.`;
 }
 
+/** Half a second or more from the last call's end to the post: what the call asked for, and Go's writes after it. */
+const SLOW_POST_MS = 500;
+
+/** One line per ask whose post came slowly after the model's last call: the call's tools, and each write Go sent after it. */
+export function slowPosts(x: LiveRun): string[] {
+  return (x.asks ?? []).flatMap((a) => {
+    const after = a.parts.afterModelMs;
+    if (after === null || after < SLOW_POST_MS) return [];
+    const tools = a.lastTools ?? [];
+    const writes = (a.afterModel ?? []).map(
+      (w) =>
+        `${w.method} sent at ${fmtMs(w.sentMs)}, reached the simulator at ${w.arrivedMs.length > 0 ? w.arrivedMs.map(fmtMs).join(' and ') : 'no time'}, ` +
+        `answered at ${fmtMs(w.answeredMs)}${w.attempts > 1 ? ` after ${w.attempts} attempts` : ''}${w.error ? ` (error: ${cell(w.error)})` : ''}`,
+    );
+    return [`- ${x.model}, ${x.chat}, ask ${a.line}: ${fmtMs(after)} from the last call to the post. The last call asked for ${tools.length > 0 ? tools.join(', ') : 'no tools'}. Go's writes after it: ${writes.length > 0 ? writes.join('; ') : 'none'}.`];
+  });
+}
+
 /** One line per live run, from Go's own tables: what Jev answered, and what woke each model turn. */
 export function whyWoke(x: LiveRun): string | null {
   if (x.jev === undefined) return null;
@@ -132,6 +150,8 @@ export function renderSummary(r: BenchReport): string {
       );
       const lengths = r.live.map(replyLengths).filter((l): l is string => l !== null);
       if (lengths.length > 0) lines.push('How long the answers were (the reply posted, and the output tokens of the call that wrote it):', '', ...lengths, '');
+      const slow = r.live.flatMap(slowPosts);
+      if (slow.length > 0) lines.push('Posts that came half a second or more after the last call (times after the ask\'s line):', '', ...slow, '');
     }
   }
   lines.push('## Checks', '', '| Chat | Check | Value | Bar | Result |', '|---|---|---|---|---|');
