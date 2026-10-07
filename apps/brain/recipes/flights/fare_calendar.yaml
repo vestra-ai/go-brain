@@ -13,6 +13,8 @@ changes_state: false
 # ixigo answers flight pages with a 403 from the boxes' shared egress, so this runs where flights load: the fast speed
 # from the trip's warm tab, once Bash's page_fetch is here.
 page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&adults=1&children=0&infants=0&class=e&source=Search%20Form
+fast:
+  url: /outlook/v1/onward/ranged?departureDate={date|DDMMYYYY}&destination={to.code}&fareClass=e&origin={from.code}&paxCombinationType=100&refundTypes=REFUNDABLE%2CNON_REFUNDABLE%2CPARTIALLY_REFUNDABLE
 capture:
   - /outlook/v1/onward/ranged
 read:

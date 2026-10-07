@@ -7,13 +7,26 @@
 import { V1Error, type V1Client } from '../../tasks/v1-client.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveFrame, OnProgress } from './progress.js';
-import { bodiesFor, type Capture, type CaptureSpec, type FetchPlan } from './recipe.js';
+import { bodiesFor, IXIGO, type Capture, type CaptureSpec, type FetchPlan } from './recipe.js';
+
+/** A page's own call, as a recipe's fast speed makes it: a path on ixigo, or a full https address the deployment allows. */
+export interface PageCall {
+  url: string;
+  method: 'GET' | 'POST';
+  headers?: Record<string, string>;
+  body?: string;
+}
 
 export interface RecipeRunner {
   name: 'browser_fetch';
   /** Opens a page, works its steps and brings back the calls the plan keeps, and the address the page ended on.
    *  onProgress: pictures of the page, for the live search card; called, never awaited. */
   read(tripId: string, url: string, plan: FetchPlan, o?: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<{ captures: Capture[]; finalUrl: string }>;
+  /**
+   * Makes a page's own call from the trip's warm ixigo tab (Bash's page_fetch), keeping the tab open for the next one;
+   * with no tab kept, it opens ixigo's home first. The call's answer, as a capture.
+   */
+  pageFetch?(tripId: string, call: PageCall, o?: { signal?: AbortSignal }): Promise<Capture>;
 }
 
 export interface RunnerDeps {
@@ -37,6 +50,10 @@ export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of cre
 export const FETCH_TIMEOUT_MS = 20_000;
 /** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
 export const IN_USE_WAIT_MS = 4_000;
+/** How long a page call may take before the run falls to the page speed: it answers in about 0.4 s on a warm tab. */
+export const FAST_TIMEOUT_MS = 5_000;
+/** How long the warm ixigo tab stays open after a page call: the next call within it needs no page load. */
+export const WARM_TAB_MS = 120_000;
 
 interface FetchAnswer { final_url: string; elapsed_ms: number; woke: boolean; captures: Capture[]; frames?: LiveFrame[] }
 
@@ -124,10 +141,42 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
+  /** One page call from the warm tab; with none kept, the same call on a tab opened at ixigo's home. */
+  async function pageFetch(tripId: string, call: PageCall, o: { signal?: AbortSignal }): Promise<Capture> {
+    const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'fast', max_bytes: 1_000_000 };
+    const ask = (open: boolean) =>
+      d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+        body: { ...(open ? { url: `${IXIGO}/` } : {}), steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS },
+        ...(o.signal ? { signal: o.signal } : {}),
+      });
+    let answer: FetchAnswer;
+    try {
+      answer = await ask(false);
+    } catch (err) {
+      if (!(err instanceof V1Error) || !(err.status === 409 && err.code === 'no_open_tab')) throw pageCallFailed(err);
+      try {
+        answer = await ask(true);
+      } catch (again) {
+        throw pageCallFailed(again);
+      }
+    }
+    const got = answer.captures.find((c) => c.match === 'fast');
+    if (!got || got.status < 200 || got.status >= 300 || got.truncated) throw new TravelError('unreachable', `ixigo's page call answered ${got ? got.status : 'nothing'}.`);
+    return got;
+  }
+
   return {
     name: 'browser_fetch',
     async read(tripId, url, plan, o = {}) {
       return fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o);
     },
+    pageFetch: (tripId, call, o = {}) => pageFetch(tripId, call, o),
   };
+}
+
+/** A page call that failed, as a TravelError: the run then falls to the page speed. */
+function pageCallFailed(err: unknown): TravelError {
+  if (err instanceof TravelError) return err;
+  if (err instanceof V1Error) return new TravelError(err.status === 402 ? 'refused' : 'unreachable', err.status === 402 ? OUT_OF_CREDIT : err.message.slice(0, 200));
+  return new TravelError('unreachable', String(err).slice(0, 200));
 }
