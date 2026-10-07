@@ -3,6 +3,7 @@
 // same with the "not spoken to Go" bar at 0.1. The run woke the model for 37.3% / 34.0% of messages, against under 25%.
 import { readFileSync } from 'node:fs';
 import { looksLikeMoney } from '@go/brain/dist/reflex/money-line.js';
+import { isSmallTalk } from '@go/brain/dist/reflex/small-talk.js';
 import { readAnswers } from '@go/brain/dist/reflex/read.js';
 import { BARS } from '@go/brain/dist/reflex/thresholds.js';
 import { wakesComposer } from '@go/brain/dist/trips/intake.js';
@@ -59,6 +60,18 @@ describe('the wake gate, replayed on the definitive live run', () => {
     it(`${run.chat}: the lines that wake Go`, () => {
       expect({ before: r.before.length, now: r.now.length }).toEqual(run.chat === 'goa-300' ? { before: 107, now: 72 } : { before: 18, now: 13 });
       console.log(`WAKE-REPLAY ${run.chat}: lines that wake Go ${r.before.length} -> ${r.now.length} of ${r.lines.length} (dropped ${r.dropped.map((l) => l.i).join(', ')})`);
+    });
+  }
+});
+
+describe('small talk in the three chats, which wakes no model when Jev has no answer', () => {
+  for (const name of ['goa-50', 'goa-300', 'goa-2000']) {
+    it(`${name}: no ask is small talk, and the only line Go may answer that is opens a burst to Go`, () => {
+      const lines = loadChat(name).lines.filter((l): l is SayLine => l.kind === 'say' && l.person !== 'go');
+      const talk = lines.filter((l) => !namesGoInText(l.text) && isSmallTalk(l.text));
+      expect(talk.filter((l) => l.go_should_speak === true)).toEqual([]);
+      for (const l of talk.filter((x) => x.go_should_speak === 'either')) expect(l.text, `${name}:${l.i}`).toBe('ok');
+      console.log(`SMALL-TALK ${name}: ${talk.length} of ${lines.length} lines (${[...new Set(talk.map((l) => l.text))].slice(0, 12).join(' | ')})`);
     });
   }
 });
