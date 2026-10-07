@@ -3,6 +3,7 @@
  * "@Go flights Delhi to Goa Friday" is flights from Delhi to Goa on the coming Friday. It reads only the places the
  * recipes' tables know and plain dates; anything less than a whole ask gives null, and the composer searches as usual.
  * Constraints ("after 6 pm", "under 8k") are not read: the search fetches the whole list and the tool applies them.
+ * A stay's pool, breakfast or free cancellation is read, since ixigo filters on those and the list depends on them.
  */
 import type { TravelKind, TravelQuery } from '../travel.js';
 import { addDays } from './recipe.js';
@@ -105,6 +106,13 @@ function placesIn(text: string, kind: TravelKind): Array<Found & { name: string 
   return out.sort((a, b) => a.at - b.at);
 }
 
+/** The must-haves ixigo filters a stay search on, as people say them. */
+const STAY_NEEDS: Array<[NonNullable<TravelQuery['mustHave']>[number], RegExp]> = [
+  ['pool', /\bpool\b/],
+  ['breakfast', /\b(breakfast|nashta)\b/],
+  ['free_cancellation', /\bfree cancell?ation\b/],
+];
+
 /** People said how many: "4 people", "5 log", "6 of us". */
 function guestsIn(lower: string): number | undefined {
   const m = /\b(\d{1,2})\s*(people|persons|adults|log|logon|of us|travellers|travelers|guests|pax|members)\b/.exec(lower);
@@ -138,7 +146,8 @@ export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
     if (checkIn && !checkOut && nights) checkOut = addDays(checkIn, Number(nights[1]));
     if (!checkIn && ctx.dates) [checkIn, checkOut] = [ctx.dates.start, ctx.dates.end];
     if (!area || !checkIn || !checkOut || checkOut <= checkIn) return null;
-    return { kind, query: { area, checkIn, checkOut, ...extra } };
+    const needs = STAY_NEEDS.filter(([, re]) => re.test(lower)).map(([need]) => need);
+    return { kind, query: { area, checkIn, checkOut, ...extra, ...(needs.length ? { mustHave: needs } : {}) } };
   }
 
   const date = dates[0]?.day;

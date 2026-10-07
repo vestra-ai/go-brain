@@ -21,11 +21,33 @@ describe('the stays recipe', () => {
   it('searches all of Goa for any part of it, two to a room', () => {
     expect(slots).toEqual({
       location: { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 },
-      checkIn: '2026-11-06', checkOut: '2026-11-09', adults: 4, rooms: 2,
+      checkIn: '2026-11-06', checkOut: '2026-11-09', adults: 4, rooms: 2, filters: [],
     });
     expect(stays.slotsFrom({ area: 'Anjuna, Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 5 }, { people: 4 })).toMatchObject({ adults: 5, rooms: 3 });
     expect(() => stays.slotsFrom({ area: 'Manali', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 })).toThrow(/Go can search ixigo stays in Goa/);
     expect(() => stays.slotsFrom({ area: 'Goa', checkIn: '2026-11-06' }, { people: 4 })).toThrow(/needs the place, check-in and check-out/);
+  });
+
+  it("lets ixigo filter the search: to the area asked for, and on the must-haves it has codes for", () => {
+    const vagator = stays.slotsFrom({ area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool', 'beach'] }, { people: 4 });
+    expect(vagator.filters).toEqual(['FL_HF_29', 'PA_C_78528']);
+    expect(stays.url(vagator)).toBe(
+      'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&locationType=S&masterLocationId=48569&countryId=1' +
+      '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0&filters=FL_HF_29%2CPA_C_78528',
+    );
+    const anjuna = stays.slotsFrom({ area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['free_cancellation', 'breakfast'] }, { people: 4 });
+    expect(stays.url(anjuna)).toBe(
+      'https://www.ixigo.com/hotels/search/result?locationId=1026&locationName=Anjuna&locationType=C&masterLocationId=50347&countryId=1' +
+      '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0&filters=MP_FB%2CMP_FC',
+    );
+  });
+
+  it('takes what ixigo filtered on as true of every stay it gave, even one that does not list it', () => {
+    const withBreakfast = stays.slotsFrom({ area: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['breakfast'] }, { people: 4 });
+    const [meritas] = stays.extract(pages().slice(0, 2), withBreakfast);
+    expect(meritas!.facts).toMatchObject({ breakfast: true, pool: true });
+    expect(meritas!.highlights).toContain('Breakfast included');
+    expect(stays.extract(pages().slice(0, 2), slots)[0]!.facts).toMatchObject({ breakfast: false });
   });
 
   it('opens the hotel results page the map gives, and keeps only the search call itself', () => {

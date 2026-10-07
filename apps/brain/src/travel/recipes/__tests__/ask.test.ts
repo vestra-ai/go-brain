@@ -12,7 +12,7 @@ describe('reading a travel ask', () => {
     expect(read("@Go flights Delhi to Goa Friday evening, Arjun can't leave before 6")).toEqual({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-10-09' } });
     // c05: no dates of its own, so the trip's.
     expect(read('Go find us a villa with a private pool in North Goa under 8k a head, close to the beach')).toEqual({
-      kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09' },
+      kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] },
     });
     // c30: from Mumbai, to the trip's destination.
     expect(read('can someone check trains from Mumbai on Thursday?')).toEqual({ kind: 'trains', query: { from: 'mumbai', to: 'North Goa', date: '2026-10-08' } });
@@ -34,6 +34,9 @@ describe('reading a travel ask', () => {
     expect(read('@Go flights Delhi to Goa 3rd Jan')?.query).toMatchObject({ date: '2027-01-03' });
     expect(read('@Go hotels in Anjuna 6 to 9 Nov for 4 people')).toEqual({ kind: 'stays', query: { area: 'anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 4 } });
     expect(read('@Go villa in Vagator from 7 Nov, 2 nights')?.query).toMatchObject({ area: 'vagator', checkIn: '2026-11-07', checkOut: '2026-11-09' });
+    // The must-haves ixigo filters a stay on; "non-refundable" is not free cancellation.
+    expect(read('@Go hotel in Candolim with breakfast and free cancellation')?.query.mustHave).toEqual(['breakfast', 'free_cancellation']);
+    expect(read('@Go hotel in Candolim, non-refundable is fine')?.query).not.toHaveProperty('mustHave');
     // "Friday" said on a Friday is next week's.
     expect(readTravelAsk('@Go flights Delhi to Goa Friday', { ...CTX, today: '2026-10-09' })?.query).toMatchObject({ date: '2026-10-16' });
   });

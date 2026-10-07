@@ -46,6 +46,10 @@ function backendQuery(q: TravelQuery): TravelQuery {
   };
 }
 
+/** What a backend sees. ixigo_web also sees the must-haves: ixigo filters on some itself, so its list holds the right stays. */
+const queryFor = (backend: string, q: TravelQuery): TravelQuery =>
+  backend === 'ixigo_web' && q.mustHave ? { ...backendQuery(q), mustHave: q.mustHave } : backendQuery(q);
+
 const keyOf = (q: TravelQuery): string =>
   JSON.stringify(Object.entries(q).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, typeof v === 'string' ? v.trim().toLowerCase() : v]));
 
@@ -93,7 +97,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
         }
       }
       const { name, b } = pick();
-      const base = backendQuery(parsed);
+      const base = queryFor(name, parsed);
       const found = name === 'ixigo_web' ? await b.search(kind, base, o) : await kept(`${name}|${kind}|${keyOf(base)}`, () => b.search(kind, base, o));
       const all = found.results;
       const results = applyConstraints(kind, parsed, all);
@@ -101,8 +105,8 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       return { checkedAt: found.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}), ...(found.runId ? { runId: found.runId } : {}) };
     },
     async waitMs(kind, q, o) {
-      const { b } = pick();
-      return b.waitMs ? b.waitMs(kind, backendQuery(TravelQuery.parse(q)), o) : null;
+      const { name, b } = pick();
+      return b.waitMs ? b.waitMs(kind, queryFor(name, TravelQuery.parse(q)), o) : null;
     },
     async status(q) {
       const { name, b } = pick();
