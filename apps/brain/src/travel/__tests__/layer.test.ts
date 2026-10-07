@@ -222,15 +222,16 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     await expect(alone.layer.status(q)).rejects.toMatchObject({ code: 'refused' });
   });
 
-  it("answers offer() with the option's own page as its link, so the group can book it there", async () => {
+  it("answers offer() with the option's own ixigo.com page as its link, so the group can book it there, and no other page", async () => {
     const { layer } = setup(true, {
       results: {
         offer: async (id) => ({
           tripId: 't_goa', cardId: 'c', resultsId: 'r', checkedAt: 'x', optionId: id, n: 1, offerId: null, kind: 'flight', title: 'IndiGo 6E 5341',
-          priceMinor: 789600, totalMinor: null, currency: 'INR', priceNote: 'per person', sourceUrl: PAGE,
+          priceMinor: 789600, totalMinor: null, currency: 'INR', priceNote: 'per person', sourceUrl: id === 'opt_ix' ? PAGE : 'https://fares.example/6e5341',
         }),
       },
     });
     expect(await layer.offer('opt_ix')).toEqual({ offerId: null, title: 'IndiGo 6E 5341', priceMinor: 789600, currency: 'INR', kind: 'flight', link: PAGE });
+    expect((await layer.offer('opt_web'))?.link).toBeNull();
   });
 });

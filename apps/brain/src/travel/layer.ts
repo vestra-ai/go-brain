@@ -8,6 +8,7 @@
  */
 import type { Switches } from '../admin/switches.js';
 import { localDay } from '../proactive/clock.js';
+import { ixigoPage } from './cards.js';
 import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
 import { applyConstraints, closest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
@@ -121,9 +122,9 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       const o = await d.results.offer(optionId);
       if (!o) return null;
       // A vote and a payment use the whole stay; the card shows the nightly price.
-      // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is the option's own page
-      // (ixigo.com's, for ixigo_web), so the group can book it there, and null when it has none.
-      return { offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: o.sourceUrl ?? null };
+      // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is the option's own page on
+      // ixigo.com (ixigo_web), where the group can book it, and null otherwise: a page a job found elsewhere is not handed out.
+      return { offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl) };
     },
     ...(d.simulate ? { simulate: d.simulate } : {}),
   };
