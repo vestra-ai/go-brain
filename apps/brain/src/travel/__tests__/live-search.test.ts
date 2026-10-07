@@ -87,6 +87,17 @@ describe('the live search card', () => {
     expect(r.cards().at(-1)).toMatchObject({ state: 'done', screenshot_url: 'https://go.test/img/frame-1.jpg', page_url: RESULTS });
   });
 
+  it('ends on the most drawn picture, the largest JPEG, not the newest: ixigo\'s grey loading list comes last (re-drill 6)', async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k2b', ...FLIGHTS });
+    const drawn = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(900, 7)]).toString('base64');
+    const loading = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 3)]).toString('base64');
+    live.progress({ type: 'frames', frames: [frame(1200, RESULTS, loading), frame(2600, RESULTS, drawn), frame(3100, RESULTS, loading)] });
+    await live.finish(true);
+    expect(r.stored).toEqual([Buffer.from(drawn, 'base64')]);
+    expect(r.cards().at(-1)).toMatchObject({ state: 'done', page_url: RESULTS });
+  });
+
   it('never stores or shows a picture of a booking page, even the newest one', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k3', ...FLIGHTS });
