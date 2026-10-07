@@ -20,9 +20,11 @@ export const TRIP_TOKEN_SECRET = 'TRIP_TOKEN';
 export interface Computer {
   userIdFor(tripId: string): string;
   ensureUser(tripId: string): Promise<string>;
-  warm(tripId: string): Promise<'ready' | 'waking' | 'skipped'>;
-  /** A warm with no cooldown, for a box Go is keeping awake (keep-warm.ts): the box is up, so it wakes nothing new. */
-  ping(tripId: string): Promise<'ready' | 'waking'>;
+  /**
+   * keepMs: hold the computer awake that long once it is up (Bash's keep_ms, at most 120 s); a later warm extends the hold.
+   * A hold is asked for on purpose (keep-warm.ts), so it is never skipped as a repeat; it still counts toward WARM_LIMIT.
+   */
+  warm(tripId: string, o?: { keepMs?: number }): Promise<'ready' | 'waking' | 'skipped'>;
   /** The job's own conversation on the trip user: the same one however often it is asked for. */
   conversation(tripId: string, taskId: string): Promise<{ userId: string; conversationId: string }>;
   /** A fresh token in the trip user's TRIP_TOKEN secret, good until `expiresAt`, checked against Go's MCP server. */
@@ -88,22 +90,15 @@ export function createComputer(d: ComputerDeps): Computer {
       return userId;
     },
 
-    async warm(tripId) {
+    async warm(tripId, o = {}) {
       const userId = await computer.ensureUser(tripId);
       const nowMs = d.now().getTime();
       const known = await row(tripId);
-      if (known?.warm_at && nowMs - known.warm_at.getTime() < WARM_COOLDOWN_MS) return 'skipped';
+      if (!o.keepMs && known?.warm_at && nowMs - known.warm_at.getTime() < WARM_COOLDOWN_MS) return 'skipped';
       warmsIssued = warmsIssued.filter((t) => nowMs - t < WARM_WINDOW_MS);
       if (warmsIssued.length >= WARM_LIMIT) throw new Error('warm_limit: too many computers are waking; setup tries again on its next pass');
       warmsIssued.push(nowMs);
-      const r = await d.v1.call<{ status: 'ready' | 'waking' }>('POST', `/v1/users/${userId}/warm`);
-      await d.pool.query('update trip_computers set warm_at = $2 where trip_id = $1', [tripId, d.now()]);
-      return r.status;
-    },
-
-    async ping(tripId) {
-      const userId = await computer.ensureUser(tripId);
-      const r = await d.v1.call<{ status: 'ready' | 'waking' }>('POST', `/v1/users/${userId}/warm`);
+      const r = await d.v1.call<{ status: 'ready' | 'waking' }>('POST', `/v1/users/${userId}/warm`, o.keepMs ? { body: { keep_ms: o.keepMs } } : {});
       await d.pool.query('update trip_computers set warm_at = $2 where trip_id = $1', [tripId, d.now()]);
       return r.status;
     },

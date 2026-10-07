@@ -58,7 +58,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   addComputerSteps(brain.setup, computer);
   // ixigo.com searches (TRAVEL_MODE ixigo_web) run on the trip's computer too; the travel lane picks one per search, and
   // keeps the computer awake while people talk travel.
-  const keeper = createKeepWarm({ wake: (tripId) => computer.warm(tripId), ping: (tripId) => computer.ping(tripId), now: brain.now, log: brain.log });
+  const keeper = createKeepWarm({ warm: (tripId, keepMs) => computer.warm(tripId, { keepMs }), now: brain.now, log: brain.log });
   brain.recipeRunners = {
     browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log }),
     agentJob: createAgentJobRunner({ v1, computer, now: brain.now, log: brain.log, deploymentId: env.VESTRA_RECIPE_DEPLOYMENT_ID ?? null }),
@@ -99,9 +99,8 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   brain.context.addNow(tasksNow({ store, packs: brain.packs, now: brain.now }));
   brain.context.addWake('task', renderTaskWake);
   sweep.start(o.sweepEveryMs ?? SWEEP_EVERY_MS);
-  // When Go stops (built.stop()): no new sweep or keep-warm ping, every stream and wait aborted, the last card updates sent.
+  // When Go stops (built.stop()): no new sweep, every stream and wait aborted, the last card updates sent.
   brain.onStop(async () => {
-    keeper.stop();
     await sweep.stop();
     await follower.close();
     await cards.flush();

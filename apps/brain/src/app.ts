@@ -69,7 +69,7 @@ export interface Brain {
   tasks?: Tasks;
   /**
    * Set by P4's tasks lane, which owns the trip's computer: the two ways to run an ixigo.com recipe on it, and keepWarm,
-   * which keeps the computer awake for two minutes of travel talk.
+   * which holds the computer awake through travel talk (Bash's warm keep_ms).
    */
   recipeRunners?: { browserFetch: RecipeRunner; agentJob: RecipeRunner; keepWarm(tripId: string): void };
   /** Set by P5. */
