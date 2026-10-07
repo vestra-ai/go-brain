@@ -685,6 +685,35 @@ describe('show the options and put them to a vote in one reply', () => {
     expect(r.posts()[1]?.params.card).toMatchObject({ decision_id: 'd_first' });
   });
 
+  it('"put the three villas to a vote" on a card shown earlier: the chat line names the card, so one model call opens the vote', async () => {
+    // goa-300 line 175 in live run 37578789333: three model calls (recall, trip, search_stays) and 9.88 s, because the
+    // chat showed the villas card without its id.
+    const find = msg(3, 'p_rahul', 'Go, find us a villa with a pool in North Goa under 8k a head, near the beach');
+    const ask = msg(6, 'p_rahul', '@Go put the three villas to a vote please');
+    const cardIn = (body: any): string | undefined => /\[options card (c_opt_[\w-]+): /.exec(JSON.stringify(body.messages[0].content))?.[1];
+    const r = room({
+      messages: [find],
+      extraTools: travelOf(),
+      script: (body, call) =>
+        call === 0
+          ? { tools: [{ name: 'search_stays', input: STAYS }] }
+          : call === 1
+            ? { text: 'Three villas with a pool.', tools: [{ name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool' } }] }
+            : call === 2 && cardIn(body)
+              ? { text: 'Vote is up, tap your pick.', tools: [{ name: 'put_to_vote', input: { card_id: cardIn(body) } }] }
+              : { text: 'never asked' },
+    });
+    await turn(r, [item(r.tripId, find, true)]);
+    const shown = r.posts()[0]!.params.card;
+    expect(shown.kind).toBe('options');
+    r.pack.messages.push(msg(5, null, 'Three villas with a pool.', { card: shown }), ask);
+    await turn(r, [item(r.tripId, ask, true)], `turn_${r.tripId}_vote`);
+    expect(r.model.bodies).toHaveLength(3);
+    expect(cardIn(r.model.bodies[2])).toBe(shown.card_id);
+    expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(1);
+    expect(r.posts().slice(1).map((p) => [p.params.text, p.params.card?.kind])).toEqual([['Vote is up, tap your pick.', 'vote']]);
+  });
+
   it('a vote with no card_id after two options cards is refused, opens nothing, and goes back to the model', async () => {
     const ask = msg(3, 'p_priya', '@Go villas, two sets, and a vote');
     const r = room({
