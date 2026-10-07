@@ -1,0 +1,35 @@
+id: offers.campaign
+title: One ixigo sale and the offers in it, such as the Grand Travel Fest
+asks:
+  - what's in the grand travel fest sale
+  - festive sale offers on ixigo
+inputs:
+  campaign: { kind: text, about: "the sale's name on ixigo, as offers.list gives it, such as grandtravelfest" }
+auth: none
+changes_state: false
+# A sale's own page, /offers/campaigns/{name}: an older Next.js page with its offers in its __NEXT_DATA__ script.
+let:
+  slug: "$replace($trim($replace(campaign, /^.*\\/campaigns\\//, '')), /[^A-Za-z0-9_-]+/, '')"
+page: /offers/campaigns/{$slug}
+capture:
+  - { match: "/offers/campaigns/{$slug}$", max_bytes: 1000000 }
+read:
+  rows: { from: "/offers/campaigns/{$slug}$", format: next_data, list: '($type($) = "array" ? $[0] : $).props.pageProps.data.offers' }
+answer:
+  as: facts
+  title: "{campaign}"
+  max: 20
+  each: |
+    $type(offerTitle) = "string" ? {
+      "sale": campaignName,
+      "offer": offerTitle,
+      "code": offerCode,
+      "for": product ? $lowercase(product),
+      "bank": paymentType,
+      "until": endDate ? $fromMillis($toMillis(endDate), '[D] [MNn,*-3] [Y]', '+0530'),
+      "details": slug
+    }
+ttl_minutes: 60
+samples: { page: offers.campaign.html }
+measured: { fast_ms: 189, page_ms: null, flow_ms: null }
+notes: Each offer in a sale has its own terms page, by its name, for offers.details.

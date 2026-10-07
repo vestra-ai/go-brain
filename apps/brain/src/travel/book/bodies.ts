@@ -1,12 +1,13 @@
 /**
  * What a page sent, as a recipe reads it. A body is JSON, a Next.js flight payload (the page's own "RSC: 1" answer:
- * one JSON value a line), or a Next.js page whose flight payload sits in its scripts. Whatever its form, the page's own
- * credentials in it (its apikey, deviceId, uuid, any token or cookie) are dropped before anything reads the body, so no
- * recipe, log or store ever holds them.
+ * one JSON value a line), a Next.js page whose flight payload sits in its scripts, or an older Next.js page whose props
+ * sit in its __NEXT_DATA__ script (ixigo's offers pages). Whatever its form, the page's own credentials in it (its
+ * apikey, deviceId, uuid, any token or cookie) are dropped before anything reads the body, so no recipe, log or store
+ * ever holds them.
  */
 import { TravelError } from '../mcp-travel.js';
 
-export const BODY_FORMATS = ['json', 'rsc', 'next_html'] as const;
+export const BODY_FORMATS = ['json', 'rsc', 'next_html', 'next_data'] as const;
 export type BodyFormat = (typeof BODY_FORMATS)[number];
 
 /** Keys that hold the page's own credentials: dropped wherever they are. */
@@ -69,11 +70,17 @@ export function flightOfPage(html: string): string {
   return text;
 }
 
+/** The JSON an older Next.js page carries in its <script id="__NEXT_DATA__">: its props, under props.pageProps. */
+export function nextDataOfPage(html: string): string | null {
+  return /<script[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html)?.[1] ?? null;
+}
+
 /** A body as a recipe reads it, its credentials gone. */
 export function readBodyAs(text: string, format: BodyFormat, what: string): unknown {
-  if (format === 'json') {
+  if (format === 'json' || format === 'next_data') {
+    const json = format === 'json' ? text : nextDataOfPage(text);
     try {
-      return withoutCredentials(JSON.parse(text));
+      return withoutCredentials(JSON.parse(json ?? ''));
     } catch {
       throw new TravelError('refused', `ixigo answered ${what} in a shape Go does not read.`);
     }

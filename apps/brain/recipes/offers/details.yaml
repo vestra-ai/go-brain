@@ -1,0 +1,45 @@
+id: offers.details
+title: "One ixigo offer's terms: its code, what it takes off, who it is for, until when, and how to use it"
+asks:
+  - what's the hdfc offer exactly
+  - minimum amount for the AUSFD code
+  - how do we use IXIHDFC3
+inputs:
+  offer: { kind: text, about: "the offer's name on ixigo, as offers.list or hotels.offers gives it, such as ausfd_hotels" }
+auth: none
+changes_state: false
+# An offer's own page, /offers/{name}: an older Next.js page with the offer in its __NEXT_DATA__ script. A name is kept
+# as ixigo writes it (IXRBLD is one). Its terms are HTML lists, read as one line an item.
+let:
+  slug: "$replace($trim($replace(offer, /^.*\\/offers\\//, '')), /[^A-Za-z0-9_-]+/, '')"
+page: /offers/{$slug}
+capture:
+  - { match: "/offers/{$slug}$", max_bytes: 1000000 }
+read:
+  rows: { from: "/offers/{$slug}$", format: next_data, list: '($type($) = "array" ? $[0] : $).props.pageProps.offerDetails' }
+answer:
+  as: facts
+  title: "{offer}"
+  max: 1
+  each: |
+    (
+      $items := function($html) { $match($html, /<li>([\s\S]*?)<\/li>/).groups[0].$trim($replace($replace($replace($, /<[^>]+>/, ""), /&nbsp;/, " "), /\s+/, " ")) };
+      $type(title) = "string" ? {
+        "offer": title,
+        "code": offerCode,
+        "for": product ? $lowercase(product),
+        "bank": paymentType,
+        "from": startDate ? $fromMillis($toMillis(startDate), '[D] [MNn,*-3] [Y]', '+0530'),
+        "until": endDate ? $fromMillis($toMillis(endDate), '[D] [MNn,*-3] [Y]', '+0530'),
+        "about": [$items(about)],
+        "how_to_use": [$items(howToAvail)],
+        "terms": [$items(tnc)],
+        "slabs": slabs ? $string(slabs)
+      }
+    )
+ttl_minutes: 60
+samples: { page: offers.details.html }
+measured: { fast_ms: 203, page_ms: 1880, flow_ms: null }
+notes: >-
+  Every offer says the person must be logged in, apply the code at booking and pay with the named card. An EMI offer's
+  slabs (amount, months, discount) come as a table.

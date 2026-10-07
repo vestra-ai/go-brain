@@ -1,0 +1,62 @@
+id: hotels.details
+title: One stay's page on ixigo, with its rating, check-in and check-out times, house rules, amenities, what is nearby and its photos
+asks:
+  - tell me about this villa
+  - does it have a pool
+  - what time is check-in there
+  - are kids allowed at that hotel
+  - how far is it from the beach
+inputs:
+  hotel: { kind: text, about: "the stay's ixigo page, as a stay Go found links it" }
+auth: none
+changes_state: false
+# The stay's own page, as a hotels.search option links it: /hotels/{id}/details with the place, the dates and the guests
+# in its query, which is kept as it is. The page's details call holds everything here; its map call adds the map.
+let:
+  hotel_id: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/(\\d+)/details\\?")[0]'
+  hotel_query: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/\\d+/details\\?([^#\\s]*)$")[0]'
+  hotel_name: '$decodeUrlComponent($groups(hotel, "[?&]hName=([^&#]*)")[0])'
+page: /hotels/{$hotel_id}/details?{$hotel_query|raw}
+capture:
+  - /accommodation-search/api/v1/accommodations/details$
+  - { match: /accommodation-search/api/v1/maps/location$, required: false }
+read:
+  # A call that came twice (the page asks again after its popup) reads as its first answer.
+  rows: { from: /accommodation-search/api/v1/accommodations/details$, list: '($type($) = "array" ? $[0] : $).data.hotelDetailResponse' }
+  also:
+    map: { from: /accommodation-search/api/v1/maps/location$, value: '($type($) = "array" ? $[0] : $).data.mapUrl' }
+answer:
+  as: facts
+  title: "{$hotel_name ? $hotel_name : 'The stay'}"
+  max: 1
+  # The stay's own address is left out: its area and town say where it is.
+  each: |
+    (
+      $rating := $num(userRating);
+      $clean := function($t) { $trim($replace($t, /<[^>]+>/, " ")) };
+      {
+        "name": $trim(name),
+        "area": locality,
+        "town": city,
+        "stars": starRating,
+        "rating_out_of_10": $rating > 0 ? $rating,
+        "rating_word": userRatingCategory,
+        "reviews": userRatingCount > 0 ? userRatingCount,
+        "check_in_from": houseRulesAndPolicies.checkinTime,
+        "check_out_by": houseRulesAndPolicies.checkoutTime,
+        "house_rules": [houseRulesAndPolicies.rules[$count(subRules.details) > 0].($trim(heading) & ": " & $join(subRules.details.$clean($), " "))],
+        "amenities": $distinct(amenityDetails.amenities.name),
+        "nearby": $distinct(landmarks.(name & ", " & $string(distance) & " " & unit))[[0..9]],
+        "about": aboutSection.data ? $clean(aboutSection.data),
+        "lat": locationDetail.lat,
+        "lng": locationDetail.lon,
+        "map": $map,
+        "photos": [imageInfo.propertyImages.imageList[[0..5]].((caption ? caption & ": " : "") & url)]
+      }
+    )
+ttl_minutes: 60
+samples: { details: hotels.details.json, map: hotels.details.map.json }
+measured: { fast_ms: 287, page_ms: 2240, flow_ms: null }
+notes: >-
+  The same page calls the rooms (hotels.rooms), the reviews (hotels.reviews) and the stays like it (hotels.similar).
+  Seen on 7 Oct 2026 for stays in Assagao; the details call came back in about 0.3 s from the page.

@@ -1,0 +1,47 @@
+{
+ "message": "Deals fetched successfully",
+ "data": {
+  "srp": {
+   "headerDeals": {
+    "type": "HEADER_CAROUSEL",
+    "deals": [
+     {
+      "id": 13956,
+      "offerCode": "AUSFD",
+      "offerTitle": "Flat 15% Off up to ₹1,500 on Domestic Hotels with AU Bank Credit Cards",
+      "clickActionOnDeal": "OPEN_BOTTOMSHEET",
+      "pathName": "/offers/ausfd_hotels"
+     },
+     {
+      "id": 14130,
+      "offerCode": "RBLD",
+      "offerTitle": "Flat 15% Off up to ₹1,500 on Domestic Hotels with RBL Bank Credit Cards",
+      "clickActionOnDeal": "OPEN_BOTTOMSHEET",
+      "pathName": "/offers/rbld_hotels"
+     },
+     {
+      "id": 11952,
+      "offerCode": "FLAT80",
+      "offerTitle": "Get Flat 80% Off on your Hotel Booking",
+      "clickActionOnDeal": "OPEN_BOTTOMSHEET",
+      "pathName": "/offers/flat80_hotels"
+     },
+     {
+      "id": 9907,
+      "offerCode": "IXIHDFC3",
+      "offerTitle": "Get flat 50% Off with HDFC Bank Mastercard Debit Cards",
+      "clickActionOnDeal": "OPEN_BOTTOMSHEET",
+      "pathName": "/offers/hdfc-campaign_hotels"
+     },
+     {
+      "id": 9657,
+      "offerCode": "ICICIEMI",
+      "offerTitle": "Get up to ₹2,500 on Domestic Hotels with ICICI Bank Credit Cards EMI",
+      "clickActionOnDeal": "OPEN_BOTTOMSHEET",
+      "pathName": "/offers/iciciemi_dom_hotels"
+     }
+    ]
+   }
+  }
+ }
+}

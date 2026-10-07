@@ -5,7 +5,7 @@ asks:
   - cheapest non stop london to delhi on 20 oct
   - kal subah mumbai se bangalore flight
 inputs:
-  from: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly from; abroad, with its airport code, like "London (LHR)" }
+  from: { kind: place, lookup: flights.airport_lookup, about: 'the city or airport people fly from; abroad, with its airport code, like "London (LHR)"' }
   to: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly to }
   date: { kind: date }
   # The members who live by another airport are not on this flight (Arjun, in Bangalore, is not on a flight from Delhi);
@@ -19,7 +19,7 @@ inputs:
   depart_after: { kind: text, optional: true, about: 24-hour HH:MM }
   depart_before: { kind: text, optional: true, about: 24-hour HH:MM }
   arrive_before: { kind: text, optional: true, about: 24-hour HH:MM }
-  max_price: { kind: money, optional: true, about: per person, in paise }
+  max_price: { kind: money, optional: true, about: "per person, in paise" }
 auth: none
 changes_state: false
 conditions:

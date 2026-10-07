@@ -1,0 +1,70 @@
+id: plan.explore
+title: Where to go from a city in a month, from ixigo's trip explorer, with what getting there and a night's stay cost
+asks:
+  - where can we go from delhi in december
+  - beach trips from bangalore in november
+  - mountains we can reach from mumbai in january
+  - december mein delhi se kahan ghoomne jaayein
+inputs:
+  origin: { kind: text, about: "the city the group would start from, such as Delhi or Bengaluru" }
+  month: { kind: date, about: any day in the month they would travel }
+  theme: { kind: choice, optional: true, about: "one of ixigo's themes: beaches, festivals, mountains, wildlife, cultural or romantic" }
+auth: none
+changes_state: false
+# ixigo's explorer, /plan, takes the city as people write it and finds its nearest airport itself (Delhi reads as New
+# Delhi). The page carries its first 15 places in its Next.js flight payload. A theme is a chip on the page: its click
+# makes the explorer's call, which then holds the places.
+let:
+  month_name: "$fromMillis($toMillis(month), '[MNn]')"
+  theme_name: "$lowercase($trim(theme))"
+page: /plan?origin={origin}&travelMonth={$lowercase($month_name)}
+capture:
+  - { match: /plan?origin=, max_bytes: 1000000 }
+fetch:
+  - when: "$theme_name = 'beaches'"
+    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
+    steps: [{ op: click, text: Beaches }, { op: wait_for, match: /itinerary-planner/api/explore? }]
+  - when: "$theme_name = 'festivals'"
+    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
+    steps: [{ op: click, text: Festivals }, { op: wait_for, match: /itinerary-planner/api/explore? }]
+  - when: "$theme_name = 'mountains'"
+    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
+    steps: [{ op: click, text: Mountains }, { op: wait_for, match: /itinerary-planner/api/explore? }]
+  - when: "$theme_name = 'wildlife'"
+    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
+    steps: [{ op: click, text: Wildlife }, { op: wait_for, match: /itinerary-planner/api/explore? }]
+  - when: "$theme_name = 'cultural'"
+    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
+    steps: [{ op: click, text: Cultural }, { op: wait_for, match: /itinerary-planner/api/explore? }]
+  - when: "$theme_name = 'romantic'"
+    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
+    steps: [{ op: click, text: Romantic }, { op: wait_for, match: /itinerary-planner/api/explore? }]
+read:
+  rows: { from: /plan?origin=, format: next_html, list: '$themed ? $themed : $find($, "destinations").destinations' }
+  also:
+    themed: { from: /itinerary-planner/api/explore?, value: '($type($) = "array" ? $[-1] : $).data.destinations' }
+answer:
+  as: facts
+  title: "Where to go from {origin} in {$month_name}"
+  max: 15
+  # ixigo's prices here are its own estimates: the cheapest way there, and a night's stay.
+  each: |
+    (
+      $b := approximateBudget;
+      $type(name) = "string" ? {
+        "place": name,
+        "getting_there": $b.priceText,
+        "stay_a_night": $b.averagePricePerNight ? "about ₹" & $b.averagePricePerNight,
+        "trip_estimate": $type($b.price) = "number" and $type($b.nights) = "number" ? "about " & $rupees($b.price) & " for " & $string($b.nights) & " nights",
+        "weather": $type(weatherAQI.min) = "number" ? $string(weatherAQI.min) & " to " & $string(weatherAQI.max) & " C",
+        "good_for": [travelAs.$lowercase($)],
+        "visa_on_arrival": "VISA_ON_ARRIVAL" in destinationType ? true,
+        "guide": slug
+      }
+    )
+ttl_minutes: 60
+samples: { page: plan.explore.html, beaches: plan.explore.beaches.json }
+measured: { fast_ms: 224, page_ms: 2980, flow_ms: null }
+notes: >-
+  "guide" is the place's name for plan.destination. The explorer's budget, travel time and weather sliders are left out
+  for now. Each theme is its own fetch until a step can take its words from an input.

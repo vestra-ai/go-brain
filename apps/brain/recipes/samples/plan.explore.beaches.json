@@ -1,0 +1,182 @@
+{
+ "status": true,
+ "data": {
+  "destinations": [
+   {
+    "slug": "denpasar",
+    "name": "Denpasar, Bali, Indonesia",
+    "country": "Indonesia",
+    "cityName": "Denpasar",
+    "weatherAQI": {
+     "aqi": 1,
+     "max": 32,
+     "min": 21,
+     "icon": "09d",
+     "aqiValue": 48
+    },
+    "travelAs": [
+     "FAMILY",
+     "FRIENDS",
+     "SOLO"
+    ],
+    "weatherType": [
+     "Warmer",
+     "Rain",
+     "No Snow"
+    ],
+    "destinationType": [
+     "BEACHES",
+     "NATURE_WILDLIFE",
+     "CULTURAL",
+     "FOOD_DRINK",
+     "SHOPPING",
+     "RELAXATION_WELLNESS",
+     "VISA_ON_ARRIVAL",
+     "TRENDING"
+    ],
+    "approximateBudget": {
+     "price": 62500,
+     "nights": 5,
+     "priceScale": 2,
+     "transportationPrice": 25941,
+     "averagePricePerNight": "4,900",
+     "priceText": "Prices starting from ₹25,941",
+     "priceSource": "estimate"
+    },
+    "tagChipText": "Visa on Arrival"
+   },
+   {
+    "slug": "devgad",
+    "name": "Devgad, Maharashtra, India",
+    "country": "India",
+    "cityName": "Devgad",
+    "weatherAQI": {
+     "aqi": 2,
+     "max": 35,
+     "min": 23,
+     "icon": "09d",
+     "aqiValue": 86
+    },
+    "travelAs": [
+     "FAMILY",
+     "FRIENDS"
+    ],
+    "weatherType": [
+     "Warmer",
+     "No Snow",
+     "No Pollution"
+    ],
+    "destinationType": [
+     "BEACHES",
+     "FOOD_DRINK",
+     "HISTORICAL_SITES",
+     "SCENIC_OUTDOORS",
+     "RELAXATION_WELLNESS",
+     "NATURE_WILDLIFE",
+     "WATER_SPORTS",
+     "CULTURAL",
+     "PHOTOGRAPHY",
+     "FISHING"
+    ],
+    "approximateBudget": {
+     "price": 11000,
+     "nights": 3,
+     "priceScale": 1,
+     "transportationPrice": 10041,
+     "averagePricePerNight": "2,333",
+     "priceText": "Prices starting from ₹10,041",
+     "priceSource": "estimate"
+    }
+   },
+   {
+    "slug": "chandpur",
+    "name": "Chandpur, Chittagong, Bangladesh",
+    "country": "Bangladesh",
+    "cityName": "Chandpur",
+    "weatherAQI": {
+     "aqi": 4,
+     "max": 32,
+     "min": 19,
+     "icon": "01d",
+     "aqiValue": 167
+    },
+    "travelAs": [
+     "FAMILY",
+     "FRIENDS"
+    ],
+    "weatherType": [
+     "Warmer",
+     "Rain",
+     "Pollution free"
+    ],
+    "destinationType": [
+     "FOOD_DRINK",
+     "FISHING",
+     "SCENIC_OUTDOORS",
+     "WATER_ACTIVITIES",
+     "RELAXATION_WELLNESS",
+     "CULTURAL",
+     "FESTIVALS_EVENTS",
+     "HISTORICAL_SITES",
+     "BEACHES",
+     "SHOPPING",
+     "FORMAL_VISA"
+    ],
+    "approximateBudget": {
+     "price": 9500,
+     "nights": 3,
+     "priceScale": 1,
+     "transportationPrice": 150,
+     "averagePricePerNight": "1,500",
+     "priceText": "Prices starting from ₹150",
+     "priceSource": "estimate"
+    },
+    "tagChipText": "Formal Visa"
+   },
+   {
+    "slug": "tajpur",
+    "name": "Tajpur, West Bengal, India",
+    "country": "India",
+    "cityName": "Tajpur",
+    "weatherAQI": {
+     "aqi": 1,
+     "max": 37,
+     "min": 21,
+     "icon": "09d",
+     "aqiValue": 7
+    },
+    "travelAs": [
+     "FAMILY",
+     "FRIENDS",
+     "SOLO"
+    ],
+    "weatherType": [
+     "Warmer",
+     "Rain",
+     "No Snow"
+    ],
+    "destinationType": [
+     "BEACHES",
+     "NATURE_WILDLIFE",
+     "RELAXATION_WELLNESS",
+     "SCENIC_OUTDOORS",
+     "ADVENTURE",
+     "ROMANTIC",
+     "FOOD_DRINK",
+     "BIRD_WATCHING",
+     "WEEKEND_DESTINATION"
+    ],
+    "approximateBudget": {
+     "price": 16000,
+     "nights": 3,
+     "priceScale": 2,
+     "transportationPrice": 1780,
+     "averagePricePerNight": "3,333",
+     "priceText": "Prices starting from ₹1,780",
+     "priceSource": "estimate"
+    }
+   }
+  ],
+  "totalCount": 393
+ }
+}
