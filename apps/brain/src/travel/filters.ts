@@ -19,7 +19,8 @@ function has(o: TravelOption, need: MustHave): boolean {
     case 'breakfast':
       return o.facts.breakfast === true;
     case 'free_cancellation':
-      return o.refundableUntil !== undefined;
+      // A date when the backend gives one; ixigo's hotel list says "Free Cancellation" without it.
+      return o.refundableUntil !== undefined || o.facts.free_cancellation === true;
     case 'non_stop':
       return o.journey?.stops === 0;
   }

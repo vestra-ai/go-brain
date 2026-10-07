@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest';
+import { TravelError } from '../../mcp-travel.js';
+import { airportOf, busCityOf, stationOf, stayLocationOf } from '../places.js';
+import { RECIPES } from '../index.js';
+import { bodiesFor, ddmmyyyy, istAt, istOf, matches } from '../recipe.js';
+import { capture } from './fixtures.js';
+
+describe('the places tables', () => {
+  it('resolve the names people use, and codes as they are', () => {
+    expect(airportOf('Goa')).toEqual({ code: 'GOI', city: 'Goa' });
+    expect(airportOf('North Goa').code).toBe('GOX');
+    expect(airportOf('Goa (GOX)').code).toBe('GOX');
+    expect(airportOf(' new  Delhi ').code).toBe('DEL');
+    expect(airportOf('blr').code).toBe('BLR');
+    expect(airportOf('GOA').code).toBe('GOI');
+    expect(stationOf('Margao')).toEqual({ code: 'MAO', name: 'Madgaon' });
+    expect(stationOf('NZM').code).toBe('NZM');
+    expect(stationOf('Pune').code).toBe('PUNE');
+    expect(busCityOf('Bombay')).toEqual({ name: 'Mumbai', id: 4 });
+    expect(stayLocationOf('Calangute').locationId).toBe(32);
+    expect(stayLocationOf('South Goa').locationId).toBe(32);
+  });
+
+  it('refuse a place they do not have, with the places that work, and never guess', () => {
+    for (const ask of [() => airportOf('Genoa'), () => stationOf('Shimla'), () => busCityOf('Pune'), () => stayLocationOf('Manali')]) {
+      try {
+        ask();
+        expect.unreachable();
+      } catch (err) {
+        expect(err).toBeInstanceOf(TravelError);
+        expect((err as TravelError).code).toBe('unknown_place');
+      }
+    }
+  });
+});
+
+describe('the recipe helpers', () => {
+  it('match a capture as the browser fetch does: a part of the URL, or the end of its path with "$"', () => {
+    expect(matches('/buslist/v3/services', 'https://www.ixigo.com/buslist/v3/services/meta/105')).toBe(true);
+    expect(matches('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services/meta/105')).toBe(false);
+    expect(matches('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services?x=1')).toBe(true);
+    expect(matches('/buslist/v3/services$', 'not a url')).toBe(false);
+  });
+
+  it('read only whole, successful bodies', () => {
+    const url = 'https://www.ixigo.com/a';
+    const cut = { ...capture('/a', url, '{"half":'), truncated: true };
+    expect(bodiesFor([capture('/a', url, 'one'), capture('/a', url, 'two', 500), cut, capture('/a', url, 'three')], '/a')).toEqual(['one', 'three']);
+  });
+
+  it('write dates and times as ixigo and India read them', () => {
+    expect(ddmmyyyy('2026-11-06')).toBe('06112026');
+    expect(istAt('2026-11-06', '05:00:00')).toBe('2026-11-06T05:00:00+05:30');
+    expect(istOf(Date.parse('2026-11-06T13:00:00Z'))).toBe('2026-11-06T18:30:00+05:30');
+  });
+
+  it('cover every kind of search, each reusing a result for 10 minutes', () => {
+    expect(Object.keys(RECIPES).sort()).toEqual(['buses', 'flights', 'stays', 'trains']);
+    for (const [kind, r] of Object.entries(RECIPES)) {
+      expect(r.kind).toBe(kind);
+      expect(r.ttlMs).toBe(600_000);
+      expect(r.capture.some((c) => c.required)).toBe(true);
+    }
+  });
+});
