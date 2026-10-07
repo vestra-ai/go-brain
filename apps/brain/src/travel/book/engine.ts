@@ -39,7 +39,7 @@ function refusePayments(where: string): void {
 export interface EngineDeps {
   book: Book;
   /** The trip's browser fetch; null while the trip's computer is not set up here. */
-  runner: (tripId: string) => Pick<RecipeRunner, 'read'> | null;
+  runner: (tripId: string) => Pick<RecipeRunner, 'read' | 'pageFetch'> | null;
   /** Keeps a place ixigo resolved; absent in tests that keep nothing. */
   pool?: Pool;
   /** The trip as a recipe's inputs read it ($trip): its head count and the members' home cities. */
