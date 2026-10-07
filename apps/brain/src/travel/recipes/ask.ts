@@ -1,7 +1,8 @@
 /**
  * A cheap read of a travel ask, in English and Hinglish, so Go can start the search the moment the message lands:
- * "@Go flights Delhi to Goa Friday" is flights from Delhi to Goa on the coming Friday. It reads only the places the
- * recipes' tables know and plain dates; anything less than a whole ask gives null, and the composer searches as usual.
+ * "@Go flights Delhi to Goa Friday" is flights from Delhi to Goa on the trip's Friday, or the coming one on a trip with
+ * no dates ahead. It reads only the places the recipes' tables know and plain dates; anything less than a whole ask
+ * gives null, and the composer searches as usual.
  * A journey's clear conditions are read too, so the answer the turn gets already holds them and show_options is the one
  * call: a clock time with am or pm ("after 7 pm", "arriving by 10 am"), "evening" (after 5 pm), "can't leave before 6"
  * (after 6 pm), non-stop, and a price cap per person ("under 6k"). A bare "after 7" is not read: it could be either.
@@ -55,8 +56,20 @@ function dayOf(day: number, month: number, today: string): string | null {
   return iso(year) >= today ? iso(year) : iso(year + 1);
 }
 
+/**
+ * The trip's own day of the week: on a trip with dates still ahead, "Friday" is the Friday from the day before it starts
+ * (an overnight journey) to its last day, not this week's. Null when the trip has none such, or no dates.
+ */
+function tripsWeekday(weekday: number, today: string, trip: AskContext['dates']): string | null {
+  if (!trip || trip.end < today) return null;
+  for (let day = addDays(trip.start, -1); day <= trip.end; day = addDays(day, 1)) {
+    if (day >= today && new Date(`${day}T00:00:00Z`).getUTCDay() === weekday) return day;
+  }
+  return null;
+}
+
 /** Every date the text names, in the order it names them. */
-function datesIn(lower: string, today: string): Array<Found & { day: string }> {
+function datesIn(lower: string, today: string, trip: AskContext['dates'] = null): Array<Found & { day: string }> {
   const out: Array<Found & { day: string }> = [];
   const add = (at: number, end: number, day: string | null): void => {
     if (day && !out.some((d) => at < d.end && end > d.at)) out.push({ at, end, day });
@@ -81,9 +94,9 @@ function datesIn(lower: string, today: string): Array<Found & { day: string }> {
   for (const m of lower.matchAll(/\b(tomorrow|kal)\b/g)) add(m.index, m.index + m[0].length, addDays(today, 1));
   const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
   for (const m of lower.matchAll(new RegExp(`\\b(${Object.keys(WEEKDAYS).join('|')})\\b`, 'g'))) {
-    // The coming one: "Friday" said on a Friday is next week's.
+    // The trip's, when it has one; else the coming one: "Friday" said on a Friday is next week's.
     const ahead = ((WEEKDAYS[m[1]!]! - weekday + 7) % 7) || 7;
-    add(m.index, m.index + m[0].length, addDays(today, ahead));
+    add(m.index, m.index + m[0].length, tripsWeekday(WEEKDAYS[m[1]!]!, today, trip) ?? addDays(today, ahead));
   }
   return out.sort((a, b) => a.at - b.at);
 }
@@ -178,7 +191,7 @@ export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
   const kind = kinds[0]!;
   const lower = text.toLowerCase();
   const places = placesIn(text, kind);
-  const dates = datesIn(lower, ctx.today);
+  const dates = datesIn(lower, ctx.today, ctx.dates ?? null);
   const guests = guestsIn(lower);
   const extra = guests ? { guests } : {};
 

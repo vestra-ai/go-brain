@@ -32,13 +32,13 @@ describe('the early start', () => {
     const w = world();
     const answer = await w.hook(msg(41, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
     expect(answer).toEqual({ dueNow: true });
-    expect(w.searches).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-10-09', departAfter: '17:00' }, tripId: 't_goa' }]);
+    expect(w.searches).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '17:00' }, tripId: 't_goa' }]);
   });
 
   it('takes an ask the quick read is sure is for Go, even without its name', async () => {
     const w = world();
     expect(await w.hook(msg(42, 'p_kabir', 'can someone check trains from Mumbai on Thursday?'), forGo, goaPack())).toEqual({ dueNow: true });
-    expect(w.searches[0]).toMatchObject({ kind: 'trains', q: { from: 'mumbai', to: 'North Goa', date: '2026-10-08' } });
+    expect(w.searches[0]).toMatchObject({ kind: 'trains', q: { from: 'mumbai', to: 'North Goa', date: '2026-11-05' } });
   });
 
   it('does nothing for chatter, for less than a whole ask, or for a place the recipes cannot fill', async () => {
@@ -53,7 +53,7 @@ describe('the early start', () => {
     for (const mode of ['fake', 'ixigo']) {
       const w = world(mode);
       expect(await w.hook(msg(46, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack()), mode).toEqual({ dueNow: true });
-      expect(w.searches, mode).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-10-09', departAfter: '17:00' }, tripId: 't_goa' }]);
+      expect(w.searches, mode).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '17:00' }, tripId: 't_goa' }]);
       // No live card there: the right-now block won't say one told the room.
       expect(w.early.searchFor('t_goa', 'm_46'), mode).toMatchObject({ kind: 'flights', live: false });
     }
@@ -100,7 +100,7 @@ describe('the early start', () => {
     const w = world();
     await w.hook(msg(48, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
     const started = w.early.searchFor('t_goa', 'm_48');
-    expect(started).toMatchObject({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-10-09' }, live: true });
+    expect(started).toMatchObject({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-11-06' }, live: true });
     expect(await started!.search).toEqual({ results: [], checkedAt: '2026-10-07T12:00:00.000Z' });
     expect(w.early.searchFor('t_goa', 'm_49')).toBeNull();
     expect(w.early.searchFor('t_other', 'm_48')).toBeNull();

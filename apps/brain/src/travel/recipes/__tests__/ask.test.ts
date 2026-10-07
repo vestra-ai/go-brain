@@ -9,13 +9,15 @@ const read = (text: string) => readTravelAsk(text, CTX);
 describe('reading a travel ask', () => {
   it("reads the test set's travel asks, English and Hinglish, into queries the recipes can fill", () => {
     // c03
-    expect(read("@Go flights Delhi to Goa Friday evening, Arjun can't leave before 6")).toEqual({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-10-09', departAfter: '18:00' } });
+    // c03: the trip's Friday, 6 Nov, not this week's.
+    expect(read("@Go flights Delhi to Goa Friday evening, Arjun can't leave before 6")).toEqual({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '18:00' } });
     // c05: no dates of its own, so the trip's.
     expect(read('Go find us a villa with a private pool in North Goa under 8k a head, close to the beach')).toEqual({
       kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] },
     });
     // c30: from Mumbai, to the trip's destination.
-    expect(read('can someone check trains from Mumbai on Thursday?')).toEqual({ kind: 'trains', query: { from: 'mumbai', to: 'North Goa', date: '2026-10-08' } });
+    // The day before the trip starts: an overnight train.
+    expect(read('can someone check trains from Mumbai on Thursday?')).toEqual({ kind: 'trains', query: { from: 'mumbai', to: 'North Goa', date: '2026-11-05' } });
     for (const ask of [read("@Go flights Delhi to Goa Friday evening, Arjun can't leave before 6"), read('can someone check trains from Mumbai on Thursday?')]) {
       expect(() => RECIPES[ask!.kind].slotsFrom(ask!.query, { people: 5 })).not.toThrow();
     }
@@ -37,8 +39,20 @@ describe('reading a travel ask', () => {
     // The must-haves ixigo filters a stay on; "non-refundable" is not free cancellation.
     expect(read('@Go hotel in Candolim with breakfast and free cancellation')?.query.mustHave).toEqual(['breakfast', 'free_cancellation']);
     expect(read('@Go hotel in Candolim, non-refundable is fine')?.query).not.toHaveProperty('mustHave');
-    // "Friday" said on a Friday is next week's.
-    expect(readTravelAsk('@Go flights Delhi to Goa Friday', { ...CTX, today: '2026-10-09' })?.query).toMatchObject({ date: '2026-10-16' });
+    // On a trip with no dates, "Friday" is the coming one, and "Friday" said on a Friday is next week's.
+    expect(readTravelAsk('@Go flights Delhi to Goa Friday', { ...CTX, dates: null })?.query).toMatchObject({ date: '2026-10-09' });
+    expect(readTravelAsk('@Go flights Delhi to Goa Friday', { ...CTX, today: '2026-10-09', dates: null })?.query).toMatchObject({ date: '2026-10-16' });
+  });
+
+  it("reads a day of the week as the trip's day while the trip is ahead, from the day before it starts to its last", () => {
+    const day = (text: string, today = CTX.today) => readTravelAsk(text, { ...CTX, today })?.query;
+    expect(day('@Go flights Delhi to Goa Friday')).toMatchObject({ date: '2026-11-06' });
+    expect(day('@Go flights Goa to Delhi Monday')).toMatchObject({ date: '2026-11-09' });
+    // Said the same Friday the trip starts on: still the trip's, today.
+    expect(day('@Go flights Delhi to Goa Friday', '2026-11-06')).toMatchObject({ date: '2026-11-06' });
+    // A day the trip doesn't cover, or a trip whose Friday has passed: the coming one.
+    expect(day('@Go flights Delhi to Goa Wednesday')).toMatchObject({ date: '2026-10-14' });
+    expect(day('@Go flights Delhi to Goa Friday', '2026-11-07')).toMatchObject({ date: '2026-11-13' });
   });
 
   it("reads a journey's clear conditions, so the turn's answer already holds them: times, evening, non-stop, a cap per person", () => {
@@ -57,7 +71,7 @@ describe('reading a travel ask', () => {
   });
 
   it('leaves what could mean two things to the model: a bare hour, hours, a cap for everyone, a stay\'s price or the beach', () => {
-    const bare = { from: 'delhi', to: 'goa', date: '2026-10-09' };
+    const bare = { from: 'delhi', to: 'goa', date: '2026-11-06' };
     expect(read('@Go flights Delhi to Goa Friday after 7')?.query).toEqual(bare);
     expect(read('@Go flights Delhi to Goa Friday under 2 hours')?.query).toEqual(bare);
     expect(read('@Go flights Delhi to Goa Friday under 30k total')?.query).toEqual(bare);
