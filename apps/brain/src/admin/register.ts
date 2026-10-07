@@ -7,6 +7,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Brain, RegisterLane } from '../app.js';
 import { newUlid } from '../door/ulid.js';
+import type { RecipeStat } from '../travel/book/engine.js';
 import { checkAll, checkComputer, defaultProbes, type Probe, type ProbeResult } from './health.js';
 import { ADMIN_LANES, NOT_DEPLOYED, type AdminLanes } from './lanes.js';
 import { renderAdminPage } from './page.js';
@@ -41,6 +42,8 @@ export interface HealthJson {
   switches: Record<SwitchName, string>;
   /** Names only: a phone number never leaves Go. */
   calls: { mode: string; allowlist: string[]; allowlist_count: number };
+  /** How fast each ixigo recipe answers, at each speed, since Go started. */
+  recipes: RecipeStat[];
 }
 
 /** The "Fire a watch" form. The rest of P6's body is fixed for the demo. */
@@ -138,7 +141,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         const tripId = await tripOf(req.query);
         const [health, people, trips] = await Promise.all([checkAll(probesFor(brain, tripId)), peopleOf(tripId), newestTrips()]);
         const html = renderAdminPage({
-          tripId, trips, role, at: brain.now(), health, switches: switchValues(), people, calls: calls(),
+          tripId, trips, role, at: brain.now(), health, switches: switchValues(), people, calls: calls(), recipes: brain.recipeStats?.() ?? [],
           note: req.query.note ?? null, docsUrl: DOCS_URL,
         });
         return reply.headers(PAGE_HEADERS).type('text/html; charset=utf-8').send(html);
@@ -155,6 +158,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
           probes: await checkAll(probesFor(brain, tripId)),
           switches: Object.fromEntries(switchValues().map((s) => [s.name, s.value])) as Record<SwitchName, string>,
           calls: { mode: c.mode, allowlist: c.allowlist.flatMap((a) => (a.name ? [a.name] : [])), allowlist_count: c.allowlist.length },
+          recipes: brain.recipeStats?.() ?? [],
         };
         return reply.header('cache-control', 'no-store').send(body);
       });

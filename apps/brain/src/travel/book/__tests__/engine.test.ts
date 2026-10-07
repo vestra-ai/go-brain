@@ -90,6 +90,34 @@ describe('a place Go has not searched before', () => {
   });
 });
 
+describe('the numbers', () => {
+  it('logs and counts every run by recipe and speed: the middle and slow end of its last runs, and how many failed', async () => {
+    let nowMs = Date.parse('2026-10-07T12:00:00Z');
+    const logged: unknown[] = [];
+    const runner = {
+      read: async (_t: string, url: string) => {
+        nowMs += url.includes('Mumbai') ? 2_000 : 1_000;
+        return { captures: [capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', fixture('buses-mumbai-goa.json'))], finalUrl: url };
+      },
+    };
+    const engine = createEngine({
+      book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date(nowMs),
+      log: { info: (o: unknown) => logged.push(o), warn: () => undefined },
+    });
+    await engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { tripId: 't_n' });
+    await engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-07' }, { tripId: 't_n' });
+    await engine.answer('flights.search', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { tripId: 't_n' });
+    await engine.answer('buses.between', { from: 'Atlantis', to: 'Goa', date: '2026-11-06' }, { tripId: 't_n' }).catch(() => undefined);
+    expect(engine.stats()).toEqual([
+      { recipe: 'buses.between', speed: 'page', runs: 3, failed: 1, p50_ms: 2_000, p90_ms: 2_000 },
+      { recipe: 'buses.city_lookup', speed: 'page', runs: 1, failed: 0, p50_ms: 1_000, p90_ms: 1_000 },
+      { recipe: 'flights.search', speed: 'link', runs: 1, failed: 0, p50_ms: 0, p90_ms: 0 },
+    ]);
+    expect(logged).toContainEqual({ recipe: 'buses.between', speed: 'page', ms: 2_000, outcome: 'ok' });
+    expect(logged).toContainEqual({ recipe: 'buses.between', speed: 'page', ms: 1_000, outcome: 'unknown_place' });
+  });
+});
+
 describe("ixigo's payment page", () => {
   it('is never a recipe\'s page, a lookup\'s box, or a page a run may land on', async () => {
     expect(isPayments('https://www.ixigo.com/payments/view/home/abc')).toBe(true);
