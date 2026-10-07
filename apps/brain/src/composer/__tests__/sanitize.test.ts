@@ -10,6 +10,13 @@ describe('sanitize', () => {
     expect(sanitize('ok —.')).toBe('ok.');
   });
 
+  it("never talks about Go's tools: \"I don't have a tool to…\" is \"I can't … here\" (run 37590000837, goa-50:33)", () => {
+    expect(sanitize("I don't have a tool to search cabs, but I can call a cab operator for you.")).toBe(
+      "I can't search cabs here, but I can call a cab operator for you.",
+    );
+    expect(sanitize('I do not have any tools to check live fares.')).toBe("I can't check live fares here.");
+  });
+
   it('never names the model or who made it', () => {
     expect(sanitize("Sure — I'm Claude, made by Anthropic.")).toBe("Sure, I'm Go, made by the Go team.");
     expect(sanitize('Running on Sonnet 5.5 today')).toBe('Running on Go today');
@@ -43,6 +50,26 @@ describe('sanitize', () => {
     });
   });
 
+  it('drops a bracket that cites a message whole, and a possessive number is "the": no "(\'s thread)" left (run 37590000837, goa-300:9)', () => {
+    expect(
+      stripMessageRefs(
+        "Prices look the same on 5, 6 and 7 Nov, from ₹4,890 up to ₹6,420 per person, so no day is cheaper. Rahul can leave Fri after 6 pm (#7's thread), " +
+          'so here are the evening flights that fit; the 6:15 am one is cheapest but too early for Arjun.',
+      ),
+    ).toEqual({
+      text:
+        'Prices look the same on 5, 6 and 7 Nov, from ₹4,890 up to ₹6,420 per person, so no day is cheaper. Rahul can leave Fri after 6 pm, ' +
+        'so here are the evening flights that fit; the 6:15 am one is cheapest but too early for Arjun.',
+      refs: [7],
+    });
+    expect(stripMessageRefs('Rahul can leave after 6 pm (#7’s thread), so the 9:20 pm one works.').text).toBe('Rahul can leave after 6 pm, so the 9:20 pm one works.');
+    expect(stripMessageRefs("Arjun can't fly early (he said so in #9, twice).")).toEqual({ text: "Arjun can't fly early.", refs: [9] });
+    expect(stripMessageRefs("Going by #14's note, Rahul pays.")).toEqual({ text: 'Going by the note, Rahul pays.', refs: [14] });
+    expect(stripMessageRefs("The plan per #14's note works.").text).toBe('The plan per the note works.');
+    // A bracket with a real number in it is not a citation.
+    expect(stripMessageRefs('Check in at reception (Room #12).')).toEqual({ text: 'Check in at reception (Room #12).', refs: [] });
+  });
+
   it('keeps every "#" that is not a message number, and leaves text with no numbers exactly as it was', () => {
     for (const t of [
       'Your flight leaves from Gate #4.',
@@ -73,11 +100,17 @@ describe("Go's ids never reach people", () => {
   });
 
   it('takes out every kind: card, vote, turn, results, task, conversation and message ids, a field name, a bare ULID', () => {
-    expect(stripIds('Vote is up on c_vote_turn_t_35e02e110dfa4980_1.')).toBe('Vote is up on.');
+    expect(stripIds('Vote is up on c_vote_turn_t_35e02e110dfa4980_1.')).toBe('Vote is up.');
     expect(stripIds('From results_id r_fr3169bwfa43r3s31806: three villas.')).toBe('From: three villas.');
     expect(stripIds('Job gt_8k2m4q is on it, turn turn_01M4AKVFEWCWYK4RFMB0MP8R97.')).toBe('Job is on it, turn.');
-    expect(stripIds('The call (conv_7f3a9c21) ended; see msg_01J9ZQ4 and task_42.')).toBe('The call ended; see and.');
-    expect(stripIds('Saved as 01M4AKVFEWCWYK4RFMB0MP8R97 for you [m_57].')).toBe('Saved as for you.');
+    expect(stripIds('The call (conv_7f3a9c21) ended; see msg_01J9ZQ4 and task_42.')).toBe('The call ended.');
+    expect(stripIds('Saved for you as 01M4AKVFEWCWYK4RFMB0MP8R97 [m_57].')).toBe('Saved for you.');
+  });
+
+  it('drops a bracket with an id in it whole, makes an id\'s possessive "the", and takes a word left pointing at nothing', () => {
+    expect(stripIds('The vote on the villas (card c_opt_turn_A_1) is up.')).toBe('The vote on the villas is up.');
+    expect(stripIds("Here: c_opt_turn_A_1's options are up.")).toBe('Here: the options are up.');
+    expect(stripIds('Vote is up on c_vote_turn_A_1 and c_vote_turn_A_2, tap your pick.')).toBe('Vote is up, tap your pick.');
   });
 
   it("leaves people's words alone: links, emails, files, flight numbers, prices, times, room numbers", () => {
