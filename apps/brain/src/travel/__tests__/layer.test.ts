@@ -190,14 +190,17 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     return { b, calls };
   }
 
-  it("searches in the trip's own browser: the trip goes with the search, each trip keeps its own results, and nothing is simulated", async () => {
+  it("searches in the trip's own browser: the trip goes with every search (ixigo_web keeps its own), and nothing is simulated", async () => {
     const ixigoWeb = web();
     const { switches, layer, fake } = setup(true, { ixigoWeb: ixigoWeb.b });
     await switches.set('TRAVEL_MODE', 'ixigo_web');
     const found = await layer.search('flights', Q, { tripId: 't_goa' });
-    await layer.search('flights', { ...Q, departAfter: '04:00' }, { tripId: 't_goa' });
+    const late = await layer.search('flights', { ...Q, departAfter: '06:00' }, { tripId: 't_goa' });
     await layer.search('flights', Q, { tripId: 't_other' });
-    expect(ixigoWeb.calls).toEqual([{ kind: 'flights', tripId: 't_goa' }, { kind: 'flights', tripId: 't_other' }]);
+    expect(ixigoWeb.calls).toEqual([{ kind: 'flights', tripId: 't_goa' }, { kind: 'flights', tripId: 't_goa' }, { kind: 'flights', tripId: 't_other' }]);
+    // The constraints still apply in code to what came back.
+    expect(late.results).toEqual([]);
+    expect(late.found).toBe(1);
     expect(found.results[0]).not.toHaveProperty('offerId');
     expect(found.results[0]!.sourceUrl).toBe(PAGE);
     expect(layer.simulated?.()).toBe(false);

@@ -1,6 +1,7 @@
 /**
  * brain.travel. Picks the backend on every call from the TRAVEL_MODE switch (the fake when the one it names is not set
- * up), caches each search for three minutes with the time it was checked, applies constraints in code on every call,
+ * up), caches each search for three minutes with the time it was checked (ixigo_web keeps its own, for ten minutes, by
+ * recipe and slots), applies constraints in code on every call,
  * and routes a hold or a confirm to the backend that made the offer. A search or a hold for a check-in or departure
  * before today in the trip's time zone is refused before any backend sees it, with the date to use instead.
  * ixigo_web searches ixigo.com itself, in the trip's browser: its options are link only, and status comes from ixigo's
@@ -52,6 +53,22 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
   const ttl = d.cacheMs ?? SEARCH_CACHE_MS;
   const today = d.today ?? (async () => localDay(d.now(), DEFAULT_TRIP_TZ));
   const cache = new Map<string, { at: number; value: TravelSearch }>();
+  /** A search kept for three minutes. ixigo_web keeps its own (by recipe and slots, ten minutes) and shares one in flight. */
+  const kept = async (key: string, search: () => Promise<TravelSearch>): Promise<TravelSearch> => {
+    const nowMs = d.now().getTime();
+    let hit = cache.get(key);
+    if (!hit || nowMs - hit.at > ttl) {
+      hit = { at: nowMs, value: await search() };
+      cache.delete(key);
+      cache.set(key, hit);
+      while (cache.size > CACHE_MAX) {
+        const oldest = cache.keys().next().value;
+        if (oldest === undefined) break;
+        cache.delete(oldest);
+      }
+    }
+    return hit.value;
+  };
   const pick = (): { name: 'fake' | 'ixigo' | 'ixigo_web'; b: TravelBackend } => {
     const mode = d.switches.get('TRAVEL_MODE');
     if (mode === 'ixigo_web' && d.ixigoWeb) return { name: 'ixigo_web', b: d.ixigoWeb };
@@ -77,24 +94,11 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       }
       const { name, b } = pick();
       const base = backendQuery(parsed);
-      // ixigo_web reads the page in the trip's own browser, for the trip's head count: its results are the trip's.
-      const key = `${name}|${name === 'ixigo_web' ? (o?.tripId ?? '') : ''}|${kind}|${keyOf(base)}`;
-      const nowMs = d.now().getTime();
-      let hit = cache.get(key);
-      if (!hit || nowMs - hit.at > ttl) {
-        hit = { at: nowMs, value: await b.search(kind, base, o) };
-        cache.delete(key);
-        cache.set(key, hit);
-        while (cache.size > CACHE_MAX) {
-          const oldest = cache.keys().next().value;
-          if (oldest === undefined) break;
-          cache.delete(oldest);
-        }
-      }
-      const all = hit.value.results;
+      const found = name === 'ixigo_web' ? await b.search(kind, base, o) : await kept(`${name}|${kind}|${keyOf(base)}`, () => b.search(kind, base, o));
+      const all = found.results;
       const results = applyConstraints(kind, parsed, all);
       const near = results.length === 0 ? closest(kind, parsed, all) : null;
-      return { checkedAt: hit.value.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}) };
+      return { checkedAt: found.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}) };
     },
     async status(q) {
       const { name, b } = pick();

@@ -1,6 +1,6 @@
 # ixigo recipes: Go searches ixigo.com in the trip's browser
 
-Design for Friday. Built so far: the recipes (section 1), the runners (section 2) and the travel layer with the "See on ixigo" card (section 3).
+Design for Friday. Built so far: the recipes (section 1), the runners (section 2), the travel layer with the "See on ixigo" card (section 3), and the early start and the 10-minute cache (section 4a and 4c).
 
 "@Go flights Delhi to Goa Friday" should get "Go is typing..." at once and an options card from ixigo.com in under 5 seconds. Each option opens on ixigo.com; booking stays there.
 
@@ -115,17 +115,17 @@ The search tool already turns each of these into a plain line.
 **(a) Start on intake.**
 - A travel message hook runs after the reflex on every person's message that names Go, or that Jev reads as for Go.
 - A cheap parser, regexes and the place tables in English and Hinglish, looks for a kind and its slots. "flights Delhi to Goa Friday" gives flights, DEL, GOI, the next Friday, and the trip's head count as adults.
-- When the slots are complete, the hook calls `travel.prefetch(kind, query, { tripId })` without waiting for it. The fetch starts about 0.2 s after the message lands.
-- The search tool later calls `travel.search` with the same normalized query and gets the same in-flight promise.
-- The parser's slots and the tool's arguments go through one function, `recipe.slotsFrom`, so they make the same key.
-- A complete search ask also skips the 2 s wait for more lines. This needs a small change to P1's intake: a hook can answer `due: 'now'`. A follow-up line ("after 6 pm") still joins the turn through its arrived-meanwhile round, and the time filter is applied to the same captured list.
+- When the slots are complete, the hook calls `travel.search(kind, query, { tripId })` without waiting for it (`travel/recipes/early.ts`, the parser in `ask.ts`). The fetch starts about 0.2 s after the message lands. It runs only under `ixigo_web`.
+- The search tool later calls `travel.search` with its own arguments and gets the same in-flight search.
+- The parser's query and the tool's arguments go through one function, `recipe.slotsFrom`, so "Delhi" and "DEL" make the same key.
+- A complete search ask also skips the 2 s wait for more lines: a hook can answer `{ dueNow: true }` (P1's `trips/hooks.ts` and `intake.ts`). A follow-up line ("after 6 pm") still joins the turn through its arrived-meanwhile round, and the time filter is applied to the same captured list.
 
 **(b) Warm the box when travel talk starts.**
 - A sleeping box takes about 5.5 s to wake, and goes back to sleep about 7 s after a warm.
 - Go warms it on the first line of travel talk: any travel word with a place or a date, to Go or not. It warms again every 5 s while travel talk goes on, for at most 2 minutes after the last such line, inside Go's warm limit (`WARM_LIMIT` 8 per org).
 - Section 8 asks Bash for a warm with a duration instead.
 
-**(c) Reuse results for 10 minutes**, keyed by recipe and normalized slots. The in-flight promise is shared, so two people asking the same thing at once cause one page load.
+**(c) Reuse results for 10 minutes**, keyed by recipe and normalized slots, in the ixigo_web backend; the layer's own three-minute cache stays for the other backends. The in-flight promise is shared, so two people asking the same thing at once cause one page load. A failed search is not kept.
 
 **(d) One model call per search ask.**
 - When the turn was woken by a message the parser recognized, it waits up to 4 s for that search before building its prompt.

@@ -72,7 +72,15 @@ describe('MessageHooks', () => {
     hooks.onRead(async (m, read) => {
       seen.push(`${m.message_id}:${String(read.forGo.sure)}`);
     });
-    await hooks.run(msg(5, 'p_priya', "I'm veg btw"), UNSURE_READ, { trip: goaSnapshot(), messages: [], seq: 5 });
+    expect(await hooks.run(msg(5, 'p_priya', "I'm veg btw"), UNSURE_READ, { trip: goaSnapshot(), messages: [], seq: 5 })).toEqual({ dueNow: false });
     expect(seen).toEqual(['m_5:false']);
+  });
+
+  it('says the message is due now when any hook says so', async () => {
+    const hooks = createMessageHooks(silentLog);
+    hooks.onRead(async () => undefined);
+    hooks.onRead(async () => ({ dueNow: true }));
+    hooks.onRead(async () => ({}));
+    expect(await hooks.run(msg(6, 'p_rahul', '@Go flights Delhi to Goa Friday'), UNSURE_READ, { trip: goaSnapshot(), messages: [], seq: 6 })).toEqual({ dueNow: true });
   });
 });
