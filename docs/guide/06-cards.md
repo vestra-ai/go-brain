@@ -143,7 +143,7 @@ Here Go finished its search for villas, so it replaces the working card from [Wo
 
 ## Images
 
-Every image on a card (`image_url`, `logo_url`, `screenshot_url` and a place's `photo_url`) is an `https` URL served from Go's image cache, such as `https://brain.go.example/img/villa-sol.jpg`. An image URL never changes what it shows, so the app can cache it for the life of the trip. A new screenshot of Go's work always has a new URL.
+Every image on a card (`image_url`, `logo_url`, `screenshot_url` and a place's `photo_url`) is an `https` URL served from Go's image cache, such as `https://brain.go.example/img/villa-sol.jpg`. An image URL never changes what it shows, so the app can cache it for the life of the trip. A new screenshot of Go's work always has a new URL, and the one it replaced may stop loading, so show only the newest.
 
 People's photos are not on cards. They come from the server, on each person (`https://cdn.go.example/people/p_rahul.jpg`).
 
@@ -439,6 +439,7 @@ Draw it like this:
 - The title, and the state: `running` as "Working on it" with a spinner, `needs_you` highlighted as "Needs you", `done` with a tick, and `failed` as "Didn't work".
 - The steps as a checklist, each marked `todo`, `doing` (with a spinner), `done` (a tick) or `failed`.
 - The latest picture of Go's screen (`screenshot_url`) as a small browser window, when there is one. When the card has a `page_url`, show that page's address in the window's address bar. Go sends one only for a search, results or details page, never for a booking, traveller or payment page.
+- While the card is `running`, the step in hand (the one `doing`) as the window's status line, such as "Picking flights: leaving after 6:00 pm".
 - "Updated 20 s ago", from `updated_at`.
 
 When the job needs someone (for example, a one-time code), Go sets `needs_you` and names that person in `for_person_ids`, which pins the card in their strip.

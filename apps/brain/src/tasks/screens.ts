@@ -8,7 +8,8 @@
  * changed pictures in a stretch of jobs, it is read every 7 s. Never while someone is signing in (needs you), never
  * twice at once for a trip, and never after the jobs end. A screenshot spends no credits, but each is one of /v1's 60
  * requests a minute per key: all trips together take at most half of that (`perMinute`), so the jobs' own calls and
- * the browser fetch keep the rest, and a tick over the budget is skipped.
+ * the browser fetch keep the rest, and a tick over the budget is skipped. A picture is kept only while a card shows it:
+ * the one a new picture replaces is dropped from Go's image cache.
  */
 import { createHash } from 'node:crypto';
 import { clip } from '../travel/cards.js';
@@ -20,7 +21,7 @@ import { V1Error, type V1Client } from './v1-client.js';
 export interface ScreensDeps {
   v1: V1Client;
   store: TaskStore;
-  images: Pick<Images, 'putBytes'>;
+  images: Pick<Images, 'putBytes' | 'forget'>;
   tasks: Pick<TasksService, 'pushCard'>;
   userIdFor: (tripId: string) => string;
   now: () => Date;
@@ -129,6 +130,10 @@ export function createScreens(d: ScreensDeps): Screens {
           if (r.screenshotUrl === url) continue;
           await d.store.update(r.id, { screenshotUrl: url });
           await d.tasks.pushCard({ ...r, screenshotUrl: url }, false, { frame: true });
+        }
+        // The picture a card showed before is superseded: dropped once no job's card shows it.
+        for (const old of new Set(rows.map((r) => r.screenshotUrl))) {
+          if (old && old !== url && !(await d.store.showsScreenshot(old))) await d.images.forget(old);
         }
       }
     } catch (err) {

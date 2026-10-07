@@ -73,6 +73,7 @@ describe("the trip's screen on the card", () => {
           await gate;
           return images.putBytes(bytes, mime);
         },
+        forget: (url) => images.forget(url),
       },
     });
     h.fake.screen = Buffer.from([0xff, 0xd8, 0xff, 9]);
@@ -145,6 +146,30 @@ describe("the trip's screen on the card", () => {
       expect(await tickAfter(s, 't_live_pace', 7_000)).toBe(true);
       expect(h.lb.link.card(row.cardId)?.screenshot_url).not.toBe(shown);
       expect(await tickAfter(s, 't_live_pace', 1_000)).toBe(true);
+      h.fake.screen = null;
+    });
+
+    it("drops the picture a new one replaced, but keeps one another job's card still shows", async () => {
+      const s = own();
+      const a = await h.runningJob('prune_a', 't_prune_a');
+      await h.runningJob('prune_b', 't_prune_b');
+      const stored = async (url: string): Promise<boolean> => {
+        const id = url.split('/img/')[1]!.split('.')[0];
+        return ((await h.pool.query('select 1 from go_images where id = $1', [id])).rowCount ?? 0) > 0;
+      };
+      h.fake.screen = Buffer.from([0xff, 0xd8, 0xff, 0x61]);
+      await tickAfter(s, 't_prune_a', 0);
+      await tickAfter(s, 't_prune_b', 0);
+      const first = (await h.store.get(a.row.id))!.screenshotUrl!;
+      h.fake.screen = Buffer.from([0xff, 0xd8, 0xff, 0x62]);
+      expect(await tickAfter(s, 't_prune_a', 1_000)).toBe(true);
+      const second = (await h.store.get(a.row.id))!.screenshotUrl!;
+      expect(second).not.toBe(first);
+      // The other trip's card still shows the first picture.
+      expect(await stored(first)).toBe(true);
+      expect(await tickAfter(s, 't_prune_b', 0)).toBe(true);
+      expect(await stored(first)).toBe(false);
+      expect(await stored(second)).toBe(true);
       h.fake.screen = null;
     });
 
