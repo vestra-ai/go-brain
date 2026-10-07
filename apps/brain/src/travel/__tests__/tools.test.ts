@@ -237,6 +237,26 @@ describe('put_to_vote', () => {
     expect((ctx.cards[0] as { fallback_text: string }).fallback_text).toMatch(/^Vote: Where do we stay\?/);
   });
 
+  it("never asks \"which villa\" of ixigo.com's hotels: the kind of place becomes \"stay\", unless every option is one (re-drill 7)", async () => {
+    const stay = (title: string) => ({
+      kind: 'stay' as const, title, priceMinor: 900_000, currency: 'INR', priceNote: 'per night, per room', highlights: ['Pool'], facts: { pool: true },
+      sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
+    });
+    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
+    const asked = async (names: string[], question: string, turn: string) => {
+      const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query, options: names.map(stay), checkedAt: '2026-10-07T12:00:00.000Z' });
+      const show = lb.ctx({ turnId: `${turn}a` });
+      const shown = (await lb.tools.run('show_options', { line: 'Here they are.', results_id: set.resultsId, title: 'Pool stays in North Goa, 6 to 9 Nov' }, show)) as any;
+      await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id, question }, lb.ctx({ turnId: `${turn}b` }));
+      return lb.link.sent('open_vote').at(-1)!.question;
+    };
+    expect(await asked(['Meritas Auberge Calangute Goa', '3102bce - A Vedic Resort', 'Villa Mandrem'], 'Which pool villa for 6 to 9 Nov?', 'turn_q1')).toBe('Which pool stay for 6 to 9 Nov?');
+    expect(await asked(['Meritas Auberge Calangute Goa', 'De Mandarin Hotel'], 'Villas: which one?', 'turn_q2')).toBe('Stays: which one?');
+    // Every option a villa by its name, or a question that names no kind of place: asked as it is.
+    expect(await asked(['Villa Mandrem', 'The Palms Villa'], 'Which pool villa for 6 to 9 Nov?', 'turn_q3')).toBe('Which pool villa for 6 to 9 Nov?');
+    expect(await asked(['Meritas Auberge Calangute Goa', 'De Mandarin Hotel'], 'Which one for 6 to 9 Nov?', 'turn_q4')).toBe('Which one for 6 to 9 Nov?');
+  });
+
   it('asks for a secret ballot when the model sets anonymous', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_anon1' }))) as any;
     const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_anon2' }))) as any;

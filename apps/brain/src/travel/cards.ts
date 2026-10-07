@@ -36,6 +36,16 @@ export function buildFlightsLinkCard(i: { cardId: string; title: string; url: st
   });
 }
 
+/** The kinds of place a stays title or vote can name. ixigo.com's results carry no kind, so a name has to say it. */
+const PLACE_KINDS = /\b(villa|resort|hotel|homestay|apartment|cottage)s?\b/i;
+
+/** The kind of place the words name ("Pool villas", "Which villa?") when not every option's own name says it; else null. */
+export function placeKindNotAll(words: string, names: string[]): string | null {
+  const kind = PLACE_KINDS.exec(words)?.[1]?.toLowerCase();
+  if (!kind) return null;
+  return names.every((n) => new RegExp(`\\b${kind}`, 'i').test(n)) ? null : kind;
+}
+
 /** The option's own https page on ixigo.com, or null: the only pages "See on ixigo" opens. */
 export function ixigoPage(sourceUrl: string | null | undefined): string | null {
   if (!sourceUrl) return null;
