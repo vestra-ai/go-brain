@@ -6,6 +6,7 @@
 import type { RegisterLane } from '../app.js';
 import { loadBook } from './book/book.js';
 import { createEngine } from './book/engine.js';
+import { ixigoTool } from './book/tool.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
@@ -79,6 +80,9 @@ export const registerTravel: RegisterLane = async (brain) => {
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
   });
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm })) brain.tools.register(t);
+  // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
+  const ixigo = ixigoTool({ book, engine, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
+  if (ixigo) brain.tools.register(ixigo);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,

@@ -1,11 +1,13 @@
 /**
  * A recipe's answer from what its page sent: the rows (read.rows, from one captured call), the other calls it reads
- * (read.also, bound by name), and each row as an option (answer.each). Every option is checked: one that doesn't check out
- * is dropped, never half read, and a page where nothing reads is refused.
+ * (read.also, bound by name), and each row as an option or a row of facts (answer.each). Every option is checked: one
+ * that doesn't check out is dropped, never half read, and a page where nothing reads is refused. The page's own
+ * credentials in a body are dropped before anything reads it (bodies.ts).
  */
 import { z } from 'zod';
 import { TravelError } from '../mcp-travel.js';
 import { bodiesFor, type Capture, type RecipeOption } from '../recipes/recipe.js';
+import { readBodyAs, type BodyFormat } from './bodies.js';
 import { evaluate } from './expr.js';
 import type { RecipeFile } from './format.js';
 
@@ -46,18 +48,72 @@ function withoutNulls(v: unknown): unknown {
 }
 
 /** One response body a recipe reads, by its capture's match. */
-function body(captures: Capture[], match: string, required: boolean, what: string): unknown {
+function body(captures: Capture[], match: string, format: BodyFormat, required: boolean, what: string): unknown {
   const raw = bodiesFor(captures, match);
   if (raw.length === 0) {
     if (required) throw new TravelError('refused', `ixigo's page did not send ${what}.`);
     return undefined;
   }
-  try {
-    // A call that came back more than once (pages 1 and 2) reads as the list of its bodies.
-    return raw.length === 1 ? JSON.parse(raw[0]!) : raw.map((b) => JSON.parse(b));
-  } catch {
-    throw new TravelError('refused', `ixigo answered ${what} in a shape Go does not read.`);
+  // A call that came back more than once (pages 1 and 2) reads as the list of its bodies.
+  return raw.length === 1 ? readBodyAs(raw[0]!, format, what) : raw.map((b) => readBodyAs(b, format, what));
+}
+
+/** The rows a recipe's page holds, and what its answer reads besides them. */
+async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<string, unknown>): Promise<unknown[]> {
+  const read = recipe.read!;
+  const what = recipe.title.toLowerCase();
+  const rowsBody = body(captures, read.rows.from, read.rows.format, true, what);
+  for (const [name, also] of Object.entries(read.also ?? {})) {
+    const b = body(captures, also.from, also.format, false, name);
+    bindings[name] = b === undefined ? undefined : await evaluate(also.value, b, bindings);
   }
+  const listed = await evaluate(read.rows.list, rowsBody, bindings);
+  let rows: unknown[] = Array.isArray(listed) ? listed : listed === undefined ? [] : [listed];
+  if (read.rows.unique) {
+    const seen = new Set<string>();
+    const kept: unknown[] = [];
+    for (const row of rows) {
+      const key = JSON.stringify(await evaluate(read.rows.unique, row, bindings) ?? null);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      kept.push(row);
+    }
+    rows = kept;
+  }
+  return rows;
+}
+
+/** A row of facts as Go may say it: plain values, short text, short lists, nothing else. */
+function plainFacts(v: unknown, depth = 0): unknown {
+  if (typeof v === 'string') return v.length > 300 ? `${v.slice(0, 300)}…` : v;
+  if (typeof v === 'number' || typeof v === 'boolean') return v;
+  if (Array.isArray(v) && depth < 2) return v.slice(0, 40).map((x) => plainFacts(x, depth + 1)).filter((x) => x !== undefined);
+  if (v && typeof v === 'object' && depth < 2) {
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plainFacts(x, depth + 1)]).filter(([, x]) => x !== undefined));
+  }
+  return undefined;
+}
+
+/** The facts a page holds, as the recipe reads them: at most the recipe's max rows. */
+export async function readFacts(recipe: RecipeFile, captures: Capture[], inputs: Record<string, unknown>, page: string, extra: Record<string, unknown> = {}): Promise<Array<Record<string, unknown>>> {
+  if (!recipe.read || recipe.answer.as !== 'facts') throw new Error(`${recipe.id} has no facts to read`);
+  const bindings: Record<string, unknown> = { ...extra, inputs, page };
+  const rows = await rowsOf(recipe, captures, bindings);
+  const out: Array<Record<string, unknown>> = [];
+  for (const row of rows) {
+    if (out.length >= recipe.answer.max) break;
+    let made: unknown;
+    try {
+      made = await evaluate(recipe.answer.each, row, bindings);
+    } catch (err) {
+      if (err instanceof TravelError) throw err;
+      continue;
+    }
+    const plain = plainFacts(withoutNulls(made));
+    if (plain && typeof plain === 'object' && !Array.isArray(plain) && Object.keys(plain).length > 0) out.push(plain as Record<string, unknown>);
+  }
+  if (rows.length > 0 && out.length === 0) throw new TravelError('refused', `ixigo answered ${recipe.title.toLowerCase()} in a shape Go does not read.`);
+  return out;
 }
 
 /**
@@ -73,25 +129,8 @@ export async function readOptions(
 ): Promise<RecipeOption[]> {
   if (!recipe.read || recipe.answer.as !== 'options') throw new Error(`${recipe.id} has no options to read`);
   const what = recipe.title.toLowerCase();
-  const rowsBody = body(captures, recipe.read.rows.from, true, what);
   const bindings: Record<string, unknown> = { ...extra, inputs, page };
-  for (const [name, also] of Object.entries(recipe.read.also ?? {})) {
-    const b = body(captures, also.from, false, name);
-    bindings[name] = b === undefined ? undefined : await evaluate(also.value, b, bindings);
-  }
-  const listed = await evaluate(recipe.read.rows.list, rowsBody, bindings);
-  let rows: unknown[] = Array.isArray(listed) ? listed : listed === undefined ? [] : [listed];
-  if (recipe.read.rows.unique) {
-    const seen = new Set<string>();
-    const kept: unknown[] = [];
-    for (const row of rows) {
-      const key = JSON.stringify(await evaluate(recipe.read.rows.unique, row, bindings) ?? null);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      kept.push(row);
-    }
-    rows = kept;
-  }
+  const rows = await rowsOf(recipe, captures, bindings);
   const out: RecipeOption[] = [];
   for (const row of rows) {
     let made: unknown;

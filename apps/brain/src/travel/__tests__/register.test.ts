@@ -36,9 +36,10 @@ describe('registerTravel', () => {
     expect(LANES.indexOf(registerTravel)).toBeLessThan(LANES.indexOf(registerProactive));
   });
 
-  it('sets brain.travel and registers the six travel tools, the three options taps, the tap wake and the image route', async () => {
+  it('sets brain.travel and registers the seven travel tools, the three options taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
-    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote']);
+    // The ixigo tool runs the book's other recipes (the destination guide and more).
+    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/open', 'options/pick', 'options/vote']);
     expect(lb.context.wakes.has('tap')).toBe(true);
     // A search that outlived its turn wakes Go with its options.

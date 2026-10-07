@@ -41,6 +41,17 @@ export function dateAs(date: string, form: DateForm): string {
 
 const escaped = (text: string): string => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
 
+/** Depth first, so a page's props are found in one pass, not one expression step a node. */
+function findWith(v: unknown, key: string, depth = 0): unknown {
+  if (depth > 64 || v === null || typeof v !== 'object') return undefined;
+  if (!Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, key)) return v;
+  for (const x of Array.isArray(v) ? v : Object.values(v)) {
+    const found = findWith(x, key, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 const nothing = (x: unknown): boolean => x === undefined || x === null || x === false || (typeof x === 'string' && x.trim().length === 0);
 
 const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
@@ -98,6 +109,8 @@ const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
         .toString()
         .replace(/\+/g, '%20'),
   },
+  /** The first object, at any depth, that has the key: the props a page's flight payload carries, wherever they sit. */
+  find: { fn: (v: unknown, key: string) => findWith(v, key) },
   /** Rupees as people write them in India: "₹1,44,653". */
   rupees: { fn: (n: number) => `₹${n.toLocaleString('en-IN')}` },
   /** "2026-11-06" as "06112026", "06-11-2026", "6 November 2026" or "6 Nov". */

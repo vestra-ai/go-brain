@@ -38,6 +38,7 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
     if (a.keep) out.push(['answer.keep', a.keep]);
   } else if (a.as === 'facts') {
     out.push(['answer.each', a.each]);
+    templates.push(['answer.title', a.title]);
   } else if (a.as === 'link') {
     templates.push(['answer.title', a.title]);
     if (a.who) out.push(['answer.who', a.who]);

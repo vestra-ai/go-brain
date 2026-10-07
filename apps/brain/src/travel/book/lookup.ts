@@ -5,6 +5,7 @@
  */
 import { norm } from '../recipes/places.js';
 import type { Capture, CaptureSpec, Step } from '../recipes/recipe.js';
+import { readBodyAs } from './bodies.js';
 import { evaluate } from './expr.js';
 import type { RecipeFile } from './format.js';
 import { fill } from './template.js';
@@ -70,7 +71,7 @@ export async function readSuggestions(r: RecipeFile, captures: Capture[], words:
   if (!call) return [];
   let body: unknown;
   try {
-    body = JSON.parse(call.body);
+    body = readBodyAs(call.body, 'json', 'its suggestions');
   } catch {
     return [];
   }
