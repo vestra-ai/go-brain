@@ -31,7 +31,7 @@ describe('the recipe book', () => {
     expect(problems).toEqual([]);
     expect(book.all().map((r) => r.id).sort()).toEqual([
       'buses.between', 'buses.city_lookup', 'flights.airport_lookup', 'flights.search',
-      'hotels.place_lookup', 'hotels.search', 'trains.between', 'trains.station_lookup',
+      'hotels.place_lookup', 'hotels.search', 'plan.destination', 'trains.between', 'trains.station_lookup',
     ]);
   });
 });
