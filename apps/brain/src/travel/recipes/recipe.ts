@@ -31,8 +31,16 @@ export interface Capture {
   at_ms: number;
 }
 
-/** Page controls the browser fetch works through the accessibility tree. */
-export type Step = { op: 'click'; role?: string; name?: string; text?: string } | { op: 'scroll'; times: number } | { op: 'wait_for'; match: string };
+/**
+ * Page controls the browser fetch works through the accessibility tree. optional: a control that may not be there (a
+ * popup shown once a day), skipped instead of failing. type: into the box with that role and name, or, with neither,
+ * into the box that has the focus (ixigo's flight From box opens unnamed and focused).
+ */
+export type Step =
+  | { op: 'click'; role?: string; name?: string; text?: string; optional?: boolean }
+  | { op: 'type'; role?: string; name?: string; text: string; submit?: boolean; optional?: boolean }
+  | { op: 'scroll'; times: number }
+  | { op: 'wait_for'; match: string };
 
 /** What the browser fetch keeps and does, and how long it may take when that is less than Bash's most. */
 export interface FetchPlan { capture: CaptureSpec[]; steps?: Step[]; timeoutMs?: number }
