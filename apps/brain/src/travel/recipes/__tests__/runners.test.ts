@@ -46,10 +46,12 @@ describe('the browser fetch runner', () => {
     expect(w.calls).toEqual([{
       method: 'POST',
       path: '/v1/users/u-t1/browser/fetch',
-      opts: { body: { url: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS } },
+      opts: { body: { url: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS, frames: {} } },
     }]);
     expect(r.options).toHaveLength(71);
     expect(r).toMatchObject({ checkedAt: '2026-11-01T10:00:00.000Z', ms: 0 });
+    // Bash's most, for a sleeping box; it answers as soon as the captures are in.
+    expect(FETCH_TIMEOUT_MS).toBe(20_000);
   });
 
   it("sends a capture's size limit, and never Go's own required flag", async () => {

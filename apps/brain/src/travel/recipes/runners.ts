@@ -39,8 +39,11 @@ export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of cre
 
 // ── the browser fetch ────────────────────────────────────────────────────────
 
-/** How long Bash may take, the box's wake included: a train search on a sleeping box took about 8 s on staging. */
-export const FETCH_TIMEOUT_MS = 12_000;
+/**
+ * How long Bash may take, the box's wake included: Bash's most. It answers as soon as the captures are in, so this only
+ * matters for a sleeping box, where a stays search ran past 13 s on staging.
+ */
+export const FETCH_TIMEOUT_MS = 20_000;
 /** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
 export const IN_USE_WAIT_MS = 4_000;
 
@@ -82,6 +85,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         capture: recipe.capture.map((c) => ({ match: c.match, ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
         ...(recipe.steps ? { steps: recipe.steps } : {}),
         timeout_ms: FETCH_TIMEOUT_MS,
+        // Pictures of the page as it loads, about one every 700 ms, for the live search card.
+        frames: {},
       };
       const fetchCaptures = async (): Promise<Capture[]> => {
         let userId = d.computer.userIdFor(tripId);

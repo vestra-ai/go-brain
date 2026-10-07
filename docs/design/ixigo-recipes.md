@@ -66,7 +66,7 @@ interface RecipeRunner {
 
 ```
 POST /v1/users/{v1UserIdFor(tripId)}/browser/fetch
-{ url: recipe.url(slots), capture: [{ match, max_bytes? }], steps: recipe.steps, timeout_ms: 8000 }
+{ url: recipe.url(slots), capture: [{ match, max_bytes? }], steps: recipe.steps, timeout_ms: 20000, frames: {} }
 ```
 
 - It answers once every step is done and every capture has matched a finished response: `{ final_url, elapsed_ms, woke, captures: [{ match, url, status, content_type, body, truncated, at_ms }] }`.
@@ -99,11 +99,11 @@ The search tool already turns each of these into a plain line.
 
 **One setting switches them.** That's an admin switch `TRAVEL_RUNNER` (`agent_job` | `browser_fetch`), read on every search like `TRAVEL_MODE`. It defaults to `agent_job` until Bash's call is live on staging. A recipe whose list loads only in a drawn tab (`fetchable: false`: buses) always runs on the agent job.
 
-**Waiting.** A search may hold up the turn for `TRAVEL_WAIT_MS` (12 s) from its start, and only through the browser fetch (a train search on a sleeping box took about 8 s); the search tools may take 14 s in the composer's loop. Past that, and always for the agent job, the tool answers that the search is running, and the live card covers the wait. When the run finishes, Go saves its options and wakes on a `search` desk item to show them (`travel/search-wake.ts`). Searches that shared a run wake Go once.
+**Waiting.** Bash may take 20 s, its most (it answers as soon as the captures are in; a stays search on a sleeping box ran past 13 s). A search may hold up the turn for `TRAVEL_WAIT_MS` (12 s) from its start, and only through the browser fetch; the search tools may take 14 s in the composer's loop. Past that, and always for the agent job, the tool answers that the search is running, and the live card covers the wait. When the run finishes, Go saves its options and wakes on a `search` desk item to show them (`travel/search-wake.ts`). Searches that shared a run wake Go once.
 
 **Flights as a link, for now.** ixigo answers the boxes' shared egress with "No flights found", then a 403 on the flight data call. Under `ixigo_web`, flights load nothing (`LINK_ONLY_KINDS` in `backend.ts`): `search_flights` posts a notice card linking to ixigo's results page with what people asked for set in ixigo's own params (`stops=0`, the `takeOff` and `landing` windows, `price=0,{cap}`, from p1-b's flights map), and a "See flights on ixigo" button. It never says there are no flights. The early start skips the search for them and the turn still starts at once.
 
-**The live card.** On a cache miss, the backend starts p1-b's live search card ("On it." with its steps), passes the run's `onProgress` to the runner, and marks the card done (`finish`) before the search answers, so it is done before the options card. A joined search shares the card.
+**The live card.** On a cache miss, the backend starts p1-b's live search card ("On it." with its steps), passes the run's `onProgress` to the runner (with Bash's frames, about one every 700 ms), and marks the card done (`finish`) before the search answers, so it is done before the options card. A joined search shares the card. A run that fails leaves its card open for `RETRY_GRACE_MS` (20 s): a retry of the same search in the same trip (usually the composer's own call after a failed early start) carries on in it. So the room sees one card per search, ending done or failed once, never a failed card followed by a second "On it.".
 
 ## 3. The travel layer
 
@@ -130,8 +130,8 @@ The search tool already turns each of these into a plain line.
 
 **(b) Warm the box when travel talk starts.**
 - A sleeping box takes about 5.5 s to wake, and goes back to sleep about 7 s after a warm.
-- Go warms it on the first line of travel talk: any travel word with a place or a date, to Go or not (`travelTalk` in `ask.ts`). That one warm asks Bash to hold the box awake for 2 minutes once it is up (`keep_ms: 120000`, Bash #4574).
-- A travel line that comes when the hold has under 20 s left extends it with one more warm (`tasks/keep-warm.ts`): about one call per 100 s per trip, inside /v1's rate. Each counts as one wake toward `WARM_LIMIT`; a hold is never skipped by Go's 60 s repeat check.
+- Go warms it on any line in the trip, from anyone, to Go or not, so the box is up before the first search. That one warm asks Bash to hold the box awake for 2 minutes once it is up (`keep_ms: 120000`, Bash #4574).
+- A line that comes when the hold has under 20 s left extends it with one more warm (`tasks/keep-warm.ts`): about one call per 100 s per trip, inside /v1's rate. Each counts as one wake toward `WARM_LIMIT`; a hold is never skipped by Go's 60 s repeat check.
 
 **(c) Reuse results for 10 minutes**, keyed by recipe and normalized slots, in the ixigo_web backend; the layer's own three-minute cache stays for the other backends. The in-flight promise is shared, so two people asking the same thing at once cause one page load. A failed search is not kept.
 

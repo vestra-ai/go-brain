@@ -104,6 +104,8 @@ describe('the search wake line', () => {
     expect(line).toContain('finished with 3 options (results_id "r_1")');
     expect(line).toContain('show_options');
     expect(line).toContain("don't say so again");
+    // A continuation of the search, not a second "on it".
+    expect(line).toContain('"Here are 3 villas in Vagator…", not a new start');
     expect(line).toContain('<data>3 buses: ₹1,500 to ₹5,000</data>');
   });
 
