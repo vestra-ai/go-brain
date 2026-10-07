@@ -9,7 +9,7 @@ import { TravelError } from '../mcp-travel.js';
 import type { TravelKind } from '../travel.js';
 
 /** "  North Goa (GOX) " as "north goa (gox)": lower case, single spaces. */
-const norm = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ');
+export const norm = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ');
 
 /** A code people or the model wrote in brackets, "Goa (GOX)", or the whole text when it is a code. */
 function codeIn(text: string): string | null {
@@ -168,6 +168,9 @@ const GOA_HALVES: Record<GoaHalf, string[]> = {
     'canacona', 'palolem', 'patnem', 'agonda', 'galgibaga', 'cola', 'quepem', 'carmona', 'fatona', 'south goa',
   ],
 };
+
+/** The places in each half of Goa, for a stays search inside one half (until areas come from ixigo's own filter). */
+export const goaHalves = (): Record<GoaHalf, string[]> => GOA_HALVES;
 
 /** The half of Goa a place is in, from its name; null when the name doesn't say. */
 export function goaHalfOf(text: string): GoaHalf | null {

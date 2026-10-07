@@ -1,0 +1,52 @@
+id: buses.between
+title: Buses between two cities on a date
+asks:
+  - buses from mumbai to goa on friday
+  - mumbai se goa bus kal raat
+  - any sleeper bus bangalore to hampi on the 20th
+inputs:
+  from: { kind: place, lookup: buses.city_lookup, about: the city or boarding point people leave from }
+  to: { kind: place, lookup: buses.city_lookup, about: the city or boarding point people go to }
+  date: { kind: date, about: the day the bus leaves }
+auth: none
+changes_state: false
+page: /buses/bus_search/{from.name}/{from.id}/{to.name}/{to.id}/{date|DD-MM-YYYY}/O
+# The page first loads /buslist/v3/services/meta/{n}: the "$" keeps the list itself. The list loads only in a drawn tab,
+# which Bash's browser fetch gives each fetch.
+capture:
+  - /buslist/v3/services$
+read:
+  rows: { from: /buslist/v3/services$, list: services }
+answer:
+  as: options
+  kind: bus
+  # A price is the lowest seat fare after the offer ixigo applies on its own ("₹3000, From ₹2700" is 2,700).
+  # arriveTimestamp is India's clock written as if it were UTC, so the arrival is the departure plus the journey time,
+  # and that clock only when the journey time is missing. ixigo has no page per bus: "Select Seats" opens on the results.
+  each: |
+    (
+      $mins := $minutes(timings.travelTime);
+      $arrive := $exists($mins) ? $istPlus(timings.startTimeDateFormat, $mins) : (timings.arriveTimestamp ? $istFromWallSeconds(timings.arriveTimestamp));
+      $operator := $trim(travelerAgentName);
+      $seats := seatStats.availableSeats;
+      $exists($arrive) ? {
+        "title": $operator,
+        "priceMinor": $paise(fares.offerPrice ? fares.offerPrice : fares.fare),
+        "currency": "INR",
+        "priceNote": "per seat, from",
+        "journey": {
+          "mode": "bus",
+          "origin": { "name": $inputs.from.name },
+          "destination": { "name": $inputs.to.name },
+          "depart_at": timings.startTimeDateFormat,
+          "arrive_at": $arrive,
+          "carrier_name": $substring($operator, 0, 60)
+        },
+        "rating": ($exists(rating) and ($exists(noOfRatings) ? noOfRatings : 1) > 0) ? rating,
+        "highlights": $highlights(busTypeName, $exists($mins) ? $hoursMinutes($mins), ($exists($seats) and $seats <= 5) ? $string($seats) & " seat" & ($seats = 1 ? "" : "s") & " left"),
+        "facts": { "bus_type": busTypeName, "seats_left": $seats, "duration_min": $mins, "reviews": noOfRatings },
+        "sourceUrl": $page
+      }
+    )
+measured: { fast_ms: null, page_ms: 2600, flow_ms: null }
+notes: The results list is AbhiBus's; one bus card holds its operator, type, times, lowest fare and seats left.

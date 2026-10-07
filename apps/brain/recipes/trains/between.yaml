@@ -1,0 +1,82 @@
+id: trains.between
+title: Trains between two stations on a date, with each class's fare and seats
+asks:
+  - trains from jaipur to udaipur on 23 oct
+  - jaipur se udaipur 23 ko kaun si train hai
+  - bangalore to chennai train 20 october
+  - kal delhi se jaipur train
+inputs:
+  from: { kind: place, lookup: trains.station_lookup, about: the station or city people board at }
+  to: { kind: place, lookup: trains.station_lookup, about: the station or city people get off at }
+  date: { kind: date, about: the day the train leaves the boarding station }
+auth: none
+changes_state: false
+# ixigo's train results page reads ixigo's own train service (on confirmtkt.com) since October: one call, every train,
+# with each class's fare, seats and ixigo's confirmation chance (p4's map).
+page: /trains/search-pwa/from/{from.code}/to/{to.code}/{date|DD-MM-YYYY}
+capture:
+  - ixigotrainsapi.confirmtkt.com/api/v1/trains/search
+read:
+  rows: { from: ixigotrainsapi.confirmtkt.com/api/v1/trains/search, list: data.trainList }
+answer:
+  as: options
+  kind: train
+  # One option per train and class, General quota. The seats are ixigo's cached figure ("2 hrs ago" on the page): the
+  # live one is trains.availability, before anyone books. Fares are per person.
+  each: |
+    (
+      $classWords := {
+        "1A": "AC First Class", "2A": "AC 2 Tier", "3A": "AC 3 Tier", "3E": "AC 3 Economy", "SL": "Sleeper", "CC": "AC Chair Car",
+        "2S": "Second Sitting", "EC": "Executive Chair Car", "EV": "Vistadome", "FC": "First Class"
+      };
+      $status := function($s) {(
+        $avl := $groups($s.availability, "^(?:AVAILABLE|AVL)[-\\s]*0*(\\d+)$", "i");
+        $avl ? "Available " & $avl[0] : $s.availabilityDisplayName ? $s.availabilityDisplayName : $substring($s.availability, 0, 30)
+      )};
+      $train := $;
+      $departAt := $istAt($inputs.date, departureTime);
+      $arriveAt := $istPlus($departAt, duration);
+      $name := $titleWords(trainName);
+      $tatkal := availabilityCacheTatkal;
+      $keys(availabilityCache).(
+        $c := $;
+        $gn := $lookup($train.availabilityCache, $c);
+        $tq := $lookup($tatkal, $c);
+        $fare := $num($gn.fare);
+        $chance := $contains($gn.prediction, "%") ? $gn.predictionPercentage;
+        ($fare > 0) ? {
+          "title": $name & " " & $train.trainNumber,
+          "priceMinor": $paise($fare),
+          "currency": "INR",
+          "priceNote": "per person, " & $c,
+          "journey": {
+            "mode": "train",
+            "origin": { "name": $substring($train.fromStnName ? $train.fromStnName : $train.fromStnCode, 0, 80), "code": $train.fromStnCode },
+            "destination": { "name": $substring($train.toStnName ? $train.toStnName : $train.toStnCode, 0, 80), "code": $train.toStnCode },
+            "depart_at": $departAt,
+            "arrive_at": $arriveAt,
+            "carrier_name": "Indian Railways",
+            "number": $train.trainNumber
+          },
+          "highlights": $highlights(
+            $lookup($classWords, $c) ? $lookup($classWords, $c) : $c,
+            $status($gn),
+            $chance ? $string($chance) & "% chance to confirm",
+            $tq.fare ? "Tatkal: " & $status($tq) & ", " & $rupees($num($tq.fare)) : ($train.duration > 0 ? $hoursMinutes($train.duration))
+          ),
+          "facts": {
+            "class_code": $c,
+            "availability": $status($gn),
+            "chance": $chance,
+            "tatkal_availability": $tq.fare ? $status($tq),
+            "tatkal_fare_minor": $num($tq.fare) ? $paise($num($tq.fare)),
+            "duration_min": $train.duration,
+            "rating": $train.trainRating
+          },
+          "sourceUrl": "https://www.ixigo.com/trains/" & $train.trainNumber & "?orgn=" & $train.fromStnCode & "&dstn=" & $train.toStnCode & "&departDate=" & $inputs.date & "&quota=GN"
+        }
+      )
+    )
+samples: { page: trains.between.page.json }
+measured: { fast_ms: 366, page_ms: 1605, flow_ms: 4069 }
+notes: Booking is a class tile, then IRCTC's login. ixigo's chance a waitlisted ticket confirms is its own ("38% Chance").

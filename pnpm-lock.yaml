@@ -27,6 +27,9 @@ importers:
       fastify:
         specifier: ^5.12.5
         version: 5.12.5
+      jsonata:
+        specifier: 2.2.2
+        version: 2.2.2
       pg:
         specifier: ^8.13.0
         version: 8.23.1
@@ -36,6 +39,9 @@ importers:
       ws:
         specifier: ^8.22.0
         version: 8.22.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
       zod:
         specifier: 4.3.6
         version: 4.3.6
@@ -1018,6 +1024,10 @@ packages:
 
   json-schema-typed@8.0.2:
     resolution: {integrity: sha512-fQhoXdcvc3V28x7C7BMs4P5+kNlgUURe2jmUT1T//oBRMDrqy1QPelJimwZGo7Hg9VPV3EQV5Bnq4hbFy2vetA==}
+
+  jsonata@2.2.2:
+    resolution: {integrity: sha512-XDFH2PuaAXv0AXJEWwElXbqADmKFGKMLMkFb+qOz0EhjQW2EIJ6pgtordLU+4u3IVERyBfqy6bi6kZKEncvRqA==}
+    engines: {node: '>= 8'}
 
   light-my-request@6.6.0:
     resolution: {integrity: sha512-CHYbu8RtboSIoVsHZ6Ye4cj4Aw/yg2oAFimlF7mNvfDV192LR7nDiKtSIfCuLT7KokPSTn/9kfVLm5OGN0A28A==}
@@ -2404,6 +2414,8 @@ snapshots:
 
   json-schema-typed@8.0.2: {}
 
+  jsonata@2.2.2: {}
+
   light-my-request@6.6.0:
     dependencies:
       cookie: 1.1.1
@@ -2920,8 +2932,7 @@ snapshots:
 
   xtend@4.0.2: {}
 
-  yaml@2.9.0:
-    optional: true
+  yaml@2.9.0: {}
 
   zod-to-json-schema@3.25.2(zod@4.3.6):
     dependencies:

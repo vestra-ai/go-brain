@@ -1,0 +1,49 @@
+id: flights.search
+title: Flights between two airports on a date
+asks:
+  - flights from delhi to goa on friday
+  - cheapest non stop london to delhi on 20 oct
+  - kal subah mumbai se bangalore flight
+inputs:
+  from: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly from; abroad, with its airport code, like "London (LHR)" }
+  to: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly to }
+  date: { kind: date }
+  # The members who live by another airport are not on this flight (Arjun, in Bangalore, is not on a flight from Delhi);
+  # one with no home, or a home Go has no airport for, may fly from here.
+  adults:
+    kind: count
+    min: 1
+    max: 9
+    value: |
+      ($n := $trip.people - $count($trip.homes[$known("flights.airport_lookup", $).code != $inputs.from.code]); $n > 0 ? $n : $trip.people)
+  depart_after: { kind: text, optional: true, about: 24-hour HH:MM }
+  depart_before: { kind: text, optional: true, about: 24-hour HH:MM }
+  arrive_before: { kind: text, optional: true, about: 24-hour HH:MM }
+  max_price: { kind: money, optional: true, about: per person, in paise }
+auth: none
+changes_state: false
+conditions:
+  non_stop: "'stops=0'"
+let:
+  # ixigo's departure and arrival windows, as the page's own filter shows them (p1-b's flights map).
+  windows: |
+    [{"name": "EARLY_MORNING", "from": "00:00", "to": "06:00"}, {"name": "MORNING", "from": "06:00", "to": "12:00"},
+     {"name": "AFTERNOON", "from": "12:00", "to": "18:00"}, {"name": "NIGHT", "from": "18:00", "to": "24:00"}]
+  take_off: |
+    (depart_after or depart_before) ? (
+      $a := depart_after ? depart_after : "00:00"; $b := depart_before ? depart_before : "24:00";
+      $join($windows[from < $b and to > $a].name, ",")
+    )
+  landing: |
+    arrive_before ? $join($windows[from < $$.arrive_before and to > "00:00"].name, ",")
+  # What people asked for, in ixigo's own params, and the cheapest first (the param ixigo's "Price / Low to High" writes).
+  params: |
+    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), "sort_type=cheapest"]), "&")
+page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children=0&infants=0&class=e&source=Search%20Form&{$params|raw}
+answer:
+  # ixigo answers flight pages with a 403 from the boxes' shared egress: the group gets the page, set as they asked.
+  as: link
+  title: "Flights, {from.words} to {to.words}"
+  who: "'for ' & $string(adults) & ' from ' & from.city"
+measured: { fast_ms: null, page_ms: null, flow_ms: null }
+notes: Booking is Book, Review & Traveller Details, Add-ons, then Payment. Go never goes past Add-ons.

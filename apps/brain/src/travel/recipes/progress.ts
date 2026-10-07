@@ -2,8 +2,6 @@
  * What a recipe run tells the room while it works. The runner reports; the live card (live-search.ts) owns everything
  * the room sees. A runner calls OnProgress and never awaits it, and it never throws back into the runner.
  */
-import type { RecipeId } from './recipe.js';
-
 /** One picture of the page, as Bash's browser fetch returns it. */
 export interface LiveFrame {
   label: string;
@@ -16,7 +14,7 @@ export interface LiveFrame {
 
 export type RecipeProgress =
   /** Just before the page loads, by the browser fetch or the fallback's job. */
-  | { type: 'opening'; recipeId: RecipeId; url: string }
+  | { type: 'opening'; recipeId: string; url: string }
   /** The page's data is back. */
   | { type: 'captured'; ms: number }
   /** Pictures of the page, any time, oldest first. */

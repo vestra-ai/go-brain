@@ -1,0 +1,132 @@
+id: hotels.search
+title: Stays in a place for check-in and check-out dates
+asks:
+  - villas in north goa from 6 to 9 nov
+  - manali mein 2 raat ke liye hotel dikhao
+  - stays with a pool near anjuna under 8k a night
+inputs:
+  place: { kind: place, lookup: hotels.place_lookup, about: the city, area or region to stay in }
+  check_in: { kind: date }
+  check_out: { kind: date }
+  adults: { kind: count, value: "$trip.people", min: 1, max: 30, about: how many people stay }
+  # Two to a room, as ixigo's own search starts ("1 Room, 2 Guests").
+  rooms: { kind: count, value: "$ceil(adults / 2)", min: 1, max: 8 }
+auth: none
+changes_state: false
+# ixigo filters the search itself on the codes it has: an area of a city, a pool, breakfast, free cancellation. Beach
+# has none: it is a distance, read from each stay.
+conditions:
+  pool: "'FL_HF_29'"
+  breakfast: "'MP_FB'"
+  free_cancellation: "'MP_FC'"
+let:
+  filters: "$sort($distinct($append(place.areas, $conditions)))"
+  # A whole state (all of Goa) with no area: hundreds of stays, so the fetch takes two pages, not the top strip of one.
+  wide: "place.location.locationType = 'S' and $count(place.areas) = 0"
+page: >-
+  /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={rooms}&childCount=0{$count($filters) > 0 ? '&filters=' & $encodeUrlComponent($join($filters, ','))|raw}
+capture:
+  - /accommodation-search/api/v3/accommodations/search$
+# Page 1 for an area. A whole state takes pages 1 and 2 (about 5 s); page 2 sometimes never comes, so at 12 s the fetch
+# answers with page 1, which reads as it is. Either way, once the results are in, ixigo's "Best Price Guarantee" popup
+# (once a day per browser) is closed if it is there, so the card's picture is the list: before the scrolls, which it can
+# block, and again after them. Bash's last picture waits 550 ms after the hotels are in, when the cards are drawn.
+fetch:
+  - when: $wide
+    capture: [{ match: /accommodation-search/api/v3/accommodations/search$, min_count: 2, max_count: 2 }]
+    steps:
+      - { op: wait_for, match: /accommodation-search/api/v3/accommodations/search$ }
+      - { op: click, name: Close modal, optional: true }
+      - { op: scroll, times: 3 }
+      - { op: click, name: Close modal, optional: true }
+    timeout_ms: 12000
+    settle_ms: 550
+  - when: "true"
+    steps:
+      - { op: wait_for, match: /accommodation-search/api/v3/accommodations/search$ }
+      - { op: click, name: Close modal, optional: true }
+    settle_ms: 550
+read:
+  rows: { from: /accommodation-search/api/v3/accommodations/search$, list: data.result.inventoryInfoList, unique: hotelId }
+answer:
+  as: options
+  kind: stay
+  # A price is the room's nightly fare plus taxes and fees, per night and per room, as ixigo shows it; the whole stay is
+  # that times the nights and the rooms. What ixigo filtered on, every stay it gave has; the rest is what it lists.
+  each: |
+    (
+      $nights := $nights($inputs.check_in, $inputs.check_out);
+      $rooms := $inputs.rooms;
+      $name := $trim(name);
+      $nightly := $paise(fareDetail.displayedBaseFare + fareDetail.taxesAndFees);
+      $offerings := $append(topOfferings, amenities.name);
+      $said := function($re, $code) { $code in $filters or $count($offerings[$contains($, $re)]) > 0 };
+      $pool := $said(/pool/i, "FL_HF_29");
+      $breakfast := $said(/breakfast/i, "MP_FB");
+      $freeCancellation := $said(/free cancellation/i, "MP_FC");
+      $distance := distanceFromSearchedEntity ? distanceFromSearchedEntity;
+      $area := locality ? locality;
+      $town := city ? city;
+      $walk := $groups($distance, "^([\\d.]+)\\s*(km|m)\\b.*\\bbeach\\b", "i");
+      $beach := $walk ? $max([1, $ceil($number($walk[0]) * ($lowercase($walk[1]) = "km" ? 1000 : 1) / 80)]);
+      $rating10 := $type(userRating) = "number" ? (userRating > 0 ? userRating) : ($type(userRating) = "string" and $contains(userRating, /^\d+(\.\d+)?$/) and $number(userRating) > 0) ? $number(userRating);
+      $address := $join($distinct([$area, $town]), ", ");
+      $image := $exists(imageInfoList[0].urlMedium) ? imageInfoList[0].urlMedium : imageInfoList[0].url;
+      {
+        "title": $name,
+        "priceMinor": $nightly,
+        "totalMinor": $nightly * $nights * $rooms,
+        "currency": "INR",
+        "priceNote": "per night, per room",
+        "place": {
+          "name": $substring($name, 0, 120),
+          "address": $address ? $substring($address, 0, 200),
+          "lat": geoLocationInfo.lat,
+          "lng": geoLocationInfo.lon
+        },
+        "imageUrl": $image ? $image,
+        "rating": $rating10 ? $floor($rating10 * 5 + 0.5) / 10,
+        "highlights": $highlights($distance, $freeCancellation ? "Free cancellation", $breakfast ? "Breakfast included", $pool ? "Pool"),
+        "facts": {
+          "nights": $nights,
+          "rooms": $rooms,
+          "area": $area,
+          "distance": $distance,
+          "stars": starRating ? starRating,
+          "rating_out_of_10": $rating10,
+          "reviews": userRatingCount,
+          "pool": $pool,
+          "breakfast": $breakfast,
+          "free_cancellation": $freeCancellation,
+          "beach_minutes": $beach
+        },
+        "sourceUrl": "https://www.ixigo.com/hotels/" & $string(hotelId) & "/details?" & $query({
+          "locationId": locationId ? locationId : $inputs.place.location.locationId,
+          "locationName": $inputs.place.location.locationName,
+          "locationType": $inputs.place.location.locationType,
+          "masterLocationId": $inputs.place.location.masterLocationId,
+          "countryId": $inputs.place.location.countryId,
+          "checkinDate": $dateAs($inputs.check_in, "DDMMYYYY"),
+          "checkoutDate": $dateAs($inputs.check_out, "DDMMYYYY"),
+          "adultCount": $inputs.adults,
+          "roomCount": $rooms,
+          "childCount": "0",
+          "searchLocationId": $inputs.place.location.locationId,
+          "hotelInfoToken": hotelInfoToken ? hotelInfoToken,
+          "hName": $name
+        })
+      }
+    )
+  # A place inside one half of Goa keeps only the stays not known to be in the other half: its area, then its town,
+  # then what it is near ("310 m from Colva Beach"). This goes when areas come from ixigo's own area filter.
+  keep: |
+    (
+      $half := $inputs.place.half;
+      $side := function($t) { $mentions($t, $inputs.place.halves.north) ? "north" : ($mentions($t, $inputs.place.halves.south) ? "south") };
+      $a := $side(facts.area);
+      $b := $side(place.address);
+      $seen := $a ? $a : ($b ? $b : $side(facts.distance));
+      $not($exists($half)) or $not($exists($seen)) or $seen = $half
+    )
+measured: { fast_ms: null, page_ms: 5000, flow_ms: null }
+notes: 10 hotels a page. Each card links to the hotel's own page, where a room's select starts the booking.

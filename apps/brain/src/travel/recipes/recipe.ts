@@ -6,6 +6,7 @@
  */
 import type { z } from 'zod';
 import { TravelError } from '../mcp-travel.js';
+import type { Step } from '../book/format.js';
 import type { TravelKind, TravelOption, TravelQuery } from '../travel.js';
 
 /** One data call a runner asks Bash's browser fetch to keep. */
@@ -31,9 +32,8 @@ export interface Capture {
   at_ms: number;
 }
 
-/** Page controls the browser fetch works through the accessibility tree. */
-/** optional: a control that may not be there (a popup shown once a day), which Bash skips instead of failing (#4585). */
-export type Step = { op: 'click'; role?: string; name?: string; text?: string; optional?: boolean } | { op: 'scroll'; times: number } | { op: 'wait_for'; match: string };
+/** Page controls the browser fetch works through the accessibility tree, as the recipe book's format writes them. */
+export type { Step } from '../book/format.js';
 
 /**
  * What the browser fetch keeps and does, how long it may take when that is less than Bash's most, and how long Bash

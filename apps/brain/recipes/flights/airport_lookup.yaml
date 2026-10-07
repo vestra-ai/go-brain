@@ -1,0 +1,36 @@
+id: flights.airport_lookup
+title: An airport or a city's airports, as ixigo's flight box knows them
+asks:
+  - london
+  - goa mopa
+inputs:
+  words: { kind: text, about: the place as the person said it }
+keeps: flights
+# From and To show as text until clicked; the box that opens has no name and has the focus.
+box:
+  page: /
+  type:
+    from:
+      - { op: click, role: StaticText, name: From }
+      - { op: type, text: "{words}" }
+      - { op: wait_for, match: searchFor=airportSuggestions }
+    to:
+      - { op: click, role: StaticText, name: To }
+      - { op: type, text: "{words}" }
+      - { op: wait_for, match: searchFor=airportSuggestions }
+capture:
+  - { match: searchFor=airportSuggestions, min_count: 1, max_count: 6, max_bytes: 200000 }
+answer:
+  as: places
+  suggestions:
+    words_param: value
+    list: data
+    name: "airportCode & ' ' & (airportName ? airportName : cityName)"
+    line: "$join([cityName, stateName, countryName][$ and $length($trim($)) > 0], ', ')"
+    # "LON, London, England, United Kingdom, All Airports": the city's own entry.
+    all: allAirport = true
+    country: countryName
+    place: "{ 'code': airportCode, 'city': cityName }"
+    place_name: city
+samples: { london: flights.airport_lookup.london.json, delhi: flights.airport_lookup.delhi.json }
+notes: '"London" also lists London, Ontario and London, Kentucky: the country line tells them apart.'
