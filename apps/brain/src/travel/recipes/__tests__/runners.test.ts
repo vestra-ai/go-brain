@@ -62,7 +62,7 @@ describe('the browser fetch runner', () => {
     const w = world(() => {
       throw new V1Error(504, 'timeout', 'The fetch timed out.', null, {
         code: 'timeout',
-        partial: { final_url: 'x', elapsed_ms: 10_000, woke: true, captures: [capture(SEARCH, url, fixture('stays-goa-page1.json'))], frames: [frame, { label: 'broken' }] },
+        partial: { final_url: 'x', elapsed_ms: 12_000, woke: true, captures: [capture(SEARCH, url, fixture('stays-goa-page1.json'))], frames: [frame, { label: 'broken' }] },
       });
     });
     const north = stays.slotsFrom({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });

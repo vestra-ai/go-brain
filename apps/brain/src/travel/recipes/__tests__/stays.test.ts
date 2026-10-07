@@ -61,10 +61,10 @@ describe('the stays recipe', () => {
     const two = {
       capture: [{ match: '/accommodation-search/api/v3/accommodations/search$', required: true, min_count: 2, max_count: 2 }],
       steps: [{ op: 'wait_for', match: '/accommodation-search/api/v3/accommodations/search$' }, { op: 'scroll', times: 3 }],
-      // Page 2 sometimes never comes: at 10 s the fetch answers with page 1 (re-drill 6).
+      // Page 2 sometimes never comes: at 12 s the fetch answers with page 1 (re-drill 6; a cold box gave both by 10 s).
       timeoutMs: WIDE_FETCH_MS,
     };
-    expect(WIDE_FETCH_MS).toBe(10_000);
+    expect(WIDE_FETCH_MS).toBe(12_000);
     const at = (area: string) => stays.slotsFrom({ area, checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { people: 4 });
     for (const area of ['Goa', 'North Goa', 'South Goa']) expect(stays.fetchFor!(at(area)), area).toEqual(two);
     for (const area of ['Vagator', 'Anjuna', 'Candolim']) {

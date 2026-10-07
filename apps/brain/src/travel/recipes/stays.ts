@@ -30,9 +30,11 @@ export interface StaySlots {
 const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
 /**
  * The most a two-page fetch may take. Page 2 sometimes never comes (re-drill 6: a cold North Goa search ran to Bash's
- * 20 s and came back with page 1 only); at 10 s the timed-out fetch answers with page 1, which is read as it is.
+ * 20 s and came back with page 1 only); at 12 s the timed-out fetch answers with page 1, which is read as it is. A box
+ * asleep for 90 minutes gave both pages by 10 s once Bash scrolled only a drawn page (#4584), so 12 s leaves it room, and
+ * stays within the turn's 12 s inline wait, with the live card covering it.
  */
-export const WIDE_FETCH_MS = 10_000;
+export const WIDE_FETCH_MS = 12_000;
 /** Two to a room, as ixigo's own search starts ("1 Room, 2 Guests"). */
 const PER_ROOM = 2;
 const MAX_ROOMS = 8;
