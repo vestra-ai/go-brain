@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadBook } from '../../book/book.js';
 import { createEngine, type Engine } from '../../book/engine.js';
 import { TravelError } from '../../mcp-travel.js';
-import { createIxigoWebBackend, TRAVEL_WAIT_MS } from '../backend.js';
+import { CARD_DELAY_MS, createIxigoWebBackend, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
 
 const { book } = loadBook();
@@ -114,7 +114,7 @@ describe('the ixigo_web backend', () => {
       cards.push({ tripId, runKey: o.runKey, kind: o.kind });
       return { progress: (e: { type: string }) => events.push(e.type), finish: async (ok: boolean) => { events.push(ok ? 'finish:ok' : 'finish:failed'); } };
     };
-    const b = createIxigoWebBackend({ book, engine: scripted().engine, now, live: live as never });
+    const b = createIxigoWebBackend({ book, engine: scripted().engine, now, live: live as never, cardDelayMs: 0 });
     const first = b.search('trains', TRAINS, { tripId: 't_goa' });
     const joined = b.search('trains', TRAINS, { tripId: 't_goa' });
     await Promise.all([first, joined]);
@@ -123,7 +123,7 @@ describe('the ixigo_web backend', () => {
     expect(cards[0]!.runKey).toBe((await first).runId);
     expect(events).toEqual(['opening', 'captured', 'extracted', 'finish:ok']);
     // A search no turn will try again (a job's, through Go's MCP server) ends its card failed before it answers.
-    const failing = createIxigoWebBackend({ book, engine: scripted('fail').engine, now, live: live as never });
+    const failing = createIxigoWebBackend({ book, engine: scripted('fail').engine, now, live: live as never, cardDelayMs: 0 });
     events.length = 0;
     await expect(failing.search('trains', TRAINS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
     expect(events).toEqual(['opening', 'failed', 'finish:failed']);
@@ -189,7 +189,7 @@ function carded(engine: { answer: Answer }) {
       },
     };
   };
-  const b = createIxigoWebBackend({ book, engine, now, live: live as never });
+  const b = createIxigoWebBackend({ book, engine, now, live: live as never, cardDelayMs: 0 });
   return { b, events, made: () => made };
 }
 
@@ -273,5 +273,34 @@ describe("a live card belongs to its search's turn", () => {
     expect(failing.runs).toHaveLength(1);
     expect(c.made()).toBe(1);
     expect(c.events).toEqual(['1:failed', '1:finish:failed']);
+  });
+});
+
+describe('a fast answer', () => {
+  it('posts no live card when the run answers within 1.5 s; a slower run shows its card, with the steps it missed', async () => {
+    vi.useFakeTimers();
+    try {
+      expect(CARD_DELAY_MS).toBe(1_500);
+      const seen: string[] = [];
+      const live = () => {
+        seen.push('card');
+        return { progress: (e: { type: string }) => seen.push(e.type), finish: async (ok: boolean) => { seen.push(ok ? 'done' : 'failed'); } };
+      };
+      const quick = createIxigoWebBackend({ book, engine: scripted().engine, now, live: live as never });
+      await quick.search('trains', TRAINS, { tripId: 't_goa' });
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(seen).toEqual([]);
+      const slow = scripted();
+      slow.hold();
+      const b = createIxigoWebBackend({ book, engine: slow.engine, now, live: live as never });
+      const run = b.search('trains', TRAINS, { tripId: 't_goa' });
+      await vi.advanceTimersByTimeAsync(CARD_DELAY_MS);
+      expect(seen).toEqual(['card', 'opening']);
+      slow.release();
+      await run;
+      expect(seen).toEqual(['card', 'opening', 'captured', 'extracted', 'done']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

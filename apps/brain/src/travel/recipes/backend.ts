@@ -36,6 +36,37 @@ export interface IxigoWebDeps {
   now: () => Date;
   /** The live search card for a run; absent in tests that don't look at it. */
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
+  /** How long a run goes before its live card shows (CARD_DELAY_MS); 0 shows it at once. */
+  cardDelayMs?: number;
+}
+
+/**
+ * A run that answers within this (a recipe's fast call from the warm tab) posts its options card with no live card
+ * first: the "On it." card shows only for a run still going after it, with the steps it missed.
+ */
+export const CARD_DELAY_MS = 1_500;
+
+/** A live card that shows only once the run has gone delayMs; until then its steps wait, and a run done by then shows none. */
+function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch {
+  if (delayMs <= 0) return make();
+  let live: LiveSearch | null = null;
+  const waiting: Array<Parameters<LiveSearch['progress']>[0]> = [];
+  const timer = setTimeout(() => {
+    live = make();
+    for (const e of waiting.splice(0)) live.progress(e);
+  }, delayMs);
+  timer.unref?.();
+  return {
+    progress: (e) => {
+      if (live) live.progress(e);
+      else waiting.push(e);
+    },
+    finish: async (ok) => {
+      clearTimeout(timer);
+      // A card never shown has nothing to end.
+      if (live) await live.finish(ok);
+    },
+  };
 }
 
 /** Each kind of search's recipe in the book. */
@@ -149,7 +180,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         card.running = true;
         card.owner = owner ?? card.owner;
       } else if (d.live) {
-        card = { live: d.live(tripId, { runKey: runId, kind, query: q }), owner, running: true, code: 'failed' };
+        const make = d.live;
+        card = { live: shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey: runId, kind, query: q })), owner, running: true, code: 'failed' };
         cards.set(cardKey, card);
       } else {
         card = null;
