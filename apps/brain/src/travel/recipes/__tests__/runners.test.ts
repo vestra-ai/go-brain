@@ -3,7 +3,7 @@ import { V1Error } from '../../../tasks/v1-client.js';
 import { TravelError } from '../../mcp-travel.js';
 import { buses, readBusesPage } from '../buses.js';
 import { flights } from '../flights.js';
-import { stays, WIDE_FETCH_MS } from '../stays.js';
+import { stays, STAYS_SETTLE_MS, WIDE_FETCH_MS } from '../stays.js';
 import { trains } from '../trains.js';
 import {
   AGENT_POLL_MS, AGENT_WAIT_MS, createAgentJobRunner, createBrowserFetchRunner, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, recipeMessage, runnerFor,
@@ -49,8 +49,13 @@ describe('the browser fetch runner', () => {
     const r = await createBrowserFetchRunner(w.deps).run('t1', stays, north);
     expect(w.calls[0]!.opts.body).toMatchObject({
       capture: [{ match: SEARCH, min_count: 2, max_count: 2 }],
-      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }],
+      steps: [
+        { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true },
+        { op: 'scroll', times: 3 }, { op: 'click', name: 'Close modal', optional: true },
+      ],
       timeout_ms: WIDE_FETCH_MS,
+      // Bash's last picture once the hotels have drawn (#4585).
+      frames: { settle_ms: STAYS_SETTLE_MS },
     });
     expect(r.options).toHaveLength(6);
   });
@@ -85,6 +90,7 @@ describe('the browser fetch runner', () => {
     expect(r).toMatchObject({ checkedAt: '2026-11-01T10:00:00.000Z', ms: 0 });
     // Bash's most, for a sleeping box; it answers as soon as the captures are in.
     expect(FETCH_TIMEOUT_MS).toBe(20_000);
+    // No settle for buses: ixigo draws their list a second or more after the data, so a wait buys no drawn frame (#4585).
   });
 
   it("sends a capture's size limit, and never Go's own required flag", async () => {

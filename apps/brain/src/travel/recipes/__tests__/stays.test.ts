@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyConstraints } from '../../filters.js';
 import type { TravelOption } from '../../travel.js';
-import { readStaysPage, stays, WIDE_FETCH_MS } from '../stays.js';
+import { readStaysPage, stays, STAYS_SETTLE_MS, WIDE_FETCH_MS } from '../stays.js';
 import { capture, fixture } from './fixtures.js';
 
 const slots = stays.slotsFrom({ area: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
@@ -60,16 +60,28 @@ describe('the stays recipe', () => {
   it('takes pages 1 and 2 for all of Goa or a half of it, and page 1 for an area (re-drill 4)', () => {
     const two = {
       capture: [{ match: '/accommodation-search/api/v3/accommodations/search$', required: true, min_count: 2, max_count: 2 }],
-      steps: [{ op: 'wait_for', match: '/accommodation-search/api/v3/accommodations/search$' }, { op: 'scroll', times: 3 }],
+      // Once the results are in, ixigo's once-a-day "Best Price Guarantee" popup is closed if it is there: before the
+      // scrolls, which it can block, and after them, for one that came late.
+      steps: [
+        { op: 'wait_for', match: '/accommodation-search/api/v3/accommodations/search$' }, { op: 'click', name: 'Close modal', optional: true },
+        { op: 'scroll', times: 3 }, { op: 'click', name: 'Close modal', optional: true },
+      ],
       // Page 2 sometimes never comes: at 12 s the fetch answers with page 1 (re-drill 6; a cold box gave both by 10 s).
       timeoutMs: WIDE_FETCH_MS,
+      // Bash's last picture 550 ms after the hotels are in: the drawn cards (#4585, about +0.55 s).
+      settleMs: STAYS_SETTLE_MS,
     };
     expect(WIDE_FETCH_MS).toBe(12_000);
+    expect(STAYS_SETTLE_MS).toBe(550);
     const at = (area: string) => stays.slotsFrom({ area, checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { people: 4 });
     for (const area of ['Goa', 'North Goa', 'South Goa']) expect(stays.fetchFor!(at(area)), area).toEqual(two);
     for (const area of ['Vagator', 'Anjuna', 'Candolim']) {
       expect(at(area).wide, area).toBe(false);
-      expect(stays.fetchFor!(at(area)), area).toEqual({ capture: stays.capture });
+      expect(stays.fetchFor!(at(area)), area).toEqual({
+        capture: stays.capture,
+        steps: [{ op: 'wait_for', match: '/accommodation-search/api/v3/accommodations/search$' }, { op: 'click', name: 'Close modal', optional: true }],
+        settleMs: STAYS_SETTLE_MS,
+      });
     }
   });
 
@@ -87,6 +99,28 @@ describe('the stays recipe', () => {
       '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0',
     );
     expect(stays.capture).toEqual([{ match: '/accommodation-search/api/v3/accommodations/search$', required: true }]);
+  });
+
+  it("reads a hotel with null details (O Hotel Goa's null image), and leaves out one it can't read, never the whole page", () => {
+    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+    const page = JSON.parse(fixture('stays-goa-page1.json'));
+    const list = page.data.result.inventoryInfoList as Array<Record<string, unknown>>;
+    const [first, second] = [list[0]!, list[1]!];
+    // p4's 12:58Z all-Goa pool search: imageInfoList[].urlMedium null, and other details null as ixigo sends them.
+    first['imageInfoList'] = [{ url: null, urlMedium: null }];
+    first['locality'] = null;
+    first['userRatingCount'] = null;
+    first['hotelInfoToken'] = null;
+    delete second['fareDetail'];
+    const options = stays.extract([capture(SEARCH, SEARCH_URL, JSON.stringify(page))], slots);
+    const read = stays.extract([capture(SEARCH, SEARCH_URL, fixture('stays-goa-page1.json'))], slots);
+    expect(options.map((o) => o.title)).toEqual(read.map((o) => o.title).filter((t) => t !== String(second['name']).trim()));
+    const o = options.find((x) => x.title === String(first['name']).trim())!;
+    expect(o).not.toHaveProperty('imageUrl');
+    expect(o.facts).not.toHaveProperty('area');
+    // Every hotel unreadable: a changed shape, said plainly, never "no stays".
+    for (const h of list) delete h['fareDetail'];
+    expect(() => stays.extract([capture(SEARCH, SEARCH_URL, JSON.stringify(page))], slots)).toThrow(/shape Go does not read/);
   });
 
   it('reads both pages of hotels, priced per night and per room with taxes, the whole stay for every room', () => {

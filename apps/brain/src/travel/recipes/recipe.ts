@@ -35,8 +35,11 @@ export interface Capture {
 /** Page controls the browser fetch works through the accessibility tree, as the recipe book's format writes them. */
 export type { Step } from '../book/format.js';
 
-/** What the browser fetch keeps and does, and how long it may take when that is less than Bash's most. */
-export interface FetchPlan { capture: CaptureSpec[]; steps?: Step[]; timeoutMs?: number }
+/**
+ * What the browser fetch keeps and does, how long it may take when that is less than Bash's most, and how long Bash
+ * waits after the data is in before its last picture (settleMs; none when the page is not drawn by then, as buses).
+ */
+export interface FetchPlan { capture: CaptureSpec[]; steps?: Step[]; timeoutMs?: number; settleMs?: number }
 
 /** An option as a recipe reads it: no offer id (booking stays on ixigo), and the option's own page on ixigo.com. */
 export type RecipeOption = Omit<TravelOption, 'offerId'> & { sourceUrl: string };

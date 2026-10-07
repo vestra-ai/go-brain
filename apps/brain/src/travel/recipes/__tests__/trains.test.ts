@@ -11,6 +11,19 @@ const load = (name: string, from: string, to: string, date: string, ddmmyyyy: st
     : []),
 ];
 
+const BETWEEN_NDLS = 'https://www.ixigo.com/trains/v1/search/between/NDLS/MAO?date=2026-11-06&languageCode=en';
+const SEATS_NDLS = 'https://www.ixigo.com/api/v3/trains/availability?originCode=NDLS&destinationCode=MAO&travelDate=06112026';
+/** A saved NDLS to MAO body with its data changed by `edit`. */
+const edited = (file: 'between' | 'availability', edit: (data: any) => void): string => {
+  const body = JSON.parse(fixture(`trains-ndls-mao-${file}.json`));
+  edit(body.data);
+  return JSON.stringify(body);
+};
+const ndlsLoad = (between: string, seats: string) => [
+  capture('/trains/v1/search/between/', BETWEEN_NDLS, between),
+  capture('/api/v3/trains/availability', SEATS_NDLS, seats),
+];
+
 describe('the trains recipe', () => {
   it('fills station codes from city names, and opens the results page the map gives', () => {
     expect(ndls).toEqual({ from: 'NDLS', to: 'MAO', date: '2026-11-06' });
@@ -71,6 +84,40 @@ describe('the trains recipe', () => {
     expect(options[0]!.facts).not.toHaveProperty('availability');
   });
 
+  it('leaves out a train it cannot read, reads null details as missing, and refuses only when no train reads', () => {
+    const between = edited('between', (d) => {
+      const [first, second] = d.trainsBetweenStations;
+      first.boardStation = null;
+      first.suspended = null;
+      first.attributes.bookable = null;
+      second.attributes.departTime = '--';
+    });
+    const options = trains.extract(ndlsLoad(between, fixture('trains-ndls-mao-availability.json')));
+    // 12618's four classes are left out; 22656 still shows, from its station code.
+    expect(options).toHaveLength(21);
+    expect(options.some((o) => o.journey?.number === '12618')).toBe(false);
+    expect(options[0]!.journey?.origin).toEqual({ name: 'NZM', code: 'NZM' });
+    const none = edited('between', (d) => {
+      for (const t of d.trainsBetweenStations) t.attributes.departTime = '--';
+    });
+    expect(() => trains.extract(ndlsLoad(none, fixture('trains-ndls-mao-availability.json')))).toThrow(/shape Go does not read/);
+  });
+
+  it('keeps every train when the seat list has parts it cannot read, or comes in another shape', () => {
+    const between = fixture('trains-ndls-mao-between.json');
+    const seats = edited('availability', (d) => {
+      d.routesData[0].availabilities[0].f = null;
+      d.routesData[1].availabilities = 'none';
+    });
+    const options = trains.extract(ndlsLoad(between, seats));
+    expect(options).toHaveLength(25);
+    // 22414's 1A seat has no fare: its base fare shows, with its status.
+    expect(options.find((o) => o.journey?.number === '22414' && o.facts.class_code === '1A')!.facts).toHaveProperty('availability');
+    const other = trains.extract(ndlsLoad(between, '{"data":{"routes":[]}}'));
+    expect(other).toHaveLength(25);
+    expect(other[0]!.facts).not.toHaveProperty('availability');
+  });
+
   it('refuses when the train list never came back', () => {
     expect(() => trains.extract([])).toThrow(/did not load its trains/);
   });
@@ -95,6 +142,11 @@ describe('the trains recipe', () => {
       journey: { origin: { code: 'NDLS' }, depart_at: '2026-11-06T13:10:00+05:30', arrive_at: '2026-11-07T17:10:00+05:30' },
     });
     expect(options.find((o) => o.title === 'GOA Express 12780')!.journey?.arrive_at).toBe('2026-11-08T05:40:00+05:30');
+  });
+
+  it('leaves out a page row that does not check out and keeps the rest', () => {
+    const rows = readTrainsPage(fixture('trains-ndls-mao.txt'));
+    expect(trains.fromAgent([{ number: '22656', name: 'X', classes: [] }, ...rows], ndls)).toHaveLength(22);
   });
 
   it('refuses page rows that do not check out', () => {

@@ -10,6 +10,13 @@ const load = () => [
   capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', fixture('buses-mumbai-goa.json')),
 ];
 
+/** The saved bus list with its services changed by `edit`. */
+const busesWith = (edit: (services: any[]) => void) => {
+  const body = JSON.parse(fixture('buses-mumbai-goa.json'));
+  edit(body.services);
+  return [capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', JSON.stringify(body))];
+};
+
 describe('the buses recipe', () => {
   it('fills the AbhiBus city ids, and opens the results page the map gives', () => {
     expect(slots).toEqual({ from: { name: 'Mumbai', id: 4 }, to: { name: 'Goa', id: 102 }, date: '2026-11-06' });
@@ -62,6 +69,27 @@ describe('the buses recipe', () => {
       expect(o.priceMinor).toBe(same.priceMinor);
       expect(o.journey?.arrive_at).toBe(same.journey?.arrive_at);
     }
+  });
+
+  it('leaves out a bus it cannot read, reads null details as missing, and refuses only when no bus reads', () => {
+    const name = JSON.parse(fixture('buses-mumbai-goa.json')).services[0].travelerAgentName.trim();
+    const options = buses.extract(busesWith((v) => {
+      Object.assign(v[0], { rating: null, noOfRatings: null, busTypeName: null, seatStats: { availableSeats: null } });
+      v[1].fares.fare = 0;
+    }), slots);
+    expect(options).toHaveLength(70);
+    const first = options.find((o) => o.title === name)!;
+    expect(first).not.toHaveProperty('rating');
+    expect(first.facts).not.toHaveProperty('seats_left');
+    expect(first.facts).not.toHaveProperty('bus_type');
+    expect(() => buses.extract(busesWith((v) => {
+      for (const s of v) s.fares = null;
+    }), slots)).toThrow(/shape Go does not read/);
+  });
+
+  it('leaves out a page row whose arrival does not match its journey time, and keeps the rest', () => {
+    const good = { operator: 'Paulo Travels Express', type: 'AC Sleeper', depart: '18:20', arrive: '10:45', duration_min: 985, price: 2700, rating: null, seats_left: null };
+    expect(buses.fromAgent([{ ...good, arrive: '09:45' }, good], slots).map((o) => o.title)).toEqual(['Paulo Travels Express']);
   });
 
   it('refuses a page row whose arrival does not match its journey time', () => {

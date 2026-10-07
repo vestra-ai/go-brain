@@ -54,6 +54,8 @@ const Fetch = z.object({
   /** Steps on the page after it opens (a popup's close, a scroll for page 2). */
   steps: z.array(Step).optional(),
   timeout_ms: z.int().positive().max(20_000).optional(),
+  /** How long after the data is in Bash takes its last picture, when the page draws its cards by then. */
+  settle_ms: z.int().positive().max(5_000).optional(),
 });
 
 /** How a lookup's suggestions read: each entry's name, second line, "All …" mark, country, and the place kept. */

@@ -16,20 +16,23 @@ export interface BusSlots { from: BusCity; to: BusCity; date: string }
 // The page first loads /buslist/v3/services/meta/{n}: the "$" keeps the list itself.
 const SERVICES = '/buslist/v3/services$';
 
+/** One bus as ixigo sends it. Every detail may be missing or null: the operator, the fare and the start are what a bus
+ *  needs. */
 const Service = z.object({
   travelerAgentName: z.string().min(1),
-  busTypeName: z.string().optional(),
-  serviceId: z.union([z.number(), z.string()]).optional(),
-  rating: z.number().optional(),
-  noOfRatings: z.number().optional(),
-  fares: z.object({ fare: z.number().positive(), offerPrice: z.number().positive().nullish(), fareList: z.array(z.number()).optional() }),
-  timings: z.object({ startTimeDateFormat: z.iso.datetime({ offset: true }), travelTime: z.string().optional(), arriveTimestamp: z.number().optional() }),
-  seatStats: z.object({ availableSeats: z.number() }).optional(),
+  busTypeName: z.string().nullish(),
+  serviceId: z.union([z.number(), z.string()]).nullish(),
+  rating: z.number().nullish(),
+  noOfRatings: z.number().nullish(),
+  fares: z.object({ fare: z.number().positive(), offerPrice: z.number().positive().nullish(), fareList: z.array(z.number()).nullish() }),
+  timings: z.object({ startTimeDateFormat: z.iso.datetime({ offset: true }), travelTime: z.string().nullish(), arriveTimestamp: z.number().nullish() }),
+  seatStats: z.object({ availableSeats: z.number().nullish() }).nullish(),
 });
-const Services = z.object({ services: z.array(Service) });
+/** The bus list, read bus by bus: one Go can't read is left out, never the whole list. */
+const Services = z.object({ services: z.array(z.unknown()) });
 
 /** "16:25:00" as 985. */
-const travelMinutes = (t: string | undefined): number | undefined => {
+const travelMinutes = (t: string | null | undefined): number | undefined => {
   const m = t ? /^(\d+):(\d{2})/.exec(t) : null;
   return m ? Number(m[1]) * 60 + Number(m[2]) : undefined;
 };
@@ -81,7 +84,14 @@ function busOption(b: BusRead, s: BusSlots): RecipeOption {
 function extract(captures: Capture[], s: BusSlots): RecipeOption[] {
   const body = bodiesFor(captures, SERVICES)[0];
   if (body === undefined) throw new TravelError('refused', "ixigo's bus results page did not load its buses.");
-  return readBody(Services, body, 'the bus search').services.flatMap((v) => {
+  const listed = readBody(Services, body, 'the bus search').services;
+  const read = listed.flatMap((raw) => {
+    const v = Service.safeParse(raw);
+    return v.success ? [v.data] : [];
+  });
+  // Buses listed and none readable: ixigo changed its shape, which is not "no buses".
+  if (listed.length > 0 && read.length === 0) throw new TravelError('refused', 'ixigo answered the bus search in a shape Go does not read.');
+  return read.flatMap((v) => {
     const durationMin = travelMinutes(v.timings.travelTime);
     // arriveTimestamp is India's clock written as if it were UTC (5 h 30 m late in all 71 buses mapped), so the arrival
     // is the departure plus the journey time, and that clock only when the journey time is missing.
@@ -98,9 +108,9 @@ function extract(captures: Capture[], s: BusSlots): RecipeOption[] {
       arriveAt,
       ...(durationMin !== undefined ? { durationMin } : {}),
       fareRupees: v.fares.offerPrice ?? v.fares.fare,
-      ...(v.seatStats ? { seatsLeft: v.seatStats.availableSeats } : {}),
-      ...(v.rating !== undefined ? { rating: v.rating } : {}),
-      ...(v.noOfRatings !== undefined ? { reviews: v.noOfRatings } : {}),
+      ...(v.seatStats?.availableSeats != null ? { seatsLeft: v.seatStats.availableSeats } : {}),
+      ...(v.rating != null ? { rating: v.rating } : {}),
+      ...(v.noOfRatings != null ? { reviews: v.noOfRatings } : {}),
     }, s)];
   });
 }
@@ -153,12 +163,25 @@ const BusRow = z.object({
 });
 
 function fromAgent(rows: unknown, s: BusSlots): RecipeOption[] {
-  return readRows(z.array(BusRow), rows, 'buses').map((r) => {
+  // Row by row: one Go can't read is left out. None read is refused, naming the first row's problem.
+  const listed = readRows(z.array(z.unknown()), rows, 'buses');
+  const read = listed.flatMap((row) => {
+    const r = BusRow.safeParse(row);
+    return r.success ? [r.data] : [];
+  });
+  if (read.length === 0 && listed.length > 0) readRows(BusRow, listed[0], 'buses');
+  const timed = read.map((r) => {
     const departAt = istAt(s.date, r.depart);
-    const arriveAt = istOf(Date.parse(departAt) + r.duration_min * 60_000);
-    // The arrival clock the page shows must match the journey time; when it doesn't, the row was misread.
-    if (arriveAt.slice(11, 16) !== r.arrive) throw new TravelError('refused', `A bus read from ixigo's page arrives at ${r.arrive}, not ${arriveAt.slice(11, 16)} as its journey time says.`);
-    return busOption({
+    return { r, departAt, arriveAt: istOf(Date.parse(departAt) + r.duration_min * 60_000) };
+  });
+  // The arrival clock the page shows must match the journey time; a row where it doesn't was misread and is left out.
+  const right = timed.filter((x) => x.arriveAt.slice(11, 16) === x.r.arrive);
+  const first = timed[0];
+  if (right.length === 0 && first) {
+    throw new TravelError('refused', `A bus read from ixigo's page arrives at ${first.r.arrive}, not ${first.arriveAt.slice(11, 16)} as its journey time says.`);
+  }
+  return right.map(({ r, departAt, arriveAt }) =>
+    busOption({
       operator: r.operator,
       type: r.type,
       departAt,
@@ -167,8 +190,8 @@ function fromAgent(rows: unknown, s: BusSlots): RecipeOption[] {
       fareRupees: r.price,
       ...(r.seats_left !== null ? { seatsLeft: r.seats_left } : {}),
       ...(r.rating !== null ? { rating: r.rating } : {}),
-    }, s);
-  });
+    }, s),
+  );
 }
 
 /** "2026-11-06" as ixigo's bus URLs write it, "06-11-2026". */

@@ -9,7 +9,7 @@ import type { Packs, TripPack } from '../trips/pack.js';
 import type { AnthropicLike } from './anthropic.js';
 import { classifyAnthropicError } from './anthropic-helpers.js';
 import type { ContextImpl } from './context.js';
-import { chatLine, dataBlock, personName } from './fence.js';
+import { chatLine, dataBlock, roomView, type Forgotten } from './fence.js';
 import { addUsage, MAX_ROUNDS, noUsage, runLoop } from './loop.js';
 import { stripMessageRefs } from './sanitize.js';
 import type { Speak } from './speak.js';
@@ -95,14 +95,13 @@ function citedMessageId(text: string, pack: TripPack): string | null {
 const seqOf = (i: DeskItem, pack: TripPack): number | null => pack.messages.find((m) => m.message_id === messageIdOf(i))?.seq ?? null;
 
 /** The chat lines of desk items' messages, as the context draws them, past `shownUpTo`: the prompt already holds the rest. */
-function linesFor(items: DeskItem[], pack: TripPack, shownUpTo: number): { lines: string[]; seqs: number[] } {
-  const names = new Map(pack.trip.people.map((p) => [p.person_id, personName(p.name)]));
-  const seqs = new Map(pack.messages.map((m) => [m.message_id, m.seq]));
+function linesFor(items: DeskItem[], pack: TripPack, forgotten: Forgotten, shownUpTo: number): { lines: string[]; seqs: number[] } {
+  const view = roomView(pack, forgotten);
   const out = { lines: [] as string[], seqs: [] as number[] };
   for (const i of items) {
     const m = pack.messages.find((x) => x.message_id === messageIdOf(i));
     if (m && m.seq <= shownUpTo) continue;
-    const line = m ? chatLine(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)) : null;
+    const line = m ? chatLine(m, view) : null;
     if (m && line) {
       out.lines.push(line);
       out.seqs.push(m.seq);
@@ -130,6 +129,8 @@ const foldText = (lines: string[]): string =>
 
 export function createComposer(d: ComposerDeps): Composer {
   const turnTimeoutMs = d.turnTimeoutMs ?? 20_000;
+  /** The messages a running turn pulled in after it started: they are the turn's too when it ends. */
+  const pulledBy = new Map<string, DeskItem[]>();
 
   async function alreadyPosted(turnId: string): Promise<boolean> {
     const r = await d.pool.query(
@@ -200,7 +201,8 @@ export function createComposer(d: ComposerDeps): Composer {
         const passedOver = claimed.filter((i) => isForGo(i) && (seqOf(i, pack) ?? Number.POSITIVE_INFINITY) <= prompt.newestSeq);
         await d.release(t.turnId, passedOver.map((i) => i.id));
         pulled.push(...claimed.filter((i) => !passedOver.includes(i)));
-        const fresh = linesFor(pulled, pack, prompt.newestSeq);
+        pulledBy.set(t.turnId, pulled);
+        const fresh = linesFor(pulled, pack, prompt.forgotten, prompt.newestSeq);
         if (fresh.lines.length) {
           const more = await runLoop({
             ...base,
@@ -311,5 +313,27 @@ export function createComposer(d: ComposerDeps): Composer {
     });
   }
 
-  return { runTurn, giveUp };
+  /**
+   * A turn is over when it ran, or gave up after its last attempt (a failed attempt runs again under the same turn id):
+   * the lanes end what it left open, such as a live search card (context.turnEnded).
+   */
+  function ended(t: TurnInput): void {
+    const items = [...t.items, ...(pulledBy.get(t.turnId) ?? [])];
+    pulledBy.delete(t.turnId);
+    d.context.turnEnded({ tripId: t.tripId, turnId: t.turnId, messageIds: items.filter((i) => i.kind === 'message').map(messageIdOf) });
+  }
+
+  return {
+    async runTurn(t) {
+      await runTurn(t);
+      ended(t);
+    },
+    async giveUp(t) {
+      try {
+        await giveUp(t);
+      } finally {
+        ended(t);
+      }
+    },
+  };
 }

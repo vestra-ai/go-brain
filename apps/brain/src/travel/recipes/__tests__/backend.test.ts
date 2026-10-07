@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
 import { createIxigoWebBackend, LINK_ONLY_KINDS, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
@@ -111,42 +111,11 @@ describe('the ixigo_web backend', () => {
     expect(cards[0]).toMatchObject({ tripId: 't_goa', kind: 'flights' });
     expect(cards[0]!.runKey).toBe((await first).runId);
     expect(events).toEqual(['opening', 'captured', 'extracted', 'finish:ok']);
-    const failing = createIxigoWebBackend({ runner: () => runner(true).r, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never, retryGraceMs: 0 });
+    // A search no turn will try again (a job's, through Go's MCP server) ends its card failed before it answers.
+    const failing = createIxigoWebBackend({ runner: () => runner(true).r, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never });
     events.length = 0;
     await expect(failing.search('flights', FLIGHTS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
-    await vi.waitFor(() => expect(events).toEqual(['failed', 'finish:failed']));
-  });
-
-  it('carries a retry of a failed search on in the same card: one card, done once, never failed in between', async () => {
-    const events: string[] = [];
-    let made = 0;
-    const live = () => {
-      made += 1;
-      return { progress: (e: { type: string }) => events.push(e.type), finish: async (ok: boolean) => { events.push(ok ? 'finish:ok' : 'finish:failed'); } };
-    };
-    let calls = 0;
-    const flaky: RecipeRunner = {
-      name: 'browser_fetch',
-      async run() {
-        calls += 1;
-        if (calls === 1) throw new TravelError('unreachable', 'ixigo took too long to answer.');
-        return { options: [OPTION], checkedAt: '2026-10-07T12:00:30.000Z', ms: 9_000 };
-      },
-    };
-    const b = createIxigoWebBackend({ runner: () => flaky, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never, retryGraceMs: 60_000 });
-    await expect(b.search('trains', TRAINS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
-    expect(events).toEqual([]);
-    await b.search('trains', TRAINS, { tripId: 't_goa' });
-    expect(made).toBe(1);
-    expect(events).toEqual(['extracted', 'finish:ok']);
-  });
-
-  it('shows a failed card once when no retry comes', async () => {
-    const events: string[] = [];
-    const live = () => ({ progress: (e: { type: string }) => events.push(e.type), finish: async (ok: boolean) => { events.push(ok ? 'finish:ok' : 'finish:failed'); } });
-    const b = createIxigoWebBackend({ runner: () => runner(true).r, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never, retryGraceMs: 10 });
-    await expect(b.search('trains', TRAINS, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unreachable' });
-    await vi.waitFor(() => expect(events).toEqual(['failed', 'finish:failed']));
+    expect(events).toEqual(['failed', 'finish:failed']);
   });
 
   it('runs each recipe on the runner chosen for it', async () => {
@@ -207,5 +176,134 @@ describe('the ixigo_web backend', () => {
     await expect(b.hold('ixigo:x', { name: 'Meher', personIds: ['p_meher'] })).rejects.toBeInstanceOf(TravelError);
     await expect(b.confirm('ixigo:h', { approvalId: 'ap', railRef: 'r' })).rejects.toMatchObject({ code: 'refused', message: expect.stringContaining('booked on ixigo') });
     await expect(b.status({ kind: 'pnr', pnr: '1234567890' })).rejects.toMatchObject({ code: 'refused' });
+  });
+});
+
+/** A runner whose runs fail or answer in turn; hold() keeps the runs waiting until release(). */
+function scripted(...outcomes: Array<'fail' | 'ok'>) {
+  let calls = 0;
+  let gate: Promise<void> | null = null;
+  let open: () => void = () => undefined;
+  const r: RecipeRunner = {
+    name: 'browser_fetch',
+    async run() {
+      const outcome = outcomes[calls++] ?? 'ok';
+      if (gate) await gate;
+      if (outcome === 'fail') throw new TravelError('unreachable', 'ixigo took too long to answer.');
+      return { options: [OPTION], checkedAt: '2026-10-07T12:00:30.000Z', ms: 9_000 };
+    },
+  };
+  return {
+    r,
+    calls: () => calls,
+    hold: () => {
+      gate = new Promise((resolve) => {
+        open = resolve;
+      });
+    },
+    release: () => {
+      gate = null;
+      open();
+    },
+  };
+}
+
+/** A backend that records its live cards: how many it made, and each one's steps and ending, as "<card>:<what>". */
+function carded(r: RecipeRunner) {
+  const events: string[] = [];
+  let made = 0;
+  const live = () => {
+    const n = ++made;
+    return {
+      progress: (e: { type: string }) => events.push(`${n}:${e.type}`),
+      finish: async (ok: boolean) => {
+        events.push(`${n}:finish:${ok ? 'done' : 'failed'}`);
+      },
+    };
+  };
+  const b = createIxigoWebBackend({ runner: () => r, peopleOf: async () => 4, now: () => new Date(nowMs), live: live as never });
+  return { b, events, made: () => made };
+}
+
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+const EARLY = { tripId: 't_goa', messageId: 'm_41' };
+const COMPOSER = { tripId: 't_goa', turnId: 'turn_1' };
+
+describe("a live card belongs to its search's turn", () => {
+  it("keeps a failed early start's card open, and the composer's search in that turn carries on in it: one card, done once", async () => {
+    const c = carded(scripted('fail', 'ok').r);
+    await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toMatchObject({ code: 'unreachable' });
+    expect(c.events).toEqual([]);
+    await c.b.search('trains', TRAINS, COMPOSER);
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
+    expect(c.made()).toBe(1);
+    expect(c.events).toEqual(['1:extracted', '1:finish:done']);
+  });
+
+  it("ends the card failed at once when the composer's own search fails, before that search answers", async () => {
+    const c = carded(scripted('fail', 'fail').r);
+    await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toThrow();
+    await c.b.search('trains', TRAINS, COMPOSER).catch(() => c.events.push('answered'));
+    expect(c.made()).toBe(1);
+    expect(c.events).toEqual(['1:failed', '1:finish:failed', 'answered']);
+  });
+
+  it('ends the card a turn left open when the turn ends: failed, once, and only for that trip and its messages', async () => {
+    const c = carded(scripted('fail').r);
+    await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toThrow();
+    c.b.turnEnded({ tripId: 't_other', turnId: 'turn_9', messageIds: ['m_41'] });
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_2', messageIds: ['m_42'] });
+    expect(c.events).toEqual([]);
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
+    expect(c.events).toEqual(['1:failed', '1:finish:failed']);
+  });
+
+  it('never reopens an ended card: the same ask afterwards gets a card of its own', async () => {
+    const c = carded(scripted('fail', 'ok').r);
+    await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toThrow();
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
+    await c.b.search('trains', TRAINS, { tripId: 't_goa', messageId: 'm_44' });
+    expect(c.made()).toBe(2);
+    expect(c.events).toEqual(['1:failed', '1:finish:failed', '2:extracted', '2:finish:done']);
+  });
+
+  it('lets a search still running when its turn ends keep its card, which its run ends', async () => {
+    const ok = scripted('ok');
+    const c = carded(ok.r);
+    ok.hold();
+    const early = c.b.search('trains', TRAINS, EARLY);
+    await tick();
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
+    expect(c.events).toEqual([]);
+    ok.release();
+    await early;
+    expect(c.events).toEqual(['1:extracted', '1:finish:done']);
+  });
+
+  it('ends at once the card of an early start that fails after its turn is over', async () => {
+    const failing = scripted('fail');
+    const c = carded(failing.r);
+    failing.hold();
+    const early = c.b.search('trains', TRAINS, EARLY).catch(() => 'failed');
+    await tick();
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
+    failing.release();
+    expect(await early).toBe('failed');
+    expect(c.events).toEqual(['1:failed', '1:finish:failed']);
+  });
+
+  it("gives the card to the composer when it joins its early start's run: if that run fails, the card ends at once", async () => {
+    const failing = scripted('fail');
+    const c = carded(failing.r);
+    failing.hold();
+    const early = c.b.search('trains', TRAINS, EARLY).catch(() => 'early failed');
+    const composer = c.b.search('trains', TRAINS, COMPOSER).catch(() => 'composer failed');
+    await tick();
+    failing.release();
+    expect(await Promise.all([early, composer])).toEqual(['early failed', 'composer failed']);
+    expect(failing.calls()).toBe(1);
+    expect(c.made()).toBe(1);
+    expect(c.events).toEqual(['1:failed', '1:finish:failed']);
   });
 });

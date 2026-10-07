@@ -10,7 +10,7 @@ import type { MUST_HAVES, TravelQuery } from '../travel.js';
 import { goaHalfOf, stayPlaceOf, type GoaHalf, type StayLocation } from './places.js';
 import {
   bodiesFor, clamp, ddmmyyyy, highlights, IXIGO, nightsBetween, paise, pageScript, readBody, readRows, RECIPE_TTL_MS,
-  type Capture, type Recipe, type RecipeOption,
+  type Capture, type Recipe, type RecipeOption, type Step,
 } from './recipe.js';
 
 export interface StaySlots {
@@ -35,6 +35,13 @@ const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
  * stays within the turn's 12 s inline wait, with the live card covering it.
  */
 export const WIDE_FETCH_MS = 12_000;
+/**
+ * How long Bash waits after the hotels are in before its last picture (#4585): about +0.55 s, and the results frames
+ * show real cards (p5's staging measurement). Buses get none: ixigo draws their list a second or more after the data.
+ */
+export const STAYS_SETTLE_MS = 550;
+/** ixigo's "Best Price Guarantee" popup's close button; not there most of the time, so optional. */
+const CLOSE_POPUP: Step = { op: 'click', name: 'Close modal', optional: true };
 /** Two to a room, as ixigo's own search starts ("1 Room, 2 Guests"). */
 const PER_ROOM = 2;
 const MAX_ROOMS = 8;
@@ -47,24 +54,27 @@ const FREE_CANCELLATION = 'MP_FC';
 const BREAKFAST = 'MP_FB';
 const MUST_HAVE_CODES: Partial<Record<(typeof MUST_HAVES)[number], string>> = { pool: POOL, free_cancellation: FREE_CANCELLATION, breakfast: BREAKFAST };
 
+/** One hotel as ixigo sends it. Every detail may be missing or null (O Hotel Goa came with a null image): only the id,
+ *  the name and the fare are needed to show it. */
 const Hotel = z.object({
   hotelId: z.number(),
-  locationId: z.number().optional(),
+  locationId: z.number().nullish(),
   name: z.string().min(1),
-  locality: z.string().optional(),
-  city: z.string().optional(),
-  userRating: z.union([z.string(), z.number()]).optional(),
-  starRating: z.number().optional(),
-  userRatingCount: z.number().optional(),
-  topOfferings: z.array(z.string()).optional(),
-  amenities: z.array(z.object({ name: z.string() })).optional(),
+  locality: z.string().nullish(),
+  city: z.string().nullish(),
+  userRating: z.union([z.string(), z.number()]).nullish(),
+  starRating: z.number().nullish(),
+  userRatingCount: z.number().nullish(),
+  topOfferings: z.array(z.string()).nullish(),
+  amenities: z.array(z.object({ name: z.string() })).nullish(),
   distanceFromSearchedEntity: z.string().nullish(),
-  hotelInfoToken: z.string().optional(),
+  hotelInfoToken: z.string().nullish(),
   geoLocationInfo: z.object({ lat: z.number(), lon: z.number() }).nullish(),
-  imageInfoList: z.array(z.object({ url: z.string().optional(), urlMedium: z.string().optional() })).optional(),
+  imageInfoList: z.array(z.object({ url: z.string().nullish(), urlMedium: z.string().nullish() })).nullish(),
   fareDetail: z.object({ displayedBaseFare: z.number().nonnegative(), taxesAndFees: z.number().nonnegative() }),
 });
-const Page = z.object({ data: z.object({ result: z.object({ inventoryInfoList: z.array(Hotel) }) }) });
+/** The page's list is read hotel by hotel: one Go can't read is left out, never the whole page (p4's 12:58Z search). */
+const Page = z.object({ data: z.object({ result: z.object({ inventoryInfoList: z.array(z.unknown()) }) }) });
 
 interface StayRead {
   name: string;
@@ -155,9 +165,9 @@ function stayOption(h: StayRead, s: StaySlots): RecipeOption {
   };
 }
 
-const ratingOf = (r: string | number | undefined): number | undefined => {
+const ratingOf = (r: string | number | null | undefined): number | undefined => {
   const n = typeof r === 'string' ? Number(r) : r;
-  return n !== undefined && Number.isFinite(n) && n > 0 ? n : undefined;
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
 };
 
 /**
@@ -179,8 +189,13 @@ function extract(captures: Capture[], s: StaySlots): RecipeOption[] {
   if (bodies.length === 0) throw new TravelError('refused', "ixigo's hotel results page did not load its hotels.");
   const seen = new Set<number>();
   const out: RecipeOption[] = [];
+  let listed = 0;
   for (const body of bodies) {
-    for (const h of readBody(Page, body, 'the hotel search').data.result.inventoryInfoList) {
+    for (const raw of readBody(Page, body, 'the hotel search').data.result.inventoryInfoList) {
+      listed += 1;
+      const read = Hotel.safeParse(raw);
+      if (!read.success) continue;
+      const h = read.data;
       if (seen.has(h.hotelId)) continue;
       seen.add(h.hotelId);
       const rating10 = ratingOf(h.userRating);
@@ -191,18 +206,20 @@ function extract(captures: Capture[], s: StaySlots): RecipeOption[] {
         ...(h.city ? { city: h.city } : {}),
         ...(h.distanceFromSearchedEntity ? { distance: h.distanceFromSearchedEntity } : {}),
         ...(rating10 !== undefined ? { rating10 } : {}),
-        ...(h.userRatingCount !== undefined ? { reviews: h.userRatingCount } : {}),
+        ...(h.userRatingCount != null ? { reviews: h.userRatingCount } : {}),
         ...(h.starRating ? { stars: h.starRating } : {}),
         nightlyRupees: h.fareDetail.displayedBaseFare + h.fareDetail.taxesAndFees,
         offerings: [...(h.topOfferings ?? []), ...(h.amenities ?? []).map((a) => a.name)],
         hotelId: h.hotelId,
-        ...(h.locationId !== undefined ? { locationId: h.locationId } : {}),
+        ...(h.locationId != null ? { locationId: h.locationId } : {}),
         ...(h.hotelInfoToken ? { token: h.hotelInfoToken } : {}),
         ...(h.geoLocationInfo ? { lat: h.geoLocationInfo.lat, lng: h.geoLocationInfo.lon } : {}),
         ...(imageUrl ? { imageUrl } : {}),
       }, s));
     }
   }
+  // Hotels listed, none readable: ixigo changed its shape, which is not "no stays".
+  if (listed > 0 && seen.size === 0) throw new TravelError('refused', 'ixigo answered the hotel search in a shape Go does not read.');
   return inHalf(out, s.half);
 }
 
@@ -317,16 +334,20 @@ export const stays: Recipe<StaySlots> = {
     `&checkinDate=${ddmmyyyy(s.checkIn)}&checkoutDate=${ddmmyyyy(s.checkOut)}&adultCount=${s.adults}&roomCount=${s.rooms}&childCount=0` +
     (s.filters.length ? `&filters=${encodeURIComponent(s.filters.join(','))}` : ''),
   // Page 1 for an area. All of Goa or a half takes pages 1 and 2 (p5's proven shape on staging, about 5 s): page 1 alone,
-  // in ixigo's popularity order, is the Calangute and Candolim strip.
+  // in ixigo's popularity order, is the Calangute and Candolim strip. Either way, once the results are in, ixigo's "Best
+  // Price Guarantee" popup (once a day per browser, about 2 s in) is closed if it is there, so the card's picture is the
+  // list, not the dark overlay: before the scrolls, which it can block, and again after them, for one that came late.
+  // Each look is one read of the page with no wait.
   capture: [{ match: SEARCH, required: true }],
   fetchFor: (s) =>
     s.wide
       ? {
           capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
-          steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }],
+          steps: [{ op: 'wait_for', match: SEARCH }, CLOSE_POPUP, { op: 'scroll', times: 3 }, CLOSE_POPUP],
           timeoutMs: WIDE_FETCH_MS,
+          settleMs: STAYS_SETTLE_MS,
         }
-      : { capture: [{ match: SEARCH, required: true }] },
+      : { capture: [{ match: SEARCH, required: true }], steps: [{ op: 'wait_for', match: SEARCH }, CLOSE_POPUP], settleMs: STAYS_SETTLE_MS },
   fetchable: true,
   readyText: 'per night, per room',
   extract,

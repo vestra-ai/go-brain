@@ -55,6 +55,7 @@ describe('the four searches, as files, read as today', () => {
       const plan = stays.fetchFor!(slots);
       expect(runs[0]!.plan.capture.map((c: CaptureSpec) => ({ ...c })), area).toEqual(plan.capture.map((c) => ({ required: true, ...c })));
       expect(runs[0]!.plan.steps ?? [], area).toEqual(plan.steps ?? []);
+      expect([runs[0]!.plan.timeoutMs, runs[0]!.plan.settleMs], area).toEqual([plan.timeoutMs, plan.settleMs]);
       expect(got.options, area).toEqual(stays.extract(caps, slots));
     }
   });

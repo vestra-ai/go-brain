@@ -207,7 +207,7 @@ const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '')
  * never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
  */
 async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
-  const pending = d.travel.search(kind, q, { tripId: ctx.tripId });
+  const pending = d.travel.search(kind, q, { tripId: ctx.tripId, turnId: ctx.turnId });
   // Handled at once, so a refusal that lands while the wait is worked out is never an unhandled rejection; it is read below.
   pending.catch(() => undefined);
   // A search that can't answer in time (an ixigo.com page on a slow box, or the agent job) goes on without the turn.

@@ -228,7 +228,12 @@ export function createEngine(d: EngineDeps) {
       let plan: FetchPlan = { capture: recipe.capture as CaptureSpec[] };
       for (const f of recipe.fetch ?? []) {
         if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
-        plan = { capture: (f.capture ?? recipe.capture) as CaptureSpec[], ...(f.steps ? { steps: f.steps } : {}), ...(f.timeout_ms ? { timeoutMs: f.timeout_ms } : {}) };
+        plan = {
+          capture: (f.capture ?? recipe.capture) as CaptureSpec[],
+          ...(f.steps ? { steps: f.steps } : {}),
+          ...(f.timeout_ms ? { timeoutMs: f.timeout_ms } : {}),
+          ...(f.settle_ms ? { settleMs: f.settle_ms } : {}),
+        };
         break;
       }
       const started = d.now().getTime();

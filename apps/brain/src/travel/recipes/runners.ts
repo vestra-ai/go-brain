@@ -104,8 +104,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       })),
       ...(plan.steps ? { steps: plan.steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
-      // Pictures of the page as it loads, about one every 700 ms, for the live search card.
-      frames: {},
+      // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
+      // the recipe says how long that takes.
+      frames: plan.settleMs ? { settle_ms: plan.settleMs } : {},
     };
     let userId = d.computer.userIdFor(tripId);
     for (let tries = 0; ; tries++) {

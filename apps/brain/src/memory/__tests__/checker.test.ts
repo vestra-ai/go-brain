@@ -123,3 +123,29 @@ describe('checkLine', () => {
     if (r.ok) expect(r.value.dueAt).toBeUndefined();
   });
 });
+
+describe('checkLine: an ask to Go is answered, never an open line', () => {
+  const at = (s: number) => new Date(Date.parse('2026-10-05T10:00:00Z') + s * 1_000).toISOString();
+  const said = [
+    msg(200, 'p_arjun', "@Go what's planned for Sunday?"),
+    msg(201, 'p_priya', 'how about we stay in Candolim?'),
+    msg(202, 'p_rahul', "@Go we're doing 6 to 9 Nov"),
+    msg(203, 'p_meher', '@Go one thing', { sent_at: at(0) }),
+    msg(204, 'p_meher', 'for my birthday on the 7th', { sent_at: at(1) }),
+    msg(205, 'p_meher', 'is there a good bakery near Anjuna?', { sent_at: at(2) }),
+  ];
+  const askEnv = (): CheckEnv => ({ pack: packOf(said, goaTrip()), forgotten: new Map(), record: [] });
+
+  it('refuses an open line resting on a question put to Go, or on a burst to Go', () => {
+    const reason = { ok: false, reason: 'an open line cannot rest on a question put to Go: Go answers it' };
+    expect(checkLine(lineP({ kind: 'open', text: 'What is planned for Sunday?', proof: ['m_0200'] }), askEnv())).toEqual(reason);
+    expect(checkLine(lineP({ kind: 'open', text: 'A bakery near Anjuna', proof: ['m_0205'] }), askEnv())).toEqual(reason);
+  });
+
+  it('keeps a question the group asks itself as open, and a plan stated to Go as agreed', () => {
+    expect(checkLine(lineP({ kind: 'open', text: 'Stay in Candolim?', proof: ['m_0201'] }), askEnv())).toMatchObject({ ok: true, value: { kind: 'open' } });
+    expect(checkLine(lineP({ kind: 'agreed', text: '6 to 9 Nov', proof: ['m_0202'] }), askEnv())).toMatchObject({ ok: true, value: { kind: 'agreed' } });
+    // One line from the group is enough for an open line, even beside an ask to Go.
+    expect(checkLine(lineP({ kind: 'open', text: 'Sunday plans', proof: ['m_0200', 'm_0201'] }), askEnv()).ok).toBe(true);
+  });
+});

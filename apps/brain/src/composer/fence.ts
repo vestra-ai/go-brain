@@ -1,4 +1,5 @@
 import type { Message } from '../door/methods.js';
+import type { TripPack } from '../trips/pack.js';
 
 const LINE_MAX = 1_500;
 
@@ -36,11 +37,54 @@ export function inlineData(text: string, max = 120): string {
   return `<data>${defuse(oneLine(text)).slice(0, max)}</data>`;
 }
 
+/** Who Go was asked to forget in a trip: each person's id, and the change number up to which their words are hidden. */
+export type Forgotten = ReadonlyMap<string, number>;
+
+/** The one test of "Go was asked to forget this": a person's words up to their forget. What they say after it is new. */
+export function forgottenAt(forgotten: Forgotten, personId: string | null, seq: number): boolean {
+  if (personId === null) return false;
+  const upTo = forgotten.get(personId);
+  return upTo !== undefined && seq <= upTo;
+}
+
+export const isForgotten = (m: Pick<Message, 'author' | 'seq'>, forgotten: Forgotten): boolean =>
+  m.author.kind === 'person' && forgottenAt(forgotten, m.author.person_id, m.seq);
+
+/** How a forgotten person's earlier message reads, in every prompt that shows the chat. */
+export const HIDDEN = '[hidden: someone asked Go to forget them]';
+
 /**
- * One chat line: "#57 Priya: text". A message's own new lines are indented two spaces, so it can never
+ * How one prompt draws the chat: who was forgotten (always given, so no prompt can show their earlier words) and how a
+ * message reads to that prompt's model. roomView is the composer's; memory's notesView is the side passes'.
+ */
+export interface ChatView<L extends string | null = string | null> {
+  readonly forgotten: Forgotten;
+  /** The message's line for this prompt; null leaves it out (the composer has no line for a deleted message). */
+  readonly label: (m: Message) => L;
+}
+
+/**
+ * Every chat line in every prompt, the composer's and the side passes': the one place a forgotten person's earlier words
+ * are hidden. A message the view leaves out stays out.
+ */
+export function chatLine<L extends string | null>(m: Message, view: ChatView<L>): L | string {
+  const shown = view.label(m);
+  if (shown === null) return shown;
+  return isForgotten(m, view.forgotten) ? `#${m.seq} ${HIDDEN}` : shown;
+}
+
+/** The composer's view of a trip's chat: "#57 Priya: text", names and message numbers as the trip has them now. */
+export function roomView(pack: TripPack, forgotten: Forgotten): ChatView {
+  const names = new Map(pack.trip.people.map((p) => [p.person_id, personName(p.name)]));
+  const seqs = new Map(pack.messages.map((m) => [m.message_id, m.seq]));
+  return { forgotten, label: (m) => roomLabel(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)) };
+}
+
+/**
+ * One chat line for the composer: "#57 Priya: text". A message's own new lines are indented two spaces, so it can never
  * start a line that looks like another message. Deleted and withheld messages have no line.
  */
-export function chatLine(
+function roomLabel(
   m: Message,
   nameOf: (personId: string) => string,
   seqOf: (messageId: string) => number | undefined,

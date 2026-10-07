@@ -117,7 +117,7 @@ The repeat ([run 37574978572](https://github.com/vestra-ai/go-brain/actions/runs
 ## What acting live changes
 
 - **Question 1:** a message Jev is sure is chatter, or sure no one spoke to Go in, does not wake the main model; the notes pass and the quiet reactions still run for it. A message that names Go always does. When Jev gives no answer (a timeout or an error), a line that is only emoji, a laugh, an ok, or a greeting or sign-off ("gn 😴", "haha 😂", "gm all ☀️") does not wake it either; any other line does (`apps/brain/src/reflex/small-talk.ts`).
-- **Questions 5, 6 and 7:** the notes pass runs at once for a sure fact or record line instead of after a quiet spell, and a sure 👍 or 🙌 goes on the message without any model. A ✅ goes on at once when questions 5 and 7 are both sure.
+- **Questions 5, 6 and 7:** the notes pass runs at once for a sure fact or record line instead of after a quiet spell, and a sure 👍 or 🙌 goes on the message without any model, 3 seconds later, unless the line turns out to be part of a burst to Go (an "ok" before "@Go one thing"), which gets Go's answer instead. A ✅ goes on at once when questions 5 and 7 are both sure.
 - **Questions 4 and 8:** no part of Go acts on these readings yet; acting live records them as acted in `reflex_reads`.
 - **Question 2:** a message that names Go and that Jev is sure is finished goes to the main model at once. Any other message that wakes it waits 2 seconds (longer while more lines keep coming, up to 6), unless it names Go, or ends a burst of lines that named Go, and plainly ends with ?, ., ! or an emoji.
 - **Question 9, in shadow:** Go does not offer help on its own from an opening.
