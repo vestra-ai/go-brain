@@ -7,7 +7,11 @@ import { loadBook } from '../book/book.js';
 import type { EngineAnswer, RunFor } from '../book/engine.js';
 import { TravelError } from '../mcp-travel.js';
 import type { RecipeOption } from '../recipes/recipe.js';
-import { createWatchRunner, flipped, startWatch, WATCH_FAILURES } from '../recipe-watches.js';
+import { createEngine } from '../book/engine.js';
+import { createIxigoWebBackend, type IxigoWebBackend } from '../recipes/backend.js';
+import type { FetchPlan } from '../recipes/recipe.js';
+import { capture, fixture } from '../recipes/__tests__/fixtures.js';
+import { createWatchRunner, flipped, startWatch, WATCH_FAILURES, watchesNow } from '../recipe-watches.js';
 import { watchTools } from '../watch-tools.js';
 
 const { book } = loadBook();
@@ -36,15 +40,13 @@ const stays = (...o: RecipeOption[]): EngineAnswer => ({ as: 'options', options:
 /** An engine whose answers come in turn; a TravelError in the list is thrown. Every call is kept. */
 function engine(...answers: Array<EngineAnswer | TravelError>) {
   const calls: Array<{ id: string; given: Record<string, unknown>; o: RunFor }> = [];
-  return {
-    calls,
-    answer: async (id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> => {
-      calls.push({ id, given, o });
-      const next = answers[Math.min(calls.length - 1, answers.length - 1)]!;
-      if (next instanceof TravelError) throw next;
-      return next;
-    },
+  const answer = async (id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> => {
+    calls.push({ id, given, o });
+    const next = answers[Math.min(calls.length - 1, answers.length - 1)]!;
+    if (next instanceof TravelError) throw next;
+    return next;
   };
+  return { calls, answer, answerShared: answer };
 }
 
 const switches = (watches: 'on' | 'off' = 'on') => ({ get: (n: string) => (n === 'RECIPE_WATCHES' ? watches : n === 'TRAVEL_MODE' ? 'ixigo_web' : '') }) as never;
@@ -194,6 +196,52 @@ describe('watch_ixigo', () => {
     const t = tools(engine(chance('CC: WL 12')));
     expect(await t.watch.run({ ...ask, flip: 'drops' }, ctx('t_x'))).toMatchObject({ error: 'needs_more' });
     expect(await t.watch.run({ recipe: 'hotels.search', inputs: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' }, flip: 'under', label: 'a pool stay under 4k' }, ctx('t_x'))).toMatchObject({ error: 'needs_more' });
+  });
+});
+
+describe('a watch shares Go\'s searches', () => {
+  it("takes its first check from a search for the same page in the same round: one page, not two (the 8 Oct drill's W2)", async () => {
+    await seedTrip(db.pool, 't_share');
+    const reads: string[] = [];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runner = {
+      read: async (_t: string, url: string, _plan: FetchPlan) => {
+        reads.push(url);
+        await gate;
+        return { captures: [capture('/accommodation-search/api/v3/accommodations/search$', 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', fixture('stays-goa-page1.json'))], finalUrl: url };
+      },
+    };
+    // Wired as register.ts wires them: the engine's searches are the backend's.
+    let backend: IxigoWebBackend | null = null;
+    const real = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => START, searches: (id, given, o, run) => backend!.shareStep(id, given, o, run) });
+    backend = createIxigoWebBackend({ book, engine: real, now: () => START });
+    const [watch] = watchTools({ pool: db.pool, book, engine: real, switches: switches(), now: () => START });
+    const ctx = ({
+      tripId: 't_share', turnId: 'turn_1', wake: [], cards: [], lines: [], stableId: () => 'rw_share', signal: new AbortController().signal,
+      pack: { trip: { dates: { start: '2026-11-06', end: '2026-11-09' } }, messages: [] },
+    }) as unknown as TurnCtx;
+    // The composer's search_stays and watch_ixigo, in one round.
+    const searched = backend.search('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { tripId: 't_share', turnId: 'turn_1' });
+    const watched = watch!.run({ recipe: 'hotels.search', inputs: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' }, conditions: ['pool'], flip: 'under', limit: 3000, label: 'a pool stay under 3k' }, ctx);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+    await searched;
+    expect(await watched).toMatchObject({});
+    expect(reads).toHaveLength(1);
+  });
+});
+
+describe('the stage desk', () => {
+  it('shows each trip with a watch going: how many, and when the next is checked, with no watch ids', async () => {
+    await seedTrip(db.pool, 't_desk');
+    await startWatch(db.pool, { ...CONFIRM, watch_id: 'rw_desk1', trip_id: 't_desk' }, START);
+    await startWatch(db.pool, { ...CONFIRM, watch_id: 'rw_desk2', trip_id: 't_desk' }, START);
+    const going = await watchesNow(db.pool, 500);
+    expect(going).toContainEqual({ trip_id: 't_desk', active: 2, next_check_at: new Date(START.getTime() + 60 * MIN).toISOString() });
+    expect(JSON.stringify(going)).not.toContain('rw_desk');
   });
 });
 

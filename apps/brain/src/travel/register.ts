@@ -29,7 +29,7 @@ import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
 import { startComputerAtSetup, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
-import { createWatchRunner } from './recipe-watches.js';
+import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
 import { ProactiveStore } from '../proactive/store.js';
 
@@ -92,6 +92,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     log: brain.log,
   });
   brain.recipeStats = () => engine.stats();
+  // The watches going, per trip (how many, the next check), for the stage desk and the health view.
+  brain.recipeWatches = () => watchesNow(brain.pool);
   const ixigoWeb = createIxigoWebBackend({
     book,
     engine,

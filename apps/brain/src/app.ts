@@ -23,6 +23,7 @@ import type { Pay } from './money/pay.js';
 import { unsureReflex, type Reflex } from './reflex/reflex.js';
 import type { Tasks } from './tasks/tasks.js';
 import type { RecipeStat } from './travel/book/engine.js';
+import type { TripWatches } from './travel/recipe-watches.js';
 import type { RecipeRunner } from './travel/recipes/runners.js';
 import type { ScreenStream } from './travel/screen-feed.js';
 import type { Travel } from './travel/travel.js';
@@ -83,6 +84,8 @@ export interface Brain {
   };
   /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */
   recipeStats?: () => RecipeStat[];
+  /** Set by the travel lane: the watches groups asked for that are going, per trip, for the admin's health view. */
+  recipeWatches?: () => Promise<TripWatches[]>;
   /** Set by P5. */
   pay?: Pay;
   /** The daily model budget (MODEL_DAILY_BUDGET_USD). buildBrain always sets it; it is optional only so lane test doubles need not. */

@@ -139,6 +139,22 @@ export interface WatchRow {
 
 const COLS = 'watch_id, trip_id, recipe_id, inputs, conditions, flip, flip_limit, label, asked_by, baseline, every_min, until, errors';
 
+/** A trip's watches going, for the stage desk and the health view: how many, and when the next is checked. No watch ids. */
+export interface TripWatches {
+  trip_id: string;
+  active: number;
+  next_check_at: string;
+}
+
+/** Every trip with a watch going, the soonest check first. */
+export async function watchesNow(pool: pg.Pool, limit = 20): Promise<TripWatches[]> {
+  const r = await pool.query<{ trip_id: string; active: number; next: Date }>(
+    `select trip_id, count(*)::int as active, min(next_check_at) as next from recipe_watches where active group by trip_id order by next limit $1`,
+    [limit],
+  );
+  return r.rows.map((w) => ({ trip_id: w.trip_id, active: w.active, next_check_at: w.next.toISOString() }));
+}
+
 /** The trip's watches still going, oldest first. */
 export async function activeWatches(pool: pg.Pool, tripId: string): Promise<WatchRow[]> {
   const r = await pool.query<WatchRow>(`select ${COLS} from recipe_watches where trip_id = $1 and active order by created_at`, [tripId]);
@@ -179,7 +195,8 @@ export async function stopWatch(pool: pg.Pool, tripId: string, watchId: string, 
 export interface WatchRunnerDeps {
   pool: pg.Pool;
   book: Pick<Book, 'get'>;
-  engine: Pick<Engine, 'answer'>;
+  /** answerShared: a search the group just made (or one running) answers a check with no load. */
+  engine: Pick<Engine, 'answerShared'>;
   store: Pick<ProactiveStore, 'add'>;
   switches: Pick<Switches, 'get'>;
   now: () => Date;
@@ -228,7 +245,7 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
     recent.push(now.getTime());
     let answer: EngineAnswer;
     try {
-      answer = await d.engine.answer(w.recipe_id, w.inputs, { tripId: w.trip_id, conditions: w.conditions, background: true });
+      answer = await d.engine.answerShared(w.recipe_id, w.inputs, { tripId: w.trip_id, conditions: w.conditions, background: true });
     } catch (err) {
       const errors = w.errors + 1;
       const why = String(err instanceof Error ? err.message : err).slice(0, 300);
