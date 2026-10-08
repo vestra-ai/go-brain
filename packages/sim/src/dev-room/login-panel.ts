@@ -5,8 +5,9 @@
 // Not now under it. Everyone else's card says who is logging in and never shows the page. The screen is the card's Watch
 // answer, which the room sends to the tapping socket only: the page taps Watch itself, once per hand-off, as soon as
 // Watch comes, and frames the answer when it is on Bash's session page (watchOrigin), so the sheet opens on a loaded page.
-// Its picture takes 5 to 15 s to come after the page loads: "Opening ixigo's login…" stays over the frame until Bash's
-// embed says the picture is live (a postMessage), or, from an embed that says nothing, for 5 s.
+// Its picture takes seconds to come after the page loads: "Opening ixigo's login…" stays over the frame until Bash's embed
+// says its picture is up (a postMessage: showing, a still of the screen, or live, the video), or, from an embed that says
+// nothing, for 5 s.
 // When the hand-off ends (logged in, Not now, out of time), the sheet closes and the card says so.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
@@ -202,22 +203,23 @@ export const LOGIN_SCRIPT = `
     }
   }
 
-  /** Whether the frame's picture is up: the embed says live, or it has had its time to say anything. */
+  /** Whether the frame's picture is up: the embed shows the screen (a still, then the video), or it has had its time. */
   function pictureUp() {
     var waited = Date.now() - login.mountedAt;
-    if (login.picture === 'live') return true;
+    if (login.picture === 'showing' || login.picture === 'live') return true;
     if (login.picture === 'connecting') return waited > EMBED_CONNECTING_MS;
     return login.picture === '' && waited > EMBED_QUIET_MS;
   }
 
-  // Bash's embed says how its picture is doing: { type: 'vestra:embed', state: 'connecting' | 'live' | 'error' }, once per
-  // change, live at its first frame. Only the frame up now is heard, from Watch's own origin; anything else is left alone.
+  // Bash's embed says how its picture is doing: { type: 'vestra:embed', state: 'connecting' | 'showing' | 'live' | 'error' },
+  // once per change: showing when a still of the screen is up, live at the video's first frame. Only the frame up now is
+  // heard, from Watch's own origin; anything else is left alone.
   window.addEventListener('message', function (e) {
     var d = e.data;
     var frame = login.framed ? $('login-frame').querySelector('iframe') : null;
     if (!WATCH_ORIGIN || e.origin !== WATCH_ORIGIN || !frame || e.source !== frame.contentWindow) return;
     if (!d || d.type !== 'vestra:embed') return;
-    if (d.state !== 'connecting' && d.state !== 'live' && d.state !== 'error') return;
+    if (['connecting', 'showing', 'live', 'error'].indexOf(d.state) < 0) return;
     login.picture = d.state;
     renderSheet();
   });

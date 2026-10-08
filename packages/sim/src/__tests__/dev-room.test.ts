@@ -841,6 +841,23 @@ describe('the login card and its sheet', () => {
     expect(LIVE_PAGE).toMatch(/\.login-wait \{ position: absolute; inset: 0; z-index: 1;/);
   });
 
+  it("lifts Opening as soon as the embed shows a still of the screen, before the video's first frame", () => {
+    const p = pageInBrowser(LIVE_PAGE);
+    p.messages([loginCard('logging_in')], 1000);
+    p.receive(answer());
+    p.browse(CARD);
+    p.post(embed('connecting'), ORIGIN);
+    expect(p.el('login-wait').hidden).toBe(false);
+    p.post(embed('showing'), ORIGIN);
+    expect(p.el('login-wait').hidden).toBe(true);
+    // The video's first frame changes nothing more; an error after it still offers the way back.
+    p.post(embed('live'), ORIGIN);
+    expect(p.el('login-wait').hidden).toBe(true);
+    p.post(embed('error'), ORIGIN);
+    expect(p.el('login-wait').hidden).toBe(false);
+    expect(p.el('login-again').hidden).toBe(false);
+  });
+
   it('shows an embed that says nothing after 5 s, and a picture still connecting after 30 s, as the embed has them', () => {
     let now = 1_000_000;
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
