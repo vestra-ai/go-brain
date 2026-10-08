@@ -1,0 +1,46 @@
+id: trains.alternates
+title: Other ways to a seat when a train is full, as ixigo offers them, train by train
+asks:
+  - the train is waitlisted, any other way to get a seat
+  - bangalore to chennai 22 oct koi alternate seat hai kya
+  - any other date or station with seats on 12608
+inputs:
+  from: { kind: place, lookup: trains.station_lookup, about: the station or city people board at }
+  to: { kind: place, lookup: trains.station_lookup, about: the station or city people get off at }
+  date: { kind: date, about: the day the train leaves the boarding station }
+  train: { kind: text, optional: true, about: "the train's 5-digit number, when people asked about one train" }
+auth: none
+changes_state: false
+# The same call as trains.between. A full class may carry ixigo's alternates for it: a seat on a nearby date, from a
+# nearby station, or in two legs, each leg with its class, seats and date.
+page: /trains/search-pwa/from/{from.code}/to/{to.code}/{date|DD-MM-YYYY}
+fast:
+  url: https://ixigotrainsapi.confirmtkt.com/api/v1/trains/search?sourceStationCode={from.code}&destinationStationCode={to.code}&addAvailabilityCache=true&excludeMultiTicketAlternates=false&excludeBoostAlternates=false&sortBy=DEFAULT&dateOfJourney={date|DD-MM-YYYY}&enableNearby=true&enableTG=true&tGPlan=ITG-A50&showTGPrediction=false&tgColor=DEFAULT&showPredictionGlobal=true&showNewAlternates=true&showNewAltText=true
+capture:
+  - ixigotrainsapi.confirmtkt.com/api/v1/trains/search
+read:
+  rows:
+    from: ixigotrainsapi.confirmtkt.com/api/v1/trains/search
+    list: |
+      data.trainList[$type($) = "object" and ($inputs.train ? trainNumber = $inputs.train : true)
+        and ($count($keys(newAlternates)) + $count($keys(newAlternatesTatkal))) > 0]
+answer:
+  as: facts
+  title: "{from.name} to {to.name}, {date|D Mon}"
+  max: 12
+  each: |
+    (
+      $legs := function($a) { $join($a.segments.(trainNumber & " " & source & " to " & destination & " " & travelClass & " " & availabilityDisplayName & " on " & $dateAs($substring(journeyDate, 0, 10), "D Mon")), ", then ") };
+      $say := function($m, $quota) { $keys($m).(
+        $a := $lookup($m, $);
+        $ & " (" & $quota & "): " & $a.altText1 & ($a.altText2 ? ", " & $a.altText2 : "") & ", " & $legs($a)
+          & ($type($a.totalFare) = "number" ? ", " & $rupees($a.totalFare) : "")
+      ) };
+      {
+        "train": $titleWords(trainName) & " " & trainNumber,
+        "alternates": [$say(newAlternates, "General"), $say(newAlternatesTatkal, "Tatkal")]
+      }
+    )
+samples: { page: trains.between.page.json }
+measured: { fast_ms: 366, page_ms: 1605, flow_ms: null }
+notes: A nearby-station train is marked "Nearby Station" with its distance. Booking an alternate is a booking like any other.

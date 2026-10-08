@@ -1,0 +1,54 @@
+id: trains.confirm_chance
+title: Whether a waitlisted train ticket is likely to confirm, by ixigo's own prediction, class by class
+asks:
+  - will my waitlist confirm in 12608 cc on 22 oct
+  - bangalore to chennai 22 oct waiting list kitna chance hai
+  - which trains jaipur to udaipur have a good chance of confirming
+inputs:
+  from: { kind: place, lookup: trains.station_lookup, about: the station or city people board at }
+  to: { kind: place, lookup: trains.station_lookup, about: the station or city people get off at }
+  date: { kind: date, about: the day the train leaves the boarding station }
+  train: { kind: text, optional: true, about: "the train's 5-digit number, when people asked about one train" }
+  class: { kind: choice, optional: true, from_page: true, about: "a class code the page offers, such as SL, 3A, 2A or CC" }
+auth: none
+changes_state: false
+# The same call as trains.between: each train's classes carry ixigo's chance a waitlisted ticket confirms ("93% Chance"),
+# its verdict ("Confirm", "No Chance") and the refund its Alternate Travel Plan would pay (trains.alternate_travel_plan).
+page: /trains/search-pwa/from/{from.code}/to/{to.code}/{date|DD-MM-YYYY}
+fast:
+  url: https://ixigotrainsapi.confirmtkt.com/api/v1/trains/search?sourceStationCode={from.code}&destinationStationCode={to.code}&addAvailabilityCache=true&excludeMultiTicketAlternates=false&excludeBoostAlternates=false&sortBy=DEFAULT&dateOfJourney={date|DD-MM-YYYY}&enableNearby=true&enableTG=true&tGPlan=ITG-A50&showTGPrediction=false&tgColor=DEFAULT&showPredictionGlobal=true&showNewAlternates=true&showNewAltText=true
+capture:
+  - ixigotrainsapi.confirmtkt.com/api/v1/trains/search
+read:
+  rows:
+    from: ixigotrainsapi.confirmtkt.com/api/v1/trains/search
+    list: 'data.trainList[$type($) = "object" and ($inputs.train ? trainNumber = $inputs.train : true)]'
+answer:
+  as: facts
+  title: "{from.name} to {to.name}, {date|D Mon}"
+  max: 12
+  # A class that is available needs no chance; one that is waitlisted says ixigo's figure and verdict. It is ixigo's
+  # prediction, not a promise.
+  each: |
+    (
+      $t := $;
+      $classes := $inputs.class ? [$inputs.class] : $keys(availabilityCache);
+      $say := function($c) {(
+        $a := $lookup($t.availabilityCache, $c);
+        $pct := $type($a.predictionPercentage) = "number" ? $a.predictionPercentage;
+        $waiting := $contains($string($a.availability), "WL");
+        $a ? $c & ": " & ($a.availabilityDisplayName ? $a.availabilityDisplayName : $a.availability)
+          & ($waiting and $exists($pct) ? ", " & $string($pct) & "% chance to confirm, ixigo says " & $a.confirmTktStatus : "")
+          & ($waiting and $type($a.tgMultiplier) = "number" ? ", Alternate Travel Plan refund up to " & $string($a.tgMultiplier) & "x" : "")
+      )};
+      $lines := [$classes.$say($)];
+      $count($lines) > 0 ? {
+        "train": $titleWords(trainName) & " " & trainNumber,
+        "leaves": fromStnCode & " " & departureTime,
+        "arrives": toStnCode & " " & arrivalTime,
+        "classes": $lines
+      }
+    )
+samples: { page: trains.between.page.json }
+measured: { fast_ms: 366, page_ms: 1605, flow_ms: null }
+notes: The results tile shows it as "SL ₹315 WL 106 49% Chance". It is ixigo's prediction from past charts, never a promise.
