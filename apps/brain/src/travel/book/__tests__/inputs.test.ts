@@ -80,12 +80,15 @@ describe('an option input', () => {
           : null,
     } as unknown as Pick<ResultsStore, 'get'>;
     const tool = ixigoTool({ book: b, engine, results, live: () => true })!;
-    expect(tool.description).toContain('hotel (an option from search results, written results_id#n, like r_ab12#2)');
+    expect(tool.description).toContain('- example.option_details (hotel#, area?): ');
+    expect(tool.description).toContain('# an option from this trip\'s search results, written results_id#n like r_ab12#2');
     const turn = { tripId: 't_goa', turnId: 'turn_1', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
     expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'r_ab12#2' } }, turn)).toMatchObject({ recipe: 'example.option_details', facts: [{ name: 'Villa Sol' }] });
     expect(given).toEqual([{ hotel: 'https://www.ixigo.com/hotels/2/details?b=2' }]);
     // Not an option of this trip's results: said plainly, nothing runs.
-    expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'r_ab12#9' } }, turn)).toMatchObject({ error: 'needs_more' });
+    expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'r_ab12#9' } }, turn)).toMatchObject({
+      error: 'needs_more', inputs: { hotel: 'an option from search results, written results_id#n, like r_ab12#2' },
+    });
     expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'Villa Sol' } }, turn)).toMatchObject({ error: 'needs_more' });
     expect(given).toHaveLength(1);
   });

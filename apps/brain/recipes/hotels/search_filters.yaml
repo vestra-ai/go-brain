@@ -5,6 +5,7 @@ asks:
   - how many stays in goa have free cancellation
   - how many 5 star hotels are there in manali
   - can we pay at the hotel for stays in goa
+  - goa mein kitne hotels free cancellation wale hain
 inputs:
   place: { kind: place, lookup: hotels.place_lookup, about: "the city, area or region to stay in" }
   check_in: { kind: date }

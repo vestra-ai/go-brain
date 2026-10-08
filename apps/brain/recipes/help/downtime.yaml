@@ -3,6 +3,7 @@ title: Whether anything on ixigo is down right now, from ixigo's own notice
 asks:
   - is ixigo down
   - why can't we book on ixigo right now
+  - ixigo chal nahi raha kya
 auth: none
 changes_state: false
 # /support asks for ongoing outages as it opens: an empty list when nothing is down.

@@ -4,6 +4,7 @@ asks:
   - what's the hdfc offer exactly
   - minimum amount for the AUSFD code
   - how do we use IXIHDFC3
+  - is offer ki terms kya hain
 inputs:
   offer: { kind: text, about: "the offer's name on ixigo, as offers.list or hotels.offers gives it, such as ausfd_hotels" }
 auth: none

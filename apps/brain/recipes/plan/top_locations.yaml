@@ -3,6 +3,7 @@ title: The destinations ixigo's trip planner lists as popular in India
 asks:
   - popular places to visit in india
   - where is everyone travelling these days
+  - aajkal log kahan ghoomne ja rahe hain
 auth: none
 changes_state: false
 # /plan asks for its popular places as it opens.

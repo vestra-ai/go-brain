@@ -3,6 +3,7 @@ title: One ixigo sale and the offers in it, such as the Grand Travel Fest
 asks:
   - what's in the grand travel fest sale
   - festive sale offers on ixigo
+  - grand travel fest sale mein kya kya hai
 inputs:
   campaign: { kind: text, about: "the sale's name on ixigo, as offers.list gives it, such as grandtravelfest" }
 auth: none

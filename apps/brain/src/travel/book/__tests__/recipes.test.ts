@@ -27,6 +27,12 @@ function engineWith(answer: (url: string, plan: FetchPlan) => ReturnType<typeof 
 }
 
 describe('the recipe book', () => {
+  it('has a Hinglish ask for every recipe a person asks for (not a lookup), as the group writes them, for Jev and the tests', () => {
+    const hinglish = /\b(hai|hain|kya|kaise|kaun|kaunsa|kaunsi|kitna|kitne|kitni|mein|se|ke|ki|ka|ko|pe|wala|wale|wali|dikhao|batao|chahiye|milega|jaayein|jaati|chal|raha|rahe|nahi|kab|kahan|kaha|log|kal|ghoomne|sasta|liye|aayegi)\b/;
+    const without = book.all().filter((r) => r.answer.as !== 'places' && !r.asks.some((a) => hinglish.test(a))).map((r) => r.id);
+    expect(without).toEqual([]);
+  });
+
   it('loads every file, with nothing left out', () => {
     expect(problems).toEqual([]);
     expect(book.all().map((r) => r.id).sort()).toEqual([

@@ -118,8 +118,39 @@ describe('the ixigo tool', () => {
       'trains.platform_locator', 'trains.running_status', 'trains.schedule', 'trains.station_status',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
-    expect(tool.description).toContain('- plan.destination: A destination');
-    expect(tool.description).toContain('Asked as: "best time to visit goa", "good places to eat in goa"');
+    expect(tool.description).toContain("- plan.destination (place): A destination's guide on ixigo.");
+  });
+
+  it('describes the book in one short line a recipe, the same bytes on every turn, so it stays cheap as the book grows', () => {
+    const unused = { answer: async () => { throw new Error('unused'); } };
+    const tool = ixigoTool({ book, engine: unused, live: () => true })!;
+    const recipes = toolRecipes(book);
+    // One line a recipe, in id order, a blank line between sections.
+    const lines = tool.description.split('\n').filter((l) => l.startsWith('- '));
+    expect(lines.map((l) => l.slice(2).split(/[ :]/)[0])).toEqual(recipes.map((r) => r.id));
+    expect(tool.description).toContain("- trains.schedule (train): A train's route and timetable.\n");
+    expect(tool.description).toContain('\n\n- trains.alternate_dates (from, to, date): ');
+    // A choice's values are said, since the model can't guess them; nothing else about an input.
+    expect(tool.description).toContain("- plan.explore (origin, month, theme?): Where to go from a city in a month. theme: one of ixigo's themes: beaches, festivals, mountains, wildlife, cultural or romantic.");
+    // How people ask is for Jev and the tests, never the prompt.
+    for (const r of recipes) for (const ask of r.asks) expect(tool.description, r.id).not.toContain(ask);
+    // Short: at most 140 characters a recipe besides a choice's values (27 recipes: about 2,700, from 8,300).
+    const choices = recipes.flatMap((r) => Object.values(r.inputs).filter((i) => i.kind === 'choice' && !i.value).map((i) => (i.about ?? '').length + 12));
+    expect(tool.description.length - choices.reduce((a, b) => a + b, 0)).toBeLessThan(140 * recipes.length + 300);
+    // The same bytes on every turn and every build: the prompt cache holds them.
+    expect(ixigoTool({ book, engine: unused, live: () => true })!.description).toBe(tool.description);
+    expect(ixigoTool({ book, engine: unused, live: () => false })!.description).toBe(tool.description);
+  });
+
+  it('answers a call that went wrong with the recipe\'s inputs in full, to call it again with', async () => {
+    const engine = createEngine({ book, runner: () => null, trip: async () => ({ people: 4, homes: [] }), now: () => new Date() });
+    const out = (await ixigoTool({ book, engine, live: () => true })!.run({ recipe: 'plan.explore', inputs: { month: '2026-12-01' } }, turn)) as Record<string, unknown>;
+    expect(out).toMatchObject({ recipe: 'plan.explore', error: 'needs_more' });
+    expect(out['inputs']).toEqual({
+      origin: 'the city the group would start from, such as Delhi or Bengaluru',
+      month: 'any day in the month they would travel',
+      theme: "optional; one of ixigo's themes: beaches, festivals, mountains, wildlife, cultural or romantic",
+    });
   });
 
   it("answers with the guide's facts, and tells the model to name only the places in them", async () => {
