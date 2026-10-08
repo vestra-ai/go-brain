@@ -1,61 +1,27 @@
-// Go Live, the room page's second column (roomPage({ live: true })): the trip's ixigo recipe runs as Go makes them, from
-// Go's live view (/v1/live) as the try room relays it. On the left the chat as it is; on the right the pages Go's computer
-// has open while a run goes, live (Bash's browser watch, one tile per tab, a grid with more than one), or, with none open,
-// one tile per run going at once from each run's own pictures; and the run strip: each run's recipe, speed, data calls and
-// times, newest first, with a group of parallel runs as one block whose wall time is set against its sum. A group of steps
-// (how we all get there, one search per home city) has a tile across the top saying how many steps are done, its steps
-// below it, each named by its city. Between runs the screen rests on the last page the computer drew, dimmed, so it never
-// looks dead; before the trip's first page, one line says what will show there, in the same space.
+// Go Live in the room (roomPage({ live: true })): the trip's ixigo recipe runs as Go makes them, from Go's live view
+// (/v1/live) as the try room relays it. The room is one column, like the App: the trip's computer shows in the chat, in
+// the search card's mini browser (the newest picture Go's computer drew, live while the card runs; page.ts), and opens
+// big in a sheet. The runs strip sits behind Details, closed until asked for: each run's recipe, speed, data calls and
+// times, newest first, with a group of parallel runs as one block whose wall time is set against its sum.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
 
-import { LOGIN_PANEL } from './login-panel.js';
-
 export const LIVE_CSS = `
-.split { display: flex; align-items: stretch; height: 100vh; height: 100dvh; }
-.split .app { flex: none; width: 440px; max-width: none; margin: 0; height: 100%; overflow-y: auto; }
-.live { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: #eef1f6; border-left: 1px solid var(--line); }
+.details { position: fixed; inset: 0; z-index: 8; background: rgba(15, 23, 42, 0.45); display: flex; justify-content: flex-end; }
+.details[hidden] { display: none; }
+.details-panel { width: min(460px, 100%); height: 100%; background: var(--bg); display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top)); overflow: hidden; box-shadow: -8px 0 24px rgba(15, 23, 42, 0.12); }
+.details-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.details-bar .act { margin-top: 0; font-size: 14px; padding: 8px 12px; }
 .live-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .live-head .live-state { color: var(--muted); font-size: 13px; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: #cbd5e1; flex: none; }
 .dot.on { background: #22c55e; box-shadow: 0 0 0 3px #dcfce7; }
-.screen { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
-.screen.grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; transition: opacity .3s; }
-.tile-bar { display: flex; gap: 8px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 12px; min-width: 0; min-height: 34px; }
-.tile-bar b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
-.tile-bar .url { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-/* A picture at its own size or smaller, never stretched: centred, with the tile's grey around it. */
-.view { aspect-ratio: 16 / 10; background: #e2e8f0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-.view img { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
-.view img:not([src]) { display: none; }
-.view .hint { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; color: var(--muted); font-size: 13px; }
-.view .hint:empty { display: none; }
-.view .chip-fast { position: absolute; left: 10px; bottom: 10px; background: #0f172a; color: #fff; border-radius: 8px; padding: 4px 9px; font-size: 12px; }
-.view .chip-fast:empty { display: none; }
-/* Between runs: the last page Go's computer drew, lightly dimmed, under a quiet label. A run brings the screen back live. */
-.tile.rest .tile-bar { color: var(--muted); }
-.tile.rest .rest-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.tile.rest .view img { opacity: .8; filter: saturate(.85); }
-/* Before the trip's first page: one line in the screen's own space, so nothing moves when a run starts. */
-.tile.calm { background: transparent; border-color: transparent; }
-.tile.calm .view { background: transparent; }
-.tile.calm .hint { font-size: 14px; }
-.fastcard { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--ink); }
-.fastcard b { font-size: 14px; }
-.fastcard .big { font-size: 40px; font-weight: 700; color: #16a34a; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.fastcard code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .speed { font-size: 10px; font-weight: 700; letter-spacing: .05em; border-radius: 6px; padding: 1px 6px; color: #fff; flex: none; }
 .speed.fast { background: #16a34a; }
 .speed.page { background: #d97706; }
 .speed.link { background: #64748b; }
 .speed.kept { background: #0891b2; }
 .speed.steps { background: #7c3aed; }
-.tile.group { grid-column: 1 / -1; }
-.group-line { padding: 8px 10px; font-size: 13px; color: var(--muted); }
-.speed.live { background: #dc2626; }
-.view.hidden { background: #0f172a; }
-.view.hidden .hint { color: #cbd5e1; }
 .speed.fell { background: #cbd5e1; color: #475569; text-decoration: line-through; }
 .ms { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .live-note { color: var(--muted); font-size: 12px; }
@@ -76,35 +42,30 @@ export const LIVE_CSS = `
 .group .run:last-child { border-bottom: 0; }
 .wf { position: relative; height: 8px; background: #eef2f7; border-radius: 4px; margin: 4px 0 0; }
 .wf i { position: absolute; top: 0; bottom: 0; border-radius: 4px; min-width: 3px; }
-@media (max-width: 1099px) {
-  .split { display: block; height: auto; }
-  .split .app { width: auto; max-width: var(--column); margin: 0 auto; height: auto; overflow: visible; }
-  .live { height: auto; border-left: 0; border-top: 1px solid var(--line); }
-}
 `;
 
-/** Go Live's column, with the login panel (login-panel.ts) under its head. `attrs`: the aside's other attributes, escaped. */
-export const liveAside = (attrs = ''): string => `<aside class="live" id="live" aria-label="Go Live"${attrs}>
-  <div class="live-head"><span class="dot" id="live-dot"></span><b>Go Live</b><span class="live-state" id="live-state">Waiting for the trip</span></div>
-${LOGIN_PANEL}  <div class="screen" id="screen"></div>
-  <div class="live-note">Pages show live as Go's computer opens them, never a payment or sign-in page. A fast run reads ixigo's own data inside a page that is already open, so nothing on screen moves: the strip shows it.</div>
-  <div class="strip-head"><b>Runs</b><span id="strip-sum"></span></div>
-  <div class="strip" id="strip"></div>
-</aside>`;
+/** The Details drawer: Go Live's state and the runs strip, closed until the header's Details opens it. */
+export const LIVE_DETAILS = `<div class="details" id="details" role="dialog" aria-modal="true" aria-label="Details" hidden>
+  <div class="details-panel">
+    <div class="details-bar"><b>Details</b><button class="act secondary" id="details-close" type="button">Close</button></div>
+    <div class="live-head"><span class="dot" id="live-dot"></span><b>Go Live</b><span class="live-state" id="live-state">Waiting for the trip</span></div>
+    <div class="live-note">The searches Go makes on ixigo, on the trip's own computer, newest first. A fast run reads ixigo's own data inside a page that is already open, so nothing on screen moves.</div>
+    <div class="strip-head"><b>Runs</b><span id="strip-sum"></span></div>
+    <div class="strip" id="strip"></div>
+  </div>
+</div>
+`;
 
 /** Inside the room's script: the socket's handler calls onLive for each { type: 'live' } message. */
 export const LIVE_SCRIPT = `
   // Go Live. live.runs: each run by id, a speed that fell and the next one sharing one row (ids, speeds); live.order:
-  // top-level rows, newest first; live.groups: rows that went at once.
-  // live.last: the newest page the trip's computer drew that Go shows (a tab's or a run's own picture), kept for the trip:
-  // the screen rests on it between runs.
-  var live = { trip: null, state: 'wait', why: '', runs: {}, order: [], groups: {}, frames: {}, screen: { state: null, tabs: {}, order: [] }, last: null };
+  // top-level rows, newest first; live.groups: rows that went at once. live.last: the newest page the trip's computer
+  // drew that Go shows (a tab's or a run's own picture), and when it came: the search card's mini browser shows it.
+  var live = { trip: null, state: 'wait', why: '', runs: {}, order: [], groups: {}, screen: { state: null, tabs: {}, order: [] }, last: null };
   var HOLD_MS = 2000;
-  var PLAY_MS = 2500;
   var BADGE = { fast: 'FAST', page: 'PAGE', link: 'LINK', kept: 'KEPT', steps: 'GROUP' };
-  var HIDDEN_HINT = { blocked_path: 'A page Go never shows (payment or sign-in)', off_site: 'Another site: Go never shows it', not_listed: 'A page Go shows no picture of' };
 
-  function liveReset() { live.runs = {}; live.order = []; live.groups = {}; live.frames = {}; live.screen = { state: null, tabs: {}, order: [] }; }
+  function liveReset() { live.runs = {}; live.order = []; live.groups = {}; live.screen = { state: null, tabs: {}, order: [] }; }
   function fmtMs(ms) { return ms == null ? '' : ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s'; }
   function clock(at) { var d = new Date(at); var p = function (n) { return (n < 10 ? '0' : '') + n; }; return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }
 
@@ -120,6 +81,7 @@ export const LIVE_SCRIPT = `
     } else if (m.type === 'run' && m.event) { live.state = 'on'; liveEvent(m.event, false); }
     else if (m.type === 'screen' && m.event) { live.state = 'on'; screenEvent(m.event); }
     renderLive();
+    liveFramed();
   }
 
   function liveEvent(e, old) {
@@ -160,8 +122,7 @@ export const LIVE_SCRIPT = `
         r.endAt = old ? 0 : Date.now();
         break;
       case 'frames': {
-        live.frames[e.run_id] = { list: e.frames || [], got: old ? 0 : Date.now() };
-        var f = live.frames[e.run_id].list[live.frames[e.run_id].list.length - 1];
+        var f = (e.frames || [])[(e.frames || []).length - 1];
         if (f) drawn(f.jpeg_base64, f.page, (r ? r.startOf[e.run_id] || r.at : Date.now()) + (f.at_ms || 0));
         break;
       }
@@ -187,89 +148,48 @@ export const LIVE_SCRIPT = `
         break;
       case 'hidden': if (t) { t.hidden = e.reason || 'blocked_path'; t.frame = null; if (e.tag) t.tag = e.tag; } break;
       case 'tab_close':
-        // Its last picture stays as its run's: a page drawn after the run answered (a kept tab) is what the run shows.
-        if (t && t.frame && t.tag && live.runs[t.tag]) live.frames[t.tag] = { list: [{ label: 'live', at_ms: 0, page: t.frame.page, jpeg_base64: t.frame.jpeg_base64 }], got: 0 };
         delete s.tabs[e.tab_id];
         s.order = s.order.filter(function (id) { return id !== e.tab_id; });
         break;
     }
   }
 
-  /** A page the computer drew: the newest one stays as live.last. Never one Go hides: a hidden tab's pictures never get here. */
+  /**
+   * A page the computer drew: the newest one stays as live.last, with when this page got it. Never one Go hides: a hidden
+   * tab's pictures never get here.
+   */
   function drawn(jpeg, page, at) {
     if (!jpeg) return;
     var when = isNaN(at) ? Date.now() : at;
-    if (!live.last || when >= live.last.at) live.last = { jpeg: jpeg, page: page || '/', at: when };
+    if (!live.last || when >= live.last.at) live.last = { jpeg: jpeg, page: page || '/', at: when, got: Date.now() };
   }
+  // The search card's mini browser and the sheet read the newest picture through this (page.ts).
+  liveShot = function () { return live.last ? { src: 'data:image/jpeg;base64,' + live.last.jpeg, got: live.last.got } : null; };
 
   /** The open tabs, in the order they opened, at most four. */
   function liveTabs() {
     return live.screen.order.map(function (id) { return live.screen.tabs[id]; }).filter(Boolean).slice(0, 4);
   }
 
-  /** At most 40 runs in the strip; older ones go, with their lookups and pictures. */
+  /** At most 40 runs in the strip; older ones go, with their lookups. */
   function trimLive() {
     while (live.order.length > 40) {
       var gone = live.runs[live.order.pop()];
       if (!gone) continue;
       gone.kids.map(function (k) { return live.runs[k] ? live.runs[k].ids : [k]; }).reduce(function (a, b) { return a.concat(b); }, gone.ids.slice())
-        .forEach(function (id) { delete live.runs[id]; delete live.frames[id]; });
+        .forEach(function (id) { delete live.runs[id]; });
     }
   }
 
-  function topOf(r) { return r.parent && live.runs[r.parent] ? live.runs[r.parent] : r; }
   function going(r) { return !r.ended || (r.endAt && Date.now() - r.endAt < HOLD_MS); }
-
   function isGroupRun(r) { return r.speeds[r.speeds.length - 1] === 'steps'; }
-
-  /**
-   * The runs on screen: those going, and those that just ended (held a moment), oldest first, at most four. A group of
-   * steps (how we all get there) shows as its own tile across the top, then its steps, at most four; its link-only
-   * steps (flights) have no page and end at once, so they take no tile.
-   */
-  function tilesNow() {
+  /** The runs going, and those that just ended (held a moment), oldest first. */
+  function goingNow() {
     var out = [];
     for (var i = live.order.length - 1; i >= 0; i--) { var r = live.runs[live.order[i]]; if (r && going(r)) out.push(r); }
-    var groups = out.filter(isGroupRun);
-    if (!groups.length) return out.slice(-4);
-    var steps = out.filter(function (x) { return !isGroupRun(x) && x.speeds[x.speeds.length - 1] !== 'link'; });
-    return groups.slice(-1).concat(steps.slice(0, 4));
+    return out;
   }
-
-  /** A group's own tile: how many of its steps are done, and once it ends, its wall time against the sum of its steps. */
-  function groupLine(r) {
-    var steps = live.order.map(function (id) { return live.runs[id]; }).filter(function (x) { return x && x.stepOf === r.id; });
-    var done = steps.filter(function (x) { return x.ended; }).length;
-    var g = live.groups[r.group];
-    var timing = g && g.ended ? ', wall ' + fmtMs(g.wall) + ' against ' + fmtMs(g.sum) + ' one after another' : '';
-    return steps.length + ' steps at once, ' + done + ' done' + timing;
-  }
-
   function tileLabel(r) { return r.lane ? r.lane + ': ' + r.label : r.label; }
-
-  /** The newest pictures of a run or its lookups, played back over at most PLAY_MS as they arrive; the last once played. */
-  function pictureOf(r) {
-    var best = null;
-    r.kids.concat(r.ids).forEach(function (id) { var f = live.frames[id]; if (f && f.list.length && (!best || f.got >= best.got)) best = f; });
-    if (!best) return null;
-    var list = best.list;
-    if (!best.got) return list[list.length - 1];
-    var first = list[0].at_ms;
-    var span = list[list.length - 1].at_ms - first;
-    var k = span > PLAY_MS ? PLAY_MS / span : 1;
-    var elapsed = Date.now() - best.got;
-    var shown = list[0];
-    for (var i = 0; i < list.length; i++) if ((list[i].at_ms - first) * k <= elapsed) shown = list[i];
-    return shown;
-  }
-
-  var SECTIONS = { hotel: 'hotels', hotels: 'hotels', train: 'trains', trains: 'trains', flight: 'flights', flights: 'flights', bus: 'buses', buses: 'buses', cab: 'cabs', cabs: 'cabs' };
-  /** "ixigo hotels" for a page under /hotels, and so on, from its path alone; "ixigo" for any other. */
-  function pageName(page) {
-    var parts = String(page || '').split('/');
-    for (var i = 0; i < parts.length; i++) if (Object.prototype.hasOwnProperty.call(SECTIONS, parts[i])) return 'ixigo ' + SECTIONS[parts[i]];
-    return 'ixigo';
-  }
 
   function badges(r) {
     var s = r.speeds;
@@ -280,116 +200,6 @@ export const LIVE_SCRIPT = `
     if (!r.ended) return '<span class="ms">' + fmtMs(Date.now() - r.at) + '</span>';
     var rows = r.picked ? ' ' + r.picked : r.rows != null ? ' ' + r.rows : '';
     return '<span class="ms">' + fmtMs(r.ms) + '</span>' + (r.ok ? '<span class="ok">✓' + rows + '</span>' : '<span class="bad" title="' + esc(r.why || '') + '">× ' + esc((r.why || 'failed').slice(0, 60)) + '</span>');
-  }
-
-  function emptyLine() {
-    if (live.state === 'off') return 'Live view is off. ' + live.why;
-    if (!live.trip) return "Say something to start the trip. Go's searches on ixigo show here, live.";
-    return "When Go searches ixigo for the trip, its pages show here, live.";
-  }
-
-  /** Between runs: the last page the computer drew, full size and dimmed, under a quiet label of what and when. */
-  function renderRest(screen) {
-    if (screen.getAttribute('data-key') !== 'rest') {
-      screen.setAttribute('data-key', 'rest');
-      screen.className = 'screen';
-      screen.innerHTML = '<div class="tile rest"><div class="tile-bar"><span class="rest-label"></span></div><div class="view"><img alt=""></div></div>';
-    }
-    var img = screen.querySelector('img');
-    var src = 'data:image/jpeg;base64,' + live.last.jpeg;
-    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
-    screen.querySelector('.rest-label').textContent = "Go's computer · " + pageName(live.last.page) + ' · ' + ago(new Date(live.last.at).toISOString());
-  }
-
-  /** Before the trip's first page: one calm line in the screen's own space. */
-  function renderCalm(screen) {
-    if (screen.getAttribute('data-key') !== 'calm') {
-      screen.setAttribute('data-key', 'calm');
-      screen.className = 'screen';
-      screen.innerHTML = '<div class="tile calm"><div class="view"><span class="hint"></span></div></div>';
-    }
-    screen.querySelector('.hint').textContent = emptyLine();
-  }
-
-  /** The tabs open on the trip's computer, live: the newest picture of each, or a dark tile for one Go never shows. */
-  function renderTabs(screen, tabs) {
-    var key = 'tabs:' + tabs.map(function (t) { return t.id; }).join(',');
-    if (screen.getAttribute('data-key') !== key) {
-      screen.setAttribute('data-key', key);
-      screen.className = 'screen' + (tabs.length > 1 ? ' grid' : '');
-      screen.innerHTML = tabs.map(function (t) { return '<div class="tile" data-tab="' + esc(t.id) + '"><div class="tile-bar"></div><div class="view"><img alt=""><span class="hint"></span></div></div>'; }).join('');
-    }
-    var els = screen.querySelectorAll('.tile');
-    for (var i = 0; i < els.length; i++) {
-      var t = live.screen.tabs[els[i].getAttribute('data-tab')];
-      if (!t) continue;
-      els[i].className = 'tile';
-      // The run whose fetch has the tab now (the fetch's tag is its run id), when the strip knows it.
-      var run = t.tag ? live.runs[t.tag] : null;
-      els[i].querySelector('.tile-bar').innerHTML = '<span class="speed live">LIVE</span>' + (run ? '<b>' + esc(tileLabel(run)) + '</b>' + badges(run) : '') +
-        '<span class="url">' + esc(t.hidden ? 'Not shown' : t.frame ? 'ixigo.com' + t.frame.page : 'Opening') + '</span>';
-      var view = els[i].querySelector('.view');
-      view.className = 'view' + (t.hidden ? ' hidden' : '');
-      var img = view.querySelector('img');
-      var src = t.frame ? 'data:image/jpeg;base64,' + t.frame.jpeg_base64 : '';
-      if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
-      if (!src && img.hasAttribute('src')) img.removeAttribute('src');
-      view.querySelector('.hint').textContent = t.hidden ? HIDDEN_HINT[t.hidden] || HIDDEN_HINT.blocked_path : src ? '' : "Opening the page on the trip's computer";
-    }
-  }
-
-  function renderScreen() {
-    var screen = $('screen');
-    var tiles = tilesNow();
-    // No run going: the screen rests on the last page drawn, or before any, says what will show. A run brings it back live.
-    if (!tiles.length) {
-      if (live.last) renderRest(screen);
-      else renderCalm(screen);
-      return;
-    }
-    var tabs = liveTabs();
-    if (tabs.length) { renderTabs(screen, tabs); return; }
-    var key = tiles.map(function (r) { return r.id; }).join(',');
-    if (screen.getAttribute('data-key') !== key) {
-      screen.setAttribute('data-key', key);
-      screen.className = 'screen' + (tiles.length > 1 ? ' grid' : '');
-      screen.innerHTML = tiles.map(function (r) {
-        if (isGroupRun(r)) return '<div class="tile group" data-run="' + esc(r.id) + '"><div class="tile-bar"></div><div class="group-line"></div></div>';
-        return '<div class="tile" data-run="' + esc(r.id) + '"><div class="tile-bar"></div><div class="view"><img alt=""><span class="hint"></span><span class="chip-fast"></span></div></div>';
-      }).join('');
-    }
-    var els = screen.querySelectorAll('.tile');
-    for (var i = 0; i < els.length; i++) {
-      var r = live.runs[els[i].getAttribute('data-run')];
-      if (!r) continue;
-      if (isGroupRun(r)) {
-        els[i].className = 'tile group' + (r.ended ? ' ended' : '');
-        els[i].querySelector('.tile-bar').innerHTML = '<b>' + esc(r.label) + '</b>' + badges(r) + outcome(r);
-        els[i].querySelector('.group-line').textContent = groupLine(r);
-        continue;
-      }
-      var pic = pictureOf(r);
-      els[i].className = 'tile' + (r.ended ? ' ended' : '');
-      els[i].querySelector('.tile-bar').innerHTML = '<b>' + esc(tileLabel(r)) + '</b>' + badges(r) + outcome(r) + '<span class="url">' + esc(pic ? 'ixigo.com' + pic.page : r.recipe) + '</span>';
-      var view = els[i].querySelector('.view');
-      view.className = 'view';
-      var img = view.querySelector('img');
-      var src = pic ? 'data:image/jpeg;base64,' + pic.jpeg_base64 : '';
-      if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
-      if (!src && img.hasAttribute('src')) img.removeAttribute('src');
-      var fast = r.speeds[r.speeds.length - 1] === 'fast';
-      var call = null;
-      for (var j = 0; j < r.lines.length; j++) if (r.lines[j].fast) call = r.lines[j];
-      // A fast run moves nothing on screen: over a picture, a chip says so; with none, the call itself fills the tile.
-      view.querySelector('.chip-fast').textContent = fast && pic ? 'In-page data call' + (call && call.ms != null ? ', ' + fmtMs(call.ms) : '') + '. No page load.' : '';
-      var hint = view.querySelector('.hint');
-      if (fast && !pic) {
-        hint.innerHTML = '<div class="fastcard"><b>In-page data call, no page load</b><span class="big">' + esc(call && call.ms != null ? fmtMs(call.ms) : fmtMs(Date.now() - r.at)) + '</span>' +
-          (call ? '<code>' + esc(call.text.split('  ')[0]) + '</code>' : '<code>inside the open ixigo tab</code>') + '</div>';
-      } else {
-        hint.textContent = pic ? '' : r.ended ? (r.ok ? 'Done' : 'Stopped') : "Opening the page on the trip's computer";
-      }
-    }
   }
 
   function runHtml(r, child, extra) {
@@ -430,26 +240,30 @@ export const LIVE_SCRIPT = `
   }
 
   function renderLive() {
-    var tiles = tilesNow().filter(function (r) { return !isGroupRun(r); });
+    var runs = goingNow();
+    var steps = runs.filter(function (r) { return !isGroupRun(r); });
+    var tabs = runs.length ? liveTabs().length : 0;
     $('live-dot').className = 'dot' + (live.state === 'on' ? ' on' : '');
-    // Between runs an open tab is the resting screen, not a live one.
-    var tabs = tilesNow().length ? liveTabs().length : 0;
-    $('live-state').textContent = live.state === 'off' ? 'Off' : live.state === 'on'
-      ? (tabs > 1 ? tabs + ' pages open, live' : tabs ? 'A page open, live' : tiles.length > 1 ? tiles.length + ' runs in parallel' : tiles.length ? 'Working' : live.screen.state === 'asleep' ? "Live. The trip's computer is asleep" : 'Live')
+    $('live-state').textContent = live.state === 'off' ? 'Off. ' + live.why : live.state === 'on'
+      ? (tabs > 1 ? tabs + ' pages open, live' : tabs ? 'A page open, live' : steps.length > 1 ? steps.length + ' runs in parallel' : steps.length ? 'Working' : live.screen.state === 'asleep' ? "Live. The trip's computer is asleep" : 'Live')
       : 'Waiting for the trip';
-    renderScreen();
     renderStrip();
   }
 
   function liveBusy() {
-    var now = Date.now();
     for (var id in live.runs) if (going(live.runs[id])) return true;
-    for (var f in live.frames) if (live.frames[f].got && now - live.frames[f].got < PLAY_MS + 500) return true;
     return false;
   }
 
+  // Details: closed until asked for.
+  function showDetails(open) {
+    $('details').hidden = !open;
+    $('details-open').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  $('details-open').addEventListener('click', function () { showDetails(true); });
+  $('details-close').addEventListener('click', function () { showDetails(false); });
+
   setInterval(function () { if (live.trip && liveBusy()) renderLive(); }, 250);
-  setInterval(function () { if (live.last) renderLive(); }, 15000); // keeps "2 min ago" honest
   renderLive();
 `;
 
