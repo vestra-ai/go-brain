@@ -37,7 +37,7 @@ let trips = 0;
  */
 /** opened: ixigo's userinfo status on the log in page the hand-off opens (403 by default: logged out), 'timeout' for a
  *  page that caught nothing in its time, 'refused' for a hand-off Bash would not open. */
-function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout'>; opened?: number | 'timeout' | 'refused' } = {}) {
+function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout'>; opened?: number | 'timeout' | 'refused'; taps?: 'fail' } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
   const clock = { now: NOW };
@@ -76,6 +76,16 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
       if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
       return capture('tab_call', `${IXIGO}${USERINFO}`, '{', s);
     },
+    // The taps on the page once it is in front: what the card says then is kept, to see Watch came first.
+    tabSteps: async (_trip: string, tab: string, steps: unknown[], to: { keepOpenMs: number; timeoutMs: number }) => {
+      tabStepCalls.push({ tab, steps, o: to, cardActions: cardActions() });
+      if (o.taps === 'fail') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+    },
+  };
+  const tabStepCalls: Array<{ tab: string; steps: unknown[]; o: { keepOpenMs: number; timeoutMs: number }; cardActions: string[] }> = [];
+  const cardActions = (): string[] => {
+    const replaced = link.of('replace_card');
+    return ((replaced.at(-1)?.card as { actions?: Array<{ action_id: string }> } | undefined)?.actions ?? []).map((a) => a.action_id);
   };
   const tabCalls: Array<{ tab: string; call: { url: string; method: string }; keepOpenMs: number }> = [];
   const handOffs: Array<{ url: string; plan: FetchPlan; o: { keepOpenMs: number; tab: string } }> = [];
@@ -135,7 +145,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const parked = async (): Promise<unknown> =>
     (await db.pool.query<{ parked: unknown }>('select parked from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.parked ?? null;
   return {
-    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, tabCalls, wakes, login, tap, last, state, parked,
+    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, tabCalls, tabStepCalls, wakes, login, tap, last, state, parked,
     greet, looks, hooks, setup: () => login.setupStep.run(tripId),
   };
 }
@@ -283,15 +293,20 @@ describe('logging in', () => {
     expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: "Opening ixigo's log in on Go's screen" });
     // No job: no model clicks its way to the box (87 to 96 s on staging, 8 Oct).
     expect(w.starts).toEqual([]);
-    // ixigo's home page in FRONT of Rahul's window (as a phone: Bash's front), its own Login tapped and the cursor in its
-    // mobile number box, the tab kept there for him for Bash's most; ixigo's userinfo asked from inside the page first,
-    // one byte, read by its status only.
+    // ixigo's home page in FRONT of Rahul's window (as a phone: Bash's front), the tab kept there for him for Bash's most;
+    // ixigo's userinfo asked from inside the page, one byte, read by its status only. The page and the check alone: Watch
+    // comes as soon as the page is in front.
     expect(LOGIN_URL).toBe('https://www.ixigo.com/');
     expect(HANDOFF_MS).toBe(600_000);
     expect(w.handOffs).toEqual([{
       url: LOGIN_URL,
-      plan: { capture: [], steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }], timeoutMs: HANDOFF_PAGE_MS },
+      plan: { capture: [], steps: [], timeoutMs: HANDOFF_PAGE_MS },
       o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' } },
+    }]);
+    // Then, with Watch on the card, ixigo's own Login and the cursor in its mobile number box, on the page he watches.
+    expect(w.tabStepCalls).toEqual([{
+      tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }],
+      o: { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS }, cardActions: ['ixigo_watch', 'ixigo_logged_in', 'ixigo_not_now'],
     }]);
     expect(await w.state()).toBe('logging_in');
     // At once, before the page: the card flips to logging in, with I'm logged in and Not now but no Watch yet (the room
@@ -388,6 +403,8 @@ describe('logging in', () => {
     expect(await w.state()).toBe('logged_in');
     expect(w.releases).toEqual([LOGIN_TAB]);
     expect(w.last()).toMatchObject({ title: 'ixigo: logged in as Rahul' });
+    // Nothing to tap on a page already logged in, and no Watch ever offered.
+    expect(w.tabStepCalls).toEqual([]);
   });
 
   it("keeps a log in page that ran out of time in front for them; one Go's computer would not open goes back to the ask, saying so", async () => {
@@ -399,9 +416,10 @@ describe('logging in', () => {
 
     // ixigo's Login or its mobile box not found (Bash's time ran out at that tap, with the check caught): the taps are a
     // convenience, the page in front is not. It stays theirs, the card as it was, no error, nothing closed.
-    const missed = world({ opened: 403 });
+    const missed = world({ opened: 403, taps: 'fail' });
     await missed.setup();
     await missed.tap('ixigo_login', 'p_rahul');
+    expect(missed.tabStepCalls).toHaveLength(1);
     expect(await missed.state()).toBe('logging_in');
     expect(missed.releases).toEqual([]);
     expect(missed.last()).toMatchObject({
