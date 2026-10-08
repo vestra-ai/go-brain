@@ -1,5 +1,5 @@
 import { once } from 'node:events';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { PAGE_HTML, roomPage } from '../dev-room/page.js';
 import { serveDevRoom, type DevRoom } from '../dev-room/serve.js';
@@ -297,6 +297,71 @@ function pageInBrowser(html: string, o: { column: boolean; me?: string }) {
   };
 }
 
+/** A stand-in for the browser's Image, for a card's picture: the test says when each one loads, or fails. */
+class TestImage {
+  static made: TestImage[] = [];
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  src = '';
+  constructor() { TestImage.made.push(this); }
+  static load(src: string) { for (const i of TestImage.made) if (i.src === src) i.onload?.(); }
+  static fail(src: string) { for (const i of TestImage.made) if (i.src === src) i.onerror?.(); }
+}
+const withPictures = () => {
+  beforeEach(() => {
+    TestImage.made = [];
+    vi.stubGlobal('Image', TestImage);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+};
+
+describe("a card's picture", () => {
+  withPictures();
+  const shot = (n: number) => `https://brain.go.example/live/shot_${n}.jpg`;
+  /** Go's working card with its newest screenshot: Go replaces it about once a second while a job runs. */
+  const working = (n: number, page_url: string | null) => ({
+    message_id: 'm_go_1', seq: 5, updated_seq: 5 + n, author: { kind: 'go' }, text: 'On it.', attachments: [],
+    mentions_go: false, mentions: [], reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z',
+    card: {
+      kind: 'working', card_id: 'c_job', fallback_text: 'Logging in to ixigo', task_id: 'task_1', title: 'Logging in to ixigo', state: 'running',
+      steps: [{ text: "Open ixigo's log in", state: 'doing' }], screenshot_url: shot(n), page_url, updated_at: '2026-10-08T10:00:00Z', actions: [],
+    },
+  });
+  /** Every picture the room shows. */
+  const pictures = (p: ReturnType<typeof pageInBrowser>) => [...p.room().matchAll(/<img alt="" src="([^"]*)"/g)].map((m) => m[1]);
+
+  for (const page of [null, 'https://www.ixigo.com/hotels/search/result']) {
+    it(`never blanks ${page ? 'the live search card' : 'a working card'}: three quick swaps keep the loaded picture until the newest loads`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column: false });
+      p.messages([working(1, page)], 1200);
+      // The first picture shows once it has loaded, never as an empty picture before that.
+      expect(pictures(p)).toEqual([]);
+      TestImage.load(shot(1));
+      expect(pictures(p)).toEqual([shot(1)]);
+      // Three new screenshots a moment apart: the card keeps the loaded one.
+      p.messages([working(2, page)], 1200);
+      expect(pictures(p)).toEqual([shot(1)]);
+      p.messages([working(3, page)], 1200);
+      expect(pictures(p)).toEqual([shot(1)]);
+      p.messages([working(4, page)], 1200);
+      expect(pictures(p)).toEqual([shot(1)]);
+      // One already passed by loads late: never shown. The newest loads: shown.
+      TestImage.load(shot(2));
+      expect(pictures(p)).toEqual([shot(1)]);
+      TestImage.load(shot(4));
+      expect(pictures(p)).toEqual([shot(4)]);
+      // A picture that fails to load: the card keeps the one it has.
+      p.messages([working(5, page)], 1200);
+      TestImage.fail(shot(5));
+      expect(pictures(p)).toEqual([shot(4)]);
+      p.messages([working(5, page)], 1200);
+      expect(pictures(p)).toEqual([shot(4)]);
+      // Each address is fetched once, however often the room is drawn.
+      expect(TestImage.made.map((i) => i.src)).toEqual([1, 2, 3, 4, 5].map(shot));
+    });
+  }
+});
+
 describe('the chat stays at the bottom', () => {
   for (const column of [true, false]) {
     const where = column ? "in Go Live's column" : 'on a page that scrolls';
@@ -450,6 +515,7 @@ describe("Go Live's screen between runs", () => {
 });
 
 describe("Go's live search card", () => {
+  withPictures();
   const shot = 'https://brain.go.example/live/shot_1.jpg';
   /** Go's message with its working card: a finished hotels search, its picture, and the page in it. */
   const searchCard = (page_url: string | null) => ({
@@ -466,6 +532,7 @@ describe("Go's live search card", () => {
     const p = pageInBrowser(PAGE_HTML, { column: false });
     const url = 'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&checkinDate=06112026&filters=FL_HF_29%2CMP';
     p.messages([searchCard(url)], 1200);
+    TestImage.load(shot);
     const html = p.room();
     const href = url.replace(/&/g, '&amp;');
     expect(html).toContain(`<a class="act secondary" href="${href}" target="_blank" rel="noopener noreferrer">See on ixigo</a>`);
