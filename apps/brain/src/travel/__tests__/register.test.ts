@@ -36,13 +36,14 @@ describe('registerTravel', () => {
     expect(LANES.indexOf(registerTravel)).toBeLessThan(LANES.indexOf(registerProactive));
   });
 
-  it('sets brain.travel and registers the seven travel tools, the four options taps, the tap wake and the image route', async () => {
+  it('sets brain.travel and registers the eight travel tools, the five options taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
     // A new trip's computer is made at setup (warm.ts startComputerAtSetup).
     expect(lb.setup.steps.map((s) => s.name)).toContain('travel.computer');
     // The ixigo tool runs the book's other recipes (the destination guide and more).
-    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo']);
-    expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/open', 'options/pick', 'options/see_all', 'options/vote']);
+    // compare_ways_there: each home city's ways to the trip, side by side (the composite trip.how_we_get_there).
+    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo', 'compare_ways_there']);
+    expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote']);
     expect(lb.context.wakes.has('tap')).toBe(true);
     // A search that outlived its turn wakes Go with its options.
     expect(lb.context.wakes.has('search')).toBe(true);

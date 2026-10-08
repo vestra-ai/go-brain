@@ -56,9 +56,74 @@ export interface RunnerDeps {
   now: () => Date;
   sleep?: (ms: number) => Promise<void>;
   log: { warn(obj: object, msg: string): void };
+  /** How many browser fetches Go runs at once on one trip's computer: Bash's own cap (the BROWSER_FETCH_SLOTS switch). */
+  slots?: () => number;
 }
 
 const nap = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms).unref());
+
+/** Bash's cap on a computer's fetches at once, until it says otherwise: two. */
+export const DEFAULT_SLOTS = 2;
+/** Bash refused a fetch because all its own are taken (409 browser_busy): Go waits as long as Bash says, this many times. */
+export const BUSY_TRIES = 5;
+const BUSY_WAIT_MS = 1_000;
+
+/**
+ * Go's own count of the fetches running on each computer (by its /v1 user, whatever trip or run asks), so it asks Bash
+ * for no more at once than Bash runs: a fetch over the count waits here for one to end, first come first served, instead
+ * of being refused. A fetch that is waiting when its signal aborts leaves without asking Bash anything.
+ */
+function fetchSlots(slots: () => number): (box: string, signal?: AbortSignal) => Promise<() => void> {
+  const running = new Map<string, number>();
+  const waiting = new Map<string, Array<() => void>>();
+  const room = (box: string): boolean => (running.get(box) ?? 0) < Math.max(1, slots());
+  const pump = (box: string): void => {
+    const queue = waiting.get(box);
+    while (queue?.length && room(box)) {
+      running.set(box, (running.get(box) ?? 0) + 1);
+      queue.shift()!();
+    }
+    if (queue?.length === 0) waiting.delete(box);
+  };
+  return async (box, signal) => {
+    if (signal?.aborted) throw signal.reason;
+    if (room(box) && !waiting.has(box)) {
+      running.set(box, (running.get(box) ?? 0) + 1);
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        const queue = waiting.get(box) ?? [];
+        waiting.set(box, queue);
+        const stop = (): void => {
+          queue.splice(queue.indexOf(go), 1);
+          if (queue.length === 0) waiting.delete(box);
+          reject(signal!.reason);
+        };
+        const go = (): void => {
+          signal?.removeEventListener('abort', stop);
+          resolve();
+        };
+        signal?.addEventListener('abort', stop, { once: true });
+        queue.push(go);
+      });
+    }
+    let freed = false;
+    return () => {
+      if (freed) return;
+      freed = true;
+      const left = (running.get(box) ?? 1) - 1;
+      if (left > 0) running.set(box, left);
+      else running.delete(box);
+      pump(box);
+    };
+  };
+}
+
+/** How long Bash says to wait before asking again when its fetches are all taken. */
+function busyWaitMs(err: V1Error): number {
+  const said = Number(err.detail?.['retry_after_ms']);
+  return Number.isFinite(said) && said > 0 ? Math.min(said, 5_000) : (err.retryAfterMs ?? BUSY_WAIT_MS);
+}
+const isBusy = (err: unknown): boolean => err instanceof V1Error && err.status === 409 && err.code === 'browser_busy';
 
 export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of credit.";
 
@@ -116,6 +181,7 @@ function fetchFailed(err: V1Error, what: { id: string; capture: CaptureSpec[] },
     throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
   }
   if (err.status === 402) throw new TravelError('refused', OUT_OF_CREDIT);
+  if (isBusy(err)) throw new TravelError('unreachable', "The trip's computer is busy with other searches. Try again in a moment.");
   if (err.status === 409) throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment.");
   if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time. Try again in a moment.");
   if (err.status === 400 || err.status === 403) {
@@ -128,6 +194,33 @@ function fetchFailed(err: V1Error, what: { id: string; capture: CaptureSpec[] },
 
 export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   const sleep = d.sleep ?? nap;
+  const slot = fetchSlots(d.slots ?? (() => DEFAULT_SLOTS));
+
+  /**
+   * A Bash call, asked again while Bash says its fetches are all taken (one Go doesn't count, or a cap lowered), inside
+   * the fetch's own time: once its signal aborts, it asks no more. A person using the browser (browser_in_use) is not this.
+   */
+  async function patient<T>(call: () => Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+    for (let busy = 0; ; busy++) {
+      try {
+        return await call();
+      } catch (err) {
+        if (!(err instanceof V1Error) || !isBusy(err) || busy >= BUSY_TRIES || signal?.aborted) throw err;
+        await sleep(busyWaitMs(err));
+      }
+    }
+  }
+
+  /** A fetch on the trip's computer, once one of its slots is free; the slot frees when the fetch ends, however it ends. */
+  async function inSlot<T>(tripId: string, signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
+    const free = await slot(d.computer.userIdFor(tripId), signal);
+    try {
+      return await run();
+    } finally {
+      free();
+    }
+  }
+
   /** One browser fetch: the page opened, its steps worked, and the calls the plan names kept. */
   async function fetchPage(
     tripId: string,
@@ -155,7 +248,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     for (let tries = 0; ; tries++) {
       const startedAt = d.now().getTime();
       try {
-        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) });
+        const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
         // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
         if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
         o.onTrace?.({
@@ -196,6 +289,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   async function pageFetch(tripId: string, call: PageCall, o: Omit<ReadOptions, 'onProgress'>): Promise<Capture> {
     if (d.now().getTime() < unsupportedUntil) throw new TravelError('unreachable', 'fast unavailable: this Bash takes no page calls');
     const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'fast', max_bytes: 1_000_000 };
+    // Never asked again on browser_busy: a page call is for speed, so a busy one fails at once and the run falls to the
+    // page, which waits its turn.
     const ask = (open: boolean) =>
       d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
         body: { ...(open ? { url: `${IXIGO}/` } : {}), steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS },
@@ -237,9 +332,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   return {
     name: 'browser_fetch',
     async read(tripId, url, plan, o = {}) {
-      return fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o);
+      return inSlot(tripId, o.signal, () => fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o));
     },
-    pageFetch: (tripId, call, o = {}) => pageFetch(tripId, call, o),
+    pageFetch: (tripId, call, o = {}) => inSlot(tripId, o.signal, () => pageFetch(tripId, call, o)),
     canPageFetch: () => d.now().getTime() >= unsupportedUntil,
   };
 }

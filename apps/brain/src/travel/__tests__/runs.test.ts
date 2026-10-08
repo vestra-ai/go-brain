@@ -64,6 +64,29 @@ describe('the run log', () => {
     expect(ends(w.seen)).toEqual([{ type: 'group_end', group_id: w.groupOf('s1'), runs: 1, wall_ms: 2_000, sum_ms: 2_000 }]);
   });
 
+  it("a composite's steps (step_of) are its group's runs, side by side; the composite holds the group open and never counts", () => {
+    const w = world();
+    w.start('c1', 'trip.how_we_get_there', { speed: 'steps', label: 'Delhi, Mumbai · 6 Nov' });
+    w.start('t1', 'trains.between', { step_of: 'c1', lane: 'Delhi', speed: 'fast' });
+    w.start('b1', 'buses.between', { step_of: 'c1', lane: 'Delhi' });
+    w.start('k1', 'buses.city_lookup', { parent: 'b1' });
+    w.start('t2', 'trains.between', { step_of: 'c1', lane: 'Mumbai', speed: 'fast' });
+    w.start('b2', 'buses.between', { step_of: 'c1', lane: 'Mumbai' });
+    w.advance(400);
+    w.end('k1', 400);
+    w.end('t1', 400, { rows: 6 });
+    w.end('t2', 400, { rows: 4 });
+    w.advance(2_600);
+    w.end('b1', 3_000, { rows: 12 });
+    w.end('b2', 3_000, { rows: 9 });
+    expect(ends(w.seen)).toEqual([]);
+    w.end('c1', 3_000, { rows: 4 });
+    expect(['t1', 'b1', 'k1', 't2', 'b2'].map(w.groupOf)).toEqual(Array(5).fill(w.groupOf('c1')));
+    expect(w.seen.find((e) => e.type === 'run_start' && e.run_id === 'b2')).toMatchObject({ step_of: 'c1', lane: 'Mumbai' });
+    // Four runs, 6.8 s of work in 3 s.
+    expect(ends(w.seen)).toEqual([{ type: 'group_end', group_id: w.groupOf('c1'), runs: 4, wall_ms: 3_000, sum_ms: 6_800 }]);
+  });
+
   it('a group left open by a run that never ended takes no new run after a minute', () => {
     const w = world();
     w.start('lost', 'hotels.search');

@@ -44,6 +44,33 @@ Also: `conditions` (the person's conditions ixigo filters on itself, as its own 
 two pages for a whole state, the popup's close, the settle before the last picture), `keep` (which options stay),
 `ttl_minutes`, `samples`, `measured` and `notes`.
 
+### A composite
+
+A composite runs other recipes in the book for each entry of a list, at once, and answers them side by side. It opens
+nothing itself. `trip.how_we_get_there` runs each member's home city's trains, buses and flights to the trip:
+
+```yaml
+inputs:
+  to: { kind: text, value: $trip.destination }
+  date: { kind: date, value: $trip.start }
+steps:
+  each: $trip.homes[$lowercase($) != $lowercase($$.to)]    # the list: each entry once, the most listed first, at most 4
+  as: home                                                 # an entry's name in the steps' given
+  run:                                                     # at most 4 steps, each a recipe and its inputs
+    - { recipe: trains.between, given: { from: $home, to: to, date: date } }
+    - { recipe: buses.between, given: { from: $home, to: to, date: date } }
+    - { recipe: flights.search, given: { from: $home, to: to, date: date } }
+answer: { as: compare }   # each entry with each step's answer, or why it has none
+```
+
+A step is a search, a link or facts: never a lookup, another composite, or a recipe that changes something on ixigo;
+its `given` names only inputs its recipe has. Every step starts at once, straight through the engine (not the search
+backend, so no shared cache or live search card); the trip's computer runs as many fetches as Bash allows at a time (the `BROWSER_FETCH_SLOTS`
+switch: 2, and 4 once Bash runs four), and the rest wait their turn in Go, so Bash never answers `409 browser_busy`
+(when it does, Go waits as long as Bash says and asks again). A step that fails is its entry's why, never the
+composite's failure. On the run strip the composite is a run of speed `steps`, and each step a run that names it in
+`step_of`, with its entry as its `lane` (a lookup inside a step has the step as its `parent`, as in any search).
+
 ### Expressions
 
 Every `read`, `answer`, `let` and template part is a JSONata expression (jsonata.org, version 2.2.2 pinned): sandboxed,
@@ -121,7 +148,7 @@ left extends it.
 - `plan.destination` (ixigo's destination guide: places to eat and visit, best time to go), and Go naming a place only
   from ixigo's data in that turn.
 - `flights.fare_calendar` and `flights.price_lock` (changes state: the group's yes).
-- The fast and flow speeds; composite recipes run in parallel in the same warm tab.
+- The fast and flow speeds; a composite's fast steps in one batch `page_fetch` (Bash's #4596).
 - Areas inside a city through ixigo's "Search within" box and its Popular Areas filter, in place of Goa's halves.
 
 

@@ -35,6 +35,7 @@ export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: st
     { value: 'q1,q2,q3,q8', label: 'q1,q2,q3,q8' },
     { value: 'q1,q2,q3,q4,q5,q6,q7,q8,q9,q10', label: 'all ten' },
   ],
+  BROWSER_FETCH_SLOTS: [{ value: '2', label: '2 (Bash runs two at once)' }, { value: '4', label: '4 (Bash runs four at once)' }, { value: '1', label: '1 (one page at a time)' }],
 };
 
 export const SWITCH_MEANING: Record<SwitchName, string> = {
@@ -43,6 +44,7 @@ export const SWITCH_MEANING: Record<SwitchName, string> = {
   PAY_RAIL: 'How a payment is charged. stripe_test charges a test card; fake charges nothing.',
   CALLS_MODE: 'Whether Go may phone anyone. allowlist means only the numbers listed under Calls.',
   REFLEX_LIVE: 'Which quick-read questions act live; the others only watch. off stops the quick read altogether.',
+  BROWSER_FETCH_SLOTS: "How many ixigo pages Go opens at once on a trip's computer. Match Bash's own cap: more than it runs wait their turn.",
 };
 
 export const esc = (s: string): string =>
