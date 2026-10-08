@@ -90,7 +90,7 @@ describe('a line that moves the plan wakes Go, replayed on the same run with que
         expect(texts).toContain("who's bringing the flip flops?");
         expect(quiet).toEqual(expect.arrayContaining(['same', "can't wait 🌴", 'anyone up?']));
       }
-      for (const l of woken) expect(Math.max(reads.get(l.i)!.p['q6_open']!, reads.get(l.i)!.p['q6_agreed']!), l.text).toBeGreaterThanOrEqual(BARS.for_go.planMin);
+      for (const l of woken) expect(Math.max(reads.get(l.i)!.p['q6_open'] ?? 0, reads.get(l.i)!.p['q6_agreed'] ?? 0), l.text).toBeGreaterThanOrEqual(BARS.for_go.planMin);
       console.log(`PLAN-WAKE ${run.chat}: ${woken.length} more lines wake Go (${woken.map((l) => l.i).join(', ')})`);
     });
   }

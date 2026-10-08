@@ -402,7 +402,8 @@ describe('why Go woke, and the trip block', () => {
       ['p_meher', '@Go can you remind everyone to vote by tonight?', true],
       ['p_kabir', "who's on the aux"],
     ]);
-    expect(quietNote(mixed.items, mixed.pack)).toMatch(/^#2 and #4 don't name you, so they are the group talking\. Answer one only if/);
+    expect(quietNote(mixed.items, mixed.pack)).toMatch(/^#2 and #4 don't name you, so they are the group talking\. Speak if you can add something real: /);
+    expect(quietNote(mixed.items, mixed.pack)).not.toContain('#3');
   });
 
   it('a dates vote that closed tells Go to save the dates on the trip: an option is only a label, so the model reads it', () => {
