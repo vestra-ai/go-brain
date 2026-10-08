@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type * as C from '@go/contract';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { silentLog } from '../../log.js';
 import { createSetup } from '../../trips/setup.js';
@@ -48,7 +48,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const packs = fakePacks(goaPack({ trip, messages: o.greeted === false ? [] : [hello] }));
   const greet = (): void => packs.set(goaPack({ trip, messages: [hello] }));
   const looks: number[] = [];
-  const hooks: { onSleep?: (n: number) => void; onHandOff?: () => void } = {};
+  const hooks: { onSleep?: (n: number) => void; onHandOff?: () => void | Promise<void> } = {};
   const statuses = [...(o.statuses ?? [])];
   const reads: Array<{ url: string; plan: FetchPlan }> = [];
   const runner = {
@@ -61,7 +61,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
     },
     handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string; check?: { url: string; method: string } }) => {
       handOffs.push({ url, plan, o: ho });
-      hooks.onHandOff?.();
+      await hooks.onHandOff?.();
       const s = o.opened ?? 403;
       if (s === 'refused') throw new TravelError('refused', 'Bash would not open the page.');
       return { captures: s === 'timeout' ? [] : [capture('check', `${IXIGO}${USERINFO}`, '{', s)] };
@@ -313,6 +313,47 @@ describe('logging in', () => {
     });
     // Nobody else gets a Watch: they would watch Rahul type his number. Their card says whose login it is, and nothing more.
     for (const a of w.last().actions) expect(a.only_for_person_ids).toEqual(['p_rahul']);
+  });
+
+  it('opens one page for a login however many times Log in is tapped while it opens (a double tap, 8 Oct)', async () => {
+    const w = world();
+    await w.setup();
+    let open: () => void = () => undefined;
+    w.hooks.onHandOff = () => new Promise<void>((r) => {
+      open = r;
+    });
+    // Tapped, and tapped again 300 ms later while the page is still opening.
+    const first = w.tap('ixigo_login', 'p_rahul');
+    await vi.waitFor(() => expect(w.handOffs).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 300));
+    const second = w.tap('ixigo_login', 'p_rahul');
+    await new Promise((r) => setTimeout(r, 50));
+    open();
+    expect(await first).toEqual({ result: 'done', toast: "Opening ixigo's log in on Go's screen" });
+    expect(await second).toEqual({ result: 'done', toast: "Already opening ixigo's log in" });
+    // And with the page open, a third tap starts nothing either.
+    w.hooks.onHandOff = undefined;
+    expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: "Already opening ixigo's log in" });
+    expect(w.handOffs).toHaveLength(1);
+    expect(await w.state()).toBe('logging_in');
+  });
+
+  it('two taps at the same moment still open one page: the row changes in one step', async () => {
+    const w = world();
+    await w.setup();
+    const toasts = (await Promise.all([w.tap('ixigo_login', 'p_rahul'), w.tap('ixigo_login', 'p_rahul')])).map((r) => r.toast).sort();
+    expect(toasts).toEqual(["Already opening ixigo's log in", "Opening ixigo's log in on Go's screen"]);
+    expect(w.handOffs).toHaveLength(1);
+  });
+
+  it("takes a logging-in row back after Bash's most (its end never seen, as after a restart): Log in opens the page again", async () => {
+    const w = world();
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    // The end timer never ran (Go restarted), and the 10 minutes are long past.
+    w.clock.now = new Date(w.clock.now.getTime() + HANDOFF_MS + 1_000);
+    expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: "Opening ixigo's log in on Go's screen" });
+    expect(w.handOffs).toHaveLength(2);
   });
 
   it('flips the card to logging in before the page is asked for, so the room can say it is opening at once', async () => {
