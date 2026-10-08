@@ -399,25 +399,27 @@ const POOL = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHav
 
 /**
  * hotels.search scripted: with no conditions it lists `wide` (checked at 12:00), and with any it lists ixigo's own filtered
- * stays (checked at 12:20). Each run is recorded with its conditions and whether it ran in the background.
+ * stays (checked at 12:20): `filtered`, or IXIGO_POOL_LIST. Each run is recorded with its conditions and whether it ran in
+ * the background. With requestOf, searches key on the page they open, as on staging; without, on the words.
  */
-function staysEngine(wide: RecipeOption[]) {
+function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?: Record<string, unknown>; requestOf?: Engine['requestOf'] } = {}) {
+  const head = o.head ?? HEAD;
   const runs: Array<{ conditions: string[]; background: boolean }> = [];
-  const answer: Answer = async (_id, _given, o) => {
-    const conditions = o.conditions ?? [];
-    runs.push({ conditions, background: o.background === true });
+  const answer: Answer = async (_id, _given, ro) => {
+    const conditions = ro.conditions ?? [];
+    runs.push({ conditions, background: ro.background === true });
     return conditions.length > 0
-      ? { as: 'options', options: IXIGO_POOL_LIST, page: 'https://www.ixigo.com/hotels/search/result?filters=FL_HF_29', checkedAt: '2026-10-07T12:20:00.000Z', ms: 9_000 }
+      ? { as: 'options', options: o.filtered ?? IXIGO_POOL_LIST, page: 'https://www.ixigo.com/hotels/search/result?filters=FL_HF_29', checkedAt: '2026-10-07T12:20:00.000Z', ms: 9_000 }
       : { as: 'options', options: wide, page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-07T12:00:00.000Z', ms: 9_000 };
   };
   const cards: string[] = [];
   const b = createIxigoWebBackend({
-    book, engine: { answer }, now, cardDelayMs: 0,
+    book, engine: { answer, ...(o.requestOf ? { requestOf: o.requestOf } : {}) }, now, cardDelayMs: 0,
     live: ((tripId: string) => { cards.push(tripId); return { progress: () => undefined, finish: async () => undefined }; }) as never,
   });
   /** The head start: hotels.search for the trip's place and dates, through Go's searches, kept once it finishes. */
   const headStart = async (): Promise<void> => {
-    const shared = await b.shareStep('hotels.search', HEAD, { tripId: 't_goa', conditions: [] }, () => answer('hotels.search', HEAD, { tripId: 't_goa', conditions: [] }));
+    const shared = await b.shareStep('hotels.search', head, { tripId: 't_goa', conditions: [] }, () => answer('hotels.search', head, { tripId: 't_goa', conditions: [] }));
     await shared?.answer;
     await tick();
   };
@@ -459,6 +461,80 @@ describe('a stays ask answered from a kept search with no conditions (the head s
     expect(found.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
     expect(s.runs).toEqual([{ conditions: [], background: false }, { conditions: ['pool'], background: false }]);
     expect(s.cards).toEqual(['t_goa']);
+  });
+
+  /**
+   * The lead's trip on staging, 8 Oct: five people in North Goa. The head start's list has three stays with a pool, one
+   * of them with free cancellation; ixigo's own pool list has three with it. Keyed by the page, as on staging.
+   */
+  const NORTH = { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
+  function fiveInNorthGoa() {
+    const fiveOfUs = createEngine({ book, runner: () => null, trip: async () => ({ people: 5, homes: [] }), now });
+    const fc = { free_cancellation: true };
+    return staysEngine([stay(1, true, fc), stay(2, true), stay(3, true), stay(4, false)], {
+      head: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' },
+      filtered: [stay(91, true, fc), stay(92, true, fc), stay(93, true), stay(94, true, fc)],
+      requestOf: (id, given, ro) => fiveOfUs.requestOf(id, given, ro),
+    });
+  }
+
+  // Staging, 8 Oct, run 1: the pool card came from the head start's list. Priya then asked "which of these has free
+  // cancellation?", and the model searched "sleeping 5, with a pool, with free cancellation": a page load of 13 s, though
+  // the pool search kept behind the card had them.
+  it('answers "which of these has free cancellation?" after the pool card from the pool search kept behind it, sleeping 5 in a trip of five', async () => {
+    const s = fiveInNorthGoa();
+    await s.headStart();
+    // "@Go find a villa with a pool in North Goa": the card at once from the head start's list, and ixigo's pool search kept behind it.
+    const card = await s.b.search('stays', { ...NORTH, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(card.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
+    await tick();
+    // The head start has one with both; the pool search has three, and answers at once. "Sleeping 5" is the trip's own
+    // head count, the page both searches opened, not a condition.
+    const asked = await s.b.search('stays', { ...NORTH, guests: 5, mustHave: ['pool', 'free_cancellation'] }, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(asked.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 94']);
+    expect(asked.checkedAt).toBe('2026-10-07T12:20:00.000Z');
+    expect(s.runs).toEqual([
+      { conditions: [], background: false },
+      { conditions: ['pool'], background: true },
+      { conditions: ['pool', 'free_cancellation'], background: true },
+    ]);
+    expect(s.cards).toEqual([]);
+  });
+
+  // Run 2: Go's own pool card when the dates were locked ("Dates are locked, so here are pool stays…"), then "@Go find a
+  // villa with a pool in North Goa", then the same follow-up, which loaded a page for 14 s.
+  it("answers the follow-up at once in run 2's order too: Go's own pool card, the villa ask, then free cancellation", async () => {
+    const s = fiveInNorthGoa();
+    await s.headStart();
+    const proactive = await s.b.search('stays', { ...NORTH, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(proactive.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
+    await tick();
+    // The villa ask: ixigo's pool search, kept behind Go's card, as it is.
+    const villa = await s.b.search('stays', { ...NORTH, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(villa.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
+    const asked = await s.b.search('stays', { ...NORTH, guests: 5, mustHave: ['pool', 'free_cancellation'] }, { tripId: 't_goa', turnId: 'turn_3' });
+    expect(asked.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 94']);
+    expect(s.runs).toEqual([
+      { conditions: [], background: false },
+      { conditions: ['pool'], background: true },
+      { conditions: ['pool', 'free_cancellation'], background: true },
+    ]);
+    expect(s.cards).toEqual([]);
+  });
+
+  it("answers a watch's first check from what is kept, loading nothing: the kept stays narrowed, or null when nothing kept answers", async () => {
+    const s = staysEngine([stay(1, true), stay(2, true), stay(3, true), stay(4, false)]);
+    const pool = { tripId: 't_goa', conditions: ['pool'] };
+    expect(await s.b.keptAnswer('hotels.search', HEAD, pool)).toBeNull();
+    await s.headStart();
+    const kept = await s.b.keptAnswer('hotels.search', HEAD, pool);
+    expect(kept).toMatchObject({ as: 'options', checkedAt: '2026-10-07T12:00:00.000Z', page: 'https://www.ixigo.com/hotels/search/result' });
+    expect(kept?.as === 'options' && kept.options.map((o) => o.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
+    // A page condition the stays don't say (paying at the hotel), or a recipe that is not a search: nothing kept answers.
+    expect(await s.b.keptAnswer('hotels.search', HEAD, { tripId: 't_goa', conditions: ['pay_at_hotel'] })).toBeNull();
+    expect(await s.b.keptAnswer('trains.confirm_chance', { from: 'Bangalore', to: 'Chennai', date: '2026-10-22' }, { tripId: 't_goa' })).toBeNull();
+    // Reading what is kept runs nothing.
+    expect(s.runs).toEqual([{ conditions: [], background: false }]);
   });
 
   it("runs its own search for a page condition the stays don't say (paying at the hotel), and with no kept search", async () => {
