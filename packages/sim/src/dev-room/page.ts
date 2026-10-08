@@ -9,7 +9,7 @@
 
 import { BROWSER_CSS, BROWSER_SCRIPT, browserSheet } from './browser.js';
 import { LIVE_CSS, LIVE_DETAILS, LIVE_HOOK, LIVE_SCRIPT } from './live-page.js';
-import { LOGIN_CSS, LOGIN_SCRIPT, LOGIN_SHEET } from './login-panel.js';
+import { LOGIN_CSS, LOGIN_SCRIPT, LOGIN_SHEET, WATCH_ACTIONS } from './login-panel.js';
 
 export interface RoomPageOptions {
   /** The page's title and the header's first line. Default "Go dev room". */
@@ -231,10 +231,39 @@ ${browserSheet(o.live && o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchO
   function settlePending() {
     var now = Date.now();
     for (var k in pending) if (now - pending[k].at > PENDING_MS || cardNow(pending[k].card) !== pending[k].was) delete pending[k];
+    for (var t in tabs) if (now - tabs[t].at > PENDING_MS) dropTab(t);
   }
   function freePending(cardId, actionId, who) {
     for (var k in pending) if (pending[k].card === cardId && pending[k].action === actionId && pending[k].who === who) delete pending[k];
   }
+  // Watch opens Go's screen in a new tab, and a browser lets a page open a tab only inside a tap: the tab opens in the
+  // tap, saying it is opening, and goes to Go's answer when it comes; a refusal closes it. tabs: each one waiting, by
+  // card, action and person.
+  var OPENS_TAB = ${JSON.stringify(WATCH_ACTIONS)};
+  var tabs = {};
+  function holdTab(cardId, actionId, who) {
+    var w = null;
+    try { w = window.open('', '_blank'); } catch (e) { w = null; }
+    if (!w) return;
+    try {
+      w.opener = null;
+      w.document.title = "Go's screen";
+      w.document.body.textContent = "Opening Go's screen…";
+    } catch (e) {}
+    tabs[pendingKey(cardId, actionId, '', who)] = { w: w, at: Date.now() };
+  }
+  /** The tab waiting for this tap's answer, if one is: it is the caller's now. */
+  function takeTab(cardId, actionId, who) {
+    var key = pendingKey(cardId, actionId, '', who);
+    var t = tabs[key];
+    delete tabs[key];
+    return t ? t.w : null;
+  }
+  function dropTab(key) {
+    try { tabs[key].w.close(); } catch (e) {}
+    delete tabs[key];
+  }
+
   /** Taps a card's button for that person, once until it settles. False when that button is still waiting. */
   function tapCard(cardId, actionId, optionId, who) {
     var key = pendingKey(cardId, actionId, optionId, who);
@@ -458,7 +487,10 @@ ${o.live ? '    syncLogin();\n' : ''}    renderSheet();
       openSheet(d.browse);
     } else if (d.tap) {
       if (watchOpensSheet(d.tap, d.action)) openSheet(d.tap);
-      else if (tapCard(d.tap, d.action, d.option, me)) render();
+      else if (tapCard(d.tap, d.action, d.option, me)) {
+        if (OPENS_TAB.indexOf(d.action) >= 0) holdTab(d.tap, d.action, me);
+        render();
+      }
     } else if (d.vote) {
       send({ type: 'vote', decisionId: d.vote, personId: me, optionIndex: Number(d.index) });
     } else if (d.confirm) {
@@ -521,18 +553,25 @@ ${o.live ? '    syncLogin();\n' : ''}    renderSheet();
           freePending(data.cardId, data.actionId, data.personId);
           render();
         }
-        if (watchHere(data)) return; // in the sheet's frame
+        var tab = takeTab(data.cardId, data.actionId, data.personId);
+        if (watchHere(data)) { // in the sheet's frame
+          if (tab) tab.close();
+          return;
+        }
         if (r.result === 'open' && safeUrl(r.url)) {
-          window.open(r.url, '_blank', 'noopener');
+          if (tab) tab.location.href = r.url;
+          else window.open(r.url, '_blank', 'noopener');
           toast('Opening the page');
         } else {
+          if (tab) tab.close();
           toast(r.toast || (r.result === 'done' ? 'Done' : 'Not allowed'));
         }
       } else if (data.type === 'forget_result') {
         toast(data.toast);
       } else if (data.type === 'limit' || data.type === 'error') {
-        // The room turned something away before it reached Go: no tap is on its way, so no button waits.
+        // The room turned something away before it reached Go: no tap is on its way, so no button or tab waits.
         pending = {};
+        for (var held in tabs) dropTab(held);
         render();
         if (data.type === 'limit' && $('limit')) $('limit').textContent = data.text;
         toast(data.type === 'limit' ? data.text : data.message);
