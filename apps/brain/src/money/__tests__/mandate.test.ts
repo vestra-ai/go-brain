@@ -132,10 +132,10 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
   };
   const flight = { amountMinor: 592000, currency: 'INR', merchant: 'ixigo: IndiGo 6E 2134', refundableUntil: null, title: 'IndiGo 6E 2134', kind: 'flight' as const };
 
-  it('a flight: group fares are not booked, so it says so with the link, and sets nothing', async () => {
+  it('a flight: group fares are not booked, so it says so and points to its card, never the link, and sets nothing', async () => {
     winnerIs('ixigo:flight:6e-2134', { ...flight, link: 'https://www.ixigo.com/flights/6e-2134' });
     expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
-      refused: "I can't book flights for the whole group yet. Here's the link to book them yourselves: https://www.ixigo.com/flights/6e-2134",
+      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: See on ixigo on its card opens it there.",
       unbookable: true,
     });
     expect(k.server.writesOf('set_mandate')).toEqual([]);
@@ -157,11 +157,11 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
     expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 
-  it('a stay from ixigo.com: no offer to hold, so it says where to book it, and sets nothing', async () => {
+  it('a stay from ixigo.com: no offer to hold, so it says where to book it (its card, never the link), and sets nothing', async () => {
     winnerIs(null);
     k.travel.pages.set('opt_villa_sol', 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1');
     expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
-      refused: "Villa Sol is booked on ixigo, not here. Here's the link to book it yourselves: https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1",
+      refused: "Villa Sol is booked on ixigo, not here: See on ixigo on its card opens it there.",
       unbookable: true,
     });
     expect(k.server.writesOf('set_mandate')).toEqual([]);

@@ -94,16 +94,17 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
     case 'wrong_offer':
       return yes(`That isn't what the group voted for. I can only pay for ${c.what}.`);
     case 'not_bookable':
-      // An option from ixigo.com (TRAVEL_MODE ixigo_web) carries its own page there, where the group books it.
+      // An option from ixigo.com (TRAVEL_MODE ixigo_web) has its own page there, opened from its card: a link is never in
+      // the words (the door takes any out).
       return yes(
         c.link
-          ? `${c.what} is booked on ixigo, not here. Here's the link to book it yourselves: ${c.link}`
+          ? `${c.what} is booked on ixigo, not here: See on ixigo on its card opens it there.`
           : "I found this one on the web, so I can't book it here. Want me to call them instead?",
       );
     case 'not_bookable_yet': {
       // A fare is per person, so one payment for the group would be wrong: the group books these on ixigo themselves.
       const first = `I can't book ${c.kind === 'train' ? 'trains' : c.kind === 'bus' ? 'buses' : 'flights'} for the whole group yet.`;
-      return yes(c.link ? `${first} Here's the link to book them yourselves: ${c.link}` : first);
+      return yes(c.link ? `${first} Each of you can book on ixigo: See on ixigo on its card opens it there.` : first);
     }
     case 'already_paid':
       return yes(`${c.what} is already booked.`);

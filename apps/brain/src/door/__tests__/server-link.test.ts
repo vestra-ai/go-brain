@@ -170,6 +170,19 @@ describe('ServerLink', () => {
     await expect(p).rejects.toMatchObject({ code: -32601 });
   });
 
+  it("takes the links out of a post's text before it goes, and a post that was only a link and no card is never sent", async () => {
+    const { l } = link();
+    const a = socket('a');
+    l.attach(a);
+    const p = l.request('post_message', { request_id: newRequestId(), trip_id: 't_goa', text: 'Book it yourselves on ixigo: https://www.ixigo.com/hotels/54381/details?locationId=1. The vote closed.' });
+    await vi.waitFor(() => expect(a.sent).toHaveLength(1));
+    expect(a.sent[0]!.params.text).toBe('Book it yourselves on ixigo. The vote closed.');
+    answer(l, a.sent[0]!.id!, { message_id: 'm_1', seq: 1 });
+    await p;
+    await expect(l.request('post_message', { request_id: newRequestId(), trip_id: 't_goa', text: 'https://www.ixigo.com/hotels/1' })).rejects.toMatchObject({ code: 422 });
+    expect(a.sent).toHaveLength(1);
+  });
+
   it('never sends params that break the contract', async () => {
     const { l } = link();
     const a = socket('a');

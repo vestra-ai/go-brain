@@ -45,9 +45,9 @@ describe('money words', () => {
     expect(refusalWords('decision_not_found', { payer: 'Rahul', what: 'it' }).say).toBe(false);
   });
 
-  it('hands over the link for group flights, trains and buses, which Go does not book this week (master §9 "Cut now")', () => {
+  it('points to See on ixigo on the card for group flights, trains and buses, which Go does not book this week (master §9 "Cut now"), never a link', () => {
     expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'IndiGo 6E 2134', kind: 'flight', link: 'https://www.ixigo.com/flights/6e-2134' })).toEqual({
-      text: "I can't book flights for the whole group yet. Here's the link to book them yourselves: https://www.ixigo.com/flights/6e-2134",
+      text: "I can't book flights for the whole group yet. Each of you can book on ixigo: See on ixigo on its card opens it there.",
       say: true,
     });
     // No link from the travel layer: just the first sentence.
