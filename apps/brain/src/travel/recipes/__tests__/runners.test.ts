@@ -4,8 +4,8 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, WARM_TAB_MS,
-  type FetchTrace,
+  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT,
+  PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -160,6 +160,11 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       expect.objectContaining({ tripId: 't1', page: '/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', code: 'domain_not_allowed' }),
       expect.any(String),
     );
+    // ixigo's payment page, blocked by Bash (#4591): said plainly, and not logged as a fault of Go's setup.
+    const payment = await said(new V1Error(403, 'page_blocked', 'ixigo.com/payments/ is blocked.'));
+    expect(payment.err).toMatchObject({ code: 'refused', message: PAYMENT_PAGE_BLOCKED });
+    expect(PAYMENT_PAGE_BLOCKED).toBe("That's the payment page, and Go never opens it; the payer finishes on ixigo.");
+    expect(payment.w.log.warn).not.toHaveBeenCalled();
   });
 
   it("falls to the page when Bash has no page_fetch, naming Bash's own status, never its schema's words (the 8 Oct drill)", async () => {
@@ -195,6 +200,74 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const other = createBrowserFetchRunner(blocked.deps);
     await other.pageFetch!('t1', { url: '/payments/x', method: 'GET' }).catch(() => undefined);
     expect(other.canPageFetch!()).toBe(true);
+  });
+
+  describe('a cold computer (COLD_COMPUTER)', () => {
+    const caughtNothing = () =>
+      new V1Error(504, 'timeout', 'The page did not send every capture within 12000 ms (it stopped at 1 wait_for).', null, {
+        code: 'timeout', partial: { elapsed_ms: 12_300, step: '1 wait_for', captures: [] },
+      });
+
+    it('asks a page that caught nothing once more on a computer Go has not read ixigo on, and tells the strip both', async () => {
+      const w = world((_, n) => {
+        if (n === 1) throw caughtNothing();
+        return fetched([busCapture]);
+      });
+      const traces: FetchTrace[] = [];
+      const read = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan, { onTrace: (t) => traces.push(t) });
+      expect(read.captures).toHaveLength(1);
+      expect(w.calls).toHaveLength(2);
+      expect(traces.map((t) => t.failed?.why ?? 'ok')).toEqual(['ran out of time at 1 wait_for', 'ok']);
+    });
+
+    it('asks only once more, and never again once a fetch has read ixigo on that computer', async () => {
+      const twice = world(() => {
+        throw caughtNothing();
+      });
+      await fails(createBrowserFetchRunner(twice.deps).read('t1', BUSES, busPlan), 'unreachable', /took too long/);
+      expect(twice.calls).toHaveLength(2);
+      const w = world((_, n) => {
+        if (n === 1) return fetched([busCapture]);
+        throw caughtNothing();
+      });
+      const runner = createBrowserFetchRunner(w.deps);
+      await runner.read('t1', BUSES, busPlan);
+      await fails(runner.read('t1', BUSES, busPlan), 'unreachable', /took too long/);
+      expect(w.calls).toHaveLength(2);
+    });
+
+    it("primes a new trip's computer with one visit to ixigo's home, its popup closed, and a primed computer's page is asked once", async () => {
+      const w = world((_, n) => {
+        if (n === 1) return { ...fetched([capture('prime', 'https://www.ixigo.com/', '<html>')]), final_url: 'https://www.ixigo.com/' };
+        throw caughtNothing();
+      });
+      const runner = createBrowserFetchRunner(w.deps);
+      await runner.prime!('t1');
+      expect(w.calls[0]).toEqual({
+        method: 'POST', path: '/v1/users/u-t1/browser/fetch',
+        opts: { body: {
+          url: 'https://www.ixigo.com/',
+          steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'prime', max_bytes: 1_000 }],
+          timeout_ms: PRIME_TIMEOUT_MS,
+        } },
+      });
+      await fails(runner.read('t1', BUSES, busPlan), 'unreachable', /took too long/);
+      expect(w.calls).toHaveLength(2);
+    });
+
+    it('a prime ixigo did not answer throws, so setup tries again, and leaves the first search its one more ask', async () => {
+      const w = world((_, n) => {
+        if (n === 1) throw new V1Error(503, 'box_unavailable', 'The computer did not wake.');
+        if (n === 2) return fetched([]);
+        if (n === 3) throw caughtNothing();
+        return fetched([busCapture]);
+      });
+      const runner = createBrowserFetchRunner(w.deps);
+      await expect(runner.prime!('t1')).rejects.toMatchObject({ status: 503, code: 'box_unavailable' });
+      await fails(runner.prime!('t1'), 'unreachable', /did not answer/);
+      expect((await runner.read('t1', BUSES, busPlan)).captures).toHaveLength(1);
+      expect(w.calls).toHaveLength(4);
+    });
   });
 
   it('logs where a page was when its time ran out, as Bash says it, so the next drill shows the step', async () => {

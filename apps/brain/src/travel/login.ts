@@ -25,6 +25,7 @@ import { returnsSchema } from '../tasks/returns.js';
 import { TravelError } from './mcp-travel.js';
 import { IXIGO, type Capture } from './recipes/recipe.js';
 import type { RecipeRunner } from './recipes/runners.js';
+import { IXIGO_WARM_STEP } from './warm.js';
 
 /** ixigo's own call that says whether the browser is logged in (about 900 bytes logged in), read by its status only. */
 export const USERINFO = '/api/v2/oauth/userinfo';
@@ -34,9 +35,9 @@ export const RECHECK_MS = 6 * 3600_000;
 const ASK_AGAIN_MS = 30 * 60_000;
 /** Setup asks only a trip made this recently; an older one is asked the first time a recipe needs the login. */
 const NEW_TRIP_MS = 24 * 3600_000;
-/** The setup step that opens and warms ixigo on the new computer (IXIGO_WARM_STEP in warm.ts, p4's #218): the prompt
- *  follows it in the same setup pass, whether the warm worked or gave up after its tries. */
-export const AFTER_WARM = 'travel.ixigo_warm';
+/** The setup step that opens and warms ixigo on the new computer (warm.ts): the prompt follows it in the same setup pass,
+ *  whether the warm worked or gave up after its tries. */
+export const AFTER_WARM = IXIGO_WARM_STEP;
 
 export type LoginState = 'asked' | 'logging_in' | 'logged_in' | 'skipped' | 'logged_out';
 

@@ -28,7 +28,7 @@ import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
-import { startComputerAtSetup, warmForTravel } from './warm.js';
+import { createIxigoWarm, IXIGO_WARM_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
@@ -57,6 +57,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.
   const warm = (tripId: string, kind: TravelKind | null): void => warmForTravel(brain, tripId, kind);
   brain.setup.addStep({ name: 'travel.computer', run: (tripId) => startComputerAtSetup(brain, tripId) });
+  // Then its Chrome's first ixigo visit, before anyone asks; the organiser's ixigo login prompt runs after this step.
+  const ixigoWarm = createIxigoWarm(brain);
+  brain.setup.addStep({ name: IXIGO_WARM_STEP, after: 'travel.computer', run: (tripId) => ixigoWarm.run(tripId) });
   // Every recipe run as it happens, for the Server's live view of a trip (/v1/live): in memory, nothing written.
   const runs = createRunLog({ now: brain.now, log: brain.log });
   // And the trip computer's screen, live, from Bash's browser watch: only where searches run on it (ixigo_web).
@@ -110,7 +113,11 @@ export const registerTravel: RegisterLane = async (brain) => {
     now: brain.now,
     log: brain.log,
   });
-  brain.recipeStats = () => engine.stats();
+  // The warm step's line too: how often ixigo answered a new trip's computer, and how fast.
+  brain.recipeStats = () => {
+    const warm = ixigoWarm.stat();
+    return warm ? [...engine.stats(), warm] : engine.stats();
+  };
   // The watches going, per trip (how many, the next check), for the stage desk and the health view.
   brain.recipeWatches = () => watchesNow(brain.pool);
   const ixigoWeb = createIxigoWebBackend({
@@ -145,7 +152,11 @@ export const registerTravel: RegisterLane = async (brain) => {
   // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
   // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
   for (const t of watchTools({ pool: brain.pool, book, engine, switches: brain.switches, now: brain.now })) brain.tools.register(t);
-  const watchRunner = createWatchRunner({ pool: brain.pool, book, engine, store: new ProactiveStore(brain.pool), switches: brain.switches, now: brain.now, log: brain.log });
+  const watchRunner = createWatchRunner({
+    pool: brain.pool, book, engine, store: new ProactiveStore(brain.pool), switches: brain.switches, now: brain.now, log: brain.log,
+    linkOpen: () => brain.door.link.isOpen(),
+    wake: (tripId) => wakeForCheck(brain, tripId),
+  });
   const watchEvery = setInterval(() => {
     watchRunner.tick().catch((err: unknown) => brain.log.warn({ err }, 'travel: the watch checks failed'));
   }, WATCH_TICK_MS);
