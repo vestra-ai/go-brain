@@ -5,6 +5,8 @@
 // Not now under it. Everyone else's card says who is logging in and never shows the page. The screen is the card's Watch
 // answer, which the room sends to the tapping socket only: the page taps Watch itself, once per hand-off, as soon as
 // Watch comes, and frames the answer when it is on Bash's session page (watchOrigin), so the sheet opens on a loaded page.
+// Its picture takes 5 to 15 s to come after the page loads: "Opening ixigo's login…" stays over the frame until Bash's
+// embed says the picture is live (a postMessage), or, from an embed that says nothing, for 5 s.
 // When the hand-off ends (logged in, Not now, out of time), the sheet closes and the card says so.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
@@ -33,10 +35,12 @@ export const LOGIN_CSS = `
 .sheet-login[hidden] { display: none; }
 .sheet-login .login-note { margin-top: 0; }
 .login-line { color: var(--muted); font-size: 13px; }
-.login-frame { flex: 1; min-height: 0; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+/* The frame and, over it until its picture is live, the opening state: the frame keeps loading underneath. */
+.login-stage { flex: 1; min-height: 0; position: relative; }
+.login-frame { position: absolute; inset: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .login-frame[hidden] { display: none; }
 .login-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
-.login-wait { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 28px 16px; color: var(--muted); font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.login-wait { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 28px 16px; color: var(--muted); font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 .login-wait[hidden] { display: none; }
 .sheet-login .actions { margin-top: 0; }
 .sheet-login .actions .act { flex: 1; }
@@ -46,8 +50,10 @@ export const LOGIN_CSS = `
 export const LOGIN_SHEET = `    <div class="sheet-login" id="sheet-login" hidden>
       <div class="login-line" id="login-line"></div>
       <div class="login-note" id="login-note" role="status" hidden></div>
-      <div class="login-frame" id="login-frame"></div>
-      <div class="login-wait" id="login-wait" hidden><span id="login-why"></span><span class="login-progress" id="login-progress" aria-hidden="true"><i></i></span><button class="act primary" id="login-again" type="button" hidden>Open the login again</button></div>
+      <div class="login-stage">
+        <div class="login-frame" id="login-frame"></div>
+        <div class="login-wait" id="login-wait" hidden><span id="login-why"></span><span class="login-progress" id="login-progress" aria-hidden="true"><i></i></span><button class="act primary" id="login-again" type="button" hidden>Open the login again</button></div>
+      </div>
       <div class="actions" id="login-acts"></div>
     </div>
 `;
@@ -61,9 +67,15 @@ export const LOGIN_SCRIPT = `
   var LOGGING_IN = ${JSON.stringify(LOGGING_IN_ACTIONS)};
   var WATCH_ORIGIN = $('sheet').getAttribute('data-watch-origin') || '';
   var WATCH_WAIT_MS = 10000;
+  // An embed that says nothing of its picture this long (one from before it could) is shown as it is, and a picture still
+  // connecting this long is shown too: the embed's own state says the rest.
+  var EMBED_QUIET_MS = 5000;
+  var EMBED_CONNECTING_MS = 30000;
   var IXIGO_LINE = 'Type your number and the code. They go to ixigo only. Go never sees them.';
   var OPENING = "Opening ixigo's login on Go's computer…";
-  var login = { asked: {}, sessions: {}, framed: '' };
+  // login.picture: what Bash's embed in the frame last said of its picture ('' for nothing yet, connecting, live, error),
+  // and login.mountedAt when that frame was put up.
+  var login = { asked: {}, sessions: {}, framed: '', picture: '', mountedAt: 0 };
 
   function watchOf(c) {
     var acts = c.actions || [];
@@ -183,8 +195,30 @@ export const LOGIN_SCRIPT = `
     if (s && s.url && login.framed !== key) {
       $('login-frame').innerHTML = '<iframe title="Go&#39;s computer" src="' + esc(s.url) + '" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>';
       login.framed = key;
+      login.picture = '';
+      login.mountedAt = Date.now();
+      setTimeout(renderSheet, EMBED_QUIET_MS + 50);
+      setTimeout(renderSheet, EMBED_CONNECTING_MS + 50);
     }
   }
+
+  /** Whether the frame's picture is up: the embed says live, or it has had its time to say anything. */
+  function pictureUp() {
+    var waited = Date.now() - login.mountedAt;
+    if (login.picture === 'live') return true;
+    if (login.picture === 'connecting') return waited > EMBED_CONNECTING_MS;
+    return login.picture === '' && waited > EMBED_QUIET_MS;
+  }
+
+  // Bash's embed says how its picture is doing: { type: 'vestra:embed', state: 'connecting' | 'live' | 'error' }. Only
+  // Watch's own origin is heard, for the frame up now; anything else is left alone.
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!WATCH_ORIGIN || e.origin !== WATCH_ORIGIN || !login.framed || !d || d.type !== 'vestra:embed') return;
+    if (d.state !== 'connecting' && d.state !== 'live' && d.state !== 'error') return;
+    login.picture = d.state;
+    renderSheet();
+  });
 
   // The sheet in login mode, for the card it was opened on. It closes when the hand-off ends or you play someone else.
   sheetLogin = function (c) {
@@ -203,10 +237,12 @@ export const LOGIN_SCRIPT = `
     $('login-line').textContent = ixigo ? IXIGO_LINE : "Go's computer is yours for this step.";
     $('login-note').hidden = c.tone !== 'heads_up';
     $('login-note').textContent = c.tone === 'heads_up' ? c.body || '' : '';
-    $('login-frame').hidden = login.framed !== key;
+    var framed = login.framed === key;
+    $('login-frame').hidden = !framed;
     var slow = watch && !s && Date.now() - login.asked[key] > WATCH_WAIT_MS;
-    var why = s && s.why ? s.why : slow ? 'refused' : '';
-    $('login-wait').hidden = login.framed === key;
+    var why = s && s.why ? s.why : (framed && login.picture === 'error') || slow ? 'refused' : '';
+    // Over the frame, which keeps loading under it, until its picture is up.
+    $('login-wait').hidden = framed && !why && pictureUp();
     $('login-why').textContent = why === 'ended' ? 'Your view of the login closed after 15 minutes.' : why ? "Go's screen didn't open here." : OPENING;
     $('login-progress').hidden = !!why;
     $('login-again').hidden = !why;
