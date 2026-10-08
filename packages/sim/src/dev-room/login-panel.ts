@@ -23,6 +23,7 @@ export const LOGIN_CSS = `
 .login-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
 .login-wait { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 28px 16px; color: var(--muted); font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 .login .actions { margin-top: 0; }
+.login-note { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 12px; padding: 8px 12px; color: var(--warn); font-size: 14px; }
 .handoff { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; aspect-ratio: 16 / 10; padding: 20px; border-radius: 12px; background: #0f172a; color: #cbd5e1; font-size: 14px; }
 .handoff b { color: #fff; font-size: 17px; }
 .handoff small { color: #94a3b8; font-size: 12px; }
@@ -40,6 +41,7 @@ export const LOGIN_CSS = `
 export const LOGIN_PANEL = `  <div class="handoff" id="handoff" hidden></div>
   <section class="login" id="login" aria-label="Your log in on Go's computer" hidden>
     <div class="login-bar"><div><b id="login-title"></b><span id="login-line"></span></div><button class="act secondary login-back" id="login-back" type="button">Back to the chat</button></div>
+    <div class="login-note" id="login-note" role="status" hidden></div>
     <div class="login-frame" id="login-frame"></div>
     <div class="login-wait" id="login-wait" hidden><span id="login-why"></span><button class="act primary" id="login-again" type="button" hidden>Open the login again</button></div>
     <div class="actions" id="login-acts"></div>
@@ -152,6 +154,9 @@ export const LOGIN_SCRIPT = `
     if (!mine) return;
     $('login-title').textContent = 'Your turn: ' + (mine.title || '');
     $('login-line').textContent = watchOf(mine).action_id === 'ixigo_watch' ? 'Type your number and the code. They go to ixigo only. Go never sees them.' : "Go's computer is yours for this step.";
+    // Go turns the card to a heads-up when I'm logged in found no login yet: its words, where the person is looking.
+    $('login-note').hidden = mine.tone !== 'heads_up';
+    $('login-note').textContent = mine.tone === 'heads_up' ? mine.body || '' : '';
     $('login-frame').hidden = login.framed !== key;
     var slow = !s && now - login.asked[key] > WATCH_WAIT_MS;
     var why = s && s.why ? s.why : slow ? 'refused' : '';
