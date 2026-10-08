@@ -738,7 +738,10 @@ describe('Go Live', () => {
       room = plain;
       const other = await page(plain, await signIn(plain));
       expect(other.headers.get('content-security-policy')).not.toContain('frame-src');
-      expect(await other.text()).not.toContain('data-watch-origin');
+      // No element carries the origin (the script still names the attribute it reads), so the page frames nothing.
+      const text = await other.text();
+      expect(text).not.toMatch(/<[a-z]+ [^>]*data-watch-origin=/);
+      if (extra.live) expect(text).toContain('<aside class="live" id="live" aria-label="Go Live">');
     }
     // Anything but a bare origin never reaches the header.
     expect(contentSecurityPolicy('n0nce', 'room.test', "https://bash.test; script-src *")).not.toContain('frame-src');
