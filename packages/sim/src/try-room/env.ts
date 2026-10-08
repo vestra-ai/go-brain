@@ -2,7 +2,6 @@
 // and TRY_COOKIE_SALT live only in Railway's variables, never in the repo or a log.
 import { z } from 'zod';
 import { DEFAULT_CAPS } from './caps.js';
-import { SIMULATED_LINE } from './words.js';
 
 const count = (fallback: number) => z.coerce.number().int().nonnegative().default(fallback);
 
@@ -22,8 +21,8 @@ export const TryEnv = z.object({
   TRY_DAILY_MESSAGES: count(DEFAULT_CAPS.dailyMessages),
   /** One visit's share of TRY_DAILY_TURNS, keyed to its cookie, so one visit cannot use up the day. */
   TRY_VISIT_TURNS: count(DEFAULT_CAPS.visitTurns),
-  /** The line about what is simulated. Change it here when a part goes live. */
-  TRY_SIMULATED_LINE: z.string().min(1).max(300).default(SIMULATED_LINE),
+  /** The line about what is real and what is simulated. Leave it out for the room's own: SIMULATED_LINE, or LIVE_LINE with TRY_LIVE=1. */
+  TRY_SIMULATED_LINE: z.string().min(1).max(300).optional(),
   /** The try room's name in Go's socket (?instance=). */
   TRY_INSTANCE: z.string().regex(/^[a-z0-9-]{1,40}$/).default('try-room'),
   /** 1: Go Live, the page's second column with the trip's recipe runs and the pages they opened (Go's /v1/live). */

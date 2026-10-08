@@ -21,7 +21,7 @@ const room = await serveTryRoom({
   host: '0.0.0.0',
   trustProxy: true,
   caps: { dailyTurns: env.TRY_DAILY_TURNS, dailyMessages: env.TRY_DAILY_MESSAGES, visitTurns: env.TRY_VISIT_TURNS },
-  simulatedLine: env.TRY_SIMULATED_LINE,
+  ...(env.TRY_SIMULATED_LINE ? { simulatedLine: env.TRY_SIMULATED_LINE } : {}),
   ...(env.TRY_LIVE === '1'
     ? { live: (tripId: string, onMessage: (m: unknown) => void) => openLiveFeed({ goUrl: env.GO_URL, secret: env.GO_SIGNING_SECRET, tripId, onMessage, log }) }
     : {}),
