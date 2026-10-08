@@ -59,7 +59,8 @@ describe('what Go knows without a check', () => {
         '- Name a particular cafe, restaurant, bar, beach or sight only when it came from ixigo in this turn (the destination guide through the ixigo tool, ' +
         'or search results) or someone in the group named it. Without that, talk about the area, never a name from memory, and offer what ixigo has. ' +
         'Do this quietly and never say why you can or can\'t name a place (never "Chapora Fort was named by Priya, so I can talk about it"): ' +
-        'just name it, or talk about the area.\n',
+        'just name it, or talk about the area. When ixigo\'s places don\'t match the ask exactly, offer the nearest ones it has, with no word about what it lacks ' +
+        '(never "ixigo doesn\'t have an Anjuna shack guide, so I can\'t say which one").\n',
     );
   });
 
@@ -71,5 +72,12 @@ describe('what Go knows without a check', () => {
     expect(NAMES_ONLY_FROM_IXIGO).toContain("never say why you can or can't name one");
     // Nothing the room is told asks Go to give a reason for a name.
     expect(NAMES_ONLY_FROM_IXIGO).not.toMatch(/\b(explain|because|tell (them|the group) why)\b/i);
+  });
+
+  // p1-a's facts pass, 8 Oct: "ixigo doesn't have an Anjuna shack guide, Kabir, so I can't say which one has the best seafood."
+  it('offers the nearest places ixigo has, with no word about what it lacks', () => {
+    const venue = GO_RULES.split('\n').find((l) => l.startsWith('- Name a particular cafe'))!;
+    expect(venue).toContain('offer the nearest ones it has, with no word about what it lacks');
+    expect(NAMES_ONLY_FROM_IXIGO).toContain("offer the nearest ones in them, with no word about what ixigo doesn't have.");
   });
 });

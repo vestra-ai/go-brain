@@ -22,6 +22,12 @@ export function sanitize(text: string): string {
 }
 
 /**
+ * A sentence: up to a full stop, question mark or exclamation mark with a space or the end after it, so never the point
+ * in "4.6" or "ixigo.com". Splitting at those cut a sentence in half.
+ */
+const SENTENCES = /(?:[^.!?]|[.!?](?=\S))*(?:[.!?]+|$)\s*/g;
+
+/**
  * What a turn's refused calls rule out of its reply: the tools that refused quietly (tell_the_room: say nothing), whose
  * names never appear; and the words each tool declares would claim its work done, for a tool that was called this turn
  * and refused every time (never for one that wasn't called).
@@ -43,7 +49,7 @@ export function withoutRefused(text: string, r: Refusals): string {
   const keep = (sentence: string): boolean => !named.some((x) => x.test(sentence)) && !r.claims.some((x) => x.test(sentence));
   return text
     .split(/\n{2,}/)
-    .map((para) => (para.match(/[^.!?]+(?:[.!?]+|$)\s*/g) ?? [para]).filter(keep).join('').trim())
+    .map((para) => (para.match(SENTENCES) ?? [para]).filter(keep).join('').trim())
     .filter((para) => para.length > 0)
     .join('\n\n');
 }
@@ -71,10 +77,37 @@ const tidy = (text: string): string =>
     .replace(/[,;:]+([.!?])/g, '$1')
     .trim();
 
+/** A word no sentence ends on: a cut that leaves one took a part the sentence needs ("Arjun's plan for a sunset there is"). */
+const OPEN_END =
+  /\b(?:is|are|was|were|be|been|am|(?:it|that|there|here|what|who)['’]s|a|an|the|of|to|in|at|on|for|from|with|by|about|per|see|via|as|than|into|and|or|but|nor|because|my|your|his|her|their|our|its)$/i;
+
+/**
+ * Each sentence of the text through a cut. A sentence the cut changed keeps what is left only when that is still a
+ * sentence; one left unfinished goes whole, so a line never ends mid-sentence (staging, 8 Oct: "...is the higher-rated
+ * one on ixigo. Arjun's plan for a sunset there is." when "in #14" was cut).
+ */
+function bySentence(text: string, cut: (sentence: string) => string): string {
+  return text
+    .split(/(\n+)/)
+    .map((part) =>
+      /^\n+$/.test(part)
+        ? part
+        : (part.match(SENTENCES) ?? [part])
+            .map((sentence) => {
+              const left = cut(sentence);
+              if (left === sentence) return sentence;
+              const words = tidy(left).replace(/[.!?]+$/, '').trimEnd();
+              return /[\p{L}\p{N}]/u.test(words) && !OPEN_END.test(words) ? left : '';
+            })
+            .join(''),
+    )
+    .join('');
+}
+
 /**
  * Takes the message numbers out of Go's words, and says which were cited, in order: "(#21, #34)", "in #6", a bare
- * "#21". A bracket that cites one goes whole ("(#7's thread)"), and "#14's note" is "the note". Only the text of a
- * message, never a card, where "House #12" is an address.
+ * "#21". A bracket that cites one goes whole ("(#7's thread)"), and "#14's note" is "the note". A sentence the cut
+ * leaves unfinished goes whole. Only the text of a message, never a card, where "House #12" is an address.
  */
 export function stripMessageRefs(text: string): { text: string; refs: number[] } {
   const refs: number[] = [];
@@ -82,11 +115,13 @@ export function stripMessageRefs(text: string): { text: string; refs: number[] }
     for (const m of match.matchAll(/#(\d+)/g)) refs.push(Number(m[1]));
     return '';
   };
-  const cutOut = text
-    .replace(BRACKET, (m: string, inner: string) => (CITES.test(inner) ? cut(m) : m))
-    .replace(POSSESSIVE, (m: string) => `${cut(m)}the`)
-    .replace(AFTER_WORD, cut)
-    .replace(BARE, cut);
+  const cutOut = bySentence(text, (sentence) =>
+    sentence
+      .replace(BRACKET, (m: string, inner: string) => (CITES.test(inner) ? cut(m) : m))
+      .replace(POSSESSIVE, (m: string) => `${cut(m)}the`)
+      .replace(AFTER_WORD, cut)
+      .replace(BARE, cut),
+  );
   // Text that cited nothing is left exactly as it was.
   if (refs.length === 0) return { text, refs };
   return { text: tidy(cutOut), refs: [...new Set(refs)] };
@@ -108,7 +143,8 @@ const LINK = /https?:\/\/\S+/g;
 
 /**
  * Takes Go's internal ids out of words people read, the last line of defence at the post: "I'll put the most recent
- * villa options card (c_opt_turn_01M4…) to a vote" loses the id and its brackets. Links are left as they are.
+ * villa options card (c_opt_turn_01M4…) to a vote" loses the id and its brackets. Links are left as they are. A
+ * sentence the cut leaves unfinished goes whole.
  */
 export function stripIds(text: string): string {
   let cut = false;
@@ -123,13 +159,15 @@ export function stripIds(text: string): string {
       .replace(ID_POSSESSIVE, gone('the'))
       .replace(ID_AFTER_WORD, gone(''))
       .replace(IDS, gone(''));
-  let out = '';
-  let at = 0;
-  for (const m of text.matchAll(LINK)) {
-    out += outside(text.slice(at, m.index)) + m[0];
-    at = m.index + m[0].length;
-  }
-  out += outside(text.slice(at));
+  const out = bySentence(text, (sentence) => {
+    let kept = '';
+    let at = 0;
+    for (const m of sentence.matchAll(LINK)) {
+      kept += outside(sentence.slice(at, m.index)) + m[0];
+      at = m.index + m[0].length;
+    }
+    return kept + outside(sentence.slice(at));
+  });
   // Text with no id in it is left exactly as it was.
   if (!cut) return text;
   return tidy(out);

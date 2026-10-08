@@ -74,6 +74,11 @@ describe("Go's rules", () => {
     expect(section).toContain(line);
   });
 
+  it('never writes a message number: people never see them, and cutting one out left half a sentence (staging, 8 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
+    expect(section).toContain('- Never write a message number ("#57") in what you say: people don\'t see them. Say whose message it was, or leave it out.\n');
+  });
+
   it('use no em dashes or en dashes, as they ask of Go', () => {
     expect(GO_RULES).not.toMatch(/[—–]/);
   });

@@ -70,6 +70,18 @@ describe('sanitize', () => {
     expect(stripMessageRefs('Check in at reception (Room #12).')).toEqual({ text: 'Check in at reception (Room #12).', refs: [] });
   });
 
+  it('drops a sentence whole when the cut leaves it unfinished: a line never ends mid-sentence (staging, 8 Oct)', () => {
+    const said =
+      "Yes, it's a good pick. ixigo rates Chapora Fort 4.2 and it's known for wide coastline views from the top, so it works well for sunset, " +
+      'though it gets busy around golden hour, so go a bit early. If you want a calmer sunset, Vagator Hill View (4.6) is the higher-rated one on ixigo.';
+    expect(stripMessageRefs(`${said} Arjun's plan for a sunset there is in #14.`)).toEqual({ text: said, refs: [14] });
+    expect(stripMessageRefs(`${said} Arjun's plan for a sunset there is #14.`)).toEqual({ text: said, refs: [14] });
+    // A cut that leaves a whole sentence keeps it.
+    expect(stripMessageRefs("Arjun's sunset plan in #14 works: go a bit early.").text).toBe("Arjun's sunset plan works: go a bit early.");
+    // Only a sentence the cut changed is judged: one that ends that way on its own is the model's.
+    expect(stripIds('Villa Sol it is. The vote for it is c_vote_turn_A_1.')).toBe('Villa Sol it is.');
+  });
+
   it('keeps every "#" that is not a message number, and leaves text with no numbers exactly as it was', () => {
     for (const t of [
       'Your flight leaves from Gate #4.',
@@ -151,6 +163,12 @@ describe('a reply after a refused call', () => {
   it('leaves a reply alone when nothing was refused, and leaves claims alone for a tool that went through', () => {
     expect(withoutRefused(said, { names: [], claims: [] })).toBe(said);
     expect(withoutRefused('Noted, Kabir has the cab.', { names: [], claims: [] })).toBe('Noted, Kabir has the cab.');
+  });
+
+  it('reads a sentence whole: the point in "4.6" never splits one (splitting there left "Villa Sol is rated 4.")', () => {
+    expect(withoutRefused('Villa Sol is rated 4.6 on ixigo and noted for the vote. Kabir paid the cab.', { names: [], claims: [/\bnoted\b/i] })).toBe(
+      'Kabir paid the cab.',
+    );
   });
 
   it('says nothing at all when every sentence was about the refusal', () => {
