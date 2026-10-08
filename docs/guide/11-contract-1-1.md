@@ -15,6 +15,7 @@ Good to know:
 |---|---|---|---|
 | A1 | `details` on an option and on a vote's option: photos, why Go picked it, the costs line by line, amenities, activities, facts, cancellation, rating, reviews, Go's note | Go | `Option.details`, `DecisionOption.details` |
 | A2 | A return leg and both prices on an option; `cab` options; the tapper's one way or round trip choice on a tap | Go; the App on a tap | `Option.return_journey`, `price_oneway_minor`, `price_round_minor`; `option_kind` `cab`; `card_tap.payload.trip` |
+| | The kind of screen a tap came from | The App on a tap | `card_tap.payload.device` |
 | A3 | Up to six quick replies under Go's message, kept on the message | Go | `post_message.quick_replies`, `Message.quick_replies` |
 | A4 | A card action's `open` can be one of the App's own screens, by a `go://` link | Go | `ActionOpen.url` |
 | A5 | "I'm flexible" as a vote: counted in `voted`, never in the tally | The Server | `decision.voted` `flexible`, `Decision.flexible_count` |
@@ -49,6 +50,8 @@ An option with both `price_oneway_minor` and `price_round_minor` lets the App of
   "payload": { "trip": "round" }
 }
 ```
+
+Any tap can also say what kind of screen it came from: `"payload": { "device": "desktop" }` or `"phone"`. Go uses it to open the page that fits, such as ixigo's desktop page for a login on a computer and its phone page on a phone. When it is absent, Go assumes a phone. `trip` and `device` are each optional, so a tap can carry either or both.
 
 ## Quick replies (A3)
 

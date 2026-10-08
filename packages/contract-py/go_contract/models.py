@@ -1486,7 +1486,8 @@ class EventAccepted(BaseModel):
 
 
 class CardTapPayload(BaseModel):
-    trip: Literal["oneway", "round"]
+    trip: Literal["oneway", "round"] | None = None
+    device: Literal["phone", "desktop"] | None = None
 
 
 class CardTap(BaseModel):

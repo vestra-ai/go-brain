@@ -30,6 +30,11 @@ describe('contract 1.1', () => {
     expect(Decision.shape.options.element.parse({ label: 'Villa Maya', details }).details?.go_note).toBe('The quietest of the three.');
     expect(CardTap.parse({ tap_id: 'tp_1', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', option_id: 'o_1', payload: { trip: 'round' } }).payload?.trip).toBe('round');
     expect(CardTap.safeParse({ tap_id: 'tp_1', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', payload: { trip: 'both' } }).success).toBe(false);
+    // The kind of screen the tap came from, on any tap, with or without trip; absent means a phone.
+    const login = CardTap.parse({ tap_id: 'tp_2', trip_id: 't', card_id: 'c_login', action_id: 'ixigo_login', person_id: 'p', payload: { device: 'desktop' } });
+    expect(login.payload?.device).toBe('desktop');
+    expect(CardTap.parse({ tap_id: 'tp_3', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', option_id: 'o_1', payload: { trip: 'oneway', device: 'phone' } }).payload).toEqual({ trip: 'oneway', device: 'phone' });
+    expect(CardTap.safeParse({ tap_id: 'tp_4', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', payload: { device: 'tablet' } }).success).toBe(false);
   });
 
   it('A3 Go can offer up to six quick replies, kept on the message', () => {

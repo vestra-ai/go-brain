@@ -8737,16 +8737,34 @@
         "type": "object",
         "properties": {
           "trip": {
-            "type": "string",
-            "enum": [
-              "oneway",
-              "round"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "oneway",
+                  "round"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "phone",
+                  "desktop"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ]
           }
-        },
-        "required": [
-          "trip"
-        ]
+        }
       },
       "CardTap": {
         "type": "object",

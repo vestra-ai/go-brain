@@ -25,8 +25,16 @@ export const CardTap = z
     person_id: Id,
     /** Set when the button was on one option of an options card. */
     option_id: Id.nullish(),
-    /** 1.1: what the tapper chose on the button's sheet: one way or the round trip, on an option with both prices. */
-    payload: z.object({ trip: z.enum(['oneway', 'round']) }).meta({ id: 'CardTapPayload' }).nullish(),
+    /** 1.1: more about the tap, each part optional. */
+    payload: z
+      .object({
+        /** What the tapper chose on the button's sheet: one way or the round trip, on an option with both prices (sent with pick). */
+        trip: z.enum(['oneway', 'round']).nullish(),
+        /** The kind of screen they tapped on, so a page Go opens fits it (ixigo's desktop or phone page). Absent: Go assumes a phone. */
+        device: z.enum(['phone', 'desktop']).nullish(),
+      })
+      .meta({ id: 'CardTapPayload' })
+      .nullish(),
   })
   .meta({ id: 'CardTap' });
 
