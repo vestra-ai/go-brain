@@ -1,12 +1,13 @@
 /**
  * Taps on Go's options cards. "Put it to a vote" opens the vote in code (fast and once); "I'll take this" goes on the
  * desk, so the composer answers the person in the room; "See on ixigo" opens the option's own ixigo.com page; "Flights
- * from my city", on the card of each home city's ways there, opens the flights from the tapper's own city.
+ * from my city", on the card of each home city's ways there, opens the flights from the tapper's own city; "Add my
+ * budget" opens the App's own budget sheet.
  */
 import type { Brain } from '../app.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
-import { clip, ixigoPage } from './cards.js';
+import { budgetSheet, clip, ixigoPage } from './cards.js';
 import { stableId } from './ids.js';
 import type { ResultsStore } from './results.js';
 import { openVoteFromCard } from './votes.js';
@@ -90,6 +91,11 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     if (!url) return { result: 'refused', toast: 'This card has no flights page' };
     return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
   });
+
+  // "Add my budget": the App's own budget sheet for the trip (a go:// link, contract 1.1 A4), opened in place.
+  taps.on('options', 'add_budget', async (tap) => ({
+    result: 'open', url: budgetSheet(tap.trip_id), expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString(),
+  }));
 
   taps.on('options', 'open', async (tap) => {
     const offer = tap.option_id ? await d.results.offer(tap.option_id) : null;
