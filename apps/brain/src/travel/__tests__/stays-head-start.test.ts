@@ -15,7 +15,7 @@ const GOA = { destination: 'Goa', start: '2026-11-06', end: '2026-11-09' };
  * A head start over a scripted Go: the trip (Goa, 6 to 9 Nov), its today, and Go's searches. `share` records each call
  * and, unless a search is kept (joined), runs the given run; `run` is the stays page, 9 s on the clock.
  */
-function rig(o: { mode?: string; trip?: { destination: string | null; start: string | null; end: string | null }; today?: string; joined?: boolean; fails?: boolean; gaveUp?: boolean; noComputer?: boolean } = {}) {
+function rig(o: { mode?: string; trip?: { destination: string | null; start: string | null; end: string | null }; today?: string; joined?: boolean; fails?: boolean; gaveUp?: boolean; noComputer?: boolean; gate?: Promise<void> } = {}) {
   const switches = new FakeSwitches();
   void switches.set('TRAVEL_MODE', o.mode ?? 'ixigo_web');
   let nowMs = Date.parse('2026-10-08T10:00:00Z');
@@ -35,6 +35,8 @@ function rig(o: { mode?: string; trip?: { destination: string | null; start: str
     },
     run: async (tripId) => {
       loads.push(tripId);
+      // A page still loading, until the test lets it finish.
+      if (o.gate) await o.gate;
       nowMs += 9_000;
       if (o.fails) throw new Error('ixigo took too long to answer. Try again in a moment.');
       return ANSWER;
@@ -59,10 +61,14 @@ afterEach(() => {
 
 describe(`createStaysHeadStart (${STAYS_HEAD_START_STEP}): the trip's likely first stays search, before anyone asks`, () => {
   it("at setup, shares hotels.search for the trip's destination and dates, loads it once, and keeps it under the key its run made known", async () => {
-    const r = rig();
+    let finish: () => void = () => undefined;
+    const r = rig({ gate: new Promise<void>((resolve) => (finish = resolve)) });
+    // Setup never waits on ixigo: the step is back while the page is still loading.
     await expect(r.hs.atSetup('t_goa')).resolves.toBeUndefined();
-    // Setup never waits on ixigo: the step is back before the page loads.
-    expect(r.loads).toEqual([]);
+    await vi.waitFor(() => expect(r.loads).toEqual(['t_goa']));
+    expect(r.shares).toHaveLength(1);
+    expect(r.log.info).not.toHaveBeenCalled();
+    finish();
     await vi.waitFor(() => expect(r.shares).toHaveLength(2));
     expect(r.loads).toEqual(['t_goa']);
     // No head count and no conditions: the trip's own head count, as the engine fills it for the ask too.

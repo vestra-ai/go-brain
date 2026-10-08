@@ -147,7 +147,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   brain.setup.addStep({ name: STAYS_HEAD_START_STEP, after: IXIGO_WARM_STEP, run: (tripId) => headStart.atSetup(tripId) });
   brain.tripLog.onEvent((ev) => headStart.onEvent(ev));
-  brain.onStop(() => headStart.stop());
+  const stopHeadStarts = (): void => headStart.stop();
+  brain.onStop(stopHeadStarts);
   const travel = createTravelLayer({
     switches: brain.switches,
     now: brain.now,
