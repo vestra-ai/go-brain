@@ -39,6 +39,24 @@ describe("the trip's screen on the card", () => {
     await expect(screens.tick('t_scr')).resolves.toBeUndefined();
   });
 
+  it("takes no picture, quietly, while Bash keeps the screen for a person signing in on it (409 browser_in_use)", async () => {
+    const { row } = await h.runningJob('scr_signin', 't_scr_signin');
+    const warned: string[] = [];
+    const quiet = createScreens({
+      v1: h.v1, store: h.store, images: createImages({ pool: h.pool, publicUrl: 'https://go.test' }), tasks: h.tasks, userIdFor: h.computer.userIdFor,
+      now: h.lb.clock.now, log: { warn: (_o, msg) => void warned.push(msg) },
+    });
+    h.fake.screen = Buffer.from([0xff, 0xd8, 0xff, 7]);
+    h.fake.screenRefusal = 'browser_in_use';
+    try {
+      await quiet.tick('t_scr_signin');
+    } finally {
+      h.fake.screenRefusal = null;
+    }
+    expect((await h.store.get(row.id))!.screenshotUrl).toBeNull();
+    expect(warned).toEqual([]);
+  });
+
   it('shows the last steps from the trace while a job has no to-do list, and stops once it writes one', async () => {
     const { row, v1TaskId } = await h.runningJob('trace', 't_trace');
     h.fake.traceSteps = [

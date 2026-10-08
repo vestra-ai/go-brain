@@ -9,8 +9,9 @@
  * first search instead (nudge). Each trip is asked once that way; a row of any kind ("Not now" too) means no more nudges.
  * Nothing waits on the login: searches work logged out. Go asks again the first time a recipe needs the login
  * (auth: login). The person logs in
- * themselves on Go's screen: their tap starts a job on the trip's computer that opens ixigo's login and hands the
- * browser to them (the working card's Watch, in control), and they type their own number and code. Go never sees
+ * themselves on Go's screen, with no model: their tap opens ixigo's log in box IN FRONT of the person's window on the
+ * trip's computer (Bash's front browser fetch), clicks into its mobile number box and keeps the tab there for them; the
+ * login card's Watch (theirs alone: nobody else sees the page) gives them control, and they type their own number and code. Go never sees
  * either. The login stays in the trip's browser profile, so every later fetch is logged in.
  *
  * Whether the browser is logged in is ixigo's own answer: the home page's POST /api/v2/oauth/userinfo, by its status
@@ -27,7 +28,6 @@ import type { TapRouter } from '../door/taps.js';
 import type { SetupStep } from '../trips/setup.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import type { Tasks } from '../tasks/tasks.js';
-import { returnsSchema } from '../tasks/returns.js';
 import { TravelError } from './mcp-travel.js';
 import { IXIGO, type Capture } from './recipes/recipe.js';
 import type { RecipeRunner } from './recipes/runners.js';
@@ -41,10 +41,21 @@ const ASK_AGAIN_MS = 30 * 60_000;
 /** Go's hello is a queued turn: the prompt waits for it this long, looking every HELLO_POLL_MS, before setup tries later. */
 export const HELLO_WAIT_MS = 20_000;
 const HELLO_POLL_MS = 1_000;
-/** The login job's to-do list, word for word: the job writes it as its own, so the card never changes under the person. */
-const LOGIN_STEPS = ["Open ixigo's log in", 'Click the mobile number box', 'Hand over the log in'] as const;
-/** ixigo's home page with its log in box open: ixigo's own address for it, so the job clicks nothing to open the box. */
-export const LOGIN_URL = 'https://www.ixigo.com/?loginVisible=true';
+/** The hand-off's tab on the trip's computer, kept in front of the person's window for them (Bash's front). */
+export const LOGIN_TAB = 'ixigo_login';
+/** How long the hand-off's tab stays in front for them: Bash's most. I'm logged in or Not now closes it sooner. */
+export const HANDOFF_MS = 600_000;
+/** How long the page may take to show its log in box; past it the tab stays in front for the person all the same. */
+export const HANDOFF_PAGE_MS = 12_000;
+/**
+ * ixigo's own Login button on its phone page (the hand-off's page runs as a phone: Bash's front), which opens its log in
+ * sheet. ?loginVisible=true opens nothing, on the phone page or the desktop one (staging probe, 8 Oct).
+ */
+const LOGIN_BUTTON = { op: 'click', role: 'button', name: 'Login' } as const;
+/** The log in sheet's mobile number field ("Enter Mobile Number"), clicked so the cursor waits in it for the person. */
+const MOBILE_BOX = { op: 'click', role: 'textbox', text: 'mobile' } as const;
+/** ixigo's home page, where the log in sheet opens. */
+export const LOGIN_URL = 'https://www.ixigo.com/';
 /** A booking ask asks again with its own line, unless it asked this recently (a turn that runs again). */
 const BOOK_ASK_AGAIN_MS = 2 * 60_000;
 /** The first ask, at setup or at a trip's first search, when Go's hello went without it. */
@@ -79,10 +90,12 @@ export interface LoginDeps {
   pool: pg.Pool;
   link: Pick<ServerLink, 'request'>;
   packs: Pick<Packs, 'get'>;
-  /** The trip's browser fetch; null while the trip's computer is not set up here. */
-  runner: () => Pick<RecipeRunner, 'read'> | null;
-  /** The jobs lane: the login is a job that opens ixigo's login and hands the browser to the person. */
-  tasks: () => Pick<Tasks, 'start' | 'handoff' | 'stop'> | null;
+  /** The trip's browser fetch, its hand-off in front included; null while the trip's computer is not set up here. */
+  runner: () => Pick<RecipeRunner, 'read' | 'handOff' | 'release' | 'tabCall'> | null;
+  /** The jobs lane: a login started as a job before the hand-off had no model (a row with a taskId) is settled there. */
+  tasks: () => Pick<Tasks, 'handoff' | 'stop'> | null;
+  /** A fresh session on the trip's screen, in control or to view (POST /v1/sessions); null with no trip computer here. */
+  screen: () => ((tripId: string, mode: 'view' | 'control') => Promise<{ url: string; expires_at: string }>) | null;
   /** A booking parked on the login wakes the composer when the login is in. */
   desk: Pick<Desk, 'put'>;
   /** Whether Go searches ixigo.com itself (TRAVEL_MODE ixigo_web): only then is there a login to ask for. */
@@ -91,6 +104,8 @@ export interface LoginDeps {
   log: { warn(obj: object, msg: string): void; info(obj: object, msg: string): void };
   /** Waits between looks for Go's hello; tests pass their own. */
   sleep?: (ms: number) => Promise<void>;
+  /** Runs `fn` after `ms` (the hand-off's end at HANDOFF_MS) and returns how to cancel it; tests pass their own. */
+  later?: (ms: number, fn: () => void) => () => void;
 }
 
 export interface IxigoLogin {
@@ -136,8 +151,8 @@ export function renderLoginResume(item: DeskItem, pack: TripPack): string | null
   const who = pack.trip.people.find((x) => x.person_id === p.personId)?.name ?? 'Someone';
   return `${who} logged in to ixigo on Go's computer, so carry on with what the group asked for, without asking anyone again: booking ${p.what ?? 'the stay'}. Call set_mandate now with ${JSON.stringify(p.resume ?? {})}, then say in one short line what was set and that the payer taps Yes, book it.`;
 }
-/** Why the card says what it says: not logged in yet, the person left or used Forget me, a log out ixigo didn't take. */
-type Note = 'not_yet' | 'left' | 'forgot' | 'logout_failed';
+/** Why the card says what it says: the page still opening, not logged in yet, the person left or used Forget me, a log out ixigo didn't take. */
+type Note = 'opening' | 'not_yet' | 'not_opened' | 'expired' | 'left' | 'forgot' | 'logout_failed';
 const day = (at: Date): string => at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 
 /** The login card for where things stand: who it is for, what it says, and the buttons only they see. */
@@ -150,18 +165,32 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
       return {
         ...base,
         title: 'Link ixigo for this trip',
-        body: `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their own phone; Go never sees the number or the code. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
+        body: note === 'not_opened'
+          ? "Go couldn't open ixigo's log in on its screen just now. Tap Log in to ixigo to try again."
+          : note === 'expired'
+            ? "ixigo's log in closed on Go's screen after 10 minutes. Tap Log in to ixigo to open it again."
+            : `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their own phone; Go never sees the number or the code. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
         actions: [button('ixigo_login', 'Log in to ixigo', 'primary'), button('ixigo_not_now', 'Not now', 'secondary')],
         fallback_text: `${name}, log in to ixigo once on Go's computer so Go can check fares and book.`,
       };
     case 'logging_in':
       return {
         ...base,
+        // Not logged in yet: a heads-up, so the room's sheet shows the line to the person looking at it.
+        ...(note === 'not_yet' ? { tone: 'heads_up' as const } : {}),
         title: 'Logging in to ixigo',
         body: note === 'not_yet'
-          ? "Go can't see ixigo logged in yet. Finish the login on Go's screen (Watch on its card), then tap I'm logged in again."
-          : `Go is opening ixigo's login on its screen. When its card asks for ${name}, tap Watch on it, log in with your phone, then tap I'm logged in here.`,
-        actions: [button('ixigo_logged_in', "I'm logged in", 'primary'), button('ixigo_not_now', 'Not now', 'secondary')],
+          ? 'Not logged in yet. Finish on Watch, then tap again.'
+          : note === 'opening'
+            ? `Opening ixigo's log in on Go's screen for ${name}.`
+            : `ixigo's log in is open on Go's screen. ${name}: tap Watch, log in with your phone, then tap I'm logged in.`,
+        // Watch only for the person logging in (anyone else would watch them type their number), and only once the page
+        // is in front: while it opens, the card carries I'm logged in and Not now alone (the room says it is opening).
+        actions: [
+          ...(note === 'opening' ? [] : [button('ixigo_watch', 'Watch', 'primary')]),
+          button('ixigo_logged_in', "I'm logged in", 'secondary'),
+          button('ixigo_not_now', 'Not now', 'secondary'),
+        ],
         fallback_text: `${name} is logging in to ixigo on Go's computer.`,
       };
     case 'logged_in':
@@ -303,6 +332,13 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   }
 
   const sleep = d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const later = d.later ?? ((ms: number, fn: () => void) => {
+    const timer = setTimeout(fn, ms);
+    timer.unref?.();
+    return () => clearTimeout(timer);
+  });
+  /** Each trip's hand-off end (HANDOFF_MS), cancelled when the login ends sooner. In this process: Bash closes the tab itself. */
+  const ending = new Map<string, () => void>();
   const nudging = new Set<string>();
   /** Trips known to have a login row: a nudge there reads nothing. */
   const hasRow = new Set<string>();
@@ -349,9 +385,96 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     }
   }
 
+  /**
+   * The hand-off, with no model: ixigo's home page opened IN FRONT of the person's window on the trip's computer (Bash's
+   * front fetch, as a phone), its Login tapped and its mobile number box clicked, and the tab kept there for them for
+   * HANDOFF_MS. ixigo's own userinfo, asked from inside the page first, says whether the browser is logged in already:
+   * then there is nothing to hand over (its Login is not there, so the page's time runs out first). A page Bash would
+   * not open puts the card back to its ask, saying so.
+   */
+  async function handOff(row: LoginRow, runner: Pick<RecipeRunner, 'handOff' | 'release'>): Promise<void> {
+    // The hand-off ends at HANDOFF_MS whatever happens: Bash closes the tab then, and the card goes back to its ask.
+    ending.get(row.tripId)?.();
+    ending.set(row.tripId, later(HANDOFF_MS, () => track('end', row.tripId, expire(row))));
+    let captures: Capture[];
+    try {
+      ({ captures } = await runner.handOff!(
+        row.tripId,
+        LOGIN_URL,
+        { capture: [], steps: [LOGIN_BUTTON, MOBILE_BOX], timeoutMs: HANDOFF_PAGE_MS },
+        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' } },
+      ));
+    } catch (err) {
+      // Loud, and nothing left open: no second path.
+      await release(row.tripId);
+      const now = await get(row.tripId);
+      if (now?.state === 'logging_in' && now.attempt === row.attempt) {
+        const back: LoginRow = { ...now, state: 'asked' };
+        await save(back);
+        await show(back, 'not_opened');
+      }
+      throw err;
+    }
+    const now = await get(row.tripId);
+    // Not now while the page opened, or another try: this hand-off is no longer theirs to finish.
+    if (now?.state !== 'logging_in' || now.attempt !== row.attempt) return;
+    if (captures.find((c) => c.match === 'check')?.status === 200) {
+      await release(row.tripId);
+      await show(await loggedIn(now));
+    } else {
+      // The page is in front for them (its taps done, or its time run out with the page kept): now the card carries Watch.
+      await show(now);
+    }
+  }
+
+  /**
+   * ixigo's userinfo answer from inside the open log in page (one byte, by its status), keeping the page for them. With no
+   * log in page open (its 10 minutes ran out), the home page's own answer, as any check reads it.
+   */
+  async function statusInLogin(tripId: string): Promise<'in' | 'out' | 'unknown'> {
+    const runner = d.runner();
+    if (!runner?.tabCall) return status(tripId);
+    let got: Capture | null;
+    try {
+      got = await runner.tabCall(tripId, LOGIN_TAB, { url: USERINFO, method: 'POST' }, HANDOFF_MS);
+    } catch (err) {
+      if (!(err instanceof TravelError)) throw err;
+      d.log.info({ tripId, status: null, login: 'unknown', why: err.code }, 'travel: ixigo said whether the trip computer is logged in');
+      return 'unknown';
+    }
+    if (got === null) return status(tripId);
+    const said = got.status === 200 ? 'in' : got.status === 401 || got.status === 403 ? 'out' : 'unknown';
+    // The status alone, for the stage desk's log: never the account.
+    d.log.info({ tripId, status: got.status, login: said, where: 'log in page' }, 'travel: ixigo said whether the trip computer is logged in');
+    return said;
+  }
+
+  /**
+   * The hand-off's tab closes, so the person's own window is on top again; one already gone is nothing to close. Every end
+   * of a login closes it: logged in, Not now, a hand-off that failed or ran its time, the person gone.
+   */
+  async function release(tripId: string): Promise<void> {
+    ending.get(tripId)?.();
+    ending.delete(tripId);
+    await d.runner()?.release?.(tripId, LOGIN_TAB).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's tab did not close"));
+  }
+
+  /** A hand-off that ran its HANDOFF_MS: its tab is closed, and its card goes back to its ask, saying so. */
+  async function expire(row: LoginRow): Promise<void> {
+    ending.delete(row.tripId);
+    const now = await get(row.tripId);
+    if (now?.state !== 'logging_in' || now.attempt !== row.attempt) return;
+    await release(row.tripId);
+    const back: LoginRow = { ...now, state: 'asked' };
+    await save(back);
+    await show(back, 'expired');
+  }
+
   async function personGone(tripId: string, personId: string, why: 'left' | 'forgot'): Promise<void> {
     const row = await get(tripId);
     if (!row || row.personId !== personId || (row.state !== 'logged_in' && row.state !== 'logging_in')) return;
+    // A log in still open for them closes first.
+    if (row.state === 'logging_in') await release(tripId);
     track('log out', tripId, logout(row, why));
   }
 
@@ -413,42 +536,45 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     },
 
     registerTaps(taps) {
-      taps.on('notice', 'ixigo_login', forPerson(async (row, tap) => {
-        const tasks = d.tasks();
-        if (!d.live() || !tasks) return { result: 'refused', toast: "Go's computer isn't browsing ixigo right now." };
+      taps.on('notice', 'ixigo_login', forPerson(async (row) => {
+        const runner = d.runner();
+        if (!d.live() || !runner?.handOff) return { result: 'refused', toast: "Go's computer isn't browsing ixigo right now." };
         if (row.state === 'logged_in') return { result: 'done', toast: 'ixigo is already logged in' };
-        const job = await tasks.start(row.tripId, {
-          // One page, one click, then the hand-off at once: each step or check the job adds is a model round the person waits
-          // on (87 to 96 s on staging when the job looked for the Log in button itself).
-          goal:
-            `Your to-do list is exactly these three steps: ${LOGIN_STEPS.map((t) => `"${t}"`).join(', ')}. ` +
-            `Open ${LOGIN_URL} in the browser: the page opens with its log in box showing a field for the mobile number (only if the box is not there, click "Log in/Sign up" at the top right). ` +
-            'Click into the mobile number field and type nothing. Then hand the browser to the person at once, checking nothing first: they log in themselves with their own mobile number and the one-time code. ' +
-            'Never type, read, copy or keep a number, a code, a name or an email, and never open a page under /payments/. When they say they are done, end the job at once with the summary "Done": Go checks the login itself.',
-          returns: returnsSchema('answer'),
-          returnsKind: 'answer',
-          context: {},
-          title: 'Logging in to ixigo',
-          steps: [...LOGIN_STEPS],
-          askedBy: row.personId,
-          // The login card speaks for the job: neither its hand-off nor its end posts a line in the chat.
-          quiet: true,
-          // One job a tap: a tap Go already answered gets its first answer back, and another tap is another try.
-          key: `ixigo_login_${tap.tap_id}`,
-        });
-        const next: LoginRow = { ...row, state: 'logging_in', taskId: job.taskId };
+        const next: LoginRow = { ...row, state: 'logging_in', taskId: null };
         await save(next);
-        track('card', row.tripId, show(next));
-        return { result: 'done', toast: "Opening ixigo on Go's computer" };
+        // The card first (opening, no Watch yet), then the page: whatever the hand-off finds is said after it, never under it.
+        track('hand-off', row.tripId, (async () => {
+          await show(next, 'opening');
+          await handOff(next, runner);
+        })());
+        return { result: 'done', toast: "Opening ixigo's log in on Go's screen" };
+      }));
+
+      // Only the person logging in watches, with control: nobody else sees their number typed. Never a link in the chat:
+      // the tap opens it.
+      taps.on('notice', 'ixigo_watch', forPerson(async (row) => {
+        const screen = d.screen();
+        if (row.state !== 'logging_in' || !screen) return { result: 'refused', toast: "ixigo's log in isn't open on Go's screen now" };
+        try {
+          const s = await screen(row.tripId, 'control');
+          return { result: 'open', url: s.url, expires_at: s.expires_at };
+        } catch (err) {
+          d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's Watch did not open");
+          return { result: 'refused', toast: "Can't open Go's screen right now" };
+        }
       }));
 
       taps.on('notice', 'ixigo_logged_in', forPerson(async (row) => {
         if (row.state !== 'logging_in') return { result: 'done' };
         track('check', row.tripId, (async () => {
-          // The job's hand-off, settled for them: the job then ends, quietly. ixigo's own answer says whether it worked.
+          // A login started as a job (before the hand-off had no model): its hand-off settled for them, quietly.
           if (row.taskId) await d.tasks()?.handoff(row.taskId, 'done').catch(() => undefined);
-          if ((await status(row.tripId)) === 'in') await show(await loggedIn(row));
-          else await show(row, 'not_yet');
+          // ixigo's own answer, read from inside the log in page: nothing opens over it, and an early tap (still waiting for
+          // the code) keeps its place. Logged in: the window closes. Not yet: it stays in front, untouched.
+          if ((await statusInLogin(row.tripId)) === 'in') {
+            await release(row.tripId);
+            await show(await loggedIn(row));
+          } else await show(row, 'not_yet');
         })());
         return { result: 'done', toast: 'Checking your login' };
       }));
@@ -458,8 +584,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         // A booking that waited on the login is let go with it: Go asks again when someone asks for a booking again.
         const next: LoginRow = { ...row, state: 'skipped', parked: null };
         await save(next);
-        // The job stops where it is: its card says Stopped, and nothing is posted in the chat.
-        if (row.taskId && row.state === 'logging_in') track('stop', row.tripId, d.tasks()?.stop(row.taskId) ?? Promise.resolve());
+        if (row.state === 'logging_in') {
+          // The log in leaves the person's screen; a job from before stops where it is, its card saying Stopped.
+          track('close', row.tripId, release(row.tripId));
+          if (row.taskId) track('stop', row.tripId, d.tasks()?.stop(row.taskId) ?? Promise.resolve());
+        }
         track('card', row.tripId, show(next));
         return { result: 'done', toast: 'Go will ask again when a booking needs it' };
       }));

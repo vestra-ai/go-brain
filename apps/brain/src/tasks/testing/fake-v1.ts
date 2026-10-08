@@ -58,6 +58,8 @@ export class FakeV1 {
   readonly platformEvents: FakePlatformEvent[] = [];
   /** The computer's screen; null answers 409 browser_not_open. */
   screen: Buffer | null = null;
+  /** Bash refusing the screenshot with this 409 code, such as browser_in_use while a person signs in on the screen. */
+  screenRefusal: string | null = null;
   /** Vestra's BROWSER_SHARED_CONTROL. Off answers screen: 'control' with 409 screen_control_unavailable. */
   controlAvailable = false;
   /** A hand_off: always message starts its task by itself (task.started on the stream). */
@@ -428,6 +430,7 @@ export class FakeV1 {
       });
     });
     app.get('/v1/users/:id/screenshot', async (_req, reply) => {
+      if (this.screenRefusal) return fail(reply, 409, this.screenRefusal);
       if (!this.screen) return fail(reply, 409, 'browser_not_open');
       return reply.header('content-type', 'image/jpeg').header('cache-control', 'no-store').send(this.screen);
     });
