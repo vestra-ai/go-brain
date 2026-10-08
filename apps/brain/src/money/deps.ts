@@ -1,5 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type pg from 'pg';
+import type * as C from '@go/contract';
+import { mentionsIn } from '../composer/speak.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Travel } from '../travel/travel.js';
 import type { PaymentKind, VaultClient } from './vault-client.js';
@@ -19,10 +21,23 @@ export interface MoneyDeps {
   tapVaultMs?: number;
 }
 
-/** One line in Go's voice, outside a turn. The request id comes from what triggered it, so a retry posts it once. */
-export async function postLine(d: Pick<MoneyDeps, 'link'>, tripId: string, text: string, requestId: string): Promise<void> {
-  await d.link.request('post_message', { request_id: requestId, trip_id: tripId, text: clip(plain(text), 2000) });
+/** Who a money line can name: the payer, or the trip's people. */
+export type Named = ReadonlyArray<Pick<C.Person, 'person_id' | 'name' | 'go_paused'>>;
+
+/**
+ * One line in Go's voice, outside a turn. The request id comes from what triggered it, so a retry posts it once. The
+ * people it names ("Rahul, the payment for … didn't go through") get a push, as in a turn (composer/speak.ts).
+ */
+export async function postLine(d: Pick<MoneyDeps, 'link'>, tripId: string, text: string, requestId: string, people: Named = []): Promise<void> {
+  const line = clip(plain(text), 2000);
+  const mentions = mentionsIn(line, people);
+  await d.link.request('post_message', { request_id: requestId, trip_id: tripId, text: line, ...(mentions.length ? { mentions } : {}) });
 }
+
+/** A payments row's payer, as postLine takes people. */
+export const payerOf = (row: { payer_person_id: string; payer_name: string }): Named => [
+  { person_id: row.payer_person_id, name: row.payer_name, go_paused: false },
+];
 
 /** Work done after an answer was sent. Errors are logged, and tests can wait for all of it. */
 export class Later {

@@ -62,6 +62,8 @@ describe('a paid payment', () => {
     expect(card.actions ?? null).toBeNull();
     const ticket = k.server.posts.at(-1);
     expect(ticket?.text).toBe('Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.');
+    // The payer it names gets a push.
+    expect(k.server.writesOf('post_message').at(-1)?.params.mentions).toEqual(['p_rahul']);
     expect(ticket?.card).toMatchObject({ kind: 'ticket', card_id: `c_ticket_${approvalId}`, booking_id: bookingId });
     expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'paid', booking_id: bookingId, ticket_posted_at: expect.any(Date) });
     expect(await unsettled(k.pool, k.now())).toEqual([]);
@@ -125,6 +127,8 @@ describe('a payment that did not happen', () => {
     expect(k.server.posts.at(-1)?.text).toBe(
       "Rahul, the payment for Villa Sol didn't go through (the bank declined the card). Nothing was charged. Want to try again?",
     );
+    // Go addresses the payer, so the line carries the mention and Rahul gets a push.
+    expect(k.server.writesOf('post_message').at(-1)?.params.mentions).toEqual(['p_rahul']);
   });
 
   it('ignores a failure for a payment that already went through', async () => {
