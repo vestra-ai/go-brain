@@ -4,6 +4,7 @@ import type { DeskItem } from '../../../desk/desk.js';
 import type { TravelOption, TravelSearch } from '../../travel.js';
 import type { EarlySearch } from '../early.js';
 import { EARLY_WAIT_MS, earlyAnswer, earlySearchNow } from '../now.js';
+import { searchWakeAnswer } from '../../search-wake.js';
 import { msg } from '../../../__tests__/fixtures/goa.js';
 import { makeTurnCtx } from '../../../composer/tools.js';
 import { goaPack } from '../../../tasks/testing/goa.js';
@@ -19,9 +20,20 @@ const wakeFor = (messageId: string, seq: number): DeskItem => ({
   id: `msg:t_goa:${messageId}`, tripId: 't_goa', kind: 'message', ref: messageId, dueAt: new Date(), payload: { messageId, seq, namesGo: true },
 });
 
+/** A search the test finishes when it likes. */
+function later<T>() {
+  let settle!: { resolve: (v: T) => void; reject: (e: unknown) => void };
+  const p = new Promise<T>((resolve, reject) => {
+    settle = { resolve, reject };
+  });
+  return { p, ...settle };
+}
+
 function world(search: Promise<TravelSearch> | null, allowed: number | null = EARLY_WAIT_MS, live = true) {
   const saved: unknown[] = [];
   const waits: number[] = [];
+  const puts: Array<Omit<DeskItem, 'id'> & { id?: string }> = [];
+  const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push(item); } };
   const early = { searchFor: (tripId: string, messageId: string): EarlySearch | null => (search && tripId === 't_goa' && messageId === 'm_57' ? { kind: 'flights', query: QUERY, search, live } : null) };
   const results = {
     save: vi.fn(async (s: Record<string, unknown>) => {
@@ -30,8 +42,8 @@ function world(search: Promise<TravelSearch> | null, allowed: number | null = EA
     }),
   };
   const travel = { waitMs: async () => allowed };
-  const now = earlySearchNow({ early, results, travel, now: () => new Date('2026-10-07T12:00:01Z'), wait: async (ms) => { waits.push(ms); await new Promise((r) => setTimeout(r, 5)); } });
-  return { now, saved, waits, results };
+  const now = earlySearchNow({ early, results, travel, desk, now: () => new Date('2026-10-07T12:00:01Z'), wait: async (ms) => { waits.push(ms); await new Promise((r) => setTimeout(r, 5)); } });
+  return { now, saved, waits, results, puts };
 }
 
 describe('the early search block', () => {
@@ -59,15 +71,25 @@ describe('the early search block', () => {
     expect(w.results.save).toHaveBeenCalledTimes(1);
   });
 
-  it('names a search still running after its 12 s, so the search tool hands it over and it wakes Go when done', async () => {
-    const w = world(new Promise<TravelSearch>(() => undefined));
+  it('hands a search still running after its 12 s over itself: its options go up when it finishes, whatever the model says (staging, 8 Oct)', async () => {
+    const run = later<TravelSearch>();
+    const w = world(run.p);
     const block = await w.now.render('t_goa', [wakeFor('m_57', 57)]);
     expect(w.waits).toEqual([EARLY_WAIT_MS]);
     expect(block).toBe(
-      'The search for #57 (flights from delhi to goa on 2026-10-09) started early and is still running, and the live card in the room shows it. ' +
-        'Call the search tool for it now with what was asked: it joins that search, answers at once, and you wake with its options when it finishes. ' +
-        'Post nothing else about it.',
+      'The search for #57 (flights from delhi to goa on 2026-10-09) is still running, and the live card in the room shows it. ' +
+        "Its options go up in the room by themselves when it finishes. Post nothing about it, and don't search for it again.",
     );
+    // Never Go's own plumbing in the room ("I'll join the running search").
+    expect(block).not.toMatch(/join/i);
+    expect(w.puts).toEqual([]);
+    // The turn ended with whatever line the model wrote; the run finishes after it, and Go wakes to put the card up.
+    run.resolve({ ...FOUND, runId: 'run_57' });
+    await vi.waitFor(() => expect(w.puts).toHaveLength(1));
+    expect(w.puts[0]).toMatchObject({
+      id: 'search:t_goa:run_57', tripId: 't_goa', kind: 'search', ref: 'flights',
+      payload: { source: 'travel_search', count: 2, resultsId: 'r_early1', error: null },
+    });
   });
 
   it('never waits on the agent job, and still hands over a search that already finished', async () => {
@@ -98,8 +120,8 @@ describe('the early search block', () => {
     const slow = world(new Promise<TravelSearch>(() => undefined), null, false);
     // A backend that does not say how long it may take: the block's own 12 s.
     expect(await slow.now.render('t_goa', [wakeFor('m_57', 57)])).toBe(
-      'The search for #57 (flights from delhi to goa on 2026-10-09) started early and is still running. ' +
-        'Call the search tool for it now with what was asked: it joins that search and answers when it finishes.',
+      'The search for #57 (flights from delhi to goa on 2026-10-09) is still running. Its options go up in the room by themselves when it finishes. ' +
+        "Say in one short line that you're still looking and they'll be here in a moment, and don't search for it again.",
     );
     expect(slow.waits).toEqual([EARLY_WAIT_MS]);
   });
@@ -123,19 +145,31 @@ describe('the early answer, with no model call', () => {
   const query = { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '19:00' };
   const late = (title: string, priceMinor: number, dep: string): TravelOption => ({ ...flight(title, priceMinor, dep), journey: { ...flight(title, priceMinor, dep).journey!, depart_at: `2026-11-06T${dep}:00+05:30` } });
   const found: TravelSearch = { checkedAt: '2026-10-07T12:00:00.000Z', found: 3, results: [late('IndiGo 6E 2134', 420_000, '19:10'), late('Air India AI 2981', 389_000, '20:45'), late('Akasa QP 1846', 450_000, '21:30')] };
-  function answer(text: string, search: Promise<TravelSearch> | null = Promise.resolve(found)) {
+  function answer(text: string, search: Promise<TravelSearch> | null = Promise.resolve(found), live = false) {
     const line = msg(57, 'p_rahul', text);
     const pack = { ...goaPack(), messages: [...goaPack().messages, line] };
-    const early = { searchFor: (_t: string, id: string): EarlySearch | null => (search && id === line.message_id ? { kind: 'flights', query, search, live: false } : null) };
+    const early = { searchFor: (_t: string, id: string): EarlySearch | null => (search && id === line.message_id ? { kind: 'flights', query, search, live } : null) };
     const cards: Array<{ cardId: string }> = [];
+    const sets = new Map<string, Record<string, unknown>>();
     const results = {
-      save: vi.fn(async (s: Record<string, unknown>) => ({ ...s, resultsId: 'r_direct1' }) as never),
+      save: vi.fn(async (s: Record<string, unknown>) => {
+        const set = { ...s, resultsId: 'r_direct1' };
+        sets.set('r_direct1', set);
+        return set as never;
+      }),
+      get: vi.fn(async (_t: string, id: string) => (sets.get(id) ?? null) as never),
       saveCard: vi.fn(async (row: { cardId: string }) => { cards.push(row); }),
       card: vi.fn(async () => null),
     };
-    const run = earlyAnswer({ early, results: results as never, images: { rehostUrl: async (u: string) => u } as never, travel: { waitMs: async () => null }, today: async () => '2026-10-07', wait: async () => undefined });
+    const puts: Array<Omit<DeskItem, 'id'> & { id?: string }> = [];
+    const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push(item); } };
+    const images = { rehostUrl: async (u: string) => u } as never;
+    const run = earlyAnswer({
+      early, results: results as never, images, travel: { waitMs: async () => null }, today: async () => '2026-10-07',
+      now: () => new Date('2026-10-07T12:00:01Z'), desk, wait: async () => undefined,
+    });
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d1', link: {} as never, pack, wake: [wakeFor(line.message_id, 57)], signal: new AbortController().signal });
-    return { go: () => run({ tripId: 't_goa', wake: ctx.wake, pack, ctx }), ctx, results };
+    return { go: () => run({ tripId: 't_goa', wake: ctx.wake, pack, ctx }), ctx, results, puts, pack, images };
   }
 
   it('answers a plain ask whose early search found options: the card and a line from the data, nothing for the model', async () => {
@@ -163,7 +197,8 @@ describe('the early answer, with no model call', () => {
     const run = earlyAnswer({
       early: { searchFor: (_t: string, id: string): EarlySearch | null => (id === line.message_id ? { kind: 'stays', query, search: Promise.resolve(stays), live: true } : null) },
       results: { save: async (s: Record<string, unknown>) => { saved.push(s); return { ...s, resultsId: 'r_direct2' } as never; }, saveCard: async () => undefined, card: async () => null } as never,
-      images: { rehostUrl: async (u: string) => u } as never, travel: { waitMs: async () => null }, today: async () => '2026-10-07', wait: async () => undefined,
+      images: { rehostUrl: async (u: string) => u } as never, travel: { waitMs: async () => null }, today: async () => '2026-10-07',
+      now: () => new Date('2026-10-07T12:00:01Z'), wait: async () => undefined,
     });
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d2', link: {} as never, pack, wake: [wakeFor(line.message_id, 58)], signal: new AbortController().signal });
     expect(await run({ tripId: 't_goa', wake: ctx.wake, pack, ctx })).toBe(true);
@@ -187,4 +222,46 @@ describe('the early answer, with no model call', () => {
     expect(question.results.save).not.toHaveBeenCalled();
     expect(await answer('@Go flights Delhi to Goa Friday after 7 pm', null).go()).toBe(false);
   });
+
+  it("hands a plain ask's search still running over and says nothing, its live card in the room: one line, the card's, comes when it finishes", async () => {
+    const run = later<TravelSearch>();
+    const a = answer('@Go flights Delhi to Goa Friday after 7 pm', run.p, true);
+    expect(await a.go()).toBe(true);
+    // Nothing from this turn: the live card already said "On it.", and no model round can promise anything.
+    expect(a.ctx.lines).toEqual([]);
+    expect(a.ctx.cards).toEqual([]);
+    expect(a.ctx.answered).toBe(true);
+    run.resolve({ ...found, runId: 'run_d1' });
+    await vi.waitFor(() => expect(a.puts).toHaveLength(1));
+    // The wake that follows puts the card up with its line, with no model call.
+    const wake = { ...a.puts[0]!, id: a.puts[0]!.id! } as DeskItem;
+    const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d9', link: {} as never, pack: a.pack, wake: [wake], signal: new AbortController().signal });
+    expect(await searchWakeAnswer({ results: a.results as never, images: a.images })({ tripId: 't_goa', wake: [wake], pack: a.pack, ctx: next })).toBe(true);
+    expect(next.lines).toEqual(['Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from ₹3,890 per person.']);
+    expect(next.cards).toHaveLength(1);
+    expect((next.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['IndiGo 6E 2134', 'Air India AI 2981', 'Akasa QP 1846']);
+  });
+
+  it("on a stays card, says the card's own cheapest, never a cheaper stay the card leaves out (staging pass, 8 Oct)", async () => {
+    const line = msg(59, 'p_priya', '@Go hotels in Goa');
+    const pack = { ...goaPack(), messages: [...goaPack().messages, line] };
+    const stay = (title: string, priceMinor: number): TravelOption => ({
+      kind: 'stay', title, priceMinor, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {},
+      sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
+    });
+    // ixigo's popular first: the cheapest of the twenty is fourth, off the card.
+    const stays: TravelSearch = { checkedAt: '2026-10-07T12:00:00.000Z', found: 4, results: [stay('Miros', 2_233_300), stay('Saudades Homestays', 529_800), stay('Comfort Inn Elite', 559_600), stay('Budget Inn', 179_000)] };
+    const query = { area: 'goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
+    const run = earlyAnswer({
+      early: { searchFor: (_t: string, id: string): EarlySearch | null => (id === line.message_id ? { kind: 'stays', query, search: Promise.resolve(stays), live: true } : null) },
+      results: { save: async (s: Record<string, unknown>) => ({ ...s, resultsId: 'r_direct3' }) as never, saveCard: async () => undefined, card: async () => null } as never,
+      images: { rehostUrl: async (u: string) => u } as never, travel: { waitMs: async () => null }, today: async () => '2026-10-07',
+      now: () => new Date('2026-10-07T12:00:01Z'), wait: async () => undefined,
+    });
+    const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d3', link: {} as never, pack, wake: [wakeFor(line.message_id, 59)], signal: new AbortController().signal });
+    expect(await run({ tripId: 't_goa', wake: ctx.wake, pack, ctx })).toBe(true);
+    expect((ctx.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Miros', 'Saudades Homestays', 'Comfort Inn Elite']);
+    expect(ctx.lines).toEqual(['Stays in Goa for 6 to 9 Nov, from ₹5,298 a night.']);
+  });
 });
+
