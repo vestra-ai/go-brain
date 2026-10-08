@@ -62,7 +62,9 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   const memory = createMemory({ pool: brain.pool, packs: brain.packs });
   brain.memory = memory;
   const side = anthropicSideModel(brain.anthropic, env.SIDE_MODEL, brain.log, brain.budget);
-  const notes = createNotes({ pool: brain.pool, packs: brain.packs, link: brain.door.link, side, log: brain.log, now: brain.now });
+  const notes = createNotes({
+    pool: brain.pool, packs: brain.packs, link: brain.door.link, side, log: brain.log, now: brain.now, travel: () => brain.travel,
+  });
   const fold = createFold({
     pool: brain.pool, packs: brain.packs, side, log: brain.log, now: brain.now,
     foldAtTokens: env.FOLD_AT_TOKENS, storyTokens: env.STORY_TOKENS, hardCapTokens: env.CHAT_HARD_CAP_TOKENS,

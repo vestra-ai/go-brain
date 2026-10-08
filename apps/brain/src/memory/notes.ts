@@ -11,8 +11,10 @@ import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
 import { maskSecrets } from '../reflex/secrets.js';
 import { partOfAskToGo } from '../trips/names-go.js';
+import type { Travel } from '../travel/travel.js';
 import type { Packs, TripPack } from '../trips/pack.js';
-import { checkFact, checkLine, type CheckEnv } from './checker.js';
+import { saveTrip, tripToday, type TripChange } from '../trips/save-trip.js';
+import { checkFact, checkLine, type CheckedLine, type CheckEnv } from './checker.js';
 import { decisionOf, linkLine } from './decision-lines.js';
 import { forgottenUpTo, saveFact } from './facts.js';
 import { chatLine } from '../composer/fence.js';
@@ -25,6 +27,7 @@ export const NOTES_RULES = [
   'You keep notes for Go, the AI member of a trip group chat. You read the new lines of the chat and propose two kinds of notes.',
   '1. facts: lasting things a person says about themselves that matter for planning the trip: food, drinks, when they can or cannot travel, seats, health, money limits they say openly, what they will not do. Only from that person\'s own line, and never from a question or a request: "@Go is it hot in Goa in November?" or "how far is Thalassa from Anjuna" says nothing lasting about whoever asks it, not even an interest in the places it names. topic is one or two lowercase words such as food, drinks, leaving, arriving, seats, flights, boats, health, budget, sleep, activities. text is short plain words without the name, such as "Vegetarian" or "Can\'t leave before 6 pm Friday". The trip\'s own plan (its dates, its place), said as the plan, is not a fact about whoever said it: it goes in the record.',
   '2. lines for the trip record: "agreed" when people agreed in the chat (proof: the proposal and the yes lines; put any line that disagrees in objections). The organizer\'s own line that states a plan point as settled ("Goa trip is happening!! 6 to 9 Nov", "We\'re doing North Goa") is agreed on its own, with that line as proof; one from the organizer that proposes or asks ("6 to 9 Nov?", "how about North Goa?") is open. "open" when a question about the plan is still unsettled among the group (person_ids: who is asked); a question put to Go is Go\'s to answer and is never open. "doing" when someone says they will sort something (person_ids: who said it); a request to Go is never a doing line, Go does it. To change one of Go\'s own record lines, give its line_id; for a job that is finished add "status": "done".',
+  'An agreed line that fixes the trip\'s dates or its place also gives them as "trip": {"dates": {"start": "2026-11-06", "end": "2026-11-09"}} or {"destination": "North Goa"}, or both, with full dates: days said without a year are the next ones after today. Only an agreed line gives "trip".',
   'A line marked "to Go" is part of an ask to Go: Go answers it, so it is never an open line, and only a fact the person states in it is noted.',
   'Cite lines by their number (#142 is 142). Propose facts only from the new lines. Never propose anything from a [hidden] line. Never copy card numbers, codes or passwords. Do not repeat what the record already says.',
   FENCE_RULE,
@@ -47,6 +50,11 @@ export const NotesOutput = z.object({
         due_at: z.string().optional(),
         line_id: z.string().optional(),
         status: z.literal('done').optional(),
+        /** An agreed line's dates or place, for the trip itself; one that doesn't read is dropped, never the whole answer. */
+        trip: z
+          .object({ dates: z.object({ start: z.iso.date(), end: z.iso.date() }).optional(), destination: z.string().min(1).max(120).optional() })
+          .optional()
+          .catch(undefined),
       }),
     )
     .max(10)
@@ -82,13 +90,17 @@ export interface NotesDeps {
   side: SideModel;
   log: Log;
   now: () => Date;
+  /** brain.travel, for a place a vote decided (the trip's writer checks it); read when a line is saved. */
+  travel?: () => Travel | undefined;
 }
 
 const BATCH = 40;
 const CONTEXT = 10;
 const empty = (): NotesResult => ({ facts: 0, lines: 0, reacted: 0, refused: [] });
 
-function promptFor(pack: TripPack, record: CheckEnv['record'], context: Message[], fresh: Message[], forgotten: ReadonlyMap<string, number>): string {
+function promptFor(
+  pack: TripPack, record: CheckEnv['record'], context: Message[], fresh: Message[], forgotten: ReadonlyMap<string, number>, today: string,
+): string {
   const recordText = record.length
     ? record
         .filter((l) => l.status !== 'undone')
@@ -108,6 +120,7 @@ function promptFor(pack: TripPack, record: CheckEnv['record'], context: Message[
     'New lines:',
     ...fresh.map(line),
     '</chat_data>',
+    `Today where the trip is: ${today}.`,
     `Propose notes for the new lines (#${fresh[0]!.seq} to #${fresh[fresh.length - 1]!.seq}).`,
   ].join('\n');
 }
@@ -125,6 +138,24 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
        ON CONFLICT (trip_id) DO UPDATE SET seq = GREATEST(notes_cursor.seq, EXCLUDED.seq), updated_at = now()`,
       [tripId, seq],
     );
+  }
+
+  /**
+   * An agreed line that fixes the trip's dates or place sets them on the trip too: the organizer's own settled line, or
+   * the group's yes (the checker has passed it). Through the trip's one writer (update_trip, with its checks); what the
+   * trip already holds is not sent again. Days read in the wrong year become the same days this year or next.
+   */
+  async function onTrip(tripId: string, pack: TripPack, line: CheckedLine, trip: { dates?: { start: string; end: string } | undefined; destination?: string | undefined }): Promise<string | null> {
+    const now = pack.trip;
+    const change: TripChange = {
+      ...(trip.dates && !(now.dates?.start === trip.dates.start && now.dates.end === trip.dates.end) ? { dates: trip.dates } : {}),
+      ...(trip.destination && now.destination?.name.toLowerCase() !== trip.destination.toLowerCase() ? { destination: trip.destination } : {}),
+    };
+    if (!change.dates && !change.destination) return null;
+    const at = { link: d.link, tripId, pack, requestId: () => `go_trip_${lineRequestId(line).slice('go_line_'.length)}` };
+    let saved = await saveTrip(d, at, change);
+    if (!saved.ok && saved.next && change.dates) saved = await saveTrip(d, at, { ...change, dates: saved.next });
+    return saved.ok ? null : `trip: ${saved.error}`;
   }
 
   async function once(tripId: string, only: string[] | undefined): Promise<NotesResult> {
@@ -148,7 +179,7 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
       raw = await d.side.complete({
         purpose: 'notes',
         system: NOTES_RULES,
-        user: promptFor(pack, env.record, context, fresh, forgotten),
+        user: promptFor(pack, env.record, context, fresh, forgotten, await tripToday(d, tripId)),
         maxTokens: 1_500,
         signal: AbortSignal.timeout(15_000),
       });
@@ -225,6 +256,10 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
         continue;
       }
       out.lines += 1;
+      if (c.value.kind === 'agreed' && l.trip) {
+        const refused = await onTrip(tripId, pack, c.value, l.trip);
+        if (refused) out.refused.push(refused);
+      }
       const vote = decisionOf(c.value, pack);
       if (vote) await linkLine(d.pool, tripId, written.lineId, vote, pack);
       if (!c.value.lineId) {
