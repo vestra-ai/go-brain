@@ -185,16 +185,17 @@ export function createScreenFeed(d: ScreenFeedDeps): ScreenFeed {
   return {
     watch(tripId, fn) {
       let t = trips.get(tripId);
+      const fresh = !t;
       if (!t) {
-        const created: TripScreen = { fns: new Set(), state: null, tabs: new Map(), abort: new AbortController(), closing: null };
-        trips.set(tripId, created);
-        void follow(created, tripId);
-        t = created;
+        t = { fns: new Set(), state: null, tabs: new Map(), abort: new AbortController(), closing: null };
+        trips.set(tripId, t);
       }
       const screen = t;
       if (screen.closing) clearTimeout(screen.closing);
       screen.closing = null;
       screen.fns.add(fn);
+      // After the viewer is in: an open that fails at once still tells it.
+      if (fresh) void follow(screen, tripId);
       return {
         now() {
           const out: ScreenEvent[] = screen.state ? [screen.state] : [];

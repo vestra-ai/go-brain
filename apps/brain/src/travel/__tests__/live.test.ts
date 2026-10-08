@@ -86,8 +86,9 @@ const end = (tripId: string, run_id: string): void => runs.record(tripId, { type
  * Opens the live view of a trip, signed as the Server signs; collects what Go sends. The listener is on before the socket
  * opens: Go's hello comes at once, and could land before a listener added after 'open'.
  */
-async function watch(tripId: string): Promise<{ ws: WebSocket; got: LiveMessage[]; next: (pred: (m: LiveMessage) => boolean) => Promise<LiveMessage> }> {
-  const target = `/v1/live?trip_id=${tripId}`;
+async function watch(tripId: string, n = ''): Promise<{ ws: WebSocket; got: LiveMessage[]; next: (pred: (m: LiveMessage) => boolean) => Promise<LiveMessage> }> {
+  // n: a second viewer of the same trip in the same second signs another address (Go takes a signature once).
+  const target = `/v1/live?trip_id=${tripId}${n ? `&n=${n}` : ''}`;
   const ws = new WebSocket(`${base}${target}`, { headers: signedHeaders(target, SECRET) });
   const got: LiveMessage[] = [];
   const waiters: Array<{ pred: (m: LiveMessage) => boolean; resolve: (m: LiveMessage) => void }> = [];
@@ -167,7 +168,7 @@ describe('the live view socket', () => {
       type: 'screen',
       event: { type: 'frame', tab_id: 'tab_1', at: '2026-10-08T10:00:00.000Z', page: '/hotels/search/result', width: 960, height: 600, jpeg_base64: '/9j/A' },
     });
-    const late = await watch('t_screen');
+    const late = await watch('t_screen', 'late');
     const hello = await late.next((m) => m.type === 'hello');
     expect(hello.type === 'hello' && hello.screen.map((e) => e.type)).toEqual(['state', 'tab_open', 'frame']);
     v.ws.close();
