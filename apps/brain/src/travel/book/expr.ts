@@ -128,12 +128,31 @@ const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
 
 
 /**
- * Every evaluation is timeboxed by JSONata's own guardrails, counted per evaluation: a recursive expression, a runaway
- * loop or a huge sequence fails that run instead of stalling a turn. (A single regular expression can't be interrupted:
- * recipe files are reviewed for that.)
+ * Every evaluation is bounded by the work it does, never the time it takes, so a busy process (a loaded CI runner, a
+ * staging box under load) never fails a read that would finish: a step budget (each expression node JSONata evaluates
+ * is a step, counted per evaluation), with JSONata's own guards on depth and sequence length. A recursive expression, a
+ * runaway loop or a huge sequence fails that run instead of stalling a turn. There is no wall-clock box: a 50 ms one
+ * tripped on a busy CI runner (D1012), and the steps catch every loop it would. (A single regular expression can't be
+ * interrupted by either: recipe files are reviewed for that.)
  */
-export const LIMITS = { timeout: 50, stack: 250, sequence: 20_000 };
-const GUARDRAILS = new Set(['D1011', 'D1012', 'D2015']);
+export const LIMITS = { stack: 250, sequence: 20_000 };
+/** The steps one evaluation may take: the heaviest read in the book takes a small part of it (limits.test.ts). */
+export const STEP_LIMIT = 1_000_000;
+const GUARDRAILS = new Set(['D1011', 'D2015', 'GO_STEPS']);
+
+/** The binding each evaluation's step counter rides in on. */
+const STEPS = '__go_steps';
+type Counter = { n: number };
+
+/** JSONata calls it as it enters each node: one step for the evaluation it belongs to (env.base). */
+const countStep = (_node: unknown, _input: unknown, env: { base: { goSteps?: Counter; lookup(name: string): unknown } }): void => {
+  const counter = (env.base.goSteps ??= (env.base.lookup(STEPS) as Counter | undefined) ?? { n: 0 });
+  counter.n += 1;
+  if (counter.n > STEP_LIMIT) throw { code: 'GO_STEPS', value: STEP_LIMIT };
+};
+
+/** The most steps and milliseconds each expression has taken in one evaluation, since Go started: the budget's evidence. */
+export const peaks = new Map<string, { steps: number; ms: number }>();
 
 const compiled = new Map<string, jsonata.Expression>();
 
@@ -143,6 +162,7 @@ export function expr(source: string): jsonata.Expression {
   if (hit) return hit;
   const e = jsonata(source, LIMITS);
   for (const [name, f] of Object.entries(FUNCTIONS)) e.registerFunction(name, f.fn as (...args: unknown[]) => unknown);
+  e.assign(Symbol.for('jsonata.__evaluate_entry') as unknown as string, countStep);
   compiled.set(source, e);
   return e;
 }
@@ -152,11 +172,17 @@ export function expr(source: string): jsonata.Expression {
  * limits is a TravelError, so the run fails as a whole and the next speed is tried; any other error is the expression's.
  */
 export async function evaluate(source: string, input: unknown, bindings: Record<string, unknown> = {}): Promise<unknown> {
+  const steps: Counter = { n: 0 };
+  const started = performance.now();
   try {
-    return await expr(source).evaluate(input, bindings);
+    return await expr(source).evaluate(input, { ...bindings, [STEPS]: steps });
   } catch (err) {
     const code = (err as { code?: unknown } | null)?.code;
-    if (typeof code === 'string' && GUARDRAILS.has(code)) throw new TravelError('unreachable', `A recipe took too long to read ixigo's answer (${code}).`);
+    if (typeof code === 'string' && GUARDRAILS.has(code)) throw new TravelError('unreachable', `A recipe could not read ixigo's answer within its limits (${code}).`);
     throw err;
+  } finally {
+    const ms = performance.now() - started;
+    const was = peaks.get(source);
+    if (!was || steps.n > was.steps || ms > was.ms) peaks.set(source, { steps: Math.max(steps.n, was?.steps ?? 0), ms: Math.max(ms, was?.ms ?? 0) });
   }
 }
