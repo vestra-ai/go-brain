@@ -42,6 +42,8 @@ export interface ReadOptions {
   /** Its place among fetches waiting for one of the computer's slots: lower goes first (a composite's trains before its
    *  buses); the same, first come first served. None is 0. */
   priority?: number;
+  /** The run's id, which Bash's browser watch names the fetch's tab by, so the live view labels the tab's tile with its run. */
+  tag?: string;
 }
 
 export interface RecipeRunner {
@@ -284,6 +286,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
       // the recipe says how long that takes.
       frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
+      ...(o.tag ? { tag: o.tag } : {}),
     };
     let userId = d.computer.userIdFor(tripId);
     let coldAgain = false;
@@ -343,7 +346,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     // page, which waits its turn.
     const ask = (open: boolean) =>
       d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
-        body: { ...(open ? { url: `${IXIGO}/` } : {}), steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS },
+        body: { ...(open ? { url: `${IXIGO}/` } : {}), steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS, ...(o.tag ? { tag: o.tag } : {}) },
         ...(o.signal ? { signal: o.signal } : {}),
       });
     let answer: FetchAnswer;
