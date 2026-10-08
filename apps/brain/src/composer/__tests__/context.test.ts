@@ -358,7 +358,7 @@ describe('why Go woke, and the trip block', () => {
       const note = quietNote(items, pack);
       expect(note, text).toContain("#2 doesn't name you, so it is the group talking. Speak if you can add something real");
       expect(note).toContain('answer a question you can answer with facts from ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already answered it');
-      expect(note).toContain('when the group agrees dates or a place, offer the next step in one line');
+      expect(note).toContain('when the group agrees dates on a trip with a place, show stays for them with search_stays; when it agrees a place, offer the next step in one line');
       expect(note).toContain('when people disagree, offer a vote');
       expect(note).toContain("Someone saying what they'd like gets a ✅ and at most one short offer, never a search");
       expect(note).toContain("Who brings, pays or does what is the friends' to settle unless the record already says");

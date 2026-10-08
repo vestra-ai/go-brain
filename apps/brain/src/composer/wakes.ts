@@ -47,8 +47,9 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   return (
     `${which} the group talking. Speak if you can add something real: answer a question you can answer with facts from ` +
     'ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already ' +
-    'answered it; when the group agrees dates or a place, offer the next step in one line; when people disagree, offer a ' +
-    "vote. Someone saying what they'd like gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
+    'answered it; when the group agrees dates on a trip with a place, show stays for them with search_stays; when it ' +
+    'agrees a place, offer the next step in one line; when people disagree, offer a vote. ' +
+    "Someone saying what they'd like gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
     "what is the friends' to settle unless the record already says, and the App gives anyone asking what they missed " +
     'their own catch-up. For banter, greetings, a side conversation, something a person already handled, or when your ' +
     'last message has had no reply from a person since, call stay_silent.'

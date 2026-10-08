@@ -25,9 +25,10 @@ describe("Go's rules", () => {
     expect(section).toContain(
       '- A question you can answer: someone in the chat asks something you can answer with facts from ixigo or the trip (the record, votes, money, places). Answer it, unless a person already did.',
     );
-    // Agreed dates or a place get one offer of the next step; a disagreement gets a vote offered.
+    // Agreed dates on a trip with a place get stays shown, not offered (lead, 8 Oct); an agreed place gets one offer of the
+    // next step; a disagreement gets a vote offered.
     expect(section).toContain(
-      '- A plan point you can move: when the group agrees dates or a place, offer the next step in one line (stays for those dates, how everyone gets there). When people disagree, offer a vote.',
+      "- A plan point you can move: when the group agrees dates on a trip that has a place, show stays for those dates with search_stays, the card and not an offer line (the trip's head start often has them already). When it agrees a place, offer the next step in one line (stays, how everyone gets there). When people disagree, offer a vote.",
     );
     expect(section).toContain('- Something wrong or at risk: say so.');
   });
