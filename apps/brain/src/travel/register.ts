@@ -11,6 +11,7 @@ import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { createImages, registerImageRoute } from './images.js';
+import { createIxigoLogin } from './login.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
 import { startLiveSearch } from './live-search.js';
@@ -65,6 +66,20 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   brain.onStop(() => screens.stop());
   registerLive(brain, runs, screens);
+  // One person's ixigo login on the trip's computer: asked of the organizer at setup, and again when a recipe needs it.
+  const login = createIxigoLogin({
+    pool: brain.pool,
+    link: brain.door.link,
+    packs: brain.packs,
+    runner: () => brain.recipeRunners?.browserFetch ?? null,
+    tasks: () => brain.tasks ?? null,
+    live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    now: brain.now,
+    log: brain.log,
+  });
+  brain.setup.addStep(login.setupStep);
+  login.registerTaps(brain.taps);
+  brain.tripLog.onEvent((ev) => login.onEvent(ev));
   // The recipe book, checked at boot: a file that fails is left out, and the log says why.
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');
@@ -88,6 +103,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     onRun: runs.record,
     // A composite's steps share the backend's searches: a city searched a minute ago, or being searched, loads nothing.
     searches: (id, given, o, run) => ixigoWeb.shareStep(id, given, o, run),
+    // A recipe that needs the trip's ixigo login (auth: login) asks for it, and waits for it.
+    login: (tripId, what) => login.ensure(tripId, what),
     now: brain.now,
     log: brain.log,
   });
