@@ -25,6 +25,19 @@ describe('question 1: for Go', () => {
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.3) }).forGo.sure).toBe(false);
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
   });
+  it("wakes Go for a line no one spoke to it in when question 6 reads a plan question to the group or an agreement: a point Go can move", () => {
+    // Jev's own answers in live run 37488230324.
+    const birthday = { q1_addressed: n(0.21), q1_chatter: n(0.22), q6_open: n(0.85), q6_agreed: n(0.05) }; // "Birthday dinner on the 7th somewhere nice? Not a shack pls"
+    const scooty = { q1_addressed: n(0.2), q1_chatter: n(0.21), q6_open: n(0.78), q6_agreed: n(0.06) }; // "scooty rent karenge na?"
+    const pool = { q1_addressed: n(0.08), q1_chatter: n(0.71), q6_open: n(0.05), q6_agreed: n(0.82) }; // "+1 pool"
+    for (const a of [birthday, scooty, pool]) expect(read(a).forGo.sure).toBe(false);
+    // Below the plan bar, or with no question 6 answer, it still reads not for Go.
+    expect(read({ q1_addressed: n(0.13), q1_chatter: n(0.27), q6_open: n(0.6), q6_agreed: n(0.05) }).forGo).toEqual({ value: false, sure: true }); // "anyone up?"
+    expect(read({ q1_addressed: n(0.21), q1_chatter: n(0.22) }).forGo).toEqual({ value: false, sure: true });
+    // Banter stays quiet whatever question 6 says: chatter is read first ("Finallyyyy 😭🙌", "haha same").
+    expect(read({ q1_addressed: n(0.03), q1_chatter: n(0.93), q6_open: n(0.02), q6_agreed: n(0.71) }).forGo).toEqual({ value: false, sure: true });
+    expect(read({ q1_addressed: n(0.02), q1_chatter: n(0.95), q6_open: n(0.9), q6_agreed: n(0.9) }).forGo).toEqual({ value: false, sure: true });
+  });
   it('never reads a line about money as not for Go, so it reaches the model; a bare number or a fact without money still skips', () => {
     const notToGo = { q1_chatter: n(0.9), q1_addressed: n(0.03) };
     const facts = (text: string): CodeFacts => ({ ...plain, money: looksLikeMoney(text) });

@@ -41,7 +41,7 @@ describe('the prompt, in order and cache-first', () => {
     expect(a.system).toEqual([{ type: 'text', text: GO_RULES, cache_control: { type: 'ephemeral', ttl: '1h' } }]);
     expect(b.system).toEqual(a.system);
     // The rules about preferences and tools ride in that one cached block, not after the cache point.
-    expect(a.system[0]?.text).toContain('is their preference: note it with a ✅ and stay quiet');
+    expect(a.system[0]?.text).toContain('is their preference: note it with a ✅ and make at most one short offer');
     expect(a.system[0]?.text).toContain('Never mention your tools');
     expect(a.system[0]?.text).toContain("are their preference, not the plan");
     expect(a.system[0]?.text).toContain("Never repeat a person's budget to the room");
@@ -352,16 +352,18 @@ describe('why Go woke, and the trip block', () => {
     return { pack: packOf(messages), items };
   };
 
-  it('a line that does not name Go says so once, with when to answer and when to stay quiet', async () => {
+  it('a line that does not name Go says so once, with when to speak and when to stay silent', async () => {
     for (const [who, text] of UNASKED) {
       const { pack, items } = turnFor([[who, text]]);
       const note = quietNote(items, pack);
-      expect(note, text).toContain("#2 doesn't name you, so it is the group talking");
-      expect(note).toContain('only if it asks something you can answer with facts or a check');
-      expect(note).toContain('who brings, pays or does what');
+      expect(note, text).toContain("#2 doesn't name you, so it is the group talking. Speak if you can add something real");
+      expect(note).toContain('answer a question you can answer with facts from ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already answered it');
+      expect(note).toContain('when the group agrees dates or a place, offer the next step in one line');
+      expect(note).toContain('when people disagree, offer a vote');
+      expect(note).toContain("Someone saying what they'd like gets a ✅ and at most one short offer, never a search");
+      expect(note).toContain("Who brings, pays or does what is the friends' to settle unless the record already says");
       expect(note).toContain('their own catch-up');
-      expect(note).toContain("Someone saying what they'd like, or agreeing, gets a ✅ at most");
-      expect(note).toContain('Otherwise call stay_silent');
+      expect(note).toContain('For banter, greetings, a side conversation, something a person already handled, or when your last message has had no reply from a person since, call stay_silent.');
       expect(note).not.toMatch(/\u2014|\u2013/);
     }
     // In the prompt: under "why you woke", after the cache point, so the cached rules never change.
@@ -400,7 +402,8 @@ describe('why Go woke, and the trip block', () => {
       ['p_meher', '@Go can you remind everyone to vote by tonight?', true],
       ['p_kabir', "who's on the aux"],
     ]);
-    expect(quietNote(mixed.items, mixed.pack)).toMatch(/^#2 and #4 don't name you, so they are the group talking\. Answer one only if/);
+    expect(quietNote(mixed.items, mixed.pack)).toMatch(/^#2 and #4 don't name you, so they are the group talking\. Speak if you can add something real: /);
+    expect(quietNote(mixed.items, mixed.pack)).not.toContain('#3');
   });
 
   it('a dates vote that closed tells Go to save the dates on the trip: an option is only a label, so the model reads it', () => {

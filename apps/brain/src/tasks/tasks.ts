@@ -46,7 +46,10 @@ export interface TaskBrief {
   cardId?: string;
   /** A turn's ctx.cards: the working card rides with the turn's message instead of being posted at once. */
   cards?: C.Card[];
-  /** The job's end wakes no one: its card says it is done, and the lane that started it speaks for it (the ixigo login). */
+  /**
+   * Neither the job's hand-off nor its end wakes anyone: its cards say who is needed and that it is done, and the lane that
+   * started it speaks for it (the ixigo login). A failure still wakes the composer.
+   */
   quiet?: boolean;
 }
 

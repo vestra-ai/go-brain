@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { candidate, fakeDesk, fakePacks, goaPack, goaTrip, manualTime, msg, seedTrip, waitFor } from '../fakes.js';
 import { proactiveOf } from '../payload.js';
+import { DAILY_POSTS } from '../policy.js';
 import { createPromoter, moodFrom } from '../promoter.js';
 import { ProactiveStore } from '../store.js';
 
@@ -92,7 +93,7 @@ describe('createPromoter', () => {
   it('waits for tomorrow morning once the day budget is spent', async () => {
     const desk = fakeDesk();
     const now = new Date(NOON);
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < DAILY_POSTS; i += 1) {
       const c = candidate({ tripId: 't_full', dedupeKey: `spent:${i}` });
       await store.add(c);
       await store.promote(c, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-06' }, new Date(now.getTime() - (i + 1) * 3600_000));
@@ -110,7 +111,7 @@ describe('createPromoter', () => {
   it('holds a message until 8 am at night in the trip time zone', async () => {
     const desk = fakeDesk();
     const p = createPromoter({ store, desk, packs, now: manualTime(LATE).now, log });
-    await store.add(candidate({ tripId: 't_late', dedupeKey: 'closed:1', source: 'opening', topic: 'vote_closed', importance: 0.8, urgency: 0.8, useful: ['message'], personIds: [], dueAt: new Date(Date.parse(LATE) - 1000) }));
+    await store.add(candidate({ tripId: 't_late', dedupeKey: 'closed:1', source: 'opening', topic: 'vote_closed', importance: 0.7, urgency: 0.7, useful: ['message'], personIds: [], dueAt: new Date(Date.parse(LATE) - 1000) }));
     await p.tick();
     expect(desk.items).toHaveLength(0);
     const s = await store.status('t_late', 'closed:1');
