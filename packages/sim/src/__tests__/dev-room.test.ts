@@ -216,11 +216,13 @@ function pageInBrowser(html: string, o: { me?: string } = {}) {
     documentElement: scrolling,
   };
   const opened: string[] = [];
+  const winListeners: Record<string, Array<(e: unknown) => void>> = {};
   const window = {
     innerHeight: view.height,
     get scrollY() { return winTop; },
     scrollTo: (_x: number, y: number) => { winTop = clamp(y); },
     open: (url: string) => { opened.push(url); },
+    addEventListener: (type: string, fn: (e: unknown) => void) => { (winListeners[type] ??= []).push(fn); },
   };
   const sockets: any[] = [];
   const sent: any[] = [];
@@ -295,6 +297,10 @@ function pageInBrowser(html: string, o: { me?: string } = {}) {
     },
     /** The page's body, as the sheet leaves it. */
     body: () => document.body,
+    /** A frame on the page posts it a message from `origin`: the login frame's own window unless another is named. */
+    post(data: unknown, origin: string, source: unknown = el('login-frame').querySelector('iframe').contentWindow) {
+      for (const fn of winListeners.message ?? []) fn({ data, origin, source });
+    },
   };
 }
 
@@ -712,11 +718,14 @@ describe('the login card and its sheet', () => {
   });
   const WATCH_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_watch', personId: 'p_rahul' };
   const LOGIN_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_login', personId: 'p_rahul' };
-  /** Rahul's page once Watch came and was answered, the sheet still closed. */
+  /** What Bash's embed posts the room as its picture comes. */
+  const embed = (state: string) => ({ type: 'vestra:embed', state });
+  /** Rahul's page once Watch came and was answered and the embed's picture is live, the sheet still closed. */
   const loggingIn = () => {
     const p = pageInBrowser(LIVE_PAGE);
     p.messages([loginCard('logging_in')], 1000);
     p.receive(answer());
+    p.post(embed('live'), ORIGIN);
     return p;
   };
 
@@ -791,12 +800,94 @@ describe('the login card and its sheet', () => {
     } finally {
       clock.mockRestore();
     }
-    // Watch comes while the sheet is open: tapped, and the screen fills the sheet when it answers.
+    // Watch comes while the sheet is open: tapped, and the screen fills the sheet once its picture is live.
     p.messages([loginCard('logging_in')], 1000);
     expect(p.sent()).toEqual([WATCH_TAP]);
     p.receive(answer());
     expect(p.el('login-frame').innerHTML).toBe(FRAME);
     expect(p.el('login-frame').hidden).toBe(false);
+    expect(p.el('login-wait').hidden).toBe(false);
+    p.post(embed('live'), ORIGIN);
+    expect(p.el('login-wait').hidden).toBe(true);
+  });
+
+  it("keeps Opening over the loading frame until Bash's embed says its picture is live, hearing only Watch's origin", () => {
+    const p = pageInBrowser(LIVE_PAGE);
+    p.messages([loginCard('logging_in')], 1000);
+    p.receive(answer());
+    p.browse(CARD);
+    // The frame is up and loading under the opening state.
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    expect(p.el('login-frame').hidden).toBe(false);
+    expect(p.el('login-wait').hidden).toBe(false);
+    expect(p.el('login-why').textContent).toBe(OPENING);
+    expect(p.el('login-progress').hidden).toBe(false);
+    p.post(embed('connecting'), ORIGIN);
+    expect(p.el('login-wait').hidden).toBe(false);
+    // Another origin, another kind of message, or a state the room doesn't know: nothing changes.
+    p.post(embed('live'), 'https://elsewhere.test');
+    p.post({ type: 'other', state: 'live' }, ORIGIN);
+    p.post(embed('ready'), ORIGIN);
+    p.post('live', ORIGIN);
+    // Nor does another frame on Watch's origin: only the login frame's own window is heard.
+    p.el('login-frame').querySelector('iframe').contentWindow = { frame: 'login' };
+    p.post(embed('live'), ORIGIN, { frame: 'another' });
+    expect(p.el('login-wait').hidden).toBe(false);
+    p.post(embed('live'), ORIGIN);
+    expect(p.el('login-wait').hidden).toBe(true);
+    expect(p.el('login-frame').writes).toBe(1);
+    // The CSS lays the opening state over the frame, which keeps loading under it.
+    expect(LIVE_PAGE).toContain('<div class="login-stage">');
+    expect(LIVE_PAGE).toMatch(/\.login-wait \{ position: absolute; inset: 0; z-index: 1;/);
+  });
+
+  it('shows an embed that says nothing after 5 s, and a picture still connecting after 30 s, as the embed has them', () => {
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const p = pageInBrowser(LIVE_PAGE);
+      p.messages([loginCard('logging_in')], 1000);
+      p.receive(answer());
+      p.browse(CARD);
+      now += 4_000;
+      p.messages([loginCard('logging_in')], 1000);
+      expect(p.el('login-wait').hidden).toBe(false);
+      now += 2_000;
+      p.messages([loginCard('logging_in')], 1000);
+      expect(p.el('login-wait').hidden).toBe(true);
+      // An embed that says it is connecting is waited for longer.
+      p.post(embed('connecting'), ORIGIN);
+      expect(p.el('login-wait').hidden).toBe(false);
+      now += 20_000;
+      p.messages([loginCard('logging_in')], 1000);
+      expect(p.el('login-wait').hidden).toBe(false);
+      now += 5_000;
+      p.messages([loginCard('logging_in')], 1000);
+      expect(p.el('login-wait').hidden).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("offers Open the login again when the embed's picture fails, and opens a fresh frame", () => {
+    const p = pageInBrowser(LIVE_PAGE);
+    p.messages([loginCard('logging_in')], 1000);
+    p.receive(answer());
+    p.browse(CARD);
+    p.post(embed('error'), ORIGIN);
+    expect(p.el('login-wait').hidden).toBe(false);
+    expect(p.el('login-why').textContent).toBe("Go's screen didn't open here.");
+    expect(p.el('login-again').hidden).toBe(false);
+    p.click('login-again');
+    expect(p.sent()).toEqual([WATCH_TAP, WATCH_TAP]);
+    expect(p.el('login-frame').innerHTML).toBe('');
+    expect(p.el('login-why').textContent).toBe(OPENING);
+    p.receive(answer());
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    expect(p.el('login-frame').writes).toBe(3);
+    // A fresh frame waits for its own word.
+    expect(p.el('login-wait').hidden).toBe(false);
+    p.post(embed('live'), ORIGIN);
     expect(p.el('login-wait').hidden).toBe(true);
   });
 
