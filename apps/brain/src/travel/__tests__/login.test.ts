@@ -175,7 +175,9 @@ describe('the ixigo login, asked at setup', () => {
         { action_id: 'ixigo_not_now', label: 'Not now', style: 'secondary', only_for_person_ids: ['p_rahul'] },
       ],
     });
-    expect((post!['card'] as { body: string }).body).toContain('Go never sees the number or the code');
+    expect((post!['card'] as { body: string }).body).toContain('with their mobile number and its code; Go never sees either');
+    // Mobile number and its code only: no other way in is named (a Google sign-in popup was cut off on Go's screen, 8 Oct).
+    expect((post!['card'] as { body: string }).body).not.toMatch(/google/i);
     expect((post!['card'] as { body: string }).body).toContain("the group never sees its details");
     expect(await w.state()).toBe('asked');
     // Setup again (a retry, a restart): no second ask.
@@ -304,7 +306,7 @@ describe('logging in', () => {
     });
     expect(w.last()).toMatchObject({
       card_id: `c_login_${w.tripId}_0`, title: 'Logging in to ixigo',
-      body: "ixigo's log in is open on Go's screen. Rahul: tap Watch, log in with your phone, then tap I'm logged in.",
+      body: "ixigo's log in is open on Go's screen. Rahul: tap Watch, log in with your mobile number, then tap I'm logged in.",
       actions: [
         { action_id: 'ixigo_watch', label: 'Watch', style: 'primary', only_for_person_ids: ['p_rahul'] },
         { action_id: 'ixigo_logged_in', label: "I'm logged in", only_for_person_ids: ['p_rahul'] },
@@ -403,7 +405,7 @@ describe('logging in', () => {
     expect(await missed.state()).toBe('logging_in');
     expect(missed.releases).toEqual([]);
     expect(missed.last()).toMatchObject({
-      title: 'Logging in to ixigo', tone: 'info', body: "ixigo's log in is open on Go's screen. Rahul: tap Watch, log in with your phone, then tap I'm logged in.",
+      title: 'Logging in to ixigo', tone: 'info', body: "ixigo's log in is open on Go's screen. Rahul: tap Watch, log in with your mobile number, then tap I'm logged in.",
     });
 
     const refused = world({ opened: 'refused' });
