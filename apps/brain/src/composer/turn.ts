@@ -242,6 +242,9 @@ export function createComposer(d: ComposerDeps): Composer {
         await d.release(t.turnId, passedOver.map((i) => i.id));
         pulled.push(...claimed.filter((i) => !passedOver.includes(i)));
         pulledBy.set(t.turnId, pulled);
+        // A pulled message is this turn's to answer, so the next round's tools see it as part of what woke the turn: "I'll
+        // pay for it" said as the vote closed is Rahul's claim (set_mandate), as it would be on a turn of its own.
+        ctx.wake = [...t.items, ...pulled];
         const fresh = linesFor(pulled, pack, prompt.forgotten, prompt.newestSeq);
         if (fresh.lines.length) {
           const more = await runLoop({
