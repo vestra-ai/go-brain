@@ -7,6 +7,8 @@ import { forgetLearnedPlaces } from '../../recipes/places.js';
 import { loadLearnedPlaces } from '../../recipes/places-store.js';
 import type { Capture, FetchPlan } from '../../recipes/recipe.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
+import type { OnProgress } from '../../recipes/progress.js';
+import { createRunLog, type FetchTrace, type RunEvent } from '../../runs.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book.js';
 import { createEngine, isPayments } from '../engine.js';
 
@@ -159,6 +161,70 @@ describe('the numbers', () => {
     ]);
     expect(logged).toContainEqual({ recipe: 'buses.between', speed: 'page', ms: 2_000, outcome: 'ok' });
     expect(logged).toContainEqual({ recipe: 'buses.between', speed: 'page', ms: 1_000, outcome: 'unknown_place' });
+  });
+});
+
+describe('the live view', () => {
+  const RSC = sample('plan.destination.rsc.txt');
+  const PAGE = sample('plan.destination.html');
+  const at = Date.parse('2026-10-07T12:00:00Z');
+  const watch = (tripId: string) => {
+    let n = 0;
+    const runs = createRunLog({ now: () => new Date(at), mint: (prefix) => `${prefix}${++n}` });
+    const seen: RunEvent[] = [];
+    runs.subscribe(tripId, (e) => seen.push(e));
+    return { runs, seen };
+  };
+
+  it('tells each run as it goes: its speeds, where the time went, its pictures and how it ended', async () => {
+    const { runs, seen } = watch('t_live');
+    const runner = {
+      read: async (_t: string, url: string, _plan: FetchPlan, o?: { onProgress?: OnProgress; onTrace?: (t: FetchTrace) => void }) => {
+        o?.onTrace?.({ speed: 'page', started_at: at, elapsed_ms: 2_000, woke: false, timings: { wake_ms: 0, nav_ms: 800, first_capture_ms: 1_500, done_ms: 1_900 }, calls: [{ url: `${url}?x=1`, status: 200, at_ms: 1_500 }] });
+        o?.onProgress?.({ type: 'frames', frames: [{ label: 'results', at_ms: 1_600, page_url: 'https://www.ixigo.com/hotels/search/result', jpeg_base64: '/9j/AA==' }] });
+        return { captures: [capture('/plan/goa$', url, PAGE)], finalUrl: url };
+      },
+      pageFetch: async (_t: string, _call: unknown, o?: { onTrace?: (t: FetchTrace) => void }) => {
+        o?.onTrace?.({ speed: 'fast', started_at: at, elapsed_ms: 300, calls: [], failed: { status: 403, why: 'forbidden' } });
+        throw new TravelError('unreachable', "ixigo's page call answered 403.");
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, runs, trip: async () => ({ people: 4, homes: [] }), now: () => new Date(at) });
+    await engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_live' });
+    // The run's own title comes when its inputs are filled, whenever that lands among the rest.
+    expect(seen.some((e) => e.type === 'named')).toBe(true);
+    expect(seen.filter((e) => e.type !== 'named').map((e) => e.type)).toEqual(['run_start', 'attempt', 'step', 'attempt', 'step', 'call', 'frames', 'run_end', 'group_end']);
+    expect(seen.filter((e) => e.type === 'attempt').map((e) => e.type === 'attempt' && e.speed)).toEqual(['fast', 'page']);
+    expect(seen.find((e) => e.type === 'step')).toMatchObject({ text: 'fast: 403, forbidden' });
+    expect(seen.find((e) => e.type === 'call')).toMatchObject({ speed: 'page', path: '/plan/goa', status: 200, at_ms: 1_500 });
+    expect(seen.find((e) => e.type === 'run_end')).toMatchObject({ ok: true, speed: 'page', rows: expect.any(Number) });
+  });
+
+  it('a fast run that answers ends fast, with its one call', async () => {
+    const { runs, seen } = watch('t_live_fast');
+    const runner = {
+      read: async () => ({ captures: [], finalUrl: '' }),
+      pageFetch: async (_t: string, _call: unknown, o?: { onTrace?: (t: FetchTrace) => void }) => {
+        o?.onTrace?.({ speed: 'fast', started_at: at, elapsed_ms: 420, calls: [{ method: 'GET', url: '/plan/goa', status: 200, at_ms: 380, ms: 380 }] });
+        return { ...capture('fast', '/plan/goa', RSC), content_type: 'text/x-component' };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, runs, trip: async () => ({ people: 4, homes: [] }), now: () => new Date(at) });
+    await engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_live_fast' });
+    expect(seen.find((e) => e.type === 'call')).toMatchObject({ speed: 'fast', method: 'GET', path: '/plan/goa', ms: 380 });
+    expect(seen.find((e) => e.type === 'run_end')).toMatchObject({ ok: true, speed: 'fast' });
+  });
+
+  it("a lookup is a run under its search, and a search that fails says why", async () => {
+    const { runs, seen } = watch('t_live_box');
+    const runner = { read: async (_t: string, url: string) => ({ captures: [capture('/buslist/v3/services$', url, fixture('buses-mumbai-goa.json'))], finalUrl: url }) };
+    const engine = createEngine({ book, runner: () => runner, runs, trip: async () => ({ people: 4, homes: [] }), now: () => new Date(at) });
+    await engine.answer('buses.between', { from: 'Atlantis', to: 'Goa', date: '2026-11-06' }, { tripId: 't_live_box' }).catch(() => undefined);
+    const starts = seen.filter((e) => e.type === 'run_start');
+    expect(starts.map((e) => e.type === 'run_start' && [e.recipe_id, e.parent ?? null])).toEqual([['buses.between', null], ['buses.city_lookup', 'run_1']]);
+    const ends = seen.filter((e) => e.type === 'run_end');
+    expect(ends.map((e) => e.type === 'run_end' && [e.run_id, e.ok])).toEqual([['run_3', true], ['run_1', false]]);
+    expect(ends[1]).toMatchObject({ why: expect.stringContaining('Atlantis') });
   });
 });
 

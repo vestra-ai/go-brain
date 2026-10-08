@@ -2,7 +2,9 @@
 // lives inside this template literal: no backticks, no dollar-brace and no backslashes in it.
 // roomPage() draws the hosted "try Go" room from the same page: its own title, "Start over", the lines about what is
 // live and what is simulated, example messages to tap, the limit line, and a nonce on the script for a strict
-// Content-Security-Policy. With no options it is the dev room.
+// Content-Security-Policy. With no options it is the dev room. With live, Go Live's column sits beside it (live-page.ts).
+
+import { LIVE_ASIDE, LIVE_CSS, LIVE_HOOK, LIVE_SCRIPT } from './live-page.js';
 
 export interface RoomPageOptions {
   /** The page's title and the header's first line. Default "Go dev room". */
@@ -13,6 +15,8 @@ export interface RoomPageOptions {
   hints?: readonly string[];
   /** The hosted room: "Start over", the lines about what is live, the limit line, and a reload to the passcode page when the socket keeps failing. */
   hosted?: boolean;
+  /** Go Live: the trip's recipe runs and the pages they opened, in a second column (desktop first). */
+  live?: boolean;
 }
 
 const escHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -95,10 +99,10 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
 .hints { display: flex; gap: 6px; align-items: center; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-bottom: 8px; }
 .hints span { color: var(--muted); font-size: 13px; flex: none; }
 button.hint { flex: none; font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; min-height: 44px; padding: 6px 12px; cursor: pointer; touch-action: manipulation; }
-</style>
+${o.live ? LIVE_CSS : ''}</style>
 </head>
 <body${o.hosted ? ' data-hosted="1"' : ''}>
-<div class="app">
+${o.live ? '<div class="split">' : ''}<div class="app">
 <header>
   ${top}
   <div class="people" id="people"></div>
@@ -113,7 +117,7 @@ button.hint { flex: none; font: inherit; font-size: 13px; border: 1px solid var(
 ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete="off" enterkeyhint="send" placeholder="Message the group. Start with @Go to ask Go."><button class="act primary" type="submit">Send</button></form>
 </footer>
 </div>
-<div class="toast" id="toast"></div>
+${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
 <script${o.nonce ? ` nonce="${escHtml(o.nonce)}"` : ''}>
 (function () {
   var COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#14b8a6'];
@@ -336,13 +340,17 @@ ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete=
     $('you').innerHTML = '<span>You are ' + esc(nameOf(me)) + '</span><button class="act secondary" data-forget="' + esc(me) + '">Forget me in this trip</button>';
     var needs = state.needs[me] || [];
     $('needs').innerHTML = needs.length ? '<div class="needs"><h2>Needs you, ' + esc(nameOf(me)) + '</h2>' + needs.map(function (n) { return '<div>' + esc(n.text) + '</div>'; }).join('') + '</div>' : '';
-    var atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+    // Beside Go Live the chat scrolls in its own column; alone, the page scrolls.
+    var col = document.querySelector('.split .app');
+    var box = col && col.scrollHeight > col.clientHeight + 1 ? col : null;
+    var atBottom = box ? box.scrollTop + box.clientHeight >= box.scrollHeight - 80 : window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     $('room').innerHTML = state.messages.map(message).join('') || '<div class="muted">No messages yet. Say hello, or start with @Go to ask Go.</div>';
     $('typing').textContent = state.typing ? 'Go is typing...' : '';
     var about = $('about');
     if (about) about.innerHTML = (state.about || []).map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('');
     if ($('limit')) $('limit').textContent = state.limit || '';
-    if (atBottom) window.scrollTo(0, document.body.scrollHeight);
+    if (atBottom && col && col.scrollHeight > col.clientHeight + 1) col.scrollTop = col.scrollHeight;
+    else if (atBottom) window.scrollTo(0, document.body.scrollHeight);
   }
 
   document.addEventListener('click', function (e) {
@@ -410,7 +418,7 @@ ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete=
         toast(data.text);
       } else if (data.type === 'error') {
         toast(data.message);
-      }
+${o.live ? LIVE_HOOK : ''}      }
     };
     ws.onopen = function () { fails = 0; };
     ws.onclose = function (e) {
@@ -423,7 +431,7 @@ ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete=
     };
   }
 
-  connect();
+${o.live ? LIVE_SCRIPT : ''}  connect();
   setInterval(render, 15000); // keeps "checked 3 min ago" honest
 })();
 </script>

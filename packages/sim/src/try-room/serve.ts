@@ -23,6 +23,8 @@ import {
 
 /** The longest message a visitor can send. */
 export const MAX_TEXT = 1000;
+/** A socket this far behind skips Go Live's pictures until it catches up; runs' events always go. */
+export const LIVE_BEHIND_BYTES = 512 * 1024;
 /** The page stops reconnecting on this close code: the room said why just before. */
 export const CLOSE_TOO_MANY = 4429;
 const HEALTH_EVERY_MS = 30_000;
@@ -54,6 +56,11 @@ export interface TryRoomOptions {
   simulatedLine?: string;
   /** Behind Railway's proxy: the visitor's address comes from x-real-ip, or else the first x-forwarded-for address. */
   trustProxy?: boolean;
+  /**
+   * Go Live: opens Go's live view of a trip (live-feed.ts). With it, the page has its second column, and each open socket
+   * gets the feed of its visit's trip, as { type: 'live', msg }. Never counted against the caps: watching wakes nothing.
+   */
+  live?: (tripId: string, onMessage: (m: unknown) => void) => { close(): void };
   /** Live sockets for one visit (default 3) and in all (default 300). */
   maxSocketsPerVisit?: number;
   maxSockets?: number;
@@ -211,6 +218,8 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
   const activity = new Map<string, number>();
   /** Each open live socket's visit. */
   const sockets = new Map<WebSocket, string>();
+  /** Go Live: each open socket's feed, of the trip its visit is in now. */
+  const feeds = new Map<WebSocket, { tripId: string; close(): void }>();
   let health: GoHealth = { ok: false, contract: null };
   let sourceLogged = false;
 
@@ -246,6 +255,23 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
   };
 
+  /** Go Live: the socket's feed follows its visit's trip; a new trip (the first message, Start over) gets a new feed. */
+  const followTrip = (ws: WebSocket, tripId: string | undefined): void => {
+    if (!o.live) return;
+    const feed = feeds.get(ws);
+    if (feed?.tripId === tripId) return;
+    feed?.close();
+    feeds.delete(ws);
+    if (!tripId) return;
+    const opened = o.live(tripId, (msg) => {
+      if (ws.readyState !== ws.OPEN) return;
+      const text = JSON.stringify({ type: 'live', trip_id: tripId, msg });
+      if (text.includes('"jpeg_base64"') && ws.bufferedAmount > LIVE_BEHIND_BYTES) return;
+      ws.send(text);
+    });
+    feeds.set(ws, { tripId, close: () => opened.close() });
+  };
+
   const about = (): string[] => [health.ok ? goLiveLine(health.contract) : GO_DOWN_LINE, simulatedLine];
 
   /** What a visit sees before its first message: its trip-to-be, with nobody's needs and no messages. */
@@ -266,6 +292,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     for (const [ws, visit] of sockets) {
       if ((only !== undefined && visit !== only) || ws.readyState !== ws.OPEN) continue;
       const tripId = trips.get(visit);
+      followTrip(ws, tripId);
       const key = tripId ?? `pending:${visit}`;
       let frame = frames.get(key);
       if (frame === undefined) {
@@ -373,7 +400,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     if (req.method === 'GET' && path === '/') {
       if (!gate.visit(req)) return html(req, res, 200, passcodePage(), null);
       const nonce = randomBytes(16).toString('base64');
-      return html(req, res, 200, roomPage({ title: 'Try Go', nonce, hints: HINTS, hosted: true }), nonce);
+      return html(req, res, 200, roomPage({ title: 'Try Go', nonce, hints: HINTS, hosted: true, live: o.live !== undefined }), nonce);
     }
     return plain(res, 404, 'text/plain; charset=utf-8', 'Not found');
   };
@@ -403,6 +430,8 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
       sockets.set(ws, visit);
       ws.on('close', () => {
         sockets.delete(ws);
+        feeds.get(ws)?.close();
+        feeds.delete(ws);
         // A trip-to-be is only kept while its visit has a socket open.
         if (![...sockets.values()].includes(visit)) pending.delete(visit);
       });
@@ -466,6 +495,8 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
       clearInterval(healthTimer);
       clearInterval(sweepTimer);
       clearInterval(pruneTimer);
+      for (const feed of feeds.values()) feed.close();
+      feeds.clear();
       for (const ws of sockets.keys()) ws.terminate();
       await new Promise<void>((resolve) => http.close(() => resolve()));
     },

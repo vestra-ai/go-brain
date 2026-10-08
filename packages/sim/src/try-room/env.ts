@@ -26,5 +26,7 @@ export const TryEnv = z.object({
   TRY_SIMULATED_LINE: z.string().min(1).max(300).default(SIMULATED_LINE),
   /** The try room's name in Go's socket (?instance=). */
   TRY_INSTANCE: z.string().regex(/^[a-z0-9-]{1,40}$/).default('try-room'),
+  /** 1: Go Live, the page's second column with the trip's recipe runs and the pages they opened (Go's /v1/live). */
+  TRY_LIVE: z.enum(['0', '1']).default('0'),
 });
 export type TryEnv = z.infer<typeof TryEnv>;
