@@ -100,6 +100,22 @@ describe('the ixigo_web backend', () => {
     expect(e.runs).toHaveLength(1);
   });
 
+  it("makes an early start with no head count and the composer's search for the whole trip one search (the 8 Oct drill: North Goa ran twice)", async () => {
+    const e = scripted();
+    const b = createIxigoWebBackend({ book, engine: e.engine, now, people: async () => 4 });
+    e.hold();
+    // The early start reads no head count; the composer says "sleeping 4" in a trip of four.
+    const early = b.search('stays', { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { tripId: 't_goa', messageId: 'm_1' });
+    const composer = b.search('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 4, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_1' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    e.release();
+    expect(await composer).toBe(await early);
+    expect(e.runs).toEqual([{ id: 'hotels.search', given: { place: 'north goa', check_in: '2026-11-06', check_out: '2026-11-09', adults: 4 }, tripId: 't_goa', conditions: ['pool'] }]);
+    // A head count that is not the whole trip is a search of its own.
+    await b.search('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 2, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(e.runs.map((r) => r.given['adults'])).toEqual([4, 2]);
+  });
+
   it('never keeps a failed search: the next ask runs it again', async () => {
     const e = scripted('fail', 'fail');
     const b = backend(e.engine);

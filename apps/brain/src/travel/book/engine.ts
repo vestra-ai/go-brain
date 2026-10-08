@@ -18,7 +18,7 @@ import type { Book } from './book.js';
 import { evaluate } from './expr.js';
 import type { RecipeFile, Step } from './format.js';
 import { clip } from '../cards.js';
-import { boxPlan, pickSuggestion, readSuggestions, type End, type Suggestion } from './lookup.js';
+import { boxFetches, pickSuggestion, readSuggestions, type End, type Suggestion } from './lookup.js';
 import { readFacts, readOptions } from './read.js';
 import { labelOf, pathOf, runLine, whyOf, type OnRun, type RunLine } from './run-event.js';
 import { fill } from './template.js';
@@ -223,21 +223,28 @@ export function createEngine(d: EngineDeps) {
       if (!runner?.read) throw new TravelError('unknown_place', `Go can't ask ixigo's box about ${ends.map((e) => `"${e.words}"`).join(' and ')} from here.`);
       const lookupRun = line(o.tripId, { recipe_id: lookupId, label: ends.map((e) => clip(e.words.trim(), 40)).join(' → '), speed: 'page', parent });
       try {
-        const plan = await boxPlan(lookup, ends.map((e) => ({ end: e.end, words: e.words })));
-        refusePayments(plan.path);
-        lookupRun.step(`opened ${pathOf(plan.path)}`);
+        // Each end's suggestion call opened as the page (box.open), at once; or one fetch typing every end into the box.
+        const fetches = await boxFetches(lookup, ends.map((e) => ({ end: e.end, words: e.words })));
+        for (const f of fetches) refusePayments(f.path);
         const fetchStarted = d.now().getTime();
-        const { captures } = await timed(lookupId, 'page', () =>
-          runner.read(o.tripId, `${IXIGO}${plan.path}`, { capture: plan.capture, steps: plan.steps }, {
-            ...(o.signal ? { signal: o.signal } : {}),
-            onProgress: (e) => {
-              if (e.type === 'frames') lookupRun.frames(e.frames, fetchStarted);
-            },
-            onTrace: (t) => lookupRun.trace(t),
-          }),
+        const captures = await timed(lookupId, 'page', async () =>
+          (
+            await Promise.all(
+              fetches.map((f) => {
+                lookupRun.step(`opened ${pathOf(f.path)}`);
+                return runner.read(o.tripId, `${IXIGO}${f.path}`, { capture: f.capture, steps: f.steps }, {
+                  ...(o.signal ? { signal: o.signal } : {}),
+                  onProgress: (e) => {
+                    if (e.type === 'frames') lookupRun.frames(e.frames, fetchStarted);
+                  },
+                  onTrace: (t) => lookupRun.trace(t),
+                });
+              }),
+            )
+          ).flatMap((got) => got.captures),
         );
         const shown: string[] = [];
-        for (const e of ends) {
+        for (const [i, e] of ends.entries()) {
           const list = await readSuggestions(lookup, captures, e.words);
           const picked = pickSuggestion(e.words, list);
           if (!picked) throw new TravelError('unknown_place', `ixigo's ${lookup.keeps} box knows no place for "${e.words.slice(0, 60)}".`);
@@ -249,7 +256,7 @@ export function createEngine(d: EngineDeps) {
                 `Search again with ${e.input} written exactly as the one the ask means, or ask the group which one if it doesn't say.`,
             );
           }
-          await keep(lookup, [e.words], picked.place, `${IXIGO}${plan.path}`);
+          await keep(lookup, [e.words], picked.place, `${IXIGO}${fetches[Math.min(i, fetches.length - 1)]!.path}`);
           out[e.input] = known(lookup.keeps!, e.words) ?? { words: e.words, ...picked.place };
           // The entry as ixigo's list shows it: "Udaipur City (UDZ)".
           shown.push(list.find((s) => s.place === picked.place)?.name ?? e.words);
@@ -380,7 +387,16 @@ export function createEngine(d: EngineDeps) {
         const got = await runner.pageFetch(o.tripId, call, { ...(o.signal ? { signal: o.signal } : {}), onTrace: (t) => fastRun.trace(t) });
         const absolute = new URL(got.url || url, IXIGO).toString();
         refusePayments(absolute);
-        const answer = await answerFrom([{ ...got, url: absolute }], { ...filled, read: { ...filled.read!, rows: { ...filled.read!.rows, format: recipe.fast.format } } }, started);
+        // A call in a shape of its own (trains: confirmtkt's, where the page reads www.ixigo.com's) reads with the fast
+        // speed's own list and each, its rows the call itself; any other reads with the recipe's read and answer.
+        const fastRead: RecipeFile = recipe.fast.list
+          ? {
+              ...filled,
+              read: { rows: { from: absolute, format: recipe.fast.format, list: recipe.fast.list } },
+              ...(recipe.fast.each && (recipe.answer.as === 'options' || recipe.answer.as === 'facts') ? { answer: { ...recipe.answer, each: recipe.fast.each } } : {}),
+            }
+          : { ...filled, read: { ...filled.read!, rows: { ...filled.read!.rows, format: recipe.fast.format } } };
+        const answer = await answerFrom([{ ...got, url: absolute }], fastRead, started);
         took('fast');
         return answer;
       } catch (err) {

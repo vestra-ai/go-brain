@@ -8,7 +8,7 @@ import { BOOK_DIR, loadBook } from '../book.js';
 import { createEngine } from '../engine.js';
 
 // The four searches as recipe files, on saved ixigo pages: the address each opens, the fetch, and the options it reads.
-// Trains read ixigo's own train call, which the results page uses since October (p4's sample).
+// Trains: the page speed reads the results page's www.ixigo.com call; the fast speed, ixigo's train service on confirmtkt.
 const { book, problems } = loadBook();
 const sample = (name: string): string => readFileSync(`${BOOK_DIR}samples/${name}`, 'utf8');
 // The Goa trip: three members live in Delhi, one in Bangalore, one in Mumbai.
@@ -164,14 +164,79 @@ describe('hotels.search', () => {
 });
 
 describe('trains.between', () => {
-  it("reads ixigo's own train call (confirmtkt.com since October), one option per train and class, with its seats and chance", async () => {
+  // The results page's own calls on www.ixigo.com, which a box's browser keeps (the pre-engine reader's saved pages).
+  const page = (name: string, from: string, to: string, date: string, ddmmyyyy: string, withSeats = true) => [
+    capture('/trains/v1/search/between/', `https://www.ixigo.com/trains/v1/search/between/${from}/${to}?date=${date}&languageCode=en`, fixture(`trains-${name}-between.json`)),
+    ...(withSeats
+      ? [capture('/api/v3/trains/availability', `https://www.ixigo.com/api/v3/trains/availability?originCode=${from}&destinationCode=${to}&travelDate=${ddmmyyyy}`, fixture(`trains-${name}-availability.json`))]
+      : []),
+  ];
+
+  it("opens ixigo's results page, whose call is on www.ixigo.com (the 8 Oct drill: the confirmtkt page never answers on a box), one option per train and class", async () => {
+    const { engine, runs } = engineWith(() => page('ndls-mao', 'NDLS', 'MAO', '2026-11-06', '06112026'));
+    const got = await engine.answer('trains.between', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
+    if (got.as !== 'options') throw new Error('not options');
+    expect(got.page).toBe('https://www.ixigo.com/search/result/train/NDLS/MAO/06112026//1/0/0/0/ALL');
+    expect(runs[0]!.plan.capture).toEqual([{ match: '/trains/v1/search/between/', required: true }, { match: '/api/v3/trains/availability', required: false }]);
+    // Never a call on another site: the page speed's captures are all www.ixigo.com's.
+    expect(runs[0]!.plan.capture.every((c) => c.match.startsWith('/'))).toBe(true);
+    expect(got.options).toHaveLength(25);
+    expect(got.options[0]).toEqual({
+      kind: 'train',
+      title: 'NZM ERS SF EXP 22656',
+      priceMinor: 311_500,
+      currency: 'INR',
+      priceNote: 'per person, 2A',
+      journey: {
+        mode: 'train',
+        origin: { name: 'Delhi Hazrat Nizamuddin', code: 'NZM' },
+        destination: { name: 'Madgaon Junction', code: 'MAO' },
+        depart_at: '2026-11-06T05:00:00+05:30',
+        arrive_at: '2026-11-07T10:10:00+05:30',
+        carrier_name: 'Indian Railways',
+        number: '22656',
+      },
+      highlights: ['AC 2 Tier', 'WL 26', '29 h 10 m'],
+      facts: { class_code: '2A', availability: 'WL 26', duration_min: 1750 },
+      sourceUrl: 'https://www.ixigo.com/trains/22656?orgn=NZM&dstn=MAO&departDate=2026-11-06&quota=GN',
+    });
+    const chance = got.options.find((o) => o.title === 'Sampark Kranthi 12218' && o.facts.class_code === '3E')!;
+    expect(chance.highlights).toContain('39% chance to confirm');
+    // Without the seats call the trains still show, with their fares.
+    const bare = await engineWith(() => page('ndls-mao', 'NDLS', 'MAO', '2026-11-06', '06112026', false)).engine.answer('trains.between', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
+    expect(bare.as === 'options' && bare.options[0]).toMatchObject({ priceMinor: 311_500, highlights: ['AC 2 Tier', '29 h 10 m'] });
+  });
+
+  it('shows Tatkal next to the General quota once it is open, and a train that boards at another station of the city', async () => {
+    const { engine } = engineWith(() => page('csmt-mao', 'CSMT', 'MAO', '2026-10-08', '08102026'));
+    const got = await engine.answer('trains.between', { from: 'Mumbai', to: 'Goa', date: '2026-10-08' }, { tripId: 't_goa' });
+    if (got.as !== 'options') throw new Error('not options');
+    expect(got.options).toHaveLength(60);
+    expect(got.options.find((o) => o.title === 'Mandovi Express 10103' && o.facts.class_code === '3A')).toMatchObject({
+      priceMinor: 113_000,
+      highlights: ['AC 3 Tier', 'RAC 10', 'Tatkal: Available 86, ₹1,460'],
+      facts: { availability: 'RAC 10', tatkal_availability: 'Available 86', tatkal_fare_minor: 146_000, duration_min: 885 },
+    });
+    expect(got.options.find((o) => o.journey?.number === '22115')!.journey).toMatchObject({ origin: { code: 'LTT' }, destination: { code: 'KRMI' } });
+  });
+
+  it("reads ixigo's train service's own call (confirmtkt.com) at the fast speed, in its own shape: one option per train and class, with its seats and chance", async () => {
     const MATCH = 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search';
-    const caps = [capture(MATCH, `https://${MATCH}?sourceStationCode=SBC&destinationStationCode=MAS&dateOfJourney=22-10-2026`, sample('trains.between.page.json'))];
-    const { engine, runs } = engineWith(() => caps);
+    const calls: Array<{ url: string }> = [];
+    const runner = {
+      read: async () => {
+        throw new Error('the fast speed answered: no page opens');
+      },
+      pageFetch: async (_t: string, call: { url: string }) => {
+        calls.push(call);
+        return capture('fast', `https://${MATCH}?sourceStationCode=SBC&destinationStationCode=MAS&dateOfJourney=22-10-2026`, sample('trains.between.page.json'));
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: HOMES }), now: () => new Date('2026-10-07T12:00:00Z') });
     const got = await engine.answer('trains.between', { from: 'Bangalore', to: 'Chennai', date: '2026-10-22' }, { tripId: 't_goa' });
     if (got.as !== 'options') throw new Error('not options');
-    expect(got.page).toBe('https://www.ixigo.com/trains/search-pwa/from/SBC/to/MAS/22-10-2026');
-    expect(runs[0]!.plan.capture).toEqual([{ match: MATCH, required: true }]);
+    expect(calls[0]!.url).toMatch(/^https:\/\/ixigotrainsapi\.confirmtkt\.com\/api\/v1\/trains\/search\?sourceStationCode=SBC&destinationStationCode=MAS&/);
+    expect(got.page).toBe('https://www.ixigo.com/search/result/train/SBC/MAS/22102026//1/0/0/0/ALL');
     expect(got.options.map((o) => `${o.title} ${o.facts.class_code} ${o.facts.availability}`)).toEqual([
       'Muzaffarpur EXP 15227 1A WL 9', 'Muzaffarpur EXP 15227 2A Available 2', 'Muzaffarpur EXP 15227 3A Available 8',
       'Muzaffarpur EXP 15227 3E Regret', 'Muzaffarpur EXP 15227 SL WL 127', 'Shatabdi EXP 12028 EC Available 25',

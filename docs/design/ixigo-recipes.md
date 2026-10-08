@@ -65,9 +65,10 @@ shape, and one that doesn't check out is dropped, never half read; a page where 
    and the words people used ("london" for flights is LON), loaded at boot. The codes Go used before seed it; they are
    ixigo's own.
 2. **A new place: ask ixigo's box.** A lookup recipe (`flights.airport_lookup`, `hotels.place_lookup`,
-   `trains.station_lookup`, `buses.city_lookup`) says where the box is and how its suggestions read. One browser fetch
-   opens ixigo's search page, types the person's words into the box (both ends of a route in the same fetch), and keeps
-   the box's own suggestion call, read in the page.
+   `trains.station_lookup`, `buses.city_lookup`) says how to reach the box's suggestions and how they read. Each end of
+   a route opens the box's own suggestion call for the person's words as the page (`box.open`), all ends at once, with
+   nothing typed: on 8 Oct, typing into the box timed out in the box's browser. A recipe with no `open` types into the
+   box on ixigo's search page instead (`box.page` and `box.type`), both ends in one fetch.
 3. **The pick**, as a person makes it:
    - the "All airports", "All stations" or "All boarding points" entry;
    - else the one entry that is the place by its own name (a stay's city or state, an airport's city, a bus city), or the

@@ -7,6 +7,9 @@ inputs:
   words: { kind: text, about: the place as the person said it }
 keeps: stays
 box:
+  # The suggestion call itself, opened as the page: no box to find, type into or wait on (the 8 Oct drill: typing
+  # into the box timed out on the box's browser). The box below is how a person does it, for the flow speed.
+  open: "/hotels-autocompleter/api/v2/results?query={words}&size=10&v=3"
   page: /hotels
   type:
     place:

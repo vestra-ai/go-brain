@@ -38,6 +38,12 @@ export interface IxigoWebDeps {
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
   /** How long a run goes before its live card shows (CARD_DELAY_MS); 0 shows it at once. */
   cardDelayMs?: number;
+  /**
+   * The trip's head count. A stay asked for with no head count is for everyone, as its recipe reads it ($trip.people), so
+   * it is keyed as that: an early start without one and the composer's search "sleeping 4" in a trip of four are one
+   * search. Absent in tests that don't look at it.
+   */
+  people?: (tripId: string) => Promise<number>;
 }
 
 /**
@@ -76,11 +82,14 @@ export const SEARCH_RECIPES: Record<TravelKind, string> = { flights: 'flights.se
 export const searchKindOf = (recipeId: string): TravelKind | null =>
   (Object.entries(SEARCH_RECIPES) as Array<[TravelKind, string]>).find(([, id]) => id === recipeId)?.[0] ?? null;
 
-/** A search's query as its recipe's inputs: the places as the person's words, and the conditions ixigo may filter on. */
-export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; conditions: string[] } {
+/**
+ * A search's query as its recipe's inputs: the places as the person's words, and the conditions ixigo may filter on. A
+ * stay with no head count is for the trip's people, when the trip's head count is given.
+ */
+export function recipeInputs(kind: TravelKind, q: TravelQuery, people?: number): { given: Record<string, unknown>; conditions: string[] } {
   const conditions = [...(q.mustHave ?? [])];
   if (kind === 'stays') {
-    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, conditions };
+    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests ?? people }, conditions };
   }
   if (kind === 'flights') {
     return {
@@ -144,12 +153,13 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   }
 
   /** The recipe, its inputs and the search's key, or a plain refusal before anything runs. */
-  function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
+  async function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
     if (!tripId) throw new TravelError('refused', "An ixigo.com search runs on a trip's computer, so it needs the trip.");
     const id = SEARCH_RECIPES[kind];
     const recipe = d.book.get(id);
     if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
-    const { given, conditions } = recipeInputs(kind, q);
+    const people = kind === 'stays' && q.guests === undefined && d.people ? await d.people(tripId) : undefined;
+    const { given, conditions } = recipeInputs(kind, q, people);
     // The page is ixigo's public results, the same in any trip's browser: the trip runs it, the words key it.
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
     return { tripId, id, given, conditions, link: recipe.answer.as === 'link', ttl, key: `${id}|${keyOf(given, conditions)}` };
@@ -157,7 +167,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
 
   return {
     async search(kind, q, o?: SearchFor) {
-      const { tripId, id, given, conditions, link, ttl, key } = plan(kind, q, o?.tripId);
+      const { tripId, id, given, conditions, link, ttl, key } = await plan(kind, q, o?.tripId);
       // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
       if (link) {
         const a = await d.engine.answer(id, given, { tripId, conditions });
@@ -221,9 +231,9 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     },
     async waitMs(kind, q, o) {
       // A search that refuses does so at once, and a link loads nothing: nothing to wait for.
-      let p: ReturnType<typeof plan>;
+      let p: Awaited<ReturnType<typeof plan>>;
       try {
-        p = plan(kind, q, o?.tripId);
+        p = await plan(kind, q, o?.tripId);
       } catch {
         return null;
       }

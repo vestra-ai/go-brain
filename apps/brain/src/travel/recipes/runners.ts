@@ -103,6 +103,8 @@ function fetchFailed(err: V1Error, what: { id: string; capture: CaptureSpec[] },
     const partial = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
     const got = Array.isArray(partial) ? partial.filter(isCapture).map((c) => ({ ...c, truncated: c.truncated === true })) : [];
     if (what.capture.every((c) => !c.required || bodiesFor(got, c.match).length > 0)) return got;
+    // Bash says where the page was when the time ran out ("it stopped at 2 type"): the admin log keeps it.
+    log.warn({ tripId, page: what.id, message: err.message.slice(0, 300) }, 'travel: a page ran out of time');
     throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
   }
   if (err.status === 402) throw new TravelError('refused', OUT_OF_CREDIT);

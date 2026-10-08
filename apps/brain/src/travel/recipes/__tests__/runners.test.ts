@@ -159,6 +159,17 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     );
   });
 
+  it('logs where a page was when its time ran out, as Bash says it, so the next drill shows the step', async () => {
+    const late = world(() => {
+      throw new V1Error(504, 'timeout', 'The page did not send every capture within 20000 ms (it stopped at 2 type). What it sent is in partial.', null, { code: 'timeout', partial: { captures: [] } });
+    });
+    await fails(createBrowserFetchRunner(late.deps).read('t1', BUSES, busPlan), 'unreachable', /took too long/);
+    expect(late.log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ tripId: 't1', message: expect.stringContaining('it stopped at 2 type') }),
+      'travel: a page ran out of time',
+    );
+  });
+
   it("tells the run strip where each call's time went: the wake, the page, each kept call; and on a timeout, where it stopped", async () => {
     const timings = { wake_ms: 4_000, nav_ms: 5_200, first_capture_ms: 7_000, done_ms: 7_400 };
     const ok = world(() => ({ ...fetched([busCapture]), woke: true, timings }));

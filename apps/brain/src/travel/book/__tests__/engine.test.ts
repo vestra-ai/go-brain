@@ -38,23 +38,21 @@ const engineFor = (b: Book, runner: ReturnType<typeof browser>['runner']) =>
   createEngine({ book: b, runner: () => runner, pool: db.pool, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
 
 describe('a place Go has not searched before', () => {
-  it("is asked of ixigo's own box, picked, kept, and gone straight to the next time, after a restart too", async () => {
+  it("is asked of ixigo's own suggestion call, opened as the page with nothing typed, picked, kept, and gone straight to the next time, after a restart too", async () => {
+    // The 8 Oct drill: typing Manali into the hotels box timed out on the box's browser. The call itself needs no box.
+    const SUGGEST = 'https://www.ixigo.com/hotels-autocompleter/api/v2/results?query=Manali&size=10&v=3';
     const b = browser(
-      (url) => (url.endsWith('/hotels') ? [capture('/hotels-autocompleter/api/v2/results', 'https://www.ixigo.com/hotels-autocompleter/api/v2/results?query=Manali&size=10&v=3', sample('hotels.place_lookup.manali.json'))] : []),
+      (url) => (url === SUGGEST ? [capture('/hotels-autocompleter/api/v2/results', SUGGEST, sample('hotels.place_lookup.manali.json'))] : []),
       [capture(SEARCH, 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', fixture('stays-goa-page1.json'))],
     );
     const engine = engineFor(book, b.runner);
     const ask = { place: 'Manali', check_in: '2026-11-06', check_out: '2026-11-09' };
     const got = await engine.answer('hotels.search', ask, { tripId: 't_mnl' });
     expect(b.runs.map((r) => r.url)).toEqual([
-      'https://www.ixigo.com/hotels',
+      SUGGEST,
       'https://www.ixigo.com/hotels/search/result?locationId=184&locationName=Manali&locationType=C&masterLocationId=9425&countryId=1&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0',
     ]);
-    expect(b.runs[0]!.plan.steps).toEqual([
-      { op: 'click', name: 'Close modal', optional: true },
-      { op: 'type', role: 'textbox', name: 'Enter city, area or property name', text: 'Manali' },
-      { op: 'wait_for', match: '/hotels-autocompleter/api/v2/results' },
-    ]);
+    expect(b.runs[0]!.plan).toEqual({ capture: [{ match: '/hotels-autocompleter/api/v2/results', required: true, min_count: 1, max_count: 1, max_bytes: 200_000 }], steps: [] });
     expect(got.as === 'options' && got.options.length).toBeGreaterThan(0);
     // Kept: after a restart, the same words go straight to the results page.
     forgetLearnedPlaces();
@@ -66,8 +64,7 @@ describe('a place Go has not searched before', () => {
 
   it('hands the model ixigo\'s list when more than one place fits, and takes the one it names, for the words asked too', async () => {
     const two = JSON.stringify([{ e: 'Udaipur City (UDZ)', c: '' }, { e: 'Udaipur Junction (UDPU)', c: '' }]);
-    const MATCH = 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search';
-    const trains = [capture(MATCH, `https://${MATCH}?sourceStationCode=JP&destinationStationCode=UDZ`, sample('trains.between.page.json'))];
+    const trains = [capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/JP/UDZ?date=2026-10-20&languageCode=en', fixture('trains-ndls-mao-between.json'))];
     const b = browser(() => [capture('searchFor=trainstationsLatLon', 'https://www.ixigo.com/action/content/trainstation?searchFor=trainstationsLatLon&anchor=false&value=Udaipur', two)], trains);
     const engine = engineFor(book, b.runner);
     const err = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur', date: '2026-10-20' }, { tripId: 't_udr' }).catch((e: unknown) => e);
@@ -77,10 +74,24 @@ describe('a place Go has not searched before', () => {
     expect(b.runs).toHaveLength(1);
     // The model names one: no second load, and "Udaipur" now means that one.
     const named = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur City (UDZ)', date: '2026-10-20' }, { tripId: 't_udr' });
-    expect(named.as === 'options' && named.page).toBe('https://www.ixigo.com/trains/search-pwa/from/JP/to/UDZ/20-10-2026');
+    expect(named.as === 'options' && named.page).toBe('https://www.ixigo.com/search/result/train/JP/UDZ/20102026//1/0/0/0/ALL');
     const again = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur', date: '2026-10-20' }, { tripId: 't_udr' });
-    expect(again.as === 'options' && again.page).toBe('https://www.ixigo.com/trains/search-pwa/from/JP/to/UDZ/20-10-2026');
-    expect(b.runs.filter((r) => !r.url.includes('/search-pwa/'))).toHaveLength(1);
+    expect(again.as === 'options' && again.page).toBe('https://www.ixigo.com/search/result/train/JP/UDZ/20102026//1/0/0/0/ALL');
+    expect(b.runs.filter((r) => !r.url.includes('/search/result/'))).toHaveLength(1);
+  });
+
+  it('opens each end\'s own suggestion call when both places are new: two fetches at once, nothing typed, then the results page', async () => {
+    const suggest = (words: string): string => `https://www.ixigo.com/action/content/trainstation?searchFor=trainstationsLatLon&anchor=false&value=${encodeURIComponent(words)}`;
+    const bodies: Record<string, string> = {
+      [suggest('Bikaner')]: JSON.stringify([{ e: 'Bikaner Jn (BKN)', c: '' }]),
+      [suggest('Udaipur City')]: JSON.stringify([{ e: 'Udaipur City (UDZ)', c: '' }]),
+    };
+    const trains = [capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/BKN/UDZ?date=2026-10-20&languageCode=en', fixture('trains-ndls-mao-between.json'))];
+    const b = browser((url) => (bodies[url] ? [capture('searchFor=trainstationsLatLon', url, bodies[url]!)] : []), trains);
+    const got = await engineFor(book, b.runner).answer('trains.between', { from: 'Bikaner', to: 'Udaipur City', date: '2026-10-20' }, { tripId: 't_bkn' });
+    expect(b.runs.map((r) => r.url)).toEqual([suggest('Bikaner'), suggest('Udaipur City'), 'https://www.ixigo.com/search/result/train/BKN/UDZ/20102026//1/0/0/0/ALL']);
+    expect(b.runs.slice(0, 2).every((r) => r.plan.steps?.length === 0)).toBe(true);
+    expect(got.as === 'options' && got.options.length).toBe(25);
   });
 
   it('is unknown_place when ixigo knows nothing for the words, so the search answers with ixigo\'s own page', async () => {
