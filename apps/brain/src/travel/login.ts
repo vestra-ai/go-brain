@@ -263,9 +263,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       async run(tripId) {
         // Nothing to log in to while Go doesn't browse ixigo.com; a recipe that needs the login asks then.
         if (!d.live() || (await get(tripId))) return;
+        // A trip Go was holding before the login came (the setup sweep reaches those too) is asked when a recipe needs it.
+        // Go's own first sight of the trip, not the trip's created_at: the try room's Goa trip says 5 Oct every time.
+        const seen = (await d.pool.query<{ created_at: Date }>('select created_at from trips where trip_id = $1', [tripId])).rows[0]?.created_at;
+        if (seen && d.now().getTime() - seen.getTime() > NEW_TRIP_MS) return;
         const pack = await d.packs.get(tripId);
-        // A trip that was going before the login came (the setup sweep reaches those too) is asked when a recipe needs it.
-        if (d.now().getTime() - Date.parse(pack.trip.created_at) > NEW_TRIP_MS) return;
         if (!pack.messages.some((m) => m.author.kind === 'go')) throw new Error('waits for Go to greet the trip');
         const organizer = pack.trip.people.find((p) => p.person_id === pack.trip.organizer_person_id && !p.go_paused);
         if (!organizer) return;

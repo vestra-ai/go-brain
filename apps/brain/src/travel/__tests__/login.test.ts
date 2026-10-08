@@ -31,12 +31,13 @@ afterAll(async () => {
 let trips = 0;
 
 /** One trip (the Goa five, Rahul organizing), its chat, the trip's browser and the jobs lane, all recorded. */
-function world(o: { live?: boolean; greeted?: boolean; createdAt?: string; statuses?: Array<number | 'timeout'> } = {}) {
+function world(o: { live?: boolean; greeted?: boolean; seenAt?: string; statuses?: Array<number | 'timeout'> } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
   const clock = { now: NOW };
   const link = fakeLink();
-  const trip = goaTrip({ trip_id: tripId, created_at: o.createdAt ?? '2026-10-08T05:50:00Z' });
+  // The sim's Goa trip says it was made on 5 Oct, whenever it is made: Go goes by when it first saw the trip.
+  const trip = goaTrip({ trip_id: tripId });
   const packs = fakePacks(goaPack({ trip, messages: o.greeted === false ? [] : [msg({ by: 'go', text: 'Hey all, I am Go.' })] }));
   const statuses = [...(o.statuses ?? [])];
   const reads: Array<{ url: string; plan: FetchPlan }> = [];
@@ -77,7 +78,11 @@ function world(o: { live?: boolean; greeted?: boolean; createdAt?: string; statu
   const last = (): C.Card & { kind: 'notice' } => cards().at(-1) as C.Card & { kind: 'notice' };
   const state = async (): Promise<string | undefined> =>
     (await db.pool.query<{ state: string }>('select state from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.state;
-  return { tripId, clock, link, reads, statuses, starts, handoffs, login, tap, last, state, setup: () => login.setupStep.run(tripId) };
+  const setup = async (): Promise<void> => {
+    await db.pool.query('insert into trips (trip_id, created_at) values ($1, $2) on conflict (trip_id) do nothing', [tripId, o.seenAt ?? '2026-10-08T05:50:00Z']);
+    await login.setupStep.run(tripId);
+  };
+  return { tripId, clock, link, reads, statuses, starts, handoffs, login, tap, last, state, setup };
 }
 
 const STATUS_PLAN = { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], timeoutMs: 12_000 };
@@ -136,8 +141,8 @@ describe('the ixigo login, asked at setup', () => {
     await w.setup();
     expect(w.link.calls).toEqual([]);
     expect(await w.state()).toBeUndefined();
-    // The setup sweep reaches trips made before this step existed: they are asked when a recipe needs the login.
-    const old = world({ createdAt: '2026-10-05T02:30:00Z' });
+    // The setup sweep reaches trips Go held before this step existed: they are asked when a recipe needs the login.
+    const old = world({ seenAt: '2026-10-05T02:30:00Z' });
     await old.setup();
     expect(old.link.calls).toEqual([]);
     expect(await old.state()).toBeUndefined();
