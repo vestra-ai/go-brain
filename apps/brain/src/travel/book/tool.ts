@@ -10,11 +10,14 @@ import { TravelError } from '../mcp-travel.js';
 import { SEARCH_RECIPES } from '../recipes/backend.js';
 import type { Book } from './book.js';
 import type { Engine } from './engine.js';
+import type { ResultsStore } from '../results.js';
 import type { RecipeFile } from './format.js';
 
 export interface IxigoToolDeps {
   book: Pick<Book, 'all'>;
   engine: Pick<Engine, 'answer'>;
+  /** Go's saved search results: an option input ("r_ab12#2") is that option's own ixigo page. */
+  results?: Pick<ResultsStore, 'get'>;
   /** Whether Go searches ixigo.com itself now (TRAVEL_MODE ixigo_web): the recipes run in the trip's browser. */
   live: () => boolean;
 }
@@ -32,7 +35,7 @@ export function toolRecipes(book: Pick<Book, 'all'>): RecipeFile[] {
 function line(r: RecipeFile): string {
   const inputs = Object.entries(r.inputs)
     .filter(([, i]) => !i.value)
-    .map(([name, i]) => `${name}${i.optional ? '?' : ''}${i.about ? ` (${i.about})` : ''}`)
+    .map(([name, i]) => `${name}${i.optional ? '?' : ''}${i.kind === 'option' ? ' (an option from search results, written results_id#n, like r_ab12#2)' : i.about ? ` (${i.about})` : ''}`)
     .join(', ');
   return `- ${r.id}: ${r.title}. Inputs: ${inputs || 'none'}. Asked as: "${r.asks.slice(0, 2).join('", "')}".`;
 }
@@ -47,6 +50,13 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
   const recipes = toolRecipes(d.book);
   if (recipes.length === 0) return null;
   const ids = recipes.map((r) => r.id) as [string, ...string[]];
+  /** "r_ab12#2": option 2 of that saved search, in this trip; its own ixigo page, or null. */
+  const optionPage = async (ref: string, tripId: string): Promise<string | null> => {
+    const m = /^(\S+)#(\d{1,2})$/.exec(ref.trim());
+    if (!m || !d.results) return null;
+    const set = await d.results.get(tripId, m[1]!);
+    return set?.options[Number(m[2]) - 1]?.sourceUrl ?? null;
+  };
   return {
     name: 'ixigo',
     description:
@@ -59,8 +69,16 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
     timeoutMs: 15_000,
     async run(a, ctx: TurnCtx) {
       if (!d.live()) return { recipe: a.recipe, error: 'not_here', note: "Go's ixigo recipes run only when Go searches ixigo.com itself." };
+      const recipe = recipes.find((r) => r.id === a.recipe);
+      const given: Record<string, unknown> = { ...a.inputs };
+      for (const [name, input] of Object.entries(recipe?.inputs ?? {})) {
+        if (input.kind !== 'option' || given[name] === undefined) continue;
+        const page = await optionPage(String(given[name]), ctx.tripId);
+        if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n, from a search.` };
+        given[name] = page;
+      }
       try {
-        const answer = await d.engine.answer(a.recipe, a.inputs, { tripId: ctx.tripId });
+        const answer = await d.engine.answer(a.recipe, given, { tripId: ctx.tripId });
         if (answer.as !== 'facts') return { recipe: a.recipe, error: 'refused', note: 'This recipe answers with options: use the search tools.' };
         if (answer.rows.length === 0) {
           return { recipe: a.recipe, title: answer.title, facts: [], note: 'ixigo has nothing for this. Say so in one line, and name no place from memory.' };

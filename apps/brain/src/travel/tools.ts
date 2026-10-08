@@ -170,6 +170,15 @@ export function searchScope(kind: TravelKind, q: TravelQuery): string {
   return `${kind} from ${q.from ?? '?'} to ${q.to ?? '?'}${q.date ? ` on ${q.date}` : ''}`;
 }
 
+const ONE: Record<TravelKind, string> = { flights: 'flight', trains: 'train', buses: 'bus', stays: 'stay' };
+
+/** The scope after a count, its noun agreeing with it: "1 train from Delhi…", "4 trains from Delhi…". */
+const scopeOf = (kind: TravelKind, q: TravelQuery, n: number): string => {
+  const scope = searchScope(kind, q);
+  return n === 1 ? `${ONE[kind]}${scope.slice(kind.length)}` : scope;
+};
+const counted = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
 /** One option in a line: its name, the stay's area, the journey's time, and its price as checked. */
 function optionLine(o: TravelOption): string {
   const where = o.kind === 'stay' ? ` (${areaOf(o)})` : '';
@@ -351,10 +360,13 @@ export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: Trav
   const options = found.results.slice(0, 10).map(toResultOption);
   if (options.length === 0) {
     const near = found.closest;
+    const closest = near ? ` Closest: ${optionLine(near.option)}, but ${listOf(near.misses)}.` : '';
     const summary =
       before === 0
         ? `Nothing came back: there are no ${scope} at all.`
-        : `None of the ${before} ${scope} fits ${listOf(terms)}.${near ? ` Closest: ${optionLine(near.option)}, but ${listOf(near.misses)}.` : ''}`;
+        : before === 1
+          ? `The one ${scopeOf(kind, q, 1)} doesn't fit ${listOf(terms)}.${closest}`
+          : `None of the ${before} ${scope} fits ${listOf(terms)}.${closest}`;
     return {
       search,
       count: 0,
@@ -365,14 +377,22 @@ export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: Trav
   }
   const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt });
   const fit = found.results.length;
-  // A train comes back once a class: the summary counts trains, and says how many fares by class they hold.
-  const trains = kind === 'trains' ? new Set(found.results.map((o) => o.journey?.number ?? o.title)).size : fit;
-  const counted = trains === fit ? `${fit}` : `${trains}`;
-  const byClass = trains === fit ? '' : ` (${fit} fares by class)`;
+  // A train comes back once a class: the summary counts trains, and says how many fares by class they hold. The list
+  // before the conditions is counted in fares, so a train list with conditions gives no "of the".
+  const trainList = kind === 'trains';
+  const n = trainList ? new Set(found.results.map((o) => o.journey?.number ?? o.title)).size : fit;
+  const byClass = n === fit ? '' : ` (${counted(fit, 'fare', 'fares')} by class)`;
   const prices = priceRange(options);
   const areas = kind === 'stays' ? [...new Set(options.map(areaOf))] : [];
+  const fits = n === 1 ? 'fits' : 'fit';
   const summary =
-    `${terms.length ? `${counted} of the ${before} ${scope} fit ${listOf(terms)}${byClass}` : `${counted} ${scope}${byClass}`}` +
+    `${
+      terms.length
+        ? trainList
+          ? `${n} ${scopeOf(kind, q, n)} ${fits} ${listOf(terms)}${byClass}`
+          : `${n} of the ${before} ${scopeOf(kind, q, before)} ${fits} ${listOf(terms)}`
+        : `${n} ${scopeOf(kind, q, n)}${byClass}`
+    }` +
     `${prices ? `: ${prices}` : ''}${areas.length ? `, in ${listOf(areas)}` : ''}.` +
     `${fit > options.length ? ` The best ${options.length} are below.` : ''}`;
   return {

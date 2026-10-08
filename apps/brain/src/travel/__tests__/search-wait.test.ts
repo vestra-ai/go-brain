@@ -69,7 +69,7 @@ describe('a search that outlives its turn', () => {
       ref: 'buses',
       payload: { source: 'travel_search', search: 'buses from Mumbai to Goa on 2026-11-06', count: 1, resultsId: 'r_late1', error: null },
     });
-    expect((w.puts[0]!.payload as { summary: string }).summary).toContain('1 buses from Mumbai to Goa on 2026-11-06');
+    expect((w.puts[0]!.payload as { summary: string }).summary).toContain('1 bus from Mumbai to Goa on 2026-11-06');
   });
 
   it('wakes Go to say so when the search fails after the turn went on', async () => {
