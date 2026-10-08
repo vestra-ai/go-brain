@@ -21,6 +21,7 @@ const PEOPLE_READ: readonly string[] = [
   'apps/brain/src/travel/ways-there.ts', // each home city's ways to the trip: its card and its line
   'apps/brain/src/travel/votes.ts',
   'apps/brain/src/travel/recipes/places.ts', // the places refusals
+  'apps/brain/src/travel/recipes/now.ts', // the line for a plain ask whose search is still running, off ixigo_web
   'apps/brain/src/travel/book/engine.ts', // the recipe engine's refusals; its options' words are in the recipe files
   'apps/brain/src/travel/book/read.ts',
   'apps/brain/src/tasks/working-card.ts', // the working card
