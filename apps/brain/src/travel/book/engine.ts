@@ -189,9 +189,10 @@ export function createEngine(d: EngineDeps) {
 
   /**
    * The places for a search's place inputs: kept ones at once; a choice the model just made from ixigo's list; the rest
-   * through ixigo's own box, all ends of one lookup in one fetch, as a run of its own under the search's (parent).
+   * through ixigo's own box, all ends of one lookup in one fetch, as a run of its own under the search's (parent). With no
+   * parent, nothing loads: null when a place still needs ixigo's box.
    */
-  async function places(recipe: RecipeFile, given: Record<string, unknown>, o: RunFor, parent: string): Promise<Record<string, Record<string, unknown>>> {
+  async function places(recipe: RecipeFile, given: Record<string, unknown>, o: RunFor, parent: string | null): Promise<Record<string, Record<string, unknown>> | null> {
     const out: Record<string, Record<string, unknown>> = {};
     const unknownByLookup = new Map<string, Array<{ input: string; end: End; words: string }>>();
     for (const [name, input] of Object.entries(recipe.inputs)) {
@@ -217,11 +218,12 @@ export function createEngine(d: EngineDeps) {
       const end: End = name === 'to' ? 'to' : name === 'from' ? 'from' : 'place';
       unknownByLookup.set(lookup.id, [...(unknownByLookup.get(lookup.id) ?? []), { input: name, end, words }]);
     }
+    if (unknownByLookup.size > 0 && parent === null) return null;
     for (const [lookupId, ends] of unknownByLookup) {
       const lookup = d.book.get(lookupId)!;
       const runner = d.runner(o.tripId);
       if (!runner?.read) throw new TravelError('unknown_place', `Go can't ask ixigo's box about ${ends.map((e) => `"${e.words}"`).join(' and ')} from here.`);
-      const lookupRun = line(o.tripId, { recipe_id: lookupId, label: ends.map((e) => clip(e.words.trim(), 40)).join(' → '), speed: 'page', parent });
+      const lookupRun = line(o.tripId, { recipe_id: lookupId, label: ends.map((e) => clip(e.words.trim(), 40)).join(' → '), speed: 'page', ...(parent ? { parent } : {}) });
       try {
         // Each end's suggestion call opened as the page (box.open), at once; or one fetch typing every end into the box.
         const fetches = await boxFetches(lookup, ends.map((e) => ({ end: e.end, words: e.words })));
@@ -271,8 +273,10 @@ export function createEngine(d: EngineDeps) {
   }
 
   /** The recipe's inputs, filled: places, then counts and the rest, then what a count works out from them. */
-  async function inputsOf(recipe: RecipeFile, given: Record<string, unknown>, o: RunFor, run: string): Promise<Record<string, unknown>> {
-    const inputs: Record<string, unknown> = { ...(await places(recipe, given, o, run)) };
+  async function inputsOf(recipe: RecipeFile, given: Record<string, unknown>, o: RunFor, run: string | null): Promise<Record<string, unknown> | null> {
+    const placed = await places(recipe, given, o, run);
+    if (!placed) return null;
+    const inputs: Record<string, unknown> = { ...placed };
     for (const [name, input] of Object.entries(recipe.inputs)) {
       if (input.kind === 'place' || input.value) continue;
       const v = given[name];
@@ -309,6 +313,32 @@ export function createEngine(d: EngineDeps) {
     return bindings;
   }
 
+  /** The fetch a recipe's page speed makes for these inputs: its captures (templates filled), or the first fetch whose
+   *  when holds, with its steps' words filled like a box's ("{area}"). */
+  async function fetchPlanOf(recipe: RecipeFile, inputs: Record<string, unknown>, bindings: Record<string, unknown>): Promise<FetchPlan> {
+    const match = (m: string): Promise<string> => (m.includes('{') ? fill(m, inputs, { url: false, bindings }) : Promise.resolve(m));
+    const captures = async (cs: RecipeFile['capture']): Promise<CaptureSpec[]> =>
+      Promise.all((cs ?? []).map(async (c) => ({ ...c, match: await match(c.match) }) as CaptureSpec));
+    const filledSteps = async (steps: Step[]): Promise<Step[]> =>
+      Promise.all(
+        steps.map(async (s) => ({
+          ...s,
+          ...('text' in s && s.text ? { text: await fill(s.text, inputs, { url: false, bindings }) } : {}),
+          ...('name' in s && s.name ? { name: await fill(s.name, inputs, { url: false, bindings }) } : {}),
+        }) as Step),
+      );
+    for (const f of recipe.fetch ?? []) {
+      if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
+      return {
+        capture: await captures(f.capture ?? recipe.capture),
+        ...(f.steps ? { steps: await filledSteps(f.steps) } : {}),
+        ...(f.timeout_ms ? { timeoutMs: f.timeout_ms } : {}),
+        ...(f.settle_ms ? { settleMs: f.settle_ms } : {}),
+      };
+    }
+    return { capture: await captures(recipe.capture) };
+  }
+
   /** Runs a recipe for the given inputs (place inputs as the person's words), on the run strip from its first speed. */
   async function run(id: string, given: Record<string, unknown>, o: RunFor, took: (s: Speed) => void = () => undefined): Promise<EngineAnswer> {
     const recipe = d.book.get(id);
@@ -339,7 +369,7 @@ export function createEngine(d: EngineDeps) {
     took: (s: Speed) => void,
   ): Promise<EngineAnswer> {
     if (recipe.answer.as !== 'link') d.warm?.(o.tripId, recipe.id);
-    const inputs = await inputsOf(recipe, given, o, strip.line.id);
+    const inputs = (await inputsOf(recipe, given, o, strip.line.id))!;
     const bindings = await bindingsOf(recipe, inputs, o);
     const page = `${IXIGO}${await fill(pageTemplate, inputs, { url: true, bindings })}`;
     refusePayments(page);
@@ -351,8 +381,6 @@ export function createEngine(d: EngineDeps) {
     if (!runner?.read) throw new TravelError('refused', "An ixigo.com search needs the trip's computer, which is not set up here.");
     // A capture's match may be a template too: "/plan/{$slug}$" keeps that one page's document, whatever the place.
     const match = (m: string): Promise<string> => (m.includes('{') ? fill(m, inputs, { url: false, bindings }) : Promise.resolve(m));
-    const captures = async (cs: RecipeFile['capture']): Promise<CaptureSpec[]> =>
-      Promise.all((cs ?? []).map(async (c) => ({ ...c, match: await match(c.match) }) as CaptureSpec));
     const read = recipe.read!;
     const filled: RecipeFile = {
       ...recipe,
@@ -407,26 +435,7 @@ export function createEngine(d: EngineDeps) {
         strip.line = line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed: 'page', fell_from: fell.id });
       }
     }
-    // A step's words may be templates too: what to type ("{area}") or which control to click, filled like a box's.
-    const filledSteps = async (steps: Step[]): Promise<Step[]> =>
-      Promise.all(
-        steps.map(async (s) => ({
-          ...s,
-          ...('text' in s && s.text ? { text: await fill(s.text, inputs, { url: false, bindings }) } : {}),
-          ...('name' in s && s.name ? { name: await fill(s.name, inputs, { url: false, bindings }) } : {}),
-        }) as Step),
-      );
-    let plan: FetchPlan = { capture: await captures(recipe.capture) };
-    for (const f of recipe.fetch ?? []) {
-      if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
-      plan = {
-        capture: await captures(f.capture ?? recipe.capture),
-        ...(f.steps ? { steps: await filledSteps(f.steps) } : {}),
-        ...(f.timeout_ms ? { timeoutMs: f.timeout_ms } : {}),
-        ...(f.settle_ms ? { settleMs: f.settle_ms } : {}),
-      };
-      break;
-    }
+    const plan = await fetchPlanOf(recipe, inputs, bindings);
     const started = d.now().getTime();
     const pageRun = strip.line;
     o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
@@ -472,6 +481,26 @@ export function createEngine(d: EngineDeps) {
   }
 
   return {
+    /**
+     * The request a run of the recipe will make, when every place is one Go already knows: the page it opens and the
+     * fetch it makes there. Two asks with the same request are one search, whatever their words: an early start's "with
+     * a pool" and the composer's "sleeping 4, with a pool" in a trip of four open the same page. Null when a place still
+     * needs ixigo's box, or the recipe loads no page. Loads nothing.
+     */
+    async requestOf(id: string, given: Record<string, unknown>, o: RunFor): Promise<string | null> {
+      const recipe = d.book.get(id);
+      if (!recipe?.page || recipe.changes_state || (recipe.answer.as !== 'options' && recipe.answer.as !== 'facts')) return null;
+      try {
+        const inputs = await inputsOf(recipe, given, o, null);
+        if (!inputs) return null;
+        const bindings = await bindingsOf(recipe, inputs, o);
+        const page = `${IXIGO}${await fill(recipe.page, inputs, { url: true, bindings })}`;
+        return JSON.stringify([page, await fetchPlanOf(recipe, inputs, bindings)]);
+      } catch {
+        // An ask the run itself refuses (a missing date): keyed by its words, and the run says why.
+        return null;
+      }
+    },
     /** Runs a recipe for the given inputs (place inputs as the person's words), timed and recorded. */
     answer(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
       const recipe = d.book.get(id);

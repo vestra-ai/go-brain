@@ -55,16 +55,14 @@ export const registerTravel: RegisterLane = async (brain) => {
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');
   // The tasks lane, which registers after this one, sets the browser fetch: a recipe reads it when it runs.
-  // The trip as a recipe reads it ($trip): its head count and the members' home cities.
-  const tripOf = async (tripId: string): Promise<{ people: number; homes: string[] }> => {
-    const people = (await brain.packs.get(tripId)).trip.people;
-    return { people: Math.max(1, people.length), homes: people.flatMap((p) => (p.from_city ? [p.from_city] : [])) };
-  };
   const engine = createEngine({
     book,
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     pool: brain.pool,
-    trip: tripOf,
+    trip: async (tripId) => {
+      const people = (await brain.packs.get(tripId)).trip.people;
+      return { people: Math.max(1, people.length), homes: people.flatMap((p) => (p.from_city ? [p.from_city] : [])) };
+    },
     // A run that opens a page warms for its kind of search; any other recipe's page, for no kind.
     warm: (tripId, recipeId) => warm(tripId, searchKindOf(recipeId)),
     // Each run's events, for the live view.
@@ -77,7 +75,6 @@ export const registerTravel: RegisterLane = async (brain) => {
     book,
     engine,
     now: brain.now,
-    people: async (tripId) => (await tripOf(tripId)).people,
     live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log }, tripId, o),
   });
   const travel = createTravelLayer({

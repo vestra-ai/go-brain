@@ -18,6 +18,7 @@
  * A search answers inline within TRAVEL_WAIT_MS of its start; past that the search tool goes on and the options come when
  * the run finishes (waitMs).
  */
+import { createHash } from 'node:crypto';
 import type { TurnEnd } from '../../composer/context.js';
 import type { Book } from '../book/book.js';
 import type { Engine } from '../book/engine.js';
@@ -31,19 +32,16 @@ export const TRAVEL_WAIT_MS = 12_000;
 
 export interface IxigoWebDeps {
   book: Pick<Book, 'get'>;
-  /** Runs a recipe: the trip's head count and homes, its places and its page are the engine's. */
-  engine: Pick<Engine, 'answer'>;
+  /**
+   * Runs a recipe: the trip's head count and homes, its places and its page are the engine's. requestOf keys a search on
+   * the page it will open, not the words asked; absent in tests whose engine is scripted, which key on the words.
+   */
+  engine: Pick<Engine, 'answer'> & Partial<Pick<Engine, 'requestOf'>>;
   now: () => Date;
   /** The live search card for a run; absent in tests that don't look at it. */
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
   /** How long a run goes before its live card shows (CARD_DELAY_MS); 0 shows it at once. */
   cardDelayMs?: number;
-  /**
-   * The trip's head count. A stay asked for with no head count is for everyone, as its recipe reads it ($trip.people), so
-   * it is keyed as that: an early start without one and the composer's search "sleeping 4" in a trip of four are one
-   * search. Absent in tests that don't look at it.
-   */
-  people?: (tripId: string) => Promise<number>;
 }
 
 /**
@@ -82,14 +80,11 @@ export const SEARCH_RECIPES: Record<TravelKind, string> = { flights: 'flights.se
 export const searchKindOf = (recipeId: string): TravelKind | null =>
   (Object.entries(SEARCH_RECIPES) as Array<[TravelKind, string]>).find(([, id]) => id === recipeId)?.[0] ?? null;
 
-/**
- * A search's query as its recipe's inputs: the places as the person's words, and the conditions ixigo may filter on. A
- * stay with no head count is for the trip's people, when the trip's head count is given.
- */
-export function recipeInputs(kind: TravelKind, q: TravelQuery, people?: number): { given: Record<string, unknown>; conditions: string[] } {
+/** A search's query as its recipe's inputs: the places as the person's words, and the conditions ixigo may filter on. */
+export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; conditions: string[] } {
   const conditions = [...(q.mustHave ?? [])];
   if (kind === 'stays') {
-    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests ?? people }, conditions };
+    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, conditions };
   }
   if (kind === 'flights') {
     return {
@@ -158,11 +153,16 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const id = SEARCH_RECIPES[kind];
     const recipe = d.book.get(id);
     if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
-    const people = kind === 'stays' && q.guests === undefined && d.people ? await d.people(tripId) : undefined;
-    const { given, conditions } = recipeInputs(kind, q, people);
-    // The page is ixigo's public results, the same in any trip's browser: the trip runs it, the words key it.
+    const { given, conditions } = recipeInputs(kind, q);
+    const link = recipe.answer.as === 'link';
+    // The page is ixigo's public results, the same in any trip's browser: the trip runs it, and the request it makes keys
+    // it (the page and its fetch), so two asks that open the same page are one search whatever their words (8 Oct: an
+    // early "with a pool" and the composer's "sleeping 4, with a pool" ran twice). A place that still needs ixigo's box
+    // has no request until it loads: the words key that one.
+    const request = link ? null : ((await d.engine.requestOf?.(id, given, { tripId, conditions })) ?? null);
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
-    return { tripId, id, given, conditions, link: recipe.answer.as === 'link', ttl, key: `${id}|${keyOf(given, conditions)}` };
+    const key = request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions)}`;
+    return { tripId, id, given, conditions, link, ttl, key };
   }
 
   return {

@@ -202,6 +202,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         throw pageCallFailed(again);
       }
     }
+    // A Bash whose answer has no page call in it (one without page_fetch, or a shape Go doesn't know): fast is unavailable.
+    if (!Array.isArray(answer.captures)) throw new TravelError('unreachable', "fast unavailable: Bash's answer had no page call");
     const got = answer.captures.find((c) => c.match === 'fast');
     // The call's own time is when its answer was in, from when Bash had the ask: the tab was already open.
     o.onTrace?.({
@@ -241,9 +243,16 @@ function failedTrace(startedAt: number, endedAt: number, err: unknown): FetchTra
   };
 }
 
-/** A page call that failed, as a TravelError: the run then falls to the page speed. */
+/**
+ * A page call that failed, as a TravelError: the run then falls to the page speed. Bash's own status and code name it
+ * ("fast unavailable: Bash answered 400 invalid_request" from a Bash without page_fetch), never its message, which may
+ * be a schema's ("Invalid input: expected string, received undefined").
+ */
 function pageCallFailed(err: unknown): TravelError {
   if (err instanceof TravelError) return err;
-  if (err instanceof V1Error) return new TravelError(err.status === 402 ? 'refused' : 'unreachable', err.status === 402 ? OUT_OF_CREDIT : err.message.slice(0, 200));
-  return new TravelError('unreachable', String(err).slice(0, 200));
+  if (err instanceof V1Error) {
+    if (err.status === 402) return new TravelError('refused', OUT_OF_CREDIT);
+    return new TravelError('unreachable', `fast unavailable: Bash answered ${err.status} ${err.code}`);
+  }
+  return new TravelError('unreachable', `fast unavailable: ${String(err).slice(0, 160)}`);
 }

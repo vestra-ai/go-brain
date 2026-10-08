@@ -18,6 +18,9 @@ describe('the places tables', () => {
     expect(stationOf('Margao')).toEqual({ code: 'MAO', name: 'Madgaon' });
     expect(stationOf('NZM').code).toBe('NZM');
     expect(stationOf('Pune').code).toBe('PUNE');
+    // A station with its own Indian Railways code, as the model writes it from ixigo's list: no lookup, like an airport's.
+    expect(stationOf('Udaipur City (UDZ)')).toEqual({ code: 'UDZ', name: 'Udaipur City' });
+    expect(stationOf('Jaipur (JP)').code).toBe('JP');
     expect(busCityOf('Bombay')).toEqual({ name: 'Mumbai', id: 4 });
     const goa = { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 };
     // An area with ixigo's own filter keeps the Goa search to it; one without searches all of Goa.

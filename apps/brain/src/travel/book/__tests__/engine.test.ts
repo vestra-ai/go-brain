@@ -94,6 +94,16 @@ describe('a place Go has not searched before', () => {
     expect(got.as === 'options' && got.options.length).toBe(25);
   });
 
+  it("takes a station's own Indian Railways code as the model writes it, with no lookup, so a box that fails never blocks a train search", async () => {
+    const trains = [capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/JP/UDZ?date=2026-10-20&languageCode=en', fixture('trains-ndls-mao-between.json'))];
+    const b = browser(() => {
+      throw new Error("ixigo's box is never asked");
+    }, trains);
+    const got = await engineFor(book, b.runner).answer('trains.between', { from: 'Jaipur (JP)', to: 'Udaipur City (UDZ)', date: '2026-10-20' }, { tripId: 't_codes' });
+    expect(b.runs.map((r) => r.url)).toEqual(['https://www.ixigo.com/search/result/train/JP/UDZ/20102026//1/0/0/0/ALL']);
+    expect(got.as === 'options' && got.options.length).toBe(25);
+  });
+
   it('is unknown_place when ixigo knows nothing for the words, so the search answers with ixigo\'s own page', async () => {
     const b = browser(() => [capture('/wap/abus-autocompleter/api/v1/results', 'https://www.ixigo.com/wap/abus-autocompleter/api/v1/results?s=Atlantis', '[]')]);
     const err = await engineFor(book, b.runner).answer('buses.between', { from: 'Atlantis', to: 'Goa', date: '2026-11-06' }, { tripId: 't_x' }).catch((e: unknown) => e);

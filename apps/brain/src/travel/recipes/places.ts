@@ -108,8 +108,12 @@ const STATION_WORDS: Record<string, string> = {
 
 export function stationOf(text: string): Station {
   const s = resolve(text, STATIONS, STATION_WORDS) ?? learned.trains.get(wordsOf(text));
-  if (!s) throw unknown('station', text);
-  return s;
+  if (s) return s;
+  // A station with its own Indian Railways code, as the model or ixigo's list writes it ("Udaipur City (UDZ)"), like an
+  // airport's: a train search never waits on the box for it.
+  const given = /^(.+?)\s*\(([A-Z]{2,5})\)$/.exec(text.trim());
+  if (given) return { code: given[2]!, name: given[1]!.trim() };
+  throw unknown('station', text);
 }
 
 // ── bus cities (AbhiBus ids, from ixigo's bus search box) ────────────────────

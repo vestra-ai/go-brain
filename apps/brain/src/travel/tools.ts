@@ -59,8 +59,8 @@ export const FlightsArgs = z.object({
   travellers: z.int().min(1).max(9).optional().describe('Only when the ask says how many fly ("for 3 of us"). Leave it out otherwise: Go counts who lives near the origin.'),
 });
 export const JourneyArgs = z.object({
-  from: Where,
-  to: Where,
+  from: Where.describe('City or station, e.g. "Jaipur"; for trains, a station with its Indian Railways code works too, e.g. "Udaipur City (UDZ)"'),
+  to: Where.describe('City or station, e.g. "Goa"; for trains, a station with its code works too, e.g. "Madgaon (MAO)"'),
   date: z.iso.date().describe('YYYY-MM-DD'),
   depart_after: Clock.optional().describe('24-hour HH:MM'),
   depart_before: Clock.optional(),
