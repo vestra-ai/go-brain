@@ -18,8 +18,10 @@ export function warmForTravel(brain: Pick<Brain, 'switches' | 'recipeRunners'>, 
 /**
  * A new trip's computer, made at the trip's setup under ixigo_web. Go trips are travel trips, and making a box takes far
  * longer than waking one from its sleep (measured on staging, 8 Oct: see the PR), so the trip's first search never waits
- * for its box to be made. No hold: the box sleeps again when idle, and travel intent wakes it (warmForTravel). Nothing in
- * the other modes, nor while the trip computer is not set up here. A /v1 refusal throws, so setup tries again.
+ * for its box to be made. Its Chrome then visits ixigo once (the tasks lane's start: runners.ts COLD_COMPUTER), so the
+ * first search is not its first visit. No hold: the box sleeps again when idle, and travel intent wakes it
+ * (warmForTravel). Nothing in the other modes, nor while the trip computer is not set up here. A /v1 refusal throws, so
+ * setup tries again.
  */
 export async function startComputerAtSetup(brain: Pick<Brain, 'switches' | 'recipeRunners'>, tripId: string): Promise<void> {
   if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web' || !brain.recipeRunners) return;
