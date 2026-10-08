@@ -164,6 +164,24 @@ describe('the fast speed', () => {
     expect(engine.stats().map((s) => [s.recipe, s.speed, s.runs, s.failed])).toEqual([['plan.destination', 'fast', 1, 0]]);
   });
 
+  it("reads the guide's own photo of the destination: its hero's first, else the first place to visit's (8 Oct)", async () => {
+    const photo = async (rsc: string): Promise<unknown> => {
+      const runner = {
+        read: async () => {
+          throw new Error('no page load');
+        },
+        pageFetch: async () => ({ ...capture('fast', '/plan/goa', rsc), content_type: 'text/x-component' }),
+      };
+      const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
+      const got = await engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_photo' });
+      return got.as === 'facts' ? got.rows[0]?.['photo'] : undefined;
+    };
+    // The hero carousel, as /plan/goa sends it: its first photo.
+    expect(await photo(RSC)).toBe('https://imagedelivery.net/pyX3WeyB0txAwUsxwjq_eg/goa/public');
+    // A guide with no hero: the first place to visit's (Baga Beach).
+    expect(await photo(RSC.replace('"photos":', '"gone":'))).toMatch(/^https:\/\/ta\.ixigo\.es\/google-photo\/ATplDJZfXxwJOxwj31QqDOQjJUSVjoycmdlgiFR0yYMZ/);
+  });
+
   it("skips the fast speed while Bash takes no page calls, and counts the run as the page's, not a failed fast run", async () => {
     let can = true;
     let calls = 0;

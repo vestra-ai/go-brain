@@ -26,13 +26,17 @@ answer:
   as: facts
   title: "{place}"
   max: 1
-  # Places To Visit and Places To Eat are ixigo's own, with ratings: the only places Go names for the destination.
+  # Places To Visit and Places To Eat are ixigo's own, with ratings: the only places Go names for the destination. The
+  # photo is the page's own: the first of its hero's photos (imagedelivery.net, 8 Oct), else the first place to visit's.
   each: |
     (
       $guide := $find(page, 'bestTime');
       $widget := function($t) { $findAll(page, 'widget').widget[title = $t] };
+      $hero := $find(page, 'photos').photos[0];
+      $visit := $widget("Places To Visit").data[0].(photo ? photo : image);
       {
         "destination": $find(page, 'destination').destination,
+        "photo": $type($hero) = "string" ? $hero : ($type($visit) = "string" ? $visit),
         "best_time": $guide.bestTime,
         "weather_by_month": [$guide.weatherHistory.(month & ": " & $string(weatherAqi.min) & " to " & $string(weatherAqi.max) & " C. " & summary)],
         "places_to_visit": [$widget("Places To Visit").data.(name & ($type(rating) = "number" ? " (" & $string(rating) & ")" : "") & (description ? ": " & description : ""))],

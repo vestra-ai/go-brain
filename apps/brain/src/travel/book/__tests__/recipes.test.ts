@@ -132,6 +132,19 @@ describe('hotels.search', () => {
     expect(near.map((o) => o.title)).toEqual(['Soul Vacation Resort and Spa, Colva']);
   });
 
+  // What ixigo's list gives for a stay (staging, 8 Oct, Anjuna, saved whole): up to seven photos, a few amenities.
+  it("reads a stay's photos from ixigo's list, up to seven and larger, and its amenities in ixigo's words", async () => {
+    const { options } = await stays('Anjuna', [], [capture(SEARCH, SEARCH_URL, fixture('stays-anjuna-full.json'))]);
+    const riva = options.find((o) => o.title === 'Riva Beach Resort')!;
+    expect(riva.imageUrls).toHaveLength(7);
+    expect(riva.imageUrls![0]).toBe('https://pix8.agoda.net/property/109600/0/047a9028e97fbe184313ae32363b5282.jpeg?ce=0&s=1024x768');
+    // The card keeps its own picture, the same photo smaller.
+    expect(riva.imageUrl).toBe('https://pix8.agoda.net/property/109600/0/047a9028e97fbe184313ae32363b5282.jpeg?ce=0&s=840x460');
+    // "Breakfast Included" is the rate, not the place: it stays a highlight.
+    expect(riva.amenities).toEqual(['Free Wifi', 'Swimming pool at the property', 'Private Beach', 'Restaurants']);
+    expect(riva.facts).toMatchObject({ rating_word: 'Excellent', reviews: 1737, distance: '120 m from Mandrem Beach', area: 'Mandrem', stars: 4 });
+  });
+
   it('searches North Goa as all of Goa, and drops a stay from South Goa', async () => {
     const north = await stays('North Goa');
     expect(north.page).not.toContain('&filters=');
@@ -162,6 +175,7 @@ describe('hotels.search', () => {
     expect(options.map((o) => o.title)).toEqual(read.map((o) => o.title).filter((t) => t !== String(second['name']).trim()));
     const o = options.find((x) => x.title === String(first['name']).trim())!;
     expect(o).not.toHaveProperty('imageUrl');
+    expect(o).not.toHaveProperty('imageUrls');
     expect(o.facts).not.toHaveProperty('area');
     expect(o.facts).not.toHaveProperty('reviews');
     // Every hotel unreadable: a changed shape, said plainly, never "no stays".

@@ -22,6 +22,7 @@ import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/
 import { createEarlyStart } from './recipes/early.js';
 import { earlyAnswer, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
+import { createPlaceFor } from './place-for.js';
 import { createResultsStore } from './results.js';
 import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
@@ -170,6 +171,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
     // A stay from ixigo.com books on Go's test rail, after the trip's ixigo login and at ixigo's price now.
     webStays: createWebStays({ results, runner: () => brain.recipeRunners?.browserFetch ?? null, login, now: brain.now }),
+    // A destination Go sets carries ixigo's place: its id, where it is, its time zone and its guide photo.
+    placeFor: createPlaceFor({ pool: brain.pool, engine, images, log: brain.log }),
   });
   const today = tripToday(brain.pool, brain.now);
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today })) brain.tools.register(t);

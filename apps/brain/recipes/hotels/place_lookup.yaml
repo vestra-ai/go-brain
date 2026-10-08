@@ -30,9 +30,11 @@ answer:
     country: country
     # A property or a landmark is not a place to search around.
     skip: "locationType in ['H', 'POI']"
+    # Where it is too (ixigo's own coordinates): a destination Go sets carries them (travel/place-for.ts).
     place: |
       { "locationId": $number(locationId), "locationName": name, "locationType": locationType,
-        "masterLocationId": $number(masterLocationId), "countryId": $number(countryId) }
+        "masterLocationId": $number(masterLocationId), "countryId": $number(countryId),
+        "lat": $type(latitude) = "number" ? latitude, "lng": $type(longitude) = "number" ? longitude }
     # A city or a state is the place by its name; an area ("Old Manali") is chosen by the words that fit.
     place_name: "locationType in ['C', 'S'] ? locationName : ''"
 samples: { manali: hotels.place_lookup.manali.json, old_manali: hotels.place_lookup.old-manali.json }

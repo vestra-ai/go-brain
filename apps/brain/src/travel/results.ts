@@ -23,6 +23,8 @@ export interface ResultOption {
   journey?: Journey;
   place?: Place;
   imageUrl?: string;
+  imageUrls?: string[];
+  amenities?: string[];
   logoUrl?: string;
   rating?: number;
   highlights: string[];

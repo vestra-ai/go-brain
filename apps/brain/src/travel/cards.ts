@@ -4,6 +4,7 @@
  */
 import * as C from '@go/contract';
 import type { z } from 'zod';
+import type { OptionDetailsT } from './details.js';
 import type { OptionKind, ResultOption } from './results.js';
 
 export type OptionsCardT = z.infer<typeof C.OptionsCard>;
@@ -160,7 +161,8 @@ export function subtitleFor(o: ResultOption): string | null {
   return o.why ?? null;
 }
 
-export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null }
+/** details: the option's sheet (contract 1.1), when Go has one for it. */
+export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null; details?: OptionDetailsT }
 
 function cardOption(p: CardPick): CardOption {
   const o = p.option;
@@ -177,6 +179,7 @@ function cardOption(p: CardPick): CardOption {
     ...(o.place ? { place: { ...o.place, name: clip(o.place.name, 120), ...(o.place.address ? { address: clip(o.place.address, 200) } : {}) } } : {}),
     ...(o.rating !== undefined ? { rating: Math.min(5, Math.max(0, o.rating)) } : {}),
     ...(o.refundableUntil ? { refundable_until: o.refundableUntil } : {}),
+    ...(p.details ? { details: p.details } : {}),
   };
 }
 
