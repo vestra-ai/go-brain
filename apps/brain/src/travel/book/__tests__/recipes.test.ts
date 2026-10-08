@@ -87,10 +87,12 @@ describe('hotels.search', () => {
   });
 
   it('takes pages 1 and 2 for all of Goa or a half of it, six scrolls bringing page 2, and page 1 for an area; closes the popup; settles 550 ms', async () => {
+    // ixigo's popup shows 1 s after the page mounts: closed first, looked for up to 3 s, then again once the results are in.
+    const POPUP = { op: 'click', name: 'Close modal', optional: true, within_ms: 3_000 };
     // Bash's whole 20 s: ixigo sent page 1 of all of Goa with a pool at 10.2 s (staging, 8 Oct), so 12 s failed it.
     const two = {
       capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
-      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 6 }, { op: 'click', name: 'Close modal', optional: true }],
+      steps: [POPUP, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 6 }, { op: 'click', name: 'Close modal', optional: true }],
       timeoutMs: 20_000,
       settleMs: 550,
     };
@@ -98,7 +100,7 @@ describe('hotels.search', () => {
     for (const area of ['Vagator', 'Anjuna', 'Candolim']) {
       expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual({
         capture: [{ match: SEARCH, required: true }],
-        steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
+        steps: [POPUP, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
         settleMs: 550,
       });
     }
