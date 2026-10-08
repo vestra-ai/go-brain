@@ -30,7 +30,7 @@ class TooSlow extends Error {}
 const STATUS_TEXT: Record<number, string> = { 401: 'Unauthorized', 404: 'Not Found', 503: 'Service Unavailable' };
 
 /** Refuses an upgrade with the contract's ErrorBody; the socket never opens. */
-function refuse(socket: Duplex, status: number, code: z.infer<typeof C.ErrorCode>, message: string): void {
+export function refuse(socket: Duplex, status: number, code: z.infer<typeof C.ErrorCode>, message: string): void {
   const body = JSON.stringify({ error: { code, message } } satisfies C.ErrorBody);
   socket.end(
     `HTTP/1.1 ${status} ${STATUS_TEXT[status] ?? 'Error'}\r\nContent-Type: application/json\r\n` +
@@ -38,7 +38,7 @@ function refuse(socket: Duplex, status: number, code: z.infer<typeof C.ErrorCode
   );
 }
 
-function signatureParts(header: string): { t: number; v1: string } | null {
+export function signatureParts(header: string): { t: number; v1: string } | null {
   const fields = new Map<string, string>();
   for (const part of header.split(',')) {
     const i = part.indexOf('=');

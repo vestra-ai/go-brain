@@ -12,6 +12,7 @@ import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { createImages, registerImageRoute } from './images.js';
 import { createTravelLayer } from './layer.js';
+import { registerLive } from './live.js';
 import { startLiveSearch } from './live-search.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
@@ -20,6 +21,7 @@ import { createEarlyStart } from './recipes/early.js';
 import { earlyAnswer, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { createResultsStore } from './results.js';
+import { createRunLog } from './runs.js';
 import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
@@ -46,6 +48,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.
   const warm = (tripId: string, kind: TravelKind | null): void => warmForTravel(brain, tripId, kind);
   brain.setup.addStep({ name: 'travel.computer', run: (tripId) => startComputerAtSetup(brain, tripId) });
+  // Every recipe run as it happens, for the Server's live view of a trip (/v1/live): in memory, nothing written.
+  const runs = createRunLog({ now: brain.now, log: brain.log });
+  registerLive(brain, runs);
   // The recipe book, checked at boot: a file that fails is left out, and the log says why.
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');
@@ -60,6 +65,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     },
     // A run that opens a page warms for its kind of search; any other recipe's page, for no kind.
     warm: (tripId, recipeId) => warm(tripId, searchKindOf(recipeId)),
+    // Each run's events, for the live view.
+    onRun: runs.record,
     now: brain.now,
     log: brain.log,
   });

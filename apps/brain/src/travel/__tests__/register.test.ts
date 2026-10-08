@@ -123,11 +123,11 @@ describe('registerTravel', () => {
   });
 
   it("closes the image fetcher's connections and the ixigo connection through brain.onStop", async () => {
-    // The fake alone: only the image fetcher.
-    expect(lb.stoppers).toHaveLength(1);
+    // The fake alone: the image fetcher, and the live view's viewers (live.ts).
+    expect(lb.stoppers).toHaveLength(2);
     const withIxigo = makeLaneBrain({ pool: db.pool, env: { IXIGO_MCP_URL: 'http://127.0.0.1:1/mcp', IXIGO_MCP_TOKEN: 'tok-ixigo-123456' } });
     await registerTravel(withIxigo.brain);
-    expect(withIxigo.stoppers).toHaveLength(2);
+    expect(withIxigo.stoppers).toHaveLength(3);
     // The client connects on its first call, so closing one that never called resolves at once.
     await withIxigo.stop();
     expect(withIxigo.stoppers).toEqual([]);

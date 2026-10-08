@@ -36,6 +36,7 @@ A judge opens the page, types the passcode, and lands in a fresh Goa trip with t
 - **The caps,** counted in memory and started again at UTC midnight (05:30 IST). One daily budget of turns covers everything that can wake Go's model: anything said (not only messages that name Go), votes, card taps, the payer's yes or no, and new trips. Each visit has its own share of that budget, keyed to its cookie, so one visit cannot use up the day. A daily total covers everything sent, reactions included. Over a cap the room says so and nothing reaches Go.
 - **Staying small.** At most 3 live sockets for a visit and 300 in all, about 5 frames a second from each socket (the rest are dropped, with a note), each trip's state worked out once for every socket watching it, and trips nobody has used or watched for 6 hours dropped.
 - **What is live.** The page says whether Go answers at `GO_URL/v1/health`, and says what is simulated.
+- **Go Live** (`TRY_LIVE=1`): a second column beside the chat, desktop first. Each open socket gets Go's live view of its visit's trip (`/v1/live?trip_id=` on Go's port, signed on the server side like the socket), and the page draws the pages Go's computer opened, one tile per recipe run going at once (a grid while runs go in parallel), and the run strip: each run's recipe, speed (fast, page), data calls and times, newest first, with a parallel group's wall time against the sum of its runs. Watching costs no turn and wakes nothing. Pictures are each fetch's own frames, which arrive as each page finishes; a fast run reads ixigo's data inside a page that is already open, so its tile shows the call and its ms instead.
 
 It runs from `packages/sim/Dockerfile` (built from the repo root) with `packages/sim/railway.json`, which health-checks `/health`. On Railway, leave Root Directory empty and set the config file path to `/packages/sim/railway.json`. The wrong-try limit keys on `x-real-ip`, which Railway's edge sets to the visitor's address, when it is an IP address, and otherwise on the socket's own address; never on `x-forwarded-for`, which a visitor can write. It remembers at most 10,000 addresses, dropping the oldest first, and prunes them every minute. The first passcode that gets in logs, once, which of the two the key came from.
 
@@ -50,5 +51,6 @@ It runs from `packages/sim/Dockerfile` (built from the repo root) with `packages
 | `TRY_VISIT_TURNS` | One visit's share of `TRY_DAILY_TURNS`. Default 30. |
 | `TRY_SIMULATED_LINE` | The line about what is simulated. |
 | `TRY_INSTANCE` | The try room's name on Go's socket. Default `try-room`. |
+| `TRY_LIVE` | `1` turns on Go Live. Default `0`. |
 
 Railway sets `PORT`. On your machine: `pnpm --filter "@go/sim..." build`, then `GO_URL=... GO_SIGNING_SECRET=... TRY_PASSCODE=... TRY_COOKIE_SALT=... pnpm --filter @go/sim try`, and open http://localhost:8080 (the cookie is Secure, which browsers allow on localhost).
