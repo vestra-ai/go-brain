@@ -1,0 +1,49 @@
+{
+ "data": {
+  "availability": [
+   {
+    "date": "07-10-2026",
+    "state": "FewSeats"
+   },
+   {
+    "date": "08-10-2026",
+    "state": "FillingFast"
+   },
+   {
+    "date": "09-10-2026",
+    "state": "FillingFast"
+   },
+   "… 24 more"
+  ],
+  "metadata": [
+   {
+    "title": "Available",
+    "colorCode": "#1D7D3D",
+    "textColorCode": "#238C46",
+    "borderColorCode": "#A2DBB5",
+    "bgColorCode": "#F2FFF6",
+    "state": "Available",
+    "visible": true
+   },
+   {
+    "title": "Filling Fast",
+    "colorCode": "#D48002",
+    "textColorCode": "#D48002",
+    "borderColorCode": "#FFE1B3",
+    "bgColorCode": "#FFF5E5",
+    "state": "FillingFast",
+    "visible": true
+   },
+   {
+    "title": "Few Seats",
+    "colorCode": "#965B02",
+    "textColorCode": "#DC3532",
+    "borderColorCode": "#F2B4B3",
+    "bgColorCode": "#FFF2F2",
+    "state": "FewSeats",
+    "visible": true
+   },
+   "… 1 more"
+  ]
+ }
+}

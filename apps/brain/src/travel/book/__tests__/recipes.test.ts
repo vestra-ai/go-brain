@@ -34,7 +34,8 @@ describe('the recipe book', () => {
       'help.downtime', 'help.faq', 'help.services',
       'hotels.details', 'hotels.offers', 'hotels.place_lookup', 'hotels.reviews', 'hotels.rooms', 'hotels.search', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list',
-      'plan.destination', 'plan.explore', 'plan.top_locations', 'trains.between', 'trains.station_lookup',
+      'plan.destination', 'plan.explore', 'plan.top_locations',
+      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.between', 'trains.by_name', 'trains.confirm_chance', 'trains.station_lookup',
     ]);
   });
 });

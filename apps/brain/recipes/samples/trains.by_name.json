@@ -1,0 +1,45 @@
+[
+ {
+  "p": "false",
+  "ct": ":1A:2A:3A:3E:SL:",
+  "c": "12780",
+  "s": "false",
+  "d": "127",
+  "pw": "95.89",
+  "origin": "NZM",
+  "destinationName": "Goa",
+  "destination": "VSG",
+  "cn": "Goa Express",
+  "n": "Goa Express",
+  "originName": "New Delhi"
+ },
+ {
+  "p": "false",
+  "ct": ":1A:2A:3A:3E:SL:",
+  "c": "12779",
+  "s": "false",
+  "d": "127",
+  "pw": "95.11",
+  "origin": "VSG",
+  "destinationName": "New Delhi",
+  "destination": "NZM",
+  "cn": "Goa Express",
+  "n": "Goa Express",
+  "originName": "Goa"
+ },
+ {
+  "p": "false",
+  "ct": ":2A:3A:SL:",
+  "c": "11055",
+  "s": "false",
+  "d": "85",
+  "pw": "99.33",
+  "origin": "LTT",
+  "destinationName": "Gorakhpur",
+  "destination": "GKP",
+  "cn": "Godan Express",
+  "n": "Godan Express",
+  "originName": "Mumbai"
+ },
+ "… 17 more"
+]

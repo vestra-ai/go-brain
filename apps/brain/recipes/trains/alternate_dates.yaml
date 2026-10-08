@@ -1,0 +1,45 @@
+id: trains.alternate_dates
+title: Which days around a date still have train seats on a route, as ixigo's date strip shows them
+asks:
+  - which day next week has seats from jaipur to udaipur
+  - delhi se goa kis din seat milegi
+  - if not friday, which nearby day has trains with seats
+inputs:
+  from: { kind: place, lookup: trains.station_lookup, about: the station or city people board at }
+  to: { kind: place, lookup: trains.station_lookup, about: the station or city people get off at }
+  date: { kind: date, about: "the day people would like to go; the strip starts there" }
+auth: none
+changes_state: false
+# The results page asks for the route's availability by day as it opens (its date strip): one state a day for the whole
+# route, not per train ("Available", "Filling Fast", "Few Seats"), named by the legend in the same answer.
+page: /trains/search-pwa/from/{from.code}/to/{to.code}/{date|DD-MM-YYYY}
+fast:
+  url: https://ixigotrainsapi.confirmtkt.com/api/v1/availability/availabilityCalender?sourceStationCode={from.code}&destinationStationCode={to.code}&startDate={date|DD-MM-YYYY}&days=30
+capture:
+  - ixigotrainsapi.confirmtkt.com/api/v1/availability/availabilityCalender
+read:
+  rows:
+    from: ixigotrainsapi.confirmtkt.com/api/v1/availability/availabilityCalender
+    list: "[ data ]"
+answer:
+  as: facts
+  title: "{from.name} to {to.name}, from {date|D Mon}"
+  max: 1
+  each: |
+    (
+      $legend := metadata;
+      $day := function($d) { $substring($d, 6, 4) & "-" & $substring($d, 3, 2) & "-" & $substring($d, 0, 2) };
+      {
+        "route": $inputs.from.code & " to " & $inputs.to.code,
+        "by_day": [availability[$type($) = "object"].(
+          $s := state;
+          $named := $legend[state = $s].title;
+          $dateAs($day(date), "D Mon") & ": " & ($named ? $named[0] : $s)
+        )]
+      }
+    )
+samples: { page: trains.alternate_dates.json }
+measured: { fast_ms: null, page_ms: 1605, flow_ms: null }
+notes: >-
+  Route level, not per train: a day "Available" means some train has seats. www.ixigo.com/api/v2/trains/availabilityCalender
+  is the same data but answers 403 without the page's own headers.
