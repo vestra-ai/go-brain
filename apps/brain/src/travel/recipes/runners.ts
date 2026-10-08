@@ -153,6 +153,8 @@ export const PAYMENT_PAGE_BLOCKED = "That's the payment page, and Go never opens
 export const FETCH_TIMEOUT_MS = 20_000;
 /** How wide Bash takes a fetch's pictures: the width of its window, so a picture is sharp at its own size, never stretched. */
 export const FRAME_WIDTH = 1280;
+/** Pictures a second Go asks Bash's watch for: its most, since Bash shares them across the open tabs (6 gave about 3 a tab). */
+export const WATCH_FPS = 10;
 /** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
 export const IN_USE_WAIT_MS = 4_000;
 /** How long a page call may take before the run falls to the page speed: it answers in about 0.4 s on a warm tab. */
