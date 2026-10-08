@@ -68,10 +68,7 @@ export const Decision = z
   .meta({ id: 'Decision' });
 export type Decision = z.infer<typeof Decision>;
 
-/**
- * 1.1: who sees an itinerary item or a booking's document. group: everyone in the trip. shared: the people it names
- * (its person_ids, or the booking's passengers). private: the one person it is for.
- */
+/** 1.1: who sees an itinerary item. group: everyone in the trip. shared: the people it names (person_ids). private: one person. */
 export const Audience = z.enum(['group', 'shared', 'private']).meta({ id: 'Audience' });
 
 /** 1.1: one more line about a booking, e.g. { "label": "Room", "value": "2 Deluxe, breakfast included" }. */
@@ -83,8 +80,9 @@ export const Passenger = z
   .meta({ id: 'Passenger' });
 
 /**
- * 1.1: a booking's document (a ticket, a voucher). `url` is Go's signed link: the Server fetches it once, keeps its own
- * copy, and serves that copy. The link stops working after a while.
+ * 1.1: a booking's document (a ticket, a voucher). `url` is Go's signed link, valid at least 10 minutes: the Server
+ * fetches it once, keeps its own copy, and serves that copy. `visibility`: covered, only the people the booking covers;
+ * group, everyone in the trip.
  */
 export const BookingDocument = z
   .object({
@@ -93,7 +91,7 @@ export const BookingDocument = z
     mime: z.string().min(1).max(100),
     size_bytes: z.int().nonnegative(),
     pages: z.int().positive().nullish(),
-    visibility: Audience,
+    visibility: z.enum(['covered', 'group']),
     url: HttpUrl,
   })
   .meta({ id: 'BookingDocument' });
@@ -140,9 +138,16 @@ export const Booking = z
   .meta({ id: 'Booking' });
 export type Booking = z.infer<typeof Booking>;
 
-/** 1.1: one person's answer to an expense they share. */
+/** 1.1: where one person stands on an expense they share: one for each person in split_person_ids other than the payer. */
 export const ExpenseConfirmation = z
-  .object({ person_id: Id, answer: z.enum(['approved', 'disputed']), at: IsoDateTime, note: z.string().min(1).max(200).nullish() })
+  .object({
+    person_id: Id,
+    state: z.enum(['pending', 'approved', 'disputed']),
+    /** When they answered. Optional here: a pending one may have no time yet. */
+    at: IsoDateTime.nullish(),
+    /** Why they disputed it, in their words. */
+    reason: z.string().min(1).max(200).nullish(),
+  })
   .meta({ id: 'ExpenseConfirmation' });
 
 export const Expense = z
@@ -161,13 +166,16 @@ export const Expense = z
     created_at: IsoDateTime,
     /** 1.1: whether the people it is split between have agreed to it. Absent: the Server asks nobody (1.0). */
     status: z.enum(['pending', 'approved', 'disputed']).nullish(),
-    /** 1.1: each answer from the people it is split between. */
+    /** 1.1: one for each person it is split between, other than the payer. */
     confirmations: z.array(ExpenseConfirmation).max(30).nullish(),
   })
   .meta({ id: 'Expense' });
 export type Expense = z.infer<typeof Expense>;
 
-/** 1.1: a payback someone recorded between two people, once the one paid confirmed it. */
+/**
+ * 1.1: a payback someone recorded between two people. The Server sends it only once the one paid confirmed it, so its
+ * status is always confirmed. read_trip's money.transfers already counts it.
+ */
 export const Settlement = z
   .object({
     settlement_id: Id,
@@ -176,7 +184,9 @@ export const Settlement = z
     amount_minor: PositiveAmountMinor,
     currency: Currency,
     method: z.enum(['upi', 'cash', 'bank_transfer', 'other']),
-    note: z.string().min(1).max(120).nullish(),
+    note: z.string().min(1).max(200).nullish(),
+    status: z.literal('confirmed'),
+    recorded_at: IsoDateTime.nullish(),
     confirmed_at: IsoDateTime,
   })
   .meta({ id: 'Settlement' });

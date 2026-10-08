@@ -110,11 +110,8 @@ export const CreateLink = z
     person_id: Id,
     /** Which part of the vault to open. 1.1 adds add_documents (Go answers "not available yet" in 1.1). */
     start: z.enum(['home', 'add_card', 'add_login', 'add_documents']).nullish(),
-    /** 1.1: what the link is for, e.g. the booking or the checklist row the documents go with. */
-    context: z
-      .object({ trip_id: Id.nullish(), booking_id: Id.nullish(), card_id: Id.nullish(), row_id: Id.nullish() })
-      .meta({ id: 'LinkContext' })
-      .nullish(),
+    /** 1.1: what the link is for: the trip, and what the documents are for. */
+    context: z.object({ trip_id: Id, purpose: z.enum(['visa']).nullish() }).meta({ id: 'LinkContext' }).nullish(),
   })
   .meta({ id: 'CreateLink' });
 export const Link = z.object({ url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'Link' });

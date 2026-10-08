@@ -278,14 +278,17 @@ describe('intake', () => {
     const expense = {
       expense_id: 'x_1', paid_by_person_id: 'p_rahul', amount_minor: 240000, currency: 'INR', note: 'Cab to Anjuna', category: 'getting_around' as const,
       split_person_ids: ['p_rahul', 'p_priya'], created_at: '2026-10-08T10:00:00Z', status: 'approved' as const,
-      confirmations: [{ person_id: 'p_priya', answer: 'approved' as const, at: '2026-10-08T10:05:00Z' }],
+      confirmations: [{ person_id: 'p_priya', state: 'approved' as const, at: '2026-10-08T10:05:00Z' }],
     };
     const reads = () => h.f.calls.filter((c) => c.method === 'read_trip').length;
     const first = reads();
     await h.send(ev(2, 'expense.changed', { expense, change: 'approved', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' }, T));
     await h.send(ev(3, 'expense.changed', { expense: { ...expense, status: 'disputed' }, change: 'disputed', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' }, T));
     await h.send(ev(4, 'settlement.recorded', {
-      settlement: { settlement_id: 's_1', from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 120000, currency: 'INR', method: 'upi', confirmed_at: '2026-10-08T11:00:00Z' },
+      settlement: {
+        settlement_id: 'st_1', from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 120000, currency: 'INR', method: 'upi',
+        status: 'confirmed', recorded_at: '2026-10-08T10:58:00Z', confirmed_at: '2026-10-08T11:00:00Z',
+      },
       by: { kind: 'person', person_id: 'p_rahul' },
     }, T));
     await h.intake.idle();

@@ -228,19 +228,17 @@ export const NoticeCard = z
   .meta({ id: 'NoticeCard', description: 'Good to know (with its source) or a heads-up (a deadline, a price change, a clash).' });
 
 /**
- * 1.1: a checklist Go keeps for the group or one person (documents to upload, things to pack, check-ins to do). Go
- * updates it in place as rows change. A row's tap sends its action_id with the row in option_id.
+ * 1.1: a checklist Go keeps for the group, one row a person (a visa on arrival: who has what ready). Rows are keyed by
+ * person: replace_card updates them in place. info: a line to read, with nothing to do.
  */
 export const ChecklistRow = z
   .object({
-    row_id: Id,
-    label: z.string().min(1).max(80),
-    detail: z.string().min(1).max(200).nullish(),
-    /** info: a line to read, with nothing to do. */
+    person_id: Id,
     status: z.enum(['todo', 'started', 'done', 'info']),
-    /** Whose row it is, when it is one person's. */
-    person_id: Id.nullish(),
-    due_at: IsoDateTime.nullish(),
+    /** Where they are, e.g. "Not yet". */
+    label: z.string().min(1).max(80),
+    /** The line under it, e.g. "Passport, photo". */
+    sub: z.string().min(1).max(200).nullish(),
   })
   .meta({ id: 'ChecklistRow' });
 
@@ -249,10 +247,21 @@ export const ChecklistCard = z
     ...base,
     kind: z.literal('checklist'),
     title: z.string().min(1).max(80),
-    rows: z.array(ChecklistRow).min(1).max(20),
+    subtitle: z.string().min(1).max(200).nullish(),
+    /** The day it is due by. */
+    due_at: IsoDate.nullish(),
+    rows: z.array(ChecklistRow).max(30),
+    /** One thing Go suggests under the list, with a button when there is one to tap. */
+    suggestion: z
+      .object({
+        text: z.string().min(1).max(300),
+        cta: z.object({ action_id: z.string().regex(/^[a-z][a-z_]{0,31}$/), label: z.string().min(1).max(24) }).nullish(),
+      })
+      .meta({ id: 'ChecklistSuggestion' })
+      .nullish(),
     actions,
   })
-  .meta({ id: 'ChecklistCard', description: '1.1: a checklist (documents, packing, check-ins), each row todo, started, done or info. Updated in place.' });
+  .meta({ id: 'ChecklistCard', description: '1.1: a checklist for the group, one row a person, each todo, started, done or info. Updated in place.' });
 
 export const Card = z
   .discriminatedUnion('kind', [

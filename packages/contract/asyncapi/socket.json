@@ -3981,27 +3981,10 @@
       "ChecklistRow": {
         "type": "object",
         "properties": {
-          "row_id": {
+          "person_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 80
-          },
-          "detail": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "status": {
             "type": "string",
@@ -4012,23 +3995,17 @@
               "info"
             ]
           },
-          "person_id": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "sub": {
             "anyOf": [
               {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "due_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
+                "maxLength": 200
               },
               {
                 "type": "null"
@@ -4037,9 +4014,47 @@
           }
         },
         "required": [
-          "row_id",
-          "label",
-          "status"
+          "person_id",
+          "status",
+          "label"
+        ]
+      },
+      "ChecklistSuggestion": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "cta": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "action_id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z_]{0,31}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 24
+                  }
+                },
+                "required": [
+                  "action_id",
+                  "label"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "text"
         ]
       },
       "ChecklistCard": {
@@ -4080,13 +4095,45 @@
             "minLength": 1,
             "maxLength": 80
           },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "rows": {
-            "minItems": 1,
-            "maxItems": 20,
+            "maxItems": 30,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ChecklistRow"
             }
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChecklistSuggestion"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "actions": {
             "anyOf": [
@@ -4110,7 +4157,7 @@
           "title",
           "rows"
         ],
-        "description": "1.1: a checklist (documents, packing, check-ins), each row todo, started, done or info. Updated in place."
+        "description": "1.1: a checklist for the group, one row a person, each todo, started, done or info. Updated in place."
       },
       "Card": {
         "oneOf": [
@@ -5098,7 +5145,11 @@
             ]
           },
           "visibility": {
-            "$ref": "#/components/schemas/Audience"
+            "type": "string",
+            "enum": [
+              "covered",
+              "group"
+            ]
           },
           "url": {
             "type": "string",
@@ -5363,18 +5414,26 @@
             "minLength": 1,
             "maxLength": 64
           },
-          "answer": {
+          "state": {
             "type": "string",
             "enum": [
+              "pending",
               "approved",
               "disputed"
             ]
           },
           "at": {
-            "type": "string",
-            "format": "date-time"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "note": {
+          "reason": {
             "anyOf": [
               {
                 "type": "string",
@@ -5389,8 +5448,7 @@
         },
         "required": [
           "person_id",
-          "answer",
-          "at"
+          "state"
         ]
       },
       "Expense": {
@@ -5543,7 +5601,22 @@
               {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 120
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "const": "confirmed"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
               },
               {
                 "type": "null"
@@ -5562,6 +5635,7 @@
           "amount_minor",
           "currency",
           "method",
+          "status",
           "confirmed_at"
         ]
       },
@@ -9075,54 +9149,27 @@
         "type": "object",
         "properties": {
           "trip_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
           },
-          "booking_id": {
+          "purpose": {
             "anyOf": [
               {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "card_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "row_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
+                "enum": [
+                  "visa"
+                ]
               },
               {
                 "type": "null"
               }
             ]
           }
-        }
+        },
+        "required": [
+          "trip_id"
+        ]
       },
       "CreateLink": {
         "type": "object",
