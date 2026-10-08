@@ -36,11 +36,11 @@
 import { createHash } from 'node:crypto';
 import type { TurnEnd } from '../../composer/context.js';
 import type { Book } from '../book/book.js';
-import type { Engine, EngineAnswer, ShareSearch } from '../book/engine.js';
+import type { Engine, EngineAnswer, RunFor, ShareSearch } from '../book/engine.js';
 import type { LiveSearch } from '../live-search.js';
 import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
-import { RECIPE_TTL_MS } from './recipe.js';
+import { RECIPE_TTL_MS, type RecipeOption } from './recipe.js';
 
 /** How long a search may hold up the turn, from its start: a train search on a sleeping box took about 8 s on staging. */
 export const TRAVEL_WAIT_MS = 12_000;
@@ -123,8 +123,11 @@ const keyOf = (given: Record<string, unknown>, conditions: string[]): string =>
     [...conditions].sort(),
   ]);
 
+/** A search's answer from what is kept, loading nothing; null when nothing kept answers it. */
+export type KeptAnswer = (id: string, given: Record<string, unknown>, o: RunFor) => Promise<EngineAnswer | null>;
+
 /** The ixigo_web backend, and the hook a turn's end calls to end the live cards it left open. */
-export type IxigoWebBackend = TravelBackend & { turnEnded(t: TurnEnd): void; shareStep: ShareSearch };
+export type IxigoWebBackend = TravelBackend & { turnEnded(t: TurnEnd): void; shareStep: ShareSearch; keptAnswer: KeptAnswer };
 
 /** Whose a live card is: the message whose early start ran its search, or the composer turn whose search tool did. */
 type Owner = { kind: 'message' | 'turn'; id: string } | null;
@@ -401,6 +404,20 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       );
       keep(key, { at: nowMs, ttl: recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS, search, ran });
       return { answer: ran, joined: false };
+    },
+    /**
+     * A search's answer from what is kept, loading nothing: the search itself, kept and done, or for a stays ask that can
+     * be narrowed, a kept search with fewer of its conditions (fromKept). Null when nothing kept answers it. A watch's
+     * first check reads it before it loads a page (watch-tools.ts), as an ask does.
+     */
+    async keptAnswer(id, given, o) {
+      const recipe = d.book.get(id);
+      if (!searchKindOf(id) || !recipe || recipe.answer.as !== 'options') return null;
+      const conditions = o.conditions ?? [];
+      const hit = kept.get(await keyFor(id, given, conditions, o.tripId));
+      const byPage = narrowedBy(id, conditions);
+      const found = hit?.done && d.now().getTime() - hit.at < hit.ttl ? hit.done : byPage ? await fromKept(id, given, byPage, o.tripId) : null;
+      return found ? { as: 'options', options: found.results as RecipeOption[], page: found.page ?? '', checkedAt: found.checkedAt, ms: 0 } : null;
     },
     async waitMs(kind, q, o) {
       // A search that refuses does so at once, and a link loads nothing: nothing to wait for.

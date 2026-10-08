@@ -493,6 +493,21 @@ describe('a stays ask answered from a kept search with no conditions (the head s
     expect(s.cards).toEqual([]);
   });
 
+  it("answers a watch's first check from what is kept, loading nothing: the kept stays narrowed, or null when nothing kept answers", async () => {
+    const s = staysEngine([stay(1, true), stay(2, true), stay(3, true), stay(4, false)]);
+    const pool = { tripId: 't_goa', conditions: ['pool'] };
+    expect(await s.b.keptAnswer('hotels.search', HEAD, pool)).toBeNull();
+    await s.headStart();
+    const kept = await s.b.keptAnswer('hotels.search', HEAD, pool);
+    expect(kept).toMatchObject({ as: 'options', checkedAt: '2026-10-07T12:00:00.000Z', page: 'https://www.ixigo.com/hotels/search/result' });
+    expect(kept?.as === 'options' && kept.options.map((o) => o.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
+    // A page condition the stays don't say (paying at the hotel), or a recipe that is not a search: nothing kept answers.
+    expect(await s.b.keptAnswer('hotels.search', HEAD, { tripId: 't_goa', conditions: ['pay_at_hotel'] })).toBeNull();
+    expect(await s.b.keptAnswer('trains.confirm_chance', { from: 'Bangalore', to: 'Chennai', date: '2026-10-22' }, { tripId: 't_goa' })).toBeNull();
+    // Reading what is kept runs nothing.
+    expect(s.runs).toEqual([{ conditions: [], background: false }]);
+  });
+
   it("runs its own search for a page condition the stays don't say (paying at the hotel), and with no kept search", async () => {
     const s = staysEngine([stay(1, true), stay(2, true), stay(3, true)]);
     await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_0' });

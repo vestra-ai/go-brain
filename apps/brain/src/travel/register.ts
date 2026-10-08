@@ -174,7 +174,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   );
   // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
   // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
-  for (const t of watchTools({ pool: brain.pool, book, engine, switches: brain.switches, now: brain.now })) brain.tools.register(t);
+  // A watch's first check reads what Go's searches keep before a page, and one already so puts its card up.
+  const watching = { kept: ixigoWeb.keptAnswer, results, images };
+  for (const t of watchTools({ pool: brain.pool, book, engine, switches: brain.switches, now: brain.now, ...watching })) brain.tools.register(t);
   const watchRunner = createWatchRunner({
     pool: brain.pool, book, engine, store: new ProactiveStore(brain.pool), switches: brain.switches, now: brain.now, log: brain.log,
     linkOpen: () => brain.door.link.isOpen(),

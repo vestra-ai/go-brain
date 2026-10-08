@@ -262,6 +262,59 @@ describe('watch_ixigo', () => {
     expect(await t.stop.run({}, ctx('t_tool'))).toMatchObject({ watches: [{ watch_id: 'rw_t1' }, { watch_id: 'rw_t3' }] });
   });
 
+  const POOL_UNDER_3K = {
+    recipe: 'hotels.search', inputs: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' }, conditions: ['pool'],
+    flip: 'under', limit: 3000, label: 'a pool stay under ₹3,000',
+  };
+
+  // The 8 Oct watches pass, W2: "let us know if a pool stay in North Goa for our dates goes under ₹3,000" was already so,
+  // and Go said it in words ("15 pool stays in North Goa for 6 to 9 Nov under ₹3,000"), with nothing to tap.
+  it('puts the options that make an already-true search so on a card with its line, as a stays search does', async () => {
+    await seedTrip(db.pool, 't_already_stays');
+    const saved: Array<Record<string, unknown>> = [];
+    const results = {
+      save: async (s: Record<string, unknown>) => {
+        saved.push(s);
+        return { ...s, resultsId: 'r_w2' };
+      },
+      saveCard: async () => undefined,
+      card: async () => null,
+    } as never;
+    const images = { rehostUrl: async (u: string) => u } as never;
+    const e = engine(stays(stay('Arambol Sweet Lake Resort', 1790), stay('Villa Sol', 5200), stay('Casa Azul', 2600)));
+    const [watch] = watchTools({ pool: db.pool, book, engine: e, switches: switches(), now: () => START, results, images });
+    const c = ctx('t_already_stays', 'rw_w2');
+    expect(await watch!.run(POOL_UNDER_3K, c)).toMatchObject({ already: true, results_id: 'r_w2', answered: true });
+    // The ones under ₹3,000, in ixigo's order, and the card's line: the turn ends on them, with the card's vote button.
+    expect(c.cards).toHaveLength(1);
+    expect((c.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Arambol Sweet Lake Resort', 'Casa Azul']);
+    expect(c.lines).toEqual(['Already on ixigo: pool stays in North Goa for 6 to 9 Nov, at most ₹3,000 a night, from ₹1,790 a night.']);
+    expect(saved[0]).toMatchObject({ optionKind: 'stay', query: { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', maxPriceMinor: 300_000, mustHave: ['pool'] } });
+    expect((await db.pool.query('select 1 from recipe_watches where trip_id = $1', ['t_already_stays'])).rowCount).toBe(0);
+  });
+
+  // The same pass: W2 loaded its own page (11.6 s) though the trip's head start had just been read.
+  it("reads what Go's searches keep before a page: kept stays that make it so load nothing; kept ones that don't, and a drop, go to the page", async () => {
+    for (const t of ['t_kept1', 't_kept2', 't_kept3']) await seedTrip(db.pool, t);
+    const e = engine(stays(stay('Villa Sol', 5200)));
+    const keptReads: RunFor[] = [];
+    const kept = async (_id: string, _given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer | null> => {
+      keptReads.push(o);
+      return stays(stay('Arambol Sweet Lake Resort', 1790));
+    };
+    const [watch] = watchTools({ pool: db.pool, book, engine: e, switches: switches(), now: () => START, kept });
+    expect(await watch!.run(POOL_UNDER_3K, ctx('t_kept1', 'rw_k1'))).toMatchObject({ already: true, now: '1 on ixigo; the cheapest ₹1,790: Arambol Sweet Lake Resort' });
+    expect(e.calls).toHaveLength(0);
+    expect(keptReads[0]).toMatchObject({ tripId: 't_kept1', conditions: ['pool'] });
+    // Not so in what is kept, which may be part of the page: the page says, and the watch starts from it.
+    expect(await watch!.run({ ...POOL_UNDER_3K, limit: 1000 }, ctx('t_kept2', 'rw_k2'))).toMatchObject({ watching: true });
+    expect(e.calls).toHaveLength(1);
+    // A drop's first reading is its baseline: always the page's, never part of it.
+    expect(await watch!.run({ ...POOL_UNDER_3K, flip: 'drops', limit: 10 }, ctx('t_kept3', 'rw_k3'))).toMatchObject({ watching: true });
+    expect(keptReads).toHaveLength(2);
+    expect(e.calls).toHaveLength(2);
+  });
+
   it('refuses a flip the recipe has not got, and under with no price', async () => {
     const t = tools(engine(chance('CC: WL 12')));
     expect(await t.watch.run({ ...ask, flip: 'drops' }, ctx('t_x'))).toMatchObject({ error: 'needs_more' });

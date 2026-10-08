@@ -294,15 +294,24 @@ export async function putUpCard(
 /**
  * A finished search that answers the turn's plain ask itself: its list saved, its picks on a card (the engine's order:
  * the first three stays, the three cheapest journeys), and a line built from its data. The turn ends on them, with no
- * model round after the search. "See on ixigo" on the card opens each option's own page, as on any card.
+ * model round after the search. "See on ixigo" on the card opens each option's own page, as on any card. lead goes
+ * before the line ("Already on ixigo: pool stays in…", a watch that is already so).
  */
-export async function answerItself(kind: TravelKind, q: TravelQuery, found: TravelSearch, ctx: TurnCtx, d: Pick<TravelToolDeps, 'results' | 'images'>): Promise<unknown> {
+export async function answerItself(
+  kind: TravelKind,
+  q: TravelQuery,
+  found: TravelSearch,
+  ctx: TurnCtx,
+  d: Pick<TravelToolDeps, 'results' | 'images'>,
+  lead?: string,
+): Promise<unknown> {
   const options = found.results.slice(0, 10).map(toResultOption);
   const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
   noteRun(set.resultsId, ctx.tripId, found.runId);
   const numbers = directPicks(kind, options);
   // The line's "from" is the card's own cheapest, never one of the results the card leaves out.
-  const line = answerLine(kind, q, numbers.map((n) => options[n - 1]!));
+  const said = answerLine(kind, q, numbers.map((n) => options[n - 1]!));
+  const line = lead ? `${lead}${said.charAt(0).toLowerCase()}${said.slice(1)}` : said;
   const { cardId, shown } = await putUpCard(set, numbers, { title: answerTitle(kind, q), line }, ctx, d);
   ctx.answered = true;
   return { search: searchName(kind, q), results_id: set.resultsId, card_id: cardId, shown, answered: true, note: 'The card and its line are up: this turn has said what it needed to.' };
