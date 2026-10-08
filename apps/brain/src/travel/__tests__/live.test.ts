@@ -9,6 +9,7 @@ import { createReplayGuard } from '../../door/replay-guard.js';
 import { createServerLink } from '../../door/server-link.js';
 import { silentLog } from '../../log.js';
 import { registerLive, type LiveMessage } from '../live.js';
+import type { RunEvent } from '../book/run-event.js';
 import { createRunLog, type RunLog } from '../runs.js';
 
 const SECRET = 's'.repeat(64);
@@ -43,6 +44,11 @@ afterAll(async () => {
   await http.close();
   await db.drop();
 });
+
+/** A run's start and end, as the engine tells them. */
+const start = (tripId: string, run_id: string, recipe_id: string): void =>
+  runs.record(tripId, { type: 'run_start', run_id, recipe_id, label: 'Goa', speed: 'page', at: new Date().toISOString() });
+const end = (tripId: string, run_id: string): void => runs.record(tripId, { type: 'run_end', run_id, ok: true, ms: 10, rows: 4 } satisfies RunEvent);
 
 /** Opens the live view of a trip, signed as the Server signs; collects what Go sends. */
 async function watch(tripId: string): Promise<{ ws: WebSocket; got: LiveMessage[]; next: (pred: (m: LiveMessage) => boolean) => Promise<LiveMessage> }> {
@@ -81,18 +87,18 @@ describe('the live view socket', () => {
   });
 
   it("opens with the trip's recent runs, then tells each event as it comes, and nothing of another trip", async () => {
-    const before = runs.start('t_live1', 'hotels.search', 'Stays');
-    before.end(true, { speed: 'page', rows: 4 });
+    start('t_live1', 'run_a', 'hotels.search');
+    end('t_live1', 'run_a');
     const v = await watch('t_live1');
     const hello = await v.next((m) => m.type === 'hello');
     expect(hello).toMatchObject({ type: 'hello', trip_id: 't_live1' });
     expect(hello.type === 'hello' && hello.events.map((e) => e.type)).toEqual(['run_start', 'run_end', 'group_end']);
 
-    runs.start('t_other', 'buses.between', 'Buses');
-    const run = runs.start('t_live1', 'trains.between', 'Trains');
-    run.attempt('fast');
-    const attempt = await v.next((m) => m.type === 'run' && m.event.type === 'attempt');
-    expect(attempt).toEqual({ type: 'run', event: { type: 'attempt', run_id: run.id, speed: 'fast', at_ms: expect.any(Number) } });
+    start('t_other', 'run_b', 'buses.between');
+    start('t_live1', 'run_c', 'trains.between');
+    runs.record('t_live1', { type: 'call', run_id: 'run_c', method: 'GET', path: 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search', status: 200, at_ms: 380, ms: 366 });
+    const call = await v.next((m) => m.type === 'run' && m.event.type === 'call');
+    expect(call).toEqual({ type: 'run', event: { type: 'call', run_id: 'run_c', method: 'GET', path: 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search', status: 200, at_ms: 380, ms: 366 } });
     expect(v.got.some((m) => m.type === 'run' && m.event.type === 'run_start' && m.event.recipe_id === 'buses.between')).toBe(false);
     v.ws.close();
   });
@@ -104,8 +110,8 @@ describe('the live view socket', () => {
       v.ws.once('close', () => resolve());
       v.ws.close();
     });
-    const run = runs.start('t_live2', 'hotels.search', 'Stays');
-    run.end(true);
+    start('t_live2', 'run_d', 'hotels.search');
+    end('t_live2', 'run_d');
     expect(v.got).toHaveLength(1);
   });
 });

@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { V1Error } from '../../../tasks/v1-client.js';
 import { TravelError } from '../../mcp-travel.js';
-import type { FetchTrace } from '../../runs.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
-import { createBrowserFetchRunner, FAST_TIMEOUT_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, WARM_TAB_MS } from '../runners.js';
+import { createBrowserFetchRunner, FAST_TIMEOUT_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, WARM_TAB_MS, type FetchTrace } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
 type Call = { method: string; path: string; opts: Record<string, unknown> };
@@ -160,13 +159,13 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     );
   });
 
-  it('tells the live view where each call\'s time went: the wake, the page, each kept call; and on a timeout, where it stopped', async () => {
+  it("tells the run strip where each call's time went: the wake, the page, each kept call; and on a timeout, where it stopped", async () => {
     const timings = { wake_ms: 4_000, nav_ms: 5_200, first_capture_ms: 7_000, done_ms: 7_400 };
     const ok = world(() => ({ ...fetched([busCapture]), woke: true, timings }));
     const traces: FetchTrace[] = [];
     await createBrowserFetchRunner(ok.deps).read('t1', BUSES, busPlan, { onTrace: (t) => traces.push(t) });
     expect(traces).toEqual([{
-      speed: 'page', started_at: Date.parse('2026-11-01T10:00:00Z'), elapsed_ms: 2300, woke: true, timings,
+      started_at: Date.parse('2026-11-01T10:00:00Z'), elapsed_ms: 2300, woke: true, timings,
       calls: [{ url: busCapture.url, status: busCapture.status, at_ms: busCapture.at_ms }],
     }]);
     const partial = { final_url: BUSES, elapsed_ms: 12_000, woke: false, timings, step: '2 scroll', captures: [busCapture] };
@@ -175,27 +174,28 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     });
     const lateTraces: FetchTrace[] = [];
     await createBrowserFetchRunner(late.deps).read('t1', BUSES, busPlan, { onTrace: (t) => lateTraces.push(t) });
-    expect(lateTraces).toEqual([expect.objectContaining({ speed: 'page', elapsed_ms: 12_000, timings, failed: { status: 504, why: 'ran out of time at 2 scroll' } })]);
+    expect(lateTraces).toEqual([expect.objectContaining({ elapsed_ms: 12_000, timings, failed: { status: 504, why: 'ran out of time at 2 scroll' } })]);
     expect(lateTraces[0]!.calls).toHaveLength(1);
     const refused = world(() => {
       throw new V1Error(403, 'domain_not_allowed', 'Not allowed.');
     });
     const refusedTraces: FetchTrace[] = [];
     await createBrowserFetchRunner(refused.deps).read('t1', BUSES, busPlan, { onTrace: (t) => refusedTraces.push(t) }).catch(() => undefined);
+    // A failure by its status and code, never its message.
     expect(refusedTraces).toEqual([expect.objectContaining({ calls: [], failed: { status: 403, why: 'domain_not_allowed' } })]);
   });
 
-  it("tells the live view a page call's own time, and a page call that failed", async () => {
+  it("tells the run strip a page call's own time, and a page call that failed", async () => {
     const fast = { ...capture('fast', '/plan/goa', '{}'), at_ms: 380 };
     const ok = world(() => ({ final_url: 'https://www.ixigo.com/', elapsed_ms: 420, woke: false, captures: [fast] }));
     const traces: FetchTrace[] = [];
     await createBrowserFetchRunner(ok.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }, { onTrace: (t) => traces.push(t) });
-    expect(traces).toEqual([expect.objectContaining({ speed: 'fast', elapsed_ms: 420, calls: [{ method: 'GET', url: fast.url, status: fast.status, at_ms: 380, ms: 380 }] })]);
+    expect(traces).toEqual([expect.objectContaining({ elapsed_ms: 420, calls: [{ method: 'GET', url: fast.url, status: fast.status, at_ms: 380, ms: 380 }] })]);
     const down = world(() => {
       throw new V1Error(402, 'out_of_credit', 'No credit.');
     });
     const downTraces: FetchTrace[] = [];
     await createBrowserFetchRunner(down.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }, { onTrace: (t) => downTraces.push(t) }).catch(() => undefined);
-    expect(downTraces).toEqual([expect.objectContaining({ speed: 'fast', calls: [], failed: { status: 402, why: 'out_of_credit' } })]);
+    expect(downTraces).toEqual([expect.objectContaining({ calls: [], failed: { status: 402, why: 'out_of_credit' } })]);
   });
 });

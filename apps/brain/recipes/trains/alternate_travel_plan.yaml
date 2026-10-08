@@ -1,0 +1,44 @@
+id: trains.alternate_travel_plan
+title: ixigo's Alternate Travel Plan for a waitlisted train ticket, in ixigo's own words
+asks:
+  - what is ixigo's alternate travel plan
+  - if my train ticket stays waitlisted what refund do i get
+  - waiting list wala ticket confirm nahi hua toh paisa wapas milega kya
+inputs:
+  from: { kind: place, lookup: trains.station_lookup, about: the station or city people board at }
+  to: { kind: place, lookup: trains.station_lookup, about: the station or city people get off at }
+  date: { kind: date, about: the day the train leaves the boarding station }
+auth: none
+changes_state: false
+# A train's results page asks for the plan's words as it opens: the same for every route. Its texts are ixigo's own, some
+# with HTML marks in them, which are taken out. The per-person price is set at booking, so it is never read here.
+page: /trains/search-pwa/from/{from.code}/to/{to.code}/{date|DD-MM-YYYY}
+fast:
+  url: https://ixigotrainsapi.confirmtkt.com/api/v2/trains/insurance/content?contentVariants=12a&insuranceTypes=TRAVEL_GUARANTEE
+capture:
+  - ixigotrainsapi.confirmtkt.com/api/v2/trains/insurance/content
+read:
+  rows:
+    from: ixigotrainsapi.confirmtkt.com/api/v2/trains/insurance/content
+    list: 'data[insuranceType = "TRAVEL_GUARANTEE"]'
+answer:
+  as: facts
+  title: Alternate Travel Plan
+  max: 1
+  each: |
+    (
+      $plain := function($t) { $t ? $trim($replace($replace($t, /<[^>]+>/, ""), /\s+/, " ")) };
+      $home := content.tgHomePageContent.bottomSheetContent;
+      $card := content.tgOnPageCardContentV2;
+      {
+        "what": $join([$plain($home.headingText), $plain($home.descriptionText)], ", "),
+        "refund": $join([$plain($card.headerLabel), $plain($card.subHeaderLabel), $plain($card.approxRefundSubText)], " "),
+        "chosen_by_default": $plain($home.inlineAlertText),
+        "terms": [$card.tgTermsAndConditions.terms.$plain(content)],
+        "good_to_know": [$card.tgTermsGlance.termsList.tooltip.items.$plain($)]
+      }
+    )
+ttl_minutes: 60
+samples: { page: trains.alternate_travel_plan.json }
+measured: { fast_ms: null, page_ms: 1605, flow_ms: null }
+notes: Default selected for eligible waitlisted tickets at booking. It never ensures a confirmed ticket.

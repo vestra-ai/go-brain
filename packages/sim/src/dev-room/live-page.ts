@@ -74,7 +74,8 @@ export const LIVE_ASIDE = `<aside class="live" id="live" aria-label="Go Live">
 
 /** Inside the room's script: the socket's handler calls onLive for each { type: 'live' } message. */
 export const LIVE_SCRIPT = `
-  // Go Live. live.runs: each run by id; live.order: top-level runs, newest first; live.groups: runs that went at once.
+  // Go Live. live.runs: each run by id, a speed that fell and the next one sharing one row (ids, speeds); live.order:
+  // top-level rows, newest first; live.groups: rows that went at once.
   var live = { trip: null, state: 'wait', why: '', runs: {}, order: [], groups: {}, frames: {} };
   var HOLD_MS = 2000;
   var PLAY_MS = 2500;
@@ -98,9 +99,20 @@ export const LIVE_SCRIPT = `
 
   function liveEvent(e, old) {
     var r = e.run_id ? live.runs[e.run_id] : null;
+    var lineAt = function (ms) { return r ? (r.startOf[e.run_id] || r.at) + ms : ms; };
     switch (e.type) {
       case 'run_start':
-        r = { id: e.run_id, recipe: e.recipe_id, label: e.label, parent: e.parent || null, group: e.group_id, at: Date.parse(e.at), speeds: [], lines: [], kids: [], ended: false, endAt: 0 };
+        // A speed that fell and the one after it are one row: FAST struck through, then PAGE.
+        if (e.fell_from && live.runs[e.fell_from]) {
+          r = live.runs[e.fell_from];
+          r.ids.push(e.run_id); r.speeds.push(e.speed); r.speedOf[e.run_id] = e.speed; r.startOf[e.run_id] = Date.parse(e.at);
+          r.ended = false; r.endAt = 0;
+          live.runs[e.run_id] = r;
+          break;
+        }
+        r = { id: e.run_id, ids: [e.run_id], recipe: e.recipe_id, label: e.label, parent: e.parent || null, group: e.group_id, at: Date.parse(e.at),
+          speeds: [e.speed], speedOf: {}, startOf: {}, msBefore: 0, lines: [], kids: [], ended: false, endAt: 0 };
+        r.speedOf[e.run_id] = e.speed; r.startOf[e.run_id] = r.at;
         live.runs[r.id] = r;
         if (r.parent && live.runs[r.parent]) { live.runs[r.parent].kids.push(r.id); break; }
         live.order.unshift(r.id);
@@ -108,13 +120,18 @@ export const LIVE_SCRIPT = `
         live.groups[r.group].runs.push(r.id);
         trimLive();
         break;
-      case 'attempt': if (r) r.speeds.push(e.speed); break;
-      case 'call': if (r) r.lines.push({ at: e.at_ms, text: e.method + ' ' + e.path + '  ' + e.status + '  ' + (e.ms != null ? fmtMs(e.ms) : '+' + fmtMs(e.at_ms)), speed: e.speed, ms: e.ms }); break;
-      case 'step': if (r) r.lines.push({ at: e.at_ms, text: e.text + '  +' + fmtMs(e.at_ms) }); break;
-      case 'named': if (r) r.label = e.label; break;
+      case 'call':
+        if (r) r.lines.push({ at: lineAt(e.at_ms), text: (e.method ? e.method + ' ' : '') + e.path + '  ' + e.status + '  ' + (e.ms != null ? fmtMs(e.ms) : '+' + fmtMs(lineAt(e.at_ms) - r.at)), fast: r.speedOf[e.run_id] === 'fast', ms: e.ms });
+        break;
+      case 'step': if (r) r.lines.push({ at: lineAt(e.at_ms), text: e.text + '  +' + fmtMs(lineAt(e.at_ms) - r.at) }); break;
       case 'run_end':
         if (!r) break;
-        r.ended = true; r.ok = e.ok; r.ms = e.ms; r.rows = e.rows; r.why = e.why; r.speed = e.speed;
+        if (e.fell_to) {
+          r.msBefore += e.ms;
+          r.lines.push({ at: lineAt(e.ms), text: r.speedOf[e.run_id] + ' fell to ' + e.fell_to + (e.why ? ': ' + e.why : '') });
+          break;
+        }
+        r.ended = true; r.ok = e.ok; r.ms = r.msBefore + e.ms; r.rows = e.rows; r.why = e.why; r.picked = e.picked;
         r.endAt = old ? 0 : Date.now();
         break;
       case 'frames': live.frames[e.run_id] = { list: e.frames || [], got: old ? 0 : Date.now() }; break;
@@ -129,7 +146,8 @@ export const LIVE_SCRIPT = `
     while (live.order.length > 40) {
       var gone = live.runs[live.order.pop()];
       if (!gone) continue;
-      gone.kids.concat([gone.id]).forEach(function (id) { delete live.runs[id]; delete live.frames[id]; });
+      gone.kids.map(function (k) { return live.runs[k] ? live.runs[k].ids : [k]; }).reduce(function (a, b) { return a.concat(b); }, gone.ids.slice())
+        .forEach(function (id) { delete live.runs[id]; delete live.frames[id]; });
     }
   }
 
@@ -146,7 +164,7 @@ export const LIVE_SCRIPT = `
   /** The newest pictures of a run or its lookups, played back over at most PLAY_MS as they arrive; the last once played. */
   function pictureOf(r) {
     var best = null;
-    r.kids.concat([r.id]).forEach(function (id) { var f = live.frames[id]; if (f && f.list.length && (!best || f.got >= best.got)) best = f; });
+    r.kids.concat(r.ids).forEach(function (id) { var f = live.frames[id]; if (f && f.list.length && (!best || f.got >= best.got)) best = f; });
     if (!best) return null;
     var list = best.list;
     if (!best.got) return list[list.length - 1];
@@ -165,13 +183,13 @@ export const LIVE_SCRIPT = `
   }
 
   function badges(r) {
-    var s = r.speeds.length ? r.speeds : r.speed ? [r.speed] : [];
+    var s = r.speeds;
     return s.map(function (sp, i) { return '<span class="speed ' + (i < s.length - 1 ? 'fell' : esc(sp)) + '">' + esc(BADGE[sp] || sp) + '</span>'; }).join('');
   }
 
   function outcome(r) {
     if (!r.ended) return '<span class="ms">' + fmtMs(Date.now() - r.at) + '</span>';
-    var rows = r.rows != null ? ' ' + r.rows : '';
+    var rows = r.picked ? ' ' + r.picked : r.rows != null ? ' ' + r.rows : '';
     return '<span class="ms">' + fmtMs(r.ms) + '</span>' + (r.ok ? '<span class="ok">✓' + rows + '</span>' : '<span class="bad" title="' + esc(r.why || '') + '">× ' + esc((r.why || 'failed').slice(0, 60)) + '</span>');
   }
 
@@ -208,9 +226,9 @@ export const LIVE_SCRIPT = `
       var src = pic ? 'data:image/jpeg;base64,' + pic.jpeg_base64 : '';
       if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
       if (!src && img.hasAttribute('src')) img.removeAttribute('src');
-      var fast = r.speeds[r.speeds.length - 1] === 'fast' || r.speed === 'fast';
+      var fast = r.speeds[r.speeds.length - 1] === 'fast';
       var call = null;
-      for (var j = 0; j < r.lines.length; j++) if (r.lines[j].speed === 'fast') call = r.lines[j];
+      for (var j = 0; j < r.lines.length; j++) if (r.lines[j].fast) call = r.lines[j];
       // A fast run moves nothing on screen: over a picture, a chip says so; with none, the call itself fills the tile.
       view.querySelector('.chip-fast').textContent = fast && pic ? 'In-page data call' + (call && call.ms != null ? ', ' + fmtMs(call.ms) : '') + '. No page load.' : '';
       var hint = view.querySelector('.hint');
@@ -235,7 +253,7 @@ export const LIVE_SCRIPT = `
     var span = Math.max(1, end - g.at);
     var left = Math.max(0, Math.min(100, ((r.at - g.at) / span) * 100));
     var width = Math.max(0.5, Math.min(100 - left, (((r.ended ? r.ms : Date.now() - r.at) || 0) / span) * 100));
-    var sp = r.speeds[r.speeds.length - 1] || r.speed;
+    var sp = r.speeds[r.speeds.length - 1];
     var colour = sp === 'fast' ? '#16a34a' : sp === 'page' ? '#d97706' : '#64748b';
     return '<div class="wf"><i style="left:' + left.toFixed(1) + '%;width:' + width.toFixed(1) + '%;background:' + colour + '"></i></div>';
   }
@@ -255,8 +273,8 @@ export const LIVE_SCRIPT = `
     }
     $('strip').innerHTML = html || '<div class="muted">No runs yet.</div>';
     var tally = {};
-    var done = live.order.map(function (id) { return live.runs[id]; }).filter(function (x) { return x && x.ended && x.ok && x.speed; }).slice(0, 10);
-    done.forEach(function (x) { var t = tally[x.speed] || (tally[x.speed] = { n: 0, ms: 0 }); t.n += 1; t.ms += x.ms; });
+    var done = live.order.map(function (id) { return live.runs[id]; }).filter(function (x) { return x && x.ended && x.ok; }).slice(0, 10);
+    done.forEach(function (x) { var sp = x.speeds[x.speeds.length - 1]; var t = tally[sp] || (tally[sp] = { n: 0, ms: 0 }); t.n += 1; t.ms += x.ms; });
     $('strip-sum').textContent = done.length ? 'Last ' + done.length + ': ' + Object.keys(tally).map(function (k) { return tally[k].n + ' ' + k + ' avg ' + fmtMs(tally[k].ms / tally[k].n); }).join(', ') : '';
   }
 

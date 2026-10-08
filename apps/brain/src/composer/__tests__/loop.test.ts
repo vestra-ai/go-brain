@@ -183,6 +183,18 @@ describe('the composer loop', () => {
     expect(usage.costUsd).toBeGreaterThan(0);
   });
 
+  it("times every round for the turn's log: its tools, first token, whole reply, output tokens and stop", async () => {
+    const { run } = setup([
+      { tools: [echoCall('x')], usage: { output_tokens: 15 } },
+      { text: 'ok', usage: { output_tokens: 25 } },
+    ]);
+    const { timings } = await run();
+    expect(timings).toEqual([
+      { tools: ['echo'], firstTokenMs: expect.any(Number), modelMs: expect.any(Number), toolMs: expect.any(Number), output: 15, stop: 'tool_use' },
+      { tools: [], firstTokenMs: expect.any(Number), modelMs: expect.any(Number), toolMs: 0, output: 25, stop: 'end_turn' },
+    ]);
+  });
+
   it('the turn\'s signal stops a slow model', async () => {
     const { run } = setup([{ text: 'late', delayMs: 2_000 }], { signal: AbortSignal.timeout(50) });
     await expect(run()).rejects.toThrow();

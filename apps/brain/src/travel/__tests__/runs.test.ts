@@ -1,143 +1,108 @@
 import { describe, expect, it } from 'vitest';
-import { createRunLog, KEPT_EVENTS, KEPT_FRAME_RUNS, pathOf, type RunEvent } from '../runs.js';
+import type { RunEvent } from '../book/run-event.js';
+import { createRunLog, GROUP_JOIN_MS, KEPT_EVENTS, KEPT_FRAME_RUNS, type LiveEvent } from '../runs.js';
 
 function world() {
   let nowMs = Date.parse('2026-10-08T06:00:00Z');
-  let n = 0;
-  const log = createRunLog({ now: () => new Date(nowMs), mint: (prefix) => `${prefix}${++n}` });
-  const seen: RunEvent[] = [];
+  const log = createRunLog({ now: () => new Date(nowMs) });
+  const seen: LiveEvent[] = [];
   log.subscribe('t_goa', (e) => seen.push(e));
-  return { log, seen, advance: (ms: number) => { nowMs += ms; } };
+  const start = (run_id: string, recipe_id: string, more: Partial<Extract<RunEvent, { type: 'run_start' }>> = {}): void =>
+    log.record('t_goa', { type: 'run_start', run_id, recipe_id, label: 'Goa', speed: 'page', at: new Date(nowMs).toISOString(), ...more });
+  const end = (run_id: string, ms: number, more: Partial<Extract<RunEvent, { type: 'run_end' }>> = {}): void =>
+    log.record('t_goa', { type: 'run_end', run_id, ok: true, ms, ...more });
+  const groupOf = (runId: string): string | undefined => {
+    const s = seen.find((e) => e.type === 'run_start' && e.run_id === runId);
+    return s?.type === 'run_start' ? s.group_id : undefined;
+  };
+  return { log, seen, start, end, groupOf, advance: (ms: number) => { nowMs += ms; } };
 }
 
-const frame = (page_url: string, at_ms = 100) => ({ label: 'results', at_ms, page_url, jpeg_base64: '/9j/AA==' });
+const ends = (seen: LiveEvent[]) => seen.filter((e) => e.type === 'group_end');
 
 describe('the run log', () => {
-  it("a call is its host and path, never its query, and ixigo's own host is left out", () => {
-    expect(pathOf('https://www.ixigo.com/hotels/api/v6/search?checkinDate=06112026&adultCount=4')).toBe('/hotels/api/v6/search');
-    expect(pathOf('https://ixigotrainsapi.confirmtkt.com/api/v1/trains/search?sourceStationCode=NDLS')).toBe('ixigotrainsapi.confirmtkt.com/api/v1/trains/search');
-    expect(pathOf('/trains/v1/pnr/status?pnr=1234567890')).toBe('/trains/v1/pnr/status');
-  });
-
-  it('tells one run as it goes: its speeds, its calls and how it ended', () => {
+  it("passes the engine's events on as they are, a run's start with the group it is in", () => {
     const w = world();
-    const run = w.log.start('t_goa', 'trains.between', 'Trains between two stations');
-    run.named('Delhi to Goa trains, Fri 6 Nov');
-    run.attempt('fast');
+    w.start('r1', 'trains.between', { speed: 'fast' });
+    w.log.record('t_goa', { type: 'call', run_id: 'r1', method: 'GET', path: 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search', status: 200, at_ms: 380, ms: 366 });
     w.advance(400);
-    run.trace({ speed: 'fast', started_at: Date.parse('2026-10-08T06:00:00Z') + 10, elapsed_ms: 380, calls: [{ method: 'GET', url: 'https://ixigotrainsapi.confirmtkt.com/api/v1/trains/search?x=1', status: 200, ms: 366 }] });
-    run.end(true, { rows: 6 });
-    expect(w.seen).toEqual([
-      { type: 'run_start', run_id: 'run_1', group_id: 'grp_2', recipe_id: 'trains.between', label: 'Trains between two stations', at: '2026-10-08T06:00:00.000Z' },
-      { type: 'named', run_id: 'run_1', label: 'Delhi to Goa trains, Fri 6 Nov' },
-      { type: 'attempt', run_id: 'run_1', speed: 'fast', at_ms: 0 },
-      { type: 'call', run_id: 'run_1', speed: 'fast', method: 'GET', path: 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search', status: 200, at_ms: 390, ms: 366 },
-      { type: 'run_end', run_id: 'run_1', ok: true, speed: 'fast', ms: 400, rows: 6 },
-      { type: 'group_end', group_id: 'grp_2', runs: 1, wall_ms: 400, sum_ms: 400 },
-    ]);
+    w.end('r1', 400, { rows: 6 });
+    expect(w.seen.map((e) => e.type)).toEqual(['run_start', 'call', 'run_end', 'group_end']);
+    expect(w.seen[0]).toMatchObject({ run_id: 'r1', recipe_id: 'trains.between', speed: 'fast', group_id: w.groupOf('r1') });
+    expect(ends(w.seen)).toEqual([{ type: 'group_end', group_id: w.groupOf('r1'), runs: 1, wall_ms: 400, sum_ms: 400 }]);
   });
 
-  it("a page run's trace says when the computer woke, when the page showed, and each call kept", () => {
+  it('runs that overlap are one group, its wall time set against the sum; the next run after it starts a new one', () => {
     const w = world();
-    const run = w.log.start('t_goa', 'hotels.search', 'Stays');
-    run.attempt('page');
-    run.trace({
-      speed: 'page', started_at: Date.parse('2026-10-08T06:00:00Z') + 5, elapsed_ms: 9_000, woke: true,
-      timings: { wake_ms: 4_000, nav_ms: 5_200, first_capture_ms: 7_000, done_ms: 8_900 },
-      calls: [{ url: 'https://www.ixigo.com/hotels/api/v6/search?page=1', status: 200, at_ms: 7_000 }],
-    });
-    expect(w.seen.filter((e) => e.type === 'step' || e.type === 'call')).toEqual([
-      { type: 'step', run_id: 'run_1', text: 'The computer woke (4000 ms)', at_ms: 4_005 },
-      { type: 'step', run_id: 'run_1', text: 'The page showed', at_ms: 5_205 },
-      { type: 'call', run_id: 'run_1', speed: 'page', method: 'GET', path: '/hotels/api/v6/search', status: 200, at_ms: 7_005 },
-    ]);
-  });
-
-  it('a failed call is a step that says so, and the run falls to the page', () => {
-    const w = world();
-    const run = w.log.start('t_goa', 'buses.between', 'Buses');
-    run.attempt('fast');
-    run.trace({ speed: 'fast', started_at: Date.parse('2026-10-08T06:00:00Z'), elapsed_ms: 5_000, calls: [], failed: { status: 504, why: 'the page call took too long' } });
-    run.attempt('page');
-    run.end(false, { why: 'ixigo took too long to answer.' });
-    expect(w.seen.filter((e) => e.type !== 'run_start' && e.type !== 'group_end')).toEqual([
-      { type: 'attempt', run_id: 'run_1', speed: 'fast', at_ms: 0 },
-      { type: 'step', run_id: 'run_1', text: 'fast: 504, the page call took too long', at_ms: 5_000 },
-      { type: 'attempt', run_id: 'run_1', speed: 'page', at_ms: 0 },
-      { type: 'run_end', run_id: 'run_1', ok: false, speed: 'page', ms: 0, why: 'ixigo took too long to answer.' },
-    ]);
-  });
-
-  it('runs that overlap are one group, its wall time set against the sum; the next run starts a new group', () => {
-    const w = world();
-    const flights = w.log.start('t_goa', 'flights.search', 'Delhi to Goa flights');
+    w.start('r1', 'flights.search');
     w.advance(100);
-    const trains = w.log.start('t_goa', 'trains.between', 'Mumbai to Goa trains');
+    w.start('r2', 'trains.between', { speed: 'fast' });
     w.advance(400);
-    trains.end(true, { speed: 'fast', rows: 6 });
+    w.end('r2', 400);
     w.advance(3_600);
-    flights.end(true, { speed: 'page', rows: 14 });
-    const later = w.log.start('t_goa', 'buses.between', 'Bangalore to Goa buses');
-    const starts = w.seen.filter((e) => e.type === 'run_start');
-    expect(starts.map((e) => e.type === 'run_start' && e.group_id)).toEqual(['grp_2', 'grp_2', 'grp_5']);
-    expect(w.seen.filter((e) => e.type === 'group_end')).toEqual([{ type: 'group_end', group_id: 'grp_2', runs: 2, wall_ms: 4_100, sum_ms: 4_500 }]);
-    later.end(true);
+    w.end('r1', 4_100);
+    w.start('r3', 'buses.between');
+    expect(w.groupOf('r2')).toBe(w.groupOf('r1'));
+    expect(w.groupOf('r3')).not.toBe(w.groupOf('r1'));
+    expect(ends(w.seen)).toEqual([{ type: 'group_end', group_id: w.groupOf('r1'), runs: 2, wall_ms: 4_100, sum_ms: 4_500 }]);
   });
 
-  it("a lookup is a run of its own under its search, in the search's group, and not counted in the group's sum", () => {
+  it("a lookup is in its search's group and never counts in it; a fallen speed's next one keeps the group open", () => {
     const w = world();
-    const search = w.log.start('t_goa', 'trains.between', 'Trains');
-    const lookup = search.child('trains.station_lookup', "ixigo's station box");
+    w.start('s1', 'trains.between', { speed: 'fast' });
+    w.start('k1', 'trains.station_lookup', { parent: 's1' });
     w.advance(300);
-    lookup.end(true, { speed: 'page' });
-    w.advance(500);
-    search.end(true, { speed: 'page' });
-    expect(w.seen.find((e) => e.type === 'run_start' && e.recipe_id === 'trains.station_lookup')).toMatchObject({ parent: 'run_1', group_id: 'grp_2' });
-    expect(w.seen.filter((e) => e.type === 'group_end')).toEqual([{ type: 'group_end', group_id: 'grp_2', runs: 1, wall_ms: 800, sum_ms: 800 }]);
+    w.end('k1', 300, { picked: 'Udaipur City (UDZ)' });
+    w.advance(200);
+    // The fast speed fails: nothing is going for a moment, but the page speed is coming.
+    w.end('s1', 500, { ok: false, fell_to: 'page', why: 'unreachable: 403' });
+    expect(ends(w.seen)).toEqual([]);
+    w.start('s2', 'trains.between', { fell_from: 's1' });
+    w.advance(1_500);
+    w.end('s2', 1_500, { rows: 6 });
+    expect([w.groupOf('k1'), w.groupOf('s2')]).toEqual([w.groupOf('s1'), w.groupOf('s1')]);
+    expect(ends(w.seen)).toEqual([{ type: 'group_end', group_id: w.groupOf('s1'), runs: 1, wall_ms: 2_000, sum_ms: 2_000 }]);
   });
 
-  it('pictures only of the pages the live card may show, and only the newest runs are kept for a new viewer', () => {
+  it('a group left open by a run that never ended takes no new run after a minute', () => {
     const w = world();
-    const run = w.log.start('t_goa', 'hotels.search', 'Stays');
-    run.frames([frame('https://www.ixigo.com/hotels/search/result?locationId=1'), frame('https://www.ixigo.com/payments/view/abc', 200)]);
-    expect(w.seen.filter((e) => e.type === 'frames')).toEqual([
-      { type: 'frames', run_id: 'run_1', frames: [{ label: 'results', at_ms: 100, page: '/hotels/search/result', jpeg_base64: '/9j/AA==' }] },
-    ]);
-    run.frames([frame('https://www.ixigo.com/payments/view/abc')]);
-    expect(w.seen.filter((e) => e.type === 'frames')).toHaveLength(1);
-    for (let i = 0; i < KEPT_FRAME_RUNS + 2; i++) w.log.start('t_goa', 'buses.between', 'Buses').frames([frame('https://www.ixigo.com/buses/bus_search/x')]);
+    w.start('lost', 'hotels.search');
+    w.advance(GROUP_JOIN_MS + 1);
+    w.start('later', 'buses.between');
+    expect(w.groupOf('later')).not.toBe(w.groupOf('lost'));
+  });
+
+  it("keeps the newest runs' pictures apart from the events, for a new viewer", () => {
+    const w = world();
+    for (let i = 0; i < KEPT_FRAME_RUNS + 2; i++) {
+      w.log.record('t_goa', { type: 'frames', run_id: `r${i}`, frames: [{ label: 'results', at_ms: 100, page: '/hotels/search/result', jpeg_base64: '/9j/AA==' }] });
+    }
     const kept = w.log.recent('t_goa').filter((e) => e.type === 'frames');
-    expect(kept).toHaveLength(KEPT_FRAME_RUNS);
-    expect(kept.some((e) => e.type === 'frames' && e.run_id === 'run_1')).toBe(false);
+    expect(kept.map((e) => e.type === 'frames' && e.run_id)).toEqual(['r2', 'r3', 'r4', 'r5']);
+    expect(w.seen.filter((e) => e.type === 'frames')).toHaveLength(KEPT_FRAME_RUNS + 2);
   });
 
   it('keeps the last events per trip, and a trip with none answers an empty list', () => {
     const w = world();
-    const run = w.log.start('t_goa', 'hotels.search', 'Stays');
-    for (let i = 0; i < KEPT_EVENTS + 20; i++) run.step(`step ${i}`);
+    w.start('r1', 'hotels.search');
+    for (let i = 0; i < KEPT_EVENTS + 20; i++) w.log.record('t_goa', { type: 'step', run_id: 'r1', text: `step ${i}`, at_ms: i });
     const recent = w.log.recent('t_goa');
     expect(recent).toHaveLength(KEPT_EVENTS);
     expect(recent.at(-1)).toMatchObject({ type: 'step', text: `step ${KEPT_EVENTS + 19}` });
     expect(w.log.recent('t_other')).toEqual([]);
   });
 
-  it('a run that ended says nothing more; a viewer that throws never reaches the run, and one that left hears nothing', () => {
+  it('a viewer that throws never reaches the engine, and one that left hears nothing', () => {
     const w = world();
     const off = w.log.subscribe('t_goa', () => {
       throw new Error('viewer down');
     });
-    const run = w.log.start('t_goa', 'hotels.search', 'Stays');
-    run.end(true);
-    run.end(false);
-    run.step('late');
-    run.attempt('page');
-    expect(w.seen.filter((e) => e.type === 'run_end')).toHaveLength(1);
-    expect(w.seen.some((e) => e.type === 'step' || e.type === 'attempt')).toBe(false);
+    expect(() => w.start('r1', 'hotels.search')).not.toThrow();
     off();
-    const heard: RunEvent[] = [];
+    const heard: LiveEvent[] = [];
     const leave = w.log.subscribe('t_goa', (e) => heard.push(e));
     leave();
-    w.log.start('t_goa', 'buses.between', 'Buses');
+    w.start('r2', 'buses.between');
     expect(heard).toEqual([]);
   });
 });

@@ -1,0 +1,74 @@
+{
+ "status": "success",
+ "results": 4,
+ "data": [
+  {
+   "tags": [
+    "money-faq"
+   ],
+   "isActive": true,
+   "header": {
+    "en": "ixigo money and its usage"
+   },
+   "contents": [
+    {
+     "text": {
+      "en": "<p>ixigo money is our virtual currency where the value of 1 ixigo money = Rs.1. Users can enjoy the following benefits:</p><p><br></p><p>For Flight bookings: You can use 100% of your ixigo money balance for a single flight booking.</p><p>For Train bookings: You can use up to Rs. 10 from your ixigo money balance on bookings above Rs. 250.</p>"
+     }
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "tags": [
+    "money-faq"
+   ],
+   "isActive": true,
+   "header": {
+    "en": "Earning ixigo money"
+   },
+   "contents": [
+    {
+     "text": {
+      "en": "<p><span style=\"color: rgb(0, 0, 0);\">There are two ways to earn ixigo money:</span></p><p><br></p><p><span style=\"color: rgb(0, 0, 0);\">1. Book a flight - Please ensure that you apply the available coupon code while making your booking. As per the terms and conditions of the coupon code, you will receive the ixigo money within 24 hours of the booking confirmation.</span></p><p><br></p><p><span style=\"color: rgb(0, 0, 0);\">2. ixigo money voucher - You can add ixigo money directly to your account if you have a voucher. To add the voucher, select the ixigo money option from the main menu of our website or flights app and click on the add ixigo money option.</span></p><p><br></p><p><span style=\"color: rgb(0, 0, 0);\">Please note: ixigo money voucher can only be received as a part of promotional offers or rewards.</span></p>"
+     }
+    }
+   ],
+   "priority": 1
+  },
+  {
+   "tags": [
+    "money-faq"
+   ],
+   "isActive": true,
+   "header": {
+    "en": "Checking ixigo money balance"
+   },
+   "contents": [
+    {
+     "text": {
+      "en": "<p><span style=\"color: rgb(0, 0, 0);\">You can check your ixigo money balance via your ixigo account. Simply select the \"ixigo money\" option from the main menu of the ixigo website or ixigo app.</span></p>"
+     }
+    }
+   ],
+   "priority": 2
+  },
+  {
+   "tags": [
+    "money-faq"
+   ],
+   "isActive": true,
+   "header": {
+    "en": "Timeline for receiving ixigo money"
+   },
+   "contents": [
+    {
+     "text": {
+      "en": "<p><span style=\"color: rgb(0, 0, 0);\">You will receive your ixigo money within 24 hours of your booking confirmation. This may vary as per the running offer and its terms and conditions.</span></p>"
+     }
+    }
+   ],
+   "priority": 3
+  }
+ ]
+}

@@ -31,7 +31,11 @@ describe('the recipe book', () => {
     expect(problems).toEqual([]);
     expect(book.all().map((r) => r.id).sort()).toEqual([
       'buses.between', 'buses.city_lookup', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.search',
-      'hotels.place_lookup', 'hotels.search', 'plan.destination', 'trains.between', 'trains.station_lookup',
+      'help.downtime', 'help.faq', 'help.services',
+      'hotels.details', 'hotels.offers', 'hotels.place_lookup', 'hotels.reviews', 'hotels.rooms', 'hotels.search', 'hotels.search_filters', 'hotels.similar',
+      'offers.campaign', 'offers.details', 'offers.list',
+      'plan.destination', 'plan.explore', 'plan.top_locations',
+      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.between', 'trains.by_name', 'trains.confirm_chance', 'trains.station_lookup',
     ]);
   });
 });
@@ -74,10 +78,10 @@ describe('hotels.search', () => {
     expect((await stays('Anjuna, Goa', [], pages(), { adults: 5 })).page).toContain('&adultCount=5&roomCount=3&');
   });
 
-  it('takes pages 1 and 2 for all of Goa or a half of it, and page 1 for an area; closes the popup; settles 550 ms', async () => {
+  it('takes pages 1 and 2 for all of Goa or a half of it, six scrolls bringing page 2, and page 1 for an area; closes the popup; settles 550 ms', async () => {
     const two = {
       capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
-      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 3 }, { op: 'click', name: 'Close modal', optional: true }],
+      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 6 }, { op: 'click', name: 'Close modal', optional: true }],
       timeoutMs: 12_000,
       settleMs: 550,
     };

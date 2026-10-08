@@ -6,7 +6,7 @@ asks:
   - what to do in goa
   - goa ke famous jagah kaun si hain
 inputs:
-  place: { kind: text, about: the destination as people said it, such as Goa }
+  place: { kind: text, about: "the destination as people said it, such as Goa" }
 auth: none
 changes_state: false
 # ixigo's guide page, /plan/{slug}: server-rendered, its props in the Next.js flight payload the page carries in its

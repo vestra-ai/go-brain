@@ -6,7 +6,6 @@
  */
 import { V1Error, type V1Client } from '../../tasks/v1-client.js';
 import { TravelError } from '../mcp-travel.js';
-import type { FetchTrace } from '../runs.js';
 import type { LiveFrame, OnProgress } from './progress.js';
 import { bodiesFor, IXIGO, type Capture, type CaptureSpec, type FetchPlan } from './recipe.js';
 
@@ -18,22 +17,35 @@ export interface PageCall {
   body?: string;
 }
 
+/**
+ * What a Bash call says about itself, for the run strip (book/run-event.ts): the calls it kept and, for a page, where its
+ * time went. Statuses, times and addresses only (the strip drops their queries); a failure by its status and code.
+ */
+export interface FetchTrace {
+  /** When the call to Bash was made, in epoch ms. */
+  started_at: number;
+  elapsed_ms: number;
+  woke?: boolean;
+  /** In ms from when the call reached Bash. */
+  timings?: { wake_ms: number; nav_ms: number | null; first_capture_ms: number | null; done_ms: number } | null;
+  calls: Array<{ method?: 'GET' | 'POST'; url: string; status: number; at_ms?: number; ms?: number }>;
+  /** A call that failed: its status (504, 409, …) and Bash's code, or where a timeout stopped ("ran out of time at 3 type"). */
+  failed?: { status: number; why: string };
+}
+
+/** onProgress: pictures of the page, for the live search card; onTrace: where the time went, for the run strip. Both
+ *  called, never awaited. */
+export interface ReadOptions { signal?: AbortSignal; onProgress?: OnProgress; onTrace?: (t: FetchTrace) => void }
+
 export interface RecipeRunner {
   name: 'browser_fetch';
-  /** Opens a page, works its steps and brings back the calls the plan keeps, and the address the page ended on.
-   *  onProgress: pictures of the page, for the live search card; onTrace: where the time went, for the live view (runs.ts).
-   *  Both called, never awaited. */
-  read(
-    tripId: string,
-    url: string,
-    plan: FetchPlan,
-    o?: { signal?: AbortSignal; onProgress?: OnProgress; onTrace?: (t: FetchTrace) => void },
-  ): Promise<{ captures: Capture[]; finalUrl: string }>;
+  /** Opens a page, works its steps and brings back the calls the plan keeps, and the address the page ended on. */
+  read(tripId: string, url: string, plan: FetchPlan, o?: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }>;
   /**
    * Makes a page's own call from the trip's warm ixigo tab (Bash's page_fetch), keeping the tab open for the next one;
    * with no tab kept, it opens ixigo's home first. The call's answer, as a capture.
    */
-  pageFetch?(tripId: string, call: PageCall, o?: { signal?: AbortSignal; onTrace?: (t: FetchTrace) => void }): Promise<Capture>;
+  pageFetch?(tripId: string, call: PageCall, o?: Omit<ReadOptions, 'onProgress'>): Promise<Capture>;
 }
 
 export interface RunnerDeps {
@@ -69,7 +81,7 @@ interface FetchAnswer {
   timings?: FetchTrace['timings'];
   captures: Capture[];
   frames?: LiveFrame[];
-  /** With a timeout: where the fetch was when the time ran out. */
+  /** With a timeout: where the fetch was when the time ran out ("3 type"). */
   step?: string;
 }
 
@@ -112,7 +124,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     url: string,
     plan: FetchPlan,
     what: { id: string; capture: CaptureSpec[] },
-    o: { signal?: AbortSignal; onProgress?: OnProgress; onTrace?: (t: FetchTrace) => void },
+    o: ReadOptions,
   ): Promise<{ captures: Capture[]; finalUrl: string }> {
     const body = {
       url,
@@ -137,7 +149,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
         if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
         o.onTrace?.({
-          speed: 'page', started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null,
+          started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null,
           calls: answer.captures.map((c) => ({ url: c.url, status: c.status, at_ms: c.at_ms })),
         });
         return { captures: answer.captures, finalUrl: typeof answer.final_url === 'string' ? answer.final_url : url };
@@ -157,14 +169,14 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           const frames = partialFrames(err);
           if (frames.length > 0) o.onProgress?.({ type: 'frames', frames });
         }
-        o.onTrace?.(failedTrace('page', startedAt, d.now().getTime(), err));
+        o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
         return { captures: fetchFailed(err, what, tripId, d.log), finalUrl: url };
       }
     }
   }
 
   /** One page call from the warm tab; with none kept, the same call on a tab opened at ixigo's home. */
-  async function pageFetch(tripId: string, call: PageCall, o: { signal?: AbortSignal; onTrace?: (t: FetchTrace) => void }): Promise<Capture> {
+  async function pageFetch(tripId: string, call: PageCall, o: Omit<ReadOptions, 'onProgress'>): Promise<Capture> {
     const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'fast', max_bytes: 1_000_000 };
     const ask = (open: boolean) =>
       d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
@@ -177,20 +189,21 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       answer = await ask(false);
     } catch (err) {
       if (!(err instanceof V1Error) || !(err.status === 409 && err.code === 'no_open_tab')) {
-        o.onTrace?.(failedTrace('fast', startedAt, d.now().getTime(), err));
+        o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
         throw pageCallFailed(err);
       }
       startedAt = d.now().getTime();
       try {
         answer = await ask(true);
       } catch (again) {
-        o.onTrace?.(failedTrace('fast', startedAt, d.now().getTime(), again));
+        o.onTrace?.(failedTrace(startedAt, d.now().getTime(), again));
         throw pageCallFailed(again);
       }
     }
     const got = answer.captures.find((c) => c.match === 'fast');
+    // The call's own time is when its answer was in, from when Bash had the ask: the tab was already open.
     o.onTrace?.({
-      speed: 'fast', started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null,
+      started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null,
       calls: got ? [{ method: call.method, url: got.url || call.url, status: got.status, at_ms: got.at_ms, ms: got.at_ms }] : [],
       ...(got ? {} : { failed: { status: 0, why: 'no answer to the page call' } }),
     });
@@ -208,17 +221,17 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
 }
 
 /**
- * A Bash call that failed, for the live view: its status and code, never its message. A timeout carries what the page
- * did before the time ran out (Bash's partial): when the computer woke, when the page showed, the calls kept, and where
- * it stopped.
+ * A Bash call that failed, for the run strip: its status and code, never its message. A timeout carries what the page did
+ * before the time ran out (Bash's partial): when the computer woke, when the page showed, the calls kept, where it stopped.
  */
-function failedTrace(speed: FetchTrace['speed'], startedAt: number, endedAt: number, err: unknown): FetchTrace {
-  if (!(err instanceof V1Error)) return { speed, started_at: startedAt, elapsed_ms: endedAt - startedAt, calls: [], failed: { status: 0, why: 'failed' } };
+function failedTrace(startedAt: number, endedAt: number, err: unknown): FetchTrace {
+  if (!(err instanceof V1Error)) return { started_at: startedAt, elapsed_ms: endedAt - startedAt, calls: [], failed: { status: 0, why: 'failed' } };
   const partial: Partial<FetchAnswer> = (err.status === 504 ? (err.detail?.['partial'] as Partial<FetchAnswer> | undefined) : undefined) ?? {};
   const { step, elapsed_ms: elapsed, woke, timings, captures } = partial;
   const why = err.status === 504 ? `ran out of time${typeof step === 'string' ? ` at ${step}` : ''}` : err.code;
   return {
-    speed, started_at: startedAt, elapsed_ms: typeof elapsed === 'number' ? elapsed : endedAt - startedAt,
+    started_at: startedAt,
+    elapsed_ms: typeof elapsed === 'number' ? elapsed : endedAt - startedAt,
     ...(typeof woke === 'boolean' ? { woke } : {}),
     timings: timings ?? null,
     calls: Array.isArray(captures) ? captures.filter(isCapture).map((c) => ({ url: c.url, status: c.status, at_ms: c.at_ms })) : [],

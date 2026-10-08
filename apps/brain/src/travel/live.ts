@@ -1,7 +1,7 @@
 /**
- * The live view's socket, /v1/live?trip_id=<trip>: one trip's recipe runs as they happen (runs.ts), for a screen the
- * Server shows (the try room's Go Live). Signed exactly as the Server's own socket is: x-go-signature over the path and
- * query, each signature good once. Read only: nothing a viewer sends is read.
+ * The live view's socket, /v1/live?trip_id=<trip>: one trip's recipe runs as the engine tells them (runs.ts), for a
+ * screen the Server shows (the try room's Go Live). Signed exactly as the Server's own socket is: x-go-signature over the
+ * path and query, each signature good once. Read only: nothing a viewer sends is read.
  *
  * On open, a hello with the trip's recent events and pictures; then every event as it comes. A viewer that falls
  * behind (over MAX_BEHIND_BYTES waiting to go out) misses pictures, never a run's events.
@@ -13,7 +13,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { Brain } from '../app.js';
 import { refuse, signatureParts } from '../door/door.js';
 import { createReplayGuard } from '../door/replay-guard.js';
-import type { RunEvent, RunLog } from './runs.js';
+import type { LiveEvent, RunLog } from './runs.js';
 
 export const LIVE_PATH = /^\/v1\/live$/;
 /** Pictures wait while this much is still going out to a viewer. */
@@ -23,7 +23,7 @@ const PING_MS = 20_000;
 const TRIP_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 /** What a viewer reads: the hello first, then one message per event. */
-export type LiveMessage = { type: 'hello'; trip_id: string; events: RunEvent[] } | { type: 'run'; event: RunEvent };
+export type LiveMessage = { type: 'hello'; trip_id: string; events: LiveEvent[] } | { type: 'run'; event: LiveEvent };
 
 export function registerLive(brain: Pick<Brain, 'door' | 'env' | 'pool' | 'now' | 'log' | 'onStop'>, runs: RunLog): { viewers(): number } {
   const guard = createReplayGuard({ pool: brain.pool, now: brain.now });

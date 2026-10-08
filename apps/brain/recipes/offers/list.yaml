@@ -1,0 +1,57 @@
+id: offers.list
+title: The offers on ixigo now, and the banks and cards that have offers
+asks:
+  - any offers on ixigo right now
+  - which bank cards have offers on ixigo
+  - koi offer chal raha hai kya
+auth: none
+changes_state: false
+# The fast speed asks for every domestic offer at once (49 on 8 Oct 2026), with ixigo's two client headers. The page,
+# /offers, is an older Next.js page: its first nine offers (sales and single offers, flights, hotels and trains
+# together), the counts and the banks sit in its __NEXT_DATA__ script; the rest load as the person scrolls. Either is
+# read the same way: rows from "/offers", the page's document or the call.
+page: /offers
+fast: { url: /upahaar-inventory/api/offers/v2/list?journeyType=DOMESTIC&page=1&limit=50, headers: { ixisrc: ixiweb, clientid: ixiweb } }
+capture:
+  - { match: /offers$, max_bytes: 1000000 }
+read:
+  rows:
+    from: /offers
+    format: next_data
+    list: |
+      (
+        $body := $type($) = "array" ? $[0] : $;
+        $d := $body.props ? $body.props.pageProps.data : $body.data;
+        $until := function($t) { $t ? $fromMillis($toMillis($t), '[D] [MNn,*-3] [Y]', '+0530') };
+        [
+          { "offers_on_ixigo": $d.count, "by_journey": $d.journeyGroups ? [$d.journeyGroups.($lowercase(journeyType) & ": " & $string(count))] },
+          { "banks_with_offers": [$d.paymentTypesOfferGroup.(paymentType & ": " & $string(associatedOffers))] },
+          $d.offers.(
+            offerType = "CAMPAIGN" ? {
+              "sale": campaignName,
+              "for": [groupedProducts.$lowercase($)],
+              "banks": [paymentTypeGroups.paymentType],
+              "until": $until(endDate),
+              "campaign": campaignSlug
+            } : {
+              "offer": offerTitle,
+              "code": offerCode,
+              "for": product ? $lowercase(product),
+              "bank": paymentType,
+              "until": $until(endDate),
+              "details": slug
+            }
+          )
+        ]
+      )
+answer:
+  as: facts
+  title: Offers on ixigo now
+  max: 30
+  each: $
+ttl_minutes: 60
+samples: { page: offers.list.html, fast: offers.list.fast.json }
+measured: { fast_ms: 63, page_ms: 2630, flow_ms: null }
+notes: >-
+  "details" is an offer's name for offers.details, "campaign" a sale's for offers.campaign. Every offer needs the
+  person's ixigo login and the named card at payment: Go only says which code fits.

@@ -1,0 +1,62 @@
+id: help.faq
+title: ixigo's own answers on one help topic, such as ixigo money, ixigo assured, the ixigo AU credit card or booking problems
+asks:
+  - how does ixigo money work
+  - what is ixigo assured
+  - what does the ixigo credit card give
+  - not able to book on ixigo, what do we do
+  - ixigo money kaise use karte hain
+inputs:
+  # The topics as help.services lists them.
+  topic:
+    kind: choice
+    optional: true
+    about: >-
+      the help topic: about-ixigo (the default), account-faq, money-faq (ixigo money), pre-booking (booking problems),
+      money-max-faq (instant refunds), ixigo-assured (free cancellation), au-credit-card (the ixigo AU credit card),
+      payment-faq (saved cards and wallets), metro or tourpackages (holiday packages)
+auth: none
+changes_state: false
+# /support answers its About ixigo questions as it opens; a topic's own questions come when its card is clicked. Only the
+# topic's own call is kept.
+let:
+  # Each topic's card on /support, by its second line, which is what is clicked.
+  cards: >-
+    { "account-faq": "Update email, phone no. or password", "money-faq": "View ixigo money transaction details and rules",
+    "pre-booking": "Facing issue while booking? Not able to book?", "money-max-faq": "Seamless instant refunds",
+    "ixigo-assured": "Get free cancellation benefits", "au-credit-card": "Your Gateway To Exclusive Perks",
+    "payment-faq": "Delete saved cards or link/delink wallets", "metro": "Metro Tickets Made Simple",
+    "tourpackages": "Unforgettable Tours Made Simple" }
+  # A topic ixigo doesn't list reads as About ixigo, which the title then says.
+  tag: "($t := $lowercase($trim(topic)); $exists($lookup($cards, $t)) ? $t : 'about-ixigo')"
+  card: "$lookup($cards, $tag)"
+page: /support
+# The fast speed asks for the topic's answers straight away: no card to click.
+fast: { url: "/support/helpcenter/api/v1/questions/general?tags={$tag}", headers: { ixisrc: ixiweb, clientid: ixiweb } }
+capture:
+  - "/support/helpcenter/api/v1/questions/general?tags={$tag}"
+fetch:
+  - when: "$exists($card)"
+    steps: [{ op: click, text: "{$card}" }]
+read:
+  rows: { from: "/support/helpcenter/api/v1/questions/general?tags={$tag}", list: '($type($) = "array" ? $[0] : $).data[$not(isActive = false)]' }
+answer:
+  as: facts
+  title: "ixigo's answers on {$tag}"
+  max: 20
+  # Answers are HTML: read as text.
+  each: |
+    (
+      $html := $join(contents.text.en, " ");
+      $text := $replace($replace($replace($html, /<br\s*\/?>|<\/p>|<\/li>/, " "), /<[^>]+>/, ""), /&nbsp;/, " ");
+      $type(header.en) = "string" ? {
+        "question": $trim(header.en),
+        "answer": $trim($replace($replace($text, /&amp;/, "&"), /\s+/, " "))
+      }
+    )
+ttl_minutes: 60
+samples: { money: help.faq.money.json }
+measured: { fast_ms: 123, page_ms: 2130, flow_ms: null }
+notes: >-
+  Counts on 7 Oct 2026: pre-booking 73, au-credit-card 19, metro 18, ixigo-assured 13, money-max-faq 8, tourpackages 8,
+  about-ixigo 8, money-faq 6, account-faq 4, payment-faq 3. The calls need the page's own headers, so only the page makes them.

@@ -1,0 +1,59 @@
+id: hotels.rooms
+title: The rooms a stay has for the dates, each rate with its price, cancellation, meals and how it is paid
+asks:
+  - what rooms does the villa have for our dates
+  - is it free cancellation, till when
+  - cheapest room there with breakfast
+  - can we pay at the hotel
+  - kitne ka room hai wahan
+inputs:
+  hotel: { kind: option, about: "the stay, one of Go's search results" }
+auth: none
+changes_state: false
+# The stay's own page (see hotels.details): its rooms call lists every room and, under each, its rates.
+let:
+  hotel_id: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/(\\d+)/details\\?")[0]'
+  hotel_query: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/\\d+/details\\?([^#\\s]*)$")[0]'
+  hotel_name: '$decodeUrlComponent($groups(hotel, "[?&]hName=([^&#]*)")[0])'
+page: /hotels/{$hotel_id}/details?{$hotel_query|raw}
+capture:
+  - "/accommodations/details/{$hotel_id}/rooms$"
+read:
+  # One row a rate, with its room's name and facts.
+  rows:
+    from: "/accommodations/details/{$hotel_id}/rooms$"
+    list: |
+      ($type($) = "array" ? $[0] : $).data.rooms.(
+        $room := $;
+        roomOptions.$merge([$, { "room": $room.name, "room_facts": $room.properties.data }])
+      )
+answer:
+  as: facts
+  title: "Rooms at {$hotel_name ? $hotel_name : 'the stay'}"
+  max: 12
+  # ixigo's price is a night for one room, before taxes and fees; the struck price is the one before its discount.
+  each: |
+    (
+      $fare := fareDetail;
+      $pay := paymentType = "PAY_AT_HOTEL" ? "pay at the hotel" : (paymentType = "BOOK_WITH_ZERO_PAYMENT" ? "book with ₹0 now, pay later" : "pay now");
+      $type($fare.displayedBaseFare) = "number" ? {
+        "room": $trim(room),
+        "about_room": $join(room_facts, ", "),
+        "rate": name,
+        "price_per_night": $rupees($fare.displayedBaseFare) & " a room" & ($type($fare.taxesAndFees) = "number" ? " plus " & $rupees($round($fare.taxesAndFees)) & " taxes and fees" : ""),
+        "before_discount": $fare.markUpFare > $fare.displayedBaseFare ? $rupees($fare.markUpFare),
+        "cancellation": cancellationBenefits.data,
+        "meals": mealBenefits,
+        "includes": otherBenefits,
+        "pay": $pay,
+        "rooms_left": fomoTag,
+        "coupon": $fare.offerMessage,
+        "recommended": isRecommended = true ? true
+      }
+    )
+ttl_minutes: 10
+samples: { book_with_zero: hotels.rooms.json, pay_at_hotel: hotels.rooms.pay-at-hotel.json }
+measured: { fast_ms: 195, page_ms: 2240, flow_ms: null }
+notes: >-
+  A rate's blockId is what booking uses; it is per search, so it is never kept. "Reserve 1 Room" asks for an ixigo login:
+  booking is the person's own step.

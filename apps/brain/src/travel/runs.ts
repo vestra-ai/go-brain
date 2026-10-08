@@ -1,126 +1,66 @@
 /**
- * The run log: each ixigo recipe run as it happens, for the live view (live.ts). The engine reports through a run's
- * handle and never waits on it; nothing here changes how a run goes, and a handle never throws back into the engine.
+ * The run log: each trip's recipe runs as the engine tells them (book/run-event.ts), for the live view (live.ts). In
+ * memory only: the last events of each trip, and the newest runs' pictures.
  *
- * Per trip, in memory only: the last events and the newest runs' pictures. Runs of a trip that overlap in time are one
- * group (they ran in parallel), so a viewer can set the group's wall time against the sum of its runs. A lookup (a
- * place typed into ixigo's box for a search) is a run of its own under its search, in the search's group.
- *
- * What a run did, never what it read: recipe ids, speeds, a call's host and path (never its query, where a PNR or a
- * person's details would ride), statuses, times and row counts. Pictures only of search, results and details pages
- * (frame-pages.ts), as on the live card.
+ * It adds one thing the engine doesn't know: which runs went at once. A run with no parent and no fell_from opens a
+ * group, or joins the one still going; a lookup joins its search's group, and a speed that fell joins its first speed's.
+ * When the last run of a group ends, the group ends, with its wall time and the sum of its runs' times, so a viewer can
+ * set one against the other.
  */
-import { randomBytes } from 'node:crypto';
-import { isFramePage } from './frame-pages.js';
-import type { LiveFrame } from './recipes/progress.js';
+import type { RunEvent } from './book/run-event.js';
 
-/** fast: the page's own call from the trip's warm tab; page: a page opened in the trip's browser. */
-export type RunSpeed = 'fast' | 'page';
+type RunStart = Extract<RunEvent, { type: 'run_start' }>;
 
-/** One call a run made, as a viewer sees it. */
-export interface RunCall {
-  method: string;
-  /** Host and path, with no query; ixigo's own host is left out ("/hotels/api/v6/search"). */
-  path: string;
-  status: number;
-  /** When it finished, in ms from the run's start. */
-  at_ms: number;
-  /** How long it took, when the speed knows (a page call does; a page's own calls only say when they finished). */
-  ms?: number;
-}
-
-export interface RunFrame {
-  label: string;
-  at_ms: number;
-  /** The page's host and path. */
-  page: string;
-  jpeg_base64: string;
-}
-
-export type RunEvent =
-  | { type: 'run_start'; run_id: string; group_id: string; parent?: string; recipe_id: string; label: string; at: string }
-  /** The run tries a speed: a fast run that fails tries the page next. */
-  | { type: 'attempt'; run_id: string; speed: RunSpeed; at_ms: number }
-  | ({ type: 'call'; run_id: string; speed: RunSpeed } & RunCall)
-  /** A moment of a page run: the page showed, the computer woke, a speed fell to the next. */
-  | { type: 'step'; run_id: string; text: string; at_ms: number }
-  /** The run's own title once its inputs are filled ("Delhi to Goa trains, Fri 6 Nov"). */
-  | { type: 'named'; run_id: string; label: string }
-  | { type: 'run_end'; run_id: string; ok: boolean; speed: RunSpeed | 'link' | 'kept' | null; ms: number; rows?: number; why?: string }
-  | { type: 'group_end'; group_id: string; runs: number; wall_ms: number; sum_ms: number }
-  | { type: 'frames'; run_id: string; frames: RunFrame[] };
-
-/** What a Bash call says about itself: its calls and, for a page, where its time went. */
-export interface FetchTrace {
-  speed: RunSpeed;
-  /** When the call to Bash was made, in epoch ms. */
-  started_at: number;
-  elapsed_ms: number;
-  woke?: boolean;
-  /** For a page: in ms after the call arrived at Bash. */
-  timings?: { wake_ms: number; nav_ms: number | null; first_capture_ms: number | null; done_ms: number } | null;
-  calls: Array<{ method?: string; url: string; status: number; at_ms?: number; ms?: number }>;
-  /** A call that failed: its status (504, 409, …) and how Go says it. */
-  failed?: { status: number; why: string };
-}
-
-export interface RunHandle {
-  readonly id: string;
-  attempt(speed: RunSpeed): void;
-  trace(t: FetchTrace): void;
-  step(text: string): void;
-  named(label: string): void;
-  frames(frames: LiveFrame[]): void;
-  /** A lookup under this run: in its group, not counted in the group's sum. */
-  child(recipeId: string, label: string): RunHandle;
-  end(ok: boolean, o?: { speed?: RunSpeed | 'link' | 'kept' | null; rows?: number; why?: string }): void;
-}
+/** What a viewer reads: the engine's events, a run's start with its group, and a group's end. */
+export type LiveEvent =
+  | Exclude<RunEvent, { type: 'run_start' }>
+  | (RunStart & { group_id: string })
+  | { type: 'group_end'; group_id: string; runs: number; wall_ms: number; sum_ms: number };
 
 export interface RunLog {
-  start(tripId: string, recipeId: string, label: string): RunHandle;
-  /** The trip's last events, oldest first, and the newest runs' pictures: what a new viewer is shown first. */
-  recent(tripId: string): RunEvent[];
+  /** The engine's onRun. Never throws back into a run. */
+  record(tripId: string, e: RunEvent): void;
+  /** The trip's last events, oldest first, then the newest runs' pictures: what a new viewer is shown first. */
+  recent(tripId: string): LiveEvent[];
   /** Every event of the trip from now on; returns the unsubscribe. */
-  subscribe(tripId: string, fn: (e: RunEvent) => void): () => void;
+  subscribe(tripId: string, fn: (e: LiveEvent) => void): () => void;
 }
 
 /** Events kept per trip, and runs whose pictures are kept. */
 export const KEPT_EVENTS = 300;
 export const KEPT_FRAME_RUNS = 4;
-/** Trips kept at once; the one with the oldest event goes first. */
+/** Trips kept at once; one nobody watches, with the oldest event, goes first. */
 const KEPT_TRIPS = 200;
-const LABEL_MAX = 80;
+/** A group still going takes a new run only this soon after its last event: one left open by a lost run never grows. */
+export const GROUP_JOIN_MS = 60_000;
 
-const IXIGO_HOST = 'www.ixigo.com';
-
-/** A call's host and path, never its query: ixigo's own host is left out. Something unreadable is "(a call)". */
-export function pathOf(url: string): string {
-  try {
-    const u = new URL(url, `https://${IXIGO_HOST}`);
-    return u.hostname === IXIGO_HOST ? u.pathname : `${u.hostname}${u.pathname}`;
-  } catch {
-    return '(a call)';
-  }
+interface Group {
+  id: string;
+  started: number;
+  last: number;
+  /** The runs still going, and a fallen speed's next one, which keeps the group open until it starts. */
+  going: Set<string>;
+  runs: number;
+  sum: number;
 }
 
 interface TripRuns {
-  events: RunEvent[];
-  /** Pictures by run, newest last. */
-  frames: Map<string, RunFrame[]>;
-  subs: Set<(e: RunEvent) => void>;
-  /** The group runs are joining now: open while one of its top-level runs is still going. */
-  group: { id: string; started: number; going: Set<string>; runs: number; sum: number } | null;
+  events: LiveEvent[];
+  frames: Map<string, Extract<RunEvent, { type: 'frames' }>>;
+  subs: Set<(e: LiveEvent) => void>;
+  groupOf: Map<string, Group>;
+  open: Group | null;
   last: number;
 }
 
-export function createRunLog(o: { now: () => Date; mint?: (prefix: string) => string; log?: { warn(obj: object, msg: string): void } }): RunLog {
-  const mint = o.mint ?? ((prefix: string) => `${prefix}${randomBytes(5).toString('hex')}`);
+export function createRunLog(o: { now: () => Date; log?: { warn(obj: object, msg: string): void } }): RunLog {
   const trips = new Map<string, TripRuns>();
+  let groups = 0;
 
   const tripOf = (tripId: string): TripRuns => {
     let t = trips.get(tripId);
     if (!t) {
-      t = { events: [], frames: new Map(), subs: new Set(), group: null, last: 0 };
+      t = { events: [], frames: new Map(), subs: new Set(), groupOf: new Map(), open: null, last: 0 };
       trips.set(tripId, t);
       while (trips.size > KEPT_TRIPS) {
         const oldest = [...trips.entries()].filter(([, v]) => v.subs.size === 0).sort((a, b) => a[1].last - b[1].last)[0];
@@ -131,12 +71,10 @@ export function createRunLog(o: { now: () => Date; mint?: (prefix: string) => st
     return t;
   };
 
-  const emit = (tripId: string, e: RunEvent): void => {
-    const t = tripOf(tripId);
-    t.last = o.now().getTime();
+  const tell = (t: TripRuns, tripId: string, e: LiveEvent): void => {
     if (e.type === 'frames') {
       t.frames.delete(e.run_id);
-      t.frames.set(e.run_id, e.frames);
+      t.frames.set(e.run_id, e);
       while (t.frames.size > KEPT_FRAME_RUNS) t.frames.delete(t.frames.keys().next().value!);
     } else {
       t.events.push(e);
@@ -146,95 +84,58 @@ export function createRunLog(o: { now: () => Date; mint?: (prefix: string) => st
       try {
         fn(e);
       } catch (err) {
-        o.log?.warn({ err, tripId }, 'travel: a live viewer failed on a run event');
+        o.log?.warn({ err: String(err).slice(0, 200), tripId }, 'travel: a live viewer failed on a run event');
       }
     }
   };
 
-  function handle(tripId: string, recipeId: string, label: string, parent?: { id: string; group: string }): RunHandle {
-    const t = tripOf(tripId);
-    const id = mint('run_');
-    const started = o.now().getTime();
-    const sinceStart = (): number => o.now().getTime() - started;
-    let group: string;
-    if (parent) {
-      group = parent.group;
-    } else {
-      if (!t.group) t.group = { id: mint('grp_'), started, going: new Set(), runs: 0, sum: 0 };
-      t.group.going.add(id);
-      t.group.runs += 1;
-      group = t.group.id;
-    }
-    emit(tripId, {
-      type: 'run_start', run_id: id, group_id: group, ...(parent ? { parent: parent.id } : {}), recipe_id: recipeId,
-      label: label.slice(0, LABEL_MAX), at: new Date(started).toISOString(),
-    });
-    let ended = false;
-    let speedNow: RunSpeed | null = null;
-    const h: RunHandle = {
-      id,
-      attempt(speed) {
-        if (ended) return;
-        speedNow = speed;
-        emit(tripId, { type: 'attempt', run_id: id, speed, at_ms: sinceStart() });
-      },
-      trace(tr) {
-        if (ended) return;
-        const offset = tr.started_at - started;
-        const at = (ms: number | null | undefined): number | null => (typeof ms === 'number' ? offset + ms : null);
-        if (tr.woke && tr.timings?.wake_ms) emit(tripId, { type: 'step', run_id: id, text: `The computer woke (${tr.timings.wake_ms} ms)`, at_ms: at(tr.timings.wake_ms)! });
-        const nav = at(tr.timings?.nav_ms);
-        if (nav !== null) emit(tripId, { type: 'step', run_id: id, text: 'The page showed', at_ms: nav });
-        for (const c of tr.calls) {
-          emit(tripId, {
-            type: 'call', run_id: id, speed: tr.speed, method: c.method ?? 'GET', path: pathOf(c.url), status: c.status,
-            at_ms: at(c.at_ms) ?? offset + tr.elapsed_ms, ...(typeof c.ms === 'number' ? { ms: c.ms } : {}),
-          });
-        }
-        if (tr.failed) emit(tripId, { type: 'step', run_id: id, text: `${tr.speed}: ${tr.failed.status}, ${tr.failed.why}`.slice(0, 160), at_ms: offset + tr.elapsed_ms });
-      },
-      step(text) {
-        if (!ended) emit(tripId, { type: 'step', run_id: id, text: text.slice(0, 160), at_ms: sinceStart() });
-      },
-      named(name) {
-        if (!ended) emit(tripId, { type: 'named', run_id: id, label: name.slice(0, LABEL_MAX) });
-      },
-      frames(list) {
-        const shown = list
-          .filter((f) => isFramePage(f.page_url))
-          .map((f) => ({ label: f.label, at_ms: f.at_ms, page: pathOf(f.page_url), jpeg_base64: f.jpeg_base64 }));
-        if (shown.length > 0) emit(tripId, { type: 'frames', run_id: id, frames: shown });
-      },
-      child(childRecipe, childLabel) {
-        return handle(tripId, childRecipe, childLabel, { id, group });
-      },
-      end(ok, e = {}) {
-        if (ended) return;
-        ended = true;
-        const ms = sinceStart();
-        const speed = e.speed === undefined ? speedNow : e.speed;
-        emit(tripId, {
-          type: 'run_end', run_id: id, ok, speed, ms,
-          ...(typeof e.rows === 'number' ? { rows: e.rows } : {}), ...(e.why ? { why: e.why.slice(0, 160) } : {}),
-        });
-        const g = t.group;
-        if (parent || !g || g.id !== group) return;
-        g.going.delete(id);
-        g.sum += ms;
-        if (g.going.size > 0) return;
-        t.group = null;
-        emit(tripId, { type: 'group_end', group_id: g.id, runs: g.runs, wall_ms: o.now().getTime() - g.started, sum_ms: g.sum });
-      },
-    };
-    return h;
+  /** The group a run's start joins: its parent's or first speed's, the one still going, or a new one. */
+  function join(t: TripRuns, e: RunStart, at: number): Group {
+    const kin = e.parent ?? e.fell_from;
+    const theirs = kin ? t.groupOf.get(kin) : undefined;
+    if (theirs) return theirs;
+    if (t.open && t.open.going.size > 0 && at - t.open.last < GROUP_JOIN_MS) return t.open;
+    groups += 1;
+    t.open = { id: `grp_${at.toString(36)}_${groups}`, started: at, last: at, going: new Set(), runs: 0, sum: 0 };
+    return t.open;
   }
 
   return {
-    start: (tripId, recipeId, label) => handle(tripId, recipeId, label),
+    record(tripId, e) {
+      try {
+        const t = tripOf(tripId);
+        const at = o.now().getTime();
+        t.last = at;
+        if (e.type === 'run_start') {
+          const g = join(t, e, at);
+          t.groupOf.set(e.run_id, g);
+          g.last = at;
+          // A lookup's time is inside its search's: it never counts. A fallen speed's next one carries the recipe on.
+          if (!e.parent) {
+            if (e.fell_from) g.going.delete(`next:${e.fell_from}`);
+            else g.runs += 1;
+            g.going.add(e.run_id);
+          }
+          tell(t, tripId, { ...e, group_id: g.id });
+          return;
+        }
+        tell(t, tripId, e);
+        if (e.type !== 'run_end') return;
+        const g = t.groupOf.get(e.run_id);
+        if (!g || !g.going.delete(e.run_id)) return;
+        g.last = at;
+        g.sum += e.ms;
+        if (e.fell_to) g.going.add(`next:${e.run_id}`);
+        if (g.going.size > 0) return;
+        if (t.open === g) t.open = null;
+        tell(t, tripId, { type: 'group_end', group_id: g.id, runs: g.runs, wall_ms: at - g.started, sum_ms: g.sum });
+      } catch (err) {
+        o.log?.warn({ err: String(err).slice(0, 200), tripId }, 'travel: the run log failed on a run event');
+      }
+    },
     recent(tripId) {
       const t = trips.get(tripId);
-      if (!t) return [];
-      return [...t.events, ...[...t.frames.entries()].map(([runId, frames]) => ({ type: 'frames' as const, run_id: runId, frames }))];
+      return t ? [...t.events, ...t.frames.values()] : [];
     },
     subscribe(tripId, fn) {
       const t = tripOf(tripId);
