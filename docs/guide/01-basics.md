@@ -133,4 +133,4 @@ When the socket itself drops:
 
 ## Versions
 
-This is contract version `1.0.0`. Go's paths start with `/v1`: the socket is `/v1/socket`, and `GET /v1/health` answers with the version Go speaks. Within version 1, things are only added (fields, event types, card kinds, methods), never renamed or removed, and an unknown method is answered with `-32601`. A breaking change would mean a `/v2/socket`, running next to `/v1/socket` until both sides have moved.
+This is contract version `1.1.0` ([what 1.1 added](11-contract-1-1.md)). Go's paths start with `/v1`: the socket is `/v1/socket`, and `GET /v1/health` answers with the version Go speaks. Within version 1, things are only added (fields, event types, card kinds, methods), never renamed or removed, and an unknown method is answered with `-32601`. A breaking change would mean a `/v2/socket`, running next to `/v1/socket` until both sides have moved.

@@ -52,6 +52,11 @@ export interface TravelOption {
   place?: Place;
   /** The backend's image; cards always show Go's re-hosted copy. */
   imageUrl?: string;
+  /** The backend's photos of it, larger, the card's picture first (a stay's: up to seven from ixigo's list); a details sheet
+   *  shows Go's re-hosted copies. */
+  imageUrls?: string[];
+  /** What the place has, in the backend's own words ("Free Wifi", "Swimming pool at the property"). */
+  amenities?: string[];
   logoUrl?: string;
   rating?: number;
   highlights: string[];
@@ -114,6 +119,16 @@ export interface Confirmed {
   journey?: Journey;
   /** Booked on Go's test rail only, nothing on ixigo (a stay from ixigo.com: travel/web-stays.ts): the receipt says so. */
   simulated?: true;
+}
+
+/** A place ixigo resolved (placeFor). */
+export interface ResolvedPlace {
+  /** Contract 1.1's Place: place_id "ixigo:<locationId>", lat/lng from ixigo, timezone from its country, photo_url from ixigo's guide. */
+  place: Place;
+  /** ixigo's type: a state (Goa), a city (Manali), or an area inside one (Candolim, Old Manali). */
+  kind: 'state' | 'city' | 'area';
+  /** The city and state it is in, by ixigo's own names: Old Manali is in ["Manali", "Himachal Pradesh"]; a state, []. */
+  within: string[];
 }
 
 /** One option Go showed on an options card, kept so a tap, a vote or a payment can name it later. */
@@ -181,6 +196,11 @@ export interface Travel {
   } | null>;
   /** The option's own name, place and area, for saving a stay or place a vote picked (composer/room-tools.ts). */
   placeOf?(optionId: string): Promise<OptionPlace | null>;
+  /**
+   * A place by the words for it, as ixigo's hotel box knows it; null when ixigo doesn't know it (or it is a hotel). The
+   * trip's destination is only ever saved as its place (trips/save-trip.ts). Filled by the travel lane (p4, place-for.ts).
+   */
+  placeFor?(words: string, o: { tripId: string }): Promise<ResolvedPlace | null>;
   /** Booking is two steps so card details only ever travel between the vault and the rail. Composer and P5 only. */
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   /** Safe to repeat: the same hold confirmed twice gives the same answer. */

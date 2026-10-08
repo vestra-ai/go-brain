@@ -55,8 +55,12 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
     }
     case 'travel_day':
       return `Tomorrow (${str('start')}) is travel day. The group may want the plan for the day: who leaves when, and what is booked.`;
-    case 'settle_up':
-      return `The trip is over and ${trip.money.transfers.length} payments are still open in settle-up.`;
+    case 'settle_up': {
+      // The Server's balances as they are now: a payback someone recorded and the one paid confirmed (1.1
+      // settlement.recorded, which makes Go read the trip again) is gone from them, so that pair is never nudged.
+      const open = trip.money.transfers.map((x) => `${who([x.from_person_id])} to ${who([x.to_person_id])} ${rupees(x.amount_minor)}`);
+      return `The trip is over and ${open.length} payments are still open in settle-up: ${open.join('; ')}. Remind only these.`;
+    }
     case 'flight_status': {
       // Facts use P4's status words (state, delayMinutes, expectedDepartAt); the demo's fire adds arriveAt and a note.
       const delay = num('delayMinutes');

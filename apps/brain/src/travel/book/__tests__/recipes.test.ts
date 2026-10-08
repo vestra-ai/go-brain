@@ -87,10 +87,12 @@ describe('hotels.search', () => {
   });
 
   it('takes pages 1 and 2 for all of Goa or a half of it, six scrolls bringing page 2, and page 1 for an area; closes the popup; settles 550 ms', async () => {
+    // ixigo's popup shows 1 s after the page mounts: closed first, looked for up to 3 s, then again once the results are in.
+    const POPUP = { op: 'click', name: 'Close modal', optional: true, within_ms: 3_000 };
     // Bash's whole 20 s: ixigo sent page 1 of all of Goa with a pool at 10.2 s (staging, 8 Oct), so 12 s failed it.
     const two = {
       capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
-      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 6 }, { op: 'click', name: 'Close modal', optional: true }],
+      steps: [POPUP, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 6 }, { op: 'click', name: 'Close modal', optional: true }],
       timeoutMs: 20_000,
       settleMs: 550,
     };
@@ -98,7 +100,7 @@ describe('hotels.search', () => {
     for (const area of ['Vagator', 'Anjuna', 'Candolim']) {
       expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual({
         capture: [{ match: SEARCH, required: true }],
-        steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
+        steps: [POPUP, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
         settleMs: 550,
       });
     }
@@ -132,6 +134,19 @@ describe('hotels.search', () => {
     expect(near.map((o) => o.title)).toEqual(['Soul Vacation Resort and Spa, Colva']);
   });
 
+  // What ixigo's list gives for a stay (staging, 8 Oct, Anjuna, saved whole): up to seven photos, a few amenities.
+  it("reads a stay's photos from ixigo's list, up to seven and larger, and its amenities in ixigo's words", async () => {
+    const { options } = await stays('Anjuna', [], [capture(SEARCH, SEARCH_URL, fixture('stays-anjuna-full.json'))]);
+    const riva = options.find((o) => o.title === 'Riva Beach Resort')!;
+    expect(riva.imageUrls).toHaveLength(7);
+    expect(riva.imageUrls![0]).toBe('https://pix8.agoda.net/property/109600/0/047a9028e97fbe184313ae32363b5282.jpeg?ce=0&s=1024x768');
+    // The card keeps its own picture, the same photo smaller.
+    expect(riva.imageUrl).toBe('https://pix8.agoda.net/property/109600/0/047a9028e97fbe184313ae32363b5282.jpeg?ce=0&s=840x460');
+    // "Breakfast Included" is the rate, not the place: it stays a highlight.
+    expect(riva.amenities).toEqual(['Free Wifi', 'Swimming pool at the property', 'Private Beach', 'Restaurants']);
+    expect(riva.facts).toMatchObject({ rating_word: 'Excellent', reviews: 1737, distance: '120 m from Mandrem Beach', area: 'Mandrem', stars: 4 });
+  });
+
   it('searches North Goa as all of Goa, and drops a stay from South Goa', async () => {
     const north = await stays('North Goa');
     expect(north.page).not.toContain('&filters=');
@@ -162,6 +177,7 @@ describe('hotels.search', () => {
     expect(options.map((o) => o.title)).toEqual(read.map((o) => o.title).filter((t) => t !== String(second['name']).trim()));
     const o = options.find((x) => x.title === String(first['name']).trim())!;
     expect(o).not.toHaveProperty('imageUrl');
+    expect(o).not.toHaveProperty('imageUrls');
     expect(o.facts).not.toHaveProperty('area');
     expect(o.facts).not.toHaveProperty('reviews');
     // Every hotel unreadable: a changed shape, said plainly, never "no stays".

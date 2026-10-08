@@ -7,7 +7,7 @@
 import { V1Error, type V1Client } from '../../tasks/v1-client.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveFrame, OnProgress } from './progress.js';
-import { bodiesFor, IXIGO, type Capture, type CaptureSpec, type FetchPlan } from './recipe.js';
+import { bodiesFor, IXIGO, type Capture, type CaptureSpec, type FetchPlan, type Step } from './recipe.js';
 
 /** A page's own call, as a recipe's fast speed makes it: a path on ixigo, or a full https address the deployment allows. */
 export interface PageCall {
@@ -82,6 +82,12 @@ export interface RecipeRunner {
    * more: one byte of its answer, for its status. Null when no tab is kept under that name.
    */
   tabCall?(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null>;
+  /**
+   * Steps on the kept hand-off tab of that name, kept in front for keepOpenMs more (Bash's url-less front fetch): a tap or
+   * two on a page the person already watches. Best effort: a step not found (Bash's time runs out with the tab kept) or a
+   * tab already gone is nothing; anything else Bash refuses is a TravelError.
+   */
+  tabSteps?(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number }): Promise<void>;
 }
 
 export interface RunnerDeps {
@@ -196,6 +202,28 @@ export const WARM_TAB_MS = 120_000;
  */
 export const FAST_UNSUPPORTED_MS = 10 * 60_000;
 /**
+ * How long Go leaves a click's within_ms out after a Bash refused it (one that predates it: its steps take no unknown
+ * field): the click then looks once, as before. Once Bash has it, it is sent again within this, with no deploy of Go's.
+ */
+export const LOOK_UNSUPPORTED_MS = 10 * 60_000;
+
+/** The steps with no within_ms: what an optional click is on a Bash that predates it, a single look. */
+export const withoutLook = (steps: Step[]): Step[] =>
+  steps.map((s) => {
+    if (s.op !== 'click' || s.within_ms === undefined) return s;
+    const { within_ms: _within, ...once } = s;
+    return once;
+  });
+
+/** Bash refused the fetch for a click's within_ms: its 400 names that step (param "steps.0"), never by its message. */
+function refusedLook(err: V1Error, steps: Step[] | undefined): boolean {
+  if (err.status !== 400 || err.code !== 'invalid_request' || !steps) return false;
+  const param = err.detail?.['param'];
+  const at = typeof param === 'string' ? /^steps\.(\d+)(?:\.|$)/.exec(param) : null;
+  const step = at ? steps[Number(at[1])] : undefined;
+  return step?.op === 'click' && step.within_ms !== undefined;
+}
+/**
  * COLD_COMPUTER. A computer's Chrome on its first ixigo visit, with none of ixigo's cookies, can draw a page that never
  * makes its search call (staging, 8 Oct: a new trip's first stays search sat 12 s on skeletons under ixigo's popup, with
  * nothing caught). So a new trip's computer visits ixigo once at setup (prime: the home page, its popup closed if it is
@@ -304,6 +332,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
 
   /** The computers a fetch of Go's has read ixigo on (COLD_COMPUTER): their pages are never asked twice. */
   const warm = new Set<string>();
+  /** Until when a click's within_ms is left out: Bash refused it (LOOK_UNSUPPORTED_MS). */
+  let noLookUntil = 0;
 
   /** One browser fetch: the page opened, its steps worked, and the calls the plan names kept. */
   async function fetchPage(
@@ -313,7 +343,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     what: { id: string; capture: CaptureSpec[] },
     o: ReadOptions,
   ): Promise<{ captures: Capture[]; finalUrl: string }> {
-    const body = {
+    const steps = plan.steps && d.now().getTime() < noLookUntil ? withoutLook(plan.steps) : plan.steps;
+    let body = {
       url,
       // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer.
       capture: plan.capture.map((c) => ({
@@ -322,7 +353,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         ...(c.min_count ? { min_count: c.min_count } : {}),
         ...(c.max_count ? { max_count: c.max_count } : {}),
       })),
-      ...(plan.steps ? { steps: plan.steps } : {}),
+      ...(steps ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
       // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
       // the recipe says how long that takes.
@@ -356,6 +387,14 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         }
         if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
           await sleep(IN_USE_WAIT_MS);
+          continue;
+        }
+        // A Bash that predates within_ms refuses the whole fetch before it opens anything: the same fetch again with its
+        // optional clicks looking once, as before, and none sent for a while.
+        if (body.steps && refusedLook(err, body.steps)) {
+          noLookUntil = d.now().getTime() + LOOK_UNSUPPORTED_MS;
+          body = { ...body, steps: withoutLook(body.steps) };
+          d.log.warn({ tripId, page: what.id }, "travel: this Bash takes no within_ms on a click yet; its optional clicks look once");
           continue;
         }
         // A cold computer's page that caught nothing (COLD_COMPUTER): once more, now that it has been to ixigo.
@@ -504,6 +543,19 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
+  async function tabSteps(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number }): Promise<void> {
+    // A fetch is its steps and a call: one byte of the home page closes it.
+    const done = { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'steps_done', max_bytes: 1 };
+    try {
+      await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+        body: { tab, steps: [...steps, done], front: true, keep_open_ms: o.keepOpenMs, timeout_ms: o.timeoutMs },
+      });
+    } catch (err) {
+      if (err instanceof V1Error && (err.status === 504 || (err.status === 409 && err.code === 'no_open_tab'))) return;
+      throw pageCallFailed(err);
+    }
+  }
+
   async function tabCall(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null> {
     const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'tab_call', max_bytes: 1 };
     try {
@@ -528,6 +580,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     handOff: (tripId, url, plan, o) => inSlot(tripId, {}, () => handOff(tripId, url, plan, o)),
     release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),
     tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
+    tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),
   };
 }
 

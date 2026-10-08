@@ -750,6 +750,23 @@ export function createEngine(d: EngineDeps) {
     },
     answer,
     answerShared,
+    /**
+     * A place as ixigo's box answers it for the words: the suggestion a person would pick, with what it shows (its
+     * region, its country) and the place it stands for (place-for.ts reads its coordinates). Null when ixigo knows none,
+     * knows more than one that fits, or there is no computer to ask from. One load of the box's own call; nothing kept.
+     */
+    async suggest(lookupId: string, words: string, o: RunFor): Promise<Suggestion | null> {
+      const lookup = d.book.get(lookupId);
+      const runner = d.runner(o.tripId);
+      if (!lookup || lookup.answer.as !== 'places' || !runner?.read) return null;
+      const [f] = await boxFetches(lookup, [{ end: 'place', words }]);
+      if (!f) return null;
+      refusePayments(f.path);
+      const got = await timed(lookupId, 'page', () => runner.read!(o.tripId, `${IXIGO}${f.path}`, { capture: f.capture, steps: f.steps }, fetchFor(o)));
+      const list = await readSuggestions(lookup, got.captures, words);
+      const picked = pickSuggestion(words, list);
+      return picked && 'place' in picked ? (list.find((x) => x.place === picked.place) ?? null) : null;
+    },
     /** Each recipe's numbers at each speed, slowest middle first. */
     stats(): RecipeStat[] {
       return [...timings.values()]

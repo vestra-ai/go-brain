@@ -14,6 +14,7 @@ import { ixigoPage } from './cards.js';
 import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
 import { applyConstraints, closest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
+import type { PlaceFor } from './place-for.js';
 import type { ResultsStore } from './results.js';
 import { checkInOf, WEB_STAY, type WebStays } from './web-stays.js';
 import { TravelQuery, type OfferRef, type SearchFor, type Travel, type TravelBackend, type TravelKind, type TravelOptionKind, type TravelSearch } from './travel.js';
@@ -35,6 +36,8 @@ export interface TravelLayerDeps {
   cacheMs?: number;
   /** Stays from ixigo.com, booked on Go's test rail once the trip's ixigo login is in (travel/web-stays.ts). */
   webStays?: WebStays | null;
+  /** A place by its words as ixigo knows it (travel/place-for.ts): only under ixigo_web, where Go reads ixigo.com. */
+  placeFor?: PlaceFor | null;
 }
 
 /** The part of a query the backend sees; the rest are constraints Go applies itself. */
@@ -143,6 +146,9 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     },
     async placeOf(optionId) {
       return d.results.placeOf ? d.results.placeOf(optionId) : null;
+    },
+    async placeFor(words, o) {
+      return d.placeFor && d.switches.get('TRAVEL_MODE') === 'ixigo_web' ? d.placeFor(words, o) : null;
     },
     async offer(optionId): Promise<OfferRef | null> {
       const o = await d.results.offer(optionId);

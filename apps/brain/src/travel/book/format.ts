@@ -41,9 +41,16 @@ const CaptureObject = z.object({
 /** A call the page makes that the fetch keeps: its match alone, or with its counts and size. */
 export const Capture = z.union([z.string().min(1).transform((match) => CaptureObject.parse({ match })), CaptureObject]);
 
-/** optional: a control that may not be there (a popup shown once a day), skipped instead of failing. */
+/**
+ * optional: a control that may not be there (a popup shown once a day), skipped instead of failing. within_ms: an optional
+ * click looks that long for one that shows a moment after the page (Bash's browser fetch; a Bash that predates it looks
+ * once, runners.ts).
+ */
 const Step = z.union([
-  z.object({ op: z.literal('click'), role: z.string().optional(), name: z.string().optional(), text: z.string().optional(), optional: z.boolean().optional() }),
+  z.object({
+    op: z.literal('click'), role: z.string().optional(), name: z.string().optional(), text: z.string().optional(), optional: z.boolean().optional(),
+    within_ms: z.int().min(1).max(10_000).optional(),
+  }),
   /** Into the box with that role and name, or, with neither, into the box that has the focus (ixigo's flight From box). */
   z.object({ op: z.literal('type'), role: z.string().optional(), name: z.string().optional(), text: z.string().min(1), submit: z.boolean().optional(), optional: z.boolean().optional() }),
   z.object({ op: z.literal('scroll'), times: z.int().positive() }),

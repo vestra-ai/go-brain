@@ -4,6 +4,7 @@
  */
 import * as C from '@go/contract';
 import type { z } from 'zod';
+import type { OptionDetailsT } from './details.js';
 import type { OptionKind, ResultOption } from './results.js';
 
 export type OptionsCardT = z.infer<typeof C.OptionsCard>;
@@ -16,6 +17,10 @@ export const VOTE_ACTION = { action_id: 'vote', label: 'Put it to a vote', style
 export const OPEN_ACTION = { action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true } as const;
 /** On a card of stays that shows a few of a longer list: the whole list on ixigo.com, one tap away. */
 export const SEE_ALL_ACTION = { action_id: 'see_all', label: 'See all on ixigo', style: 'secondary' } as const;
+/** On a stays card while nobody in the trip has a budget band: opens the App's budget sheet (contract 1.1 A4, a go:// link). */
+export const ADD_BUDGET_ACTION = { action_id: 'add_budget', label: 'Add my budget', style: 'secondary' } as const;
+/** The App's budget sheet for a trip, from the App team's route table (docs/guide/11-contract-1-1.md). */
+export const budgetSheet = (tripId: string): string => `go://trips/${encodeURIComponent(tripId)}/sheet/budget`;
 
 /** On the card of each home city's ways to the trip: ixigo's flights from the tapper's own home city. */
 export const FLIGHTS_HOME_ACTION = { action_id: 'flights_home', label: 'Flights from my city', style: 'secondary' } as const;
@@ -160,7 +165,8 @@ export function subtitleFor(o: ResultOption): string | null {
   return o.why ?? null;
 }
 
-export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null }
+/** details: the option's sheet (contract 1.1), when Go has one for it. */
+export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null; details?: OptionDetailsT }
 
 function cardOption(p: CardPick): CardOption {
   const o = p.option;
@@ -177,17 +183,23 @@ function cardOption(p: CardPick): CardOption {
     ...(o.place ? { place: { ...o.place, name: clip(o.place.name, 120), ...(o.place.address ? { address: clip(o.place.address, 200) } : {}) } } : {}),
     ...(o.rating !== undefined ? { rating: Math.min(5, Math.max(0, o.rating)) } : {}),
     ...(o.refundableUntil ? { refundable_until: o.refundableUntil } : {}),
+    ...(p.details ? { details: p.details } : {}),
   };
 }
 
 const KIND_WORDS: Record<OptionKind, [string, string]> = {
   stay: ['stay', 'stays'], flight: ['flight', 'flights'], train: ['train', 'trains'], bus: ['bus', 'buses'],
   place: ['place', 'places'], food: ['place to eat', 'places to eat'], activity: ['thing to do', 'things to do'],
+  cab: ['cab', 'cabs'],
 };
 
 /** The options card, checked against the contract: a bug here throws instead of posting a card the App cannot draw. */
-/** seeAll: the card's last button opens the whole list on ixigo.com instead of each option's page (stays, three shown). */
-export function buildOptionsCard(i: { cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean }): OptionsCardT {
+/**
+ * seeAll: the card's last button opens the whole list on ixigo.com instead of each option's page (stays, three shown).
+ * askBudget (stays, while nobody has a budget band): "Add my budget" takes the place of "See all on ixigo", after the
+ * group's own buttons; each option's "See on ixigo" stays only if there is still room in the three.
+ */
+export function buildOptionsCard(i: { cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean; askBudget?: boolean }): OptionsCardT {
   const priced = i.picks.filter((p) => p.option.priceMinor !== undefined);
   const cheapest = [...priced].sort((a, b) => (a.option.priceMinor ?? 0) - (b.option.priceMinor ?? 0))[0];
   const from = cheapest ? `, from ${formatInr(cheapest.option.priceMinor ?? 0)}${cheapest.option.priceNote ? ` ${cheapest.option.priceNote}` : ''}` : '';
@@ -200,8 +212,15 @@ export function buildOptionsCard(i: { cardId: string; title: string; optionKind:
     option_kind: i.optionKind,
     checked_at: i.checkedAt,
     options: i.picks.map(cardOption),
-    actions: [PICK_ACTION, ...(i.picks.length >= 2 ? [VOTE_ACTION] : []), ...(i.seeAll ? [SEE_ALL_ACTION] : i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [])],
+    actions: optionsActions(i),
   });
+}
+
+function optionsActions(i: { picks: CardPick[]; seeAll?: boolean; askBudget?: boolean }) {
+  const group = [PICK_ACTION, ...(i.picks.length >= 2 ? [VOTE_ACTION] : [])];
+  const open = i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [];
+  if (i.askBudget) return [...group, ADD_BUDGET_ACTION, ...open].slice(0, 3);
+  return [...group, ...(i.seeAll ? [SEE_ALL_ACTION] : open)];
 }
 
 /**

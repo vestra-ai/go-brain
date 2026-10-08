@@ -61,11 +61,14 @@ describe('rulesForTurn', () => {
     const r = rulesForTurn([proItem(chat, ['react', 'record', 'message'])]);
     expect(r).toMatchObject({ mayPostText: true, pinOnlyFor: null });
     expect(r?.tools).toEqual(expect.arrayContaining(['react', 'record', 'post_notice', 'stay_silent']));
+    // A message Go volunteers may carry quick replies (1.1 A3); a turn that may post no text gets none.
+    expect(r?.tools).toContain('offer_replies');
   });
 
   it('never lets simulated news out as text: a notice card carries its label and pins', () => {
     const toAll = candidate({ dedupeKey: 'sim:flight_status:all', simulated: true, personIds: [] });
     expect(rulesForTurn([proItem(toAll, ['message'])])).toMatchObject({ mayPostText: false, tools: expect.arrayContaining(['post_notice']) });
+    expect(rulesForTurn([proItem(toAll, ['message'])])?.tools).not.toContain('offer_replies');
     expect(composerRules([proItem(toAll, ['message'])])?.mayPostText).toBe(false);
     expect(rulesForTurn([proItem(chat, ['react', 'record', 'message'])])?.mayPostText).toBe(true);
   });
@@ -126,6 +129,20 @@ describe('the wake text', () => {
     expect(text).toContain('"Where do we stay?"');
     expect(text).toContain('Not voted yet: Arjun and Meher');
     expect(text).toContain('in about 6 hours');
+  });
+
+  it('names only the payments still open in settle-up: a confirmed payback (1.1 settlement.recorded) is gone from them', () => {
+    const c = candidate({ source: 'timer', topic: 'settle_up', personIds: [], facts: { end: '2026-11-09' } });
+    const transfers = [
+      { from_person_id: 'p_meher', to_person_id: 'p_rahul', amount_minor: 460000, currency: 'INR' },
+      { from_person_id: 'p_arjun', to_person_id: 'p_kabir', amount_minor: 48000, currency: 'INR' },
+    ];
+    const pack = goaPack();
+    pack.trip.money = { ...pack.trip.money, transfers };
+    const text = describeNoticed(c, pack, 'Asia/Kolkata', NOW);
+    expect(text).toContain('2 payments are still open in settle-up: Meher to Rahul ₹4,600; Arjun to Kabir ₹480. Remind only these.');
+    // Priya paid Rahul back and he confirmed it: the Server's balances no longer have that pair, so neither does the nudge.
+    expect(text).not.toContain('Priya');
   });
 
   it('says how much is at stake when free cancellation ends', () => {

@@ -209,6 +209,95 @@ describe('intake', () => {
     expect(h.order.filter((x) => x.startsWith('hook:'))).toEqual([]);
   });
 
+  // Contract 1.1 tolerance (1): a message from the Server itself (author system: "Priya added a photo", a check-in
+  // reminder) is kept, as an event or read back after a gap, and Go never answers it as if a person spoke, even "@Go".
+  it('a message from the Server itself is kept and never wakes Go, as an event or read back after a gap', async () => {
+    const T = 't_in_system';
+    const system = (seq: number, text: string) => msg(seq, null, text, { author: { kind: 'system' }, mentions_go: true });
+    const h = harness({
+      answers: {
+        read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 5 }),
+        read_messages: () => ({ messages: [system(3, '@Go Kabir shared a location'), msg(4, 'p_kabir', 'there it is')], has_more: false }),
+      },
+    });
+    await h.send(created(T));
+    await h.send(ev(2, 'message.created', { message: system(2, '@Go Priya added 3 photos') }, T));
+    await h.send(ev(5, 'message.created', { message: msg(5, 'p_arjun', 'nice') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref).sort()).toEqual(['m_4', 'm_5']);
+    expect(h.order.filter((x) => x.startsWith('typing:') || x === 'hook:m_2' || x === 'hook:m_3')).toEqual([]);
+    const pack = await h.packs.get(T);
+    expect(pack.messages.filter((m) => m.author.kind === 'system').map((m) => m.message_id)).toEqual(['m_2', 'm_3']);
+  });
+
+  // Contract 1.1 tolerance (2): replace_card changes no change number by the contract, but a Server that bumps a
+  // message's updated_seq when Go replaces its card hands it back from read_messages. It wakes nobody, and a person's
+  // message read back again (a reaction moved its updated_seq) is not handled twice.
+  it('a message read back after a gap with only its card replaced, or a reaction, wakes nobody and is not handled twice', async () => {
+    const T = 't_in_replaced';
+    const card = (state: 'running' | 'done') => ({
+      kind: 'working' as const, card_id: 'c_live_1', fallback_text: 'Go is searching hotels on ixigo.', task_id: 'search_1',
+      title: 'Searching hotels on ixigo', state, steps: [{ text: 'Opening ixigo hotels', state: state === 'done' ? 'done' as const : 'doing' as const }],
+      updated_at: '2026-10-08T10:00:00Z',
+    });
+    const h = harness({
+      answers: {
+        read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 6 }),
+        read_messages: () => ({
+          messages: [
+            msg(2, null, 'On it.', { card: card('done'), updated_seq: 4 }),
+            msg(3, 'p_priya', '@Go stays in Palolem?', { updated_seq: 5, reactions: [{ emoji: '👍', person_id: 'p_rahul' }] }),
+          ],
+          has_more: false,
+        }),
+      },
+    });
+    await h.send(created(T));
+    await h.send(ev(2, 'message.created', { message: msg(2, null, 'On it.', { card: card('running') }) }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_priya', '@Go stays in Palolem?') }, T));
+    await h.intake.idle();
+    const before = (await open(T)).filter((r) => r.kind === 'message');
+    expect(before.map((r) => r.ref)).toEqual(['m_3']);
+    const hooksBefore = h.order.filter((x) => x.startsWith('hook:')).length;
+    await h.send(ev(6, 'message.created', { message: msg(6, 'p_meher', 'ok') }, T));
+    await h.intake.idle();
+    const after = (await open(T)).filter((r) => r.kind === 'message');
+    expect(after.map((r) => r.ref)).toEqual(['m_3', 'm_6']);
+    expect(h.order.filter((x) => x.startsWith('hook:')).slice(hooksBefore)).toEqual(['hook:m_6']);
+    const pack = await h.packs.get(T);
+    expect(pack.messages.find((m) => m.message_id === 'm_2')?.card).toMatchObject({ state: 'done' });
+  });
+
+  // Contract 1.1 tolerance (3): expense.changed's new answers (approved, disputed) and a payback (settlement.recorded)
+  // are taken: the trip is read again for the Server's money, and nothing breaks.
+  it("takes 1.1's expense answers and paybacks: each reads the trip again, and Go carries on", async () => {
+    const T = 't_in_money11';
+    const h = harness({ answers: { read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 4 }) } });
+    await h.send(created(T));
+    const expense = {
+      expense_id: 'x_1', paid_by_person_id: 'p_rahul', amount_minor: 240000, currency: 'INR', note: 'Cab to Anjuna', category: 'getting_around' as const,
+      split_person_ids: ['p_rahul', 'p_priya'], created_at: '2026-10-08T10:00:00Z', status: 'approved' as const,
+      confirmations: [{ person_id: 'p_priya', state: 'approved' as const, at: '2026-10-08T10:05:00Z' }],
+    };
+    const reads = () => h.f.calls.filter((c) => c.method === 'read_trip').length;
+    const first = reads();
+    await h.send(ev(2, 'expense.changed', { expense, change: 'approved', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' }, T));
+    await h.send(ev(3, 'expense.changed', { expense: { ...expense, status: 'disputed' }, change: 'disputed', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' }, T));
+    await h.send(ev(4, 'settlement.recorded', {
+      settlement: {
+        settlement_id: 'st_1', from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 120000, currency: 'INR', method: 'upi',
+        status: 'confirmed', recorded_at: '2026-10-08T10:58:00Z', confirmed_at: '2026-10-08T11:00:00Z',
+      },
+      by: { kind: 'person', person_id: 'p_rahul' },
+    }, T));
+    await h.intake.idle();
+    expect(reads()).toBeGreaterThan(first);
+    await h.send(ev(5, 'message.created', { message: msg(5, 'p_arjun', '@Go who owes what now?') }, T));
+    await h.intake.idle();
+    expect((await open(T)).filter((r) => r.kind === 'message').map((r) => r.ref)).toEqual(['m_5']);
+  });
+
   it('handles a trip\'s events one at a time in seq order, even when the reflex is slow', async () => {
     const h = harness({
       reflex: () => ({ read: async (m) => { if (m.message_id === 'm_2') await sleep(150); return UNSURE_READ; } }),

@@ -25,6 +25,6 @@ describe('the method table', () => {
   it('knows exactly the contract event types', () => {
     const theirs = C.Event.options.map((o) => o.shape.type.value).sort();
     expect([...KNOWN_EVENT_TYPES].sort()).toEqual(theirs);
-    expect(KNOWN_EVENT_TYPES.size).toBe(20);
+    expect(KNOWN_EVENT_TYPES.size).toBe(21);
   });
 });

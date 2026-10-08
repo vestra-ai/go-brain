@@ -4,7 +4,7 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS,
+  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
   LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -76,6 +76,48 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(plain.calls[0]!.opts['body']).toEqual({ url: BUSES, capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS, frames: { width: FRAME_WIDTH } });
   });
 
+  // ixigo's hotel popup shows 1 s after the page mounts, so the recipe's first click looks for it up to 3 s (Bash's
+  // within_ms). A Bash from before within_ms takes no unknown field in a step: its 400 names the step (param), and Go
+  // asks the same fetch again with that click looking once, as it did before, and sends none for a while.
+  it('sends an optional click its within_ms; a Bash that refuses it gets the same fetch with the click looking once, for a while', async () => {
+    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+    const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
+    const page = 'https://www.ixigo.com/hotels/search/result?locationId=1026';
+    const plan: FetchPlan = {
+      capture: [{ match: SEARCH, required: true }],
+      steps: [{ op: 'click', name: 'Close modal', optional: true, within_ms: 3_000 }, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
+    };
+    const once = [{ op: 'click', name: 'Close modal', optional: true }, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }];
+    const answer = fetched([capture(SEARCH, url, fixture('stays-goa-page1.json'))], page);
+    const stepsSent = (w: ReturnType<typeof world>) => w.calls.map((c) => (c.opts['body'] as { steps: unknown }).steps);
+    // A Bash that takes it.
+    const today = world(() => answer);
+    await createBrowserFetchRunner(today.deps).read('t1', page, plan);
+    expect(stepsSent(today)).toEqual([plan.steps]);
+    // One that predates it: refused before anything opens, then the same fetch with one look.
+    const older = world((c) => {
+      const steps = (c.opts['body'] as { steps: Array<Record<string, unknown>> }).steps;
+      if (steps.some((x) => 'within_ms' in x)) throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'steps.0' });
+      return answer;
+    });
+    const runner = createBrowserFetchRunner(older.deps);
+    expect((await runner.read('t1', page, plan)).captures).toHaveLength(1);
+    expect(stepsSent(older)).toEqual([plan.steps, once]);
+    expect(older.log.warn).toHaveBeenCalledOnce();
+    // For a while after, none is sent: one fetch each. Past LOOK_UNSUPPORTED_MS it is asked again, in case Bash has it now.
+    await runner.read('t1', page, plan);
+    expect(stepsSent(older)).toEqual([plan.steps, once, once]);
+    await older.deps.sleep(LOOK_UNSUPPORTED_MS);
+    await runner.read('t1', page, plan);
+    expect(stepsSent(older)).toEqual([plan.steps, once, once, plan.steps, once]);
+    // A 400 that names another step is not this one: never asked again.
+    const other = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'steps.1' });
+    });
+    await createBrowserFetchRunner(other.deps).read('t1', page, plan).catch(() => undefined);
+    expect(other.calls).toHaveLength(1);
+  });
+
   it('answers a timed-out fetch with what it did get when every required call is in it, and shows the pictures it took', async () => {
     const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
     const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
@@ -139,6 +181,20 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
         timeout_ms: 12_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login',
       } },
     }]);
+    // Taps on the kept hand-off tab, in front, after the page: a call closes the fetch; a tap not found (504) or a tab
+    // gone (no_open_tab) is nothing.
+    const taps = world(() => fetched([capture('steps_done', 'https://www.ixigo.com/', '<', 200)], 'https://www.ixigo.com/'));
+    await createBrowserFetchRunner(taps.deps).tabSteps!('t1', 'ixigo_login', [{ op: 'click', role: 'button', name: 'Login' }], { keepOpenMs: 600_000, timeoutMs: 12_000 });
+    expect(taps.calls[0]!.opts['body']).toEqual({
+      tab: 'ixigo_login', front: true, keep_open_ms: 600_000, timeout_ms: 12_000,
+      steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'steps_done', max_bytes: 1 }],
+    });
+    for (const err of [new V1Error(504, 'timeout', 'The page did not send every capture (it stopped at 1 click).'), new V1Error(409, 'no_open_tab', 'No tab is kept open.')]) {
+      const failing = world(() => {
+        throw err;
+      });
+      await expect(createBrowserFetchRunner(failing.deps).tabSteps!('t1', 'ixigo_login', [], { keepOpenMs: 600_000, timeoutMs: 12_000 })).resolves.toBeUndefined();
+    }
     await runner.release!('t1', 'ixigo_login');
     expect(w.calls[1]!.opts['body']).toEqual({ tab: 'ixigo_login', steps: [{ op: 'page_fetch', url: '/', method: 'GET', capture_as: 'close', max_bytes: 1 }], timeout_ms: FAST_TIMEOUT_MS });
 

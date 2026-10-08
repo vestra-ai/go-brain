@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place, PositiveAmountMinor, Seq } from './common.js';
-import { BookingKind, Day, Decision, DecisionOption, Proof } from './trip.js';
+import { BookingDetail, BookingDocument, BookingKind, Day, Decision, DecisionOption, Passenger, Proof } from './trip.js';
 
 /**
  * Go's requests: what Go asks the Server over the socket, to read the trip or act in it.
@@ -121,6 +121,14 @@ export const AddBooking = z
     decision_id: Id.nullish(),
     /** Required when Go paid through the vault. The Server marks that approval used. */
     approval_id: Id.nullish(),
+    /** 1.1: more lines for the ticket. */
+    details: z.array(BookingDetail).max(20).nullish(),
+    /** 1.1: the way back, for a round trip. */
+    return_journey: Journey.nullish(),
+    /** 1.1: each traveller, with a seat and PNR when there are. */
+    passengers: z.array(Passenger).max(30).nullish(),
+    /** 1.1: tickets and vouchers. The Server fetches each `url` once (Go's signed link) and keeps its own copy. */
+    documents: z.array(BookingDocument).max(10).nullish(),
   })
   .meta({ id: 'AddBooking' });
 export const AddBookingResult = z.object({ booking_id: Id, seq: Seq }).meta({ id: 'AddBookingResult' });
@@ -149,6 +157,12 @@ export const AddExpense = z
     category: Category,
     split_person_ids: z.array(Id).min(1).max(30),
     booking_id: Id.nullish(),
+    /**
+     * 1.1: the spend approval this was paid with (its `jti`), when Go paid through the vault. The Server records such an
+     * expense as approved at once; without it, a 1.1 Server records the expense pending, for the people it is split
+     * between to approve or dispute.
+     */
+    approval_id: Id.nullish(),
   })
   .meta({ id: 'AddExpense' });
 export const AddExpenseResult = z.object({ expense_id: Id, seq: Seq }).meta({ id: 'AddExpenseResult' });

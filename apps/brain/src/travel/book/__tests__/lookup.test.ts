@@ -32,10 +32,12 @@ describe("ixigo's search box, read and picked as a person would (p4's raw answer
 
   it('takes a city by its own name, and an area by the words that fit it, though ixigo lists the city first', async () => {
     expect((await pick('hotels.place_lookup', '/hotels-autocompleter/api/v2/results', 'query', 'Manali', 'hotels.place_lookup.manali.json')).picked)
-      .toEqual({ place: { locationId: 184, locationName: 'Manali', locationType: 'C', masterLocationId: 9425, countryId: 1 } });
+      .toEqual({ place: { locationId: 184, locationName: 'Manali', locationType: 'C', masterLocationId: 9425, countryId: 1, lat: 32.2431872, lng: 77.1891761 } });
     const old = await pick('hotels.place_lookup', '/hotels-autocompleter/api/v2/results', 'query', 'Old Manali', 'hotels.place_lookup.old-manali.json');
     expect(old.list.map((s) => s.name)).toEqual(['Manali', 'Old Manali']);
-    expect(old.picked).toEqual({ place: { locationId: 3588, locationName: 'Old Manali', locationType: 'L', masterLocationId: 31346, countryId: 1 } });
+    expect(old.picked).toEqual({
+      place: { locationId: 3588, locationName: 'Old Manali', locationType: 'L', masterLocationId: 31346, countryId: 1, lat: 32.2521478, lng: 77.17871140000001 },
+    });
   });
 
   it('takes the "All boarding points" entry, and a town by its name when there is none: Bangalore is Bengaluru 7, Hampi is 1579', async () => {

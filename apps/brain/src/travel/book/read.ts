@@ -32,8 +32,12 @@ const Option = z.object({
       stops: z.int().nonnegative().optional(),
     })
     .optional(),
-  place: z.object({ name: z.string().min(1).max(120), address: z.string().max(200).optional(), lat: z.number().optional(), lng: z.number().optional() }).optional(),
+  place: z
+    .object({ name: z.string().min(1).max(120), address: z.string().max(200).optional(), lat: z.number().optional(), lng: z.number().optional(), timezone: z.string().max(64).optional() })
+    .optional(),
   imageUrl: z.url().optional(),
+  imageUrls: z.array(z.url()).max(10).optional(),
+  amenities: z.array(z.string().min(1).max(80)).max(12).optional(),
   rating: z.number().min(0).max(5).optional(),
   highlights: z.array(z.string().min(1).max(80)).max(4),
   facts: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),

@@ -212,6 +212,7 @@ export function messageText(m: Message): string {
   if (m.text) parts.push(m.text);
   for (const a of m.attachments) {
     if (a.kind === 'photo') parts.push(a.caption ? `(photo: ${a.caption})` : '(a photo)');
+    else if (a.kind === 'location') parts.push(`(📍 ${a.name ?? `${a.lat},${a.lng}`})`);
     else parts.push(`(file: ${a.name})`);
   }
   return parts.join(' ');

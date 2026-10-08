@@ -630,35 +630,33 @@ describe('Go Live', () => {
   }
   const lives = (got: any[]) => got.filter((m) => m.type === 'live');
 
-  it("draws the second column only when the room has Go Live, and the page's script still parses", async () => {
+  it("draws Go Live as the chat's mini browser and Details, never a second column, and the page's script still parses", async () => {
     const plain = roomPage({ title: 'Try Go', nonce: 'n0nce', hints: HINTS, hosted: true });
-    expect(plain).not.toContain('class="split"');
     expect(plain).not.toContain('onLive(');
+    expect(plain).not.toContain('id="details"');
     const html = roomPage({ title: 'Try Go', nonce: 'n0nce', hints: HINTS, hosted: true, live: true });
-    expect(html).toContain('<div class="split"><div class="app">');
-    expect(html).toContain('<aside class="live" id="live" aria-label="Go Live">');
+    expect(html).not.toContain('class="split"');
+    expect(html).not.toContain('<aside');
+    expect(html).toContain('<div class="app">');
+    expect(html).toContain('id="details-open"');
+    expect(html).toContain('<div class="details" id="details" role="dialog" aria-modal="true" aria-label="Details" hidden>');
+    expect(html).toContain('<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>');
     expect(html).toContain("} else if (data.type === 'live') {");
-    // A picture is shown at its own size or smaller, never stretched, and a finished or failed run's picture is never
-    // dimmed. Only the resting screen between runs is, lightly (dev-room.test.ts).
-    expect(html).toContain('.view img { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }');
+    // A picture is shown at its own size or smaller, never stretched or dimmed.
+    expect(html).toContain('.mini-view img { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; pointer-events: none; }');
     expect(html).not.toContain('object-fit: cover');
     expect(html).not.toContain('grayscale');
-    expect(html).not.toContain('.tile.ended {');
-    expect(html).toContain('.tile.rest .view img { opacity: .8; filter: saturate(.85); }');
     expect(html).toContain("else if (m.type === 'screen' && m.event) { live.state = 'on'; screenEvent(m.event); }");
-    // A group of steps (how we all get there) has its own badge and tile, and each step is named by its city.
+    // A group of steps (how we all get there) has its own badge in the runs, and each step is named by its city.
     expect(html).toContain("steps: 'GROUP'");
-    expect(html).toContain('<div class="tile group" data-run="');
     expect(html).toContain("return r.lane ? r.lane + ': ' + r.label : r.label;");
-    // A live tab carries the run whose fetch has it (Bash echoes the fetch's tag), and its tile that run's label.
-    expect(html).toContain('var run = t.tag ? live.runs[t.tag] : null;');
     expect(html).not.toContain('—');
     const script = html.slice(html.indexOf('<script nonce="n0nce">') + '<script nonce="n0nce">'.length, html.indexOf('</script>'));
     expect(() => new Function(script)).not.toThrow();
     const { feeds, live: open } = fakeLive();
     const { room: r } = await setUp({ live: open });
     const cookie = await signIn(r);
-    expect(await (await page(r, cookie)).text()).toContain('id="screen"');
+    expect(await (await page(r, cookie)).text()).toContain('id="strip"');
     expect(feeds).toEqual([]);
   });
 
@@ -729,7 +727,7 @@ describe('Go Live', () => {
     const cookie = await signIn(r);
     const res = await page(r, cookie);
     expect(res.headers.get('content-security-policy')).toContain("frame-src https://staging.vestra.ai; form-action 'self'");
-    expect(await res.text()).toContain('<aside class="live" id="live" aria-label="Go Live" data-watch-origin="https://staging.vestra.ai">');
+    expect(await res.text()).toContain('<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden data-watch-origin="https://staging.vestra.ai">');
     // The passcode page frames nothing, and nobody may frame the room.
     expect((await page(r)).headers.get('content-security-policy')).not.toContain('frame-src');
     expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
@@ -744,7 +742,7 @@ describe('Go Live', () => {
       // No element carries the origin (the script still names the attribute it reads), so the page frames nothing.
       const text = await other.text();
       expect(text).not.toMatch(/<[a-z]+ [^>]*data-watch-origin=/);
-      if (extra.live) expect(text).toContain('<aside class="live" id="live" aria-label="Go Live">');
+      expect(text).toContain('<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>');
     }
     // Anything but a bare origin never reaches the header.
     expect(contentSecurityPolicy('n0nce', 'room.test', "https://bash.test; script-src *")).not.toContain('frame-src');

@@ -11,6 +11,7 @@ import { dateAs } from './book/expr.js';
 import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, linkLine, plainAsk } from './answer.js';
+import { stayDetails, trainDetails } from './details.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
@@ -273,16 +274,26 @@ export async function putUpCard(
   const cardId = ctx.stableId('c_opt');
   const run = runOfSet.get(set.resultsId);
   if (run) remember(shownRuns, run);
+  // Each option's sheet (contract 1.1 details), from what the search read: a stay's photos through Go's image cache.
+  const query = set.query as TravelQuery;
+  const people = query.guests ?? ctx.pack?.trip?.people?.length ?? 0;
   const picks = await Promise.all(
     numbers.map(async (n, i) => {
       const option = set.options[n - 1]!;
-      return { n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null };
+      const gallery = set.optionKind === 'stay' ? (await Promise.all((option.imageUrls ?? []).map((u) => d.images.rehostUrl(u)))).filter((u): u is string => u !== null) : [];
+      const details = set.optionKind === 'stay' ? stayDetails(option, query, people, gallery) : set.optionKind === 'train' ? trainDetails(option) : null;
+      return {
+        n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null,
+        ...(details ? { details } : {}),
+      };
     }),
   );
   const title = stayCardTitle(given.title, set.query, picks.map((p) => p.option));
   // Stays from ixigo.com: the card shows a few, so its button opens the whole list the search read (the lead's call).
   const seeAll = set.optionKind === 'stay' && ixigoPage(set.page ?? null) !== null;
-  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks, seeAll });
+  // Nobody in the trip has a budget band yet: the stays card asks for one, in the App's own budget sheet.
+  const askBudget = set.optionKind === 'stay' && !ctx.pack.trip.budget?.lowest;
+  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks, seeAll, askBudget });
   await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
   // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
   const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;

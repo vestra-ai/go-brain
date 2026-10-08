@@ -39,7 +39,9 @@ describe('record_expense', () => {
     const [out] = await run([
       { name: 'record_expense', input: { message_id: '#1', amount_minor: 320000, for_what: 'Cab from the airport', category: 'getting_around' } },
     ]);
-    expect(out).toMatchObject({ recorded: true, tell_the_room: expect.stringContaining('Stay quiet') });
+    // 1.1: no vault payment behind it, so it is pending for the people it is split between: no approval_id goes.
+    expect(out).toMatchObject({ recorded: true, pending: true, tell_the_room: expect.stringContaining('Stay quiet') });
+    expect(expenses()[0]).not.toHaveProperty('approval_id');
     expect(expenses()).toEqual([
       expect.objectContaining({
         request_id: 'go_expense_m_1',
@@ -164,6 +166,41 @@ describe('who_owes_what', () => {
       ],
     });
     expect(k.server.writesOf('read_trip')).toHaveLength(1);
+  });
+
+  it('says where each expense stands (1.1 B4): pending and who it waits on, disputed by whom and why; never to press anyone', async () => {
+    const trip = goaTrip('confirmed');
+    trip.expenses.push(
+      C.Expense.parse({
+        expense_id: 'e_cab', paid_by_person_id: 'p_kabir', amount_minor: 340000, currency: 'INR', note: 'Airport cab', category: 'getting_around',
+        split_person_ids: EVERYONE, created_at: '2026-10-09T13:20:00Z', status: 'disputed',
+        confirmations: [
+          { person_id: 'p_rahul', state: 'approved', at: '2026-10-10T08:10:00Z' },
+          { person_id: 'p_priya', state: 'disputed', at: '2026-10-10T08:40:00Z', reason: 'I took the bus' },
+          { person_id: 'p_arjun', state: 'pending' },
+          { person_id: 'p_meher', state: 'pending' },
+        ],
+      }),
+      C.Expense.parse({
+        expense_id: 'e_dinner', paid_by_person_id: 'p_priya', amount_minor: 250000, currency: 'INR', note: 'Dinner', category: 'food',
+        split_person_ids: ['p_priya', 'p_meher'], created_at: '2026-10-09T20:00:00Z', status: 'pending',
+        confirmations: [{ person_id: 'p_meher', state: 'pending' }],
+      }),
+      C.Expense.parse({
+        expense_id: 'e_villa', paid_by_person_id: 'p_rahul', amount_minor: 5420000, currency: 'INR', note: 'Villa Sol', category: 'stay',
+        split_person_ids: EVERYONE, created_at: '2026-10-08T10:00:00Z', status: 'approved',
+      }),
+    );
+    k.server.trips.set('t_goa', trip);
+    const ctx = turnCtx('t_goa', k.server, goaTrip('confirmed'), [say(1, 'p_arjun', 'who owes what now?')]);
+    const [out] = (await runToolCalls([readExpensesTool()], ctx, [{ name: 'who_owes_what', input: {} }])) as Array<{ expenses: Array<Record<string, unknown>>; tell_the_room: string }>;
+    const byFor = Object.fromEntries(out!.expenses.map((e) => [e['for'], e]));
+    expect(byFor['Airport cab']).toMatchObject({ status: 'disputed', disputed: [{ by: 'Priya', why: '<data>I took the bus</data>' }] });
+    expect(byFor['Airport cab']).not.toHaveProperty('waiting_on');
+    expect(byFor['Dinner']).toMatchObject({ status: 'pending', waiting_on: ['Meher'] });
+    expect(byFor['Villa Sol']).toMatchObject({ status: 'approved' });
+    expect(out!.tell_the_room).toContain('An expense still pending is not final');
+    expect(out!.tell_the_room).toContain('Never press anyone about one they disputed: you may say who disputed it and why');
   });
 
   it('says nothing is recorded yet when there is nothing', async () => {

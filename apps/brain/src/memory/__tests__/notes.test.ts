@@ -379,6 +379,29 @@ describe("the trip's dates and place, from an agreed line (8 Oct regression pass
     expect(trips(again.link)).toEqual([]);
   });
 
+  it('agreeing on "North Goa, not South" leaves the trip\'s destination as Goa with its place_id: an area is where to stay (the Server, 6 Oct)', async () => {
+    const goa = { name: 'Goa', place_id: 'ixigo_goa', lat: 15.3, lng: 74.1, photo_url: 'https://images.ixigo.com/goa.jpg' };
+    const said = [msg(122, 'p_priya', 'North Goa this time, not South?'), msg(124, 'p_arjun', 'yes North'), msg(125, 'p_rahul', 'North it is')];
+    const answer = JSON.stringify({
+      facts: [],
+      // What the old prompt's own example led the side model to give.
+      lines: [{ kind: 'agreed', text: 'North Goa, not South', person_ids: [], proof: [122, 124, 125], trip: { destination: 'North Goa' } }],
+    });
+    const packs = fakePacks({ t_d6: packOf(said, goaTrip({ trip_id: 't_d6', destination: goa })) });
+    const link = fakeLink();
+    const side = scriptedSide([answer]);
+    const notes = createNotes({ pool: db.pool, packs, link, side, log: silentLog, now: () => new Date('2026-10-08T10:00:00Z') });
+    const out = await notes.run('t_d6');
+    // The agreement is in the record; the trip is not touched (no Place for it was resolved, and a bare name is never
+    // sent), so Goa keeps its place_id, coordinates and photo.
+    expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['North Goa, not South']);
+    expect(trips(link)).toEqual([]);
+    expect(out.refused).toEqual([expect.stringContaining("can't look up North Goa")]);
+    // The prompt's example is a real change of destination, and says an area is never the trip's place.
+    expect(side.prompts[0]!.system).not.toContain('{"destination": "North Goa"}');
+    expect(side.prompts[0]!.system).toContain('an area inside it ("North Goa, not South", "Candolim", "Anjuna") is where to stay there');
+  });
+
   it('a "trip" that does not read is dropped, never the rest of the answer', async () => {
     const said = [msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov')];
     const answer = JSON.stringify({
