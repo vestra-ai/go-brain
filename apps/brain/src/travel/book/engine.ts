@@ -228,9 +228,14 @@ export function createEngine(d: EngineDeps) {
         lookupRun.step(`opened ${pathOf(plan.path)}`);
         const fetchStarted = d.now().getTime();
         const { captures } = await timed(lookupId, 'page', () =>
-          runner.read(o.tripId, `${IXIGO}${plan.path}`, { capture: plan.capture, steps: plan.steps }, o.signal ? { signal: o.signal } : {}),
+          runner.read(o.tripId, `${IXIGO}${plan.path}`, { capture: plan.capture, steps: plan.steps }, {
+            ...(o.signal ? { signal: o.signal } : {}),
+            onProgress: (e) => {
+              if (e.type === 'frames') lookupRun.frames(e.frames, fetchStarted);
+            },
+            onTrace: (t) => lookupRun.trace(t),
+          }),
         );
-        lookupRun.calls(captures, fetchStarted);
         const shown: string[] = [];
         for (const e of ends) {
           const list = await readSuggestions(lookup, captures, e.words);
@@ -371,11 +376,10 @@ export function createEngine(d: EngineDeps) {
           ...(recipe.fast.headers ? { headers: recipe.fast.headers } : {}),
           ...(recipe.fast.body ? { body: await fill(recipe.fast.body, inputs, { url: false, bindings }) } : {}),
         };
-        const at = strip.line.since();
-        const got = await runner.pageFetch(o.tripId, call, o.signal ? { signal: o.signal } : {});
+        const fastRun = strip.line;
+        const got = await runner.pageFetch(o.tripId, call, { ...(o.signal ? { signal: o.signal } : {}), onTrace: (t) => fastRun.trace(t) });
         const absolute = new URL(got.url || url, IXIGO).toString();
         refusePayments(absolute);
-        strip.line.call({ method: recipe.fast.method, url: absolute, status: got.status, atMs: at, ms: strip.line.since() - at });
         const answer = await answerFrom([{ ...got, url: absolute }], { ...filled, read: { ...filled.read!, rows: { ...filled.read!.rows, format: recipe.fast.format } } }, started);
         took('fast');
         return answer;
@@ -408,11 +412,19 @@ export function createEngine(d: EngineDeps) {
       break;
     }
     const started = d.now().getTime();
+    const pageRun = strip.line;
     o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
-    strip.line.step(`opened ${pathOf(page)}`);
-    const got = await runner.read(o.tripId, page, plan, { ...(o.signal ? { signal: o.signal } : {}), ...(o.onProgress ? { onProgress: o.onProgress } : {}) });
+    pageRun.step(`opened ${pathOf(page)}`);
+    const got = await runner.read(o.tripId, page, plan, {
+      ...(o.signal ? { signal: o.signal } : {}),
+      // The pictures go to the live card as before, and to the run strip's browser pane.
+      onProgress: (e) => {
+        if (e.type === 'frames') pageRun.frames(e.frames, started);
+        o.onProgress?.(e);
+      },
+      onTrace: (t) => pageRun.trace(t),
+    });
     refusePayments(got.finalUrl);
-    strip.line.calls(got.captures, started);
     o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
     return answerFrom(got.captures, filled, started);
   }

@@ -2,8 +2,10 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
 import { forgetLearnedPlaces } from '../../recipes/places.js';
-import type { Capture, FetchPlan } from '../../recipes/recipe.js';
-import { capture } from '../../recipes/__tests__/fixtures.js';
+import type { LiveFrame } from '../../recipes/progress.js';
+import type { Capture } from '../../recipes/recipe.js';
+import type { FetchTrace, ReadOptions, RecipeRunner } from '../../recipes/runners.js';
+import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { BOOK_DIR, loadBook } from '../book.js';
 import { createEngine } from '../engine.js';
 import { labelOf, type RunEvent } from '../run-event.js';
@@ -19,7 +21,7 @@ const PAGE = sample('plan.destination.html');
 const GUIDE = labelOf(book.get('plan.destination')!, { place: 'Goa' });
 
 /** An engine on a clock the runner moves, and every run event it says, by trip. */
-function engineWith(runner: { read: (t: string, url: string, plan: FetchPlan) => Promise<{ captures: Capture[]; finalUrl: string }>; pageFetch?: (t: string, call: { url: string }) => Promise<Capture> }) {
+function engineWith(runner: Pick<RecipeRunner, 'read' | 'pageFetch'>) {
   const clock = { ms: Date.parse('2026-10-07T12:00:00Z') };
   const events: Array<[string, RunEvent]> = [];
   const engine = createEngine({
@@ -29,14 +31,26 @@ function engineWith(runner: { read: (t: string, url: string, plan: FetchPlan) =>
   return { engine, clock, events: () => events.map(([, e]) => e), trips: () => new Set(events.map(([t]) => t)) };
 }
 
+/**
+ * A Bash call as the runner makes it: it takes ms on the clock, sends its pictures, then says what it did (its trace):
+ * the calls it kept, unless the trace names others.
+ */
+function fetched(clock: { ms: number }, o: ReadOptions | undefined, ms: number, captures: Capture[], trace: Partial<FetchTrace> = {}, frames: LiveFrame[] = []): void {
+  const startedAt = clock.ms;
+  clock.ms += ms;
+  if (frames.length > 0) o?.onProgress?.({ type: 'frames', frames });
+  o?.onTrace?.({ started_at: startedAt, elapsed_ms: ms, woke: false, timings: null, calls: captures.map((c) => ({ url: c.url, status: c.status, at_ms: c.at_ms })), ...trace });
+}
+
 describe('the run strip', () => {
   it('shows a search and the lookup under it: each opened page, the calls that came back, and how each ended', async () => {
     const box = capture('searchFor=trainstationsLatLon', 'https://www.ixigo.com/action/content/trainstation?searchFor=trainstationsLatLon&value=Udaipur%20City', sample('trains.station_lookup.udaipur.json'));
     const trains = capture(TRAINS, `https://${TRAINS}?sourceStationCode=JP&destinationStationCode=UDZ`, sample('trains.between.page.json'));
     const s = engineWith({
-      read: async (_t, url) => {
-        s.clock.ms += url.includes('/search-pwa/') ? 2_000 : 800;
-        return { captures: url.includes('/search-pwa/') ? [trains] : [box], finalUrl: url };
+      read: async (_t, url, _plan, o) => {
+        const results = url.includes('/search-pwa/');
+        fetched(s.clock, o, results ? 2_000 : 800, [results ? trains : box]);
+        return { captures: [results ? trains : box], finalUrl: url };
       },
     });
     const got = await s.engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur City', date: '2026-10-20' }, { tripId: 't_run' });
@@ -61,28 +75,29 @@ describe('the run strip', () => {
       read: async () => {
         throw new Error('no page is opened');
       },
-      pageFetch: async () => {
-        s.clock.ms += 366;
-        return { ...capture('fast', '/plan/goa', RSC), content_type: 'text/x-component' };
+      pageFetch: async (_t, _call, o) => {
+        fetched(s.clock, o, 366, [], { calls: [{ method: 'GET', url: 'https://www.ixigo.com/plan/goa', status: 200, at_ms: 340, ms: 340 }] });
+        return { ...capture('fast', '/plan/goa', RSC), content_type: 'text/x-component', at_ms: 340 };
       },
     });
     await s.engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_run' });
     const [run] = s.events().map((e) => e.run_id);
     expect(s.events()).toEqual([
       { type: 'run_start', run_id: run, recipe_id: 'plan.destination', label: GUIDE, speed: 'fast', at: '2026-10-07T12:00:00.000Z' },
-      { type: 'call', run_id: run, method: 'GET', path: '/plan/goa', status: 200, at_ms: 0, ms: 366 },
+      { type: 'call', run_id: run, method: 'GET', path: '/plan/goa', status: 200, at_ms: 340, ms: 340 },
       { type: 'run_end', run_id: run, ok: true, ms: 366, rows: 1 },
     ]);
   });
 
   it('ends a fast run that fails with where it fell and why, and the page run names the run it fell from', async () => {
     const s = engineWith({
-      read: async (_t, url) => {
-        s.clock.ms += 1_500;
-        return { captures: [capture('/plan/goa$', url, PAGE)], finalUrl: url };
+      read: async (_t, url, _plan, o) => {
+        const page = capture('/plan/goa$', url, PAGE);
+        fetched(s.clock, o, 1_500, [page]);
+        return { captures: [page], finalUrl: url };
       },
-      pageFetch: async () => {
-        s.clock.ms += 200;
+      pageFetch: async (_t, _call, o) => {
+        fetched(s.clock, o, 200, [], { calls: [{ method: 'GET', url: 'https://www.ixigo.com/plan/goa', status: 403, at_ms: 180, ms: 180 }] });
         throw new TravelError('unreachable', "ixigo's page call answered 403.");
       },
     });
@@ -90,12 +105,49 @@ describe('the run strip', () => {
     const [fast, page] = s.events().filter((e) => e.type === 'run_start').map((e) => e.run_id);
     expect(s.events()).toEqual([
       { type: 'run_start', run_id: fast, recipe_id: 'plan.destination', label: GUIDE, speed: 'fast', at: '2026-10-07T12:00:00.000Z' },
+      { type: 'call', run_id: fast, method: 'GET', path: '/plan/goa', status: 403, at_ms: 180, ms: 180 },
       { type: 'run_end', run_id: fast, ok: false, ms: 200, fell_to: 'page', why: "unreachable: ixigo's page call answered 403." },
       { type: 'run_start', run_id: page, recipe_id: 'plan.destination', label: GUIDE, speed: 'page', fell_from: fast, at: '2026-10-07T12:00:00.200Z' },
       { type: 'step', run_id: page, text: 'opened /plan/goa', at_ms: 0 },
       { type: 'call', run_id: page, path: '/plan/goa', status: 200, at_ms: 1_200 },
       { type: 'run_end', run_id: page, ok: true, ms: 1_500, rows: 1 },
     ]);
+  });
+
+  it("shows where a page's time went, what a fetch that ran out of time still kept, and only the pictures Go may show", async () => {
+    const buses = { ...capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services?from=Mumbai&to=Goa', fixture('buses-mumbai-goa.json')), at_ms: 5_200 };
+    const frame = (page_url: string, at_ms: number): LiveFrame => ({ label: 'results', at_ms, page_url, jpeg_base64: 'AAAA' });
+    let opened = '';
+    const s = engineWith({
+      read: async (_t, url, _plan, o) => {
+        opened = url;
+        fetched(
+          s.clock, o, 6_000, [buses],
+          { woke: true, timings: { wake_ms: 3_000, nav_ms: 3_800, first_capture_ms: 5_200, done_ms: 6_000 }, failed: { status: 504, why: 'ran out of time at 3 scroll' } },
+          [frame(`${url}`, 5_400), frame('https://www.ixigo.com/payments/abc', 5_600)],
+        );
+        return { captures: [buses], finalUrl: url };
+      },
+    });
+    const card: string[] = [];
+    const got = await s.engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { tripId: 't_run', onProgress: (e) => card.push(e.type) });
+    const page = new URL(opened).pathname;
+    const [run] = s.events().map((e) => e.run_id);
+    expect(page).toMatch(/^\/buses\/bus_search\//);
+    expect(s.events()).toEqual([
+      { type: 'run_start', run_id: run, recipe_id: 'buses.between', label: 'Mumbai → Goa · 6 Nov', speed: 'page', at: '2026-10-07T12:00:00.000Z' },
+      { type: 'step', run_id: run, text: `opened ${page}`, at_ms: 0 },
+      // The payment page's picture never leaves the engine.
+      { type: 'frames', run_id: run, frames: [{ label: 'results', at_ms: 5_400, page, jpeg_base64: 'AAAA' }] },
+      { type: 'step', run_id: run, text: 'computer woke', at_ms: 3_000 },
+      { type: 'step', run_id: run, text: 'page showed', at_ms: 3_800 },
+      { type: 'step', run_id: run, text: 'first data', at_ms: 5_200 },
+      { type: 'call', run_id: run, path: '/buslist/v3/services', status: 200, at_ms: 5_200 },
+      { type: 'step', run_id: run, text: 'stopped: ran out of time at 3 scroll (504)', at_ms: 6_000 },
+      { type: 'run_end', run_id: run, ok: true, ms: 6_000, rows: got.as === 'options' ? got.options.length : -1 },
+    ]);
+    // The live card still gets its pictures, as it did before.
+    expect(card).toContain('frames');
   });
 
   it('shows a link as a run that loads nothing, and a facts answer kept from earlier as a kept run', async () => {
