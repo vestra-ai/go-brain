@@ -16,6 +16,8 @@ import type { V1Client } from './v1-client.js';
 export const WARM_LIMIT = 8;
 const WARM_WINDOW_MS = 90_000;
 const WARM_COOLDOWN_MS = 60_000;
+/** The trips whose box Go saw up most recently, at most this many. */
+const SEEN_UP_MAX = 500;
 export const TRIP_TOKEN_SECRET = 'TRIP_TOKEN';
 
 export interface Computer {
@@ -26,6 +28,12 @@ export interface Computer {
    * A hold is asked for on purpose (keep-warm.ts), so it is never skipped as a repeat; it still counts toward WARM_LIMIT.
    */
   warm(tripId: string, o?: { keepMs?: number }): Promise<'ready' | 'waking' | 'skipped'>;
+  /**
+   * Holds the computer awake keepMs once it is up (Bash's warm with keep_ms): the trip's keepalive while its people talk
+   * (travel/awake.ts). A box Go saw up within its own last hold is not waking, so that warm skips Go's wake limit; any
+   * other counts toward it, as a wake. Never skipped as a repeat.
+   */
+  hold(tripId: string, keepMs: number): Promise<'ready' | 'waking'>;
   /** The job's own conversation on the trip user: the same one however often it is asked for. */
   conversation(tripId: string, taskId: string): Promise<{ userId: string; conversationId: string }>;
   /** A fresh token in the trip user's TRIP_TOKEN secret, good until `expiresAt`, checked against Go's MCP server. */
@@ -51,6 +59,15 @@ export function v1UserIdFor(tripId: string): string {
 
 export function createComputer(d: ComputerDeps): Computer {
   let warmsIssued: number[] = [];
+  /** When each trip's box last answered a hold as up ('ready'). */
+  const seenUp = new Map<string, number>();
+
+  /** Go's own count of computers waking (WARM_LIMIT in WARM_WINDOW_MS): throws when it is full. */
+  function countWake(nowMs: number, then: string): void {
+    warmsIssued = warmsIssued.filter((t) => nowMs - t < WARM_WINDOW_MS);
+    if (warmsIssued.length >= WARM_LIMIT) throw new Error(`warm_limit: too many computers are waking; ${then}`);
+    warmsIssued.push(nowMs);
+  }
 
   async function row(tripId: string): Promise<{ v1_user_id: string; user_ready_at: Date | null; warm_at: Date | null } | null> {
     const { rows } = await d.pool.query<{ v1_user_id: string; user_ready_at: Date | null; warm_at: Date | null }>(
@@ -96,11 +113,27 @@ export function createComputer(d: ComputerDeps): Computer {
       const nowMs = d.now().getTime();
       const known = await row(tripId);
       if (!o.keepMs && known?.warm_at && nowMs - known.warm_at.getTime() < WARM_COOLDOWN_MS) return 'skipped';
-      warmsIssued = warmsIssued.filter((t) => nowMs - t < WARM_WINDOW_MS);
-      if (warmsIssued.length >= WARM_LIMIT) throw new Error('warm_limit: too many computers are waking; setup tries again on its next pass');
-      warmsIssued.push(nowMs);
+      countWake(nowMs, 'setup tries again on its next pass');
       const r = await d.v1.call<{ status: 'ready' | 'waking' }>('POST', `/v1/users/${userId}/warm`, o.keepMs ? { body: { keep_ms: o.keepMs } } : {});
       await d.pool.query('update trip_computers set warm_at = $2 where trip_id = $1', [tripId, d.now()]);
+      return r.status;
+    },
+
+    async hold(tripId, keepMs) {
+      const userId = await computer.ensureUser(tripId);
+      const nowMs = d.now().getTime();
+      const up = seenUp.get(tripId);
+      if (up === undefined || nowMs - up >= keepMs) countWake(nowMs, 'the keepalive tries again on its next beat');
+      const r = await d.v1.call<{ status: 'ready' | 'waking' }>('POST', `/v1/users/${userId}/warm`, { body: { keep_ms: keepMs } });
+      seenUp.delete(tripId);
+      if (r.status === 'ready') {
+        seenUp.set(tripId, nowMs);
+        while (seenUp.size > SEEN_UP_MAX) {
+          const oldest = seenUp.keys().next().value;
+          if (oldest === undefined) break;
+          seenUp.delete(oldest);
+        }
+      }
       return r.status;
     },
 
