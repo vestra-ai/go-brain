@@ -70,6 +70,8 @@ export class FakeV1 {
   failNextStream: { status: number; code: string } | null = null;
   /** null: the MCP check passes when the user has TRIP_TOKEN. false: it always fails. */
   checkOk: boolean | null = null;
+  /** What a warm answers: 'waking' (202), or 'ready' (200) for a computer that is up. */
+  warmStatus: 'waking' | 'ready' = 'waking';
   /** The next POST to a path that matches answers this status and code, once (402 wallet_empty, 409 conversation_busy). */
   failNextPost: { path: RegExp; status: number; code: string } | null = null;
   traceSteps: Array<Record<string, unknown>> = [];
@@ -320,7 +322,7 @@ export class FakeV1 {
     });
     app.post('/v1/users/:id/warm', async (req, reply) => {
       if (!this.users.has(param(req))) return fail(reply, 404, 'user_not_found');
-      return reply.code(202).send({ user_id: param(req), status: 'waking' });
+      return reply.code(this.warmStatus === 'ready' ? 200 : 202).send({ user_id: param(req), status: this.warmStatus });
     });
     // A browser fetch whose page answers each page_fetch step at once, as a new computer's prime asks it (runners.ts).
     app.post('/v1/users/:id/browser/fetch', async (req, reply) => {
