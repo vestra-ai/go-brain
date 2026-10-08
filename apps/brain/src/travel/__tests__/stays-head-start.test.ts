@@ -15,7 +15,7 @@ const GOA = { destination: 'Goa', start: '2026-11-06', end: '2026-11-09' };
  * A head start over a scripted Go: the trip (Goa, 6 to 9 Nov), its today, and Go's searches. `share` records each call
  * and, unless a search is kept (joined), runs the given run; `run` is the stays page, 9 s on the clock.
  */
-function rig(o: { mode?: string; trip?: { destination: string | null; start: string | null; end: string | null }; today?: string; joined?: boolean; fails?: boolean; gaveUp?: boolean; noComputer?: boolean; gate?: Promise<void>; onChangedKept?: StaysHeadStartDeps['onChangedKept'] } = {}) {
+function rig(o: { mode?: string; trip?: { destination: string | null; start: string | null; end: string | null }; today?: string; joined?: boolean; fails?: boolean; gaveUp?: boolean; noComputer?: boolean; gate?: Promise<void>; onChangedKept?: StaysHeadStartDeps['onChangedKept']; staysKept?: StaysHeadStartDeps['staysKept'] } = {}) {
   const switches = new FakeSwitches();
   void switches.set('TRAVEL_MODE', o.mode ?? 'ixigo_web');
   let nowMs = Date.parse('2026-10-08T10:00:00Z');
@@ -45,6 +45,7 @@ function rig(o: { mode?: string; trip?: { destination: string | null; start: str
     warmGaveUp: () => o.gaveUp ?? false,
     computerSetUp: () => !o.noComputer,
     ...(o.onChangedKept ? { onChangedKept: o.onChangedKept } : {}),
+    ...(o.staysKept ? { staysKept: o.staysKept } : {}),
   };
   return { hs: createStaysHeadStart(deps), shares, loads, log, advance: (ms: number) => (nowMs += ms) };
 }
@@ -212,6 +213,32 @@ describe(`createStaysHeadStart (${STAYS_HEAD_START_STEP}): the trip's likely fir
     failing.hs.onEvent(said('person'));
     await vi.waitFor(() => expect(failing.log.warn).toHaveBeenCalled());
     expect(kept).not.toHaveBeenCalled();
+  });
+
+  it('loads nothing when stays for the same place and dates are kept or running with any conditions: one load per agreement', async () => {
+    vi.useFakeTimers();
+    const kept = vi.fn();
+    const asked: HeadStartAsk[] = [];
+    // The turn's own "pool stays for 6 to 9 Nov" is kept (backend.ts pageKept).
+    const r = rig({ onChangedKept: kept, staysKept: async (_t, ask) => {
+      asked.push(ask);
+      return true;
+    } });
+    r.hs.onEvent(updated(['dates']));
+    await vi.advanceTimersByTimeAsync(HEAD_START_SETTLE_MS);
+    await vi.waitFor(() => expect(asked).toHaveLength(1));
+    await r.hs.atSetup('t_goa');
+    await vi.waitFor(() => expect(asked).toHaveLength(2));
+    expect(asked[0]).toEqual({ place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' });
+    expect(r.shares).toEqual([]);
+    expect(r.loads).toEqual([]);
+    expect(kept).not.toHaveBeenCalled();
+    expect(r.hs.stat()).toBeNull();
+    expect(r.log.info).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't_goa', why: 'changed' }), expect.stringContaining('kept already'));
+    // Nothing kept for these dates: it loads as before.
+    const fresh = rig({ staysKept: async () => false });
+    await fresh.hs.atSetup('t_goa');
+    await vi.waitFor(() => expect(fresh.loads).toEqual(['t_goa']));
   });
 
   it('stop() drops a head start still waiting for its edit to settle', async () => {

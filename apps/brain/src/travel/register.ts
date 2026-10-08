@@ -148,6 +148,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     warmGaveUp: (tripId) => ixigoWarm.gaveUp(tripId),
     computerSetUp: () => brain.recipeRunners !== undefined,
     // Dates agreed on a trip with a place: the kept stays go up as one card, unless Go has the last word.
+    // A turn's own stays search for these dates, with any conditions, is the trip's one load: the head start skips it.
+    staysKept: (tripId, ask) => ixigoWeb.pageKept('hotels.search', { ...ask }, { tripId }),
     onChangedKept: showHeadStartStays({ travel: () => brain.travel, packs: brain.packs, desk: brain.desk, results, now: brain.now, log: brain.log }),
   });
   brain.setup.addStep({ name: STAYS_HEAD_START_STEP, after: IXIGO_WARM_STEP, run: (tripId) => headStart.atSetup(tripId) });

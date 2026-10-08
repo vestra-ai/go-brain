@@ -13,7 +13,8 @@ import type { RecipeOption } from '../recipes/recipe.js';
 import type { ResultsStore } from '../results.js';
 import { searchWakeAnswer } from '../search-wake.js';
 import type { Travel } from '../travel.js';
-import type { HeadStartAsk } from '../warm.js';
+import { FakeSwitches } from '../../tasks/testing/lane-brain.js';
+import { createStaysHeadStart, HEAD_START_SETTLE_MS, type HeadStartAsk } from '../warm.js';
 
 const { book } = loadBook();
 const now = () => new Date('2026-10-08T12:00:00Z');
@@ -40,7 +41,7 @@ function rig() {
     await shared?.answer;
   };
   const travel = { search: (...a: Parameters<Travel['search']>) => b.search(...a) } as unknown as Travel;
-  return { loads, headStart, travel };
+  return { loads, headStart, travel, b, answer };
 }
 
 /** A results store that keeps what it saves, and the cards put up from it. */
@@ -133,5 +134,62 @@ describe('dates agreed on a trip with a place: the head start\'s stays go up (le
     expect(roomPastHeadStart(pack(line(1, true, 'vote', '2026-10-08T11:59:40Z'), line(2, false, null, '2026-10-08T11:59:50Z')), since)).toBe(false);
     // The order is the room's (seq), not the list's.
     expect(roomPastHeadStart(pack(line(2, false, null, '2026-10-08T11:59:50Z'), line(1, true, null, '2026-10-08T11:59:40Z')), since)).toBe(false);
+  });
+});
+
+describe('one ixigo load per agreement: the turn\'s own stays search, then the head start', () => {
+  it("the turn's pool search for the agreed dates is the one load: the head start after the dates change loads nothing and wakes nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      const r = rig();
+      const kept = vi.fn();
+      const log = { info: vi.fn(), warn: vi.fn() };
+      const switches = new FakeSwitches();
+      void switches.set('TRAVEL_MODE', 'ixigo_web');
+      // The head start as register.ts wires it, over the same searches.
+      const hs = createStaysHeadStart({
+        switches, now, log,
+        trip: async () => ({ destination: 'Goa', start: '2026-11-06', end: '2026-11-09' }),
+        today: async () => '2026-10-08',
+        share: (tripId, ask, run) => r.b.shareStep('hotels.search', { ...ask }, { tripId, conditions: [], background: true }, run),
+        run: (tripId, ask) => r.answer('hotels.search', { ...ask }, { tripId, conditions: [], background: true }),
+        ttlMs: 30 * 60_000,
+        warmGaveUp: () => false,
+        computerSetUp: () => true,
+        staysKept: (tripId, ask) => r.b.pageKept('hotels.search', { ...ask }, { tripId }),
+        onChangedKept: kept,
+      });
+      // "locking 6 to 9 Nov then": the turn shows pool stays for the dates (staging, 8 Oct: the hello promises a pool).
+      await r.travel.search('stays', { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_lock' });
+      expect(r.loads).toEqual([['pool']]);
+      // The notes pass saved the dates: trip.updated, and the head start once the edit settles.
+      hs.onEvent({ event_id: 'e_dates', trip_id: 't_goa', seq: 9, type: 'trip.updated', data: { by: { kind: 'go' }, changed: ['dates'] } } as never);
+      await vi.advanceTimersByTimeAsync(HEAD_START_SETTLE_MS);
+      await vi.waitFor(() => expect(log.info).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't_goa', why: 'changed' }), expect.stringContaining('kept already')));
+      expect(r.loads).toEqual([['pool']]);
+      expect(kept).not.toHaveBeenCalled();
+      // With nothing kept for those dates (no turn searched), the head start is the one load, and it hands its stays on.
+      const other = rig();
+      const hs2 = createStaysHeadStart({
+        switches, now, log,
+        trip: async () => ({ destination: 'Goa', start: '2026-11-13', end: '2026-11-16' }),
+        today: async () => '2026-10-08',
+        share: (tripId, ask, run) => other.b.shareStep('hotels.search', { ...ask }, { tripId, conditions: [], background: true }, run),
+        run: (tripId, ask) => other.answer('hotels.search', { ...ask }, { tripId, conditions: [], background: true }),
+        ttlMs: 30 * 60_000,
+        warmGaveUp: () => false,
+        computerSetUp: () => true,
+        staysKept: (tripId, ask) => other.b.pageKept('hotels.search', { ...ask }, { tripId }),
+        onChangedKept: kept,
+      });
+      hs2.onEvent({ event_id: 'e_dates2', trip_id: 't_goa', seq: 9, type: 'trip.updated', data: { by: { kind: 'person', person_id: 'p_rahul' }, changed: ['dates'] } } as never);
+      await vi.advanceTimersByTimeAsync(HEAD_START_SETTLE_MS);
+      await vi.waitFor(() => expect(kept).toHaveBeenCalledTimes(1));
+      expect(other.loads).toEqual([[]]);
+      hs.stop();
+      hs2.stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -126,8 +126,11 @@ const keyOf = (given: Record<string, unknown>, conditions: string[]): string =>
 /** A search's answer from what is kept, loading nothing; null when nothing kept answers it. */
 export type KeptAnswer = (id: string, given: Record<string, unknown>, o: RunFor) => Promise<EngineAnswer | null>;
 
+/** Whether a search of this page, with any conditions, is kept or running: it already answers the page's asks. */
+export type PageKept = (id: string, given: Record<string, unknown>, o: { tripId: string }) => Promise<boolean>;
+
 /** The ixigo_web backend, and the hook a turn's end calls to end the live cards it left open. */
-export type IxigoWebBackend = TravelBackend & { turnEnded(t: TurnEnd): void; shareStep: ShareSearch; keptAnswer: KeptAnswer };
+export type IxigoWebBackend = TravelBackend & { turnEnded(t: TurnEnd): void; shareStep: ShareSearch; keptAnswer: KeptAnswer; pageKept: PageKept };
 
 /** Whose a live card is: the message whose early start ran its search, or the composer turn whose search tool did. */
 type Owner = { kind: 'message' | 'turn'; id: string } | null;
@@ -136,6 +139,8 @@ type Owner = { kind: 'message' | 'turn'; id: string } | null;
 interface Kept {
   at: number;
   ttl: number;
+  /** The same search's key with no conditions: its page, whatever it filters (pageKept). */
+  page: string;
   search: Promise<TravelSearch>;
   ran: Promise<EngineAnswer>;
   done?: TravelSearch;
@@ -233,7 +238,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   }
 
   /** The search itself, in the background: no card, no hold, kept under its own key for the next ask. */
-  function runQuietly(key: string, id: string, given: Record<string, unknown>, conditions: string[], tripId: string, ttl: number): void {
+  function runQuietly(key: string, page: string, id: string, given: Record<string, unknown>, conditions: string[], tripId: string, ttl: number): void {
     const nowMs = d.now().getTime();
     const runId = `${key}|${nowMs}`;
     const ran = d.engine.answer(id, given, { tripId, conditions, background: true });
@@ -241,7 +246,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
       return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page };
     });
-    keep(key, { at: nowMs, ttl, search, ran });
+    keep(key, { at: nowMs, ttl, search, ran, page });
   }
   /** The live cards that have not ended, by trip and search. */
   const cards = new Map<string, OpenCard>();
@@ -279,7 +284,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const { given, conditions } = recipeInputs(kind, q);
     const link = recipe.answer.as === 'link';
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
-    return { tripId, id, given, conditions, link, ttl, key: link ? `${id}|${keyOf(given, conditions)}` : await keyFor(id, given, conditions, tripId) };
+    const key = link ? `${id}|${keyOf(given, conditions)}` : await keyFor(id, given, conditions, tripId);
+    return { tripId, id, given, conditions, link, ttl, key, page: conditions.length > 0 && !link ? await keyFor(id, given, [], tripId) : key };
   }
 
   /**
@@ -295,7 +301,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
 
   return {
     async search(kind, q, o?: SearchFor) {
-      const { tripId, id, given, conditions, link, ttl, key } = await plan(kind, q, o?.tripId);
+      const { tripId, id, given, conditions, link, ttl, key, page } = await plan(kind, q, o?.tripId);
       // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
       if (link) {
         const a = await d.engine.answer(id, given, { tripId, conditions });
@@ -315,7 +321,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         // The wait let another search of this key start, or finish: what is kept is read again.
         hit = kept.get(key);
         if (narrowed && !(fresh(hit) && hit.done)) {
-          if (!fresh(hit)) runQuietly(key, id, given, conditions, tripId, ttl);
+          if (!fresh(hit)) runQuietly(key, page, id, given, conditions, tripId, ttl);
           return narrowed;
         }
       }
@@ -377,7 +383,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
           throw err;
         },
       );
-      keep(key, { at: nowMs, ttl, search, ran });
+      keep(key, { at: nowMs, ttl, search, ran, page });
       return search;
     },
     async shareStep(id, given, o, run) {
@@ -387,6 +393,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       if (!kind || !recipe || recipe.answer.as !== 'options') return null;
       const conditions = o.conditions ?? [];
       const key = await keyFor(id, given, conditions, o.tripId);
+      const page = conditions.length > 0 ? await keyFor(id, given, [], o.tripId) : key;
       const nowMs = d.now().getTime();
       const hit = kept.get(key);
       if (hit && nowMs - hit.at < hit.ttl) return { answer: hit.ran, joined: true };
@@ -402,7 +409,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
           throw err instanceof TravelError ? err : new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
         },
       );
-      keep(key, { at: nowMs, ttl: recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS, search, ran });
+      keep(key, { at: nowMs, ttl: recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS, search, ran, page });
       return { answer: ran, joined: false };
     },
     /**
@@ -418,6 +425,16 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       const byPage = narrowedBy(id, conditions);
       const found = hit?.done && d.now().getTime() - hit.at < hit.ttl ? hit.done : byPage ? await fromKept(id, given, byPage, o.tripId) : null;
       return found ? { as: 'options', options: found.results as RecipeOption[], page: found.page ?? '', checkedAt: found.checkedAt, ms: 0 } : null;
+    },
+    /**
+     * A search of this page kept or running, with any conditions, finished or not: "pool stays for our dates" answers
+     * "stays for our dates" too, so the stays head start loads nothing behind it (warm.ts). A failed run is not kept.
+     */
+    async pageKept(id, given, o) {
+      const page = await keyFor(id, given, [], o.tripId);
+      const nowMs = d.now().getTime();
+      for (const k of kept.values()) if (k.page === page && nowMs - k.at < k.ttl) return true;
+      return false;
     },
     async waitMs(kind, q, o) {
       // A search that refuses does so at once, and a link loads nothing: nothing to wait for.
