@@ -202,6 +202,11 @@ export class FakeContext implements Context {
   addDirect(fn: Parameters<Context['addDirect']>[0]): void {
     this.directs.push(fn);
   }
+  /** The lanes' cards on a turn's own post: a test asks them as P1's composer does, just before the post. */
+  readonly turnCards: Array<Parameters<Context['addTurnCard']>[0]> = [];
+  addTurnCard(fn: Parameters<Context['addTurnCard']>[0]): void {
+    this.turnCards.push(fn);
+  }
 }
 
 type SetupStep = Parameters<Setup['addStep']>[0];

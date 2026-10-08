@@ -264,7 +264,13 @@ export function createComposer(d: ComposerDeps): Composer {
       }
 
       // With mayPostText false the words are dropped; the cards in ctx.cards still go.
-      const text = r.silent || ctx.mayPostText === false ? null : r.text.trim() || null;
+      const words = r.silent || ctx.mayPostText === false ? null : r.text.trim() || null;
+      // A lane's card for this turn rides on its post, first, with its line after Go's words: one message, never two in a
+      // row (the ixigo login on Go's hello).
+      const riders = await d.context.turnCards({ tripId: t.tripId, wake: t.items, pack });
+      ctx.cards.unshift(...riders.map((x) => x.card));
+      const lines = ctx.mayPostText === false ? [] : riders.map((x) => x.line);
+      const text = [words, ...lines].filter((x): x is string => !!x).join('\n') || null;
       const replyTo = text ? (replyToFor(t.items, pack) ?? citedMessageId(text, pack)) : null;
       const ids =
         text || ctx.cards.length
