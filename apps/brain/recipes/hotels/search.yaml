@@ -96,7 +96,8 @@ answer:
           "name": $substring($name, 0, 120),
           "address": $address ? $substring($address, 0, 200),
           "lat": geoLocationInfo.lat,
-          "lng": geoLocationInfo.lon
+          "lng": geoLocationInfo.lon,
+          "timezone": $inputs.place.location.countryId = 1 ? "Asia/Kolkata"
         },
         "imageUrl": $image ? $image,
         "imageUrls": $photos,

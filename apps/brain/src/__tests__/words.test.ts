@@ -16,6 +16,7 @@ const PEOPLE_READ: readonly string[] = [
   'apps/brain/src/composer/turn.ts', // the line Go posts when a turn fails
   'apps/brain/src/door/taps.ts', // a tap's toast
   'apps/brain/src/travel/cards.ts', // options cards
+  'apps/brain/src/travel/details.ts', // an option's details sheet
   'apps/brain/src/travel/taps.ts',
   'apps/brain/src/travel/login.ts', // the ixigo login card and its line
   'apps/brain/src/travel/ways-there.ts', // each home city's ways to the trip: its card and its line

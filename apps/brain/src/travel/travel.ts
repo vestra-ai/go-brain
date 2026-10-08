@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import type { Booking, Journey, Place } from '@go/contract';
+import type { ResolvedPlace } from './place-for.js';
 import type { OptionPlace } from './results.js';
 
 export const TravelKind = z.enum(['flights', 'trains', 'buses', 'stays']);
@@ -182,6 +183,13 @@ export interface Travel {
   offer(optionId: string): Promise<{ offerId: string | null; title: string; priceMinor: number | null; currency: string | null; kind: 'flight' | 'train' | 'bus' | 'stay'; link: string | null } | null>;
   /** The option's own name, place and area, for saving a stay or place a vote picked (composer/room-tools.ts). */
   placeOf?(optionId: string): Promise<OptionPlace | null>;
+  /**
+   * A place by the words for it, as ixigo knows it (travel/place-for.ts): contract 1.1's Place with ixigo's id, lat and
+   * lng, its time zone and, for a destination, ixigo's guide photo; its kind and what it lies within. Null under another
+   * TRAVEL_MODE, or when ixigo knows no place for the words. The first time a place is seen it costs one box lookup and
+   * a guide load or two; after that, nothing. Throws a TravelError when ixigo can't be reached.
+   */
+  placeFor?(words: string, o: { tripId: string }): Promise<ResolvedPlace | null>;
   /** Booking is two steps so card details only ever travel between the vault and the rail. Composer and P5 only. */
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   /** Safe to repeat: the same hold confirmed twice gives the same answer. */
