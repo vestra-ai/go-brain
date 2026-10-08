@@ -332,10 +332,11 @@ describe("the trip's dates and place, from an agreed line (8 Oct regression pass
     const side = scriptedSide([answer]);
     const notes = createNotes({ pool: db.pool, packs, link, side, log: silentLog, now: () => new Date('2026-10-08T10:00:00Z') });
     const out = await notes.run('t_d6');
-    // The agreement is in the record; the trip is not touched, so Goa keeps its place_id, coordinates and photo.
+    // The agreement is in the record; the trip is not touched (no Place for it was resolved, and a bare name is never
+    // sent), so Goa keeps its place_id, coordinates and photo.
     expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['North Goa, not South']);
     expect(trips(link)).toEqual([]);
-    expect(out.refused).toEqual([expect.stringContaining('North Goa is in Goa')]);
+    expect(out.refused).toEqual([expect.stringContaining("can't look up North Goa")]);
     // The prompt's example is a real change of destination, and says an area is never the trip's place.
     expect(side.prompts[0]!.system).not.toContain('{"destination": "North Goa"}');
     expect(side.prompts[0]!.system).toContain('an area inside it ("North Goa, not South", "Candolim", "Anjuna") is where to stay there');

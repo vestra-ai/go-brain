@@ -173,11 +173,11 @@ describe('the room\'s tools', () => {
     const casa = { kind: 'stay', title: 'Casa Mareia', place: { name: 'Casa Mareia', address: 'Vagator, North Goa' }, area: 'Vagator' };
     const north = { kind: 'place', title: 'North Goa', place: { name: 'North Goa', address: null }, area: null };
     const options: Record<string, unknown> = { opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } } };
-    // ixigo's places: Goa and Candolim inside it, and Kerala far away (findPlace).
+    // The places ixigo resolves (findPlace).
     const GOA = { name: 'Goa', place_id: 'ixigo_goa', lat: 15.3, lng: 74.1, photo_url: 'https://images.ixigo.com/goa.jpg' };
     const places: Record<string, unknown> = {
       goa: GOA,
-      candolim: { name: 'Candolim', place_id: 'ixigo_candolim', lat: 15.52, lng: 73.76, photo_url: null },
+      'north goa': { name: 'North Goa', place_id: 'ixigo_north_goa', lat: 15.6, lng: 73.8, photo_url: 'https://images.ixigo.com/north-goa.jpg' },
       kerala: { name: 'Kerala', place_id: 'ixigo_kerala', lat: 10.85, lng: 76.27, photo_url: 'https://images.ixigo.com/kerala.jpg' },
     };
     const travel = {
@@ -210,23 +210,43 @@ describe('the room\'s tools', () => {
       expect(calls).toHaveLength(1);
     });
 
-    it('never makes an area of the destination the trip\'s place, voted or said (the Server, 6 Oct): Goa keeps its place_id', async () => {
-      // North vs South decided where in Goa to stay, not where the trip goes.
+    it('saves a place the vote picked as ixigo\'s full Place, refuses another, and changes nothing it cannot resolve', async () => {
+      // North vs South as a real place vote stays allowed: saved as the Place ixigo resolves, never a bare name.
       const { ctx, calls } = run([closed('d_area', ['opt_north', 'opt_south'], 0, '2026-10-05T18:00:00Z')], GOA);
-      expect(await updateTrip.run({ destination: 'north goa' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('North Goa is in Goa'), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ destination: 'north goa' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(calls[0]?.params.destination).toEqual(places['north goa']);
       expect(await updateTrip.run({ destination: 'South Goa' }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
-      // Staging, 8 Oct, after "Where should we stay in Goa: Candolim or Anjuna?": the name says it is in Goa, or ixigo's
-      // place is a few km from Goa's. The dates said with it still save.
-      const said = run([], GOA);
-      expect(await updateTrip.run({ destination: 'Candolim, Goa', dates: { start: '2026-11-06', end: '2026-11-09' } }, said.ctx))
-        .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining('Candolim, Goa is in Goa') });
-      expect(await updateTrip.run({ destination: 'Candolim' }, said.ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Candolim is in Goa') });
-      expect([...calls, ...said.calls].map((c) => c.params.destination)).toEqual([undefined]);
-      const none = run([]);
-      expect(await updateTrip.run({ stay: 'Villa Sol, Assagao' }, none.ctx)).toEqual({ ok: true, changed: ['stay'], stay: 'Villa Sol, Assagao' });
+      // With no resolved Place, nothing changes: the destination is never sent as {name} alone.
+      const unresolved = run([closed('d_area', ['opt_north', 'opt_south'], 1, '2026-10-05T18:00:00Z')], GOA);
+      expect(await updateTrip.run({ destination: 'south goa' }, unresolved.ctx)).toMatchObject({ ok: false, error: expect.stringContaining("can't look up South Goa"), tell_the_room: SAY_NOTHING });
+      expect(unresolved.calls).toEqual([]);
     });
 
-    it('sends a new destination as ixigo\'s full Place, never a bare name; one ixigo cannot find is the organizer\'s to set', async () => {
+    it('staging 09:32: a vote on where to stay in Goa sets the stay to its winner and leaves Goa the destination, with its place_id', async () => {
+      const stayVote = vote({
+        decision_id: 'd_where', question: 'Where should we stay in Goa: Candolim or Anjuna?', status: 'closed', result_index: 0,
+        closed_at: '2026-10-08T09:32:01Z', options: [{ label: 'Candolim' }, { label: 'Anjuna' }], tally: [3, 1],
+      });
+      const { ctx, calls } = run([stayVote], GOA);
+      // What the composer sent on staging.
+      const r = await updateTrip.run({ destination: 'Candolim, Goa', stay: 'Villa with a pool in Candolim' }, ctx);
+      expect(r).toMatchObject({ ok: true, changed: ['stay'], stay: 'Candolim', note: expect.stringContaining("can't look up Candolim, Goa") });
+      expect(calls.map((c) => c.params)).toEqual([{ request_id: expect.any(String), trip_id: 't_goa', stay: 'Candolim' }]);
+      expect((ctx.pack.trip.destination as typeof GOA)).toEqual(GOA);
+    });
+
+    it("never saves a wish as the stay: the group agreed 'a villa with a pool', which is no pick until a vote or a booking", async () => {
+      const { ctx, calls } = run([], GOA);
+      expect(await updateTrip.run({ stay: 'Villa with a pool' }, ctx)).toMatchObject({
+        ok: false, error: expect.stringContaining('no stay the group picked yet'), tell_the_room: SAY_NOTHING,
+      });
+      // Said with dates, the dates still save and the wish does not.
+      expect(await updateTrip.run({ stay: 'Villa with a pool in Candolim', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
+        .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining('no stay the group picked yet') });
+      expect(calls.map((c) => c.params.stay)).toEqual([undefined]);
+    });
+
+    it('sends a new destination as ixigo\'s full Place, never a bare name; one ixigo cannot find changes nothing', async () => {
       const { ctx, calls } = run([], GOA);
       expect(await updateTrip.run({ destination: 'Kerala' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
       expect(calls[0]?.params.destination).toEqual(places['kerala']);

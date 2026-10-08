@@ -63,10 +63,15 @@ const UpdateTripInput = z.object({
     .min(1)
     .max(120)
     .optional()
-    .describe('Where the trip goes: a city or region, like "Goa" or "Kerala". Never an area or a stay inside it ("North Goa", "Candolim"): that is where in it to stay.'),
+    .describe('Where the trip goes: a city or region, like "Goa". Never an area to stay in or a hotel: that is the stay.'),
   dates: z.object({ start: z.iso.date(), end: z.iso.date() }).optional(),
   vibe: z.array(z.string().min(1).max(40)).max(12).optional(),
-  stay: z.string().min(1).max(60).optional().describe('The place to stay the group picked, by its own name, like "Villa Sol, Anjuna". Never a wish ("a villa with a pool").'),
+  stay: z
+    .string()
+    .min(1)
+    .max(60)
+    .optional()
+    .describe('Where the group stays, as it picked it: a vote\'s winner or a booked stay, like "Candolim" or "Villa Sol, Anjuna". Never a wish ("a villa with a pool"): that stays a preference.'),
 });
 
 const StaySilentInput = z.object({
