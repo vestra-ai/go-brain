@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import { toolDefs } from '../loop.js';
+import { NAMES_ONLY_FROM_IXIGO } from '../../travel/book/tool.js';
 import { travelTools } from '../../travel/tools.js';
 import { roomTools } from '../room-tools.js';
 import { CARD_LINE, GO_RULES } from '../rules.js';
@@ -56,7 +57,19 @@ describe('what Go knows without a check', () => {
         '- Everything else a well-travelled friend knows, say plainly, with no "I can\'t check live" caveat: distances and travel times, what an area is like, ' +
         'local tips, and the usual weather for the season.\n' +
         '- Name a particular cafe, restaurant, bar, beach or sight only when it came from ixigo in this turn (the destination guide through the ixigo tool, ' +
-        'or search results) or someone in the group named it. Without that, talk about the area, never a name from memory, and offer what ixigo has.\n',
+        'or search results) or someone in the group named it. Without that, talk about the area, never a name from memory, and offer what ixigo has. ' +
+        'Do this quietly and never say why you can or can\'t name a place (never "Chapora Fort was named by Priya, so I can talk about it"): ' +
+        'just name it, or talk about the area.\n',
     );
+  });
+
+  // p5's robustness drill, 8 Oct: "Chapora Fort was named by Priya, so I can talk about it." The venue rule, said to the room.
+  it('applies the venue rule quietly: never says why it may or may not name a place, nor do the ixigo tool\'s notes invite it', () => {
+    const venue = GO_RULES.split('\n').find((l) => l.startsWith('- Name a particular cafe'))!;
+    expect(venue).toContain('never say why');
+    expect(venue).toContain('just name it, or talk about the area.');
+    expect(NAMES_ONLY_FROM_IXIGO).toContain("never say why you can or can't name one");
+    // Nothing the room is told asks Go to give a reason for a name.
+    expect(NAMES_ONLY_FROM_IXIGO).not.toMatch(/\b(explain|because|tell (them|the group) why)\b/i);
   });
 });
