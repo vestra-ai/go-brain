@@ -192,14 +192,21 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   }
 
   /**
-   * A stays ask answered from a finished, kept search of the same page with no conditions: its rows that have every page
-   * condition the ask set, all of them NARROWED_BY; null when there is no such search, or fewer than NARROW_MIN rows fit.
-   * Conditions that are not the page's (a beach, a villa) are not ixigo's to filter: Go's own filters read them as ever.
+   * The ask's page conditions, when there are some and each is NARROWED_BY, so a kept search with none can answer it;
+   * null otherwise. Conditions that are not the page's (a beach, a villa) are not ixigo's to filter: Go's own filters read
+   * them as ever.
    */
-  async function fromKept(id: string, given: Record<string, unknown>, conditions: string[], tripId: string): Promise<TravelSearch | null> {
+  function narrowedBy(id: string, conditions: string[]): string[] | null {
     const recipe = d.book.get(id);
-    const byPage = conditions.filter((c) => recipe?.conditions && Object.hasOwn(recipe.conditions, c));
-    if (byPage.length === 0 || !byPage.every((c) => NARROWED_BY.has(c))) return null;
+    const byPage = conditions.filter((c) => recipe?.conditions !== undefined && Object.hasOwn(recipe.conditions, c));
+    return byPage.length > 0 && byPage.every((c) => NARROWED_BY.has(c)) ? byPage : null;
+  }
+
+  /**
+   * A stays ask answered from a finished, kept search of the same page with no conditions: its rows that have every one
+   * of the ask's page conditions (narrowedBy); null when there is no such search, or fewer than NARROW_MIN rows fit.
+   */
+  async function fromKept(id: string, given: Record<string, unknown>, byPage: string[], tripId: string): Promise<TravelSearch | null> {
     const wide = kept.get(await keyFor(id, given, [], tripId));
     if (!wide?.done || d.now().getTime() - wide.at >= wide.ttl) return null;
     const rows = wide.done.results.filter((o) => byPage.every((c) => o.facts[c] === true));
@@ -279,17 +286,22 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       const owner: Owner = o?.turnId ? { kind: 'turn', id: o.turnId } : o?.messageId ? { kind: 'message', id: o.messageId } : null;
       const cardKey = `${tripId}|${key}`;
       const nowMs = d.now().getTime();
-      const hit = kept.get(key);
+      const fresh = (k: Kept | undefined): k is Kept => k !== undefined && nowMs - k.at < k.ttl;
+      let hit = kept.get(key);
       // The search itself kept and done answers as it is; until then, a kept search of the same page with no conditions
-      // answers from its rows, and the search itself runs in the background (unless it is running already).
-      if (!(hit?.done && nowMs - hit.at < hit.ttl)) {
-        const narrowed = await fromKept(id, given, conditions, tripId);
-        if (narrowed) {
-          if (!(hit && nowMs - hit.at < hit.ttl)) runQuietly(key, id, given, conditions, tripId, ttl);
+      // answers from its rows, and the search itself runs in the background (unless it is running already). Only an ask
+      // that can be narrowed waits here, so every other search reads what is kept and keeps its own with no wait between.
+      const byPage = narrowedBy(id, conditions);
+      if (byPage && !(fresh(hit) && hit.done)) {
+        const narrowed = await fromKept(id, given, byPage, tripId);
+        // The wait let another search of this key start, or finish: what is kept is read again.
+        hit = kept.get(key);
+        if (narrowed && !(fresh(hit) && hit.done)) {
+          if (!fresh(hit)) runQuietly(key, id, given, conditions, tripId, ttl);
           return narrowed;
         }
       }
-      if (hit && nowMs - hit.at < hit.ttl) {
+      if (fresh(hit)) {
         // The composer joining a run its early start began takes the card: if that run fails, nothing retries it.
         const running = cards.get(cardKey);
         if (running?.running && owner?.kind === 'turn') running.owner = owner;
