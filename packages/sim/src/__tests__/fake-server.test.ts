@@ -17,7 +17,9 @@ afterEach(async () => {
 });
 
 async function setUp(extra: Partial<FakeServerOptions> = {}) {
-  go = await startTestGo(secret);
+  // A Server given its own clock signs its socket by it, so Go checks by the same clock.
+  const now = extra.now;
+  go = await startTestGo(secret, now ? { nowSeconds: () => Math.floor(now().getTime() / 1000) } : {});
   fake = new FakeServer({ goUrl: go.url, secret, ...extra });
   await fake.start(3000);
   await fake.createTrip(goaFreshTrip());
