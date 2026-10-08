@@ -2,7 +2,7 @@ import type * as C from '@go/contract';
 import type { Packs } from '../trips/pack.js';
 import { flexibleOf } from '../trips/votes.js';
 import type { NowProvider } from './context.js';
-import { dataBlock, defuse, inlineData, personName } from './fence.js';
+import { dataBlock, defuse, inlineData, oneLine, personName } from './fence.js';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -48,6 +48,26 @@ function votersOf(d: C.Decision, people: C.Person[]): string {
   return `. Voted: ${names(people.filter((p) => voted.has(p.person_id)))}. Not yet: ${names(people.filter((p) => !voted.has(p.person_id)))}`;
 }
 
+/** The most days of the itinerary "right now" shows. */
+const ITINERARY_DAYS = 14;
+
+/**
+ * The itinerary as the room may hear it (1.1 A8). A private item is one person's own: it never enters the room's prompt,
+ * so Go can't say it to the group. A shared one says who it is for; one with no audience is the group's.
+ */
+export function itineraryLines(trip: Pick<C.TripSnapshot, 'itinerary' | 'people'>): string[] {
+  const name = (id: string): string => personName(trip.people.find((p) => p.person_id === id)?.name ?? 'someone');
+  return trip.itinerary.slice(0, ITINERARY_DAYS).flatMap((day) => {
+    const items = day.items
+      .filter((it) => it.audience !== 'private')
+      .map((it) => {
+        const forWhom = it.person_ids?.length ? ` (for ${it.person_ids.map(name).join(', ')})` : '';
+        return `${it.time ? `${it.time} ` : ''}${oneLine(it.title)}, ${it.status}${forWhom}`;
+      });
+    return items.length ? [defuse(`${day.date}${day.title ? ` ${oneLine(day.title)}` : ''}: ${items.join('; ')}`)] : [];
+  });
+}
+
 /** The 'trip' block of "right now": what the trip is, who is in it, open votes. Other lanes add the record, pages and tasks. */
 export function tripNow(packs: Packs): NowProvider {
   return {
@@ -87,6 +107,8 @@ export function tripNow(packs: Packs): NowProvider {
       }
       const booked = trip.bookings.filter((b) => b.status === 'confirmed');
       if (booked.length) lines.push(`Booked: ${booked.map((b) => inlineData(b.title)).join(', ')}`);
+      const plan = itineraryLines(trip);
+      if (plan.length) lines.push(`Itinerary:\n${dataBlock('itinerary', plan)}`);
       return lines.join('\n');
     },
   };

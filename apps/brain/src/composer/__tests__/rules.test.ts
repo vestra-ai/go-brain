@@ -137,6 +137,13 @@ describe("Go's rules", () => {
     expect(section).toContain("- Someone who said they're flexible on a vote has voted: never ask them to pick.");
   });
 
+  it('never presses anyone about a disputed expense, and a pending one is not final (1.1 B4)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
+    expect(section).toContain(
+      '- Never press anyone about an expense they disputed: you may say who disputed it and why, when it matters. An expense still pending is not final until the people it is split between approve it in the App.',
+    );
+  });
+
   it('use no em dashes or en dashes, as they ask of Go', () => {
     expect(GO_RULES).not.toMatch(/[—–]/);
   });

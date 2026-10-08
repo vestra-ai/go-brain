@@ -476,6 +476,28 @@ describe('why Go woke, and the trip block', () => {
     expect(beach).not.toMatch(/Rahul|Priya|Arjun|Meher|Kabir/);
   });
 
+  it("shows the itinerary as the room may hear it: the group's and shared items, never a private one (1.1 A8)", async () => {
+    const trip = goaSnapshot({
+      itinerary: [
+        {
+          date: '2026-11-07', title: "Meher's birthday",
+          items: [
+            { time: '10:00', title: 'Beach day at Anjuna', category: 'activities', status: 'planned' },
+            { time: '19:30', title: 'Cake pickup', category: 'food', status: 'planned', audience: 'shared', person_ids: ['p_priya', 'p_arjun'] },
+            { time: '21:00', title: 'Call with the visa office', category: 'other', status: 'planned', audience: 'private', person_ids: ['p_kabir'] },
+          ],
+        },
+        { date: '2026-11-08', items: [{ title: 'Kabir alone: pharmacy run', category: 'other', status: 'idea', audience: 'private', person_ids: ['p_kabir'] }] },
+      ],
+    });
+    const block = await tripNow({ get: async () => packOf([], trip), invalidate: () => undefined }).render('t_goa', []);
+    expect(block).toContain('Itinerary:\n<data source="itinerary">\n2026-11-07 Meher\'s birthday: 10:00 Beach day at Anjuna, planned; 19:30 Cake pickup, planned (for Priya, Arjun)\n</data>');
+    // Kabir's own items never reach the room's prompt, and a day with only private items is left out.
+    expect(block).not.toContain('visa office');
+    expect(block).not.toContain('pharmacy');
+    expect(block).not.toContain('2026-11-08');
+  });
+
   it('counts a flexible vote as voted and names nobody as not yet then; a closed vote says how many were flexible (1.1 A5)', async () => {
     // Priya and Kabir picked; Arjun said he is flexible (counted in voted, never in the tally, named in no pick).
     const votes = [{ person_id: 'p_priya', option_index: 0 }, { person_id: 'p_kabir', option_index: 0 }];

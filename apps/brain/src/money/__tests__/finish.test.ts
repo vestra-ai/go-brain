@@ -56,6 +56,8 @@ describe('a paid payment', () => {
       note: 'Villa Sol, 3 nights',
       split_person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'],
       booking_id: bookingId,
+      // 1.1 B4: paid through the vault, so the Server records it approved at once, never pending.
+      approval_id: approvalId,
     });
     const card = C.PayCard.parse(k.server.cards.get(cardId));
     expect(card.state).toBe('paid');
