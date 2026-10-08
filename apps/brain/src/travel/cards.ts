@@ -14,6 +14,8 @@ export const PICK_ACTION = { action_id: 'pick', label: "I'll take this", style: 
 export const VOTE_ACTION = { action_id: 'vote', label: 'Put it to a vote', style: 'secondary' } as const;
 /** On options from ixigo.com: opens the option's own page there, where the group books it. */
 export const OPEN_ACTION = { action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true } as const;
+/** On a card of stays that shows a few of a longer list: the whole list on ixigo.com, one tap away. */
+export const SEE_ALL_ACTION = { action_id: 'see_all', label: 'See all on ixigo', style: 'secondary' } as const;
 
 /** On the card that links to flights on ixigo, when Go can't read them itself. */
 export const SEE_FLIGHTS_ACTION = { action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' } as const;
@@ -181,7 +183,8 @@ const KIND_WORDS: Record<OptionKind, [string, string]> = {
 };
 
 /** The options card, checked against the contract: a bug here throws instead of posting a card the App cannot draw. */
-export function buildOptionsCard(i: { cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[] }): OptionsCardT {
+/** seeAll: the card's last button opens the whole list on ixigo.com instead of each option's page (stays, three shown). */
+export function buildOptionsCard(i: { cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean }): OptionsCardT {
   const priced = i.picks.filter((p) => p.option.priceMinor !== undefined);
   const cheapest = [...priced].sort((a, b) => (a.option.priceMinor ?? 0) - (b.option.priceMinor ?? 0))[0];
   const from = cheapest ? `, from ${formatInr(cheapest.option.priceMinor ?? 0)}${cheapest.option.priceNote ? ` ${cheapest.option.priceNote}` : ''}` : '';
@@ -194,6 +197,6 @@ export function buildOptionsCard(i: { cardId: string; title: string; optionKind:
     option_kind: i.optionKind,
     checked_at: i.checkedAt,
     options: i.picks.map(cardOption),
-    actions: [PICK_ACTION, ...(i.picks.length >= 2 ? [VOTE_ACTION] : []), ...(i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [])],
+    actions: [PICK_ACTION, ...(i.picks.length >= 2 ? [VOTE_ACTION] : []), ...(i.seeAll ? [SEE_ALL_ACTION] : i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [])],
   });
 }

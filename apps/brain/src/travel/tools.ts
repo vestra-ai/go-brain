@@ -278,7 +278,9 @@ export async function putUpCard(
     }),
   );
   const title = stayCardTitle(given.title, set.query, picks.map((p) => p.option));
-  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks });
+  // Stays from ixigo.com: the card shows a few, so its button opens the whole list the search read (the lead's call).
+  const seeAll = set.optionKind === 'stay' && ixigoPage(set.page ?? null) !== null;
+  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks, seeAll });
   await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
   // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
   const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
@@ -294,7 +296,7 @@ export async function putUpCard(
  */
 export async function answerItself(kind: TravelKind, q: TravelQuery, found: TravelSearch, ctx: TurnCtx, d: Pick<TravelToolDeps, 'results' | 'images'>): Promise<unknown> {
   const options = found.results.slice(0, 10).map(toResultOption);
-  const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt });
+  const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
   // The early read keeps places as typed ("north goa"): the card's title names them properly.
   const titled = { ...q, ...(q.from ? { from: titleWords(q.from) } : {}), ...(q.to ? { to: titleWords(q.to) } : {}), ...(q.area ? { area: titleWords(q.area) } : {}) };
   const { cardId, shown } = await putUpCard(set, directPicks(kind, options), { title: suggestTitle(kind, titled), line: answerLine(kind, q, found) }, ctx, d);
@@ -435,7 +437,7 @@ export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: Trav
       note: 'Nothing to show. Say what the summary says in one line, keeping every condition in it, and suggest loosening one thing.',
     };
   }
-  const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt });
+  const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
   const fit = found.results.length;
   // A train comes back once a class: the summary counts trains, and says how many fares by class they hold. The list
   // before the conditions is counted in fares, so a train list with conditions gives no "of the".

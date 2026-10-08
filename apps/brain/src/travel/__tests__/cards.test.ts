@@ -37,6 +37,14 @@ describe('the options card', () => {
     expect(buildOptionsCard({ cardId: 'c_web', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: elsewhere }).actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
   });
 
+  it('with seeAll, its last button opens the whole list on ixigo instead of each option\'s page (stays, three shown)', () => {
+    const onIxigo = picks.map((p) => ({ ...p, option: { ...p.option, sourceUrl: 'https://www.ixigo.com/hotels/1/details?hName=x' } }));
+    const card = buildOptionsCard({ cardId: 'c_all', title: 'Stays in North Goa', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: onIxigo, seeAll: true });
+    expect(C.OptionsCard.safeParse(card).success).toBe(true);
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote', 'see_all']);
+    expect(card.actions?.[2]).toEqual({ action_id: 'see_all', label: 'See all on ixigo', style: 'secondary' });
+  });
+
   it('builds the flights link card as a valid notice with its one button', () => {
     const card = buildFlightsLinkCard({ cardId: 'c_link_1', title: 'Flights, Delhi to Goa', url: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI' });
     expect(C.NoticeCard.safeParse(card).success).toBe(true);
