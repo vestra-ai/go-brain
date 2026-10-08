@@ -1,0 +1,40 @@
+id: buses.offers
+title: The bus booking offers on ixigo now, each with its coupon, what it gives and its last day
+asks:
+  - any bus offers
+  - bus booking coupon code
+  - bus ke liye koi offer hai kya
+auth: none
+changes_state: false
+# The page is AbhiBus's, ixigo's bus partner: a Next.js page whose flight payload carries every offer, some of them more
+# than once, each with its coupon, a line on what it gives, its terms and its last day. (The "Bus Offers" link on /offers
+# points at bus.ixigo.com, which answered with an SSL error on 7 Oct.)
+page: /buses/offers
+capture:
+  - { match: /buses/offers$, max_bytes: 1000000 }
+read:
+  rows:
+    from: /buses/offers$
+    format: next_html
+    list: '$findAll($, "coupon")[$type(coupon) = "string" and coupon != ""]'
+    unique: coupon
+answer:
+  as: facts
+  title: Bus offers on ixigo now
+  max: 25
+  each: |
+    {
+      "offer": $trim(title),
+      "code": coupon,
+      "what": $trim(subTitle),
+      "terms": [$split(description, "\n").$trim($)[$ != ""]][[0..3]],
+      "from": validFrom,
+      "until": expDate,
+      "new_users_only": new_user_offer = "1"
+    }
+ttl_minutes: 60
+samples: { page: buses.offers.html }
+measured: { fast_ms: null, page_ms: 8366, flow_ms: null }
+notes: >-
+  A code applies at AbhiBus's payment step, with the person's own login: Go only says which code fits, and never applies
+  one. Most need a named card, and many leave out state transport buses.

@@ -118,3 +118,17 @@ describe('trains.by_name', () => {
     expect(got.rows.map((r) => r['number'])).toEqual(['12779']);
   });
 });
+
+describe('trains.offers', () => {
+  it("reads ixigo's train offers page: the count, the payment types, and each offer with its last day", async () => {
+    const PAGE = 'https://www.ixigo.com/offers/tag/trains';
+    const got = await facts('trains.offers', {}, [capture('/offers/tag/trains$', PAGE, sample('trains.offers.html'))]);
+    expect(got.page).toBe(PAGE);
+    expect(got.runs[0]!.plan.capture).toEqual([{ match: '/offers/tag/trains$', required: true, max_bytes: 1_000_000 }]);
+    expect(got.rows[0]).toEqual({ train_offers: 6, paid_with: ['UPI: 1', 'CRED: 1', 'AU Bank: 1', 'UPI: 1'] });
+    expect(got.rows).toHaveLength(7);
+    expect(got.rows[1]).toEqual({ offer: '₹0 Payment Gateway Charges on train bookings via AU Credit Card', paid_with: 'AU Bank', until: '31 Dec 2026', details: 'AU-0PG' });
+    // An offer with no last day, and no code, says neither.
+    expect(got.rows[3]).toEqual({ offer: 'Redeem Rewards. Save Instantly. Travel Smarter.', details: 'pay-with-points' });
+  });
+});

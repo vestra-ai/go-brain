@@ -111,10 +111,10 @@ describe('the ixigo tool', () => {
 
   it("offers the book's facts recipes, never a search, a lookup or one that changes something", () => {
     expect(toolRecipes(book).map((r) => r.id)).toEqual([
-      'flights.fare_calendar', 'help.downtime', 'help.faq', 'help.services',
+      'buses.offers', 'flights.fare_calendar', 'help.downtime', 'help.faq', 'help.services',
       'hotels.details', 'hotels.offers', 'hotels.reviews', 'hotels.rooms', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list', 'plan.destination', 'plan.explore', 'plan.top_locations',
-      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.by_name', 'trains.confirm_chance',
+      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.by_name', 'trains.confirm_chance', 'trains.offers',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
     expect(tool.description).toContain('- plan.destination: A destination');
