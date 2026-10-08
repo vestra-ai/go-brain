@@ -271,6 +271,8 @@ export async function putUpCard(
   d: Pick<TravelToolDeps, 'results' | 'images'>,
 ): Promise<{ cardId: string; shown: number }> {
   const cardId = ctx.stableId('c_opt');
+  const run = runOfSet.get(set.resultsId);
+  if (run) remember(shownRuns, run);
   const picks = await Promise.all(
     numbers.map(async (n, i) => {
       const option = set.options[n - 1]!;
@@ -297,7 +299,11 @@ export async function putUpCard(
 export async function answerItself(kind: TravelKind, q: TravelQuery, found: TravelSearch, ctx: TurnCtx, d: Pick<TravelToolDeps, 'results' | 'images'>): Promise<unknown> {
   const options = found.results.slice(0, 10).map(toResultOption);
   const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
-  const { cardId, shown } = await putUpCard(set, directPicks(kind, options), { title: answerTitle(kind, q), line: answerLine(kind, q, found) }, ctx, d);
+  noteRun(set.resultsId, ctx.tripId, found.runId);
+  const numbers = directPicks(kind, options);
+  // The line's "from" is the card's own cheapest, never one of the results the card leaves out.
+  const line = answerLine(kind, q, numbers.map((n) => options[n - 1]!));
+  const { cardId, shown } = await putUpCard(set, numbers, { title: answerTitle(kind, q), line }, ctx, d);
   ctx.answered = true;
   return { search: searchName(kind, q), results_id: set.resultsId, card_id: cardId, shown, answered: true, note: 'The card and its line are up: this turn has said what it needed to.' };
 }
@@ -308,32 +314,61 @@ const STILL_RUNNING = Symbol('still running');
 const KEPT_ANSWERS_MS = 1_000;
 const nap = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms).unref());
 
+/** Runs whose options a card in the room has shown, as "trip:run", and each saved set's run: bounded, newest kept. */
+const shownRuns = new Map<string, true>();
+const runOfSet = new Map<string, string>();
+const RUNS_KEPT = 2_000;
+function remember<V>(m: Map<string, V>, key: string, value: V = true as V): void {
+  m.delete(key);
+  m.set(key, value);
+  while (m.size > RUNS_KEPT) m.delete(m.keys().next().value!);
+}
+function noteRun(resultsId: string, tripId: string, runId: string | undefined): void {
+  if (runId) remember(runOfSet, resultsId, `${tripId}:${runId}`);
+}
+
 /**
- * The turn goes on while the search runs; when it finishes, its answer is saved and Go wakes on a 'search' desk item to
- * show it. Searches that shared one run (the early start and this call, or two turns) wake Go once.
+ * A search that outlived its turn, handed over: when its run finishes, its options are saved and Go wakes on a 'search'
+ * desk item, and that wake puts its card up with its line itself, with no model call (searchWakeAnswer). Level-triggered
+ * at the run: every search that outlives its turn comes here (the early start's, from the right-now block or the early
+ * answer, and the search tool's), whatever the model did in that turn, and the ones that shared one run wake Go once. A
+ * run whose options a card in the room already showed wakes nothing. Without a desk (tests that don't look) it does nothing.
  */
-function goOnWithout(kind: TravelKind, q: TravelQuery, pending: Promise<TravelSearch>, ctx: TurnCtx, d: TravelToolDeps): unknown {
-  const search = searchName(kind, q);
-  const wake = (id: string, payload: SearchWake): Promise<void> => d.desk!.put({ id, tripId: ctx.tripId, kind: 'search', ref: kind, dueAt: d.now(), payload });
+export function handOver(
+  kind: TravelKind,
+  q: TravelQuery,
+  pending: Promise<TravelSearch>,
+  o: { tripId: string; fallbackId: string },
+  d: Pick<TravelToolDeps, 'desk' | 'now' | 'log'> & { results: Pick<ResultsStore, 'save'> },
+): void {
+  const desk = d.desk;
+  if (!desk) return;
+  const wake = (id: string, payload: SearchWake): Promise<void> => desk.put({ id, tripId: o.tripId, kind: 'search', ref: kind, dueAt: d.now(), payload });
   pending
     .then(
       async (found) => {
-        const a = await searchAnswer(kind, q, found, ctx.tripId, d);
+        if (found.runId && shownRuns.has(`${o.tripId}:${found.runId}`)) return;
+        const a = await searchAnswer(kind, q, found, o.tripId, d);
         const payload: SearchWake = { source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null };
-        await wake(`search:${ctx.tripId}:${found.runId ?? `${ctx.turnId}:${kind}`}`, payload);
+        await wake(`search:${o.tripId}:${found.runId ?? o.fallbackId}`, payload);
       },
       async (err: unknown) => {
         const code = err instanceof TravelError ? err.code : 'failed';
-        await wake(`search:${ctx.tripId}:${ctx.turnId}:${kind}:failed`, { source: 'travel_search', search, count: 0, resultsId: null, summary: '', error: code });
+        await wake(`search:${o.tripId}:${o.fallbackId}:failed`, { source: 'travel_search', search: searchName(kind, q), count: 0, resultsId: null, summary: '', error: code });
       },
     )
-    .catch((err: unknown) => d.log?.warn({ err, tripId: ctx.tripId, kind }, 'travel: a search that outlived its turn could not wake Go'));
+    .catch((err: unknown) => d.log?.warn({ err, tripId: o.tripId, kind }, 'travel: a search that outlived its turn could not wake Go'));
+}
+
+/** The turn goes on while the search runs; handOver puts its options up when it finishes. */
+function goOnWithout(kind: TravelKind, q: TravelQuery, pending: Promise<TravelSearch>, ctx: TurnCtx, d: TravelToolDeps): unknown {
+  handOver(kind, q, pending, { tripId: ctx.tripId, fallbackId: `${ctx.turnId}:${kind}` }, d);
   return {
-    search,
+    search: searchName(kind, q),
     count: 0,
     running: true,
     tell_the_room: SAY_NOTHING,
-    note: 'This search is still running on ixigo, and the live card in the room already shows it. Post nothing about it now: you wake with its options when it finishes.',
+    note: 'This search is still running on ixigo, and the live card in the room already shows it. Post nothing about it: its options go up in the room by themselves when it finishes.',
   };
 }
 
@@ -436,6 +471,7 @@ export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: Trav
     };
   }
   const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
+  noteRun(set.resultsId, tripId, found.runId);
   const fit = found.results.length;
   // A train comes back once a class: the summary counts trains, and says how many fares by class they hold. The list
   // before the conditions is counted in fares, so a train list with conditions gives no "of the".

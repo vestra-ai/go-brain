@@ -3,18 +3,21 @@
  * started early, the prompt's right-now part carries that search's answer: the results_id, the summary and the results,
  * exactly as the search tool would give them. So the model's first and only call is show_options with its line. The
  * block waits for the search as long as it may hold up the turn (TravelBackend.waitMs: up to 12 s from its start through
- * the browser fetch, none for the agent job, 12 s for a backend that does not say); one still running is named, and the
- * search tool joins it. Under ixigo_web the live card already said "On it." in the room, so the block tells the model
- * not to say it again, and the search tool hands the running search over so it wakes Go when it finishes.
+ * the browser fetch, none for the agent job, 12 s for a backend that does not say). One still running is handed over
+ * right here (tools.ts handOver), never left to the model to pass on: its card and line go up by themselves when it
+ * finishes. On staging (8 Oct) a cold box's first stays search ran 13 s, the model ended its turn with a line instead
+ * of the search tool, and the options never reached the room. Under ixigo_web the live card already said "On it.", so
+ * the model posts nothing about it; elsewhere it says one plain line.
  */
 import type { DirectAnswer, NowProvider } from '../../composer/context.js';
+import type { Desk } from '../../desk/desk.js';
 import { dataBlock, defuse, oneLine } from '../../composer/fence.js';
 import { CARD_LINE } from '../../composer/rules.js';
 import { plainAsk } from '../answer.js';
 import type { Images } from '../images.js';
 import type { ResultsStore } from '../results.js';
-import { answerItself, searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
-import type { Travel } from '../travel.js';
+import { answerItself, handOver, searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
+import type { Travel, TravelSearch } from '../travel.js';
 import { TRAVEL_WAIT_MS } from './backend.js';
 import type { EarlyStart } from './early.js';
 
@@ -28,6 +31,9 @@ export interface EarlySearchNowDeps {
   /** How much longer each search may hold up the turn. */
   travel: Pick<Travel, 'waitMs'>;
   now: () => Date;
+  /** Where a search still running wakes Go when it finishes (tools.ts handOver). */
+  desk?: Pick<Desk, 'put'>;
+  log?: { warn(obj: object, msg: string): void };
   wait?: (ms: number) => Promise<void>;
 }
 
@@ -88,13 +94,15 @@ export function earlySearchNow(d: EarlySearchNowDeps): NowProvider {
         const settled = await Promise.race([early.search.then(() => true, () => true), wait(left).then(() => false)]);
         const answer = settled ? await answerFor(tripId, p.messageId, early) : 'running';
         if (answer === 'running') {
-          const scope = `The search for #${p.seq ?? '?'} (${searchScope(early.kind, early.query)}) started early and is still running`;
+          // Handed over here, whatever the model does next: its card goes up when it finishes.
+          handOver(early.kind, early.query, early.search, { tripId, fallbackId: `early:${p.messageId}` }, d);
+          const scope = `The search for #${p.seq ?? '?'} (${searchScope(early.kind, early.query)}) is still running`;
           blocks.push(
             early.live
-              ? `${scope}, and the live card in the room shows it. ` +
-                  'Call the search tool for it now with what was asked: it joins that search, answers at once, and you wake with its options when it finishes. ' +
-                  'Post nothing else about it.'
-              : `${scope}. Call the search tool for it now with what was asked: it joins that search and answers when it finishes.`,
+              ? `${scope}, and the live card in the room shows it. Its options go up in the room by themselves when it finishes. ` +
+                  "Post nothing about it, and don't search for it again."
+              : `${scope}. Its options go up in the room by themselves when it finishes. ` +
+                  "Say in one short line that you're still looking and they'll be here in a moment, and don't search for it again.",
           );
         } else if (answer) {
           blocks.push(answerBlock(p.seq, answer, early.live));
@@ -114,13 +122,21 @@ export interface EarlyAnswerDeps {
   travel: Pick<Travel, 'waitMs'>;
   /** Today in the trip's time zone, YYYY-MM-DD. */
   today: (tripId: string) => Promise<string>;
+  now: () => Date;
+  /** Where a search still running wakes Go when it finishes (tools.ts handOver). */
+  desk?: Pick<Desk, 'put'>;
+  log?: { warn(obj: object, msg: string): void };
   wait?: (ms: number) => Promise<void>;
 }
 
+const RUNNING = Symbol('running');
+
 /**
  * The turn's answer with no model call at all: it woke for one plain search ask whose early search found options (the
- * early read is the search, so the card and its line come from it). Any doubt, a search still running or one that
- * failed or found nothing, and the turn goes to the model as before, with the block above.
+ * early read is the search, so the card and its line come from it). The same plain ask whose search is still running,
+ * with its live card in the room: the search is handed over and the turn says nothing, so the room hears one line, the
+ * card's, when it finishes. Any doubt, a search that failed or found nothing, or one still running with no live card,
+ * and the turn goes to the model as before, with the block above.
  */
 export function earlyAnswer(d: EarlyAnswerDeps): DirectAnswer {
   const wait = d.wait ?? nap;
@@ -132,7 +148,16 @@ export function earlyAnswer(d: EarlyAnswerDeps): DirectAnswer {
     if (!early) return false;
     // As long as the block would wait for it: the backend's own wait from the run's start, or the block's.
     const allowed = d.travel.waitMs ? await d.travel.waitMs(early.kind, early.query, { tripId }).catch(() => null) : null;
-    const found = await Promise.race([early.search.then((f) => f, () => null), wait(Math.max(0, allowed ?? EARLY_WAIT_MS)).then(() => null)]);
+    const found = await Promise.race<TravelSearch | null | typeof RUNNING>([
+      early.search.then((f) => f, () => null),
+      wait(Math.max(0, allowed ?? EARLY_WAIT_MS)).then(() => RUNNING),
+    ]);
+    if (found === RUNNING) {
+      if (!early.live || !d.desk || !plainAsk(early.kind, early.query, { wake, pack, today: await d.today(tripId) }).ok) return false;
+      handOver(early.kind, early.query, early.search, { tripId, fallbackId: `early:${messageId}` }, d);
+      ctx.answered = true;
+      return true;
+    }
     if (!found || found.results.length === 0) return false;
     if (!plainAsk(early.kind, early.query, { wake, pack, today: await d.today(tripId) }).ok) return false;
     await answerItself(early.kind, early.query, found, ctx, d);

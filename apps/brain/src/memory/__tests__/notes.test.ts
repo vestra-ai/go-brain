@@ -261,3 +261,72 @@ describe('the record in the notes prompt', () => {
     expect(user.split('</chat_data>')).toHaveLength(2);
   });
 });
+
+describe("the trip's dates and place, from an agreed line (8 Oct regression pass)", () => {
+  /** A trip with no dates yet, Rahul organizing, and the notes pass over these lines. */
+  function dateless(tripId: string, messages: Message[], answers: string[], dates: { start: string; end: string } | null = null) {
+    const packs = fakePacks({ [tripId]: packOf(messages, goaTrip({ trip_id: tripId, dates })) });
+    const link = fakeLink();
+    const side = scriptedSide(answers);
+    const notes = createNotes({ pool: db.pool, packs, link, side, log: silentLog, now: () => new Date('2026-10-08T10:00:00Z') });
+    return { link, side, notes };
+  }
+  const trips = (link: ReturnType<typeof fakeLink>) => link.calls.filter((c) => c.method === 'update_trip').map((c) => c.params);
+
+  it("the organizer's own settled line sets the trip's dates through update_trip, with today in the prompt", async () => {
+    const said = [msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov, Diwali weekend 🌴')];
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [{ kind: 'agreed', text: 'Goa trip 6 to 9 Nov', person_ids: [], proof: [3], trip: { dates: { start: '2026-11-06', end: '2026-11-09' } } }],
+    });
+    const { link, side, notes } = dateless('t_d1', said, [answer]);
+    const out = await notes.run('t_d1');
+    expect(out).toMatchObject({ lines: 1, refused: [] });
+    expect(side.prompts[0]!.user).toContain('Today where the trip is: 2026-10-08.');
+    expect(trips(link)).toEqual([{ request_id: expect.stringMatching(/^go_trip_/), trip_id: 't_d1', dates: { start: '2026-11-06', end: '2026-11-09' } }]);
+    // The line goes to the record first; the trip follows it.
+    expect(link.calls.map((c) => c.method).filter((m) => m !== 'add_reaction')).toEqual(['add_record_line', 'update_trip']);
+  });
+
+  it("a member's suggestion nobody agreed to sets nothing: the checker writes it as open, and an open line never moves the trip", async () => {
+    const said = [msg(5, 'p_priya', 'how about 7 to 10 Nov instead?')];
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [{ kind: 'agreed', text: 'Goa trip 7 to 10 Nov', person_ids: [], proof: [5], trip: { dates: { start: '2026-11-07', end: '2026-11-10' } } }],
+    });
+    const { link, notes } = dateless('t_d2', said, [answer]);
+    await notes.run('t_d2');
+    expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.kind)).toEqual(['open']);
+    expect(trips(link)).toEqual([]);
+  });
+
+  it('a later change moves them, days read in the wrong year become this year\'s, and the dates the trip holds are not sent again', async () => {
+    const said = [msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov'), msg(9, 'p_rahul', 'Change of plan: 7 to 10 Nov, flights are cheaper')];
+    const moved = JSON.stringify({
+      facts: [],
+      // The side model guessed last year for days said without one.
+      lines: [{ kind: 'agreed', text: 'Goa trip 7 to 10 Nov', person_ids: [], proof: [9], trip: { dates: { start: '2025-11-07', end: '2025-11-10' } } }],
+    });
+    const { link, notes } = dateless('t_d3', said, [moved], { start: '2026-11-06', end: '2026-11-09' });
+    await notes.run('t_d3', { only: ['m_0009'] });
+    expect(trips(link)).toEqual([{ request_id: expect.stringMatching(/^go_trip_/), trip_id: 't_d3', dates: { start: '2026-11-07', end: '2026-11-10' } }]);
+    const same = JSON.stringify({
+      facts: [],
+      lines: [{ kind: 'agreed', text: 'Goa trip 6 to 9 Nov', person_ids: [], proof: [3], trip: { dates: { start: '2026-11-06', end: '2026-11-09' } } }],
+    });
+    const again = dateless('t_d4', said.slice(0, 1), [same], { start: '2026-11-06', end: '2026-11-09' });
+    await again.notes.run('t_d4');
+    expect(trips(again.link)).toEqual([]);
+  });
+
+  it('a "trip" that does not read is dropped, never the rest of the answer', async () => {
+    const said = [msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov')];
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [{ kind: 'agreed', text: 'Goa trip 6 to 9 Nov', person_ids: [], proof: [3], trip: { dates: { start: '6 Nov', end: '9 Nov' } } }],
+    });
+    const { link, notes } = dateless('t_d5', said, [answer]);
+    expect(await notes.run('t_d5')).toMatchObject({ lines: 1 });
+    expect(trips(link)).toEqual([]);
+  });
+});
