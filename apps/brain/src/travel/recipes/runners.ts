@@ -34,8 +34,9 @@ export interface FetchTrace {
 }
 
 /** onProgress: pictures of the page, for the live search card; onTrace: where the time went, for the run strip. Both
- *  called, never awaited. */
-export interface ReadOptions { signal?: AbortSignal; onProgress?: OnProgress; onTrace?: (t: FetchTrace) => void }
+ *  called, never awaited. tag: the run's id, which Bash's browser watch names the fetch's tab by, so the live view
+ *  labels the tab's tile with its run. */
+export interface ReadOptions { signal?: AbortSignal; onProgress?: OnProgress; onTrace?: (t: FetchTrace) => void; tag?: string }
 
 export interface RecipeRunner {
   name: 'browser_fetch';
@@ -243,6 +244,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
       // the recipe says how long that takes.
       frames: plan.settleMs ? { settle_ms: plan.settleMs } : {},
+      ...(o.tag ? { tag: o.tag } : {}),
     };
     let userId = d.computer.userIdFor(tripId);
     for (let tries = 0; ; tries++) {
@@ -293,7 +295,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     // page, which waits its turn.
     const ask = (open: boolean) =>
       d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
-        body: { ...(open ? { url: `${IXIGO}/` } : {}), steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS },
+        body: { ...(open ? { url: `${IXIGO}/` } : {}), steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS, ...(o.tag ? { tag: o.tag } : {}) },
         ...(o.signal ? { signal: o.signal } : {}),
       });
     let answer: FetchAnswer;

@@ -325,6 +325,7 @@ export function createEngine(d: EngineDeps) {
                 lookupRun.step(`opened ${pathOf(f.path)}`);
                 return runner.read(o.tripId, `${IXIGO}${f.path}`, { capture: f.capture, steps: f.steps }, {
                   ...(o.signal ? { signal: o.signal } : {}),
+                  tag: lookupRun.id,
                   onProgress: (e) => {
                     if (e.type === 'frames') lookupRun.frames(e.frames, fetchStarted);
                   },
@@ -497,7 +498,7 @@ export function createEngine(d: EngineDeps) {
           ...(recipe.fast.body ? { body: await fill(recipe.fast.body, inputs, { url: false, bindings }) } : {}),
         };
         const fastRun = strip.line;
-        const got = await runner.pageFetch(o.tripId, call, { ...(o.signal ? { signal: o.signal } : {}), onTrace: (t) => fastRun.trace(t) });
+        const got = await runner.pageFetch(o.tripId, call, { ...(o.signal ? { signal: o.signal } : {}), onTrace: (t) => fastRun.trace(t), tag: fastRun.id });
         const absolute = new URL(got.url || url, IXIGO).toString();
         refusePayments(absolute);
         // A call in a shape of its own (trains: confirmtkt's, where the page reads www.ixigo.com's) reads with the fast
@@ -528,6 +529,7 @@ export function createEngine(d: EngineDeps) {
     pageRun.step(`opened ${pathOf(page)}`);
     const got = await runner.read(o.tripId, page, plan, {
       ...(o.signal ? { signal: o.signal } : {}),
+      tag: pageRun.id,
       // The pictures go to the live card as before, and to the run strip's browser pane.
       onProgress: (e) => {
         if (e.type === 'frames') pageRun.frames(e.frames, started);

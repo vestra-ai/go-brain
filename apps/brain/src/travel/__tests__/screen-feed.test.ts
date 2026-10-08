@@ -160,6 +160,20 @@ describe('the trip computer\'s screen', () => {
     feed.stop();
   });
 
+  it("carries the run that has a tab (the fetch's tag), and the later run's once it takes a kept tab", async () => {
+    const { feed, streams } = rig();
+    const got: ScreenEvent[] = [];
+    feed.watch('t_goa', (e) => got.push(e));
+    await settle();
+    const s = streams[0]!;
+    s.push('tab_open', { tab_id: 'tab_1', tag: '01JRUNA' });
+    s.push('frame', { tab_id: 'tab_1', tag: '01JRUNB', url: RESULTS, at: 'x', width: 960, height: 600, jpeg_base64: '/9j/A' });
+    s.push('frame', { tab_id: 'tab_1', tag: 'bad tag!', url: RESULTS, at: 'y', width: 960, height: 600, jpeg_base64: '/9j/B' });
+    await settle();
+    expect(got.map((e) => [e.type, 'tag' in e ? e.tag : null])).toEqual([['tab_open', '01JRUNA'], ['frame', '01JRUNB'], ['frame', '01JRUNB']]);
+    expect(feed.watch('t_goa', () => undefined).now()[0]).toEqual({ type: 'tab_open', tab_id: 'tab_1', tag: '01JRUNB' });
+  });
+
   it('says off, and opens nothing more, where there is no watch to open', async () => {
     const { feed, open } = rig(() => null);
     const got: ScreenEvent[] = [];
