@@ -57,7 +57,8 @@ const DESKTOP_LOGIN_BUTTON = { op: 'click', role: 'button', text: 'Log in/Sign u
 /** What the person finishes the log in on, as their tap says (contract 1.1's payload.device): a phone when it doesn't. */
 export type LoginDevice = 'phone' | 'desktop';
 const deviceOf = (tap: CardTapParams): LoginDevice =>
-  (tap.payload as { device?: unknown } | null | undefined)?.device === 'desktop' ? 'desktop' : 'phone';
+  // Read as data until this build's contract carries payload (contract 1.1, #263).
+  (tap as unknown as { payload?: { device?: unknown } | null }).payload?.device === 'desktop' ? 'desktop' : 'phone';
 /** The log in sheet's mobile number field ("Enter Mobile Number"), clicked so the cursor waits in it for the person. */
 const MOBILE_BOX = { op: 'click', role: 'textbox', text: 'mobile' } as const;
 /** ixigo's home page, where the log in sheet opens. */
