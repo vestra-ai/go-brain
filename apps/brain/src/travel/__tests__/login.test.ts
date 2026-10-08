@@ -59,6 +59,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   };
   const starts: TaskBrief[] = [];
   const handoffs: Array<[string, string]> = [];
+  const stops: string[] = [];
   const tasks = {
     start: async (_trip: string, brief: TaskBrief) => {
       starts.push(brief);
@@ -66,6 +67,9 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
     },
     handoff: async (taskId: string, outcome: 'done' | 'could_not' | 'not_now') => {
       handoffs.push([taskId, outcome]);
+    },
+    stop: async (taskId: string) => {
+      stops.push(taskId);
     },
   };
   const login = createIxigoLogin({
@@ -90,7 +94,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const last = (): C.Card & { kind: 'notice' } => cards().at(-1) as C.Card & { kind: 'notice' };
   const state = async (): Promise<string | undefined> =>
     (await db.pool.query<{ state: string }>('select state from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.state;
-  return { tripId, clock, link, reads, statuses, starts, handoffs, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
+  return { tripId, clock, link, reads, statuses, starts, handoffs, stops, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
 }
 
 const STATUS_PLAN = { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], timeoutMs: 12_000 };
@@ -234,8 +238,16 @@ describe('logging in', () => {
     expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: "Opening ixigo on Go's computer" });
     expect(w.starts).toHaveLength(1);
     const job = w.starts[0]!;
-    expect(job).toMatchObject({ title: 'Logging in to ixigo', askedBy: 'p_rahul', returnsKind: 'answer', steps: ["Opening ixigo's login", 'Rahul logs in', 'Checking the login'] });
-    expect(job.goal).toContain('https://www.ixigo.com/');
+    // Its end posts nothing: the login card speaks for it.
+    expect(job).toMatchObject({ title: 'Logging in to ixigo', askedBy: 'p_rahul', returnsKind: 'answer', quiet: true, steps: ['Open ixigo.com', 'Open the log in box', 'Hand over the log in'] });
+    // The fewest steps: its own to-do list is Go's, two clicks leave the box open on the mobile number, and the hand-off
+    // comes at once, with no check before it.
+    expect(job.goal).toContain('Your to-do list is exactly these three steps: "Open ixigo.com", "Open the log in box", "Hand over the log in".');
+    expect(job.goal).toContain('Open https://www.ixigo.com/ in the browser and click "Log in/Sign up" at the top right of the page.');
+    expect(job.goal).toContain('click into that field and type nothing');
+    expect(job.goal).toContain('hand the browser to the person at once, checking nothing first');
+    expect(job.goal).toContain('end the job at once with the summary "Done"');
+    expect(job.goal).not.toContain('top bar');
     expect(job.goal).toContain('Never type, read, copy or keep a number, a code, a name or an email');
     expect(job.goal).toContain('never open a page under /payments/');
     expect(await w.state()).toBe('logging_in');
@@ -245,6 +257,17 @@ describe('logging in', () => {
     });
   });
 
+  it('Not now while the job runs stops it, so its end posts nothing; the hand-off is never answered', async () => {
+    const w = world();
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.tap('ixigo_not_now', 'p_rahul')).toEqual({ result: 'done', toast: 'Go will ask again when a booking needs it' });
+    expect(w.stops).toEqual(['gt_login_1']);
+    expect(w.handoffs).toEqual([]);
+    expect(await w.state()).toBe('skipped');
+    expect(w.last()).toMatchObject({ title: 'ixigo login skipped', actions: [{ action_id: 'ixigo_login' }] });
+  });
+
   it("I'm logged in settles the job's hand-off, and ixigo's own answer decides by its status alone: 401 is not yet, 200 is logged in as Rahul", async () => {
     const w = world({ statuses: [401, 200] });
     await w.setup();
@@ -252,6 +275,7 @@ describe('logging in', () => {
 
     expect(await w.tap('ixigo_logged_in', 'p_rahul')).toEqual({ result: 'done', toast: 'Checking your login' });
     expect(w.handoffs).toEqual([['gt_login_1', 'done']]);
+    expect(w.stops).toEqual([]);
     // ixigo's home page, keeping one byte of its userinfo call: the status is read, the account never is.
     expect(w.reads.at(-1)).toEqual({ url: 'https://www.ixigo.com/', plan: STATUS_PLAN });
     expect(await w.state()).toBe('logging_in');
