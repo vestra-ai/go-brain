@@ -5,6 +5,7 @@ import { goaSnapshot, msg, vote } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
 import { SocketCallError } from '../../door/rpc.js';
 import { reactionRequestId, reactOnce } from '../../memory/reactions.js';
+import { TravelError } from '../../travel/mcp-travel.js';
 import type { Travel } from '../../travel/travel.js';
 import { nextDates, roomTools } from '../room-tools.js';
 import { createTools, makeTurnCtx, SAY_NOTHING, type QuickTool } from '../tools.js';
@@ -180,11 +181,25 @@ describe('the room\'s tools', () => {
       'north goa': { name: 'North Goa', place_id: 'ixigo_north_goa', lat: 15.6, lng: 73.8, photo_url: 'https://images.ixigo.com/north-goa.jpg' },
       kerala: { name: 'Kerala', place_id: 'ixigo_kerala', lat: 10.85, lng: 76.27, photo_url: 'https://images.ixigo.com/kerala.jpg' },
     };
+    // ixigo's own type and second line for the places it knows as areas or cities (placeFor's kind and within).
+    const sorts: Record<string, { kind: string; within: string[] }> = {
+      candolim: { kind: 'area', within: ['Goa'] },
+      'old manali': { kind: 'area', within: ['Manali', 'Himachal Pradesh'] },
+      panaji: { kind: 'city', within: ['Goa'] },
+      manali: { kind: 'city', within: ['Himachal Pradesh'] },
+    };
+    Object.assign(places, {
+      candolim: { name: 'Candolim', place_id: 'ixigo:1101', lat: 15.52, lng: 73.76 },
+      'old manali': { name: 'Old Manali', place_id: 'ixigo:2202', lat: 32.25, lng: 77.18 },
+      panaji: { name: 'Panaji', place_id: 'ixigo:3303', lat: 15.49, lng: 73.83 },
+      manali: { name: 'Manali', place_id: 'ixigo:2200', lat: 32.24, lng: 77.19 },
+    });
     const travel = {
       placeOf: async (id: string) => options[id] ?? null,
       placeFor: async (words: string) => {
+        if (words === 'Unreachable') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
         const place = places[words.toLowerCase()];
-        return place ? { place, kind: 'state', within: [] } : null;
+        return place ? { place, ...(sorts[words.toLowerCase()] ?? { kind: 'state', within: [] }) } : null;
       },
     } as unknown as Travel;
     // Built in each test: the database is ready only once beforeAll has run.
@@ -256,6 +271,33 @@ describe('the room\'s tools', () => {
       expect(await updateTrip.run({ destination: 'Atlantis' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("can't look up Atlantis"), tell_the_room: SAY_NOTHING });
       expect(await updateTrip.run({ destination: 'goa' }, ctx)).toMatchObject({ ok: false, error: 'The trip already has that.' });
       expect(calls).toHaveLength(1);
+    });
+
+    it("refuses what ixigo calls an area, or puts inside the trip's destination, by its own data, never the words", async () => {
+      const { ctx, calls } = run([], GOA);
+      // "Candolim" has no "Goa" in it: ixigo's type and second line say it is an area of Goa.
+      expect(await updateTrip.run({ destination: 'Candolim' }, ctx)).toMatchObject({
+        ok: false, error: expect.stringContaining('Candolim is an area in Goa: where to stay, never where the trip goes'), tell_the_room: SAY_NOTHING,
+      });
+      // A city ixigo puts inside Goa is no new destination either.
+      expect(await updateTrip.run({ destination: 'Panaji' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Panaji is a place in Goa') });
+      // An area is never a destination, whatever the trip is: Old Manali on this Goa trip.
+      expect(await updateTrip.run({ destination: 'Old Manali' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Old Manali is an area in Manali, Himachal Pradesh') });
+      // Said with dates, the dates still save.
+      expect(await updateTrip.run({ destination: 'Candolim', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
+        .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining('Candolim is an area in Goa') });
+      expect(calls.map((c) => c.params.destination)).toEqual([undefined]);
+      // A city outside the destination is a real move: Goa to Manali goes as Manali's full Place.
+      expect(await updateTrip.run({ destination: 'Manali' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(calls[1]?.params.destination).toEqual(places['manali']);
+    });
+
+    it('changes nothing when ixigo cannot be reached (a TravelError from placeFor), and the rest of the change still saves', async () => {
+      const { ctx, calls } = run([], GOA);
+      expect(await updateTrip.run({ destination: 'Unreachable' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("can't reach ixigo"), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ destination: 'Unreachable', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
+        .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining("can't reach ixigo") });
+      expect(calls.map((c) => c.params.destination)).toEqual([undefined]);
     });
   });
 
