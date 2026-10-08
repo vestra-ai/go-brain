@@ -8,6 +8,11 @@
  * it, so an early start on intake and the composer's own call make one page load, and one live search card: the card
  * starts with the run and is marked done before the search answers.
  *
+ * A composite's step that is one of these searches (trip.how_we_get_there's trains and buses) shares them too
+ * (shareStep): it takes a search kept or running for the same request, and one it runs is kept for the next ask, early
+ * starts and the composer's searches alike. A step gets no live card of its own: the composite's card and Go Live's
+ * tiles show it.
+ *
  * A live card belongs to the turn that handles its search: the turn for the message whose early start ran it, or the
  * composer turn whose search tool did. A failed early start leaves its card open, and the composer's search in that turn
  * carries on in it. The composer's own search that fails ends its card failed at once, before Go's line. When a turn ends
@@ -23,7 +28,7 @@
 import { createHash } from 'node:crypto';
 import type { TurnEnd } from '../../composer/context.js';
 import type { Book } from '../book/book.js';
-import type { Engine } from '../book/engine.js';
+import type { Engine, EngineAnswer, ShareSearch } from '../book/engine.js';
 import type { LiveSearch } from '../live-search.js';
 import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
@@ -111,7 +116,7 @@ const keyOf = (given: Record<string, unknown>, conditions: string[]): string =>
   ]);
 
 /** The ixigo_web backend, and the hook a turn's end calls to end the live cards it left open. */
-export type IxigoWebBackend = TravelBackend & { turnEnded(t: TurnEnd): void };
+export type IxigoWebBackend = TravelBackend & { turnEnded(t: TurnEnd): void; shareStep: ShareSearch };
 
 /** Whose a live card is: the message whose early start ran its search, or the composer turn whose search tool did. */
 type Owner = { kind: 'message' | 'turn'; id: string } | null;
@@ -144,7 +149,22 @@ const BOOK_ON_IXIGO = 'Options from ixigo.com are booked on ixigo, from their li
 const CACHE_MAX = 200;
 
 export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
-  const kept = new Map<string, { at: number; ttl: number; search: Promise<TravelSearch> }>();
+  /** Searches by request: the run's own answer (ran) and the search made of it, which a step and a search each take. */
+  const kept = new Map<string, { at: number; ttl: number; search: Promise<TravelSearch>; ran: Promise<EngineAnswer> }>();
+
+  /** A run kept for its TTL under its key; one that fails is not kept, so the next ask runs it again. */
+  function keep(key: string, entry: { at: number; ttl: number; search: Promise<TravelSearch>; ran: Promise<EngineAnswer> }): void {
+    kept.delete(key);
+    kept.set(key, entry);
+    while (kept.size > CACHE_MAX) {
+      const oldest = kept.keys().next().value;
+      if (oldest === undefined) break;
+      kept.delete(oldest);
+    }
+    entry.search.catch(() => {
+      if (kept.get(key)?.search === entry.search) kept.delete(key);
+    });
+  }
   /** The live cards that have not ended, by trip and search. */
   const cards = new Map<string, OpenCard>();
   /** Owners whose turn has ended, as "<trip>|turn:<id>" and "<trip>|message:<id>". */
@@ -180,14 +200,19 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
     const { given, conditions } = recipeInputs(kind, q);
     const link = recipe.answer.as === 'link';
-    // The page is ixigo's public results, the same in any trip's browser: the trip runs it, and the request it makes keys
-    // it (the page and its fetch), so two asks that open the same page are one search whatever their words (8 Oct: an
-    // early "with a pool" and the composer's "sleeping 4, with a pool" ran twice). A place that still needs ixigo's box
-    // has no request until it loads: the words key that one.
-    const request = link ? null : ((await d.engine.requestOf?.(id, given, { tripId, conditions })) ?? null);
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
-    const key = request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions)}`;
-    return { tripId, id, given, conditions, link, ttl, key };
+    return { tripId, id, given, conditions, link, ttl, key: link ? `${id}|${keyOf(given, conditions)}` : await keyFor(id, given, conditions, tripId) };
+  }
+
+  /**
+   * A search's key. The page is ixigo's public results, the same in any trip's browser: the trip runs it, and the request
+   * it makes keys it (the page and its fetch), so two asks that open the same page are one search whatever their words
+   * (8 Oct: an early "with a pool" and the composer's "sleeping 4, with a pool" ran twice). A place that still needs
+   * ixigo's box has no request until it loads: the words key that one.
+   */
+  async function keyFor(id: string, given: Record<string, unknown>, conditions: string[], tripId: string): Promise<string> {
+    const request = (await d.engine.requestOf?.(id, given, { tripId, conditions })) ?? null;
+    return request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions)}`;
   }
 
   return {
@@ -231,7 +256,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         card = null;
       }
       const live = card?.live;
-      const search = d.engine.answer(id, given, { tripId, conditions, ...(live ? { onProgress: live.progress } : {}) }).then(
+      const ran = d.engine.answer(id, given, { tripId, conditions, ...(live ? { onProgress: live.progress } : {}) });
+      const search = ran.then(
         async (run): Promise<TravelSearch> => {
           if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
           live?.progress({ type: 'extracted', count: run.options.length });
@@ -259,18 +285,27 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
           throw err;
         },
       );
-      kept.delete(key);
-      kept.set(key, { at: nowMs, ttl, search });
-      while (kept.size > CACHE_MAX) {
-        const oldest = kept.keys().next().value;
-        if (oldest === undefined) break;
-        kept.delete(oldest);
-      }
-      // A failed search is not kept: the next ask runs it again.
-      search.catch(() => {
-        if (kept.get(key)?.search === search) kept.delete(key);
-      });
+      keep(key, { at: nowMs, ttl, search, ran });
       return search;
+    },
+    async shareStep(id, given, o, run) {
+      const kind = searchKindOf(id);
+      const recipe = d.book.get(id);
+      // A link loads nothing, and anything else is not a search: the step runs on its own.
+      if (!kind || !recipe || recipe.answer.as !== 'options') return null;
+      const conditions = o.conditions ?? [];
+      const key = await keyFor(id, given, conditions, o.tripId);
+      const nowMs = d.now().getTime();
+      const hit = kept.get(key);
+      if (hit && nowMs - hit.at < hit.ttl) return { answer: hit.ran, joined: true };
+      const ran = run();
+      const runId = `${key}|${nowMs}`;
+      const search = ran.then((a): TravelSearch => {
+        if (a.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
+        return { results: a.options, checkedAt: a.checkedAt, runId, page: a.page };
+      });
+      keep(key, { at: nowMs, ttl: recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS, search, ran });
+      return { answer: ran, joined: false };
     },
     async waitMs(kind, q, o) {
       // A search that refuses does so at once, and a link loads nothing: nothing to wait for.

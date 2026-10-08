@@ -73,6 +73,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     warm: (tripId, recipeId) => warm(tripId, searchKindOf(recipeId)),
     // Each run's events, for the live view.
     onRun: runs.record,
+    // A composite's steps share the backend's searches: a city searched a minute ago, or being searched, loads nothing.
+    searches: (id, given, o, run) => ixigoWeb.shareStep(id, given, o, run),
     now: brain.now,
     log: brain.log,
   });

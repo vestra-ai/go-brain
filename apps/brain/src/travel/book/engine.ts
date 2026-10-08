@@ -53,6 +53,40 @@ export interface EngineDeps {
   log?: { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
   /** The trip's run log, for the run strip beside Go's browser: every run's start, calls, steps and end (run-event.ts). */
   onRun?: OnRun;
+  /** Go's searches (the search backend's), which a composite's steps share: absent, every step runs its own page. */
+  searches?: ShareSearch;
+}
+
+/**
+ * How a composite's step that is one of the searches shares Go's searches: the answer of a search kept or running for
+ * the same request (joined), or of the step's own run, which is kept for the next ask. Null when the step is not one it
+ * keeps (a link, a facts recipe): the step runs on its own.
+ */
+export type ShareSearch = (
+  id: string,
+  given: Record<string, unknown>,
+  o: RunFor,
+  run: () => Promise<EngineAnswer>,
+) => Promise<{ answer: Promise<EngineAnswer>; joined: boolean } | null>;
+
+/** A promise, or the signal's reason once it aborts, whichever comes first. */
+function untilAborted<T>(p: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return p;
+  return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const stop = (): void => reject(signal.reason);
+    signal.addEventListener('abort', stop, { once: true });
+    p.then(
+      (v) => {
+        signal.removeEventListener('abort', stop);
+        resolve(v);
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', stop);
+        reject(err);
+      },
+    );
+  });
 }
 
 /** How fast a recipe answers at one speed: its runs, its failures, and the middle and slow end of its last runs. */
@@ -65,8 +99,8 @@ export interface RecipeStat {
   p90_ms: number | null;
 }
 /** link: an answer that loads nothing; fast: the page's own call from the trip's warm tab; page: the browser fetch of a
- *  page (a lookup's box, or a results page); kept: a facts answer from earlier, inside its recipe's TTL; steps: a
- *  composite, whose steps run at their own speeds. */
+ *  page (a lookup's box, or a results page); kept: a facts answer from earlier inside its recipe's TTL, or a composite's
+ *  step answered by a search Go kept or was running; steps: a composite, whose steps run at their own speeds. */
 export type Speed = 'link' | 'fast' | 'page' | 'kept' | 'steps';
 /** The last runs a recipe's speeds are measured over. */
 const LAST_RUNS = 100;
@@ -543,7 +577,12 @@ export function createEngine(d: EngineDeps) {
           const stepGiven: Record<string, unknown> = {};
           for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
           const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, ...(o.conditions ? { conditions: o.conditions } : {}), ...(o.signal ? { signal: o.signal } : {}) };
-          return { recipe: step.recipe, answer: await answer(step.recipe, stepGiven, stepRun) };
+          const own = (): Promise<EngineAnswer> => answer(step.recipe, stepGiven, stepRun);
+          // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load.
+          const shared = d.searches ? await d.searches(step.recipe, stepGiven, stepRun, own) : null;
+          if (!shared) return { recipe: step.recipe, answer: await own() };
+          const got = shared.joined ? fromKept(step.recipe, stepGiven, stepRun, shared.answer) : shared.answer;
+          return { recipe: step.recipe, answer: await untilAborted(got, o.signal) };
         } catch (err) {
           if (o.signal?.aborted) return { recipe: step.recipe, why: 'out of time' };
           if (!(err instanceof TravelError)) d.log?.warn({ recipe: step.recipe, err: String(err).slice(0, 200) }, 'book: a step of a composite failed');
@@ -562,6 +601,22 @@ export function createEngine(d: EngineDeps) {
     }
   }
 
+  /** An answer kept from earlier or another run's, on the strip as kept: its run ends when that answer is in. */
+  function fromKept(id: string, given: Record<string, unknown>, o: RunFor, hit: Promise<EngineAnswer>): Promise<EngineAnswer> {
+    const recipe = d.book.get(id);
+    const keptRun = line(o.tripId, { recipe_id: id, label: recipe ? labelOf(recipe, given) : id, speed: 'kept', ...stepOf(o) });
+    return timed(id, 'kept', () => hit).then(
+      (a) => {
+        keptRun.end({ ok: true, ...rowsOf(a) });
+        return a;
+      },
+      (err: unknown) => {
+        keptRun.end({ ok: false, why: whyOf(err) });
+        throw err;
+      },
+    );
+  }
+
   /** Runs a recipe for the given inputs (place inputs as the person's words), timed and recorded. */
   function answer(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
     const recipe = d.book.get(id);
@@ -572,19 +627,7 @@ export function createEngine(d: EngineDeps) {
     };
     if (recipe?.answer.as === 'facts') {
       const hit = keptHit(recipe, given);
-      if (hit) {
-        const keptRun = line(o.tripId, { recipe_id: id, label: labelOf(recipe, given), speed: 'kept', ...stepOf(o) });
-        return timed(id, 'kept', () => hit).then(
-          (a) => {
-            keptRun.end({ ok: true, ...rowsOf(a) });
-            return a;
-          },
-          (err: unknown) => {
-            keptRun.end({ ok: false, why: whyOf(err) });
-            throw err;
-          },
-        );
-      }
+      if (hit) return fromKept(id, given, o, hit);
       return timed(id, () => speed, () => kept(id, given, run(id, given, o, took)));
     }
     return timed(id, () => speed, () => run(id, given, o, took));
