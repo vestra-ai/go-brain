@@ -27,7 +27,8 @@ export interface TestGo {
   close(): Promise<void>;
 }
 
-export async function startTestGo(secret: string): Promise<TestGo> {
+/** `nowSeconds`: the clock Go checks signatures by, for a Server whose clock is moved; the real one by default. */
+export async function startTestGo(secret: string, o: { nowSeconds?: () => number } = {}): Promise<TestGo> {
   const seen = new Set<string>();
   const waiting = new Map<string, (frame: any) => void>();
   let sock: WebSocket | undefined;
@@ -36,7 +37,7 @@ export async function startTestGo(secret: string): Promise<TestGo> {
     port: 0,
     verifyClient: ({ req }, done) => {
       const header = req.headers['x-go-signature'];
-      const ok = verifyRequest({ method: 'GET', target: req.url ?? '', body: '' }, typeof header === 'string' ? header : undefined, secret).ok;
+      const ok = verifyRequest({ method: 'GET', target: req.url ?? '', body: '' }, typeof header === 'string' ? header : undefined, secret, o.nowSeconds?.()).ok;
       if (!ok) go.refused += 1;
       done(ok, 401);
     },
