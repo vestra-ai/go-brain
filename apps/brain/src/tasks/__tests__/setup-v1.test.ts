@@ -16,6 +16,7 @@ function fakeVestra(state: State) {
     const key = (init?.headers as Record<string, string>).authorization?.replace('Bearer ', '');
     calls.push({ method, path: url.pathname, body, key });
     const route = `${method} ${url.pathname}`;
+    if (route === 'GET /v1/models') return json(200, { data: [{ id: 'default' }, { id: 'claude-haiku-5-5' }, { id: 'fast-model' }] });
     if (route === 'PATCH /v1/org') return json(200, { id: 'org_go', memory_mode: body.memory_mode });
     if (route === 'GET /v1/mcp-servers') return json(200, { data: state.servers });
     if (route === 'POST /v1/mcp-servers') {
@@ -77,6 +78,19 @@ describe('setupV1', () => {
     const version = calls.find((c) => c.path === '/v1/deployments/dep_go1/versions')!;
     expect(version.body.manifest.deny_tools).toEqual([...GO_DENY_TOOLS]);
     expect(r).toMatchObject({ version: 2, webhookSecret: null });
+  });
+
+  it('checks every model it would save against /v1 first: one /v1 dropped stops the run before anything is saved', async () => {
+    const state: State = { servers: [], deployment: null, hooks: [] };
+    const { f, calls } = fakeVestra(state);
+    // 8 Oct: Bash took claude-haiku-4-5 off its list, and a run saved go-trip-task before go-recipe failed on it.
+    await expect(setupV1({ baseUrl: 'https://api.test', key: KEY, publicUrl: 'https://go.example', browserFetch: true, recipeModel: 'claude-haiku-4-5', fetch: f, log: () => undefined }))
+      .rejects.toThrow(/offers no model claude-haiku-4-5; it offers default, claude-haiku-5-5, fast-model\. Nothing was saved/);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /v1/models']);
+    // The default model needs no check.
+    const plain = fakeVestra({ servers: [], deployment: null, hooks: [] });
+    await setupV1({ baseUrl: 'https://api.test', key: KEY, publicUrl: 'https://go.example', model: 'default', fetch: plain.f, log: () => undefined });
+    expect(plain.calls.some((c) => c.path === '/v1/models')).toBe(false);
   });
 
   it('with the browser fetch and a recipe model: ixigo.com allowed for the trip user, and go-recipe on that model', async () => {
