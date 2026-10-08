@@ -1,0 +1,50 @@
+id: trains.offers
+title: The train booking offers on ixigo now, and the banks and wallets that have them
+asks:
+  - any offers on train booking
+  - train ticket pe koi offer hai kya
+  - which card gives cashback on train tickets
+auth: none
+changes_state: false
+# ixigo's offers page for trains, an older Next.js page like /offers (offers.list): its offers, the counts and the
+# payment types sit in its __NEXT_DATA__ script. Train offers are mostly about payment: a card, a wallet, no gateway charge.
+page: /offers/tag/trains
+capture:
+  - { match: /offers/tag/trains$, max_bytes: 1000000 }
+read:
+  rows:
+    from: /offers/tag/trains$
+    format: next_data
+    list: |
+      (
+        $d := $.props.pageProps.data;
+        $until := function($t) { $t ? $fromMillis($toMillis($t), '[D] [MNn,*-3] [Y]', '+0530') };
+        [
+          { "train_offers": $d.count, "paid_with": [$d.paymentTypesOfferGroup.(paymentType & ": " & $string(associatedOffers))] },
+          $d.offers.(
+            offerType = "CAMPAIGN" ? {
+              "sale": campaignName,
+              "banks": [paymentTypeGroups.paymentType],
+              "until": $until(endDate),
+              "campaign": campaignSlug
+            } : {
+              "offer": offerTitle,
+              "code": offerCode ? offerCode,
+              "paid_with": paymentType,
+              "until": $until(endDate),
+              "details": slug
+            }
+          )
+        ]
+      )
+answer:
+  as: facts
+  title: Train offers on ixigo now
+  max: 20
+  each: $
+ttl_minutes: 60
+samples: { page: trains.offers.html }
+measured: { fast_ms: null, page_ms: 8277, flow_ms: null }
+notes: >-
+  "details" is an offer's name for offers.details. An offer needs the person's own ixigo login and the named card or
+  wallet at payment: Go only says which one fits.
