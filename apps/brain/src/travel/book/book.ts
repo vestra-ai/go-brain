@@ -45,6 +45,7 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
   } else if (a.as === 'places') {
     for (const [k, v] of Object.entries(a.suggestions)) if (k !== 'words_param' && typeof v === 'string') out.push([`answer.suggestions.${k}`, v]);
   }
+  for (const [name, flip] of Object.entries(r.watch ?? {})) out.push([`watch.${name}`, flip]);
   if (r.steps) {
     out.push(['steps.each', r.steps.each]);
     for (const [i, s] of r.steps.run.entries()) for (const [name, v] of Object.entries(s.given)) out.push([`steps.run.${i}.given.${name}`, v]);

@@ -49,6 +49,9 @@ answer:
         "classes": $lines
       }
     )
+# "Tell us when 12608's 3A confirms": a class line that is available, confirmed or RAC, not on the waiting list.
+watch:
+  confirms: '$count(classes[$contains($lowercase($), /:\s*(available|avl|cnf|rac)\b/)]) > 0'
 samples: { page: trains.between.page.json }
 measured: { fast_ms: 366, page_ms: 1605, flow_ms: null }
 notes: The results tile shows it as "SL ₹315 WL 106 49% Chance". It is ixigo's prediction from past charts, never a promise.

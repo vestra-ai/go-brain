@@ -1,7 +1,7 @@
 import type pg from 'pg';
 
 /** Demo fallbacks that flip at runtime with no redeploy. P7 adds the admin page. */
-export type SwitchName = 'TRAVEL_MODE' | 'TRAVEL_RUNNER' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE' | 'BROWSER_FETCH_SLOTS';
+export type SwitchName = 'TRAVEL_MODE' | 'TRAVEL_RUNNER' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE' | 'BROWSER_FETCH_SLOTS' | 'RECIPE_WATCHES';
 
 export interface Switches {
   /** The stored value, else the environment's, else the safe default. Read on every use, cached 2 s. */
@@ -23,6 +23,8 @@ export const SWITCH_RULES: Record<SwitchName, { valid: (v: string) => boolean; f
   REFLEX_LIVE: { valid: (v) => /^(off|q(?:10|[1-9])(,q(?:10|[1-9]))*)?$/.test(v), fallback: '' },
   // Bash's own cap on a computer's browser fetches at once: 2, and 4 once Bash runs four (its #4596).
   BROWSER_FETCH_SLOTS: { valid: oneOf('1', '2', '3', '4'), fallback: '2' },
+  // Watches the group asks Go to keep on ixigo (travel/recipe-watches.ts): off unless a deployment says on (staging does).
+  RECIPE_WATCHES: { valid: oneOf('off', 'on'), fallback: 'off' },
 };
 
 export function createSwitches(o: {

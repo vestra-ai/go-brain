@@ -204,6 +204,17 @@ describe('decide', () => {
     expect(decide(cand({ useful: ['pin'] }), tired, NOON).kind).not.toBe('go');
   });
 
+  it("lets what the group asked for (a watch on ixigo) past the spent budget and two in a row, but never past night or the bar", () => {
+    const busy = mood({ postsToday: DAILY_POSTS, lastProactivePostAt: new Date('2026-10-06T06:10:00Z'), lastPersonMessageAt: new Date('2026-10-06T06:00:00Z') });
+    const watch = cand({ asked: true, topic: 'recipe_watch', useful: ['message'], importance: 0.9, confidence: 0.9, urgency: 0.6, dedupeKey: 'recipe_watch:rw_1:fired' });
+    expect(decide(watch, busy, NOON)).toMatchObject({ kind: 'go', allowed: ['message'], counted: true });
+    // Not asked, the same nudge waits for tomorrow's budget.
+    expect(decide({ ...watch, asked: false }, busy, NOON)).toMatchObject({ kind: 'wait', reason: 'budget' });
+    // Night still holds it till morning, and a nudge below the bar never goes.
+    expect(decide(watch, busy, LATE)).toMatchObject({ kind: 'wait', reason: 'night' });
+    expect(decide({ ...watch, importance: 0.2 }, busy, NOON)).toEqual({ kind: 'drop', reason: 'below_bar' });
+  });
+
   it('still never pings a paused person, still drops what expired, and pins only the named people, even when forced', () => {
     const stage = cand({ simulated: true, forced: true });
     expect(decide(stage, mood({ pausedPersonIds: ['p_arjun'] }), NOON)).toEqual({ kind: 'drop', reason: 'paused' });

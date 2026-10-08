@@ -36,6 +36,7 @@ export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: st
     { value: 'q1,q2,q3,q4,q5,q6,q7,q8,q9,q10', label: 'all ten' },
   ],
   BROWSER_FETCH_SLOTS: [{ value: '2', label: '2 (Bash runs two at once)' }, { value: '4', label: '4 (Bash runs four at once)' }, { value: '1', label: '1 (one page at a time)' }],
+  RECIPE_WATCHES: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on (Go keeps the watches groups ask for)' }],
 };
 
 export const SWITCH_MEANING: Record<SwitchName, string> = {
@@ -45,6 +46,7 @@ export const SWITCH_MEANING: Record<SwitchName, string> = {
   CALLS_MODE: 'Whether Go may phone anyone. allowlist means only the numbers listed under Calls.',
   REFLEX_LIVE: 'Which quick-read questions act live; the others only watch. off stops the quick read altogether.',
   BROWSER_FETCH_SLOTS: "How many ixigo pages Go opens at once on a trip's computer. Match Bash's own cap: more than it runs wait their turn.",
+  RECIPE_WATCHES: 'Whether Go keeps an eye on ixigo when a group asks ("tell us when it confirms"): a page an hour a watch, three watches a trip at most.',
 };
 
 export const esc = (s: string): string =>

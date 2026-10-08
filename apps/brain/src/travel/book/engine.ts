@@ -137,6 +137,11 @@ export interface RunFor {
   /** A step of a composite: the composite's run, and the entry the step runs for (its lane on the strip). */
   stepOf?: string;
   lane?: string;
+  /**
+   * A check nobody is waiting on (a watch the group asked for): it never holds the trip's computer awake (no warm) and
+   * keeps no tab open there (no fast speed), so the computer sleeps again right after the page.
+   */
+  background?: boolean;
 }
 
 /**
@@ -431,7 +436,7 @@ export function createEngine(d: EngineDeps) {
     if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
     if (!recipe.page) throw new TravelError('refused', `${recipe.title} has no page to open.`);
     const runner = d.runner(o.tripId);
-    const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && fastOn(runner) ? 'fast' : 'page';
+    const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && fastOn(runner) && !o.background ? 'fast' : 'page';
     const strip = { line: line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed, ...stepOf(o) }) };
     try {
       const answer = await runRecipe(recipe, recipe.page, given, o, runner, strip, took);
@@ -453,7 +458,7 @@ export function createEngine(d: EngineDeps) {
     strip: { line: RunLine },
     took: (s: Speed) => void,
   ): Promise<EngineAnswer> {
-    if (recipe.answer.as !== 'link') d.warm?.(o.tripId, recipe.id);
+    if (recipe.answer.as !== 'link' && !o.background) d.warm?.(o.tripId, recipe.id);
     const inputs = (await inputsOf(recipe, given, o, strip.line.id))!;
     const bindings = await bindingsOf(recipe, inputs, o);
     const page = `${IXIGO}${await fill(pageTemplate, inputs, { url: true, bindings })}`;
@@ -486,7 +491,7 @@ export function createEngine(d: EngineDeps) {
       return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
-    if (recipe.fast && fastOn(runner) && runner.pageFetch) {
+    if (recipe.fast && fastOn(runner) && runner.pageFetch && !o.background) {
       const started = d.now().getTime();
       try {
         const url = await fill(recipe.fast.url, inputs, { url: true, bindings });

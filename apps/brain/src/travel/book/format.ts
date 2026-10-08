@@ -165,6 +165,12 @@ export const RecipeFile = z
       })
       .optional(),
     steps: Steps.optional(),
+    /**
+     * What the group may ask Go to watch this recipe for ("tell us when 12608's waitlist confirms"), by name: each an
+     * expression over one row of a facts answer, true when the watch has come true; $limit is the number the ask gave.
+     * Searches with options need none: their flips (appears, under, drops) are the watch's own.
+     */
+    watch: z.record(z.string().regex(/^[a-z][a-z_]*$/), Expr).optional(),
     answer: Answer,
     ttl_minutes: z.int().positive().max(60).default(10),
     measured: z.record(z.string(), z.number().nullable()).optional(),

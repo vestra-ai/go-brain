@@ -143,7 +143,26 @@ left extends it.
 | `buses.between` | `/buses/bus_search/{From}/{id}/{To}/{id}/{DD-MM-YYYY}/O` | `/buslist/v3/services$` | options, the lowest seat fare after ixigo's offer |
 | `flights.search` | `/search/result/flight?from=…` with ixigo's own filter and sort params | none | a link: ixigo answers flight pages with a 403 from the boxes' shared egress |
 
-## 6. Next
+## 6. Watches the group asks for
+
+"Tell us when 12608's waitlist confirms", "if a pool stay in North Goa under ₹4k opens up": `watch_ixigo` keeps a recipe
+from the book on watch for the trip (`travel/recipe-watches.ts`, table `recipe_watches`).
+
+- **A watch is** a recipe, the ask's inputs and conditions, and a **flip** picked by name: a search's own (`appears`,
+  `under` a price, `drops` a percent from the first check) or one its file names under `watch:` (trains.confirm_chance's
+  `confirms`). The model never writes an expression.
+- **The first check runs at once.** Something already true is answered then, and no watch is kept.
+- **Then every hour,** every half hour within two days of its date, in the background: no warm and no tab kept, so the
+  computer sleeps right after the page. A trip's watches share one check time, so one wake checks them all.
+- **Budgets:** three watches a trip, at most 20 checks across every trip in ten minutes, and the `RECIPE_WATCHES` switch
+  (off unless a deployment sets it on; staging does).
+- **It speaks once,** when the flip comes true: a proactive nudge marked `asked`, which skips the daily budget and "two in
+  a row" (night and the dedupe still hold), as one short line naming who asked and a notice card. Never "still
+  waitlisted".
+- **It ends** when it fires, at its date (14 days at most), on `stop_watch`, after six checks in a row that failed (said
+  in one line), or when the trip goes.
+
+## 7. Next
 
 - The `ixigo` tool: any recipe by id, with a description built from the book; `facts` answers.
 - `plan.destination` (ixigo's destination guide: places to eat and visit, best time to go), and Go naming a place only
@@ -153,7 +172,7 @@ left extends it.
 - Areas inside a city through ixigo's "Search within" box and its Popular Areas filter, in place of Goa's halves.
 
 
-## 7. How ixigo works
+## 8. How ixigo works
 
 
 Walked by hand on www.ixigo.com, logged in as Keshav, on 7 Oct 2026, through the accessibility tree. Nothing was booked or
