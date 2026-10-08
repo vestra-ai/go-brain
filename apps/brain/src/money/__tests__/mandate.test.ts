@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { askToPay, idsFromTurn, withTurn } from '../ask.js';
 import { amountsSaid, marginCap, nightsOf, setMandate } from '../mandate.js';
 import { AskToPayInput, SetMandateInput, askToPayTool, setMandateTool } from '../tools.js';
+import type { Travel } from '../../travel/travel.js';
 import { goaTrip, moneyKit, runToolCalls, say, turnCtx, type MoneyKit } from './kit.js';
 
 let k: MoneyKit;
@@ -241,5 +242,57 @@ describe('the quick tools', () => {
     ]);
     expect(out).toMatchObject({ mandate_card: 'c_mandate_turn_test_1', tell_the_room: expect.stringContaining('₹59,000: the price plus a little margin') });
     expect(k.server.writesOf('set_mandate')[0]?.params).toMatchObject({ cap_minor: 5900000 });
+  });
+});
+
+describe('set_mandate on a stay from ixigo.com: the login first, and ixigo\'s price now', () => {
+  type Prepare = NonNullable<Travel['prepare']>;
+  const prepared = (answer: Awaited<ReturnType<Prepare>>) => {
+    const calls: Array<{ optionId: string } & Parameters<Prepare>[1]> = [];
+    const prepare: Prepare = async (optionId, o) => {
+      calls.push({ optionId, ...o });
+      return answer;
+    };
+    Object.assign(k.travel, { prepare });
+    return calls;
+  };
+
+  it('with the login out, sets nothing: the ask waits on the login, with the call to make once it is in', async () => {
+    const note = 'Go asked Rahul in the chat, with the login card, and carries on with booking Villa Sol once the login is in. Say nothing more about it.';
+    const calls = prepared({ ok: false, note });
+    expect(await setMandate(k.deps, ctxWith(), noCap)).toEqual({ refused: note, parked: true });
+    expect(calls).toEqual([
+      { optionId: 'opt_villa_sol', tripId: 't_goa', what: 'Villa Sol', resume: { decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul', refundable_only: true } },
+    ]);
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+    // A cap someone said rides along, so the call made later is the same one.
+    const again = prepared({ ok: false, note });
+    await setMandate(k.deps, ctxWith(), mandate);
+    expect(again[0]?.resume).toMatchObject({ cap_minor: 5500000 });
+  });
+
+  it('says on the mandate that the price moved since the vote, and takes the cap from the price now', async () => {
+    prepared({ ok: true, priceMinor: 5600000 });
+    const ctx = ctxWith([['p_rahul', 'just book whatever works']]);
+    const r = await setMandate(k.deps, ctx, noCap);
+    expect(r).toMatchObject({ cardId: expect.any(String), capMinor: marginCap(5600000), note: expect.stringContaining('Villa Sol is ₹56,000 on ixigo now, up from ₹54,200 on the vote.') });
+    expect(ctx.cards[0]).toMatchObject({ fallback_text: expect.stringMatching(/^Villa Sol is ₹56,000 on ixigo now, up from ₹54,200 on the vote\. Ready to book Villa Sol/) });
+    expect(k.server.writesOf('set_mandate')[0]?.params).toMatchObject({ cap_minor: marginCap(5600000) });
+  });
+
+  it('says nothing about the price when ixigo still shows the vote\'s, or could not say', async () => {
+    for (const priceMinor of [5420000, null]) {
+      k.server.trips.set('t_goa', goaTrip('closed'));
+      prepared({ ok: true, priceMinor });
+      const r = await setMandate(k.deps, ctxWith([['p_rahul', 'just book whatever works']]), noCap);
+      expect(r).toMatchObject({ cardId: expect.any(String), capMinor: 5900000 });
+      expect('note' in r ? r.note : '').not.toContain('on ixigo now');
+    }
+  });
+
+  it('a check that failed says try again and sets nothing', async () => {
+    Object.assign(k.travel, { prepare: async () => { throw new Error('db down'); } });
+    expect(await setMandate(k.deps, ctxWith(), noCap)).toEqual({ refused: "I couldn't check Villa Sol just now. Try again in a moment." });
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 });

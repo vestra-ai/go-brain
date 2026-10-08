@@ -136,8 +136,10 @@ export function failReasonWords(reason: string | null): string {
   }
 }
 
-export function bookedLine(o: { title: string; payer: string; amount: string; people: number }): string {
+export function bookedLine(o: { title: string; payer: string; amount: string; people: number; simulated?: boolean }): string {
   const split = o.people > 1 ? `, split between all ${o.people}` : '';
+  // A booking on Go's test rail only (a stay from ixigo.com) says so: nothing was booked on ixigo, nothing real was paid.
+  if (o.simulated) return `Booked (simulated): ${o.title}. ${o.payer}'s test payment of ${o.amount}${split}; nothing was booked on ixigo.`;
   return `Booked ${o.title}! ${o.payer} paid ${o.amount}${split}.`;
 }
 

@@ -112,6 +112,8 @@ export interface Confirmed {
   imageUrl?: string;
   place?: Place;
   journey?: Journey;
+  /** Booked on Go's test rail only, nothing on ixigo (a stay from ixigo.com: travel/web-stays.ts): the receipt says so. */
+  simulated?: true;
 }
 
 /** One option Go showed on an options card, kept so a tap, a vote or a payment can name it later. */
@@ -179,6 +181,13 @@ export interface Travel {
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   /** Safe to repeat: the same hold confirmed twice gives the same answer. */
   confirm(holdId: string, paid: { approvalId: string; railRef: string }): Promise<Confirmed>;
+  /**
+   * Before a mandate (P5's set_mandate): what booking the option needs first, and its price now. A stay from ixigo.com
+   * needs the trip's ixigo login: with none, the person is asked on the login card and `resume` waits on the login, so Go
+   * carries on with it once the login is in (ok false, and the note for the model). priceMinor is ixigo's price for it
+   * now, or null when there is nothing to read again or the page didn't say. Absent: nothing is needed first.
+   */
+  prepare?(optionId: string, o: { tripId: string; what: string; resume: Record<string, unknown> }): Promise<{ ok: true; priceMinor: number | null } | { ok: false; note: string }>;
   /** True while searches come from the fake ixigo (TRAVEL_MODE is fake, or ixigo is not set up): the listings are simulated. */
   simulated?(): boolean;
   /** Present while the fake ixigo runs: makes a flight late, for the demo's labelled "simulated" watch. */
