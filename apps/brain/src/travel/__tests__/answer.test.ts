@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { msg } from '../../__tests__/fixtures/goa.js';
 import type { DeskItem } from '../../desk/desk.js';
 import { goaPack } from '../../tasks/testing/goa.js';
-import { answerLine, directPicks, linkLine, plainAsk, plainEnglish } from '../answer.js';
+import { answerLine, answerTitle, directPicks, linkLine, plainAsk, plainEnglish } from '../answer.js';
 import { toResultOption } from '../results.js';
 import type { TravelOption, TravelQuery } from '../travel.js';
 
@@ -94,6 +94,20 @@ describe("the card's line, built from the search", () => {
     expect(linkLine('flights', FLIGHTS, 'for 3 from Delhi')).toBe(
       'Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 3 from Delhi, leaving after 7:00 pm: book there, and tell me which one so I can note it for the group.',
     );
+  });
+});
+
+describe("the card's title, built from the search as the model's titles read", () => {
+  it('stays: the kind with its condition, the place, and the stay\'s dates', () => {
+    expect(answerTitle('stays', VILLAS)).toBe('Pool stays in North Goa, 6 to 9 Nov');
+    expect(answerTitle('stays', { area: 'anjuna', checkIn: '2026-11-30', checkOut: '2026-12-02' })).toBe('Stays in Anjuna, 30 Nov to 2 Dec');
+  });
+
+  it('buses, trains and flights: the kind, the places and the day (the buses card had lost its date)', () => {
+    expect(answerTitle('buses', { from: 'mumbai', to: 'goa', date: '2026-11-06' })).toBe('Buses, Mumbai to Goa, 6 Nov');
+    expect(answerTitle('trains', { from: 'mumbai', to: 'madgaon', date: '2026-11-05' })).toBe('Trains, Mumbai to Madgaon, 5 Nov');
+    expect(answerTitle('flights', FLIGHTS)).toBe('Flights, Delhi to Goa, 6 Nov');
+    expect(answerTitle('flights', { ...FLIGHTS, mustHave: ['non_stop'] })).toBe('Non-stop flights, Delhi to Goa, 6 Nov');
   });
 });
 

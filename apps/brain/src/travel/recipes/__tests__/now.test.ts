@@ -143,7 +143,7 @@ describe('the early answer, with no model call', () => {
     expect(await a.go()).toBe(true);
     expect(a.ctx.lines).toEqual(['Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from ₹3,890 per person.']);
     expect(a.ctx.cards).toHaveLength(1);
-    expect(a.ctx.cards[0]).toMatchObject({ kind: 'options', title: 'Flights, Delhi to Goa' });
+    expect(a.ctx.cards[0]).toMatchObject({ kind: 'options', title: 'Flights, Delhi to Goa, 6 Nov' });
     // The three cheapest, by departure.
     expect((a.ctx.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['IndiGo 6E 2134', 'Air India AI 2981', 'Akasa QP 1846']);
     expect(a.ctx.answered).toBe(true);
@@ -168,7 +168,7 @@ describe('the early answer, with no model call', () => {
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d2', link: {} as never, pack, wake: [wakeFor(line.message_id, 58)], signal: new AbortController().signal });
     expect(await run({ tripId: 't_goa', wake: ctx.wake, pack, ctx })).toBe(true);
     expect(saved[0]).toMatchObject({ page });
-    expect(ctx.cards[0]).toMatchObject({ kind: 'options', title: 'Stays in North Goa' });
+    expect(ctx.cards[0]).toMatchObject({ kind: 'options', title: 'Pool stays in North Goa, 6 to 9 Nov' });
     expect((ctx.cards[0] as { actions: Array<{ action_id: string }> }).actions.map((x) => x.action_id)).toEqual(['pick', 'vote', 'see_all']);
     // The engine's first three, in its order.
     expect((ctx.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Casa Azul', 'Meritas', 'Vedic Resort']);

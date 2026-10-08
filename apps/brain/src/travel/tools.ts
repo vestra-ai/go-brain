@@ -10,7 +10,7 @@ import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
 import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
-import { answerLine, directPicks, linkLine, plainAsk } from './answer.js';
+import { answerLine, answerTitle, directPicks, linkLine, plainAsk } from './answer.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
@@ -297,9 +297,7 @@ export async function putUpCard(
 export async function answerItself(kind: TravelKind, q: TravelQuery, found: TravelSearch, ctx: TurnCtx, d: Pick<TravelToolDeps, 'results' | 'images'>): Promise<unknown> {
   const options = found.results.slice(0, 10).map(toResultOption);
   const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
-  // The early read keeps places as typed ("north goa"): the card's title names them properly.
-  const titled = { ...q, ...(q.from ? { from: titleWords(q.from) } : {}), ...(q.to ? { to: titleWords(q.to) } : {}), ...(q.area ? { area: titleWords(q.area) } : {}) };
-  const { cardId, shown } = await putUpCard(set, directPicks(kind, options), { title: suggestTitle(kind, titled), line: answerLine(kind, q, found) }, ctx, d);
+  const { cardId, shown } = await putUpCard(set, directPicks(kind, options), { title: answerTitle(kind, q), line: answerLine(kind, q, found) }, ctx, d);
   ctx.answered = true;
   return { search: searchName(kind, q), results_id: set.resultsId, card_id: cardId, shown, answered: true, note: 'The card and its line are up: this turn has said what it needed to.' };
 }

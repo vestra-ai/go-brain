@@ -9,7 +9,7 @@
  */
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
-import { formatInr } from './cards.js';
+import { clip, formatInr } from './cards.js';
 import { asked } from './filters.js';
 import { agreedDates, readTravelAsk } from './recipes/ask.js';
 import { airportOf, busCityOf, norm, stationOf, stayPlaceOf } from './recipes/places.js';
@@ -119,6 +119,28 @@ const rangeText = (a: string, b: string): string => {
 };
 const titleWords = (s: string): string => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
+
+/** "6 Nov". */
+const dayMonth = (iso: string): string => {
+  const d = dateOf(iso);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+};
+
+/**
+ * The card's title for a search that answers itself, as the model's titles read: the kind with its condition, the
+ * places, and the day or the stay's dates. "Pool stays in North Goa, 6 to 9 Nov", "Buses, Mumbai to Goa, 6 Nov",
+ * "Non-stop flights, Delhi to Goa, 6 Nov".
+ */
+export function answerTitle(kind: TravelKind, q: TravelQuery): string {
+  if (kind === 'stays') {
+    const head = q.mustHave?.includes('pool') ? 'Pool stays' : 'Stays';
+    const when = q.checkIn && q.checkOut ? `, ${rangeText(q.checkIn, q.checkOut)}` : '';
+    return clip(`${head} in ${titleWords(q.area ?? q.to ?? 'Goa')}${when}`, 80);
+  }
+  const noun = { flights: 'Flights', trains: 'Trains', buses: 'Buses' }[kind];
+  const head = q.mustHave?.includes('non_stop') ? `Non-stop ${noun.toLowerCase()}` : noun;
+  return clip(`${head}, ${titleWords(q.from ?? '')} to ${titleWords(q.to ?? '')}${q.date ? `, ${dayMonth(q.date)}` : ''}`, 80);
+}
 
 /**
  * The card's line, built from the search: its scope and conditions and the cheapest price that fits, said to whoever
