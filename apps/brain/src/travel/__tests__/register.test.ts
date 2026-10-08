@@ -53,7 +53,7 @@ describe('registerTravel', () => {
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo', 'compare_ways_there', 'watch_ixigo', 'stop_watch']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual([
       'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/see_on_ixigo',
-      'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
+      'options/add_budget', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
     ]);
     expect(lb.context.wakes.has('tap')).toBe(true);
     // A search that outlived its turn wakes Go with its options.
@@ -124,6 +124,12 @@ describe('registerTravel', () => {
     const tapAll = (c: C.Card) => lb.taps.tap('options', 'see_all', { tap_id: `tap_${c.card_id}`, trip_id: 't_goa', card_id: c.card_id, action_id: 'see_all', person_id: 'p_meher' }, c);
     expect(await tapAll(all)).toEqual({ result: 'open', url: list, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
     expect(await tapAll(await keep('c_all2'))).toEqual({ result: 'refused', toast: 'This list has no ixigo page' });
+  });
+
+  it('"Add my budget" opens the App\'s own budget sheet for the trip, a go:// link (contract 1.1 A4)', async () => {
+    const tapIt = await lb.taps.tap('options', 'add_budget', { tap_id: 'tap_b1', trip_id: 't_goa', card_id: 'c_any', action_id: 'add_budget', person_id: 'p_meher' }, {} as C.Card);
+    expect(tapIt).toEqual({ result: 'open', url: 'go://trips/t_goa/sheet/budget', expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
+    expect(C.CardActionResult.parse(tapIt)).toEqual(tapIt);
   });
 
   it('"See flights on ixigo" opens the link card\'s own ixigo page', async () => {
