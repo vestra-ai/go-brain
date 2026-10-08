@@ -173,7 +173,7 @@ describe('the room\'s tools', () => {
     const casa = { kind: 'stay', title: 'Casa Mareia', place: { name: 'Casa Mareia', address: 'Vagator, North Goa' }, area: 'Vagator' };
     const north = { kind: 'place', title: 'North Goa', place: { name: 'North Goa', address: null }, area: null };
     const options: Record<string, unknown> = { opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } } };
-    // The places ixigo resolves (findPlace).
+    // The places ixigo resolves (placeFor, p4's travel lane).
     const GOA = { name: 'Goa', place_id: 'ixigo_goa', lat: 15.3, lng: 74.1, photo_url: 'https://images.ixigo.com/goa.jpg' };
     const places: Record<string, unknown> = {
       goa: GOA,
@@ -182,7 +182,10 @@ describe('the room\'s tools', () => {
     };
     const travel = {
       placeOf: async (id: string) => options[id] ?? null,
-      findPlace: async (name: string) => places[name.toLowerCase()] ?? null,
+      placeFor: async (words: string) => {
+        const place = places[words.toLowerCase()];
+        return place ? { place, kind: 'state', within: [] } : null;
+      },
     } as unknown as Travel;
     // Built in each test: the database is ready only once beforeAll has run.
     const updateTrip = { run: (a: unknown, ctx: Parameters<QuickTool['run']>[1]) => roomTools({ now: () => new Date('2026-10-06T09:00:00Z'), pool: db.pool, travel: () => travel }).find((x) => x.name === 'update_trip')!.run(a, ctx) };

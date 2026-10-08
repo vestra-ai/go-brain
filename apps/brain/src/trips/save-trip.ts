@@ -138,7 +138,7 @@ async function decided(d: SaveTripDeps, pack: TripPack, kind: 'stay' | 'place'):
 /**
  * Where the trip goes, as a full Place, or why not. update_trip never sends a bare {name} (the Server, 6 Oct: "a wrong
  * place saved on update_trip"; staging, 8 Oct: {"name":"Candolim, Goa"} over Goa, dropping its place_id, coordinates and
- * photo). A destination changes only to ixigo's resolved Place (travel.findPlace: place_id, lat/lng, photo, time zone);
+ * photo). A destination changes only to ixigo's resolved Place (travel.placeFor: place_id, lat/lng, photo, time zone);
  * a name that resolves to nothing leaves the destination as it is, for the organizer to change in the App.
  */
 async function destinationOf(
@@ -148,7 +148,7 @@ async function destinationOf(
 ): Promise<{ place: Place; same?: false } | { same: true } | { error: string }> {
   const now = at.pack.trip.destination ?? null;
   if (now && plain(now.name) === plain(name)) return { same: true };
-  const found = await d.travel?.()?.findPlace?.(name, { tripId: at.tripId });
+  const found = (await d.travel?.()?.placeFor?.(name, { tripId: at.tripId }))?.place;
   if (!found) {
     return { error: `Go can't look up ${name} as a place, so the trip's place stays ${now ? now.name : 'unset'}. Where to stay goes in stay; the organizer can change where the trip goes in the App.` };
   }
