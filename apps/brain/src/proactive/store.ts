@@ -34,6 +34,7 @@ type CandidateRow = {
   simulated: boolean;
   small: boolean;
   forced: boolean;
+  asked: boolean;
 };
 
 const isAction = (a: string): a is Action => (ACTIONS as readonly string[]).includes(a);
@@ -55,14 +56,15 @@ function toCandidate(r: CandidateRow): Candidate {
     simulated: r.simulated,
     small: r.small,
     ...(r.forced ? { forced: true } : {}),
+    ...(r.asked ? { asked: true } : {}),
   };
 }
 
-const COLS = 'trip_id, dedupe_key, source, topic, due_at, expires_at, importance, confidence, urgency, useful, person_ids, facts, simulated, small, forced';
-const PLACES = '$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15';
+const COLS = 'trip_id, dedupe_key, source, topic, due_at, expires_at, importance, confidence, urgency, useful, person_ids, facts, simulated, small, forced, asked';
+const PLACES = '$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16';
 const values = (c: Candidate): unknown[] => [
   c.tripId, c.dedupeKey, c.source, c.topic, c.dueAt, c.expiresAt, c.importance, c.confidence, c.urgency,
-  c.useful, c.personIds, JSON.stringify(c.facts), c.simulated, c.small, c.forced === true,
+  c.useful, c.personIds, JSON.stringify(c.facts), c.simulated, c.small, c.forced === true, c.asked === true,
 ];
 
 export class ProactiveStore {

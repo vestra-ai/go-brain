@@ -94,6 +94,21 @@ describe('rulesForTurn', () => {
 });
 
 describe('the wake text', () => {
+  it("says a watch the group asked for came true as Go answering an ask, naming who asked, with what ixigo shows", () => {
+    const fired = candidate({
+      dedupeKey: 'recipe_watch:rw_1:fired', topic: 'recipe_watch', asked: true, personIds: ['p_arjun'], useful: ['message'],
+      facts: { recipeWatchId: 'rw_1', label: "12608's CC to confirm", what: 'Lalbagh Sf Exp 12608, CC: Available 4', checkedAt: NOW.toISOString(), page: 'https://www.ixigo.com/trains/search-pwa/from/SBC/to/MAS/22-10-2026' },
+    });
+    const text = renderWake(proItem(fired, ['message']), goaPack(), NOW);
+    expect(text).toContain('Go is answering an ask from earlier');
+    expect(text).not.toContain('nobody asked');
+    expect(text).toContain('Arjun asked Go to watch ixigo for "12608\'s CC to confirm"');
+    expect(text).toContain('CC: Available 4');
+    expect(text).toContain('At most one short message');
+    const stopped = candidate({ dedupeKey: 'recipe_watch:rw_1:stopped', topic: 'recipe_watch_stopped', asked: true, personIds: ['p_arjun'], useful: ['message'], facts: { label: "12608's CC to confirm", tries: 6 } });
+    expect(renderWake(proItem(stopped, ['message']), goaPack(), NOW)).toContain('could not check ixigo for "12608\'s CC to confirm" 6 times in a row');
+  });
+
   it('says the demo watch is simulated, pinned to Arjun, and not for everyone', () => {
     const text = renderWake(proItem(delay, ['pin'], ['p_arjun']), goaPack(), NOW);
     expect(text).toContain('Simulated for the demo');

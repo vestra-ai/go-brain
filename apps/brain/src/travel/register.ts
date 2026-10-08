@@ -29,6 +29,12 @@ import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
 import { startComputerAtSetup, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
+import { createWatchRunner } from './recipe-watches.js';
+import { watchTools } from './watch-tools.js';
+import { ProactiveStore } from '../proactive/store.js';
+
+/** How often Go looks for watches that are due: each watch's own pace is an hour or half an hour. */
+export const WATCH_TICK_MS = 30_000;
 
 export const registerTravel: RegisterLane = async (brain) => {
   const env = readTravelEnv(brain.env);
@@ -109,6 +115,16 @@ export const registerTravel: RegisterLane = async (brain) => {
   if (recipesTool) brain.tools.register(recipesTool);
   // How everyone gets to the trip, asked for: each home city's trains and buses side by side, on one card.
   brain.tools.register(waysThereTool({ engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' }));
+  // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
+  // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
+  for (const t of watchTools({ pool: brain.pool, book, engine, switches: brain.switches, now: brain.now })) brain.tools.register(t);
+  const watchRunner = createWatchRunner({ pool: brain.pool, book, engine, store: new ProactiveStore(brain.pool), switches: brain.switches, now: brain.now, log: brain.log });
+  const watchEvery = setInterval(() => {
+    watchRunner.tick().catch((err: unknown) => brain.log.warn({ err }, 'travel: the watch checks failed'));
+  }, WATCH_TICK_MS);
+  watchEvery.unref();
+  const stopWatchChecks = (): void => clearInterval(watchEvery);
+  brain.onStop(stopWatchChecks);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,

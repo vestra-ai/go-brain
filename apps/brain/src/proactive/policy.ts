@@ -29,6 +29,11 @@ export interface Candidate {
   small: boolean;
   /** The stage's fire with force: true (Task 8). Skips the bar, night, the budget, "two in a row", hush and ignored raises. */
   forced?: boolean;
+  /**
+   * The group asked for it (a watch on ixigo: "tell us when it confirms"): Go is answering, not volunteering, so it
+   * skips the daily budget and "two in a row". The bar, night and the dedupe still hold.
+   */
+  asked?: boolean;
 }
 
 /** What the bar knows about the trip right now. */
@@ -124,11 +129,11 @@ export function decide(c: Candidate, m: TripMood, now: Date): Decision {
       bar = need;
       continue;
     }
-    if (m.postsToday >= DAILY_POSTS) {
+    if (m.postsToday >= DAILY_POSTS && c.asked !== true) {
       blocked = 'budget';
       break;
     }
-    if (lastWordIsGos(m)) {
+    if (lastWordIsGos(m) && c.asked !== true) {
       blocked = 'two_in_a_row';
       break;
     }

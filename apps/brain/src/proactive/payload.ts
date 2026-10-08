@@ -23,6 +23,7 @@ export const ProactivePayload = z.object({
     simulated: z.boolean(),
     small: z.boolean(),
     forced: z.boolean().default(false),
+    asked: z.boolean().default(false),
   }),
   allowed: z.array(z.enum(ACTIONS)).min(1),
   forPersonIds: z.array(z.string()),
@@ -32,7 +33,7 @@ export type ProactivePayload = z.infer<typeof ProactivePayload>;
 
 export function toPayload(c: Candidate, d: Extract<Decision, { kind: 'go' }>, tz: string): ProactivePayload {
   return {
-    candidate: { ...c, forced: c.forced === true, dueAt: c.dueAt.toISOString(), expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null },
+    candidate: { ...c, forced: c.forced === true, asked: c.asked === true, dueAt: c.dueAt.toISOString(), expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null },
     allowed: d.allowed,
     forPersonIds: d.forPersonIds,
     tz,
