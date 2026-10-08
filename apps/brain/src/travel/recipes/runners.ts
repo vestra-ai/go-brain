@@ -44,6 +44,13 @@ export interface ReadOptions {
   priority?: number;
   /** The run's id, which Bash's browser watch names the fetch's tab by, so the live view labels the tab's tile with its run. */
   tag?: string;
+  /**
+   * A page a person is waiting on: its tab stays open on its page after the answer, as the trip's warm tab (WARM_TAB_MS).
+   * ixigo draws what it answered about 2 s after its data (8 Oct probe: the hotel list 2.1 s after the accommodations
+   * call), after Bash has answered, so a tab closed at the answer only ever showed the live view ixigo's skeleton. The
+   * answer never waits for the drawing; the next page call runs in this tab with no page load.
+   */
+  keepOpen?: boolean;
 }
 
 export interface RecipeRunner {
@@ -161,7 +168,10 @@ export const WATCH_FPS = 10;
 export const IN_USE_WAIT_MS = 4_000;
 /** How long a page call may take before the run falls to the page speed: it answers in about 0.4 s on a warm tab. */
 export const FAST_TIMEOUT_MS = 5_000;
-/** How long the warm ixigo tab stays open after a page call: the next call within it needs no page load. */
+/**
+ * How long the warm ixigo tab stays open after a page call, or after a page a person waited on (keepOpen): the next call
+ * within it needs no page load, and the live view sees the page drawn.
+ */
 export const WARM_TAB_MS = 120_000;
 /**
  * How long Go stops trying page calls after Bash refused one as a request it doesn't take (a 400: a Bash with no
@@ -287,6 +297,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       // the recipe says how long that takes.
       frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
       ...(o.tag ? { tag: o.tag } : {}),
+      // Under Bash's default name, the one the page calls take: one warm tab a trip, never one more toward Bash's cap.
+      ...(o.keepOpen ? { keep_open_ms: WARM_TAB_MS } : {}),
     };
     let userId = d.computer.userIdFor(tripId);
     let coldAgain = false;

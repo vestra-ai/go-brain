@@ -132,6 +132,16 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(w.calls.map((c) => (c.opts['body'] as { tag?: string }).tag)).toEqual(['01JRUNPAGE', '01JRUNFAST', undefined]);
   });
 
+  it('keeps the tab of a page a person waits on open as the warm tab, so the live view sees ixigo draw it; never otherwise', async () => {
+    const w = world(() => fetched([busCapture]));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.read('t1', BUSES, busPlan, { keepOpen: true });
+    await runner.read('t1', BUSES, busPlan);
+    const kept = w.calls.map((c) => (c.opts['body'] as { keep_open_ms?: number; tab?: string }));
+    // Under Bash's default name, the warm tab the page calls take: no tab of its own toward Bash's cap.
+    expect(kept.map((b) => [b.keep_open_ms, b.tab])).toEqual([[WARM_TAB_MS, undefined], [undefined, undefined]]);
+  });
+
   it('makes the trip user when /v1 does not have it, then asks once more', async () => {
     const w = world((_, n) => {
       if (n === 1) throw new V1Error(404, 'user_not_found', 'No such user.');
