@@ -91,7 +91,7 @@ export interface LoginDeps {
   link: Pick<ServerLink, 'request'>;
   packs: Pick<Packs, 'get'>;
   /** The trip's browser fetch, its hand-off in front included; null while the trip's computer is not set up here. */
-  runner: () => Pick<RecipeRunner, 'read' | 'handOff' | 'release' | 'tabCall'> | null;
+  runner: () => Pick<RecipeRunner, 'read' | 'handOff' | 'release' | 'tabCall' | 'tabSteps'> | null;
   /** The jobs lane: a login started as a job before the hand-off had no model (a row with a taskId) is settled there. */
   tasks: () => Pick<Tasks, 'handoff' | 'stop'> | null;
   /** A fresh session on the trip's screen, in control or to view (POST /v1/sessions); null with no trip computer here. */
@@ -406,7 +406,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
    * then there is nothing to hand over (its Login is not there, so the page's time runs out first). A page Bash would
    * not open puts the card back to its ask, saying so.
    */
-  async function handOff(row: LoginRow, runner: Pick<RecipeRunner, 'handOff' | 'release'>): Promise<void> {
+  async function handOff(row: LoginRow, runner: Pick<RecipeRunner, 'handOff' | 'release' | 'tabSteps'>): Promise<void> {
     // The hand-off ends at HANDOFF_MS whatever happens: Bash closes the tab then, and the card goes back to its ask.
     ending.get(row.tripId)?.();
     ending.set(row.tripId, later(HANDOFF_MS, () => track('end', row.tripId, expire(row))));
@@ -415,7 +415,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       ({ captures } = await runner.handOff!(
         row.tripId,
         LOGIN_URL,
-        { capture: [], steps: [LOGIN_BUTTON, MOBILE_BOX], timeoutMs: HANDOFF_PAGE_MS },
+        // The page and the check alone: Watch comes as soon as the page is in front (its crop is set before it loads), and
+        // the taps run after, while Watch's picture connects (staging, 8 Oct: they were 2 to 3 s of the wait for Watch).
+        { capture: [], steps: [], timeoutMs: HANDOFF_PAGE_MS },
         { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' } },
       ));
     } catch (err) {
@@ -436,8 +438,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       await release(row.tripId);
       await show(await loggedIn(now));
     } else {
-      // The page is in front for them (its taps done, or its time run out with the page kept): now the card carries Watch.
+      // The page is in front for them: now the card carries Watch. Then ixigo's Login and the mobile box, tapped on the
+      // page they watch (best effort: the page stays theirs if a tap finds nothing), and the page takes the keyboard.
       await show(now);
+      await runner.tabSteps?.(row.tripId, LOGIN_TAB, [LOGIN_BUTTON, MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
+        .catch((err: unknown) => d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's taps did not run"));
     }
   }
 

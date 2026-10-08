@@ -82,6 +82,12 @@ export interface RecipeRunner {
    * more: one byte of its answer, for its status. Null when no tab is kept under that name.
    */
   tabCall?(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null>;
+  /**
+   * Steps on the kept hand-off tab of that name, kept in front for keepOpenMs more (Bash's url-less front fetch): a tap or
+   * two on a page the person already watches. Best effort: a step not found (Bash's time runs out with the tab kept) or a
+   * tab already gone is nothing; anything else Bash refuses is a TravelError.
+   */
+  tabSteps?(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number }): Promise<void>;
 }
 
 export interface RunnerDeps {
@@ -537,6 +543,19 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
+  async function tabSteps(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number }): Promise<void> {
+    // A fetch is its steps and a call: one byte of the home page closes it.
+    const done = { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'steps_done', max_bytes: 1 };
+    try {
+      await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+        body: { tab, steps: [...steps, done], front: true, keep_open_ms: o.keepOpenMs, timeout_ms: o.timeoutMs },
+      });
+    } catch (err) {
+      if (err instanceof V1Error && (err.status === 504 || (err.status === 409 && err.code === 'no_open_tab'))) return;
+      throw pageCallFailed(err);
+    }
+  }
+
   async function tabCall(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null> {
     const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'tab_call', max_bytes: 1 };
     try {
@@ -561,6 +580,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     handOff: (tripId, url, plan, o) => inSlot(tripId, {}, () => handOff(tripId, url, plan, o)),
     release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),
     tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
+    tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),
   };
 }
 

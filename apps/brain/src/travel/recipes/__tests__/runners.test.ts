@@ -181,6 +181,20 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
         timeout_ms: 12_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login',
       } },
     }]);
+    // Taps on the kept hand-off tab, in front, after the page: a call closes the fetch; a tap not found (504) or a tab
+    // gone (no_open_tab) is nothing.
+    const taps = world(() => fetched([capture('steps_done', 'https://www.ixigo.com/', '<', 200)], 'https://www.ixigo.com/'));
+    await createBrowserFetchRunner(taps.deps).tabSteps!('t1', 'ixigo_login', [{ op: 'click', role: 'button', name: 'Login' }], { keepOpenMs: 600_000, timeoutMs: 12_000 });
+    expect(taps.calls[0]!.opts['body']).toEqual({
+      tab: 'ixigo_login', front: true, keep_open_ms: 600_000, timeout_ms: 12_000,
+      steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'steps_done', max_bytes: 1 }],
+    });
+    for (const err of [new V1Error(504, 'timeout', 'The page did not send every capture (it stopped at 1 click).'), new V1Error(409, 'no_open_tab', 'No tab is kept open.')]) {
+      const failing = world(() => {
+        throw err;
+      });
+      await expect(createBrowserFetchRunner(failing.deps).tabSteps!('t1', 'ixigo_login', [], { keepOpenMs: 600_000, timeoutMs: 12_000 })).resolves.toBeUndefined();
+    }
     await runner.release!('t1', 'ixigo_login');
     expect(w.calls[1]!.opts['body']).toEqual({ tab: 'ixigo_login', steps: [{ op: 'page_fetch', url: '/', method: 'GET', capture_as: 'close', max_bytes: 1 }], timeout_ms: FAST_TIMEOUT_MS });
 
