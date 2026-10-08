@@ -44,6 +44,20 @@ export interface LoopInput {
   budget?: Pick<Budget, 'reserve'>;
 }
 
+/** One model round's timing, for the turn's log line: no text, only what was called and how long it took. */
+export interface RoundTiming {
+  /** The tools the round asked for, in order. */
+  tools: string[];
+  /** From the round's request to its first streamed delta (text, thinking or a tool's input); null when none came. */
+  firstTokenMs: number | null;
+  /** From the round's request to its whole reply. */
+  modelMs: number;
+  /** Running the round's tools. */
+  toolMs: number;
+  output: number;
+  stop: string | null;
+}
+
 export interface LoopResult {
   /**
    * What to post: the last round's text, or the latest text an earlier round wrote. Empty when silent. A turn that ended
@@ -56,6 +70,8 @@ export interface LoopResult {
   /** The whole exchange so far, ending with the model's last message or the last tool results. */
   messages: Anthropic.MessageParam[];
   stopReason: string | null;
+  /** Every round's timing, in order. */
+  timings: RoundTiming[];
 }
 
 /** Tool definitions from the zod inputs. */
@@ -217,6 +233,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   const thinking = caps.id === 'claude-sonnet-5-5' ? { type: 'between_tools' } : undefined;
   const messages = [...i.messages];
   const usage = noUsage();
+  const timings: RoundTiming[] = [];
   let firstToken = false;
   let latestText = '';
   for (let round = 1; round <= maxRounds; round++) {
@@ -236,14 +253,17 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     // turn keeps what it has.
     const hold = i.budget ? i.budget.reserve({ purpose: 'composer', model: i.model, usd: estimateCostUsd(i.model, body, body.max_tokens) }) : null;
     if (i.budget && !hold) {
-      return { text: latestText, silent: i.ctx.outcome.silent, rounds: round - 1, usage, messages, stopReason: 'over_budget' };
+      return { text: latestText, silent: i.ctx.outcome.silent, rounds: round - 1, usage, messages, stopReason: 'over_budget', timings };
     }
+    const asked = Date.now();
+    let firstDelta: number | null = null;
     const reply = await underHold(hold, i.model, async (billed) => {
       // 'between_tools' is not in the SDK's types yet, so the body is cast.
       const stream = i.client.messages.stream(body as unknown as Anthropic.MessageStreamParams, { signal: i.signal });
       for await (const ev of stream) {
         if (ev.type === 'message_start') billed.usage = ev.message.usage;
         else if (ev.type === 'message_delta' && billed.usage) billed.usage = { ...billed.usage, output_tokens: ev.usage.output_tokens };
+        if (firstDelta === null && ev.type === 'content_block_delta') firstDelta = Date.now() - asked;
         if (!firstToken && ev.type === 'content_block_delta') {
           firstToken = true;
           i.onFirstToken?.();
@@ -254,6 +274,8 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
       return final;
     });
     addUsage(usage, usageOf(reply.usage, i.model));
+    const timing: RoundTiming = { tools: [], firstTokenMs: firstDelta, modelMs: Date.now() - asked, toolMs: 0, output: reply.usage.output_tokens, stop: reply.stop_reason };
+    timings.push(timing);
     const text = reply.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)
@@ -266,8 +288,10 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     messages.push({ role: 'assistant', content: said.length || !latestText ? said : [{ type: 'text', text: latestText }] });
     const calls = reply.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (reply.stop_reason !== 'tool_use' || calls.length === 0) {
-      return { text: text || latestText, silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason };
+      return { text: text || latestText, silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason, timings };
     }
+    timing.tools = calls.map((c) => c.name);
+    const toolsFrom = Date.now();
     // A reply of card tools only: they run one by one, so each one's card is counted, and once every card is up the
     // turn ends with this reply's words. A card tool that failed (no card) goes back to the model as any result does.
     const cardsOnly = calls.every((c) => byName.get(c.name)?.endsTurn === true);
@@ -284,17 +308,18 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     } else {
       results.push(...(await Promise.all(calls.map((c) => runTool(byName.get(c.name), c, i)))));
     }
+    timing.toolMs = Date.now() - toolsFrom;
     messages.push({ role: 'user', content: [...results, ...roundNotes(calls, results, byName)] });
     if (calls.some((c) => c.name === STAY_SILENT)) {
       i.ctx.outcome.silent = true;
-      return { text: '', silent: true, rounds: round, usage, messages, stopReason: STAY_SILENT };
+      return { text: '', silent: true, rounds: round, usage, messages, stopReason: STAY_SILENT, timings };
     }
     // A card that went up with its line: the line is this reply's words. The reply's free text was written before the
     // card was up ("I'll show the best three…"), so it never goes out.
     const lines = [...new Set(i.ctx.lines.slice(linesBefore).map((l) => l.trim()).filter((l) => l !== ''))];
     const words = lines.length > 0 ? lines.join('\n') : text;
     if (lines.length > 0) latestText = words;
-    if (allUp) return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP };
+    if (allUp) return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP, timings };
   }
-  return { text: latestText, silent: i.ctx.outcome.silent, rounds: maxRounds, usage, messages, stopReason: 'max_rounds' };
+  return { text: latestText, silent: i.ctx.outcome.silent, rounds: maxRounds, usage, messages, stopReason: 'max_rounds', timings };
 }

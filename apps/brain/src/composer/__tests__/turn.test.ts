@@ -20,7 +20,7 @@ import { createTravelLayer } from '../../travel/layer.js';
 import { createFakeTravel } from '../../travel/mcp-travel.js';
 import { createResultsStore } from '../../travel/results.js';
 import { travelTools } from '../../travel/tools.js';
-import { createComposer, OVER_BUDGET, TROUBLE } from '../turn.js';
+import { createComposer, logTurn, OVER_BUDGET, TROUBLE } from '../turn.js';
 import { ASK_HOW_MUCH, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -824,5 +824,28 @@ describe('an ask that lands while Go writes its hello', () => {
     await desk.put({ id: `setup:${r.tripId}:greet`, tripId: r.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} });
     await desk.tick();
     expect(r.posts().map((p) => p.params.text)).toEqual(['Hi all, I am Go!', 'Here are three stays.']);
+  });
+});
+
+describe("the turn's log line", () => {
+  it('says where the time went, round by round, with no words from anyone', () => {
+    const lines: Array<{ obj: Record<string, unknown>; msg: string }> = [];
+    const log = { info: (obj: object, msg?: string) => lines.push({ obj: obj as Record<string, unknown>, msg: msg ?? '' }) };
+    logTurn(log, {
+      tripId: 't_goa', turnId: 'turn_1', wokeFor: ['message'], builtMs: 40, firstToken: new Date(1_000_000 + 1_340), started: 1_000_000, totalMs: 15_200, outcome: 'spoke',
+      timings: [
+        { tools: ['search_stays'], firstTokenMs: 1_300, modelMs: 2_900, toolMs: 8_400, output: 180, stop: 'tool_use' },
+        { tools: ['show_options'], firstTokenMs: 3_100, modelMs: 3_600, toolMs: 300, output: 210, stop: 'tool_use' },
+      ],
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.msg).toBe('turn: 2 rounds, 15.2s: r1 search_stays first 1.3s model 2.9s out 180 tools 8.4s | r2 show_options first 3.1s model 3.6s out 210 tools 0.3s');
+    expect(lines[0]!.obj).toMatchObject({
+      trip: 't_goa', turn: 'turn_1', woke_for: ['message'], outcome: 'spoke', build_ms: 40, first_token_ms: 1_340, total_ms: 15_200,
+      rounds: [
+        { tools: ['search_stays'], first_token_ms: 1_300, model_ms: 2_900, tool_ms: 8_400, output_tokens: 180, stop: 'tool_use' },
+        { tools: ['show_options'], first_token_ms: 3_100, model_ms: 3_600, tool_ms: 300, output_tokens: 210, stop: 'tool_use' },
+      ],
+    });
   });
 });
