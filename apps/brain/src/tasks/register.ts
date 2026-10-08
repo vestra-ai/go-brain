@@ -62,9 +62,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   brain.recipeRunners = {
     browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log, slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')) }),
     keepWarm: (tripId) => keeper.touch(tripId),
-    start: async (tripId) => {
-      await computer.warm(tripId);
-    },
+    start: (tripId) => computer.warm(tripId),
     // Bash's live view of the fetch's own tabs: a stream that never wakes the computer. No resume: a watch has no history.
     watch: (tripId, signal) => v1.stream(`/v1/users/${computer.userIdFor(tripId)}/browser/watch`, { lastEventId: 0, signal }),
   };
