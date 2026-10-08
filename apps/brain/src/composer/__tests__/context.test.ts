@@ -374,6 +374,24 @@ describe('why Go woke, and the trip block', () => {
     expect(block).toContain('Open vote d_stay: <data>Where do we stay?</data>: <data>Villa Sol</data> 1, <data>Casa Azul</data> 0 (1 of 5 voted)');
   });
 
+  it('names who has voted and who has not on an open vote, never what they picked; a secret ballot is counts only (8 Oct drill)', async () => {
+    const votes = [{ person_id: 'p_priya', option_index: 0 }, { person_id: 'p_arjun', option_index: 1 }, { person_id: 'p_kabir', option_index: 0 }];
+    const trip = goaSnapshot({
+      decisions: [
+        vote({ decision_id: 'd_stay', voted: 3, tally: [2, 1], votes }),
+        vote({ decision_id: 'd_beach', question: 'Beach day?', anonymous: true, options: [{ label: 'Saturday' }, { label: 'Sunday' }], voted: 2, tally: [1, 1] }),
+      ],
+    });
+    const block = await tripNow({ get: async () => packOf([], trip), invalidate: () => undefined }).render('t_goa', []);
+    const stay = block.split('\n').find((l) => l.startsWith('Open vote d_stay'))!;
+    // The drill: Priya, Arjun and Kabir had voted, and Go named Arjun and Kabir as not yet.
+    expect(stay).toContain('(3 of 5 voted). Voted: Priya, Arjun, Kabir. Not yet: Rahul, Meher');
+    expect(stay).not.toMatch(/Priya[^.]*Villa Sol|Arjun[^.]*Casa Azul/);
+    const beach = block.split('\n').find((l) => l.startsWith('Open vote d_beach'))!;
+    expect(beach).toContain("(2 of 5 voted). Secret ballot: counts only; never say who has or hasn't voted");
+    expect(beach).not.toMatch(/Rahul|Priya|Arjun|Meher|Kabir/);
+  });
+
   it('two lanes render "tap": the first returns null for this item, so the second one\'s text is used', () => {
     const c = context();
     const asked: string[] = [];
