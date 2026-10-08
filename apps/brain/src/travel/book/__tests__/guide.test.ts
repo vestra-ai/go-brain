@@ -115,6 +115,7 @@ describe('the ixigo tool', () => {
       'hotels.details', 'hotels.offers', 'hotels.reviews', 'hotels.rooms', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list', 'plan.destination', 'plan.explore', 'plan.top_locations',
       'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.by_name', 'trains.confirm_chance', 'trains.offers',
+      'trains.platform_locator', 'trains.running_status', 'trains.schedule', 'trains.station_status',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
     expect(tool.description).toContain('- plan.destination: A destination');

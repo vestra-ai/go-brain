@@ -1,0 +1,37 @@
+id: trains.station_status
+title: The trains that stop at a station, with their arrival, departure and halt, from ixigo's station page
+asks:
+  - which trains stop at jaipur
+  - trains from madgaon station
+  - jaipur station se kaun si trains jaati hain
+inputs:
+  station: { kind: place, lookup: trains.station_lookup, about: the railway station or city }
+auth: none
+changes_state: false
+# ixigo's station page, plain server-rendered HTML: its first ten trains (the table's last row, "View More Trains", pages
+# the rest), each with its number and name, arrival, departure and halt. The page's address is the station's name and
+# code, "/train-stations/jaipur-jp-railway-station", as every schedule links it. The day letters carry their days only
+# in their style, so they are not read.
+let:
+  slug: '$lowercase($replace($trim(station.name), /[^A-Za-z0-9]+/, "-")) & "-" & $lowercase(station.code) & "-railway-station"'
+page: /train-stations/{$slug}
+capture:
+  - { match: "/train-stations/{$slug}$", max_bytes: 1000000 }
+read:
+  rows: { from: "/train-stations/{$slug}$", format: html_tables, list: "[ $ ]" }
+answer:
+  as: facts
+  title: "{station.name} station"
+  max: 1
+  each: |
+    (
+      $rows := $reduce(tables, function($found, $t) { $t[0][0] = "Train Name/No." ? $t : $found }, []);
+      {
+        "station": $substringBefore(title, " Railway Station"),
+        "trains": [$map($rows, function($r, $i) { ($i > 0 and $exists($r[1])) ? $r[0] & ": arrives " & $r[1] & ", departs " & $r[2] & ", halt " & $r[3] })]
+      }
+    )
+ttl_minutes: 60
+samples: { page: trains.station_status.html }
+measured: { fast_ms: null, page_ms: 8366, flow_ms: null }
+notes: The timetable, not a live board. For whether a train is late, use trains.running_status.
