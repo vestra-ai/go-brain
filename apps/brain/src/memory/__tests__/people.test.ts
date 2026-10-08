@@ -173,8 +173,8 @@ describe('forget_person (master §10 item 5)', () => {
     expect(C.Card.safeParse(card).success).toBe(true);
     expect(card).toMatchObject({ kind: 'notice', for_person_ids: ['p_meher'] });
     expect(card.card_id.length).toBeLessThanOrEqual(64);
-    // It says "you", never a name: nothing on it tells anyone else who used Forget me.
-    const words = JSON.stringify(card);
+    // It says "you", never a name: nothing anyone can read on it says who used Forget me (for_person_ids is the pin).
+    const words = JSON.stringify({ ...card, for_person_ids: null });
     for (const name of ['Meher', 'p_meher', 'Kabir', 'Priya']) expect(words).not.toContain(name);
     // Everywhere: one card per trip, and the trip whose card failed is still forgotten.
     await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_goa', topic: 'food', text: 'Vegan now', messageId: null, source: 'join' }));
