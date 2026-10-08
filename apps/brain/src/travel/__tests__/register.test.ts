@@ -36,17 +36,21 @@ describe('registerTravel', () => {
     expect(LANES.indexOf(registerTravel)).toBeLessThan(LANES.indexOf(registerProactive));
   });
 
-  it('sets brain.travel and registers the eight travel tools, the five options taps, the tap wake and the image route', async () => {
+  it('sets brain.travel and registers the travel tools, the options taps, the login card taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
-    // A new trip's computer is made at setup (warm.ts startComputerAtSetup), then visits ixigo once (warmIxigoAtSetup),
-    // the step the organiser's ixigo login prompt runs after.
+    // A new trip's computer is made at setup (warm.ts startComputerAtSetup), then visits ixigo once (warmIxigoAtSetup), and
+    // then its organizer is asked to log in to ixigo (login.ts): travel.computer, travel.ixigo_warm, travel.ixigo_login.
     expect(lb.setup.steps.map((s) => s.name)).toContain('travel.computer');
     expect(lb.setup.steps.find((s) => s.name === 'travel.ixigo_warm')).toMatchObject({ after: 'travel.computer' });
+    expect(lb.setup.steps.find((s) => s.name === 'travel.ixigo_login')).toMatchObject({ after: 'travel.ixigo_warm' });
     // The ixigo tool runs the book's other recipes (the destination guide and more).
     // compare_ways_there: each home city's ways to the trip, side by side (the composite trip.how_we_get_there).
     // watch_ixigo and stop_watch: the watches a group asks Go to keep on ixigo (travel/recipe-watches.ts).
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo', 'compare_ways_there', 'watch_ixigo', 'stop_watch']);
-    expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote']);
+    expect([...lb.taps.handlers.keys()].sort()).toEqual([
+      'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/see_on_ixigo',
+      'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
+    ]);
     expect(lb.context.wakes.has('tap')).toBe(true);
     // A search that outlived its turn wakes Go with its options.
     expect(lb.context.wakes.has('search')).toBe(true);

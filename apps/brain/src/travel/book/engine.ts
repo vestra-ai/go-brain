@@ -55,6 +55,11 @@ export interface EngineDeps {
   onRun?: OnRun;
   /** Go's searches (the search backend's), which a composite's steps share: absent, every step runs its own page. */
   searches?: ShareSearch;
+  /**
+   * The trip's ixigo login (travel/login.ts), for a recipe with auth: login: ok, or the line for the model once the
+   * person was asked. Absent, such a recipe never runs.
+   */
+  login?: (tripId: string, what: string) => Promise<{ ok: true } | { ok: false; note: string }>;
 }
 
 /**
@@ -201,6 +206,12 @@ const rowsOf = (a: EngineAnswer): { rows?: number } =>
         : {};
 
 export function createEngine(d: EngineDeps) {
+  /** A recipe with auth: login runs only on a logged-in trip computer; otherwise the person is asked and it is refused. */
+  async function loggedIn(recipe: RecipeFile, tripId: string): Promise<void> {
+    if (recipe.auth !== 'login') return;
+    const l = d.login ? await d.login(tripId, recipe.title) : { ok: false as const, note: `${recipe.title} needs an ixigo login, which Go can't ask for here.` };
+    if (!l.ok) throw new TravelError('refused', l.note);
+  }
   const offered = new Map<string, Offered>();
   /** The places ixigo listed for words it knows more than one place for, by lookup and words: asked again, the same list. */
   const listed = new Map<string, { choices: Suggestion[]; at: number }>();
@@ -450,6 +461,7 @@ export function createEngine(d: EngineDeps) {
     if (!recipe) throw new TravelError('refused', `There is no ixigo recipe ${id}.`);
     if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
     if (!recipe.page) throw new TravelError('refused', `${recipe.title} has no page to open.`);
+    await loggedIn(recipe, o.tripId);
     const runner = d.runner(o.tripId);
     const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && fastOn(runner) && !o.background ? 'fast' : 'page';
     const strip = { line: line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed, ...stepOf(o) }) };
@@ -573,6 +585,7 @@ export function createEngine(d: EngineDeps) {
     let strip: RunLine | null = null;
     try {
       if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
+      await loggedIn(recipe, o.tripId);
       // A composite has no place inputs (format.ts), so nothing here loads.
       const inputs = (await inputsOf(recipe, given, o, null))!;
       for (const [name, input] of Object.entries(recipe.inputs)) {

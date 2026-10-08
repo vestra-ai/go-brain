@@ -23,6 +23,7 @@ import type { Pay } from './money/pay.js';
 import { unsureReflex, type Reflex } from './reflex/reflex.js';
 import type { Tasks } from './tasks/tasks.js';
 import type { RecipeStat } from './travel/book/engine.js';
+import type { IxigoLogin } from './travel/login.js';
 import type { TripWatches } from './travel/recipe-watches.js';
 import type { RecipeRunner } from './travel/recipes/runners.js';
 import type { ScreenStream } from './travel/screen-feed.js';
@@ -89,6 +90,11 @@ export interface Brain {
   recipeStats?: () => RecipeStat[];
   /** Set by the travel lane: the watches groups asked for that are going, per trip, for the admin's health view. */
   recipeWatches?: () => Promise<TripWatches[]>;
+  /**
+   * Set by the travel lane: the trip's ixigo login (travel/login.ts). personGone logs the trip's computer out of ixigo
+   * when the login is that person's: travel calls it when they leave; "Forget me" in the trip should call it too.
+   */
+  ixigoLogin?: Pick<IxigoLogin, 'personGone'>;
   /** Set by P5. */
   pay?: Pay;
   /** The daily model budget (MODEL_DAILY_BUDGET_USD). buildBrain always sets it; it is optional only so lane test doubles need not. */
