@@ -198,11 +198,15 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       // One byte of the answer is all Bash keeps: Go reads its status, never what it says about the account.
       ({ captures } = await runner.read(tripId, `${IXIGO}/`, { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], timeoutMs: 12_000 }));
     } catch (err) {
-      if (err instanceof TravelError) return 'unknown';
-      throw err;
+      if (!(err instanceof TravelError)) throw err;
+      d.log.info({ tripId, status: null, login: 'unknown', why: err.code }, 'travel: ixigo said whether the trip computer is logged in');
+      return 'unknown';
     }
     const s = captures.find((c) => c.url.includes(USERINFO))?.status;
-    return s === 200 ? 'in' : s === 401 || s === 403 ? 'out' : 'unknown';
+    const said = s === 200 ? 'in' : s === 401 || s === 403 ? 'out' : 'unknown';
+    // The status alone, for the stage desk's log: never the account.
+    d.log.info({ tripId, status: s ?? null, login: said }, 'travel: ixigo said whether the trip computer is logged in');
+    return said;
   }
 
   async function loggedIn(row: LoginRow): Promise<LoginRow> {
