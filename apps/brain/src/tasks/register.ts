@@ -24,7 +24,7 @@ import { SWEEP_EVERY_MS, createSweep, type Sweep } from './sweep.js';
 import { registerTaskTaps } from './taps.js';
 import { createTasks, type TasksService } from './tasks.js';
 import { taskTools } from './tools.js';
-import { createBrowserFetchRunner } from '../travel/recipes/runners.js';
+import { createBrowserFetchRunner, FRAME_WIDTH } from '../travel/recipes/runners.js';
 import { createV1Client, type V1Client } from './v1-client.js';
 import { registerV1Webhooks } from './webhooks.js';
 
@@ -59,12 +59,17 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   // ixigo.com searches (TRAVEL_MODE ixigo_web) run on the trip's computer too, through its browser fetch, and the travel
   // lane keeps the computer awake while people talk travel.
   const keeper = createKeepWarm({ warm: (tripId, keepMs) => computer.warm(tripId, { keepMs }), now: brain.now, log: brain.log });
+  const browserFetch = createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log, slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')) });
   brain.recipeRunners = {
-    browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log, slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')) }),
+    browserFetch,
     keepWarm: (tripId) => keeper.touch(tripId),
     start: (tripId) => computer.warm(tripId),
+    // The new computer's first ixigo visit, travel's setup step after start (runners.ts COLD_COMPUTER).
+    prime: async (tripId) => {
+      await browserFetch.prime?.(tripId);
+    },
     // Bash's live view of the fetch's own tabs: a stream that never wakes the computer. No resume: a watch has no history.
-    watch: (tripId, signal) => v1.stream(`/v1/users/${computer.userIdFor(tripId)}/browser/watch`, { lastEventId: 0, signal }),
+    watch: (tripId, signal) => v1.stream(`/v1/users/${computer.userIdFor(tripId)}/browser/watch?width=${FRAME_WIDTH}`, { lastEventId: 0, signal }),
   };
   const store = createTaskStore(brain.pool);
   const eventStore = createEventStore(brain.pool, brain.now);

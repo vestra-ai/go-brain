@@ -635,6 +635,10 @@ describe('Go Live', () => {
     expect(html).toContain('<div class="split"><div class="app">');
     expect(html).toContain('<aside class="live" id="live" aria-label="Go Live">');
     expect(html).toContain("} else if (data.type === 'live') {");
+    // A picture is shown at its own size or smaller, never stretched, and a finished or failed run's picture is never dimmed.
+    expect(html).toContain('.view img { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }');
+    expect(html).not.toContain('object-fit: cover');
+    expect(html).not.toContain('grayscale');
     expect(html).toContain("else if (m.type === 'screen' && m.event) { live.state = 'on'; screenEvent(m.event); }");
     // A group of steps (how we all get there) has its own badge and tile, and each step is named by its city.
     expect(html).toContain("steps: 'GROUP'");

@@ -11,6 +11,7 @@ import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { createImages, registerImageRoute } from './images.js';
+import { createIxigoLogin } from './login.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
 import { startLiveSearch } from './live-search.js';
@@ -27,7 +28,7 @@ import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
-import { startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
+import { createIxigoWarm, IXIGO_WARM_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
@@ -56,6 +57,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.
   const warm = (tripId: string, kind: TravelKind | null): void => warmForTravel(brain, tripId, kind);
   brain.setup.addStep({ name: 'travel.computer', run: (tripId) => startComputerAtSetup(brain, tripId) });
+  // Then its Chrome's first ixigo visit, before anyone asks; the organiser's ixigo login prompt runs after this step.
+  const ixigoWarm = createIxigoWarm(brain);
+  brain.setup.addStep({ name: IXIGO_WARM_STEP, after: 'travel.computer', run: (tripId) => ixigoWarm.run(tripId) });
   // Every recipe run as it happens, for the Server's live view of a trip (/v1/live): in memory, nothing written.
   const runs = createRunLog({ now: brain.now, log: brain.log });
   // And the trip computer's screen, live, from Bash's browser watch: only where searches run on it (ixigo_web).
@@ -65,6 +69,22 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   brain.onStop(() => screens.stop());
   registerLive(brain, runs, screens);
+  // One person's ixigo login on the trip's computer: asked of the organizer at setup, and again when a recipe needs it.
+  const login = createIxigoLogin({
+    pool: brain.pool,
+    link: brain.door.link,
+    packs: brain.packs,
+    runner: () => brain.recipeRunners?.browserFetch ?? null,
+    tasks: () => brain.tasks ?? null,
+    live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    now: brain.now,
+    log: brain.log,
+  });
+  brain.setup.addStep(login.setupStep);
+  login.registerTaps(brain.taps);
+  brain.tripLog.onEvent((ev) => login.onEvent(ev));
+  // For "Forget me" in a trip (the memory lane): the person's ixigo login goes with them.
+  brain.ixigoLogin = login;
   // The recipe book, checked at boot: a file that fails is left out, and the log says why.
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');
@@ -88,10 +108,16 @@ export const registerTravel: RegisterLane = async (brain) => {
     onRun: runs.record,
     // A composite's steps share the backend's searches: a city searched a minute ago, or being searched, loads nothing.
     searches: (id, given, o, run) => ixigoWeb.shareStep(id, given, o, run),
+    // A recipe that needs the trip's ixigo login (auth: login) asks for it, and waits for it.
+    login: (tripId, what) => login.ensure(tripId, what),
     now: brain.now,
     log: brain.log,
   });
-  brain.recipeStats = () => engine.stats();
+  // The warm step's line too: how often ixigo answered a new trip's computer, and how fast.
+  brain.recipeStats = () => {
+    const warm = ixigoWarm.stat();
+    return warm ? [...engine.stats(), warm] : engine.stats();
+  };
   // The watches going, per trip (how many, the next check), for the stage desk and the health view.
   brain.recipeWatches = () => watchesNow(brain.pool);
   const ixigoWeb = createIxigoWebBackend({
