@@ -305,7 +305,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
           if (a.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
           return { results: a.options, checkedAt: a.checkedAt, runId, page: a.page };
         },
-        // A search that joined a step whose composite ran out of time hears it as ixigo's slowness, not an abort.
+        // A step's run is never cut short by its composite, but anything that is not a travel error is said as one.
         (err: unknown): never => {
           throw err instanceof TravelError ? err : new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
         },

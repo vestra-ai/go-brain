@@ -193,6 +193,19 @@ describe("a composite's steps share Go's searches, keyed by the request they mak
     expect([pages(w.opened, 'train'), pages(w.opened, 'bus_search')].map((p) => p.length)).toEqual([1, 1]);
   });
 
+  it("a step the composite's time cuts short still finishes and is kept: the city asked alone a moment later loads nothing", async () => {
+    const w = wired({ hold: true });
+    const stop = new AbortController();
+    const composite = w.engine.answer(WAYS, {}, { tripId: 't_goa', signal: stop.signal });
+    await settle();
+    stop.abort();
+    expect(stepsOf(await composite)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'out of time'], ['buses.between', 'out of time'], ['flights.search', 'link']] }]);
+    w.release();
+    await settle();
+    await w.backend.search('buses', BUSES, { tripId: 't_goa' });
+    expect(pages(w.opened, 'bus_search')).toHaveLength(1);
+  });
+
   it('a step that asks what a search still running asks joins it: one page for both', async () => {
     const w = wired({ hold: true });
     const alone = w.backend.search('buses', BUSES, { tripId: 't_goa' });

@@ -543,8 +543,9 @@ export function createEngine(d: EngineDeps) {
   /**
    * A composite: its inputs, the entries it runs for, then every step for every entry at once, each a run of its own that
    * names this one (step_of) and its entry (lane). The trip's computer runs as many fetches at once as its slots allow
-   * (runners.ts), and the rest wait their turn. A step that fails is its entry's why, never the composite's failure; o.signal
-   * ends the steps still going (the turn's time is up), and they answer why too.
+   * (runners.ts), and the rest wait their turn. A step that fails is its entry's why, never the composite's failure. When
+   * o.signal aborts (the turn's time is up), the steps still going answer "out of time": a shared search's run goes on and
+   * is kept for the next ask; any other step's run stops.
    */
   async function runSteps(recipe: RecipeFile, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
     const steps = recipe.steps!;
@@ -576,11 +577,13 @@ export function createEngine(d: EngineDeps) {
         try {
           const stepGiven: Record<string, unknown> = {};
           for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
-          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, ...(o.conditions ? { conditions: o.conditions } : {}), ...(o.signal ? { signal: o.signal } : {}) };
-          const own = (): Promise<EngineAnswer> => answer(step.recipe, stepGiven, stepRun);
-          // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load.
-          const shared = d.searches ? await d.searches(step.recipe, stepGiven, stepRun, own) : null;
-          if (!shared) return { recipe: step.recipe, answer: await own() };
+          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, ...(o.conditions ? { conditions: o.conditions } : {}) };
+          const own = (signal?: AbortSignal): Promise<EngineAnswer> => answer(step.recipe, stepGiven, { ...stepRun, ...(signal ? { signal } : {}) });
+          // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load. A
+          // step's own search is kept for the next ask, so the composite's time never cuts it short: it finishes in the
+          // background (Bash's own timeout bounds it), and only the step stops waiting.
+          const shared = d.searches ? await d.searches(step.recipe, stepGiven, stepRun, () => own()) : null;
+          if (!shared) return { recipe: step.recipe, answer: await own(o.signal) };
           const got = shared.joined ? fromKept(step.recipe, stepGiven, stepRun, shared.answer) : shared.answer;
           return { recipe: step.recipe, answer: await untilAborted(got, o.signal) };
         } catch (err) {
