@@ -120,6 +120,40 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     await fails(createBrowserFetchRunner(blocked.deps).pageFetch!('t1', { url: '/payments/x', method: 'GET' }), 'unreachable', /blocked/);
   });
 
+  it("hands a page to the person in front of their window (Bash's front), keeping its tab for them, and closes it after", async () => {
+    const USERINFO_URL = 'https://www.ixigo.com/api/v2/oauth/userinfo';
+    const w = world(() => fetched([capture('/api/v2/oauth/userinfo', USERINFO_URL, '{', 401)], 'https://www.ixigo.com/?loginVisible=true'));
+    const runner = createBrowserFetchRunner(w.deps);
+    const plan: FetchPlan = { capture: [{ match: '/api/v2/oauth/userinfo', required: true, max_bytes: 1 }], steps: [{ op: 'click', role: 'textbox', text: 'mobile' }], timeoutMs: 12_000 };
+    const opened = await runner.handOff!('t1', 'https://www.ixigo.com/?loginVisible=true', plan, { keepOpenMs: 600_000, tab: 'ixigo_login' });
+    expect(opened.captures).toMatchObject([{ status: 401 }]);
+    // No pictures: the person watches the page itself.
+    expect(w.calls).toEqual([{
+      method: 'POST', path: '/v1/users/u-t1/browser/fetch',
+      opts: { body: {
+        url: 'https://www.ixigo.com/?loginVisible=true', capture: [{ match: '/api/v2/oauth/userinfo', max_bytes: 1 }],
+        steps: [{ op: 'click', role: 'textbox', text: 'mobile' }], timeout_ms: 12_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login',
+      } },
+    }]);
+    await runner.release!('t1', 'ixigo_login');
+    expect(w.calls[1]!.opts['body']).toEqual({ tab: 'ixigo_login', steps: [{ op: 'page_fetch', url: '/', method: 'GET', capture_as: 'close', max_bytes: 1 }], timeout_ms: FAST_TIMEOUT_MS });
+
+    // A page that ran out of time stays in front for the person: what it caught, never a failure.
+    const slow = world(() => {
+      throw new V1Error(504, 'timeout', 'The page did not send every capture within 12000 ms (it stopped at 1 click).', null, { partial: { captures: [] } });
+    });
+    expect(await createBrowserFetchRunner(slow.deps).handOff!('t1', 'https://www.ixigo.com/?loginVisible=true', plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [] });
+    // A tab already gone (its time ran out) is nothing to close; anything else Bash refuses is said as a travel error.
+    const gone = world(() => {
+      throw new V1Error(409, 'no_open_tab', 'No tab is kept open.');
+    });
+    await expect(createBrowserFetchRunner(gone.deps).release!('t1', 'ixigo_login')).resolves.toBeUndefined();
+    const old = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Unrecognized key: "front"');
+    });
+    await expect(createBrowserFetchRunner(old.deps).handOff!('t1', 'https://www.ixigo.com/?loginVisible=true', plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).rejects.toBeInstanceOf(TravelError);
+  });
+
   it("names each fetch's tab by its run, so Bash's browser watch labels it: on a page and on a page call", async () => {
     const w = world((c) =>
       (c.opts['body'] as { steps?: Array<{ op: string }> }).steps?.[0]?.op === 'page_fetch'

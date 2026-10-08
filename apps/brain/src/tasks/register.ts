@@ -21,7 +21,7 @@ import { createKeepWarm } from './keep-warm.js';
 import { createScreens, SCREENS_PER_MINUTE_PER_KEY, type Screens } from './screens.js';
 import { createTaskStore, type TaskStore } from './store.js';
 import { SWEEP_EVERY_MS, createSweep, type Sweep } from './sweep.js';
-import { registerTaskTaps } from './taps.js';
+import { openSession, registerTaskTaps } from './taps.js';
 import { createTasks, type TasksService } from './tasks.js';
 import { taskTools } from './tools.js';
 import { createBrowserFetchRunner, FRAME_WIDTH, WATCH_FPS } from '../travel/recipes/runners.js';
@@ -70,6 +70,8 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     },
     // Bash's live view of the fetch's own tabs: a stream that never wakes the computer. No resume: a watch has no history.
     watch: (tripId, signal) => v1.stream(`/v1/users/${computer.userIdFor(tripId)}/browser/watch?width=${FRAME_WIDTH}&fps=${WATCH_FPS}`, { lastEventId: 0, signal }),
+    // The ixigo login's Watch (travel/login.ts): a session on the trip's screen, as the working card's Watch opens one.
+    screen: (tripId, mode) => openSession(v1, computer.userIdFor(tripId), null, mode),
   };
   const store = createTaskStore(brain.pool);
   const eventStore = createEventStore(brain.pool, brain.now);

@@ -9,14 +9,14 @@ import { fakeLink, fakePacks, goaPack, goaTrip, msg } from '../../proactive/fake
 import type { TaskBrief } from '../../tasks/tasks.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
-import { createIxigoLogin, HELLO_WAIT_MS, LOGIN_URL, RECHECK_MS, USERINFO } from '../login.js';
+import { createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, LOGIN_TAB, LOGIN_URL, RECHECK_MS, USERINFO } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
 import { IXIGO, type FetchPlan } from '../recipes/recipe.js';
 
 // Keshav, 8 Oct: "when the trip creates, that's when we [make] the ixigo connection, and all the warming should happen;
 // connection as in ixigo should be logged in, so prompt someone to login". The organizer is asked right after setup warms
-// ixigo; their own tap starts the job that hands them Go's browser; ixigo's own answer, by its status, says whether the
+// ixigo; their own tap opens ixigo's log in in front on Go's screen, with no model; ixigo's own answer, by its status, says whether the
 // browser is logged in; and nothing of the account ever reaches Go.
 const NOW = new Date('2026-10-08T06:00:00Z');
 
@@ -34,7 +34,9 @@ let trips = 0;
  * One trip (the Goa five, Rahul organizing), its chat, the trip's browser and the jobs lane, all recorded. The trip says it
  * was made on 5 Oct, as the sim's Goa trip always does: nothing here goes by that. Waits for Go's hello move the clock.
  */
-function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout'> } = {}) {
+/** opened: ixigo's userinfo status on the log in page the hand-off opens (401 by default: logged out), 'timeout' for a
+ *  page that caught nothing in its time, 'refused' for a hand-off Bash would not open. */
+function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout'>; opened?: number | 'timeout' | 'refused' } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
   const clock = { now: NOW };
@@ -56,6 +58,22 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
       if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
       return { captures: [capture(USERINFO, `${IXIGO}${USERINFO}`, '{', s)], finalUrl: url };
     },
+    handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string }) => {
+      handOffs.push({ url, plan, o: ho });
+      const s = o.opened ?? 401;
+      if (s === 'refused') throw new TravelError('refused', 'Bash would not open the page.');
+      return { captures: s === 'timeout' ? [] : [capture(USERINFO, `${IXIGO}${USERINFO}`, '{', s)] };
+    },
+    release: async (_trip: string, tab: string) => {
+      releases.push(tab);
+    },
+  };
+  const handOffs: Array<{ url: string; plan: FetchPlan; o: { keepOpenMs: number; tab: string } }> = [];
+  const releases: string[] = [];
+  const sessions: Array<[string, string]> = [];
+  const screen = async (trip: string, mode: 'view' | 'control') => {
+    sessions.push([trip, mode]);
+    return { url: `https://screen.example/${mode}`, expires_at: '2026-10-08T06:15:00.000Z' };
   };
   const starts: TaskBrief[] = [];
   const handoffs: Array<[string, string]> = [];
@@ -73,7 +91,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
     },
   };
   const login = createIxigoLogin({
-    pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, live: () => o.live !== false, now: () => clock.now,
+    pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, screen: () => screen, live: () => o.live !== false, now: () => clock.now,
     log: { warn: () => undefined, info: () => undefined },
     sleep: async (ms) => {
       clock.now = new Date(clock.now.getTime() + ms);
@@ -94,7 +112,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const last = (): C.Card & { kind: 'notice' } => cards().at(-1) as C.Card & { kind: 'notice' };
   const state = async (): Promise<string | undefined> =>
     (await db.pool.query<{ state: string }>('select state from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.state;
-  return { tripId, clock, link, reads, statuses, starts, handoffs, stops, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
+  return { tripId, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
 }
 
 const STATUS_PLAN = { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], timeoutMs: 12_000 };
@@ -229,61 +247,111 @@ describe("a trip's first search, with no login asked for yet", () => {
 });
 
 describe('logging in', () => {
-  it("only the person asked can tap; Log in starts the job that opens ixigo's login and hands them the browser", async () => {
+  it("only the person asked can tap; Log in opens ixigo's log in box in front of their window on Go's screen, with no job and no model", async () => {
     const w = world();
     await w.setup();
     expect(await w.tap('ixigo_login', 'p_priya')).toEqual({ result: 'refused', toast: 'Only Rahul can do this here.' });
-    expect(w.starts).toEqual([]);
+    expect(w.handOffs).toEqual([]);
 
-    expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: "Opening ixigo on Go's computer" });
-    expect(w.starts).toHaveLength(1);
-    const job = w.starts[0]!;
-    // Neither its hand-off nor its end posts a line: the login card speaks for it.
-    expect(job).toMatchObject({ title: 'Logging in to ixigo', askedBy: 'p_rahul', returnsKind: 'answer', quiet: true, steps: ["Open ixigo's log in", 'Click the mobile number box', 'Hand over the log in'] });
-    // The fewest steps: its own to-do list is Go's, ixigo's own address opens the log in box (the button only when it
-    // didn't), one click puts the cursor in the mobile number, and the hand-off comes at once, with no check before it.
+    expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: "Opening ixigo's log in on Go's screen" });
+    // No job: no model clicks its way to the box (87 to 96 s on staging, 8 Oct).
+    expect(w.starts).toEqual([]);
+    // ixigo's own address opens the box; the page in FRONT of Rahul's window, the cursor in its mobile number box, the tab
+    // kept there for him for Bash's most; one byte of ixigo's userinfo kept, read by its status only.
     expect(LOGIN_URL).toBe('https://www.ixigo.com/?loginVisible=true');
-    expect(job.goal).toContain('Your to-do list is exactly these three steps: "Open ixigo\'s log in", "Click the mobile number box", "Hand over the log in".');
-    expect(job.goal).toContain('Open https://www.ixigo.com/?loginVisible=true in the browser: the page opens with its log in box showing a field for the mobile number (only if the box is not there, click "Log in/Sign up" at the top right).');
-    expect(job.goal).toContain('Click into the mobile number field and type nothing.');
-    expect(job.goal).toContain('hand the browser to the person at once, checking nothing first');
-    expect(job.goal).toContain('end the job at once with the summary "Done"');
-    expect(job.goal).not.toContain('top bar');
-    expect(job.goal).toContain('Never type, read, copy or keep a number, a code, a name or an email');
-    expect(job.goal).toContain('never open a page under /payments/');
+    expect(HANDOFF_MS).toBe(600_000);
+    expect(w.handOffs).toEqual([{
+      url: LOGIN_URL,
+      plan: { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], steps: [{ op: 'click', role: 'textbox', text: 'mobile' }], timeoutMs: HANDOFF_PAGE_MS },
+      o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB },
+    }]);
     expect(await w.state()).toBe('logging_in');
     expect(w.last()).toMatchObject({
       card_id: `c_login_${w.tripId}_0`, title: 'Logging in to ixigo',
-      actions: [{ action_id: 'ixigo_logged_in', label: "I'm logged in" }, { action_id: 'ixigo_not_now', label: 'Not now' }],
+      body: "ixigo's log in is open on Go's screen. Rahul: tap Watch, log in with your phone, then tap I'm logged in.",
+      actions: [
+        { action_id: 'ixigo_watch', label: 'Watch', style: 'primary' },
+        { action_id: 'ixigo_logged_in', label: "I'm logged in", only_for_person_ids: ['p_rahul'] },
+        { action_id: 'ixigo_not_now', label: 'Not now', only_for_person_ids: ['p_rahul'] },
+      ],
+    });
+    // Watch is everyone's: anyone can see Go's screen.
+    expect(w.last().actions[0]).not.toHaveProperty('only_for_person_ids');
+  });
+
+  it('Watch gives the person logging in control and anyone else a view, and opens nothing while the log in is not open', async () => {
+    const w = world();
+    await w.setup();
+    expect(await w.tap('ixigo_watch', 'p_rahul')).toEqual({ result: 'refused', toast: "ixigo's log in isn't open on Go's screen now" });
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.tap('ixigo_watch', 'p_rahul')).toEqual({ result: 'open', url: 'https://screen.example/control', expires_at: '2026-10-08T06:15:00.000Z' });
+    expect(await w.tap('ixigo_watch', 'p_priya')).toEqual({ result: 'open', url: 'https://screen.example/view', expires_at: '2026-10-08T06:15:00.000Z' });
+    expect(w.sessions).toEqual([[w.tripId, 'control'], [w.tripId, 'view']]);
+  });
+
+  it("needs no hand-off when ixigo's log in page says the browser is logged in already: the tab closes and the card says so", async () => {
+    const w = world({ opened: 200 });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    expect(w.releases).toEqual([LOGIN_TAB]);
+    expect(w.last()).toMatchObject({ title: 'ixigo: logged in as Rahul' });
+  });
+
+  it("keeps a log in page that ran out of time in front for them; one Go's computer would not open goes back to the ask, saying so", async () => {
+    const slow = world({ opened: 'timeout' });
+    await slow.setup();
+    await slow.tap('ixigo_login', 'p_rahul');
+    expect(await slow.state()).toBe('logging_in');
+    expect(slow.releases).toEqual([]);
+
+    const refused = world({ opened: 'refused' });
+    await refused.setup();
+    await refused.tap('ixigo_login', 'p_rahul');
+    expect(await refused.state()).toBe('asked');
+    expect(refused.last()).toMatchObject({
+      title: 'Link ixigo for this trip',
+      body: "Go couldn't open ixigo's log in on its screen just now. Tap Log in to ixigo to try again.",
+      actions: [{ action_id: 'ixigo_login' }, { action_id: 'ixigo_not_now' }],
     });
   });
 
-  it('Not now while the job runs stops it, so its end posts nothing; the hand-off is never answered', async () => {
+  it('Not now closes the log in on Go\'s screen; a login started as a job before stops it too, and its hand-off is never answered', async () => {
     const w = world();
     await w.setup();
     await w.tap('ixigo_login', 'p_rahul');
     expect(await w.tap('ixigo_not_now', 'p_rahul')).toEqual({ result: 'done', toast: 'Go will ask again when a booking needs it' });
-    expect(w.stops).toEqual(['gt_login_1']);
-    expect(w.handoffs).toEqual([]);
+    expect(w.releases).toEqual([LOGIN_TAB]);
+    expect(w.stops).toEqual([]);
     expect(await w.state()).toBe('skipped');
     expect(w.last()).toMatchObject({ title: 'ixigo login skipped', actions: [{ action_id: 'ixigo_login' }] });
+
+    const old = world();
+    await old.setup();
+    await old.tap('ixigo_login', 'p_rahul');
+    await db.pool.query("update ixigo_logins set task_id = 'gt_login_old' where trip_id = $1", [old.tripId]);
+    await old.tap('ixigo_not_now', 'p_rahul');
+    expect(old.stops).toEqual(['gt_login_old']);
+    expect(old.handoffs).toEqual([]);
   });
 
-  it("I'm logged in settles the job's hand-off, and ixigo's own answer decides by its status alone: 401 is not yet, 200 is logged in as Rahul", async () => {
+  it("I'm logged in: ixigo's own answer decides by its status alone; 401 keeps the log in in front, 200 closes it and says logged in as Rahul", async () => {
     const w = world({ statuses: [401, 200] });
     await w.setup();
     await w.tap('ixigo_login', 'p_rahul');
 
     expect(await w.tap('ixigo_logged_in', 'p_rahul')).toEqual({ result: 'done', toast: 'Checking your login' });
-    expect(w.handoffs).toEqual([['gt_login_1', 'done']]);
-    expect(w.stops).toEqual([]);
+    // No job to settle.
+    expect(w.handoffs).toEqual([]);
     // ixigo's home page, keeping one byte of its userinfo call: the status is read, the account never is.
     expect(w.reads.at(-1)).toEqual({ url: 'https://www.ixigo.com/', plan: STATUS_PLAN });
     expect(await w.state()).toBe('logging_in');
-    expect(w.last().body).toBe("Go can't see ixigo logged in yet. Finish the login on Go's screen (Watch on its card), then tap I'm logged in again.");
+    expect(w.releases).toEqual([]);
+    expect(w.last().body).toBe("Go can't see ixigo logged in yet. Finish the login on Go's screen (Watch), then tap I'm logged in again.");
 
     await w.tap('ixigo_logged_in', 'p_rahul');
     expect(await w.state()).toBe('logged_in');
+    expect(w.releases).toEqual([LOGIN_TAB]);
     expect(w.last()).toMatchObject({
       card_id: `c_login_${w.tripId}_0`, title: 'ixigo: logged in as Rahul',
       body: "Since 8 Oct. Searches and bookings for this trip use Rahul's ixigo account; the group never sees its details, and Go never opens the payment page.",

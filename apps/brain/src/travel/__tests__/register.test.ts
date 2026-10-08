@@ -52,7 +52,7 @@ describe('registerTravel', () => {
     // watch_ixigo and stop_watch: the watches a group asks Go to keep on ixigo (travel/recipe-watches.ts).
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo', 'compare_ways_there', 'watch_ixigo', 'stop_watch']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual([
-      'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/see_on_ixigo',
+      'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/see_on_ixigo',
       'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
     ]);
     expect(lb.context.wakes.has('tap')).toBe(true);
