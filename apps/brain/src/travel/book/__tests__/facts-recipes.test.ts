@@ -145,8 +145,7 @@ describe('a stay from search results', () => {
       get: async (tripId: string, id: string) => (tripId === 't_goa' && id === 'r_ab12' ? { options: [{ sourceUrl: HIGH_FIVE }, { sourceUrl: MOJIGAO }] } : null),
     } as unknown as Pick<ResultsStore, 'get'>;
     const tool = ixigoTool({ book, engine, results, live: () => true })!;
-    expect(tool.description).toContain('- hotels.reviews: What guests said about a stay');
-    expect(tool.description).toContain('hotel (an option from search results, written results_id#n, like r_ab12#2)');
+    expect(tool.description).toContain('- hotels.reviews (hotel#): What guests said about a stay.');
     const turn = { tripId: 't_goa', turnId: 'turn_1', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
     const out = (await tool.run({ recipe: 'hotels.reviews', inputs: { hotel: 'r_ab12#2' } }, turn)) as { facts: unknown[]; source: string; title: string };
     expect(runs.map((r) => r.url)).toEqual([MOJIGAO]);

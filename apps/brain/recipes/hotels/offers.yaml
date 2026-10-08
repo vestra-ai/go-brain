@@ -4,6 +4,7 @@ asks:
   - any hotel offers for our goa stay
   - hdfc card discount on hotels?
   - hotel coupon code on ixigo
+  - goa hotel booking pe koi offer hai kya
 inputs:
   place: { kind: place, lookup: hotels.place_lookup, about: "the city, area or region to stay in" }
   check_in: { kind: date }

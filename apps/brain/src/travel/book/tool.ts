@@ -1,7 +1,10 @@
 /**
  * The ixigo tool: any facts recipe in the book by its id, beyond the four searches (their own tools). Its description is
- * the book itself: each recipe's id, title, inputs and how people ask for it. The facts come back for the model to say
- * in its own words. A recipe that changes something on ixigo is not offered here: it waits for the group's yes.
+ * the book itself, one short line a recipe (its id, its inputs and what it answers), so it stays cheap as the book grows:
+ * it rides in every composer call, and it is the same bytes on every turn, so the prompt cache holds it. How people ask
+ * for a recipe (its asks) is for Jev and the tests, not here; a call that goes wrong answers with the recipe's inputs in
+ * full. The facts come back for the model to say in its own words. A recipe that changes something on ixigo is not
+ * offered here: it waits for the group's yes.
  */
 import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../../composer/tools.js';
@@ -31,14 +34,45 @@ export function toolRecipes(book: Pick<Book, 'all'>): RecipeFile[] {
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/** One recipe as the model reads it in the tool's description. */
+/** A recipe's inputs the model gives (not the ones worked out from the others), by name. */
+const givenInputs = (r: RecipeFile) => Object.entries(r.inputs).filter(([, i]) => !i.value);
+
+/** A title's first clause: "A destination's guide on ixigo, with the best time to go, …" says "A destination's guide on ixigo". */
+const firstClause = (title: string): string => title.split(/,\s|\s\(|;\s|:\s/)[0]!.replace(/\.$/, '');
+
+/**
+ * One recipe as the model reads it in the tool's description: "- plan.explore (origin, month, theme?): Where to go from a
+ * city in a month. theme: one of ixigo's themes: …". Inputs marked ? are optional, # an option from search results. A
+ * choice's values are said, since the model can't guess them; any other input's details come with an answer that went
+ * wrong.
+ */
 function line(r: RecipeFile): string {
-  const inputs = Object.entries(r.inputs)
-    .filter(([, i]) => !i.value)
-    .map(([name, i]) => `${name}${i.optional ? '?' : ''}${i.kind === 'option' ? ' (an option from search results, written results_id#n, like r_ab12#2)' : i.about ? ` (${i.about})` : ''}`)
-    .join(', ');
-  return `- ${r.id}: ${r.title}. Inputs: ${inputs || 'none'}. Asked as: "${r.asks.slice(0, 2).join('", "')}".`;
+  const inputs = givenInputs(r).map(([name, i]) => `${name}${i.kind === 'option' ? '#' : ''}${i.optional ? '?' : ''}`).join(', ');
+  const choices = givenInputs(r).filter(([, i]) => i.kind === 'choice' && i.about).map(([name, i]) => ` ${name}: ${i.about!.replace(/\s+/g, ' ').trim()}.`);
+  return `- ${r.id}${inputs ? ` (${inputs})` : ''}: ${firstClause(r.title)}.${choices.join('')}`;
 }
+
+/** The tool's description: the recipes in id order, a blank line between sections, the same bytes on every turn. */
+export function bookLines(recipes: RecipeFile[]): string {
+  const out: string[] = [];
+  let section: string | null = null;
+  for (const r of recipes) {
+    const s = r.id.split('.')[0]!;
+    if (section !== null && s !== section) out.push('');
+    section = s;
+    out.push(line(r));
+  }
+  return out.join('\n');
+}
+
+/** A recipe's inputs in full, for the model to call it again after an answer that went wrong. */
+const inputsOf = (r: RecipeFile | undefined): Record<string, string> =>
+  Object.fromEntries(
+    (r ? givenInputs(r) : []).map(([name, i]) => [
+      name,
+      `${i.optional ? 'optional; ' : ''}${i.kind === 'option' ? 'an option from search results, written results_id#n, like r_ab12#2' : (i.about ?? i.kind).replace(/\s+/g, ' ').trim()}`,
+    ]),
+  );
 
 /** Go names a place only from ixigo's own data: what the room is told about the facts it gets. */
 export const NAMES_ONLY_FROM_IXIGO =
@@ -60,8 +94,9 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
   return {
     name: 'ixigo',
     description:
-      "Runs one of Go's ixigo.com recipes in the trip's browser and answers with what ixigo shows. Use it for what the " +
-      `searches don't cover. The recipes:\n${recipes.map(line).join('\n')}`,
+      "Runs one of Go's ixigo.com recipes in the trip's browser and answers with what ixigo shows, for what the searches " +
+      "don't cover. A line a recipe: its id, its inputs (? optional, # an option from this trip's search results, written " +
+      `results_id#n like r_ab12#2) and what it answers.\n${bookLines(recipes)}`,
     input: z.object({
       recipe: z.enum(ids).describe('The recipe id'),
       inputs: z.record(z.string(), Value).describe('The recipe\'s inputs by name, places as the person said them, dates as YYYY-MM-DD'),
@@ -74,7 +109,7 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
       for (const [name, input] of Object.entries(recipe?.inputs ?? {})) {
         if (input.kind !== 'option' || given[name] === undefined) continue;
         const page = await optionPage(String(given[name]), ctx.tripId);
-        if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n, from a search.` };
+        if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n, from a search.`, inputs: inputsOf(recipe) };
         given[name] = page;
       }
       try {
@@ -87,7 +122,8 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
       } catch (err) {
         if (!(err instanceof TravelError)) throw err;
         if (err.code === 'pick_place') return { recipe: a.recipe, choose: err.message };
-        return { recipe: a.recipe, error: err.code, note: clip(err.message, 200) };
+        // The description says each input's name only: an answer that went wrong says them in full, to call again with.
+        return { recipe: a.recipe, error: err.code, note: clip(err.message, 200), inputs: inputsOf(recipe) };
       }
     },
   };

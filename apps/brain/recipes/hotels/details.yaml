@@ -6,6 +6,7 @@ asks:
   - what time is check-in there
   - are kids allowed at that hotel
   - how far is it from the beach
+  - is villa mein pool hai kya
 inputs:
   hotel: { kind: option, about: "the stay, one of Go's search results" }
 auth: none
