@@ -9,7 +9,7 @@ import { fakeLink, fakePacks, goaPack, goaTrip, msg } from '../../proactive/fake
 import type { TaskBrief } from '../../tasks/tasks.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
-import { createIxigoLogin, HELLO_WAIT_MS, RECHECK_MS, USERINFO } from '../login.js';
+import { createIxigoLogin, HELLO_WAIT_MS, LOGIN_URL, RECHECK_MS, USERINFO } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
 import { IXIGO, type FetchPlan } from '../recipes/recipe.js';
@@ -238,13 +238,14 @@ describe('logging in', () => {
     expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: "Opening ixigo on Go's computer" });
     expect(w.starts).toHaveLength(1);
     const job = w.starts[0]!;
-    // Its end posts nothing: the login card speaks for it.
-    expect(job).toMatchObject({ title: 'Logging in to ixigo', askedBy: 'p_rahul', returnsKind: 'answer', quiet: true, steps: ['Open ixigo.com', 'Open the log in box', 'Hand over the log in'] });
-    // The fewest steps: its own to-do list is Go's, two clicks leave the box open on the mobile number, and the hand-off
-    // comes at once, with no check before it.
-    expect(job.goal).toContain('Your to-do list is exactly these three steps: "Open ixigo.com", "Open the log in box", "Hand over the log in".');
-    expect(job.goal).toContain('Open https://www.ixigo.com/ in the browser and click "Log in/Sign up" at the top right of the page.');
-    expect(job.goal).toContain('click into that field and type nothing');
+    // Neither its hand-off nor its end posts a line: the login card speaks for it.
+    expect(job).toMatchObject({ title: 'Logging in to ixigo', askedBy: 'p_rahul', returnsKind: 'answer', quiet: true, steps: ["Open ixigo's log in", 'Click the mobile number box', 'Hand over the log in'] });
+    // The fewest steps: its own to-do list is Go's, ixigo's own address opens the log in box (the button only when it
+    // didn't), one click puts the cursor in the mobile number, and the hand-off comes at once, with no check before it.
+    expect(LOGIN_URL).toBe('https://www.ixigo.com/?loginVisible=true');
+    expect(job.goal).toContain('Your to-do list is exactly these three steps: "Open ixigo\'s log in", "Click the mobile number box", "Hand over the log in".');
+    expect(job.goal).toContain('Open https://www.ixigo.com/?loginVisible=true in the browser: the page opens with its log in box showing a field for the mobile number (only if the box is not there, click "Log in/Sign up" at the top right).');
+    expect(job.goal).toContain('Click into the mobile number field and type nothing.');
     expect(job.goal).toContain('hand the browser to the person at once, checking nothing first');
     expect(job.goal).toContain('end the job at once with the summary "Done"');
     expect(job.goal).not.toContain('top bar');
