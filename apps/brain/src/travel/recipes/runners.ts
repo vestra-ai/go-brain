@@ -35,7 +35,14 @@ export interface FetchTrace {
 
 /** onProgress: pictures of the page, for the live search card; onTrace: where the time went, for the run strip. Both
  *  called, never awaited. */
-export interface ReadOptions { signal?: AbortSignal; onProgress?: OnProgress; onTrace?: (t: FetchTrace) => void }
+export interface ReadOptions {
+  signal?: AbortSignal;
+  onProgress?: OnProgress;
+  onTrace?: (t: FetchTrace) => void;
+  /** Its place among fetches waiting for one of the computer's slots: lower goes first (a composite's trains before its
+   *  buses); the same, first come first served. None is 0. */
+  priority?: number;
+}
 
 export interface RecipeRunner {
   name: 'browser_fetch';
@@ -73,19 +80,19 @@ const BUSY_WAIT_MS = 1_000;
  * for no more at once than Bash runs: a fetch over the count waits here for one to end, first come first served, instead
  * of being refused. A fetch that is waiting when its signal aborts leaves without asking Bash anything.
  */
-function fetchSlots(slots: () => number): (box: string, signal?: AbortSignal) => Promise<() => void> {
+function fetchSlots(slots: () => number): (box: string, signal?: AbortSignal, priority?: number) => Promise<() => void> {
   const running = new Map<string, number>();
-  const waiting = new Map<string, Array<() => void>>();
+  const waiting = new Map<string, Array<{ go: () => void; priority: number }>>();
   const room = (box: string): boolean => (running.get(box) ?? 0) < Math.max(1, slots());
   const pump = (box: string): void => {
     const queue = waiting.get(box);
     while (queue?.length && room(box)) {
       running.set(box, (running.get(box) ?? 0) + 1);
-      queue.shift()!();
+      queue.shift()!.go();
     }
     if (queue?.length === 0) waiting.delete(box);
   };
-  return async (box, signal) => {
+  return async (box, signal, priority = 0) => {
     if (signal?.aborted) throw signal.reason;
     if (room(box) && !waiting.has(box)) {
       running.set(box, (running.get(box) ?? 0) + 1);
@@ -94,16 +101,23 @@ function fetchSlots(slots: () => number): (box: string, signal?: AbortSignal) =>
         const queue = waiting.get(box) ?? [];
         waiting.set(box, queue);
         const stop = (): void => {
-          queue.splice(queue.indexOf(go), 1);
+          queue.splice(queue.indexOf(entry), 1);
           if (queue.length === 0) waiting.delete(box);
           reject(signal!.reason);
         };
-        const go = (): void => {
-          signal?.removeEventListener('abort', stop);
-          resolve();
+        const entry = {
+          priority,
+          go: (): void => {
+            signal?.removeEventListener('abort', stop);
+            resolve();
+          },
         };
         signal?.addEventListener('abort', stop, { once: true });
-        queue.push(go);
+        // After every waiting fetch of its priority or a lower one; then whoever is first goes, if there is room (the
+        // slots were raised while fetches waited).
+        const at = queue.findIndex((w) => w.priority > priority);
+        queue.splice(at === -1 ? queue.length : at, 0, entry);
+        pump(box);
       });
     }
     let freed = false;
@@ -212,8 +226,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   }
 
   /** A fetch on the trip's computer, once one of its slots is free; the slot frees when the fetch ends, however it ends. */
-  async function inSlot<T>(tripId: string, signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
-    const free = await slot(d.computer.userIdFor(tripId), signal);
+  async function inSlot<T>(tripId: string, o: Pick<ReadOptions, 'signal' | 'priority'>, run: () => Promise<T>): Promise<T> {
+    const free = await slot(d.computer.userIdFor(tripId), o.signal, o.priority);
     try {
       return await run();
     } finally {
@@ -332,9 +346,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   return {
     name: 'browser_fetch',
     async read(tripId, url, plan, o = {}) {
-      return inSlot(tripId, o.signal, () => fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o));
+      return inSlot(tripId, o, () => fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o));
     },
-    pageFetch: (tripId, call, o = {}) => inSlot(tripId, o.signal, () => pageFetch(tripId, call, o)),
+    pageFetch: (tripId, call, o = {}) => inSlot(tripId, o, () => pageFetch(tripId, call, o)),
     canPageFetch: () => d.now().getTime() >= unsupportedUntil,
   };
 }

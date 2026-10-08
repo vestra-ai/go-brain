@@ -114,7 +114,13 @@ export const registerTravel: RegisterLane = async (brain) => {
   const recipesTool = ixigoTool({ book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
   if (recipesTool) brain.tools.register(recipesTool);
   // How everyone gets to the trip, asked for: each home city's trains and buses side by side, on one card.
-  brain.tools.register(waysThereTool({ engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' }));
+  brain.tools.register(
+    waysThereTool({
+      engine, results, link: brain.door.link, now: brain.now, log: brain.log,
+      live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+      slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')),
+    }),
+  );
   // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
   // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
   for (const t of watchTools({ pool: brain.pool, book, engine, switches: brain.switches, now: brain.now })) brain.tools.register(t);

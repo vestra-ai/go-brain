@@ -137,12 +137,27 @@ export interface RunFor {
   /** A step of a composite: the composite's run, and the entry the step runs for (its lane on the strip). */
   stepOf?: string;
   lane?: string;
+  /** Its fetches' place among those waiting for the computer's slots: lower first (runners.ts). */
+  priority?: number;
+  /** A composite's steps as they go: its entries once it knows them, then each step as it ends (ok: it answered). */
+  onSteps?: (e: StepsEvent) => void;
   /**
    * A check nobody is waiting on (a watch the group asked for): it never holds the trip's computer awake (no warm) and
    * keeps no tab open there (no fast speed), so the computer sleeps again right after the page.
    */
   background?: boolean;
 }
+
+export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
+
+/** A check nobody is waiting on (a watch) waits behind every fetch a person is. */
+export const BACKGROUND_PRIORITY = 9;
+
+/** What a run's fetches carry to the runner: when to stop, and their place in the computer's queue. */
+const fetchFor = (o: RunFor): { signal?: AbortSignal; priority: number } => ({
+  ...(o.signal ? { signal: o.signal } : {}),
+  priority: o.priority ?? (o.background ? BACKGROUND_PRIORITY : 0),
+});
 
 /**
  * A step's run on the strip names its composite (step_of) and its lane. Not parent: a parent's run is a lookup, nested
@@ -329,7 +344,7 @@ export function createEngine(d: EngineDeps) {
               fetches.map((f) => {
                 lookupRun.step(`opened ${pathOf(f.path)}`);
                 return runner.read(o.tripId, `${IXIGO}${f.path}`, { capture: f.capture, steps: f.steps }, {
-                  ...(o.signal ? { signal: o.signal } : {}),
+                  ...fetchFor(o),
                   onProgress: (e) => {
                     if (e.type === 'frames') lookupRun.frames(e.frames, fetchStarted);
                   },
@@ -502,7 +517,7 @@ export function createEngine(d: EngineDeps) {
           ...(recipe.fast.body ? { body: await fill(recipe.fast.body, inputs, { url: false, bindings }) } : {}),
         };
         const fastRun = strip.line;
-        const got = await runner.pageFetch(o.tripId, call, { ...(o.signal ? { signal: o.signal } : {}), onTrace: (t) => fastRun.trace(t) });
+        const got = await runner.pageFetch(o.tripId, call, { ...fetchFor(o), onTrace: (t) => fastRun.trace(t) });
         const absolute = new URL(got.url || url, IXIGO).toString();
         refusePayments(absolute);
         // A call in a shape of its own (trains: confirmtkt's, where the page reads www.ixigo.com's) reads with the fast
@@ -532,7 +547,7 @@ export function createEngine(d: EngineDeps) {
     o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
     pageRun.step(`opened ${pathOf(page)}`);
     const got = await runner.read(o.tripId, page, plan, {
-      ...(o.signal ? { signal: o.signal } : {}),
+      ...fetchFor(o),
       // The pictures go to the live card as before, and to the run strip's browser pane.
       onProgress: (e) => {
         if (e.type === 'frames') pageRun.frames(e.frames, started);
@@ -578,11 +593,14 @@ export function createEngine(d: EngineDeps) {
       if (entries.length === 0) throw new TravelError('needs_more', `${recipe.title} has no ${steps.as.replace(/_/g, ' ')} to run for yet.`);
       const composite = line(o.tripId, { recipe_id: recipe.id, label: `${entries.map((e) => clip(e, 30)).join(', ')} · ${labelOf(recipe, inputs)}`, speed: 'steps' });
       strip = composite;
-      const stepFor = async (entry: string, step: NonNullable<RecipeFile['steps']>['run'][number]): Promise<StepAnswer> => {
+      o.onSteps?.({ type: 'entries', entries });
+      // A step's fetches wait their turn by its place in the file: every city's first step (trains, the slower page)
+      // takes the computer's slots before any city's second.
+      const stepFor = async (entry: string, step: NonNullable<RecipeFile['steps']>['run'][number], priority: number): Promise<StepAnswer> => {
         try {
           const stepGiven: Record<string, unknown> = {};
           for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
-          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, ...(o.conditions ? { conditions: o.conditions } : {}) };
+          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority, ...(o.conditions ? { conditions: o.conditions } : {}) };
           const own = (signal?: AbortSignal): Promise<EngineAnswer> => answer(step.recipe, stepGiven, { ...stepRun, ...(signal ? { signal } : {}) });
           // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load. A
           // step's own search is kept for the next ask, so the composite's time never cuts it short: it finishes in the
@@ -597,7 +615,12 @@ export function createEngine(d: EngineDeps) {
           return { recipe: step.recipe, why: whyOf(err) };
         }
       };
-      const done = await Promise.all(entries.map(async (entry) => ({ entry, steps: await Promise.all(steps.run.map((step) => stepFor(entry, step))) })));
+      const told = async (entry: string, step: NonNullable<RecipeFile['steps']>['run'][number], priority: number): Promise<StepAnswer> => {
+        const s = await stepFor(entry, step, priority);
+        o.onSteps?.({ type: 'step', entry, recipe: s.recipe, ok: !!s.answer });
+        return s;
+      };
+      const done = await Promise.all(entries.map(async (entry) => ({ entry, steps: await Promise.all(steps.run.map((step, i) => told(entry, step, i))) })));
       const at = d.now();
       const out: EngineAnswer = { as: 'compare', inputs, entries: done, checkedAt: at.toISOString(), ms: at.getTime() - started };
       const rows = rowsOf(out);

@@ -9,7 +9,7 @@ import { createIxigoWebBackend } from '../../recipes/backend.js';
 import { createBrowserFetchRunner } from '../../recipes/runners.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { BOOK_DIR, checkRecipe, loadBook } from '../book.js';
-import { createEngine, type EngineAnswer } from '../engine.js';
+import { createEngine, type EngineAnswer, type StepsEvent } from '../engine.js';
 import type { RunEvent } from '../run-event.js';
 
 afterEach(() => forgetLearnedPlaces());
@@ -85,6 +85,57 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     expect(starts.find((e) => e.recipe_id === 'buses.city_lookup')).toMatchObject({ parent: delhiBuses.run_id });
     // The composite ends last, with the steps that answered.
     expect(events.at(-1)).toMatchObject({ type: 'run_end', run_id: composite.run_id, ok: true, rows: 5 });
+  });
+
+  it("puts every city's trains ahead of its buses in the computer's queue, and tells each step as it ends", async () => {
+    const asked = new Set<string>();
+    const said: StepsEvent[] = [];
+    const runner = {
+      read: async (_trip: string, url: string, _plan: FetchPlan, o?: { priority?: number }) => {
+        asked.add(`${url.includes('/train/') ? 'train page' : url.includes('/bus_search/') ? 'bus page' : 'bus box'} ${o?.priority}`);
+        return { captures: pageFor(url) ?? [], finalUrl: url };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => trip, now: () => new Date('2026-10-08T12:00:00Z') });
+    await engine.answer(WAYS, {}, { tripId: 't_goa', onSteps: (e) => said.push(e) });
+    // Trains are the file's first step: priority 0. A city's buses, their page and ixigo's box alike, come after.
+    expect([...asked].sort()).toEqual(['bus box 1', 'bus page 1', 'train page 0']);
+    expect(said[0]).toEqual({ type: 'entries', entries: ['Delhi', 'Mumbai'] });
+    expect(said.slice(1).map((e) => (e.type === 'step' ? `${e.entry} ${e.recipe} ${e.ok}` : e.type)).sort()).toEqual([
+      'Delhi buses.between false', 'Delhi flights.search true', 'Delhi trains.between true',
+      'Mumbai buses.between true', 'Mumbai flights.search true', 'Mumbai trains.between true',
+    ]);
+  });
+
+  it('puts a check nobody waits on (a watch) behind every search a person is waiting on, even one that came after it', async () => {
+    const asked: string[] = [];
+    const ends: Array<() => void> = [];
+    const v1 = {
+      async call<T>(_m: string, _p: string, o: { body?: { url?: string } } = {}): Promise<T> {
+        const url = o.body?.url ?? '';
+        asked.push(/\/(\d\d)-11-2026\//.exec(url)?.[1] ?? url);
+        await new Promise<void>((r) => ends.push(r));
+        return { final_url: url, elapsed_ms: 900, woke: false, captures: pageFor(url) ?? [] } as T;
+      },
+    };
+    const runner = createBrowserFetchRunner({
+      v1, computer: { userIdFor: (t) => `u-${t}`, ensureUser: async (t) => `u-${t}` }, now: () => new Date(), log: { warn: () => undefined }, slots: () => 1,
+    });
+    const engine = createEngine({ book, runner: () => runner, trip: async () => trip, now: () => new Date('2026-10-08T12:00:00Z') });
+    const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
+    const buses = (date: string, background = false) =>
+      engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date }, { tripId: 't_goa', ...(background ? { background } : {}) }).catch(() => undefined);
+    const runs = [buses('2026-11-06')];
+    await settle();
+    runs.push(buses('2026-11-07', true));
+    await settle();
+    runs.push(buses('2026-11-08'));
+    while (asked.length < 3 || ends.length > 0) {
+      await settle();
+      ends.shift()?.();
+    }
+    await Promise.all(runs);
+    expect(asked).toEqual(['06', '08', '07']);
   });
 
   it("asks the trip's computer for no more pages at once than its slots: the rest wait their turn", async () => {
