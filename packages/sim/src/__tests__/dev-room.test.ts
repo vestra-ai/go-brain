@@ -642,6 +642,26 @@ describe("Go Live's login panel", () => {
     expect(p.el('login-frame').innerHTML).toBe('');
   });
 
+  it("shows Go's heads-up in the sheet when I'm logged in found no login yet, and keeps the screen", () => {
+    const p = loggingIn();
+    expect(p.el('login-note').hidden).toBe(true);
+    // Go's answer to the tap is a toast; then the card itself turns to a heads-up, which the person in the sheet sees.
+    const notYet = loginCard('logging_in');
+    Object.assign(notYet.card, { tone: 'heads_up', body: 'Not logged in yet. Finish on Watch, then tap again.' });
+    p.messages([notYet], 1000);
+    expect(p.el('login-note').hidden).toBe(false);
+    expect(p.el('login-note').textContent).toBe('Not logged in yet. Finish on Watch, then tap again.');
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    expect(p.el('login-frame').writes).toBe(1);
+    expect(p.sent()).toEqual([WATCH_TAP]);
+    // The next tap finds the login: the card is replaced, and the column goes back to the live view.
+    p.messages([loginCard('logged_in')], 1000);
+    expect(p.el('login').hidden).toBe(true);
+    // A card in its usual tone says nothing extra.
+    const q = loggingIn();
+    expect(q.el('login-note').textContent).toBe('');
+  });
+
   it('keeps the screen while you play someone else, so a half-typed number is still there when you come back', () => {
     const p = loggingIn();
     expect(p.el('login-frame').writes).toBe(1);
