@@ -2,7 +2,9 @@
 // Go's live view (/v1/live) as the try room relays it. On the left the chat as it is; on the right the pages Go's computer
 // has open, live (Bash's browser watch, one tile per tab, a grid with more than one), or, with none open, one tile per run
 // going at once from each run's own pictures; and the run strip: each run's recipe, speed, data calls and times, newest
-// first, with a group of parallel runs as one block whose wall time is set against its sum.
+// first, with a group of parallel runs as one block whose wall time is set against its sum. A group of steps (how we all
+// get there, one search per home city) has a tile across the top saying how many steps are done, its steps below it,
+// each named by its city.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
 
@@ -38,6 +40,9 @@ export const LIVE_CSS = `
 .speed.page { background: #d97706; }
 .speed.link { background: #64748b; }
 .speed.kept { background: #0891b2; }
+.speed.steps { background: #7c3aed; }
+.tile.group { grid-column: 1 / -1; }
+.group-line { padding: 8px 10px; font-size: 13px; color: var(--muted); }
 .speed.live { background: #dc2626; }
 .view.hidden { background: #0f172a; }
 .view.hidden .hint { color: #cbd5e1; }
@@ -83,7 +88,7 @@ export const LIVE_SCRIPT = `
   var live = { trip: null, state: 'wait', why: '', runs: {}, order: [], groups: {}, frames: {}, screen: { state: null, tabs: {}, order: [] } };
   var HOLD_MS = 2000;
   var PLAY_MS = 2500;
-  var BADGE = { fast: 'FAST', page: 'PAGE', link: 'LINK', kept: 'KEPT' };
+  var BADGE = { fast: 'FAST', page: 'PAGE', link: 'LINK', kept: 'KEPT', steps: 'GROUP' };
 
   function liveReset() { live.runs = {}; live.order = []; live.groups = {}; live.frames = {}; live.screen = { state: null, tabs: {}, order: [] }; }
   function fmtMs(ms) { return ms == null ? '' : ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s'; }
@@ -116,7 +121,7 @@ export const LIVE_SCRIPT = `
           live.runs[e.run_id] = r;
           break;
         }
-        r = { id: e.run_id, ids: [e.run_id], recipe: e.recipe_id, label: e.label, parent: e.parent || null, group: e.group_id, at: Date.parse(e.at),
+        r = { id: e.run_id, ids: [e.run_id], recipe: e.recipe_id, label: e.label, parent: e.parent || null, stepOf: e.step_of || null, lane: e.lane || null, group: e.group_id, at: Date.parse(e.at),
           speeds: [e.speed], speedOf: {}, startOf: {}, msBefore: 0, lines: [], kids: [], ended: false, endAt: 0 };
         r.speedOf[e.run_id] = e.speed; r.startOf[e.run_id] = r.at;
         live.runs[r.id] = r;
@@ -186,12 +191,32 @@ export const LIVE_SCRIPT = `
   function topOf(r) { return r.parent && live.runs[r.parent] ? live.runs[r.parent] : r; }
   function going(r) { return !r.ended || (r.endAt && Date.now() - r.endAt < HOLD_MS); }
 
-  /** The runs on screen: those going, and those that just ended (held a moment), oldest first, at most four. */
+  function isGroupRun(r) { return r.speeds[r.speeds.length - 1] === 'steps'; }
+
+  /**
+   * The runs on screen: those going, and those that just ended (held a moment), oldest first, at most four. A group of
+   * steps (how we all get there) shows as its own tile across the top, then its steps, at most four; its link-only
+   * steps (flights) have no page and end at once, so they take no tile.
+   */
   function tilesNow() {
     var out = [];
     for (var i = live.order.length - 1; i >= 0; i--) { var r = live.runs[live.order[i]]; if (r && going(r)) out.push(r); }
-    return out.slice(-4);
+    var groups = out.filter(isGroupRun);
+    if (!groups.length) return out.slice(-4);
+    var steps = out.filter(function (x) { return !isGroupRun(x) && x.speeds[x.speeds.length - 1] !== 'link'; });
+    return groups.slice(-1).concat(steps.slice(0, 4));
   }
+
+  /** A group's own tile: how many of its steps are done, and once it ends, its wall time against the sum of its steps. */
+  function groupLine(r) {
+    var steps = live.order.map(function (id) { return live.runs[id]; }).filter(function (x) { return x && x.stepOf === r.id; });
+    var done = steps.filter(function (x) { return x.ended; }).length;
+    var g = live.groups[r.group];
+    var timing = g && g.ended ? ', wall ' + fmtMs(g.wall) + ' against ' + fmtMs(g.sum) + ' one after another' : '';
+    return steps.length + ' steps at once, ' + done + ' done' + timing;
+  }
+
+  function tileLabel(r) { return r.lane ? r.lane + ': ' + r.label : r.label; }
 
   /** The newest pictures of a run or its lookups, played back over at most PLAY_MS as they arrive; the last once played. */
   function pictureOf(r) {
@@ -267,7 +292,10 @@ export const LIVE_SCRIPT = `
       screen.setAttribute('data-key', key);
       screen.className = 'screen' + (tiles.length > 1 ? ' grid' : '');
       screen.innerHTML = tiles.length
-        ? tiles.map(function (r) { return '<div class="tile" data-run="' + esc(r.id) + '"><div class="tile-bar"></div><div class="view"><img alt=""><span class="hint"></span><span class="chip-fast"></span></div></div>'; }).join('')
+        ? tiles.map(function (r) {
+          if (isGroupRun(r)) return '<div class="tile group" data-run="' + esc(r.id) + '"><div class="tile-bar"></div><div class="group-line"></div></div>';
+          return '<div class="tile" data-run="' + esc(r.id) + '"><div class="tile-bar"></div><div class="view"><img alt=""><span class="hint"></span><span class="chip-fast"></span></div></div>';
+        }).join('')
         : '<div class="tile"><div class="view"><span class="hint"></span></div></div>';
     }
     if (!tiles.length) { screen.querySelector('.hint').textContent = emptyLine(); return; }
@@ -275,9 +303,15 @@ export const LIVE_SCRIPT = `
     for (var i = 0; i < els.length; i++) {
       var r = live.runs[els[i].getAttribute('data-run')];
       if (!r) continue;
+      if (isGroupRun(r)) {
+        els[i].className = 'tile group' + (r.ended ? ' ended' : '');
+        els[i].querySelector('.tile-bar').innerHTML = '<b>' + esc(r.label) + '</b>' + badges(r) + outcome(r);
+        els[i].querySelector('.group-line').textContent = groupLine(r);
+        continue;
+      }
       var pic = pictureOf(r);
       els[i].className = 'tile' + (r.ended ? ' ended' : '');
-      els[i].querySelector('.tile-bar').innerHTML = '<b>' + esc(r.label) + '</b>' + badges(r) + outcome(r) + '<span class="url">' + esc(pic ? 'ixigo.com' + pic.page : r.recipe) + '</span>';
+      els[i].querySelector('.tile-bar').innerHTML = '<b>' + esc(tileLabel(r)) + '</b>' + badges(r) + outcome(r) + '<span class="url">' + esc(pic ? 'ixigo.com' + pic.page : r.recipe) + '</span>';
       var view = els[i].querySelector('.view');
       view.className = 'view' + (idle ? ' idle' : '');
       var img = view.querySelector('img');
@@ -302,7 +336,7 @@ export const LIVE_SCRIPT = `
   function runHtml(r, child, extra) {
     var kids = r.kids.map(function (id) { return live.runs[id] ? runHtml(live.runs[id], true, '') : ''; }).join('');
     var lines = r.lines.slice().sort(function (a, b) { return a.at - b.at; }).slice(-8).map(function (l) { return '<div>' + esc(l.text) + '</div>'; }).join('');
-    return '<div class="' + (child ? 'child' : 'run') + '"><div class="run-line">' + (child ? '' : '<span class="t">' + clock(r.at) + '</span>') + '<b>' + esc(r.label) + '</b><span class="id">' + esc(r.recipe) + '</span>' + badges(r) + outcome(r) + '</div>' +
+    return '<div class="' + (child ? 'child' : 'run') + '"><div class="run-line">' + (child ? '' : '<span class="t">' + clock(r.at) + '</span>') + '<b>' + esc(tileLabel(r)) + '</b><span class="id">' + esc(r.recipe) + '</span>' + badges(r) + outcome(r) + '</div>' +
       (extra || '') + (lines ? '<div class="calls">' + lines + '</div>' : '') + kids + '</div>';
   }
 
@@ -337,7 +371,7 @@ export const LIVE_SCRIPT = `
   }
 
   function renderLive() {
-    var tiles = tilesNow();
+    var tiles = tilesNow().filter(function (r) { return !isGroupRun(r); });
     $('live-dot').className = 'dot' + (live.state === 'on' ? ' on' : '');
     var tabs = liveTabs().length;
     $('live-state').textContent = live.state === 'off' ? 'Off' : live.state === 'on'
