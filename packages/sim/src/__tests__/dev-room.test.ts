@@ -234,6 +234,13 @@ function pageInBrowser(html: string, o: { column: boolean }) {
       view.content = content;
       sockets[0].onmessage({ data: JSON.stringify({ type: 'state', connected: true, trip, messages: texts.map((t, i) => message(i, t)), typing: false, needs, about: [], limit: null }) });
     },
+    /** The page gets the room's state with these messages as they are, cards included. */
+    messages(list: object[], content: number) {
+      view.content = content;
+      sockets[0].onmessage({ data: JSON.stringify({ type: 'state', connected: true, trip, messages: list, typing: false, needs: {}, about: [], limit: null }) });
+    },
+    /** What the page drew in the room. */
+    room: (): string => el('room').innerHTML,
     /** The reader scrolls to `top`; the browser sends a scroll event. */
     scroll(top: number) {
       if (o.column) colTop = clamp(top);
@@ -317,5 +324,50 @@ describe('the chat stays at the bottom', () => {
     expect(PAGE_HTML).toContain('<button class="newpill" id="newpill" type="button" hidden>New messages ↓</button>');
     expect(PAGE_HTML).toContain('.newpill[hidden] { display: none; }');
     expect(PAGE_HTML).not.toContain('—');
+  });
+});
+
+describe("Go's live search card", () => {
+  const shot = 'https://brain.go.example/live/shot_1.jpg';
+  /** Go's message with its working card: a finished hotels search, its picture, and the page in it. */
+  const searchCard = (page_url: string | null) => ({
+    message_id: 'm_go_1', seq: 5, updated_seq: 5, author: { kind: 'go' }, text: 'Here are the villas I found.', attachments: [],
+    mentions_go: false, mentions: [], reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z',
+    card: {
+      kind: 'working', card_id: 'c_live_1', fallback_text: 'Searching hotels in Goa', task_id: 'task_1', title: 'Villas with a pool in North Goa',
+      state: 'done', steps: [{ text: 'Open ixigo hotels', state: 'done' }, { text: 'Read the results', state: 'done' }],
+      screenshot_url: shot, page_url, updated_at: '2026-10-08T10:00:00Z', actions: [],
+    },
+  });
+
+  it('shows no page address as text, only the picture, the steps and a "See on ixigo" button', () => {
+    const p = pageInBrowser(PAGE_HTML, { column: false });
+    const url = 'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&checkinDate=06112026&filters=FL_HF_29%2CMP';
+    p.messages([searchCard(url)], 1200);
+    const html = p.room();
+    const href = url.replace(/&/g, '&amp;');
+    expect(html).toContain(`<a class="act secondary" href="${href}" target="_blank" rel="noopener noreferrer">See on ixigo</a>`);
+    // The address is only ever the button's href: never between tags, where a person would read it.
+    expect(html.split(href)).toHaveLength(2);
+    expect(html).not.toMatch(/>[^<]*(https?:|ixigo\.com\/hotels)/);
+    expect(html).toContain(`<img alt="" src="${shot}"`);
+    expect(html).toContain('Read the results');
+  });
+
+  it('gives no button for a page that is not an ixigo.com page, and still shows no address', () => {
+    for (const other of ['https://ixigo.com.example.net/hotels', 'https://example.com/ixigo/hotels', 'javascript:alert(1)', null]) {
+      const p = pageInBrowser(PAGE_HTML, { column: false });
+      p.messages([searchCard(other)], 1200);
+      const html = p.room();
+      expect(html).not.toContain('See on ixigo');
+      if (other) expect(html).not.toContain(other);
+      expect(html).toContain('Read the results');
+    }
+    // An ixigo subdomain or the bare domain is ixigo.
+    for (const ixigo of ['https://ixigo.com/trains', 'https://www.ixigo.com/hotels/goa']) {
+      const p = pageInBrowser(PAGE_HTML, { column: false });
+      p.messages([searchCard(ixigo)], 1200);
+      expect(p.room()).toContain('See on ixigo');
+    }
   });
 });
