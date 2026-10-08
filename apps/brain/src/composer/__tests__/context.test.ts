@@ -5,6 +5,7 @@ import type { Message } from '../../door/methods.js';
 import { silentLog } from '../../log.js';
 import type { TripPack } from '../../trips/pack.js';
 import { createContext, formatTime, type TextBlock } from '../context.js';
+import { answersToGo } from '../fence.js';
 import { GO_RULES } from '../rules.js';
 import { tripNow } from '../trip-now.js';
 import { ASK_HOW_MUCH, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
@@ -237,6 +238,75 @@ describe('"Ask Go about this"', () => {
       ).user,
     );
     expect(text).toContain('#3 Arjun: (about #2) is this refundable?');
+  });
+});
+
+describe("a plain answer to Go's question", () => {
+  // Trip t_try_7f4e8e657c4f on staging (8 Oct): Go asked Rahul by name and, 48 minutes later with nothing in between,
+  // Rahul answered with no @Go and no reply. His line carried no mark, the turn read it as the group talking, and Go
+  // called stay_silent.
+  const ASKED = msg(50, null, "The stay search for North Goa didn't go through, ixigo wasn't reachable. Rahul, want me to try again?");
+  const later = (seq: number, personId: string, text: string, minutes = 48): Message =>
+    msg(seq, personId, text, { sent_at: new Date(Date.parse(ASKED.sent_at) + minutes * 60_000).toISOString() });
+  const ANSWER = later(51, 'p_rahul', 'heyy can you try creating the tickets now');
+  const woke = (m: Message): DeskItem => wake({ id: `w${m.seq}`, ref: m.message_id, payload: { messageId: m.message_id, namesGo: false } });
+  const chat = async (messages: Message[], items: DeskItem[] = []) => context().build(input(packOf(messages), 0, items));
+  const MARK = "(answers Go's question";
+
+  it('marks the answer, 48 minutes later with no @Go and no reply, and gives it no "doesn\'t name you" note', async () => {
+    const p = await chat([ASKED, ANSWER], [woke(ANSWER)]);
+    expect(all(p.user)).toContain("#51 Rahul: (answers Go's question #50) heyy can you try creating the tickets now");
+    expect(answersToGo(packOf([ASKED, ANSWER]))).toEqual(new Map([['m_51', 50]]));
+    expect(quietNote([woke(ANSWER)], packOf([ASKED, ANSWER]))).toBeNull();
+    expect(p.user.at(-2)?.text).not.toContain("doesn't name you");
+  });
+
+  it('no mark when someone else spoke in between, or Go posted again', async () => {
+    const priya = later(51, 'p_priya', 'lol ixigo down again', 10);
+    const rahul = later(52, 'p_rahul', 'heyy can you try creating the tickets now');
+    const p = await chat([ASKED, priya, rahul], [woke(rahul)]);
+    expect(all(p.user)).toContain('#52 Rahul: heyy can you try creating the tickets now');
+    expect(all(p.user)).not.toContain(MARK);
+    expect(quietNote([woke(rahul)], packOf([ASKED, priya, rahul]))).toMatch(/^#52 doesn't name you/);
+    const goAgain = all((await chat([ASKED, msg(51, null, 'Checking flights for the group meanwhile.'), rahul])).user);
+    expect(goAgain).not.toContain(MARK);
+  });
+
+  it('no mark when Go asked someone else: a question to Priya that Rahul answers', async () => {
+    const toPriya = msg(50, null, "The stay search didn't go through. Priya, want me to try again?");
+    expect(all((await chat([toPriya, ANSWER])).user)).not.toContain(MARK);
+    // Go's own mentions decide over the names in its words: it named both but @mentioned only Priya.
+    const mentionsPriya = msg(50, null, 'Rahul said Friday. Priya, want me to search Friday too?', { mentions: ['p_priya'] });
+    expect(answersToGo(packOf([mentionsPriya, ANSWER]))).toEqual(new Map());
+  });
+
+  it('marks an answer to a card pinned to that person, with no name in the words', async () => {
+    const pinned = msg(50, null, 'Ready when you are, shall I book it?', {
+      card: { kind: 'mandate', card_id: 'c_m', fallback_text: 'Ready to book Villa Sol', decision_id: 'd_stay', for_person_ids: ['p_rahul'] },
+    });
+    expect(answersToGo(packOf([pinned, later(51, 'p_rahul', 'yes go ahead')]))).toEqual(new Map([['m_51', 50]]));
+  });
+
+  it("no mark when Go's message was not a question, or its only \"?\" is in a link", async () => {
+    const told = msg(50, null, "The stay search for North Goa didn't go through, Rahul. I'll try again in a bit.");
+    expect(all((await chat([told, ANSWER])).user)).not.toContain(MARK);
+    const link = msg(50, null, 'Rahul, here is the page: https://www.ixigo.com/hotels?city=goa');
+    expect(answersToGo(packOf([link, ANSWER]))).toEqual(new Map());
+  });
+
+  it('marks only his first message after the question, never the second', async () => {
+    const second = later(52, 'p_rahul', 'and the flights too pls', 49);
+    const text = all((await chat([ASKED, ANSWER, second])).user);
+    expect(text).toContain("#51 Rahul: (answers Go's question #50) heyy");
+    expect(text).toContain('#52 Rahul: and the flights too pls');
+    expect(answersToGo(packOf([ASKED, ANSWER, second]))).toEqual(new Map([['m_51', 50]]));
+  });
+
+  it('a line made with the reply feature keeps its own mark only', async () => {
+    const replied = later(51, 'p_rahul', 'yes pls', 5);
+    const text = all((await chat([ASKED, { ...replied, reply_to: 'm_50' }])).user);
+    expect(text).toContain('#51 Rahul: (reply to #50) yes pls');
+    expect(text).not.toContain(MARK);
   });
 });
 
