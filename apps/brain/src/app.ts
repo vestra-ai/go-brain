@@ -70,10 +70,10 @@ export interface Brain {
   tasks?: Tasks;
   /**
    * Set by P4's tasks lane, which owns the trip's computer: the browser fetch the recipe engine reads ixigo.com pages
-   * with, and keepWarm, which holds the computer awake for two minutes (Bash's warm keep_ms). Only travel's
-   * warmForTravel calls it.
+   * with; keepWarm, which holds the computer awake for two minutes (Bash's warm keep_ms), which only travel's
+   * warmForTravel calls; and start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step.
    */
-  recipeRunners?: { browserFetch: RecipeRunner; keepWarm(tripId: string): void };
+  recipeRunners?: { browserFetch: RecipeRunner; keepWarm(tripId: string): void; start(tripId: string): Promise<void> };
   /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */
   recipeStats?: () => RecipeStat[];
   /** Set by P5. */
