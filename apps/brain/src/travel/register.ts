@@ -12,7 +12,7 @@ import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
-import { createIxigoLogin } from './login.js';
+import { createIxigoLogin, renderLoginResume } from './login.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
 import { startLiveSearch } from './live-search.js';
@@ -31,6 +31,7 @@ import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
+import { createWebStays } from './web-stays.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
 import { ProactiveStore } from '../proactive/store.js';
@@ -63,6 +64,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     packs: brain.packs,
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     tasks: () => brain.tasks ?? null,
+    desk: brain.desk,
     live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
     now: brain.now,
     log: brain.log,
@@ -161,6 +163,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     results,
     today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
+    // A stay from ixigo.com books on Go's test rail, after the trip's ixigo login and at ixigo's price now.
+    webStays: createWebStays({ results, runner: () => brain.recipeRunners?.browserFetch ?? null, login, now: brain.now }),
   });
   const today = tripToday(brain.pool, brain.now);
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today })) brain.tools.register(t);
@@ -207,5 +211,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));
   // Null for taps on other cards (pay, call): the next lane's renderer, or P1's generic line, reads those.
   brain.context.addWake('tap', renderOptionsTap);
+  // A booking that waited on the ixigo login, once the login is in.
+  brain.context.addWake('tap', renderLoginResume);
   brain.travel = travel;
 };

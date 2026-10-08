@@ -59,6 +59,10 @@ describe('money words', () => {
     expect(bookedLine({ title: 'Villa Sol, 3 nights', payer: 'Rahul', amount: '₹54,200', people: 5 })).toBe(
       'Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.',
     );
+    // A stay from ixigo.com, booked on Go's test rail only: the receipt says so, and never claims an ixigo booking.
+    expect(bookedLine({ title: 'Saudades Homestays, 3 nights', payer: 'Rahul', amount: '₹47,682', people: 5, simulated: true })).toBe(
+      "Booked (simulated): Saudades Homestays, 3 nights. Rahul's test payment of ₹47,682, split between all 5; nothing was booked on ixigo.",
+    );
     expect(failedLine({ payer: 'Rahul', what: 'Villa Sol', reason: 'card_declined' })).toBe(
       "Rahul, the payment for Villa Sol didn't go through (the bank declined the card). Nothing was charged. Want to try again?",
     );

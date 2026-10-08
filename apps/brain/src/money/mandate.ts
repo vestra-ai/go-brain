@@ -88,7 +88,7 @@ export async function setMandate(
   d: MoneyDeps,
   ctx: Pick<TurnCtx, 'tripId' | 'stableId' | 'cards' | 'pack'>,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
-): Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true }> {
+): Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; parked?: true }> {
   const vague = { payer: 'The payer', what: 'it' };
   let trip: Trip;
   try {
@@ -115,10 +115,35 @@ export async function setMandate(
   const payer = trip.people.find((p) => p.person_id === o.payerPersonId);
   if (!payer) return { refused: "That person isn't in this trip." };
 
+  // What the option needs first: a stay from ixigo.com needs the trip's ixigo login (the person is asked on its card, and
+  // this call waits on it, made again when the login is in), and its price is ixigo's now, not the vote's.
+  let live: number | null = null;
+  const prepare = chosen.option_ref ? d.travel()?.prepare : undefined;
+  if (prepare && chosen.option_ref) {
+    const resume = {
+      decision_id: o.decisionId, choice_index: o.choiceIndex, payer_person_id: payer.person_id, refundable_only: o.refundableOnly,
+      ...(o.capMinor !== undefined ? { cap_minor: o.capMinor } : {}),
+    };
+    let ready: Awaited<ReturnType<typeof prepare>>;
+    try {
+      ready = await prepare(chosen.option_ref, { tripId: ctx.tripId, what: chosen.label, resume });
+    } catch {
+      return { refused: `I couldn't check ${chosen.label} just now. Try again in a moment.` };
+    }
+    if (!ready.ok) return { refused: ready.note, parked: true };
+    live = ready.priceMinor;
+  }
+
   // The cap is never invented: an amount someone wrote in the chat, read as they meant it, or the price plus up to 10%.
   const said = amountsSaid(ctx.pack.messages, { heads: trip.people.length, nights: nightsOf(trip) });
-  const price = chosen.price_minor ?? null;
+  const voted = chosen.price_minor ?? null;
+  const price = live ?? voted;
   const currency = chosen.currency ?? trip.money.currency;
+  // A price that moved since the vote is said on the mandate, before anyone taps Yes, book it. prepare reads the same
+  // number the vote showed, or none, so a move said here is a real one.
+  const moved = live !== null && voted !== null && live !== voted
+    ? `${chosen.label} is ${money(live, currency)} on ixigo now, ${live > voted ? 'up' : 'down'} from ${money(voted, currency)} on the vote.`
+    : null;
   // No cap from the model: nobody said a clear number, so the whole price plus up to 10%, and Go says so.
   const byMargin = o.capMinor === undefined;
   let capMinor: number;
@@ -149,8 +174,9 @@ export async function setMandate(
   });
   const cardId = ctx.stableId('c_mandate');
   ctx.cards.push(
-    mandateCard({ cardId, decisionId: o.decisionId, what: chosen.label, capMinor, currency, refundableOnly: o.refundableOnly, payerName: payer.name }),
+    mandateCard({ cardId, decisionId: o.decisionId, what: chosen.label, capMinor, currency, refundableOnly: o.refundableOnly, payerName: payer.name, moved }),
   );
-  const note = byMargin ? `Nobody said a clear number, so I set the cap at ${money(capMinor, currency)}: the price plus a little margin.` : null;
+  const margin = byMargin ? `Nobody said a clear number, so I set the cap at ${money(capMinor, currency)}: the price plus a little margin.` : null;
+  const note = [moved, margin].filter((x) => x !== null).join(' ') || null;
   return { cardId, capMinor, byMargin, note };
 }
