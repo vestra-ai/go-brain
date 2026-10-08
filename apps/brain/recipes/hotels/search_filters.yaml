@@ -1,0 +1,48 @@
+id: hotels.search_filters
+title: What a place's stays on ixigo can be narrowed by, with how many stays each has, for the dates
+asks:
+  - which areas in assagao have the most hotels
+  - how many stays in goa have free cancellation
+  - how many 5 star hotels are there in manali
+  - can we pay at the hotel for stays in goa
+inputs:
+  place: { kind: place, lookup: hotels.place_lookup, about: "the city, area or region to stay in" }
+  check_in: { kind: date }
+  check_out: { kind: date }
+  adults: { kind: count, value: "$trip.people", min: 1, max: 30, about: how many people stay }
+  rooms: { kind: count, value: "$ceil(adults / 2)", min: 1, max: 8 }
+auth: none
+changes_state: false
+# hotels.search's results page: its metadata call counts the stays under every filter the page offers (the popular
+# areas, the kinds of stay, stars, ratings, meals, how to pay, facilities and the price bands).
+let:
+  filters: "$sort($distinct(place.areas))"
+page: >-
+  /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={rooms}&childCount=0{$count($filters) > 0 ? '&filters=' & $encodeUrlComponent($join($filters, ','))|raw}
+capture:
+  - /accommodation-search/api/v2/accommodations/search/metadata$
+read:
+  # One row a filter group, its options with their counts; the price bands as rupees a night.
+  rows:
+    from: /accommodation-search/api/v2/accommodations/search/metadata$
+    list: |
+      (
+        $m := ($type($) = "array" ? $[0] : $).data.metaData;
+        $bands := $m.filterCriteriaMap.dynamicPrice.data[count > 0 and $exists($num(minPrice)) and $exists($num(maxPrice))];
+        [
+          { "group": "Stays found", "count": $m.totalCount },
+          $m.filterCriteriaMap.*[title != "Price"].{ "group": title, "options": [data[count > 0].(name & ": " & $string(count))] },
+          { "group": "Price a night", "options": [$bands.($rupees($num(minPrice)) & " to " & $rupees($num(maxPrice)) & ": " & $string(count))] }
+        ]
+      )
+answer:
+  as: facts
+  title: "Stays in {place.words}, by filter"
+  max: 15
+  each: "$count(options) > 0 or $exists(count) ? $"
+ttl_minutes: 30
+samples: { page: hotels.search_filters.json }
+measured: { fast_ms: 537, page_ms: 1930, flow_ms: null }
+notes: >-
+  The codes behind the options (MP_FC free cancellation, PT_PAY_AT_HOTEL, PA_L_154906 an area, DP_1600_1800 a price
+  band) are what hotels.search filters on. A free price range such as DP_1600_3000 is refused: only the page's bands work.

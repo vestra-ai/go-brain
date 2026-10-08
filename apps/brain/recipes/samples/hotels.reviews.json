@@ -1,0 +1,48 @@
+{
+ "data": {
+  "moreResultsAvailable": true,
+  "reviewList": [
+   {
+    "title": "Beautiful- Nestled in nature!",
+    "category": "Family",
+    "location": "India",
+    "reviewComment": "Totally loved our stay, the experience was great and so close to nature. My daughter loved spotting different birds that she got to see on the property. Spa is great, very warm and friendly staff at the restaurant as well!",
+    "reviewDate": "Sep 2026",
+    "avgRating": "10.0",
+    "countryCode": "in",
+    "roomType": null
+   },
+   {
+    "title": "Beautiful Nature Retreat",
+    "category": "Solo Traveller",
+    "location": null,
+    "reviewComment": "Stunning resort nestled completely in nature. The food was also excellent.",
+    "reviewDate": "Sep 2026",
+    "avgRating": "10.0",
+    "countryCode": null,
+    "roomType": null
+   },
+   {
+    "title": "Relaxing Spa and Pool",
+    "category": "Solo Traveller",
+    "location": null,
+    "reviewComment": "Our experience was wonderful; we really enjoyed the spa and the eco pool!",
+    "reviewDate": "Sep 2026",
+    "avgRating": "8.0",
+    "countryCode": null,
+    "roomType": null
+   },
+   {
+    "title": "Memorable Cozy Stay",
+    "category": "Solo Traveller",
+    "location": null,
+    "reviewComment": "My time at Moji Goa was both refreshing and unforgettable. What sets Moji apart is its distinctive concept, beautifully designed atmosphere, excellent cuisine, well-organized events, and the small touches that combine to offer a truly unique experience. The property is peaceful, cozy, and meticulously cared for, with friendly hospitality and quick, attentive service. It’s one of those places that feels both special and welcoming simultaneously. Special thanks to Rechal for being so kind, hospitable, and flexible, and to Ashwathi, whose caring and affectionate nature made my stay even more pleasant. I also want to sincerely thank Pallav and all the other staff members for their kindness, smiles, and excellent service. Thank you to the girls and the entire Moji team for making me feel so much at home. I would definitely suggest Moji Goa and look forward to returning for another wonderful experience.",
+    "reviewDate": "Sep 2026",
+    "avgRating": "10.0",
+    "countryCode": null,
+    "roomType": null
+   }
+  ],
+  "fallbackReviews": false
+ }
+}

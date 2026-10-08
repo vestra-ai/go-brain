@@ -1,0 +1,185 @@
+{
+ "data": {
+  "persona": "COUPLE",
+  "hotelLevelDetails": {
+   "city": "Assagao",
+   "accommodationType": "Hotel"
+  },
+  "rooms": [
+   {
+    "id": "1422089395",
+    "name": "Family Room",
+    "properties": [
+     {
+      "code": "SIZE",
+      "data": "30 sq. mt."
+     },
+     {
+      "code": "BED_TYPE",
+      "data": "1 double bed"
+     },
+     {
+      "code": "VIEW",
+      "data": "Garden view"
+     },
+     {
+      "code": "OCCUPANCY",
+      "data": "Sleeps 2"
+     }
+    ],
+    "roomLevelAmenities": [
+     "Hair dryer",
+     "Toiletries",
+     "Towels",
+     "Swimming pool",
+     "Television",
+     "Air-conditioned rooms"
+    ],
+    "roomOptions": [
+     {
+      "roomId": "1422089395",
+      "name": "Room With Free Cancellation",
+      "cancellationBenefits": {
+       "code": "FULLY_REFUNDABLE",
+       "data": "Free Cancellation till 05 Nov 11:59 PM",
+       "policy": [
+        {
+         "code": "FULLY_REFUNDABLE",
+         "title": "Fully refundable before 05 Nov 2026 11:59 PM",
+         "subTitle": "Cancel your reservation before 05 Nov 2026 11:59 PM, to get a full refund",
+         "cancellationDate": "2026-11-05T23:59:00",
+         "checkInDate": "2026-11-06T00:00:00",
+         "endDate": "2026-11-05T23:59:00",
+         "cancellationAmount": 0.0
+        },
+        {
+         "code": "PARTIALLY_REFUNDABLE",
+         "title": "Partially refundable after 05 Nov 2026 11:59 PM",
+         "subTitle": "You’ll be charged ₹1071.00 per night, if you cancel after 05 Nov 2026 11:59 PM",
+         "cancellationDate": "2026-11-05T23:59:00",
+         "checkInDate": "2026-11-06T00:00:00",
+         "endDate": "2026-11-06T23:59:00",
+         "cancellationAmount": 1071.0
+        }
+       ],
+       "remarks": {
+        "title": "Note",
+        "text": null,
+        "subText": "Date and time is displayed as per the local time zone of your hotel’s location."
+       }
+      },
+      "otherBenefits": [
+       "Parking",
+       "Coffee & tea",
+       "Free WiFi",
+       "Drinking water"
+      ],
+      "isRecommended": true,
+      "paymentType": "PAY_AT_HOTEL",
+      "roomIndex": 1,
+      "fareDetail": {
+       "displayedBaseFare": 2775,
+       "markUpFare": 3000,
+       "markupDiscountPercent": null,
+       "taxesAndFees": 375,
+       "totalPrice": 3375.0,
+       "couponCode": null,
+       "offerMessage": null,
+       "paymentType": "PAY_AT_HOTEL",
+       "payAtHotelAmount": 9450.0
+      }
+     }
+    ]
+   },
+   {
+    "id": "1422089396",
+    "name": "Executive Suite",
+    "properties": [
+     {
+      "code": "SIZE",
+      "data": "42 sq. mt."
+     },
+     {
+      "code": "BED_TYPE",
+      "data": "1 double bed"
+     },
+     {
+      "code": "VIEW",
+      "data": "Outdoor view"
+     },
+     {
+      "code": "OCCUPANCY",
+      "data": "Sleeps 2"
+     }
+    ],
+    "roomLevelAmenities": [
+     "Hair dryer",
+     "Toiletries",
+     "Towels",
+     "Whirlpool Bathtub",
+     "Swimming pool",
+     "Television"
+    ],
+    "roomOptions": [
+     {
+      "roomId": "1422089396",
+      "name": "Room With Free Cancellation",
+      "cancellationBenefits": {
+       "code": "FULLY_REFUNDABLE",
+       "data": "Free Cancellation till 05 Nov 11:59 PM",
+       "policy": [
+        {
+         "code": "FULLY_REFUNDABLE",
+         "title": "Fully refundable before 05 Nov 2026 11:59 PM",
+         "subTitle": "Cancel your reservation before 05 Nov 2026 11:59 PM, to get a full refund",
+         "cancellationDate": "2026-11-05T23:59:00",
+         "checkInDate": "2026-11-06T00:00:00",
+         "endDate": "2026-11-05T23:59:00",
+         "cancellationAmount": 0.0
+        },
+        {
+         "code": "PARTIALLY_REFUNDABLE",
+         "title": "Partially refundable after 05 Nov 2026 11:59 PM",
+         "subTitle": "You’ll be charged ₹2102.25 per night, if you cancel after 05 Nov 2026 11:59 PM",
+         "cancellationDate": "2026-11-05T23:59:00",
+         "checkInDate": "2026-11-06T00:00:00",
+         "endDate": "2026-11-06T23:59:00",
+         "cancellationAmount": 2102.25
+        }
+       ],
+       "remarks": {
+        "title": "Note",
+        "text": null,
+        "subText": "Date and time is displayed as per the local time zone of your hotel’s location."
+       }
+      },
+      "otherBenefits": [
+       "Parking",
+       "Coffee & tea",
+       "Free WiFi",
+       "Drinking water"
+      ],
+      "fomoTag": "Only 1 room left",
+      "isRecommended": false,
+      "paymentType": "PAY_AT_HOTEL",
+      "roomIndex": 1,
+      "fareDetail": {
+       "displayedBaseFare": 5447,
+       "markUpFare": 5889,
+       "markupDiscountPercent": null,
+       "taxesAndFees": 736,
+       "totalPrice": 6624.75,
+       "couponCode": null,
+       "offerMessage": null,
+       "paymentType": "PAY_AT_HOTEL",
+       "payAtHotelAmount": 18549.3
+      }
+     }
+    ]
+   }
+  ],
+  "metadata": {
+   "rateMethod": "per night for 1 room"
+  }
+ }
+}

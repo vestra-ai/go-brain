@@ -10,7 +10,7 @@ import type { AnthropicLike } from './anthropic.js';
 import { classifyAnthropicError } from './anthropic-helpers.js';
 import type { ContextImpl } from './context.js';
 import { chatLine, dataBlock, roomView, type Forgotten } from './fence.js';
-import { addUsage, MAX_ROUNDS, noUsage, runLoop } from './loop.js';
+import { addUsage, MAX_ROUNDS, noUsage, runLoop, type RoundTiming } from './loop.js';
 import { stripMessageRefs } from './sanitize.js';
 import type { Speak } from './speak.js';
 import { makeTurnCtx, scopedLink, type Tools } from './tools.js';
@@ -127,6 +127,34 @@ const foldText = (lines: string[]): string =>
   'Your reply above has not been posted yet. Write the one message to post now, covering these too if they need it. ' +
   'If they change nothing, send the same reply again.';
 
+const secs = (ms: number | null): string => (ms === null ? '-' : `${(ms / 1000).toFixed(1)}s`);
+
+/**
+ * One info line per turn: where its time went, round by round (the tools each asked for, its first token and whole
+ * reply, its output tokens, its tools' time), with no words from anyone. "turn: 2 rounds, 15.2s: r1 search_stays first
+ * 1.3s model 2.9s out 180 tools 8.4s | r2 show_options first 3.1s model 3.6s out 210".
+ */
+export function logTurn(
+  log: Pick<Log, 'info'>,
+  t: { tripId: string; turnId: string; wokeFor: string[]; builtMs: number; firstToken: Date | null; started: number; timings: RoundTiming[]; totalMs: number; outcome: string },
+): void {
+  const rounds = t.timings.map((r, n) =>
+    `r${n + 1} ${r.tools.join(',') || r.stop || 'text'} first ${secs(r.firstTokenMs)} model ${secs(r.modelMs)} out ${r.output}${r.tools.length ? ` tools ${secs(r.toolMs)}` : ''}`);
+  log.info(
+    {
+      trip: t.tripId,
+      turn: t.turnId,
+      woke_for: t.wokeFor,
+      outcome: t.outcome,
+      build_ms: t.builtMs,
+      first_token_ms: t.firstToken ? t.firstToken.getTime() - t.started : null,
+      total_ms: t.totalMs,
+      rounds: t.timings.map((r) => ({ tools: r.tools, first_token_ms: r.firstTokenMs, model_ms: r.modelMs, tool_ms: r.toolMs, output_tokens: r.output, stop: r.stop })),
+    },
+    `turn: ${t.timings.length} round${t.timings.length === 1 ? '' : 's'}, ${secs(t.totalMs)}: ${rounds.join(' | ') || 'no model call'}`,
+  );
+}
+
 export function createComposer(d: ComposerDeps): Composer {
   const turnTimeoutMs = d.turnTimeoutMs ?? 20_000;
   /** The messages a running turn pulled in after it started: they are the turn's too when it ends. */
@@ -151,6 +179,10 @@ export function createComposer(d: ComposerDeps): Composer {
     const times: { firstToken: Date | null } = { firstToken: null };
     const usage = noUsage();
     let rounds = 0;
+    // Where a turn's time goes, for its log line: building the prompt, each model round and its tools, the post.
+    const started = d.now().getTime();
+    let builtMs = 0;
+    const timings: RoundTiming[] = [];
     // Typing may also be on for a message the turn pulled in, or one intake turned it on for: a turn that posted answered it.
     const pulled: DeskItem[] = [];
     let posted = false;
@@ -165,6 +197,7 @@ export function createComposer(d: ComposerDeps): Composer {
         [t.turnId, t.tripId, t.items.map((i) => i.kind), t.attempt, d.now(), typingAt, d.model],
       );
       const prompt = await d.context.build({ tripId: t.tripId, pack, wake: t.items, seenSeq, now: d.now(), tz });
+      builtMs = d.now().getTime() - started;
       const signal = AbortSignal.timeout(turnTimeoutMs);
       // P6's proactive bar may limit a turn Go woke for on its own: which tools, and whether its text may be posted.
       const limits = d.context.turnRules(t.items);
@@ -182,6 +215,7 @@ export function createComposer(d: ComposerDeps): Composer {
         ...(d.budget ? { budget: d.budget } : {}),
       };
       let r = await runLoop({ ...base, messages: [{ role: 'user', content: prompt.user }] });
+      timings.push(...r.timings);
       addUsage(usage, r.usage);
       rounds += r.rounds;
       // The first round's hold did not fit today's budget (calls running at the same moment took the rest): no model
@@ -209,6 +243,7 @@ export function createComposer(d: ComposerDeps): Composer {
             maxRounds: MAX_ROUNDS - rounds,
             messages: withNewLines(r.messages, foldText(fresh.lines)),
           });
+          timings.push(...more.timings);
           addUsage(usage, more.usage);
           rounds += more.rounds;
           if (more.stopReason === 'over_budget' && more.rounds === 0) {
@@ -261,6 +296,7 @@ export function createComposer(d: ComposerDeps): Composer {
         [t.turnId, d.now(), times.firstToken, rounds, usage.input, usage.cacheRead, usage.cacheWrite, usage.output, usage.costUsd, outcome],
       );
       await d.pool.query('update trips set composer_seen_seq = greatest(composer_seen_seq, $2) where trip_id = $1', [t.tripId, newest]);
+      logTurn(d.log, { tripId: t.tripId, turnId: t.turnId, wokeFor: t.items.map((i) => i.kind), builtMs, firstToken: times.firstToken, started, timings, totalMs: d.now().getTime() - started, outcome });
     } catch (e) {
       const kind = classifyAnthropicError(e).kind;
       const message = e instanceof Error ? e.message : String(e);

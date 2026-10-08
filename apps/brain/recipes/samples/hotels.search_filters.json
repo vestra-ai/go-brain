@@ -1,0 +1,514 @@
+{
+ "data": {
+  "metaData": {
+   "filterCriteriaMap": {
+    "accommodationType": {
+     "title": "Accommodation Type",
+     "data": [
+      {
+       "code": "AT_HOTEL",
+       "name": "Hotel",
+       "count": 21,
+       "originalCount": 0
+      },
+      {
+       "code": "AT_BAB",
+       "name": "Bed and Breakfast",
+       "count": 2,
+       "originalCount": 0
+      },
+      {
+       "code": "AT_SAPRT",
+       "name": "Serviced apartment",
+       "count": 2,
+       "originalCount": 0
+      },
+      {
+       "code": "AT_EH",
+       "name": "Entire house",
+       "count": 1,
+       "originalCount": 0
+      }
+     ]
+    },
+    "popularAreas": {
+     "title": "Popular Areas",
+     "data": [
+      {
+       "code": "PA_L_154906",
+       "name": "Bouta Waddo",
+       "count": 14,
+       "originalCount": 0
+      },
+      {
+       "code": "PA_C_78550",
+       "name": "Assagao",
+       "count": 13,
+       "originalCount": 0
+      },
+      {
+       "code": "PA_L_154885",
+       "name": "Mazal Waddo",
+       "count": 1,
+       "originalCount": 0
+      }
+     ]
+    },
+    "facilities": {
+     "title": "Facilities",
+     "data": [
+      {
+       "code": "FL_HF_13",
+       "name": "Internet access",
+       "count": 25,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_15",
+       "name": "Laundry Service/Washing Machine",
+       "count": 22,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_19",
+       "name": "Outdoor Activities",
+       "count": 21,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_29",
+       "name": "Swimming Pool",
+       "count": 21,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_5",
+       "name": "CCTV/Security",
+       "count": 20,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_20",
+       "name": "Parking",
+       "count": 20,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_30",
+       "name": "Television/streaming service",
+       "count": 19,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_9",
+       "name": "Facilities for kids",
+       "count": 19,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_25",
+       "name": "Room Service",
+       "count": 17,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_18",
+       "name": "Non-smoking rooms",
+       "count": 16,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_2",
+       "name": "Balcony/terrace",
+       "count": 12,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_14",
+       "name": "Kitchen",
+       "count": 11,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_12",
+       "name": "Indoor Games",
+       "count": 11,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_17",
+       "name": "Nightclub/Bar",
+       "count": 11,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_26",
+       "name": "Shower",
+       "count": 10,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_31",
+       "name": "Transfers",
+       "count": 10,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_24",
+       "name": "Restaurants/Lounges",
+       "count": 8,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_8",
+       "name": "Facilities for Differently-Abled Guests",
+       "count": 8,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_21",
+       "name": "Pet-friendly property",
+       "count": 7,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_27",
+       "name": "Smoking Area",
+       "count": 7,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_3",
+       "name": "Barbeque Facility",
+       "count": 6,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_28",
+       "name": "Spa/Sauna",
+       "count": 6,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_4",
+       "name": "Bathtub",
+       "count": 5,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_23",
+       "name": "Private Pool",
+       "count": 4,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_11",
+       "name": "Fitness Centre",
+       "count": 3,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_7",
+       "name": "Elevator access",
+       "count": 2,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_1",
+       "name": "Late Check-in Supported",
+       "count": 2,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_6",
+       "name": "Electric Vehicle Charging Station",
+       "count": 1,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_10",
+       "name": "Fireplace",
+       "count": 1,
+       "originalCount": 0
+      },
+      {
+       "code": "FL_HF_16",
+       "name": "Meeting/Business",
+       "count": 1,
+       "originalCount": 0
+      }
+     ]
+    },
+    "starRating": {
+     "title": "Star Rating",
+     "data": [
+      {
+       "code": "SR_5",
+       "name": "5",
+       "count": 12,
+       "originalCount": 0
+      },
+      {
+       "code": "SR_4",
+       "name": "4",
+       "count": 10,
+       "originalCount": 0
+      },
+      {
+       "code": "SR_3",
+       "name": "3",
+       "count": 3,
+       "originalCount": 0
+      },
+      {
+       "code": "SR_2",
+       "name": "2",
+       "count": 1,
+       "originalCount": 0
+      }
+     ]
+    },
+    "mostPopular": {
+     "title": "Most Popular",
+     "data": [
+      {
+       "code": "MP_FC",
+       "name": "Free Cancellation",
+       "count": 11,
+       "originalCount": 0
+      },
+      {
+       "code": "MP_CF",
+       "name": "Couple Friendly",
+       "count": 2,
+       "originalCount": 0
+      },
+      {
+       "code": "MP_RE",
+       "name": "Rated Exceptional(9+)",
+       "count": 14,
+       "originalCount": 0
+      },
+      {
+       "code": "MP_FB",
+       "name": "Free Breakfast",
+       "count": 18,
+       "originalCount": 0
+      },
+      {
+       "code": "MP_PA",
+       "name": "Parking Available",
+       "count": 20,
+       "originalCount": 0
+      }
+     ]
+    },
+    "dynamicPrice": {
+     "title": "Price",
+     "data": [
+      {
+       "code": "DP_1600_1800",
+       "minPrice": "1600",
+       "maxPrice": "1800",
+       "count": 2,
+       "originalCount": 2
+      },
+      {
+       "code": "DP_1800_2000",
+       "minPrice": "1800",
+       "maxPrice": "2000",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "DP_2000_2500",
+       "minPrice": "2000",
+       "maxPrice": "2500",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "DP_2500_3000",
+       "minPrice": "2500",
+       "maxPrice": "3000",
+       "count": 2,
+       "originalCount": 2
+      },
+      {
+       "code": "DP_3000_3500",
+       "minPrice": "3000",
+       "maxPrice": "3500",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "DP_3500_4000",
+       "minPrice": "3500",
+       "maxPrice": "4000",
+       "count": 1,
+       "originalCount": 1
+      },
+      {
+       "code": "DP_4000_4500",
+       "minPrice": "4000",
+       "maxPrice": "4500",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "DP_4500_5000",
+       "minPrice": "4500",
+       "maxPrice": "5000",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "DP_5000_6000",
+       "minPrice": "5000",
+       "maxPrice": "6000",
+       "count": 2,
+       "originalCount": 2
+      },
+      {
+       "code": "DP_6000_7000",
+       "minPrice": "6000",
+       "maxPrice": "7000",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "DP_7000_8000",
+       "minPrice": "7000",
+       "maxPrice": "8000",
+       "count": 1,
+       "originalCount": 1
+      },
+      {
+       "code": "DP_8000_9000",
+       "minPrice": "8000",
+       "maxPrice": "9000",
+       "count": 1,
+       "originalCount": 1
+      }
+     ]
+    },
+    "userRating": {
+     "title": "User Rating",
+     "data": [
+      {
+       "code": "UR_9.0",
+       "name": "Exceptional: 9+",
+       "count": 14,
+       "originalCount": 0
+      },
+      {
+       "code": "UR_8.0",
+       "name": "Excellent: 8+",
+       "count": 17,
+       "originalCount": 0
+      },
+      {
+       "code": "UR_7.0",
+       "name": "Very Good: 7+",
+       "count": 18,
+       "originalCount": 0
+      },
+      {
+       "code": "UR_6.0",
+       "name": "Good: 6+",
+       "count": 19,
+       "originalCount": 0
+      },
+      {
+       "code": "UR_5.0",
+       "name": "Pleasant: 5+",
+       "count": 20,
+       "originalCount": 0
+      }
+     ]
+    },
+    "meals": {
+     "title": "Meals",
+     "data": [
+      {
+       "code": "ML_BR",
+       "name": "Breakfast Included",
+       "count": 18,
+       "originalCount": 0
+      },
+      {
+       "code": "ML_LU",
+       "name": "Lunch Included",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "ML_DI",
+       "name": "Dinner Included",
+       "count": 0,
+       "originalCount": 0
+      }
+     ]
+    },
+    "paymentType": {
+     "title": "Payment Mode",
+     "data": [
+      {
+       "code": "PT_PAY_NOW",
+       "name": "Prepaid",
+       "count": 25,
+       "originalCount": 0
+      },
+      {
+       "code": "PT_PAY_AT_HOTEL",
+       "name": "Pay At Hotel",
+       "count": 3,
+       "originalCount": 0
+      },
+      {
+       "code": "PT_BOOK_WITH_ZERO_PAYMENT",
+       "name": "Book with ₹0 payment",
+       "count": 4,
+       "originalCount": 0
+      }
+     ]
+    }
+   },
+   "sortCriteriaMap": {
+    "sort_by_all": {
+     "data": [
+      {
+       "code": "SC_P",
+       "name": "Popularity",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "SC_P_LH",
+       "name": "Price",
+       "subTitle": "Low to High",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "SC_P_HL",
+       "name": "Price",
+       "subTitle": "High to Low",
+       "count": 0,
+       "originalCount": 0
+      },
+      {
+       "code": "SC_UR",
+       "name": "User Rating",
+       "subTitle": "Highest First",
+       "count": 0,
+       "originalCount": 0
+      }
+     ]
+    }
+   },
+   "totalCount": 28,
+   "defaultSortCriteria": "SC_P"
+  }
+ }
+}

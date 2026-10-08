@@ -31,7 +31,10 @@ describe('the recipe book', () => {
     expect(problems).toEqual([]);
     expect(book.all().map((r) => r.id).sort()).toEqual([
       'buses.between', 'buses.city_lookup', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.search',
-      'hotels.place_lookup', 'hotels.search', 'plan.destination', 'trains.between', 'trains.station_lookup',
+      'help.downtime', 'help.faq', 'help.services',
+      'hotels.details', 'hotels.offers', 'hotels.place_lookup', 'hotels.reviews', 'hotels.rooms', 'hotels.search', 'hotels.search_filters', 'hotels.similar',
+      'offers.campaign', 'offers.details', 'offers.list',
+      'plan.destination', 'plan.explore', 'plan.top_locations', 'trains.between', 'trains.station_lookup',
     ]);
   });
 });
