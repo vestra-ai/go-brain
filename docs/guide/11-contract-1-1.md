@@ -19,7 +19,7 @@ Good to know:
 | A4 | A card action's `open` can be one of the App's own screens, by a `go://` link | Go | `ActionOpen.url` |
 | A5 | "I'm flexible" as a vote: counted in `voted`, never in the tally | The Server | `decision.voted` `flexible`, `Decision.flexible_count` |
 | A6 | A shared location, and how long a voice note or video plays | The Server | `Attachment` kind `location`, `FileAttachment.duration_s` |
-| A7 | A booking's extra lines, return leg, passengers with seats and PNRs, and documents | Go | `add_booking` and `Booking`: `details`, `return_journey`, `passengers`, `documents` |
+| A7 | A booking's extra lines, return leg, passengers with seats and PNRs, and documents (`covered` or `group`) | Go | `add_booking` and `Booking`: `details`, `return_journey`, `passengers`, `documents` |
 | A8 | An itinerary item for some people, or private; a picture for a day | Both | `ItineraryItem.person_ids`, `audience`; `Day.image_url` |
 | A9 | A vote taken back | The Server | `decision.voted` `retracted` |
 | A10 | The `claim` card action: the first claim wins | Go | a card's `actions` |
@@ -27,7 +27,7 @@ Good to know:
 | B1 | A payback someone recorded, once the one paid confirmed it | The Server | the `settlement.recorded` event |
 | B2 | A checklist card; a vault link to add documents | Go; the Server asks | the `checklist` card; `vault_link` `start: "add_documents"` and `context` |
 | B3a | A call's recording and length | Go | `CallCard.recording_url`, `duration_s` |
-| B4 | Whether the people an expense is split between agreed to it | The Server | `Expense.status`, `confirmations`; `expense.changed` `approved`, `disputed` and `by_person_id` |
+| B4 | Whether the people an expense is split between agreed to it; the vault payment an expense was paid with | The Server; Go | `Expense.status`, `confirmations`; `expense.changed` `approved`, `disputed` and `by_person_id`; `add_expense.approval_id` |
 
 Not in 1.1: listening to a call live (B3b), `request_task` (B3c), and the check-in methods (Group C). They come after the hackathon.
 
@@ -35,7 +35,7 @@ Not in 1.1: listening to a call live (B3b), `request_task` (B3c), and the check-
 
 An option's `details` is what the App shows when someone opens the option. Every field in it is optional, and the App shows what is there. `costs` lists what the price is made of, each line in the trip's currency, and `total_minor` adds them up. `rating` is the rating as the source gives it: out of 5, or out of 10 where the source rates out of 10 (ixigo's hotel scores). A vote's option (`DecisionOption`) can carry the same `details`, so the vote card can open each choice.
 
-An option with both `price_oneway_minor` and `price_round_minor` lets the App offer one way or the round trip on its button. The tap then carries the choice:
+An option with both `price_oneway_minor` and `price_round_minor` lets the App offer one way or the round trip on its button. `price_minor` stays the price the card shows. The `pick` tap then carries the choice:
 
 <!-- schema: CardTap -->
 ```json
@@ -69,13 +69,24 @@ Go can offer up to six replies under its message. Each has a `label` of up to 40
 
 ## App screens and claims (A4, A10)
 
-A card action's `open` answer may now name one of the App's own screens with a `go://` link, which the App opens in place instead of in the browser sheet. The App team's route table lists the screens and their links. Links stay `http`, `https` or `go`, never anything else.
+A card action's `open` answer may now name one of the App's own screens with a `go://` link, which the App opens in place. An `https://` link still means "open in the browser sheet". Links stay `http`, `https` or `go`, never anything else. These are the App's screens (the Server team's route table):
+
+| Link | The screen |
+|---|---|
+| `go://trips/<trip_id>/sheet/budget` | The budget sheet |
+| `go://trips/<trip_id>/sheet/route` | The route sheet, on an options card |
+| `go://trips/<trip_id>/sheet/cab` | The cab sheet, on an options card |
+| `go://trips/<trip_id>/bookings/<booking_id>` | My booking, for the person who tapped only |
+| `go://trips/<trip_id>/itinerary` | The Trip tab's itinerary |
+| `go://trips/<trip_id>/bookings` | The Trip tab's bookings |
+| `go://trips/<trip_id>/expenses` | The Trip tab's expenses |
+| `go://trips/<trip_id>/checkin/<booking_id>` | Check-in (Group C, not in 1.1) |
 
 `claim` is a card action for something one person takes on ("I'll book the cab"). The Server sends the tap to Go like any other. The first claim wins: Go answers `done` to the first tap and `refused` to the ones after it, with a toast naming who has it.
 
 ## Votes (A5, A9)
 
-`decision.voted` can now say a person is flexible (`"flexible": true`) or took their vote back (`"retracted": true`). Neither has an `option_index`. A flexible person counts in `voted` and never in `tally`, and the decision's `flexible_count` says how many are flexible. A vote taken back counts nowhere: `voted` and `tally` come without it.
+`decision.voted` can now say a person is flexible (`"flexible": true`) or took their vote back (`"retracted": true`). Neither has an `option_index`. A flexible person counts in `voted` and never in `tally`, and the decision's `flexible_count` says how many are flexible. After a vote is taken back, `voted` and `tally` are the new totals, without it.
 
 ## Locations and voice notes (A6)
 
@@ -83,7 +94,7 @@ A message can carry a shared location: `{ "kind": "location", "lat": 15.6, "lng"
 
 ## Bookings (A7)
 
-`add_booking` (and so `Booking`) can carry extra lines (`details`), the way back (`return_journey`), each traveller with a seat and PNR (`passengers`), and the booking's documents. A document's `url` is Go's signed link: the Server fetches it once, keeps its own copy, and serves that copy from then on. The link stops working after a while, so fetch it when the booking arrives. `visibility` says who may see the document: `group`, `shared` (the booking's passengers) or `private` (the one person it is for).
+`add_booking` (and so `Booking`) can carry extra lines (`details`), the way back (`return_journey`), each traveller with a seat and PNR (`passengers`), and the booking's documents. A document's `url` is Go's signed link, valid at least 10 minutes: the Server fetches it once, keeps its own copy, and serves that copy from then on, so fetch it when the booking arrives. `visibility` says who may see the document: `covered` (only the people the booking covers) or `group` (everyone in the trip).
 
 ## Itinerary (A8) and places (A11)
 
@@ -91,9 +102,9 @@ An itinerary item can name the people it is for (`person_ids`) and who sees it (
 
 ## Paybacks (B1)
 
-The Server sends `settlement.recorded` when someone paid someone back and the one paid confirmed it. Only confirmed paybacks are sent. `method` is `upi`, `cash`, `bank_transfer` or `other`. The Server does the money maths, so Go reads `money` from the trip again.
+The Server sends `settlement.recorded` when someone paid someone back and the one paid confirmed it. Only confirmed paybacks are sent, so `status` is always `confirmed`, and Go never sees a pending or disputed one. `method` is `upi`, `cash`, `bank_transfer` or `other`. `note` and `recorded_at` (when the payer recorded it) are optional. `read_trip`'s `money.transfers` already counts confirmed paybacks, so Go reads the money again.
 
-Priya paid Rahul back ₹1,200 in cash for the cab, and Rahul confirmed it:
+Aarav paid Rahul back ₹5,800 by UPI for the villa and groceries, and Rahul confirmed it:
 
 <!-- schema: SettlementRecorded -->
 ```json
@@ -105,13 +116,15 @@ Priya paid Rahul back ₹1,200 in cash for the cab, and Rahul confirmed it:
   "type": "settlement.recorded",
   "data": {
     "settlement": {
-      "settlement_id": "s_0007",
-      "from_person_id": "p_priya",
+      "settlement_id": "st_0007",
+      "from_person_id": "p_aarav",
       "to_person_id": "p_rahul",
-      "amount_minor": 120000,
+      "amount_minor": 580000,
       "currency": "INR",
-      "method": "cash",
-      "note": "Airport cab",
+      "method": "upi",
+      "note": "villa + groceries",
+      "status": "confirmed",
+      "recorded_at": "2026-10-10T09:02:00Z",
       "confirmed_at": "2026-10-10T09:15:00Z"
     },
     "by": { "kind": "person", "person_id": "p_rahul" }
@@ -121,31 +134,35 @@ Priya paid Rahul back ₹1,200 in cash for the cab, and Rahul confirmed it:
 
 ## Checklists and documents (B2)
 
-A `checklist` card is a list Go keeps for the group or one person: documents to upload, things to pack, check-ins to do. Each row is `todo`, `started`, `done` or `info` (a line to read, with nothing to do), and may name whose row it is. Go updates the card in place with `replace_card` as rows change.
+A `checklist` card shows who in the group has something ready, one row a person (a visa on arrival, for example). Each row is `todo`, `started`, `done` or `info` (a line to read, with nothing to do), with a `label` and an optional `sub` line. Rows are keyed by `person_id`, with no row ids and no row buttons: Go updates the card in place with `replace_card`. The card can have a `subtitle`, the day it is due (`due_at`, a date), and one `suggestion` with an optional button (`cta`), whose tap reaches Go like any card action.
 
 <!-- schema: ChecklistCard -->
 ```json
 {
-  "card_id": "c_check_docs",
   "kind": "checklist",
-  "fallback_text": "Documents for the trip: 1 of 3 done",
-  "title": "Documents for the trip",
+  "card_id": "c_visa",
+  "title": "Indonesia e-VOA",
+  "subtitle": "Each of you needs one before you fly",
+  "due_at": "2026-12-10",
   "rows": [
-    { "row_id": "r_rahul_id", "label": "Rahul: ID for the train", "status": "done", "person_id": "p_rahul" },
-    { "row_id": "r_priya_id", "label": "Priya: ID for the train", "status": "todo", "person_id": "p_priya", "due_at": "2026-11-05T12:00:00Z" },
-    { "row_id": "r_voucher", "label": "The villa sends its voucher on 5 Nov", "status": "info" }
+    { "person_id": "p_aarav", "status": "todo", "label": "Not yet", "sub": "Passport, photo" },
+    { "person_id": "p_rahul", "status": "done", "label": "Done" }
   ],
-  "actions": [{ "action_id": "upload", "label": "Add documents", "style": "primary" }]
+  "suggestion": { "text": "You and Arjun land together. Share a cab?", "cta": { "action_id": "cab", "label": "Book" } },
+  "actions": [],
+  "fallback_text": "Indonesia e-VOA: 1 of 2 done"
 }
 ```
 
-`vault_link` takes `start: "add_documents"` and an optional `context` (the trip, booking, card or row the documents go with). In 1.1 Go answers it `409 conflict`, "Adding documents in the vault is not available yet.", until the vault has that page.
+`vault_link` takes `start: "add_documents"` and an optional `context` (`{ "trip_id": "t_bali", "purpose": "visa" }`). In 1.1 Go answers it `409 conflict`, "Adding documents in the vault is not available yet.", until the vault has that page.
 
 ## Calls (B3a) and expenses (B4)
 
-A finished call's card can carry its `recording_url` and `duration_s`.
+A finished call's card can carry its `recording_url` (Go's own signed link, which stops working after a while) and `duration_s`.
 
-An expense can say whether the people it is split between agreed to it: `status` is `pending`, `approved` or `disputed`, and `confirmations` holds each person's answer. When someone answers, the Server sends `expense.changed` with `change` `approved` or `disputed`, and `by_person_id` says who answered.
+An expense can say whether the people it is split between agreed to it: `status` is `pending`, `approved` or `disputed`, and `confirmations` has one entry for each person in `split_person_ids` other than the payer, with their `state` (`pending`, `approved` or `disputed`), when they answered (`at`), and a `reason` for a dispute. When someone answers, the Server sends `expense.changed` with `change` `approved` or `disputed`, and `by_person_id` says who answered.
+
+`add_expense` gains `approval_id`, the spend approval a vault payment used (the same id as on its booking). With it, the Server records the expense as approved at once. Without it, the Server records it pending, for the people it is split between to answer. A `booking_id` alone does not approve an expense.
 
 Priya disputed the cab, because she took the bus:
 
@@ -169,7 +186,12 @@ Priya disputed the cab, because she took the bus:
       "added_by_person_id": "p_kabir",
       "created_at": "2026-10-09T13:20:00Z",
       "status": "disputed",
-      "confirmations": [{ "person_id": "p_priya", "answer": "disputed", "at": "2026-10-10T08:40:00Z", "note": "I took the bus" }]
+      "confirmations": [
+        { "person_id": "p_rahul", "state": "approved", "at": "2026-10-10T08:10:00Z" },
+        { "person_id": "p_priya", "state": "disputed", "at": "2026-10-10T08:40:00Z", "reason": "I took the bus" },
+        { "person_id": "p_arjun", "state": "pending" },
+        { "person_id": "p_meher", "state": "pending" }
+      ]
     },
     "change": "disputed",
     "by": { "kind": "person", "person_id": "p_priya" },

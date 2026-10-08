@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ActionOpen, Booking, Card, CardTap, CONTRACT_VERSION, CreateLink, Decision, Event, Expense, ItineraryItem, Message, Option, Place, PostMessage,
-  TripSnapshot,
+  ActionOpen, AddExpense, Booking, Card, CardTap, CONTRACT_VERSION, CreateLink, Decision, Event, Expense, ItineraryItem, Message, Option, Place,
+  PostMessage, TripSnapshot,
 } from '../index.js';
 
 // Contract 1.1: the Server team's additive proposal (A1 to A11, B1, B2, B3a, B4). Every addition is optional, so what
@@ -30,6 +30,9 @@ describe('contract 1.1', () => {
     expect(Decision.shape.options.element.parse({ label: 'Villa Maya', details }).details?.go_note).toBe('The quietest of the three.');
     expect(CardTap.parse({ tap_id: 'tp_1', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', option_id: 'o_1', payload: { trip: 'round' } }).payload?.trip).toBe('round');
     expect(CardTap.safeParse({ tap_id: 'tp_1', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', payload: { trip: 'both' } }).success).toBe(false);
+    // Mobile only: no device in 1.1. A payload is A2's trip, and a device a room still sends is dropped, never refused.
+    const tap = CardTap.parse({ tap_id: 'tp_2', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', option_id: 'o_1', payload: { trip: 'oneway', device: 'desktop' } });
+    expect(tap.payload).toEqual({ trip: 'oneway' });
   });
 
   it('A3 Go can offer up to six quick replies, kept on the message', () => {
@@ -67,9 +70,10 @@ describe('contract 1.1', () => {
       booking_id: 'b_1', kind: 'train', status: 'confirmed', title: '12608', vendor: 'ixigo', ref: 'PNR 4512', amount_minor: 80000, currency: 'INR',
       payer_person_id: 'p_rahul', for_person_ids: ['p_rahul'], created_at: at,
       details: [{ label: 'Coach', value: 'C2' }], passengers: [{ person_id: 'p_rahul', seat: 'C2 41', pnr: '4512' }],
-      documents: [{ document_id: 'doc_1', name: 'Ticket.pdf', mime: 'application/pdf', size_bytes: 52000, pages: 1, visibility: 'shared', url: 'https://go.example.com/docs/doc_1?sig=x' }],
+      documents: [{ document_id: 'doc_1', name: '6E5313-K7QX2M.pdf', mime: 'application/pdf', size_bytes: 184233, pages: 2, visibility: 'covered', url: 'https://go.example.com/docs/doc_1?sig=x' }],
     });
-    expect(b.documents?.[0]?.visibility).toBe('shared');
+    expect(b.documents?.[0]?.visibility).toBe('covered');
+    expect(Booking.shape.documents.safeParse([{ ...b.documents![0], visibility: 'shared' }]).success).toBe(false);
   });
 
   it('A8 an itinerary item can be for some people and private; a day can have a picture; A11 a place has its time zone', () => {
@@ -82,13 +86,28 @@ describe('contract 1.1', () => {
   it('B1 a confirmed payback is an event; B4 an expense has its answers, and its event says approved or disputed', () => {
     const settled = Event.parse({
       event_id: 'e', trip_id: 't', seq: 9, occurred_at: at, type: 'settlement.recorded',
-      data: { settlement: { settlement_id: 's_1', from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 120000, currency: 'INR', method: 'upi', confirmed_at: at }, by: { kind: 'person', person_id: 'p_rahul' } },
+      data: {
+        settlement: {
+          settlement_id: 'st_1', from_person_id: 'p_aarav', to_person_id: 'p_rahul', amount_minor: 580000, currency: 'INR', method: 'upi',
+          note: 'villa + groceries', status: 'confirmed', recorded_at: at, confirmed_at: at,
+        },
+        by: { kind: 'person', person_id: 'p_rahul' },
+      },
     });
     expect(settled.type).toBe('settlement.recorded');
+    // Only confirmed ones are sent.
+    const pending = { settlement_id: 'st_2', from_person_id: 'p_a', to_person_id: 'p_b', amount_minor: 1, currency: 'INR', method: 'cash', status: 'pending', confirmed_at: at };
+    expect(Event.safeParse({ event_id: 'e', trip_id: 't', seq: 9, occurred_at: at, type: 'settlement.recorded', data: { settlement: pending, by: { kind: 'system' } } }).success).toBe(false);
     const expense = Expense.parse({
       expense_id: 'x_1', paid_by_person_id: 'p_rahul', amount_minor: 240000, currency: 'INR', note: 'Cab', category: 'getting_around',
-      split_person_ids: ['p_rahul', 'p_priya'], created_at: at, status: 'approved', confirmations: [{ person_id: 'p_priya', answer: 'approved', at }],
+      split_person_ids: ['p_rahul', 'p_priya', 'p_arjun'], created_at: at, status: 'disputed',
+      confirmations: [{ person_id: 'p_priya', state: 'approved', at }, { person_id: 'p_arjun', state: 'disputed', at, reason: 'I took the bus' }],
     });
+    expect(expense.confirmations?.[1]?.state).toBe('disputed');
+    // add_expense says which vault payment paid it, so the Server approves it at once; without one it is pending.
+    const add = { request_id: 'rq_x', trip_id: 't', paid_by_person_id: 'p_rahul', amount_minor: 840000, currency: 'INR', note: 'Villa Maya', category: 'stay', split_person_ids: ['p_rahul', 'p_priya'] };
+    expect(AddExpense.parse({ ...add, approval_id: 'ap_7f3a' }).approval_id).toBe('ap_7f3a');
+    expect(AddExpense.parse(add).approval_id).toBeUndefined();
     for (const change of ['approved', 'disputed']) {
       expect(Event.parse({ event_id: 'e', trip_id: 't', seq: 10, occurred_at: at, type: 'expense.changed', data: { expense, change, by: { kind: 'system' }, by_person_id: 'p_priya' } }).type).toBe('expense.changed');
     }
@@ -96,12 +115,14 @@ describe('contract 1.1', () => {
 
   it('B2 a checklist card, and a vault link to add documents with its context; B3a a call has its recording', () => {
     const checklist = {
-      card_id: 'c_ck', kind: 'checklist', fallback_text: 'Documents for the trip', title: 'Documents',
-      rows: [{ row_id: 'r_1', label: 'Rahul: ID for the train', status: 'todo', person_id: 'p_rahul' }, { row_id: 'r_2', label: 'Hotel voucher', status: 'info' }],
+      kind: 'checklist', card_id: 'c_visa', title: 'Indonesia e-VOA', subtitle: 'Due before you fly', due_at: '2026-12-10',
+      rows: [{ person_id: 'p_aarav', status: 'todo', label: 'Not yet', sub: 'Passport, photo' }, { person_id: 'p_rahul', status: 'done', label: 'Done' }],
+      suggestion: { text: 'You and Arjun land together. Share a cab?', cta: { action_id: 'cab', label: 'Book' } }, actions: [], fallback_text: 'Indonesia e-VOA: 1 of 2 done',
     };
     expect(Card.parse(checklist).kind).toBe('checklist');
-    expect(Card.safeParse({ ...checklist, rows: [{ row_id: 'r_1', label: 'x', status: 'maybe' }] }).success).toBe(false);
-    expect(CreateLink.parse({ kind: 'vault', person_id: 'p', start: 'add_documents', context: { booking_id: 'b_1' } }).start).toBe('add_documents');
+    expect(Card.safeParse({ ...checklist, rows: [{ person_id: 'p_aarav', label: 'x', status: 'maybe' }] }).success).toBe(false);
+    expect(Card.safeParse({ ...checklist, due_at: '2026-12-10T10:00:00Z' }).success).toBe(false);
+    expect(CreateLink.parse({ kind: 'vault', person_id: 'p', start: 'add_documents', context: { trip_id: 't_bali', purpose: 'visa' } }).start).toBe('add_documents');
     const call = Card.parse({
       card_id: 'c_call', kind: 'call', fallback_text: 'Go called the villa', call_id: 'call_1', business: 'Villa Maya', goal: 'Ask about late check-in',
       state: 'ended', recording_url: 'https://go.example.com/rec/call_1.mp3', duration_s: 94,

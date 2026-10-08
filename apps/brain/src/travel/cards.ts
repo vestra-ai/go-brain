@@ -186,6 +186,7 @@ function cardOption(p: CardPick): CardOption {
 const KIND_WORDS: Record<OptionKind, [string, string]> = {
   stay: ['stay', 'stays'], flight: ['flight', 'flights'], train: ['train', 'trains'], bus: ['bus', 'buses'],
   place: ['place', 'places'], food: ['place to eat', 'places to eat'], activity: ['thing to do', 'things to do'],
+  cab: ['cab', 'cabs'],
 };
 
 /** The options card, checked against the contract: a bug here throws instead of posting a card the App cannot draw. */

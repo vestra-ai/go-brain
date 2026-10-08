@@ -352,17 +352,25 @@ class NoticeCard(BaseModel):
 
 
 class ChecklistRow(BaseModel):
-    row_id: Annotated[str, Field(max_length=64, min_length=1)]
-    label: Annotated[str, Field(max_length=80, min_length=1)]
-    detail: str | None = None
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
     status: Literal["todo", "started", "done", "info"]
-    person_id: str | None = None
-    due_at: AwareDatetime | None = None
+    label: Annotated[str, Field(max_length=80, min_length=1)]
+    sub: str | None = None
+
+
+class Cta(BaseModel):
+    action_id: Annotated[str, Field(pattern="^[a-z][a-z_]{0,31}$")]
+    label: Annotated[str, Field(max_length=24, min_length=1)]
+
+
+class ChecklistSuggestion(BaseModel):
+    text: Annotated[str, Field(max_length=300, min_length=1)]
+    cta: Cta | None = None
 
 
 class ChecklistCard(BaseModel):
     """
-    1.1: a checklist (documents, packing, check-ins), each row todo, started, done or info. Updated in place.
+    1.1: a checklist for the group, one row a person, each todo, started, done or info. Updated in place.
     """
 
     card_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -370,7 +378,10 @@ class ChecklistCard(BaseModel):
     for_person_ids: list[str] | None = None
     kind: Literal["checklist"]
     title: Annotated[str, Field(max_length=80, min_length=1)]
-    rows: Annotated[list[ChecklistRow], Field(max_length=20, min_length=1)]
+    subtitle: str | None = None
+    due_at: date_aliased | None = None
+    rows: Annotated[list[ChecklistRow], Field(max_length=30)]
+    suggestion: ChecklistSuggestion | None = None
     actions: list[CardAction] | None = None
 
 
@@ -589,7 +600,7 @@ class BookingDocument(BaseModel):
     mime: Annotated[str, Field(max_length=100, min_length=1)]
     size_bytes: Annotated[int, Field(ge=0)]
     pages: int | None = None
-    visibility: Literal["group", "shared", "private"]
+    visibility: Literal["covered", "group"]
     url: Annotated[str, Field(pattern="^https?://")]
 
 
@@ -622,9 +633,9 @@ class Booking(BaseModel):
 
 class ExpenseConfirmation(BaseModel):
     person_id: Annotated[str, Field(max_length=64, min_length=1)]
-    answer: Literal["approved", "disputed"]
-    at: AwareDatetime
-    note: str | None = None
+    state: Literal["pending", "approved", "disputed"]
+    at: AwareDatetime | None = None
+    reason: str | None = None
 
 
 class Expense(BaseModel):
@@ -653,6 +664,8 @@ class Settlement(BaseModel):
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
     method: Literal["upi", "cash", "bank_transfer", "other"]
     note: str | None = None
+    status: Literal["confirmed"]
+    recorded_at: AwareDatetime | None = None
     confirmed_at: AwareDatetime
 
 
@@ -1398,6 +1411,7 @@ class AddExpense(BaseModel):
     """
     split_person_ids: Annotated[list[str], Field(max_length=30, min_length=1)]
     booking_id: str | None = None
+    approval_id: str | None = None
 
 
 class AddExpenseResult(BaseModel):
@@ -1573,10 +1587,8 @@ class ForgetResult(BaseModel):
 
 
 class LinkContext(BaseModel):
-    trip_id: str | None = None
-    booking_id: str | None = None
-    card_id: str | None = None
-    row_id: str | None = None
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    purpose: Literal["visa"] | None = None
 
 
 class CreateLink(BaseModel):

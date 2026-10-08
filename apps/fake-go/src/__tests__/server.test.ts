@@ -228,11 +228,11 @@ describe('send_event', () => {
     const expense = {
       expense_id: 'x_1', paid_by_person_id: 'p_rahul', amount_minor: 240000, currency: 'INR', note: 'Cab', category: 'getting_around',
       split_person_ids: ['p_rahul', 'p_priya'], created_at: at, status: 'disputed',
-      confirmations: [{ person_id: 'p_priya', answer: 'disputed', at, note: 'I took the bus' }],
+      confirmations: [{ person_id: 'p_priya', state: 'disputed', at, reason: 'I took the bus' }],
     };
     const asked = [
       ev('ev_s', 60, 'settlement.recorded', {
-        settlement: { settlement_id: 's_1', from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 120000, currency: 'INR', method: 'cash', confirmed_at: at },
+        settlement: { settlement_id: 'st_1', from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 120000, currency: 'INR', method: 'cash', status: 'confirmed', confirmed_at: at },
         by: { kind: 'person', person_id: 'p_rahul' },
       }),
       ev('ev_x', 61, 'expense.changed', { expense, change: 'disputed', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' }),

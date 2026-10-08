@@ -58,10 +58,20 @@ const CloseVoteInput = z.object({
 
 const UpdateTripInput = z.object({
   title: z.string().min(1).max(80).optional(),
-  destination: z.string().min(1).max(120).optional().describe('The place name, like "North Goa".'),
+  destination: z
+    .string()
+    .min(1)
+    .max(120)
+    .optional()
+    .describe('Where the trip goes: a city or region, like "Goa". Never an area to stay in or a hotel: that is the stay.'),
   dates: z.object({ start: z.iso.date(), end: z.iso.date() }).optional(),
   vibe: z.array(z.string().min(1).max(40)).max(12).optional(),
-  stay: z.string().min(1).max(60).optional(),
+  stay: z
+    .string()
+    .min(1)
+    .max(60)
+    .optional()
+    .describe('Where the group stays, as it picked it: a vote\'s winner or a booked stay, like "Candolim" or "Villa Sol, Anjuna". Never a wish ("a villa with a pool"): that stays a preference.'),
 });
 
 const StaySilentInput = z.object({
@@ -152,7 +162,7 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
       // The trip's one writer: the checks (a stay or place a vote decided, days before today) and the request are there.
       const r = await saveTrip(o, { link: ctx.link, tripId: ctx.tripId, pack: ctx.pack, requestId: () => ctx.stableId('go_trip') }, a);
       if (!r.ok) return { ok: false, error: r.error, ...(r.quiet ? { tell_the_room: SAY_NOTHING } : {}) };
-      return { ok: true, changed: r.changed, ...(r.stay ? { stay: r.stay } : {}) };
+      return { ok: true, changed: r.changed, ...(r.stay ? { stay: r.stay } : {}), ...(r.note ? { note: r.note } : {}) };
     },
   };
 

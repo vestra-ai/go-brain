@@ -121,14 +121,47 @@ export async function settleDecisionLines(pool: Pool, link: ServerLink, tripId: 
     const d = pack.trip.decisions.find((x) => x.decision_id === row.decision_id);
     const kind = row.line.kind;
     if (!settled(d, row.closes_on) || (kind !== 'agreed' && kind !== 'open' && kind !== 'doing')) continue;
-    const done: CheckedLine = {
-      kind,
-      text: row.line.text,
-      personIds: row.line.person_ids,
-      proof: row.line.proof.map((p) => ({ message_id: p.message_id, person_id: p.person_id ?? null })),
-      lineId: row.line_id,
-      status: 'done',
-    };
+    const done = doneOf({ ...row.line, kind });
+    const out = await writeLine(pool, link, tripId, done, lineRequestId(done));
+    if ('lineId' in out) marked += 1;
+  }
+  return marked;
+}
+
+/** A line of Go's as it is, marked done: the update that closes it and changes nothing else. */
+function doneOf(line: C.RecordLine & { kind: CheckedLine['kind'] }): CheckedLine {
+  return {
+    kind: line.kind,
+    text: line.text,
+    personIds: line.person_ids,
+    proof: line.proof.map((p) => ({ message_id: p.message_id, person_id: p.person_id ?? null })),
+    lineId: line.line_id,
+    status: 'done',
+  };
+}
+
+/**
+ * Go's open questions a new agreed or doing line settles: the ones the notes model names (settles), and, for an agreed
+ * line, any whose question is among the line's own proof (the proposal the group said yes to). The Server, 6 Oct: open
+ * lines were never closed, so a question the group had settled stayed in everyone's "needs you".
+ */
+export function settledBy(line: CheckedLine, named: readonly string[], record: readonly C.RecordLine[]): C.RecordLine[] {
+  if (line.kind === 'open' || line.status === 'done') return [];
+  const proof = new Set(line.proof.map((p) => p.message_id));
+  return record.filter(
+    (r) =>
+      r.kind === 'open' && r.status === 'active' && r.source === 'go' && r.line_id !== line.lineId &&
+      (named.includes(r.line_id) || (line.kind === 'agreed' && r.proof.some((p) => proof.has(p.message_id)))),
+  );
+}
+
+/** Marks done each open question this line settles (settledBy). Returns how many it marked. */
+export async function closeSettled(
+  pool: Pool, link: ServerLink, tripId: string, line: CheckedLine, named: readonly string[], record: readonly C.RecordLine[],
+): Promise<number> {
+  let marked = 0;
+  for (const r of settledBy(line, named, record)) {
+    const done = doneOf({ ...r, kind: 'open' });
     const out = await writeLine(pool, link, tripId, done, lineRequestId(done));
     if ('lineId' in out) marked += 1;
   }

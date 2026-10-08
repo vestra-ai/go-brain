@@ -82,9 +82,13 @@ export interface Brain {
   recipeRunners?: {
     browserFetch: RecipeRunner;
     keepWarm(tripId: string): void;
+    /** Holds the trip's computer awake keepMs once it is up (Bash's warm keep_ms), for the keepalive while people talk. */
+    keepAwake?(tripId: string, keepMs: number): Promise<'ready' | 'waking'>;
     start(tripId: string): Promise<'ready' | 'waking' | 'skipped'>;
     prime(tripId: string): Promise<void>;
     watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
+    /** A fresh 15-minute session on the trip's screen, in control or to view (POST /v1/sessions): the ixigo login's Watch. */
+    screen(tripId: string, mode: 'view' | 'control'): Promise<{ url: string; expires_at: string }>;
   };
   /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */
   recipeStats?: () => RecipeStat[];

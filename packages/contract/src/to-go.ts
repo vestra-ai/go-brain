@@ -25,7 +25,7 @@ export const CardTap = z
     person_id: Id,
     /** Set when the button was on one option of an options card. */
     option_id: Id.nullish(),
-    /** 1.1: what the tapper chose on the button's sheet: one way or the round trip, on an option with both prices. */
+    /** 1.1: what the tapper chose on the button's sheet: one way or the round trip, on an option with both prices (sent with pick). */
     payload: z.object({ trip: z.enum(['oneway', 'round']) }).meta({ id: 'CardTapPayload' }).nullish(),
   })
   .meta({ id: 'CardTap' });
@@ -110,11 +110,8 @@ export const CreateLink = z
     person_id: Id,
     /** Which part of the vault to open. 1.1 adds add_documents (Go answers "not available yet" in 1.1). */
     start: z.enum(['home', 'add_card', 'add_login', 'add_documents']).nullish(),
-    /** 1.1: what the link is for, e.g. the booking or the checklist row the documents go with. */
-    context: z
-      .object({ trip_id: Id.nullish(), booking_id: Id.nullish(), card_id: Id.nullish(), row_id: Id.nullish() })
-      .meta({ id: 'LinkContext' })
-      .nullish(),
+    /** 1.1: what the link is for: the trip, and what the documents are for. */
+    context: z.object({ trip_id: Id, purpose: z.enum(['visa']).nullish() }).meta({ id: 'LinkContext' }).nullish(),
   })
   .meta({ id: 'CreateLink' });
 export const Link = z.object({ url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'Link' });

@@ -11,6 +11,7 @@ import { tripToday } from '../travel/dates.js';
 import { createImages } from '../travel/images.js';
 import { createResultsStore } from '../travel/results.js';
 import { createCardUpdater } from './card-updater.js';
+import { createTripAwake, recentTalk } from './awake.js';
 import { addComputerSteps, createComputer, type Computer } from './computer.js';
 import { renderTaskWake, tasksNow } from './context.js';
 import { readTasksEnv } from './env.js';
@@ -21,7 +22,7 @@ import { createKeepWarm } from './keep-warm.js';
 import { createScreens, SCREENS_PER_MINUTE_PER_KEY, type Screens } from './screens.js';
 import { createTaskStore, type TaskStore } from './store.js';
 import { SWEEP_EVERY_MS, createSweep, type Sweep } from './sweep.js';
-import { registerTaskTaps } from './taps.js';
+import { openSession, registerTaskTaps } from './taps.js';
 import { createTasks, type TasksService } from './tasks.js';
 import { taskTools } from './tools.js';
 import { createBrowserFetchRunner, FRAME_WIDTH, WATCH_FPS } from '../travel/recipes/runners.js';
@@ -63,6 +64,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   brain.recipeRunners = {
     browserFetch,
     keepWarm: (tripId) => keeper.touch(tripId),
+    keepAwake: (tripId, keepMs) => computer.keepAwake(tripId, keepMs),
     start: (tripId) => computer.warm(tripId),
     // The new computer's first ixigo visit, travel's setup step after start (runners.ts COLD_COMPUTER).
     prime: async (tripId) => {
@@ -70,6 +72,8 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     },
     // Bash's live view of the fetch's own tabs: a stream that never wakes the computer. No resume: a watch has no history.
     watch: (tripId, signal) => v1.stream(`/v1/users/${computer.userIdFor(tripId)}/browser/watch?width=${FRAME_WIDTH}&fps=${WATCH_FPS}`, { lastEventId: 0, signal }),
+    // The ixigo login's Watch (travel/login.ts): a session on the trip's screen, as the working card's Watch opens one.
+    screen: (tripId, mode) => openSession(v1, computer.userIdFor(tripId), null, mode),
   };
   const store = createTaskStore(brain.pool);
   const eventStore = createEventStore(brain.pool, brain.now);
@@ -106,8 +110,21 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   brain.context.addNow(tasksNow({ store, packs: brain.packs, now: brain.now }));
   brain.context.addWake('task', renderTaskWake);
   sweep.start(o.sweepEveryMs ?? SWEEP_EVERY_MS);
-  // When Go stops (built.stop()): no new sweep, every stream and wait aborted, the last card updates sent.
+  // The trip's computer stays awake while its group talks (awake.ts): a hold every 30 s until 10 quiet minutes, where Go
+  // reads ixigo.com on it; after a restart, picked back up from each trip's last person's line.
+  const awake = createTripAwake({
+    keep: (tripId, keepMs) => computer.keepAwake(tripId, keepMs),
+    now: brain.now,
+    log: brain.log,
+    on: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    gone: async (tripId) => ((await brain.pool.query('select 1 from trips where trip_id = $1 and gone_at is not null', [tripId])).rowCount ?? 0) > 0,
+    recent: (since) => recentTalk(brain.pool, since),
+  });
+  brain.tripLog.onEvent((ev) => awake.onEvent(ev));
+  void awake.catchUp().catch((err: unknown) => brain.log.warn({ err: String(err) }, 'tasks: the keepalive could not read which trips are talking'));
+  // When Go stops (built.stop()): no new sweep or hold, every stream and wait aborted, the last card updates sent.
   brain.onStop(async () => {
+    awake.stop();
     await sweep.stop();
     await follower.close();
     await cards.flush();

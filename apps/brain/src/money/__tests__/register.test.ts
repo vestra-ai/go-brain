@@ -78,7 +78,7 @@ describe('registerMoney', () => {
   it('answers 1.1\'s add_documents "not available yet" (409 conflict), with any context, and asks the vault nothing', async () => {
     const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server });
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
-    const asked = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_documents', context: { trip_id: 't_goa', booking_id: 'b_1' } });
+    const asked = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_documents', context: { trip_id: 't_goa', purpose: 'visa' } });
     const err = await seen.handlers.get('vault_link')?.(asked, { instance: 'sim', frameId: 'gs_2' }).then(() => null, (e: unknown) => e);
     expect(err).toBeInstanceOf(SocketCallError);
     expect(err).toMatchObject({ code: 409, dataCode: 'conflict', message: NOT_AVAILABLE_YET });

@@ -58,6 +58,8 @@ export class FakeV1 {
   readonly platformEvents: FakePlatformEvent[] = [];
   /** The computer's screen; null answers 409 browser_not_open. */
   screen: Buffer | null = null;
+  /** Bash refusing the screenshot with this 409 code, such as browser_in_use while a person signs in on the screen. */
+  screenRefusal: string | null = null;
   /** Vestra's BROWSER_SHARED_CONTROL. Off answers screen: 'control' with 409 screen_control_unavailable. */
   controlAvailable = false;
   /** A hand_off: always message starts its task by itself (task.started on the stream). */
@@ -68,6 +70,8 @@ export class FakeV1 {
   failNextStream: { status: number; code: string } | null = null;
   /** null: the MCP check passes when the user has TRIP_TOKEN. false: it always fails. */
   checkOk: boolean | null = null;
+  /** What a warm answers: 'waking' (202), or 'ready' (200) for a computer that is up. */
+  warmStatus: 'waking' | 'ready' = 'waking';
   /** The next POST to a path that matches answers this status and code, once (402 wallet_empty, 409 conversation_busy). */
   failNextPost: { path: RegExp; status: number; code: string } | null = null;
   traceSteps: Array<Record<string, unknown>> = [];
@@ -318,7 +322,7 @@ export class FakeV1 {
     });
     app.post('/v1/users/:id/warm', async (req, reply) => {
       if (!this.users.has(param(req))) return fail(reply, 404, 'user_not_found');
-      return reply.code(202).send({ user_id: param(req), status: 'waking' });
+      return reply.code(this.warmStatus === 'ready' ? 200 : 202).send({ user_id: param(req), status: this.warmStatus });
     });
     // A browser fetch whose page answers each page_fetch step at once, as a new computer's prime asks it (runners.ts).
     app.post('/v1/users/:id/browser/fetch', async (req, reply) => {
@@ -428,6 +432,7 @@ export class FakeV1 {
       });
     });
     app.get('/v1/users/:id/screenshot', async (_req, reply) => {
+      if (this.screenRefusal) return fail(reply, 409, this.screenRefusal);
       if (!this.screen) return fail(reply, 409, 'browser_not_open');
       return reply.header('content-type', 'image/jpeg').header('cache-control', 'no-store').send(this.screen);
     });
