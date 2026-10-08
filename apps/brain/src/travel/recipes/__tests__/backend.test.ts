@@ -463,18 +463,26 @@ describe('a stays ask answered from a kept search with no conditions (the head s
     expect(s.cards).toEqual(['t_goa']);
   });
 
-  // Staging, 8 Oct, a trip of five: the pool card came from the head start's list (three stays with a pool, one of them with
-  // free cancellation). Priya then asked "which of these has free cancellation?", and the model searched "sleeping 5, with
-  // a pool, with free cancellation": a page load of 13 s, though the pool search kept behind the card had them.
-  it('answers "which of these has free cancellation?" after the pool card from the pool search kept behind it, sleeping 5 in a trip of five', async () => {
+  /**
+   * The lead's trip on staging, 8 Oct: five people in North Goa. The head start's list has three stays with a pool, one
+   * of them with free cancellation; ixigo's own pool list has three with it. Keyed by the page, as on staging.
+   */
+  const NORTH = { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
+  function fiveInNorthGoa() {
     const fiveOfUs = createEngine({ book, runner: () => null, trip: async () => ({ people: 5, homes: [] }), now });
     const fc = { free_cancellation: true };
-    const NORTH = { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
-    const s = staysEngine([stay(1, true, fc), stay(2, true), stay(3, true), stay(4, false)], {
+    return staysEngine([stay(1, true, fc), stay(2, true), stay(3, true), stay(4, false)], {
       head: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' },
       filtered: [stay(91, true, fc), stay(92, true, fc), stay(93, true), stay(94, true, fc)],
       requestOf: (id, given, ro) => fiveOfUs.requestOf(id, given, ro),
     });
+  }
+
+  // Staging, 8 Oct, run 1: the pool card came from the head start's list. Priya then asked "which of these has free
+  // cancellation?", and the model searched "sleeping 5, with a pool, with free cancellation": a page load of 13 s, though
+  // the pool search kept behind the card had them.
+  it('answers "which of these has free cancellation?" after the pool card from the pool search kept behind it, sleeping 5 in a trip of five', async () => {
+    const s = fiveInNorthGoa();
     await s.headStart();
     // "@Go find a villa with a pool in North Goa": the card at once from the head start's list, and ixigo's pool search kept behind it.
     const card = await s.b.search('stays', { ...NORTH, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_1' });
@@ -485,6 +493,27 @@ describe('a stays ask answered from a kept search with no conditions (the head s
     const asked = await s.b.search('stays', { ...NORTH, guests: 5, mustHave: ['pool', 'free_cancellation'] }, { tripId: 't_goa', turnId: 'turn_2' });
     expect(asked.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 94']);
     expect(asked.checkedAt).toBe('2026-10-07T12:20:00.000Z');
+    expect(s.runs).toEqual([
+      { conditions: [], background: false },
+      { conditions: ['pool'], background: true },
+      { conditions: ['pool', 'free_cancellation'], background: true },
+    ]);
+    expect(s.cards).toEqual([]);
+  });
+
+  // Run 2: Go's own pool card when the dates were locked ("Dates are locked, so here are pool stays…"), then "@Go find a
+  // villa with a pool in North Goa", then the same follow-up, which loaded a page for 14 s.
+  it("answers the follow-up at once in run 2's order too: Go's own pool card, the villa ask, then free cancellation", async () => {
+    const s = fiveInNorthGoa();
+    await s.headStart();
+    const proactive = await s.b.search('stays', { ...NORTH, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(proactive.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
+    await tick();
+    // The villa ask: ixigo's pool search, kept behind Go's card, as it is.
+    const villa = await s.b.search('stays', { ...NORTH, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(villa.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
+    const asked = await s.b.search('stays', { ...NORTH, guests: 5, mustHave: ['pool', 'free_cancellation'] }, { tripId: 't_goa', turnId: 'turn_3' });
+    expect(asked.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 94']);
     expect(s.runs).toEqual([
       { conditions: [], background: false },
       { conditions: ['pool'], background: true },
