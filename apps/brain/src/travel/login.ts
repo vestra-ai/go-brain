@@ -39,6 +39,8 @@ const ASK_AGAIN_MS = 30 * 60_000;
 /** Go's hello is a queued turn: the prompt waits for it this long, looking every HELLO_POLL_MS, before setup tries later. */
 export const HELLO_WAIT_MS = 20_000;
 const HELLO_POLL_MS = 1_000;
+/** The login job's to-do list, word for word: the job writes it as its own, so the card never changes under the person. */
+const LOGIN_STEPS = ['Open ixigo.com', 'Open the log in box', 'Hand over the log in'] as const;
 /** The first ask, at setup or at a trip's first search. */
 const FIRST_LINE = "{name}, link ixigo for the trip: one login on the trip's computer, about a minute.";
 
@@ -62,7 +64,7 @@ export interface LoginDeps {
   /** The trip's browser fetch; null while the trip's computer is not set up here. */
   runner: () => Pick<RecipeRunner, 'read'> | null;
   /** The jobs lane: the login is a job that opens ixigo's login and hands the browser to the person. */
-  tasks: () => Pick<Tasks, 'start' | 'handoff'> | null;
+  tasks: () => Pick<Tasks, 'start' | 'handoff' | 'stop'> | null;
   /** Whether Go searches ixigo.com itself (TRAVEL_MODE ixigo_web): only then is there a login to ask for. */
   live: () => boolean;
   now: () => Date;
@@ -347,16 +349,21 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         const tasks = d.tasks();
         if (!d.live() || !tasks) return { result: 'refused', toast: "Go's computer isn't browsing ixigo right now." };
         if (row.state === 'logged_in') return { result: 'done', toast: 'ixigo is already logged in' };
-        const name = await nameOf(row.tripId, row.personId);
         const job = await tasks.start(row.tripId, {
+          // Two clicks, then the hand-off at once: each step or check the job adds is a model round the person waits on.
           goal:
-            "Open https://www.ixigo.com/ in the browser and open its log in (the Log in button at the top of the page). Then hand the browser to the person so they log in themselves with their own mobile number and the one-time code. Never type, read, copy or keep a number, a code, a name or an email, and never open a page under /payments/. When they say they are done, say in the summary only whether the page's top bar greets a logged-in person; never say who.",
+            `Your to-do list is exactly these three steps: ${LOGIN_STEPS.map((t) => `"${t}"`).join(', ')}. ` +
+            'Open https://www.ixigo.com/ in the browser and click "Log in/Sign up" at the top right of the page. A box opens with a field for the mobile number: click into that field and type nothing. ' +
+            'Then hand the browser to the person at once, checking nothing first: they log in themselves with their own mobile number and the one-time code. ' +
+            'Never type, read, copy or keep a number, a code, a name or an email, and never open a page under /payments/. When they say they are done, end the job at once with the summary "Done": Go checks the login itself.',
           returns: returnsSchema('answer'),
           returnsKind: 'answer',
           context: {},
           title: 'Logging in to ixigo',
-          steps: ["Opening ixigo's login", `${name} logs in`, 'Checking the login'],
+          steps: [...LOGIN_STEPS],
           askedBy: row.personId,
+          // The login card speaks for the job: its end posts nothing in the chat.
+          quiet: true,
           // One job a tap: a tap Go already answered gets its first answer back, and another tap is another try.
           key: `ixigo_login_${tap.tap_id}`,
         });
@@ -369,7 +376,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       taps.on('notice', 'ixigo_logged_in', forPerson(async (row) => {
         if (row.state !== 'logging_in') return { result: 'done' };
         track('check', row.tripId, (async () => {
-          // The job's hand-off, settled for them: the job then looks at the page and ends.
+          // The job's hand-off, settled for them: the job then ends, quietly. ixigo's own answer says whether it worked.
           if (row.taskId) await d.tasks()?.handoff(row.taskId, 'done').catch(() => undefined);
           if ((await status(row.tripId)) === 'in') await show(await loggedIn(row));
           else await show(row, 'not_yet');
@@ -381,7 +388,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         if (row.state === 'logged_in') return { result: 'done' };
         const next: LoginRow = { ...row, state: 'skipped' };
         await save(next);
-        if (row.taskId && row.state === 'logging_in') track('hand-off', row.tripId, d.tasks()?.handoff(row.taskId, 'not_now').catch(() => undefined) ?? Promise.resolve());
+        // The job stops where it is: its card says Stopped, and nothing is posted in the chat.
+        if (row.taskId && row.state === 'logging_in') track('stop', row.tripId, d.tasks()?.stop(row.taskId) ?? Promise.resolve());
         track('card', row.tripId, show(next));
         return { result: 'done', toast: 'Go will ask again when a booking needs it' };
       }));

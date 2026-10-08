@@ -45,7 +45,8 @@ export interface TaskHarness {
   /** Told when a job reaches a conversation; a test sets it to a real follower. */
   onFollow: ((conversationId: string, tripId: string) => void) | null;
   /** The villa job, started, handed to /v1 and named by it (task.started applied). Needs fake.autoStart off. */
-  runningJob(key: string, tripId?: string): Promise<{ row: TaskRow; v1TaskId: string }>;
+  /** A job past task.started, on VILLA_BRIEF or that brief with `over`. */
+  runningJob(key: string, tripId?: string, over?: Partial<TaskBrief>): Promise<{ row: TaskRow; v1TaskId: string }>;
   close(): Promise<void>;
 }
 
@@ -77,8 +78,8 @@ export async function makeTaskHarness(o: { autoStart?: boolean; cardGapMs?: numb
     set onFollow(f) {
       onFollow = f;
     },
-    async runningJob(key, tripId = 't_goa') {
-      const r = await tasks.start(tripId, { ...VILLA_BRIEF, key });
+    async runningJob(key, tripId = 't_goa', over = {}) {
+      const r = await tasks.start(tripId, { ...VILLA_BRIEF, ...over, key });
       await tasks.settled();
       const row = await store.get(r.taskId);
       if (!row?.conversationId || !row.v1TurnId) throw new Error(`job ${key} did not reach /v1`);
