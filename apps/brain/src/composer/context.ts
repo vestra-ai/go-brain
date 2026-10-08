@@ -1,3 +1,4 @@
+import type * as C from '@go/contract';
 import type { DeskItem, DeskKind } from '../desk/desk.js';
 import type { Log } from '../log.js';
 import type { TripPack } from '../trips/pack.js';
@@ -44,6 +45,12 @@ export interface TurnEnd {
  */
 export type DirectAnswer = (i: { tripId: string; wake: DeskItem[]; pack: TripPack; ctx: TurnCtx }) => Promise<boolean>;
 
+/**
+ * A card a lane puts on the turn's own post, first, with one line after Go's words, so the room gets one message, never
+ * two in a row (the ixigo login on Go's hello). Asked once, just before the post; null for none.
+ */
+export type TurnCard = (i: { tripId: string; wake: DeskItem[]; pack: TripPack }) => Promise<{ card: C.Card; line: string } | null>;
+
 /** A turn's limits: the only tools it may call (stay_silent always works) and whether its text may be posted. */
 export interface TurnLimits {
   tools: string[];
@@ -70,6 +77,8 @@ export interface Context {
   addTurnEnd(fn: (t: TurnEnd) => void): void;
   /** A lane's answer with no model call, tried before the model in registration order; the first true wins. */
   addDirect(fn: DirectAnswer): void;
+  /** A lane's card on the turn's own post, with its line (TurnCard). */
+  addTurnCard(fn: TurnCard): void;
 }
 
 /** A text block as the Messages API takes it. */
@@ -110,6 +119,8 @@ export type ContextImpl = Context & {
   turnEnded(t: TurnEnd): void;
   /** Whether a lane answered the turn with no model call; a lane that throws is logged and the model answers. */
   direct(i: Parameters<DirectAnswer>[0]): Promise<boolean>;
+  /** Every lane's card for this turn's post, in registration order; a lane that throws is logged and left out. */
+  turnCards(i: Parameters<TurnCard>[0]): Promise<Array<{ card: C.Card; line: string }>>;
 };
 
 export const CHUNK = 25;
@@ -147,6 +158,7 @@ export function createContext(log: Log): ContextImpl {
   const endNotes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
   const turnEnds: Array<(t: TurnEnd) => void> = [];
   const directs: DirectAnswer[] = [];
+  const riders: TurnCard[] = [];
   let story: StoryProvider | null = null;
   let forgottenFrom: ForgottenProvider | null = null;
 
@@ -216,6 +228,21 @@ export function createContext(log: Log): ContextImpl {
     },
     addDirect(fn) {
       directs.push(fn);
+    },
+    addTurnCard(fn) {
+      riders.push(fn);
+    },
+    async turnCards(i) {
+      const out: Array<{ card: C.Card; line: string }> = [];
+      for (const fn of riders) {
+        try {
+          const rider = await fn(i);
+          if (rider) out.push(rider);
+        } catch (e) {
+          log.warn({ err: e, trip: i.tripId }, "a lane's card for the turn failed; the post goes without it");
+        }
+      }
+      return out;
     },
     async direct(i) {
       for (const fn of directs) {

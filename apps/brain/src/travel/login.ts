@@ -2,9 +2,10 @@
  * One person's ixigo login on the trip's computer. Keshav's word: "when the trip creates, that's when we [make] the ixigo
  * connection, and all the warming should happen; connection as in ixigo should be logged in, so prompt someone to login",
  * and "if there is no login on ixigo in a group, it should first proactively prompt for that". One setup flow at
- * trip.created: the box is made (travel.computer), then, right after Go's hello, Go prompts the organizer (or, with none,
- * the first person who hasn't paused Go) with one line and a card pinned to them (travel.ixigo_login), then ixigo is opened
- * and warmed on the box (travel.ixigo_warm). A trip that never had the prompt (one Go held before it came) is asked at its
+ * trip.created: Go's hello itself prompts the organizer (or, with none, the first person who hasn't paused Go), with its
+ * last line for them and a card pinned to them on the same message (helloCard: one Go post, never two in a row); the box
+ * is made (travel.computer), the prompt is made after the hello if the hello went without it (travel.ixigo_login), then
+ * ixigo is opened and warmed on the box (travel.ixigo_warm). A trip that never had the prompt (one Go held before it came) is asked at its
  * first search instead (nudge). Each trip is asked once that way; a row of any kind ("Not now" too) means no more nudges.
  * Nothing waits on the login: searches work logged out. Go asks again the first time a recipe needs the login
  * (auth: login). The person logs in
@@ -46,8 +47,10 @@ const LOGIN_STEPS = ["Open ixigo's log in", 'Click the mobile number box', 'Hand
 export const LOGIN_URL = 'https://www.ixigo.com/?loginVisible=true';
 /** A booking ask asks again with its own line, unless it asked this recently (a turn that runs again). */
 const BOOK_ASK_AGAIN_MS = 2 * 60_000;
-/** The first ask, at setup or at a trip's first search. */
+/** The first ask, at setup or at a trip's first search, when Go's hello went without it. */
 const FIRST_LINE = "{name}, link ixigo for the trip: one login on the trip's computer, about a minute.";
+/** The hello's last line, for the person asked, with the login card on the same message. */
+export const HELLO_LINE = '{name}, first link ixigo once so I can search and book for everyone.';
 
 export type LoginState = 'asked' | 'logging_in' | 'logged_in' | 'skipped' | 'logged_out';
 
@@ -91,7 +94,13 @@ export interface LoginDeps {
 }
 
 export interface IxigoLogin {
-  /** The setup step that asks right after Go's hello, before the warm. */
+  /**
+   * Go's hello carries the ask (context.addTurnCard): on the setup turn that greets the trip, with no login yet, the
+   * login card and one line for the person asked ride on the hello's own post, so a new trip opens with one Go message,
+   * never two in a row. Null for any other turn, a trip that already has a login, or one Go doesn't browse for.
+   */
+  helloCard(i: { tripId: string; wake: DeskItem[]; pack: TripPack }): Promise<{ card: C.Card; line: string } | null>;
+  /** The setup step that asks after Go's hello when the hello went without the ask, before the warm. */
   setupStep: SetupStep;
   /**
    * Travel intent on a trip (warmForTravel's callers: a search tool starting, the early start, a recipe's run): a trip
@@ -356,9 +365,28 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     };
 
   return {
+    async helloCard(i) {
+      if (!d.live() || !i.wake.some((w) => w.kind === 'setup' && w.ref === 'greet')) return null;
+      // Claimed before the hello goes, so the setup step (and a first search's nudge) finds the ask made and asks nothing.
+      const personId = askable(i.pack);
+      if (personId) {
+        await d.pool.query(
+          `insert into ixigo_logins (trip_id, person_id, state, attempt, asked_at, updated_at) values ($1, $2, 'asked', 0, $3, $3)
+           on conflict (trip_id) do nothing`,
+          [i.tripId, personId, d.now()],
+        );
+      }
+      // The first ask, made here or by an earlier try of this turn: anything else (logged in, skipped, asked again) is not the hello's.
+      const row = await get(i.tripId);
+      if (!row || row.state !== 'asked' || row.attempt !== 0) return null;
+      const name = i.pack.trip.people.find((p) => p.person_id === row.personId)?.name ?? 'the organizer';
+      return { card: loginCard(row, name), line: HELLO_LINE.replace('{name}', name) };
+    },
+
     setupStep: {
       name: 'travel.ixigo_login',
-      // Right after the box is started, before ixigo is warmed on it: the prompt never waits on the warm.
+      // Right after the box is started, before ixigo is warmed on it: the prompt never waits on the warm. Go's hello
+      // normally carried the ask already (helloCard), and then this finds the row and asks nothing.
       after: 'travel.computer',
       async run(tripId) {
         // Nothing to log in to while Go doesn't browse ixigo.com; a recipe that needs the login asks then.

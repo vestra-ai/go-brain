@@ -70,6 +70,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     log: brain.log,
   });
   login.registerTaps(brain.taps);
+  // Go's hello carries the login card and its line: one message to open a new trip, never two in a row.
+  brain.context.addTurnCard((i) => login.helloCard(i));
   // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.
   // Travel intent is also when a trip with no ixigo login is asked for one, once (it never holds the search).
   const warm = (tripId: string, kind: TravelKind | null): void => {
