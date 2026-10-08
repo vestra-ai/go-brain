@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HttpUrl, Id, IsoDateTime } from './common.js';
+import { AppUrl, HttpUrl, Id, IsoDateTime } from './common.js';
 
 /**
  * Your requests: what the Server asks Go over the socket. Events tell Go what happened;
@@ -25,13 +25,18 @@ export const CardTap = z
     person_id: Id,
     /** Set when the button was on one option of an options card. */
     option_id: Id.nullish(),
+    /** 1.1: what the tapper chose on the button's sheet: one way or the round trip, on an option with both prices. */
+    payload: z.object({ trip: z.enum(['oneway', 'round']) }).meta({ id: 'CardTapPayload' }).nullish(),
   })
   .meta({ id: 'CardTap' });
 
 /** Done. Show the toast, if any. Go follows up in the room. */
 export const ActionDone = z.object({ result: z.literal('done'), toast: z.string().max(120).nullish() }).meta({ id: 'ActionDone' });
-/** Open this page in the system browser sheet (the vault, or watching Go work). */
-export const ActionOpen = z.object({ result: z.literal('open'), url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'ActionOpen' });
+/**
+ * Open this page in the system browser sheet (the vault, or watching Go work). 1.1: or one of the App's own screens,
+ * by a go:// link from the guide's route table, which the App opens in place.
+ */
+export const ActionOpen = z.object({ result: z.literal('open'), url: AppUrl, expires_at: IsoDateTime }).meta({ id: 'ActionOpen' });
 /** Not allowed or no longer possible. Show the toast. */
 export const ActionRefused = z.object({ result: z.literal('refused'), toast: z.string().min(1).max(120) }).meta({ id: 'ActionRefused' });
 
@@ -103,8 +108,13 @@ export const CreateLink = z
   .object({
     kind: z.enum(['vault']),
     person_id: Id,
-    /** Which part of the vault to open. */
-    start: z.enum(['home', 'add_card', 'add_login']).nullish(),
+    /** Which part of the vault to open. 1.1 adds add_documents (Go answers "not available yet" in 1.1). */
+    start: z.enum(['home', 'add_card', 'add_login', 'add_documents']).nullish(),
+    /** 1.1: what the link is for, e.g. the booking or the checklist row the documents go with. */
+    context: z
+      .object({ trip_id: Id.nullish(), booking_id: Id.nullish(), card_id: Id.nullish(), row_id: Id.nullish() })
+      .meta({ id: 'LinkContext' })
+      .nullish(),
   })
   .meta({ id: 'CreateLink' });
 export const Link = z.object({ url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'Link' });

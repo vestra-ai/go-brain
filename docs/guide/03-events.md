@@ -442,7 +442,7 @@ Go does not announce each line it writes. Instead, it may add a quiet ✅ reacti
 | `trip.created` | Someone creates a trip. | Sets the trip up (memory, people, its queue, and its own computer in the background), then greets the group and starts. |
 | `trip.updated` | The title, destination, dates, vibe, stay, itinerary, status or budget changes. | Reads the trip and warns the room about a clash. |
 | `decision.opened` | A vote opens. | Notes the vote and when it closes. |
-| `decision.voted` | Someone votes or changes their vote. | Keeps the count, quietly. |
+| `decision.voted` | Someone votes or changes their vote, says they are flexible, or takes their vote back (1.1). | Keeps the count, quietly. |
 | `decision.closed` | A vote closes. | Announces the result. For a booking vote, sets the mandate. |
 | `decision.cancelled` | A vote is called off. | Stops waiting on it. |
 | `mandate.set` | Go set what the group allowed for a spend. | Records the change number. |
@@ -450,7 +450,8 @@ Go does not announce each line it writes. Instead, it may add a quiet ✅ reacti
 | `mandate.declined` | The payer taps "Not now". | Does not ask for a spend approval. |
 | `record.changed` | A trip record line is added, changed, done or undone. | Keeps its copy of the record. Treats an undone line as no longer settled. |
 | `booking.changed` | A booking is added, changed or cancelled. | Checks it against the plan and warns about a clash. |
-| `expense.changed` | An expense is added or removed. | Takes note. The server does the money maths. |
+| `expense.changed` | An expense is added or removed, or (1.1) someone it is split between approves or disputes it. | Takes note. The server does the money maths. |
+| `settlement.recorded` | (1.1) Someone paid someone back, and the one paid confirmed it. | Reads the trip's money again. |
 
 The rest of this page shows each event type with an example from the Goa trip.
 

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { Actor, Id, IsoDateTime, Seq } from './common.js';
 import { Person } from './people.js';
 import { Message, Reaction } from './room.js';
-import { Booking, Decision, Expense, Mandate, RecordLine, TripSnapshot } from './trip.js';
+import { Booking, Decision, Expense, Mandate, RecordLine, Settlement, TripSnapshot } from './trip.js';
 
 /**
  * Events: the Server tells Go what happened in a trip, one send_event request per event on the socket.
@@ -58,8 +58,12 @@ export const DecisionVoted = ev('decision.voted',
     voted: z.int().nonnegative(),
     of: z.int().nonnegative(),
     tally: z.array(z.int().nonnegative()).max(10),
+    /** 1.1: they said "I'm flexible" instead of picking: no option_index, counted in voted, never in the tally. */
+    flexible: z.literal(true).nullish(),
+    /** 1.1: they took their vote back: no option_index, and voted and tally count without them. */
+    retracted: z.literal(true).nullish(),
   }),
-  'DecisionVoted', 'Someone voted (or changed their vote).');
+  'DecisionVoted', 'Someone voted, changed their vote, said they are flexible (1.1), or took their vote back (1.1).');
 export const DecisionClosed = ev('decision.closed',
   z.object({ decision: Decision, reason: z.enum(['time', 'everyone_voted', 'closed_by_person', 'closed_by_go']) }),
   'DecisionClosed', 'A vote closed, with the result.');
@@ -78,8 +82,17 @@ export const BookingChanged = ev('booking.changed',
   z.object({ booking: Booking, change: z.enum(['added', 'updated', 'cancelled']), by: Actor }),
   'BookingChanged', 'A booking was added, changed or cancelled.');
 export const ExpenseChanged = ev('expense.changed',
-  z.object({ expense: Expense, change: z.enum(['added', 'removed']), by: Actor }),
-  'ExpenseChanged', 'An expense was added or removed.');
+  z.object({
+    expense: Expense,
+    /** 1.1 adds approved and disputed: someone it is split between agreed to it, or disputed it. */
+    change: z.enum(['added', 'removed', 'approved', 'disputed']),
+    by: Actor,
+    /** 1.1: on approved and disputed, who answered. */
+    by_person_id: Id.nullish(),
+  }),
+  'ExpenseChanged', 'An expense was added or removed, or (1.1) someone it is split between approved or disputed it.');
+export const SettlementRecorded = ev('settlement.recorded', z.object({ settlement: Settlement, by: Actor }), 'SettlementRecorded',
+  '1.1: someone paid someone back, and the one paid confirmed it. Only confirmed settlements are sent.');
 
 export const Event = z
   .discriminatedUnion('type', [
@@ -103,6 +116,7 @@ export const Event = z
     RecordChanged,
     BookingChanged,
     ExpenseChanged,
+    SettlementRecorded,
   ])
   .meta({ id: 'Event', discriminator: { propertyName: 'type' } });
 export type Event = z.infer<typeof Event>;

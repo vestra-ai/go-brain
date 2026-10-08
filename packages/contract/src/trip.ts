@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place, Seq } from './common.js';
+import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place, PositiveAmountMinor, Seq } from './common.js';
+import { OptionDetails } from './cards.js';
 import { BudgetSummary, Person } from './people.js';
 
 /**
@@ -16,6 +17,8 @@ export const DecisionOption = z
     /** Go's own reference for this option (e.g. an ixigo offer), so it can book the winner. */
     option_ref: z.string().max(200).nullish(),
     note: z.string().max(120).nullish(),
+    /** 1.1: what the App shows when the option is opened, as on an options card's option. */
+    details: OptionDetails.nullish(),
   })
   .meta({ id: 'DecisionOption' });
 
@@ -52,6 +55,8 @@ export const Decision = z
     of: z.int().nonnegative(),
     /** Votes per option, in option order. */
     tally: z.array(z.int().nonnegative()).max(10),
+    /** 1.1: how many said "I'm flexible": counted in `voted`, never in the tally. */
+    flexible_count: z.int().nonnegative().nullish(),
     /** Who voted for what. Left out when the vote is anonymous. */
     votes: z.array(z.object({ person_id: Id, option_index: z.int().nonnegative() })).max(30).nullish(),
     /** The winning option, once closed. Null when nobody voted or the top options tied: Go then asks the group. */
@@ -62,6 +67,36 @@ export const Decision = z
   })
   .meta({ id: 'Decision' });
 export type Decision = z.infer<typeof Decision>;
+
+/**
+ * 1.1: who sees an itinerary item or a booking's document. group: everyone in the trip. shared: the people it names
+ * (its person_ids, or the booking's passengers). private: the one person it is for.
+ */
+export const Audience = z.enum(['group', 'shared', 'private']).meta({ id: 'Audience' });
+
+/** 1.1: one more line about a booking, e.g. { "label": "Room", "value": "2 Deluxe, breakfast included" }. */
+export const BookingDetail = z.object({ label: z.string().min(1).max(40), value: z.string().min(1).max(200) }).meta({ id: 'BookingDetail' });
+
+/** 1.1: one traveller on a booking, with their seat and PNR when the booking has them. */
+export const Passenger = z
+  .object({ person_id: Id, seat: z.string().min(1).max(20).nullish(), pnr: z.string().min(1).max(40).nullish() })
+  .meta({ id: 'Passenger' });
+
+/**
+ * 1.1: a booking's document (a ticket, a voucher). `url` is Go's signed link: the Server fetches it once, keeps its own
+ * copy, and serves that copy. The link stops working after a while.
+ */
+export const BookingDocument = z
+  .object({
+    document_id: Id,
+    name: z.string().min(1).max(200),
+    mime: z.string().min(1).max(100),
+    size_bytes: z.int().nonnegative(),
+    pages: z.int().positive().nullish(),
+    visibility: Audience,
+    url: HttpUrl,
+  })
+  .meta({ id: 'BookingDocument' });
 
 export const BookingKind = z
   .enum(['stay', 'flight', 'train', 'bus', 'cab', 'table', 'activity', 'other'])
@@ -93,9 +128,22 @@ export const Booking = z
     /** Null when Go added it. */
     added_by_person_id: Id.nullish(),
     created_at: IsoDateTime,
+    /** 1.1: more lines for the ticket. */
+    details: z.array(BookingDetail).max(20).nullish(),
+    /** 1.1: the way back, for a round trip. */
+    return_journey: Journey.nullish(),
+    /** 1.1: each traveller, with a seat and PNR when there are. */
+    passengers: z.array(Passenger).max(30).nullish(),
+    /** 1.1: tickets and vouchers, as the Server keeps them. */
+    documents: z.array(BookingDocument).max(10).nullish(),
   })
   .meta({ id: 'Booking' });
 export type Booking = z.infer<typeof Booking>;
+
+/** 1.1: one person's answer to an expense they share. */
+export const ExpenseConfirmation = z
+  .object({ person_id: Id, answer: z.enum(['approved', 'disputed']), at: IsoDateTime, note: z.string().min(1).max(200).nullish() })
+  .meta({ id: 'ExpenseConfirmation' });
 
 export const Expense = z
   .object({
@@ -111,9 +159,28 @@ export const Expense = z
     /** Null when Go added it. */
     added_by_person_id: Id.nullish(),
     created_at: IsoDateTime,
+    /** 1.1: whether the people it is split between have agreed to it. Absent: the Server asks nobody (1.0). */
+    status: z.enum(['pending', 'approved', 'disputed']).nullish(),
+    /** 1.1: each answer from the people it is split between. */
+    confirmations: z.array(ExpenseConfirmation).max(30).nullish(),
   })
   .meta({ id: 'Expense' });
 export type Expense = z.infer<typeof Expense>;
+
+/** 1.1: a payback someone recorded between two people, once the one paid confirmed it. */
+export const Settlement = z
+  .object({
+    settlement_id: Id,
+    from_person_id: Id,
+    to_person_id: Id,
+    amount_minor: PositiveAmountMinor,
+    currency: Currency,
+    method: z.enum(['upi', 'cash', 'bank_transfer', 'other']),
+    note: z.string().min(1).max(120).nullish(),
+    confirmed_at: IsoDateTime,
+  })
+  .meta({ id: 'Settlement' });
+export type Settlement = z.infer<typeof Settlement>;
 
 export const Transfer = z
   .object({ from_person_id: Id, to_person_id: Id, amount_minor: AmountMinor, currency: Currency })
@@ -143,11 +210,21 @@ export const ItineraryItem = z
     booking_id: Id.nullish(),
     status: z.enum(['booked', 'planned', 'idea']),
     note: z.string().max(200).nullish(),
+    /** 1.1: the people it is for, when it is not the whole group. */
+    person_ids: z.array(Id).max(30).nullish(),
+    /** 1.1: who sees it. Absent means the group. */
+    audience: Audience.nullish(),
   })
   .meta({ id: 'ItineraryItem' });
 
 export const Day = z
-  .object({ date: IsoDate, title: z.string().max(80).nullish(), items: z.array(ItineraryItem).max(20) })
+  .object({
+    date: IsoDate,
+    title: z.string().max(80).nullish(),
+    items: z.array(ItineraryItem).max(20),
+    /** 1.1: a picture for the day. */
+    image_url: HttpUrl.nullish(),
+  })
   .meta({ id: 'Day' });
 
 /** A message a record line came from, and who said it. */

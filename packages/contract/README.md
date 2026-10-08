@@ -2,14 +2,14 @@
 
 The contract is everything that travels between the Server and Go, written once as zod schemas. It is the single source of truth for the wire: Go, the fake Go, the simulator and the vault all import their types from here, and nothing redefines a schema of its own. The guide in [`docs/guide`](../../docs/guide) explains it in plain words, and CI checks that every example in the guide matches these schemas.
 
-Version `1.0.0` (`CONTRACT_VERSION`). One WebSocket at `/v1/socket`, opened by the Server and signed, with JSON-RPC 2.0 frames both ways.
+Version `1.1.0` (`CONTRACT_VERSION`; what 1.1 added: docs/guide/11-contract-1-1.md). One WebSocket at `/v1/socket`, opened by the Server and signed, with JSON-RPC 2.0 frames both ways.
 
 ## Main parts
 
 | Part | What it holds |
 |---|---|
 | `src/common.ts`, `src/people.ts`, `src/room.ts`, `src/trip.ts` | The objects: ids, money in whole minor units (paise), people, messages, the trip snapshot, votes, bookings, expenses and the trip record. |
-| `src/cards.ts` | The 13 card kinds: the record cards the Server draws (vote, mandate, ticket, expense, settle-up, day, plan, budget) and Go's own (options, working, call, pay, notice), each with fallback text. |
+| `src/cards.ts` | The 14 card kinds: the record cards the Server draws (vote, mandate, ticket, expense, settle-up, day, plan, budget) and Go's own (options, working, call, pay, notice, and 1.1's checklist), each with fallback text. |
 | `src/events.ts` | Every event the Server sends Go, one per change, with its change number. |
 | `src/to-go.ts`, `src/to-server.ts`, `src/socket.ts` | Every method in both directions with its params and result, the socket path and frame limits. |
 | `src/errors.ts` | The error codes and what each one means for a retry. |

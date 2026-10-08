@@ -74,6 +74,39 @@ export const BudgetCard = z
 
 // ── Go cards (content inside) ──
 
+/**
+ * 1.1: what the App shows when someone opens an option (or a vote's option): photos, why Go picked it, what it costs
+ * and what is included. Every field is optional: the App shows what is there.
+ */
+export const OptionDetails = z
+  .object({
+    /** More photos, first one first. */
+    gallery_urls: z.array(HttpUrl).max(12).nullish(),
+    /** One line under the photos. */
+    caption: z.string().min(1).max(200).nullish(),
+    /** Why Go thinks it fits the group, a reason a line. */
+    why: z.array(z.string().min(1).max(140)).max(5).nullish(),
+    /** What it costs, line by line, e.g. { "label": "Room, 3 nights", "emoji": "🛏️", "amount_minor": 1200000, "currency": "INR" }. */
+    costs: z
+      .array(z.object({ label: z.string().min(1).max(60), emoji: z.string().min(1).max(16).nullish(), amount_minor: AmountMinor, currency: Currency }).meta({ id: 'OptionCost' }))
+      .max(12)
+      .nullish(),
+    /** The costs added up, in the costs' currency. */
+    total_minor: AmountMinor.nullish(),
+    amenities: z.array(z.string().min(1).max(40)).max(30).nullish(),
+    activities: z.array(z.string().min(1).max(60)).max(20).nullish(),
+    /** Anything else worth a line, e.g. { "label": "Check-in", "value": "2 pm" }. */
+    facts: z.array(z.object({ label: z.string().min(1).max(40), value: z.string().min(1).max(200) }).meta({ id: 'OptionFact' })).max(20).nullish(),
+    /** The cancellation terms in words, e.g. "Free cancellation until 4 Nov". */
+    cancellation: z.string().min(1).max(200).nullish(),
+    /** The rating as the source gives it (out of 5, or 10 where the source rates out of 10). */
+    rating: z.number().min(0).max(10).nullish(),
+    review_count: z.int().nonnegative().nullish(),
+    /** Go's own word on it, in Go's voice. */
+    go_note: z.string().min(1).max(300).nullish(),
+  })
+  .meta({ id: 'OptionDetails' });
+
 export const Option = z
   .object({
     /** Go's id for this option, sent back when someone taps a per-option button. */
@@ -92,6 +125,13 @@ export const Option = z
     place: Place.nullish(),
     rating: z.number().min(0).max(5).nullish(),
     refundable_until: IsoDateTime.nullish(),
+    /** 1.1: what the App shows when the option is opened. */
+    details: OptionDetails.nullish(),
+    /** 1.1: the way back, for a round trip. */
+    return_journey: Journey.nullish(),
+    /** 1.1: the price one way and for the round trip, when the App offers both (a tap says which: card_tap payload.trip). */
+    price_oneway_minor: AmountMinor.nullish(),
+    price_round_minor: AmountMinor.nullish(),
   })
   .meta({ id: 'Option' });
 
@@ -100,7 +140,8 @@ export const OptionsCard = z
     ...base,
     kind: z.literal('options'),
     title: z.string().min(1).max(80),
-    option_kind: z.enum(['stay', 'flight', 'train', 'bus', 'place', 'food', 'activity']),
+    /** 1.1 adds cab. */
+    option_kind: z.enum(['stay', 'flight', 'train', 'bus', 'place', 'food', 'activity', 'cab']),
     /** When Go checked the prices. The App shows "checked 3 min ago". */
     checked_at: IsoDateTime,
     options: z.array(Option).min(1).max(5),
@@ -142,6 +183,9 @@ export const CallCard = z
     outcome: z.string().max(500).nullish(),
     /** The full transcript, once the call ends. This card is the call's record. */
     transcript: z.array(CallLine).max(300).nullish(),
+    /** 1.1: the call's recording, once it ends, and how long it was. */
+    recording_url: HttpUrl.nullish(),
+    duration_s: z.int().nonnegative().nullish(),
     actions,
   })
   .meta({ id: 'CallCard', description: 'Go on a phone call to a business. Updated in place while it runs; the final version is the record.' });
@@ -183,6 +227,33 @@ export const NoticeCard = z
   })
   .meta({ id: 'NoticeCard', description: 'Good to know (with its source) or a heads-up (a deadline, a price change, a clash).' });
 
+/**
+ * 1.1: a checklist Go keeps for the group or one person (documents to upload, things to pack, check-ins to do). Go
+ * updates it in place as rows change. A row's tap sends its action_id with the row in option_id.
+ */
+export const ChecklistRow = z
+  .object({
+    row_id: Id,
+    label: z.string().min(1).max(80),
+    detail: z.string().min(1).max(200).nullish(),
+    /** info: a line to read, with nothing to do. */
+    status: z.enum(['todo', 'started', 'done', 'info']),
+    /** Whose row it is, when it is one person's. */
+    person_id: Id.nullish(),
+    due_at: IsoDateTime.nullish(),
+  })
+  .meta({ id: 'ChecklistRow' });
+
+export const ChecklistCard = z
+  .object({
+    ...base,
+    kind: z.literal('checklist'),
+    title: z.string().min(1).max(80),
+    rows: z.array(ChecklistRow).min(1).max(20),
+    actions,
+  })
+  .meta({ id: 'ChecklistCard', description: '1.1: a checklist (documents, packing, check-ins), each row todo, started, done or info. Updated in place.' });
+
 export const Card = z
   .discriminatedUnion('kind', [
     VoteCard,
@@ -198,6 +269,7 @@ export const Card = z
     CallCard,
     PayCard,
     NoticeCard,
+    ChecklistCard,
   ])
   .meta({ id: 'Card', discriminator: { propertyName: 'kind' } });
 export type Card = z.infer<typeof Card>;
