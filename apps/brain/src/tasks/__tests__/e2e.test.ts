@@ -66,7 +66,9 @@ function goScript(body: any): Reply {
   return { tools: [{ name: 'stay_silent', input: { reason: 'chatter' } }] };
 }
 
-let offset = 0;
+// The trip's dates are fixed (6 to 9 Nov 2026) and Go refuses a day that has passed, so the clock starts a month before
+// them, whatever the real date, and runs on from there.
+let offset = Date.parse('2026-10-08T06:30:00.000Z') - Date.now();
 const now = (): Date => new Date(Date.now() + offset);
 let db: Awaited<ReturnType<typeof withSchema>>;
 let fake: FakeV1;

@@ -20,7 +20,8 @@ export const DIRECTOR_WORDS = {
   callAnnounce: `I'll call ${DEMO_DIVE_SHOP.name} to ask if they can take five of us on Sunday morning.`,
   weather: 'November is dry and sunny in Goa, around 32 degrees by day. Good beach weather.',
   villasShown: 'Three villas that fit, with their prices for the whole stay.',
-  mandate: 'Villa Sol won. Rahul, tap Yes, book it when you are ready.',
+  villaWon: 'Villa Sol won, all five votes. One of you books it for everyone.',
+  mandate: "Rahul, you're booking for all 5. Tap Yes, book it when you're ready.",
   refusal: "I can't pay without a group vote and Rahul's OK on his phone. Want me to put scuba to a vote?",
 } as const;
 
@@ -130,7 +131,7 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
   const sideBodies: MessageBody[] = [];
   const calls: ToolCall[] = [];
   const results: Array<{ name: string; content: string }> = [];
-  const done = { mandate: false, notice: false };
+  const done = { won: false, mandate: false, notice: false };
 
   function afterRound(body: MessageBody, ran: Array<{ name: string; content: string }>): Reply {
     const now = rightNow(body);
@@ -163,6 +164,20 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
       return { tools: [{ name: 'ask_to_pay', input: { decision_id: 'd_scuba', option_ref: 'opt_scuba', purpose: 'Scuba for everyone' } }] };
     }
     if (/\bweather\b/i.test(fresh)) return { text: DIRECTOR_WORDS.weather };
+    // The person who asks Go to book the stay is the one who pays (their ask is their claim); the cap is the "8k a head"
+    // said in the chat.
+    if (!done.mandate && /\bI'll book it\b/i.test(fresh)) {
+      const decision = o.trip()?.decisions.find((x) => x.status === 'closed' && !x.mandate && x.result_index != null);
+      if (decision && decision.result_index != null) {
+        done.mandate = true;
+        return {
+          tools: [{
+            name: 'set_mandate',
+            input: { decision_id: decision.decision_id, choice_index: decision.result_index, cap_minor: DEMO_CAP_MINOR, refundable_only: false, payer_person_id: DEMO_PAYER },
+          }],
+        };
+      }
+    }
     if (/flights delhi to goa/i.test(fresh)) {
       return { tools: [{ name: 'search_flights', input: { from: 'Delhi', to: 'Goa', date: DEMO_DATE, depart_after: '18:00' } }] };
     }
@@ -210,17 +225,10 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
         }],
       };
     }
-    if (!done.mandate && now.includes(' closed: ')) {
-      const decision = o.trip()?.decisions.find((x) => x.status === 'closed' && !x.mandate && x.result_index != null);
-      if (decision && decision.result_index != null) {
-        done.mandate = true;
-        return {
-          tools: [{
-            name: 'set_mandate',
-            input: { decision_id: decision.decision_id, choice_index: decision.result_index, cap_minor: DEMO_CAP_MINOR, refundable_only: false, payer_person_id: DEMO_PAYER },
-          }],
-        };
-      }
+    // The vote closed: Go says who won and never picks who pays. The I'll book it card rides on this post.
+    if (!done.won && now.includes(' closed: ')) {
+      done.won = true;
+      return { text: DIRECTOR_WORDS.villaWon };
     }
     const resultsId = /results_id "([^"]+)"/.exec(now)?.[1];
     if (resultsId && now.includes('finished with')) {
