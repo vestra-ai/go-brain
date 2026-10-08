@@ -61,6 +61,15 @@ describe('the reply after a refused call (8 Oct rerun)', () => {
     expect((await run()).text).toBe('Arjun, can you confirm?');
   });
 
+  it("keeps a claim when the claiming tool wasn't called this turn, even when another tool refused quietly", async () => {
+    // A plain "Noted" with no record call stays: only a tool that was called, and refused every time, loses its claims.
+    const none = setup([{ text: 'Noted, Priya, a pool it is.' }], { tools: [noter, echo] });
+    expect((await none.run()).text).toBe('Noted, Priya, a pool it is.');
+    const blocker: QuickTool<{ say: string }> = { ...echo, name: 'blocker', run: async () => ({ refused: 'no', tell_the_room: SAY_NOTHING }) };
+    const other = setup([{ tools: [{ name: 'blocker', input: { say: 'x' } }] }, { text: 'Noted, Priya, a pool it is.' }], { tools: [noter, blocker] });
+    expect((await other.run()).text).toBe('Noted, Priya, a pool it is.');
+  });
+
   it('keeps a claim when the tool went through in the turn', async () => {
     const { run } = setup([{ tools: [{ name: 'noter', input: { who: 'kabir' } }] }, { text: 'Noted, Kabir has the cab.' }], { tools: [noter] });
     expect((await run()).text).toBe('Noted, Kabir has the cab.');

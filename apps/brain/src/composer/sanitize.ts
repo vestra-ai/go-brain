@@ -23,8 +23,8 @@ export function sanitize(text: string): string {
 
 /**
  * What a turn's refused calls rule out of its reply: the tools that refused quietly (tell_the_room: say nothing), whose
- * names never appear; and the words each tool declares would claim its work done, for a tool none of whose calls went
- * through this turn.
+ * names never appear; and the words each tool declares would claim its work done, for a tool that was called this turn
+ * and refused every time (never for one that wasn't called).
  */
 export interface Refusals {
   names: readonly string[];

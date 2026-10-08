@@ -197,7 +197,8 @@ function refusedResult(r: Anthropic.ToolResultBlockParam): boolean {
 
 /**
  * What the turn's calls so far rule out of its reply (sanitize.ts withoutRefused): the tools that refused quietly, and the
- * claims of a tool whose every call this turn was refused.
+ * claims of a tool that was called this turn and refused every time. A tool not called this turn rules nothing out: a
+ * plain "Noted, Priya" with no record call stands.
  */
 function refusalsOf(seen: ReadonlyArray<{ name: string; refused: boolean; quiet: boolean }>, byName: ReadonlyMap<string, QuickTool<any>>): Refusals {
   const went = new Set(seen.filter((s) => !s.refused).map((s) => s.name));
