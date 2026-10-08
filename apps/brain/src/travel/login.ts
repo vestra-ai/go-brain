@@ -10,7 +10,7 @@
  * (auth: login). The person logs in
  * themselves on Go's screen, with no model: their tap opens ixigo's log in box IN FRONT of the person's window on the
  * trip's computer (Bash's front browser fetch), clicks into its mobile number box and keeps the tab there for them; the
- * login card's Watch gives them control (anyone else a view), and they type their own number and code. Go never sees
+ * login card's Watch (theirs alone: nobody else sees the page) gives them control, and they type their own number and code. Go never sees
  * either. The login stays in the trip's browser profile, so every later fetch is logged in.
  *
  * Whether the browser is logged in is ixigo's own answer: the home page's POST /api/v2/oauth/userinfo, by its status
@@ -139,9 +139,9 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
         body: note === 'not_yet'
           ? 'Not logged in yet. Finish on Watch, then tap again.'
           : `ixigo's log in is open on Go's screen. ${name}: tap Watch, log in with your phone, then tap I'm logged in.`,
-        // Watch for everyone: control for the person logging in, a view for anyone else.
+        // Watch only for the person logging in: anyone else would watch them type their number.
         actions: [
-          { action_id: 'ixigo_watch', label: 'Watch', style: 'primary' },
+          button('ixigo_watch', 'Watch', 'primary'),
           button('ixigo_logged_in', "I'm logged in", 'secondary'),
           button('ixigo_not_now', 'Not now', 'secondary'),
         ],
@@ -470,19 +470,19 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         return { result: 'done', toast: "Opening ixigo's log in on Go's screen" };
       }));
 
-      // Anyone may watch; the person logging in gets control. Never a link in the chat: the tap opens it.
-      taps.on('notice', 'ixigo_watch', async (tap) => {
-        const row = await get(tap.trip_id);
+      // Only the person logging in watches, with control: nobody else sees their number typed. Never a link in the chat:
+      // the tap opens it.
+      taps.on('notice', 'ixigo_watch', forPerson(async (row) => {
         const screen = d.screen();
-        if (!row || row.state !== 'logging_in' || !screen) return { result: 'refused', toast: "ixigo's log in isn't open on Go's screen now" };
+        if (row.state !== 'logging_in' || !screen) return { result: 'refused', toast: "ixigo's log in isn't open on Go's screen now" };
         try {
-          const s = await screen(row.tripId, tap.person_id === row.personId ? 'control' : 'view');
+          const s = await screen(row.tripId, 'control');
           return { result: 'open', url: s.url, expires_at: s.expires_at };
         } catch (err) {
           d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's Watch did not open");
           return { result: 'refused', toast: "Can't open Go's screen right now" };
         }
-      });
+      }));
 
       taps.on('notice', 'ixigo_logged_in', forPerson(async (row) => {
         if (row.state !== 'logging_in') return { result: 'done' };

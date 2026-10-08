@@ -286,23 +286,23 @@ describe('logging in', () => {
       card_id: `c_login_${w.tripId}_0`, title: 'Logging in to ixigo',
       body: "ixigo's log in is open on Go's screen. Rahul: tap Watch, log in with your phone, then tap I'm logged in.",
       actions: [
-        { action_id: 'ixigo_watch', label: 'Watch', style: 'primary' },
+        { action_id: 'ixigo_watch', label: 'Watch', style: 'primary', only_for_person_ids: ['p_rahul'] },
         { action_id: 'ixigo_logged_in', label: "I'm logged in", only_for_person_ids: ['p_rahul'] },
         { action_id: 'ixigo_not_now', label: 'Not now', only_for_person_ids: ['p_rahul'] },
       ],
     });
-    // Watch is everyone's: anyone can see Go's screen.
-    expect(w.last().actions[0]).not.toHaveProperty('only_for_person_ids');
+    // Nobody else gets a Watch: they would watch Rahul type his number. Their card says whose login it is, and nothing more.
+    for (const a of w.last().actions) expect(a.only_for_person_ids).toEqual(['p_rahul']);
   });
 
-  it('Watch gives the person logging in control and anyone else a view, and opens nothing while the log in is not open', async () => {
+  it("Watch gives only the person logging in Go's screen, with control; anyone else's tap is refused and opens nothing", async () => {
     const w = world();
     await w.setup();
     expect(await w.tap('ixigo_watch', 'p_rahul')).toEqual({ result: 'refused', toast: "ixigo's log in isn't open on Go's screen now" });
     await w.tap('ixigo_login', 'p_rahul');
     expect(await w.tap('ixigo_watch', 'p_rahul')).toEqual({ result: 'open', url: 'https://screen.example/control', expires_at: '2026-10-08T06:15:00.000Z' });
-    expect(await w.tap('ixigo_watch', 'p_priya')).toEqual({ result: 'open', url: 'https://screen.example/view', expires_at: '2026-10-08T06:15:00.000Z' });
-    expect(w.sessions).toEqual([[w.tripId, 'control'], [w.tripId, 'view']]);
+    expect(await w.tap('ixigo_watch', 'p_priya')).toEqual({ result: 'refused', toast: 'Only Rahul can do this here.' });
+    expect(w.sessions).toEqual([[w.tripId, 'control']]);
   });
 
   it("needs no hand-off when ixigo's log in page says the browser is logged in already: the tab closes and the card says so", async () => {
