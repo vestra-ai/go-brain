@@ -1411,6 +1411,7 @@ class AddExpense(BaseModel):
     """
     split_person_ids: Annotated[list[str], Field(max_length=30, min_length=1)]
     booking_id: str | None = None
+    approval_id: str | None = None
 
 
 class AddExpenseResult(BaseModel):

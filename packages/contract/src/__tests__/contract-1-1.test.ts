@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ActionOpen, Booking, Card, CardTap, CONTRACT_VERSION, CreateLink, Decision, Event, Expense, ItineraryItem, Message, Option, Place, PostMessage,
-  TripSnapshot,
+  ActionOpen, AddExpense, Booking, Card, CardTap, CONTRACT_VERSION, CreateLink, Decision, Event, Expense, ItineraryItem, Message, Option, Place,
+  PostMessage, TripSnapshot,
 } from '../index.js';
 
 // Contract 1.1: the Server team's additive proposal (A1 to A11, B1, B2, B3a, B4). Every addition is optional, so what
@@ -101,6 +101,10 @@ describe('contract 1.1', () => {
       confirmations: [{ person_id: 'p_priya', state: 'approved', at }, { person_id: 'p_arjun', state: 'disputed', at, reason: 'I took the bus' }],
     });
     expect(expense.confirmations?.[1]?.state).toBe('disputed');
+    // add_expense says which vault payment paid it, so the Server approves it at once; without one it is pending.
+    const add = { request_id: 'rq_x', trip_id: 't', paid_by_person_id: 'p_rahul', amount_minor: 840000, currency: 'INR', note: 'Villa Maya', category: 'stay', split_person_ids: ['p_rahul', 'p_priya'] };
+    expect(AddExpense.parse({ ...add, approval_id: 'ap_7f3a' }).approval_id).toBe('ap_7f3a');
+    expect(AddExpense.parse(add).approval_id).toBeUndefined();
     for (const change of ['approved', 'disputed']) {
       expect(Event.parse({ event_id: 'e', trip_id: 't', seq: 10, occurred_at: at, type: 'expense.changed', data: { expense, change, by: { kind: 'system' }, by_person_id: 'p_priya' } }).type).toBe('expense.changed');
     }

@@ -157,6 +157,12 @@ export const AddExpense = z
     category: Category,
     split_person_ids: z.array(Id).min(1).max(30),
     booking_id: Id.nullish(),
+    /**
+     * 1.1: the spend approval this was paid with (its `jti`), when Go paid through the vault. The Server records such an
+     * expense as approved at once; without it, a 1.1 Server records the expense pending, for the people it is split
+     * between to approve or dispute.
+     */
+    approval_id: Id.nullish(),
   })
   .meta({ id: 'AddExpense' });
 export const AddExpenseResult = z.object({ expense_id: Id, seq: Seq }).meta({ id: 'AddExpenseResult' });
