@@ -123,7 +123,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     watchRunner.tick().catch((err: unknown) => brain.log.warn({ err }, 'travel: the watch checks failed'));
   }, WATCH_TICK_MS);
   watchEvery.unref();
-  brain.onStop(() => clearInterval(watchEvery));
+  const stopWatchChecks = (): void => clearInterval(watchEvery);
+  brain.onStop(stopWatchChecks);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
