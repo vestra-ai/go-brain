@@ -91,6 +91,8 @@ form { display: flex; gap: 8px; }
 input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
 .toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 14px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(var(--column) - 32px); width: max-content; }
 .toast.show { opacity: 1; }
+.newpill { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); margin-bottom: 8px; font: inherit; font-size: 13px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; min-height: 44px; padding: 8px 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18); touch-action: manipulation; }
+.newpill[hidden] { display: none; }
 .top { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .top button.act { margin-top: 0; font-size: 14px; padding: 8px 12px; flex: none; }
 .about { color: var(--muted); font-size: 12px; }
@@ -114,6 +116,7 @@ ${o.live ? '<div class="split">' : ''}<div class="app">
   <div class="typing" id="typing"></div>
 </main>
 <footer>
+  <button class="newpill" id="newpill" type="button" hidden>New messages ↓</button>
 ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete="off" enterkeyhint="send" placeholder="Message the group. Start with @Go to ask Go."><button class="act primary" type="submit">Send</button></form>
 </footer>
 </div>
@@ -329,6 +332,26 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
       quote + body + (m.card && !m.deleted ? card(m.card) : '') + '<div class="reactions">' + chips + react + '</div></div></div>';
   }
 
+  // Whether the reader is at the bottom of the chat, kept from their own scrolling, never measured inside a render: a
+  // render rebuilds the room, and its pictures load after it, so the room's height mid-render says nothing about where
+  // the reader is. Beside Go Live the chat scrolls in its own column; alone, the page scrolls.
+  var pinned = true;
+  var newest = '';
+  function column() {
+    var col = document.querySelector('.split .app');
+    return col && getComputedStyle(col).overflowY === 'auto' ? col : null;
+  }
+  function fromBottom() {
+    var col = column();
+    if (col) return col.scrollHeight - col.scrollTop - col.clientHeight;
+    return (document.scrollingElement || document.documentElement).scrollHeight - window.scrollY - window.innerHeight;
+  }
+  function toBottom() {
+    var col = column();
+    if (col) col.scrollTop = col.scrollHeight;
+    else window.scrollTo(0, (document.scrollingElement || document.documentElement).scrollHeight);
+  }
+
   function render() {
     if (!state) return;
     var t = state.trip;
@@ -340,17 +363,16 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
     $('you').innerHTML = '<span>You are ' + esc(nameOf(me)) + '</span><button class="act secondary" data-forget="' + esc(me) + '">Forget me in this trip</button>';
     var needs = state.needs[me] || [];
     $('needs').innerHTML = needs.length ? '<div class="needs"><h2>Needs you, ' + esc(nameOf(me)) + '</h2>' + needs.map(function (n) { return '<div>' + esc(n.text) + '</div>'; }).join('') + '</div>' : '';
-    // Beside Go Live the chat scrolls in its own column; alone, the page scrolls.
-    var col = document.querySelector('.split .app');
-    var box = col && col.scrollHeight > col.clientHeight + 1 ? col : null;
-    var atBottom = box ? box.scrollTop + box.clientHeight >= box.scrollHeight - 80 : window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     $('room').innerHTML = state.messages.map(message).join('') || '<div class="muted">No messages yet. Say hello, or start with @Go to ask Go.</div>';
     $('typing').textContent = state.typing ? 'Go is typing...' : '';
     var about = $('about');
     if (about) about.innerHTML = (state.about || []).map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('');
     if ($('limit')) $('limit').textContent = state.limit || '';
-    if (atBottom && col && col.scrollHeight > col.clientHeight + 1) col.scrollTop = col.scrollHeight;
-    else if (atBottom) window.scrollTo(0, document.body.scrollHeight);
+    // At the bottom before, at the bottom after. Scrolled up to read: left in place, and told about a new message.
+    var last = state.messages.length ? state.messages[state.messages.length - 1].message_id : '';
+    if (pinned) toBottom();
+    else if (last !== newest) $('newpill').hidden = false;
+    newest = last;
   }
 
   document.addEventListener('click', function (e) {
@@ -379,6 +401,21 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
     } else if (d.startOver) {
       send({ type: 'start_over' });
     }
+  });
+
+  // Scroll events do not bubble from the chat's column, so the page listens while they travel down to it.
+  document.addEventListener('scroll', function () {
+    pinned = fromBottom() <= 80;
+    if (pinned) $('newpill').hidden = true;
+  }, true);
+  // A picture that loads after a render makes the room taller: a reader at the bottom stays there.
+  document.addEventListener('load', function (e) {
+    if (pinned && e.target && e.target.tagName === 'IMG' && $('room').contains(e.target)) toBottom();
+  }, true);
+  $('newpill').addEventListener('click', function () {
+    pinned = true;
+    $('newpill').hidden = true;
+    toBottom();
   });
 
   $('composer').addEventListener('submit', function (e) {

@@ -166,3 +166,156 @@ describe('the live socket', () => {
     await until(() => f.messages().some((m) => m.text === 'still here'));
   });
 });
+
+/**
+ * Runs the page's own script against a small stand-in for a browser: the chat's scroll box (Go Live's column, or the page
+ * itself), its height, scroll events, pictures that load, and the socket. The test sets the chat's height to what the
+ * browser would lay out, then sends the page a state.
+ */
+function pageInBrowser(html: string, o: { column: boolean }) {
+  const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
+  const view = { height: 600, content: 1000 };
+  const clamp = (top: number) => Math.max(0, Math.min(top, view.content - view.height));
+  let colTop = 0;
+  let winTop = 0;
+  const col = {
+    clientHeight: view.height,
+    get scrollHeight() { return view.content; },
+    get scrollTop() { return colTop; },
+    set scrollTop(v: number) { colTop = clamp(v); },
+  };
+  const elements = new Map<string, any>();
+  const el = (id: string) => {
+    if (!elements.has(id)) {
+      const listeners: Record<string, Array<(e: unknown) => void>> = {};
+      elements.set(id, {
+        id, innerHTML: '', textContent: '', value: '', dataset: {}, hidden: id === 'newpill', listeners,
+        addEventListener: (type: string, fn: (e: unknown) => void) => { (listeners[type] ??= []).push(fn); },
+        focus: () => {},
+        contains: (x: { inRoom?: boolean }) => x.inRoom === true,
+      });
+    }
+    return elements.get(id);
+  };
+  const docListeners: Record<string, Array<(e: unknown) => void>> = {};
+  const scrolling = { get scrollHeight() { return view.content; } };
+  const document = {
+    getElementById: el,
+    querySelector: (q: string) => (q === '.split .app' && o.column ? col : null),
+    addEventListener: (type: string, fn: (e: unknown) => void) => { (docListeners[type] ??= []).push(fn); },
+    body: { getAttribute: () => '1' },
+    scrollingElement: scrolling,
+    documentElement: scrolling,
+  };
+  const window = {
+    innerHeight: view.height,
+    get scrollY() { return winTop; },
+    scrollTo: (_x: number, y: number) => { winTop = clamp(y); },
+    open: () => {},
+  };
+  const sockets: any[] = [];
+  class StubSocket { onmessage: ((ev: { data: string }) => void) | null = null; constructor() { sockets.push(this); } send() {} }
+  const run = new Function('document', 'window', 'localStorage', 'WebSocket', 'location', 'getComputedStyle', 'setInterval', script);
+  run(document, window, { getItem: () => null, setItem: () => {} }, StubSocket, { protocol: 'http:', host: 'room.test', reload: () => {} },
+    (x: unknown) => ({ overflowY: x === col ? 'auto' : 'visible' }), () => 0);
+  const trip = goaFreshTrip();
+  const message = (n: number, text: string) => ({
+    message_id: `m_${n}`, seq: n + 1, updated_seq: n + 1, author: { kind: 'person', person_id: 'p_priya' }, text, attachments: [],
+    mentions_go: false, mentions: [], reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z',
+  });
+  return {
+    view,
+    /** Where the reader is: the top of what they see. */
+    top: () => (o.column ? colTop : winTop),
+    bottom: () => view.content - view.height,
+    pill: () => el('newpill'),
+    /** The page gets the room's state with these messages, laid out at `content` px tall. */
+    state(texts: string[], content: number, needs: Record<string, unknown[]> = {}) {
+      view.content = content;
+      sockets[0].onmessage({ data: JSON.stringify({ type: 'state', connected: true, trip, messages: texts.map((t, i) => message(i, t)), typing: false, needs, about: [], limit: null }) });
+    },
+    /** The reader scrolls to `top`; the browser sends a scroll event. */
+    scroll(top: number) {
+      if (o.column) colTop = clamp(top);
+      else winTop = clamp(top);
+      for (const fn of docListeners.scroll ?? []) fn({ target: o.column ? col : document });
+    },
+    /** A picture in the room finishes loading, and the room is `content` px tall now. */
+    pictureLoads(content: number) {
+      view.content = content;
+      for (const fn of docListeners.load ?? []) fn({ target: { tagName: 'IMG', inRoom: true } });
+    },
+    tapPill() {
+      for (const fn of el('newpill').listeners.click ?? []) fn({});
+    },
+  };
+}
+
+describe('the chat stays at the bottom', () => {
+  for (const column of [true, false]) {
+    const where = column ? "in Go Live's column" : 'on a page that scrolls';
+    it(`keeps a reader at the bottom ${where} when a card above grows and a reply arrives`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column });
+      p.state(['Goa?', 'yes!'], 1000);
+      expect(p.top()).toBe(p.bottom());
+      // The vote card above grows (people voting, then "Saudades won"), and the needs box changes, before the reply.
+      p.state(['Goa?', 'yes!'], 1240, { p_rahul: [{ text: 'Vote on the stay' }] });
+      expect(p.top()).toBe(p.bottom());
+      p.state(['Goa?', 'yes!', 'Saudades won, 4 to 1'], 1400);
+      expect(p.top()).toBe(800);
+      expect(p.pill().hidden).toBe(true);
+    });
+
+    it(`keeps a reader at the bottom ${where} when a picture loads after the render`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column });
+      p.state(['Go, find villas'], 1000);
+      // The live card is rebuilt on every render: its picture loads afterwards and makes the room 300 px taller.
+      p.state(['Go, find villas', 'Working on it'], 1100);
+      p.pictureLoads(1400);
+      expect(p.top()).toBe(p.bottom());
+      // The next render, a second later, still finds the reader at the bottom.
+      p.state(['Go, find villas', 'Working on it', 'Three villas'], 1700);
+      expect(p.top()).toBe(p.bottom());
+    });
+
+    it(`leaves a reader who scrolled up ${where} where they are, and says when a new message arrives`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column });
+      p.state(['a', 'b', 'c'], 2000);
+      p.scroll(300);
+      // A render with nothing new (the 15 s clock, a card ticking) moves nothing and shows no pill.
+      p.state(['a', 'b', 'c'], 2050);
+      expect(p.top()).toBe(300);
+      expect(p.pill().hidden).toBe(true);
+      p.pictureLoads(2100);
+      expect(p.top()).toBe(300);
+      // A new message: still where they were, and the pill appears.
+      p.state(['a', 'b', 'c', 'd'], 2300);
+      expect(p.top()).toBe(300);
+      expect(p.pill().hidden).toBe(false);
+      // The pill takes them to the bottom and goes away; from there they follow the chat again.
+      p.tapPill();
+      expect(p.top()).toBe(p.bottom());
+      expect(p.pill().hidden).toBe(true);
+      p.state(['a', 'b', 'c', 'd', 'e'], 2500);
+      expect(p.top()).toBe(p.bottom());
+    });
+
+    it(`hides the pill ${where} when the reader scrolls back down to the bottom themselves`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column });
+      p.state(['a'], 1500);
+      p.scroll(0);
+      p.state(['a', 'b'], 1700);
+      expect(p.pill().hidden).toBe(false);
+      p.scroll(p.bottom() - 40); // near enough to the bottom
+      expect(p.pill().hidden).toBe(true);
+      p.state(['a', 'b', 'c'], 1900);
+      expect(p.top()).toBe(p.bottom());
+    });
+  }
+
+  it('has the pill in the page, hidden, above the message box, with no em dash', () => {
+    expect(PAGE_HTML).toContain('<button class="newpill" id="newpill" type="button" hidden>New messages ↓</button>');
+    expect(PAGE_HTML).toContain('.newpill[hidden] { display: none; }');
+    expect(PAGE_HTML).not.toContain('—');
+  });
+});
