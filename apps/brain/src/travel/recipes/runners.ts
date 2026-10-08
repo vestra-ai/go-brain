@@ -67,6 +67,11 @@ export interface RecipeRunner {
   handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string }): Promise<{ captures: Capture[] }>;
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
+  /**
+   * One page call from inside the kept tab of that name (Bash's page_fetch on it, no url), keeping the tab keepOpenMs
+   * more: one byte of its answer, for its status. Null when no tab is kept under that name.
+   */
+  tabCall?(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null>;
 }
 
 export interface RunnerDeps {
@@ -443,6 +448,19 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
+  async function tabCall(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null> {
+    const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'tab_call', max_bytes: 1 };
+    try {
+      const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+        body: { tab, steps: [step], keep_open_ms: keepOpenMs, timeout_ms: FAST_TIMEOUT_MS },
+      });
+      return (Array.isArray(answer.captures) ? answer.captures : []).find((c) => c.match === 'tab_call') ?? null;
+    } catch (err) {
+      if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') return null;
+      throw pageCallFailed(err);
+    }
+  }
+
   return {
     name: 'browser_fetch',
     async read(tripId, url, plan, o = {}) {
@@ -453,6 +471,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     prime: (tripId) => inSlot(tripId, {}, () => prime(tripId)),
     handOff: (tripId, url, plan, o) => inSlot(tripId, {}, () => handOff(tripId, url, plan, o)),
     release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),
+    tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
   };
 }
 

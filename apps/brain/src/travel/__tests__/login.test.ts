@@ -67,7 +67,15 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
     release: async (_trip: string, tab: string) => {
       releases.push(tab);
     },
+    // "I'm logged in" asks ixigo from inside the log in page: the same statuses, in turn.
+    tabCall: async (_trip: string, tab: string, call: { url: string; method: string }, keepOpenMs: number) => {
+      tabCalls.push({ tab, call, keepOpenMs });
+      const s = statuses.shift() ?? 'timeout';
+      if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+      return capture('tab_call', `${IXIGO}${USERINFO}`, '{', s);
+    },
   };
+  const tabCalls: Array<{ tab: string; call: { url: string; method: string }; keepOpenMs: number }> = [];
   const handOffs: Array<{ url: string; plan: FetchPlan; o: { keepOpenMs: number; tab: string } }> = [];
   const releases: string[] = [];
   const sessions: Array<[string, string]> = [];
@@ -120,7 +128,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const last = (): C.Card & { kind: 'notice' } => cards().at(-1) as C.Card & { kind: 'notice' };
   const state = async (): Promise<string | undefined> =>
     (await db.pool.query<{ state: string }>('select state from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.state;
-  return { tripId, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
+  return { tripId, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, tabCalls, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
 }
 
 const STATUS_PLAN = { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], timeoutMs: 12_000 };
@@ -380,14 +388,18 @@ describe('logging in', () => {
     await w.setup();
     await w.tap('ixigo_login', 'p_rahul');
 
+    const reads = w.reads.length;
     expect(await w.tap('ixigo_logged_in', 'p_rahul')).toEqual({ result: 'done', toast: 'Checking your login' });
     // No job to settle.
     expect(w.handoffs).toEqual([]);
-    // ixigo's home page, keeping one byte of its userinfo call: the status is read, the account never is.
-    expect(w.reads.at(-1)).toEqual({ url: 'https://www.ixigo.com/', plan: STATUS_PLAN });
+    // ixigo's userinfo from INSIDE the open log in page, keeping it open for them: nothing opens over it, and the status is
+    // read (one byte), the account never is.
+    expect(w.tabCalls).toEqual([{ tab: LOGIN_TAB, call: { url: USERINFO, method: 'POST' }, keepOpenMs: HANDOFF_MS }]);
+    expect(w.reads).toHaveLength(reads);
+    // An early tap, still waiting for the code: the window stays in front, untouched.
     expect(await w.state()).toBe('logging_in');
     expect(w.releases).toEqual([]);
-    expect(w.last().body).toBe("Go can't see ixigo logged in yet. Finish the login on Go's screen (Watch), then tap I'm logged in again.");
+    expect(w.last().body).toBe('Not logged in yet. Finish on Watch, then tap again.');
 
     await w.tap('ixigo_logged_in', 'p_rahul');
     expect(await w.state()).toBe('logged_in');

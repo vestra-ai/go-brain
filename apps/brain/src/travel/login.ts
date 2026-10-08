@@ -70,7 +70,7 @@ export interface LoginDeps {
   link: Pick<ServerLink, 'request'>;
   packs: Pick<Packs, 'get'>;
   /** The trip's browser fetch, its hand-off in front included; null while the trip's computer is not set up here. */
-  runner: () => Pick<RecipeRunner, 'read' | 'handOff' | 'release'> | null;
+  runner: () => Pick<RecipeRunner, 'read' | 'handOff' | 'release' | 'tabCall'> | null;
   /** The jobs lane: a login started as a job before the hand-off had no model (a row with a taskId) is settled there. */
   tasks: () => Pick<Tasks, 'handoff' | 'stop'> | null;
   /** A fresh session on the trip's screen, in control or to view (POST /v1/sessions); null with no trip computer here. */
@@ -137,7 +137,7 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
         ...base,
         title: 'Logging in to ixigo',
         body: note === 'not_yet'
-          ? "Go can't see ixigo logged in yet. Finish the login on Go's screen (Watch), then tap I'm logged in again."
+          ? 'Not logged in yet. Finish on Watch, then tap again.'
           : `ixigo's log in is open on Go's screen. ${name}: tap Watch, log in with your phone, then tap I'm logged in.`,
         // Watch for everyone: control for the person logging in, a view for anyone else.
         actions: [
@@ -367,6 +367,28 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   }
 
   /**
+   * ixigo's userinfo answer from inside the open log in page (one byte, by its status), keeping the page for them. With no
+   * log in page open (its 10 minutes ran out), the home page's own answer, as any check reads it.
+   */
+  async function statusInLogin(tripId: string): Promise<'in' | 'out' | 'unknown'> {
+    const runner = d.runner();
+    if (!runner?.tabCall) return status(tripId);
+    let got: Capture | null;
+    try {
+      got = await runner.tabCall(tripId, LOGIN_TAB, { url: USERINFO, method: 'POST' }, HANDOFF_MS);
+    } catch (err) {
+      if (!(err instanceof TravelError)) throw err;
+      d.log.info({ tripId, status: null, login: 'unknown', why: err.code }, 'travel: ixigo said whether the trip computer is logged in');
+      return 'unknown';
+    }
+    if (got === null) return status(tripId);
+    const said = got.status === 200 ? 'in' : got.status === 401 || got.status === 403 ? 'out' : 'unknown';
+    // The status alone, for the stage desk's log: never the account.
+    d.log.info({ tripId, status: got.status, login: said, where: 'log in page' }, 'travel: ixigo said whether the trip computer is logged in');
+    return said;
+  }
+
+  /**
    * The hand-off's tab closes, so the person's own window is on top again; one already gone is nothing to close. Every end
    * of a login closes it: logged in, Not now, a hand-off that failed or ran its time, the person gone.
    */
@@ -467,8 +489,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         track('check', row.tripId, (async () => {
           // A login started as a job (before the hand-off had no model): its hand-off settled for them, quietly.
           if (row.taskId) await d.tasks()?.handoff(row.taskId, 'done').catch(() => undefined);
-          // ixigo's own answer says whether it worked; until it does, the log in stays in front for them.
-          if ((await status(row.tripId)) === 'in') {
+          // ixigo's own answer, read from inside the log in page: nothing opens over it, and an early tap (still waiting for
+          // the code) keeps its place. Logged in: the window closes. Not yet: it stays in front, untouched.
+          if ((await statusInLogin(row.tripId)) === 'in') {
             await release(row.tripId);
             await show(await loggedIn(row));
           } else await show(row, 'not_yet');
