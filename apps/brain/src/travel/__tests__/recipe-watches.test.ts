@@ -51,21 +51,27 @@ function engine(...answers: Array<EngineAnswer | TravelError>) {
 
 const switches = (watches: 'on' | 'off' = 'on') => ({ get: (n: string) => (n === 'RECIPE_WATCHES' ? watches : n === 'TRAVEL_MODE' ? 'ixigo_web' : '') }) as never;
 
-/** A runner on its own clock, its nudges in the real proactive store. */
-function runner(e: ReturnType<typeof engine>, o: { cap?: number; watches?: 'on' | 'off' } = {}) {
+/** A runner on its own clock, its nudges in the real proactive store, its Server link open until a test closes it. */
+function runner(e: Pick<ReturnType<typeof engine>, 'answerShared'>, o: { cap?: number; watches?: 'on' | 'off'; wake?: (tripId: string) => Promise<void> } = {}) {
   const clock = { now: START };
+  const link = { open: true };
+  const warned: string[] = [];
   const store = new ProactiveStore(db.pool);
   const r = createWatchRunner({
-    pool: db.pool, book, engine: e, store, switches: switches(o.watches), now: () => clock.now, log: { warn: () => undefined },
+    pool: db.pool, book, engine: e, store, switches: switches(o.watches), now: () => clock.now, log: { warn: (_o, msg) => warned.push(msg) },
+    linkOpen: () => link.open,
+    ...(o.wake ? { wake: o.wake } : {}),
     ...(o.cap ? { capPer10Min: o.cap } : {}),
   });
-  return { r, clock, at: (ms: number) => { clock.now = new Date(START.getTime() + ms); } };
+  return { r, clock, link, warned, at: (ms: number) => { clock.now = new Date(START.getTime() + ms); } };
 }
 
 const CONFIRM = { recipe_id: 'trains.confirm_chance', inputs: { from: 'Bangalore', to: 'Chennai', date: '2026-10-22', train: '12608', class: 'CC' }, conditions: [], flip: 'confirms', flip_limit: null, label: "12608's CC to confirm", asked_by: 'p_priya', baseline: null, until: UNTIL };
 
 async function watchRow(id: string) {
-  return (await db.pool.query<{ active: boolean; stopped: string | null; fired_at: Date | null; errors: number }>('select active, stopped, fired_at, errors from recipe_watches where watch_id = $1', [id])).rows[0]!;
+  return (await db.pool.query<{ active: boolean; stopped: string | null; fired_at: Date | null; errors: number; next_check_at: Date }>(
+    'select active, stopped, fired_at, errors, next_check_at from recipe_watches where watch_id = $1', [id],
+  )).rows[0]!;
 }
 async function nudges(tripId: string) {
   return (await db.pool.query<{ dedupe_key: string; topic: string; asked: boolean; person_ids: string[]; facts: Record<string, unknown> }>(
@@ -155,6 +161,70 @@ describe('a watch the group asked for', () => {
     await w.r.tick();
     expect(e.calls.some((c) => c.o.tripId === 't_gone')).toBe(false);
     expect(await watchRow('rw_gone')).toMatchObject({ active: false, stopped: 'trip_gone' });
+  });
+});
+
+describe("a watch's check and the links it needs", () => {
+  it('checks nothing while no Server socket is open, counting nothing against the watch, and checks it once one is', async () => {
+    await seedTrip(db.pool, 't_nolink');
+    await startWatch(db.pool, { ...CONFIRM, watch_id: 'rw_nolink', trip_id: 't_nolink' }, START);
+    const due = (await watchRow('rw_nolink')).next_check_at;
+    const e = engine(chance('CC: WL 12'));
+    const w = runner(e);
+    w.link.open = false;
+    for (let i = 1; i <= WATCH_FAILURES + 2; i++) {
+      w.at(60 * MIN + i * 30_000);
+      expect(await w.r.tick()).toBe(0);
+    }
+    expect(e.calls).toEqual([]);
+    expect(await watchRow('rw_nolink')).toMatchObject({ active: true, errors: 0, next_check_at: due });
+    w.link.open = true;
+    await w.r.tick();
+    expect(e.calls.filter((c) => c.o.tripId === 't_nolink')).toHaveLength(1);
+  });
+
+  it('never counts a check the link dropped under: the watch stays due for its return, where a real failure counts', async () => {
+    await seedTrip(db.pool, 't_drop');
+    await startWatch(db.pool, { ...CONFIRM, watch_id: 'rw_drop', trip_id: 't_drop' }, START);
+    const due = (await watchRow('rw_drop')).next_check_at;
+    let w: ReturnType<typeof runner> | null = null;
+    const dropping = {
+      answerShared: async (): Promise<EngineAnswer> => {
+        w!.link.open = false;
+        throw new TravelError('unreachable', 'no socket from the Server is open');
+      },
+    };
+    w = runner(dropping);
+    w.at(61 * MIN);
+    await w.r.tick();
+    expect(await watchRow('rw_drop')).toMatchObject({ active: true, errors: 0, next_check_at: due });
+    // The same failure with the link up is the watch's own, and counts.
+    const failing = runner(engine(new TravelError('unreachable', 'ixigo took too long to answer.')));
+    failing.at(62 * MIN);
+    await failing.r.tick();
+    expect((await watchRow('rw_drop')).errors).toBe(1);
+  });
+
+  it("wakes a trip's computer once, before its watches' pages; a wake that fails is logged and the checks go on", async () => {
+    await seedTrip(db.pool, 't_wake');
+    await startWatch(db.pool, { ...CONFIRM, watch_id: 'rw_wake1', trip_id: 't_wake' }, START);
+    await startWatch(db.pool, { ...CONFIRM, watch_id: 'rw_wake2', trip_id: 't_wake', inputs: { ...CONFIRM.inputs, class: '2S' }, label: "12608's 2S to confirm" }, START);
+    const order: string[] = [];
+    const e = engine(chance('CC: WL 12'));
+    const checking = { answerShared: async (id: string, given: Record<string, unknown>, o: RunFor) => { order.push(`check ${o.tripId}`); return e.answerShared(id, given, o); } };
+    const w = runner(checking, { wake: async (tripId) => { order.push(`wake ${tripId}`); } });
+    w.at(61 * MIN);
+    await w.r.tick();
+    expect(order.filter((x) => x.endsWith('t_wake'))).toEqual(['wake t_wake', 'check t_wake', 'check t_wake']);
+
+    await seedTrip(db.pool, 't_wakefail');
+    await startWatch(db.pool, { ...CONFIRM, watch_id: 'rw_wakefail', trip_id: 't_wakefail' }, START);
+    const f = engine(chance('CC: WL 12'));
+    const failing = runner(f, { wake: async () => { throw new Error('warm_limit: too many computers are waking'); } });
+    failing.at(61 * MIN);
+    await failing.r.tick();
+    expect(f.calls.some((c) => c.o.tripId === 't_wakefail')).toBe(true);
+    expect(failing.warned).toContain("travel: a watch's check could not wake its computer");
   });
 });
 
