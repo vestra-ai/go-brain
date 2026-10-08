@@ -10,6 +10,7 @@ import { createTokenStore, hashToken } from '../../mcp/tokens.js';
 import { FakeSwitches } from '../testing/lane-brain.js';
 import { makeTaskHarness, VILLA_BRIEF, type TaskHarness } from '../testing/harness.js';
 import { armedToken } from '../testing/job-search.js';
+import { returnsSchema } from '../returns.js';
 
 let h: TaskHarness;
 let travel: ReturnType<typeof createTravelLayer>;
@@ -104,7 +105,7 @@ describe('applying /v1 events', () => {
     await h.events.apply({ ...ev, source: 'stream' });
     await h.cards.flush();
     const done = (await h.store.get(row.id))!;
-    expect(done).toMatchObject({ state: 'done', endReason: 'completed', costUsd: 0.42 });
+    expect(done).toMatchObject({ state: 'done', endReason: 'completed', costUsd: 0.42, quiet: false });
     expect(h.lb.link.card(row.cardId)).toMatchObject({ state: 'done', actions: [] });
     const items = h.lb.desk.items.filter((i) => i.id === `task:${row.id}:done`);
     expect(items).toHaveLength(1);
@@ -154,6 +155,17 @@ describe('applying /v1 events', () => {
     expect((await h.store.get(row.id))?.state).toBe('stopped');
     expect(h.lb.desk.items.some((i) => i.id === `task:${row.id}:done`)).toBe(false);
     expect(h.lb.link.card(row.cardId)?.fallback_text).toBe('Stopped: Finding villas with a pool in North Goa');
+  });
+
+  it('ends a quiet job (the ixigo login) done on its card and wakes no one: the lane that started it speaks for it', async () => {
+    const { row, v1TaskId } = await h.runningJob('ev7q', 't_ev7q', { title: 'Logging in to ixigo', returns: returnsSchema('answer'), returnsKind: 'answer', quiet: true });
+    expect(row.quiet).toBe(true);
+    h.fake.complete(v1TaskId, { summary: 'Done' }, 'Done');
+    await h.events.apply({ type: 'task.completed', data: { task_id: v1TaskId }, source: 'webhook' });
+    await h.cards.flush();
+    expect(await h.store.get(row.id)).toMatchObject({ state: 'done', endReason: 'completed' });
+    expect(h.lb.link.card(row.cardId)).toMatchObject({ state: 'done' });
+    expect(h.lb.desk.items.some((i) => i.id.startsWith(`task:${row.id}:`))).toBe(false);
   });
 
   it('ends a failed job as "Didn\'t work", and a job that hit its spend cap with that reason', async () => {

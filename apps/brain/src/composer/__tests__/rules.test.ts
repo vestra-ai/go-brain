@@ -40,6 +40,13 @@ describe("Go's rules", () => {
     expect(section).toContain('- One reply per burst: when several messages came together, answer them in one message.');
   });
 
+  it('a line marked as answering Go\'s question is a reply to Go, right under "speak when someone replies to you"', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
+    expect(section).toContain(
+      'and when a vote closed or a decision is ready to move.\n- A line marked "(answers Go\'s question #N)" is that person answering what you asked them in #N: it is a reply to you, even without @Go and even much later.\n',
+    );
+  });
+
   it("one person's dates or place before a vote are not the plan: no leaning, no search unless asked", () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
     expect(section).toContain(

@@ -43,9 +43,11 @@ export interface TaskRow {
   startingAt: Date | null;
   todosAt: Date | null;
   costUsd: number | null;
+  /** The job's end wakes no one: the lane that started it speaks for it (TaskBrief.quiet). */
+  quiet: boolean;
 }
 
-export type NewTask = Pick<TaskRow, 'id' | 'tripId' | 'title' | 'goal' | 'returnsKind' | 'returns' | 'context' | 'successCriteria' | 'askedBy' | 'state' | 'cardId' | 'steps' | 'deadlineAt' | 'createdAt'>;
+export type NewTask = Pick<TaskRow, 'id' | 'tripId' | 'title' | 'goal' | 'returnsKind' | 'returns' | 'context' | 'successCriteria' | 'askedBy' | 'state' | 'cardId' | 'steps' | 'deadlineAt' | 'createdAt'> & { quiet?: boolean };
 export type TaskPatch = Partial<Pick<TaskRow, 'messageId' | 'steps' | 'screenshotUrl' | 'needsPersonId' | 'conversationId' | 'deadlineAt' | 'result' | 'resultsId' | 'error' | 'endReason' | 'startedAt' | 'endedAt' | 'stopRequestedAt' | 'todosAt' | 'costUsd'>>;
 
 export interface InteractionRow {
@@ -102,6 +104,7 @@ interface TaskDb {
   screenshot_url: string | null; needs_person_id: string | null; conversation_id: string | null; v1_turn_id: string | null; v1_task_id: string | null;
   deadline_at: Date | null; result: unknown; results_id: string | null; error: string | null; end_reason: string | null; created_at: Date;
   started_at: Date | null; ended_at: Date | null; stop_requested_at: Date | null; starting_at: Date | null; todos_at: Date | null; cost_usd: string | null;
+  quiet: boolean;
 }
 
 const rowOf = (r: TaskDb): TaskRow => ({
@@ -110,6 +113,7 @@ const rowOf = (r: TaskDb): TaskRow => ({
   screenshotUrl: r.screenshot_url, needsPersonId: r.needs_person_id, conversationId: r.conversation_id, v1TurnId: r.v1_turn_id, v1TaskId: r.v1_task_id,
   deadlineAt: r.deadline_at, result: r.result, resultsId: r.results_id, error: r.error, endReason: r.end_reason, createdAt: r.created_at,
   startedAt: r.started_at, endedAt: r.ended_at, stopRequestedAt: r.stop_requested_at, startingAt: r.starting_at, todosAt: r.todos_at, costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
+  quiet: r.quiet,
 });
 
 interface InteractionDb {
@@ -141,12 +145,12 @@ function setClause(patch: TaskPatch, offset: number): { sql: string; values: unk
   return { sql: parts.join(', '), values };
 }
 
-const INSERT_TASK = `insert into tasks (id, trip_id, title, goal, returns_kind, returns, context, success_criteria, asked_by, state, card_id, steps, deadline_at, created_at, starting_at)
-  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, case when $10 = 'starting' then $14::timestamptz end) on conflict (id) do nothing`;
+const INSERT_TASK = `insert into tasks (id, trip_id, title, goal, returns_kind, returns, context, success_criteria, asked_by, state, card_id, steps, deadline_at, created_at, starting_at, quiet)
+  values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, case when $10 = 'starting' then $14::timestamptz end, $15) on conflict (id) do nothing`;
 
 const insertValues = (t: NewTask): unknown[] => [
   t.id, t.tripId, t.title, t.goal, t.returnsKind, JSON.stringify(t.returns), JSON.stringify(t.context), t.successCriteria, t.askedBy, t.state, t.cardId,
-  JSON.stringify(t.steps), t.deadlineAt, t.createdAt,
+  JSON.stringify(t.steps), t.deadlineAt, t.createdAt, t.quiet ?? false,
 ];
 
 export function createTaskStore(pool: pg.Pool): TaskStore {

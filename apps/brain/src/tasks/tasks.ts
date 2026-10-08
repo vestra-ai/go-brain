@@ -46,6 +46,8 @@ export interface TaskBrief {
   cardId?: string;
   /** A turn's ctx.cards: the working card rides with the turn's message instead of being posted at once. */
   cards?: C.Card[];
+  /** The job's end wakes no one: its card says it is done, and the lane that started it speaks for it (the ixigo login). */
+  quiet?: boolean;
 }
 
 export interface Tasks {
@@ -232,6 +234,7 @@ export function createTasks(d: TasksDeps): TasksService {
         steps: plannedSteps(brief.steps),
         deadlineAt: new Date(now.getTime() + deadlineMs),
         createdAt: now,
+        quiet: brief.quiet ?? false,
       };
       // Queued instead when the trip already runs three: counted and saved under one per-trip lock.
       const state = await d.store.insertCapped(row, MAX_ACTIVE_PER_TRIP);

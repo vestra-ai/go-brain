@@ -3,6 +3,31 @@ import type { Packs } from '../trips/pack.js';
 import type { NowProvider } from './context.js';
 import { dataBlock, defuse, inlineData, personName } from './fence.js';
 
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** A calendar day, as "Fri 6 Nov". A date has no time of day, so its weekday is the same in every time zone. */
+const dayOf = (iso: string): string => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+};
+/** Trips this long or shorter list every day, so the model never counts its way from a date to a weekday. */
+const LIST_DAYS = 14;
+
+/**
+ * The trip's dates with their weekdays, worked out in code (8 Oct: given "2026-11-06 to 2026-11-09", the model called
+ * the Saturday the 8th): "Fri 6 Nov to Mon 9 Nov 2026 (3 nights): Fri 6 Nov, Sat 7 Nov, Sun 8 Nov, Mon 9 Nov".
+ */
+export function datesLine(start: string, end: string): string {
+  const from = Date.parse(`${start}T00:00:00Z`);
+  const nights = Math.round((Date.parse(`${end}T00:00:00Z`) - from) / 86_400_000);
+  const sameYear = start.slice(0, 4) === end.slice(0, 4);
+  const range = `${dayOf(start)}${sameYear ? '' : ` ${start.slice(0, 4)}`} to ${dayOf(end)} ${end.slice(0, 4)}`;
+  const length = nights === 0 ? 'a day trip' : `${nights} night${nights === 1 ? '' : 's'}`;
+  if (nights < 0 || nights >= LIST_DAYS) return `${range} (${length})`;
+  const days = Array.from({ length: nights + 1 }, (_, k) => dayOf(new Date(from + k * 86_400_000).toISOString().slice(0, 10)));
+  return `${range} (${length}): ${days.join(', ')}`;
+}
+
 const money = (minor: number, currency: string): string =>
   currency === 'INR' ? `₹${Math.round(minor / 100).toLocaleString('en-IN')}` : `${currency} ${Math.round(minor / 100)}`;
 
@@ -28,7 +53,7 @@ export function tripNow(packs: Packs): NowProvider {
       const { trip } = await packs.get(tripId);
       const lines = [`Trip: ${inlineData(trip.title)} (${trip.status})`];
       if (trip.destination) lines.push(`Destination: ${inlineData(trip.destination.name)}`);
-      if (trip.dates) lines.push(`Dates: ${trip.dates.start} to ${trip.dates.end}`);
+      if (trip.dates) lines.push(`Dates: ${datesLine(trip.dates.start, trip.dates.end)}`);
       if (trip.stay) lines.push(`Stay wanted: ${inlineData(trip.stay)}`);
       if (trip.vibe.length) lines.push(`Vibe: ${inlineData(trip.vibe.join(', '))}`);
       const low = trip.budget.lowest;

@@ -12,12 +12,16 @@ import type { SseFrame } from '../tasks/sse.js';
 import { pathOf } from './book/run-event.js';
 import { isFramePage } from './frame-pages.js';
 
-/** What a viewer reads of the screen. `off`: no screen to watch (Bash refused or is not reachable, or not ixigo_web). */
+/**
+ * What a viewer reads of the screen. `off`: no screen to watch (Bash refused or is not reachable, or not ixigo_web).
+ * `tag`: the run whose fetch has the tab now (its run_id, Go's own tag on the fetch), so its tile carries the run's label;
+ * a kept tab a later run takes says the later run's.
+ */
 export type ScreenEvent =
   | { type: 'state'; state: 'asleep' | 'live' | 'off' }
-  | { type: 'tab_open'; tab_id: string }
-  | { type: 'frame'; tab_id: string; at: string; page: string; width: number; height: number; jpeg_base64: string }
-  | { type: 'hidden'; tab_id: string; reason: 'blocked_path' | 'off_site' }
+  | { type: 'tab_open'; tab_id: string; tag?: string }
+  | { type: 'frame'; tab_id: string; tag?: string; at: string; page: string; width: number; height: number; jpeg_base64: string }
+  | { type: 'hidden'; tab_id: string; tag?: string; reason: 'blocked_path' | 'off_site' }
   | { type: 'tab_close'; tab_id: string };
 
 export interface ScreenFeed {
@@ -45,8 +49,10 @@ export const CLOSE_AFTER_MS = 30_000;
 export const AGAIN_MS = 1_000;
 export const WAITS_MS = [2_000, 5_000, 15_000, 30_000];
 const TAB_ID = /^[A-Za-z0-9_-]{1,80}$/;
+const TAG = /^[A-Za-z0-9_.:-]{1,64}$/;
 
 interface Tab {
+  tag: string | null;
   hidden: ScreenEvent | null;
   last: ScreenEvent | null;
 }
@@ -95,13 +101,16 @@ export function createScreenFeed(d: ScreenFeedDeps): ScreenFeed {
     t.tabs.clear();
   };
 
-  const tabOf = (t: TripScreen, tripId: string, id: string): Tab => {
+  const tagged = (tag: string | null): { tag?: string } => (tag ? { tag } : {});
+
+  const tabOf = (t: TripScreen, tripId: string, id: string, tag: string | null): Tab => {
     let tab = t.tabs.get(id);
     if (!tab) {
-      tab = { hidden: null, last: null };
+      tab = { tag, hidden: null, last: null };
       t.tabs.set(id, tab);
-      tell(t, tripId, { type: 'tab_open', tab_id: id });
+      tell(t, tripId, { type: 'tab_open', tab_id: id, ...tagged(tag) });
     }
+    if (tag) tab.tag = tag;
     return tab;
   };
 
@@ -116,22 +125,23 @@ export function createScreenFeed(d: ScreenFeedDeps): ScreenFeed {
     }
     const id = typeof data.tab_id === 'string' && TAB_ID.test(data.tab_id) ? data.tab_id : null;
     if (!id) return;
+    const tag = typeof data.tag === 'string' && TAG.test(data.tag) ? data.tag : null;
     if (f.event === 'tab_open') {
-      tabOf(t, tripId, id);
+      tabOf(t, tripId, id, tag);
     } else if (f.event === 'frame') {
       // Go's own rule: only a page Go may show, and only its path.
       if (typeof data.url !== 'string' || typeof data.jpeg_base64 !== 'string' || !isFramePage(data.url)) return;
-      const tab = tabOf(t, tripId, id);
+      const tab = tabOf(t, tripId, id, tag);
       if (tab.hidden) return;
       tab.last = {
-        type: 'frame', tab_id: id, at: typeof data.at === 'string' ? data.at : new Date().toISOString(), page: pathOf(data.url),
+        type: 'frame', tab_id: id, ...tagged(tab.tag), at: typeof data.at === 'string' ? data.at : new Date().toISOString(), page: pathOf(data.url),
         width: num(data.width), height: num(data.height), jpeg_base64: data.jpeg_base64,
       };
       tell(t, tripId, tab.last);
     } else if (f.event === 'hidden') {
-      const tab = tabOf(t, tripId, id);
+      const tab = tabOf(t, tripId, id, tag);
       tab.last = null;
-      tab.hidden = { type: 'hidden', tab_id: id, reason: data.reason === 'off_site' ? 'off_site' : 'blocked_path' };
+      tab.hidden = { type: 'hidden', tab_id: id, ...tagged(tab.tag), reason: data.reason === 'off_site' ? 'off_site' : 'blocked_path' };
       tell(t, tripId, tab.hidden);
     } else if (f.event === 'tab_close') {
       if (t.tabs.delete(id)) tell(t, tripId, { type: 'tab_close', tab_id: id });
@@ -200,7 +210,7 @@ export function createScreenFeed(d: ScreenFeedDeps): ScreenFeed {
         now() {
           const out: ScreenEvent[] = screen.state ? [screen.state] : [];
           for (const [id, tab] of screen.tabs) {
-            out.push({ type: 'tab_open', tab_id: id });
+            out.push({ type: 'tab_open', tab_id: id, ...tagged(tab.tag) });
             const shown = tab.hidden ?? tab.last;
             if (shown) out.push(shown);
           }
