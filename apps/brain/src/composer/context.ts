@@ -137,16 +137,19 @@ export function formatTime(now: Date, tz: string): string {
 /**
  * Said under "right now" while someone in the trip has used Forget me. Their earlier lines are hidden, but Go's own
  * earlier answers about them are not (drill t_p1b_2c72baaa: "Kabir doesn't drink" right after Kabir's forget), and Go
- * must know the forget is done, so it never sends them to Forget me again.
+ * must know the forget is done, so it never sends them to Forget me again. The room is never told who used it: the
+ * person who did is told on a card pinned to them (memory/people.ts forgetNotice).
  */
 export function forgottenNote(pack: TripPack, forgotten: Forgotten): string | null {
   const names = [...forgotten.keys()].map((id) => personName(pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone who left'));
   if (names.length === 0) return null;
   const who = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const them = names.length === 1 ? who : 'them';
   return (
     `${who} used "Forget me in this trip" in the App, so Go forgot what it knew about them, and their earlier messages are hidden. ` +
-    `Never repeat anything about ${names.length === 1 ? who : 'them'} from earlier in the chat, your own messages included. ` +
-    'If someone asks, say only that they asked you to forget what you knew about them, without naming any of it.'
+    `Never repeat anything about ${them} from earlier in the chat, your own messages included. ` +
+    `If someone asks about ${them}, say you don't have that and they can ask ${them} directly. ` +
+    'Never tell the room that anyone used Forget me or asked you to forget them: only the person who did it is told, on their own card.'
   );
 }
 
