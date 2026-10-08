@@ -31,17 +31,19 @@ page: >-
   /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={rooms}&childCount=0{$count($filters) > 0 ? '&filters=' & $encodeUrlComponent($join($filters, ','))|raw}{sort in ['SC_P', 'SC_P_LH', 'SC_P_HL', 'SC_UR'] ? '&sort=' & sort|raw}
 capture:
   - /accommodation-search/api/v3/accommodations/search$
-# Page 1 for an area. A whole state takes pages 1 and 2 (about 5 s); page 2 sometimes never comes, so at 12 s the fetch
-# answers with page 1, which reads as it is. Either way, once the results are in, ixigo's "Best Price Guarantee" popup
-# (once a day per browser) is closed if it is there, so the card's picture is the list: before the scrolls, which it can
-# block, and again after them. Bash's last picture waits 550 ms after the hotels are in, when the cards are drawn.
+# Page 1 for an area. A whole state takes pages 1 and 2: six scrolls bring page 2 about 2.6 s after page 1, the fetch
+# done near 7.6 s (three scrolls often never brought it, p5's loads of 8 Oct). Page 2 sometimes never comes, so at 12 s
+# the fetch answers with page 1, which reads as it is. Either way, once the results are in, ixigo's "Best Price
+# Guarantee" popup (once a day per browser) is closed if it is there, so the card's picture is the list: before the
+# scrolls, which it can block, and again after them. Bash's last picture waits 550 ms after the hotels are in, when the
+# cards are drawn.
 fetch:
   - when: $wide
     capture: [{ match: /accommodation-search/api/v3/accommodations/search$, min_count: 2, max_count: 2 }]
     steps:
       - { op: wait_for, match: /accommodation-search/api/v3/accommodations/search$ }
       - { op: click, name: Close modal, optional: true }
-      - { op: scroll, times: 3 }
+      - { op: scroll, times: 6 }
       - { op: click, name: Close modal, optional: true }
     timeout_ms: 12000
     settle_ms: 550

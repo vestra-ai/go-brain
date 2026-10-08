@@ -78,10 +78,10 @@ describe('hotels.search', () => {
     expect((await stays('Anjuna, Goa', [], pages(), { adults: 5 })).page).toContain('&adultCount=5&roomCount=3&');
   });
 
-  it('takes pages 1 and 2 for all of Goa or a half of it, and page 1 for an area; closes the popup; settles 550 ms', async () => {
+  it('takes pages 1 and 2 for all of Goa or a half of it, six scrolls bringing page 2, and page 1 for an area; closes the popup; settles 550 ms', async () => {
     const two = {
       capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
-      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 3 }, { op: 'click', name: 'Close modal', optional: true }],
+      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 6 }, { op: 'click', name: 'Close modal', optional: true }],
       timeoutMs: 12_000,
       settleMs: 550,
     };

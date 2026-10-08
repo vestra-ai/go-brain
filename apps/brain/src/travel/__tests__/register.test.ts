@@ -38,6 +38,8 @@ describe('registerTravel', () => {
 
   it('sets brain.travel and registers the seven travel tools, the three options taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
+    // A new trip's computer is made at setup (warm.ts startComputerAtSetup).
+    expect(lb.setup.steps.map((s) => s.name)).toContain('travel.computer');
     // The ixigo tool runs the book's other recipes (the destination guide and more).
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/open', 'options/pick', 'options/vote']);

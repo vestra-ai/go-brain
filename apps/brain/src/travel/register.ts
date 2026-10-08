@@ -24,7 +24,7 @@ import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
-import { warmForTravel } from './warm.js';
+import { startComputerAtSetup, warmForTravel } from './warm.js';
 
 export const registerTravel: RegisterLane = async (brain) => {
   const env = readTravelEnv(brain.env);
@@ -43,8 +43,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   const images = createImages({ pool: brain.pool, publicUrl: env.GO_PUBLIC_URL });
   const imageRoute = registerImageRoute(brain.http, { pool: brain.pool });
   brain.onStop(() => imageRoute.close());
-  // The one owner of waking the trip's computer for travel (see warmForTravel).
+  // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.
   const warm = (tripId: string, kind: TravelKind | null): void => warmForTravel(brain, tripId, kind);
+  brain.setup.addStep({ name: 'travel.computer', run: (tripId) => startComputerAtSetup(brain, tripId) });
   // The recipe book, checked at boot: a file that fails is left out, and the log says why.
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');

@@ -62,6 +62,9 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   brain.recipeRunners = {
     browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log }),
     keepWarm: (tripId) => keeper.touch(tripId),
+    start: async (tripId) => {
+      await computer.warm(tripId);
+    },
   };
   const store = createTaskStore(brain.pool);
   const eventStore = createEventStore(brain.pool, brain.now);
