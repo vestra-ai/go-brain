@@ -2,9 +2,11 @@
 // lives inside this template literal: no backticks, no dollar-brace and no backslashes in it.
 // roomPage() draws the hosted "try Go" room from the same page: its own title, "Start over", the lines about what is
 // live and what is simulated, example messages to tap, the limit line, and a nonce on the script for a strict
-// Content-Security-Policy. With no options it is the dev room. With live, Go Live's column sits beside it (live-page.ts).
+// Content-Security-Policy. With no options it is the dev room. With live, Go Live's column sits beside it (live-page.ts),
+// and with watchOrigin too, a login hand-off's screen fills that column for the person logging in (login-panel.ts).
 
-import { LIVE_ASIDE, LIVE_CSS, LIVE_HOOK, LIVE_SCRIPT } from './live-page.js';
+import { LIVE_CSS, LIVE_HOOK, LIVE_SCRIPT, liveAside } from './live-page.js';
+import { LOGIN_CSS, LOGIN_SCRIPT } from './login-panel.js';
 
 export interface RoomPageOptions {
   /** The page's title and the header's first line. Default "Go dev room". */
@@ -17,6 +19,8 @@ export interface RoomPageOptions {
   hosted?: boolean;
   /** Go Live: the trip's recipe runs and the pages they opened, in a second column (desktop first). */
   live?: boolean;
+  /** With live: Bash's session page origin. A login hand-off's Watch answer on it is framed in Go Live's column. */
+  watchOrigin?: string;
 }
 
 const escHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -102,7 +106,7 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
 .hints { display: flex; gap: 6px; align-items: center; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-bottom: 8px; }
 .hints span { color: var(--muted); font-size: 13px; flex: none; }
 button.hint { flex: none; font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; min-height: 44px; padding: 6px 12px; cursor: pointer; touch-action: manipulation; }
-${o.live ? LIVE_CSS : ''}</style>
+${o.live ? LIVE_CSS + LOGIN_CSS : ''}</style>
 </head>
 <body${o.hosted ? ' data-hosted="1"' : ''}>
 ${o.live ? '<div class="split">' : ''}<div class="app">
@@ -121,7 +125,7 @@ ${o.live ? '<div class="split">' : ''}<div class="app">
 ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete="off" enterkeyhint="send" placeholder="Message the group. Start with @Go to ask Go."><button class="act primary" type="submit">Send</button></form>
 </footer>
 </div>
-${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
+${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOrigin)}"` : '')}</div>` : ''}<div class="toast" id="toast"></div>
 <script${o.nonce ? ` nonce="${escHtml(o.nonce)}"` : ''}>
 (function () {
   var COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#14b8a6'];
@@ -130,6 +134,8 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
   var ws = null;
   var fails = 0;
   var toastTimer = null;
+  // Go Live puts a login hand-off's Watch answer in its column (login-panel.ts); without it every page opens in a window.
+  var watchHere = function () { return false; };
   try { me = localStorage.getItem('go-dev-room-me') || me; } catch (e) {}
 
   function $(id) { return document.getElementById(id); }
@@ -385,7 +391,7 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
     if (pinned) toBottom();
     else if (last !== newest) $('newpill').hidden = false;
     newest = last;
-  }
+${o.live ? '    renderLogin();\n' : ''}  }
 
   document.addEventListener('click', function (e) {
     var el = e.target && e.target.closest ? e.target.closest('button') : null;
@@ -454,6 +460,7 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
         render();
       } else if (data.type === 'tap_result') {
         var r = data.result;
+        if (watchHere(data)) return; // on screen in Go Live's column
         if (r.result === 'open' && safeUrl(r.url)) {
           window.open(r.url, '_blank', 'noopener');
           toast('Opening the page');
@@ -480,7 +487,7 @@ ${o.live ? LIVE_HOOK : ''}      }
     };
   }
 
-${o.live ? LIVE_SCRIPT : ''}  connect();
+${o.live ? LIVE_SCRIPT + LOGIN_SCRIPT : ''}  connect();
   setInterval(render, 15000); // keeps "checked 3 min ago" honest
 })();
 </script>

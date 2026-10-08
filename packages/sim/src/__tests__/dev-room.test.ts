@@ -1,7 +1,7 @@
 import { once } from 'node:events';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { PAGE_HTML } from '../dev-room/page.js';
+import { PAGE_HTML, roomPage } from '../dev-room/page.js';
 import { serveDevRoom, type DevRoom } from '../dev-room/serve.js';
 import { FakeServer } from '../fake-server.js';
 import { goaFreshTrip } from '../goa.js';
@@ -172,7 +172,7 @@ describe('the live socket', () => {
  * itself), its height, scroll events, pictures that load, and the socket. The test sets the chat's height to what the
  * browser would lay out, then sends the page a state.
  */
-function pageInBrowser(html: string, o: { column: boolean }) {
+function pageInBrowser(html: string, o: { column: boolean; me?: string }) {
   const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
   const view = { height: 600, content: 1000 };
   const clamp = (top: number) => Math.max(0, Math.min(top, view.content - view.height));
@@ -185,18 +185,33 @@ function pageInBrowser(html: string, o: { column: boolean }) {
     set scrollTop(v: number) { colTop = clamp(v); },
   };
   const elements = new Map<string, any>();
+  /** An element: its markup counts how often it was rewritten (a rewritten frame loads its page again). */
+  const stub = (id: string, attrs: Record<string, string> = {}): any => {
+    const listeners: Record<string, Array<(e: unknown) => void>> = {};
+    const inner = new Map<string, any>();
+    let markup = '';
+    return {
+      id, textContent: '', value: '', className: '', dataset: {}, hidden: id === 'newpill', listeners, writes: 0,
+      get innerHTML() { return markup; },
+      set innerHTML(v: string) { markup = v; this.writes += 1; },
+      getAttribute: (k: string) => attrs[k] ?? null,
+      setAttribute: (k: string, v: string) => { attrs[k] = String(v); },
+      hasAttribute: (k: string) => k in attrs,
+      removeAttribute: (k: string) => { delete attrs[k]; },
+      querySelector: (q: string) => { if (!inner.has(q)) inner.set(q, stub(`${id} ${q}`)); return inner.get(q); },
+      querySelectorAll: () => [],
+      addEventListener: (type: string, fn: (e: unknown) => void) => { (listeners[type] ??= []).push(fn); },
+      focus: () => {},
+      contains: (x: { inRoom?: boolean }) => x.inRoom === true,
+    };
+  };
   const el = (id: string) => {
-    if (!elements.has(id)) {
-      const listeners: Record<string, Array<(e: unknown) => void>> = {};
-      elements.set(id, {
-        id, innerHTML: '', textContent: '', value: '', dataset: {}, hidden: id === 'newpill', listeners,
-        addEventListener: (type: string, fn: (e: unknown) => void) => { (listeners[type] ??= []).push(fn); },
-        focus: () => {},
-        contains: (x: { inRoom?: boolean }) => x.inRoom === true,
-      });
-    }
+    if (!elements.has(id)) elements.set(id, stub(id));
     return elements.get(id);
   };
+  // Go Live's column carries the origin of the one page it may frame.
+  const watchOrigin = /<aside[^>]* data-watch-origin="([^"]*)"/.exec(html)?.[1];
+  if (watchOrigin) elements.set('live', stub('live', { 'data-watch-origin': watchOrigin }));
   const docListeners: Record<string, Array<(e: unknown) => void>> = {};
   const scrolling = { get scrollHeight() { return view.content; } };
   const document = {
@@ -207,17 +222,24 @@ function pageInBrowser(html: string, o: { column: boolean }) {
     scrollingElement: scrolling,
     documentElement: scrolling,
   };
+  const opened: string[] = [];
   const window = {
     innerHeight: view.height,
     get scrollY() { return winTop; },
     scrollTo: (_x: number, y: number) => { winTop = clamp(y); },
-    open: () => {},
+    open: (url: string) => { opened.push(url); },
   };
   const sockets: any[] = [];
-  class StubSocket { onmessage: ((ev: { data: string }) => void) | null = null; constructor() { sockets.push(this); } send() {} }
-  const run = new Function('document', 'window', 'localStorage', 'WebSocket', 'location', 'getComputedStyle', 'setInterval', script);
-  run(document, window, { getItem: () => null, setItem: () => {} }, StubSocket, { protocol: 'http:', host: 'room.test', reload: () => {} },
-    (x: unknown) => ({ overflowY: x === col ? 'auto' : 'visible' }), () => 0);
+  const sent: any[] = [];
+  class StubSocket {
+    readyState = 1;
+    onmessage: ((ev: { data: string }) => void) | null = null;
+    constructor() { sockets.push(this); }
+    send(data: string) { sent.push(JSON.parse(data)); }
+  }
+  const run = new Function('document', 'window', 'localStorage', 'WebSocket', 'location', 'getComputedStyle', 'setInterval', 'setTimeout', script);
+  run(document, window, { getItem: () => o.me ?? null, setItem: () => {} }, StubSocket, { protocol: 'http:', host: 'room.test', reload: () => {} },
+    (x: unknown) => ({ overflowY: x === col ? 'auto' : 'visible' }), () => 0, () => 0);
   const trip = goaFreshTrip();
   const message = (n: number, text: string) => ({
     message_id: `m_${n}`, seq: n + 1, updated_seq: n + 1, author: { kind: 'person', person_id: 'p_priya' }, text, attachments: [],
@@ -254,6 +276,23 @@ function pageInBrowser(html: string, o: { column: boolean }) {
     },
     tapPill() {
       for (const fn of el('newpill').listeners.click ?? []) fn({});
+    },
+    el,
+    /** What the page sent on its socket. */
+    sent: () => sent,
+    /** The pages it opened in a new window. */
+    opened: () => opened,
+    /** The room sends the page one message. */
+    receive(data: object) {
+      sockets[0].onmessage({ data: JSON.stringify(data) });
+    },
+    /** A tap on one of the page's own buttons, by its id. */
+    click(id: string) {
+      for (const fn of el(id).listeners.click ?? []) fn({});
+    },
+    /** A tap on a person at the top: the page is now that person. */
+    play(personId: string) {
+      for (const fn of docListeners.click ?? []) fn({ target: { closest: () => ({ dataset: { me: personId } }) } });
     },
   };
 }
@@ -369,5 +408,176 @@ describe("Go's live search card", () => {
       p.messages([searchCard(ixigo)], 1200);
       expect(p.room()).toContain('See on ixigo');
     }
+  });
+});
+
+describe("Go Live's login panel", () => {
+  const ORIGIN = 'https://bash.test';
+  const LIVE_PAGE = roomPage({ title: 'Try Go', hosted: true, live: true, watchOrigin: ORIGIN });
+  const SESSION = `${ORIGIN}/screen?s=ses_1#token=tok_secret`;
+  const FRAME = `<iframe title="Go&#39;s computer" src="${SESSION}" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>`;
+  const CARD = 'c_login_t_goa_1';
+  /** Go's message with a card in it. */
+  const fromGo = (card: object, n = 1) => ({
+    message_id: `m_go_${n}`, seq: n, updated_seq: n, author: { kind: 'go' }, text: '', attachments: [], mentions_go: false, mentions: [],
+    reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z', card,
+  });
+  /** #247's ixigo login card, pinned to Rahul: while he logs in it carries Watch, then his two buttons. */
+  const loginCard = (state: 'logging_in' | 'logged_in') => fromGo({
+    kind: 'notice', card_id: CARD, tone: 'info', for_person_ids: ['p_rahul'], fallback_text: "Rahul is logging in to ixigo on Go's computer.",
+    title: state === 'logging_in' ? 'Logging in to ixigo' : 'ixigo: logged in as Rahul', body: "ixigo's log in is open on Go's screen.",
+    actions: state === 'logging_in'
+      ? [
+        { action_id: 'ixigo_watch', label: 'Watch', style: 'primary' },
+        { action_id: 'ixigo_logged_in', label: "I'm logged in", style: 'secondary', only_for_person_ids: ['p_rahul'] },
+        { action_id: 'ixigo_not_now', label: 'Not now', style: 'secondary', only_for_person_ids: ['p_rahul'] },
+      ]
+      : [{ action_id: 'ixigo_logout', label: 'Log out', style: 'secondary', only_for_person_ids: ['p_rahul'] }],
+  });
+  /** The room's answer to a Watch tap: Bash's session page, good for 15 minutes. */
+  const answer = (over: object = {}) => ({
+    type: 'tap_result', cardId: CARD, actionId: 'ixigo_watch', personId: 'p_rahul',
+    result: { result: 'open', url: SESSION, expires_at: '2099-01-01T00:00:00Z' }, ...over,
+  });
+  const WATCH_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_watch', personId: 'p_rahul' };
+  /** Rahul's page with his login on screen. */
+  const loggingIn = () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([loginCard('logging_in')], 1000);
+    p.receive(answer());
+    return p;
+  };
+
+  it('taps Watch once for a hand-off waiting on you, and fills the column with its screen, in control, and your buttons', () => {
+    expect(LIVE_PAGE).not.toMatch(/[—–]|claude/i);
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([loginCard('logging_in')], 1000);
+    expect(p.sent()).toEqual([WATCH_TAP]);
+    expect(p.el('live').className).toBe('live mine');
+    expect(p.el('login').hidden).toBe(false);
+    expect(p.el('login-wait').hidden).toBe(false);
+    expect(p.el('login-why').textContent).toBe("Opening ixigo's log in on Go's computer");
+    expect(p.el('login-again').hidden).toBe(true);
+    // Every render after that (a new message, the 15 s clock) taps nothing more.
+    p.messages([loginCard('logging_in')], 1000);
+    expect(p.sent()).toHaveLength(1);
+
+    p.receive(answer());
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    expect(p.el('login-frame').hidden).toBe(false);
+    expect(p.el('login-wait').hidden).toBe(true);
+    expect(p.opened()).toEqual([]);
+    expect(p.el('toast').textContent).toBe('');
+    expect(p.el('login-title').textContent).toBe('Your turn: Logging in to ixigo');
+    expect(p.el('login-line').textContent).toBe('Type your number and the code. They go to ixigo only. Go never sees them.');
+    const buttons = p.el('login-acts').innerHTML;
+    expect(buttons).toContain(`data-tap="${CARD}" data-action="ixigo_logged_in">I'm logged in</button>`);
+    expect(buttons).toContain(`data-tap="${CARD}" data-action="ixigo_not_now">Not now</button>`);
+    expect(buttons).not.toContain('ixigo_watch');
+    expect(p.el('handoff').hidden).toBe(true);
+  });
+
+  it("shows everyone else who is on Go's computer and never the page", () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true, me: 'p_priya' });
+    p.messages([loginCard('logging_in')], 1000);
+    expect(p.sent()).toEqual([]);
+    expect(p.el('live').className).toBe('live other');
+    expect(p.el('handoff').hidden).toBe(false);
+    expect(p.el('handoff').innerHTML).toBe("<b>Rahul is on Go's computer</b><span>Logging in to ixigo</span><small>Only Rahul sees this page.</small>");
+    expect(p.el('login').hidden).toBe(true);
+    expect(p.el('login-frame').innerHTML).toBe('');
+    // A Watch Priya taps herself is not a hand-off for her: Go's answer opens as it always did, never in the column.
+    p.receive(answer({ personId: 'p_priya' }));
+    expect(p.opened()).toEqual([SESSION]);
+    expect(p.el('login-frame').innerHTML).toBe('');
+  });
+
+  it('keeps the screen while you play someone else, so a half-typed number is still there when you come back', () => {
+    const p = loggingIn();
+    expect(p.el('login-frame').writes).toBe(1);
+    p.play('p_priya');
+    expect(p.el('login').hidden).toBe(true);
+    expect(p.el('handoff').hidden).toBe(false);
+    expect(p.el('live').className).toBe('live other');
+    p.play('p_rahul');
+    expect(p.el('login').hidden).toBe(false);
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    // The frame was never rewritten, so its page never loaded again, and Watch was tapped once.
+    expect(p.el('login-frame').writes).toBe(1);
+    expect(p.sent()).toEqual([WATCH_TAP]);
+  });
+
+  it('goes back to the live view when the hand-off ends: logged in, Not now, out of time', () => {
+    const p = loggingIn();
+    p.messages([loginCard('logged_in')], 1000);
+    expect(p.el('login').hidden).toBe(true);
+    expect(p.el('handoff').hidden).toBe(true);
+    expect(p.el('live').className).toBe('live');
+    expect(p.el('login-frame').innerHTML).toBe('');
+    expect(p.sent()).toHaveLength(1);
+  });
+
+  it('closes a screen that ran out, and Open the login again taps Watch again', () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([loginCard('logging_in')], 1000);
+    p.receive(answer({ result: { result: 'open', url: SESSION, expires_at: '2020-01-01T00:00:00Z' } }));
+    expect(p.el('login-frame').innerHTML).toBe('');
+    expect(p.el('login-wait').hidden).toBe(false);
+    expect(p.el('login-why').textContent).toBe('Your view of the login closed after 15 minutes.');
+    expect(p.el('login-again').hidden).toBe(false);
+    p.click('login-again');
+    expect(p.sent()).toEqual([WATCH_TAP, WATCH_TAP]);
+    expect(p.el('login-why').textContent).toBe("Opening ixigo's log in on Go's computer");
+    expect(p.el('login-again').hidden).toBe(true);
+    // Go refuses this time: the button again, and Go's own words in the toast.
+    p.receive(answer({ result: { result: 'refused', toast: "Can't open Go's screen right now" } }));
+    expect(p.el('login-why').textContent).toBe("Go's screen didn't open here.");
+    expect(p.el('login-again').hidden).toBe(false);
+    expect(p.el('toast').textContent).toBe("Can't open Go's screen right now");
+  });
+
+  it('frames no page from another site, and a room with no watch origin taps nothing and opens Watch in a window', () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([loginCard('logging_in')], 1000);
+    const elsewhere = 'https://elsewhere.test/screen#token=tok_secret';
+    p.receive(answer({ result: { result: 'open', url: elsewhere, expires_at: '2099-01-01T00:00:00Z' } }));
+    expect(p.el('login-frame').innerHTML).toBe('');
+    expect(p.opened()).toEqual([elsewhere]);
+    expect(p.el('login-again').hidden).toBe(false);
+
+    const plain = pageInBrowser(roomPage({ title: 'Try Go', hosted: true, live: true }), { column: true });
+    plain.messages([loginCard('logging_in')], 1000);
+    expect(plain.sent()).toEqual([]);
+    expect(plain.el('login').hidden).toBe(true);
+    plain.receive(answer());
+    expect(plain.opened()).toEqual([SESSION]);
+    expect(plain.el('login-frame').innerHTML).toBe('');
+  });
+
+  it("takes a working card's hand-off too, and leaves a job that is only running alone", () => {
+    const working = (state: 'running' | 'needs_you') => fromGo({
+      kind: 'working', card_id: 'c_job', fallback_text: 'Logging in to ixigo', task_id: 'task_1', title: 'Logging in to ixigo', state,
+      steps: [], updated_at: '2026-10-08T10:00:00Z', ...(state === 'needs_you' ? { for_person_ids: ['p_rahul'] } : {}),
+      actions: [{ action_id: 'watch', label: 'Watch', style: 'primary' }, { action_id: 'stop', label: 'Stop', style: 'secondary' }],
+    });
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([working('running')], 1000);
+    expect(p.sent()).toEqual([]);
+    expect(p.el('live').className).toBe('live');
+    p.messages([working('needs_you')], 1000);
+    expect(p.sent()).toEqual([{ type: 'tap', cardId: 'c_job', actionId: 'watch', personId: 'p_rahul' }]);
+    expect(p.el('login-line').textContent).toBe("Go's computer is yours for this step.");
+    expect(p.el('login-acts').innerHTML).toContain('data-action="stop">Stop</button>');
+    expect(p.el('login-acts').innerHTML).not.toContain('data-action="watch"');
+  });
+
+  it('on a phone, Back to the chat keeps the login open behind a pill that brings it back', () => {
+    const p = loggingIn();
+    p.click('login-back');
+    expect(p.el('live').className).toBe('live mine away');
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    p.click('loginpill');
+    expect(p.el('live').className).toBe('live mine');
+    expect(p.el('login-frame').writes).toBe(1);
   });
 });
