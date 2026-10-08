@@ -77,13 +77,11 @@ describe('hotels.search', () => {
     expect((await stays('Anjuna, Goa', [], pages(), { adults: 5 })).page).toContain('&adultCount=5&roomCount=3&');
   });
 
-  it('takes page 1, and page 2 when six scrolls bring it, for all of Goa or a half of it, page 1 for an area; closes the popup; settles 550 ms', async () => {
-    // Page 2 is kept when it came while the steps ran; the fetch never waits on it. 20 s, Bash's most, is spent only on
-    // a slow page 1 (a box's first ixigo hotels load).
+  it('takes pages 1 and 2 for all of Goa or a half of it, six scrolls bringing page 2, and page 1 for an area; closes the popup; settles 550 ms', async () => {
     const two = {
-      capture: [{ match: SEARCH, required: true, min_count: 1, max_count: 2 }],
+      capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
       steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 6 }, { op: 'click', name: 'Close modal', optional: true }],
-      timeoutMs: 20_000,
+      timeoutMs: 12_000,
       settleMs: 550,
     };
     for (const area of ['Goa', 'North Goa', 'South Goa']) expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual(two);
