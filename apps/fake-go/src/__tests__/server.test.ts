@@ -140,7 +140,7 @@ describe('health and pages', () => {
     await start();
     const res = await fake!.app.inject({ method: 'GET', url: '/v1/health' });
     expect(res.statusCode).toBe(200);
-    expect(Health.parse(res.json())).toEqual({ ok: true, contract: '1.0.0' });
+    expect(Health.parse(res.json())).toEqual({ ok: true, contract: '1.1.0' });
   });
 
   it('shows the last frames only with the admin token', async () => {
@@ -213,10 +213,39 @@ describe('send_event', () => {
     expect(seen).toEqual(['ev_0057']);
   });
 
-  it('knows all 20 event types of the contract', () => {
-    expect(KNOWN_EVENT_TYPES.size).toBe(20);
+  it('knows all 21 event types of the contract, 1.1\'s settlement.recorded too', () => {
+    expect(KNOWN_EVENT_TYPES.size).toBe(21);
     expect(KNOWN_EVENT_TYPES.has('message.created')).toBe(true);
     expect(KNOWN_EVENT_TYPES.has('expense.changed')).toBe(true);
+    expect(KNOWN_EVENT_TYPES.has('settlement.recorded')).toBe(true);
+  });
+
+  it("takes 1.1's new shapes from the Server: a payback, an expense answer, a flexible and a taken-back vote, a location", async () => {
+    const seen: string[] = [];
+    const port = await start({ behaviour: () => ({ handlers: {}, onEvent: (e) => { seen.push(e.type); } }) });
+    const sock = await serverSide(port, 'v11');
+    const ev = (id: string, seq: number, type: string, data: unknown) => ({ event_id: id, trip_id: 't_goa', seq, occurred_at: at, type, data });
+    const expense = {
+      expense_id: 'x_1', paid_by_person_id: 'p_rahul', amount_minor: 240000, currency: 'INR', note: 'Cab', category: 'getting_around',
+      split_person_ids: ['p_rahul', 'p_priya'], created_at: at, status: 'disputed',
+      confirmations: [{ person_id: 'p_priya', state: 'disputed', at, reason: 'I took the bus' }],
+    };
+    const asked = [
+      ev('ev_s', 60, 'settlement.recorded', {
+        settlement: { settlement_id: 'st_1', from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 120000, currency: 'INR', method: 'cash', status: 'confirmed', confirmed_at: at },
+        by: { kind: 'person', person_id: 'p_rahul' },
+      }),
+      ev('ev_x', 61, 'expense.changed', { expense, change: 'disputed', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' }),
+      ev('ev_f', 62, 'decision.voted', { decision_id: 'd_1', person_id: 'p_kabir', flexible: true, voted: 3, of: 5, tally: [1, 1] }),
+      ev('ev_r', 63, 'decision.voted', { decision_id: 'd_1', person_id: 'p_kabir', retracted: true, voted: 2, of: 5, tally: [1, 1] }),
+      {
+        ...priyaAsks('ev_loc'), seq: 64,
+        data: { message: { ...priyaAsks('ev_loc').data.message, seq: 64, updated_seq: 64, attachments: [{ kind: 'location', lat: 15.6, lng: 73.7, name: 'Anjuna beach' }] } },
+      },
+    ];
+    for (const e of asked) expect(await sock.request('send_event', e)).toEqual({ accepted: true, duplicate: false });
+    await until(() => seen.length === asked.length);
+    expect(seen).toEqual(['settlement.recorded', 'expense.changed', 'decision.voted', 'decision.voted', 'message.created']);
   });
 });
 

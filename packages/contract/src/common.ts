@@ -25,6 +25,8 @@ export const IsoDate = z.iso.date();
 
 /** Links are http or https only, so nothing like javascript: can reach the App. */
 export const HttpUrl = z.url({ protocol: /^https?$/ });
+/** 1.1: a link the App opens: http or https, or go:// for one of the App's own screens (the guide's route table). */
+export const AppUrl = z.url({ protocol: /^(https?|go)$/ });
 
 /** One spending category system across the itinerary, bookings and the budget. */
 export const Category = z
@@ -50,6 +52,8 @@ export const Place = z
     lat: z.number().min(-90).max(90).nullish(),
     lng: z.number().min(-180).max(180).nullish(),
     photo_url: HttpUrl.nullish(),
+    /** 1.1: the place's IANA time zone, e.g. "Asia/Kolkata", so times there read in local time. */
+    timezone: z.string().min(1).max(64).regex(/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/, 'an IANA time zone, e.g. Asia/Kolkata').nullish(),
   })
   .meta({ id: 'Place' });
 export type Place = z.infer<typeof Place>;

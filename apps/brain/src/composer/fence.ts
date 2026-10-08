@@ -147,6 +147,7 @@ function roomLabel(
   if (m.text) parts.push(defuse(m.text).replace(BREAK, '\n  '));
   for (const at of m.attachments) {
     if (at.kind === 'photo') parts.push(at.caption ? `[photo: ${defuse(oneLine(at.caption)).slice(0, 200)}]` : '[photo]');
+    else if (at.kind === 'location') parts.push(`[📍 ${defuse(oneLine(at.name ?? `${at.lat},${at.lng}`)).slice(0, 120)}]`);
     else parts.push(`[file: ${defuse(oneLine(at.name)).slice(0, 80)}]`);
   }
   // An options card keeps its id, so "put the villas to a vote" names it (put_to_vote card_id) instead of searching again.

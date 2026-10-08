@@ -17,6 +17,7 @@ export type VoteOutcome =
 
 const QUESTIONS: Record<OptionKind, string> = {
   stay: 'Where do we stay?', flight: 'Which flight?', train: 'Which train?', bus: 'Which bus?', place: 'Where do we go?', food: 'Where do we eat?', activity: 'What do we do?',
+  cab: 'Which cab?',
 };
 
 /**

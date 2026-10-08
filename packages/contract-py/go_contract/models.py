@@ -28,6 +28,7 @@ class Place(BaseModel):
     lat: float | None = None
     lng: float | None = None
     photo_url: str | None = None
+    timezone: str | None = None
 
 
 class Origin(BaseModel):
@@ -179,6 +180,37 @@ class BudgetCard(BaseModel):
     kind: Literal["budget"]
 
 
+class OptionCost(BaseModel):
+    label: Annotated[str, Field(max_length=60, min_length=1)]
+    emoji: str | None = None
+    amount_minor: Annotated[int, Field(ge=0)]
+    currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
+
+
+class OptionFact(BaseModel):
+    label: Annotated[str, Field(max_length=40, min_length=1)]
+    value: Annotated[str, Field(max_length=200, min_length=1)]
+
+
+class GalleryUrl(RootModel[str]):
+    root: Annotated[str, Field(pattern="^https?://")]
+
+
+class OptionDetails(BaseModel):
+    gallery_urls: list[GalleryUrl] | None = None
+    caption: str | None = None
+    why: list[str] | None = None
+    costs: list[OptionCost] | None = None
+    total_minor: int | None = None
+    amenities: list[str] | None = None
+    activities: list[str] | None = None
+    facts: list[OptionFact] | None = None
+    cancellation: str | None = None
+    rating: float | None = None
+    review_count: int | None = None
+    go_note: str | None = None
+
+
 class Option(BaseModel):
     option_id: Annotated[str, Field(max_length=64, min_length=1)]
     title: Annotated[str, Field(max_length=80, min_length=1)]
@@ -193,6 +225,10 @@ class Option(BaseModel):
     place: Place | None = None
     rating: float | None = None
     refundable_until: AwareDatetime | None = None
+    details: OptionDetails | None = None
+    return_journey: Journey | None = None
+    price_oneway_minor: int | None = None
+    price_round_minor: int | None = None
 
 
 class OptionsCard(BaseModel):
@@ -205,7 +241,9 @@ class OptionsCard(BaseModel):
     for_person_ids: list[str] | None = None
     kind: Literal["options"]
     title: Annotated[str, Field(max_length=80, min_length=1)]
-    option_kind: Literal["stay", "flight", "train", "bus", "place", "food", "activity"]
+    option_kind: Literal[
+        "stay", "flight", "train", "bus", "place", "food", "activity", "cab"
+    ]
     checked_at: AwareDatetime
     options: Annotated[list[Option], Field(max_length=5, min_length=1)]
     actions: list[CardAction] | None = None
@@ -263,6 +301,8 @@ class CallCard(BaseModel):
     last_line: LastLine | None = None
     outcome: str | None = None
     transcript: list[TranscriptItem] | None = None
+    recording_url: str | None = None
+    duration_s: int | None = None
     actions: list[CardAction] | None = None
 
 
@@ -311,6 +351,40 @@ class NoticeCard(BaseModel):
     actions: list[CardAction] | None = None
 
 
+class ChecklistRow(BaseModel):
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    status: Literal["todo", "started", "done", "info"]
+    label: Annotated[str, Field(max_length=80, min_length=1)]
+    sub: str | None = None
+
+
+class Cta(BaseModel):
+    action_id: Annotated[str, Field(pattern="^[a-z][a-z_]{0,31}$")]
+    label: Annotated[str, Field(max_length=24, min_length=1)]
+
+
+class ChecklistSuggestion(BaseModel):
+    text: Annotated[str, Field(max_length=300, min_length=1)]
+    cta: Cta | None = None
+
+
+class ChecklistCard(BaseModel):
+    """
+    1.1: a checklist for the group, one row a person, each todo, started, done or info. Updated in place.
+    """
+
+    card_id: Annotated[str, Field(max_length=64, min_length=1)]
+    fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
+    for_person_ids: list[str] | None = None
+    kind: Literal["checklist"]
+    title: Annotated[str, Field(max_length=80, min_length=1)]
+    subtitle: str | None = None
+    due_at: date_aliased | None = None
+    rows: Annotated[list[ChecklistRow], Field(max_length=30)]
+    suggestion: ChecklistSuggestion | None = None
+    actions: list[CardAction] | None = None
+
+
 class PhotoAttachment(BaseModel):
     kind: Literal["photo"]
     url: Annotated[str, Field(pattern="^https?://")]
@@ -325,6 +399,20 @@ class FileAttachment(BaseModel):
     name: Annotated[str, Field(max_length=200, min_length=1)]
     mime: Annotated[str, Field(max_length=100, min_length=1)]
     size_bytes: Annotated[int, Field(ge=0)]
+    duration_s: float | None = None
+
+
+class LocationAttachment(BaseModel):
+    kind: Literal["location"]
+    lat: Annotated[float, Field(ge=-90.0, le=90.0)]
+    lng: Annotated[float, Field(ge=-180.0, le=180.0)]
+    name: str | None = None
+    address: str | None = None
+
+
+class QuickReply(BaseModel):
+    label: Annotated[str, Field(max_length=40, min_length=1)]
+    text: str | None = None
 
 
 class Reaction(BaseModel):
@@ -342,7 +430,12 @@ class Message(BaseModel):
     """
     text: str | None = None
     attachments: Annotated[
-        list[Annotated[PhotoAttachment | FileAttachment, Field(discriminator="kind")]],
+        list[
+            Annotated[
+                PhotoAttachment | FileAttachment | LocationAttachment,
+                Field(discriminator="kind"),
+            ]
+        ],
         Field(max_length=10),
     ]
     reply_to: str | None = None
@@ -364,8 +457,10 @@ class Message(BaseModel):
         | CallCard
         | PayCard
         | NoticeCard
+        | ChecklistCard
         | None
     ) = None
+    quick_replies: list[QuickReply] | None = None
     withheld: bool
     deleted: bool
     edited_at: AwareDatetime | None = None
@@ -399,10 +494,12 @@ class PostMessage(BaseModel):
         | CallCard
         | PayCard
         | NoticeCard
+        | ChecklistCard
         | None
     ) = None
     reply_to: str | None = None
     mentions: list[str] | None = None
+    quick_replies: list[QuickReply] | None = None
 
 
 class PostMessageResult(BaseModel):
@@ -425,7 +522,8 @@ class ReplaceCard(BaseModel):
         | WorkingCard
         | CallCard
         | PayCard
-        | NoticeCard,
+        | NoticeCard
+        | ChecklistCard,
         Field(discriminator="kind"),
     ]
 
@@ -446,6 +544,7 @@ class DecisionOption(BaseModel):
     currency: str | None = None
     option_ref: str | None = None
     note: str | None = None
+    details: OptionDetails | None = None
 
 
 class Mandate(BaseModel):
@@ -476,11 +575,33 @@ class Decision(BaseModel):
     voted: Annotated[int, Field(ge=0)]
     of: Annotated[int, Field(ge=0)]
     tally: Annotated[list[int], Field(max_length=10)]
+    flexible_count: int | None = None
     votes: list[Vote] | None = None
     result_index: int | None = None
     mandate: Mandate | None = None
     opened_at: AwareDatetime
     closed_at: AwareDatetime | None = None
+
+
+class BookingDetail(BaseModel):
+    label: Annotated[str, Field(max_length=40, min_length=1)]
+    value: Annotated[str, Field(max_length=200, min_length=1)]
+
+
+class Passenger(BaseModel):
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    seat: str | None = None
+    pnr: str | None = None
+
+
+class BookingDocument(BaseModel):
+    document_id: Annotated[str, Field(max_length=64, min_length=1)]
+    name: Annotated[str, Field(max_length=200, min_length=1)]
+    mime: Annotated[str, Field(max_length=100, min_length=1)]
+    size_bytes: Annotated[int, Field(ge=0)]
+    pages: int | None = None
+    visibility: Literal["covered", "group"]
+    url: Annotated[str, Field(pattern="^https?://")]
 
 
 class Booking(BaseModel):
@@ -504,6 +625,17 @@ class Booking(BaseModel):
     approval_id: str | None = None
     added_by_person_id: str | None = None
     created_at: AwareDatetime
+    details: list[BookingDetail] | None = None
+    return_journey: Journey | None = None
+    passengers: list[Passenger] | None = None
+    documents: list[BookingDocument] | None = None
+
+
+class ExpenseConfirmation(BaseModel):
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    state: Literal["pending", "approved", "disputed"]
+    at: AwareDatetime | None = None
+    reason: str | None = None
 
 
 class Expense(BaseModel):
@@ -520,6 +652,21 @@ class Expense(BaseModel):
     booking_id: str | None = None
     added_by_person_id: str | None = None
     created_at: AwareDatetime
+    status: Literal["pending", "approved", "disputed"] | None = None
+    confirmations: list[ExpenseConfirmation] | None = None
+
+
+class Settlement(BaseModel):
+    settlement_id: Annotated[str, Field(max_length=64, min_length=1)]
+    from_person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    to_person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    amount_minor: Annotated[int, Field(gt=0)]
+    currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
+    method: Literal["upi", "cash", "bank_transfer", "other"]
+    note: str | None = None
+    status: Literal["confirmed"]
+    recorded_at: AwareDatetime | None = None
+    confirmed_at: AwareDatetime
 
 
 class Transfer(BaseModel):
@@ -557,12 +704,15 @@ class ItineraryItem(BaseModel):
     booking_id: str | None = None
     status: Literal["booked", "planned", "idea"]
     note: str | None = None
+    person_ids: list[str] | None = None
+    audience: Literal["group", "shared", "private"] | None = None
 
 
 class Day(BaseModel):
     date: date_aliased
     title: str | None = None
     items: Annotated[list[ItineraryItem], Field(max_length=20)]
+    image_url: str | None = None
 
 
 class Proof(BaseModel):
@@ -845,11 +995,13 @@ class DecisionVotedData(BaseModel):
     voted: Annotated[int, Field(ge=0)]
     of: Annotated[int, Field(ge=0)]
     tally: Annotated[list[int], Field(max_length=10)]
+    flexible: Literal[True] | None = None
+    retracted: Literal[True] | None = None
 
 
 class DecisionVoted(BaseModel):
     """
-    Someone voted (or changed their vote).
+    Someone voted, changed their vote, said they are flexible (1.1), or took their vote back (1.1).
     """
 
     event_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -999,16 +1151,17 @@ class BookingChanged(BaseModel):
 
 class ExpenseChangedData(BaseModel):
     expense: Expense
-    change: Literal["added", "removed"]
+    change: Literal["added", "removed", "approved", "disputed"]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
     Who did it: a person, Go, or the Server itself (system).
     """
+    by_person_id: str | None = None
 
 
 class ExpenseChanged(BaseModel):
     """
-    An expense was added or removed.
+    An expense was added or removed, or (1.1) someone it is split between approved or disputed it.
     """
 
     event_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -1017,6 +1170,27 @@ class ExpenseChanged(BaseModel):
     occurred_at: AwareDatetime
     type: Literal["expense.changed"]
     data: ExpenseChangedData
+
+
+class SettlementRecordedData(BaseModel):
+    settlement: Settlement
+    by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
+    """
+    Who did it: a person, Go, or the Server itself (system).
+    """
+
+
+class SettlementRecorded(BaseModel):
+    """
+    1.1: someone paid someone back, and the one paid confirmed it. Only confirmed settlements are sent.
+    """
+
+    event_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    seq: Annotated[int, Field(gt=0)]
+    occurred_at: AwareDatetime
+    type: Literal["settlement.recorded"]
+    data: SettlementRecordedData
 
 
 class Event(
@@ -1041,6 +1215,7 @@ class Event(
         | RecordChanged
         | BookingChanged
         | ExpenseChanged
+        | SettlementRecorded
     ]
 ):
     root: Annotated[
@@ -1063,7 +1238,8 @@ class Event(
         | MandateDeclined
         | RecordChanged
         | BookingChanged
-        | ExpenseChanged,
+        | ExpenseChanged
+        | SettlementRecorded,
         Field(discriminator="type"),
     ]
 
@@ -1196,6 +1372,10 @@ class AddBooking(BaseModel):
     image_url: str | None = None
     decision_id: str | None = None
     approval_id: str | None = None
+    details: list[BookingDetail] | None = None
+    return_journey: Journey | None = None
+    passengers: list[Passenger] | None = None
+    documents: list[BookingDocument] | None = None
 
 
 class AddBookingResult(BaseModel):
@@ -1231,6 +1411,7 @@ class AddExpense(BaseModel):
     """
     split_person_ids: Annotated[list[str], Field(max_length=30, min_length=1)]
     booking_id: str | None = None
+    approval_id: str | None = None
 
 
 class AddExpenseResult(BaseModel):
@@ -1304,6 +1485,10 @@ class EventAccepted(BaseModel):
     duplicate: bool
 
 
+class CardTapPayload(BaseModel):
+    trip: Literal["oneway", "round"]
+
+
 class CardTap(BaseModel):
     tap_id: Annotated[str, Field(max_length=64, min_length=1)]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -1311,6 +1496,7 @@ class CardTap(BaseModel):
     action_id: Annotated[str, Field(pattern="^[a-z][a-z_]{0,31}$")]
     person_id: Annotated[str, Field(max_length=64, min_length=1)]
     option_id: str | None = None
+    payload: CardTapPayload | None = None
 
 
 class ActionDone(BaseModel):
@@ -1400,10 +1586,16 @@ class ForgetResult(BaseModel):
     remaining_facts: Literal[0]
 
 
+class LinkContext(BaseModel):
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    purpose: Literal["visa"] | None = None
+
+
 class CreateLink(BaseModel):
     kind: Literal["vault"]
     person_id: Annotated[str, Field(max_length=64, min_length=1)]
-    start: Literal["home", "add_card", "add_login"] | None = None
+    start: Literal["home", "add_card", "add_login", "add_documents"] | None = None
+    context: LinkContext | None = None
 
 
 class Link(BaseModel):

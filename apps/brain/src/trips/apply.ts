@@ -91,6 +91,9 @@ export function applyEvent(pack: TripPack, ev: TripEvent): 'ok' | 'reread' {
       const idx = data.option_index;
       if (!d.anonymous && pid != null && idx != null) {
         d.votes = [...(d.votes ?? []).filter((v) => v.person_id !== pid), { person_id: pid, option_index: idx }];
+      } else if (!d.anonymous && pid != null && (data.flexible || data.retracted)) {
+        // 1.1: "I'm flexible" or a vote taken back: whatever they picked before is no longer their vote.
+        d.votes = (d.votes ?? []).filter((v) => v.person_id !== pid);
       }
       break;
     }
@@ -127,6 +130,8 @@ export function applyEvent(pack: TripPack, ev: TripEvent): 'ok' | 'reread' {
     case 'trip.updated':
     case 'booking.changed':
     case 'expense.changed':
+    // 1.1: a payback moves the money, which the Server works out: read it.
+    case 'settlement.recorded':
       return 'reread';
   }
   pack.seq = Math.max(pack.seq, ev.seq);

@@ -411,7 +411,7 @@ curl https://brain.go.example/v1/health
 
 <!-- schema: Health -->
 ```json
-{ "ok": true, "contract": "1.0.0" }
+{ "ok": true, "contract": "1.1.0" }
 ```
 
 Check that `contract` starts with `1.`. Within version 1, the contract only adds things, so a Go that speaks any `1.x` works with a server built for `1.0.0`.

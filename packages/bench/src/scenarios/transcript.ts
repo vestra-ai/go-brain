@@ -58,7 +58,9 @@ function cardLine(card: C.Card): string {
 function messageLine(m: C.Message): string {
   const parts: string[] = [];
   if (m.text) parts.push(m.text);
-  for (const a of m.attachments) parts.push(a.kind === 'photo' ? `[photo: ${a.caption ?? 'no caption'}]` : `[file: ${a.name}]`);
+  for (const a of m.attachments) {
+    parts.push(a.kind === 'photo' ? `[photo: ${a.caption ?? 'no caption'}]` : a.kind === 'location' ? `[location: ${a.name ?? `${a.lat}, ${a.lng}`}]` : `[file: ${a.name}]`);
+  }
   if (m.card) parts.push(cardLine(m.card));
   const goReacted = m.reactions.filter((r) => r.person_id == null).map((r) => r.emoji);
   if (goReacted.length > 0) parts.push(`(Go reacted ${goReacted.join(' ')})`);
