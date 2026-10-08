@@ -2,11 +2,14 @@
 // lives inside this template literal: no backticks, no dollar-brace and no backslashes in it.
 // roomPage() draws the hosted "try Go" room from the same page: its own title, "Start over", the lines about what is
 // live and what is simulated, example messages to tap, the limit line, and a nonce on the script for a strict
-// Content-Security-Policy. With no options it is the dev room. With live, Go Live's column sits beside it (live-page.ts),
-// and with watchOrigin too, a login hand-off's screen fills that column for the person logging in (login-panel.ts).
+// Content-Security-Policy. With no options it is the dev room. It is one column, like the App: a working card shows the
+// trip's computer as a mini browser that opens big in a sheet (browser.ts). With live, Go Live feeds that browser and its
+// runs sit behind Details (live-page.ts); with watchOrigin too, the login card opens Go's screen in the sheet for the
+// person logging in (login-panel.ts).
 
-import { LIVE_CSS, LIVE_HOOK, LIVE_SCRIPT, liveAside } from './live-page.js';
-import { LOGIN_CSS, LOGIN_SCRIPT } from './login-panel.js';
+import { BROWSER_CSS, BROWSER_SCRIPT, browserSheet } from './browser.js';
+import { LIVE_CSS, LIVE_DETAILS, LIVE_HOOK, LIVE_SCRIPT } from './live-page.js';
+import { LOGIN_CSS, LOGIN_SCRIPT, LOGIN_SHEET } from './login-panel.js';
 
 export interface RoomPageOptions {
   /** The page's title and the header's first line. Default "Go dev room". */
@@ -17,9 +20,9 @@ export interface RoomPageOptions {
   hints?: readonly string[];
   /** The hosted room: "Start over", the lines about what is live, the limit line, and a reload to the passcode page when the socket keeps failing. */
   hosted?: boolean;
-  /** Go Live: the trip's recipe runs and the pages they opened, in a second column (desktop first). */
+  /** Go Live: the trip's computer live in the search card's mini browser, and the recipe runs behind Details. */
   live?: boolean;
-  /** With live: Bash's session page origin. A login hand-off's Watch answer on it is framed in Go Live's column. */
+  /** With live: Bash's session page origin. A login hand-off's Watch answer on it is framed in the sheet. */
   watchOrigin?: string;
 }
 
@@ -28,10 +31,10 @@ const escHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&
 export function roomPage(o: RoomPageOptions = {}): string {
   const title = escHtml(o.title ?? 'Go dev room');
   const titleDiv = `<div class="title" id="title">${title}<small>connecting</small></div>`;
-  const top = o.hosted
-    ? `<div class="top">${titleDiv}<button class="act secondary" type="button" data-start-over="1">Start over</button></div>
-  <div class="about" id="about"></div>`
-    : titleDiv;
+  const details = o.live ? '<button class="act secondary" type="button" id="details-open" aria-controls="details" aria-expanded="false">Details</button>' : '';
+  const startOver = o.hosted ? '<button class="act secondary" type="button" data-start-over="1">Start over</button>' : '';
+  const top = (details || startOver ? `<div class="top">${titleDiv}<span class="top-acts">${details}${startOver}</span></div>` : titleDiv) +
+    (o.hosted ? '\n  <div class="about" id="about"></div>' : '');
   const limit = o.hosted ? '  <div class="limit" id="limit" role="status"></div>\n' : '';
   const hints = o.hints?.length
     ? `  <div class="hints"><span>Try:</span>${o.hints.map((h) => `<button class="hint" type="button" data-fill="${escHtml(h)}">${escHtml(h)}</button>`).join('')}</div>\n`
@@ -43,7 +46,7 @@ export function roomPage(o: RoomPageOptions = {}): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${title}</title>
 <style>
-:root { --bg: #f6f7f9; --panel: #ffffff; --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --go: #38bdf8; --go-ink: #0369a1; --accent: #0f172a; --warn: #b45309; --column: 430px; }
+:root { --bg: #f6f7f9; --panel: #ffffff; --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --go: #38bdf8; --go-ink: #0369a1; --accent: #0f172a; --warn: #b45309; --column: 600px; }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #e9ecf1; color: var(--ink); font-size: 15px; line-height: 1.45; }
@@ -99,6 +102,7 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
 .newpill { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); margin-bottom: 8px; font: inherit; font-size: 13px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; min-height: 44px; padding: 8px 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18); touch-action: manipulation; }
 .newpill[hidden] { display: none; }
 .top { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.top-acts { display: flex; gap: 6px; flex: none; }
 .top button.act { margin-top: 0; font-size: 14px; padding: 8px 12px; flex: none; }
 .about { color: var(--muted); font-size: 12px; }
 .limit { color: var(--warn); font-size: 13px; margin-bottom: 8px; }
@@ -106,10 +110,10 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
 .hints { display: flex; gap: 6px; align-items: center; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-bottom: 8px; }
 .hints span { color: var(--muted); font-size: 13px; flex: none; }
 button.hint { flex: none; font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; min-height: 44px; padding: 6px 12px; cursor: pointer; touch-action: manipulation; }
-${o.live ? LIVE_CSS + LOGIN_CSS : ''}</style>
+${BROWSER_CSS}${o.live ? LIVE_CSS + LOGIN_CSS : ''}</style>
 </head>
 <body${o.hosted ? ' data-hosted="1"' : ''}>
-${o.live ? '<div class="split">' : ''}<div class="app">
+<div class="app">
 <header>
   ${top}
   <div class="people" id="people"></div>
@@ -125,7 +129,7 @@ ${o.live ? '<div class="split">' : ''}<div class="app">
 ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete="off" enterkeyhint="send" placeholder="Message the group. Start with @Go to ask Go."><button class="act primary" type="submit">Send</button></form>
 </footer>
 </div>
-${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOrigin)}"` : '')}</div>` : ''}<div class="toast" id="toast"></div>
+${browserSheet(o.live && o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOrigin)}"` : '', o.live ? LOGIN_SHEET : '')}${o.live ? LIVE_DETAILS : ''}<div class="toast" id="toast"></div>
 <script${o.nonce ? ` nonce="${escHtml(o.nonce)}"` : ''}>
 (function () {
   var COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#14b8a6'];
@@ -134,8 +138,10 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
   var ws = null;
   var fails = 0;
   var toastTimer = null;
-  // Go Live puts a login hand-off's Watch answer in its column (login-panel.ts); without it every page opens in a window.
+  // A login hand-off's Watch answer goes in the sheet (login-panel.ts); without it every page opens in a window.
   var watchHere = function () { return false; };
+  // A login card's own part (login-panel.ts), or null: without it the card is drawn as any notice.
+  var loginPart = function () { return null; };
   try { me = localStorage.getItem('go-dev-room-me') || me; } catch (e) {}
 
   function $(id) { return document.getElementById(id); }
@@ -210,10 +216,41 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
     toastTimer = setTimeout(function () { t.className = 'toast'; }, 2500);
   }
 
+  // A card button tapped and waiting, for the person who tapped it. Go answers a tap by changing the card, so the button
+  // stays pending (disabled, "Opening…") until the card changes, Go refuses or opens a page, or PENDING_MS pass; a second
+  // tap on it is never sent.
+  var PENDING_MS = 15000;
+  var OPENS = ['watch', 'ixigo_watch', 'ixigo_login'];
+  var pending = {};
+  function pendingKey(cardId, actionId, optionId, who) { return cardId + ' ' + actionId + ' ' + (optionId || '') + ' ' + who; }
+  function cardNow(cardId) {
+    var list = state ? state.messages : [];
+    for (var i = 0; i < list.length; i++) if (list[i].card && !list[i].deleted && list[i].card.card_id === cardId) return JSON.stringify(list[i].card);
+    return '';
+  }
+  function settlePending() {
+    var now = Date.now();
+    for (var k in pending) if (now - pending[k].at > PENDING_MS || cardNow(pending[k].card) !== pending[k].was) delete pending[k];
+  }
+  function freePending(cardId, actionId, who) {
+    for (var k in pending) if (pending[k].card === cardId && pending[k].action === actionId && pending[k].who === who) delete pending[k];
+  }
+  /** Taps a card's button for that person, once until it settles. False when that button is still waiting. */
+  function tapCard(cardId, actionId, optionId, who) {
+    var key = pendingKey(cardId, actionId, optionId, who);
+    if (pending[key]) return false;
+    pending[key] = { card: cardId, action: actionId, who: who, was: cardNow(cardId), at: Date.now() };
+    send({ type: 'tap', cardId: cardId, actionId: actionId, personId: who, optionId: optionId || undefined });
+    setTimeout(render, PENDING_MS + 50);
+    return true;
+  }
+
   function visible(action) { return !action.only_for_person_ids || action.only_for_person_ids.indexOf(me) >= 0; }
   function goButton(card, action, optionId) {
+    var busy = !!pending[pendingKey(card.card_id, action.action_id, optionId, me)];
     return '<button class="act ' + (action.style === 'primary' ? 'primary' : 'secondary') + '" data-tap="' + esc(card.card_id) + '" data-action="' + esc(action.action_id) + '"' +
-      (optionId ? ' data-option="' + esc(optionId) + '"' : '') + '>' + esc(action.label) + '</button>';
+      (optionId ? ' data-option="' + esc(optionId) + '"' : '') + (busy ? ' disabled aria-busy="true"' : '') + '>' +
+      esc(busy ? (OPENS.indexOf(action.action_id) >= 0 ? 'Opening…' : 'One moment…') : action.label) + '</button>';
   }
   function goActions(card) {
     var acts = (card.actions || []).filter(function (a) { return !a.per_option && visible(a); });
@@ -227,6 +264,7 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
   }
   function fallback(c) { return '<div>' + esc(c.fallback_text) + '</div>'; }
 
+${BROWSER_SCRIPT}
   var RENDER = {
     vote: function (c) {
       var d = decision(c.decision_id);
@@ -312,11 +350,10 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
     working: function (c) {
       var label = { running: 'Working on it', needs_you: 'Needs you', done: 'Done', failed: "Didn't work" }[c.state] || c.state;
       var mark = { todo: '○', doing: '◐', done: '●', failed: '×' };
-      var shot = picture(c.card_id, c.screenshot_url);
       var see = ixigoPage(c.page_url);
       return '<span class="tag' + (c.state === 'needs_you' ? ' warn' : '') + '">' + esc(label) + '</span><h3>' + esc(c.title) + '</h3><div class="steps">' +
         c.steps.map(function (s) { return '<div>' + (mark[s.state] || '') + ' ' + esc(s.text) + '</div>'; }).join('') + '</div>' +
-        (shot ? '<img alt="" src="' + esc(shot) + '" style="max-width:100%;border-radius:10px;margin-top:8px">' : '') +
+        miniBrowser(c, see ? 'ixigo.com' : "Go's computer") +
         // The page's address is never shown as text: the picture and the steps say what it is, and the link is a button.
         (see ? '<div class="actions"><a class="act secondary" href="' + esc(see) + '" target="_blank" rel="noopener noreferrer">See on ixigo</a></div>' : '') +
         '<div class="meta">Updated ' + esc(ago(c.updated_at)) + '</div>' + goActions(c);
@@ -337,6 +374,8 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
         '<div class="meta">' + esc(nameOf(c.payer_person_id)) + ' pays. ' + esc(label) + '</div>' + (waiting ? goActions(c) : '');
     },
     notice: function (c) {
+      var part = loginPart(c);
+      if (part !== null) return part;
       var link = c.source ? safeUrl(c.source.url) : '';
       var src = c.source ? (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(c.source.name) + '</a>' : esc(c.source.name)) : '';
       return '<span class="tag' + (c.tone === 'heads_up' ? ' warn' : '') + '">' + (c.tone === 'heads_up' ? 'Heads up' : 'Good to know') + '</span><h3>' + esc(c.title) + '</h3>' +
@@ -371,26 +410,20 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
 
   // Whether the reader is at the bottom of the chat, kept from their own scrolling, never measured inside a render: a
   // render rebuilds the room, and its pictures load after it, so the room's height mid-render says nothing about where
-  // the reader is. Beside Go Live the chat scrolls in its own column; alone, the page scrolls.
+  // the reader is. The page scrolls: the room is one column.
   var pinned = true;
   var newest = '';
-  function column() {
-    var col = document.querySelector('.split .app');
-    return col && getComputedStyle(col).overflowY === 'auto' ? col : null;
-  }
   function fromBottom() {
-    var col = column();
-    if (col) return col.scrollHeight - col.scrollTop - col.clientHeight;
     return (document.scrollingElement || document.documentElement).scrollHeight - window.scrollY - window.innerHeight;
   }
   function toBottom() {
-    var col = column();
-    if (col) col.scrollTop = col.scrollHeight;
-    else window.scrollTo(0, (document.scrollingElement || document.documentElement).scrollHeight);
+    window.scrollTo(0, (document.scrollingElement || document.documentElement).scrollHeight);
   }
 
   function render() {
     if (!state) return;
+    settlePending();
+    noteRunning();
     var t = state.trip;
     $('title').innerHTML = esc(t.title) + '<small>' + esc(t.people.length + ' people, change ' + t.seq + (state.connected ? '' : ', Go is not connected')) + '</small>';
     $('people').innerHTML = t.people.map(function (p) {
@@ -410,7 +443,8 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
     if (pinned) toBottom();
     else if (last !== newest) $('newpill').hidden = false;
     newest = last;
-${o.live ? '    renderLogin();\n' : ''}  }
+${o.live ? '    syncLogin();\n' : ''}    renderSheet();
+  }
 
   document.addEventListener('click', function (e) {
     var el = e.target && e.target.closest ? e.target.closest('button') : null;
@@ -420,8 +454,11 @@ ${o.live ? '    renderLogin();\n' : ''}  }
       me = d.me;
       try { localStorage.setItem('go-dev-room-me', me); } catch (x) {}
       render();
+    } else if (d.browse) {
+      openSheet(d.browse);
     } else if (d.tap) {
-      send({ type: 'tap', cardId: d.tap, actionId: d.action, personId: me, optionId: d.option || undefined });
+      if (watchOpensSheet(d.tap, d.action)) openSheet(d.tap);
+      else if (tapCard(d.tap, d.action, d.option, me)) render();
     } else if (d.vote) {
       send({ type: 'vote', decisionId: d.vote, personId: me, optionIndex: Number(d.index) });
     } else if (d.confirm) {
@@ -440,7 +477,7 @@ ${o.live ? '    renderLogin();\n' : ''}  }
     }
   });
 
-  // Scroll events do not bubble from the chat's column, so the page listens while they travel down to it.
+  // Where the reader is, after any scroll of the page.
   document.addEventListener('scroll', function () {
     pinned = fromBottom() <= 80;
     if (pinned) $('newpill').hidden = true;
@@ -479,7 +516,12 @@ ${o.live ? '    renderLogin();\n' : ''}  }
         render();
       } else if (data.type === 'tap_result') {
         var r = data.result;
-        if (watchHere(data)) return; // on screen in Go Live's column
+        // An answer that isn't a change to the card frees its button at once.
+        if (r.result !== 'done') {
+          freePending(data.cardId, data.actionId, data.personId);
+          render();
+        }
+        if (watchHere(data)) return; // in the sheet's frame
         if (r.result === 'open' && safeUrl(r.url)) {
           window.open(r.url, '_blank', 'noopener');
           toast('Opening the page');
@@ -488,11 +530,12 @@ ${o.live ? '    renderLogin();\n' : ''}  }
         }
       } else if (data.type === 'forget_result') {
         toast(data.toast);
-      } else if (data.type === 'limit') {
-        if ($('limit')) $('limit').textContent = data.text;
-        toast(data.text);
-      } else if (data.type === 'error') {
-        toast(data.message);
+      } else if (data.type === 'limit' || data.type === 'error') {
+        // The room turned something away before it reached Go: no tap is on its way, so no button waits.
+        pending = {};
+        render();
+        if (data.type === 'limit' && $('limit')) $('limit').textContent = data.text;
+        toast(data.type === 'limit' ? data.text : data.message);
 ${o.live ? LIVE_HOOK : ''}      }
     };
     ws.onopen = function () { fails = 0; };
