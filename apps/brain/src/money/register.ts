@@ -2,7 +2,9 @@ import type { RegisterLane } from '../app.js';
 import { statsRegistry } from '../stats/sources.js';
 import { askToPay, idsFromTurn, withTurn } from './ask.js';
 import { moneyRoutes } from './callbacks.js';
-import type { MoneyDeps } from './deps.js';
+import { claimCardOnClose, claimTap } from './claim-taps.js';
+import { CLAIM_ACTION, createClaims } from './claims.js';
+import { Later, type MoneyDeps } from './deps.js';
 import { createPay } from './engine.js';
 import { readMoneyEnv } from './env.js';
 import { readExpensesTool, recordExpenseTool } from './expenses.js';
@@ -28,6 +30,7 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
     }
     const { VAULT_URL, VAULT_SHARED_SECRET } = env;
     const vault = vaultClient({ baseUrl: VAULT_URL, secret: VAULT_SHARED_SECRET, now: brain.now, ...(o.fetch ? { fetch: o.fetch } : {}) });
+    const claims = createClaims(brain.pool, brain.now);
     const d: MoneyDeps = {
       pool: brain.pool,
       link: brain.door.link,
@@ -37,6 +40,7 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
       now: brain.now,
       log: brain.log,
       tapVaultMs: 1_500,
+      claims,
     };
     const pay = createPay(d);
     brain.pay = pay;
@@ -45,8 +49,12 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
     brain.tools.register(setMandateTool((ctx, a) => setMandate(d, ctx, a)));
     brain.taps.on('pay', 'approve', (tap, card) => pay.approveTap(tap, card));
     brain.taps.on('pay', 'decline', (tap, card) => pay.declineTap(tap, card));
+    // Who books a stay for all: the card on Go's line about the closed vote, and its I'll book it.
+    const claiming = { d, claims, packs: brain.packs, later: new Later() };
+    brain.taps.on('notice', CLAIM_ACTION, claimTap(claiming));
+    brain.context.addTurnCard(claimCardOnClose(claiming));
     brain.door.handle('vault_link', vaultLinkHandler(vault));
-    brain.context.addNow(paymentsNow({ pool: brain.pool, packs: brain.packs, now: brain.now, travel: () => brain.travel }));
+    brain.context.addNow(paymentsNow({ pool: brain.pool, packs: brain.packs, now: brain.now, travel: () => brain.travel, claims }));
     brain.tripLog.onEvent((ev) => pay.heard(ev));
     await brain.http.register(
       moneyRoutes({ pool: brain.pool, secret: VAULT_SHARED_SECRET, now: brain.now, paid: (p) => pay.paid(p), failed: (p) => pay.failed(p), confirming: (p) => pay.confirming(p) }),

@@ -49,7 +49,7 @@ export type DirectAnswer = (i: { tripId: string; wake: DeskItem[]; pack: TripPac
  * A card a lane puts on the turn's own post, first, with one line after Go's words, so the room gets one message, never
  * two in a row (the ixigo login on Go's hello). Asked once, just before the post; null for none.
  */
-export type TurnCard = (i: { tripId: string; wake: DeskItem[]; pack: TripPack }) => Promise<{ card: C.Card; line: string } | null>;
+export type TurnCard = (i: { tripId: string; turnId: string; wake: DeskItem[]; pack: TripPack }) => Promise<{ card: C.Card; line: string } | null>;
 
 /** A turn's limits: the only tools it may call (stay_silent always works) and whether its text may be posted. */
 export interface TurnLimits {

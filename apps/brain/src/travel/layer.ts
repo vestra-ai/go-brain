@@ -16,7 +16,7 @@ import { applyConstraints, closest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
 import type { PlaceFor } from './place-for.js';
 import type { ResultsStore } from './results.js';
-import { WEB_STAY, type WebStays } from './web-stays.js';
+import { checkInOf, WEB_STAY, type WebStays } from './web-stays.js';
 import { TravelQuery, type OfferRef, type SearchFor, type Travel, type TravelBackend, type TravelKind, type TravelOptionKind, type TravelSearch } from './travel.js';
 
 export const SEARCH_CACHE_MS = 180_000;
@@ -158,7 +158,13 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       // ixigo.com (ixigo_web), where the group can book it, and null otherwise: a page a job found elsewhere is not handed out.
       // A stay from ixigo.com has no offer of its own: it gets Go's web-stay offer, booked on the test rail after the login.
       const offerId = o.offerId ?? d.webStays?.offerIdFor(o) ?? null;
-      return { offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl) };
+      // The day it is for: what its search asked, or a stay page's own check-in. A vote that outlived it cannot book the past.
+      const day = (o.offerId ? (await d.results.searchedFor?.(o.offerId))?.day : null) ?? checkInOf(o.sourceUrl);
+      const past = day !== null && day !== undefined && day < (await today(o.tripId));
+      return {
+        offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl),
+        ...(day ? { day } : {}), ...(past ? { past: true as const } : {}),
+      };
     },
     ...(d.webStays ? { prepare: d.webStays.prepare } : {}),
     ...(d.simulate ? { simulate: d.simulate } : {}),

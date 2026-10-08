@@ -4,8 +4,9 @@ import { ixigoPage } from '../travel/cards.js';
 import type { Travel } from '../travel/travel.js';
 import { GROUP_FARES } from './ask.js';
 import { mandateCard } from './cards.js';
+import { askersOf, claimCard, claimCardId } from './claims.js';
 import type { MoneyDeps } from './deps.js';
-import { money, refusalWords } from './words.js';
+import { money, refusalWords, shortDate } from './words.js';
 
 /** The price plus up to 10%, rounded down to a whole ₹1,000 and never below the price: the most Go sets on its own. */
 export function marginCap(priceMinor: number): number {
@@ -77,6 +78,11 @@ export async function whyNotBookable(
     return { refused: refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}) }).text, unbookable: true };
   }
   if (!offer?.offerId) return { refused: refusalWords('not_bookable', { ...words, ...(link ? { link } : {}) }).text, unbookable: true };
+  // A vote that outlived its stay's or journey's day: nothing to book, so no mandate.
+  if (offer.past) {
+    const was = offer.day ? `${option.label} was for ${shortDate(`${offer.day}T12:00:00Z`)}, which has passed` : `${option.label}'s date has passed`;
+    return { refused: `${was}, so I can't book it. Want me to search again for dates ahead?`, unbookable: true };
+  }
   return null;
 }
 
@@ -86,9 +92,9 @@ export async function whyNotBookable(
  */
 export async function setMandate(
   d: MoneyDeps,
-  ctx: Pick<TurnCtx, 'tripId' | 'stableId' | 'cards' | 'pack'>,
+  ctx: Pick<TurnCtx, 'tripId' | 'stableId' | 'cards' | 'pack'> & Partial<Pick<TurnCtx, 'turnId' | 'wake'>>,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
-): Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; parked?: true }> {
+): Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; parked?: true; claim?: true }> {
   const vague = { payer: 'The payer', what: 'it' };
   let trip: Trip;
   try {
@@ -114,6 +120,39 @@ export async function setMandate(
 
   const payer = trip.people.find((p) => p.person_id === o.payerPersonId);
   if (!payer) return { refused: "That person isn't in this trip." };
+
+  // One person books a stay for all (claims.ts): the payer is whoever claimed it, by the card's I'll book it or by asking
+  // Go to book it in their own words (that ask is their claim). Go never picks the payer itself.
+  let claimedNow = false;
+  if (d.claims && chosen.option_ref && (await d.travel()?.offer(chosen.option_ref).catch(() => null))?.kind === 'stay') {
+    const held = await d.claims.get(ctx.tripId, o.decisionId);
+    const nameOf = (id: string): string => trip.people.find((p) => p.person_id === id)?.name ?? 'Someone';
+    // A mandate set before claims came holds as the claim.
+    const holder = held?.personId ?? decision.mandate?.payer_person_id ?? null;
+    if (holder) {
+      if (holder !== payer.person_id) return { refused: `${nameOf(holder)} is already booking this.` };
+    } else if (ctx.wake && askersOf(ctx.wake, ctx.pack).includes(payer.person_id)) {
+      const first = await d.claims.take(ctx.tripId, o.decisionId, payer.person_id);
+      if (first !== payer.person_id) return { refused: `${nameOf(first)} is already booking this.` };
+      claimedNow = true;
+      // The card, when it is up, says who is booking now.
+      if (held?.offeredTurn) {
+        await d.link.request('replace_card', {
+          trip_id: ctx.tripId, card: claimCard({ decisionId: o.decisionId, what: chosen.label, people: trip.people.length, claimer: payer.name }),
+        });
+      }
+    } else {
+      // Nobody has claimed it: the card asks the group, on this turn's own post.
+      const id = claimCardId(o.decisionId);
+      if (ctx.turnId && (await d.claims.offer(ctx.tripId, o.decisionId, ctx.turnId)) && !ctx.cards.some((c) => c.card_id === id)) {
+        ctx.cards.push(claimCard({ decisionId: o.decisionId, what: chosen.label, people: trip.people.length, claimer: null }));
+      }
+      return {
+        refused: `One person books ${chosen.label} for all: whoever taps I'll book it on the card, or asks me to book it themselves, is the payer.`,
+        claim: true,
+      };
+    }
+  }
 
   // What the option needs first: a stay from ixigo.com needs the trip's ixigo login (the person is asked on its card, and
   // this call waits on it, made again when the login is in), and its price is ixigo's now, not the vote's.
@@ -176,7 +215,9 @@ export async function setMandate(
   ctx.cards.push(
     mandateCard({ cardId, decisionId: o.decisionId, what: chosen.label, capMinor, currency, refundableOnly: o.refundableOnly, payerName: payer.name, moved }),
   );
-  const margin = byMargin ? `Nobody said a clear number, so I set the cap at ${money(capMinor, currency)}: the price plus a little margin.` : null;
-  const note = [moved, margin].filter((x) => x !== null).join(' ') || null;
+  // Never "nobody said a number": an I'll book it tap sets it with no model reading the chat, where someone may have.
+  const margin = byMargin ? `I set the cap at ${money(capMinor, currency)}: the price plus a little margin.` : null;
+  const claimed = claimedNow ? `${payer.name}, you're booking for all ${trip.people.length}.` : null;
+  const note = [claimed, moved, margin].filter((x) => x !== null).join(' ') || null;
   return { cardId, capMinor, byMargin, note };
 }

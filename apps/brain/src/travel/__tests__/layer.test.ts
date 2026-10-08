@@ -311,4 +311,23 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     // With no web stays (a test, a lane that never set it), nothing changes.
     expect(setup().layer.prepare).toBeUndefined();
   });
+
+  it('says the day an offer is for, and past once that day is behind the trip: a vote that outlived it cannot book the past', async () => {
+    const page = (day: string) => `https://www.ixigo.com/hotels/54381/details?checkinDate=${day}&checkoutDate=09112026&roomCount=3`;
+    const { layer } = setup(true, {
+      today: async () => '2026-10-08',
+      results: {
+        offer: async (id) => ({
+          tripId: 't_goa', cardId: 'c', resultsId: 'r', checkedAt: 'x', optionId: id, n: 1, offerId: id === 'opt_fake' ? 'fake:st' : null, kind: 'stay', title: 'Saudades',
+          priceMinor: 1589400, totalMinor: 4768200, currency: 'INR', priceNote: 'per night, per room', sourceUrl: id === 'opt_old' ? page('01102026') : page('06112026'),
+        }),
+        searchedFor: async () => ({ tripId: 't_goa', day: '2026-10-02' }),
+      },
+    });
+    expect(await layer.offer('opt_new')).toMatchObject({ day: '2026-11-06' });
+    expect(await layer.offer('opt_new')).not.toHaveProperty('past');
+    expect(await layer.offer('opt_old')).toMatchObject({ day: '2026-10-01', past: true });
+    // An offer of Go's own search: the day that search asked for.
+    expect(await layer.offer('opt_fake')).toMatchObject({ day: '2026-10-02', past: true });
+  });
 });

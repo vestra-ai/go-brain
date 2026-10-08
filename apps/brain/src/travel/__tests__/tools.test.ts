@@ -224,7 +224,8 @@ describe('show_options', () => {
     expect(card.options[0]).toMatchObject({ price_minor: 1280000, price_note: 'per night', subtitle: 'Anjuna, ₹38,400 for 3 nights' });
     expect(card.options[0]!.image_url).toMatch(/^https:\/\/go\.test\/img\/u[0-9a-f]{32}\.jpg$/);
     expect(lb.link.sent('post_message')).toHaveLength(posts);
-    expect(await travel.offer(card.options[0]!.option_id)).toEqual({ offerId: 'fake:st-villa-sol-anjuna-20261106-20261109-5', title: 'Villa Sol', priceMinor: 3840000, currency: 'INR', kind: 'stay', link: null });
+    // The day it is for (its search's check-in), so a vote that outlives it is refused, never booked (#264).
+    expect(await travel.offer(card.options[0]!.option_id)).toEqual({ offerId: 'fake:st-villa-sol-anjuna-20261106-20261109-5', title: 'Villa Sol', priceMinor: 3840000, currency: 'INR', kind: 'stay', link: null, day: '2026-11-06' });
     expect(await results.offer(card.options[0]!.option_id)).toMatchObject({ n: 1, totalMinor: 3840000, priceMinor: 1280000 });
   });
 

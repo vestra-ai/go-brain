@@ -134,6 +134,8 @@ export class FakeServer {
     const sock: GoSocket = new GoSocket({
       url: socketUrl(this.o.goUrl, this.o.instance ?? 'sim'),
       secret: this.o.secret,
+      // Signed with this Server's own clock, the one Go is given too in a test that moves time.
+      nowSeconds: () => Math.floor(this.now().getTime() / 1000),
       handlers: this.handlers,
       ...(this.o.backoffSeconds ? { backoffSeconds: this.o.backoffSeconds } : {}),
       onOpen: () => {

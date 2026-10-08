@@ -30,7 +30,7 @@ type AskRun = (ctx: TurnCtx, o: { decisionId: string; optionRef: string; purpose
 type SetRun = (
   ctx: TurnCtx,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
-) => Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; parked?: true }>;
+) => Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; parked?: true; claim?: true }>;
 
 export function askToPayTool(run: AskRun): QuickTool<AskToPayInput> {
   return {
@@ -51,7 +51,7 @@ export function setMandateTool(run: SetRun): QuickTool<SetMandateInput> {
   return {
     name: 'set_mandate',
     description:
-      'After a choice vote closes, record what the group allows: the winning option, who pays (the organizer or the person the group named in the chat), whether only refundable rates are allowed, and cap_minor, the most to spend in paise, only when someone in the group said a number: "8k a head per night" is 8,000 rupees times the people times the nights, "8k a head" is 8,000 times the people, a plain "40k" is the total. When nobody said a clear number, leave cap_minor out: Go uses the price plus up to 10% and says so. Never invent a cap or a payer. The payer then taps Yes, book it on the card.',
+      'After a choice vote closes, record what the group allows: the winning option, who pays (for a stay, only the person who took it with I\'ll book it on Go\'s card, or who asks you to book it themselves: their ask is their claim; never pick the payer), whether only refundable rates are allowed, and cap_minor, the most to spend in paise, only when someone in the group said a number: "8k a head per night" is 8,000 rupees times the people times the nights, "8k a head" is 8,000 times the people, a plain "40k" is the total. When nobody said a clear number, leave cap_minor out: Go uses the price plus up to 10% and says so. Never invent a cap or a payer. The payer then taps Yes, book it on the card.',
     input: SetMandateInput,
     async run(args, ctx) {
       const r = await run(ctx, {
@@ -68,7 +68,9 @@ export function setMandateTool(run: SetRun): QuickTool<SetMandateInput> {
             ? 'Say this in one short line, before anything about who pays: there is nothing to set up for paying for this option.'
             : r.parked
               ? 'It waits on the trip\'s ixigo login, and Go carries on with it by itself once the login is in. Do what refused says, and never ask for a number or a code in the chat.'
-              : SAY_THE_REFUSAL,
+              : r.claim
+                ? 'The I\'ll book it card is up with your message. Say in one short line that whoever taps it books for everyone. Never pick who pays.'
+                : SAY_THE_REFUSAL,
         };
       }
       return {

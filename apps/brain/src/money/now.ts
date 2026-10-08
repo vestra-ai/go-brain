@@ -3,6 +3,7 @@ import type { NowProvider } from '../composer/context.js';
 import type { Packs } from '../trips/pack.js';
 import type { Travel } from '../travel/travel.js';
 import type pg from 'pg';
+import type { Claims } from './claims.js';
 import { whyNotBookable } from './mandate.js';
 import { listForTrip } from './store.js';
 import { failReasonWords, money } from './words.js';
@@ -11,7 +12,7 @@ const clock = (at: Date): string =>
   new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' }).format(at).toLowerCase();
 
 /** "Right now": what is waiting on whom for money in this trip, and what the composer may do next. */
-export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: () => Date; travel?: () => Travel | undefined }): NowProvider {
+export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: () => Date; travel?: () => Travel | undefined; claims?: Claims }): NowProvider {
   return {
     name: 'payments',
     order: 40,
@@ -56,6 +57,17 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
           const cannot = d.travel ? await whyNotBookable({ travel: d.travel }, win) : null;
           if (cannot?.unbookable) {
             lines.push(`- Vote ${dec.decision_id} closed and ${win.label} won, but Go can't book it: don't ask who pays or use set_mandate. If it comes up, say: ${cannot.refused}`);
+            continue;
+          }
+          // A stay is booked for all by whoever claims it (claims.ts): Go never picks the payer.
+          const stay = d.claims && win.option_ref && (await d.travel?.()?.offer(win.option_ref).catch(() => null))?.kind === 'stay';
+          if (stay && d.claims) {
+            const held = (await d.claims.get(tripId, dec.decision_id))?.personId;
+            lines.push(
+              held
+                ? `- Vote ${dec.decision_id} closed and ${win.label} won. ${nameOf(held)} is booking it for all: use set_mandate with payer ${held} (the cap is the price plus a little, or a number they said).`
+                : `- Vote ${dec.decision_id} closed and ${win.label} won. One person books it for all: whoever taps I'll book it on Go's card, or asks you to book it themselves (their ask is their claim: set_mandate with them as payer). Never pick who pays.`,
+            );
             continue;
           }
           lines.push(`- Vote ${dec.decision_id} closed and ${win.label} won. Once the group says who pays, use set_mandate (the cap is the price plus a little, or a number they said).`);
