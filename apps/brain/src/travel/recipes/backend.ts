@@ -300,10 +300,16 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       if (hit && nowMs - hit.at < hit.ttl) return { answer: hit.ran, joined: true };
       const ran = run();
       const runId = `${key}|${nowMs}`;
-      const search = ran.then((a): TravelSearch => {
-        if (a.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
-        return { results: a.options, checkedAt: a.checkedAt, runId, page: a.page };
-      });
+      const search = ran.then(
+        (a): TravelSearch => {
+          if (a.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
+          return { results: a.options, checkedAt: a.checkedAt, runId, page: a.page };
+        },
+        // A search that joined a step whose composite ran out of time hears it as ixigo's slowness, not an abort.
+        (err: unknown): never => {
+          throw err instanceof TravelError ? err : new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+        },
+      );
       keep(key, { at: nowMs, ttl: recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS, search, ran });
       return { answer: ran, joined: false };
     },
