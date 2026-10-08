@@ -7,7 +7,7 @@ import type { DeskItem } from '../../desk/desk.js';
 import { goaTrip, msg, packOf } from '../../reflex/goa.fixture.js';
 import type { TripPack } from '../../trips/pack.js';
 import type { CheckedLine } from '../checker.js';
-import { answers, decisionOf, linkLine, settleDecisionLines } from '../decision-lines.js';
+import { answers, decisionOf, linkLine, settleDecisionLines, settledBy } from '../decision-lines.js';
 import { mirrorLine } from '../record.js';
 import { fakeLink } from './test-kit.js';
 
@@ -134,5 +134,39 @@ describe('an open line people raised before the vote: the vote that answers it s
     // The sweep again: the same writes, nothing sent twice.
     await settleDecisionLines(db.pool, link, T, closed);
     expect(done().sort()).toEqual(['r_one', 'r_two']);
+  });
+});
+
+describe('settledBy: the open questions a new line settles (Server, 6 Oct: open lines were never closed)', () => {
+  const rec = (line_id: string, over: Partial<C.RecordLine> = {}): C.RecordLine => ({
+    line_id, kind: 'open', text: 'Candolim or Anjuna for the stay?', status: 'active', proof: [{ message_id: 'm_0240', person_id: 'p_priya' }],
+    person_ids: [], source: 'go', created_at: '2026-10-06T09:00:00Z', updated_at: '2026-10-06T09:00:00Z', ...over,
+  });
+  const line = (over: Partial<CheckedLine>): CheckedLine => ({
+    kind: 'agreed', text: 'Stay in Candolim', personIds: [], proof: [{ message_id: 'm_0241', person_id: 'p_rahul' }], ...over,
+  });
+  const record = [
+    rec('r_stay'),
+    rec('r_cab', { text: 'Who sorts the airport cab?', proof: [{ message_id: 'm_0243', person_id: 'p_kabir' }] }),
+    rec('r_done', { status: 'done' }),
+    rec('r_people', { source: 'person' }),
+    rec('r_agreed', { kind: 'agreed' }),
+  ];
+  const ids = (l: CheckedLine, named: string[] = []) => settledBy(l, named, record).map((r) => r.line_id);
+
+  it('closes the open question an agreed line cites as its proposal, and the ones the model names', () => {
+    expect(ids(line({ proof: [{ message_id: 'm_0240', person_id: 'p_priya' }, { message_id: 'm_0241', person_id: 'p_rahul' }] }))).toEqual(['r_stay']);
+    expect(ids(line({}), ['r_stay'])).toEqual(['r_stay']);
+    expect(ids(line({ kind: 'doing', text: 'Meher sorts the airport cab' }), ['r_cab'])).toEqual(['r_cab']);
+  });
+
+  it("never closes on nothing: no named line and no shared proof, a doing line's proof alone, or Go's own other lines", () => {
+    expect(ids(line({}))).toEqual([]);
+    expect(ids(line({ kind: 'doing', proof: [{ message_id: 'm_0240', person_id: 'p_priya' }] }))).toEqual([]);
+    // Only Go's own active open lines: never one already done, someone else's, or an agreed line.
+    expect(ids(line({}), ['r_done', 'r_people', 'r_agreed'])).toEqual([]);
+    // An open line settles nothing, and a line never closes itself.
+    expect(ids(line({ kind: 'open' }), ['r_stay'])).toEqual([]);
+    expect(ids(line({ lineId: 'r_stay' }), ['r_stay'])).toEqual([]);
   });
 });

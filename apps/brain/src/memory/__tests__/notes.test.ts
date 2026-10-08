@@ -77,6 +77,37 @@ describe('the notes pass', () => {
     expect(adds).toEqual([['doing', 'Kabir books the airport cab', ['p_kabir']]]);
   });
 
+  it('closes the open questions a settled line answers: one the agreed line cites, and one the model names (Server, 6 Oct)', async () => {
+    const said = [
+      msg(240, 'p_priya', "Candolim or Anjuna for the stay? I can't decide"),
+      msg(241, 'p_rahul', 'Candolim for sure'),
+      msg(242, 'p_arjun', 'yes Candolim'),
+      msg(243, 'p_kabir', 'who is sorting the airport cab?'),
+      msg(244, 'p_meher', "I'll sort the airport cab"),
+    ];
+    const open = (line_id: string, text: string, seq: number, who: string) => ({
+      line_id, kind: 'open' as const, text, status: 'active' as const, proof: [{ message_id: `m_0${seq}`, person_id: who }], person_ids: [],
+      source: 'go' as const, created_at: '2026-10-06T09:00:00Z', updated_at: '2026-10-06T09:00:00Z',
+    });
+    await mirrorLine(db.pool, 't_n30', open('r_stay', 'Candolim or Anjuna for the stay?', 240, 'p_priya'), 1);
+    await mirrorLine(db.pool, 't_n30', open('r_cab', 'Who sorts the airport cab?', 243, 'p_kabir'), 1);
+    await mirrorLine(db.pool, 't_n30', open('r_scuba', 'Scuba on Saturday?', 230, 'p_arjun'), 1);
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [
+        // Cites the question it settles: closed with no name given.
+        { kind: 'agreed', text: 'Stay in Candolim', person_ids: [], proof: [240, 241, 242] },
+        // Names the question it settles.
+        { kind: 'doing', text: 'Meher sorts the airport cab', person_ids: ['p_meher'], proof: [244], settles: ['r_cab'] },
+      ],
+    });
+    const { link, notes } = setup('t_n30', said, [answer]);
+    await notes.run('t_n30');
+    const closed = link.calls.filter((c) => c.method === 'update_record_line').map((c) => [c.params.line_id, c.params.status, c.params.kind]);
+    expect(closed.sort()).toEqual([['r_cab', 'done', 'open'], ['r_stay', 'done', 'open']]);
+    expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['Stay in Candolim', 'Meher sorts the airport cab']);
+  });
+
   it('an ask to Go gets Go\'s answer, not a receipt: no open line and no ✅ on it; a plan stated to Go and a group question are noted', async () => {
     // Live drill (t_p1a_572dd322): "@Go what's planned for Sunday?" got an open line and a ✅ after Go had answered it.
     const said = [
