@@ -85,6 +85,7 @@ main { flex: 1; padding: 12px 12px 16px; }
 button.act { font: inherit; font-size: 15px; border-radius: 12px; min-height: 44px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--accent); margin-top: 4px; touch-action: manipulation; }
 button.primary { background: var(--accent); color: #fff; }
 button.secondary { background: var(--panel); color: var(--accent); }
+a.act { display: inline-flex; align-items: center; text-decoration: none; font: inherit; font-size: 15px; border-radius: 12px; min-height: 44px; padding: 10px 16px; border: 1px solid var(--accent); margin-top: 4px; background: var(--panel); color: var(--accent); }
 .typing { color: var(--go-ink); font-size: 13px; min-height: 20px; margin: 4px 0 0 36px; }
 footer { position: sticky; bottom: 0; z-index: 2; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
 form { display: flex; gap: 8px; }
@@ -134,6 +135,16 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function safeUrl(u) { return /^https?:/i.test(String(u || '')) ? String(u) : ''; }
+  /** An ixigo.com page, or '': the only pages a "See on ixigo" button opens. */
+  function ixigoPage(u) {
+    var url = safeUrl(u);
+    try {
+      var host = url ? new URL(url).hostname : '';
+      return host === 'ixigo.com' || host.slice(-10) === '.ixigo.com' ? url : '';
+    } catch (e) {
+      return '';
+    }
+  }
   function money(minor, cur) {
     if (minor == null) return '';
     var text = Math.round(minor / 100).toLocaleString('en-IN');
@@ -277,11 +288,12 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
       var label = { running: 'Working on it', needs_you: 'Needs you', done: 'Done', failed: "Didn't work" }[c.state] || c.state;
       var mark = { todo: '○', doing: '◐', done: '●', failed: '×' };
       var shot = safeUrl(c.screenshot_url);
-      var page = safeUrl(c.page_url);
+      var see = ixigoPage(c.page_url);
       return '<span class="tag' + (c.state === 'needs_you' ? ' warn' : '') + '">' + esc(label) + '</span><h3>' + esc(c.title) + '</h3><div class="steps">' +
         c.steps.map(function (s) { return '<div>' + (mark[s.state] || '') + ' ' + esc(s.text) + '</div>'; }).join('') + '</div>' +
-        (shot && page ? '<div class="meta" style="margin-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(page) + '</div>' : '') +
         (shot ? '<img alt="" src="' + esc(shot) + '" style="max-width:100%;border-radius:10px;margin-top:8px">' : '') +
+        // The page's address is never shown as text: the picture and the steps say what it is, and the link is a button.
+        (see ? '<div class="actions"><a class="act secondary" href="' + esc(see) + '" target="_blank" rel="noopener noreferrer">See on ixigo</a></div>' : '') +
         '<div class="meta">Updated ' + esc(ago(c.updated_at)) + '</div>' + goActions(c);
     },
     call: function (c) {
