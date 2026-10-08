@@ -71,6 +71,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const handOffs: Array<{ url: string; plan: FetchPlan; o: { keepOpenMs: number; tab: string } }> = [];
   const releases: string[] = [];
   const sessions: Array<[string, string]> = [];
+  const timers: Array<{ ms: number; fn: () => void; cancelled: boolean }> = [];
   const screen = async (trip: string, mode: 'view' | 'control') => {
     sessions.push([trip, mode]);
     return { url: `https://screen.example/${mode}`, expires_at: '2026-10-08T06:15:00.000Z' };
@@ -98,6 +99,13 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
       looks.push(ms);
       hooks.onSleep?.(looks.length);
     },
+    later: (ms, fn) => {
+      const t = { ms, fn, cancelled: false };
+      timers.push(t);
+      return () => {
+        t.cancelled = true;
+      };
+    },
   });
   const handlers = new Map<string, (tap: CardTapParams, card: C.Card) => Promise<CardTapResult>>();
   login.registerTaps({ on: (kind, action, h) => handlers.set(`${kind}:${action}`, h) });
@@ -112,7 +120,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const last = (): C.Card & { kind: 'notice' } => cards().at(-1) as C.Card & { kind: 'notice' };
   const state = async (): Promise<string | undefined> =>
     (await db.pool.query<{ state: string }>('select state from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.state;
-  return { tripId, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
+  return { tripId, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
 }
 
 const STATUS_PLAN = { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], timeoutMs: 12_000 };
@@ -309,6 +317,9 @@ describe('logging in', () => {
     await refused.setup();
     await refused.tap('ixigo_login', 'p_rahul');
     expect(await refused.state()).toBe('asked');
+    // Nothing left open on the trip's screen, and no second path: the card says try again.
+    expect(refused.releases).toEqual([LOGIN_TAB]);
+    expect(refused.timers.every((t) => t.cancelled)).toBe(true);
     expect(refused.last()).toMatchObject({
       title: 'Link ixigo for this trip',
       body: "Go couldn't open ixigo's log in on its screen just now. Tap Log in to ixigo to try again.",
@@ -333,6 +344,35 @@ describe('logging in', () => {
     await old.tap('ixigo_not_now', 'p_rahul');
     expect(old.stops).toEqual(['gt_login_old']);
     expect(old.handoffs).toEqual([]);
+  });
+
+  it(`a hand-off that runs its ${HANDOFF_MS / 60_000} minutes closes the log in, and the card goes back to its ask, saying so`, async () => {
+    const w = world();
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(w.timers.map((t) => t.ms)).toEqual([HANDOFF_MS]);
+    w.timers[0]!.fn();
+    await w.login.settled();
+    expect(await w.state()).toBe('asked');
+    expect(w.releases).toEqual([LOGIN_TAB]);
+    expect(w.last()).toMatchObject({
+      title: 'Link ixigo for this trip', body: "ixigo's log in closed on Go's screen after 10 minutes. Tap Log in to ixigo to open it again.",
+    });
+    // A login that ended sooner cancels its end: logged in here.
+    const done = world({ statuses: [200] });
+    await done.setup();
+    await done.tap('ixigo_login', 'p_rahul');
+    await done.tap('ixigo_logged_in', 'p_rahul');
+    expect(done.timers.map((t) => t.cancelled)).toEqual([true]);
+  });
+
+  it('the person leaving the trip while the log in is open closes it first', async () => {
+    const w = world();
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.login.personGone(w.tripId, 'p_rahul', 'left');
+    await w.login.settled();
+    expect(w.releases[0]).toBe(LOGIN_TAB);
   });
 
   it("I'm logged in: ixigo's own answer decides by its status alone; 401 keeps the log in in front, 200 closes it and says logged in as Rahul", async () => {

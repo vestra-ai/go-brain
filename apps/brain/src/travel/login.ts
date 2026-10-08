@@ -81,6 +81,8 @@ export interface LoginDeps {
   log: { warn(obj: object, msg: string): void; info(obj: object, msg: string): void };
   /** Waits between looks for Go's hello; tests pass their own. */
   sleep?: (ms: number) => Promise<void>;
+  /** Runs `fn` after `ms` (the hand-off's end at HANDOFF_MS) and returns how to cancel it; tests pass their own. */
+  later?: (ms: number, fn: () => void) => () => void;
 }
 
 export interface IxigoLogin {
@@ -109,7 +111,7 @@ export interface IxigoLogin {
 
 const cardId = (tripId: string, attempt: number): string => `c_login_${tripId}_${attempt}`;
 /** Why the card says what it says: not logged in yet, the person left or used Forget me, a log out ixigo didn't take. */
-type Note = 'not_yet' | 'not_opened' | 'left' | 'forgot' | 'logout_failed';
+type Note = 'not_yet' | 'not_opened' | 'expired' | 'left' | 'forgot' | 'logout_failed';
 const day = (at: Date): string => at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 
 /** The login card for where things stand: who it is for, what it says, and the buttons only they see. */
@@ -124,7 +126,9 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
         title: 'Link ixigo for this trip',
         body: note === 'not_opened'
           ? "Go couldn't open ixigo's log in on its screen just now. Tap Log in to ixigo to try again."
-          : `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their own phone; Go never sees the number or the code. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
+          : note === 'expired'
+            ? "ixigo's log in closed on Go's screen after 10 minutes. Tap Log in to ixigo to open it again."
+            : `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their own phone; Go never sees the number or the code. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
         actions: [button('ixigo_login', 'Log in to ixigo', 'primary'), button('ixigo_not_now', 'Not now', 'secondary')],
         fallback_text: `${name}, log in to ixigo once on Go's computer so Go can check fares and book.`,
       };
@@ -271,6 +275,13 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   }
 
   const sleep = d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const later = d.later ?? ((ms: number, fn: () => void) => {
+    const timer = setTimeout(fn, ms);
+    timer.unref?.();
+    return () => clearTimeout(timer);
+  });
+  /** Each trip's hand-off end (HANDOFF_MS), cancelled when the login ends sooner. In this process: Bash closes the tab itself. */
+  const ending = new Map<string, () => void>();
   const nudging = new Set<string>();
   /** Trips known to have a login row: a nudge there reads nothing. */
   const hasRow = new Set<string>();
@@ -324,6 +335,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
    * page Bash would not open puts the card back to its ask, saying so.
    */
   async function handOff(row: LoginRow, runner: Pick<RecipeRunner, 'handOff' | 'release'>): Promise<void> {
+    // The hand-off ends at HANDOFF_MS whatever happens: Bash closes the tab then, and the card goes back to its ask.
+    ending.get(row.tripId)?.();
+    ending.set(row.tripId, later(HANDOFF_MS, () => track('end', row.tripId, expire(row))));
     let captures: Capture[];
     try {
       ({ captures } = await runner.handOff!(
@@ -333,6 +347,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB },
       ));
     } catch (err) {
+      // Loud, and nothing left open: no second path.
+      await release(row.tripId);
       const now = await get(row.tripId);
       if (now?.state === 'logging_in' && now.attempt === row.attempt) {
         const back: LoginRow = { ...now, state: 'asked' };
@@ -350,14 +366,32 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     }
   }
 
-  /** The hand-off's tab closes, so the person's own window is on top again; one already gone is nothing to close. */
+  /**
+   * The hand-off's tab closes, so the person's own window is on top again; one already gone is nothing to close. Every end
+   * of a login closes it: logged in, Not now, a hand-off that failed or ran its time, the person gone.
+   */
   async function release(tripId: string): Promise<void> {
+    ending.get(tripId)?.();
+    ending.delete(tripId);
     await d.runner()?.release?.(tripId, LOGIN_TAB).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's tab did not close"));
+  }
+
+  /** A hand-off that ran its HANDOFF_MS: its tab is closed, and its card goes back to its ask, saying so. */
+  async function expire(row: LoginRow): Promise<void> {
+    ending.delete(row.tripId);
+    const now = await get(row.tripId);
+    if (now?.state !== 'logging_in' || now.attempt !== row.attempt) return;
+    await release(row.tripId);
+    const back: LoginRow = { ...now, state: 'asked' };
+    await save(back);
+    await show(back, 'expired');
   }
 
   async function personGone(tripId: string, personId: string, why: 'left' | 'forgot'): Promise<void> {
     const row = await get(tripId);
     if (!row || row.personId !== personId || (row.state !== 'logged_in' && row.state !== 'logging_in')) return;
+    // A log in still open for them closes first.
+    if (row.state === 'logging_in') await release(tripId);
     track('log out', tripId, logout(row, why));
   }
 
