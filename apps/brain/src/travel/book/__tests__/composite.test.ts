@@ -9,7 +9,7 @@ import { createIxigoWebBackend } from '../../recipes/backend.js';
 import { createBrowserFetchRunner } from '../../recipes/runners.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { BOOK_DIR, checkRecipe, loadBook } from '../book.js';
-import { createEngine, type EngineAnswer } from '../engine.js';
+import { createEngine, type EngineAnswer, type StepsEvent } from '../engine.js';
 import type { RunEvent } from '../run-event.js';
 
 afterEach(() => forgetLearnedPlaces());
@@ -85,6 +85,26 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     expect(starts.find((e) => e.recipe_id === 'buses.city_lookup')).toMatchObject({ parent: delhiBuses.run_id });
     // The composite ends last, with the steps that answered.
     expect(events.at(-1)).toMatchObject({ type: 'run_end', run_id: composite.run_id, ok: true, rows: 5 });
+  });
+
+  it("puts every city's trains ahead of its buses in the computer's queue, and tells each step as it ends", async () => {
+    const asked = new Set<string>();
+    const said: StepsEvent[] = [];
+    const runner = {
+      read: async (_trip: string, url: string, _plan: FetchPlan, o?: { priority?: number }) => {
+        asked.add(`${url.includes('/train/') ? 'train page' : url.includes('/bus_search/') ? 'bus page' : 'bus box'} ${o?.priority}`);
+        return { captures: pageFor(url) ?? [], finalUrl: url };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => trip, now: () => new Date('2026-10-08T12:00:00Z') });
+    await engine.answer(WAYS, {}, { tripId: 't_goa', onSteps: (e) => said.push(e) });
+    // Trains are the file's first step: priority 0. A city's buses, their page and ixigo's box alike, come after.
+    expect([...asked].sort()).toEqual(['bus box 1', 'bus page 1', 'train page 0']);
+    expect(said[0]).toEqual({ type: 'entries', entries: ['Delhi', 'Mumbai'] });
+    expect(said.slice(1).map((e) => (e.type === 'step' ? `${e.entry} ${e.recipe} ${e.ok}` : e.type)).sort()).toEqual([
+      'Delhi buses.between false', 'Delhi flights.search true', 'Delhi trains.between true',
+      'Mumbai buses.between true', 'Mumbai flights.search true', 'Mumbai trains.between true',
+    ]);
   });
 
   it("asks the trip's computer for no more pages at once than its slots: the rest wait their turn", async () => {

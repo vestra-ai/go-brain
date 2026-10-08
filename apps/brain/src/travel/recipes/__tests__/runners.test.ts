@@ -293,6 +293,28 @@ describe("fetches at once on one trip's computer: Bash runs only so many (409 br
     expect(most).toBe(4);
   });
 
+  it("lets a waiting fetch of a lower priority go first: a composite's trains before its buses, first come first served within one", async () => {
+    const ends: Array<() => void> = [];
+    const w = world(async () => {
+      await new Promise<void>((r) => ends.push(r));
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner({ ...w.deps, slots: () => 1 });
+    const asked = () => w.calls.map((c) => String((c.opts['body'] as { url?: string }).url).split('?n=')[1]);
+    const reads = [
+      runner.read('t1', `${BUSES}?n=1`, busPlan),
+      runner.read('t1', `${BUSES}?n=2`, busPlan, { priority: 1 }),
+      runner.read('t1', `${BUSES}?n=3`, busPlan, { priority: 0 }),
+      runner.read('t1', `${BUSES}?n=4`, busPlan, { priority: 1 }),
+    ];
+    for (let i = 0; i < 4; i++) {
+      await settle();
+      ends.shift()?.();
+    }
+    await Promise.all(reads);
+    expect(asked()).toEqual(['1', '3', '2', '4']);
+  });
+
   it("counts by the computer, not the trip: two trips on one /v1 user share its slots", async () => {
     const ends: Array<() => void> = [];
     const w = world(async () => {
