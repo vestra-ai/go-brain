@@ -51,6 +51,8 @@ export interface ReadOptions {
    * answer never waits for the drawing; the next page call runs in this tab with no page load.
    */
   keepOpen?: boolean;
+  /** With keepOpen, for a live card: one more picture of the kept tab once ixigo has drawn it (LOOK_AFTER_MS, `drawn`). */
+  look?: boolean;
 }
 
 export interface RecipeRunner {
@@ -188,6 +190,15 @@ export const FAST_UNSUPPORTED_MS = 10 * 60_000;
  * computer just made waking included.
  */
 export const PRIME_TIMEOUT_MS = 15_000;
+/**
+ * When the look at a kept page goes, after the answer: ixigo drew the hotel list 2.1 s after its data on a cold box
+ * (8 Oct probe), and Bash answers about 1.3 s after the data, so this is past the drawing with room to spare.
+ */
+export const LOOK_AFTER_MS = 2_500;
+/** The look's own time: a tab already open and one tiny call inside it. */
+export const LOOK_TIMEOUT_MS = 5_000;
+/** The one call a look makes inside the tab: Bash takes no fetch without a call or a capture, and ixigo's icon is the smallest. */
+const LOOK_STEP = { op: 'page_fetch', url: '/favicon.ico', method: 'GET', capture_as: 'look', max_bytes: 1_000 };
 
 interface FetchAnswer {
   final_url: string;
@@ -313,7 +324,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null,
           calls: answer.captures.map((c) => ({ url: c.url, status: c.status, at_ms: c.at_ms })),
         });
-        return { captures: answer.captures, finalUrl: typeof answer.final_url === 'string' ? answer.final_url : url };
+        const finalUrl = typeof answer.final_url === 'string' ? answer.final_url : url;
+        if (o.keepOpen && o.look && o.onProgress) look(tripId, finalUrl, startedAt, o.onProgress, o.tag);
+        return { captures: answer.captures, finalUrl };
       } catch (err) {
         if (!(err instanceof V1Error)) throw err;
         // Once only: a trip whose user /v1 does not have yet, or a person who just used the browser.
@@ -341,6 +354,27 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         return { captures: fetchFailed(err, what, tripId, d.log), finalUrl: url };
       }
     }
+  }
+
+  /**
+   * The page as ixigo drew it, for the live card. ixigo draws its list about 2 s after its data, after Bash has answered
+   * (the 8 Oct probe), so the answer's pictures are its skeleton: one more picture of the kept tab, LOOK_AFTER_MS on. A
+   * screenshot of the tab, not a page load: the tab is taken for one tiny call inside it and kept again as the warm tab.
+   * Only a picture of the same page is told, timed from the page's fetch; a look that fails, or finds the tab taken or on
+   * another page (a later search kept its own), tells nothing, and the card keeps the picture it has. Never awaited.
+   */
+  function look(tripId: string, pageUrl: string, fetchStarted: number, onProgress: OnProgress, tag: string | undefined): void {
+    const body = { steps: [LOOK_STEP], keep_open_ms: WARM_TAB_MS, timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH }, ...(tag ? { tag } : {}) };
+    void sleep(LOOK_AFTER_MS)
+      .then(() => inSlot(tripId, {}, async () => {
+        const lookStarted = d.now().getTime();
+        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, { body });
+        const frames = (Array.isArray(answer.frames) ? answer.frames.filter(isFrame) : [])
+          .filter((f) => f.page_url === pageUrl)
+          .map((f) => ({ ...f, at_ms: lookStarted - fetchStarted + f.at_ms }));
+        if (frames.length > 0) onProgress({ type: 'drawn', frames });
+      }))
+      .catch((err: unknown) => d.log.warn({ tripId, err: String(err instanceof Error ? err.message : err).slice(0, 200) }, 'travel: a look at the drawn page found nothing'));
   }
 
   /** Until when page calls are skipped: Bash said it can't make them. */
