@@ -145,6 +145,25 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
       return '';
     }
   }
+  // A card's picture changes only once the new one has loaded, so the card never blanks between pictures: a working
+  // card's screenshot comes as a new address about once a second, and the room is drawn afresh on every change.
+  // pics.shown: each card's picture on screen; pics.wanted: the newest one asked for, loading. One that fails keeps the old.
+  var pics = { shown: {}, wanted: {} };
+  function picture(cardId, u) {
+    var url = safeUrl(u);
+    if (!url || pics.shown[cardId] === url) return url;
+    if (pics.wanted[cardId] !== url) {
+      pics.wanted[cardId] = url;
+      var img = new Image();
+      img.onload = function () {
+        if (pics.wanted[cardId] !== url) return;
+        pics.shown[cardId] = url;
+        render();
+      };
+      img.src = url;
+    }
+    return pics.shown[cardId] || '';
+  }
   function money(minor, cur) {
     if (minor == null) return '';
     var text = Math.round(minor / 100).toLocaleString('en-IN');
@@ -287,7 +306,7 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
     working: function (c) {
       var label = { running: 'Working on it', needs_you: 'Needs you', done: 'Done', failed: "Didn't work" }[c.state] || c.state;
       var mark = { todo: '○', doing: '◐', done: '●', failed: '×' };
-      var shot = safeUrl(c.screenshot_url);
+      var shot = picture(c.card_id, c.screenshot_url);
       var see = ixigoPage(c.page_url);
       return '<span class="tag' + (c.state === 'needs_you' ? ' warn' : '') + '">' + esc(label) + '</span><h3>' + esc(c.title) + '</h3><div class="steps">' +
         c.steps.map(function (s) { return '<div>' + (mark[s.state] || '') + ' ' + esc(s.text) + '</div>'; }).join('') + '</div>' +
