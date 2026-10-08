@@ -139,6 +139,10 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
         timeout_ms: 12_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login',
       } },
     }]);
+    // A person on a computer: the device goes to Bash with front; a phone is Bash's default and is not sent.
+    const desk = world(() => fetched([capture('check', USERINFO_URL, '{', 403)], 'https://www.ixigo.com/'));
+    await createBrowserFetchRunner(desk.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop' });
+    expect(desk.calls[0]!.opts['body']).toMatchObject({ front: true, device: 'desktop' });
     await runner.release!('t1', 'ixigo_login');
     expect(w.calls[1]!.opts['body']).toEqual({ tab: 'ixigo_login', steps: [{ op: 'page_fetch', url: '/', method: 'GET', capture_as: 'close', max_bytes: 1 }], timeout_ms: FAST_TIMEOUT_MS });
 

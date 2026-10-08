@@ -72,9 +72,10 @@ export interface RecipeRunner {
    * A hand-off the person finishes themselves (the ixigo login), with no model: the page opens in FRONT of their window on
    * the trip's computer (Bash's front), its steps run, and its tab stays there for them, kept under `tab`. A page that ran
    * out of time stays open for them all the same, with what it caught. `check`: one call from inside the page before the
-   * steps (one byte, its status, as capture `check`). Throws a TravelError when Bash would not open it.
+   * steps (one byte, its status, as capture `check`). `device`: what the person finishes it on (Bash's default: a phone).
+   * Throws a TravelError when Bash would not open it.
    */
-  handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[] }>;
+  handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'phone' | 'desktop' }): Promise<{ captures: Capture[] }>;
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
   /**
@@ -465,7 +466,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     warm.add(userId);
   }
 
-  async function handOff(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[] }> {
+  async function handOff(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'phone' | 'desktop' }): Promise<{ captures: Capture[] }> {
     // The check first, from inside the page as soon as it is there (one byte, its status), then the plan's own steps.
     const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
     const steps = [...check, ...(plan.steps ?? [])];
@@ -475,6 +476,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       ...(steps.length ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
       front: true,
+      ...(o.device ? { device: o.device } : {}),
       keep_open_ms: o.keepOpenMs,
       tab: o.tab,
     };

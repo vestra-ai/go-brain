@@ -122,9 +122,10 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const handlers = new Map<string, (tap: CardTapParams, card: C.Card) => Promise<CardTapResult>>();
   login.registerTaps({ on: (kind, action, h) => handlers.set(`${kind}:${action}`, h) });
   let tapN = 0;
-  const tap = async (action: string, personId: string): Promise<CardTapResult> => {
+  const tap = async (action: string, personId: string, payload?: Record<string, unknown>): Promise<CardTapResult> => {
     tapN += 1;
-    const out = await handlers.get(`notice:${action}`)!({ tap_id: `tap_${tapN}`, trip_id: tripId, card_id: 'c_login', action_id: action, person_id: personId }, {} as C.Card);
+    const params = { tap_id: `tap_${tapN}`, trip_id: tripId, card_id: 'c_login', action_id: action, person_id: personId, ...(payload ? { payload } : {}) };
+    const out = await handlers.get(`notice:${action}`)!(params as CardTapParams, {} as C.Card);
     await login.settled();
     return out;
   };
@@ -313,6 +314,25 @@ describe('logging in', () => {
     });
     // Nobody else gets a Watch: they would watch Rahul type his number. Their card says whose login it is, and nothing more.
     for (const a of w.last().actions) expect(a.only_for_person_ids).toEqual(['p_rahul']);
+  });
+
+  it("opens ixigo's desktop page for a person on a computer (the tap's device), and the phone page otherwise", async () => {
+    const desk = world();
+    await desk.setup();
+    await desk.tap('ixigo_login', 'p_rahul', { device: 'desktop' });
+    expect(desk.handOffs[0]).toMatchObject({
+      url: LOGIN_URL,
+      plan: { steps: [{ op: 'click', role: 'button', text: 'Log in/Sign up' }, { op: 'click', role: 'textbox', text: 'mobile' }] },
+      o: { device: 'desktop', tab: LOGIN_TAB },
+    });
+    // No device on the tap (the App, a phone), or a phone: Bash's default, the phone page.
+    for (const payload of [undefined, { device: 'phone' }]) {
+      const phone = world();
+      await phone.setup();
+      await phone.tap('ixigo_login', 'p_rahul', payload);
+      expect(phone.handOffs[0]!.plan.steps?.[0]).toEqual({ op: 'click', role: 'button', name: 'Login' });
+      expect(phone.handOffs[0]!.o).not.toHaveProperty('device');
+    }
   });
 
   it('opens one page for a login however many times Log in is tapped while it opens (a double tap, 8 Oct)', async () => {

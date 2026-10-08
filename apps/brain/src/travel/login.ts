@@ -52,6 +52,12 @@ export const HANDOFF_PAGE_MS = 12_000;
  * sheet. ?loginVisible=true opens nothing, on the phone page or the desktop one (staging probe, 8 Oct).
  */
 const LOGIN_BUTTON = { op: 'click', role: 'button', name: 'Login' } as const;
+/** The same on ixigo's desktop page (a person on a computer): "Log in/Sign up", by the avatar. */
+const DESKTOP_LOGIN_BUTTON = { op: 'click', role: 'button', text: 'Log in/Sign up' } as const;
+/** What the person finishes the log in on, as their tap says (contract 1.1's payload.device): a phone when it doesn't. */
+export type LoginDevice = 'phone' | 'desktop';
+const deviceOf = (tap: CardTapParams): LoginDevice =>
+  (tap.payload as { device?: unknown } | null | undefined)?.device === 'desktop' ? 'desktop' : 'phone';
 /** The log in sheet's mobile number field ("Enter Mobile Number"), clicked so the cursor waits in it for the person. */
 const MOBILE_BOX = { op: 'click', role: 'textbox', text: 'mobile' } as const;
 /** ixigo's home page, where the log in sheet opens. */
@@ -406,7 +412,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
    * then there is nothing to hand over (its Login is not there, so the page's time runs out first). A page Bash would
    * not open puts the card back to its ask, saying so.
    */
-  async function handOff(row: LoginRow, runner: Pick<RecipeRunner, 'handOff' | 'release'>): Promise<void> {
+  async function handOff(row: LoginRow, runner: Pick<RecipeRunner, 'handOff' | 'release'>, device: LoginDevice = 'phone'): Promise<void> {
     // The hand-off ends at HANDOFF_MS whatever happens: Bash closes the tab then, and the card goes back to its ask.
     ending.get(row.tripId)?.();
     ending.set(row.tripId, later(HANDOFF_MS, () => track('end', row.tripId, expire(row))));
@@ -415,8 +421,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       ({ captures } = await runner.handOff!(
         row.tripId,
         LOGIN_URL,
-        { capture: [], steps: [LOGIN_BUTTON, MOBILE_BOX], timeoutMs: HANDOFF_PAGE_MS },
-        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' } },
+        { capture: [], steps: [device === 'desktop' ? DESKTOP_LOGIN_BUTTON : LOGIN_BUTTON, MOBILE_BOX], timeoutMs: HANDOFF_PAGE_MS },
+        // A phone is Bash's default; a computer gets ixigo's desktop page.
+        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' }, ...(device === 'desktop' ? { device } : {}) },
       ));
     } catch (err) {
       // Loud, and nothing left open: no second path.
@@ -550,7 +557,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     },
 
     registerTaps(taps) {
-      taps.on('notice', 'ixigo_login', forPerson(async (row) => {
+      taps.on('notice', 'ixigo_login', forPerson(async (row, tap) => {
         const runner = d.runner();
         if (!d.live() || !runner?.handOff) return { result: 'refused', toast: "Go's computer isn't browsing ixigo right now." };
         if (row.state === 'logged_in') return { result: 'done', toast: 'ixigo is already logged in' };
@@ -561,7 +568,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         // The card first (opening, no Watch yet), then the page: whatever the hand-off finds is said after it, never under it.
         track('hand-off', row.tripId, (async () => {
           await show(next, 'opening');
-          await handOff(next, runner);
+          await handOff(next, runner, deviceOf(tap));
         })());
         return { result: 'done', toast: "Opening ixigo's log in on Go's screen" };
       }));
