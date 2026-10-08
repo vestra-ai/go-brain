@@ -104,6 +104,17 @@ describe('a place Go has not searched before', () => {
     expect(got.as === 'options' && got.options.length).toBe(25);
   });
 
+  it("asks ixigo's list once for the same words: asked again before the pick, the same choice with no second load", async () => {
+    const two = JSON.stringify([{ e: 'Udaipur City (UDZ)', c: '' }, { e: 'Udaipur Junction (UDPU)', c: '' }]);
+    const b = browser(() => [capture('searchFor=trainstationsLatLon', 'https://www.ixigo.com/action/content/trainstation?searchFor=trainstationsLatLon&anchor=false&value=Udaipur', two)]);
+    const engine = engineFor(book, b.runner);
+    for (let i = 0; i < 2; i++) {
+      const err = await engine.answer('trains.between', { from: 'Jaipur', to: 'Udaipur', date: '2026-10-20' }, { tripId: 't_udr2' }).catch((e: unknown) => e);
+      expect(err).toMatchObject({ code: 'pick_place', choices: ['Udaipur City (UDZ)', 'Udaipur Junction (UDPU)'] });
+    }
+    expect(b.runs).toHaveLength(1);
+  });
+
   it('is unknown_place when ixigo knows nothing for the words, so the search answers with ixigo\'s own page', async () => {
     const b = browser(() => [capture('/wap/abus-autocompleter/api/v1/results', 'https://www.ixigo.com/wap/abus-autocompleter/api/v1/results?s=Atlantis', '[]')]);
     const err = await engineFor(book, b.runner).answer('buses.between', { from: 'Atlantis', to: 'Goa', date: '2026-11-06' }, { tripId: 't_x' }).catch((e: unknown) => e);
@@ -134,6 +145,26 @@ describe('the fast speed', () => {
     expect(pages).toEqual([]);
     expect(got.as === 'facts' && got.rows[0]).toMatchObject({ destination: 'Goa, India', best_time: 'November - March' });
     expect(engine.stats().map((s) => [s.recipe, s.speed, s.runs, s.failed])).toEqual([['plan.destination', 'fast', 1, 0]]);
+  });
+
+  it("skips the fast speed while Bash takes no page calls, and counts the run as the page's, not a failed fast run", async () => {
+    let can = true;
+    let calls = 0;
+    const runner = {
+      read: async (_t: string, url: string) => ({ captures: [capture('/plan/goa$', url, PAGE)], finalUrl: url }),
+      pageFetch: async () => {
+        calls += 1;
+        // The runner remembers that this Bash takes no page calls (Bash's 400).
+        can = false;
+        throw new TravelError('unreachable', 'fast unavailable: Bash answered 400 invalid_request');
+      },
+      canPageFetch: () => can,
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
+    await engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_fast' });
+    await engine.answer('plan.destination', { place: 'Kerala' }, { tripId: 't_fast' });
+    expect(calls).toBe(1);
+    expect(engine.stats().map((s) => [s.recipe, s.speed, s.runs, s.failed])).toEqual([['plan.destination', 'page', 2, 0]]);
   });
 
   it('falls to the page speed when the call fails, and counts the failed call', async () => {

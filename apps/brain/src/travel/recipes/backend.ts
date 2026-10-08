@@ -13,7 +13,9 @@
  * carries on in it. The composer's own search that fails ends its card failed at once, before Go's line. When a turn ends
  * (turnEnded), a card it left open ends failed. So the room sees one card per search, ending done or failed exactly once,
  * and never after its turn; a search still running when its turn ends keeps its card until the run ends it. A card that
- * ended never reopens: a later ask gets a card of its own.
+ * ended never reopens: a later ask gets a card of its own. A search that stops on a pick (ixigo knows more than one place
+ * for the words) is not a failure: its card says Go is choosing, stays open through the turn's end, and the search after
+ * the pick goes on in it, whatever its words.
  *
  * A search answers inline within TRAVEL_WAIT_MS of its start; past that the search tool goes on and the options come when
  * the run finishes (waitMs).
@@ -114,14 +116,23 @@ export type IxigoWebBackend = TravelBackend & { turnEnded(t: TurnEnd): void };
 /** Whose a live card is: the message whose early start ran its search, or the composer turn whose search tool did. */
 type Owner = { kind: 'message' | 'turn'; id: string } | null;
 
-/** A live card that has not ended: its search running, or a failed early start's card waiting for the composer's search. */
+/**
+ * A live card that has not ended: its search running, a failed early start's card waiting for the composer's search, or
+ * a card waiting on a pick (choosingSince: ixigo knew more than one place, and the search after the pick, whatever its
+ * words, goes on in it).
+ */
 interface OpenCard {
   live: LiveSearch;
+  kind: TravelKind;
   owner: Owner;
   running: boolean;
   /** Why the last run failed, for the card's failed step. */
   code: string;
+  choosingSince: number | null;
 }
+
+/** How long a card waits on a pick: as long as the engine keeps ixigo's list for the model to choose from. */
+export const CHOOSING_MS = 15 * 60_000;
 
 /** Turns and messages remembered as over, so a run that fails after its turn ended ends its card at once. */
 const OVER_MAX = 2_000;
@@ -145,6 +156,20 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     if (cards.get(cardKey) === card) cards.delete(cardKey);
     if (!ok) card.live.progress({ type: 'failed', code: card.code });
     return card.live.finish(ok);
+  }
+
+  /** The trip's cards that waited on a pick past CHOOSING_MS end failed: nobody picked. */
+  function sweepChoosing(tripId: string): void {
+    for (const [k, card] of cards) {
+      if (k.startsWith(`${tripId}|`) && card.choosingSince !== null && d.now().getTime() - card.choosingSince >= CHOOSING_MS) void end(k, card, false);
+    }
+  }
+
+  /** The trip's card waiting on a pick for this kind of search, under its key. */
+  function choosingCard(tripId: string, kind: TravelKind): [string, OpenCard] | null {
+    sweepChoosing(tripId);
+    for (const [k, card] of cards) if (k.startsWith(`${tripId}|`) && card.choosingSince !== null && card.kind === kind) return [k, card];
+    return null;
   }
 
   /** The recipe, its inputs and the search's key, or a plain refusal before anything runs. */
@@ -184,14 +209,23 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         return hit.search;
       }
       const runId = `${key}|${nowMs}`;
-      // A failed early start's card, still open in its turn, carries on with this search; otherwise the run gets its own.
+      // A failed early start's card, still open in its turn, carries on with this search, and so does a card waiting on a
+      // pick of this kind of search, whatever this search's words ("Udaipur City (UDZ)" after "Udaipur"); otherwise the
+      // run gets its own.
       let card = cards.get(cardKey) ?? null;
+      const waiting = card ? null : choosingCard(tripId, kind);
+      if (waiting) {
+        cards.delete(waiting[0]);
+        card = waiting[1];
+        cards.set(cardKey, card);
+      }
       if (card && !card.running) {
         card.running = true;
+        card.choosingSince = null;
         card.owner = owner ?? card.owner;
       } else if (d.live) {
         const make = d.live;
-        card = { live: shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey: runId, kind, query: q })), owner, running: true, code: 'failed' };
+        card = { live: shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey: runId, kind, query: q })), kind, owner, running: true, code: 'failed', choosingSince: null };
         cards.set(cardKey, card);
       } else {
         card = null;
@@ -208,10 +242,19 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         async (err: unknown): Promise<never> => {
           if (card) {
             card.code = err instanceof TravelError ? err.code : 'failed';
-            // A failed early start waits, open, for the composer's search in its turn. Anything else ends failed now,
-            // before the search answers: the composer's own search, a job's, or one whose turn is already over.
-            if (card.owner?.kind === 'message' && !over.has(`${tripId}|${ownerKey(card.owner)}`)) card.running = false;
-            else await end(cardKey, card, false);
+            if (err instanceof TravelError && err.code === 'pick_place') {
+              // Not a failure: the model, or the group, chooses between the places ixigo knows. The card says so and
+              // waits, through the turn's end, for the search after the pick.
+              card.running = false;
+              card.choosingSince = d.now().getTime();
+              card.live.progress({ type: 'choosing', between: err.choices });
+            } else if (card.owner?.kind === 'message' && !over.has(`${tripId}|${ownerKey(card.owner)}`)) {
+              // A failed early start waits, open, for the composer's search in its turn. Anything else ends failed now,
+              // before the search answers: the composer's own search, a job's, or one whose turn is already over.
+              card.running = false;
+            } else {
+              await end(cardKey, card, false);
+            }
           }
           throw err;
         },
@@ -252,10 +295,12 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         if (oldest === undefined) break;
         over.delete(oldest);
       }
-      // A card the turn left open ends failed; one whose search still runs is ended by its run.
+      // A card the turn left open ends failed; one whose search still runs is ended by its run, and one waiting on a pick
+      // waits on (the group may be choosing), up to CHOOSING_MS.
       for (const [k, card] of cards) {
-        if (k.startsWith(`${t.tripId}|`) && !card.running && owners.has(ownerKey(card.owner))) void end(k, card, false);
+        if (k.startsWith(`${t.tripId}|`) && !card.running && card.choosingSince === null && owners.has(ownerKey(card.owner))) void end(k, card, false);
       }
+      sweepChoosing(t.tripId);
     },
     async status() {
       throw new TravelError('refused', "Flight and PNR status aren't read from ixigo.com yet.");

@@ -150,6 +150,30 @@ describe('the live search card', () => {
     expect(r.cards().at(-1)).toMatchObject({ state: 'done', screenshot_url: null, page_url: null });
   });
 
+  it("never fails on a pick: it says Go is choosing between ixigo's places, and the search after the pick ticks on in it", async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_pick', kind: 'trains', query: { from: 'Jaipur', to: 'Udaipur', date: '2026-10-20' } });
+    live.progress({ type: 'choosing', between: ['Udaipur City (UDZ)', 'Udaipur Junction (UDPU)'] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.cards().at(-1)).toMatchObject({
+      state: 'running',
+      steps: [
+        { text: 'Choosing between Udaipur City (UDZ) and Udaipur Junction (UDPU)', state: 'doing' },
+        { text: 'Opening ixigo trains', state: 'todo' },
+        { text: 'Reading the results', state: 'todo' },
+        { text: 'Picking the best trains', state: 'todo' },
+      ],
+    });
+    // The search after the pick.
+    live.progress({ type: 'opening', recipeId: 'trains.between', url: RESULTS });
+    live.progress({ type: 'captured', ms: 900 });
+    live.progress({ type: 'extracted', count: 25 });
+    await live.finish(true);
+    expect(r.cards().at(-1)!.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done']);
+    expect(r.cards().some((c) => c.state === 'failed')).toBe(false);
+    expect(new Set(r.cards().map((c) => c.card_id)).size).toBe(1);
+  });
+
   it('a failed run marks the card failed at the step it was on, and a later finish keeps it failed', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k5', ...FLIGHTS });

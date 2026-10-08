@@ -3,7 +3,7 @@ import { V1Error } from '../../../tasks/v1-client.js';
 import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
-import { createBrowserFetchRunner, FAST_TIMEOUT_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, WARM_TAB_MS, type FetchTrace } from '../runners.js';
+import { createBrowserFetchRunner, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, WARM_TAB_MS, type FetchTrace } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
 type Call = { method: string; path: string; opts: Record<string, unknown> };
@@ -170,6 +170,28 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     // An answer with no page call in it at all: fast is unavailable too, not a crash.
     const odd = world(() => ({ final_url: 'https://www.ixigo.com/', elapsed_ms: 10, woke: false }));
     await fails(createBrowserFetchRunner(odd.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }), 'unreachable', /fast unavailable: Bash's answer had no page call/);
+  });
+
+  it('remembers for 10 minutes that a Bash takes no page calls, asking it nothing meanwhile, then tries again', async () => {
+    const w = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input: expected string, received undefined');
+    });
+    const runner = createBrowserFetchRunner(w.deps);
+    expect(runner.canPageFetch!()).toBe(true);
+    await runner.pageFetch!('t1', { url: '/plan/goa', method: 'GET' }).catch(() => undefined);
+    expect(runner.canPageFetch!()).toBe(false);
+    await fails(runner.pageFetch!('t1', { url: '/plan/goa', method: 'GET' }), 'unreachable', /takes no page calls/);
+    expect(w.calls).toHaveLength(1);
+    // Once Bash has page_fetch, page calls resume within 10 minutes, with no deploy of Go's.
+    await w.deps.sleep(FAST_UNSUPPORTED_MS);
+    expect(runner.canPageFetch!()).toBe(true);
+    // A refusal for one call (403, a blocked page) is not a Bash without page_fetch.
+    const blocked = world(() => {
+      throw new V1Error(403, 'page_blocked', 'Blocked.');
+    });
+    const other = createBrowserFetchRunner(blocked.deps);
+    await other.pageFetch!('t1', { url: '/payments/x', method: 'GET' }).catch(() => undefined);
+    expect(other.canPageFetch!()).toBe(true);
   });
 
   it('logs where a page was when its time ran out, as Bash says it, so the next drill shows the step', async () => {
