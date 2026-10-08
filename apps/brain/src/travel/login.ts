@@ -135,6 +135,8 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
     case 'logging_in':
       return {
         ...base,
+        // Not logged in yet: a heads-up, so the room's sheet shows the line to the person looking at it.
+        ...(note === 'not_yet' ? { tone: 'heads_up' as const } : {}),
         title: 'Logging in to ixigo',
         body: note === 'not_yet'
           ? 'Not logged in yet. Finish on Watch, then tap again.'

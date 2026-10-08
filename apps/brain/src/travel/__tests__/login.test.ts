@@ -399,7 +399,7 @@ describe('logging in', () => {
     // An early tap, still waiting for the code: the window stays in front, untouched.
     expect(await w.state()).toBe('logging_in');
     expect(w.releases).toEqual([]);
-    expect(w.last().body).toBe('Not logged in yet. Finish on Watch, then tap again.');
+    expect(w.last()).toMatchObject({ tone: 'heads_up', body: 'Not logged in yet. Finish on Watch, then tap again.' });
 
     await w.tap('ixigo_logged_in', 'p_rahul');
     expect(await w.state()).toBe('logged_in');
