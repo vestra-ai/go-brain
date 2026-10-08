@@ -138,5 +138,8 @@ answer:
       $seen := $a ? $a : ($b ? $b : $side(facts.distance));
       $not($exists($half)) or $not($exists($seen)) or $seen = $half
     )
+# A search is kept for 30 minutes, so the trip's stays head start (warm.ts) still answers the first ask a while after
+# setup; the options card says when ixigo was checked.
+ttl_minutes: 30
 measured: { fast_ms: null, page_ms: 5000, flow_ms: null }
 notes: 10 hotels a page. Each card links to the hotel's own page, where a room's select starts the booking.

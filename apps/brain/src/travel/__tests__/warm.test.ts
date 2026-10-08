@@ -109,8 +109,11 @@ describe(`createIxigoWarm (${IXIGO_WARM_STEP}): the new computer's first ixigo v
     await expect(warm.run('t_down')).resolves.toBeUndefined();
     expect(b.log.warn).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't_down', tries: IXIGO_WARM_TRIES }), expect.stringContaining('its warm is done with a warning'));
     expect(warm.stat()).toEqual({ recipe: IXIGO_WARM_STEP, speed: 'page', runs: IXIGO_WARM_TRIES, failed: IXIGO_WARM_TRIES, p50_ms: null, p90_ms: null });
+    // The trip's stays head start asks this, and runs nothing for it.
+    expect(warm.gaveUp('t_down')).toBe(true);
     // Another trip's count is its own.
     await expect(warm.run('t_other')).rejects.toThrow(/did not answer/);
+    expect(warm.gaveUp('t_other')).toBe(false);
   });
 
   it('says nothing in the health view before its first visit, then how often and how fast ixigo answered', async () => {

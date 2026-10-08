@@ -78,12 +78,14 @@ describe('the recipe helpers', () => {
     expect(istOf(Date.parse('2026-11-06T13:00:00Z'))).toBe('2026-11-06T18:30:00+05:30');
   });
 
-  it("cover every kind of search with a recipe in the book, each reusing a result for 10 minutes", () => {
+  it("cover every kind of search with a recipe in the book, each reusing a result for 10 minutes, a stays one for 30", () => {
     const { book } = loadBook();
     expect(Object.keys(SEARCH_RECIPES).sort()).toEqual(['buses', 'flights', 'stays', 'trains']);
     for (const id of Object.values(SEARCH_RECIPES)) {
       const r = book.get(id)!;
-      expect(r.ttl_minutes, id).toBe(10);
+      // Stays: the trip's stays head start (warm.ts) runs before anyone asks, so its search is kept long enough for the
+      // first ask to come; the options card says when ixigo was checked.
+      expect(r.ttl_minutes, id).toBe(id === 'hotels.search' ? 30 : 10);
       // Flights are a link: ixigo answers flight pages with a 403 from the boxes' shared egress.
       expect(r.answer.as, id).toBe(id === 'flights.search' ? 'link' : 'options');
     }

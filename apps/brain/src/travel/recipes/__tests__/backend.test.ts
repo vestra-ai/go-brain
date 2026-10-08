@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadBook } from '../../book/book.js';
 import { createEngine, type Engine } from '../../book/engine.js';
 import { TravelError } from '../../mcp-travel.js';
-import { CARD_DELAY_MS, CHOOSING_MS, createIxigoWebBackend, TRAVEL_WAIT_MS } from '../backend.js';
+import { CARD_DELAY_MS, CHOOSING_MS, createIxigoWebBackend, NARROW_MIN, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -384,5 +384,90 @@ describe('a fast answer', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/** A stay as hotels.search reads one: with a pool or not (facts.pool), and any other fact it says. */
+const stay = (n: number, pool: boolean, more: Record<string, boolean> = {}): RecipeOption => ({
+  kind: 'stay', title: `Stay ${n}`, priceMinor: 500_000 + n, currency: 'INR', priceNote: 'per night, per room', highlights: pool ? ['Pool'] : [],
+  facts: { pool, ...more }, sourceUrl: `https://www.ixigo.com/hotels/${n}/details`,
+});
+const IXIGO_POOL_LIST = [stay(91, true), stay(92, true), stay(93, true), stay(94, true)];
+/** The trip's stays head start: its destination and dates, no conditions (warm.ts createStaysHeadStart). */
+const HEAD = { place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' };
+const POOL = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
+
+/**
+ * hotels.search scripted: with no conditions it lists `wide` (checked at 12:00), and with any it lists ixigo's own filtered
+ * stays (checked at 12:20). Each run is recorded with its conditions and whether it ran in the background.
+ */
+function staysEngine(wide: RecipeOption[]) {
+  const runs: Array<{ conditions: string[]; background: boolean }> = [];
+  const answer: Answer = async (_id, _given, o) => {
+    const conditions = o.conditions ?? [];
+    runs.push({ conditions, background: o.background === true });
+    return conditions.length > 0
+      ? { as: 'options', options: IXIGO_POOL_LIST, page: 'https://www.ixigo.com/hotels/search/result?filters=FL_HF_29', checkedAt: '2026-10-07T12:20:00.000Z', ms: 9_000 }
+      : { as: 'options', options: wide, page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-07T12:00:00.000Z', ms: 9_000 };
+  };
+  const cards: string[] = [];
+  const b = createIxigoWebBackend({
+    book, engine: { answer }, now, cardDelayMs: 0,
+    live: ((tripId: string) => { cards.push(tripId); return { progress: () => undefined, finish: async () => undefined }; }) as never,
+  });
+  /** The head start: hotels.search for the trip's place and dates, through Go's searches, kept once it finishes. */
+  const headStart = async (): Promise<void> => {
+    const shared = await b.shareStep('hotels.search', HEAD, { tripId: 't_goa', conditions: [] }, () => answer('hotels.search', HEAD, { tripId: 't_goa', conditions: [] }));
+    await shared?.answer;
+    await tick();
+  };
+  return { b, runs, cards, headStart };
+}
+
+describe('a stays ask answered from a kept search with no conditions (the head start)', () => {
+  it("answers a pool ask at once from the kept list, its stays with a pool, in one search with no live card", async () => {
+    const s = staysEngine([stay(1, true), stay(2, false), stay(3, true), stay(4, true), stay(5, false)]);
+    await s.headStart();
+    const found = await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 3', 'Stay 4']);
+    // The card says when the kept list was checked, and "See all on ixigo" opens that page.
+    expect(found).toMatchObject({ checkedAt: '2026-10-07T12:00:00.000Z', page: 'https://www.ixigo.com/hotels/search/result' });
+    expect(s.cards).toEqual([]);
+    // ixigo's own pool search starts in the background: no card, no hold.
+    expect(s.runs).toEqual([{ conditions: [], background: false }, { conditions: ['pool'], background: true }]);
+    // A condition that is not the page's (a beach) is Go's own filter's: the pool still narrows.
+    const near = await s.b.search('stays', { ...POOL, mustHave: ['pool', 'beach'] }, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(near.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 3', 'Stay 4']);
+  });
+
+  it('keeps the filtered search it ran: the next pool ask answers from it, loading nothing', async () => {
+    const s = staysEngine([stay(1, true), stay(2, true), stay(3, true)]);
+    await s.headStart();
+    await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
+    await tick();
+    const again = await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(again.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
+    expect(again.checkedAt).toBe('2026-10-07T12:20:00.000Z');
+    expect(s.runs).toHaveLength(2);
+    expect(s.cards).toEqual([]);
+  });
+
+  it(`runs its own search, with its card, when fewer than ${NARROW_MIN} kept stays have a pool`, async () => {
+    const s = staysEngine([stay(1, true), stay(2, true), stay(3, false), stay(4, false)]);
+    await s.headStart();
+    const found = await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
+    expect(s.runs).toEqual([{ conditions: [], background: false }, { conditions: ['pool'], background: false }]);
+    expect(s.cards).toEqual(['t_goa']);
+  });
+
+  it("runs its own search for a page condition the stays don't say (paying at the hotel), and with no kept search", async () => {
+    const s = staysEngine([stay(1, true), stay(2, true), stay(3, true)]);
+    await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_0' });
+    expect(s.runs).toEqual([{ conditions: ['pool'], background: false }]);
+    await s.headStart();
+    await s.b.search('stays', { ...POOL, mustHave: ['pay_at_hotel'] }, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(s.runs.at(-1)).toEqual({ conditions: ['pay_at_hotel'], background: false });
+    expect(s.cards).toEqual(['t_goa', 't_goa']);
   });
 });

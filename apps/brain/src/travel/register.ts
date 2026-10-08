@@ -28,7 +28,7 @@ import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
-import { createIxigoWarm, IXIGO_WARM_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
+import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
@@ -118,11 +118,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     now: brain.now,
     log: brain.log,
   });
-  // The warm step's line too: how often ixigo answered a new trip's computer, and how fast.
-  brain.recipeStats = () => {
-    const warm = ixigoWarm.stat();
-    return warm ? [...engine.stats(), warm] : engine.stats();
-  };
+  // The warm step's line too: how often ixigo answered a new trip's computer, and how fast; and the stays head start's.
+  brain.recipeStats = () => [...engine.stats(), ...[ixigoWarm.stat(), headStart.stat()].filter((s) => s !== null)];
   // The watches going, per trip (how many, the next check), for the stage desk and the health view.
   brain.recipeWatches = () => watchesNow(brain.pool);
   const ixigoWeb = createIxigoWebBackend({
@@ -131,6 +128,27 @@ export const registerTravel: RegisterLane = async (brain) => {
     now: brain.now,
     live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log }, tripId, o),
   });
+  // The trip's likely first stays search, before anyone asks: after the warm at setup, when its dates or destination
+  // change, and on a line after the last one ran out. Through Go's searches (shareStep), so no card, and the ask joins it.
+  const headStart = createStaysHeadStart({
+    switches: brain.switches,
+    now: brain.now,
+    log: brain.log,
+    trip: async (tripId) => {
+      const { destination, dates } = (await brain.packs.get(tripId)).trip;
+      return { destination: destination?.name ?? null, start: dates?.start ?? null, end: dates?.end ?? null };
+    },
+    today: tripToday(brain.pool, brain.now),
+    share: (tripId, ask, run) => ixigoWeb.shareStep('hotels.search', { ...ask }, { tripId, conditions: [], background: true }, run),
+    run: (tripId, ask) => engine.answer('hotels.search', { ...ask }, { tripId, conditions: [], background: true }),
+    ttlMs: (book.get('hotels.search')?.ttl_minutes ?? 10) * 60_000,
+    warmGaveUp: (tripId) => ixigoWarm.gaveUp(tripId),
+    computerSetUp: () => brain.recipeRunners !== undefined,
+  });
+  brain.setup.addStep({ name: STAYS_HEAD_START_STEP, after: IXIGO_WARM_STEP, run: (tripId) => headStart.atSetup(tripId) });
+  brain.tripLog.onEvent((ev) => headStart.onEvent(ev));
+  const stopHeadStarts = (): void => headStart.stop();
+  brain.onStop(stopHeadStarts);
   const travel = createTravelLayer({
     switches: brain.switches,
     now: brain.now,
