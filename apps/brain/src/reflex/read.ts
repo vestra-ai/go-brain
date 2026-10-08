@@ -48,6 +48,12 @@ const atMost = (p: number, bar: number): boolean => Number.isFinite(p) && p <= b
 const allAtMost = (ps: number[], bar: number): boolean => ps.every((p) => atMost(p, bar));
 const anyAtLeast = (ps: number[], bar: number): boolean => ps.some((p) => atLeast(p, bar));
 
+/**
+ * Jev reads the line as moving the plan (question 6, live): a question to the group about the trip that is not settled
+ * yet, or agreeing to a plan. Go may answer it, offer the next step or offer a vote, so the turn decides.
+ */
+const movesPlan = (a: Answers, b: Bars): boolean => anyAtLeast([noulP(a, 'q6_open'), noulP(a, 'q6_agreed')], b.for_go.planMin);
+
 function readForGo(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
   if (f.namesGo) return sure(true);
   const addressed = noulP(a, 'q1_addressed');
@@ -55,9 +61,9 @@ function readForGo(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
   // A line about money is never read as not for Go: only a turn records an expense or asks what it was for.
   if (!f.money) {
     if (atLeast(chatter, b.for_go.chatterMin) && atMost(addressed, b.for_go.addressedMaxForChatter)) return sure(false);
-    // No one spoke to Go (a fact, a plan, friends talking): not for Go, though not chatter. The chatter answer must be
-    // well formed too, so an odd answer still reads unsure.
-    if (atMost(addressed, b.for_go.notAddressedMax) && Number.isFinite(chatter)) return sure(false);
+    // No one spoke to Go (a fact, friends talking): not for Go, though not chatter, unless the line moves the plan. The
+    // chatter answer must be well formed too, so an odd answer still reads unsure.
+    if (atMost(addressed, b.for_go.notAddressedMax) && Number.isFinite(chatter) && !movesPlan(a, b)) return sure(false);
     // No answer from Jev (a timeout or an error): small talk ("gn 😴", "haha 😂") says nothing to Go; any other line wakes.
     if (!Number.isFinite(addressed) && !Number.isFinite(chatter) && f.smallTalk) return sure(false);
   }

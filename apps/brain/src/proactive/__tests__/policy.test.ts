@@ -3,6 +3,8 @@ import { addDays, isNight, localDay, localHour, nextMorning, tomorrowMorning, zo
 import {
   BARS,
   DAILY_POSTS,
+  HUSH_RAISE,
+  NIGHT_RAISE,
   RECHECK_MS,
   SMALL_HOLD_MS,
   barRaise,
@@ -127,12 +129,13 @@ describe('decide', () => {
   });
 
   it('holds a message that would pass by day until 8 am', () => {
-    const c = cand({ topic: 'vote_closed', source: 'opening', importance: 0.8, urgency: 0.8, useful: ['message'], personIds: [] });
+    const c = cand({ topic: 'vote_closed', source: 'opening', importance: 0.7, urgency: 0.7, useful: ['message'], personIds: [] });
+    expect(decide(c, mood(), NOON)).toMatchObject({ kind: 'go', allowed: ['message'] });
     expect(decide(c, mood(), LATE)).toEqual({ kind: 'wait', until: new Date('2026-10-07T02:30:00.000Z'), reason: 'night' });
   });
 
   it('drops a night nudge that expires before morning', () => {
-    const c = cand({ importance: 0.8, urgency: 0.8, useful: ['message'], personIds: [], expiresAt: new Date(LATE.getTime() + 3600_000) });
+    const c = cand({ importance: 0.7, urgency: 0.7, useful: ['message'], personIds: [], expiresAt: new Date(LATE.getTime() + 3600_000) });
     expect(decide(c, mood(), LATE)).toEqual({ kind: 'drop', reason: 'below_bar' });
   });
 
@@ -164,8 +167,32 @@ describe('decide', () => {
   });
 
   it('lets a hush lower how chatty Go is', () => {
-    const hushed = mood({ hushCount: 1, lastHushAt: NOON });
-    expect(decide(chat(), hushed, NOON)).toMatchObject({ kind: 'go', allowed: ['react', 'record'], counted: false });
+    // One hush lifts the message bar from 0.3 to 0.45, which a chat opening (0.49) still clears; two (0.6) keep it quiet.
+    const once = decide(chat(), mood({ hushCount: 1, lastHushAt: NOON }), NOON);
+    expect(once).toMatchObject({ kind: 'go', allowed: ['react', 'record', 'message'], counted: true });
+    expect((once as { bar: number }).bar).toBeCloseTo(0.45);
+    const twice = mood({ hushCount: 2, lastHushAt: NOON });
+    expect(decide(chat(), twice, NOON)).toMatchObject({ kind: 'go', allowed: ['react', 'record'], counted: false });
+  });
+
+  it('is proactive (Keshav, 2026-10-08): a message clears 0.3, eight posts a day, and the night and hush raises kept', () => {
+    expect(BARS.message).toBe(0.3);
+    expect(DAILY_POSTS).toBe(8);
+    expect(NIGHT_RAISE).toBe(0.25);
+    expect(HUSH_RAISE).toBe(0.15);
+    // A day timer (0.48) posts by day, which the old 0.45 bar also let through, and still waits for 8 am at night.
+    const day = cand({ source: 'timer', topic: 'travel_day', importance: 0.6, urgency: 0.8, useful: ['message'], personIds: [] });
+    expect(decide(day, mood(), NOON)).toMatchObject({ kind: 'go', allowed: ['message'], counted: true });
+    expect(decide(day, mood(), LATE)).toMatchObject({ kind: 'wait', reason: 'night' });
+    // A nudge at 0.35 posts now; under 0.45 it was dropped.
+    const plain = cand({ importance: 0.5, confidence: 1, urgency: 0.7, useful: ['message'], personIds: [] });
+    expect(decide(plain, mood(), NOON)).toMatchObject({ kind: 'go', allowed: ['message'] });
+    // The eighth post of the day goes; the ninth waits for tomorrow.
+    expect(decide(day, mood({ postsToday: 7 }), NOON)).toMatchObject({ kind: 'go', allowed: ['message'] });
+    expect(decide(day, mood({ postsToday: 8 }), NOON)).toEqual({ kind: 'wait', until: new Date('2026-10-07T02:30:00.000Z'), reason: 'budget' });
+    // Never two in a row: after Go's own post with nobody since, even a proactive message waits for a person.
+    const last = mood({ lastGoMessageAt: new Date('2026-10-06T06:10:00Z'), lastPersonMessageAt: new Date('2026-10-06T06:00:00Z') });
+    expect(decide(chat(), last, NOON)).toMatchObject({ kind: 'go', allowed: ['react', 'record'], counted: false });
   });
 
   it('never pings someone who paused Go', () => {
