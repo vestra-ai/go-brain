@@ -158,13 +158,14 @@ export const LIVE_SCRIPT = `
     switch (e.type) {
       case 'state': s.state = e.state; break;
       case 'tab_open':
-        if (!t) { s.tabs[e.tab_id] = { id: e.tab_id, frame: null, hidden: false }; s.order.push(e.tab_id); }
+        if (!t) { s.tabs[e.tab_id] = { id: e.tab_id, frame: null, hidden: false, tag: e.tag || null }; s.order.push(e.tab_id); }
         break;
       case 'frame':
-        if (!t) { screenEvent({ type: 'tab_open', tab_id: e.tab_id }); t = s.tabs[e.tab_id]; }
+        if (!t) { screenEvent({ type: 'tab_open', tab_id: e.tab_id, tag: e.tag }); t = s.tabs[e.tab_id]; }
+        if (e.tag) t.tag = e.tag;
         if (!t.hidden) t.frame = e;
         break;
-      case 'hidden': if (t) { t.hidden = true; t.frame = null; } break;
+      case 'hidden': if (t) { t.hidden = true; t.frame = null; if (e.tag) t.tag = e.tag; } break;
       case 'tab_close':
         delete s.tabs[e.tab_id];
         s.order = s.order.filter(function (id) { return id !== e.tab_id; });
@@ -268,7 +269,10 @@ export const LIVE_SCRIPT = `
       var t = live.screen.tabs[els[i].getAttribute('data-tab')];
       if (!t) continue;
       els[i].className = 'tile';
-      els[i].querySelector('.tile-bar').innerHTML = '<span class="speed live">LIVE</span><span class="url">' + esc(t.hidden ? 'Not shown' : t.frame ? 'ixigo.com' + t.frame.page : 'Opening') + '</span>';
+      // The run whose fetch has the tab now (the fetch's tag is its run id), when the strip knows it.
+      var run = t.tag ? live.runs[t.tag] : null;
+      els[i].querySelector('.tile-bar').innerHTML = '<span class="speed live">LIVE</span>' + (run ? '<b>' + esc(tileLabel(run)) + '</b>' + badges(run) : '') +
+        '<span class="url">' + esc(t.hidden ? 'Not shown' : t.frame ? 'ixigo.com' + t.frame.page : 'Opening') + '</span>';
       var view = els[i].querySelector('.view');
       view.className = 'view' + (t.hidden ? ' hidden' : '');
       var img = view.querySelector('img');

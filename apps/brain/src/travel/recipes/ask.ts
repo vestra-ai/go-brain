@@ -34,8 +34,9 @@ const KINDS: Array<[TravelKind, RegExp]> = [
   ['stays', /\b(hotels?|stays?|villas?|resorts?|homestays?|airbnbs?|places? to stay)\b/i],
 ];
 
-/** Another job for Go about the same things: a vote, a booking, a payment, a reminder. Never a search to start. */
-const NOT_A_SEARCH = /\b(vote|votes|voting|poll|book|booked|booking|pay|paid|payment|cancel|remind)\b/i;
+/** Another job for Go about the same things: a vote, a booking, a payment, a reminder, ixigo's offers ("any ixigo offers on
+ *  hotels right now?" started a stays search on staging, 8 Oct, and its card was Go's only answer). Never a search to start. */
+const NOT_A_SEARCH = /\b(vote|votes|voting|poll|book|booked|booking|pay|paid|payment|cancel|remind|offers?|deals?|discounts?|coupons?|promos?|cashback)\b/i;
 /** A watch the group asks Go to keep ("let us know if a pool stay goes under 3k", "tell us when it confirms"): the
  *  composer's watch_ixigo, never a search started early (8 Oct drill: one ran, failed, and cost a load and 12 s). */
 const A_WATCH = /\b(let (us|me) know (if|when)|tell (us|me) (if|when)|notify|alert (us|me)|keep an eye|watch(ing)?|bata(na|dena) (jab|agar))\b/i;

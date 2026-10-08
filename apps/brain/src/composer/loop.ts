@@ -4,6 +4,7 @@ import type { Budget, Reservation } from '../budget.js';
 import type { AnthropicLike } from './anthropic.js';
 import { computeAnthropicCostUsd, estimateCostUsd, normalizeAnthropicUsage, resolveCapabilities, type AnthropicUsage } from './anthropic-helpers.js';
 import type { TextBlock } from './context.js';
+import { withoutRefused, type Refusals } from './sanitize.js';
 import { SAY_NOTHING, STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
 
 export const MAX_ROUNDS = 4;
@@ -182,6 +183,32 @@ export function roundNotes(
   return notes;
 }
 
+/** Whether a tool's answer says it did nothing: an error, or an answer that refused ("refused", "error", ok: false). */
+function refusedResult(r: Anthropic.ToolResultBlockParam): boolean {
+  if (r.is_error) return true;
+  if (typeof r.content !== 'string') return false;
+  try {
+    const o = JSON.parse(r.content) as unknown;
+    return typeof o === 'object' && o !== null && ('refused' in o || 'error' in o || (o as { ok?: unknown }).ok === false);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What the turn's calls so far rule out of its reply (sanitize.ts withoutRefused): the tools that refused quietly, and the
+ * claims of a tool that was called this turn and refused every time. A tool not called this turn rules nothing out: a
+ * plain "Noted, Priya" with no record call stands.
+ */
+function refusalsOf(seen: ReadonlyArray<{ name: string; refused: boolean; quiet: boolean }>, byName: ReadonlyMap<string, QuickTool<any>>): Refusals {
+  const went = new Set(seen.filter((s) => !s.refused).map((s) => s.name));
+  const refused = [...new Set(seen.filter((s) => s.refused && !went.has(s.name)).map((s) => s.name))];
+  return {
+    names: [...new Set(seen.filter((s) => s.quiet).map((s) => s.name))],
+    claims: refused.flatMap((n) => byName.get(n)?.claims ?? []),
+  };
+}
+
 async function runTool(tool: QuickTool<any> | undefined, call: Anthropic.ToolUseBlock, i: LoopInput): Promise<Anthropic.ToolResultBlockParam> {
   const result = (content: string, isError = false): Anthropic.ToolResultBlockParam => ({
     type: 'tool_result',
@@ -236,6 +263,10 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   const timings: RoundTiming[] = [];
   let firstToken = false;
   let latestText = '';
+  // Every call this turn and whether it was refused, quietly or not: the reply never narrates a quiet refusal, and never
+  // claims the work of a tool that did nothing (8 Oct: "The record call was refused, so I'll… Noted, …").
+  const seen: Array<{ name: string; refused: boolean; quiet: boolean }> = [];
+  const clean = (t: string): string => withoutRefused(t, refusalsOf(seen, byName));
   for (let round = 1; round <= maxRounds; round++) {
     // Every round marks its newest block, the first too: a round after it reads the whole prompt so far from the cache.
     let outgoing = withRollingMarker(messages);
@@ -253,7 +284,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     // turn keeps what it has.
     const hold = i.budget ? i.budget.reserve({ purpose: 'composer', model: i.model, usd: estimateCostUsd(i.model, body, body.max_tokens) }) : null;
     if (i.budget && !hold) {
-      return { text: latestText, silent: i.ctx.outcome.silent, rounds: round - 1, usage, messages, stopReason: 'over_budget', timings };
+      return { text: clean(latestText), silent: i.ctx.outcome.silent, rounds: round - 1, usage, messages, stopReason: 'over_budget', timings };
     }
     const asked = Date.now();
     let firstDelta: number | null = null;
@@ -288,7 +319,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     messages.push({ role: 'assistant', content: said.length || !latestText ? said : [{ type: 'text', text: latestText }] });
     const calls = reply.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (reply.stop_reason !== 'tool_use' || calls.length === 0) {
-      return { text: text || latestText, silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason, timings };
+      return { text: clean(text || latestText), silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason, timings };
     }
     timing.tools = calls.map((c) => c.name);
     const toolsFrom = Date.now();
@@ -310,6 +341,11 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
       results.push(...(await Promise.all(calls.map((c) => runTool(byName.get(c.name), c, i)))));
     }
     timing.toolMs = Date.now() - toolsFrom;
+    calls.forEach((c, k) => {
+      const r = results[k];
+      if (!r) return;
+      seen.push({ name: c.name, refused: refusedResult(r), quiet: typeof r.content === 'string' && r.content.includes(SAY_NOTHING) });
+    });
     messages.push({ role: 'user', content: [...results, ...roundNotes(calls, results, byName)] });
     if (calls.some((c) => c.name === STAY_SILENT)) {
       i.ctx.outcome.silent = true;
@@ -318,10 +354,10 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     // A card that went up with its line: the line is this reply's words. The reply's free text was written before the
     // card was up ("I'll show the best three…"), so it never goes out.
     const lines = [...new Set(i.ctx.lines.slice(linesBefore).map((l) => l.trim()).filter((l) => l !== ''))];
-    const words = lines.length > 0 ? lines.join('\n') : text;
+    const words = lines.length > 0 ? lines.join('\n') : clean(text);
     if (lines.length > 0) latestText = words;
     // A tool that answered itself (a finished plain search put up its card and line): the turn ends on its card too.
     if (allUp || (i.ctx.answered && lines.length > 0)) return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP, timings };
   }
-  return { text: latestText, silent: i.ctx.outcome.silent, rounds: maxRounds, usage, messages, stopReason: 'max_rounds', timings };
+  return { text: clean(latestText), silent: i.ctx.outcome.silent, rounds: maxRounds, usage, messages, stopReason: 'max_rounds', timings };
 }

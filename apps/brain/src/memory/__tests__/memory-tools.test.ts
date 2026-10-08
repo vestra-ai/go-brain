@@ -99,6 +99,18 @@ describe('quick tools', () => {
     expect(adds.map((x) => x.params.request_id)).toEqual(['go_record_turn_1_1', 'go_record_turn_1_2']);
   });
 
+  it("record() never puts a job against someone on another person's word: it asks them to confirm, and a reply can't say noted", async () => {
+    // The 8 Oct rerun: Priya's "note that Arjun is bringing the speaker". Only Arjun's own line makes it his.
+    const out = await tool('record').run({ kind: 'doing', text: 'Arjun brings the speaker', person_ids: ['p_arjun'], proof_message_ids: ['m_0122'] }, ctx());
+    expect(out).toEqual({
+      refused: 'a doing line names someone who did not say they would do it',
+      tell_the_room: "Only Arjun can put this against their own name. Ask Arjun in one line to confirm it, and don't say it is noted until they do.",
+    });
+    const claims = tool('record').claims!;
+    expect(claims.test("Noted, speaker for the beach day is down as Arjun's.")).toBe(true);
+    expect(claims.test("Arjun, are you bringing the speaker? I'll note it once you say so.")).toBe(false);
+  });
+
   it('trip() returns the basics and the record', async () => {
     await mirrorLine(db.pool, 't_goa', rl({ line_id: 'r_scuba', kind: 'open', text: 'Scuba on Saturday?', person_ids: ['p_meher', 'p_kabir'], proof: [{ message_id: 'm_0150', person_id: 'p_meher' }] }), 160);
     const out = (await tool('trip').run({}, ctx())) as { title: string; record: string; people: unknown[] };

@@ -644,6 +644,8 @@ describe('Go Live', () => {
     expect(html).toContain("steps: 'GROUP'");
     expect(html).toContain('<div class="tile group" data-run="');
     expect(html).toContain("return r.lane ? r.lane + ': ' + r.label : r.label;");
+    // A live tab carries the run whose fetch has it (Bash echoes the fetch's tag), and its tile that run's label.
+    expect(html).toContain('var run = t.tag ? live.runs[t.tag] : null;');
     expect(html).not.toContain('—');
     const script = html.slice(html.indexOf('<script nonce="n0nce">') + '<script nonce="n0nce">'.length, html.indexOf('</script>'));
     expect(() => new Function(script)).not.toThrow();

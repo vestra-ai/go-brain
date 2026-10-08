@@ -7,7 +7,7 @@ import type { TripPack } from '../../trips/pack.js';
 import { createContext, formatTime, type TextBlock } from '../context.js';
 import { answersToGo } from '../fence.js';
 import { GO_RULES } from '../rules.js';
-import { tripNow } from '../trip-now.js';
+import { datesLine, tripNow } from '../trip-now.js';
 import { ASK_HOW_MUCH, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
 const PEOPLE = ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'];
@@ -442,6 +442,17 @@ describe('why Go woke, and the trip block', () => {
     expect(block).toContain('<data source="people">');
     expect(block).toContain('Priya (p_priya): from Delhi; Vegetarian; Window seat');
     expect(block).toContain('Open vote d_stay: <data>Where do we stay?</data>: <data>Villa Sol</data> 1, <data>Casa Azul</data> 0 (1 of 5 voted)');
+  });
+
+  it("gives the trip's dates with their weekdays, every day of a short trip, so a vote on Saturday or Sunday has its dates (8 Oct drill)", async () => {
+    const block = await tripNow({ get: async () => packOf([], goaSnapshot()), invalidate: () => undefined }).render('t_goa', []);
+    // The drill: given 2026-11-06 to 2026-11-09, Go put the beach day on "Saturday (8 Nov)". 6 Nov 2026 is a Friday.
+    expect(block).toContain('Dates: Fri 6 Nov to Mon 9 Nov 2026 (3 nights): Fri 6 Nov, Sat 7 Nov, Sun 8 Nov, Mon 9 Nov');
+    expect(block).not.toContain('2026-11-06');
+    expect(datesLine('2026-12-30', '2027-01-02')).toBe('Wed 30 Dec 2026 to Sat 2 Jan 2027 (3 nights): Wed 30 Dec, Thu 31 Dec, Fri 1 Jan, Sat 2 Jan');
+    expect(datesLine('2026-11-07', '2026-11-07')).toBe('Sat 7 Nov to Sat 7 Nov 2026 (a day trip): Sat 7 Nov');
+    // A long trip: the range and its weekdays, not every day.
+    expect(datesLine('2026-11-01', '2026-11-30')).toBe('Sun 1 Nov to Mon 30 Nov 2026 (29 nights)');
   });
 
   it('names who has voted and who has not on an open vote, never what they picked; a secret ballot is counts only (8 Oct drill)', async () => {
