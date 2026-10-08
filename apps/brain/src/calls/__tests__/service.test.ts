@@ -117,6 +117,15 @@ describe('request', () => {
     expect((await store.get(b.callId))?.business).toBe('Villa Sol');
   });
 
+  it('gives the people the announce names a push (the Server team: mentions were never sent), and nobody when it names none', async () => {
+    const m = make('t_announce_names');
+    await m.request({ announce: "I'll call Villa Sol for Arjun about early check-in at 10 am." });
+    expect(m.link.of('post_message')[0]).toMatchObject({ mentions: ['p_arjun'] });
+    const n = make('t_announce_none');
+    await n.request();
+    expect(n.link.of('post_message')[0]).not.toHaveProperty('mentions');
+  });
+
   it('says who and why with the stop line, waits 30 s, and allows one call at a time', async () => {
     const m = make('t_announce');
     const r = await m.request();

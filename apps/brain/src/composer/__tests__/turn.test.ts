@@ -894,7 +894,7 @@ describe("a lane's card on the turn's own post (p2's regression red: a new trip 
   /** The ixigo login lane on the room's own link and pack, as travel/register.ts adds it. */
   function withLogin(r: ReturnType<typeof room>) {
     const login = createIxigoLogin({
-      pool: db.pool, link: r.link, packs: { get: async () => r.pack }, runner: () => null, tasks: () => null, desk: { put: async () => undefined },
+      pool: db.pool, link: r.link, packs: { get: async () => r.pack }, runner: () => null, tasks: () => null, screen: () => null, desk: { put: async () => undefined },
       live: () => true, now: () => new Date(), log: { warn: () => undefined, info: () => undefined }, sleep: async () => undefined,
     });
     r.context.addTurnCard((i) => login.helloCard(i));

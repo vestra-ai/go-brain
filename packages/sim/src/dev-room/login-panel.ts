@@ -2,13 +2,17 @@
 // person you are playing, the column is Go's screen for them, in control (on a phone, a sheet over the chat), and they
 // type their own number and code there. Everyone else's column says who is on Go's computer and never shows the page.
 // The screen is the hand-off card's Watch answer, which the room sends to the tapping socket only: the page taps Watch
-// itself, once per hand-off, and frames the answer when it is on Bash's session page (watchOrigin). When the hand-off
-// ends (logged in, Not now, out of time), the column goes back to the live view.
+// itself, once per hand-off, and frames the answer when it is on Bash's session page (watchOrigin). Between the person's
+// Log in tap and Watch (Go brings the login page in front first: about 2 s, or 9 to 12 s when the computer wakes), the
+// column already says it is opening. When the hand-off ends (logged in, Not now, out of time), it goes back to the live
+// view.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
 
 /** The card actions that answer with Go's screen: a working card's Watch, and the ixigo login card's. */
 export const WATCH_ACTIONS: readonly string[] = ['watch', 'ixigo_watch'];
+/** The action only the ixigo login card in its logging-in state carries: with no Watch yet, the login is opening. */
+export const LOGGING_IN_ACTIONS: readonly string[] = ['ixigo_logged_in'];
 
 export const LOGIN_CSS = `
 .live [hidden] { display: none !important; }
@@ -22,6 +26,11 @@ export const LOGIN_CSS = `
 .login-frame { flex: 1; min-height: 480px; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .login-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
 .login-wait { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 28px 16px; color: var(--muted); font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+/* While the login opens: a thin bar that drifts, calm; still for anyone who asks for less motion. */
+.login-progress { position: relative; width: 160px; height: 3px; border-radius: 999px; background: #e0f2fe; overflow: hidden; }
+.login-progress i { position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; border-radius: 999px; background: var(--go); animation: login-drift 1.6s ease-in-out infinite; }
+@keyframes login-drift { from { left: -40%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .login-progress i { animation: none; left: 30%; } }
 .login .actions { margin-top: 0; }
 .login-note { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 12px; padding: 8px 12px; color: var(--warn); font-size: 14px; }
 .handoff { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; aspect-ratio: 16 / 10; padding: 20px; border-radius: 12px; background: #0f172a; color: #cbd5e1; font-size: 14px; }
@@ -43,7 +52,7 @@ export const LOGIN_PANEL = `  <div class="handoff" id="handoff" hidden></div>
     <div class="login-bar"><div><b id="login-title"></b><span id="login-line"></span></div><button class="act secondary login-back" id="login-back" type="button">Back to the chat</button></div>
     <div class="login-note" id="login-note" role="status" hidden></div>
     <div class="login-frame" id="login-frame"></div>
-    <div class="login-wait" id="login-wait" hidden><span id="login-why"></span><button class="act primary" id="login-again" type="button" hidden>Open the login again</button></div>
+    <div class="login-wait" id="login-wait" hidden><span id="login-why"></span><div class="login-progress" id="login-progress" aria-hidden="true"><i></i></div><button class="act primary" id="login-again" type="button" hidden>Open the login again</button></div>
     <div class="actions" id="login-acts"></div>
   </section>
   <button class="loginpill" id="loginpill" type="button">Finish logging in</button>
@@ -55,6 +64,7 @@ export const LOGIN_SCRIPT = `
   // login.sessions: each one's screen as Watch answered it, or why there is none; login.framed: the hand-off whose screen
   // is in the frame, kept while you play someone else, so a half-typed number is still there when you come back.
   var WATCH = ${JSON.stringify(WATCH_ACTIONS)};
+  var LOGGING_IN = ${JSON.stringify(LOGGING_IN_ACTIONS)};
   var WATCH_ORIGIN = $('live').getAttribute('data-watch-origin') || '';
   var WATCH_WAIT_MS = 10000;
   var login = { asked: {}, sessions: {}, framed: '', away: false, awayFor: '' };
@@ -68,18 +78,27 @@ export const LOGIN_SCRIPT = `
   function isHandoff(c) {
     return !!(c && c.for_person_ids && c.for_person_ids.length && (c.kind !== 'working' || c.state === 'needs_you') && watchOf(c));
   }
-  function handoffs() {
+  /** The login card for someone, in its logging-in state with no Watch yet: Go is bringing the login page in front. */
+  function isOpening(c) {
+    return !!(c && c.kind === 'notice' && c.for_person_ids && c.for_person_ids.length && !watchOf(c) &&
+      (c.actions || []).some(function (a) { return LOGGING_IN.indexOf(a.action_id) >= 0; }));
+  }
+  function cards(keep) {
     var out = [];
     for (var i = 0; i < state.messages.length; i++) {
       var c = state.messages[i].deleted ? null : state.messages[i].card;
-      if (isHandoff(c)) out.push(c);
+      if (keep(c)) out.push(c);
     }
     return out;
   }
+  function handoffs() { return cards(isHandoff); }
   function keyOf(c, who) { return c.card_id + ' ' + who; }
-  /** The newest hand-off for this person, or with none named the newest for anyone but you. */
-  function handoffFor(who) {
-    var list = handoffs();
+  /**
+   * The newest hand-off for this person, or with none named the newest for anyone but you. With opening, a login still
+   * opening counts too.
+   */
+  function handoffFor(who, opening) {
+    var list = cards(function (c) { return isHandoff(c) || (opening && isOpening(c)); });
     for (var i = list.length - 1; i >= 0; i--) {
       var mine = list[i].for_person_ids.indexOf(me) >= 0;
       if (who ? list[i].for_person_ids.indexOf(who) >= 0 : !mine) return list[i];
@@ -126,8 +145,10 @@ export const LOGIN_SCRIPT = `
 
   function renderLogin() {
     if (!state) return;
-    var mine = WATCH_ORIGIN ? handoffFor(me) : null;
-    var other = mine ? null : handoffFor(null);
+    var mine = WATCH_ORIGIN ? handoffFor(me, true) : null;
+    var other = mine ? null : handoffFor(null, true);
+    // Null while the login is still opening on Go's computer: nothing to tap yet.
+    var watch = mine ? watchOf(mine) : null;
     var now = Date.now();
     for (var k in login.sessions) if (login.sessions[k].url && now >= login.sessions[k].ends) login.sessions[k] = { why: 'ended' };
     // The frame keeps its screen while its hand-off is open and its session good, whoever you are playing now.
@@ -136,8 +157,8 @@ export const LOGIN_SCRIPT = `
       login.framed = '';
     }
     var key = mine ? keyOf(mine, me) : '';
-    if (mine && !login.asked[key]) tapWatch(mine, me);
-    var s = key ? login.sessions[key] : null;
+    if (watch && !login.asked[key]) tapWatch(mine, me);
+    var s = watch ? login.sessions[key] : null;
     if (s && s.url && login.framed !== key) {
       $('login-frame').innerHTML = '<iframe title="Go&#39;s computer" src="' + esc(s.url) + '" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>';
       login.framed = key;
@@ -153,15 +174,16 @@ export const LOGIN_SCRIPT = `
     }
     if (!mine) return;
     $('login-title').textContent = 'Your turn: ' + (mine.title || '');
-    $('login-line').textContent = watchOf(mine).action_id === 'ixigo_watch' ? 'Type your number and the code. They go to ixigo only. Go never sees them.' : "Go's computer is yours for this step.";
+    $('login-line').textContent = !watch || watch.action_id === 'ixigo_watch' ? 'Type your number and the code. They go to ixigo only. Go never sees them.' : "Go's computer is yours for this step.";
     // Go turns the card to a heads-up when I'm logged in found no login yet: its words, where the person is looking.
     $('login-note').hidden = mine.tone !== 'heads_up';
     $('login-note').textContent = mine.tone === 'heads_up' ? mine.body || '' : '';
     $('login-frame').hidden = login.framed !== key;
-    var slow = !s && now - login.asked[key] > WATCH_WAIT_MS;
+    var slow = watch && !s && now - login.asked[key] > WATCH_WAIT_MS;
     var why = s && s.why ? s.why : slow ? 'refused' : '';
     $('login-wait').hidden = login.framed === key;
-    $('login-why').textContent = why === 'ended' ? 'Your view of the login closed after 15 minutes.' : why ? "Go's screen didn't open here." : "Opening ixigo's log in on Go's computer";
+    $('login-why').textContent = why === 'ended' ? 'Your view of the login closed after 15 minutes.' : why ? "Go's screen didn't open here." : "Opening ixigo's login on Go's computer…";
+    $('login-progress').hidden = !!why;
     $('login-again').hidden = !why;
     $('login-acts').innerHTML = (mine.actions || []).filter(function (a) { return WATCH.indexOf(a.action_id) < 0 && visible(a); })
       .map(function (a) { return goButton(mine, a, ''); }).join('');

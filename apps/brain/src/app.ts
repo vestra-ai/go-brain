@@ -85,6 +85,8 @@ export interface Brain {
     start(tripId: string): Promise<'ready' | 'waking' | 'skipped'>;
     prime(tripId: string): Promise<void>;
     watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
+    /** A fresh 15-minute session on the trip's screen, in control or to view (POST /v1/sessions): the ixigo login's Watch. */
+    screen(tripId: string, mode: 'view' | 'control'): Promise<{ url: string; expires_at: string }>;
   };
   /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */
   recipeStats?: () => RecipeStat[];
