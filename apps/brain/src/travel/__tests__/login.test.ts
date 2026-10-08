@@ -9,7 +9,7 @@ import { fakeLink, fakePacks, goaPack, goaTrip, msg } from '../../proactive/fake
 import type { TaskBrief } from '../../tasks/tasks.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
-import { AFTER_WARM, createIxigoLogin, RECHECK_MS, USERINFO } from '../login.js';
+import { createIxigoLogin, HELLO_WAIT_MS, RECHECK_MS, USERINFO } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
 import { IXIGO, type FetchPlan } from '../recipes/recipe.js';
@@ -30,14 +30,22 @@ afterAll(async () => {
 
 let trips = 0;
 
-/** One trip (the Goa five, Rahul organizing), its chat, the trip's browser and the jobs lane, all recorded. */
-function world(o: { live?: boolean; greeted?: boolean; createdAt?: string; statuses?: Array<number | 'timeout'> } = {}) {
+/**
+ * One trip (the Goa five, Rahul organizing), its chat, the trip's browser and the jobs lane, all recorded. The trip says it
+ * was made on 5 Oct, as the sim's Goa trip always does: nothing here goes by that. Waits for Go's hello move the clock.
+ */
+function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout'> } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
   const clock = { now: NOW };
   const link = fakeLink();
-  const trip = goaTrip({ trip_id: tripId, created_at: o.createdAt ?? '2026-10-08T05:50:00Z' });
-  const packs = fakePacks(goaPack({ trip, messages: o.greeted === false ? [] : [msg({ by: 'go', text: 'Hey all, I am Go.' })] }));
+  const base = goaTrip({ trip_id: tripId });
+  const trip = goaTrip({ trip_id: tripId, people: base.people.map((p) => ({ ...p, go_paused: o.paused?.includes(p.person_id) ?? false })) });
+  const hello = msg({ by: 'go', text: 'Hey all, I am Go.' });
+  const packs = fakePacks(goaPack({ trip, messages: o.greeted === false ? [] : [hello] }));
+  const greet = (): void => packs.set(goaPack({ trip, messages: [hello] }));
+  const looks: number[] = [];
+  const hooks: { onSleep?: (n: number) => void } = {};
   const statuses = [...(o.statuses ?? [])];
   const reads: Array<{ url: string; plan: FetchPlan }> = [];
   const runner = {
@@ -63,6 +71,11 @@ function world(o: { live?: boolean; greeted?: boolean; createdAt?: string; statu
   const login = createIxigoLogin({
     pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, live: () => o.live !== false, now: () => clock.now,
     log: { warn: () => undefined, info: () => undefined },
+    sleep: async (ms) => {
+      clock.now = new Date(clock.now.getTime() + ms);
+      looks.push(ms);
+      hooks.onSleep?.(looks.length);
+    },
   });
   const handlers = new Map<string, (tap: CardTapParams, card: C.Card) => Promise<CardTapResult>>();
   login.registerTaps({ on: (kind, action, h) => handlers.set(`${kind}:${action}`, h) });
@@ -77,17 +90,29 @@ function world(o: { live?: boolean; greeted?: boolean; createdAt?: string; statu
   const last = (): C.Card & { kind: 'notice' } => cards().at(-1) as C.Card & { kind: 'notice' };
   const state = async (): Promise<string | undefined> =>
     (await db.pool.query<{ state: string }>('select state from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.state;
-  return { tripId, clock, link, reads, statuses, starts, handoffs, login, tap, last, state, setup: () => login.setupStep.run(tripId) };
+  return { tripId, clock, link, reads, statuses, starts, handoffs, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
 }
 
 const STATUS_PLAN = { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], timeoutMs: 12_000 };
 
 describe('the ixigo login, asked at setup', () => {
-  it('asks the organizer once Go has greeted the trip: one line naming them, and the card pinned to them with buttons only they see', async () => {
-    const early = world({ greeted: false });
-    await expect(early.setup()).rejects.toThrow(/greet/);
-    expect(early.link.of('post_message')).toEqual([]);
+  it("waits for Go's hello, looking every second, then asks; with no hello in 20 s, setup tries again later", async () => {
+    const w = world({ greeted: false });
+    w.hooks.onSleep = (n) => {
+      if (n === 3) w.greet();
+    };
+    await w.setup();
+    expect(w.looks).toEqual([1_000, 1_000, 1_000]);
+    expect(w.link.of('post_message')).toHaveLength(1);
 
+    const never = world({ greeted: false });
+    await expect(never.setup()).rejects.toThrow(/greet/);
+    expect(never.looks.reduce((a, b) => a + b, 0)).toBe(HELLO_WAIT_MS);
+    expect(never.link.of('post_message')).toEqual([]);
+    expect(await never.state()).toBeUndefined();
+  });
+
+  it('asks the organizer once Go has greeted the trip: one line naming them, and the card pinned to them with buttons only they see', async () => {
     const w = world();
     await w.setup();
     const [post] = w.link.of('post_message');
@@ -111,36 +136,91 @@ describe('the ixigo login, asked at setup', () => {
     expect(w.link.of('post_message')).toHaveLength(1);
   });
 
-  it('is one setup flow at trip.created: the box, then ixigo warmed on it, then the prompt, in the same pass once the warm is done', async () => {
+  it('is one setup flow at trip.created: the box started, the prompt right after the hello, then ixigo warmed; a warm that fails never holds the prompt', async () => {
     const w = world();
     const setup = createSetup({ pool: db.pool, log: silentLog, now: () => w.clock.now });
     const ran: string[] = [];
     let warmed = false;
     setup.addStep({ name: 'brain.ready', run: async () => { ran.push('ready'); } });
     setup.addStep({ name: 'travel.computer', after: 'brain.ready', run: async () => { ran.push('computer'); } });
-    setup.addStep({ name: AFTER_WARM, after: 'travel.computer', run: async () => { ran.push('warm'); if (!warmed) throw new Error('ixigo did not answer'); } });
-    setup.addStep(w.login.setupStep);
-    expect(w.login.setupStep.after).toBe('travel.ixigo_warm');
-    // The warm failed this pass: the prompt waits for it.
+    setup.addStep({ ...w.login.setupStep, run: async (tripId) => { ran.push('login'); await w.login.setupStep.run(tripId); } });
+    setup.addStep({ name: 'travel.ixigo_warm', after: 'travel.computer', run: async () => { ran.push('warm'); if (!warmed) throw new Error('ixigo did not answer'); } });
+    expect(w.login.setupStep.after).toBe('travel.computer');
+    // The warm failed this pass, after the prompt went out.
     await setup.ensureTrip(w.tripId);
-    expect(w.link.of('post_message')).toEqual([]);
+    expect(ran).toEqual(['ready', 'computer', 'login', 'warm']);
+    expect(w.link.of('post_message')).toHaveLength(1);
     warmed = true;
     await setup.ensureTrip(w.tripId);
-    expect(ran).toEqual(['ready', 'computer', 'warm', 'warm']);
+    expect(ran).toEqual(['ready', 'computer', 'login', 'warm', 'warm']);
     expect(w.link.of('post_message')).toHaveLength(1);
     expect(setup.isReady(w.tripId)).toBe(true);
   });
 
-  it('asks nothing while Go does not browse ixigo.com itself, nor of a trip that was going before the login came', async () => {
+  it("asks the first person who hasn't paused Go when the organizer has", async () => {
+    const w = world({ paused: ['p_rahul'] });
+    await w.setup();
+    expect(w.link.of('post_message')[0]).toMatchObject({ text: "Priya, link ixigo for the trip: one login on the trip's computer, about a minute.", mentions: ['p_priya'] });
+    expect(w.last()).toMatchObject({ for_person_ids: ['p_priya'], actions: [{ only_for_person_ids: ['p_priya'] }, { only_for_person_ids: ['p_priya'] }] });
+  });
+
+  it('asks nothing while Go does not browse ixigo.com itself', async () => {
     const w = world({ live: false });
     await w.setup();
+    w.login.nudge(w.tripId);
+    await w.login.settled();
     expect(w.link.calls).toEqual([]);
     expect(await w.state()).toBeUndefined();
-    // The setup sweep reaches trips made before this step existed: they are asked when a recipe needs the login.
-    const old = world({ createdAt: '2026-10-05T02:30:00Z' });
-    await old.setup();
-    expect(old.link.calls).toEqual([]);
-    expect(await old.state()).toBeUndefined();
+  });
+});
+
+describe("a trip's first search, with no login asked for yet", () => {
+  // Keshav, 8 Oct: "if there is no login on ixigo in a group, it should first proactively prompt for that". A trip Go held
+  // before the prompt came at setup (its setup step done long ago) is asked when its first search starts.
+  it('asks once, beside the search, and never again: not at a second search, nor when two start at once', async () => {
+    const w = world();
+    w.login.nudge(w.tripId);
+    w.login.nudge(w.tripId);
+    await w.login.settled();
+    expect(w.link.of('post_message')).toHaveLength(1);
+    expect(w.link.of('post_message')[0]).toMatchObject({ text: "Rahul, link ixigo for the trip: one login on the trip's computer, about a minute.", card: { card_id: `c_login_${w.tripId}_0` } });
+    expect(await w.state()).toBe('asked');
+    w.login.nudge(w.tripId);
+    await w.login.settled();
+    expect(w.link.of('post_message')).toHaveLength(1);
+    // Setup reaching the trip after the search asked: the row is there, so nothing more.
+    await w.setup();
+    expect(w.link.of('post_message')).toHaveLength(1);
+  });
+
+  it("an ask that never reached the room is asked again by the next search", async () => {
+    const w = world();
+    let fail = true;
+    const request = w.link.request.bind(w.link);
+    w.link.request = (async (method: string, params: Record<string, unknown>) => {
+      if (method === 'post_message' && fail) throw new Error('the Server is away');
+      return request(method, params);
+    }) as typeof w.link.request;
+    w.login.nudge(w.tripId);
+    await w.login.settled();
+    expect(await w.state()).toBeUndefined();
+    fail = false;
+    w.login.nudge(w.tripId);
+    await w.login.settled();
+    expect(await w.state()).toBe('asked');
+    // The failed post never reached the fake Server's record; the second is the one ask.
+    expect(w.link.of('post_message')).toHaveLength(1);
+  });
+
+  it('asks nothing of a trip that has a row of any kind, Not now included', async () => {
+    const w = world();
+    await w.setup();
+    await w.tap('ixigo_not_now', 'p_rahul');
+    const posts = w.link.of('post_message').length;
+    w.login.nudge(w.tripId);
+    await w.login.settled();
+    expect(w.link.of('post_message')).toHaveLength(posts);
+    expect(await w.state()).toBe('skipped');
   });
 });
 

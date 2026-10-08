@@ -28,18 +28,18 @@ export async function startComputerAtSetup(brain: Pick<Brain, 'switches' | 'reci
   await brain.recipeRunners.start(tripId);
 }
 
-/** Step 2's setup step. The organiser's ixigo login prompt (step 3) is the setup step that runs after it. */
+/** Step 3's setup step, after the organiser's ixigo login prompt (step 2, login.ts), which never waits on it. */
 export const IXIGO_WARM_STEP = 'travel.ixigo_warm';
 /** Tries a trip's warm gets. Each wakes the box, so with ixigo down the step stops there, done with a warning. */
 export const IXIGO_WARM_TRIES = 3;
 
 /**
- * Step 2 of the trip's ixigo connection, right after its computer is made: the computer's Chrome visits ixigo once, its
- * popup closed, so the first search is not its first visit (runners.ts COLD_COMPUTER). Under ixigo_web only, and done at
- * once in the other modes or while the trip computer is not set up here. A visit ixigo did not answer throws, so setup
- * tries again and the login prompt waits, up to IXIGO_WARM_TRIES: then the step is done with a warning (the log, and its
- * line in the health view's recipes) and the login prompt goes ahead; the first search still has its one retry. Tries are
- * counted in this process: a restart starts a trip's count again.
+ * Step 3 of the trip's ixigo connection, after its computer is started and the login prompt is out: the computer's Chrome
+ * visits ixigo once, its popup closed, so the first search is not its first visit (runners.ts COLD_COMPUTER). Under
+ * ixigo_web only, and done at once in the other modes or while the trip computer is not set up here. A visit ixigo did not
+ * answer throws, so setup tries again, up to IXIGO_WARM_TRIES: then the step is done with a warning (the log, and its line
+ * in the health view's recipes); the first search still has its one retry. Tries are counted in this process: a restart
+ * starts a trip's count again.
  */
 export function createIxigoWarm(brain: Pick<Brain, 'switches' | 'recipeRunners' | 'log' | 'now'>): {
   run(tripId: string): Promise<void>;
@@ -72,7 +72,7 @@ export function createIxigoWarm(brain: Pick<Brain, 'switches' | 'recipeRunners' 
         tries.delete(tripId);
         brain.log.warn(
           { tripId, tries: attempt, err: String(err).slice(0, 200) },
-          "travel: ixigo never answered the new trip's computer; its warm is done with a warning and the login prompt goes ahead",
+          "travel: ixigo never answered the new trip's computer; its warm is done with a warning",
         );
       }
     },
