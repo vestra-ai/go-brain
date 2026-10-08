@@ -537,6 +537,27 @@ describe('a stays ask answered from a kept search with no conditions (the head s
     expect(s.runs).toEqual([{ conditions: [], background: false }]);
   });
 
+  it('knows a page is kept or running with any conditions (pageKept), so the head start loads nothing behind a pool search', async () => {
+    const s = staysEngine([stay(1, true), stay(2, true), stay(3, true)]);
+    const trip = { tripId: 't_goa' };
+    expect(await s.b.pageKept('hotels.search', HEAD, trip)).toBe(false);
+    // The turn's own "pool stays for 6 to 9 Nov": the same page with a condition.
+    await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_0' });
+    expect(await s.b.pageKept('hotels.search', HEAD, trip)).toBe(true);
+    // Other dates, or another place, are other pages.
+    expect(await s.b.pageKept('hotels.search', { ...HEAD, check_out: '2026-11-10' }, trip)).toBe(false);
+    expect(await s.b.pageKept('hotels.search', { ...HEAD, place: 'Manali' }, trip)).toBe(false);
+    // Past its time it answers nothing.
+    nowMs += 31 * 60_000;
+    try {
+      expect(await s.b.pageKept('hotels.search', HEAD, trip)).toBe(false);
+    } finally {
+      nowMs -= 31 * 60_000;
+    }
+    // Asking runs nothing.
+    expect(s.runs).toEqual([{ conditions: ['pool'], background: false }]);
+  });
+
   it("runs its own search for a page condition the stays don't say (paying at the hotel), and with no kept search", async () => {
     const s = staysEngine([stay(1, true), stay(2, true), stay(3, true)]);
     await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_0' });
