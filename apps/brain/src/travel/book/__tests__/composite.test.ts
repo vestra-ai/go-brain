@@ -107,6 +107,37 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     ]);
   });
 
+  it('puts a check nobody waits on (a watch) behind every search a person is waiting on, even one that came after it', async () => {
+    const asked: string[] = [];
+    const ends: Array<() => void> = [];
+    const v1 = {
+      async call<T>(_m: string, _p: string, o: { body?: { url?: string } } = {}): Promise<T> {
+        const url = o.body?.url ?? '';
+        asked.push(/\/(\d\d)-11-2026\//.exec(url)?.[1] ?? url);
+        await new Promise<void>((r) => ends.push(r));
+        return { final_url: url, elapsed_ms: 900, woke: false, captures: pageFor(url) ?? [] } as T;
+      },
+    };
+    const runner = createBrowserFetchRunner({
+      v1, computer: { userIdFor: (t) => `u-${t}`, ensureUser: async (t) => `u-${t}` }, now: () => new Date(), log: { warn: () => undefined }, slots: () => 1,
+    });
+    const engine = createEngine({ book, runner: () => runner, trip: async () => trip, now: () => new Date('2026-10-08T12:00:00Z') });
+    const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
+    const buses = (date: string, background = false) =>
+      engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date }, { tripId: 't_goa', ...(background ? { background } : {}) }).catch(() => undefined);
+    const runs = [buses('2026-11-06')];
+    await settle();
+    runs.push(buses('2026-11-07', true));
+    await settle();
+    runs.push(buses('2026-11-08'));
+    while (asked.length < 3 || ends.length > 0) {
+      await settle();
+      ends.shift()?.();
+    }
+    await Promise.all(runs);
+    expect(asked).toEqual(['06', '08', '07']);
+  });
+
   it("asks the trip's computer for no more pages at once than its slots: the rest wait their turn", async () => {
     const most = async (slots: number): Promise<number> => {
       let going = 0;

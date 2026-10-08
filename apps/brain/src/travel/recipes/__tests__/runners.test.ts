@@ -315,6 +315,30 @@ describe("fetches at once on one trip's computer: Bash runs only so many (409 br
     expect(asked()).toEqual(['1', '3', '2', '4']);
   });
 
+  it('lets a waiting fetch go as soon as the slots are raised, without waiting for one to end', async () => {
+    let slots = 1;
+    const ends: Array<() => void> = [];
+    const w = world(async () => {
+      await new Promise<void>((r) => ends.push(r));
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner({ ...w.deps, slots: () => slots });
+    const reads = [runner.read('t1', `${BUSES}?n=1`, busPlan), runner.read('t1', `${BUSES}?n=2`, busPlan)];
+    await settle();
+    expect(w.calls).toHaveLength(1);
+    // Bash runs more now: the next fetch to come lets the one waiting go at once, and waits itself.
+    slots = 2;
+    reads.push(runner.read('t1', `${BUSES}?n=3`, busPlan));
+    await settle();
+    expect(w.calls.map((c) => String((c.opts['body'] as { url?: string }).url).split('?n=')[1])).toEqual(['1', '2']);
+    while (ends.length > 0) {
+      ends.shift()!();
+      await settle();
+    }
+    await Promise.all(reads);
+    expect(w.calls).toHaveLength(3);
+  });
+
   it("counts by the computer, not the trip: two trips on one /v1 user share its slots", async () => {
     const ends: Array<() => void> = [];
     const w = world(async () => {

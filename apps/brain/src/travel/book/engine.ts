@@ -150,10 +150,13 @@ export interface RunFor {
 
 export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
 
+/** A check nobody is waiting on (a watch) waits behind every fetch a person is. */
+export const BACKGROUND_PRIORITY = 9;
+
 /** What a run's fetches carry to the runner: when to stop, and their place in the computer's queue. */
-const fetchFor = (o: RunFor): { signal?: AbortSignal; priority?: number } => ({
+const fetchFor = (o: RunFor): { signal?: AbortSignal; priority: number } => ({
   ...(o.signal ? { signal: o.signal } : {}),
-  ...(o.priority !== undefined ? { priority: o.priority } : {}),
+  priority: o.priority ?? (o.background ? BACKGROUND_PRIORITY : 0),
 });
 
 /**

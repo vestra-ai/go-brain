@@ -113,9 +113,11 @@ function fetchSlots(slots: () => number): (box: string, signal?: AbortSignal, pr
           },
         };
         signal?.addEventListener('abort', stop, { once: true });
-        // After every waiting fetch of its priority or a lower one.
+        // After every waiting fetch of its priority or a lower one; then whoever is first goes, if there is room (the
+        // slots were raised while fetches waited).
         const at = queue.findIndex((w) => w.priority > priority);
         queue.splice(at === -1 ? queue.length : at, 0, entry);
+        pump(box);
       });
     }
     let freed = false;
