@@ -1,13 +1,15 @@
 /**
  * What a page sent, as a recipe reads it. A body is JSON, a Next.js flight payload (the page's own "RSC: 1" answer:
- * one JSON value a line), a Next.js page whose flight payload sits in its scripts, or an older Next.js page whose props
- * sit in its __NEXT_DATA__ script (ixigo's offers pages). Whatever its form, the page's own credentials in it (its
- * apikey, deviceId, uuid, any token or cookie) are dropped before anything reads the body, so no recipe, log or store
- * ever holds them.
+ * one JSON value a line), a Next.js page whose flight payload sits in its scripts, an older Next.js page whose props
+ * sit in its __NEXT_DATA__ script (ixigo's offers pages), or a plain server-rendered page with no data call at all,
+ * read as its tables (html_tables: a train's schedule, running status, coach position, a station's or platform's page).
+ * Whatever its form, the page's own credentials in it (its apikey, deviceId, uuid, any token or cookie) are dropped
+ * before anything reads the body, so no recipe, log or store ever holds them.
  */
+import { DomUtils, ElementType, parseDocument } from 'htmlparser2';
 import { TravelError } from '../mcp-travel.js';
 
-export const BODY_FORMATS = ['json', 'rsc', 'next_html', 'next_data'] as const;
+export const BODY_FORMATS = ['json', 'rsc', 'next_html', 'next_data', 'html_tables'] as const;
 export type BodyFormat = (typeof BODY_FORMATS)[number];
 
 /** Keys that hold the page's own credentials: dropped wherever they are. */
@@ -75,8 +77,81 @@ export function nextDataOfPage(html: string): string | null {
   return /<script[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html)?.[1] ?? null;
 }
 
+/**
+ * A plain page as html_tables reads it: its <title> and canonical address, every table's rows as the text of their
+ * cells (the header row kept, as the first row), and every ld+json block, parsed. Tables keep the page's order, an
+ * empty one too, so a recipe's tables[1] is the page's second table.
+ */
+export interface HtmlTables {
+  title: string | null;
+  canonical: string | null;
+  tables: string[][][];
+  ld: unknown[];
+}
+
+type DomElement = ReturnType<typeof DomUtils.getElementsByTagName>[number];
+type DomNode = DomElement['children'][number];
+
+/** The nearest element named name around el, or null. */
+function closest(el: DomElement, name: string): DomElement | null {
+  for (let p = el.parent; p; p = p.parent) {
+    if (p.type === ElementType.Tag && p.name === name) return p;
+  }
+  return null;
+}
+
+/**
+ * An element's text: each piece trimmed and joined by one space, never a script's or a style's. ixigo's cells hold each
+ * piece in an element of its own with nothing between ("<div>Asalpur Jobner</div><div>37 km</div>"), which reads
+ * "Asalpur Jobner 37 km", not "Asalpur Jobner37 km".
+ */
+function textOf(el: DomElement): string {
+  const pieces: string[] = [];
+  const walk = (n: DomNode): void => {
+    if (n.type === ElementType.Text) {
+      const t = n.data.replace(/\s+/g, ' ').trim();
+      if (t) pieces.push(t);
+    } else if (n.type === ElementType.Tag || n.type === ElementType.CDATA || n.type === ElementType.Root) {
+      for (const c of n.children) walk(c);
+    }
+  };
+  for (const c of el.children) walk(c);
+  return pieces.join(' ');
+}
+
+/**
+ * A plain page's title, canonical address, tables and ld+json, by a real HTML parser (htmlparser2), never by patterns.
+ * A table's rows are the <tr>s whose nearest table is it, and a row's cells the <td>s and <th>s whose nearest row is it,
+ * whatever wraps them: ixigo's schedule wraps each row in a <div>, and a table inside a cell keeps its own rows. A row
+ * with no text at all (a spacer) is left out.
+ */
+export function htmlTablesOf(html: string): HtmlTables {
+  const doc = parseDocument(html);
+  const title = DomUtils.getElementsByTagName('title', doc, true, 1)[0];
+  const canonical = DomUtils.findOne((el) => el.name === 'link' && /(^|\s)canonical(\s|$)/i.test(el.attribs['rel'] ?? ''), doc.children);
+  const ld: unknown[] = [];
+  for (const block of DomUtils.findAll((el) => el.name === 'script' && (el.attribs['type'] ?? '').trim().toLowerCase() === 'application/ld+json', doc.children)) {
+    try {
+      ld.push(JSON.parse(DomUtils.textContent(block)));
+    } catch {
+      // a block that doesn't read
+    }
+  }
+  const tables = DomUtils.getElementsByTagName('table', doc, true).map((table) =>
+    DomUtils.findAll((el) => el.name === 'tr' && closest(el, 'table') === table, table.children)
+      .map((tr) => DomUtils.findAll((el) => (el.name === 'td' || el.name === 'th') && closest(el, 'tr') === tr, tr.children).map(textOf))
+      .filter((row) => row.some((cell) => cell.length > 0)),
+  );
+  return { title: title ? textOf(title) || null : null, canonical: canonical?.attribs['href'] ?? null, tables, ld };
+}
+
 /** A body as a recipe reads it, its credentials gone. */
 export function readBodyAs(text: string, format: BodyFormat, what: string): unknown {
+  if (format === 'html_tables') {
+    const page = htmlTablesOf(text);
+    if (page.tables.length === 0 && page.ld.length === 0) throw new TravelError('refused', `ixigo answered ${what} in a shape Go does not read.`);
+    return withoutCredentials(page);
+  }
   if (format === 'json' || format === 'next_data') {
     const json = format === 'json' ? text : nextDataOfPage(text);
     try {
