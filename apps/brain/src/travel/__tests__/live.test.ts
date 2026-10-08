@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { signedHeaders, tryOpen } from '../../__tests__/fixtures/raw-server.js';
 import { withSchema } from '../../db/test-db.js';
@@ -11,6 +11,8 @@ import { silentLog } from '../../log.js';
 import { registerLive, type LiveMessage } from '../live.js';
 import type { RunEvent } from '../book/run-event.js';
 import { createRunLog, type RunLog } from '../runs.js';
+import { createScreenFeed, type ScreenStream } from '../screen-feed.js';
+import type { SseFrame } from '../../tasks/sse.js';
 
 const SECRET = 's'.repeat(64);
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -19,6 +21,34 @@ let door: DoorImpl;
 let runs: RunLog;
 let base: string;
 const stops: Array<() => void | Promise<void>> = [];
+
+/** Bash's watch stream of each trip, as the tests push Bash's events into it. */
+const bash = new Map<string, (event: string, data: Record<string, unknown>) => void>();
+function bashStream(tripId: string, signal: AbortSignal): ScreenStream {
+  const queue: SseFrame[] = [];
+  let wake: (() => void) | null = null;
+  let done = false;
+  const stop = (): void => {
+    done = true;
+    wake?.();
+  };
+  signal.addEventListener('abort', stop);
+  bash.set(tripId, (event, data) => {
+    queue.push({ id: null, event, data: { type: event, ...data } });
+    wake?.();
+  });
+  async function* read(): AsyncGenerator<SseFrame> {
+    for (;;) {
+      while (queue.length > 0) yield queue.shift()!;
+      if (done) return;
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+      wake = null;
+    }
+  }
+  return { frames: read(), close: stop };
+}
 
 beforeAll(async () => {
   db = await withSchema();
@@ -33,7 +63,9 @@ beforeAll(async () => {
     now,
   });
   runs = createRunLog({ now });
-  registerLive({ door, env: { GO_SIGNING_SECRET: SECRET } as never, pool: db.pool, now, log: silentLog as never, onStop: (fn) => stops.push(fn) }, runs);
+  const screens = createScreenFeed({ open: (tripId, signal) => Promise.resolve(bashStream(tripId, signal)), log: silentLog });
+  stops.push(() => screens.stop());
+  registerLive({ door, env: { GO_SIGNING_SECRET: SECRET } as never, pool: db.pool, now, log: silentLog as never, onStop: (fn) => stops.push(fn) }, runs, screens);
   await http.listen({ port: 0, host: '127.0.0.1' });
   base = `ws://127.0.0.1:${(http.server.address() as AddressInfo).port}`;
 });
@@ -54,8 +86,9 @@ const end = (tripId: string, run_id: string): void => runs.record(tripId, { type
  * Opens the live view of a trip, signed as the Server signs; collects what Go sends. The listener is on before the socket
  * opens: Go's hello comes at once, and could land before a listener added after 'open'.
  */
-async function watch(tripId: string): Promise<{ ws: WebSocket; got: LiveMessage[]; next: (pred: (m: LiveMessage) => boolean) => Promise<LiveMessage> }> {
-  const target = `/v1/live?trip_id=${tripId}`;
+async function watch(tripId: string, n = ''): Promise<{ ws: WebSocket; got: LiveMessage[]; next: (pred: (m: LiveMessage) => boolean) => Promise<LiveMessage> }> {
+  // n: a second viewer of the same trip in the same second signs another address (Go takes a signature once).
+  const target = `/v1/live?trip_id=${tripId}${n ? `&n=${n}` : ''}`;
   const ws = new WebSocket(`${base}${target}`, { headers: signedHeaders(target, SECRET) });
   const got: LiveMessage[] = [];
   const waiters: Array<{ pred: (m: LiveMessage) => boolean; resolve: (m: LiveMessage) => void }> = [];
@@ -121,4 +154,25 @@ describe('the live view socket', () => {
     end('t_live2', 'run_d');
     expect(v.got).toHaveLength(1);
   });
+
+  it("shows the trip computer's screen: each tab and picture as Bash sends it, path only, and the screen as it is to a viewer who comes late", async () => {
+    const v = await watch('t_screen');
+    await v.next((m) => m.type === 'hello');
+    await vi.waitFor(() => expect(bash.has('t_screen')).toBe(true));
+    const push = bash.get('t_screen')!;
+    push('state', { state: 'live' });
+    push('tab_open', { tab_id: 'tab_1' });
+    push('frame', { tab_id: 'tab_1', url: 'https://www.ixigo.com/hotels/search/result?city=Goa', at: '2026-10-08T10:00:00.000Z', width: 960, height: 600, jpeg_base64: '/9j/A' });
+    const frame = await v.next((m) => m.type === 'screen' && m.event.type === 'frame');
+    expect(frame).toEqual({
+      type: 'screen',
+      event: { type: 'frame', tab_id: 'tab_1', at: '2026-10-08T10:00:00.000Z', page: '/hotels/search/result', width: 960, height: 600, jpeg_base64: '/9j/A' },
+    });
+    const late = await watch('t_screen', 'late');
+    const hello = await late.next((m) => m.type === 'hello');
+    expect(hello.type === 'hello' && hello.screen.map((e) => e.type)).toEqual(['state', 'tab_open', 'frame']);
+    v.ws.close();
+    late.ws.close();
+  });
 });
+

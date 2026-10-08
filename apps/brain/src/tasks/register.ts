@@ -65,6 +65,8 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     start: async (tripId) => {
       await computer.warm(tripId);
     },
+    // Bash's live view of the fetch's own tabs: a stream that never wakes the computer. No resume: a watch has no history.
+    watch: (tripId, signal) => v1.stream(`/v1/users/${computer.userIdFor(tripId)}/browser/watch`, { lastEventId: 0, signal }),
   };
   const store = createTaskStore(brain.pool);
   const eventStore = createEventStore(brain.pool, brain.now);

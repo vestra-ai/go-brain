@@ -24,6 +24,7 @@ import { unsureReflex, type Reflex } from './reflex/reflex.js';
 import type { Tasks } from './tasks/tasks.js';
 import type { RecipeStat } from './travel/book/engine.js';
 import type { RecipeRunner } from './travel/recipes/runners.js';
+import type { ScreenStream } from './travel/screen-feed.js';
 import type { Travel } from './travel/travel.js';
 import { createGoneTrips } from './trips/gone.js';
 import { createMessageHooks, type MessageHooks } from './trips/hooks.js';
@@ -71,9 +72,15 @@ export interface Brain {
   /**
    * Set by P4's tasks lane, which owns the trip's computer: the browser fetch the recipe engine reads ixigo.com pages
    * with; keepWarm, which holds the computer awake for two minutes (Bash's warm keep_ms), which only travel's
-   * warmForTravel calls; and start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step.
+   * warmForTravel calls; start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step; and
+   * watch, Bash's browser watch of the trip's computer (never a wake), for the live view's screen (screen-feed.ts).
    */
-  recipeRunners?: { browserFetch: RecipeRunner; keepWarm(tripId: string): void; start(tripId: string): Promise<void> };
+  recipeRunners?: {
+    browserFetch: RecipeRunner;
+    keepWarm(tripId: string): void;
+    start(tripId: string): Promise<void>;
+    watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
+  };
   /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */
   recipeStats?: () => RecipeStat[];
   /** Set by P5. */
