@@ -55,6 +55,8 @@ export interface RecipeRunner {
   pageFetch?(tripId: string, call: PageCall, o?: Omit<ReadOptions, 'onProgress'>): Promise<Capture>;
   /** Whether page calls are worth trying now: false for a while after a Bash without page_fetch refused one. */
   canPageFetch?(): boolean;
+  /** A new trip's computer's first ixigo visit, before anyone asks (COLD_COMPUTER below). Throws when ixigo did not answer. */
+  prime?(tripId: string): Promise<void>;
 }
 
 export interface RunnerDeps {
@@ -163,6 +165,15 @@ export const WARM_TAB_MS = 120_000;
  * of Go's.
  */
 export const FAST_UNSUPPORTED_MS = 10 * 60_000;
+/**
+ * COLD_COMPUTER. A computer's Chrome on its first ixigo visit, with none of ixigo's cookies, can draw a page that never
+ * makes its search call (staging, 8 Oct: a new trip's first stays search sat 12 s on skeletons under ixigo's popup, with
+ * nothing caught). So a new trip's computer visits ixigo once at setup (prime: the home page, its popup closed if it is
+ * there, one call from inside the page), and a page that runs out of time with nothing caught, on a computer no fetch of
+ * Go's has read ixigo on yet, is asked once more at once: the second visit is warm. How long the prime may take, a
+ * computer just made waking included.
+ */
+export const PRIME_TIMEOUT_MS = 15_000;
 
 interface FetchAnswer {
   final_url: string;
@@ -179,6 +190,12 @@ const isFrame = (f: unknown): f is LiveFrame =>
   typeof f === 'object' && f !== null && typeof (f as LiveFrame).jpeg_base64 === 'string' && typeof (f as LiveFrame).page_url === 'string';
 
 /** The pictures a timed-out fetch did take, which Bash sends with its partial captures. */
+/** A timed-out fetch that caught nothing at all. */
+function caughtNothing(err: V1Error): boolean {
+  const captures = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
+  return !Array.isArray(captures) || captures.length === 0;
+}
+
 function partialFrames(err: V1Error): LiveFrame[] {
   const frames = (err.detail?.['partial'] as { frames?: unknown } | undefined)?.frames;
   return Array.isArray(frames) ? frames.filter(isFrame) : [];
@@ -240,6 +257,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
+  /** The computers a fetch of Go's has read ixigo on (COLD_COMPUTER): their pages are never asked twice. */
+  const warm = new Set<string>();
+
   /** One browser fetch: the page opened, its steps worked, and the calls the plan names kept. */
   async function fetchPage(
     tripId: string,
@@ -264,10 +284,12 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
     };
     let userId = d.computer.userIdFor(tripId);
+    let coldAgain = false;
     for (let tries = 0; ; tries++) {
       const startedAt = d.now().getTime();
       try {
         const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
+        if (answer.captures.length > 0) warm.add(userId);
         // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
         if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
         o.onTrace?.({
@@ -284,6 +306,13 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         }
         if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
           await sleep(IN_USE_WAIT_MS);
+          continue;
+        }
+        // A cold computer's page that caught nothing (COLD_COMPUTER): once more, now that it has been to ixigo.
+        if (err.status === 504 && !coldAgain && !warm.has(userId) && caughtNothing(err) && !o.signal?.aborted) {
+          coldAgain = true;
+          o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
+          d.log.warn({ tripId, page: what.id }, 'travel: a cold computer caught nothing; asking once more');
           continue;
         }
         // A timed-out fetch's pictures go to the card as a finished one's do, whatever its captures can answer.
@@ -345,7 +374,24 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       ...(got ? {} : { failed: { status: 0, why: 'no answer to the page call' } }),
     });
     if (!got || got.status < 200 || got.status >= 300 || got.truncated) throw new TravelError('unreachable', `ixigo's page call answered ${got ? got.status : 'nothing'}.`);
+    warm.add(d.computer.userIdFor(tripId));
     return got;
+  }
+
+  /** COLD_COMPUTER's prime: ixigo's home on the trip's computer, its popup closed, and one call from inside the page. */
+  async function prime(tripId: string): Promise<void> {
+    const userId = d.computer.userIdFor(tripId);
+    const body = {
+      url: `${IXIGO}/`,
+      steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'prime', max_bytes: 1_000 }],
+      timeout_ms: PRIME_TIMEOUT_MS,
+    };
+    // A refusal or a timeout throws as Bash says it: setup tries again, and the first search still has its one retry.
+    const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body });
+    if (!Array.isArray(answer.captures) || !answer.captures.some((c) => c.match === 'prime')) {
+      throw new TravelError('unreachable', "ixigo's page did not answer on the trip's computer.");
+    }
+    warm.add(userId);
   }
 
   return {
@@ -355,6 +401,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     },
     pageFetch: (tripId, call, o = {}) => inSlot(tripId, o, () => pageFetch(tripId, call, o)),
     canPageFetch: () => d.now().getTime() >= unsupportedUntil,
+    prime: (tripId) => inSlot(tripId, {}, () => prime(tripId)),
   };
 }
 

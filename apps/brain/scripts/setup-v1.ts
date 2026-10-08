@@ -5,6 +5,8 @@
  * Run it again with --deny-tools once Bash PR 2 (deny_tools on deployments) is on the target: it saves a new version.
  * --browser-fetch allows Bash's browser fetch on ixigo.com, once that is on the target. --recipe-model <model id> saves
  * the go-recipe deployment (the fallback travel search) on that model: put the id it prints in VESTRA_RECIPE_DEPLOYMENT_ID.
+ * Staging and production run it on claude-haiku-5-5 (Bash dropped claude-haiku-4-5 on 8 Oct). A model must be one GET
+ * /v1/models lists: the run checks before it saves anything.
  */
 import { setupV1 } from '../src/tasks/setup-v1.js';
 

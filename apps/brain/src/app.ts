@@ -75,13 +75,14 @@ export interface Brain {
    * with; keepWarm, which holds the computer awake for two minutes (Bash's warm keep_ms), which only travel's
    * warmForTravel calls; start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step and a
    * watch's check, and says whether it was up ('ready'), is on its way ('waking'), or was woken in the last minute
-   * ('skipped'); and watch, Bash's browser watch of the trip's computer (never a wake), for the live view's screen
-   * (screen-feed.ts).
+   * ('skipped'); prime, the computer's first ixigo visit, travel's next setup step (it throws when ixigo did not answer);
+   * and watch, Bash's browser watch of the trip's computer (never a wake), for the live view's screen (screen-feed.ts).
    */
   recipeRunners?: {
     browserFetch: RecipeRunner;
     keepWarm(tripId: string): void;
     start(tripId: string): Promise<'ready' | 'waking' | 'skipped'>;
+    prime(tripId: string): Promise<void>;
     watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
   };
   /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */
