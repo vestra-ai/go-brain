@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { askToPay, idsFromTurn, withTurn } from '../ask.js';
 import { amountsSaid, marginCap, nightsOf, setMandate } from '../mandate.js';
 import { AskToPayInput, SetMandateInput, askToPayTool, setMandateTool } from '../tools.js';
+import type { Travel } from '../../travel/travel.js';
 import { goaTrip, moneyKit, runToolCalls, say, turnCtx, type MoneyKit } from './kit.js';
 
 let k: MoneyKit;
@@ -132,10 +133,10 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
   };
   const flight = { amountMinor: 592000, currency: 'INR', merchant: 'ixigo: IndiGo 6E 2134', refundableUntil: null, title: 'IndiGo 6E 2134', kind: 'flight' as const };
 
-  it('a flight: group fares are not booked, so it says so with the link, and sets nothing', async () => {
+  it('a flight: group fares are not booked, so it says so and points to its card, never the link, and sets nothing', async () => {
     winnerIs('ixigo:flight:6e-2134', { ...flight, link: 'https://www.ixigo.com/flights/6e-2134' });
     expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
-      refused: "I can't book flights for the whole group yet. Here's the link to book them yourselves: https://www.ixigo.com/flights/6e-2134",
+      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: See on ixigo on its card opens it there.",
       unbookable: true,
     });
     expect(k.server.writesOf('set_mandate')).toEqual([]);
@@ -157,11 +158,11 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
     expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 
-  it('a stay from ixigo.com: no offer to hold, so it says where to book it, and sets nothing', async () => {
+  it('a stay from ixigo.com: no offer to hold, so it says where to book it (its card, never the link), and sets nothing', async () => {
     winnerIs(null);
     k.travel.pages.set('opt_villa_sol', 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1');
     expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
-      refused: "Villa Sol is booked on ixigo, not here. Here's the link to book it yourselves: https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1",
+      refused: "Villa Sol is booked on ixigo, not here: See on ixigo on its card opens it there.",
       unbookable: true,
     });
     expect(k.server.writesOf('set_mandate')).toEqual([]);
@@ -241,5 +242,80 @@ describe('the quick tools', () => {
     ]);
     expect(out).toMatchObject({ mandate_card: 'c_mandate_turn_test_1', tell_the_room: expect.stringContaining('₹59,000: the price plus a little margin') });
     expect(k.server.writesOf('set_mandate')[0]?.params).toMatchObject({ cap_minor: 5900000 });
+  });
+});
+
+describe('set_mandate on a stay from ixigo.com: the login first, and ixigo\'s price now', () => {
+  type Prepare = NonNullable<Travel['prepare']>;
+  const prepared = (answer: Awaited<ReturnType<Prepare>>) => {
+    const calls: Array<{ optionId: string } & Parameters<Prepare>[1]> = [];
+    const prepare: Prepare = async (optionId, o) => {
+      calls.push({ optionId, ...o });
+      return answer;
+    };
+    Object.assign(k.travel, { prepare });
+    return calls;
+  };
+
+  it('with the login out, sets nothing: the ask waits on the login, with the call to make once it is in', async () => {
+    const note = 'Go asked Rahul in the chat, with the login card, and carries on with booking Villa Sol once the login is in. Say nothing more about it.';
+    const calls = prepared({ ok: false, note });
+    expect(await setMandate(k.deps, ctxWith(), noCap)).toEqual({ refused: note, parked: true });
+    expect(calls).toEqual([
+      { optionId: 'opt_villa_sol', tripId: 't_goa', what: 'Villa Sol', resume: { decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul', refundable_only: true } },
+    ]);
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+    // A cap someone said rides along, so the call made later is the same one.
+    const again = prepared({ ok: false, note });
+    await setMandate(k.deps, ctxWith(), mandate);
+    expect(again[0]?.resume).toMatchObject({ cap_minor: 5500000 });
+  });
+
+  it('says on the mandate that the price moved since the vote, and takes the cap from the price now', async () => {
+    prepared({ ok: true, priceMinor: 5600000 });
+    const ctx = ctxWith([['p_rahul', 'just book whatever works']]);
+    const r = await setMandate(k.deps, ctx, noCap);
+    expect(r).toMatchObject({ cardId: expect.any(String), capMinor: marginCap(5600000), note: expect.stringContaining('Villa Sol is ₹56,000 on ixigo now, up from ₹54,200 on the vote.') });
+    expect(ctx.cards[0]).toMatchObject({ fallback_text: expect.stringMatching(/^Villa Sol is ₹56,000 on ixigo now, up from ₹54,200 on the vote\. Ready to book Villa Sol/) });
+    expect(k.server.writesOf('set_mandate')[0]?.params).toMatchObject({ cap_minor: marginCap(5600000) });
+  });
+
+  it('says nothing about the price when ixigo still shows the vote\'s, or could not say', async () => {
+    for (const priceMinor of [5420000, null]) {
+      k.server.trips.set('t_goa', goaTrip('closed'));
+      prepared({ ok: true, priceMinor });
+      const r = await setMandate(k.deps, ctxWith([['p_rahul', 'just book whatever works']]), noCap);
+      expect(r).toMatchObject({ cardId: expect.any(String), capMinor: 5900000 });
+      expect('note' in r ? r.note : '').not.toContain('on ixigo now');
+    }
+  });
+
+  it("Saudades as the demo voted it (₹47,682 for 3 nights): the same price on ixigo says nothing; ₹49,392 says both prices", async () => {
+    const saudades = () => {
+      const t = goaTrip('closed');
+      const vote = t.decisions[0]!;
+      vote.options[0] = { ...vote.options[0]!, label: 'Saudades Homestays', price_minor: 4768200 };
+      return t;
+    };
+    const asked = () => ctxWith([['p_rahul', 'heyy can you try booking Saudades now']]);
+    k.server.trips.set('t_goa', saudades());
+    prepared({ ok: true, priceMinor: 4768200 });
+    const same = await setMandate(k.deps, asked(), noCap);
+    expect(same).toMatchObject({ cardId: expect.any(String), capMinor: marginCap(4768200) });
+    expect('note' in same ? same.note : '').not.toContain('on ixigo now');
+
+    k.server.trips.set('t_goa', saudades());
+    prepared({ ok: true, priceMinor: 4939200 });
+    const ctx = asked();
+    expect(await setMandate(k.deps, ctx, noCap)).toMatchObject({
+      capMinor: marginCap(4939200), note: expect.stringContaining('Saudades Homestays is ₹49,392 on ixigo now, up from ₹47,682 on the vote.'),
+    });
+    expect(ctx.cards[0]).toMatchObject({ fallback_text: expect.stringContaining('Saudades Homestays is ₹49,392 on ixigo now, up from ₹47,682 on the vote. Ready to book Saudades Homestays') });
+  });
+
+  it('a check that failed says try again and sets nothing', async () => {
+    Object.assign(k.travel, { prepare: async () => { throw new Error('db down'); } });
+    expect(await setMandate(k.deps, ctxWith(), noCap)).toEqual({ refused: "I couldn't check Villa Sol just now. Try again in a moment." });
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 });

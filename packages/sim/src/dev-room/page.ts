@@ -2,9 +2,11 @@
 // lives inside this template literal: no backticks, no dollar-brace and no backslashes in it.
 // roomPage() draws the hosted "try Go" room from the same page: its own title, "Start over", the lines about what is
 // live and what is simulated, example messages to tap, the limit line, and a nonce on the script for a strict
-// Content-Security-Policy. With no options it is the dev room. With live, Go Live's column sits beside it (live-page.ts).
+// Content-Security-Policy. With no options it is the dev room. With live, Go Live's column sits beside it (live-page.ts),
+// and with watchOrigin too, a login hand-off's screen fills that column for the person logging in (login-panel.ts).
 
-import { LIVE_ASIDE, LIVE_CSS, LIVE_HOOK, LIVE_SCRIPT } from './live-page.js';
+import { LIVE_CSS, LIVE_HOOK, LIVE_SCRIPT, liveAside } from './live-page.js';
+import { LOGIN_CSS, LOGIN_SCRIPT } from './login-panel.js';
 
 export interface RoomPageOptions {
   /** The page's title and the header's first line. Default "Go dev room". */
@@ -17,6 +19,8 @@ export interface RoomPageOptions {
   hosted?: boolean;
   /** Go Live: the trip's recipe runs and the pages they opened, in a second column (desktop first). */
   live?: boolean;
+  /** With live: Bash's session page origin. A login hand-off's Watch answer on it is framed in Go Live's column. */
+  watchOrigin?: string;
 }
 
 const escHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -85,12 +89,15 @@ main { flex: 1; padding: 12px 12px 16px; }
 button.act { font: inherit; font-size: 15px; border-radius: 12px; min-height: 44px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--accent); margin-top: 4px; touch-action: manipulation; }
 button.primary { background: var(--accent); color: #fff; }
 button.secondary { background: var(--panel); color: var(--accent); }
+a.act { display: inline-flex; align-items: center; text-decoration: none; font: inherit; font-size: 15px; border-radius: 12px; min-height: 44px; padding: 10px 16px; border: 1px solid var(--accent); margin-top: 4px; background: var(--panel); color: var(--accent); }
 .typing { color: var(--go-ink); font-size: 13px; min-height: 20px; margin: 4px 0 0 36px; }
 footer { position: sticky; bottom: 0; z-index: 2; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
 form { display: flex; gap: 8px; }
 input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
 .toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 14px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(var(--column) - 32px); width: max-content; }
 .toast.show { opacity: 1; }
+.newpill { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); margin-bottom: 8px; font: inherit; font-size: 13px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; min-height: 44px; padding: 8px 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18); touch-action: manipulation; }
+.newpill[hidden] { display: none; }
 .top { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .top button.act { margin-top: 0; font-size: 14px; padding: 8px 12px; flex: none; }
 .about { color: var(--muted); font-size: 12px; }
@@ -99,7 +106,7 @@ input[type=text] { flex: 1; font: inherit; font-size: 16px; min-height: 44px; bo
 .hints { display: flex; gap: 6px; align-items: center; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin-bottom: 8px; }
 .hints span { color: var(--muted); font-size: 13px; flex: none; }
 button.hint { flex: none; font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; min-height: 44px; padding: 6px 12px; cursor: pointer; touch-action: manipulation; }
-${o.live ? LIVE_CSS : ''}</style>
+${o.live ? LIVE_CSS + LOGIN_CSS : ''}</style>
 </head>
 <body${o.hosted ? ' data-hosted="1"' : ''}>
 ${o.live ? '<div class="split">' : ''}<div class="app">
@@ -114,10 +121,11 @@ ${o.live ? '<div class="split">' : ''}<div class="app">
   <div class="typing" id="typing"></div>
 </main>
 <footer>
+  <button class="newpill" id="newpill" type="button" hidden>New messages ↓</button>
 ${limit}${hints}  <form id="composer"><input type="text" id="text" autocomplete="off" enterkeyhint="send" placeholder="Message the group. Start with @Go to ask Go."><button class="act primary" type="submit">Send</button></form>
 </footer>
 </div>
-${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
+${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOrigin)}"` : '')}</div>` : ''}<div class="toast" id="toast"></div>
 <script${o.nonce ? ` nonce="${escHtml(o.nonce)}"` : ''}>
 (function () {
   var COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#14b8a6'];
@@ -126,11 +134,42 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
   var ws = null;
   var fails = 0;
   var toastTimer = null;
+  // Go Live puts a login hand-off's Watch answer in its column (login-panel.ts); without it every page opens in a window.
+  var watchHere = function () { return false; };
   try { me = localStorage.getItem('go-dev-room-me') || me; } catch (e) {}
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function safeUrl(u) { return /^https?:/i.test(String(u || '')) ? String(u) : ''; }
+  /** An ixigo.com page, or '': the only pages a "See on ixigo" button opens. */
+  function ixigoPage(u) {
+    var url = safeUrl(u);
+    try {
+      var host = url ? new URL(url).hostname : '';
+      return host === 'ixigo.com' || host.slice(-10) === '.ixigo.com' ? url : '';
+    } catch (e) {
+      return '';
+    }
+  }
+  // A card's picture changes only once the new one has loaded, so the card never blanks between pictures: a working
+  // card's screenshot comes as a new address about once a second, and the room is drawn afresh on every change.
+  // pics.shown: each card's picture on screen; pics.wanted: the newest one asked for, loading. One that fails keeps the old.
+  var pics = { shown: {}, wanted: {} };
+  function picture(cardId, u) {
+    var url = safeUrl(u);
+    if (!url || pics.shown[cardId] === url) return url;
+    if (pics.wanted[cardId] !== url) {
+      pics.wanted[cardId] = url;
+      var img = new Image();
+      img.onload = function () {
+        if (pics.wanted[cardId] !== url) return;
+        pics.shown[cardId] = url;
+        render();
+      };
+      img.src = url;
+    }
+    return pics.shown[cardId] || '';
+  }
   function money(minor, cur) {
     if (minor == null) return '';
     var text = Math.round(minor / 100).toLocaleString('en-IN');
@@ -273,12 +312,13 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
     working: function (c) {
       var label = { running: 'Working on it', needs_you: 'Needs you', done: 'Done', failed: "Didn't work" }[c.state] || c.state;
       var mark = { todo: '○', doing: '◐', done: '●', failed: '×' };
-      var shot = safeUrl(c.screenshot_url);
-      var page = safeUrl(c.page_url);
+      var shot = picture(c.card_id, c.screenshot_url);
+      var see = ixigoPage(c.page_url);
       return '<span class="tag' + (c.state === 'needs_you' ? ' warn' : '') + '">' + esc(label) + '</span><h3>' + esc(c.title) + '</h3><div class="steps">' +
         c.steps.map(function (s) { return '<div>' + (mark[s.state] || '') + ' ' + esc(s.text) + '</div>'; }).join('') + '</div>' +
-        (shot && page ? '<div class="meta" style="margin-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(page) + '</div>' : '') +
         (shot ? '<img alt="" src="' + esc(shot) + '" style="max-width:100%;border-radius:10px;margin-top:8px">' : '') +
+        // The page's address is never shown as text: the picture and the steps say what it is, and the link is a button.
+        (see ? '<div class="actions"><a class="act secondary" href="' + esc(see) + '" target="_blank" rel="noopener noreferrer">See on ixigo</a></div>' : '') +
         '<div class="meta">Updated ' + esc(ago(c.updated_at)) + '</div>' + goActions(c);
     },
     call: function (c) {
@@ -329,6 +369,26 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
       quote + body + (m.card && !m.deleted ? card(m.card) : '') + '<div class="reactions">' + chips + react + '</div></div></div>';
   }
 
+  // Whether the reader is at the bottom of the chat, kept from their own scrolling, never measured inside a render: a
+  // render rebuilds the room, and its pictures load after it, so the room's height mid-render says nothing about where
+  // the reader is. Beside Go Live the chat scrolls in its own column; alone, the page scrolls.
+  var pinned = true;
+  var newest = '';
+  function column() {
+    var col = document.querySelector('.split .app');
+    return col && getComputedStyle(col).overflowY === 'auto' ? col : null;
+  }
+  function fromBottom() {
+    var col = column();
+    if (col) return col.scrollHeight - col.scrollTop - col.clientHeight;
+    return (document.scrollingElement || document.documentElement).scrollHeight - window.scrollY - window.innerHeight;
+  }
+  function toBottom() {
+    var col = column();
+    if (col) col.scrollTop = col.scrollHeight;
+    else window.scrollTo(0, (document.scrollingElement || document.documentElement).scrollHeight);
+  }
+
   function render() {
     if (!state) return;
     var t = state.trip;
@@ -340,18 +400,17 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
     $('you').innerHTML = '<span>You are ' + esc(nameOf(me)) + '</span><button class="act secondary" data-forget="' + esc(me) + '">Forget me in this trip</button>';
     var needs = state.needs[me] || [];
     $('needs').innerHTML = needs.length ? '<div class="needs"><h2>Needs you, ' + esc(nameOf(me)) + '</h2>' + needs.map(function (n) { return '<div>' + esc(n.text) + '</div>'; }).join('') + '</div>' : '';
-    // Beside Go Live the chat scrolls in its own column; alone, the page scrolls.
-    var col = document.querySelector('.split .app');
-    var box = col && col.scrollHeight > col.clientHeight + 1 ? col : null;
-    var atBottom = box ? box.scrollTop + box.clientHeight >= box.scrollHeight - 80 : window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     $('room').innerHTML = state.messages.map(message).join('') || '<div class="muted">No messages yet. Say hello, or start with @Go to ask Go.</div>';
     $('typing').textContent = state.typing ? 'Go is typing...' : '';
     var about = $('about');
     if (about) about.innerHTML = (state.about || []).map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('');
     if ($('limit')) $('limit').textContent = state.limit || '';
-    if (atBottom && col && col.scrollHeight > col.clientHeight + 1) col.scrollTop = col.scrollHeight;
-    else if (atBottom) window.scrollTo(0, document.body.scrollHeight);
-  }
+    // At the bottom before, at the bottom after. Scrolled up to read: left in place, and told about a new message.
+    var last = state.messages.length ? state.messages[state.messages.length - 1].message_id : '';
+    if (pinned) toBottom();
+    else if (last !== newest) $('newpill').hidden = false;
+    newest = last;
+${o.live ? '    renderLogin();\n' : ''}  }
 
   document.addEventListener('click', function (e) {
     var el = e.target && e.target.closest ? e.target.closest('button') : null;
@@ -381,6 +440,21 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
     }
   });
 
+  // Scroll events do not bubble from the chat's column, so the page listens while they travel down to it.
+  document.addEventListener('scroll', function () {
+    pinned = fromBottom() <= 80;
+    if (pinned) $('newpill').hidden = true;
+  }, true);
+  // A picture that loads after a render makes the room taller: a reader at the bottom stays there.
+  document.addEventListener('load', function (e) {
+    if (pinned && e.target && e.target.tagName === 'IMG' && $('room').contains(e.target)) toBottom();
+  }, true);
+  $('newpill').addEventListener('click', function () {
+    pinned = true;
+    $('newpill').hidden = true;
+    toBottom();
+  });
+
   $('composer').addEventListener('submit', function (e) {
     e.preventDefault();
     var input = $('text');
@@ -405,6 +479,7 @@ ${o.live ? `${LIVE_ASIDE}</div>` : ''}<div class="toast" id="toast"></div>
         render();
       } else if (data.type === 'tap_result') {
         var r = data.result;
+        if (watchHere(data)) return; // on screen in Go Live's column
         if (r.result === 'open' && safeUrl(r.url)) {
           window.open(r.url, '_blank', 'noopener');
           toast('Opening the page');
@@ -431,7 +506,7 @@ ${o.live ? LIVE_HOOK : ''}      }
     };
   }
 
-${o.live ? LIVE_SCRIPT : ''}  connect();
+${o.live ? LIVE_SCRIPT + LOGIN_SCRIPT : ''}  connect();
   setInterval(render, 15000); // keeps "checked 3 min ago" honest
 })();
 </script>

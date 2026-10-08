@@ -79,18 +79,21 @@ export function mandateCard(o: {
   currency: string;
   refundableOnly: boolean;
   payerName: string;
+  /** The price moved since the vote: said first, before anyone says yes. */
+  moved?: string | null;
 }): MandateCard {
   const refundable = o.refundableOnly ? ', refundable only' : '';
-  const text = `Ready to book ${o.what}: up to ${money(o.capMinor, o.currency)}${refundable}, ${o.payerName} pays. ${o.payerName}, open Go to say yes.`;
+  const moved = o.moved ? `${o.moved} ` : '';
+  const text = `${moved}Ready to book ${o.what}: up to ${money(o.capMinor, o.currency)}${refundable}, ${o.payerName} pays. ${o.payerName}, open Go to say yes.`;
   return C.MandateCard.parse({ card_id: o.cardId, kind: 'mandate', decision_id: o.decisionId, fallback_text: clip(plain(text), 300) });
 }
 
-export function ticketCard(o: { cardId: string; bookingId: string; title: string; ref: string; refundableUntil: string | null }): TicketCard {
+export function ticketCard(o: { cardId: string; bookingId: string; title: string; ref: string; refundableUntil: string | null; simulated?: boolean }): TicketCard {
   const refund = o.refundableUntil ? ` Free cancellation until ${shortDate(o.refundableUntil)}.` : '';
   return C.TicketCard.parse({
     card_id: o.cardId,
     kind: 'ticket',
     booking_id: o.bookingId,
-    fallback_text: clip(plain(`Booked: ${o.title}. Ref ${o.ref}.${refund}`), 300),
+    fallback_text: clip(plain(`${o.simulated ? 'Booked (simulated)' : 'Booked'}: ${o.title}. Ref ${o.ref}.${refund}`), 300),
   });
 }

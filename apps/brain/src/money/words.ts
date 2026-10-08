@@ -94,16 +94,17 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
     case 'wrong_offer':
       return yes(`That isn't what the group voted for. I can only pay for ${c.what}.`);
     case 'not_bookable':
-      // An option from ixigo.com (TRAVEL_MODE ixigo_web) carries its own page there, where the group books it.
+      // An option from ixigo.com (TRAVEL_MODE ixigo_web) has its own page there, opened from its card: a link is never in
+      // the words (the door takes any out).
       return yes(
         c.link
-          ? `${c.what} is booked on ixigo, not here. Here's the link to book it yourselves: ${c.link}`
+          ? `${c.what} is booked on ixigo, not here: See on ixigo on its card opens it there.`
           : "I found this one on the web, so I can't book it here. Want me to call them instead?",
       );
     case 'not_bookable_yet': {
       // A fare is per person, so one payment for the group would be wrong: the group books these on ixigo themselves.
       const first = `I can't book ${c.kind === 'train' ? 'trains' : c.kind === 'bus' ? 'buses' : 'flights'} for the whole group yet.`;
-      return yes(c.link ? `${first} Here's the link to book them yourselves: ${c.link}` : first);
+      return yes(c.link ? `${first} Each of you can book on ixigo: See on ixigo on its card opens it there.` : first);
     }
     case 'already_paid':
       return yes(`${c.what} is already booked.`);
@@ -136,8 +137,10 @@ export function failReasonWords(reason: string | null): string {
   }
 }
 
-export function bookedLine(o: { title: string; payer: string; amount: string; people: number }): string {
+export function bookedLine(o: { title: string; payer: string; amount: string; people: number; simulated?: boolean }): string {
   const split = o.people > 1 ? `, split between all ${o.people}` : '';
+  // A booking on Go's test rail only (a stay from ixigo.com) says so: nothing was booked on ixigo, nothing real was paid.
+  if (o.simulated) return `Booked (simulated): ${o.title}. ${o.payer}'s test payment of ${o.amount}${split}; nothing was booked on ixigo.`;
   return `Booked ${o.title}! ${o.payer} paid ${o.amount}${split}.`;
 }
 

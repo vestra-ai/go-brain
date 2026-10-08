@@ -398,7 +398,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(reply.reply_to).toBe(vegMessageId);
   }, 20_000);
 
-  it('4:20 Meher taps "Forget me in this trip" in the App: Go forgets her inside 2 s, says nothing in the chat, and queries find nothing left', async () => {
+  it('4:20 Meher taps "Forget me in this trip" in the App: Go forgets her inside 2 s, the group sees nothing, Meher gets one notice pinned to her, and queries find nothing left', async () => {
     chapter('4:20 Forget me, from the App');
     const tripId = fake().trip().trip_id;
     const meher = DEMO_FORGET.person;
@@ -421,9 +421,14 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(page.facts.filter((f) => f.trip_id === tripId)).toEqual([]);
     const hits = await memory.recall(tripId, "What can't Meher eat? veg", 'group');
     expect(hits.map((h) => h.seq)).not.toContain(vegSeq);
-    // Forgetting is the App's job: Go says nothing about it in the room.
+    // Forgetting is the App's job: the group sees nothing about it, and Meher alone gets one notice pinned to her that
+    // names nobody (people.ts forgetNotice).
     await new Promise((resolve) => setTimeout(resolve, 1_500));
-    expect(go().filter((m) => m.seq > before)).toEqual([]);
+    const after = go().filter((m) => m.seq > before);
+    const onlyMeher = (m: (typeof after)[number]): boolean =>
+      !m.text && m.card?.kind === 'notice' && m.card.for_person_ids?.length === 1 && m.card.for_person_ids[0] === meher;
+    expect(after.filter((m) => !onlyMeher(m))).toEqual([]);
+    expect(after.filter(onlyMeher)).toHaveLength(1);
   }, 20_000);
 
   it("the beats landed in the run sheet's order, each of Go's writes was done once, and nothing Go sent has a dash", () => {

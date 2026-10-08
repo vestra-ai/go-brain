@@ -17,6 +17,7 @@ import { createTools, type QuickTool } from '../tools.js';
 import { FakeIxigoStore } from '../../travel/fake-ixigo/data.js';
 import { createImages } from '../../travel/images.js';
 import { createTravelLayer } from '../../travel/layer.js';
+import { createIxigoLogin, HELLO_LINE } from '../../travel/login.js';
 import { createFakeTravel } from '../../travel/mcp-travel.js';
 import { createResultsStore } from '../../travel/results.js';
 import { travelTools } from '../../travel/tools.js';
@@ -883,5 +884,71 @@ describe('an answer with no model call', () => {
     });
     await turn(limited, [item(limited.tripId, ask, true)]);
     expect(asked).toBe(0);
+  });
+});
+
+describe("a lane's card on the turn's own post (p2's regression red: a new trip opened with two Go posts in a row)", () => {
+  const greet = (tripId: string): DeskItem => ({ id: `setup:${tripId}:greet`, tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} });
+  const HELLO = "Hey all, I'm Go! I can find stays and flights for Goa, run votes and book once you agree.";
+
+  /** The ixigo login lane on the room's own link and pack, as travel/register.ts adds it. */
+  function withLogin(r: ReturnType<typeof room>) {
+    const login = createIxigoLogin({
+      pool: db.pool, link: r.link, packs: { get: async () => r.pack }, runner: () => null, tasks: () => null, screen: () => null, desk: { put: async () => undefined },
+      live: () => true, now: () => new Date(), log: { warn: () => undefined, info: () => undefined }, sleep: async () => undefined,
+    });
+    r.context.addTurnCard((i) => login.helloCard(i));
+    return login;
+  }
+
+  it("a new trip's first Go post is the hello with the login card and Rahul's line on it, and setup asks nothing after", async () => {
+    const r = room({ messages: [], script: [{ text: HELLO }] });
+    const login = withLogin(r);
+    await turn(r, [greet(r.tripId)]);
+    expect(r.posts()).toHaveLength(1);
+    const hello = r.posts()[0]!.params;
+    expect(hello.text).toBe(`${HELLO}\n${HELLO_LINE.replace('{name}', 'Rahul')}`);
+    expect(hello.text).toBe(`${HELLO}\nRahul, first link ixigo once so I can search and book for everyone.`);
+    expect(hello.mentions).toEqual(['p_rahul']);
+    expect(hello.card).toMatchObject({
+      card_id: `c_login_${r.tripId}_0`, kind: 'notice', title: 'Link ixigo for this trip', for_person_ids: ['p_rahul'],
+      actions: [{ action_id: 'ixigo_login', only_for_person_ids: ['p_rahul'] }, { action_id: 'ixigo_not_now', only_for_person_ids: ['p_rahul'] }],
+    });
+    // The hello is in the room now; the setup step that asks after it finds the ask made, and nobody hears from Go twice.
+    r.pack.messages.push(msg(101, null, hello.text));
+    await login.setupStep.run(r.tripId);
+    await login.settled();
+    expect(r.posts()).toHaveLength(1);
+  });
+
+  it('a trip already logged in to ixigo gets the hello alone, and any other turn never carries the card', async () => {
+    const r = room({ messages: [], script: [{ text: HELLO }] });
+    withLogin(r);
+    await db.pool.query(
+      `insert into ixigo_logins (trip_id, person_id, state, attempt, asked_at, logged_in_at, checked_at, updated_at) values ($1, 'p_rahul', 'logged_in', 0, now(), now(), now(), now())`,
+      [r.tripId],
+    );
+    await turn(r, [greet(r.tripId)]);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]!.params).toMatchObject({ text: HELLO });
+    expect(r.posts()[0]!.params.card).toBeUndefined();
+
+    const ask = msg(2, 'p_priya', '@Go hi!');
+    const s = room({ messages: [ask], script: [{ text: 'Hi Priya!' }] });
+    withLogin(s);
+    await turn(s, [item(s.tripId, ask, true)]);
+    expect(s.posts()[0]!.params).toMatchObject({ text: 'Hi Priya!' });
+    expect(s.posts()[0]!.params.card).toBeUndefined();
+  });
+
+  it("a lane's card that fails leaves the post as Go wrote it", async () => {
+    const r = room({ messages: [], script: [{ text: HELLO }] });
+    r.context.addTurnCard(async () => {
+      throw new Error('db down');
+    });
+    await turn(r, [greet(r.tripId)]);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]!.params).toMatchObject({ text: HELLO });
+    expect(r.posts()[0]!.params.card).toBeUndefined();
   });
 });

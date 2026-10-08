@@ -62,8 +62,11 @@ describe('Forget me in the composer', () => {
     expect(now).toContain(
       '## asked Go to forget\nKabir used "Forget me in this trip" in the App, so Go forgot what it knew about them, and their earlier messages are hidden. ' +
         'Never repeat anything about Kabir from earlier in the chat, your own messages included. ' +
-        'If someone asks, say only that they asked you to forget what you knew about them, without naming any of it.',
+        "If someone asks about Kabir, say you don't have that and they can ask Kabir directly. " +
+        'Never tell the room that anyone used Forget me or asked you to forget them: only the person who did it is told, on their own card.',
     );
+    // Staging, 8 Oct: "Meher asked me to forget what I knew about them" told the room who used Forget me.
+    expect(now).not.toContain('say only that they asked you to forget');
     // Before "why you woke", after the cache point: the chat blocks and the rules are as they were.
     expect(now.indexOf('## asked Go to forget')).toBeLessThan(now.indexOf('## Why you woke'));
     expect(p.user.slice(0, -2).every((b) => !b.text.includes('## asked Go to forget') && !b.text.includes('Forget me in this trip'))).toBe(true);

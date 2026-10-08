@@ -9,7 +9,8 @@ import { fakeLink, fakePacks, goaPack, goaTrip, msg } from '../../proactive/fake
 import type { TaskBrief } from '../../tasks/tasks.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
-import { createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, LOGIN_TAB, LOGIN_URL, RECHECK_MS, USERINFO } from '../login.js';
+import type { DeskItem } from '../../desk/desk.js';
+import { createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, LOGIN_TAB, LOGIN_URL, RECHECK_MS, renderLoginResume, USERINFO } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
 import { IXIGO, type FetchPlan } from '../recipes/recipe.js';
@@ -99,8 +100,10 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
       stops.push(taskId);
     },
   };
+  const wakes: DeskItem[] = [];
+  const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { wakes.push({ id: item.id ?? '', ...item }); } };
   const login = createIxigoLogin({
-    pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, screen: () => screen, live: () => o.live !== false, now: () => clock.now,
+    pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, screen: () => screen, desk, live: () => o.live !== false, now: () => clock.now,
     log: { warn: () => undefined, info: () => undefined },
     sleep: async (ms) => {
       clock.now = new Date(clock.now.getTime() + ms);
@@ -128,7 +131,12 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const last = (): C.Card & { kind: 'notice' } => cards().at(-1) as C.Card & { kind: 'notice' };
   const state = async (): Promise<string | undefined> =>
     (await db.pool.query<{ state: string }>('select state from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.state;
-  return { tripId, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, tabCalls, login, tap, last, state, greet, looks, hooks, setup: () => login.setupStep.run(tripId) };
+  const parked = async (): Promise<unknown> =>
+    (await db.pool.query<{ parked: unknown }>('select parked from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.parked ?? null;
+  return {
+    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, tabCalls, wakes, login, tap, last, state, parked,
+    greet, looks, hooks, setup: () => login.setupStep.run(tripId),
+  };
 }
 
 const STATUS_PLAN = { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], timeoutMs: 12_000 };
@@ -556,5 +564,75 @@ describe('logging out', () => {
     expect(await w.login.ensure(w.tripId, 'The train booking')).toMatchObject({ ok: false, note: expect.stringContaining('Go asked Priya to log in') });
     // A new card, pinned to Priya, posted now: the line the model gets is true.
     expect(w.link.of('post_message').slice(before)).toEqual([expect.objectContaining({ mentions: ['p_priya'], card: expect.objectContaining({ for_person_ids: ['p_priya'] }) })]);
+  });
+});
+
+describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try booking Saudades now" got a link)', () => {
+  const what = 'Saudades Homestays';
+  const resume = { decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul', refundable_only: false };
+
+  it('brings the login card back with its own line, waits on the login, and carries on with exactly that stay once it is in', async () => {
+    const w = world({ statuses: [200] });
+    await w.setup();
+    w.clock.now = new Date(NOW.getTime() + 3 * 60_000);
+    expect(await w.login.ensure(w.tripId, what, { park: { what, resume } })).toEqual({
+      ok: false,
+      note: 'Go asked Rahul in the chat, with the login card, and carries on with booking Saudades Homestays once the login is in. Say nothing more about it.',
+    });
+    const posts = w.link.of('post_message');
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toMatchObject({
+      text: "To book Saudades Homestays I need ixigo linked once, Rahul: one login on the trip's computer, about a minute.",
+      mentions: ['p_rahul'],
+      card: { card_id: `c_login_${w.tripId}_1`, actions: [{ action_id: 'ixigo_login' }, { action_id: 'ixigo_not_now' }] },
+    });
+    expect(await w.parked()).toEqual({ what, resume });
+    expect(w.wakes).toEqual([]);
+
+    // Rahul logs in on Go's screen; ixigo then says the browser is logged in.
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    expect(w.wakes).toEqual([
+      expect.objectContaining({
+        id: `travel:login_resume:${w.tripId}:1`, tripId: w.tripId, kind: 'tap',
+        payload: { source: 'ixigo_login', action: 'resume', personId: 'p_rahul', what, resume },
+      }),
+    ]);
+    expect(await w.parked()).toBeNull();
+    expect(renderLoginResume(w.wakes[0]!, goaPack({ trip: w.trip }))).toBe(
+      'Rahul logged in to ixigo on Go\'s computer, so carry on with what the group asked for, without asking anyone again: booking Saudades Homestays. ' +
+        'Call set_mandate now with {"decision_id":"d_villa","choice_index":0,"payer_person_id":"p_rahul","refundable_only":false}, then say in one short line what was set and that the payer taps Yes, book it.',
+    );
+    // Other taps are not this wake's to say.
+    expect(renderLoginResume({ ...w.wakes[0]!, payload: { source: 'options', action: 'pick' } }, goaPack({ trip: w.trip }))).toBeNull();
+  });
+
+  it('asks once for a turn that runs again, and Not now lets the waiting booking go with the login', async () => {
+    const w = world({ statuses: [200] });
+    await w.setup();
+    w.clock.now = new Date(NOW.getTime() + 3 * 60_000);
+    await w.login.ensure(w.tripId, what, { park: { what, resume } });
+    const again = await w.login.ensure(w.tripId, what, { park: { what, resume } });
+    expect(again).toMatchObject({ ok: false, note: expect.stringContaining("Rahul's login card is just above, and Go carries on once the login is in") });
+    expect(w.link.of('post_message')).toHaveLength(2);
+
+    await w.tap('ixigo_not_now', 'p_rahul');
+    expect(await w.parked()).toBeNull();
+    // Logged in later, from another ask: nothing was waiting, so nothing carries on.
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    expect(w.wakes).toEqual([]);
+  });
+
+  it('with the login already in, is ok at once and parks nothing', async () => {
+    const w = world({ statuses: [200, 200] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    expect(await w.login.ensure(w.tripId, what, { park: { what, resume } })).toEqual({ ok: true });
+    expect(await w.parked()).toBeNull();
+    expect(w.wakes).toEqual([]);
   });
 });

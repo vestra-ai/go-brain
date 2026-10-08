@@ -4,8 +4,9 @@
  * recipe and slots), applies constraints in code on every call,
  * and routes a hold or a confirm to the backend that made the offer. A search or a hold for a check-in or departure
  * before today in the trip's time zone is refused before any backend sees it, with the date to use instead.
- * ixigo_web searches ixigo.com itself, in the trip's browser: its options are link only, and status comes from ixigo's
- * MCP server when that is set up (never from the fake, whose readings are simulated).
+ * ixigo_web searches ixigo.com itself, in the trip's browser: its options are link only, except its stays, which book on
+ * Go's test rail once the trip's ixigo login is in (travel/web-stays.ts), and status comes from ixigo's MCP server when
+ * that is set up (never from the fake, whose readings are simulated).
  */
 import type { Switches } from '../admin/switches.js';
 import { localDay } from '../proactive/clock.js';
@@ -14,6 +15,7 @@ import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
 import { applyConstraints, closest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
 import type { ResultsStore } from './results.js';
+import { WEB_STAY, type WebStays } from './web-stays.js';
 import { TravelQuery, type OfferRef, type SearchFor, type Travel, type TravelBackend, type TravelKind, type TravelOptionKind, type TravelSearch } from './travel.js';
 
 export const SEARCH_CACHE_MS = 180_000;
@@ -31,6 +33,8 @@ export interface TravelLayerDeps {
   today?: (tripId: string | null) => Promise<string>;
   simulate?: NonNullable<Travel['simulate']>;
   cacheMs?: number;
+  /** Stays from ixigo.com, booked on Go's test rail once the trip's ixigo login is in (travel/web-stays.ts). */
+  webStays?: WebStays | null;
 }
 
 /** The part of a query the backend sees; the rest are constraints Go applies itself. */
@@ -122,6 +126,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     },
     simulated: () => pick().name === 'fake',
     async hold(offerId, lead) {
+      if (offerId.startsWith(WEB_STAY) && d.webStays) return d.webStays.hold(offerId, lead);
       // The day the offer was searched for: a vote that outlived it cannot book the past.
       const searched = await d.results.searchedFor?.(offerId);
       if (searched?.day) {
@@ -133,6 +138,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       return byPrefix(offerId).hold(offerId, lead);
     },
     async confirm(holdId, paid) {
+      if (holdId.startsWith(WEB_STAY) && d.webStays) return d.webStays.confirm(holdId, paid);
       return byPrefix(holdId).confirm(holdId, paid);
     },
     async placeOf(optionId) {
@@ -144,8 +150,11 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       // A vote and a payment use the whole stay; the card shows the nightly price.
       // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is the option's own page on
       // ixigo.com (ixigo_web), where the group can book it, and null otherwise: a page a job found elsewhere is not handed out.
-      return { offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl) };
+      // A stay from ixigo.com has no offer of its own: it gets Go's web-stay offer, booked on the test rail after the login.
+      const offerId = o.offerId ?? d.webStays?.offerIdFor(o) ?? null;
+      return { offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl) };
     },
+    ...(d.webStays ? { prepare: d.webStays.prepare } : {}),
     ...(d.simulate ? { simulate: d.simulate } : {}),
   };
 }

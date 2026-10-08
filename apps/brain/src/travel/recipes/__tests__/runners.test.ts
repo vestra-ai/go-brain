@@ -4,8 +4,8 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, OUT_OF_CREDIT,
-  PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
+  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS,
+  LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -189,6 +189,53 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     await runner.pageFetch!('t1', { url: '/plan/goa', method: 'GET' }, { tag: '01JRUNFAST' });
     await runner.read('t1', BUSES, busPlan);
     expect(w.calls.map((c) => (c.opts['body'] as { tag?: string }).tag)).toEqual(['01JRUNPAGE', '01JRUNFAST', undefined]);
+  });
+
+  it('keeps the tab of a page a person waits on open as the warm tab, so the live view sees ixigo draw it; never otherwise', async () => {
+    const w = world(() => fetched([busCapture]));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.read('t1', BUSES, busPlan, { keepOpen: true });
+    await runner.read('t1', BUSES, busPlan);
+    const kept = w.calls.map((c) => (c.opts['body'] as { keep_open_ms?: number; tab?: string }));
+    // Under Bash's default name, the warm tab the page calls take: no tab of its own toward Bash's cap.
+    expect(kept.map((b) => [b.keep_open_ms, b.tab])).toEqual([[WARM_TAB_MS, undefined], [undefined, undefined]]);
+  });
+
+  it("looks at a kept page once ixigo has drawn it, for a live card: one tiny call in the tab, its pictures of the same page", async () => {
+    const OTHER = 'https://www.ixigo.com/buses/bus_search/Delhi/1/Goa/102/06-11-2026/O';
+    const pic = (page_url: string, jpeg_base64: string) => ({ label: 'done', at_ms: 120, page_url, jpeg_base64 });
+    const w = world((c) => ((c.opts['body'] as { url?: string }).url
+      ? { ...fetched([busCapture]), frames: [pic(BUSES, '/9j/S')] }
+      : { ...fetched([capture('look', 'https://www.ixigo.com/favicon.ico', '')]), frames: [pic(BUSES, '/9j/D'), pic(OTHER, '/9j/X')] }));
+    const runner = createBrowserFetchRunner(w.deps);
+    const seen: RecipeProgress[] = [];
+    await runner.read('t1', BUSES, busPlan, { keepOpen: true, look: true, tag: '01JRUNPAGE', onProgress: (e) => seen.push(e) });
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(w.calls.map((c) => c.opts['body'])[1]).toEqual({
+      steps: [{ op: 'page_fetch', url: '/favicon.ico', method: 'GET', capture_as: 'look', max_bytes: 1_000 }],
+      // Through Bash's settle window: without one, Bash answers before the tab's picture is back, with none.
+      keep_open_ms: WARM_TAB_MS, timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH, settle_ms: LOOK_SETTLE_MS }, tag: '01JRUNPAGE',
+    });
+    // Only the run's own page, timed from the page's fetch: the look went LOOK_AFTER_MS after the answer.
+    expect(seen.at(-1)).toEqual({ type: 'drawn', frames: [{ ...pic(BUSES, '/9j/D'), at_ms: LOOK_AFTER_MS + 120 }] });
+
+    // No look without a live card, nor for a page whose tab is not kept; a look that fails tells nothing and throws nothing.
+    const quiet = world(() => fetched([busCapture]));
+    const r2 = createBrowserFetchRunner(quiet.deps);
+    await r2.read('t1', BUSES, busPlan, { keepOpen: true, onProgress: () => undefined });
+    await r2.read('t1', BUSES, busPlan, { look: true, onProgress: () => undefined });
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(quiet.calls).toHaveLength(2);
+    const taken = world((c) => {
+      if ((c.opts['body'] as { url?: string }).url) return fetched([busCapture]);
+      throw new V1Error(409, 'no_open_tab', 'No tab is kept open under the name default.');
+    });
+    const told: RecipeProgress[] = [];
+    await createBrowserFetchRunner(taken.deps).read('t1', BUSES, busPlan, { keepOpen: true, look: true, onProgress: (e) => told.push(e) });
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(taken.calls).toHaveLength(2);
+    expect(told.some((e) => e.type === 'drawn')).toBe(false);
+    expect(taken.log.warn).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't1' }), 'travel: a look at the drawn page found nothing');
   });
 
   it('makes the trip user when /v1 does not have it, then asks once more', async () => {

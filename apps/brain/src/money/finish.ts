@@ -165,8 +165,8 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
     await d.link.request('post_message', {
       request_id: id('ticket'),
       trip_id: row.trip_id,
-      text: bookedLine({ title: confirmed.title, payer: row.payer_name, amount: money(amountMinor, row.currency), people: row.for_person_ids.length }),
-      card: ticketCard({ cardId: rid('c_ticket', approvalId), bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil }),
+      text: bookedLine({ title: confirmed.title, payer: row.payer_name, amount: money(amountMinor, row.currency), people: row.for_person_ids.length, simulated: confirmed.simulated === true }),
+      card: ticketCard({ cardId: rid('c_ticket', approvalId), bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil, simulated: confirmed.simulated === true }),
     });
     await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
   }

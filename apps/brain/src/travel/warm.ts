@@ -131,6 +131,14 @@ export interface StaysHeadStartDeps {
   warmGaveUp(tripId: string): boolean;
   /** The trip computer is set up here (the tasks lane's runners), as for every warm in this file. */
   computerSetUp(): boolean;
+  /**
+   * The trip's dates or destination changed and this head start loaded and kept their stays: Go may put them up
+   * (head-start-wake.ts decides). Never at setup, on a person's line, or when the search was kept or running already
+   * (an ask got there first, or the same dates were agreed again).
+   */
+  onChangedKept?(tripId: string, ask: HeadStartAsk, startedAt: Date): void;
+  /** A stays search of this place and dates is kept or running, with any conditions (the backend's pageKept). */
+  staysKept?(tripId: string, ask: HeadStartAsk): Promise<boolean>;
 }
 
 const DAY_MS = 86_400_000;
@@ -170,6 +178,14 @@ export function createStaysHeadStart(d: StaysHeadStartDeps): {
     if (!t.destination || !t.start || !t.end) return;
     const nights = Math.round((Date.parse(t.end) - Date.parse(t.start)) / DAY_MS);
     if (!(nights >= 1 && nights <= HEAD_START_MAX_NIGHTS) || t.start < (await d.today(tripId))) return;
+    const ask: HeadStartAsk = { place: t.destination, check_in: t.start, check_out: t.end };
+    // A stays search of the same place and dates, kept or running with any conditions (the turn's own on an agreement,
+    // "pool stays for 6 to 9 Nov"), already answers "stays for these dates": a head start would only load a second page,
+    // and every load opens a window on the trip's computer. One load per agreement.
+    if (await d.staysKept?.(tripId, ask)) {
+      d.log.info({ tripId, why }, "travel: the trip's stays for these dates are kept already: no head start");
+      return;
+    }
     const day = d.now().toISOString().slice(0, 10);
     const used = loadsToday.get(tripId);
     const count = used?.day === day ? used.count : 0;
@@ -177,7 +193,6 @@ export function createStaysHeadStart(d: StaysHeadStartDeps): {
       d.log.info({ tripId, why }, "travel: the trip's stays head starts are used up for today");
       return;
     }
-    const ask: HeadStartAsk = { place: t.destination, check_in: t.start, check_out: t.end };
     const started = d.now().getTime();
     lastAt.set(tripId, started);
     const shared = await d.share(tripId, ask, () => d.run(tripId, ask));
@@ -193,6 +208,7 @@ export function createStaysHeadStart(d: StaysHeadStartDeps): {
       // answer under that key too (a share whose run is the answer itself loads nothing).
       await d.share(tripId, ask, () => Promise.resolve(answer));
       d.log.info({ tripId, why, ms: d.now().getTime() - started }, "travel: the trip's stays head start is kept");
+      if (why === 'changed') d.onChangedKept?.(tripId, ask, new Date(started));
     } catch (err) {
       failed += 1;
       lastAt.delete(tripId);

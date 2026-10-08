@@ -30,7 +30,7 @@ type AskRun = (ctx: TurnCtx, o: { decisionId: string; optionRef: string; purpose
 type SetRun = (
   ctx: TurnCtx,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
-) => Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true }>;
+) => Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; parked?: true }>;
 
 export function askToPayTool(run: AskRun): QuickTool<AskToPayInput> {
   return {
@@ -66,7 +66,9 @@ export function setMandateTool(run: SetRun): QuickTool<SetMandateInput> {
           refused: r.refused,
           tell_the_room: r.unbookable
             ? 'Say this in one short line, before anything about who pays: there is nothing to set up for paying for this option.'
-            : SAY_THE_REFUSAL,
+            : r.parked
+              ? 'It waits on the trip\'s ixigo login, and Go carries on with it by itself once the login is in. Do what refused says, and never ask for a number or a code in the chat.'
+              : SAY_THE_REFUSAL,
         };
       }
       return {

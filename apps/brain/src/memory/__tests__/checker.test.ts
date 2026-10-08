@@ -50,6 +50,22 @@ describe('checkFact', () => {
     expect(checkFact({ person_id: 'p_meher', topic: 'food', text: 'Allergic to peanuts', message_id: 'm_0130' }, env({ forgotten: new Map([['p_meher', 135]]) })))
       .toEqual({ ok: false, reason: 'that person asked Go to forget this' });
   });
+  it("never saves a person's budget or a money figure as a fact: budgets stay private to the trip (staging 8 Oct)", () => {
+    const said = [
+      msg(200, 'p_meher', 'for me a pool stay under ₹3,000 per night max'),
+      msg(201, 'p_meher', "my budget's tight this time"),
+      msg(202, 'p_meher', "I can't leave before 6 pm on Friday"),
+    ];
+    const e = env({ pack: packOf([...messages, ...said], goaTrip()) });
+    const refused = { ok: false, reason: "a person's budget or money stays private to the trip" };
+    // The fact staging saved for Meher, and a budget with no amount.
+    expect(checkFact({ person_id: 'p_meher', topic: 'budget', text: 'Pool stay under ₹3,000 per night', message_id: 'm_0200' }, e)).toEqual(refused);
+    expect(checkFact({ person_id: 'p_meher', topic: 'stays', text: 'Pool stay under 3k a night', message_id: 'm_0200' }, e)).toEqual(refused);
+    expect(checkFact({ person_id: 'p_meher', topic: 'Budget', text: 'Tight this time', message_id: 'm_0201' }, e)).toEqual(refused);
+    // A time is not money: a lasting fact with a number still saves.
+    expect(checkFact({ person_id: 'p_meher', topic: 'leaving', text: "Can't leave before 6 pm Friday", message_id: 'm_0202' }, e).ok).toBe(true);
+  });
+
   it('takes em dashes out of what it saves', () => {
     expect(cleanText('Allergic to peanuts — strictly', 200)).toBe('Allergic to peanuts, strictly');
     expect(cleanText('x'.repeat(201), 200)).toBeNull();
@@ -85,6 +101,19 @@ describe('checkLine', () => {
       .toMatchObject({ ok: true, value: { kind: 'doing', personIds: ['p_kabir'] } });
     // A promise said to Go in the same breath is refused too (see checker.ts): its words cannot be told from the ask.
     expect(checkLine(lineP({ kind: 'doing', text: 'Kabir sorts the cab', proof: ['m_0181'], person_ids: ['p_kabir'] }), e)).toEqual(refused);
+  });
+
+  it('never makes a doing line from a payment or a debt: that is an expense, a money record (staging 8 Oct)', () => {
+    const paid = msg(190, 'p_kabir', 'I paid 2400 for the cab from the airport, split between all of us');
+    const owes = msg(191, 'p_priya', 'Kabir owes me 500 for the dinner');
+    const later = msg(192, 'p_rahul', 'I will pay for the villa and you all send me later');
+    const e = env({ pack: packOf([...messages, paid, owes, later], goaTrip()) });
+    const refused = { ok: false, reason: 'a payment or a debt is a money record, not a doing line' };
+    expect(checkLine(lineP({ kind: 'doing', text: 'Paid for airport cab', proof: ['m_0190'], person_ids: ['p_kabir'] }), e)).toEqual(refused);
+    expect(checkLine(lineP({ kind: 'doing', text: 'Paid for dinner', proof: ['m_0191'], person_ids: ['p_priya'] }), e)).toEqual(refused);
+    // A promise to pay later is a job someone takes on: still a doing line.
+    expect(checkLine(lineP({ kind: 'doing', text: 'Rahul pays for the villa', proof: ['m_0192'], person_ids: ['p_rahul'] }), e))
+      .toMatchObject({ ok: true, value: { kind: 'doing', personIds: ['p_rahul'] } });
   });
 
   it('lets only the person who said it be on a doing line', () => {

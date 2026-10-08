@@ -86,6 +86,10 @@ export function wireMemory(brain: Brain, d: WireDeps): {
     pool: brain.pool, packs: brain.packs, fold, now: brain.now, log: brain.log,
     // Travel registers after memory, so the login is read when a forget runs.
     loginGone: async (tripId, personId) => brain.ixigoLogin?.personGone(tripId, personId, 'forgot'),
+    // The person is told on a card pinned to them; the room hears nothing.
+    tellPerson: async (tripId, _personId, card) => {
+      await brain.door.link.request('post_message', { request_id: `go_${card.card_id}`, trip_id: tripId, card });
+    },
   });
   brain.door.handle('get_person', people.get_person);
   brain.door.handle('update_person', people.update_person);

@@ -163,17 +163,23 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: 
     push();
   }
 
-  async function show(list: LiveFrame[]): Promise<void> {
+  /** drawn: the page as ixigo drew it after the answer, which replaces the picture even on a card that is done. */
+  async function show(list: LiveFrame[], drawn = false): Promise<void> {
     const frame = frameToShow(list);
-    if (!frame || ended) return;
+    if (!frame || (ended && !drawn)) return;
     const url = await d.images.putBytes(frame.bytes, 'image/jpeg');
-    if (ended || card.screenshot_url === url) return;
+    if ((ended && !drawn) || card.screenshot_url === url) return;
     card.screenshot_url = url;
     card.page_url = frame.pageUrl;
     push();
   }
 
   function on(e: RecipeProgress): void {
+    if (e.type === 'drawn') {
+      if (card.state === 'failed') return;
+      frames = frames.then(() => show(e.frames, true)).catch((err: unknown) => d.log.warn({ err, cardId: card.card_id }, 'travel: a live search picture failed'));
+      return;
+    }
     if (ended) return;
     switch (e.type) {
       case 'opening':

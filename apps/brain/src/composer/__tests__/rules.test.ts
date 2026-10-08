@@ -25,9 +25,10 @@ describe("Go's rules", () => {
     expect(section).toContain(
       '- A question you can answer: someone in the chat asks something you can answer with facts from ixigo or the trip (the record, votes, money, places). Answer it, unless a person already did.',
     );
-    // Agreed dates or a place get one offer of the next step; a disagreement gets a vote offered.
+    // Agreed dates on a trip with a place get stays shown, not offered (lead, 8 Oct); an agreed place gets one offer of the
+    // next step; a disagreement gets a vote offered.
     expect(section).toContain(
-      '- A plan point you can move: when the group agrees dates or a place, offer the next step in one line (stays for those dates, how everyone gets there). When people disagree, offer a vote.',
+      "- A plan point you can move: when the group agrees dates on a trip that has a place, show stays for those dates with search_stays, the card and not an offer line (the trip's head start often has them already). When it agrees a place, offer the next step in one line (stays, how everyone gets there). When people disagree, offer a vote.",
     );
     expect(section).toContain('- Something wrong or at risk: say so.');
   });
@@ -96,6 +97,32 @@ describe("Go's rules", () => {
     const line =
       "- Never describe your own steps, reasons or tools, and never announce a card or a vote (\"I'll show the options card now\", \"I'll open a vote\"): the card shows itself. Say only what the group needs: the answer, the card, the next step.";
     expect(section).toContain(line);
+  });
+
+  it('never writes a message number: people never see them, and cutting one out left half a sentence (staging, 8 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
+    expect(section).toContain('- Never write a message number ("#57") in what you say: people don\'t see them. Say whose message it was, or leave it out.\n');
+  });
+
+  it('an offer follows from the message it answers: a birthday answer gets no villa offer (staging, 8 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
+    expect(section).toContain(
+      '- An offer must follow from the message you are answering. Answer what was asked and stop: never add an offer about something else ("when is Meher\'s birthday?" gets the birthday, never "want me to pull up villas?").',
+    );
+  });
+
+  it('brings up an open vote only when the message is about it, or once before it closes unseen: never as a tail, never on a refusal (staging, 8 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nVotes and the trip\n'));
+    expect(section).toContain(
+      "- Bring up an open vote only when the message you are answering is about it or what it decides, or once when it is about to close with people who haven't voted. Never add it to a reply about something else, and never to a refusal.",
+    );
+  });
+
+  it('never tells the room who used Forget me, nor that anyone asked Go to forget them (staging, 8 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nForget me\n'), GO_RULES.indexOf('\nVotes and the trip\n'));
+    expect(section).toContain(
+      "- Never tell the room that someone used Forget me or asked you to forget them. If someone asks about a thing you no longer know, say you don't have it, and that they can ask that person.",
+    );
   });
 
   it('use no em dashes or en dashes, as they ask of Go', () => {

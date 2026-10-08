@@ -2,9 +2,10 @@
  * One person's ixigo login on the trip's computer. Keshav's word: "when the trip creates, that's when we [make] the ixigo
  * connection, and all the warming should happen; connection as in ixigo should be logged in, so prompt someone to login",
  * and "if there is no login on ixigo in a group, it should first proactively prompt for that". One setup flow at
- * trip.created: the box is made (travel.computer), then, right after Go's hello, Go prompts the organizer (or, with none,
- * the first person who hasn't paused Go) with one line and a card pinned to them (travel.ixigo_login), then ixigo is opened
- * and warmed on the box (travel.ixigo_warm). A trip that never had the prompt (one Go held before it came) is asked at its
+ * trip.created: Go's hello itself prompts the organizer (or, with none, the first person who hasn't paused Go), with its
+ * last line for them and a card pinned to them on the same message (helloCard: one Go post, never two in a row); the box
+ * is made (travel.computer), the prompt is made after the hello if the hello went without it (travel.ixigo_login), then
+ * ixigo is opened and warmed on the box (travel.ixigo_warm). A trip that never had the prompt (one Go held before it came) is asked at its
  * first search instead (nudge). Each trip is asked once that way; a row of any kind ("Not now" too) means no more nudges.
  * Nothing waits on the login: searches work logged out. Go asks again the first time a recipe needs the login
  * (auth: login). The person logs in
@@ -20,6 +21,7 @@
  */
 import type * as C from '@go/contract';
 import type pg from 'pg';
+import type { Desk, DeskItem } from '../desk/desk.js';
 import type { CardTapParams, CardTapResult } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { TapRouter } from '../door/taps.js';
@@ -54,10 +56,23 @@ const LOGIN_BUTTON = { op: 'click', role: 'button', name: 'Login' } as const;
 const MOBILE_BOX = { op: 'click', role: 'textbox', text: 'mobile' } as const;
 /** ixigo's home page, where the log in sheet opens. */
 export const LOGIN_URL = 'https://www.ixigo.com/';
-/** The first ask, at setup or at a trip's first search. */
+/** A booking ask asks again with its own line, unless it asked this recently (a turn that runs again). */
+const BOOK_ASK_AGAIN_MS = 2 * 60_000;
+/** The first ask, at setup or at a trip's first search, when Go's hello went without it. */
 const FIRST_LINE = "{name}, link ixigo for the trip: one login on the trip's computer, about a minute.";
+/** The hello's last line, for the person asked, with the login card on the same message. */
+export const HELLO_LINE = '{name}, first link ixigo once so I can search and book for everyone.';
 
 export type LoginState = 'asked' | 'logging_in' | 'logged_in' | 'skipped' | 'logged_out';
+
+/**
+ * A booking ask that waits on the trip's login (travel/web-stays.ts): what it books, said in the ask's line, and the
+ * set_mandate call to carry on with, which the composer makes when the login is in.
+ */
+export interface Parked {
+  what: string;
+  resume: Record<string, unknown>;
+}
 
 export interface LoginRow {
   tripId: string;
@@ -68,6 +83,7 @@ export interface LoginRow {
   askedAt: Date;
   loggedInAt: Date | null;
   checkedAt: Date | null;
+  parked: Parked | null;
 }
 
 export interface LoginDeps {
@@ -80,6 +96,8 @@ export interface LoginDeps {
   tasks: () => Pick<Tasks, 'handoff' | 'stop'> | null;
   /** A fresh session on the trip's screen, in control or to view (POST /v1/sessions); null with no trip computer here. */
   screen: () => ((tripId: string, mode: 'view' | 'control') => Promise<{ url: string; expires_at: string }>) | null;
+  /** A booking parked on the login wakes the composer when the login is in. */
+  desk: Pick<Desk, 'put'>;
   /** Whether Go searches ixigo.com itself (TRAVEL_MODE ixigo_web): only then is there a login to ask for. */
   live: () => boolean;
   now: () => Date;
@@ -91,7 +109,13 @@ export interface LoginDeps {
 }
 
 export interface IxigoLogin {
-  /** The setup step that asks right after Go's hello, before the warm. */
+  /**
+   * Go's hello carries the ask (context.addTurnCard): on the setup turn that greets the trip, with no login yet, the
+   * login card and one line for the person asked ride on the hello's own post, so a new trip opens with one Go message,
+   * never two in a row. Null for any other turn, a trip that already has a login, or one Go doesn't browse for.
+   */
+  helloCard(i: { tripId: string; wake: DeskItem[]; pack: TripPack }): Promise<{ card: C.Card; line: string } | null>;
+  /** The setup step that asks after Go's hello when the hello went without the ask, before the warm. */
   setupStep: SetupStep;
   /**
    * Travel intent on a trip (warmForTravel's callers: a search tool starting, the early start, a recipe's run): a trip
@@ -99,8 +123,12 @@ export interface IxigoLogin {
    */
   nudge(tripId: string): void;
   registerTaps(taps: Pick<TapRouter, 'on'>): void;
-  /** For a recipe that needs the login: ok, or the line for the model (and the person was asked). */
-  ensure(tripId: string, what: string): Promise<{ ok: true } | { ok: false; note: string }>;
+  /**
+   * For a recipe or a booking that needs the login: ok, or the line for the model (and the person was asked). A booking
+   * (park) is asked with its own line ("To book Saudades I need ixigo linked once, Rahul") and waits on the login: when
+   * the login is in, the composer wakes and carries on with it.
+   */
+  ensure(tripId: string, what: string, o?: { park?: Parked }): Promise<{ ok: true } | { ok: false; note: string }>;
   /** ixigo's own answer for the trip's browser: in, out, or unknown (the page never said). */
   status(tripId: string): Promise<'in' | 'out' | 'unknown'>;
   onEvent(ev: C.Event): Promise<void>;
@@ -115,6 +143,14 @@ export interface IxigoLogin {
 }
 
 const cardId = (tripId: string, attempt: number): string => `c_login_${tripId}_${attempt}`;
+
+/** How a booking that waited on the login reads in "why Go woke", once the login is in. Null for other taps. */
+export function renderLoginResume(item: DeskItem, pack: TripPack): string | null {
+  const p = item.payload as { source?: string; action?: string; personId?: string; what?: string; resume?: Record<string, unknown> };
+  if (p.source !== 'ixigo_login' || p.action !== 'resume') return null;
+  const who = pack.trip.people.find((x) => x.person_id === p.personId)?.name ?? 'Someone';
+  return `${who} logged in to ixigo on Go's computer, so carry on with what the group asked for, without asking anyone again: booking ${p.what ?? 'the stay'}. Call set_mandate now with ${JSON.stringify(p.resume ?? {})}, then say in one short line what was set and that the payer taps Yes, book it.`;
+}
 /** Why the card says what it says: not logged in yet, the person left or used Forget me, a log out ixigo didn't take. */
 type Note = 'not_yet' | 'not_opened' | 'expired' | 'left' | 'forgot' | 'logout_failed';
 const day = (at: Date): string => at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
@@ -196,19 +232,22 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function get(tripId: string): Promise<LoginRow | null> {
     const { rows } = await d.pool.query<{
       person_id: string; state: LoginState; attempt: number; task_id: string | null; asked_at: Date; logged_in_at: Date | null; checked_at: Date | null;
-    }>('select person_id, state, attempt, task_id, asked_at, logged_in_at, checked_at from ixigo_logins where trip_id = $1', [tripId]);
+      parked: Parked | null;
+    }>('select person_id, state, attempt, task_id, asked_at, logged_in_at, checked_at, parked from ixigo_logins where trip_id = $1', [tripId]);
     const r = rows[0];
-    return r ? { tripId, personId: r.person_id, state: r.state, attempt: r.attempt, taskId: r.task_id, askedAt: r.asked_at, loggedInAt: r.logged_in_at, checkedAt: r.checked_at } : null;
+    return r
+      ? { tripId, personId: r.person_id, state: r.state, attempt: r.attempt, taskId: r.task_id, askedAt: r.asked_at, loggedInAt: r.logged_in_at, checkedAt: r.checked_at, parked: r.parked }
+      : null;
   }
 
   async function save(row: LoginRow): Promise<void> {
     await d.pool.query(
-      `insert into ixigo_logins (trip_id, person_id, state, attempt, task_id, asked_at, logged_in_at, checked_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `insert into ixigo_logins (trip_id, person_id, state, attempt, task_id, asked_at, logged_in_at, checked_at, parked, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        on conflict (trip_id) do update set person_id = excluded.person_id, state = excluded.state, attempt = excluded.attempt,
          task_id = excluded.task_id, asked_at = excluded.asked_at, logged_in_at = excluded.logged_in_at, checked_at = excluded.checked_at,
-         updated_at = excluded.updated_at`,
-      [row.tripId, row.personId, row.state, row.attempt, row.taskId, row.askedAt, row.loggedInAt, row.checkedAt, d.now()],
+         parked = excluded.parked, updated_at = excluded.updated_at`,
+      [row.tripId, row.personId, row.state, row.attempt, row.taskId, row.askedAt, row.loggedInAt, row.checkedAt, row.parked ? JSON.stringify(row.parked) : null, d.now()],
     );
   }
 
@@ -222,8 +261,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   }
 
   /** Asks one person, with a line naming them and a fresh card (an earlier card is far up the chat by now). */
-  async function ask(tripId: string, personId: string, attempt: number, line: string): Promise<void> {
-    const row: LoginRow = { tripId, personId, state: 'asked', attempt, taskId: null, askedAt: d.now(), loggedInAt: null, checkedAt: null };
+  async function ask(tripId: string, personId: string, attempt: number, line: string, parked: Parked | null = null): Promise<void> {
+    const row: LoginRow = { tripId, personId, state: 'asked', attempt, taskId: null, askedAt: d.now(), loggedInAt: null, checkedAt: null, parked };
     await save(row);
     const name = await nameOf(tripId, personId);
     await d.link.request('post_message', {
@@ -252,7 +291,15 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
 
   async function loggedIn(row: LoginRow): Promise<LoginRow> {
     const now = d.now();
-    const next: LoginRow = { ...row, state: 'logged_in', loggedInAt: row.state === 'logged_in' ? row.loggedInAt : now, checkedAt: now };
+    // A booking that waited on this login carries on: the composer wakes with it, before the row lets it go, so a
+    // failed write here leaves it parked for the next time the login reads in (the desk item's id makes it once).
+    if (row.parked) {
+      await d.desk.put({
+        id: `travel:login_resume:${row.tripId}:${row.attempt}`, tripId: row.tripId, kind: 'tap', ref: cardId(row.tripId, row.attempt), dueAt: now,
+        payload: { source: 'ixigo_login', action: 'resume', personId: row.personId, what: row.parked.what, resume: row.parked.resume },
+      });
+    }
+    const next: LoginRow = { ...row, state: 'logged_in', loggedInAt: row.state === 'logged_in' ? row.loggedInAt : now, checkedAt: now, parked: null };
     await save(next);
     return next;
   }
@@ -322,7 +369,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       [tripId, personId, now],
     );
     if ((made.rowCount ?? 0) === 0) return;
-    const row: LoginRow = { tripId, personId, state: 'asked', attempt: 0, taskId: null, askedAt: now, loggedInAt: null, checkedAt: null };
+    const row: LoginRow = { tripId, personId, state: 'asked', attempt: 0, taskId: null, askedAt: now, loggedInAt: null, checkedAt: null, parked: null };
     const name = await nameOf(tripId, personId);
     try {
       await d.link.request('post_message', {
@@ -435,9 +482,28 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     };
 
   return {
+    async helloCard(i) {
+      if (!d.live() || !i.wake.some((w) => w.kind === 'setup' && w.ref === 'greet')) return null;
+      // Claimed before the hello goes, so the setup step (and a first search's nudge) finds the ask made and asks nothing.
+      const personId = askable(i.pack);
+      if (personId) {
+        await d.pool.query(
+          `insert into ixigo_logins (trip_id, person_id, state, attempt, asked_at, updated_at) values ($1, $2, 'asked', 0, $3, $3)
+           on conflict (trip_id) do nothing`,
+          [i.tripId, personId, d.now()],
+        );
+      }
+      // The first ask, made here or by an earlier try of this turn: anything else (logged in, skipped, asked again) is not the hello's.
+      const row = await get(i.tripId);
+      if (!row || row.state !== 'asked' || row.attempt !== 0) return null;
+      const name = i.pack.trip.people.find((p) => p.person_id === row.personId)?.name ?? 'the organizer';
+      return { card: loginCard(row, name), line: HELLO_LINE.replace('{name}', name) };
+    },
+
     setupStep: {
       name: 'travel.ixigo_login',
-      // Right after the box is started, before ixigo is warmed on it: the prompt never waits on the warm.
+      // Right after the box is started, before ixigo is warmed on it: the prompt never waits on the warm. Go's hello
+      // normally carried the ask already (helloCard), and then this finds the row and asks nothing.
       after: 'travel.computer',
       async run(tripId) {
         // Nothing to log in to while Go doesn't browse ixigo.com; a recipe that needs the login asks then.
@@ -509,7 +575,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
 
       taps.on('notice', 'ixigo_not_now', forPerson(async (row) => {
         if (row.state === 'logged_in') return { result: 'done' };
-        const next: LoginRow = { ...row, state: 'skipped' };
+        // A booking that waited on the login is let go with it: Go asks again when someone asks for a booking again.
+        const next: LoginRow = { ...row, state: 'skipped', parked: null };
         await save(next);
         if (row.state === 'logging_in') {
           // The log in leaves the person's screen; a job from before stops where it is, its card saying Stopped.
@@ -527,7 +594,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       }));
     },
 
-    async ensure(tripId, what) {
+    async ensure(tripId, what, o = {}) {
+      const park = o.park ?? null;
       const row = await get(tripId);
       const now = d.now().getTime();
       if (row && (row.state === 'logged_in' || row.state === 'logging_in')) {
@@ -540,7 +608,16 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         }
         // ixigo can't say: a login Go saw stands until it can.
         if (s === 'unknown' && row.state === 'logged_in') return { ok: true };
-        if (row.state === 'logging_in') return { ok: false, note: `${what} needs the trip's ixigo login, and ${await nameOf(tripId, row.personId)} hasn't finished it on Go's screen yet. Say so in one line.` };
+        if (row.state === 'logging_in') {
+          if (park) await save({ ...row, parked: park });
+          const name = await nameOf(tripId, row.personId);
+          return {
+            ok: false,
+            note: park
+              ? `${what} needs the trip's ixigo login, and ${name} hasn't finished it on Go's screen yet. Go carries on with it once ${name} is in: say so in one line.`
+              : `${what} needs the trip's ixigo login, and ${name} hasn't finished it on Go's screen yet. Say so in one line.`,
+          };
+        }
       }
       const pack = await d.packs.get(tripId);
       // Someone who used Forget me in this trip is never asked again (memory's forgotten marks).
@@ -558,9 +635,17 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           : pack.trip.people.find((p) => can(p.person_id))?.person_id;
       if (!personId) return { ok: false, note: `${what} needs the trip's ixigo login, and nobody can be asked for it now. Say so in one line.` };
       const name = await nameOf(tripId, personId);
-      // Someone new (the one asked used Forget me) is asked at once; the same person, at most once in half an hour.
-      if (!row || row.personId !== personId || row.state !== 'asked' || now - row.askedAt.getTime() >= ASK_AGAIN_MS) {
-        await ask(tripId, personId, row ? row.attempt + 1 : 0, "{name}, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.");
+      // Someone new (the one asked used Forget me) is asked at once; the same person, at most once in half an hour, or,
+      // for a booking, with its own line unless that was just asked.
+      const again = park ? BOOK_ASK_AGAIN_MS : ASK_AGAIN_MS;
+      if (!row || row.personId !== personId || row.state !== 'asked' || now - row.askedAt.getTime() >= again) {
+        const line = park ? `To book ${park.what} I need ixigo linked once, {name}: one login on the trip's computer, about a minute.` : "{name}, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.";
+        await ask(tripId, personId, row ? row.attempt + 1 : 0, line, park);
+        // Go's line and the card are the answer to the booking ask.
+        if (park) return { ok: false, note: `Go asked ${name} in the chat, with the login card, and carries on with booking ${park.what} once the login is in. Say nothing more about it.` };
+      } else if (park && row) {
+        await save({ ...row, parked: park });
+        return { ok: false, note: `${what} needs the trip's ixigo login: ${name}'s login card is just above, and Go carries on once the login is in. Say so in one line, and never ask for a number or a code in the chat.` };
       }
       return { ok: false, note: `${what} needs the trip's ixigo login. Go asked ${name} to log in on the card: say so in one line, and never ask for a number or a code in the chat.` };
     },

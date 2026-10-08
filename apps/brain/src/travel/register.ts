@@ -10,8 +10,9 @@ import { ixigoTool } from './book/tool.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
+import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
-import { createIxigoLogin } from './login.js';
+import { createIxigoLogin, renderLoginResume } from './login.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
 import { startLiveSearch } from './live-search.js';
@@ -30,6 +31,7 @@ import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
+import { createWebStays } from './web-stays.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
 import { ProactiveStore } from '../proactive/store.js';
@@ -63,11 +65,14 @@ export const registerTravel: RegisterLane = async (brain) => {
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     tasks: () => brain.tasks ?? null,
     screen: () => brain.recipeRunners?.screen ?? null,
+    desk: brain.desk,
     live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
     now: brain.now,
     log: brain.log,
   });
   login.registerTaps(brain.taps);
+  // Go's hello carries the login card and its line: one message to open a new trip, never two in a row.
+  brain.context.addTurnCard((i) => login.helloCard(i));
   // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.
   // Travel intent is also when a trip with no ixigo login is asked for one, once (it never holds the search).
   const warm = (tripId: string, kind: TravelKind | null): void => {
@@ -145,6 +150,10 @@ export const registerTravel: RegisterLane = async (brain) => {
     ttlMs: (book.get('hotels.search')?.ttl_minutes ?? 10) * 60_000,
     warmGaveUp: (tripId) => ixigoWarm.gaveUp(tripId),
     computerSetUp: () => brain.recipeRunners !== undefined,
+    // Dates agreed on a trip with a place: the kept stays go up as one card, unless Go has the last word.
+    // A turn's own stays search for these dates, with any conditions, is the trip's one load: the head start skips it.
+    staysKept: (tripId, ask) => ixigoWeb.pageKept('hotels.search', { ...ask }, { tripId }),
+    onChangedKept: showHeadStartStays({ travel: () => brain.travel, packs: brain.packs, desk: brain.desk, results, now: brain.now, log: brain.log }),
   });
   brain.setup.addStep({ name: STAYS_HEAD_START_STEP, after: IXIGO_WARM_STEP, run: (tripId) => headStart.atSetup(tripId) });
   brain.tripLog.onEvent((ev) => headStart.onEvent(ev));
@@ -159,6 +168,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     results,
     today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
+    // A stay from ixigo.com books on Go's test rail, after the trip's ixigo login and at ixigo's price now.
+    webStays: createWebStays({ results, runner: () => brain.recipeRunners?.browserFetch ?? null, login, now: brain.now }),
   });
   const today = tripToday(brain.pool, brain.now);
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today })) brain.tools.register(t);
@@ -175,7 +186,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   );
   // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
   // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
-  for (const t of watchTools({ pool: brain.pool, book, engine, switches: brain.switches, now: brain.now })) brain.tools.register(t);
+  // A watch's first check reads what Go's searches keep before a page, and one already so puts its card up.
+  const watching = { kept: ixigoWeb.keptAnswer, results, images };
+  for (const t of watchTools({ pool: brain.pool, book, engine, switches: brain.switches, now: brain.now, ...watching })) brain.tools.register(t);
   const watchRunner = createWatchRunner({
     pool: brain.pool, book, engine, store: new ProactiveStore(brain.pool), switches: brain.switches, now: brain.now, log: brain.log,
     linkOpen: () => brain.door.link.isOpen(),
@@ -205,5 +218,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));
   // Null for taps on other cards (pay, call): the next lane's renderer, or P1's generic line, reads those.
   brain.context.addWake('tap', renderOptionsTap);
+  // A booking that waited on the ixigo login, once the login is in.
+  brain.context.addWake('tap', renderLoginResume);
   brain.travel = travel;
 };

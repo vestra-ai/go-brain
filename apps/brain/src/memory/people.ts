@@ -4,6 +4,7 @@
  * validated against the contract before it leaves. Forget answers remaining_facts: 0 only after queries
  * show no fact, no story line and a forgotten mark for every trip.
  */
+import { createHash } from 'node:crypto';
 import * as C from '@go/contract';
 import type { Pool } from 'pg';
 import type { ToGoHandler } from '../door/handlers.js';
@@ -44,6 +45,28 @@ export interface PeopleDeps {
    * another member is asked next time (travel/login.ts personGone). Called once the forget holds; it never fails one.
    */
   loginGone?: (tripId: string, personId: string) => Promise<void>;
+  /**
+   * Tells the person, and only them, that the forget is done: forgetNotice on a card pinned to them. The room hears
+   * nothing. Called once the forget holds, per trip; it never fails one.
+   */
+  tellPerson?: (tripId: string, personId: string, card: C.Card) => Promise<void>;
+}
+
+/**
+ * The forget's confirmation, a notice pinned to the person who used Forget me. It names nobody, so the room learns
+ * nothing from it, and Go never says in the chat who used it (composer/context.ts forgottenNote).
+ */
+export function forgetNotice(tripId: string, personId: string, at: Date): C.Card {
+  return {
+    // Ids are at most 64 characters, and a trip's and a person's can each be long.
+    card_id: `c_forgot_${createHash('sha256').update(`${tripId}|${personId}|${at.getTime()}`).digest('hex').slice(0, 20)}`,
+    kind: 'notice',
+    tone: 'info',
+    for_person_ids: [personId],
+    title: 'Go forgot you in this trip',
+    body: "Everything Go learned about you in this trip is deleted, and Go won't read or repeat your earlier messages here. What you say from now on is new.",
+    fallback_text: 'Go forgot what it learned about you in this trip.',
+  };
 }
 
 /** Every trip Go holds anything about this person in. */
@@ -138,6 +161,9 @@ export function peopleHandlers(d: PeopleDeps): {
       for (const t of trips) {
         await d.loginGone?.(t, person_id).catch((err: unknown) =>
           d.log.warn({ err: String(err).slice(0, 200), tripId: t }, "forget: the trip's ixigo login could not be let go"),
+        );
+        await d.tellPerson?.(t, person_id, forgetNotice(t, person_id, d.now())).catch((err: unknown) =>
+          d.log.warn({ err: String(err).slice(0, 200), tripId: t }, 'forget: the card telling the person could not be posted'),
         );
       }
       return C.ForgetResult.parse({ deleted_facts: deleted, remaining_facts: 0 });

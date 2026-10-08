@@ -14,6 +14,8 @@ export interface TestGo {
   forgets: any[];
   /** What forget_person answers: Go's ForgetResult, or 'fail' for an error. */
   forget: object | 'fail';
+  /** What card_tap answers: Go's CardActionResult. */
+  tapAnswer: object;
   targets: string[];
   signatures: string[];
   refused: number;
@@ -46,6 +48,7 @@ export async function startTestGo(secret: string): Promise<TestGo> {
     taps: [],
     forgets: [],
     forget: { deleted_facts: 2, remaining_facts: 0 },
+    tapAnswer: { result: 'done', toast: 'Noted.' },
     targets: [],
     signatures: [],
     refused: 0,
@@ -82,7 +85,7 @@ export async function startTestGo(secret: string): Promise<TestGo> {
       }
       if (f.method === 'card_tap') {
         go.taps.push(f.params);
-        ws.send(JSON.stringify({ jsonrpc: '2.0', id: f.id, result: { result: 'done', toast: 'Noted.' } }));
+        ws.send(JSON.stringify({ jsonrpc: '2.0', id: f.id, result: go.tapAnswer }));
         return;
       }
       if (f.method === 'forget_person') {

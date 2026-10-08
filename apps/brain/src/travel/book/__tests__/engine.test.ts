@@ -37,6 +37,23 @@ function browser(box: (url: string, plan: FetchPlan) => Capture[], results: Capt
 const engineFor = (b: Book, runner: ReturnType<typeof browser>['runner']) =>
   createEngine({ book: b, runner: () => runner, pool: db.pool, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
 
+describe('a page a person waits on', () => {
+  it('stays open as the warm tab, so the live view sees ixigo draw it; a check nobody waits on keeps none', async () => {
+    const asked: Array<boolean | undefined> = [];
+    const runner = {
+      read: async (_trip: string, url: string, plan: FetchPlan, o: { keepOpen?: boolean } = {}) => {
+        asked.push(o.keepOpen);
+        return { captures: [capture(plan.capture[0]!.match, url, sample('plan.destination.html'))], finalUrl: url };
+      },
+    };
+    const engine = engineFor(book, runner);
+    // What the guide says is not this test's: only what each read asked of the computer.
+    await engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_keep' }).catch(() => null);
+    await engine.answer('plan.destination', { place: 'Kerala' }, { tripId: 't_keep', background: true }).catch(() => null);
+    expect(asked).toEqual([true, undefined]);
+  });
+});
+
 describe('a place Go has not searched before', () => {
   it("is asked of ixigo's own suggestion call, opened as the page with nothing typed, picked, kept, and gone straight to the next time, after a restart too", async () => {
     // The 8 Oct drill: typing Manali into the hotels box timed out on the box's browser. The call itself needs no box.

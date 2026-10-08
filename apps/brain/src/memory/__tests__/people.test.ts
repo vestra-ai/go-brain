@@ -156,6 +156,33 @@ describe('forget_person (master §10 item 5)', () => {
     expect((await db.pool.query("SELECT count(*)::int AS n FROM story_lines WHERE trip_id = 't_manali'")).rows[0].n).toBe(0);
   });
 
+  it('tells only the person, on a notice pinned to them that names nobody, in each trip it forgets; a card that fails never fails the forget', async () => {
+    const told: Array<{ tripId: string; personId: string; card: C.Card }> = [];
+    const telling = peopleHandlers({
+      pool: db.pool, packs, fold: { redactPerson: async () => 0, storyMentions: async () => 0 }, now: () => new Date('2026-10-08T12:00:00Z'), log: silentLog,
+      tellPerson: async (tripId, personId, card) => {
+        told.push({ tripId, personId, card });
+        if (tripId === 't_manali') throw new Error('the Server is away');
+      },
+    });
+    await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_goa', topic: 'food', text: 'Vegetarian', messageId: null, source: 'join' }));
+    await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_manali', topic: 'food', text: 'Vegetarian', messageId: null, source: 'join' }));
+    expect(await telling.forget_person({ person_id: 'p_meher', trip_id: 't_goa' }, meta)).toMatchObject({ remaining_facts: 0 });
+    expect(told.map((t) => [t.tripId, t.personId])).toEqual([['t_goa', 'p_meher']]);
+    const card = told[0]!.card;
+    expect(C.Card.safeParse(card).success).toBe(true);
+    expect(card).toMatchObject({ kind: 'notice', for_person_ids: ['p_meher'] });
+    expect(card.card_id.length).toBeLessThanOrEqual(64);
+    // It says "you", never a name: nothing anyone can read on it says who used Forget me (for_person_ids is the pin).
+    const words = JSON.stringify({ ...card, for_person_ids: null });
+    for (const name of ['Meher', 'p_meher', 'Kabir', 'Priya']) expect(words).not.toContain(name);
+    // Everywhere: one card per trip, and the trip whose card failed is still forgotten.
+    await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_goa', topic: 'food', text: 'Vegan now', messageId: null, source: 'join' }));
+    expect(await telling.forget_person({ person_id: 'p_meher' }, meta)).toMatchObject({ remaining_facts: 0 });
+    expect(told.slice(1).map((t) => t.tripId).sort()).toEqual(['t_goa', 't_manali']);
+    expect(await countFacts(db.pool, 'p_meher', null)).toBe(0);
+  });
+
   it("lets go of the trip's ixigo login in each trip it forgets, and a login that can't be let go never fails the forget", async () => {
     const gone: Array<[string, string]> = [];
     const withLogin = peopleHandlers({

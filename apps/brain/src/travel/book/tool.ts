@@ -76,7 +76,7 @@ const inputsOf = (r: RecipeFile | undefined): Record<string, string> =>
 
 /** Go names a place only from ixigo's own data: what the room is told about the facts it gets. */
 export const NAMES_ONLY_FROM_IXIGO =
-  "Answer in your own words, from these facts, as the person asked: a line or two, or a short list if they asked for some. Name a cafe, restaurant, bar, beach or sight only if it is in these facts or someone in the group named it, never one from memory, and never say why you can or can't name one.";
+  "Answer in your own words, from these facts, as the person asked: a line or two, or a short list if they asked for some. Name a cafe, restaurant, bar, beach or sight only if it is in these facts or someone in the group named it, never one from memory, and never say why you can or can't name one. When these facts don't match the ask exactly (another area, another kind of place), offer the nearest ones in them, with no word about what ixigo doesn't have.";
 
 const Value = z.union([z.string().min(1).max(120), z.number()]);
 

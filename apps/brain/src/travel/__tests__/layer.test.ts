@@ -275,4 +275,40 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     expect(await layer.offer('opt_ix')).toEqual({ offerId: null, title: 'IndiGo 6E 5341', priceMinor: 789600, currency: 'INR', kind: 'flight', link: PAGE });
     expect((await layer.offer('opt_web'))?.link).toBeNull();
   });
+
+  it("gives a stay from ixigo.com Go's web-stay offer, and sends its hold, confirm and prepare to the web stays (travel/web-stays.ts)", async () => {
+    const STAY = 'https://www.ixigo.com/hotels/54381/details?checkinDate=06112026&checkoutDate=09112026&roomCount=3';
+    const calls: string[] = [];
+    const webStays: NonNullable<TravelLayerDeps['webStays']> = {
+      offerIdFor: (o) => (o.sourceUrl === STAY && !o.offerId ? `webstay:${o.optionId}` : null),
+      prepare: async () => ({ ok: true, priceMinor: 4768200 }),
+      hold: async (offerId) => {
+        calls.push(`hold ${offerId}`);
+        return { holdId: `${offerId}:1`, amountMinor: 4768200, currency: 'INR', merchant: 'ixigo (simulated): Saudades', expiresAt: 'x', payment: { kind: 'fake' } };
+      },
+      confirm: async (holdId) => {
+        calls.push(`confirm ${holdId}`);
+        return { ref: 'SIM-1', vendor: 'ixigo (simulated)', title: 'Saudades', kind: 'stay', simulated: true };
+      },
+    };
+    const { layer, fake } = setup(true, {
+      webStays,
+      results: {
+        offer: async (id) => ({
+          tripId: 't_goa', cardId: 'c', resultsId: 'r', checkedAt: 'x', optionId: id, n: 1, offerId: null, kind: 'stay', title: 'Saudades Homestays',
+          priceMinor: 1589400, totalMinor: 4768200, currency: 'INR', priceNote: 'per night, per room', sourceUrl: id === 'opt_sau' ? STAY : 'https://villa.example/book',
+        }),
+      },
+    });
+    expect(await layer.offer('opt_sau')).toMatchObject({ offerId: 'webstay:opt_sau', priceMinor: 4768200, kind: 'stay' });
+    // A stay a job found on another site stays unbookable.
+    expect(await layer.offer('opt_other')).toMatchObject({ offerId: null });
+    await layer.hold('webstay:opt_sau', { name: 'Rahul', personIds: ['p_rahul'] });
+    await layer.confirm('webstay:opt_sau:1', { approvalId: 'ap_1', railRef: 'fake_1' });
+    expect(calls).toEqual(['hold webstay:opt_sau', 'confirm webstay:opt_sau:1']);
+    expect(fake.calls).toEqual([]);
+    expect(layer.prepare).toBe(webStays.prepare);
+    // With no web stays (a test, a lane that never set it), nothing changes.
+    expect(setup().layer.prepare).toBeUndefined();
+  });
 });

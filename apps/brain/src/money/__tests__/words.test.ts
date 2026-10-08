@@ -45,9 +45,9 @@ describe('money words', () => {
     expect(refusalWords('decision_not_found', { payer: 'Rahul', what: 'it' }).say).toBe(false);
   });
 
-  it('hands over the link for group flights, trains and buses, which Go does not book this week (master §9 "Cut now")', () => {
+  it('points to See on ixigo on the card for group flights, trains and buses, which Go does not book this week (master §9 "Cut now"), never a link', () => {
     expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'IndiGo 6E 2134', kind: 'flight', link: 'https://www.ixigo.com/flights/6e-2134' })).toEqual({
-      text: "I can't book flights for the whole group yet. Here's the link to book them yourselves: https://www.ixigo.com/flights/6e-2134",
+      text: "I can't book flights for the whole group yet. Each of you can book on ixigo: See on ixigo on its card opens it there.",
       say: true,
     });
     // No link from the travel layer: just the first sentence.
@@ -58,6 +58,10 @@ describe('money words', () => {
   it('says what happened after a payment in one short line', () => {
     expect(bookedLine({ title: 'Villa Sol, 3 nights', payer: 'Rahul', amount: '₹54,200', people: 5 })).toBe(
       'Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.',
+    );
+    // A stay from ixigo.com, booked on Go's test rail only: the receipt says so, and never claims an ixigo booking.
+    expect(bookedLine({ title: 'Saudades Homestays, 3 nights', payer: 'Rahul', amount: '₹47,682', people: 5, simulated: true })).toBe(
+      "Booked (simulated): Saudades Homestays, 3 nights. Rahul's test payment of ₹47,682, split between all 5; nothing was booked on ixigo.",
     );
     expect(failedLine({ payer: 'Rahul', what: 'Villa Sol', reason: 'card_declined' })).toBe(
       "Rahul, the payment for Villa Sol didn't go through (the bank declined the card). Nothing was charged. Want to try again?",

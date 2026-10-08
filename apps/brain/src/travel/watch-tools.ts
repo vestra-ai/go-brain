@@ -1,6 +1,8 @@
 /**
  * watch_ixigo and stop_watch: the group asks Go to keep an eye on ixigo for them ("tell us when 12608's waitlist
- * confirms"), and to stop. The first check runs at once: something already true is answered now, with no watch kept.
+ * confirms"), and to stop. The first check runs at once: something already true is answered now, with no watch kept,
+ * and a search's options go up on a card with its line, as a stays search's do. It reads what is kept first, as an ask
+ * does (a pool stay under ₹3,000 from the trip's head start), and loads a page only when that can't say it is so.
  * The checks after it are the watch runner's (recipe-watches.ts).
  */
 import type pg from 'pg';
@@ -8,12 +10,17 @@ import { z } from 'zod';
 import type { Switches } from '../admin/switches.js';
 import type { QuickTool, TurnCtx } from '../composer/tools.js';
 import type { Book } from './book/book.js';
-import type { Engine } from './book/engine.js';
+import type { Engine, EngineAnswer } from './book/engine.js';
 import { istAt } from './book/expr.js';
 import type { RecipeFile } from './book/format.js';
 import { clip } from './cards.js';
+import type { Images } from './images.js';
 import { TravelError } from './mcp-travel.js';
+import { searchKindOf, type KeptAnswer } from './recipes/backend.js';
 import { activeWatches, DROPS_PCT, flipped, flipsOf, startWatch, stopWatch, WATCH_MAX_DAYS, WATCHES_PER_TRIP } from './recipe-watches.js';
+import type { ResultsStore } from './results.js';
+import { answerItself } from './tools.js';
+import { MUST_HAVES, type TravelKind, type TravelQuery } from './travel.js';
 
 export interface WatchToolDeps {
   pool: pg.Pool;
@@ -23,6 +30,11 @@ export interface WatchToolDeps {
   engine: Pick<Engine, 'answerShared'>;
   switches: Pick<Switches, 'get'>;
   now: () => Date;
+  /** What Go's searches keep, read before a page loads (backend.ts keptAnswer); absent, the first check loads as before. */
+  kept?: KeptAnswer;
+  /** Where a search that is already so puts its options card; absent, it is said in words. */
+  results?: ResultsStore;
+  images?: Images;
 }
 
 /** The recipes the group may ask Go to watch: searches with options, and facts recipes that name their flips. */
@@ -53,6 +65,22 @@ function askerOf(ctx: TurnCtx): string | null {
 }
 
 const dayOf = (d: Date): string => d.toISOString().slice(0, 10);
+
+/** A watched search's inputs as the search tools ask it: for its card's title and line when it is already so. */
+function queryOf(kind: TravelKind, inputs: Record<string, unknown>, conditions: string[], cap: number | null): TravelQuery {
+  const text = (k: string): string | null => {
+    const v = inputs[k];
+    return typeof v === 'string' ? v : null;
+  };
+  const mustHave = conditions.filter((c): c is (typeof MUST_HAVES)[number] => (MUST_HAVES as readonly string[]).includes(c));
+  const more = { ...(cap !== null ? { maxPriceMinor: Math.round(cap * 100) } : {}), ...(mustHave.length ? { mustHave } : {}) };
+  if (kind === 'stays') {
+    const [area, checkIn, checkOut, adults] = [text('place'), text('check_in'), text('check_out'), inputs['adults']];
+    return { ...(area ? { area } : {}), ...(checkIn ? { checkIn } : {}), ...(checkOut ? { checkOut } : {}), ...(typeof adults === 'number' ? { guests: adults } : {}), ...more };
+  }
+  const [from, to, date] = [text('from'), text('to'), text('date')];
+  return { ...(from ? { from } : {}), ...(to ? { to } : {}), ...(date ? { date } : {}), ...more };
+}
 
 export function watchTools(d: WatchToolDeps): Array<QuickTool<any>> {
   const recipes = watchableRecipes(d.book);
@@ -97,17 +125,38 @@ export function watchTools(d: WatchToolDeps): Array<QuickTool<any>> {
       if (until.getTime() <= now.getTime()) return { error: 'past_date', note: 'That day has passed: nothing to watch.' };
       const conditions = (a.conditions ?? []).filter((c) => c in (recipe.conditions ?? {}));
       const limit = a.flip === 'drops' ? (a.limit ?? DROPS_PCT) : (a.limit ?? null);
-      // The first check, now: what is already true is answered, and no watch is kept.
+      // The first check, now: what is already true is answered, and no watch is kept. What is kept answers first, but
+      // only that it is already so: a kept list may be part of the page (fewer conditions), so "not yet" and a drop's
+      // baseline come from the page.
       let first: Awaited<ReturnType<typeof flipped>>;
+      let answer: EngineAnswer;
       try {
-        const answer = await d.engine.answerShared(a.recipe, a.inputs, { tripId: ctx.tripId, conditions, signal: ctx.signal });
-        first = await flipped(recipe, a.flip, answer, { inputs: a.inputs, limit, baseline: null });
+        const kept = a.flip === 'drops' ? null : ((await d.kept?.(a.recipe, a.inputs, { tripId: ctx.tripId, conditions })) ?? null);
+        const fromKept = kept ? await flipped(recipe, a.flip, kept, { inputs: a.inputs, limit, baseline: null }) : null;
+        if (kept && fromKept?.on) {
+          answer = kept;
+          first = fromKept;
+        } else {
+          answer = await d.engine.answerShared(a.recipe, a.inputs, { tripId: ctx.tripId, conditions, signal: ctx.signal });
+          first = await flipped(recipe, a.flip, answer, { inputs: a.inputs, limit, baseline: null });
+        }
       } catch (err) {
         if (!(err instanceof TravelError)) throw err;
         if (err.code === 'pick_place') return { recipe: a.recipe, choose: err.message };
         return { recipe: a.recipe, error: err.code, note: clip(err.message, 200) };
       }
       if (first.on && a.flip !== 'drops') {
+        // A search's options that make it so go up on a card with its line, as a stays search's do: the group can pick
+        // one or put them to a vote (8 Oct pass: "15 pool stays under ₹3,000" in words left nothing to tap).
+        const kind = searchKindOf(a.recipe);
+        if (answer.as === 'options' && kind && d.results && d.images) {
+          const cap = a.flip === 'under' ? limit : null;
+          const fit = answer.options.filter((o) => cap === null || (o.priceMinor > 0 && o.priceMinor <= cap * 100));
+          const q = queryOf(kind, a.inputs, conditions, cap);
+          const found = { results: fit, checkedAt: answer.checkedAt, found: answer.options.length, ...(answer.page ? { page: answer.page } : {}) };
+          const card = (await answerItself(kind, q, found, ctx, { results: d.results, images: d.images }, 'Already on ixigo: ')) as object;
+          return { already: true, now: first.reading.what, ...card, note: 'It is already so on ixigo, and its card and line are up. Go keeps no watch for it.' };
+        }
         return { already: true, now: first.reading.what, note: 'It is already so on ixigo: tell whoever asked, in one line. Go keeps no watch for it.' };
       }
       const watchId = ctx.stableId('rw');

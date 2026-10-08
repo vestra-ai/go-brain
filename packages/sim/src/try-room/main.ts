@@ -23,7 +23,10 @@ const room = await serveTryRoom({
   caps: { dailyTurns: env.TRY_DAILY_TURNS, dailyMessages: env.TRY_DAILY_MESSAGES, visitTurns: env.TRY_VISIT_TURNS },
   ...(env.TRY_SIMULATED_LINE ? { simulatedLine: env.TRY_SIMULATED_LINE } : {}),
   ...(env.TRY_LIVE === '1'
-    ? { live: (tripId: string, onMessage: (m: unknown) => void) => openLiveFeed({ goUrl: env.GO_URL, secret: env.GO_SIGNING_SECRET, tripId, onMessage, log }) }
+    ? {
+      live: (tripId: string, onMessage: (m: unknown) => void) => openLiveFeed({ goUrl: env.GO_URL, secret: env.GO_SIGNING_SECRET, tripId, onMessage, log }),
+      ...(env.TRY_WATCH_ORIGIN ? { watchOrigin: env.TRY_WATCH_ORIGIN } : {}),
+    }
     : {}),
   log,
 });

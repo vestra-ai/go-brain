@@ -1,7 +1,7 @@
 import { once } from 'node:events';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
-import { PAGE_HTML } from '../dev-room/page.js';
+import { PAGE_HTML, roomPage } from '../dev-room/page.js';
 import { serveDevRoom, type DevRoom } from '../dev-room/serve.js';
 import { FakeServer } from '../fake-server.js';
 import { goaFreshTrip } from '../goa.js';
@@ -164,5 +164,590 @@ describe('the live socket', () => {
     expect(got.some((m) => m.type === 'forget_result')).toBe(false);
     ws.send(JSON.stringify({ type: 'say', personId: 'p_rahul', text: 'still here' }));
     await until(() => f.messages().some((m) => m.text === 'still here'));
+  });
+});
+
+/**
+ * Runs the page's own script against a small stand-in for a browser: the chat's scroll box (Go Live's column, or the page
+ * itself), its height, scroll events, pictures that load, and the socket. The test sets the chat's height to what the
+ * browser would lay out, then sends the page a state.
+ */
+function pageInBrowser(html: string, o: { column: boolean; me?: string }) {
+  const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
+  const view = { height: 600, content: 1000 };
+  const clamp = (top: number) => Math.max(0, Math.min(top, view.content - view.height));
+  let colTop = 0;
+  let winTop = 0;
+  const col = {
+    clientHeight: view.height,
+    get scrollHeight() { return view.content; },
+    get scrollTop() { return colTop; },
+    set scrollTop(v: number) { colTop = clamp(v); },
+  };
+  const elements = new Map<string, any>();
+  /** An element: its markup counts how often it was rewritten (a rewritten frame loads its page again). */
+  const stub = (id: string, attrs: Record<string, string> = {}): any => {
+    const listeners: Record<string, Array<(e: unknown) => void>> = {};
+    const inner = new Map<string, any>();
+    let markup = '';
+    return {
+      id, textContent: '', value: '', className: '', dataset: {}, hidden: id === 'newpill', listeners, writes: 0,
+      get innerHTML() { return markup; },
+      set innerHTML(v: string) { markup = v; this.writes += 1; },
+      getAttribute: (k: string) => attrs[k] ?? null,
+      setAttribute: (k: string, v: string) => { attrs[k] = String(v); },
+      hasAttribute: (k: string) => k in attrs,
+      removeAttribute: (k: string) => { delete attrs[k]; },
+      querySelector: (q: string) => { if (!inner.has(q)) inner.set(q, stub(`${id} ${q}`)); return inner.get(q); },
+      querySelectorAll: () => [],
+      addEventListener: (type: string, fn: (e: unknown) => void) => { (listeners[type] ??= []).push(fn); },
+      focus: () => {},
+      contains: (x: { inRoom?: boolean }) => x.inRoom === true,
+    };
+  };
+  const el = (id: string) => {
+    if (!elements.has(id)) elements.set(id, stub(id));
+    return elements.get(id);
+  };
+  // Go Live's column carries the origin of the one page it may frame.
+  const watchOrigin = /<aside[^>]* data-watch-origin="([^"]*)"/.exec(html)?.[1];
+  if (watchOrigin) elements.set('live', stub('live', { 'data-watch-origin': watchOrigin }));
+  const docListeners: Record<string, Array<(e: unknown) => void>> = {};
+  const scrolling = { get scrollHeight() { return view.content; } };
+  const document = {
+    getElementById: el,
+    querySelector: (q: string) => (q === '.split .app' && o.column ? col : null),
+    addEventListener: (type: string, fn: (e: unknown) => void) => { (docListeners[type] ??= []).push(fn); },
+    body: { getAttribute: () => '1' },
+    scrollingElement: scrolling,
+    documentElement: scrolling,
+  };
+  const opened: string[] = [];
+  const window = {
+    innerHeight: view.height,
+    get scrollY() { return winTop; },
+    scrollTo: (_x: number, y: number) => { winTop = clamp(y); },
+    open: (url: string) => { opened.push(url); },
+  };
+  const sockets: any[] = [];
+  const sent: any[] = [];
+  class StubSocket {
+    readyState = 1;
+    onmessage: ((ev: { data: string }) => void) | null = null;
+    constructor() { sockets.push(this); }
+    send(data: string) { sent.push(JSON.parse(data)); }
+  }
+  const run = new Function('document', 'window', 'localStorage', 'WebSocket', 'location', 'getComputedStyle', 'setInterval', 'setTimeout', script);
+  run(document, window, { getItem: () => o.me ?? null, setItem: () => {} }, StubSocket, { protocol: 'http:', host: 'room.test', reload: () => {} },
+    (x: unknown) => ({ overflowY: x === col ? 'auto' : 'visible' }), () => 0, () => 0);
+  const trip = goaFreshTrip();
+  const message = (n: number, text: string) => ({
+    message_id: `m_${n}`, seq: n + 1, updated_seq: n + 1, author: { kind: 'person', person_id: 'p_priya' }, text, attachments: [],
+    mentions_go: false, mentions: [], reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z',
+  });
+  return {
+    view,
+    /** Where the reader is: the top of what they see. */
+    top: () => (o.column ? colTop : winTop),
+    bottom: () => view.content - view.height,
+    pill: () => el('newpill'),
+    /** The page gets the room's state with these messages, laid out at `content` px tall. */
+    state(texts: string[], content: number, needs: Record<string, unknown[]> = {}) {
+      view.content = content;
+      sockets[0].onmessage({ data: JSON.stringify({ type: 'state', connected: true, trip, messages: texts.map((t, i) => message(i, t)), typing: false, needs, about: [], limit: null }) });
+    },
+    /** The page gets the room's state with these messages as they are, cards included. */
+    messages(list: object[], content: number) {
+      view.content = content;
+      sockets[0].onmessage({ data: JSON.stringify({ type: 'state', connected: true, trip, messages: list, typing: false, needs: {}, about: [], limit: null }) });
+    },
+    /** What the page drew in the room. */
+    room: (): string => el('room').innerHTML,
+    /** The reader scrolls to `top`; the browser sends a scroll event. */
+    scroll(top: number) {
+      if (o.column) colTop = clamp(top);
+      else winTop = clamp(top);
+      for (const fn of docListeners.scroll ?? []) fn({ target: o.column ? col : document });
+    },
+    /** A picture in the room finishes loading, and the room is `content` px tall now. */
+    pictureLoads(content: number) {
+      view.content = content;
+      for (const fn of docListeners.load ?? []) fn({ target: { tagName: 'IMG', inRoom: true } });
+    },
+    tapPill() {
+      for (const fn of el('newpill').listeners.click ?? []) fn({});
+    },
+    el,
+    /** What the page sent on its socket. */
+    sent: () => sent,
+    /** The pages it opened in a new window. */
+    opened: () => opened,
+    /** The room sends the page one message. */
+    receive(data: object) {
+      sockets[0].onmessage({ data: JSON.stringify(data) });
+    },
+    /** A tap on one of the page's own buttons, by its id. */
+    click(id: string) {
+      for (const fn of el(id).listeners.click ?? []) fn({});
+    },
+    /** A tap on a person at the top: the page is now that person. */
+    play(personId: string) {
+      for (const fn of docListeners.click ?? []) fn({ target: { closest: () => ({ dataset: { me: personId } }) } });
+    },
+  };
+}
+
+/** A stand-in for the browser's Image, for a card's picture: the test says when each one loads, or fails. */
+class TestImage {
+  static made: TestImage[] = [];
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  src = '';
+  constructor() { TestImage.made.push(this); }
+  static load(src: string) { for (const i of TestImage.made) if (i.src === src) i.onload?.(); }
+  static fail(src: string) { for (const i of TestImage.made) if (i.src === src) i.onerror?.(); }
+}
+const withPictures = () => {
+  beforeEach(() => {
+    TestImage.made = [];
+    vi.stubGlobal('Image', TestImage);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+};
+
+describe("a card's picture", () => {
+  withPictures();
+  const shot = (n: number) => `https://brain.go.example/live/shot_${n}.jpg`;
+  /** Go's working card with its newest screenshot: Go replaces it about once a second while a job runs. */
+  const working = (n: number, page_url: string | null) => ({
+    message_id: 'm_go_1', seq: 5, updated_seq: 5 + n, author: { kind: 'go' }, text: 'On it.', attachments: [],
+    mentions_go: false, mentions: [], reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z',
+    card: {
+      kind: 'working', card_id: 'c_job', fallback_text: 'Logging in to ixigo', task_id: 'task_1', title: 'Logging in to ixigo', state: 'running',
+      steps: [{ text: "Open ixigo's log in", state: 'doing' }], screenshot_url: shot(n), page_url, updated_at: '2026-10-08T10:00:00Z', actions: [],
+    },
+  });
+  /** Every picture the room shows. */
+  const pictures = (p: ReturnType<typeof pageInBrowser>) => [...p.room().matchAll(/<img alt="" src="([^"]*)"/g)].map((m) => m[1]);
+
+  for (const page of [null, 'https://www.ixigo.com/hotels/search/result']) {
+    it(`never blanks ${page ? 'the live search card' : 'a working card'}: three quick swaps keep the loaded picture until the newest loads`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column: false });
+      p.messages([working(1, page)], 1200);
+      // The first picture shows once it has loaded, never as an empty picture before that.
+      expect(pictures(p)).toEqual([]);
+      TestImage.load(shot(1));
+      expect(pictures(p)).toEqual([shot(1)]);
+      // Three new screenshots a moment apart: the card keeps the loaded one.
+      p.messages([working(2, page)], 1200);
+      expect(pictures(p)).toEqual([shot(1)]);
+      p.messages([working(3, page)], 1200);
+      expect(pictures(p)).toEqual([shot(1)]);
+      p.messages([working(4, page)], 1200);
+      expect(pictures(p)).toEqual([shot(1)]);
+      // One already passed by loads late: never shown. The newest loads: shown.
+      TestImage.load(shot(2));
+      expect(pictures(p)).toEqual([shot(1)]);
+      TestImage.load(shot(4));
+      expect(pictures(p)).toEqual([shot(4)]);
+      // A picture that fails to load: the card keeps the one it has.
+      p.messages([working(5, page)], 1200);
+      TestImage.fail(shot(5));
+      expect(pictures(p)).toEqual([shot(4)]);
+      p.messages([working(5, page)], 1200);
+      expect(pictures(p)).toEqual([shot(4)]);
+      // Each address is fetched once, however often the room is drawn.
+      expect(TestImage.made.map((i) => i.src)).toEqual([1, 2, 3, 4, 5].map(shot));
+    });
+  }
+});
+
+describe('the chat stays at the bottom', () => {
+  for (const column of [true, false]) {
+    const where = column ? "in Go Live's column" : 'on a page that scrolls';
+    it(`keeps a reader at the bottom ${where} when a card above grows and a reply arrives`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column });
+      p.state(['Goa?', 'yes!'], 1000);
+      expect(p.top()).toBe(p.bottom());
+      // The vote card above grows (people voting, then "Saudades won"), and the needs box changes, before the reply.
+      p.state(['Goa?', 'yes!'], 1240, { p_rahul: [{ text: 'Vote on the stay' }] });
+      expect(p.top()).toBe(p.bottom());
+      p.state(['Goa?', 'yes!', 'Saudades won, 4 to 1'], 1400);
+      expect(p.top()).toBe(800);
+      expect(p.pill().hidden).toBe(true);
+    });
+
+    it(`keeps a reader at the bottom ${where} when a picture loads after the render`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column });
+      p.state(['Go, find villas'], 1000);
+      // The live card is rebuilt on every render: its picture loads afterwards and makes the room 300 px taller.
+      p.state(['Go, find villas', 'Working on it'], 1100);
+      p.pictureLoads(1400);
+      expect(p.top()).toBe(p.bottom());
+      // The next render, a second later, still finds the reader at the bottom.
+      p.state(['Go, find villas', 'Working on it', 'Three villas'], 1700);
+      expect(p.top()).toBe(p.bottom());
+    });
+
+    it(`leaves a reader who scrolled up ${where} where they are, and says when a new message arrives`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column });
+      p.state(['a', 'b', 'c'], 2000);
+      p.scroll(300);
+      // A render with nothing new (the 15 s clock, a card ticking) moves nothing and shows no pill.
+      p.state(['a', 'b', 'c'], 2050);
+      expect(p.top()).toBe(300);
+      expect(p.pill().hidden).toBe(true);
+      p.pictureLoads(2100);
+      expect(p.top()).toBe(300);
+      // A new message: still where they were, and the pill appears.
+      p.state(['a', 'b', 'c', 'd'], 2300);
+      expect(p.top()).toBe(300);
+      expect(p.pill().hidden).toBe(false);
+      // The pill takes them to the bottom and goes away; from there they follow the chat again.
+      p.tapPill();
+      expect(p.top()).toBe(p.bottom());
+      expect(p.pill().hidden).toBe(true);
+      p.state(['a', 'b', 'c', 'd', 'e'], 2500);
+      expect(p.top()).toBe(p.bottom());
+    });
+
+    it(`hides the pill ${where} when the reader scrolls back down to the bottom themselves`, () => {
+      const p = pageInBrowser(PAGE_HTML, { column });
+      p.state(['a'], 1500);
+      p.scroll(0);
+      p.state(['a', 'b'], 1700);
+      expect(p.pill().hidden).toBe(false);
+      p.scroll(p.bottom() - 40); // near enough to the bottom
+      expect(p.pill().hidden).toBe(true);
+      p.state(['a', 'b', 'c'], 1900);
+      expect(p.top()).toBe(p.bottom());
+    });
+  }
+
+  it('has the pill in the page, hidden, above the message box, with no em dash', () => {
+    expect(PAGE_HTML).toContain('<button class="newpill" id="newpill" type="button" hidden>New messages ↓</button>');
+    expect(PAGE_HTML).toContain('.newpill[hidden] { display: none; }');
+    expect(PAGE_HTML).not.toContain('—');
+  });
+});
+
+describe("Go Live's screen between runs", () => {
+  const LIVE_PAGE = roomPage({ title: 'Try Go', hosted: true, live: true });
+  const before = (ms: number) => new Date(Date.now() - ms).toISOString();
+  /** The room relays one message of Go's live view of the trip. */
+  const relay = (p: ReturnType<typeof pageInBrowser>, msg: object, tripId = 't_try_1') => p.receive({ type: 'live', trip_id: tripId, msg });
+  const runStart = (id: string, at: string) => ({ type: 'run_start', run_id: id, recipe_id: 'ixigo.hotels.search', label: 'Stays in Goa', group_id: `g_${id}`, at, speed: 'page' });
+  const runEnd = (id: string) => ({ type: 'run_end', run_id: id, ok: true, ms: 900, rows: 12 });
+  const frame = (tab: string, jpeg: string, at: string, page = '/hotels/search/result') =>
+    ({ type: 'frame', tab_id: tab, tag: 'run_1', at, page, width: 1280, height: 800, jpeg_base64: jpeg });
+  const screen = (p: ReturnType<typeof pageInBrowser>) => p.el('screen');
+  const picture = (p: ReturnType<typeof pageInBrowser>) => screen(p).querySelector('img').getAttribute('src');
+  const label = (p: ReturnType<typeof pageInBrowser>) => screen(p).querySelector('.rest-label').textContent;
+
+  it("shows one calm line in the screen's own space before the trip's first page, never an empty box", () => {
+    expect(LIVE_PAGE).not.toMatch(/[\u2014\u2013]|claude/i);
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    expect(screen(p).getAttribute('data-key')).toBe('calm');
+    expect(screen(p).innerHTML).toBe('<div class="tile calm"><div class="view"><span class="hint"></span></div></div>');
+    expect(screen(p).querySelector('.hint').textContent).toBe("Say something to start the trip. Go's searches on ixigo show here, live.");
+    relay(p, { type: 'hello', events: [], screen: [] });
+    expect(screen(p).querySelector('.hint').textContent).toBe('When Go searches ixigo for the trip, its pages show here, live.');
+  });
+
+  it('rests on the last page the computer drew, dimmed under a quiet label, and a run brings the screen back live', () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    // In late: a search that ended two minutes ago, its warm tab still open on the drawn list.
+    relay(p, {
+      type: 'hello', events: [runStart('run_1', before(130_000)), runEnd('run_1')],
+      screen: [{ type: 'tab_open', tab_id: 'tab_1', tag: 'run_1' }, frame('tab_1', 'TElTVA==', before(125_000))],
+    });
+    expect(screen(p).getAttribute('data-key')).toBe('rest');
+    expect(screen(p).innerHTML).toBe('<div class="tile rest"><div class="tile-bar"><span class="rest-label"></span></div><div class="view"><img alt=""></div></div>');
+    expect(picture(p)).toBe('data:image/jpeg;base64,TElTVA==');
+    expect(label(p)).toBe("Go's computer · ixigo hotels · 2 min ago");
+    expect(p.el('live-state').textContent).toBe('Live');
+    // A search starts: the same tab, at full brightness and LIVE.
+    relay(p, { type: 'run', event: runStart('run_2', before(0)) });
+    expect(screen(p).getAttribute('data-key')).toBe('tabs:tab_1');
+    expect(screen(p).innerHTML).not.toContain('tile rest');
+    expect(p.el('live-state').textContent).toBe('A page open, live');
+    relay(p, { type: 'screen', event: frame('tab_1', 'TkVX', before(0)) });
+    // Back in after a dropped socket, the search over and its tab closed: the screen rests on the newest page.
+    relay(p, { type: 'hello', events: [runStart('run_1', before(130_000)), runEnd('run_1'), runStart('run_2', before(5_000)), runEnd('run_2')], screen: [] });
+    expect(screen(p).getAttribute('data-key')).toBe('rest');
+    expect(picture(p)).toBe('data:image/jpeg;base64,TkVX');
+    expect(label(p)).toBe("Go's computer · ixigo hotels · just now");
+  });
+
+  it("rests on a run's own picture when no tab was left open, named from its page, and a new trip starts calm", () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    relay(p, {
+      type: 'hello', screen: [],
+      events: [
+        runStart('run_1', before(185_000)),
+        { type: 'frames', run_id: 'run_1', frames: [{ label: 'results', at_ms: 5_000, page: '/trains/search/result', jpeg_base64: 'VFJBSU4=' }] },
+        runEnd('run_1'),
+      ],
+    });
+    expect(picture(p)).toBe('data:image/jpeg;base64,VFJBSU4=');
+    expect(label(p)).toBe("Go's computer · ixigo trains · 3 min ago");
+    relay(p, { type: 'hello', events: [], screen: [] }, 't_try_2');
+    expect(screen(p).getAttribute('data-key')).toBe('calm');
+  });
+
+  it('never rests on a page Go hides: a tab gone to a sign-in page keeps the page before it, and a tab hidden from the start shows none', () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    relay(p, {
+      type: 'hello', events: [runStart('run_1', before(70_000)), runEnd('run_1')],
+      screen: [
+        { type: 'tab_open', tab_id: 'tab_1' }, frame('tab_1', 'SE9URUxT', before(65_000)),
+        { type: 'hidden', tab_id: 'tab_1', reason: 'blocked_path' },
+        // A picture of that tab after it was hidden is never shown.
+        frame('tab_1', 'U0lHTklO', before(60_000)),
+      ],
+    });
+    expect(picture(p)).toBe('data:image/jpeg;base64,SE9URUxT');
+    expect(label(p)).toBe("Go's computer · ixigo hotels · 1 min ago");
+    const q = pageInBrowser(LIVE_PAGE, { column: true });
+    relay(q, { type: 'hello', events: [], screen: [{ type: 'tab_open', tab_id: 'tab_9' }, { type: 'hidden', tab_id: 'tab_9', reason: 'blocked_path' }] });
+    expect(screen(q).getAttribute('data-key')).toBe('calm');
+  });
+});
+
+describe("Go's live search card", () => {
+  withPictures();
+  const shot = 'https://brain.go.example/live/shot_1.jpg';
+  /** Go's message with its working card: a finished hotels search, its picture, and the page in it. */
+  const searchCard = (page_url: string | null) => ({
+    message_id: 'm_go_1', seq: 5, updated_seq: 5, author: { kind: 'go' }, text: 'Here are the villas I found.', attachments: [],
+    mentions_go: false, mentions: [], reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z',
+    card: {
+      kind: 'working', card_id: 'c_live_1', fallback_text: 'Searching hotels in Goa', task_id: 'task_1', title: 'Villas with a pool in North Goa',
+      state: 'done', steps: [{ text: 'Open ixigo hotels', state: 'done' }, { text: 'Read the results', state: 'done' }],
+      screenshot_url: shot, page_url, updated_at: '2026-10-08T10:00:00Z', actions: [],
+    },
+  });
+
+  it('shows no page address as text, only the picture, the steps and a "See on ixigo" button', () => {
+    const p = pageInBrowser(PAGE_HTML, { column: false });
+    const url = 'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&checkinDate=06112026&filters=FL_HF_29%2CMP';
+    p.messages([searchCard(url)], 1200);
+    TestImage.load(shot);
+    const html = p.room();
+    const href = url.replace(/&/g, '&amp;');
+    expect(html).toContain(`<a class="act secondary" href="${href}" target="_blank" rel="noopener noreferrer">See on ixigo</a>`);
+    // The address is only ever the button's href: never between tags, where a person would read it.
+    expect(html.split(href)).toHaveLength(2);
+    expect(html).not.toMatch(/>[^<]*(https?:|ixigo\.com\/hotels)/);
+    expect(html).toContain(`<img alt="" src="${shot}"`);
+    expect(html).toContain('Read the results');
+  });
+
+  it('gives no button for a page that is not an ixigo.com page, and still shows no address', () => {
+    for (const other of ['https://ixigo.com.example.net/hotels', 'https://example.com/ixigo/hotels', 'javascript:alert(1)', null]) {
+      const p = pageInBrowser(PAGE_HTML, { column: false });
+      p.messages([searchCard(other)], 1200);
+      const html = p.room();
+      expect(html).not.toContain('See on ixigo');
+      if (other) expect(html).not.toContain(other);
+      expect(html).toContain('Read the results');
+    }
+    // An ixigo subdomain or the bare domain is ixigo.
+    for (const ixigo of ['https://ixigo.com/trains', 'https://www.ixigo.com/hotels/goa']) {
+      const p = pageInBrowser(PAGE_HTML, { column: false });
+      p.messages([searchCard(ixigo)], 1200);
+      expect(p.room()).toContain('See on ixigo');
+    }
+  });
+});
+
+describe("Go Live's login panel", () => {
+  const ORIGIN = 'https://bash.test';
+  const LIVE_PAGE = roomPage({ title: 'Try Go', hosted: true, live: true, watchOrigin: ORIGIN });
+  const SESSION = `${ORIGIN}/screen?s=ses_1#token=tok_secret`;
+  const FRAME = `<iframe title="Go&#39;s computer" src="${SESSION}" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>`;
+  const CARD = 'c_login_t_goa_1';
+  /** Go's message with a card in it. */
+  const fromGo = (card: object, n = 1) => ({
+    message_id: `m_go_${n}`, seq: n, updated_seq: n, author: { kind: 'go' }, text: '', attachments: [], mentions_go: false, mentions: [],
+    reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z', card,
+  });
+  /** #247's ixigo login card, pinned to Rahul: while he logs in it carries Watch, then his two buttons. */
+  const loginCard = (state: 'logging_in' | 'logged_in') => fromGo({
+    kind: 'notice', card_id: CARD, tone: 'info', for_person_ids: ['p_rahul'], fallback_text: "Rahul is logging in to ixigo on Go's computer.",
+    title: state === 'logging_in' ? 'Logging in to ixigo' : 'ixigo: logged in as Rahul', body: "ixigo's log in is open on Go's screen.",
+    actions: state === 'logging_in'
+      ? [
+        { action_id: 'ixigo_watch', label: 'Watch', style: 'primary' },
+        { action_id: 'ixigo_logged_in', label: "I'm logged in", style: 'secondary', only_for_person_ids: ['p_rahul'] },
+        { action_id: 'ixigo_not_now', label: 'Not now', style: 'secondary', only_for_person_ids: ['p_rahul'] },
+      ]
+      : [{ action_id: 'ixigo_logout', label: 'Log out', style: 'secondary', only_for_person_ids: ['p_rahul'] }],
+  });
+  /** The room's answer to a Watch tap: Bash's session page, good for 15 minutes. */
+  const answer = (over: object = {}) => ({
+    type: 'tap_result', cardId: CARD, actionId: 'ixigo_watch', personId: 'p_rahul',
+    result: { result: 'open', url: SESSION, expires_at: '2099-01-01T00:00:00Z' }, ...over,
+  });
+  const WATCH_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_watch', personId: 'p_rahul' };
+  /** Rahul's page with his login on screen. */
+  const loggingIn = () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([loginCard('logging_in')], 1000);
+    p.receive(answer());
+    return p;
+  };
+
+  it('taps Watch once for a hand-off waiting on you, and fills the column with its screen, in control, and your buttons', () => {
+    expect(LIVE_PAGE).not.toMatch(/[—–]|claude/i);
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([loginCard('logging_in')], 1000);
+    expect(p.sent()).toEqual([WATCH_TAP]);
+    expect(p.el('live').className).toBe('live mine');
+    expect(p.el('login').hidden).toBe(false);
+    expect(p.el('login-wait').hidden).toBe(false);
+    expect(p.el('login-why').textContent).toBe("Opening ixigo's log in on Go's computer");
+    expect(p.el('login-again').hidden).toBe(true);
+    // Every render after that (a new message, the 15 s clock) taps nothing more.
+    p.messages([loginCard('logging_in')], 1000);
+    expect(p.sent()).toHaveLength(1);
+
+    p.receive(answer());
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    expect(p.el('login-frame').hidden).toBe(false);
+    expect(p.el('login-wait').hidden).toBe(true);
+    expect(p.opened()).toEqual([]);
+    expect(p.el('toast').textContent).toBe('');
+    expect(p.el('login-title').textContent).toBe('Your turn: Logging in to ixigo');
+    expect(p.el('login-line').textContent).toBe('Type your number and the code. They go to ixigo only. Go never sees them.');
+    const buttons = p.el('login-acts').innerHTML;
+    expect(buttons).toContain(`data-tap="${CARD}" data-action="ixigo_logged_in">I'm logged in</button>`);
+    expect(buttons).toContain(`data-tap="${CARD}" data-action="ixigo_not_now">Not now</button>`);
+    expect(buttons).not.toContain('ixigo_watch');
+    expect(p.el('handoff').hidden).toBe(true);
+  });
+
+  it("shows everyone else who is on Go's computer and never the page", () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true, me: 'p_priya' });
+    p.messages([loginCard('logging_in')], 1000);
+    expect(p.sent()).toEqual([]);
+    expect(p.el('live').className).toBe('live other');
+    expect(p.el('handoff').hidden).toBe(false);
+    expect(p.el('handoff').innerHTML).toBe("<b>Rahul is on Go's computer</b><span>Logging in to ixigo</span><small>Only Rahul sees this page.</small>");
+    expect(p.el('login').hidden).toBe(true);
+    expect(p.el('login-frame').innerHTML).toBe('');
+    // A Watch Priya taps herself is not a hand-off for her: Go's answer opens as it always did, never in the column.
+    p.receive(answer({ personId: 'p_priya' }));
+    expect(p.opened()).toEqual([SESSION]);
+    expect(p.el('login-frame').innerHTML).toBe('');
+  });
+
+  it("shows Go's heads-up in the sheet when I'm logged in found no login yet, and keeps the screen", () => {
+    const p = loggingIn();
+    expect(p.el('login-note').hidden).toBe(true);
+    // Go's answer to the tap is a toast; then the card itself turns to a heads-up, which the person in the sheet sees.
+    const notYet = loginCard('logging_in');
+    Object.assign(notYet.card, { tone: 'heads_up', body: 'Not logged in yet. Finish on Watch, then tap again.' });
+    p.messages([notYet], 1000);
+    expect(p.el('login-note').hidden).toBe(false);
+    expect(p.el('login-note').textContent).toBe('Not logged in yet. Finish on Watch, then tap again.');
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    expect(p.el('login-frame').writes).toBe(1);
+    expect(p.sent()).toEqual([WATCH_TAP]);
+    // The next tap finds the login: the card is replaced, and the column goes back to the live view.
+    p.messages([loginCard('logged_in')], 1000);
+    expect(p.el('login').hidden).toBe(true);
+    // A card in its usual tone says nothing extra.
+    const q = loggingIn();
+    expect(q.el('login-note').textContent).toBe('');
+  });
+
+  it('keeps the screen while you play someone else, so a half-typed number is still there when you come back', () => {
+    const p = loggingIn();
+    expect(p.el('login-frame').writes).toBe(1);
+    p.play('p_priya');
+    expect(p.el('login').hidden).toBe(true);
+    expect(p.el('handoff').hidden).toBe(false);
+    expect(p.el('live').className).toBe('live other');
+    p.play('p_rahul');
+    expect(p.el('login').hidden).toBe(false);
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    // The frame was never rewritten, so its page never loaded again, and Watch was tapped once.
+    expect(p.el('login-frame').writes).toBe(1);
+    expect(p.sent()).toEqual([WATCH_TAP]);
+  });
+
+  it('goes back to the live view when the hand-off ends: logged in, Not now, out of time', () => {
+    const p = loggingIn();
+    p.messages([loginCard('logged_in')], 1000);
+    expect(p.el('login').hidden).toBe(true);
+    expect(p.el('handoff').hidden).toBe(true);
+    expect(p.el('live').className).toBe('live');
+    expect(p.el('login-frame').innerHTML).toBe('');
+    expect(p.sent()).toHaveLength(1);
+  });
+
+  it('closes a screen that ran out, and Open the login again taps Watch again', () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([loginCard('logging_in')], 1000);
+    p.receive(answer({ result: { result: 'open', url: SESSION, expires_at: '2020-01-01T00:00:00Z' } }));
+    expect(p.el('login-frame').innerHTML).toBe('');
+    expect(p.el('login-wait').hidden).toBe(false);
+    expect(p.el('login-why').textContent).toBe('Your view of the login closed after 15 minutes.');
+    expect(p.el('login-again').hidden).toBe(false);
+    p.click('login-again');
+    expect(p.sent()).toEqual([WATCH_TAP, WATCH_TAP]);
+    expect(p.el('login-why').textContent).toBe("Opening ixigo's log in on Go's computer");
+    expect(p.el('login-again').hidden).toBe(true);
+    // Go refuses this time: the button again, and Go's own words in the toast.
+    p.receive(answer({ result: { result: 'refused', toast: "Can't open Go's screen right now" } }));
+    expect(p.el('login-why').textContent).toBe("Go's screen didn't open here.");
+    expect(p.el('login-again').hidden).toBe(false);
+    expect(p.el('toast').textContent).toBe("Can't open Go's screen right now");
+  });
+
+  it('frames no page from another site, and a room with no watch origin taps nothing and opens Watch in a window', () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([loginCard('logging_in')], 1000);
+    const elsewhere = 'https://elsewhere.test/screen#token=tok_secret';
+    p.receive(answer({ result: { result: 'open', url: elsewhere, expires_at: '2099-01-01T00:00:00Z' } }));
+    expect(p.el('login-frame').innerHTML).toBe('');
+    expect(p.opened()).toEqual([elsewhere]);
+    expect(p.el('login-again').hidden).toBe(false);
+
+    const plain = pageInBrowser(roomPage({ title: 'Try Go', hosted: true, live: true }), { column: true });
+    plain.messages([loginCard('logging_in')], 1000);
+    expect(plain.sent()).toEqual([]);
+    expect(plain.el('login').hidden).toBe(true);
+    plain.receive(answer());
+    expect(plain.opened()).toEqual([SESSION]);
+    expect(plain.el('login-frame').innerHTML).toBe('');
+  });
+
+  it("takes a working card's hand-off too, and leaves a job that is only running alone", () => {
+    const working = (state: 'running' | 'needs_you') => fromGo({
+      kind: 'working', card_id: 'c_job', fallback_text: 'Logging in to ixigo', task_id: 'task_1', title: 'Logging in to ixigo', state,
+      steps: [], updated_at: '2026-10-08T10:00:00Z', ...(state === 'needs_you' ? { for_person_ids: ['p_rahul'] } : {}),
+      actions: [{ action_id: 'watch', label: 'Watch', style: 'primary' }, { action_id: 'stop', label: 'Stop', style: 'secondary' }],
+    });
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([working('running')], 1000);
+    expect(p.sent()).toEqual([]);
+    expect(p.el('live').className).toBe('live');
+    p.messages([working('needs_you')], 1000);
+    expect(p.sent()).toEqual([{ type: 'tap', cardId: 'c_job', actionId: 'watch', personId: 'p_rahul' }]);
+    expect(p.el('login-line').textContent).toBe("Go's computer is yours for this step.");
+    expect(p.el('login-acts').innerHTML).toContain('data-action="stop">Stop</button>');
+    expect(p.el('login-acts').innerHTML).not.toContain('data-action="watch"');
+  });
+
+  it('on a phone, Back to the chat keeps the login open behind a pill that brings it back', () => {
+    const p = loggingIn();
+    p.click('login-back');
+    expect(p.el('live').className).toBe('live mine away');
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    p.click('loginpill');
+    expect(p.el('live').className).toBe('live mine');
+    expect(p.el('login-frame').writes).toBe(1);
   });
 });
