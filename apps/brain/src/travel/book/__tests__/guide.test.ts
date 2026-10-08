@@ -110,7 +110,11 @@ describe('the ixigo tool', () => {
   const turn = { tripId: 't_goa', turnId: 'turn_1', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
 
   it("offers the book's facts recipes, never a search, a lookup or one that changes something", () => {
-    expect(toolRecipes(book).map((r) => r.id)).toEqual(['flights.fare_calendar', 'plan.destination']);
+    expect(toolRecipes(book).map((r) => r.id)).toEqual([
+      'flights.fare_calendar', 'help.downtime', 'help.faq', 'help.services',
+      'hotels.details', 'hotels.offers', 'hotels.reviews', 'hotels.rooms', 'hotels.search_filters', 'hotels.similar',
+      'offers.campaign', 'offers.details', 'offers.list', 'plan.destination', 'plan.explore', 'plan.top_locations',
+    ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
     expect(tool.description).toContain('- plan.destination: A destination');
     expect(tool.description).toContain('Asked as: "best time to visit goa", "good places to eat in goa"');

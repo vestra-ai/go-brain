@@ -1,0 +1,29 @@
+{
+ "status": true,
+ "data": [
+  {
+   "slug": "jaipur-india",
+   "displayname": "Jaipur, Rajasthan, India"
+  },
+  {
+   "slug": "agra-india",
+   "displayname": "Agra, Uttar Pradesh, India"
+  },
+  {
+   "slug": "udaipur-india",
+   "displayname": "Udaipur, Rajasthan, India"
+  },
+  {
+   "slug": "jaisalmer-india",
+   "displayname": "Jaisalmer, Rajasthan, India"
+  },
+  {
+   "slug": "rishikesh-india",
+   "displayname": "Rishikesh, Uttarakhand, India"
+  },
+  {
+   "slug": "goa-india",
+   "displayname": "Goa, India"
+  }
+ ]
+}

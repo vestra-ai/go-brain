@@ -1,0 +1,354 @@
+{
+ "data": {
+  "hotelDetailResponse": {
+   "locationId": 2701789,
+   "hotelId": 4395492,
+   "name": "High Five Hotels Phase 2",
+   "locality": "Bouta Waddo",
+   "city": "Assagao",
+   "userRating": null,
+   "userRatingCategory": null,
+   "starRating": 4,
+   "userRatingCount": 0,
+   "distanceFromSearchedEntity": null,
+   "locationDetail": {
+    "lat": 15.60148811340332,
+    "lon": 73.76203155517578
+   },
+   "imageInfo": {
+    "guestImages": null,
+    "propertyImages": {
+     "categories": [
+      "Exterior",
+      "Swimming pool",
+      "Public Areas",
+      "Food and beverages",
+      "Facilities",
+      "Bathroom",
+      "Others"
+     ],
+     "imageList": [
+      {
+       "pictureId": "1367335925",
+       "url": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/887455278.jpg?k=19b4e1b8d0d557de623c34b2fca5f47c096688caa195b8a918a4e1b78e8d3c8b&o=",
+       "urlHigh": null,
+       "urlMedium": null,
+       "urlLow": null,
+       "caption": "Exterior view",
+       "imageCategory": "Exterior",
+       "rank": 0,
+       "srpRank": null,
+       "detailRank": null,
+       "categoryRank": null,
+       "withinCategoryRank": null
+      },
+      {
+       "pictureId": "1367335911",
+       "url": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/887455477.jpg?k=e0a0576cfd83d6aef32a0752d57bac77e29d3eaff4398ebffc4adebbaee7bbec&o=",
+       "urlHigh": null,
+       "urlMedium": null,
+       "urlLow": null,
+       "caption": "Swimming pool",
+       "imageCategory": "Swimming pool",
+       "rank": 1,
+       "srpRank": null,
+       "detailRank": null,
+       "categoryRank": null,
+       "withinCategoryRank": null
+      },
+      {
+       "pictureId": "1367335907",
+       "url": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/887455489.jpg?k=f15b12d4c6334466a165e208479757f06282444f49c92e4547507ada11e04d25&o=",
+       "urlHigh": null,
+       "urlMedium": null,
+       "urlLow": null,
+       "caption": "Entrance",
+       "imageCategory": "Public Areas",
+       "rank": 2,
+       "srpRank": null,
+       "detailRank": null,
+       "categoryRank": null,
+       "withinCategoryRank": null
+      },
+      {
+       "pictureId": "1367335915",
+       "url": "https://q-xx.bstatic.com/xdata/images/hotel/840x460/887455277.jpg?k=91f2e3add91e3ea4188889ddf6865364860055f34fa9e3f1790cc8b96f1336b9&o=",
+       "urlHigh": null,
+       "urlMedium": null,
+       "urlLow": null,
+       "caption": "Restaurant",
+       "imageCategory": "Food and beverages",
+       "rank": 3,
+       "srpRank": null,
+       "detailRank": null,
+       "categoryRank": null,
+       "withinCategoryRank": null
+      }
+     ],
+     "aiImageData": false
+    }
+   },
+   "landmarks": [
+    {
+     "name": "Shubadra",
+     "distance": 0.1,
+     "unit": "km"
+    },
+    {
+     "name": "Shubadra",
+     "distance": 0.1,
+     "unit": "km"
+    },
+    {
+     "name": "Sub Centre, assagao",
+     "distance": 0.7,
+     "unit": "km"
+    },
+    {
+     "name": "Sensistan",
+     "distance": 1.11,
+     "unit": "km"
+    },
+    {
+     "name": "Siolim Cooking School",
+     "distance": 1.19,
+     "unit": "km"
+    },
+    {
+     "name": "Goa Cooking Classes",
+     "distance": 1.19,
+     "unit": "km"
+    },
+    {
+     "name": "St Anthonys Hospital",
+     "distance": 1.23,
+     "unit": "km"
+    },
+    {
+     "name": "Panchayat Ground",
+     "distance": 1.4,
+     "unit": "km"
+    }
+   ],
+   "aboutSection": {
+    "data": "",
+    "descriptionInfo": null
+   },
+   "houseRulesAndPolicies": {
+    "checkinTime": "12:00",
+    "checkoutTime": "11:00",
+    "checkInCheckoutInfo": null,
+    "upfrontPolicies": null,
+    "rules": [
+     {
+      "policyType": "CHILD_AND_EXTRA_BED_POLICY",
+      "heading": "Children and extra beds",
+      "subRules": [
+       {
+        "details": [
+         "All children are welcome."
+        ]
+       },
+       {
+        "subHeading": "Guests above 18 year(s)",
+        "details": [
+         "Must use an extra bed which will incur an additional charge."
+        ]
+       },
+       {
+        "subHeading": "Other",
+        "details": [
+         "Extra beds are dependent on the room you choose. Please check the individual room capacity for more details."
+        ]
+       }
+      ]
+     },
+     {
+      "policyType": "GENERIC_POLICY",
+      "heading": "Property Policies",
+      "subRules": [
+       {
+        "details": [
+         "Primary Guest should be 18+ years of age"
+        ]
+       }
+      ]
+     },
+     {
+      "policyType": "OTHER_INFO",
+      "heading": "Property Information",
+      "subRules": [
+       {
+        "details": [
+         "Check-out from - 10:00",
+         "Check-in until - 23:00"
+        ]
+       }
+      ]
+     },
+     {
+      "policyType": "ANNOUNCEMENT",
+      "heading": "Property Announcements",
+      "subRules": [
+       {
+        "details": [
+         "This property will not accommodate hen, stag or similar parties. <br/> Please note that any changes in tax structure due to government policies will result in revised taxes, which will be applicable to all reservations and will be charged additionally during check out."
+        ]
+       }
+      ]
+     }
+    ],
+    "policies": null
+   },
+   "amenityDetails": {
+    "amenityCount": 40,
+    "amenities": [
+     {
+      "id": 10,
+      "name": "Swimming pool",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/26a173aebc9382953a77ed6bdb5b19f9-bddtk.png",
+      "amenityRank": 2,
+      "categoryName": "Activities and sports",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/ec3dc56707ddff3565437c56a97924d8-rohol.png",
+      "categoryRank": 10
+     },
+     {
+      "id": 14,
+      "name": "Wi-Fi in public areas",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/151cef0685c0a4382988b6e4b1cff8c0-ufney.png",
+      "amenityRank": 4,
+      "categoryName": "Internet access",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/151cef0685c0a4382988b6e4b1cff8c0-ufney.png",
+      "categoryRank": 7
+     },
+     {
+      "id": 17,
+      "name": "Restaurants",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/da0b42fb35b40ff871caacab5bffdb1f-shpzg.png",
+      "amenityRank": 5,
+      "categoryName": "Food and drinks",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/da0b42fb35b40ff871caacab5bffdb1f-shpzg.png",
+      "categoryRank": 9
+     },
+     {
+      "id": 25,
+      "name": "Room Service",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/3d1357deba15ce07b861e8dcc1f74285-gdtvq.png",
+      "amenityRank": 7,
+      "categoryName": "Food and drinks",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/da0b42fb35b40ff871caacab5bffdb1f-shpzg.png",
+      "categoryRank": 9
+     },
+     {
+      "id": 30,
+      "name": "Hot Tub",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/bec03e1e4bcfd83d52a5107468a8bf03-utbfi.png",
+      "amenityRank": 8,
+      "categoryName": "Activities and sports",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/ec3dc56707ddff3565437c56a97924d8-rohol.png",
+      "categoryRank": 10
+     },
+     {
+      "id": 35,
+      "name": "Bar",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/47d65677716ba0f39d685e5cb988e881-neiie.png",
+      "amenityRank": 10,
+      "categoryName": "Food and drinks",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/da0b42fb35b40ff871caacab5bffdb1f-shpzg.png",
+      "categoryRank": 9
+     },
+     {
+      "id": 43,
+      "name": "Air-conditioned rooms",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/2f5c6ae6b3949cc9f663a8c4b02f007a-vqujt.png",
+      "amenityRank": 14,
+      "categoryName": "Room amenities",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/b0dd9d7b35c4ee79822e3c99c50dacdb-znkpk.png",
+      "categoryRank": 3
+     },
+     {
+      "id": 73,
+      "name": "24*7 Front Desk",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/1a1d74103220154b7758d681c78030c5-boqvq.png",
+      "amenityRank": 22,
+      "categoryName": "Access",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/b06639d96e94c293d723dd86c54ea525-jrskt.png",
+      "categoryRank": 1
+     },
+     {
+      "id": 76,
+      "name": "Free car parking",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/ef8f16633966e87e36dd337f21188912-ytivx.png",
+      "amenityRank": 24,
+      "categoryName": "Transfers and transport",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/3b4fe317ef4c7bd4a06d84eeceb66869-sdszh.png",
+      "categoryRank": 6
+     },
+     {
+      "id": 87,
+      "name": "Family room",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/c844db3c5b138fafb0dc5ca096581cbb-merzm.png",
+      "amenityRank": 26,
+      "categoryName": "Family and kids",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/c844db3c5b138fafb0dc5ca096581cbb-merzm.png",
+      "categoryRank": 5
+     },
+     {
+      "id": 93,
+      "name": "Balcony/terrace",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/8ac98afed8d7fabc9e326d1835f4fcb4-wcvso.png",
+      "amenityRank": 29,
+      "categoryName": "Room amenities",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/b0dd9d7b35c4ee79822e3c99c50dacdb-znkpk.png",
+      "categoryRank": 3
+     },
+     {
+      "id": 94,
+      "name": "Airport transfer",
+      "amenityUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/3b4fe317ef4c7bd4a06d84eeceb66869-sdszh.png",
+      "amenityRank": 31,
+      "categoryName": "Transfers and transport",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/3b4fe317ef4c7bd4a06d84eeceb66869-sdszh.png",
+      "categoryRank": 6
+     },
+     {
+      "id": 138,
+      "name": "Non-smoking rooms",
+      "amenityUrl": "",
+      "amenityRank": 104,
+      "categoryName": "Access",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/b06639d96e94c293d723dd86c54ea525-jrskt.png",
+      "categoryRank": 1
+     },
+     {
+      "id": 166,
+      "name": "Safety/security feature",
+      "amenityUrl": "",
+      "amenityRank": 141,
+      "categoryName": "Safety and security",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/b275fb3258ba5497024d1cd28664657c-fyyeo.png",
+      "categoryRank": 2
+     },
+     {
+      "id": 179,
+      "name": "Bedside socket",
+      "amenityUrl": "",
+      "amenityRank": 161,
+      "categoryName": "Room amenities",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/b0dd9d7b35c4ee79822e3c99c50dacdb-znkpk.png",
+      "categoryRank": 3
+     },
+     {
+      "id": 194,
+      "name": "Cupboard",
+      "amenityUrl": "",
+      "amenityRank": 176,
+      "categoryName": "Room amenities",
+      "categoryUrl": "https://images.ixigo.com/image/upload/accommodations/facilities/b0dd9d7b35c4ee79822e3c99c50dacdb-znkpk.png",
+      "categoryRank": 3
+     }
+    ]
+   }
+  }
+ }
+}

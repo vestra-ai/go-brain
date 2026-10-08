@@ -12,7 +12,9 @@ const SitePath = z
   .string()
   .refine((t) => /^\/[^\s]*$/.test(t.replace(/\{[^{}]*\}/g, '')), 'a page or call is a path on www.ixigo.com, starting with /');
 
-export const Input = z.object({
+/** Strict: a key the format doesn't know is refused, so an unquoted "about: the city, area or region" in a YAML flow
+ *  map (cut at its comma into "about: the city" and a stray key) fails the check instead of reaching the model cut. */
+export const Input = z.strictObject({
   /** option: one of Go's search results, which the ixigo tool gives the recipe as that option's own ixigo page. */
   kind: z.enum(['place', 'date', 'count', 'choice', 'text', 'money', 'option']),
   /** A place's lookup recipe: ixigo's own search box for it. */
@@ -126,7 +128,8 @@ export const RecipeFile = z
     read: z
       .object({
         /** unique: a row's key, when a call came back more than once (pages 1 and 2) and a row may repeat. */
-        /** format: json, or a Next.js flight payload (rsc), or a Next.js page with one in its scripts (next_html). */
+        /** format: json, or a Next.js flight payload (rsc), a Next.js page with one in its scripts (next_html), or an older
+         *  Next.js page with its props in its __NEXT_DATA__ script (next_data). */
         rows: z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional() }),
         also: z
           .record(z.string().regex(/^[a-z][a-z_]*$/), z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), value: Expr }))

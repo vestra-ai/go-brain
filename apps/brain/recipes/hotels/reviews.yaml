@@ -1,0 +1,41 @@
+id: hotels.reviews
+title: What guests said about a stay, its latest reviews on ixigo with each guest's rating and kind of trip
+asks:
+  - what do people say about the villa
+  - is the food good there
+  - reviews from families for that hotel
+  - log kya bol rahe hain is hotel ke baare mein
+inputs:
+  hotel: { kind: option, about: "the stay, one of Go's search results" }
+auth: none
+changes_state: false
+# The stay's own page (see hotels.details): its reviews call answers the ten most recent, all kinds of guests. A guest's
+# name is never read.
+let:
+  hotel_id: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/(\\d+)/details\\?")[0]'
+  hotel_query: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/\\d+/details\\?([^#\\s]*)$")[0]'
+  hotel_name: '$decodeUrlComponent($groups(hotel, "[?&]hName=([^&#]*)")[0])'
+page: /hotels/{$hotel_id}/details?{$hotel_query|raw}
+capture:
+  - "/accommodations/reviews/aiReviews/{$hotel_id}$"
+read:
+  rows: { from: "/accommodations/reviews/aiReviews/{$hotel_id}$", list: '($type($) = "array" ? $[0] : $).data.reviewList' }
+answer:
+  as: facts
+  title: "Reviews of {$hotel_name ? $hotel_name : 'the stay'}"
+  max: 10
+  each: |
+    {
+      "rating_out_of_10": $num(avgRating),
+      "guests": category,
+      "when": reviewDate,
+      "title": title,
+      "said": reviewComment,
+      "room": roomType
+    }
+ttl_minutes: 60
+samples: { page: hotels.reviews.json }
+measured: { fast_ms: 133, page_ms: 2240, flow_ms: null }
+notes: >-
+  A stay with no reviews answers an empty list. The page's chips (Couple, Family, Group, Solo Traveller) ask again with a
+  category; only the first answer is read here.

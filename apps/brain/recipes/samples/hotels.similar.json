@@ -1,0 +1,100 @@
+{
+ "data": {
+  "recommendationInventoryInfo": [
+   {
+    "locationId": 59258,
+    "hotelId": 51991,
+    "name": "Siolim House",
+    "locality": "Assagao",
+    "city": "Assagao",
+    "userRating": "9.2",
+    "userRatingCategory": "Exceptional",
+    "starRating": 4,
+    "userRatingCount": 345,
+    "topOfferings": [
+     "Breakfast Included",
+     "Free Cancellation",
+     "Free Wifi",
+     "Swimming pool at the property"
+    ],
+    "distanceFromSearchedEntity": "2.80 km from this hotel",
+    "isCancellationAvailable": true,
+    "isFreeBreakfastAvailable": true,
+    "isSameHotel": false,
+    "accommodationType": "Hotel",
+    "fareDetail": {
+     "displayedBaseFare": 10573,
+     "markUpFare": 11813,
+     "markupDiscountPercent": "10% off",
+     "taxesAndFees": 2793,
+     "totalPrice": 14605.42,
+     "couponCode": "IXIFIRST",
+     "offerMessage": "Discount of ₹2573 included. Coupon code IXIFIRST applied!",
+     "paymentType": "PAY_NOW",
+     "payAtHotelAmount": null
+    }
+   },
+   {
+    "locationId": 986365,
+    "hotelId": 451459,
+    "name": "Dia BNB",
+    "locality": "Bouta Waddo",
+    "city": "Assagao",
+    "userRating": "6.3",
+    "userRatingCategory": "Good",
+    "starRating": 3,
+    "userRatingCount": 307,
+    "topOfferings": [
+     "Free Wifi"
+    ],
+    "distanceFromSearchedEntity": "1.00 km from this hotel",
+    "isCancellationAvailable": true,
+    "isFreeBreakfastAvailable": true,
+    "isSameHotel": false,
+    "accommodationType": "Serviced apartment",
+    "fareDetail": {
+     "displayedBaseFare": 5059,
+     "markUpFare": 6090,
+     "markupDiscountPercent": "16% off",
+     "taxesAndFees": 771,
+     "totalPrice": 6861.1,
+     "couponCode": "IXIFIRST",
+     "offerMessage": "Discount of ₹1945 included. Coupon code IXIFIRST applied!",
+     "paymentType": "PAY_NOW",
+     "payAtHotelAmount": null
+    }
+   },
+   {
+    "locationId": 2347234,
+    "hotelId": 3753462,
+    "name": "Unseen Boutique Hotel, Assagao",
+    "locality": "Assagao",
+    "city": "Assagao",
+    "userRating": "9.2",
+    "userRatingCategory": "Exceptional",
+    "starRating": 4,
+    "userRatingCount": 141,
+    "topOfferings": [
+     "Free Wifi",
+     "Swimming pool at the property"
+    ],
+    "distanceFromSearchedEntity": "2.95 km from this hotel",
+    "isCancellationAvailable": false,
+    "isFreeBreakfastAvailable": true,
+    "isSameHotel": false,
+    "accommodationType": "Hotel",
+    "fareDetail": {
+     "displayedBaseFare": 7253,
+     "markUpFare": 8270,
+     "markupDiscountPercent": "12% off",
+     "taxesAndFees": 2150,
+     "totalPrice": 10419.75,
+     "couponCode": "IXIFIRST",
+     "offerMessage": "Discount of ₹2256 included. Coupon code IXIFIRST applied!",
+     "paymentType": "PAY_NOW",
+     "payAtHotelAmount": null
+    }
+   }
+  ]
+ }
+}

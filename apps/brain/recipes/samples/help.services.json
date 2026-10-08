@@ -1,0 +1,78 @@
+{
+ "status": "success",
+ "length": 9,
+ "data": [
+  {
+   "action": {
+    "openType": "SAME",
+    "link": "/support/services/account-faq"
+   },
+   "header": "Account Settings",
+   "subHeader": "Update email, phone no. or password"
+  },
+  {
+   "action": {
+    "openType": "SAME",
+    "link": "/support/services/money-faq"
+   },
+   "header": "ixigo money",
+   "subHeader": "View ixigo money transaction details and rules"
+  },
+  {
+   "action": {
+    "openType": "SAME",
+    "link": "/support/services/pre-booking"
+   },
+   "header": "Pre-booking Queries",
+   "subHeader": "Facing issue while booking? Not able to book?"
+  },
+  {
+   "action": {
+    "openType": "SAME",
+    "link": "/support/services/money-max-faq"
+   },
+   "header": "ixigo money max",
+   "subHeader": "Seamless instant refunds"
+  },
+  {
+   "action": {
+    "openType": "SAME",
+    "link": "/support/services/ixigo-assured"
+   },
+   "header": "ixigo assured",
+   "subHeader": "Get free cancellation benefits"
+  },
+  {
+   "action": {
+    "openType": "SAME",
+    "link": "/support/services/au-credit-card"
+   },
+   "header": "ixigo AU Credit Card",
+   "subHeader": "Your Gateway To Exclusive Perks "
+  },
+  {
+   "action": {
+    "openType": "SAME",
+    "link": "/support/services/payment-faq"
+   },
+   "header": "Manage Payment Methods",
+   "subHeader": "Delete saved cards or link/delink wallets"
+  },
+  {
+   "action": {
+    "openType": "SAME",
+    "link": "/support/services/metro"
+   },
+   "header": "Metro Ticket Booking",
+   "subHeader": "Metro Tickets Made Simple "
+  },
+  {
+   "action": {
+    "openType": "SAME",
+    "link": "/support/services/tourpackages"
+   },
+   "header": "Holiday Packages",
+   "subHeader": "Unforgettable Tours Made Simple"
+  }
+ ]
+}
