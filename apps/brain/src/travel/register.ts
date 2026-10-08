@@ -27,7 +27,7 @@ import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
-import { createIxigoWarm, IXIGO_WARM_STEP, startComputerAtSetup, warmForTravel } from './warm.js';
+import { createIxigoWarm, IXIGO_WARM_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
@@ -133,7 +133,11 @@ export const registerTravel: RegisterLane = async (brain) => {
   // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
   // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
   for (const t of watchTools({ pool: brain.pool, book, engine, switches: brain.switches, now: brain.now })) brain.tools.register(t);
-  const watchRunner = createWatchRunner({ pool: brain.pool, book, engine, store: new ProactiveStore(brain.pool), switches: brain.switches, now: brain.now, log: brain.log });
+  const watchRunner = createWatchRunner({
+    pool: brain.pool, book, engine, store: new ProactiveStore(brain.pool), switches: brain.switches, now: brain.now, log: brain.log,
+    linkOpen: () => brain.door.link.isOpen(),
+    wake: (tripId) => wakeForCheck(brain, tripId),
+  });
   const watchEvery = setInterval(() => {
     watchRunner.tick().catch((err: unknown) => brain.log.warn({ err }, 'travel: the watch checks failed'));
   }, WATCH_TICK_MS);

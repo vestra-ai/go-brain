@@ -63,9 +63,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   brain.recipeRunners = {
     browserFetch,
     keepWarm: (tripId) => keeper.touch(tripId),
-    start: async (tripId) => {
-      await computer.warm(tripId);
-    },
+    start: (tripId) => computer.warm(tripId),
     // The new computer's first ixigo visit, travel's setup step after start (runners.ts COLD_COMPUTER).
     prime: async (tripId) => {
       await browserFetch.prime?.(tripId);

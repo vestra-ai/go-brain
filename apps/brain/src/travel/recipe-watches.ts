@@ -6,9 +6,11 @@
  *
  * Go checks a watch every hour, every half hour within two days of its date, in the background: the check never holds
  * the trip's computer awake and keeps no tab open there, and a trip's watches share one check time, so one wake does them
- * all. It says so once, when the flip comes true, through the proactive bar as the group's ask (it skips the daily budget
- * and "two in a row"; night and the dedupe still hold), and the watch ends. Never "still waitlisted". A watch also ends
- * at its date, when someone stops it, after six checks in a row that failed (said in one line), or when the trip goes.
+ * all, woken before their pages. No check runs while no Server socket is open (a trip's details come through it), and
+ * one the link drops under is not counted against its watch. It says so once, when the flip comes true, through the
+ * proactive bar as the group's ask (it skips the daily budget and "two in a row"; night and the dedupe still hold), and
+ * the watch ends. Never "still waitlisted". A watch also ends at its date, when someone stops it, after six checks in a
+ * row that failed (said in one line), or when the trip goes.
  *
  * Budgets: three watches a trip at once, and at most WATCH_CHECKS_PER_10_MIN checks across every trip in ten minutes, so
  * no trip burns ixigo's patience with the one address every computer goes out from. The RECIPE_WATCHES switch turns
@@ -201,6 +203,10 @@ export interface WatchRunnerDeps {
   switches: Pick<Switches, 'get'>;
   now: () => Date;
   log: { warn(obj: object, msg: string): void };
+  /** Whether a Server socket is open: with none, no check runs, and one the link dropped under is not a failure. */
+  linkOpen: () => boolean;
+  /** Wakes the trip's computer before its checks (warm.ts wakeForCheck). One that throws is logged, and the checks go on. */
+  wake?: (tripId: string) => Promise<void>;
   /** The cap across every trip in ten minutes (WATCH_CHECKS_PER_10_MIN). */
   capPer10Min?: number;
 }
@@ -247,6 +253,8 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
     try {
       answer = await d.engine.answerShared(w.recipe_id, w.inputs, { tripId: w.trip_id, conditions: w.conditions, background: true });
     } catch (err) {
+      // The Server's socket went under the check: not the watch's failure, and it stays due for the link's return.
+      if (!d.linkOpen()) return false;
       const errors = w.errors + 1;
       const why = String(err instanceof Error ? err.message : err).slice(0, 300);
       d.log.warn({ watchId: w.watch_id, recipe: w.recipe_id, errors, err: why }, 'travel: a watch check failed');
@@ -278,7 +286,7 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
   }
 
   async function once(): Promise<number> {
-    if (d.switches.get('RECIPE_WATCHES') !== 'on') return 0;
+    if (d.switches.get('RECIPE_WATCHES') !== 'on' || !d.linkOpen()) return 0;
     const now = d.now();
     // A trip the Server no longer has keeps no watches.
     await d.pool.query(
@@ -295,7 +303,8 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
     for (const w of due.rows) byTrip.set(w.trip_id, [...(byTrip.get(w.trip_id) ?? []), w]);
     let fired = 0;
     // A trip's watches together, so one wake of its computer checks them all; trips one after another.
-    for (const watches of byTrip.values()) {
+    for (const [tripId, watches] of byTrip) {
+      await d.wake?.(tripId).catch((err: unknown) => d.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: a watch's check could not wake its computer"));
       const done = await Promise.all(watches.map((w) => check(w, now).catch((err: unknown) => {
         d.log.warn({ watchId: w.watch_id, err: String(err).slice(0, 200) }, 'travel: a watch could not be checked');
         return false;

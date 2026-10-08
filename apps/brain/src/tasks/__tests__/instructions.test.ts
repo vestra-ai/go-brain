@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { DEMO_LISTINGS, GO_DENY_TOOLS, GO_RECIPE_INSTRUCTIONS, GO_TASK_INSTRUCTIONS, GO_WEBHOOK_EVENTS, goTaskManifest } from '../instructions.js';
+import {
+  DEMO_LISTINGS, GO_BLOCKED_PATHS, GO_BROWSER_DOMAINS, GO_DENY_TOOLS, GO_RECIPE_INSTRUCTIONS, GO_TASK_INSTRUCTIONS, GO_WEBHOOK_EVENTS,
+  goRecipeManifest, goTaskManifest,
+} from '../instructions.js';
 
 describe('the travel search job (go-recipe)', () => {
   it('passes the script to computer_eval as its expression, waits for the results first, and returns rows unchanged', () => {
@@ -48,6 +51,16 @@ describe('the go-trip-task manifest', () => {
     });
     expect(m).not.toHaveProperty('deny_tools');
     expect(goTaskManifest({ mcpServerId: 'mcp_go', model: 'default', denyTools: true }).deny_tools).toEqual([...GO_DENY_TOOLS]);
+  });
+
+  it("with the browser fetch, closes ixigo's payment page beside the sites it allows, on both deployments (Bash #4591)", () => {
+    expect(GO_BLOCKED_PATHS).toEqual(['ixigo.com/payments/']);
+    expect(goTaskManifest({ mcpServerId: 'mcp_go', model: 'default', denyTools: false }).browser).toBeUndefined();
+    expect(goTaskManifest({ mcpServerId: 'mcp_go', model: 'default', denyTools: false, browserFetch: true }).browser).toEqual({
+      allowed_domains: [...GO_BROWSER_DOMAINS], blocked_paths: ['ixigo.com/payments/'],
+    });
+    expect(goRecipeManifest({ model: 'fast', denyTools: false }).browser).toBeUndefined();
+    expect(goRecipeManifest({ model: 'fast', denyTools: false, browserFetch: true }).browser).toEqual({ blocked_paths: ['ixigo.com/payments/'] });
   });
 
   it("denies Bash's house tools and Composio, but never the tools that reach Go", () => {

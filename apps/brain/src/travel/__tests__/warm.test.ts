@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FakeSwitches } from '../../tasks/testing/lane-brain.js';
-import { createIxigoWarm, IXIGO_WARM_STEP, IXIGO_WARM_TRIES, startComputerAtSetup, warmForTravel } from '../warm.js';
+import { CHECK_WAKE_LEAD_MS, createIxigoWarm, IXIGO_WARM_STEP, IXIGO_WARM_TRIES, startComputerAtSetup, wakeForCheck, warmForTravel } from '../warm.js';
 
 /** A brain with the travel mode switch and the tasks lane's keepWarm and start, recording each hold and each start. */
-function brainIn(mode: string, withComputer = true, startFails = false, primeFails = 0) {
+function brainIn(mode: string, withComputer = true, startFails = false, status: 'ready' | 'waking' | 'skipped' = 'waking', primeFails = 0) {
   const switches = new FakeSwitches();
   void switches.set('TRAVEL_MODE', mode);
   const held: string[] = [];
@@ -14,6 +14,7 @@ function brainIn(mode: string, withComputer = true, startFails = false, primeFai
     start: async (tripId: string) => {
       if (startFails) throw new Error('warm_limit: too many computers are waking');
       started.push(tripId);
+      return status;
     },
     // primeFails: how many visits in a row ixigo does not answer, then it does.
     prime: async (tripId: string) => {
@@ -93,7 +94,7 @@ describe(`createIxigoWarm (${IXIGO_WARM_STEP}): the new computer's first ixigo v
   });
 
   it('throws while ixigo does not answer, so setup tries again and the login prompt waits, and is done once it does', async () => {
-    const b = brainIn('ixigo_web', true, false, 1);
+    const b = brainIn('ixigo_web', true, false, 'waking', 1);
     const warm = createIxigoWarm(b.brain);
     await expect(warm.run('t_new')).rejects.toThrow(/did not answer/);
     await warm.run('t_new');
@@ -102,7 +103,7 @@ describe(`createIxigoWarm (${IXIGO_WARM_STEP}): the new computer's first ixigo v
   });
 
   it(`gives up after ${IXIGO_WARM_TRIES} tries: done with a warning in the log and the health view, so the login prompt goes ahead`, async () => {
-    const b = brainIn('ixigo_web', true, false, 99);
+    const b = brainIn('ixigo_web', true, false, 'waking', 99);
     const warm = createIxigoWarm(b.brain);
     for (let i = 1; i < IXIGO_WARM_TRIES; i += 1) await expect(warm.run('t_down')).rejects.toThrow(/did not answer/);
     await expect(warm.run('t_down')).resolves.toBeUndefined();
@@ -118,5 +119,37 @@ describe(`createIxigoWarm (${IXIGO_WARM_STEP}): the new computer's first ixigo v
     expect(warm.stat()).toBeNull();
     await warm.run('t_new');
     expect(warm.stat()).toEqual({ recipe: IXIGO_WARM_STEP, speed: 'page', runs: 1, failed: 0, p50_ms: 1_500, p90_ms: 1_500 });
+  });
+});
+
+describe("wakeForCheck: a watch's check wakes its trip's computer before its page", () => {
+  it('wakes the box with no hold, and gives a box that was not up CHECK_WAKE_LEAD_MS before the page', async () => {
+    for (const status of ['waking', 'skipped'] as const) {
+      const { brain, started, held } = brainIn('ixigo_web', true, false, status);
+      const slept: number[] = [];
+      await wakeForCheck(brain, 't_watch', async (ms) => { slept.push(ms); });
+      expect(started, status).toEqual(['t_watch']);
+      expect(held, status).toEqual([]);
+      expect(slept, status).toEqual([CHECK_WAKE_LEAD_MS]);
+    }
+  });
+
+  it('goes straight on when the box is up, and wakes none in the other modes nor without the trip computer', async () => {
+    const up = brainIn('ixigo_web', true, false, 'ready');
+    const slept: number[] = [];
+    await wakeForCheck(up.brain, 't_watch', async (ms) => { slept.push(ms); });
+    expect(up.started).toEqual(['t_watch']);
+    expect(slept).toEqual([]);
+    for (const mode of ['fake', 'ixigo']) {
+      const other = brainIn(mode);
+      await wakeForCheck(other.brain, 't_watch', async (ms) => { slept.push(ms); });
+      expect(other.started, mode).toEqual([]);
+    }
+    await expect(wakeForCheck(brainIn('ixigo_web', false).brain, 't_watch')).resolves.toBeUndefined();
+    expect(slept).toEqual([]);
+  });
+
+  it('throws a /v1 refusal, so the runner logs it and the page wakes the box itself', async () => {
+    await expect(wakeForCheck(brainIn('ixigo_web', true, true).brain, 't_watch', async () => undefined)).rejects.toThrow(/warm_limit/);
   });
 });
