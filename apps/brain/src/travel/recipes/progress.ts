@@ -21,6 +21,8 @@ export type RecipeProgress =
   | { type: 'frames'; frames: LiveFrame[] }
   /** The options are read, before Go's own constraints are applied. */
   | { type: 'extracted'; count: number }
+  /** ixigo knows more than one place for the words: the model or the group chooses, and the search goes on after. */
+  | { type: 'choosing'; between: string[] }
   /** The run failed with this TravelError code. */
   | { type: 'failed'; code: string };
 

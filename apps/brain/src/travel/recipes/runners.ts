@@ -46,6 +46,8 @@ export interface RecipeRunner {
    * with no tab kept, it opens ixigo's home first. The call's answer, as a capture.
    */
   pageFetch?(tripId: string, call: PageCall, o?: Omit<ReadOptions, 'onProgress'>): Promise<Capture>;
+  /** Whether page calls are worth trying now: false for a while after a Bash without page_fetch refused one. */
+  canPageFetch?(): boolean;
 }
 
 export interface RunnerDeps {
@@ -73,6 +75,12 @@ export const IN_USE_WAIT_MS = 4_000;
 export const FAST_TIMEOUT_MS = 5_000;
 /** How long the warm ixigo tab stays open after a page call: the next call within it needs no page load. */
 export const WARM_TAB_MS = 120_000;
+/**
+ * How long Go stops trying page calls after Bash refused one as a request it doesn't take (a 400: a Bash with no
+ * page_fetch yet), or answered with no page call in it. Once Bash has page_fetch, they resume within this, with no deploy
+ * of Go's.
+ */
+export const FAST_UNSUPPORTED_MS = 10 * 60_000;
 
 interface FetchAnswer {
   final_url: string;
@@ -177,8 +185,16 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
+  /** Until when page calls are skipped: Bash said it can't make them. */
+  let unsupportedUntil = 0;
+  const unsupported = (): TravelError => {
+    unsupportedUntil = d.now().getTime() + FAST_UNSUPPORTED_MS;
+    return new TravelError('unreachable', "fast unavailable: Bash's answer had no page call");
+  };
+
   /** One page call from the warm tab; with none kept, the same call on a tab opened at ixigo's home. */
   async function pageFetch(tripId: string, call: PageCall, o: Omit<ReadOptions, 'onProgress'>): Promise<Capture> {
+    if (d.now().getTime() < unsupportedUntil) throw new TravelError('unreachable', 'fast unavailable: this Bash takes no page calls');
     const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'fast', max_bytes: 1_000_000 };
     const ask = (open: boolean) =>
       d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
@@ -192,6 +208,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     } catch (err) {
       if (!(err instanceof V1Error) || !(err.status === 409 && err.code === 'no_open_tab')) {
         o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
+        // A request this Bash doesn't take: no page call is tried again for a while.
+        if (err instanceof V1Error && err.status === 400) unsupportedUntil = d.now().getTime() + FAST_UNSUPPORTED_MS;
         throw pageCallFailed(err);
       }
       startedAt = d.now().getTime();
@@ -199,11 +217,12 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         answer = await ask(true);
       } catch (again) {
         o.onTrace?.(failedTrace(startedAt, d.now().getTime(), again));
+        if (again instanceof V1Error && again.status === 400) unsupportedUntil = d.now().getTime() + FAST_UNSUPPORTED_MS;
         throw pageCallFailed(again);
       }
     }
     // A Bash whose answer has no page call in it (one without page_fetch, or a shape Go doesn't know): fast is unavailable.
-    if (!Array.isArray(answer.captures)) throw new TravelError('unreachable', "fast unavailable: Bash's answer had no page call");
+    if (!Array.isArray(answer.captures)) throw unsupported();
     const got = answer.captures.find((c) => c.match === 'fast');
     // The call's own time is when its answer was in, from when Bash had the ask: the tab was already open.
     o.onTrace?.({
@@ -221,6 +240,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       return fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o);
     },
     pageFetch: (tripId, call, o = {}) => pageFetch(tripId, call, o),
+    canPageFetch: () => d.now().getTime() >= unsupportedUntil,
   };
 }
 

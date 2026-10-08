@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadBook } from '../../book/book.js';
 import { createEngine, type Engine } from '../../book/engine.js';
 import { TravelError } from '../../mcp-travel.js';
-import { CARD_DELAY_MS, createIxigoWebBackend, TRAVEL_WAIT_MS } from '../backend.js';
+import { CARD_DELAY_MS, CHOOSING_MS, createIxigoWebBackend, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -16,7 +16,7 @@ type Answer = Engine['answer'];
 type Run = { id: string; given: Record<string, unknown>; tripId: string; conditions: string[] };
 
 /** A recipe engine whose runs fail or answer in turn; hold() keeps the runs waiting until release(). */
-function scripted(...outcomes: Array<'fail' | 'ok'>) {
+function scripted(...outcomes: Array<'fail' | 'ok' | 'pick'>) {
   const runs: Run[] = [];
   let gate: Promise<void> | null = null;
   let open: () => void = () => undefined;
@@ -26,6 +26,7 @@ function scripted(...outcomes: Array<'fail' | 'ok'>) {
     o.onProgress?.({ type: 'opening', recipeId: id, url: 'https://www.ixigo.com/x' });
     if (gate) await gate;
     if (outcome === 'fail') throw new TravelError('unreachable', 'ixigo took too long to answer.');
+    if (outcome === 'pick') throw new TravelError('pick_place', 'ixigo knows more than one place for "Udaipur".', null, ['Udaipur City (UDZ)', 'Udaipur Junction (UDPU)']);
     o.onProgress?.({ type: 'captured', ms: 2_100 });
     return { as: 'options', options: [OPTION], page: 'https://www.ixigo.com/x', checkedAt: '2026-10-07T12:00:03.000Z', ms: 2_100 };
   };
@@ -256,6 +257,29 @@ describe("a live card belongs to its search's turn", () => {
     c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
     c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
     expect(c.events).toEqual(['1:failed', '1:finish:failed']);
+  });
+
+  it("never fails the card on a pick: it says Go is choosing, waits through the turn's end, and the search after the pick goes on in it (8 Oct, D1)", async () => {
+    const c = carded(scripted('pick', 'pick', 'ok').engine);
+    // The early start, then the composer with the same words: ixigo knows two Udaipurs.
+    await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toMatchObject({ code: 'pick_place' });
+    await expect(c.b.search('trains', TRAINS, COMPOSER)).rejects.toMatchObject({ code: 'pick_place' });
+    // The turn ends with Go asking the group which one: the card waits on, never red.
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
+    expect(c.events).toEqual(['1:choosing', '1:choosing']);
+    // The pick, in other words: the same card carries on, and is done once.
+    await c.b.search('trains', { ...TRAINS, to: 'Udaipur City (UDZ)' }, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(c.made()).toBe(1);
+    expect(c.events).toEqual(['1:choosing', '1:choosing', '1:extracted', '1:finish:done']);
+  });
+
+  it('ends a card nobody picked for, failed, once it waited 15 minutes', async () => {
+    const c = carded(scripted('pick').engine);
+    await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toMatchObject({ code: 'pick_place' });
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
+    nowMs += CHOOSING_MS;
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_5', messageIds: [] });
+    expect(c.events).toEqual(['1:choosing', '1:failed', '1:finish:failed']);
   });
 
   it('never reopens an ended card: the same ask afterwards gets a card of its own', async () => {

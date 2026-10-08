@@ -145,9 +145,14 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: 
     });
   }
 
+  /** The planned steps are the last three: a step for choosing a place may come before them. */
   const tick = (i: number, state: 'doing' | 'done'): void => {
-    const step = card.steps[i];
+    const step = card.steps[card.steps.length - 3 + i];
     if (step && step.state !== 'done') step.state = state;
+  };
+  /** The search goes on after a pick: the choosing step is done. */
+  const chosen = (): void => {
+    if (card.steps.length > 3 && card.steps[0]!.state === 'doing') card.steps[0]!.state = 'done';
   };
 
   function settle(ok: boolean): void {
@@ -172,8 +177,23 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: 
     if (ended) return;
     switch (e.type) {
       case 'opening':
+        if (card.steps.length > 3 && card.steps[0]!.state === 'doing') {
+          chosen();
+          tick(0, 'doing');
+          push();
+        }
         return;
+      case 'choosing': {
+        // Not a failure: ixigo knows more than one place, and the card waits on the pick with the search still to come.
+        const text = clip(e.between.length > 1 ? `Choosing between ${e.between.slice(0, -1).join(', ')} and ${e.between.at(-1)}` : 'Choosing the place', 80);
+        if (card.steps.length > 3) card.steps[0] = { text, state: 'doing' };
+        else card.steps.unshift({ text, state: 'doing' });
+        for (const s of card.steps.slice(1)) if (s.state === 'doing') s.state = 'todo';
+        push();
+        return;
+      }
       case 'captured':
+        chosen();
         tick(0, 'done');
         tick(1, 'doing');
         push();
@@ -182,6 +202,7 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: 
         frames = frames.then(() => show(e.frames)).catch((err: unknown) => d.log.warn({ err, cardId: card.card_id }, 'travel: a live search picture failed'));
         return;
       case 'extracted':
+        chosen();
         tick(0, 'done');
         tick(1, 'done');
         tick(2, 'doing');

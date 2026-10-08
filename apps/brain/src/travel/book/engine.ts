@@ -41,7 +41,7 @@ function refusePayments(where: string): void {
 export interface EngineDeps {
   book: Book;
   /** The trip's browser fetch; null while the trip's computer is not set up here. */
-  runner: (tripId: string) => Pick<RecipeRunner, 'read' | 'pageFetch'> | null;
+  runner: (tripId: string) => Pick<RecipeRunner, 'read' | 'pageFetch' | 'canPageFetch'> | null;
   /** Keeps a place ixigo resolved; absent in tests that keep nothing. */
   pool?: Pool;
   /** The trip as a recipe's inputs read it ($trip): its head count and the members' home cities. */
@@ -108,6 +108,9 @@ function known(kind: TravelKind, words: string): Record<string, unknown> | null 
   }
 }
 
+/** Whether a recipe's fast speed is worth trying on this runner: it has page calls, and its Bash takes them now. */
+const fastOn = (runner: ReturnType<EngineDeps['runner']>): boolean => !!runner?.pageFetch && runner.canPageFetch?.() !== false;
+
 const choiceLine = (s: Suggestion): string => (s.line ? `"${s.name}" (${s.line})` : `"${s.name}"`);
 
 /** How many rows an answer has, for its run's end; a link has none. */
@@ -115,6 +118,8 @@ const rowsOf = (a: EngineAnswer): { rows?: number } => (a.as === 'options' ? { r
 
 export function createEngine(d: EngineDeps) {
   const offered = new Map<string, Offered>();
+  /** The places ixigo listed for words it knows more than one place for, by lookup and words: asked again, the same list. */
+  const listed = new Map<string, { choices: Suggestion[]; at: number }>();
   const keptFacts = new Map<string, { at: number; answer: Promise<EngineAnswer> }>();
   const timings = new Map<string, { recipe: string; speed: Speed; ms: number[]; runs: number; failed: number }>();
 
@@ -170,11 +175,26 @@ export function createEngine(d: EngineDeps) {
   function offer(lookup: RecipeFile, asked: string, choices: Suggestion[]): void {
     const at = d.now().getTime();
     for (const c of choices) offered.set(`${lookup.id}|${norm(c.name)}`, { lookup: lookup.id, asked, place: c.place, at });
-    while (offered.size > OFFERED_MAX) {
-      const oldest = offered.keys().next().value;
-      if (oldest === undefined) break;
-      offered.delete(oldest);
+    listed.delete(`${lookup.id}|${norm(asked)}`);
+    listed.set(`${lookup.id}|${norm(asked)}`, { choices, at });
+    for (const m of [offered, listed] as Array<Map<string, unknown>>) {
+      while (m.size > OFFERED_MAX) {
+        const oldest = m.keys().next().value;
+        if (oldest === undefined) break;
+        m.delete(oldest);
+      }
     }
+  }
+
+  /** pick_place: the model's choice to make between the places ixigo listed for the words, by their names on the list. */
+  function pickPlace(input: string, words: string, choices: Suggestion[]): TravelError {
+    return new TravelError(
+      'pick_place',
+      `ixigo knows more than one place for "${words.slice(0, 60)}": ${choices.map(choiceLine).join('; ')}. ` +
+        `Search again with ${input} written exactly as the one the ask means, or ask the group which one if it doesn't say.`,
+      null,
+      choices.map((c) => c.name),
+    );
   }
 
   async function keep(lookup: RecipeFile, words: string[], place: Record<string, unknown>, from: string): Promise<void> {
@@ -217,6 +237,9 @@ export function createEngine(d: EngineDeps) {
         out[name] = have;
         continue;
       }
+      // Words ixigo just listed more than one place for: the same choice, with no second load of the list.
+      const list = listed.get(`${lookup.id}|${norm(words)}`);
+      if (list && d.now().getTime() - list.at < OFFERED_MS) throw pickPlace(name, words, list.choices);
       const end: End = name === 'to' ? 'to' : name === 'from' ? 'from' : 'place';
       unknownByLookup.set(lookup.id, [...(unknownByLookup.get(lookup.id) ?? []), { input: name, end, words }]);
     }
@@ -254,11 +277,7 @@ export function createEngine(d: EngineDeps) {
           if (!picked) throw new TravelError('unknown_place', `ixigo's ${lookup.keeps} box knows no place for "${e.words.slice(0, 60)}".`);
           if ('choose' in picked) {
             offer(lookup, e.words, picked.choose);
-            throw new TravelError(
-              'pick_place',
-              `ixigo knows more than one place for "${e.words.slice(0, 60)}": ${picked.choose.map(choiceLine).join('; ')}. ` +
-                `Search again with ${e.input} written exactly as the one the ask means, or ask the group which one if it doesn't say.`,
-            );
+            throw pickPlace(e.input, e.words, picked.choose);
           }
           await keep(lookup, [e.words], picked.place, `${IXIGO}${fetches[Math.min(i, fetches.length - 1)]!.path}`);
           out[e.input] = known(lookup.keeps!, e.words) ?? { words: e.words, ...picked.place };
@@ -348,7 +367,7 @@ export function createEngine(d: EngineDeps) {
     if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
     if (!recipe.page) throw new TravelError('refused', `${recipe.title} has no page to open.`);
     const runner = d.runner(o.tripId);
-    const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && runner?.pageFetch ? 'fast' : 'page';
+    const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && fastOn(runner) ? 'fast' : 'page';
     const strip = { line: line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed }) };
     try {
       const answer = await runRecipe(recipe, recipe.page, given, o, runner, strip, took);
@@ -403,7 +422,7 @@ export function createEngine(d: EngineDeps) {
       return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
-    if (recipe.fast && runner.pageFetch) {
+    if (recipe.fast && fastOn(runner) && runner.pageFetch) {
       const started = d.now().getTime();
       try {
         const url = await fill(recipe.fast.url, inputs, { url: true, bindings });
@@ -430,7 +449,8 @@ export function createEngine(d: EngineDeps) {
         took('fast');
         return answer;
       } catch (err) {
-        record(recipe.id, 'fast', d.now().getTime() - started, err instanceof TravelError ? err.code : 'failed');
+        // A Bash that takes no page calls is not a failed fast run: the run is the page's, and fast resumes once it does.
+        if (fastOn(runner)) record(recipe.id, 'fast', d.now().getTime() - started, err instanceof TravelError ? err.code : 'failed');
         d.log?.warn({ recipe: recipe.id, err: String(err).slice(0, 200) }, 'book: the fast speed failed; the page speed runs');
         const fell = strip.line;
         fell.end({ ok: false, fell_to: 'page', why: whyOf(err) });
