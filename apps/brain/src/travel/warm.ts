@@ -131,6 +131,12 @@ export interface StaysHeadStartDeps {
   warmGaveUp(tripId: string): boolean;
   /** The trip computer is set up here (the tasks lane's runners), as for every warm in this file. */
   computerSetUp(): boolean;
+  /**
+   * The trip's dates or destination changed and this head start loaded and kept their stays: Go may put them up
+   * (head-start-wake.ts decides). Never at setup, on a person's line, or when the search was kept or running already
+   * (an ask got there first, or the same dates were agreed again).
+   */
+  onChangedKept?(tripId: string, ask: HeadStartAsk, startedAt: Date): void;
 }
 
 const DAY_MS = 86_400_000;
@@ -193,6 +199,7 @@ export function createStaysHeadStart(d: StaysHeadStartDeps): {
       // answer under that key too (a share whose run is the answer itself loads nothing).
       await d.share(tripId, ask, () => Promise.resolve(answer));
       d.log.info({ tripId, why, ms: d.now().getTime() - started }, "travel: the trip's stays head start is kept");
+      if (why === 'changed') d.onChangedKept?.(tripId, ask, new Date(started));
     } catch (err) {
       failed += 1;
       lastAt.delete(tripId);

@@ -10,6 +10,7 @@ import { ixigoTool } from './book/tool.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
+import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
 import { createIxigoLogin } from './login.js';
 import { createTravelLayer } from './layer.js';
@@ -144,6 +145,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     ttlMs: (book.get('hotels.search')?.ttl_minutes ?? 10) * 60_000,
     warmGaveUp: (tripId) => ixigoWarm.gaveUp(tripId),
     computerSetUp: () => brain.recipeRunners !== undefined,
+    // Dates agreed on a trip with a place: the kept stays go up as one card, unless Go has the last word.
+    onChangedKept: showHeadStartStays({ travel: () => brain.travel, packs: brain.packs, desk: brain.desk, results, now: brain.now, log: brain.log }),
   });
   brain.setup.addStep({ name: STAYS_HEAD_START_STEP, after: IXIGO_WARM_STEP, run: (tripId) => headStart.atSetup(tripId) });
   brain.tripLog.onEvent((ev) => headStart.onEvent(ev));
