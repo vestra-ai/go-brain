@@ -193,7 +193,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
           live?.progress({ type: 'extracted', count: run.options.length });
           // The card is done before the options card posts.
           if (card) await end(cardKey, card, true);
-          return { results: run.options, checkedAt: run.checkedAt, runId };
+          return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page };
         },
         async (err: unknown): Promise<never> => {
           if (card) {

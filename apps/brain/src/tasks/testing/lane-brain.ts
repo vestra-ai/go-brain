@@ -197,6 +197,11 @@ export class FakeContext implements Context {
   addTurnEnd(fn: Parameters<Context['addTurnEnd']>[0]): void {
     this.turnEnds.push(fn);
   }
+  /** The lanes' answers with no model call: a test runs one as P1's composer does, before the model. */
+  readonly directs: Array<Parameters<Context['addDirect']>[0]> = [];
+  addDirect(fn: Parameters<Context['addDirect']>[0]): void {
+    this.directs.push(fn);
+  }
 }
 
 type SetupStep = Parameters<Setup['addStep']>[0];

@@ -849,3 +849,39 @@ describe("the turn's log line", () => {
     });
   });
 });
+
+describe('an answer with no model call', () => {
+  it("a lane's direct answer posts its line (and cards) with no model call, and the turn is written down", async () => {
+    const ask = msg(3, 'p_arjun', '@Go villas with a pool in North Goa');
+    const r = room({ messages: [ask], script: [{ text: 'never asked' }] });
+    const seen: string[] = [];
+    r.context.addDirect(async ({ wake, ctx }) => {
+      seen.push(wake.map((w) => w.kind).join());
+      ctx.lines.push('Pool stays in North Goa for 6 to 9 Nov, from ₹4,334 a night.');
+      return true;
+    });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toEqual([]);
+    expect(seen).toEqual(['message']);
+    expect(r.posts().map((p) => p.params.text)).toEqual(['Pool stays in North Goa for 6 to 9 Nov, from ₹4,334 a night.']);
+    const { rows } = await db.pool.query('select outcome, rounds, output_tokens from turns where turn_id = $1', [`turn_${r.tripId}`]);
+    expect(rows[0]).toMatchObject({ outcome: 'spoke', rounds: 0, output_tokens: 0 });
+  });
+
+  it('a lane that passes leaves the turn to the model, and a turn under limits never asks a lane', async () => {
+    const ask = msg(3, 'p_arjun', '@Go villas with a pool in North Goa, which is closest to the beach?');
+    const r = room({ messages: [ask], script: [{ text: 'Casa Mareia is the closest, 2 minutes from the sand.' }] });
+    r.context.addDirect(async () => false);
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.model.bodies).toHaveLength(1);
+    expect(r.posts().map((p) => p.params.text)).toEqual(['Casa Mareia is the closest, 2 minutes from the sand.']);
+    const limited = room({ messages: [ask], script: [{ tools: [{ name: 'stay_silent', input: { reason: 'proactive' } }] }], limits: () => ({ tools: ['stay_silent'], mayPostText: false }) });
+    let asked = 0;
+    limited.context.addDirect(async () => {
+      asked += 1;
+      return true;
+    });
+    await turn(limited, [item(limited.tripId, ask, true)]);
+    expect(asked).toBe(0);
+  });
+});

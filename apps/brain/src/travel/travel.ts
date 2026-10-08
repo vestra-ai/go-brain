@@ -71,6 +71,8 @@ export interface TravelSearch {
   closest?: { option: TravelOption; misses: string[] };
   /** The run that read it, when a backend runs one per search (ixigo_web): searches that shared a run share its id. */
   runId?: string;
+  /** The results page it read on ixigo.com, where the whole list is (ixigo_web). */
+  page?: string;
 }
 
 export type StatusQuery =

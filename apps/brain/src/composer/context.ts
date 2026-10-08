@@ -3,6 +3,7 @@ import type { Log } from '../log.js';
 import type { TripPack } from '../trips/pack.js';
 import { chatLine, dataBlock, defuse, oneLine, personName, roomView, type Forgotten } from './fence.js';
 import { GO_RULES } from './rules.js';
+import type { TurnCtx } from './tools.js';
 
 export interface NowProvider {
   /** 'record', 'people', 'tasks', 'payments', 'openings'; P1 adds 'trip'. */
@@ -37,6 +38,12 @@ export interface TurnEnd {
   messageIds: string[];
 }
 
+/**
+ * A lane's answer with no model call: given the turn's wake items, it puts its cards and their lines in ctx and says
+ * true, or says false and the turn goes to the model (P4's finished early search for a plain ask).
+ */
+export type DirectAnswer = (i: { tripId: string; wake: DeskItem[]; pack: TripPack; ctx: TurnCtx }) => Promise<boolean>;
+
 /** A turn's limits: the only tools it may call (stay_silent always works) and whether its text may be posted. */
 export interface TurnLimits {
   tools: string[];
@@ -61,6 +68,8 @@ export interface Context {
   addTurnRules(fn: (wake: DeskItem[]) => TurnLimits | null): void;
   /** Called once a turn is over, so a lane ends what the turn left open (P4's live search cards). */
   addTurnEnd(fn: (t: TurnEnd) => void): void;
+  /** A lane's answer with no model call, tried before the model in registration order; the first true wins. */
+  addDirect(fn: DirectAnswer): void;
 }
 
 /** A text block as the Messages API takes it. */
@@ -99,6 +108,8 @@ export type ContextImpl = Context & {
   turnRules(wake: DeskItem[]): TurnLimits | null;
   /** Tells every addTurnEnd lane the turn is over; never throws. */
   turnEnded(t: TurnEnd): void;
+  /** Whether a lane answered the turn with no model call; a lane that throws is logged and the model answers. */
+  direct(i: Parameters<DirectAnswer>[0]): Promise<boolean>;
 };
 
 export const CHUNK = 25;
@@ -135,6 +146,7 @@ export function createContext(log: Log): ContextImpl {
   const notes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
   const endNotes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
   const turnEnds: Array<(t: TurnEnd) => void> = [];
+  const directs: DirectAnswer[] = [];
   let story: StoryProvider | null = null;
   let forgottenFrom: ForgottenProvider | null = null;
 
@@ -201,6 +213,19 @@ export function createContext(log: Log): ContextImpl {
     },
     addTurnEnd(fn) {
       turnEnds.push(fn);
+    },
+    addDirect(fn) {
+      directs.push(fn);
+    },
+    async direct(i) {
+      for (const fn of directs) {
+        try {
+          if (await fn(i)) return true;
+        } catch (e) {
+          log.warn({ err: e, trip: i.tripId }, 'a direct answer failed; the model answers');
+        }
+      }
+      return false;
     },
     turnEnded(t) {
       for (const fn of turnEnds) {

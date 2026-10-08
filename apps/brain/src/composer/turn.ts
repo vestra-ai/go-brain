@@ -10,7 +10,7 @@ import type { AnthropicLike } from './anthropic.js';
 import { classifyAnthropicError } from './anthropic-helpers.js';
 import type { ContextImpl } from './context.js';
 import { chatLine, dataBlock, roomView, type Forgotten } from './fence.js';
-import { addUsage, MAX_ROUNDS, noUsage, runLoop, type RoundTiming } from './loop.js';
+import { addUsage, MAX_ROUNDS, noUsage, runLoop, type LoopResult, type RoundTiming } from './loop.js';
 import { stripMessageRefs } from './sanitize.js';
 import type { Speak } from './speak.js';
 import { makeTurnCtx, scopedLink, type Tools } from './tools.js';
@@ -214,7 +214,12 @@ export function createComposer(d: ComposerDeps): Composer {
         },
         ...(d.budget ? { budget: d.budget } : {}),
       };
-      let r = await runLoop({ ...base, messages: [{ role: 'user', content: prompt.user }] });
+      // A lane may answer with no model call (P4: a plain search ask whose early search found options): its cards and
+      // their lines are the turn's answer. A turn under limits always goes to the model.
+      const direct = ctx.allowedTools === undefined && ctx.mayPostText !== false && (await d.context.direct({ tripId: t.tripId, wake: t.items, pack, ctx }));
+      let r: LoopResult = direct
+        ? { text: [...new Set(ctx.lines.map((l) => l.trim()).filter((l) => l !== ''))].join('\n'), silent: false, rounds: 0, usage: noUsage(), messages: [], stopReason: 'answered', timings: [] }
+        : await runLoop({ ...base, messages: [{ role: 'user', content: prompt.user }] });
       timings.push(...r.timings);
       addUsage(usage, r.usage);
       rounds += r.rounds;
@@ -230,7 +235,8 @@ export function createComposer(d: ComposerDeps): Composer {
       // prompt was built, its desk item after) needs no extra round. But one that names Go was never a reason this turn
       // woke, so the model may have passed over it (a hello that only says hello): it goes back on the desk for a turn
       // of its own, which sees what Go just said.
-      if (!r.silent && r.text && ctx.mayPostText !== false && ctx.allowedTools === undefined && rounds < MAX_ROUNDS) {
+      // A direct answer has no exchange to go on: new lines wait for a turn of their own.
+      if (!direct && !r.silent && r.text && ctx.mayPostText !== false && ctx.allowedTools === undefined && rounds < MAX_ROUNDS) {
         const claimed = await d.claimNew(t.tripId, t.turnId);
         const passedOver = claimed.filter((i) => isForGo(i) && (seqOf(i, pack) ?? Number.POSITIVE_INFINITY) <= prompt.newestSeq);
         await d.release(t.turnId, passedOver.map((i) => i.id));

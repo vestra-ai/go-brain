@@ -69,6 +69,15 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
   });
 
+  // A card of stays shows a few: this opens the whole list the search read on ixigo.com.
+  taps.on('options', 'see_all', async (tap) => {
+    const row = await d.results.card(tap.trip_id, tap.card_id);
+    const set = row ? await d.results.get(tap.trip_id, row.resultsId) : null;
+    const url = ixigoPage(set?.page ?? null);
+    if (!url) return { result: 'refused', toast: 'This list has no ixigo page' };
+    return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
+  });
+
   taps.on('options', 'open', async (tap) => {
     const offer = tap.option_id ? await d.results.offer(tap.option_id) : null;
     if (!offer || offer.cardId !== tap.card_id || offer.tripId !== tap.trip_id) return { result: 'refused', toast: 'That option is no longer here' };

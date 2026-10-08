@@ -17,7 +17,7 @@ import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
 import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/backend.js';
 import { createEarlyStart } from './recipes/early.js';
-import { earlySearchNow } from './recipes/now.js';
+import { earlyAnswer, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { createResultsStore } from './results.js';
 import { renderSearchWake } from './search-wake.js';
@@ -80,7 +80,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
   });
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm })) brain.tools.register(t);
+  const today = tripToday(brain.pool, brain.now);
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today })) brain.tools.register(t);
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
   const recipesTool = ixigoTool({ book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
   if (recipesTool) brain.tools.register(recipesTool);
@@ -92,6 +93,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
+  // A plain search ask whose early search found options answers with no model call: the card and a line from its data.
+  brain.context.addDirect(earlyAnswer({ early, results, images, travel, today }));
   // A search that outlived its turn wakes Go with its options.
   brain.context.addWake('search', renderSearchWake);
   // A turn that ends ends the live search cards it left open.

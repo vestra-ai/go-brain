@@ -36,13 +36,13 @@ describe('registerTravel', () => {
     expect(LANES.indexOf(registerTravel)).toBeLessThan(LANES.indexOf(registerProactive));
   });
 
-  it('sets brain.travel and registers the seven travel tools, the three options taps, the tap wake and the image route', async () => {
+  it('sets brain.travel and registers the seven travel tools, the four options taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
     // A new trip's computer is made at setup (warm.ts startComputerAtSetup).
     expect(lb.setup.steps.map((s) => s.name)).toContain('travel.computer');
     // The ixigo tool runs the book's other recipes (the destination guide and more).
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo']);
-    expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/open', 'options/pick', 'options/vote']);
+    expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/open', 'options/pick', 'options/see_all', 'options/vote']);
     expect(lb.context.wakes.has('tap')).toBe(true);
     // A search that outlived its turn wakes Go with its options.
     expect(lb.context.wakes.has('search')).toBe(true);
@@ -93,6 +93,25 @@ describe('registerTravel', () => {
     expect(opened).toEqual({ result: 'open', url: page, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
     // An option from another card is refused.
     expect(await lb.taps.tap('options', 'open', tap({ tap_id: 'tap_o3', action_id: 'open', option_id: 'opt_ixr1' }), card)).toEqual({ result: 'refused', toast: 'That option is no longer here' });
+  });
+
+  it('"See all on ixigo" on a card of stays opens the whole list the search read, and nothing for a list without one', async () => {
+    const results = createResultsStore(db.pool);
+    const list = 'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&filters=FL_HF_29';
+    const hotel: ResultOption = { kind: 'stay', title: 'Meritas', priceMinor: 810400, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {}, sourceUrl: 'https://www.ixigo.com/hotels/1384544/details?hName=Meritas' };
+    const checkedAt = '2026-10-07T12:00:00.000Z';
+    const picks = [{ optionId: 'opt_all1', n: 1, option: hotel, imageUrl: null }];
+    const keep = async (cardId: string, page?: string) => {
+      const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: {}, options: [hotel], checkedAt, ...(page ? { page } : {}) });
+      const c = buildOptionsCard({ cardId, title: 'Stays in North Goa', optionKind: 'stay', checkedAt, picks, seeAll: page !== undefined });
+      await results.saveCard({ cardId, tripId: 't_goa', resultsId: set.resultsId, title: c.title, optionKind: 'stay', card: c }, picks, checkedAt);
+      return c;
+    };
+    const all = await keep('c_all1', list);
+    expect(all.actions?.map((a) => a.action_id)).toEqual(['pick', 'see_all']);
+    const tapAll = (c: C.Card) => lb.taps.tap('options', 'see_all', { tap_id: `tap_${c.card_id}`, trip_id: 't_goa', card_id: c.card_id, action_id: 'see_all', person_id: 'p_meher' }, c);
+    expect(await tapAll(all)).toEqual({ result: 'open', url: list, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
+    expect(await tapAll(await keep('c_all2'))).toEqual({ result: 'refused', toast: 'This list has no ixigo page' });
   });
 
   it('"See flights on ixigo" opens the link card\'s own ixigo page', async () => {
