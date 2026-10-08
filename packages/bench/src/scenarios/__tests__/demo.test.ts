@@ -24,9 +24,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEMO_CAP_MINOR, DEMO_FORGET, DEMO_FRIEND, DEMO_LINES, DEMO_PAYER, DEMO_PEOPLE, DEMO_STAY_SEARCH, DEMO_VILLAS, DEMO_WATCH, type DemoLine } from '../demo.js';
+import { DEMO_CAP_MINOR, DEMO_FORGET, DEMO_FRIEND, DEMO_LINES, DEMO_NOW, DEMO_PAYER, DEMO_PEOPLE, DEMO_STAY_SEARCH, DEMO_VILLAS, DEMO_WATCH, type DemoLine } from '../demo.js';
 import { createDirector, DIRECTOR_WORDS as W } from '../director.js';
-import { CALL_OUTCOME, CALL_RECORD, DEMO_ADMIN_TOKEN, DEMO_CALLEE, DEMO_PHOTO_URL, startDemoRoom, type DemoRoom } from '../kit.js';
+import { CALL_OUTCOME, CALL_RECORD, DEMO_ADMIN_TOKEN, DEMO_CALLEE, DEMO_PHOTO_URL, runClockFrom, startDemoRoom, type DemoRoom } from '../kit.js';
 import { renderTranscript, rowsOfFile, type TranscriptAct } from '../transcript.js';
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -116,11 +116,14 @@ let decisionId = '';
 let payCard: Card<'pay'> | undefined;
 
 describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every lane and every outside thing faked', () => {
+  let realClock: (() => void) | undefined;
   beforeAll(async () => {
+    realClock = runClockFrom(DEMO_NOW);
     demo = await startDemoRoom({ anthropic: director.client });
   }, 60_000);
   afterAll(async () => {
     await demo?.stop();
+    realClock?.();
   });
 
   it('every lane is registered, in master order', () => {

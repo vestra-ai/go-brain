@@ -13,6 +13,11 @@ export const DEMO_PAYER = 'p_rahul';
 export const DEMO_FRIEND = 'p_priya';
 /** "Friday" in the fake ixigo catalog. */
 export const DEMO_DATE = '2026-11-06';
+/**
+ * The demo test's clock starts here (noon in Goa, a month before the trip) and runs on from there. The trip's dates are
+ * fixed, and Go refuses to search or book a day that has passed, so no run may depend on the real date.
+ */
+export const DEMO_NOW = '2026-10-08T06:30:00.000Z';
 
 export interface DemoLine {
   person: string;

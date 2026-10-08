@@ -224,6 +224,25 @@ export interface DemoRoom {
   stop(): Promise<void>;
 }
 
+/**
+ * Runs this process's clock from `at`, as if the test started then, at the real pace. Go, the FakeServer, the trip's
+ * computer, the vault and the test itself all read the same Date, so signatures, expiries and the transcript's times
+ * agree with each other. Returns the undo.
+ */
+export function runClockFrom(at: string): () => void {
+  const Real = Date;
+  const offset = Real.parse(at) - Real.now();
+  const now = (): number => Real.now() + offset;
+  globalThis.Date = new Proxy(Real, {
+    construct: (target, args, newTarget) => Reflect.construct(target, args.length === 0 ? [now()] : args, newTarget),
+    apply: () => new Real(now()).toString(),
+    get: (target, key, receiver) => (key === 'now' ? now : Reflect.get(target, key, receiver)),
+  });
+  return () => {
+    globalThis.Date = Real;
+  };
+}
+
 export async function startDemoRoom(o: { anthropic: AnthropicLike }): Promise<DemoRoom> {
   const v1 = new FakeV1({ keys: V1_KEYS, adminKey: V1_ADMIN, now: () => new Date() });
   await v1.start();

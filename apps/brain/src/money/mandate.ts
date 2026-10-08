@@ -215,7 +215,8 @@ export async function setMandate(
   ctx.cards.push(
     mandateCard({ cardId, decisionId: o.decisionId, what: chosen.label, capMinor, currency, refundableOnly: o.refundableOnly, payerName: payer.name, moved }),
   );
-  const margin = byMargin ? `Nobody said a clear number, so I set the cap at ${money(capMinor, currency)}: the price plus a little margin.` : null;
+  // Never "nobody said a number": an I'll book it tap sets it with no model reading the chat, where someone may have.
+  const margin = byMargin ? `I set the cap at ${money(capMinor, currency)}: the price plus a little margin.` : null;
   const claimed = claimedNow ? `${payer.name}, you're booking for all ${trip.people.length}.` : null;
   const note = [claimed, moved, margin].filter((x) => x !== null).join(' ') || null;
   return { cardId, capMinor, byMargin, note };
