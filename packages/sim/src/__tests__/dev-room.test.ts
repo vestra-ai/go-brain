@@ -1,7 +1,7 @@
 import { once } from 'node:events';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { PAGE_HTML } from '../dev-room/page.js';
+import { PAGE_HTML, roomPage } from '../dev-room/page.js';
 import { serveDevRoom, type DevRoom } from '../dev-room/serve.js';
 import { FakeServer } from '../fake-server.js';
 import { goaFreshTrip } from '../goa.js';
@@ -172,7 +172,7 @@ describe('the live socket', () => {
  * itself), its height, scroll events, pictures that load, and the socket. The test sets the chat's height to what the
  * browser would lay out, then sends the page a state.
  */
-function pageInBrowser(html: string, o: { column: boolean }) {
+function pageInBrowser(html: string, o: { column: boolean; me?: string }) {
   const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
   const view = { height: 600, content: 1000 };
   const clamp = (top: number) => Math.max(0, Math.min(top, view.content - view.height));
@@ -185,18 +185,33 @@ function pageInBrowser(html: string, o: { column: boolean }) {
     set scrollTop(v: number) { colTop = clamp(v); },
   };
   const elements = new Map<string, any>();
+  /** An element: its markup counts how often it was rewritten (a rewritten frame loads its page again). */
+  const stub = (id: string, attrs: Record<string, string> = {}): any => {
+    const listeners: Record<string, Array<(e: unknown) => void>> = {};
+    const inner = new Map<string, any>();
+    let markup = '';
+    return {
+      id, textContent: '', value: '', className: '', dataset: {}, hidden: id === 'newpill', listeners, writes: 0,
+      get innerHTML() { return markup; },
+      set innerHTML(v: string) { markup = v; this.writes += 1; },
+      getAttribute: (k: string) => attrs[k] ?? null,
+      setAttribute: (k: string, v: string) => { attrs[k] = String(v); },
+      hasAttribute: (k: string) => k in attrs,
+      removeAttribute: (k: string) => { delete attrs[k]; },
+      querySelector: (q: string) => { if (!inner.has(q)) inner.set(q, stub(`${id} ${q}`)); return inner.get(q); },
+      querySelectorAll: () => [],
+      addEventListener: (type: string, fn: (e: unknown) => void) => { (listeners[type] ??= []).push(fn); },
+      focus: () => {},
+      contains: (x: { inRoom?: boolean }) => x.inRoom === true,
+    };
+  };
   const el = (id: string) => {
-    if (!elements.has(id)) {
-      const listeners: Record<string, Array<(e: unknown) => void>> = {};
-      elements.set(id, {
-        id, innerHTML: '', textContent: '', value: '', dataset: {}, hidden: id === 'newpill', listeners,
-        addEventListener: (type: string, fn: (e: unknown) => void) => { (listeners[type] ??= []).push(fn); },
-        focus: () => {},
-        contains: (x: { inRoom?: boolean }) => x.inRoom === true,
-      });
-    }
+    if (!elements.has(id)) elements.set(id, stub(id));
     return elements.get(id);
   };
+  // Go Live's column carries the origin of the one page it may frame.
+  const watchOrigin = /<aside[^>]* data-watch-origin="([^"]*)"/.exec(html)?.[1];
+  if (watchOrigin) elements.set('live', stub('live', { 'data-watch-origin': watchOrigin }));
   const docListeners: Record<string, Array<(e: unknown) => void>> = {};
   const scrolling = { get scrollHeight() { return view.content; } };
   const document = {
@@ -207,17 +222,24 @@ function pageInBrowser(html: string, o: { column: boolean }) {
     scrollingElement: scrolling,
     documentElement: scrolling,
   };
+  const opened: string[] = [];
   const window = {
     innerHeight: view.height,
     get scrollY() { return winTop; },
     scrollTo: (_x: number, y: number) => { winTop = clamp(y); },
-    open: () => {},
+    open: (url: string) => { opened.push(url); },
   };
   const sockets: any[] = [];
-  class StubSocket { onmessage: ((ev: { data: string }) => void) | null = null; constructor() { sockets.push(this); } send() {} }
-  const run = new Function('document', 'window', 'localStorage', 'WebSocket', 'location', 'getComputedStyle', 'setInterval', script);
-  run(document, window, { getItem: () => null, setItem: () => {} }, StubSocket, { protocol: 'http:', host: 'room.test', reload: () => {} },
-    (x: unknown) => ({ overflowY: x === col ? 'auto' : 'visible' }), () => 0);
+  const sent: any[] = [];
+  class StubSocket {
+    readyState = 1;
+    onmessage: ((ev: { data: string }) => void) | null = null;
+    constructor() { sockets.push(this); }
+    send(data: string) { sent.push(JSON.parse(data)); }
+  }
+  const run = new Function('document', 'window', 'localStorage', 'WebSocket', 'location', 'getComputedStyle', 'setInterval', 'setTimeout', script);
+  run(document, window, { getItem: () => o.me ?? null, setItem: () => {} }, StubSocket, { protocol: 'http:', host: 'room.test', reload: () => {} },
+    (x: unknown) => ({ overflowY: x === col ? 'auto' : 'visible' }), () => 0, () => 0);
   const trip = goaFreshTrip();
   const message = (n: number, text: string) => ({
     message_id: `m_${n}`, seq: n + 1, updated_seq: n + 1, author: { kind: 'person', person_id: 'p_priya' }, text, attachments: [],
@@ -254,6 +276,23 @@ function pageInBrowser(html: string, o: { column: boolean }) {
     },
     tapPill() {
       for (const fn of el('newpill').listeners.click ?? []) fn({});
+    },
+    el,
+    /** What the page sent on its socket. */
+    sent: () => sent,
+    /** The pages it opened in a new window. */
+    opened: () => opened,
+    /** The room sends the page one message. */
+    receive(data: object) {
+      sockets[0].onmessage({ data: JSON.stringify(data) });
+    },
+    /** A tap on one of the page's own buttons, by its id. */
+    click(id: string) {
+      for (const fn of el(id).listeners.click ?? []) fn({});
+    },
+    /** A tap on a person at the top: the page is now that person. */
+    play(personId: string) {
+      for (const fn of docListeners.click ?? []) fn({ target: { closest: () => ({ dataset: { me: personId } }) } });
     },
   };
 }
@@ -324,6 +363,89 @@ describe('the chat stays at the bottom', () => {
     expect(PAGE_HTML).toContain('<button class="newpill" id="newpill" type="button" hidden>New messages ↓</button>');
     expect(PAGE_HTML).toContain('.newpill[hidden] { display: none; }');
     expect(PAGE_HTML).not.toContain('—');
+  });
+});
+
+describe("Go Live's screen between runs", () => {
+  const LIVE_PAGE = roomPage({ title: 'Try Go', hosted: true, live: true });
+  const before = (ms: number) => new Date(Date.now() - ms).toISOString();
+  /** The room relays one message of Go's live view of the trip. */
+  const relay = (p: ReturnType<typeof pageInBrowser>, msg: object, tripId = 't_try_1') => p.receive({ type: 'live', trip_id: tripId, msg });
+  const runStart = (id: string, at: string) => ({ type: 'run_start', run_id: id, recipe_id: 'ixigo.hotels.search', label: 'Stays in Goa', group_id: `g_${id}`, at, speed: 'page' });
+  const runEnd = (id: string) => ({ type: 'run_end', run_id: id, ok: true, ms: 900, rows: 12 });
+  const frame = (tab: string, jpeg: string, at: string, page = '/hotels/search/result') =>
+    ({ type: 'frame', tab_id: tab, tag: 'run_1', at, page, width: 1280, height: 800, jpeg_base64: jpeg });
+  const screen = (p: ReturnType<typeof pageInBrowser>) => p.el('screen');
+  const picture = (p: ReturnType<typeof pageInBrowser>) => screen(p).querySelector('img').getAttribute('src');
+  const label = (p: ReturnType<typeof pageInBrowser>) => screen(p).querySelector('.rest-label').textContent;
+
+  it("shows one calm line in the screen's own space before the trip's first page, never an empty box", () => {
+    expect(LIVE_PAGE).not.toMatch(/[\u2014\u2013]|claude/i);
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    expect(screen(p).getAttribute('data-key')).toBe('calm');
+    expect(screen(p).innerHTML).toBe('<div class="tile calm"><div class="view"><span class="hint"></span></div></div>');
+    expect(screen(p).querySelector('.hint').textContent).toBe("Say something to start the trip. Go's searches on ixigo show here, live.");
+    relay(p, { type: 'hello', events: [], screen: [] });
+    expect(screen(p).querySelector('.hint').textContent).toBe('When Go searches ixigo for the trip, its pages show here, live.');
+  });
+
+  it('rests on the last page the computer drew, dimmed under a quiet label, and a run brings the screen back live', () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    // In late: a search that ended two minutes ago, its warm tab still open on the drawn list.
+    relay(p, {
+      type: 'hello', events: [runStart('run_1', before(130_000)), runEnd('run_1')],
+      screen: [{ type: 'tab_open', tab_id: 'tab_1', tag: 'run_1' }, frame('tab_1', 'TElTVA==', before(125_000))],
+    });
+    expect(screen(p).getAttribute('data-key')).toBe('rest');
+    expect(screen(p).innerHTML).toBe('<div class="tile rest"><div class="tile-bar"><span class="rest-label"></span></div><div class="view"><img alt=""></div></div>');
+    expect(picture(p)).toBe('data:image/jpeg;base64,TElTVA==');
+    expect(label(p)).toBe("Go's computer · ixigo hotels · 2 min ago");
+    expect(p.el('live-state').textContent).toBe('Live');
+    // A search starts: the same tab, at full brightness and LIVE.
+    relay(p, { type: 'run', event: runStart('run_2', before(0)) });
+    expect(screen(p).getAttribute('data-key')).toBe('tabs:tab_1');
+    expect(screen(p).innerHTML).not.toContain('tile rest');
+    expect(p.el('live-state').textContent).toBe('A page open, live');
+    relay(p, { type: 'screen', event: frame('tab_1', 'TkVX', before(0)) });
+    // Back in after a dropped socket, the search over and its tab closed: the screen rests on the newest page.
+    relay(p, { type: 'hello', events: [runStart('run_1', before(130_000)), runEnd('run_1'), runStart('run_2', before(5_000)), runEnd('run_2')], screen: [] });
+    expect(screen(p).getAttribute('data-key')).toBe('rest');
+    expect(picture(p)).toBe('data:image/jpeg;base64,TkVX');
+    expect(label(p)).toBe("Go's computer · ixigo hotels · just now");
+  });
+
+  it("rests on a run's own picture when no tab was left open, named from its page, and a new trip starts calm", () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    relay(p, {
+      type: 'hello', screen: [],
+      events: [
+        runStart('run_1', before(185_000)),
+        { type: 'frames', run_id: 'run_1', frames: [{ label: 'results', at_ms: 5_000, page: '/trains/search/result', jpeg_base64: 'VFJBSU4=' }] },
+        runEnd('run_1'),
+      ],
+    });
+    expect(picture(p)).toBe('data:image/jpeg;base64,VFJBSU4=');
+    expect(label(p)).toBe("Go's computer · ixigo trains · 3 min ago");
+    relay(p, { type: 'hello', events: [], screen: [] }, 't_try_2');
+    expect(screen(p).getAttribute('data-key')).toBe('calm');
+  });
+
+  it('never rests on a page Go hides: a tab gone to a sign-in page keeps the page before it, and a tab hidden from the start shows none', () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    relay(p, {
+      type: 'hello', events: [runStart('run_1', before(70_000)), runEnd('run_1')],
+      screen: [
+        { type: 'tab_open', tab_id: 'tab_1' }, frame('tab_1', 'SE9URUxT', before(65_000)),
+        { type: 'hidden', tab_id: 'tab_1', reason: 'blocked_path' },
+        // A picture of that tab after it was hidden is never shown.
+        frame('tab_1', 'U0lHTklO', before(60_000)),
+      ],
+    });
+    expect(picture(p)).toBe('data:image/jpeg;base64,SE9URUxT');
+    expect(label(p)).toBe("Go's computer · ixigo hotels · 1 min ago");
+    const q = pageInBrowser(LIVE_PAGE, { column: true });
+    relay(q, { type: 'hello', events: [], screen: [{ type: 'tab_open', tab_id: 'tab_9' }, { type: 'hidden', tab_id: 'tab_9', reason: 'blocked_path' }] });
+    expect(screen(q).getAttribute('data-key')).toBe('calm');
   });
 });
 

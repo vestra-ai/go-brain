@@ -1,10 +1,11 @@
 // Go Live, the room page's second column (roomPage({ live: true })): the trip's ixigo recipe runs as Go makes them, from
 // Go's live view (/v1/live) as the try room relays it. On the left the chat as it is; on the right the pages Go's computer
-// has open, live (Bash's browser watch, one tile per tab, a grid with more than one), or, with none open, one tile per run
-// going at once from each run's own pictures; and the run strip: each run's recipe, speed, data calls and times, newest
-// first, with a group of parallel runs as one block whose wall time is set against its sum. A group of steps (how we all
-// get there, one search per home city) has a tile across the top saying how many steps are done, its steps below it,
-// each named by its city.
+// has open while a run goes, live (Bash's browser watch, one tile per tab, a grid with more than one), or, with none open,
+// one tile per run going at once from each run's own pictures; and the run strip: each run's recipe, speed, data calls and
+// times, newest first, with a group of parallel runs as one block whose wall time is set against its sum. A group of steps
+// (how we all get there, one search per home city) has a tile across the top saying how many steps are done, its steps
+// below it, each named by its city. Between runs the screen rests on the last page the computer drew, dimmed, so it never
+// looks dead; before the trip's first page, one line says what will show there, in the same space.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
 
@@ -30,6 +31,14 @@ export const LIVE_CSS = `
 .view .hint:empty { display: none; }
 .view .chip-fast { position: absolute; left: 10px; bottom: 10px; background: #0f172a; color: #fff; border-radius: 8px; padding: 4px 9px; font-size: 12px; }
 .view .chip-fast:empty { display: none; }
+/* Between runs: the last page Go's computer drew, lightly dimmed, under a quiet label. A run brings the screen back live. */
+.tile.rest .tile-bar { color: var(--muted); }
+.tile.rest .rest-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tile.rest .view img { opacity: .8; filter: saturate(.85); }
+/* Before the trip's first page: one line in the screen's own space, so nothing moves when a run starts. */
+.tile.calm { background: transparent; border-color: transparent; }
+.tile.calm .view { background: transparent; }
+.tile.calm .hint { font-size: 14px; }
 .fastcard { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--ink); }
 .fastcard b { font-size: 14px; }
 .fastcard .big { font-size: 40px; font-weight: 700; color: #16a34a; font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -84,7 +93,9 @@ export const LIVE_ASIDE = `<aside class="live" id="live" aria-label="Go Live">
 export const LIVE_SCRIPT = `
   // Go Live. live.runs: each run by id, a speed that fell and the next one sharing one row (ids, speeds); live.order:
   // top-level rows, newest first; live.groups: rows that went at once.
-  var live = { trip: null, state: 'wait', why: '', runs: {}, order: [], groups: {}, frames: {}, screen: { state: null, tabs: {}, order: [] } };
+  // live.last: the newest page the trip's computer drew that Go shows (a tab's or a run's own picture), kept for the trip:
+  // the screen rests on it between runs.
+  var live = { trip: null, state: 'wait', why: '', runs: {}, order: [], groups: {}, frames: {}, screen: { state: null, tabs: {}, order: [] }, last: null };
   var HOLD_MS = 2000;
   var PLAY_MS = 2500;
   var BADGE = { fast: 'FAST', page: 'PAGE', link: 'LINK', kept: 'KEPT', steps: 'GROUP' };
@@ -95,7 +106,7 @@ export const LIVE_SCRIPT = `
   function clock(at) { var d = new Date(at); var p = function (n) { return (n < 10 ? '0' : '') + n; }; return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }
 
   function onLive(data) {
-    if (data.trip_id !== live.trip) { live.trip = data.trip_id; liveReset(); }
+    if (data.trip_id !== live.trip) { live.trip = data.trip_id; liveReset(); live.last = null; }
     var m = data.msg || {};
     if (m.type === 'off') { live.state = 'off'; live.why = m.why || ''; }
     else if (m.type === 'hello') {
@@ -145,7 +156,12 @@ export const LIVE_SCRIPT = `
         r.ended = true; r.ok = e.ok; r.ms = r.msBefore + e.ms; r.rows = e.rows; r.why = e.why; r.picked = e.picked;
         r.endAt = old ? 0 : Date.now();
         break;
-      case 'frames': live.frames[e.run_id] = { list: e.frames || [], got: old ? 0 : Date.now() }; break;
+      case 'frames': {
+        live.frames[e.run_id] = { list: e.frames || [], got: old ? 0 : Date.now() };
+        var f = live.frames[e.run_id].list[live.frames[e.run_id].list.length - 1];
+        if (f) drawn(f.jpeg_base64, f.page, (r ? r.startOf[e.run_id] || r.at : Date.now()) + (f.at_ms || 0));
+        break;
+      }
       case 'group_end':
         if (live.groups[e.group_id]) { live.groups[e.group_id].ended = true; live.groups[e.group_id].wall = e.wall_ms; live.groups[e.group_id].sum = e.sum_ms; }
         break;
@@ -164,7 +180,7 @@ export const LIVE_SCRIPT = `
       case 'frame':
         if (!t) { screenEvent({ type: 'tab_open', tab_id: e.tab_id, tag: e.tag }); t = s.tabs[e.tab_id]; }
         if (e.tag) t.tag = e.tag;
-        if (!t.hidden) t.frame = e;
+        if (!t.hidden) { t.frame = e; drawn(e.jpeg_base64, e.page, Date.parse(e.at)); }
         break;
       case 'hidden': if (t) { t.hidden = e.reason || 'blocked_path'; t.frame = null; if (e.tag) t.tag = e.tag; } break;
       case 'tab_close':
@@ -174,6 +190,13 @@ export const LIVE_SCRIPT = `
         s.order = s.order.filter(function (id) { return id !== e.tab_id; });
         break;
     }
+  }
+
+  /** A page the computer drew: the newest one stays as live.last. Never one Go hides: a hidden tab's pictures never get here. */
+  function drawn(jpeg, page, at) {
+    if (!jpeg) return;
+    var when = isNaN(at) ? Date.now() : at;
+    if (!live.last || when >= live.last.at) live.last = { jpeg: jpeg, page: page || '/', at: when };
   }
 
   /** The open tabs, in the order they opened, at most four. */
@@ -237,9 +260,12 @@ export const LIVE_SCRIPT = `
     return shown;
   }
 
-  function lastWithPictures() {
-    for (var i = 0; i < live.order.length; i++) { var r = live.runs[live.order[i]]; if (r && pictureOf(r)) return r; }
-    return null;
+  var SECTIONS = { hotel: 'hotels', hotels: 'hotels', train: 'trains', trains: 'trains', flight: 'flights', flights: 'flights', bus: 'buses', buses: 'buses', cab: 'cabs', cabs: 'cabs' };
+  /** "ixigo hotels" for a page under /hotels, and so on, from its path alone; "ixigo" for any other. */
+  function pageName(page) {
+    var parts = String(page || '').split('/');
+    for (var i = 0; i < parts.length; i++) if (Object.prototype.hasOwnProperty.call(SECTIONS, parts[i])) return 'ixigo ' + SECTIONS[parts[i]];
+    return 'ixigo';
   }
 
   function badges(r) {
@@ -255,8 +281,31 @@ export const LIVE_SCRIPT = `
 
   function emptyLine() {
     if (live.state === 'off') return 'Live view is off. ' + live.why;
-    if (!live.trip) return 'Say something to start the trip. Its searches show here.';
-    return "Pages Go opens on the trip's computer show here.";
+    if (!live.trip) return "Say something to start the trip. Go's searches on ixigo show here, live.";
+    return "When Go searches ixigo for the trip, its pages show here, live.";
+  }
+
+  /** Between runs: the last page the computer drew, full size and dimmed, under a quiet label of what and when. */
+  function renderRest(screen) {
+    if (screen.getAttribute('data-key') !== 'rest') {
+      screen.setAttribute('data-key', 'rest');
+      screen.className = 'screen';
+      screen.innerHTML = '<div class="tile rest"><div class="tile-bar"><span class="rest-label"></span></div><div class="view"><img alt=""></div></div>';
+    }
+    var img = screen.querySelector('img');
+    var src = 'data:image/jpeg;base64,' + live.last.jpeg;
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    screen.querySelector('.rest-label').textContent = "Go's computer · " + pageName(live.last.page) + ' · ' + ago(new Date(live.last.at).toISOString());
+  }
+
+  /** Before the trip's first page: one calm line in the screen's own space. */
+  function renderCalm(screen) {
+    if (screen.getAttribute('data-key') !== 'calm') {
+      screen.setAttribute('data-key', 'calm');
+      screen.className = 'screen';
+      screen.innerHTML = '<div class="tile calm"><div class="view"><span class="hint"></span></div></div>';
+    }
+    screen.querySelector('.hint').textContent = emptyLine();
   }
 
   /** The tabs open on the trip's computer, live: the newest picture of each, or a dark tile for one Go never shows. */
@@ -288,23 +337,24 @@ export const LIVE_SCRIPT = `
 
   function renderScreen() {
     var screen = $('screen');
+    var tiles = tilesNow();
+    // No run going: the screen rests on the last page drawn, or before any, says what will show. A run brings it back live.
+    if (!tiles.length) {
+      if (live.last) renderRest(screen);
+      else renderCalm(screen);
+      return;
+    }
     var tabs = liveTabs();
     if (tabs.length) { renderTabs(screen, tabs); return; }
-    var tiles = tilesNow();
-    var idle = false;
-    if (!tiles.length) { var last = lastWithPictures(); if (last) { tiles = [last]; idle = true; } }
-    var key = tiles.map(function (r) { return r.id; }).join(',') + (idle ? ':idle' : '');
+    var key = tiles.map(function (r) { return r.id; }).join(',');
     if (screen.getAttribute('data-key') !== key) {
       screen.setAttribute('data-key', key);
       screen.className = 'screen' + (tiles.length > 1 ? ' grid' : '');
-      screen.innerHTML = tiles.length
-        ? tiles.map(function (r) {
-          if (isGroupRun(r)) return '<div class="tile group" data-run="' + esc(r.id) + '"><div class="tile-bar"></div><div class="group-line"></div></div>';
-          return '<div class="tile" data-run="' + esc(r.id) + '"><div class="tile-bar"></div><div class="view"><img alt=""><span class="hint"></span><span class="chip-fast"></span></div></div>';
-        }).join('')
-        : '<div class="tile"><div class="view"><span class="hint"></span></div></div>';
+      screen.innerHTML = tiles.map(function (r) {
+        if (isGroupRun(r)) return '<div class="tile group" data-run="' + esc(r.id) + '"><div class="tile-bar"></div><div class="group-line"></div></div>';
+        return '<div class="tile" data-run="' + esc(r.id) + '"><div class="tile-bar"></div><div class="view"><img alt=""><span class="hint"></span><span class="chip-fast"></span></div></div>';
+      }).join('');
     }
-    if (!tiles.length) { screen.querySelector('.hint').textContent = emptyLine(); return; }
     var els = screen.querySelectorAll('.tile');
     for (var i = 0; i < els.length; i++) {
       var r = live.runs[els[i].getAttribute('data-run')];
@@ -319,7 +369,7 @@ export const LIVE_SCRIPT = `
       els[i].className = 'tile' + (r.ended ? ' ended' : '');
       els[i].querySelector('.tile-bar').innerHTML = '<b>' + esc(tileLabel(r)) + '</b>' + badges(r) + outcome(r) + '<span class="url">' + esc(pic ? 'ixigo.com' + pic.page : r.recipe) + '</span>';
       var view = els[i].querySelector('.view');
-      view.className = 'view' + (idle ? ' idle' : '');
+      view.className = 'view';
       var img = view.querySelector('img');
       var src = pic ? 'data:image/jpeg;base64,' + pic.jpeg_base64 : '';
       if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
@@ -334,7 +384,7 @@ export const LIVE_SCRIPT = `
         hint.innerHTML = '<div class="fastcard"><b>In-page data call, no page load</b><span class="big">' + esc(call && call.ms != null ? fmtMs(call.ms) : fmtMs(Date.now() - r.at)) + '</span>' +
           (call ? '<code>' + esc(call.text.split('  ')[0]) + '</code>' : '<code>inside the open ixigo tab</code>') + '</div>';
       } else {
-        hint.textContent = pic || idle ? '' : r.ended ? (r.ok ? 'Done' : 'Stopped') : "Opening the page on the trip's computer";
+        hint.textContent = pic ? '' : r.ended ? (r.ok ? 'Done' : 'Stopped') : "Opening the page on the trip's computer";
       }
     }
   }
@@ -379,7 +429,8 @@ export const LIVE_SCRIPT = `
   function renderLive() {
     var tiles = tilesNow().filter(function (r) { return !isGroupRun(r); });
     $('live-dot').className = 'dot' + (live.state === 'on' ? ' on' : '');
-    var tabs = liveTabs().length;
+    // Between runs an open tab is the resting screen, not a live one.
+    var tabs = tilesNow().length ? liveTabs().length : 0;
     $('live-state').textContent = live.state === 'off' ? 'Off' : live.state === 'on'
       ? (tabs > 1 ? tabs + ' pages open, live' : tabs ? 'A page open, live' : tiles.length > 1 ? tiles.length + ' runs in parallel' : tiles.length ? 'Working' : live.screen.state === 'asleep' ? "Live. The trip's computer is asleep" : 'Live')
       : 'Waiting for the trip';
@@ -395,6 +446,7 @@ export const LIVE_SCRIPT = `
   }
 
   setInterval(function () { if (live.trip && liveBusy()) renderLive(); }, 250);
+  setInterval(function () { if (live.last) renderLive(); }, 15000); // keeps "2 min ago" honest
   renderLive();
 `;
 
