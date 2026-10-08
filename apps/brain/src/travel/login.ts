@@ -74,15 +74,23 @@ export interface IxigoLogin {
   /** ixigo's own answer for the trip's browser: in, out, or unknown (the page never said). */
   status(tripId: string): Promise<'in' | 'out' | 'unknown'>;
   onEvent(ev: C.Event): Promise<void>;
+  /**
+   * A person gone from their login: they left the trip, or used "Forget me" in it. When the trip's login is theirs, Go
+   * logs the trip's computer out of ixigo (in the background) and the card says why. Travel calls it on person.left; the
+   * memory lane's forget_person calls it through brain.ixigoLogin.
+   */
+  personGone(tripId: string, personId: string, why: 'left' | 'forgot'): Promise<void>;
   /** Waits for the work taps started in the background (tests). */
   settled(): Promise<void>;
 }
 
 const cardId = (tripId: string, attempt: number): string => `c_login_${tripId}_${attempt}`;
+/** Why the card says what it says: not logged in yet, the person left or used Forget me, a log out ixigo didn't take. */
+type Note = 'not_yet' | 'left' | 'forgot' | 'logout_failed';
 const day = (at: Date): string => at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 
 /** The login card for where things stand: who it is for, what it says, and the buttons only they see. */
-export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 'attempt' | 'loggedInAt'>, name: string, note?: 'not_yet' | 'left' | 'logout_failed'): C.Card {
+export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 'attempt' | 'loggedInAt'>, name: string, note?: Note): C.Card {
   const only = [row.personId];
   const button = (action_id: string, label: string, style: 'primary' | 'secondary'): C.CardAction => ({ action_id, label, style, only_for_person_ids: only });
   const base = { card_id: cardId(row.tripId, row.attempt), kind: 'notice' as const, tone: 'info' as const, for_person_ids: only };
@@ -127,7 +135,9 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
       return {
         ...base,
         title: 'Logged out of ixigo',
-        body: note === 'left' ? `${name} left the trip, so Go logged out of ixigo on its computer.` : `Go's computer is no longer logged in to ixigo as ${name}.`,
+        body: note === 'left'
+          ? `${name} left the trip, so Go logged out of ixigo on its computer.`
+          : note === 'forgot' ? `${name} used Forget me in this trip, so Go logged out of ixigo on its computer.` : `Go's computer is no longer logged in to ixigo as ${name}.`,
         actions: [],
         fallback_text: 'Go logged out of ixigo.',
       };
@@ -166,7 +176,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     return pack.trip.people.find((p) => p.person_id === personId)?.name ?? 'the organizer';
   }
 
-  async function show(row: LoginRow, note?: 'not_yet' | 'left' | 'logout_failed'): Promise<void> {
+  async function show(row: LoginRow, note?: Note): Promise<void> {
     await d.link.request('replace_card', { trip_id: row.tripId, card: loginCard(row, await nameOf(row.tripId, row.personId), note) });
   }
 
@@ -203,7 +213,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   }
 
   /** ixigo's own menu: the greeting at the top ("Hey Keshav") opens it, and its "Log out" link logs the browser out. */
-  async function logout(row: LoginRow, why: 'asked' | 'left'): Promise<void> {
+  async function logout(row: LoginRow, why: 'asked' | 'left' | 'forgot'): Promise<void> {
     const runner = d.runner();
     if (runner) {
       try {
@@ -223,7 +233,13 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     }
     const out: LoginRow = { ...row, state: 'logged_out', checkedAt: d.now() };
     await save(out);
-    await show(out, why === 'left' ? 'left' : undefined);
+    await show(out, why === 'asked' ? undefined : why);
+  }
+
+  async function personGone(tripId: string, personId: string, why: 'left' | 'forgot'): Promise<void> {
+    const row = await get(tripId);
+    if (!row || row.personId !== personId || (row.state !== 'logged_in' && row.state !== 'logging_in')) return;
+    track('log out', tripId, logout(row, why));
   }
 
   /** A tap on the login card by the person it is for; anyone else is told whose it is. */
@@ -334,11 +350,10 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     status,
 
     async onEvent(ev) {
-      if (ev.type !== 'person.left') return;
-      const row = await get(ev.trip_id);
-      if (!row || row.personId !== ev.data.person_id || (row.state !== 'logged_in' && row.state !== 'logging_in')) return;
-      track('log out', ev.trip_id, logout(row, 'left'));
+      if (ev.type === 'person.left') await personGone(ev.trip_id, ev.data.person_id, 'left');
     },
+
+    personGone,
 
     async settled() {
       while (inFlight.size) await Promise.all([...inFlight]);

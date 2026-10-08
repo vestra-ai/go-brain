@@ -283,6 +283,11 @@ describe('logging out', () => {
     await left.login.settled();
     expect(await left.state()).toBe('logged_out');
     expect(left.last()).toMatchObject({ title: 'Logged out of ixigo', body: 'Rahul left the trip, so Go logged out of ixigo on its computer.' });
+    // "Forget me" in the trip, from the memory lane, logs out the same way.
+    const forgot = await loggedIn([401]);
+    await forgot.login.personGone(forgot.tripId, 'p_rahul', 'forgot');
+    await forgot.login.settled();
+    expect(forgot.last()).toMatchObject({ title: 'Logged out of ixigo', body: 'Rahul used Forget me in this trip, so Go logged out of ixigo on its computer.' });
     // Someone else leaving changes nothing.
     const other = await loggedIn([]);
     await other.login.onEvent({ event_id: 'e_left', trip_id: other.tripId, seq: 300, occurred_at: NOW.toISOString(), type: 'person.left', data: { person_id: 'p_priya' } } as C.Event);

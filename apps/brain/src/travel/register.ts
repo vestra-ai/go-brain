@@ -80,6 +80,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.setup.addStep(login.setupStep);
   login.registerTaps(brain.taps);
   brain.tripLog.onEvent((ev) => login.onEvent(ev));
+  // For "Forget me" in a trip (the memory lane): the person's ixigo login goes with them.
+  brain.ixigoLogin = login;
   // The recipe book, checked at boot: a file that fails is left out, and the log says why.
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');
