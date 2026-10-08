@@ -355,7 +355,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           : pack.trip.people.find((p) => can(p.person_id))?.person_id;
       if (!personId) return { ok: false, note: `${what} needs the trip's ixigo login, and nobody can be asked for it now. Say so in one line.` };
       const name = await nameOf(tripId, personId);
-      if (!row || row.state !== 'asked' || now - row.askedAt.getTime() >= ASK_AGAIN_MS) {
+      // Someone new (the one asked used Forget me) is asked at once; the same person, at most once in half an hour.
+      if (!row || row.personId !== personId || row.state !== 'asked' || now - row.askedAt.getTime() >= ASK_AGAIN_MS) {
         await ask(tripId, personId, row ? row.attempt + 1 : 0, "{name}, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.");
       }
       return { ok: false, note: `${what} needs the trip's ixigo login. Go asked ${name} to log in on the card: say so in one line, and never ask for a number or a code in the chat.` };

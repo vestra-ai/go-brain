@@ -307,4 +307,17 @@ describe('logging out', () => {
     expect(asked).toMatchObject({ mentions: ['p_priya'], card: { for_person_ids: ['p_priya'] } });
     expect(JSON.stringify(asked)).not.toContain('p_rahul');
   });
+
+  it('when the person only asked (not logged in yet) uses Forget me, the next one is asked at once, not half an hour later', async () => {
+    const w = world();
+    await w.setup();
+    expect(await w.state()).toBe('asked');
+    await db.pool.query('insert into forgotten (person_id, trip_id, up_to_seq, forgotten_at) values ($1, $2, $3, $4)', ['p_rahul', w.tripId, 300, NOW]);
+    await w.login.personGone(w.tripId, 'p_rahul', 'forgot');
+    await w.login.settled();
+    const before = w.link.of('post_message').length;
+    expect(await w.login.ensure(w.tripId, 'The train booking')).toMatchObject({ ok: false, note: expect.stringContaining('Go asked Priya to log in') });
+    // A new card, pinned to Priya, posted now: the line the model gets is true.
+    expect(w.link.of('post_message').slice(before)).toEqual([expect.objectContaining({ mentions: ['p_priya'], card: expect.objectContaining({ for_person_ids: ['p_priya'] }) })]);
+  });
 });
