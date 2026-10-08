@@ -52,6 +52,11 @@ export interface TravelOption {
   place?: Place;
   /** The backend's image; cards always show Go's re-hosted copy. */
   imageUrl?: string;
+  /** The backend's photos of it, larger, the card's picture first (a stay's: up to seven from ixigo's list); a details sheet
+   *  shows Go's re-hosted copies. */
+  imageUrls?: string[];
+  /** What the place has, in the backend's own words ("Free Wifi", "Swimming pool at the property"). */
+  amenities?: string[];
   logoUrl?: string;
   rating?: number;
   highlights: string[];

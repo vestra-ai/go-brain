@@ -89,6 +89,13 @@ const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
   nights: { fn: (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000) },
   /** Up to four highlights, the empty ones dropped. */
   highlights: { fn: (...items: unknown[]) => items.flat().filter((x): x is string => typeof x === 'string' && !nothing(x)).slice(0, 4) },
+  /** Up to max texts, in order, the empty ones and repeats dropped (a stay's photos, its amenities); nothing when none. */
+  texts: {
+    fn: (max: number, ...items: unknown[]) => {
+      const out = [...new Set(items.flat(2).filter((x): x is string => typeof x === 'string' && !nothing(x)).map((x) => x.trim()))].slice(0, max);
+      return out.length > 0 ? out : undefined;
+    },
+  },
   /** "MANDOVI EXPRESS" as "Mandovi Express"; codes and short words stay as written. */
   titleWords: {
     fn: (name: string) => name.trim().split(/\s+/).map((w) => (/^[A-Z]{4,}$/.test(w) ? `${w[0]}${w.slice(1).toLowerCase()}` : w)).join(' '),
