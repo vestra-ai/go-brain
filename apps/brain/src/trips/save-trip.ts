@@ -9,7 +9,7 @@ import type { Pool } from 'pg';
 import type { ServerLink } from '../door/server-link.js';
 import { DEFAULT_TZ, localDay } from '../proactive/clock.js';
 import type { OptionPlace } from '../travel/results.js';
-import type { Travel } from '../travel/travel.js';
+import type { ResolvedPlace, Travel } from '../travel/travel.js';
 import { clip } from '../composer/sanitize.js';
 import type { TripPack } from './pack.js';
 
@@ -148,11 +148,26 @@ async function destinationOf(
 ): Promise<{ place: Place; same?: false } | { same: true } | { error: string }> {
   const now = at.pack.trip.destination ?? null;
   if (now && plain(now.name) === plain(name)) return { same: true };
-  const found = (await d.travel?.()?.placeFor?.(name, { tripId: at.tripId }))?.place;
-  if (!found) {
-    return { error: `Go can't look up ${name} as a place, so the trip's place stays ${now ? now.name : 'unset'}. Where to stay goes in stay; the organizer can change where the trip goes in the App.` };
+  const stays = `the trip's place stays ${now ? now.name : 'unset'}`;
+  let resolved: ResolvedPlace | null | undefined;
+  try {
+    resolved = await d.travel?.()?.placeFor?.(name, { tripId: at.tripId });
+  } catch {
+    // ixigo could not be reached (a TravelError): nothing changes this time.
+    return { error: `Go can't reach ixigo to look up ${name} right now, so ${stays}. Try again later, or the organizer can change it in the App.` };
   }
+  if (!resolved) {
+    return { error: `Go can't look up ${name} as a place, so ${stays}. Where to stay goes in stay; the organizer can change where the trip goes in the App.` };
+  }
+  const found = resolved.place;
   if (now && plain(found.name) === plain(now.name)) return { same: true };
+  // By ixigo's own data, not the words: an area (Candolim, Old Manali), or anything ixigo puts inside the trip's
+  // destination, is where to stay there, never where the trip goes.
+  const inside = now !== null && resolved.within.some((w) => plain(w) === plain(now.name));
+  if (resolved.kind === 'area' || inside) {
+    const where = resolved.within.length ? ` in ${resolved.within.join(', ')}` : '';
+    return { error: `${found.name} is ${resolved.kind === 'area' ? 'an area' : 'a place'}${where}: where to stay, never where the trip goes, so ${stays}. Save it as the stay once the group picks it.` };
+  }
   return { place: found };
 }
 
