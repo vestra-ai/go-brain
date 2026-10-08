@@ -45,10 +45,15 @@ export const LOGIN_TAB = 'ixigo_login';
 export const HANDOFF_MS = 600_000;
 /** How long the page may take to show its log in box; past it the tab stays in front for the person all the same. */
 export const HANDOFF_PAGE_MS = 12_000;
-/** The log in box's mobile number field ("Enter Mobile Number"), clicked so the cursor waits in it for the person. */
+/**
+ * ixigo's own Login button on its phone page (the hand-off's page runs as a phone: Bash's front), which opens its log in
+ * sheet. ?loginVisible=true opens nothing, on the phone page or the desktop one (staging probe, 8 Oct).
+ */
+const LOGIN_BUTTON = { op: 'click', role: 'button', name: 'Login' } as const;
+/** The log in sheet's mobile number field ("Enter Mobile Number"), clicked so the cursor waits in it for the person. */
 const MOBILE_BOX = { op: 'click', role: 'textbox', text: 'mobile' } as const;
-/** ixigo's home page with its log in box open: ixigo's own address for it, so the job clicks nothing to open the box. */
-export const LOGIN_URL = 'https://www.ixigo.com/?loginVisible=true';
+/** ixigo's home page, where the log in sheet opens. */
+export const LOGIN_URL = 'https://www.ixigo.com/';
 /** The first ask, at setup or at a trip's first search. */
 const FIRST_LINE = "{name}, link ixigo for the trip: one login on the trip's computer, about a minute.";
 
@@ -331,10 +336,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   }
 
   /**
-   * The hand-off, with no model: ixigo's log in box opened IN FRONT of the person's window on the trip's computer
-   * (Bash's front fetch), its mobile number box clicked, and the tab kept there for them for HANDOFF_MS. ixigo's own
-   * userinfo answer on that page says whether the browser is logged in already: then there is nothing to hand over. A
-   * page Bash would not open puts the card back to its ask, saying so.
+   * The hand-off, with no model: ixigo's home page opened IN FRONT of the person's window on the trip's computer (Bash's
+   * front fetch, as a phone), its Login tapped and its mobile number box clicked, and the tab kept there for them for
+   * HANDOFF_MS. ixigo's own userinfo, asked from inside the page first, says whether the browser is logged in already:
+   * then there is nothing to hand over (its Login is not there, so the page's time runs out first). A page Bash would
+   * not open puts the card back to its ask, saying so.
    */
   async function handOff(row: LoginRow, runner: Pick<RecipeRunner, 'handOff' | 'release'>): Promise<void> {
     // The hand-off ends at HANDOFF_MS whatever happens: Bash closes the tab then, and the card goes back to its ask.
@@ -345,8 +351,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       ({ captures } = await runner.handOff!(
         row.tripId,
         LOGIN_URL,
-        { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], steps: [MOBILE_BOX], timeoutMs: HANDOFF_PAGE_MS },
-        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB },
+        { capture: [], steps: [LOGIN_BUTTON, MOBILE_BOX], timeoutMs: HANDOFF_PAGE_MS },
+        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' } },
       ));
     } catch (err) {
       // Loud, and nothing left open: no second path.
@@ -362,7 +368,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     const now = await get(row.tripId);
     // Not now while the page opened, or another try: this hand-off is no longer theirs to finish.
     if (now?.state !== 'logging_in' || now.attempt !== row.attempt) return;
-    if (captures.find((c) => c.url.includes(USERINFO))?.status === 200) {
+    if (captures.find((c) => c.match === 'check')?.status === 200) {
       await release(row.tripId);
       await show(await loggedIn(now));
     }

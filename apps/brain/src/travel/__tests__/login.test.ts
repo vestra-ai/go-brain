@@ -34,7 +34,7 @@ let trips = 0;
  * One trip (the Goa five, Rahul organizing), its chat, the trip's browser and the jobs lane, all recorded. The trip says it
  * was made on 5 Oct, as the sim's Goa trip always does: nothing here goes by that. Waits for Go's hello move the clock.
  */
-/** opened: ixigo's userinfo status on the log in page the hand-off opens (401 by default: logged out), 'timeout' for a
+/** opened: ixigo's userinfo status on the log in page the hand-off opens (403 by default: logged out), 'timeout' for a
  *  page that caught nothing in its time, 'refused' for a hand-off Bash would not open. */
 function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout'>; opened?: number | 'timeout' | 'refused' } = {}) {
   trips += 1;
@@ -58,11 +58,11 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
       if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
       return { captures: [capture(USERINFO, `${IXIGO}${USERINFO}`, '{', s)], finalUrl: url };
     },
-    handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string }) => {
+    handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string; check?: { url: string; method: string } }) => {
       handOffs.push({ url, plan, o: ho });
-      const s = o.opened ?? 401;
+      const s = o.opened ?? 403;
       if (s === 'refused') throw new TravelError('refused', 'Bash would not open the page.');
-      return { captures: s === 'timeout' ? [] : [capture(USERINFO, `${IXIGO}${USERINFO}`, '{', s)] };
+      return { captures: s === 'timeout' ? [] : [capture('check', `${IXIGO}${USERINFO}`, '{', s)] };
     },
     release: async (_trip: string, tab: string) => {
       releases.push(tab);
@@ -272,14 +272,15 @@ describe('logging in', () => {
     expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: "Opening ixigo's log in on Go's screen" });
     // No job: no model clicks its way to the box (87 to 96 s on staging, 8 Oct).
     expect(w.starts).toEqual([]);
-    // ixigo's own address opens the box; the page in FRONT of Rahul's window, the cursor in its mobile number box, the tab
-    // kept there for him for Bash's most; one byte of ixigo's userinfo kept, read by its status only.
-    expect(LOGIN_URL).toBe('https://www.ixigo.com/?loginVisible=true');
+    // ixigo's home page in FRONT of Rahul's window (as a phone: Bash's front), its own Login tapped and the cursor in its
+    // mobile number box, the tab kept there for him for Bash's most; ixigo's userinfo asked from inside the page first,
+    // one byte, read by its status only.
+    expect(LOGIN_URL).toBe('https://www.ixigo.com/');
     expect(HANDOFF_MS).toBe(600_000);
     expect(w.handOffs).toEqual([{
       url: LOGIN_URL,
-      plan: { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], steps: [{ op: 'click', role: 'textbox', text: 'mobile' }], timeoutMs: HANDOFF_PAGE_MS },
-      o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB },
+      plan: { capture: [], steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }], timeoutMs: HANDOFF_PAGE_MS },
+      o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' } },
     }]);
     expect(await w.state()).toBe('logging_in');
     expect(w.last()).toMatchObject({
