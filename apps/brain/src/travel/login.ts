@@ -243,6 +243,20 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       : null;
   }
 
+  /**
+   * The login to logging in, in one step on its row, unless it is logging in already: then null, and the tap starts
+   * nothing. A logging-in row older than HANDOFF_MS is one whose end Go never saw (a restart): it is taken again.
+   */
+  async function claim(row: LoginRow): Promise<LoginRow | null> {
+    const now = d.now();
+    const r = await d.pool.query(
+      `update ixigo_logins set state = 'logging_in', task_id = null, updated_at = $2
+       where trip_id = $1 and (state <> 'logging_in' or updated_at < $3)`,
+      [row.tripId, now, new Date(now.getTime() - HANDOFF_MS)],
+    );
+    return r.rowCount ? { ...row, state: 'logging_in', taskId: null } : null;
+  }
+
   async function save(row: LoginRow): Promise<void> {
     await d.pool.query(
       `insert into ixigo_logins (trip_id, person_id, state, attempt, task_id, asked_at, logged_in_at, checked_at, parked, updated_at)
@@ -540,8 +554,10 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         const runner = d.runner();
         if (!d.live() || !runner?.handOff) return { result: 'refused', toast: "Go's computer isn't browsing ixigo right now." };
         if (row.state === 'logged_in') return { result: 'done', toast: 'ixigo is already logged in' };
-        const next: LoginRow = { ...row, state: 'logging_in', taskId: null };
-        await save(next);
+        // One hand-off per login: a tap while its page opens or is open (a double tap) starts nothing, not a second page
+        // over the first (Keshav, 8 Oct: the second one's measuring cut the page off).
+        const next = await claim(row);
+        if (!next) return { result: 'done', toast: "Already opening ixigo's log in" };
         // The card first (opening, no Watch yet), then the page: whatever the hand-off finds is said after it, never under it.
         track('hand-off', row.tripId, (async () => {
           await show(next, 'opening');
