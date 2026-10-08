@@ -322,6 +322,17 @@ describe('logging in', () => {
     expect(await slow.state()).toBe('logging_in');
     expect(slow.releases).toEqual([]);
 
+    // ixigo's Login or its mobile box not found (Bash's time ran out at that tap, with the check caught): the taps are a
+    // convenience, the page in front is not. It stays theirs, the card as it was, no error, nothing closed.
+    const missed = world({ opened: 403 });
+    await missed.setup();
+    await missed.tap('ixigo_login', 'p_rahul');
+    expect(await missed.state()).toBe('logging_in');
+    expect(missed.releases).toEqual([]);
+    expect(missed.last()).toMatchObject({
+      title: 'Logging in to ixigo', tone: 'info', body: "ixigo's log in is open on Go's screen. Rahul: tap Watch, log in with your phone, then tap I'm logged in.",
+    });
+
     const refused = world({ opened: 'refused' });
     await refused.setup();
     await refused.tap('ixigo_login', 'p_rahul');

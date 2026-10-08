@@ -159,6 +159,15 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       throw new V1Error(504, 'timeout', 'The page did not send every capture within 12000 ms (it stopped at 1 click).', null, { partial: { captures: [] } });
     });
     expect(await createBrowserFetchRunner(slow.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [] });
+    // Its taps are a convenience: ixigo's Login not found (the page's time ran out at that step), the page is still the
+    // person's, in front, with the check it caught.
+    const missed = world(() => {
+      throw new V1Error(504, 'timeout', 'The page did not send every capture within 12000 ms (it stopped at 2 click).', null, {
+        partial: { step: '2 click', captures: [capture('check', USERINFO_URL, '{', 403)] },
+      });
+    });
+    expect(await createBrowserFetchRunner(missed.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', check: { url: '/api/v2/oauth/userinfo', method: 'POST' } }))
+      .toMatchObject({ captures: [{ match: 'check', status: 403 }] });
     // A tab already gone (its time ran out) is nothing to close; anything else Bash refuses is said as a travel error.
     const gone = world(() => {
       throw new V1Error(409, 'no_open_tab', 'No tab is kept open.');
