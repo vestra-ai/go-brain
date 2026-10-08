@@ -4,7 +4,7 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT,
+  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, OUT_OF_CREDIT,
   PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -62,7 +62,8 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
           steps: plan.steps,
           timeout_ms: 12_000,
           // Bash's last picture once the hotels have drawn (#4585).
-          frames: { settle_ms: 550 },
+          // Pictures as wide as the fetch's window, so the try room never stretches one.
+          frames: { width: FRAME_WIDTH, settle_ms: 550 },
         },
       },
     }]);
@@ -72,7 +73,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(FETCH_TIMEOUT_MS).toBe(20_000);
     const plain = world(() => fetched([busCapture]));
     await createBrowserFetchRunner(plain.deps).read('t1', BUSES, busPlan);
-    expect(plain.calls[0]!.opts['body']).toEqual({ url: BUSES, capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS, frames: {} });
+    expect(plain.calls[0]!.opts['body']).toEqual({ url: BUSES, capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS, frames: { width: FRAME_WIDTH } });
   });
 
   it('answers a timed-out fetch with what it did get when every required call is in it, and shows the pictures it took', async () => {
