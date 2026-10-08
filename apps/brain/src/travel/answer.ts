@@ -82,8 +82,9 @@ export interface PlainAskContext {
  * (kind, places, dates and every condition it names), asking nothing more, and the only tool of its round.
  */
 export function plainAsk(kind: TravelKind, q: TravelQuery, c: PlainAskContext): Plain {
-  const item = c.wake[0];
-  if (c.wake.length !== 1 || item?.kind !== 'message') return no('not one message');
+  // A turn with no wake items to read (a tool run outside a turn) is never a plain ask.
+  const item = c.wake?.[0];
+  if (c.wake?.length !== 1 || item?.kind !== 'message') return no('not one message');
   const p = item.payload as { messageId?: string; namesGo?: boolean } | null;
   if (p?.namesGo !== true) return no('not to Go');
   const m = c.pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));

@@ -58,12 +58,13 @@ describe('a plain search ask, which the search answers itself', () => {
     expect(plain('flights', { from: 'delhi', to: 'goa', date: '2026-11-06' }, '@Go flights Delhi to Goa Friday after 7 pm')).toMatchObject({ ok: false });
   });
 
-  it('7. not on a proactive or wake turn, or a message not to Go', () => {
+  it('7. not on a proactive or wake turn, or a message not to Go, nor a tool run with no wake items at all', () => {
     const tap: DeskItem = { id: 'tap:1', tripId: 't_goa', kind: 'tap', ref: 'tap_1', dueAt: new Date(), payload: {} };
     expect(plain('flights', FLIGHTS, '@Go flights Delhi to Goa Friday after 7 pm', { wake: [tap] })).toMatchObject({ ok: false, why: 'not one message' });
     const search: DeskItem = { ...tap, id: 'search:1', kind: 'search' };
     expect(plain('flights', FLIGHTS, '@Go flights Delhi to Goa Friday after 7 pm', { wake: [search] })).toMatchObject({ ok: false });
     expect(plain('flights', FLIGHTS, 'flights Delhi to Goa Friday after 7 pm', { namesGo: false })).toMatchObject({ ok: false, why: 'not to Go' });
+    expect(plainAsk('flights', FLIGHTS, { wake: undefined as never, pack: undefined as never, today: TODAY })).toMatchObject({ ok: false, why: 'not one message' });
   });
 
   it("8. not when the ask isn't plainly English: the model answers in the group's language", () => {
