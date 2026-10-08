@@ -15,7 +15,7 @@ import type { Travel } from '../travel/travel.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import { saveTrip, tripToday, type TripChange } from '../trips/save-trip.js';
 import { checkFact, checkLine, type CheckedLine, type CheckEnv } from './checker.js';
-import { decisionOf, linkLine } from './decision-lines.js';
+import { closeSettled, decisionOf, linkLine } from './decision-lines.js';
 import { forgottenUpTo, saveFact } from './facts.js';
 import { chatLine } from '../composer/fence.js';
 import { FENCE_RULE, fenceText, notesView, peopleLegend } from './fence.js';
@@ -26,7 +26,7 @@ import type { SideModel } from './side-model.js';
 export const NOTES_RULES = [
   'You keep notes for Go, the AI member of a trip group chat. You read the new lines of the chat and propose two kinds of notes.',
   '1. facts: lasting things a person says about themselves that matter for planning the trip: food, drinks, when they can or cannot travel, seats, health, what they will not do. Never a budget, a price limit or any amount of money: budgets stay private to the trip, and the App asks them. Only from that person\'s own line, and never from a question or a request: "@Go is it hot in Goa in November?" or "how far is Thalassa from Anjuna" says nothing lasting about whoever asks it, not even an interest in the places it names. topic is one or two lowercase words such as food, drinks, leaving, arriving, seats, flights, boats, health, sleep, activities. text is short plain words without the name, such as "Vegetarian" or "Can\'t leave before 6 pm Friday". The trip\'s own plan (its dates, its place), said as the plan, is not a fact about whoever said it: it goes in the record.',
-  '2. lines for the trip record: "agreed" when people agreed in the chat (proof: the proposal and the yes lines; put any line that disagrees in objections). The organizer\'s own line that states a plan point as settled ("Goa trip is happening!! 6 to 9 Nov", "We\'re doing North Goa") is agreed on its own, with that line as proof; one from the organizer that proposes or asks ("6 to 9 Nov?", "how about North Goa?") is open. "open" when a question about the plan is still unsettled among the group (person_ids: who is asked); a question put to Go is Go\'s to answer and is never open. "doing" when someone says they will sort something (person_ids: who said it); a request to Go is never a doing line, Go does it, and a payment someone made or a debt ("I paid 2400 for the cab", "Kabir owes me 500") is a money record Go keeps with record_expense, never a doing line. To change one of Go\'s own record lines, give its line_id; for a job that is finished add "status": "done".',
+  '2. lines for the trip record: "agreed" when people agreed in the chat (proof: the proposal and the yes lines; put any line that disagrees in objections). The organizer\'s own line that states a plan point as settled ("Goa trip is happening!! 6 to 9 Nov", "We\'re doing North Goa") is agreed on its own, with that line as proof; one from the organizer that proposes or asks ("6 to 9 Nov?", "how about North Goa?") is open. "open" when a question about the plan is still unsettled among the group (person_ids: who is asked); a question put to Go is Go\'s to answer and is never open. "doing" when someone says they will sort something (person_ids: who said it); a request to Go is never a doing line, Go does it, and a payment someone made or a debt ("I paid 2400 for the cab", "Kabir owes me 500") is a money record Go keeps with record_expense, never a doing line. To change one of Go\'s own record lines, give its line_id; for a job that is finished add "status": "done". When an agreed or doing line settles one of Go\'s open questions in the record (the group agreed it, or someone took it on), give that open line\'s line_id in "settles": Go closes the question.',
   'An agreed line that fixes the trip\'s dates or its place also gives them as "trip": {"dates": {"start": "2026-11-06", "end": "2026-11-09"}} or {"destination": "North Goa"}, or both, with full dates: days said without a year are the next ones after today. Only an agreed line gives "trip".',
   'A line marked "to Go" is part of an ask to Go: Go answers it, so it is never an open line, and only a fact the person states in it is noted.',
   'Cite lines by their number (#142 is 142). Propose facts only from the new lines. Never propose anything from a [hidden] line. Never copy card numbers, codes or passwords. Do not repeat what the record already says.',
@@ -50,6 +50,8 @@ export const NotesOutput = z.object({
         due_at: z.string().optional(),
         line_id: z.string().optional(),
         status: z.literal('done').optional(),
+        /** Go's open questions in the record this line settles: Go marks each done (decision-lines.ts closeSettled). */
+        settles: z.array(z.string()).max(5).optional().catch(undefined),
         /** An agreed line's dates or place, for the trip itself; one that doesn't read is dropped, never the whole answer. */
         trip: z
           .object({ dates: z.object({ start: z.iso.date(), end: z.iso.date() }).optional(), destination: z.string().min(1).max(120).optional() })
@@ -256,6 +258,7 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
         continue;
       }
       out.lines += 1;
+      await closeSettled(d.pool, d.link, tripId, c.value, l.settles ?? [], env.record);
       if (c.value.kind === 'agreed' && l.trip) {
         const refused = await onTrip(tripId, pack, c.value, l.trip);
         if (refused) out.refused.push(refused);
