@@ -43,7 +43,7 @@ export interface TaskRow {
   startingAt: Date | null;
   todosAt: Date | null;
   costUsd: number | null;
-  /** The job's end wakes no one: the lane that started it speaks for it (TaskBrief.quiet). */
+  /** The job's hand-off and its end wake no one: the lane that started it speaks for it (TaskBrief.quiet). */
   quiet: boolean;
 }
 

@@ -86,6 +86,15 @@ describe('applying /v1 events', () => {
     expect(h.lb.link.card(row.cardId)?.for_person_ids).toBeUndefined();
   });
 
+  it("pins a quiet job's hand-off (the ixigo login) to the person who asked, with no line from the composer: its cards say it", async () => {
+    const { row, v1TaskId } = await h.runningJob('ev4q', 't_ev4q', { title: 'Logging in to ixigo', returns: returnsSchema('answer'), returnsKind: 'answer', quiet: true });
+    const ask = h.fake.ask(v1TaskId, { type: 'handoff', kind: 'ask_question', summary: 'Log in to ixigo', browser: { suggested_mode: 'control', url: null } });
+    await h.events.apply({ type: 'interaction.created', data: { interaction_id: ask.id, type: 'handoff', task_id: v1TaskId }, source: 'webhook' });
+    await h.cards.flush();
+    expect(h.lb.link.card(row.cardId)).toMatchObject({ state: 'needs_you', for_person_ids: ['p_meher'] });
+    expect(h.lb.desk.items.some((i) => i.id.startsWith(`task:${row.id}:`))).toBe(false);
+  });
+
   it("answers an approval from Go's policy: yes for Go's read-only tools, no for anything else", async () => {
     const { v1TaskId } = await h.runningJob('ev5', 't_ev5');
     const read = h.fake.ask(v1TaskId, { type: 'approval', kind: 'tool_permission', summary: 'Use trip', details: { server: 'go-trip', tool: 'trip' } });
