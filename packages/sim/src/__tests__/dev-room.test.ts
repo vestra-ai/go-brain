@@ -294,6 +294,10 @@ function pageInBrowser(html: string, o: { column: boolean; me?: string }) {
     play(personId: string) {
       for (const fn of docListeners.click ?? []) fn({ target: { closest: () => ({ dataset: { me: personId } }) } });
     },
+    /** A tap on one of Go's buttons on a card, as the page draws it (data-tap, data-action). */
+    tapCard(cardId: string, actionId: string) {
+      for (const fn of docListeners.click ?? []) fn({ target: { closest: () => ({ dataset: { tap: cardId, action: actionId } }) } });
+    },
   };
 }
 
@@ -572,17 +576,21 @@ describe("Go Live's login panel", () => {
     message_id: `m_go_${n}`, seq: n, updated_seq: n, author: { kind: 'go' }, text: '', attachments: [], mentions_go: false, mentions: [],
     reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z', card,
   });
-  /** #247's ixigo login card, pinned to Rahul: while he logs in it carries Watch, then his two buttons. */
-  const loginCard = (state: 'logging_in' | 'logged_in') => fromGo({
+  const button = (action_id: string, label: string, style = 'secondary') => ({ action_id, label, style, only_for_person_ids: ['p_rahul'] });
+  /**
+   * #247's ixigo login card, pinned to Rahul: its ask, then logging in (opening: no Watch until the login page is in
+   * front; then Watch and his two buttons), then logged in.
+   */
+  const loginCard = (state: 'asked' | 'opening' | 'logging_in' | 'logged_in') => fromGo({
     kind: 'notice', card_id: CARD, tone: 'info', for_person_ids: ['p_rahul'], fallback_text: "Rahul is logging in to ixigo on Go's computer.",
-    title: state === 'logging_in' ? 'Logging in to ixigo' : 'ixigo: logged in as Rahul', body: "ixigo's log in is open on Go's screen.",
-    actions: state === 'logging_in'
-      ? [
-        { action_id: 'ixigo_watch', label: 'Watch', style: 'primary' },
-        { action_id: 'ixigo_logged_in', label: "I'm logged in", style: 'secondary', only_for_person_ids: ['p_rahul'] },
-        { action_id: 'ixigo_not_now', label: 'Not now', style: 'secondary', only_for_person_ids: ['p_rahul'] },
-      ]
-      : [{ action_id: 'ixigo_logout', label: 'Log out', style: 'secondary', only_for_person_ids: ['p_rahul'] }],
+    title: { asked: 'Link ixigo for this trip', opening: 'Logging in to ixigo', logging_in: 'Logging in to ixigo', logged_in: 'ixigo: logged in as Rahul' }[state],
+    body: "ixigo's log in is open on Go's screen.",
+    actions: {
+      asked: [button('ixigo_login', 'Log in to ixigo', 'primary'), button('ixigo_not_now', 'Not now')],
+      opening: [button('ixigo_logged_in', "I'm logged in"), button('ixigo_not_now', 'Not now')],
+      logging_in: [{ action_id: 'ixigo_watch', label: 'Watch', style: 'primary' }, button('ixigo_logged_in', "I'm logged in"), button('ixigo_not_now', 'Not now')],
+      logged_in: [button('ixigo_logout', 'Log out')],
+    }[state],
   });
   /** The room's answer to a Watch tap: Bash's session page, good for 15 minutes. */
   const answer = (over: object = {}) => ({
@@ -606,7 +614,7 @@ describe("Go Live's login panel", () => {
     expect(p.el('live').className).toBe('live mine');
     expect(p.el('login').hidden).toBe(false);
     expect(p.el('login-wait').hidden).toBe(false);
-    expect(p.el('login-why').textContent).toBe("Opening ixigo's log in on Go's computer");
+    expect(p.el('login-why').textContent).toBe("Opening ixigo's login on Go's computer…");
     expect(p.el('login-again').hidden).toBe(true);
     // Every render after that (a new message, the 15 s clock) taps nothing more.
     p.messages([loginCard('logging_in')], 1000);
@@ -625,6 +633,58 @@ describe("Go Live's login panel", () => {
     expect(buttons).toContain(`data-tap="${CARD}" data-action="ixigo_not_now">Not now</button>`);
     expect(buttons).not.toContain('ixigo_watch');
     expect(p.el('handoff').hidden).toBe(true);
+  });
+
+  it('says the login is opening the moment Go takes the tap, and frames it when Watch arrives', () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    const q = pageInBrowser(LIVE_PAGE, { column: true, me: 'p_priya' });
+    p.messages([loginCard('asked')], 1000);
+    expect(p.el('login').hidden).toBe(true);
+    p.tapCard(CARD, 'ixigo_login');
+    const LOGIN_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_login', personId: 'p_rahul' };
+    expect(p.sent()).toEqual([LOGIN_TAP]);
+    // Go turns the card at once; Watch comes once the login page is in front (seconds, longer from asleep).
+    for (const page of [p, q]) page.messages([loginCard('opening')], 1000);
+    expect(p.el('live').className).toBe('live mine');
+    expect(p.el('login').hidden).toBe(false);
+    expect(p.el('login-title').textContent).toBe('Your turn: Logging in to ixigo');
+    expect(p.el('login-wait').hidden).toBe(false);
+    expect(p.el('login-why').textContent).toBe("Opening ixigo's login on Go's computer…");
+    expect(p.el('login-progress').hidden).toBe(false);
+    expect(p.el('login-again').hidden).toBe(true);
+    expect(p.el('login-frame').hidden).toBe(true);
+    expect(p.el('login-acts').innerHTML).toContain('data-action="ixigo_not_now">Not now</button>');
+    // Nothing to Watch yet, and a computer that takes its time waking is still opening, never "didn't open".
+    expect(p.sent()).toEqual([LOGIN_TAP]);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 30_000);
+    try {
+      p.messages([loginCard('opening')], 1000);
+      expect(p.el('login-why').textContent).toBe("Opening ixigo's login on Go's computer…");
+    } finally {
+      clock.mockRestore();
+    }
+    // Everyone else sees who is on Go's computer from the first moment.
+    expect(q.el('live').className).toBe('live other');
+    expect(q.el('handoff').innerHTML).toBe("<b>Rahul is on Go's computer</b><span>Logging in to ixigo</span><small>Only Rahul sees this page.</small>");
+    // Watch arrives: the page taps it, still opening, then frames Go's answer.
+    p.messages([loginCard('logging_in')], 1000);
+    expect(p.sent()).toEqual([LOGIN_TAP, WATCH_TAP]);
+    expect(p.el('login-why').textContent).toBe("Opening ixigo's login on Go's computer…");
+    p.receive(answer());
+    expect(p.el('login-frame').innerHTML).toBe(FRAME);
+    expect(p.el('login-frame').hidden).toBe(false);
+    expect(p.el('login-wait').hidden).toBe(true);
+  });
+
+  it("goes back to the live view when Go's computer couldn't open the login, and shows no opening for an ask", () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    p.messages([loginCard('opening')], 1000);
+    expect(p.el('login').hidden).toBe(false);
+    // Go puts the card back to its ask (the page wouldn't open): the column is the live view again.
+    p.messages([loginCard('asked')], 1000);
+    expect(p.el('login').hidden).toBe(true);
+    expect(p.el('live').className).toBe('live');
+    expect(p.sent()).toEqual([]);
   });
 
   it("shows everyone else who is on Go's computer and never the page", () => {
@@ -697,7 +757,7 @@ describe("Go Live's login panel", () => {
     expect(p.el('login-again').hidden).toBe(false);
     p.click('login-again');
     expect(p.sent()).toEqual([WATCH_TAP, WATCH_TAP]);
-    expect(p.el('login-why').textContent).toBe("Opening ixigo's log in on Go's computer");
+    expect(p.el('login-why').textContent).toBe("Opening ixigo's login on Go's computer…");
     expect(p.el('login-again').hidden).toBe(true);
     // Go refuses this time: the button again, and Go's own words in the toast.
     p.receive(answer({ result: { result: 'refused', toast: "Can't open Go's screen right now" } }));

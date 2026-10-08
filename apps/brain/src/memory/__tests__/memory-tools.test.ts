@@ -99,6 +99,19 @@ describe('quick tools', () => {
     expect(adds.map((x) => x.params.request_id)).toEqual(['go_record_turn_1_1', 'go_record_turn_1_2']);
   });
 
+  it('record() closes the open question an agreed line settles: its question is among the proof (Server, 6 Oct)', async () => {
+    await mirrorLine(db.pool, 't_goa', rl({ line_id: 'r_north', kind: 'open', text: 'North Goa this time?', proof: [{ message_id: 'm_0122', person_id: 'p_priya' }] }), 125);
+    try {
+      const link = fakeLink();
+      expect(await tool('record').run({ kind: 'agreed', text: 'North Goa it is', person_ids: [], proof_message_ids: ['m_0122', 'm_0124'] }, ctx(link)))
+        .toMatchObject({ kind: 'agreed' });
+      const closed = link.calls.filter((x) => x.method === 'update_record_line').map((x) => [x.params.line_id, x.params.status]);
+      expect(closed).toEqual([['r_north', 'done']]);
+    } finally {
+      await db.pool.query("DELETE FROM record_lines WHERE trip_id = 't_goa' AND line_id = 'r_north'");
+    }
+  });
+
   it("record() never puts a job against someone on another person's word: it asks them to confirm, and a reply can't say noted", async () => {
     // The 8 Oct rerun: Priya's "note that Arjun is bringing the speaker". Only Arjun's own line makes it his.
     const out = await tool('record').run({ kind: 'doing', text: 'Arjun brings the speaker', person_ids: ['p_arjun'], proof_message_ids: ['m_0122'] }, ctx());

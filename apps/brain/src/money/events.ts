@@ -25,7 +25,7 @@ export async function tripEvent(t: TapDeps, ev: TripEvent): Promise<void> {
       // The winner's option_ref goes in as is; askToPay turns it into the travel offer.
       const r = await t.ask(ev.trip_id, { decisionId: decision.decision_id, optionRef: chosen.option_ref, purpose }, ev.event_id);
       if ('refused' in r && r.say && r.code !== 'approval_outstanding' && r.code !== 'already_paid') {
-        await postLine(t.d, ev.trip_id, r.refused, rid('go_said', ev.event_id));
+        await postLine(t.d, ev.trip_id, r.refused, rid('go_said', ev.event_id), trip.people);
       }
       return;
     }

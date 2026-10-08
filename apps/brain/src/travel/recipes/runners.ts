@@ -68,6 +68,20 @@ export interface RecipeRunner {
   canPageFetch?(): boolean;
   /** A new trip's computer's first ixigo visit, before anyone asks (COLD_COMPUTER below). Throws when ixigo did not answer. */
   prime?(tripId: string): Promise<void>;
+  /**
+   * A hand-off the person finishes themselves (the ixigo login), with no model: the page opens in FRONT of their window on
+   * the trip's computer (Bash's front), its steps run, and its tab stays there for them, kept under `tab`. A page that ran
+   * out of time stays open for them all the same, with what it caught. `check`: one call from inside the page before the
+   * steps (one byte, its status, as capture `check`). Throws a TravelError when Bash would not open it.
+   */
+  handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[] }>;
+  /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
+  release?(tripId: string, tab: string): Promise<void>;
+  /**
+   * One page call from inside the kept tab of that name (Bash's page_fetch on it, no url), keeping the tab keepOpenMs
+   * more: one byte of its answer, for its status. Null when no tab is kept under that name.
+   */
+  tabCall?(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null>;
 }
 
 export interface RunnerDeps {
@@ -451,6 +465,58 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     warm.add(userId);
   }
 
+  async function handOff(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[] }> {
+    // The check first, from inside the page as soon as it is there (one byte, its status), then the plan's own steps.
+    const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
+    const steps = [...check, ...(plan.steps ?? [])];
+    const body = {
+      url,
+      capture: plan.capture.map((c) => ({ match: c.match, ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
+      ...(steps.length ? { steps } : {}),
+      timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
+      front: true,
+      keep_open_ms: o.keepOpenMs,
+      tab: o.tab,
+    };
+    try {
+      const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, { body });
+      return { captures: Array.isArray(answer.captures) ? answer.captures : [] };
+    } catch (err) {
+      // Bash keeps a timed-out tab: the page is in front for the person, with what it caught.
+      if (err instanceof V1Error && err.status === 504) {
+        const partial = err.detail?.['partial'] as Partial<FetchAnswer> | undefined;
+        return { captures: Array.isArray(partial?.captures) ? partial.captures.filter(isCapture) : [] };
+      }
+      throw pageCallFailed(err);
+    }
+  }
+
+  /** A fetch with no url on the hand-off's tab and no keep: one call from inside its page, then the tab closes. */
+  async function release(tripId: string, tab: string): Promise<void> {
+    try {
+      await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+        body: { tab, steps: [{ op: 'page_fetch', url: '/', method: 'GET', capture_as: 'close', max_bytes: 1 }], timeout_ms: FAST_TIMEOUT_MS },
+      });
+    } catch (err) {
+      // Its time ran out, or Chrome restarted: no tab is kept under that name, and nothing is left to close.
+      if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') return;
+      throw pageCallFailed(err);
+    }
+  }
+
+  async function tabCall(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null> {
+    const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'tab_call', max_bytes: 1 };
+    try {
+      const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+        body: { tab, steps: [step], keep_open_ms: keepOpenMs, timeout_ms: FAST_TIMEOUT_MS },
+      });
+      return (Array.isArray(answer.captures) ? answer.captures : []).find((c) => c.match === 'tab_call') ?? null;
+    } catch (err) {
+      if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') return null;
+      throw pageCallFailed(err);
+    }
+  }
+
   return {
     name: 'browser_fetch',
     async read(tripId, url, plan, o = {}) {
@@ -459,6 +525,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     pageFetch: (tripId, call, o = {}) => inSlot(tripId, o, () => pageFetch(tripId, call, o)),
     canPageFetch: () => d.now().getTime() >= unsupportedUntil,
     prime: (tripId) => inSlot(tripId, {}, () => prime(tripId)),
+    handOff: (tripId, url, plan, o) => inSlot(tripId, {}, () => handOff(tripId, url, plan, o)),
+    release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),
+    tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
   };
 }
 
