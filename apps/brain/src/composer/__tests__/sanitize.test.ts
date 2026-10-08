@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clip, sanitize, sanitizeDeep, stripIds, stripMessageRefs } from '../sanitize.js';
+import { clip, sanitize, sanitizeDeep, stripIds, stripMessageRefs, withoutRefused } from '../sanitize.js';
 
 describe('sanitize', () => {
   it('turns em and en dashes into commas, and number ranges into hyphens', () => {
@@ -132,5 +132,28 @@ describe("Go's ids never reach people", () => {
       checked_at: '2026-10-07T09:00:00Z',
     };
     expect(sanitizeDeep(card)).toEqual({ ...card, title: 'Villas' });
+  });
+});
+
+describe('a reply after a refused call', () => {
+  // The 8 Oct rerun, word for word: the record call was refused, and nothing was noted.
+  const said = "The record call was refused, so I'll just acknowledge in the chat.\n\nNoted, speaker for the beach day is down as Arjun's. Arjun, shout if that's wrong, and everyone else can reply with their item.";
+  const claims = /\bnoted\b|\bdown as\b/i;
+
+  it('never names a tool that refused quietly, and never claims the work of a tool that did nothing', () => {
+    expect(withoutRefused(said, { names: ['record'], claims: [claims] })).toBe("Arjun, shout if that's wrong, and everyone else can reply with their item.");
+    // A tool written with an underscore is named either way.
+    expect(withoutRefused('I tried record expense for that. Kabir paid the cab.', { names: ['record_expense'], claims: [] })).toBe('Kabir paid the cab.');
+    // Its name in another word is not its name.
+    expect(withoutRefused('The record_expense list is up to date.', { names: ['record'], claims: [] })).toBe('The record_expense list is up to date.');
+  });
+
+  it('leaves a reply alone when nothing was refused, and leaves claims alone for a tool that went through', () => {
+    expect(withoutRefused(said, { names: [], claims: [] })).toBe(said);
+    expect(withoutRefused('Noted, Kabir has the cab.', { names: [], claims: [] })).toBe('Noted, Kabir has the cab.');
+  });
+
+  it('says nothing at all when every sentence was about the refusal', () => {
+    expect(withoutRefused('The record call was refused. Noted anyway.', { names: ['record'], claims: [claims] })).toBe('');
   });
 });
