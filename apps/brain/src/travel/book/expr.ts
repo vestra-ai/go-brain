@@ -136,8 +136,12 @@ const FUNCTIONS: Record<string, { fn: (...args: never[]) => unknown }> = {
  * interrupted by either: recipe files are reviewed for that.)
  */
 export const LIMITS = { stack: 250, sequence: 20_000 };
-/** The steps one evaluation may take: the heaviest read in the book takes a small part of it (limits.test.ts). */
-export const STEP_LIMIT = 1_000_000;
+/**
+ * The steps one evaluation may take. The heaviest read in the book took 2,347 (an expression of trains.between, 9 ms
+ * on CI, 8 Oct), so this is about a hundred times that, and a runaway ends in a fraction of a second; limits.test fails
+ * any read past a tenth of it.
+ */
+export const STEP_LIMIT = 250_000;
 const GUARDRAILS = new Set(['D1011', 'D2015', 'GO_STEPS']);
 
 /** The binding each evaluation's step counter rides in on. */
