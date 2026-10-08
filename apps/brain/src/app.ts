@@ -73,13 +73,15 @@ export interface Brain {
   /**
    * Set by P4's tasks lane, which owns the trip's computer: the browser fetch the recipe engine reads ixigo.com pages
    * with; keepWarm, which holds the computer awake for two minutes (Bash's warm keep_ms), which only travel's
-   * warmForTravel calls; start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step; and
-   * watch, Bash's browser watch of the trip's computer (never a wake), for the live view's screen (screen-feed.ts).
+   * warmForTravel calls; start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step; prime,
+   * the computer's first ixigo visit, travel's next setup step (it throws when ixigo did not answer); and watch, Bash's
+   * browser watch of the trip's computer (never a wake), for the live view's screen (screen-feed.ts).
    */
   recipeRunners?: {
     browserFetch: RecipeRunner;
     keepWarm(tripId: string): void;
     start(tripId: string): Promise<void>;
+    prime(tripId: string): Promise<void>;
     watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
   };
   /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */

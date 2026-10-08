@@ -55,7 +55,7 @@ export interface RecipeRunner {
   pageFetch?(tripId: string, call: PageCall, o?: Omit<ReadOptions, 'onProgress'>): Promise<Capture>;
   /** Whether page calls are worth trying now: false for a while after a Bash without page_fetch refused one. */
   canPageFetch?(): boolean;
-  /** A new trip's computer's first ixigo visit, before anyone asks (COLD_COMPUTER below). Never throws. */
+  /** A new trip's computer's first ixigo visit, before anyone asks (COLD_COMPUTER below). Throws when ixigo did not answer. */
   prime?(tripId: string): Promise<void>;
 }
 
@@ -381,13 +381,12 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'prime', max_bytes: 1_000 }],
       timeout_ms: PRIME_TIMEOUT_MS,
     };
-    try {
-      const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body });
-      if (Array.isArray(answer.captures) && answer.captures.some((c) => c.match === 'prime')) warm.add(userId);
-    } catch (err) {
-      // The first search still has its one retry.
-      d.log.warn({ tripId, code: err instanceof V1Error ? err.code : String(err).slice(0, 120) }, "travel: priming the trip's computer failed");
+    // A refusal or a timeout throws as Bash says it: setup tries again, and the first search still has its one retry.
+    const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body });
+    if (!Array.isArray(answer.captures) || !answer.captures.some((c) => c.match === 'prime')) {
+      throw new TravelError('unreachable', "ixigo's page did not answer on the trip's computer.");
     }
+    warm.add(userId);
   }
 
   return {

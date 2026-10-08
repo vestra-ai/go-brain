@@ -27,7 +27,7 @@ import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
-import { startComputerAtSetup, warmForTravel } from './warm.js';
+import { IXIGO_WARM_STEP, startComputerAtSetup, warmForTravel, warmIxigoAtSetup } from './warm.js';
 import { waysThereTool } from './ways-there.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
@@ -56,6 +56,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.
   const warm = (tripId: string, kind: TravelKind | null): void => warmForTravel(brain, tripId, kind);
   brain.setup.addStep({ name: 'travel.computer', run: (tripId) => startComputerAtSetup(brain, tripId) });
+  // Then its Chrome's first ixigo visit, before anyone asks; the organiser's ixigo login prompt runs after this step.
+  brain.setup.addStep({ name: IXIGO_WARM_STEP, after: 'travel.computer', run: (tripId) => warmIxigoAtSetup(brain, tripId) });
   // Every recipe run as it happens, for the Server's live view of a trip (/v1/live): in memory, nothing written.
   const runs = createRunLog({ now: brain.now, log: brain.log });
   // And the trip computer's screen, live, from Bash's browser watch: only where searches run on it (ixigo_web).

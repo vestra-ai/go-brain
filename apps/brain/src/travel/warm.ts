@@ -16,14 +16,27 @@ export function warmForTravel(brain: Pick<Brain, 'switches' | 'recipeRunners'>, 
 }
 
 /**
- * A new trip's computer, made at the trip's setup under ixigo_web. Go trips are travel trips, and making a box takes far
- * longer than waking one from its sleep (measured on staging, 8 Oct: see the PR), so the trip's first search never waits
- * for its box to be made. Its Chrome then visits ixigo once (the tasks lane's start: runners.ts COLD_COMPUTER), so the
- * first search is not its first visit. No hold: the box sleeps again when idle, and travel intent wakes it
- * (warmForTravel). Nothing in the other modes, nor while the trip computer is not set up here. A /v1 refusal throws, so
- * setup tries again.
+ * A new trip's computer, made at the trip's setup under ixigo_web: step 1 of the trip's ixigo connection. Go trips are
+ * travel trips, and making a box takes far longer than waking one from its sleep (measured on staging, 8 Oct: see the PR),
+ * so the trip's first search never waits for its box to be made. No hold: the box sleeps again when idle, and travel
+ * intent wakes it (warmForTravel). Nothing in the other modes, nor while the trip computer is not set up here. A /v1
+ * refusal throws, so setup tries again.
  */
 export async function startComputerAtSetup(brain: Pick<Brain, 'switches' | 'recipeRunners'>, tripId: string): Promise<void> {
   if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web' || !brain.recipeRunners) return;
   await brain.recipeRunners.start(tripId);
+}
+
+/** Step 2's setup step. The organiser's ixigo login prompt (step 3) is the setup step that runs after it. */
+export const IXIGO_WARM_STEP = 'travel.ixigo_warm';
+
+/**
+ * Step 2 of the trip's ixigo connection, right after its computer is made: the computer's Chrome visits ixigo once, its
+ * popup closed, so the first search is not its first visit (runners.ts COLD_COMPUTER). Under ixigo_web only, and done at
+ * once in the other modes or while the trip computer is not set up here. A visit ixigo did not answer throws, so setup
+ * tries again, and the login prompt waits for it.
+ */
+export async function warmIxigoAtSetup(brain: Pick<Brain, 'switches' | 'recipeRunners'>, tripId: string): Promise<void> {
+  if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web' || !brain.recipeRunners) return;
+  await brain.recipeRunners.prime(tripId);
 }

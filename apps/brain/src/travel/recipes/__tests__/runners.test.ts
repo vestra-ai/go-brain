@@ -250,17 +250,18 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       expect(w.calls).toHaveLength(2);
     });
 
-    it('a prime that fails never throws, and leaves the first search its one more ask', async () => {
+    it('a prime ixigo did not answer throws, so setup tries again, and leaves the first search its one more ask', async () => {
       const w = world((_, n) => {
         if (n === 1) throw new V1Error(503, 'box_unavailable', 'The computer did not wake.');
-        if (n === 2) throw caughtNothing();
+        if (n === 2) return fetched([]);
+        if (n === 3) throw caughtNothing();
         return fetched([busCapture]);
       });
       const runner = createBrowserFetchRunner(w.deps);
-      await expect(runner.prime!('t1')).resolves.toBeUndefined();
-      expect(w.log.warn).toHaveBeenCalledWith({ tripId: 't1', code: 'box_unavailable' }, "travel: priming the trip's computer failed");
+      await expect(runner.prime!('t1')).rejects.toMatchObject({ status: 503, code: 'box_unavailable' });
+      await fails(runner.prime!('t1'), 'unreachable', /did not answer/);
       expect((await runner.read('t1', BUSES, busPlan)).captures).toHaveLength(1);
-      expect(w.calls).toHaveLength(3);
+      expect(w.calls).toHaveLength(4);
     });
   });
 

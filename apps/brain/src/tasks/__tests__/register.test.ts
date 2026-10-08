@@ -34,10 +34,12 @@ const VILLA = {
 };
 
 describe('registerTasks', () => {
-  it("makes a new trip's computer at setup, then has its browser visit ixigo once, before anyone asks", async () => {
+  it("makes a new trip's computer (start), then has its browser visit ixigo once (prime), before anyone asks", async () => {
     await lb.brain.recipeRunners!.start('t_prime');
     expect(fake.callsTo('POST', /^\/v1\/users\/[^/]+\/warm$/).length).toBeGreaterThan(0);
-    await vi.waitFor(() => expect(fake.callsTo('POST', /\/browser\/fetch$/)).toHaveLength(1));
+    expect(fake.callsTo('POST', /\/browser\/fetch$/)).toHaveLength(0);
+    await lb.brain.recipeRunners!.prime('t_prime');
+    expect(fake.callsTo('POST', /\/browser\/fetch$/)).toHaveLength(1);
     expect(fake.callsTo('POST', /\/browser\/fetch$/)[0]!.body).toMatchObject({
       url: 'https://www.ixigo.com/',
       steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', capture_as: 'prime' }],

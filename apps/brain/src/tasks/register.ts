@@ -65,8 +65,10 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     keepWarm: (tripId) => keeper.touch(tripId),
     start: async (tripId) => {
       await computer.warm(tripId);
-      // The new computer's first ixigo visit, before anyone asks (runners.ts COLD_COMPUTER): not awaited, never throws.
-      void browserFetch.prime?.(tripId);
+    },
+    // The new computer's first ixigo visit, travel's setup step after start (runners.ts COLD_COMPUTER).
+    prime: async (tripId) => {
+      await browserFetch.prime?.(tripId);
     },
     // Bash's live view of the fetch's own tabs: a stream that never wakes the computer. No resume: a watch has no history.
     watch: (tripId, signal) => v1.stream(`/v1/users/${computer.userIdFor(tripId)}/browser/watch`, { lastEventId: 0, signal }),
