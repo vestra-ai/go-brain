@@ -5,24 +5,12 @@
  * image cache. Kept for good by the words (place_details): one box lookup a place and one guide load a destination,
  * ever. Nothing is made up: what ixigo doesn't say is left out (a country with more than one time zone has none).
  */
+import type { Place } from '@go/contract';
 import type pg from 'pg';
-import type { z } from 'zod';
-import type * as C from '@go/contract';
 import type { Engine } from './book/engine.js';
 import type { Images } from './images.js';
 import { norm } from './recipes/places.js';
-
-export type PlaceT = z.infer<typeof C.Place>;
-
-/** A place ixigo knows, as Go keeps it. */
-export interface ResolvedPlace {
-  /** Contract 1.1's Place: place_id "ixigo:<locationId>", lat and lng, timezone, and photo_url for a destination. */
-  place: PlaceT;
-  /** ixigo's type: a state (Goa), a city (Manali), or an area inside one (Candolim, Old Manali). */
-  kind: 'state' | 'city' | 'area';
-  /** The city and state it lies in, by ixigo's own names: Old Manali in ["Manali", "Himachal Pradesh"]; a state, none. */
-  within: string[];
-}
+import type { ResolvedPlace } from './travel.js';
 
 export type PlaceFor = (words: string, o: { tripId: string }) => Promise<ResolvedPlace | null>;
 
@@ -85,7 +73,7 @@ export function createPlaceFor(d: PlaceForDeps): PlaceFor {
     const [lat, lng] = [num(p['lat']), num(p['lng'])];
     const timezone = timezoneOf(s.country);
     const photo = await photoOf([s.name, ...within], o.tripId);
-    const place: PlaceT = {
+    const place: Place = {
       name: s.name.slice(0, 120),
       ...(p['locationId'] !== undefined ? { place_id: `ixigo:${String(p['locationId'])}` } : {}),
       ...(lat !== null && lng !== null ? { lat, lng } : {}),
