@@ -1,17 +1,17 @@
 # What changed in Go since v1
 
-This page lists what changed in Go between the v1 hand-off and `build` today (8 Oct, commit `6eaf68c`, #217), and what the Server team and the App team need to do about each change. v1 means contract 1.0.0 in `packages/contract`, the guide in `docs/guide/`, and `main` as of 7 Oct (#173).
+This page lists what changed in Go between the v1 hand-off and `build` today (8 Oct, commit `b60d9d5`, #219), and what the Server team and the App team need to do about each change. v1 means contract 1.0.0 in `packages/contract`, the guide in `docs/guide/`, and `main` as of 7 Oct (#173).
 
 ## In short
 
 - The contract did not change. `git diff origin/main origin/build -- packages/contract packages/contract-py docs/guide` is empty, and `CONTRACT_VERSION` is still `1.0.0`.
 - Go sends no new methods. It still uses `post_message`, `replace_card` and the rest exactly as the guide describes them.
-- The changes are in how Go uses the contract: new button ids on existing cards, a new "ways there" options card, watches that post later, a new read-only socket `/v1/live`, a changed setup, and two new switches.
+- The changes are in how Go uses the contract: new button ids on existing cards, an ixigo login card at setup, a new "ways there" options card, watches that post later, a new read-only socket `/v1/live`, new setup steps, and two new switches.
 - The Server forwards every `action_id` as it is (guide page 05), so the new buttons need no Server code.
 
 ## 1. Card buttons and `open` answers
 
-These are all the buttons Go handles today (`travel/taps.ts`, `tasks/taps.ts`, `money/register.ts`, `calls/register.ts`):
+These are all the buttons Go handles today (`travel/taps.ts`, `travel/login.ts`, `tasks/taps.ts`, `money/register.ts`, `calls/register.ts`):
 
 | Card | `action_id` | Label | What Go answers | Since |
 |---|---|---|---|---|
@@ -21,6 +21,7 @@ These are all the buttons Go handles today (`travel/taps.ts`, `tasks/taps.ts`, `
 | `options` | `see_all` | "See all on ixigo" | `open` with the whole stays list on ixigo.com. | New, #194 |
 | `options` | `flights_home` | "Flights from my city" | `open` with ixigo's flights from the tapper's home city. | New, #208 |
 | `notice` | `see_on_ixigo` | "See flights on ixigo" (or trains, buses, hotels) | `open` with the card's `source.url` on ixigo.com. | Flights card in `main`, other kinds new in #179 |
+| `notice` | `ixigo_login`, `ixigo_logged_in`, `ixigo_not_now`, `ixigo_logout` | See "The ixigo login card" below | `done` with a toast. | New, #220 |
 | `working` | `watch`, `stop` | "Watch", "Stop" | `watch` answers `open` with a 15-minute screen link. | v1 |
 | `call` | `stop` | "Stop the call" | `done`. | v1 |
 | `pay` | `approve`, `decline` | "Approve", "Decline" | `approve` answers `open` with the vault page (5 minutes). | v1 |
@@ -37,11 +38,31 @@ Which card gets which buttons (`travel/cards.ts`):
 - The ways card (section 2) has only `open` and `flights_home`. It has no `pick` and no `vote`.
 - A notice card that links to ixigo has one `see_on_ixigo` button.
 
-**The ixigo login card is not on `build`.** It is draft PR #220 (branch `ixigo-login`) and may change before it merges. In that draft, the login card is a `notice` card pinned to one person, with the buttons `ixigo_login`, `ixigo_not_now`, `ixigo_logged_in` and `ixigo_logout`. All four answer `done` with a toast, never `open`. The person logs in through the existing working card's Watch button, which answers `open`.
-
 Good to know:
 - For an ixigo page, `expires_at` is 10 minutes after the tap (`OPEN_FOR_MS` in `travel/taps.ts`). It is how long Go counts the prices as fresh. The page itself keeps working, but do not keep the link: a later tap gets a fresh answer.
 - Go answers a tap within 2.5 seconds (`door/taps.ts`). A button Go has no handler for is refused with "That button doesn't do anything yet."
+
+### The ixigo login card (#220)
+
+One person logs in to ixigo on the trip's computer, so Go can later run the recipes that need a login (`travel/login.ts`).
+
+- **Who gets it:** the trip's organizer (`organizer_person_id`), once Go has said hello to a new trip, and only under `TRAVEL_MODE=ixigo_web`. Go posts one line that names and mentions them ("<name>, link ixigo for the trip: one login on the trip's computer, about a minute.") with a `notice` card. The card's `for_person_ids` and every button's `only_for_person_ids` hold that one person.
+- **When Go asks again:** a trip made more than a day ago is not asked at setup. Go asks when a recipe marked `auth: login` needs the login, at most once every 30 minutes, with a new line and a new card. It asks the same person again, or the organizer if that person has left. No recipe in the book needs the login yet (`apps/brain/recipes`), so today only setup asks. The card id is `c_login_<trip_id>_<attempt>`.
+- **How the card moves:** Go updates it in place with `replace_card`.
+
+| Card title | Buttons | What a tap does |
+|---|---|---|
+| "Link ixigo for this trip" | `ixigo_login` "Log in to ixigo", `ixigo_not_now` "Not now" | `ixigo_login` starts the login job and answers "Opening ixigo on Go's computer". |
+| "Logging in to ixigo" | `ixigo_logged_in` "I'm logged in", `ixigo_not_now` "Not now" | `ixigo_logged_in` answers "Checking your login", then Go asks ixigo and updates the card. |
+| "ixigo: logged in as <name>" | `ixigo_logout` "Log out" | Answers "Logging out of ixigo", then Go logs out through ixigo's own menu. |
+| "ixigo login skipped" | `ixigo_login` "Log in to ixigo" | `ixigo_not_now` led here and answered "Go will ask again when a booking needs it". |
+| "Logged out of ixigo" | none | Nothing. |
+
+- **What each tap answers:** every login button answers `done` with a toast, never `open`. Go answers `refused` when someone else taps ("Only <name> can do this here."), when the card is no longer active, or when Go's computer is not browsing ixigo.
+- **How the person logs in:** `ixigo_login` starts an ordinary job, so Go also posts a `working` card titled "Logging in to ixigo" with Watch and Stop. When the job hands the browser over, that card turns `needs_you` with the person in `for_person_ids`. Their Watch tap answers `open` with a 15-minute screen link in control mode (`tasks/taps.ts`), and anyone else's Watch link is view only. The person types their own number and one-time code on ixigo's page, then taps "I'm logged in".
+- **What Go knows:** Go checks the login only by the status of ixigo's own `POST /api/v2/oauth/userinfo` call (200 means in, 401 or 403 means out). It never reads the account, and the card names the trip member, not the account. Go checks again at most every 6 hours, when a recipe needs it.
+- **Logging out:** Go logs out when the person taps "Log out" or leaves the trip (`person.left`). "Forget me" does not log out yet: `brain.ixigoLogin.personGone` exists, but the memory lane does not call it.
+- **What the Server and App do:** nothing new. The Server pushes the organizer for the mention and the pin, forwards the taps, and applies `replace_card`. The App shows the buttons only to `only_for_person_ids`, shows the toasts, and opens the Watch link in the system browser sheet.
 
 ## 2. The comparison card is an ordinary options card
 
@@ -61,6 +82,7 @@ Good to know:
 - **What it streams:** JSON messages. The first is `{ "type": "hello", "trip_id", "events", "screen" }`, with recent run events and the screen as it is now. After that, each message is `{ "type": "run", "event" }` (run_start, call, step, run_end, frames, group_end) or `{ "type": "screen", "event" }` (state, tab_open, frame, hidden, tab_close).
 
 Good to know:
+- Pictures are 1280 pixels wide (#219). Go asks Bash for that width on every page it fetches and on the browser watch (`FRAME_WIDTH` in `travel/recipes/runners.ts`). A `frame` event carries its `width` and `height`. Draw a picture at its own size or smaller, never stretched, as the try room does (`packages/sim/src/dev-room/live-page.ts`). The live search card's `screenshot_url` comes from the same pictures.
 - Pictures are sent only of ixigo.com search, results and details pages (`travel/frame-pages.ts`), and only with the page's path, never its query. A payment, booking or sign-in tab shows as `hidden`.
 - Watching never wakes the trip's computer. While it sleeps, the screen state is `asleep`. Outside `TRAVEL_MODE=ixigo_web`, the screen state is `off`.
 - Go keeps this in memory only: the last 300 events per trip and the pictures of the newest 4 runs. A slow viewer misses pictures, never run or tab events. Go ignores anything a viewer sends.
@@ -80,13 +102,26 @@ Good to know: because the group asked, a watch's message skips Go's daily budget
 
 ## 5. Setting up a new trip
 
-- A new trip now runs three setup steps (`trips/setup.ts`). `brain.ready` makes Go's side of the trip and says hello (`room.ts`). `computer.user` makes the trip's `/v1` user (`tasks/computer.ts`). `travel.computer` makes the trip's computer (`startComputerAtSetup` in `travel/warm.ts`, #198).
-- The old `computer.warm` step is gone (#183). Under `TRAVEL_MODE=ixigo_web`, `travel.computer` makes the computer with no hold, so the first search does not wait about 13 seconds for it. In the other modes it does nothing. After setup, the computer wakes only when someone asks for travel, a job starts, or a watch is checked.
-- The Server provides nothing new. It sends `trip.created` as before, and Go still answers `accepted` at once and sets up afterwards.
+Setup runs on `trip.created` and on any event for a trip that is not set up yet (`trips/intake.ts`). It runs these steps in this order (`trips/setup.ts`, with the lanes registering in the order of `main.ts`). A step with "after" waits until that step is done.
+
+| Order | Step | Where | What it does |
+|---|---|---|---|
+| 1 | `brain.ready` | `room.ts` | Makes Go's side of the trip, then Go says hello. |
+| 2 | `travel.computer` | `travel/warm.ts`, #198 | Makes the trip's computer, with no hold. |
+| 3 | `travel.ixigo_warm`, after `travel.computer` | `travel/warm.ts`, #218 | The computer's browser visits ixigo's home page once and closes its popup, so the first search is not its first visit. |
+| 4 | `travel.ixigo_login`, after `travel.ixigo_warm` | `travel/login.ts`, #220 | Asks the organizer to log in to ixigo (section 1). It waits until Go has said hello. |
+| 5 | `computer.user` | `tasks/computer.ts` | Makes the trip's `/v1` user, if step 2 has not already made it. |
+
+- Steps 2, 3 and 4 do anything only under `TRAVEL_MODE=ixigo_web`. In the other modes they finish at once.
+- A step that fails is tried again on the trip's next event (at most every 30 seconds) or by setup's sweep (every 2 minutes). So the login line comes a little after Go's hello, usually within two minutes.
+- `travel.ixigo_warm` tries at most 3 times (`IXIGO_WARM_TRIES`, counted per Go process). After that it is done with a warning, and the login prompt goes ahead. Its runs show as a `travel.ixigo_warm` line in `recipes` on `/admin/health.json`.
+- The old `computer.warm` step is gone (#183). After setup, the computer wakes only when someone asks for travel, a job starts, or a watch is checked.
+- The Server provides nothing new. It sends `trip.created` as before, and Go still answers `accepted` at once and sets up afterwards. Under `ixigo_web`, the Server now sees a second Go message after the hello: the login line with its card.
 - Go's `/v1` deployments now allow `ixigotrainsapi.confirmtkt.com` next to `ixigo.com` (#204), and block `ixigo.com/payments/` (#181, commit `6ac6194`, enforced by Bash #4591). These live in `tasks/instructions.ts` and are written by the one-time `setup-v1` script (`pnpm --filter ./apps/brain setup-v1 --browser-fetch`), not by a per-trip step.
 - When Bash blocks a page, Go refuses it with "That's the payment page, and Go never opens it; the payer finishes on ixigo." Go never pays on ixigo.
+- `setup-v1` now checks every model it is given against `GET /v1/models` before it saves anything. If `/v1` does not offer one, the run stops and saves nothing (#221).
 
-Good to know: `setup-v1` must run against a Bash that has #4591, because `/v1` refuses a manifest key it does not know.
+Good to know: `setup-v1` must run against a Bash that has #4591, because `/v1` refuses a manifest key it does not know. #221's notes say staging was run this way on 8 Oct.
 
 ## 6. Switches
 
@@ -97,7 +132,7 @@ Switches are read on every use, and a value set on the admin page wins over the 
 | `RECIPE_WATCHES` (new) | `off`, `on` | `off` | Turns watches on (section 4). `.env.example` says staging sets `on` and production leaves it `off`. |
 | `BROWSER_FETCH_SLOTS` (new) | `1` to `4` | `2` | Sets how many ixigo pages Go opens at once on a trip's computer. Match Bash's own cap. It also sets how long a comparison may take. |
 | `TRAVEL_RUNNER` | `agent_job`, `browser_fetch` | `agent_job` | Does nothing now. Since #184 every ixigo.com read uses Bash's browser fetch, but the switch still shows on the admin page. |
-| `TRAVEL_MODE` | `ixigo`, `ixigo_web`, `fake` | `fake` | Unchanged. `ixigo_web` is the mode that turns on Go Live's screen, watches, the ways card and the computer at setup. |
+| `TRAVEL_MODE` | `ixigo`, `ixigo_web`, `fake` | `fake` | Unchanged. `ixigo_web` is the mode that turns on Go Live's screen, watches, the ways card, the computer and ixigo warm at setup, and the login card. |
 
 ## Other changes you may notice
 
@@ -109,17 +144,14 @@ Switches are read on every use, and a value set on the admin page wins over the 
 
 ## Not on `build` yet
 
-These are open PRs, and each one may change before it merges:
-- #220 (draft): the ixigo login card from section 1.
-- #218: a new setup step, `travel.ixigo_warm`, that opens ixigo on the new computer.
-- #212: Go Live labels each live tab with the run that opened it.
-- #219: sharper Go Live pictures, 1280 pixels wide.
+- #212 (open): Go Live labels each live tab with the run that opened it. It waits for Bash to take the fetch's tag, and it may change before it merges.
 
 ## Where the guide is now out of date
 
-- **06-cards.md, "Buttons on Go cards":** the table lacks `open`, `see_all` and `flights_home` on options cards and `see_on_ixigo` on notice cards. It says `open` is only for the vault and watching Go work. Its notice card section says "usually none" for buttons, but link cards have one.
-- **05-your-requests.md, the `card_tap` table:** it lacks the same four buttons.
+- **06-cards.md, "Buttons on Go cards":** the table lacks `open`, `see_all` and `flights_home` on options cards, and `see_on_ixigo` and the four login buttons on notice cards. It says `open` is only for the vault and watching Go work. Its notice card section says "usually none" for buttons, but link cards and the login card have them.
+- **05-your-requests.md, the `card_tap` table:** it lacks the same buttons.
 - **07-the-app.md, "Opening Go pages":** it says every link is one of Go's pages and expires after 5 minutes. ixigo links are `www.ixigo.com` pages and expire after 10 minutes.
-- **03-events.md, "How Go sets itself up for a new trip":** it says Go starts a computer for every trip. Now that happens only under `ixigo_web`, with no hold.
+- **03-events.md, "How Go sets itself up for a new trip":** it says Go starts a computer for every trip. Now that happens only under `ixigo_web`, with no hold, followed by the ixigo warm and the login line.
+- **08-money-and-the-vault.md, "What it holds":** it says the vault holds logins, such as a person's ixigo account. The vault stores no logins this week (`apps/vault/src/links.ts`), and the ixigo login now lives in the trip computer's browser (#220).
 - **docs/operations.md, "The demo switches":** it lists four switches and gives `TRAVEL_MODE` as `ixigo` or `fake`. There are now seven switches, and `TRAVEL_MODE` also takes `ixigo_web`.
-- No guide page covers `/v1/live` or watches.
+- No guide page covers `/v1/live`, watches or the ixigo login.
