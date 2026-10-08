@@ -156,6 +156,24 @@ describe('forget_person (master §10 item 5)', () => {
     expect((await db.pool.query("SELECT count(*)::int AS n FROM story_lines WHERE trip_id = 't_manali'")).rows[0].n).toBe(0);
   });
 
+  it("lets go of the trip's ixigo login in each trip it forgets, and a login that can't be let go never fails the forget", async () => {
+    const gone: Array<[string, string]> = [];
+    const withLogin = peopleHandlers({
+      pool: db.pool, packs, fold: { redactPerson: async () => 0, storyMentions: async () => 0 }, now: () => new Date(), log: silentLog,
+      loginGone: async (tripId, personId) => {
+        gone.push([tripId, personId]);
+        if (tripId === 't_manali') throw new Error('the login card could not be replaced');
+      },
+    });
+    await saveFact(db.pool, fact({ personId: 'p_rahul', tripId: 't_goa', topic: 'food', text: 'Loves prawns', messageId: null, source: 'join' }));
+    await saveFact(db.pool, fact({ personId: 'p_rahul', tripId: 't_manali', topic: 'food', text: 'Loves momos', messageId: null, source: 'join' }));
+    expect(await withLogin.forget_person({ person_id: 'p_rahul', trip_id: 't_goa' }, meta)).toEqual({ deleted_facts: 1, remaining_facts: 0 });
+    expect(gone).toEqual([['t_goa', 'p_rahul']]);
+    // Everywhere: each trip Go still holds anything of theirs in (Manali, here), and one that throws still answers.
+    expect(await withLogin.forget_person({ person_id: 'p_rahul' }, meta)).toEqual({ deleted_facts: 1, remaining_facts: 0 });
+    expect(gone.slice(1)).toEqual([['t_manali', 'p_rahul']]);
+  });
+
   it('refuses to answer, and changes nothing, when something would be left', async () => {
     await saveFact(db.pool, fact({ personId: 'p_arjun', topic: 'flights', text: 'No early flights', messageId: null, source: 'join' }));
     const stubborn = peopleHandlers({

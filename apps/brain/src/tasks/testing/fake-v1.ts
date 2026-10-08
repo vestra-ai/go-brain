@@ -320,6 +320,15 @@ export class FakeV1 {
       if (!this.users.has(param(req))) return fail(reply, 404, 'user_not_found');
       return reply.code(202).send({ user_id: param(req), status: 'waking' });
     });
+    // A browser fetch whose page answers each page_fetch step at once, as a new computer's prime asks it (runners.ts).
+    app.post('/v1/users/:id/browser/fetch', async (req, reply) => {
+      if (!this.users.has(param(req))) return fail(reply, 404, 'user_not_found');
+      const b = (req.body ?? {}) as { url?: string; steps?: Array<{ op?: string; capture_as?: string }> };
+      const captures = (b.steps ?? []).filter((s) => s.op === 'page_fetch').map((s) => ({
+        match: s.capture_as, url: b.url ?? '', status: 200, content_type: 'text/html', body: '', truncated: false, at_ms: 1,
+      }));
+      return { final_url: b.url ?? null, elapsed_ms: 1, woke: false, captures };
+    });
     app.put('/v1/secrets/:name', async (req) => {
       const name = (req.params as { name: string }).name;
       const b = req.body as { user_id?: string; value: string };

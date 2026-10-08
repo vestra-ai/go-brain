@@ -1,13 +1,14 @@
 import * as C from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
-import { makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
-import type { EngineAnswer, StepAnswer } from '../book/engine.js';
+import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
+import type { EngineAnswer, RunFor, StepAnswer } from '../book/engine.js';
+import { hoursMinutes } from '../book/expr.js';
 import { TravelError } from '../mcp-travel.js';
 import type { RecipeOption } from '../recipes/recipe.js';
 import { createResultsStore, toResultOption, type ResultsStore } from '../results.js';
 import { registerTravelTaps } from '../taps.js';
-import { waysLine, waysOf, waysRows, waysThereTool, WAYS_THERE, type WayThere } from '../ways-there.js';
+import { waysDeadlineMs, waysLine, waysOf, waysRows, waysThereTool, WAYS_THERE, type WayThere } from '../ways-there.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -35,7 +36,9 @@ function bus(operator: string, rupees: number, depart: string, arrive: string, s
   return {
     kind: 'bus', title: operator, priceMinor: rupees * 100, currency: 'INR', priceNote: 'per seat, from',
     journey: { mode: 'bus', origin: { name: 'Mumbai' }, destination: { name: 'Goa' }, depart_at: depart, arrive_at: arrive, carrier_name: operator },
-    highlights: ['A/C Sleeper'], facts: { bus_type: 'A/C Sleeper', ...(seats !== undefined ? { seats_left: seats } : {}) }, sourceUrl: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O',
+    // As the recipe writes it: the bus type, then its time.
+    highlights: ['A/C Sleeper', hoursMinutes((Date.parse(arrive) - Date.parse(depart)) / 60_000)],
+    facts: { bus_type: 'A/C Sleeper', ...(seats !== undefined ? { seats_left: seats } : {}) }, sourceUrl: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O',
   };
 }
 const options = (list: RecipeOption[]): EngineAnswer => ({ as: 'options', options: list, page: 'https://www.ixigo.com/x', checkedAt: '2026-10-08T12:00:00.000Z', ms: 900 });
@@ -81,24 +84,31 @@ const COMPARE: EngineAnswer = {
   ],
 };
 
-const toolWith = (answer: () => Promise<EngineAnswer>, live = true) =>
-  waysThereTool({ engine: { answer: async (id) => (id === WAYS_THERE ? answer() : Promise.reject(new Error(id))) }, results, live: () => live });
+const toolWith = (answer: (o: RunFor) => Promise<EngineAnswer>, o: { live?: boolean; waitMs?: number; cardDelayMs?: number } = {}) =>
+  waysThereTool({
+    engine: { answer: async (id, _given, run) => (id === WAYS_THERE ? answer(run) : Promise.reject(new Error(id))) },
+    results, link: lb.link, now: lb.brain.now, slots: () => 2, live: () => o.live ?? true,
+    ...(o.waitMs !== undefined ? { waitMs: o.waitMs } : {}),
+    cardDelayMs: o.cardDelayMs ?? 60_000,
+  });
 
 describe("each home city's ways to the trip", () => {
   it("picks each city's cheapest and fastest seat people can still buy, and says what didn't come back", () => {
     if (COMPARE.as !== 'compare') return;
     const ways = waysOf(COMPARE, lb.ctx().pack.trip.people);
-    expect(ways.map((w) => [w.home, w.people, w.cheapest?.title, w.cheapest?.facts.class_code, w.fastest?.title, w.missed, !!w.flights])).toEqual([
+    expect(ways.map((w) => [w.home, w.people, w.cheapest?.title, w.cheapest?.facts.class_code, w.fastest?.title, w.only, w.missed, !!w.flights])).toEqual([
       // The Rajdhani's 2A is cheaper, but ixigo says it is full.
-      ['Delhi', 3, 'Goa Express 12779', 'SL', 'Rajdhani 22413', ['buses'], true],
-      ['Bangalore', 1, undefined, undefined, undefined, [], true],
+      ['Delhi', 3, 'Goa Express 12779', 'SL', 'Rajdhani 22413', false, ['buses'], true],
+      ['Bangalore', 1, undefined, undefined, undefined, false, [], true],
       // The Paulo Travels bus is cheaper and faster, but has no seat left.
-      ['Mumbai', 1, 'Konkan Kanya 10111', 'SL', 'Konkan Kanya 10111', [], true],
+      ['Mumbai', 1, 'Konkan Kanya 10111', 'SL', 'Konkan Kanya 10111', false, [], true],
     ]);
+    // What didn't come back is said once, after the cities.
     expect(waysLine(ways, '2026-11-06')).toBe(
       'From Delhi, the cheapest is the Goa Express 12779 in Sleeper at ₹645 (26 h 10 m), the fastest the Rajdhani 22413 in AC 3 Tier at ₹2,140 (15 h 30 m). ' +
-        "The buses didn't come back. From Bangalore, ixigo has no trains or buses on Fri 6 Nov. " +
-        'From Mumbai, the Konkan Kanya 10111 in Sleeper is the cheapest and the fastest, at ₹420 (11 h 40 m). Flights from your own city are a tap away on the card.',
+        'From Bangalore, ixigo has no trains or buses on Fri 6 Nov. ' +
+        'From Mumbai, the Konkan Kanya 10111 in Sleeper is the cheapest and the fastest, at ₹420 (11 h 40 m). ' +
+        "Buses didn't come back for Delhi. Flights from your own city are a tap away on the card.",
     );
   });
 
@@ -106,7 +116,7 @@ describe("each home city's ways to the trip", () => {
     const way = (home: string, savesMin: number): WayThere => {
       const slow = toResultOption(train('Slow', '1', 'SL', 500, at(6, '06:00'), at(7, '06:00')));
       const quick = toResultOption(train('Quick', '2', '3A', 1_500, at(6, '06:00'), new Date(Date.parse(at(7, '06:00')) - savesMin * 60_000).toISOString()));
-      return { home, people: 1, cheapest: slow, fastest: quick, flights: null, missed: [] };
+      return { home, people: 1, cheapest: slow, fastest: quick, only: false, flights: null, missed: [] };
     };
     const rows = waysRows([way('Delhi', 600), way('Mumbai', 60), way('Pune', 300), way('Jaipur', 30)]);
     expect(rows.map((r) => `${r.way.home} ${r.is}`)).toEqual(['Delhi cheapest', 'Delhi fastest', 'Mumbai cheapest', 'Pune cheapest', 'Jaipur cheapest']);
@@ -141,7 +151,7 @@ describe("each home city's ways to the trip", () => {
 
   it("says why it can't, without a card: not searching ixigo.com, no day or home city yet, or nothing came back", async () => {
     const ctx = lb.ctx({ turnId: 'turn_ways2' });
-    expect(await toolWith(async () => COMPARE, false).run({}, ctx)).toMatchObject({ error: 'not_here' });
+    expect(await toolWith(async () => COMPARE, { live: false }).run({}, ctx)).toMatchObject({ error: 'not_here' });
     const needs = await toolWith(async () => {
       throw new TravelError('needs_more', 'How everyone gets to the trip needs the day everyone travels.');
     }).run({}, ctx);
@@ -150,7 +160,88 @@ describe("each home city's ways to the trip", () => {
       as: 'compare', inputs: { to: 'North Goa', date: '2026-11-06' }, checkedAt: '2026-10-08T12:00:00.000Z', ms: 12_000,
       entries: [{ entry: 'Delhi', steps: [{ recipe: 'trains.between', why: 'out of time' }, { recipe: 'buses.between', why: 'out of time' }, flights('DEL')] }],
     };
-    expect(await toolWith(async () => empty).run({}, ctx)).toMatchObject({ note: expect.stringContaining('No train or bus came back') });
     expect([ctx.cards, ctx.lines, ctx.answered]).toEqual([[], [], undefined]);
+    // Nothing came back: the line says so, and the turn ends on it.
+    const none = lb.ctx({ turnId: 'turn_ways2b' });
+    expect(await toolWith(async () => empty).run({}, none)).toMatchObject({ answered: true, card_id: null });
+    expect([none.cards, none.lines]).toEqual([[], ['No train or bus came back from Delhi on Fri 6 Nov. Flights are on ixigo.']]);
+  });
+
+  it("says one bus as the one bus, never \"bus bus\", what didn't come back once, and each row's time once (the 8 Oct drill)", async () => {
+    const drill: EngineAnswer = {
+      as: 'compare', inputs: { to: 'Goa', date: '2026-11-06' }, checkedAt: '2026-10-08T12:00:00.000Z', ms: 12_000,
+      entries: [
+        { entry: 'Delhi', steps: [{ recipe: 'trains.between', why: 'out of time' }, { recipe: 'buses.between', answer: options([bus('NTC Smart Bus', 5_300, at(6, '16:00'), at(8, '08:30'))]) }, flights('DEL')] },
+        {
+          entry: 'Mumbai',
+          steps: [
+            { recipe: 'trains.between', why: 'out of time' },
+            { recipe: 'buses.between', answer: options([bus('Naik Tours & Travels', 1_500, at(6, '17:30'), at(7, '08:00')), bus('IntrCity SmartBus', 3_182, at(6, '22:15'), at(7, '08:10'))]) },
+            flights('BOM'),
+          ],
+        },
+      ],
+    };
+    const ctx = lb.ctx({ turnId: 'turn_ways4' });
+    await toolWith(async () => drill).run({}, ctx);
+    expect(ctx.lines).toEqual([
+      'From Delhi, the one bus is the NTC Smart Bus, at ₹5,300 (40 h 30 m). ' +
+        'From Mumbai, the cheapest is the Naik Tours & Travels bus at ₹1,500 (14 h 30 m), the fastest the IntrCity SmartBus at ₹3,182 (9 h 55 m). ' +
+        "Trains didn't come back for any city. Flights from your own city are a tap away on the card.",
+    ]);
+    const card = C.Card.parse(ctx.cards[0]);
+    if (card.kind !== 'options') throw new Error('expected an options card');
+    expect(card.options.map((o) => o.highlights)).toEqual([
+      ['The only bus, 40 h 30 m', 'A/C Sleeper'],
+      ['Cheapest, 14 h 30 m', 'A/C Sleeper'],
+      ['Fastest, 9 h 55 m', 'A/C Sleeper'],
+    ]);
+  });
+
+  it('gives a comparison the time its pages need on the computer: 25 s for three cities on two slots, 17 s on four', () => {
+    expect([waysDeadlineMs(3, 2), waysDeadlineMs(3, 4), waysDeadlineMs(1, 2), waysDeadlineMs(4, 2)]).toEqual([25_000, 17_000, 13_000, 29_000]);
+  });
+
+  it("shows an On it. live card for a comparison past the turn's wait, ticks each city, then posts its card and line itself", async () => {
+    const ctx = lb.ctx({ turnId: 'turn_ways3' });
+    let finish: (a: EngineAnswer) => void = () => undefined;
+    let tell: RunFor['onSteps'];
+    const tool = toolWith(
+      (run) => {
+        tell = run.onSteps;
+        run.onSteps?.({ type: 'entries', entries: ['Delhi', 'Bangalore', 'Mumbai'] });
+        return new Promise((r) => (finish = r));
+      },
+      { waitMs: 30, cardDelayMs: 0 },
+    );
+    const from = lb.link.requests.length;
+    const sent = () => lb.link.requests.slice(from);
+    const working = () =>
+      sent().flatMap((r) => {
+        const card = r.params['card'] as { kind?: string; title?: string; state?: string; steps?: Array<{ text: string; state: string }> } | undefined;
+        return card?.kind === 'working' ? [{ method: r.method, text: r.params['text'], ...card }] : [];
+      });
+    // The turn ends with nothing said: the live card is the room's word for now.
+    expect(await tool.run({}, ctx)).toMatchObject({ running: true });
+    expect([ctx.cards, ctx.lines, ctx.answered]).toEqual([[], [], undefined]);
+    await eventually(() => working().length > 0);
+    expect(working()[0]).toMatchObject({
+      method: 'post_message', text: 'On it.', title: 'Checking 3 cities', state: 'running',
+      steps: [{ text: 'Delhi: trains · buses', state: 'doing' }, { text: 'Bangalore: trains · buses', state: 'doing' }, { text: 'Mumbai: trains · buses', state: 'doing' }],
+    });
+    tell?.({ type: 'step', entry: 'Delhi', recipe: 'buses.between', ok: false });
+    tell?.({ type: 'step', entry: 'Delhi', recipe: 'trains.between', ok: true });
+    tell?.({ type: 'step', entry: 'Bangalore', recipe: 'trains.between', ok: false });
+    tell?.({ type: 'step', entry: 'Bangalore', recipe: 'buses.between', ok: false });
+    tell?.({ type: 'step', entry: 'Bangalore', recipe: 'flights.search', ok: true });
+    await eventually(() => working().at(-1)?.steps?.map((s) => s.state).join() === 'done,failed,doing');
+    finish(COMPARE);
+    await eventually(() => sent().some((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'options'));
+    const posted = sent().findIndex((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'options');
+    expect(sent()[posted]!.method).toBe('post_message');
+    expect(sent()[posted]!.params['text']).toMatch(/^From Delhi, the cheapest is the Goa Express 12779 in Sleeper/);
+    // The live card ended before the comparison went up: Mumbai, still going when it came in, done with it.
+    const last = sent().slice(0, posted).filter((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'working').at(-1)!;
+    expect(last.params['card']).toMatchObject({ state: 'done', steps: [{ state: 'done' }, { state: 'failed' }, { state: 'done' }] });
   });
 });

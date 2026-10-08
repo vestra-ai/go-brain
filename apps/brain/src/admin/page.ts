@@ -1,6 +1,7 @@
 // The admin page: one screen for the operator at the side of the stage. Plain HTML forms and no script, light and
 // readable on a laptop. Everything shown is escaped, and phone numbers are masked.
 import type { RecipeStat } from '../travel/book/engine.js';
+import type { TripWatches } from '../travel/recipe-watches.js';
 import type { ProbeResult } from './health.js';
 import type { SwitchName } from './switches.js';
 
@@ -21,6 +22,8 @@ export interface AdminView {
   docsUrl: string;
   /** How fast each ixigo recipe answers, at each speed, since Go started. */
   recipes: RecipeStat[];
+  /** The watches groups asked for that are going, per trip. */
+  watches?: TripWatches[];
 }
 
 export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: string }>> = {
@@ -36,6 +39,7 @@ export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: st
     { value: 'q1,q2,q3,q4,q5,q6,q7,q8,q9,q10', label: 'all ten' },
   ],
   BROWSER_FETCH_SLOTS: [{ value: '2', label: '2 (Bash runs two at once)' }, { value: '4', label: '4 (Bash runs four at once)' }, { value: '1', label: '1 (one page at a time)' }],
+  RECIPE_WATCHES: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on (Go keeps the watches groups ask for)' }],
 };
 
 export const SWITCH_MEANING: Record<SwitchName, string> = {
@@ -45,6 +49,7 @@ export const SWITCH_MEANING: Record<SwitchName, string> = {
   CALLS_MODE: 'Whether Go may phone anyone. allowlist means only the numbers listed under Calls.',
   REFLEX_LIVE: 'Which quick-read questions act live; the others only watch. off stops the quick read altogether.',
   BROWSER_FETCH_SLOTS: "How many ixigo pages Go opens at once on a trip's computer. Match Bash's own cap: more than it runs wait their turn.",
+  RECIPE_WATCHES: 'Whether Go keeps an eye on ixigo when a group asks ("tell us when it confirms"): a page an hour a watch, three watches a trip at most.',
 };
 
 export const esc = (s: string): string =>
@@ -151,6 +156,14 @@ function recipesBlock(recipes: RecipeStat[]): string {
   return `<table><tr><th>Recipe</th><th>Speed</th><th>p50</th><th>p90</th><th>Runs</th><th>Failed</th></tr>\n${rows}</table>`;
 }
 
+/** The watches groups asked Go to keep on ixigo: per trip, how many are going and when the next is checked (IST). */
+function watchesBlock(watches: TripWatches[]): string {
+  if (watches.length === 0) return '<p>No watch is going.</p>';
+  const at = (iso: string): string => new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const rows = watches.map((w) => `<tr><td>${esc(w.trip_id)}</td><td class="num">${w.active}</td><td>${esc(at(w.next_check_at))}</td></tr>`).join('\n');
+  return `<table><tr><th>Trip</th><th>Watches</th><th>Next check</th></tr>\n${rows}</table>`;
+}
+
 export function renderAdminPage(v: AdminView): string {
   const time = v.at.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
   const health = v.health
@@ -173,6 +186,8 @@ ${v.note ? `<p class="note">${esc(v.note)}</p>` : ''}
 <p>Each check waits at most 1.5 s. Reload the page to check again.</p>
 <h2>Recipes</h2>
 ${recipesBlock(v.recipes)}
+<h2>Watches</h2>
+${watchesBlock(v.watches ?? [])}
 <h2>Switches</h2>
 ${v.switches.map((s) => switchRow(v, s)).join('\n')}
 <div class="row"><div><b>DEMO_ROOM</b><p>Which room is on stage: the App on the phones, or the dev room (pnpm --filter @go/sim room). Chosen on the laptop, not in Go.</p></div><div class="now">on the laptop</div><div></div><div></div></div>

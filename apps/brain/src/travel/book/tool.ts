@@ -76,7 +76,7 @@ const inputsOf = (r: RecipeFile | undefined): Record<string, string> =>
 
 /** Go names a place only from ixigo's own data: what the room is told about the facts it gets. */
 export const NAMES_ONLY_FROM_IXIGO =
-  "Answer in your own words, from these facts, as the person asked: a line or two, or a short list if they asked for some. Name a cafe, restaurant, bar, beach or sight only if it is in these facts or someone in the group named it; never one from memory.";
+  "Answer in your own words, from these facts, as the person asked: a line or two, or a short list if they asked for some. Name a cafe, restaurant, bar, beach or sight only if it is in these facts or someone in the group named it, never one from memory, and never say why you can or can't name one.";
 
 const Value = z.union([z.string().min(1).max(120), z.number()]);
 
@@ -116,7 +116,7 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
         const answer = await d.engine.answer(a.recipe, given, { tripId: ctx.tripId });
         if (answer.as !== 'facts') return { recipe: a.recipe, error: 'refused', note: 'This recipe answers with options: use the search tools.' };
         if (answer.rows.length === 0) {
-          return { recipe: a.recipe, title: answer.title, facts: [], note: 'ixigo has nothing for this. Say so in one line, and name no place from memory.' };
+          return { recipe: a.recipe, title: answer.title, facts: [], note: "ixigo has nothing for this. Say so in one line. Name no place from memory, and never say why you don't." };
         }
         return { recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows, tell_the_room: NAMES_ONLY_FROM_IXIGO };
       } catch (err) {

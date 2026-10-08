@@ -34,9 +34,17 @@ export interface FetchTrace {
 }
 
 /** onProgress: pictures of the page, for the live search card; onTrace: where the time went, for the run strip. Both
- *  called, never awaited. tag: the run's id, which Bash's browser watch names the fetch's tab by, so the live view
- *  labels the tab's tile with its run. */
-export interface ReadOptions { signal?: AbortSignal; onProgress?: OnProgress; onTrace?: (t: FetchTrace) => void; tag?: string }
+ *  called, never awaited. */
+export interface ReadOptions {
+  signal?: AbortSignal;
+  onProgress?: OnProgress;
+  onTrace?: (t: FetchTrace) => void;
+  /** Its place among fetches waiting for one of the computer's slots: lower goes first (a composite's trains before its
+   *  buses); the same, first come first served. None is 0. */
+  priority?: number;
+  /** The run's id, which Bash's browser watch names the fetch's tab by, so the live view labels the tab's tile with its run. */
+  tag?: string;
+}
 
 export interface RecipeRunner {
   name: 'browser_fetch';
@@ -49,6 +57,8 @@ export interface RecipeRunner {
   pageFetch?(tripId: string, call: PageCall, o?: Omit<ReadOptions, 'onProgress'>): Promise<Capture>;
   /** Whether page calls are worth trying now: false for a while after a Bash without page_fetch refused one. */
   canPageFetch?(): boolean;
+  /** A new trip's computer's first ixigo visit, before anyone asks (COLD_COMPUTER below). Throws when ixigo did not answer. */
+  prime?(tripId: string): Promise<void>;
 }
 
 export interface RunnerDeps {
@@ -74,19 +84,19 @@ const BUSY_WAIT_MS = 1_000;
  * for no more at once than Bash runs: a fetch over the count waits here for one to end, first come first served, instead
  * of being refused. A fetch that is waiting when its signal aborts leaves without asking Bash anything.
  */
-function fetchSlots(slots: () => number): (box: string, signal?: AbortSignal) => Promise<() => void> {
+function fetchSlots(slots: () => number): (box: string, signal?: AbortSignal, priority?: number) => Promise<() => void> {
   const running = new Map<string, number>();
-  const waiting = new Map<string, Array<() => void>>();
+  const waiting = new Map<string, Array<{ go: () => void; priority: number }>>();
   const room = (box: string): boolean => (running.get(box) ?? 0) < Math.max(1, slots());
   const pump = (box: string): void => {
     const queue = waiting.get(box);
     while (queue?.length && room(box)) {
       running.set(box, (running.get(box) ?? 0) + 1);
-      queue.shift()!();
+      queue.shift()!.go();
     }
     if (queue?.length === 0) waiting.delete(box);
   };
-  return async (box, signal) => {
+  return async (box, signal, priority = 0) => {
     if (signal?.aborted) throw signal.reason;
     if (room(box) && !waiting.has(box)) {
       running.set(box, (running.get(box) ?? 0) + 1);
@@ -95,16 +105,23 @@ function fetchSlots(slots: () => number): (box: string, signal?: AbortSignal) =>
         const queue = waiting.get(box) ?? [];
         waiting.set(box, queue);
         const stop = (): void => {
-          queue.splice(queue.indexOf(go), 1);
+          queue.splice(queue.indexOf(entry), 1);
           if (queue.length === 0) waiting.delete(box);
           reject(signal!.reason);
         };
-        const go = (): void => {
-          signal?.removeEventListener('abort', stop);
-          resolve();
+        const entry = {
+          priority,
+          go: (): void => {
+            signal?.removeEventListener('abort', stop);
+            resolve();
+          },
         };
         signal?.addEventListener('abort', stop, { once: true });
-        queue.push(go);
+        // After every waiting fetch of its priority or a lower one; then whoever is first goes, if there is room (the
+        // slots were raised while fetches waited).
+        const at = queue.findIndex((w) => w.priority > priority);
+        queue.splice(at === -1 ? queue.length : at, 0, entry);
+        pump(box);
       });
     }
     let freed = false;
@@ -127,6 +144,7 @@ function busyWaitMs(err: V1Error): number {
 const isBusy = (err: unknown): boolean => err instanceof V1Error && err.status === 409 && err.code === 'browser_busy';
 
 export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of credit.";
+export const PAYMENT_PAGE_BLOCKED = "That's the payment page, and Go never opens it; the payer finishes on ixigo.";
 
 // ── the browser fetch ────────────────────────────────────────────────────────
 
@@ -135,6 +153,8 @@ export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of cre
  * matters for a sleeping box, where a stays search ran past 13 s on staging.
  */
 export const FETCH_TIMEOUT_MS = 20_000;
+/** How wide Bash takes a fetch's pictures: the width of its window, so a picture is sharp at its own size, never stretched. */
+export const FRAME_WIDTH = 1280;
 /** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
 export const IN_USE_WAIT_MS = 4_000;
 /** How long a page call may take before the run falls to the page speed: it answers in about 0.4 s on a warm tab. */
@@ -147,6 +167,15 @@ export const WARM_TAB_MS = 120_000;
  * of Go's.
  */
 export const FAST_UNSUPPORTED_MS = 10 * 60_000;
+/**
+ * COLD_COMPUTER. A computer's Chrome on its first ixigo visit, with none of ixigo's cookies, can draw a page that never
+ * makes its search call (staging, 8 Oct: a new trip's first stays search sat 12 s on skeletons under ixigo's popup, with
+ * nothing caught). So a new trip's computer visits ixigo once at setup (prime: the home page, its popup closed if it is
+ * there, one call from inside the page), and a page that runs out of time with nothing caught, on a computer no fetch of
+ * Go's has read ixigo on yet, is asked once more at once: the second visit is warm. How long the prime may take, a
+ * computer just made waking included.
+ */
+export const PRIME_TIMEOUT_MS = 15_000;
 
 interface FetchAnswer {
   final_url: string;
@@ -163,6 +192,12 @@ const isFrame = (f: unknown): f is LiveFrame =>
   typeof f === 'object' && f !== null && typeof (f as LiveFrame).jpeg_base64 === 'string' && typeof (f as LiveFrame).page_url === 'string';
 
 /** The pictures a timed-out fetch did take, which Bash sends with its partial captures. */
+/** A timed-out fetch that caught nothing at all. */
+function caughtNothing(err: V1Error): boolean {
+  const captures = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
+  return !Array.isArray(captures) || captures.length === 0;
+}
+
 function partialFrames(err: V1Error): LiveFrame[] {
   const frames = (err.detail?.['partial'] as { frames?: unknown } | undefined)?.frames;
   return Array.isArray(frames) ? frames.filter(isFrame) : [];
@@ -185,6 +220,8 @@ function fetchFailed(err: V1Error, what: { id: string; capture: CaptureSpec[] },
   if (isBusy(err)) throw new TravelError('unreachable', "The trip's computer is busy with other searches. Try again in a moment.");
   if (err.status === 409) throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment.");
   if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time. Try again in a moment.");
+  // Bash's block on ixigo's payment page (#4591): never a fault of Go's setup, and never a page Go opens.
+  if (err.status === 403 && err.code === 'page_blocked') throw new TravelError('refused', PAYMENT_PAGE_BLOCKED);
   if (err.status === 400 || err.status === 403) {
     // Go's own setup or request is wrong (ixigo.com not allowed, a bad recipe): the admin log says so, the room hears less.
     log.warn({ tripId, page: what.id, code: err.code, message: err.message }, 'travel: the browser fetch refused a page');
@@ -213,14 +250,17 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   }
 
   /** A fetch on the trip's computer, once one of its slots is free; the slot frees when the fetch ends, however it ends. */
-  async function inSlot<T>(tripId: string, signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
-    const free = await slot(d.computer.userIdFor(tripId), signal);
+  async function inSlot<T>(tripId: string, o: Pick<ReadOptions, 'signal' | 'priority'>, run: () => Promise<T>): Promise<T> {
+    const free = await slot(d.computer.userIdFor(tripId), o.signal, o.priority);
     try {
       return await run();
     } finally {
       free();
     }
   }
+
+  /** The computers a fetch of Go's has read ixigo on (COLD_COMPUTER): their pages are never asked twice. */
+  const warm = new Set<string>();
 
   /** One browser fetch: the page opened, its steps worked, and the calls the plan names kept. */
   async function fetchPage(
@@ -243,14 +283,16 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
       // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
       // the recipe says how long that takes.
-      frames: plan.settleMs ? { settle_ms: plan.settleMs } : {},
+      frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
       ...(o.tag ? { tag: o.tag } : {}),
     };
     let userId = d.computer.userIdFor(tripId);
+    let coldAgain = false;
     for (let tries = 0; ; tries++) {
       const startedAt = d.now().getTime();
       try {
         const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
+        if (answer.captures.length > 0) warm.add(userId);
         // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
         if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
         o.onTrace?.({
@@ -267,6 +309,13 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         }
         if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
           await sleep(IN_USE_WAIT_MS);
+          continue;
+        }
+        // A cold computer's page that caught nothing (COLD_COMPUTER): once more, now that it has been to ixigo.
+        if (err.status === 504 && !coldAgain && !warm.has(userId) && caughtNothing(err) && !o.signal?.aborted) {
+          coldAgain = true;
+          o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
+          d.log.warn({ tripId, page: what.id }, 'travel: a cold computer caught nothing; asking once more');
           continue;
         }
         // A timed-out fetch's pictures go to the card as a finished one's do, whatever its captures can answer.
@@ -328,16 +377,34 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       ...(got ? {} : { failed: { status: 0, why: 'no answer to the page call' } }),
     });
     if (!got || got.status < 200 || got.status >= 300 || got.truncated) throw new TravelError('unreachable', `ixigo's page call answered ${got ? got.status : 'nothing'}.`);
+    warm.add(d.computer.userIdFor(tripId));
     return got;
+  }
+
+  /** COLD_COMPUTER's prime: ixigo's home on the trip's computer, its popup closed, and one call from inside the page. */
+  async function prime(tripId: string): Promise<void> {
+    const userId = d.computer.userIdFor(tripId);
+    const body = {
+      url: `${IXIGO}/`,
+      steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'prime', max_bytes: 1_000 }],
+      timeout_ms: PRIME_TIMEOUT_MS,
+    };
+    // A refusal or a timeout throws as Bash says it: setup tries again, and the first search still has its one retry.
+    const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body });
+    if (!Array.isArray(answer.captures) || !answer.captures.some((c) => c.match === 'prime')) {
+      throw new TravelError('unreachable', "ixigo's page did not answer on the trip's computer.");
+    }
+    warm.add(userId);
   }
 
   return {
     name: 'browser_fetch',
     async read(tripId, url, plan, o = {}) {
-      return inSlot(tripId, o.signal, () => fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o));
+      return inSlot(tripId, o, () => fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o));
     },
-    pageFetch: (tripId, call, o = {}) => inSlot(tripId, o.signal, () => pageFetch(tripId, call, o)),
+    pageFetch: (tripId, call, o = {}) => inSlot(tripId, o, () => pageFetch(tripId, call, o)),
     canPageFetch: () => d.now().getTime() >= unsupportedUntil,
+    prime: (tripId) => inSlot(tripId, {}, () => prime(tripId)),
   };
 }
 

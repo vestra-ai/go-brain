@@ -11,6 +11,7 @@ import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { createImages, registerImageRoute } from './images.js';
+import { createIxigoLogin } from './login.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
 import { startLiveSearch } from './live-search.js';
@@ -23,12 +24,18 @@ import { loadLearnedPlaces } from './recipes/places-store.js';
 import { createResultsStore } from './results.js';
 import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
-import { renderSearchWake } from './search-wake.js';
+import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
-import { startComputerAtSetup, warmForTravel } from './warm.js';
+import { createIxigoWarm, IXIGO_WARM_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
+import { createWatchRunner, watchesNow } from './recipe-watches.js';
+import { watchTools } from './watch-tools.js';
+import { ProactiveStore } from '../proactive/store.js';
+
+/** How often Go looks for watches that are due: each watch's own pace is an hour or half an hour. */
+export const WATCH_TICK_MS = 30_000;
 
 export const registerTravel: RegisterLane = async (brain) => {
   const env = readTravelEnv(brain.env);
@@ -47,9 +54,30 @@ export const registerTravel: RegisterLane = async (brain) => {
   const images = createImages({ pool: brain.pool, publicUrl: env.GO_PUBLIC_URL });
   const imageRoute = registerImageRoute(brain.http, { pool: brain.pool });
   brain.onStop(() => imageRoute.close());
+  // One person's ixigo login on the trip's computer: asked right after Go's hello at setup, at the first search of a trip
+  // that never had that ask, and again when a recipe needs it.
+  const login = createIxigoLogin({
+    pool: brain.pool,
+    link: brain.door.link,
+    packs: brain.packs,
+    runner: () => brain.recipeRunners?.browserFetch ?? null,
+    tasks: () => brain.tasks ?? null,
+    live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    now: brain.now,
+    log: brain.log,
+  });
+  login.registerTaps(brain.taps);
   // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.
-  const warm = (tripId: string, kind: TravelKind | null): void => warmForTravel(brain, tripId, kind);
+  // Travel intent is also when a trip with no ixigo login is asked for one, once (it never holds the search).
+  const warm = (tripId: string, kind: TravelKind | null): void => {
+    warmForTravel(brain, tripId, kind);
+    login.nudge(tripId);
+  };
+  // Setup, in this order: the box started, the login prompt right after Go's hello, then the Chrome's first ixigo visit.
   brain.setup.addStep({ name: 'travel.computer', run: (tripId) => startComputerAtSetup(brain, tripId) });
+  brain.setup.addStep(login.setupStep);
+  const ixigoWarm = createIxigoWarm(brain);
+  brain.setup.addStep({ name: IXIGO_WARM_STEP, after: 'travel.computer', run: (tripId) => ixigoWarm.run(tripId) });
   // Every recipe run as it happens, for the Server's live view of a trip (/v1/live): in memory, nothing written.
   const runs = createRunLog({ now: brain.now, log: brain.log });
   // And the trip computer's screen, live, from Bash's browser watch: only where searches run on it (ixigo_web).
@@ -59,6 +87,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   brain.onStop(() => screens.stop());
   registerLive(brain, runs, screens);
+  brain.tripLog.onEvent((ev) => login.onEvent(ev));
+  // For "Forget me" in a trip (the memory lane): the person's ixigo login goes with them.
+  brain.ixigoLogin = login;
   // The recipe book, checked at boot: a file that fails is left out, and the log says why.
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');
@@ -82,10 +113,18 @@ export const registerTravel: RegisterLane = async (brain) => {
     onRun: runs.record,
     // A composite's steps share the backend's searches: a city searched a minute ago, or being searched, loads nothing.
     searches: (id, given, o, run) => ixigoWeb.shareStep(id, given, o, run),
+    // A recipe that needs the trip's ixigo login (auth: login) asks for it, and waits for it.
+    login: (tripId, what) => login.ensure(tripId, what),
     now: brain.now,
     log: brain.log,
   });
-  brain.recipeStats = () => engine.stats();
+  // The warm step's line too: how often ixigo answered a new trip's computer, and how fast.
+  brain.recipeStats = () => {
+    const warm = ixigoWarm.stat();
+    return warm ? [...engine.stats(), warm] : engine.stats();
+  };
+  // The watches going, per trip (how many, the next check), for the stage desk and the health view.
+  brain.recipeWatches = () => watchesNow(brain.pool);
   const ixigoWeb = createIxigoWebBackend({
     book,
     engine,
@@ -108,7 +147,27 @@ export const registerTravel: RegisterLane = async (brain) => {
   const recipesTool = ixigoTool({ book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
   if (recipesTool) brain.tools.register(recipesTool);
   // How everyone gets to the trip, asked for: each home city's trains and buses side by side, on one card.
-  brain.tools.register(waysThereTool({ engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' }));
+  brain.tools.register(
+    waysThereTool({
+      engine, results, link: brain.door.link, now: brain.now, log: brain.log,
+      live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+      slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')),
+    }),
+  );
+  // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
+  // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
+  for (const t of watchTools({ pool: brain.pool, book, engine, switches: brain.switches, now: brain.now })) brain.tools.register(t);
+  const watchRunner = createWatchRunner({
+    pool: brain.pool, book, engine, store: new ProactiveStore(brain.pool), switches: brain.switches, now: brain.now, log: brain.log,
+    linkOpen: () => brain.door.link.isOpen(),
+    wake: (tripId) => wakeForCheck(brain, tripId),
+  });
+  const watchEvery = setInterval(() => {
+    watchRunner.tick().catch((err: unknown) => brain.log.warn({ err }, 'travel: the watch checks failed'));
+  }, WATCH_TICK_MS);
+  watchEvery.unref();
+  const stopWatchChecks = (): void => clearInterval(watchEvery);
+  brain.onStop(stopWatchChecks);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
@@ -116,10 +175,12 @@ export const registerTravel: RegisterLane = async (brain) => {
     linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
-  brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
+  brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now, desk: brain.desk, log: brain.log }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.
-  brain.context.addDirect(earlyAnswer({ early, results, images, travel, today }));
-  // A search that outlived its turn wakes Go with its options.
+  // One still running is handed over, and the turn says nothing: the live card covers the wait.
+  brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, log: brain.log }));
+  // A search that outlived its turn wakes Go with its options, and that wake puts them up itself: card and line.
+  brain.context.addDirect(searchWakeAnswer({ results, images }));
   brain.context.addWake('search', renderSearchWake);
   // A turn that ends ends the live search cards it left open.
   brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));

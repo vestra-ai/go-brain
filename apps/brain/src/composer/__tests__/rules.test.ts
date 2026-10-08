@@ -44,9 +44,11 @@ describe("Go's rules", () => {
     );
   });
 
-  it('take no side while a vote is open: who has voted and a reminder to tap, nothing more', () => {
+  it('take no side while a vote is open: who has voted, only from the vote line, and a reminder to tap; a secret ballot is counts only', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nVotes and the trip\n'));
-    expect(section).toContain("- While a vote is open, don't argue for an option; you may say who has voted and remind people to tap.");
+    expect(section).toContain(
+      "- While a vote is open, don't argue for an option; you may say who has voted and who hasn't, only as the vote's line in \"right now\" names them, and remind people to tap. A secret ballot is counts only: never say who has or hasn't voted.",
+    );
   });
 
   it('keeps the shared costs people say they paid and reads who owes whom, but never moves money between people', () => {

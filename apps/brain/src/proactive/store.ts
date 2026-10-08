@@ -34,6 +34,7 @@ type CandidateRow = {
   simulated: boolean;
   small: boolean;
   forced: boolean;
+  asked: boolean;
 };
 
 const isAction = (a: string): a is Action => (ACTIONS as readonly string[]).includes(a);
@@ -55,14 +56,15 @@ function toCandidate(r: CandidateRow): Candidate {
     simulated: r.simulated,
     small: r.small,
     ...(r.forced ? { forced: true } : {}),
+    ...(r.asked ? { asked: true } : {}),
   };
 }
 
-const COLS = 'trip_id, dedupe_key, source, topic, due_at, expires_at, importance, confidence, urgency, useful, person_ids, facts, simulated, small, forced';
-const PLACES = '$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15';
+const COLS = 'trip_id, dedupe_key, source, topic, due_at, expires_at, importance, confidence, urgency, useful, person_ids, facts, simulated, small, forced, asked';
+const PLACES = '$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16';
 const values = (c: Candidate): unknown[] => [
   c.tripId, c.dedupeKey, c.source, c.topic, c.dueAt, c.expiresAt, c.importance, c.confidence, c.urgency,
-  c.useful, c.personIds, JSON.stringify(c.facts), c.simulated, c.small, c.forced === true,
+  c.useful, c.personIds, JSON.stringify(c.facts), c.simulated, c.small, c.forced === true, c.asked === true,
 ];
 
 export class ProactiveStore {
@@ -209,9 +211,11 @@ export class ProactiveStore {
     return tz && isValidTz(tz) ? tz : DEFAULT_TZ;
   }
 
-  async tripExists(tripId: string): Promise<boolean> {
-    const r = await this.pool.query(`select 1 from trips where trip_id = $1`, [tripId]);
-    return (r.rowCount ?? 0) > 0;
+  /** Whether Go has the trip: live, gone (the Server no longer has it, trips.gone_at), or null for one it never had. */
+  async tripState(tripId: string): Promise<'live' | 'gone' | null> {
+    const r = await this.pool.query<{ gone: boolean }>(`select gone_at is not null as gone from trips where trip_id = $1`, [tripId]);
+    const row = r.rows[0];
+    return row ? (row.gone ? 'gone' : 'live') : null;
   }
 
   async hush(tripId: string, now: Date): Promise<void> {

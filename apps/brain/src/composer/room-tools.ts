@@ -4,10 +4,9 @@ import { z } from 'zod';
 import type { Message } from '../door/methods.js';
 import { SocketCallError } from '../door/rpc.js';
 import { reactOnce } from '../memory/reactions.js';
-import { DEFAULT_TZ, localDay } from '../proactive/clock.js';
-import type { OptionPlace } from '../travel/results.js';
 import type { Travel } from '../travel/travel.js';
 import type { TripPack } from '../trips/pack.js';
+import { saveTrip } from '../trips/save-trip.js';
 import { inlineData } from './fence.js';
 import { CARD_LINE } from './rules.js';
 import { clip } from './sanitize.js';
@@ -69,36 +68,12 @@ const StaySilentInput = z.object({
   reason: z.string().min(1).max(200).describe('A few words for the log. Never shown to anyone.'),
 });
 
-/** Days said without a year mean the next ones: the same days this year, or next year when this year's have passed. */
-export function nextDates(d: { start: string; end: string }, today: string): { start: string; end: string } {
-  const year = Number(today.slice(0, 4));
-  const shift = (`${year}${d.start.slice(4)}` >= today ? year : year + 1) - Number(d.start.slice(0, 4));
-  const move = (day: string) => `${Number(day.slice(0, 4)) + shift}${day.slice(4)}`;
-  return { start: move(d.start), end: move(d.end) };
-}
+// Days without a year: the trip's one writer (trips/save-trip.ts) works them out, for this tool and the notes pass.
+export { nextDates } from '../trips/save-trip.js';
 
 /** The room's quick tools. None of them can pay, book or see a card: those are never composer tools in P1. */
-/** Lowercase letters and digits only, so "Villa Sol," and "villa sol" compare equal. */
-const plain = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-
 /** travel: brain.travel, read when a tool runs (the travel lane registers after this one). */
 export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Travel | undefined }): QuickTool<any>[] {
-  /** The winner of the latest closed vote whose winning option is of this kind, with the option's own data. */
-  async function decided(pack: TripPack, kind: 'stay' | 'place'): Promise<OptionPlace | null> {
-    const travel = o.travel?.();
-    if (!travel?.placeOf) return null;
-    const closed = pack.trip.decisions
-      .filter((d) => d.status === 'closed' && d.result_index !== null && d.result_index !== undefined)
-      .sort((a, b) => (b.closed_at ?? '').localeCompare(a.closed_at ?? ''));
-    for (const d of closed) {
-      const ref = d.options[d.result_index!]?.option_ref;
-      if (!ref) continue;
-      const option = await travel.placeOf(ref);
-      if (option?.kind === kind) return option;
-    }
-    return null;
-  }
-
   const react: QuickTool<z.infer<typeof ReactInput>> = {
     name: 'react',
     description:
@@ -174,51 +149,10 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     description: "Change the trip's title, place, dates, vibe or the stay the group wants. Only when the group agreed or the organizer asked.",
     input: UpdateTripInput,
     async run(a, ctx) {
-      const fields = {
-        ...(a.title ? { title: a.title } : {}),
-        ...(a.destination ? { destination: { name: a.destination } } : {}),
-        ...(a.dates ? { dates: a.dates } : {}),
-        ...(a.vibe ? { vibe: a.vibe } : {}),
-        ...(a.stay ? { stay: a.stay } : {}),
-      };
-      if (Object.keys(fields).length === 0) return { ok: false, error: 'Nothing to change.' };
-      // A stay or place a vote decided is saved from the winning option's own data, never from the model's words, and a
-      // different one is refused: "Villa Sol, Assagao" for the Villa Sol in Anjuna the group voted for saves "Villa Sol, Anjuna".
-      if (a.stay) {
-        const won = await decided(ctx.pack, 'stay');
-        if (won) {
-          if (!` ${plain(a.stay)} `.includes(` ${plain(won.title)} `)) {
-            return { ok: false, error: `The group voted for ${won.title}${won.area ? ` in ${won.area}` : ''}. Save that, or ask the group before changing the stay.`, tell_the_room: SAY_NOTHING };
-          }
-          fields.stay = clip(won.area ? `${won.title}, ${won.area}` : won.title, 60);
-        }
-      }
-      if (a.destination) {
-        const won = await decided(ctx.pack, 'place');
-        if (won) {
-          const name = won.place?.name ?? won.title;
-          if (!` ${plain(a.destination)} `.includes(` ${plain(name)} `)) {
-            return { ok: false, error: `The group voted for ${name}. Save that, or ask the group before changing the place.`, tell_the_room: SAY_NOTHING };
-          }
-          fields.destination = { name };
-        }
-      }
-      if (a.dates && a.dates.start > a.dates.end) return { ok: false, error: 'The start date is after the end date.' };
-      if (a.dates) {
-        const tz = (await o.pool.query<{ tz: string }>('select tz from trips where trip_id = $1', [ctx.tripId])).rows[0]?.tz ?? DEFAULT_TZ;
-        const today = localDay(o.now(), tz);
-        // A trip under way keeps the start it already has; any other day before today is a guessed year.
-        if (a.dates.end < today || (a.dates.start < today && a.dates.start !== ctx.pack.trip.dates?.start)) {
-          const next = nextDates(a.dates, today);
-          return {
-            ok: false,
-            error: `Those dates are before today (${today} where the trip is). Use this year or next: ${next.start} to ${next.end}, if that is what the group meant.`,
-            tell_the_room: SAY_NOTHING,
-          };
-        }
-      }
-      await ctx.link.request('update_trip', { request_id: ctx.stableId('go_trip'), trip_id: ctx.tripId, ...fields });
-      return { ok: true, changed: Object.keys(fields), ...(fields.stay ? { stay: fields.stay } : {}) };
+      // The trip's one writer: the checks (a stay or place a vote decided, days before today) and the request are there.
+      const r = await saveTrip(o, { link: ctx.link, tripId: ctx.tripId, pack: ctx.pack, requestId: () => ctx.stableId('go_trip') }, a);
+      if (!r.ok) return { ok: false, error: r.error, ...(r.quiet ? { tell_the_room: SAY_NOTHING } : {}) };
+      return { ok: true, changed: r.changed, ...(r.stay ? { stay: r.stay } : {}) };
     },
   };
 

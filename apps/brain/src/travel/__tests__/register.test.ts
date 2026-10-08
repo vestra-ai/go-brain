@@ -36,14 +36,23 @@ describe('registerTravel', () => {
     expect(LANES.indexOf(registerTravel)).toBeLessThan(LANES.indexOf(registerProactive));
   });
 
-  it('sets brain.travel and registers the eight travel tools, the five options taps, the tap wake and the image route', async () => {
+  it('sets brain.travel and registers the travel tools, the options taps, the login card taps, the tap wake and the image route', async () => {
     expect(lb.brain.travel).toBeDefined();
-    // A new trip's computer is made at setup (warm.ts startComputerAtSetup).
-    expect(lb.setup.steps.map((s) => s.name)).toContain('travel.computer');
+    // A new trip's computer is started at setup (warm.ts startComputerAtSetup); right after Go's hello its organizer is
+    // asked to log in to ixigo (login.ts); then its Chrome visits ixigo once (the warm). Both wait only on the box, and
+    // the login is registered first, so setup runs travel.computer, travel.ixigo_login, travel.ixigo_warm.
+    const names = lb.setup.steps.map((s) => s.name);
+    expect(names.filter((n) => n.startsWith('travel.'))).toEqual(['travel.computer', 'travel.ixigo_login', 'travel.ixigo_warm']);
+    expect(lb.setup.steps.find((s) => s.name === 'travel.ixigo_login')).toMatchObject({ after: 'travel.computer' });
+    expect(lb.setup.steps.find((s) => s.name === 'travel.ixigo_warm')).toMatchObject({ after: 'travel.computer' });
     // The ixigo tool runs the book's other recipes (the destination guide and more).
     // compare_ways_there: each home city's ways to the trip, side by side (the composite trip.how_we_get_there).
-    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo', 'compare_ways_there']);
-    expect([...lb.taps.handlers.keys()].sort()).toEqual(['notice/see_on_ixigo', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote']);
+    // watch_ixigo and stop_watch: the watches a group asks Go to keep on ixigo (travel/recipe-watches.ts).
+    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'ixigo', 'compare_ways_there', 'watch_ixigo', 'stop_watch']);
+    expect([...lb.taps.handlers.keys()].sort()).toEqual([
+      'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/see_on_ixigo',
+      'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
+    ]);
     expect(lb.context.wakes.has('tap')).toBe(true);
     // A search that outlived its turn wakes Go with its options.
     expect(lb.context.wakes.has('search')).toBe(true);
@@ -124,11 +133,14 @@ describe('registerTravel', () => {
   });
 
   it("closes the image fetcher's connections and the ixigo connection through brain.onStop", async () => {
-    // The fake alone: the image fetcher, the screen's Bash streams (screen-feed.ts) and the live view's viewers (live.ts).
-    expect(lb.stoppers).toHaveLength(3);
+    // The fake alone: the image fetcher, the screen's Bash streams (screen-feed.ts), the live view's viewers (live.ts) and
+    // the watch checks (recipe-watches.ts), each stopped by name where it has one.
+    expect(lb.stoppers).toHaveLength(4);
+    expect(lb.stoppers.map((f) => f.name)).toContain('stopWatchChecks');
     const withIxigo = makeLaneBrain({ pool: db.pool, env: { IXIGO_MCP_URL: 'http://127.0.0.1:1/mcp', IXIGO_MCP_TOKEN: 'tok-ixigo-123456' } });
     await registerTravel(withIxigo.brain);
-    expect(withIxigo.stoppers).toHaveLength(4);
+    expect(withIxigo.stoppers).toHaveLength(5);
+    expect(withIxigo.stoppers.map((f) => f.name)).toContain('stopWatchChecks');
     // The client connects on its first call, so closing one that never called resolves at once.
     await withIxigo.stop();
     expect(withIxigo.stoppers).toEqual([]);

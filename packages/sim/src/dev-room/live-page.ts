@@ -19,16 +19,15 @@ export const LIVE_CSS = `
 .screen { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
 .screen.grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; transition: opacity .3s; }
-.tile.ended { opacity: .7; }
 .tile-bar { display: flex; gap: 8px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 12px; min-width: 0; min-height: 34px; }
 .tile-bar b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
 .tile-bar .url { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-.view { aspect-ratio: 16 / 10; background: #e2e8f0; position: relative; overflow: hidden; }
-.view img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+/* A picture at its own size or smaller, never stretched: centred, with the tile's grey around it. */
+.view { aspect-ratio: 16 / 10; background: #e2e8f0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.view img { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
 .view img:not([src]) { display: none; }
 .view .hint { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; color: var(--muted); font-size: 13px; }
 .view .hint:empty { display: none; }
-.view.idle img { filter: grayscale(.6); opacity: .55; }
 .view .chip-fast { position: absolute; left: 10px; bottom: 10px; background: #0f172a; color: #fff; border-radius: 8px; padding: 4px 9px; font-size: 12px; }
 .view .chip-fast:empty { display: none; }
 .fastcard { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--ink); }

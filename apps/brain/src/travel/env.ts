@@ -11,6 +11,8 @@ export const TravelEnv = z.object({
   TRAVEL_RUNNER: z.enum(['agent_job', 'browser_fetch']).optional(),
   /** How many browser fetches Go runs at once on a trip's computer (Bash's cap). The BROWSER_FETCH_SLOTS switch can change it. */
   BROWSER_FETCH_SLOTS: z.enum(['1', '2', '3', '4']).optional(),
+  /** Whether Go keeps the watches a group asks for on ixigo. Off unless set; staging sets on. The RECIPE_WATCHES switch can change it. */
+  RECIPE_WATCHES: z.enum(['off', 'on']).optional(),
   IXIGO_MCP_URL: z.url().optional(),
   IXIGO_MCP_TOKEN: z.string().min(1).optional(),
 });

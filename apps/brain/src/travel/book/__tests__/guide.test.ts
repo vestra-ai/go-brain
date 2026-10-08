@@ -76,7 +76,7 @@ describe('plan.destination', () => {
     expect(got).toMatchObject({ as: 'facts', rows: [] });
     const tool = ixigoTool({ book, engine, live: () => true })!;
     expect(await tool.run({ recipe: 'plan.destination', inputs: { place: 'North Goa' } }, { tripId: 't_goa' } as unknown as TurnCtx))
-      .toMatchObject({ facts: [], note: expect.stringContaining('name no place from memory') });
+      .toMatchObject({ facts: [], note: expect.stringContaining("Name no place from memory, and never say why you don't.") });
   });
 
   it('keeps the guide per destination: the second question about the same place is instant, and counted as kept', async () => {

@@ -66,7 +66,9 @@ answer: { as: compare }   # each entry with each step's answer, or why it has no
 A step is a search, a link or facts: never a lookup, another composite, or a recipe that changes something on ixigo;
 its `given` names only inputs its recipe has. A step that is one of the searches shares Go's searches, keyed by the
 request it makes: one kept or running for the same request answers it with no load (a `kept` run on the strip), and
-its own run is kept for the next ask; a step has no live search card of its own. Every step starts at once; the trip's computer runs as many fetches as Bash allows at a time (the `BROWSER_FETCH_SLOTS`
+its own run is kept for the next ask; a step has no live search card of its own (the composite's tool shows one card
+for the whole run). Every step starts at once, and its fetches wait their turn by its place in the file: every entry's
+first step (trains, the slower page) before any entry's second; the trip's computer runs as many fetches as Bash allows at a time (the `BROWSER_FETCH_SLOTS`
 switch: 2, and 4 once Bash runs four), and the rest wait their turn in Go, so Bash never answers `409 browser_busy`
 (when it does, Go waits as long as Bash says and asks again). A step that fails is its entry's why, never the
 composite's failure. On the run strip the composite is a run of speed `steps`, and each step a run that names it in
@@ -143,7 +145,26 @@ left extends it.
 | `buses.between` | `/buses/bus_search/{From}/{id}/{To}/{id}/{DD-MM-YYYY}/O` | `/buslist/v3/services$` | options, the lowest seat fare after ixigo's offer |
 | `flights.search` | `/search/result/flight?from=…` with ixigo's own filter and sort params | none | a link: ixigo answers flight pages with a 403 from the boxes' shared egress |
 
-## 6. Next
+## 6. Watches the group asks for
+
+"Tell us when 12608's waitlist confirms", "if a pool stay in North Goa under ₹4k opens up": `watch_ixigo` keeps a recipe
+from the book on watch for the trip (`travel/recipe-watches.ts`, table `recipe_watches`).
+
+- **A watch is** a recipe, the ask's inputs and conditions, and a **flip** picked by name: a search's own (`appears`,
+  `under` a price, `drops` a percent from the first check) or one its file names under `watch:` (trains.confirm_chance's
+  `confirms`). The model never writes an expression.
+- **The first check runs at once.** Something already true is answered then, and no watch is kept.
+- **Then every hour,** every half hour within two days of its date, in the background: no warm and no tab kept, so the
+  computer sleeps right after the page. A trip's watches share one check time, so one wake checks them all.
+- **Budgets:** three watches a trip, at most 20 checks across every trip in ten minutes, and the `RECIPE_WATCHES` switch
+  (off unless a deployment sets it on; staging does).
+- **It speaks once,** when the flip comes true: a proactive nudge marked `asked`, which skips the daily budget and "two in
+  a row" (night and the dedupe still hold), as one short line naming who asked and a notice card. Never "still
+  waitlisted".
+- **It ends** when it fires, at its date (14 days at most), on `stop_watch`, after six checks in a row that failed (said
+  in one line), or when the trip goes.
+
+## 7. Next
 
 - The `ixigo` tool: any recipe by id, with a description built from the book; `facts` answers.
 - `plan.destination` (ixigo's destination guide: places to eat and visit, best time to go), and Go naming a place only
@@ -153,7 +174,7 @@ left extends it.
 - Areas inside a city through ixigo's "Search within" box and its Popular Areas filter, in place of Goa's halves.
 
 
-## 7. How ixigo works
+## 8. How ixigo works
 
 
 Walked by hand on www.ixigo.com, logged in as Keshav, on 7 Oct 2026, through the accessibility tree. Nothing was booked or

@@ -92,6 +92,17 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
     }
     case 'dates_clash':
       return `The trip dates are now ${str('start')} to ${str('end')}, but ${quote(str('title') || 'a booking')} starts ${str('starts_at').slice(0, 10)}${str('ends_at') ? ` and ends ${str('ends_at').slice(0, 10)}` : ''}.`;
+    case 'recipe_watch': {
+      // A watch the group asked for came true: what ixigo shows now, and its page.
+      const asker = c.personIds.length > 0 ? who(c.personIds) : 'The group';
+      const checked = str('checkedAt') ? ` (checked ${ago(str('checkedAt'), now)})` : '';
+      const page = str('page') ? ` Its ixigo page: ${quote(str('page'), 300)}.` : '';
+      return `${asker} asked Go to watch ixigo for ${quote(str('label') || 'this')}, and it came true${checked}: ${quote(str('what'), 400)}.${page} Tell them in one short message, naming who asked, and put it on a notice card (source ixigo).`;
+    }
+    case 'recipe_watch_stopped': {
+      const asker = c.personIds.length > 0 ? who(c.personIds) : 'the group';
+      return `Go could not check ixigo for ${quote(str('label') || 'the watch')} ${num('tries') ?? 6} times in a row, so it stopped watching. Tell ${asker} in one short line, and offer to watch again later.`;
+    }
     default:
       return `Go noticed: ${quote(JSON.stringify(f), 300)}.`;
   }
@@ -118,7 +129,9 @@ export function renderWake(item: DeskItem, pack: TripPack, now: Date): string {
     ? ` The earlier notice is card_id ${JSON.stringify(c.facts.noticeCardId)}.`
     : '';
   const loud = p.allowed.includes('message') ? ' At most one short message.' : ' Do not post a message to everyone.';
-  return `${lead}Go noticed this itself, nobody asked: ${describeNoticed(c, pack, p.tz, now)} Allowed: ${allowed}.${pin}${notice}${loud} Suggest, never act.`;
+  // A watch the group asked for is Go answering them, later: never "nobody asked".
+  const why = c.asked === true ? 'Go is answering an ask from earlier' : 'Go noticed this itself, nobody asked';
+  return `${lead}${why}: ${describeNoticed(c, pack, p.tz, now)} Allowed: ${allowed}.${pin}${notice}${loud} Suggest, never act.`;
 }
 
 export const OPENINGS_ORDER = 60;

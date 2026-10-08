@@ -23,6 +23,8 @@ import type { Pay } from './money/pay.js';
 import { unsureReflex, type Reflex } from './reflex/reflex.js';
 import type { Tasks } from './tasks/tasks.js';
 import type { RecipeStat } from './travel/book/engine.js';
+import type { IxigoLogin } from './travel/login.js';
+import type { TripWatches } from './travel/recipe-watches.js';
 import type { RecipeRunner } from './travel/recipes/runners.js';
 import type { ScreenStream } from './travel/screen-feed.js';
 import type { Travel } from './travel/travel.js';
@@ -72,17 +74,27 @@ export interface Brain {
   /**
    * Set by P4's tasks lane, which owns the trip's computer: the browser fetch the recipe engine reads ixigo.com pages
    * with; keepWarm, which holds the computer awake for two minutes (Bash's warm keep_ms), which only travel's
-   * warmForTravel calls; start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step; and
-   * watch, Bash's browser watch of the trip's computer (never a wake), for the live view's screen (screen-feed.ts).
+   * warmForTravel calls; start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step and a
+   * watch's check, and says whether it was up ('ready'), is on its way ('waking'), or was woken in the last minute
+   * ('skipped'); prime, the computer's first ixigo visit, travel's next setup step (it throws when ixigo did not answer);
+   * and watch, Bash's browser watch of the trip's computer (never a wake), for the live view's screen (screen-feed.ts).
    */
   recipeRunners?: {
     browserFetch: RecipeRunner;
     keepWarm(tripId: string): void;
-    start(tripId: string): Promise<void>;
+    start(tripId: string): Promise<'ready' | 'waking' | 'skipped'>;
+    prime(tripId: string): Promise<void>;
     watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
   };
   /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */
   recipeStats?: () => RecipeStat[];
+  /** Set by the travel lane: the watches groups asked for that are going, per trip, for the admin's health view. */
+  recipeWatches?: () => Promise<TripWatches[]>;
+  /**
+   * Set by the travel lane: the trip's ixigo login (travel/login.ts). personGone logs the trip's computer out of ixigo
+   * when the login is that person's: travel calls it when they leave; "Forget me" in the trip should call it too.
+   */
+  ixigoLogin?: Pick<IxigoLogin, 'personGone'>;
   /** Set by P5. */
   pay?: Pay;
   /** The daily model budget (MODEL_DAILY_BUDGET_USD). buildBrain always sets it; it is optional only so lane test doubles need not. */
@@ -193,7 +205,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     pool, now,
     env: {
       TRAVEL_MODE: env.TRAVEL_MODE, TRAVEL_RUNNER: env.TRAVEL_RUNNER, PAY_RAIL: env.PAY_RAIL, CALLS_MODE: env.CALLS_MODE, REFLEX_LIVE: env.REFLEX_LIVE,
-      BROWSER_FETCH_SLOTS: env.BROWSER_FETCH_SLOTS,
+      BROWSER_FETCH_SLOTS: env.BROWSER_FETCH_SLOTS, RECIPE_WATCHES: env.RECIPE_WATCHES,
     },
   });
 

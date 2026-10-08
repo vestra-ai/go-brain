@@ -41,6 +41,15 @@ export async function setupV1(o: SetupV1Options): Promise<SetupV1Result> {
   const mcpUrl = `${publicUrl}/mcp`;
   const hookUrl = `${publicUrl}/v1-webhooks`;
 
+  // Every model the run would save, against /v1's own list before anything is saved: a model /v1 dropped stops the run
+  // here, never halfway (8 Oct: Bash took claude-haiku-4-5 off its list, and go-trip-task was saved but go-recipe not).
+  const named = [o.model, o.recipeModel].filter((m): m is string => !!m && m !== 'default');
+  if (named.length > 0) {
+    const offered = (await v1.call<Page<{ id: string }>>('GET', '/v1/models')).data.map((m) => m.id);
+    const missing = named.filter((m) => !offered.includes(m));
+    if (missing.length > 0) throw new Error(`/v1 offers no model ${missing.join(' or ')}; it offers ${offered.join(', ')}. Nothing was saved.`);
+  }
+
   await v1.call('PATCH', '/v1/org', { admin: true, body: { memory_mode: 'none' } });
   log('org: memory_mode is none');
 
@@ -96,7 +105,7 @@ export async function setupV1(o: SetupV1Options): Promise<SetupV1Result> {
   const dep = await saveDeployment(GO_DEPLOYMENT_SLUG, 'Go trip task', "Go's jobs on a trip's computer", manifest, note ? `Go trip task, ${note}` : 'Go trip task');
   const version = dep.version;
   const recipe = o.recipeModel
-    ? await saveDeployment(GO_RECIPE_SLUG, 'Go travel search', "Go's fallback travel search: one page and one script on a trip's computer", goRecipeManifest({ model: o.recipeModel, denyTools: o.denyTools === true }), 'Go recipe')
+    ? await saveDeployment(GO_RECIPE_SLUG, 'Go travel search', "Go's fallback travel search: one page and one script on a trip's computer", goRecipeManifest({ model: o.recipeModel, denyTools: o.denyTools === true, browserFetch: o.browserFetch === true }), 'Go recipe')
     : null;
 
   const hooks = await v1.call<Page<{ id: string; url: string }>>('GET', '/v1/webhooks', { query: { limit: 100 } });

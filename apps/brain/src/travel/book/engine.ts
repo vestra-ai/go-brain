@@ -55,6 +55,11 @@ export interface EngineDeps {
   onRun?: OnRun;
   /** Go's searches (the search backend's), which a composite's steps share: absent, every step runs its own page. */
   searches?: ShareSearch;
+  /**
+   * The trip's ixigo login (travel/login.ts), for a recipe with auth: login: ok, or the line for the model once the
+   * person was asked. Absent, such a recipe never runs.
+   */
+  login?: (tripId: string, what: string) => Promise<{ ok: true } | { ok: false; note: string }>;
 }
 
 /**
@@ -137,7 +142,27 @@ export interface RunFor {
   /** A step of a composite: the composite's run, and the entry the step runs for (its lane on the strip). */
   stepOf?: string;
   lane?: string;
+  /** Its fetches' place among those waiting for the computer's slots: lower first (runners.ts). */
+  priority?: number;
+  /** A composite's steps as they go: its entries once it knows them, then each step as it ends (ok: it answered). */
+  onSteps?: (e: StepsEvent) => void;
+  /**
+   * A check nobody is waiting on (a watch the group asked for): it never holds the trip's computer awake (no warm) and
+   * keeps no tab open there (no fast speed), so the computer sleeps again right after the page.
+   */
+  background?: boolean;
 }
+
+export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
+
+/** A check nobody is waiting on (a watch) waits behind every fetch a person is. */
+export const BACKGROUND_PRIORITY = 9;
+
+/** What a run's fetches carry to the runner: when to stop, and their place in the computer's queue. */
+const fetchFor = (o: RunFor): { signal?: AbortSignal; priority: number } => ({
+  ...(o.signal ? { signal: o.signal } : {}),
+  priority: o.priority ?? (o.background ? BACKGROUND_PRIORITY : 0),
+});
 
 /**
  * A step's run on the strip names its composite (step_of) and its lane. Not parent: a parent's run is a lookup, nested
@@ -181,6 +206,12 @@ const rowsOf = (a: EngineAnswer): { rows?: number } =>
         : {};
 
 export function createEngine(d: EngineDeps) {
+  /** A recipe with auth: login runs only on a logged-in trip computer; otherwise the person is asked and it is refused. */
+  async function loggedIn(recipe: RecipeFile, tripId: string): Promise<void> {
+    if (recipe.auth !== 'login') return;
+    const l = d.login ? await d.login(tripId, recipe.title) : { ok: false as const, note: `${recipe.title} needs an ixigo login, which Go can't ask for here.` };
+    if (!l.ok) throw new TravelError('refused', l.note);
+  }
   const offered = new Map<string, Offered>();
   /** The places ixigo listed for words it knows more than one place for, by lookup and words: asked again, the same list. */
   const listed = new Map<string, { choices: Suggestion[]; at: number }>();
@@ -324,7 +355,7 @@ export function createEngine(d: EngineDeps) {
               fetches.map((f) => {
                 lookupRun.step(`opened ${pathOf(f.path)}`);
                 return runner.read(o.tripId, `${IXIGO}${f.path}`, { capture: f.capture, steps: f.steps }, {
-                  ...(o.signal ? { signal: o.signal } : {}),
+                  ...fetchFor(o),
                   tag: lookupRun.id,
                   onProgress: (e) => {
                     if (e.type === 'frames') lookupRun.frames(e.frames, fetchStarted);
@@ -431,8 +462,9 @@ export function createEngine(d: EngineDeps) {
     if (!recipe) throw new TravelError('refused', `There is no ixigo recipe ${id}.`);
     if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
     if (!recipe.page) throw new TravelError('refused', `${recipe.title} has no page to open.`);
+    await loggedIn(recipe, o.tripId);
     const runner = d.runner(o.tripId);
-    const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && fastOn(runner) ? 'fast' : 'page';
+    const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && fastOn(runner) && !o.background ? 'fast' : 'page';
     const strip = { line: line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed, ...stepOf(o) }) };
     try {
       const answer = await runRecipe(recipe, recipe.page, given, o, runner, strip, took);
@@ -454,7 +486,7 @@ export function createEngine(d: EngineDeps) {
     strip: { line: RunLine },
     took: (s: Speed) => void,
   ): Promise<EngineAnswer> {
-    if (recipe.answer.as !== 'link') d.warm?.(o.tripId, recipe.id);
+    if (recipe.answer.as !== 'link' && !o.background) d.warm?.(o.tripId, recipe.id);
     const inputs = (await inputsOf(recipe, given, o, strip.line.id))!;
     const bindings = await bindingsOf(recipe, inputs, o);
     const page = `${IXIGO}${await fill(pageTemplate, inputs, { url: true, bindings })}`;
@@ -487,7 +519,7 @@ export function createEngine(d: EngineDeps) {
       return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
-    if (recipe.fast && fastOn(runner) && runner.pageFetch) {
+    if (recipe.fast && fastOn(runner) && runner.pageFetch && !o.background) {
       const started = d.now().getTime();
       try {
         const url = await fill(recipe.fast.url, inputs, { url: true, bindings });
@@ -498,7 +530,7 @@ export function createEngine(d: EngineDeps) {
           ...(recipe.fast.body ? { body: await fill(recipe.fast.body, inputs, { url: false, bindings }) } : {}),
         };
         const fastRun = strip.line;
-        const got = await runner.pageFetch(o.tripId, call, { ...(o.signal ? { signal: o.signal } : {}), onTrace: (t) => fastRun.trace(t), tag: fastRun.id });
+        const got = await runner.pageFetch(o.tripId, call, { ...fetchFor(o), onTrace: (t) => fastRun.trace(t), tag: fastRun.id });
         const absolute = new URL(got.url || url, IXIGO).toString();
         refusePayments(absolute);
         // A call in a shape of its own (trains: confirmtkt's, where the page reads www.ixigo.com's) reads with the fast
@@ -528,7 +560,7 @@ export function createEngine(d: EngineDeps) {
     o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
     pageRun.step(`opened ${pathOf(page)}`);
     const got = await runner.read(o.tripId, page, plan, {
-      ...(o.signal ? { signal: o.signal } : {}),
+      ...fetchFor(o),
       tag: pageRun.id,
       // The pictures go to the live card as before, and to the run strip's browser pane.
       onProgress: (e) => {
@@ -555,6 +587,7 @@ export function createEngine(d: EngineDeps) {
     let strip: RunLine | null = null;
     try {
       if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
+      await loggedIn(recipe, o.tripId);
       // A composite has no place inputs (format.ts), so nothing here loads.
       const inputs = (await inputsOf(recipe, given, o, null))!;
       for (const [name, input] of Object.entries(recipe.inputs)) {
@@ -575,11 +608,14 @@ export function createEngine(d: EngineDeps) {
       if (entries.length === 0) throw new TravelError('needs_more', `${recipe.title} has no ${steps.as.replace(/_/g, ' ')} to run for yet.`);
       const composite = line(o.tripId, { recipe_id: recipe.id, label: `${entries.map((e) => clip(e, 30)).join(', ')} · ${labelOf(recipe, inputs)}`, speed: 'steps' });
       strip = composite;
-      const stepFor = async (entry: string, step: NonNullable<RecipeFile['steps']>['run'][number]): Promise<StepAnswer> => {
+      o.onSteps?.({ type: 'entries', entries });
+      // A step's fetches wait their turn by its place in the file: every city's first step (trains, the slower page)
+      // takes the computer's slots before any city's second.
+      const stepFor = async (entry: string, step: NonNullable<RecipeFile['steps']>['run'][number], priority: number): Promise<StepAnswer> => {
         try {
           const stepGiven: Record<string, unknown> = {};
           for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
-          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, ...(o.conditions ? { conditions: o.conditions } : {}) };
+          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority, ...(o.conditions ? { conditions: o.conditions } : {}) };
           const own = (signal?: AbortSignal): Promise<EngineAnswer> => answer(step.recipe, stepGiven, { ...stepRun, ...(signal ? { signal } : {}) });
           // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load. A
           // step's own search is kept for the next ask, so the composite's time never cuts it short: it finishes in the
@@ -594,7 +630,12 @@ export function createEngine(d: EngineDeps) {
           return { recipe: step.recipe, why: whyOf(err) };
         }
       };
-      const done = await Promise.all(entries.map(async (entry) => ({ entry, steps: await Promise.all(steps.run.map((step) => stepFor(entry, step))) })));
+      const told = async (entry: string, step: NonNullable<RecipeFile['steps']>['run'][number], priority: number): Promise<StepAnswer> => {
+        const s = await stepFor(entry, step, priority);
+        o.onSteps?.({ type: 'step', entry, recipe: s.recipe, ok: !!s.answer });
+        return s;
+      };
+      const done = await Promise.all(entries.map(async (entry) => ({ entry, steps: await Promise.all(steps.run.map((step, i) => told(entry, step, i))) })));
       const at = d.now();
       const out: EngineAnswer = { as: 'compare', inputs, entries: done, checkedAt: at.toISOString(), ms: at.getTime() - started };
       const rows = rowsOf(out);
@@ -620,6 +661,19 @@ export function createEngine(d: EngineDeps) {
         throw err;
       },
     );
+  }
+
+  /**
+   * A recipe's answer through Go's searches (the search backend's, by the request it makes), when it is one of the
+   * searches: a search kept or running for the same page answers it with no load (a kept run on the strip), and a run of
+   * its own is kept for the next ask. Anything else, or with no searches wired, is answer()'s. o.signal ends only the
+   * wait: the run itself finishes and is kept. A watch's checks take it, so a search the group just made answers them.
+   */
+  async function answerShared(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
+    const { signal, ...run } = o;
+    const shared = d.searches ? await d.searches(id, given, run, () => answer(id, given, run)) : null;
+    if (!shared) return answer(id, given, o);
+    return untilAborted(shared.joined ? fromKept(id, given, run, shared.answer) : shared.answer, signal);
   }
 
   /** Runs a recipe for the given inputs (place inputs as the person's words), timed and recorded. */
@@ -686,6 +740,7 @@ export function createEngine(d: EngineDeps) {
       }
     },
     answer,
+    answerShared,
     /** Each recipe's numbers at each speed, slowest middle first. */
     stats(): RecipeStat[] {
       return [...timings.values()]

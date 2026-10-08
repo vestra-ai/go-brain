@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { localDay } from '../proactive/clock.js';
 import type { Candidate } from '../proactive/policy.js';
 import type { ProactiveStore } from '../proactive/store.js';
+import { TripGoneError } from '../trips/gone.js';
 
 /** The same fire within this window (or the one before) is a double click. */
 export const FIRE_WINDOW_MS = 60_000;
@@ -59,7 +60,9 @@ export function registerFireRoute(app: FastifyInstance, d: FireDeps): void {
     const parsed = FireWatchBody.safeParse(req.body);
     if (!parsed.success) return reply.code(422).send(errorBody('invalid', z.prettifyError(parsed.error).slice(0, 500)));
     const b = parsed.data;
-    if (!(await d.store.tripExists(b.trip_id))) return reply.code(404).send(errorBody('not_found', 'no such trip'));
+    const state = await d.store.tripState(b.trip_id);
+    if (state === null) return reply.code(404).send(errorBody('not_found', 'no such trip'));
+    if (state === 'gone') return reply.code(404).send(errorBody('not_found', 'that trip is gone'));
 
     const now = d.now();
     const minute = Math.floor(now.getTime() / FIRE_WINDOW_MS);
@@ -96,7 +99,13 @@ export function registerFireRoute(app: FastifyInstance, d: FireDeps): void {
     };
     // Two clicks at the same moment: one insert wins, the other is the double click.
     if ((await d.store.add(c)) === 'exists') return reply.send({ ok: true, dedupe_key: dedupeKey, duplicate: true, promoted: 0 });
-    await d.promote(b.trip_id);
+    try {
+      await d.promote(b.trip_id);
+    } catch (err) {
+      // The Server forgot the trip between the check and the pass: the same answer as a trip already gone.
+      if (err instanceof TripGoneError) return reply.code(404).send(errorBody('not_found', 'that trip is gone'));
+      throw err;
+    }
     // The answer is about this fire only, whatever else the pass promoted.
     const promoted = (await d.store.status(b.trip_id, dedupeKey))?.status === 'promoted' ? 1 : 0;
     return reply.send({ ok: true, dedupe_key: dedupeKey, promoted });
