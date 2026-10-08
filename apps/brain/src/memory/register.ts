@@ -80,7 +80,11 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   // Forget me reaches the composer's chat: a forgotten person's earlier lines are hidden and "right now" names them.
   brain.context.setForgotten({ get: (tripId) => forgottenUpTo(brain.pool, tripId) });
 
-  const people = peopleHandlers({ pool: brain.pool, packs: brain.packs, fold, now: brain.now, log: brain.log });
+  const people = peopleHandlers({
+    pool: brain.pool, packs: brain.packs, fold, now: brain.now, log: brain.log,
+    // Travel registers after memory, so the login is read when a forget runs.
+    loginGone: async (tripId, personId) => brain.ixigoLogin?.personGone(tripId, personId, 'forgot'),
+  });
   brain.door.handle('get_person', people.get_person);
   brain.door.handle('update_person', people.update_person);
   brain.door.handle('delete_fact', people.delete_fact);

@@ -39,6 +39,11 @@ export interface PeopleDeps {
   fold: Pick<Fold, 'redactPerson' | 'storyMentions'>;
   now: () => Date;
   log: Log;
+  /**
+   * The trip's ixigo login, when it is this person's: Go logs the trip's computer out of ixigo and clears the login, so
+   * another member is asked next time (travel/login.ts personGone). Called once the forget holds; it never fails one.
+   */
+  loginGone?: (tripId: string, personId: string) => Promise<void>;
 }
 
 /** Every trip Go holds anything about this person in. */
@@ -129,6 +134,12 @@ export function peopleHandlers(d: PeopleDeps): {
       );
       if ((await countFacts(d.pool, person_id, tripId)) !== 0 || marks.rows[0]!.n !== trips.length) throw notForgotten();
       d.log.info({ personId: person_id, trips: trips.length, deleted }, 'forgot a person');
+      // Their ixigo login goes too: the log out runs in the background, and its failure is the card's to say, not ours.
+      for (const t of trips) {
+        await d.loginGone?.(t, person_id).catch((err: unknown) =>
+          d.log.warn({ err: String(err).slice(0, 200), tripId: t }, "forget: the trip's ixigo login could not be let go"),
+        );
+      }
       return C.ForgetResult.parse({ deleted_facts: deleted, remaining_facts: 0 });
     },
   };

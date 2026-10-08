@@ -340,10 +340,19 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         if (row.state === 'logging_in') return { ok: false, note: `${what} needs the trip's ixigo login, and ${await nameOf(tripId, row.personId)} hasn't finished it on Go's screen yet. Say so in one line.` };
       }
       const pack = await d.packs.get(tripId);
-      const organizer = pack.trip.people.find((p) => p.person_id === pack.trip.organizer_person_id && !p.go_paused);
-      // The person asked before, while they are still in the trip and haven't paused Go; else the organizer.
-      const still = row !== null && pack.trip.people.some((p) => p.person_id === row.personId && !p.go_paused);
-      const personId = row !== null && still ? row.personId : organizer?.person_id;
+      // Someone who used Forget me in this trip is never asked again (memory's forgotten marks).
+      const forgot = new Set(
+        (await d.pool.query<{ person_id: string }>('select person_id from forgotten where trip_id = $1', [tripId])).rows.map((r) => r.person_id),
+      );
+      const can = (id: string | null | undefined): id is string =>
+        !!id && !forgot.has(id) && pack.trip.people.some((p) => p.person_id === id && !p.go_paused);
+      // The person asked before, while they are still in the trip and can be asked; else the organizer; else the first
+      // member who can be (the organizer used Forget me).
+      const personId = row !== null && can(row.personId)
+        ? row.personId
+        : can(pack.trip.organizer_person_id)
+          ? pack.trip.organizer_person_id
+          : pack.trip.people.find((p) => can(p.person_id))?.person_id;
       if (!personId) return { ok: false, note: `${what} needs the trip's ixigo login, and nobody can be asked for it now. Say so in one line.` };
       const name = await nameOf(tripId, personId);
       if (!row || row.state !== 'asked' || now - row.askedAt.getTime() >= ASK_AGAIN_MS) {

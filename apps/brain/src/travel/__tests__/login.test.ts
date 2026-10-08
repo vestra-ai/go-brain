@@ -294,4 +294,17 @@ describe('logging out', () => {
     await other.login.settled();
     expect(await other.state()).toBe('logged_in');
   });
+
+  it('after Forget me, the next login is asked of someone else: the organizer, or the next member when it was the organizer', async () => {
+    const w = await loggedIn([401]);
+    // Rahul, the organizer, used Forget me in the trip: the memory lane marks it, then lets his login go.
+    await db.pool.query('insert into forgotten (person_id, trip_id, up_to_seq, forgotten_at) values ($1, $2, $3, $4)', ['p_rahul', w.tripId, 300, NOW]);
+    await w.login.personGone(w.tripId, 'p_rahul', 'forgot');
+    await w.login.settled();
+    expect(await w.state()).toBe('logged_out');
+    expect(await w.login.ensure(w.tripId, 'The train booking')).toMatchObject({ ok: false, note: expect.stringContaining('Go asked Priya to log in') });
+    const asked = w.link.of('post_message').at(-1)!;
+    expect(asked).toMatchObject({ mentions: ['p_priya'], card: { for_person_ids: ['p_priya'] } });
+    expect(JSON.stringify(asked)).not.toContain('p_rahul');
+  });
 });
