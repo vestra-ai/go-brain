@@ -78,6 +78,20 @@ describe('post', () => {
     expect(rows[0].posted_at).toBeInstanceOf(Date);
   });
 
+  it('puts 1.1 quick replies under the words, on the first message only, cleaned; never without words', async () => {
+    const { link, calls } = fakeLink({ post_message: () => ({ message_id: `m_go_${calls.length}`, seq: 20 + calls.length }) });
+    await db.pool.query(`insert into turns (turn_id, trip_id, woke_for, started_at, model) values ('turn_Q', 't_goa', '{message}', now(), 'm')`);
+    const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
+    let n = 0;
+    const replies = [{ label: 'North Goa' }, { label: 'South Goa — calmer', text: '@Go South Goa please' }];
+    await speak.post({ link, tripId: 't_goa', turnId: 'turn_Q', requestId: (tag) => `go_${tag}_Q_${++n}`, text: 'North or South?', cards: [notice('c_3')], quickReplies: replies });
+    expect(calls[0]?.params.quick_replies).toEqual([{ label: 'North Goa' }, { label: 'South Goa, calmer', text: '@Go South Goa please' }]);
+    expect(calls[1]?.params.quick_replies).toBeUndefined();
+    // A card alone carries none: the replies answer Go's words.
+    await speak.post({ link, tripId: 't_goa', turnId: 'turn_Q', requestId: (tag) => `go_${tag}_Q_${++n}`, text: null, cards: [notice('c_4')], quickReplies: replies });
+    expect(calls[2]?.params.quick_replies).toBeUndefined();
+  });
+
   it("never posts Go's own ids: the line goa-300:175 posted in run 37586604675 goes out without its card id", async () => {
     const { link, calls } = fakeLink({ post_message: () => ({ message_id: 'm_go_8', seq: 8 }) });
     const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });

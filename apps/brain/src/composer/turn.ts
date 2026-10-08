@@ -282,6 +282,7 @@ export function createComposer(d: ComposerDeps): Composer {
               text,
               cards: ctx.cards,
               ...(replyTo ? { replyTo } : {}),
+              ...(ctx.quickReplies?.length ? { quickReplies: ctx.quickReplies } : {}),
               // People Go's words name get a push.
               people: pack.trip.people,
             })

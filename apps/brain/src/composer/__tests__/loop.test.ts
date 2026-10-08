@@ -106,7 +106,7 @@ describe('the composer loop', () => {
     expect(body.tool_choice).toEqual({ type: 'auto' });
     expect(body.system).toEqual([{ type: 'text', text: 'You are Go.', cache_control: { type: 'ephemeral', ttl: '1h' } }]);
     expect(body.messages).toEqual([{ role: 'user', content: [...USER.slice(0, -1), { ...USER.at(-1), cache_control: { type: 'ephemeral' } }] }]);
-    expect(body.tools.map((t: any) => t.name)).toEqual(['echo', 'react', 'open_vote', 'close_vote', 'update_trip', 'stay_silent']);
+    expect(body.tools.map((t: any) => t.name)).toEqual(['echo', 'react', 'open_vote', 'close_vote', 'update_trip', 'offer_replies', 'stay_silent']);
     for (const t of body.tools) {
       expect(t.input_schema.type).toBe('object');
       expect(t.input_schema.$schema).toBeUndefined();

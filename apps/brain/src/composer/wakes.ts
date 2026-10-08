@@ -2,6 +2,7 @@ import type { DeskItem } from '../desk/desk.js';
 import { amountsIn } from '../money/expenses.js';
 import { looksLikeMoney, saysMoneyMoved } from '../reflex/money-line.js';
 import type { TripPack } from '../trips/pack.js';
+import { flexibleOf } from '../trips/votes.js';
 import { answersToGo, inlineData, personName } from './fence.js';
 
 /** For a line that says someone paid but no amount: record_expense would ask, but with no amount the model never calls it. */
@@ -86,7 +87,8 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
     if (!d) return 'a vote closed';
     const won = d.result_index != null ? d.options[d.result_index] : undefined;
     // The counts from the Server's own tally, so the result line never gets a number wrong.
-    const tally = `${d.options.map((op, k) => `${inlineData(op.label)} ${d.tally[k] ?? 0}`).join(', ')}; ${d.voted} of ${d.of} voted`;
+    const flexible = flexibleOf(d);
+    const tally = `${d.options.map((op, k) => `${inlineData(op.label)} ${d.tally[k] ?? 0}`).join(', ')}; ${d.voted} of ${d.of} voted${flexible ? `, ${flexible} flexible` : ''}`;
     // An option is only a label (DecisionOption has no dates or place fields), so the model reads the winner and saves it.
     return won
       ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${tally}). ` +

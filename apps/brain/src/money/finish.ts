@@ -150,6 +150,8 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
       category: categoryFor(confirmed.kind),
       split_person_ids: row.for_person_ids,
       booking_id: bookingId,
+      // 1.1: paid through the vault, so the Server records it approved at once, never pending (B4).
+      approval_id: approvalId,
     });
     await patchPayment(d.pool, row.payment_id, { expense_id: r.expense_id }, d.now());
   }

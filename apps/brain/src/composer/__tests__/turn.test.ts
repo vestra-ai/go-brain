@@ -431,7 +431,7 @@ describe('a composer turn', () => {
     const refused = r.model.bodies[1].messages[2].content.find((b: { is_error?: boolean }) => b.is_error);
     expect(refused.content).toContain('update_trip is not allowed this turn');
     // The definitions sent are the full list, as on any other turn.
-    expect(r.model.bodies[0].tools.map((t: { name: string }) => t.name)).toEqual(['close_vote', 'open_vote', 'react', 'stay_silent', 'update_trip']);
+    expect(r.model.bodies[0].tools.map((t: { name: string }) => t.name)).toEqual(['close_vote', 'offer_replies', 'open_vote', 'react', 'stay_silent', 'update_trip']);
     const { rows } = await db.pool.query('select outcome from turns where turn_id = $1', [`turn_${r.tripId}`]);
     expect(rows[0].outcome).toBe('acted');
   });

@@ -74,6 +74,18 @@ const UpdateTripInput = z.object({
     .describe('Where the group stays, as it picked it: a vote\'s winner or a booked stay, like "Candolim" or "Villa Sol, Anjuna". Never a wish ("a villa with a pool"): that stays a preference.'),
 });
 
+const OfferRepliesInput = z.object({
+  replies: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(40).describe('What the button says, a few words: "Beach", "North Goa", "Saturday".'),
+        text: z.string().min(1).max(200).optional().describe('What a tap posts as their message, when it should say more than the label.'),
+      }),
+    )
+    .min(2)
+    .max(6),
+});
+
 const StaySilentInput = z.object({
   reason: z.string().min(1).max(200).describe('A few words for the log. Never shown to anyone.'),
 });
@@ -166,6 +178,23 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     },
   };
 
+  /**
+   * 1.1 quick replies (A3): the choices go under Go's message as buttons, and a tap comes back as the tapper's own
+   * message, so the group answers with one tap instead of typing, and Go's words never list them.
+   */
+  const offerReplies: QuickTool<z.infer<typeof OfferRepliesInput>> = {
+    name: 'offer_replies',
+    description:
+      'Put up to six tap-to-answer choices under your message, when you ask the group to pick between a few things ' +
+      '(beach or mountains, North or South Goa, Saturday or Sunday). A tap comes back as that person\'s own message. ' +
+      'Ask the question in your words and never list the choices there: they show as buttons.',
+    input: OfferRepliesInput,
+    async run(a, ctx) {
+      ctx.quickReplies = a.replies.map((r) => ({ label: clip(r.label, 40), ...(r.text ? { text: clip(r.text, 200) } : {}) }));
+      return { ok: true, shown: ctx.quickReplies.map((r) => r.label), tell_the_room: 'Ask the question in one short line. The choices show under it as buttons: do not list them.' };
+    },
+  };
+
   const staySilent: QuickTool<z.infer<typeof StaySilentInput>> = {
     name: STAY_SILENT,
     description: 'End your turn without a message. Call it when nothing needs words from you, also right after a reaction or an action.',
@@ -176,5 +205,5 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     },
   };
 
-  return [react, openVote, closeVote, updateTrip, staySilent];
+  return [react, openVote, closeVote, updateTrip, offerReplies, staySilent];
 }
