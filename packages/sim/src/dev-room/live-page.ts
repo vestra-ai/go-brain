@@ -8,6 +8,8 @@
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
 
+import { LOGIN_PANEL } from './login-panel.js';
+
 export const LIVE_CSS = `
 .split { display: flex; align-items: stretch; height: 100vh; height: 100dvh; }
 .split .app { flex: none; width: 440px; max-width: none; margin: 0; height: 100%; overflow-y: auto; }
@@ -72,9 +74,10 @@ export const LIVE_CSS = `
 }
 `;
 
-export const LIVE_ASIDE = `<aside class="live" id="live" aria-label="Go Live">
+/** Go Live's column, with the login panel (login-panel.ts) under its head. `attrs`: the aside's other attributes, escaped. */
+export const liveAside = (attrs = ''): string => `<aside class="live" id="live" aria-label="Go Live"${attrs}>
   <div class="live-head"><span class="dot" id="live-dot"></span><b>Go Live</b><span class="live-state" id="live-state">Waiting for the trip</span></div>
-  <div class="screen" id="screen"></div>
+${LOGIN_PANEL}  <div class="screen" id="screen"></div>
   <div class="live-note">Pages show live as Go's computer opens them, never a payment or sign-in page. A fast run reads ixigo's own data inside a page that is already open, so nothing on screen moves: the strip shows it.</div>
   <div class="strip-head"><b>Runs</b><span id="strip-sum"></span></div>
   <div class="strip" id="strip"></div>

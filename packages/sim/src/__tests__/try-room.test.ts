@@ -6,7 +6,7 @@ import { FakeServer } from '../fake-server.js';
 import { goaFreshTrip } from '../goa.js';
 import { Caps, DEFAULT_CAPS } from '../try-room/caps.js';
 import { TryEnv } from '../try-room/env.js';
-import { COOKIE_NAME, Gate, WrongTries, clientAddress } from '../try-room/gate.js';
+import { COOKIE_NAME, Gate, WrongTries, clientAddress, contentSecurityPolicy } from '../try-room/gate.js';
 import { CLOSE_TOO_MANY, LIVE_BEHIND_BYTES, refusal, serveTryRoom, visitTrip, type TryRoom, type TryRoomOptions } from '../try-room/serve.js';
 import {
   DAILY_LIMIT_LINE, HINTS, LIVE_HINTS, LIVE_LINE, NOT_IN_YOUR_TRIP, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_MANY_TRIES, tooManyTabs,
@@ -719,6 +719,69 @@ describe('Go Live', () => {
     await until(() => lives(l.got).some((m) => m.msg.event?.type === 'run_end'));
     expect(lives(l.got).map((m) => m.msg.event.type)).toContain('run_end');
   });
+
+  it("may frame Bash's session page, and only with a watch origin: the CSP and the page say which", async () => {
+    const { live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open, watchOrigin: 'https://staging.vestra.ai' });
+    const cookie = await signIn(r);
+    const res = await page(r, cookie);
+    expect(res.headers.get('content-security-policy')).toContain("frame-src https://staging.vestra.ai; form-action 'self'");
+    expect(await res.text()).toContain('<aside class="live" id="live" aria-label="Go Live" data-watch-origin="https://staging.vestra.ai">');
+    // The passcode page frames nothing, and nobody may frame the room.
+    expect((await page(r)).headers.get('content-security-policy')).not.toContain('frame-src');
+    expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+    // No watch origin, or no Go Live: no frame-src at all, and Watch opens in a window.
+    const others: Array<Partial<TryRoomOptions>> = [{ live: open }, { watchOrigin: 'https://staging.vestra.ai' }];
+    for (const extra of others) {
+      await room?.close();
+      const plain = await serveTryRoom({ fake: fake!, passcode, cookieSalt, goUrl: go!.url, port: 0, goHealth: async () => ({ ok: true, contract: '1.0.0' }), ...extra });
+      room = plain;
+      const other = await page(plain, await signIn(plain));
+      expect(other.headers.get('content-security-policy')).not.toContain('frame-src');
+      expect(await other.text()).not.toContain('data-watch-origin');
+    }
+    // Anything but a bare origin never reaches the header.
+    expect(contentSecurityPolicy('n0nce', 'room.test', "https://bash.test; script-src *")).not.toContain('frame-src');
+    expect(contentSecurityPolicy('n0nce', 'room.test', 'https://bash.test/screen')).not.toContain('frame-src');
+    expect(contentSecurityPolicy('n0nce', 'room.test', 'http://localhost:3000')).toContain('frame-src http://localhost:3000;');
+  });
+
+  it("gives a Watch answer to the tapping socket only, and counts a Watch as a message, not a turn", async () => {
+    const { live: open } = fakeLive();
+    const { go: g, room: r } = await setUp({ live: open, watchOrigin: 'https://staging.vestra.ai', caps: { visitTurns: 2 } });
+    const cookie = await signIn(r);
+    const a = await inRoom(r, cookie);
+    const b = await inRoom(r, cookie);
+    const rahul = personId(a, 'Rahul');
+    // The first message makes the trip: the visit's two turns are gone.
+    sayAs(a, rahul, 'Hi all');
+    await until(() => said(g).length === 1);
+    const tripId = r.tripOf(visitOf(cookie))!;
+    await g.call('post_message', {
+      request_id: 'rq_login', trip_id: tripId,
+      card: {
+        kind: 'notice', card_id: 'c_login_1', tone: 'info', for_person_ids: [rahul], fallback_text: "Rahul is logging in to ixigo on Go's computer.",
+        title: 'Logging in to ixigo', body: "ixigo's log in is open on Go's screen.",
+        actions: [
+          { action_id: 'ixigo_watch', label: 'Watch', style: 'primary' },
+          { action_id: 'ixigo_logged_in', label: "I'm logged in", style: 'secondary', only_for_person_ids: [rahul] },
+        ],
+      },
+    });
+    await until(() => lastState(b.got).messages.some((m: any) => m.card?.card_id === 'c_login_1'));
+    g.tapAnswer = { result: 'open', url: 'https://staging.vestra.ai/screen?s=ses_1#token=tok_secret', expires_at: '2099-01-01T00:00:00Z' };
+    a.ws.send(JSON.stringify({ type: 'tap', cardId: 'c_login_1', actionId: 'ixigo_watch', personId: rahul }));
+    await until(() => a.got.some((m) => m.type === 'tap_result'));
+    expect(a.got.find((m) => m.type === 'tap_result')).toEqual({ type: 'tap_result', cardId: 'c_login_1', actionId: 'ixigo_watch', personId: rahul, result: g.tapAnswer });
+    // Over the visit's turns, a tap that can wake Go is turned away; the Watch above went through.
+    a.ws.send(JSON.stringify({ type: 'tap', cardId: 'c_login_1', actionId: 'ixigo_logged_in', personId: rahul }));
+    await until(() => a.got.some((m) => m.type === 'limit'));
+    expect(g.taps.map((t) => t.action_id)).toEqual(['ixigo_watch']);
+    // The other tab of the same visit never saw the session or its token.
+    await pause(100);
+    expect(b.got.filter((m) => m.type === 'tap_result')).toEqual([]);
+    expect(JSON.stringify(b.got)).not.toContain('tok_secret');
+  });
 });
 
 describe('the hosted page and its settings', () => {
@@ -758,5 +821,12 @@ describe('the hosted page and its settings', () => {
     const { TRY_COOKIE_SALT: _salt, ...noSalt } = base;
     expect(() => TryEnv.parse(noSalt)).toThrow();
     expect(() => TryEnv.parse({ ...base, GO_URL: 'brain-try.example' })).toThrow();
+    // Bash's session page origin, as the browser writes it; anything with a path, or http off this machine, is refused.
+    expect(TryEnv.parse(base).TRY_WATCH_ORIGIN).toBeUndefined();
+    expect(TryEnv.parse({ ...base, TRY_WATCH_ORIGIN: 'https://Staging.Vestra.ai' }).TRY_WATCH_ORIGIN).toBe('https://staging.vestra.ai');
+    expect(TryEnv.parse({ ...base, TRY_WATCH_ORIGIN: 'http://localhost:3000' }).TRY_WATCH_ORIGIN).toBe('http://localhost:3000');
+    for (const bad of ['https://staging.vestra.ai/', 'https://staging.vestra.ai/screen', 'http://staging.vestra.ai', 'staging.vestra.ai']) {
+      expect(() => TryEnv.parse({ ...base, TRY_WATCH_ORIGIN: bad })).toThrow();
+    }
   });
 });

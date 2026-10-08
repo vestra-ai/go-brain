@@ -10,6 +10,7 @@ import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import type { TripSnapshot } from '@go/contract';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { WATCH_ACTIONS } from '../dev-room/login-panel.js';
 import { roomPage } from '../dev-room/page.js';
 import { doAction, roomState, type Action } from '../dev-room/serve.js';
 import type { FakeServer } from '../fake-server.js';
@@ -32,8 +33,12 @@ const SWEEP_EVERY_MS = 10 * 60_000;
 const PRUNE_TRIES_EVERY_MS = 60_000;
 const RECORDS_KEPT_PER_TRIP = 200;
 
-/** What can wake Go's model: anything said, a vote, a card tap, the payer's yes or no. A reaction or "Forget me" cannot. */
+/**
+ * What can wake Go's model: anything said, a vote, a card tap, the payer's yes or no. A reaction or "Forget me" cannot,
+ * and nor can Watch: it opens Go's screen and wakes no model.
+ */
 const WAKES_GO: ReadonlySet<string> = new Set(['say', 'vote', 'tap', 'confirm', 'decline']);
+const wakesGo = (a: Action): boolean => WAKES_GO.has(a.type) && !(a.type === 'tap' && WATCH_ACTIONS.includes(a.actionId));
 
 export interface GoHealth {
   ok: boolean;
@@ -61,6 +66,11 @@ export interface TryRoomOptions {
    * gets the feed of its visit's trip, as { type: 'live', msg }. Never counted against the caps: watching wakes nothing.
    */
   live?: (tripId: string, onMessage: (m: unknown) => void) => { close(): void };
+  /**
+   * With live: Bash's session page origin (TRY_WATCH_ORIGIN). The page's CSP may frame it, and a login hand-off's Watch
+   * answer on it fills Go Live's column for the person logging in (login-panel.ts).
+   */
+  watchOrigin?: string;
   /** Live sockets for one visit (default 3) and in all (default 300). */
   maxSocketsPerVisit?: number;
   maxSockets?: number;
@@ -342,7 +352,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
       const refused = refusal(o.fake, tripId, a);
       if (refused) return reply({ type: 'error', message: refused });
       // Counted before it reaches Go; over a cap nothing reaches Go.
-      const verdict = caps.send(visit, WAKES_GO.has(a.type));
+      const verdict = caps.send(visit, wakesGo(a));
       if (!verdict.ok) {
         reply({ type: 'limit', text: verdict.line });
         return pushAll(visit);
@@ -354,11 +364,13 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     }
   };
 
-  const html = (req: IncomingMessage, res: ServerResponse, status: number, body: string, nonce: string | null, extra: Record<string, string> = {}): void => {
+  const html = (
+    req: IncomingMessage, res: ServerResponse, status: number, body: string, nonce: string | null, extra: Record<string, string> = {}, frameOrigin?: string,
+  ): void => {
     res.writeHead(status, {
       ...PAGE_HEADERS,
       'content-type': 'text/html; charset=utf-8',
-      'content-security-policy': contentSecurityPolicy(nonce, req.headers.host),
+      'content-security-policy': contentSecurityPolicy(nonce, req.headers.host, frameOrigin),
       ...extra,
     });
     res.end(body);
@@ -400,7 +412,9 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     if (req.method === 'GET' && path === '/') {
       if (!gate.visit(req)) return html(req, res, 200, passcodePage(), null);
       const nonce = randomBytes(16).toString('base64');
-      return html(req, res, 200, roomPage({ title: 'Try Go', nonce, hints: o.live ? LIVE_HINTS : HINTS, hosted: true, live: o.live !== undefined }), nonce);
+      const watchOrigin = o.live ? o.watchOrigin : undefined;
+      const room = roomPage({ title: 'Try Go', nonce, hints: o.live ? LIVE_HINTS : HINTS, hosted: true, live: o.live !== undefined, ...(watchOrigin ? { watchOrigin } : {}) });
+      return html(req, res, 200, room, nonce, {}, watchOrigin);
     }
     return plain(res, 404, 'text/plain; charset=utf-8', 'Not found');
   };
