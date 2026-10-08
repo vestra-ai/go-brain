@@ -236,7 +236,7 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
   function freePending(cardId, actionId, who) {
     for (var k in pending) if (pending[k].card === cardId && pending[k].action === actionId && pending[k].who === who) delete pending[k];
   }
-  /** Taps a card's button for `who`, once until it settles. False when that button is still waiting. */
+  /** Taps a card's button for that person, once until it settles. False when that button is still waiting. */
   function tapCard(cardId, actionId, optionId, who) {
     var key = pendingKey(cardId, actionId, optionId, who);
     if (pending[key]) return false;
