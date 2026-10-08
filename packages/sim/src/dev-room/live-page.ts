@@ -14,7 +14,7 @@ import { LOGIN_PANEL } from './login-panel.js';
 export const LIVE_CSS = `
 .split { display: flex; align-items: stretch; height: 100vh; height: 100dvh; }
 .split .app { flex: none; width: 440px; max-width: none; margin: 0; height: 100%; overflow-y: auto; }
-.live { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: #eef1f6; border-left: 1px solid var(--line); }
+.live { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: #eef1f6; border-left: 1px solid var(--line); overscroll-behavior: contain; }
 .live-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .live-head .live-state { color: var(--muted); font-size: 13px; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: #cbd5e1; flex: none; }
@@ -34,9 +34,13 @@ export const LIVE_CSS = `
 .view .chip-fast { position: absolute; left: 10px; bottom: 10px; background: #0f172a; color: #fff; border-radius: 8px; padding: 4px 9px; font-size: 12px; }
 .view .chip-fast:empty { display: none; }
 /* Between runs: the last page Go's computer drew, lightly dimmed, under a quiet label. A run brings the screen back live. */
-.tile.rest .tile-bar { color: var(--muted); }
-.tile.rest .rest-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* It reads as a picture, never a page to use: nothing on it takes the pointer, and a pill at its foot says what it is. */
+.tile.rest, .tile.rest .view { cursor: default; }
 .tile.rest .view img { opacity: .8; filter: saturate(.85); }
+.tile.rest .view img { pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
+.rest-pill { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); max-width: calc(100% - 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: rgba(15, 23, 42, 0.72); color: #fff; border-radius: 999px; padding: 5px 12px; font-size: 12px; pointer-events: none; }
+/* Beside the chat, a screen fits the column with the strip under it, so nothing in the column scrolls but the strip. */
+.split .live .view { max-height: calc(100vh - 330px); max-height: calc(100dvh - 330px); min-height: 160px; }
 /* Before the trip's first page: one line in the screen's own space, so nothing moves when a run starts. */
 .tile.calm { background: transparent; border-color: transparent; }
 .tile.calm .view { background: transparent; }
@@ -80,6 +84,7 @@ export const LIVE_CSS = `
   .split { display: block; height: auto; }
   .split .app { width: auto; max-width: var(--column); margin: 0 auto; height: auto; overflow: visible; }
   .live { height: auto; border-left: 0; border-top: 1px solid var(--line); }
+  .split .live .view { max-height: none; min-height: 0; }
 }
 `;
 
@@ -263,13 +268,6 @@ export const LIVE_SCRIPT = `
     return shown;
   }
 
-  var SECTIONS = { hotel: 'hotels', hotels: 'hotels', train: 'trains', trains: 'trains', flight: 'flights', flights: 'flights', bus: 'buses', buses: 'buses', cab: 'cabs', cabs: 'cabs' };
-  /** "ixigo hotels" for a page under /hotels, and so on, from its path alone; "ixigo" for any other. */
-  function pageName(page) {
-    var parts = String(page || '').split('/');
-    for (var i = 0; i < parts.length; i++) if (Object.prototype.hasOwnProperty.call(SECTIONS, parts[i])) return 'ixigo ' + SECTIONS[parts[i]];
-    return 'ixigo';
-  }
 
   function badges(r) {
     var s = r.speeds;
@@ -288,17 +286,22 @@ export const LIVE_SCRIPT = `
     return "When Go searches ixigo for the trip, its pages show here, live.";
   }
 
-  /** Between runs: the last page the computer drew, full size and dimmed, under a quiet label of what and when. */
+  /**
+   * Between runs: the last page the computer drew, fitted and dimmed, a picture with a pill at its foot saying what it is
+   * and when, or that the computer is asleep.
+   */
   function renderRest(screen) {
     if (screen.getAttribute('data-key') !== 'rest') {
       screen.setAttribute('data-key', 'rest');
       screen.className = 'screen';
-      screen.innerHTML = '<div class="tile rest"><div class="tile-bar"><span class="rest-label"></span></div><div class="view"><img alt=""></div></div>';
+      screen.innerHTML = '<div class="tile rest"><div class="view"><img alt="" draggable="false"><span class="rest-pill"></span></div></div>';
     }
     var img = screen.querySelector('img');
     var src = 'data:image/jpeg;base64,' + live.last.jpeg;
     if (img.getAttribute('src') !== src) img.setAttribute('src', src);
-    screen.querySelector('.rest-label').textContent = "Go's computer · " + pageName(live.last.page) + ' · ' + ago(new Date(live.last.at).toISOString());
+    screen.querySelector('.rest-pill').textContent = live.screen.state === 'asleep'
+      ? "Go's computer is asleep. It wakes when someone asks Go."
+      : "Last page Go's computer showed · " + ago(new Date(live.last.at).toISOString());
   }
 
   /** Before the trip's first page: one calm line in the screen's own space. */

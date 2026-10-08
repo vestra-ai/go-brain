@@ -446,7 +446,7 @@ describe("Go Live's screen between runs", () => {
     ({ type: 'frame', tab_id: tab, tag: 'run_1', at, page, width: 1280, height: 800, jpeg_base64: jpeg });
   const screen = (p: ReturnType<typeof pageInBrowser>) => p.el('screen');
   const picture = (p: ReturnType<typeof pageInBrowser>) => screen(p).querySelector('img').getAttribute('src');
-  const label = (p: ReturnType<typeof pageInBrowser>) => screen(p).querySelector('.rest-label').textContent;
+  const label = (p: ReturnType<typeof pageInBrowser>) => screen(p).querySelector('.rest-pill').textContent;
 
   it("shows one calm line in the screen's own space before the trip's first page, never an empty box", () => {
     expect(LIVE_PAGE).not.toMatch(/[\u2014\u2013]|claude/i);
@@ -458,7 +458,7 @@ describe("Go Live's screen between runs", () => {
     expect(screen(p).querySelector('.hint').textContent).toBe('When Go searches ixigo for the trip, its pages show here, live.');
   });
 
-  it('rests on the last page the computer drew, dimmed under a quiet label, and a run brings the screen back live', () => {
+  it('rests on the last page the computer drew, a dimmed picture with a pill saying so, and a run brings the screen back live', () => {
     const p = pageInBrowser(LIVE_PAGE, { column: true });
     // In late: a search that ended two minutes ago, its warm tab still open on the drawn list.
     relay(p, {
@@ -466,9 +466,10 @@ describe("Go Live's screen between runs", () => {
       screen: [{ type: 'tab_open', tab_id: 'tab_1', tag: 'run_1' }, frame('tab_1', 'TElTVA==', before(125_000))],
     });
     expect(screen(p).getAttribute('data-key')).toBe('rest');
-    expect(screen(p).innerHTML).toBe('<div class="tile rest"><div class="tile-bar"><span class="rest-label"></span></div><div class="view"><img alt=""></div></div>');
+    // A picture, never a page: no bar like a browser's, and the pill sits on the picture itself.
+    expect(screen(p).innerHTML).toBe('<div class="tile rest"><div class="view"><img alt="" draggable="false"><span class="rest-pill"></span></div></div>');
     expect(picture(p)).toBe('data:image/jpeg;base64,TElTVA==');
-    expect(label(p)).toBe("Go's computer · ixigo hotels · 2 min ago");
+    expect(label(p)).toBe("Last page Go's computer showed · 2 min ago");
     expect(p.el('live-state').textContent).toBe('Live');
     // A search starts: the same tab, at full brightness and LIVE.
     relay(p, { type: 'run', event: runStart('run_2', before(0)) });
@@ -480,10 +481,10 @@ describe("Go Live's screen between runs", () => {
     relay(p, { type: 'hello', events: [runStart('run_1', before(130_000)), runEnd('run_1'), runStart('run_2', before(5_000)), runEnd('run_2')], screen: [] });
     expect(screen(p).getAttribute('data-key')).toBe('rest');
     expect(picture(p)).toBe('data:image/jpeg;base64,TkVX');
-    expect(label(p)).toBe("Go's computer · ixigo hotels · just now");
+    expect(label(p)).toBe("Last page Go's computer showed · just now");
   });
 
-  it("rests on a run's own picture when no tab was left open, named from its page, and a new trip starts calm", () => {
+  it("rests on a run's own picture when no tab was left open, and a new trip starts calm", () => {
     const p = pageInBrowser(LIVE_PAGE, { column: true });
     relay(p, {
       type: 'hello', screen: [],
@@ -494,9 +495,33 @@ describe("Go Live's screen between runs", () => {
       ],
     });
     expect(picture(p)).toBe('data:image/jpeg;base64,VFJBSU4=');
-    expect(label(p)).toBe("Go's computer · ixigo trains · 3 min ago");
+    expect(label(p)).toBe("Last page Go's computer showed · 3 min ago");
     relay(p, { type: 'hello', events: [], screen: [] }, 't_try_2');
     expect(screen(p).getAttribute('data-key')).toBe('calm');
+  });
+
+  it("says on the picture when the trip's computer is asleep, as the head does, and the time again once it wakes", () => {
+    const p = pageInBrowser(LIVE_PAGE, { column: true });
+    relay(p, {
+      type: 'hello', events: [runStart('run_1', before(21 * 60_000)), runEnd('run_1')],
+      screen: [{ type: 'state', state: 'asleep' }, { type: 'tab_open', tab_id: 'tab_1' }, frame('tab_1', 'TElTVA==', before(21 * 60_000))],
+    });
+    expect(picture(p)).toBe('data:image/jpeg;base64,TElTVA==');
+    expect(label(p)).toBe("Go's computer is asleep. It wakes when someone asks Go.");
+    expect(p.el('live-state').textContent).toBe("Live. The trip's computer is asleep");
+    relay(p, { type: 'screen', event: { type: 'state', state: 'live' } });
+    expect(label(p)).toBe("Last page Go's computer showed · 21 min ago");
+  });
+
+  it('draws the resting picture so nothing suggests it can be used, and fits it in the column so nothing scrolls under it', () => {
+    // The picture takes no pointer and no drag, the tile shows the plain arrow, and the pill is a label, not a control.
+    expect(LIVE_PAGE).toContain('.tile.rest, .tile.rest .view { cursor: default; }');
+    expect(LIVE_PAGE).toContain('.tile.rest .view img { pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }');
+    expect(LIVE_PAGE).toMatch(/\.rest-pill \{ position: absolute; left: 50%; bottom: 10px;[^}]*pointer-events: none; \}/);
+    // Beside the chat the screen fits under the column's height with the strip below it; stacked on a phone, it doesn't need to.
+    expect(LIVE_PAGE).toContain('.split .live .view { max-height: calc(100vh - 330px); max-height: calc(100dvh - 330px); min-height: 160px; }');
+    expect(LIVE_PAGE).toContain('  .split .live .view { max-height: none; min-height: 0; }');
+    expect(LIVE_PAGE).toContain('overscroll-behavior: contain; }');
   });
 
   it('never rests on a page Go hides: a tab gone to a sign-in page keeps the page before it, and a tab hidden from the start shows none', () => {
@@ -511,7 +536,7 @@ describe("Go Live's screen between runs", () => {
       ],
     });
     expect(picture(p)).toBe('data:image/jpeg;base64,SE9URUxT');
-    expect(label(p)).toBe("Go's computer · ixigo hotels · 1 min ago");
+    expect(label(p)).toBe("Last page Go's computer showed · 1 min ago");
     const q = pageInBrowser(LIVE_PAGE, { column: true });
     relay(q, { type: 'hello', events: [], screen: [{ type: 'tab_open', tab_id: 'tab_9' }, { type: 'hidden', tab_id: 'tab_9', reason: 'blocked_path' }] });
     expect(screen(q).getAttribute('data-key')).toBe('calm');
