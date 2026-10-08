@@ -40,7 +40,9 @@ const ASK_AGAIN_MS = 30 * 60_000;
 export const HELLO_WAIT_MS = 20_000;
 const HELLO_POLL_MS = 1_000;
 /** The login job's to-do list, word for word: the job writes it as its own, so the card never changes under the person. */
-const LOGIN_STEPS = ['Open ixigo.com', 'Open the log in box', 'Hand over the log in'] as const;
+const LOGIN_STEPS = ["Open ixigo's log in", 'Click the mobile number box', 'Hand over the log in'] as const;
+/** ixigo's home page with its log in box open: ixigo's own address for it, so the job clicks nothing to open the box. */
+export const LOGIN_URL = 'https://www.ixigo.com/?loginVisible=true';
 /** The first ask, at setup or at a trip's first search. */
 const FIRST_LINE = "{name}, link ixigo for the trip: one login on the trip's computer, about a minute.";
 
@@ -122,7 +124,7 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
         title: 'Logging in to ixigo',
         body: note === 'not_yet'
           ? "Go can't see ixigo logged in yet. Finish the login on Go's screen (Watch on its card), then tap I'm logged in again."
-          : `Go is opening ixigo's login on its screen. When Go says it needs ${name}, tap Watch on its card, log in with your phone, then tap I'm logged in here.`,
+          : `Go is opening ixigo's login on its screen. When its card asks for ${name}, tap Watch on it, log in with your phone, then tap I'm logged in here.`,
         actions: [button('ixigo_logged_in', "I'm logged in", 'primary'), button('ixigo_not_now', 'Not now', 'secondary')],
         fallback_text: `${name} is logging in to ixigo on Go's computer.`,
       };
@@ -350,11 +352,12 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         if (!d.live() || !tasks) return { result: 'refused', toast: "Go's computer isn't browsing ixigo right now." };
         if (row.state === 'logged_in') return { result: 'done', toast: 'ixigo is already logged in' };
         const job = await tasks.start(row.tripId, {
-          // Two clicks, then the hand-off at once: each step or check the job adds is a model round the person waits on.
+          // One page, one click, then the hand-off at once: each step or check the job adds is a model round the person waits
+          // on (87 to 96 s on staging when the job looked for the Log in button itself).
           goal:
             `Your to-do list is exactly these three steps: ${LOGIN_STEPS.map((t) => `"${t}"`).join(', ')}. ` +
-            'Open https://www.ixigo.com/ in the browser and click "Log in/Sign up" at the top right of the page. A box opens with a field for the mobile number: click into that field and type nothing. ' +
-            'Then hand the browser to the person at once, checking nothing first: they log in themselves with their own mobile number and the one-time code. ' +
+            `Open ${LOGIN_URL} in the browser: the page opens with its log in box showing a field for the mobile number (only if the box is not there, click "Log in/Sign up" at the top right). ` +
+            'Click into the mobile number field and type nothing. Then hand the browser to the person at once, checking nothing first: they log in themselves with their own mobile number and the one-time code. ' +
             'Never type, read, copy or keep a number, a code, a name or an email, and never open a page under /payments/. When they say they are done, end the job at once with the summary "Done": Go checks the login itself.',
           returns: returnsSchema('answer'),
           returnsKind: 'answer',
@@ -362,7 +365,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           title: 'Logging in to ixigo',
           steps: [...LOGIN_STEPS],
           askedBy: row.personId,
-          // The login card speaks for the job: its end posts nothing in the chat.
+          // The login card speaks for the job: neither its hand-off nor its end posts a line in the chat.
           quiet: true,
           // One job a tap: a tap Go already answered gets its first answer back, and another tap is another try.
           key: `ixigo_login_${tap.tap_id}`,

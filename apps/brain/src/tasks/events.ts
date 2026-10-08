@@ -122,7 +122,8 @@ export function createTaskEvents(d: TaskEventsDeps): TaskEvents {
           const fresh = await d.store.get(row.id);
           if (fresh) await d.tasks.pushCard(fresh, true);
         }
-        await wake(row, `handoff:${id}`, { event: 'handoff', taskId: row.id, title: row.title, interactionId: id, personId, summary: summary ?? 'It needs someone to sign in or give a code.' });
+        // A quiet job's cards already say who is needed and what to tap (the ixigo login's), so no line in the chat.
+        if (!row.quiet) await wake(row, `handoff:${id}`, { event: 'handoff', taskId: row.id, title: row.title, interactionId: id, personId, summary: summary ?? 'It needs someone to sign in or give a code.' });
         return;
       }
       case 'approval': {

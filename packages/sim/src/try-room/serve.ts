@@ -17,8 +17,8 @@ import { goaFreshTrip } from '../goa.js';
 import { Caps, DEFAULT_CAPS, type CapLimits } from './caps.js';
 import { Gate, PAGE_HEADERS, WrongTries, clientAddress, contentSecurityPolicy, passcodePage } from './gate.js';
 import {
-  GO_DOWN_LINE, HINTS, NOT_IN_YOUR_TRIP, PICK_A_PERSON, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_LONG, TOO_MANY_TRIES,
-  TYPE_SOMETHING, UNKNOWN_ACTION, WRONG_PASSCODE, goLiveLine, tooManyTabs,
+  GO_DOWN_LINE, HINTS, LIVE_HINTS, LIVE_LINE, NOT_IN_YOUR_TRIP, PICK_A_PERSON, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN,
+  TOO_LONG, TOO_MANY_TRIES, TYPE_SOMETHING, UNKNOWN_ACTION, WRONG_PASSCODE, goLiveLine, tooManyTabs,
 } from './words.js';
 
 /** The longest message a visitor can send. */
@@ -52,7 +52,7 @@ export interface TryRoomOptions {
   /** Default 127.0.0.1. Use 0.0.0.0 on Railway. */
   host?: string;
   caps?: Partial<CapLimits>;
-  /** What is simulated in this demo. Default SIMULATED_LINE. */
+  /** What is real and what is simulated in this demo. Default SIMULATED_LINE, or LIVE_LINE with Go Live. */
   simulatedLine?: string;
   /** Behind Railway's proxy: the visitor's address comes from x-real-ip, or else the first x-forwarded-for address. */
   trustProxy?: boolean;
@@ -201,7 +201,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
   const gate = new Gate(o.passcode, o.cookieSalt, now);
   const wrongTries = new WrongTries(now, undefined, undefined, undefined, o.wrongTriesPerSecond ?? 30);
   const caps = new Caps({ ...DEFAULT_CAPS, ...o.caps }, now);
-  const simulatedLine = o.simulatedLine ?? SIMULATED_LINE;
+  const simulatedLine = o.simulatedLine ?? (o.live ? LIVE_LINE : SIMULATED_LINE);
   const goHealth = o.goHealth ?? (() => fetchGoHealth(o.goUrl));
   const maxPerVisit = o.maxSocketsPerVisit ?? 3;
   const maxSockets = o.maxSockets ?? 300;
@@ -400,7 +400,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     if (req.method === 'GET' && path === '/') {
       if (!gate.visit(req)) return html(req, res, 200, passcodePage(), null);
       const nonce = randomBytes(16).toString('base64');
-      return html(req, res, 200, roomPage({ title: 'Try Go', nonce, hints: HINTS, hosted: true, live: o.live !== undefined }), nonce);
+      return html(req, res, 200, roomPage({ title: 'Try Go', nonce, hints: o.live ? LIVE_HINTS : HINTS, hosted: true, live: o.live !== undefined }), nonce);
     }
     return plain(res, 404, 'text/plain; charset=utf-8', 'Not found');
   };
