@@ -70,6 +70,7 @@ describe('ProactiveStore', () => {
     await store.add(watch);
     await store.add(live);
     await db.pool.query(`update trips set gone_at = $2 where trip_id = $1`, ['t_gone_store', NOON]);
+    expect(await store.tripState('t_gone_store')).toBe('gone');
     expect(await store.retireGone(NOON)).toBe(2);
     expect(await store.status('t_gone_store', 'timer:gone')).toMatchObject({ status: 'dropped', reason: 'trip_gone' });
     expect(await store.status('t_gone_store', 'watch:gone')).toMatchObject({ status: 'dropped', reason: 'trip_gone' });
@@ -123,8 +124,8 @@ describe('ProactiveStore', () => {
     await seedTrip(db.pool, 't_london', 'Europe/London');
     expect(await store.tripTz('t_london')).toBe('Europe/London');
     expect(await store.tripTz('t_nowhere')).toBe('Asia/Kolkata');
-    expect(await store.tripExists('t_goa')).toBe(true);
-    expect(await store.tripExists('t_nowhere')).toBe(false);
+    expect(await store.tripState('t_goa')).toBe('live');
+    expect(await store.tripState('t_nowhere')).toBeNull();
   });
 
   it('lists the unprompted posts that still need the ignored check', async () => {

@@ -211,9 +211,11 @@ export class ProactiveStore {
     return tz && isValidTz(tz) ? tz : DEFAULT_TZ;
   }
 
-  async tripExists(tripId: string): Promise<boolean> {
-    const r = await this.pool.query(`select 1 from trips where trip_id = $1`, [tripId]);
-    return (r.rowCount ?? 0) > 0;
+  /** Whether Go has the trip: live, gone (the Server no longer has it, trips.gone_at), or null for one it never had. */
+  async tripState(tripId: string): Promise<'live' | 'gone' | null> {
+    const r = await this.pool.query<{ gone: boolean }>(`select gone_at is not null as gone from trips where trip_id = $1`, [tripId]);
+    const row = r.rows[0];
+    return row ? (row.gone ? 'gone' : 'live') : null;
   }
 
   async hush(tripId: string, now: Date): Promise<void> {
