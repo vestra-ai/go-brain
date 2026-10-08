@@ -210,11 +210,13 @@ export const LOGIN_SCRIPT = `
     return login.picture === '' && waited > EMBED_QUIET_MS;
   }
 
-  // Bash's embed says how its picture is doing: { type: 'vestra:embed', state: 'connecting' | 'live' | 'error' }. Only
-  // Watch's own origin is heard, for the frame up now; anything else is left alone.
+  // Bash's embed says how its picture is doing: { type: 'vestra:embed', state: 'connecting' | 'live' | 'error' }, once per
+  // change, live at its first frame. Only the frame up now is heard, from Watch's own origin; anything else is left alone.
   window.addEventListener('message', function (e) {
     var d = e.data;
-    if (!WATCH_ORIGIN || e.origin !== WATCH_ORIGIN || !login.framed || !d || d.type !== 'vestra:embed') return;
+    var frame = login.framed ? $('login-frame').querySelector('iframe') : null;
+    if (!WATCH_ORIGIN || e.origin !== WATCH_ORIGIN || !frame || e.source !== frame.contentWindow) return;
+    if (!d || d.type !== 'vestra:embed') return;
     if (d.state !== 'connecting' && d.state !== 'live' && d.state !== 'error') return;
     login.picture = d.state;
     renderSheet();

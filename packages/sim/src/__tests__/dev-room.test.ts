@@ -297,9 +297,9 @@ function pageInBrowser(html: string, o: { me?: string } = {}) {
     },
     /** The page's body, as the sheet leaves it. */
     body: () => document.body,
-    /** A frame on the page posts it a message from `origin`. */
-    post(data: unknown, origin: string) {
-      for (const fn of winListeners.message ?? []) fn({ data, origin });
+    /** A frame on the page posts it a message from `origin`: the login frame's own window unless another is named. */
+    post(data: unknown, origin: string, source: unknown = el('login-frame').querySelector('iframe').contentWindow) {
+      for (const fn of winListeners.message ?? []) fn({ data, origin, source });
     },
   };
 }
@@ -829,6 +829,9 @@ describe('the login card and its sheet', () => {
     p.post({ type: 'other', state: 'live' }, ORIGIN);
     p.post(embed('ready'), ORIGIN);
     p.post('live', ORIGIN);
+    // Nor does another frame on Watch's origin: only the login frame's own window is heard.
+    p.el('login-frame').querySelector('iframe').contentWindow = { frame: 'login' };
+    p.post(embed('live'), ORIGIN, { frame: 'another' });
     expect(p.el('login-wait').hidden).toBe(false);
     p.post(embed('live'), ORIGIN);
     expect(p.el('login-wait').hidden).toBe(true);
