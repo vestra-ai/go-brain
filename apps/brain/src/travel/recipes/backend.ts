@@ -24,6 +24,12 @@
  *
  * A search answers inline within TRAVEL_WAIT_MS of its start; past that the search tool goes on and the options come when
  * the run finishes (waitMs).
+ *
+ * A stays ask whose only page conditions are ones ixigo's own rows say (NARROWED_BY: pool, breakfast, free cancellation)
+ * answers at once from a finished, kept search of the same page with no conditions (the trip's stays head start, or an
+ * earlier ask), its rows that have them all, when at least NARROW_MIN do; the card's checked time is that search's. The
+ * filtered search then runs in the background, with no card and no message, and is kept under its own key for the next
+ * ask. The posted card is never touched.
  */
 import { createHash } from 'node:crypto';
 import type { TurnEnd } from '../../composer/context.js';
@@ -121,6 +127,15 @@ export type IxigoWebBackend = TravelBackend & { turnEnded(t: TurnEnd): void; sha
 /** Whose a live card is: the message whose early start ran its search, or the composer turn whose search tool did. */
 type Owner = { kind: 'message' | 'turn'; id: string } | null;
 
+/** A search kept under its key: when it started, for how long, its run, and what it found once it finished (done). */
+interface Kept {
+  at: number;
+  ttl: number;
+  search: Promise<TravelSearch>;
+  ran: Promise<EngineAnswer>;
+  done?: TravelSearch;
+}
+
 /**
  * A live card that has not ended: its search running, a failed early start's card waiting for the composer's search, or
  * a card waiting on a pick (choosingSince: ixigo knew more than one place, and the search after the pick, whatever its
@@ -148,12 +163,17 @@ export const LINK_ONLY_KINDS: ReadonlySet<TravelKind> = new Set(['flights']);
 const BOOK_ON_IXIGO = 'Options from ixigo.com are booked on ixigo, from their link.';
 const CACHE_MAX = 200;
 
+/** The conditions a kept stays search with none answers from its own rows: each stay says them (facts.pool and the rest). */
+export const NARROWED_BY: ReadonlySet<string> = new Set(['pool', 'breakfast', 'free_cancellation']);
+/** The fewest rows a kept search must have with the conditions to answer from them; fewer, and the ask runs its own search. */
+export const NARROW_MIN = 3;
+
 export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   /** Searches by request: the run's own answer (ran) and the search made of it, which a step and a search each take. */
-  const kept = new Map<string, { at: number; ttl: number; search: Promise<TravelSearch>; ran: Promise<EngineAnswer> }>();
+  const kept = new Map<string, Kept>();
 
   /** A run kept for its TTL under its key; one that fails is not kept, so the next ask runs it again. */
-  function keep(key: string, entry: { at: number; ttl: number; search: Promise<TravelSearch>; ran: Promise<EngineAnswer> }): void {
+  function keep(key: string, entry: Kept): void {
     kept.delete(key);
     kept.set(key, entry);
     while (kept.size > CACHE_MAX) {
@@ -161,9 +181,42 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       if (oldest === undefined) break;
       kept.delete(oldest);
     }
-    entry.search.catch(() => {
-      if (kept.get(key)?.search === entry.search) kept.delete(key);
+    entry.search.then(
+      (found) => {
+        entry.done = found;
+      },
+      () => {
+        if (kept.get(key)?.search === entry.search) kept.delete(key);
+      },
+    );
+  }
+
+  /**
+   * A stays ask answered from a finished, kept search of the same page with no conditions: its rows that have every page
+   * condition the ask set, all of them NARROWED_BY; null when there is no such search, or fewer than NARROW_MIN rows fit.
+   * Conditions that are not the page's (a beach, a villa) are not ixigo's to filter: Go's own filters read them as ever.
+   */
+  async function fromKept(id: string, given: Record<string, unknown>, conditions: string[], tripId: string): Promise<TravelSearch | null> {
+    const recipe = d.book.get(id);
+    const byPage = conditions.filter((c) => recipe?.conditions && Object.hasOwn(recipe.conditions, c));
+    if (byPage.length === 0 || !byPage.every((c) => NARROWED_BY.has(c))) return null;
+    const wide = kept.get(await keyFor(id, given, [], tripId));
+    if (!wide?.done || d.now().getTime() - wide.at >= wide.ttl) return null;
+    const rows = wide.done.results.filter((o) => byPage.every((c) => o.facts[c] === true));
+    if (rows.length < NARROW_MIN) return null;
+    return { ...wide.done, results: rows, runId: `${wide.done.runId ?? id}|${[...byPage].sort().join('+')}` };
+  }
+
+  /** The search itself, in the background: no card, no hold, kept under its own key for the next ask. */
+  function runQuietly(key: string, id: string, given: Record<string, unknown>, conditions: string[], tripId: string, ttl: number): void {
+    const nowMs = d.now().getTime();
+    const runId = `${key}|${nowMs}`;
+    const ran = d.engine.answer(id, given, { tripId, conditions, background: true });
+    const search = ran.then((run): TravelSearch => {
+      if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
+      return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page };
     });
+    keep(key, { at: nowMs, ttl, search, ran });
   }
   /** The live cards that have not ended, by trip and search. */
   const cards = new Map<string, OpenCard>();
@@ -227,6 +280,15 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       const cardKey = `${tripId}|${key}`;
       const nowMs = d.now().getTime();
       const hit = kept.get(key);
+      // The search itself kept and done answers as it is; until then, a kept search of the same page with no conditions
+      // answers from its rows, and the search itself runs in the background (unless it is running already).
+      if (!(hit?.done && nowMs - hit.at < hit.ttl)) {
+        const narrowed = await fromKept(id, given, conditions, tripId);
+        if (narrowed) {
+          if (!(hit && nowMs - hit.at < hit.ttl)) runQuietly(key, id, given, conditions, tripId, ttl);
+          return narrowed;
+        }
+      }
       if (hit && nowMs - hit.at < hit.ttl) {
         // The composer joining a run its early start began takes the card: if that run fails, nothing retries it.
         const running = cards.get(cardKey);
