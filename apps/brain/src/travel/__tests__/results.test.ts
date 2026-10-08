@@ -24,6 +24,10 @@ describe('result sets', () => {
     expect(set.resultsId).toMatch(/^r_/);
     expect(await store.get('t_goa', set.resultsId)).toEqual(set);
     expect(await store.get('t_other', set.resultsId)).toBeNull();
+    // A search's results page on ixigo.com, kept with its list for "See all on ixigo".
+    const page = 'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa';
+    const withPage = await store.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: {}, options: [villa('Villa Sol', 1280000)], checkedAt: CHECKED, page });
+    expect(await store.get('t_goa', withPage.resultsId)).toMatchObject({ page });
   });
 
   it('keeps the options on a card as offers that a tap, a vote or a payment can name', async () => {

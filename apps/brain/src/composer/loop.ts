@@ -294,6 +294,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     const toolsFrom = Date.now();
     // A reply of card tools only: they run one by one, so each one's card is counted, and once every card is up the
     // turn ends with this reply's words. A card tool that failed (no card) goes back to the model as any result does.
+    i.ctx.roundTools = calls.map((c) => c.name);
     const cardsOnly = calls.every((c) => byName.get(c.name)?.endsTurn === true);
     let allUp = cardsOnly;
     const results: Anthropic.ToolResultBlockParam[] = [];
@@ -319,7 +320,8 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     const lines = [...new Set(i.ctx.lines.slice(linesBefore).map((l) => l.trim()).filter((l) => l !== ''))];
     const words = lines.length > 0 ? lines.join('\n') : text;
     if (lines.length > 0) latestText = words;
-    if (allUp) return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP, timings };
+    // A tool that answered itself (a finished plain search put up its card and line): the turn ends on its card too.
+    if (allUp || (i.ctx.answered && lines.length > 0)) return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP, timings };
   }
   return { text: latestText, silent: i.ctx.outcome.silent, rounds: maxRounds, usage, messages, stopReason: 'max_rounds', timings };
 }

@@ -57,7 +57,8 @@ describe('the ixigo_web backend', () => {
   it("runs each kind's recipe from the book, with the person's words and conditions as its inputs", async () => {
     const e = scripted();
     const found = await backend(e.engine).search('trains', TRAINS, { tripId: 't_goa' });
-    expect(found).toEqual({ results: [OPTION], checkedAt: '2026-10-07T12:00:03.000Z', runId: expect.stringMatching(/^trains\.between\|/) });
+    // With the results page it read: "See all on ixigo" opens it.
+    expect(found).toEqual({ results: [OPTION], checkedAt: '2026-10-07T12:00:03.000Z', runId: expect.stringMatching(/^trains\.between\|/), page: 'https://www.ixigo.com/x' });
     await backend(e.engine).search('stays', { area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 7, mustHave: ['pool'] }, { tripId: 't_goa' });
     await backend(e.engine).search('buses', TRAINS, { tripId: 't_goa' });
     expect(e.runs).toEqual([

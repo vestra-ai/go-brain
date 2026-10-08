@@ -40,6 +40,8 @@ export interface ResultSet {
   query: Record<string, unknown>;
   options: ResultOption[];
   checkedAt: string;
+  /** The results page the search read on ixigo.com, where the whole list is: "See all on ixigo" opens it. */
+  page?: string | null;
 }
 
 export interface OptionsCardRow {
@@ -114,20 +116,20 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
     async save(s) {
       const set: ResultSet = { ...s, resultsId: s.resultsId ?? mintId('r') };
       await pool.query(
-        `insert into travel_results (results_id, trip_id, option_kind, source, query, options, checked_at)
-         values ($1, $2, $3, $4, $5, $6, $7) on conflict (results_id) do nothing`,
-        [set.resultsId, set.tripId, set.optionKind, set.source, JSON.stringify(set.query), JSON.stringify(set.options), set.checkedAt],
+        `insert into travel_results (results_id, trip_id, option_kind, source, query, options, checked_at, page)
+         values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (results_id) do nothing`,
+        [set.resultsId, set.tripId, set.optionKind, set.source, JSON.stringify(set.query), JSON.stringify(set.options), set.checkedAt, set.page ?? null],
       );
       return set;
     },
 
     async get(tripId, resultsId) {
-      const { rows } = await pool.query<{ results_id: string; trip_id: string; option_kind: OptionKind; source: 'search' | 'task'; query: Record<string, unknown>; options: ResultOption[]; checked_at: Date }>(
-        'select results_id, trip_id, option_kind, source, query, options, checked_at from travel_results where trip_id = $1 and results_id = $2',
+      const { rows } = await pool.query<{ results_id: string; trip_id: string; option_kind: OptionKind; source: 'search' | 'task'; query: Record<string, unknown>; options: ResultOption[]; checked_at: Date; page: string | null }>(
+        'select results_id, trip_id, option_kind, source, query, options, checked_at, page from travel_results where trip_id = $1 and results_id = $2',
         [tripId, resultsId],
       );
       const r = rows[0];
-      return r ? { resultsId: r.results_id, tripId: r.trip_id, optionKind: r.option_kind, source: r.source, query: r.query, options: r.options, checkedAt: r.checked_at.toISOString() } : null;
+      return r ? { resultsId: r.results_id, tripId: r.trip_id, optionKind: r.option_kind, source: r.source, query: r.query, options: r.options, checkedAt: r.checked_at.toISOString(), ...(r.page ? { page: r.page } : {}) } : null;
     },
 
     async findOffer(tripId, offerId) {

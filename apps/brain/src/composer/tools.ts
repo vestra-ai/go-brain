@@ -52,6 +52,10 @@ export interface TurnCtx {
   allowedTools?: string[];
   /** false: the turn's final text is not posted (cards and reactions still go). */
   mayPostText?: boolean;
+  /** The tools the model asked for in the round now running, set by the loop before they run. */
+  roundTools?: string[];
+  /** Set by a tool that put up its card and its line itself (a finished plain search): the turn ends on them. */
+  answered?: boolean;
 }
 
 export interface TurnOutcome {

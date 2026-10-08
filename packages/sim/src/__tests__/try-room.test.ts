@@ -7,7 +7,7 @@ import { goaFreshTrip } from '../goa.js';
 import { Caps, DEFAULT_CAPS } from '../try-room/caps.js';
 import { TryEnv } from '../try-room/env.js';
 import { COOKIE_NAME, Gate, WrongTries, clientAddress } from '../try-room/gate.js';
-import { CLOSE_TOO_MANY, refusal, serveTryRoom, visitTrip, type TryRoom, type TryRoomOptions } from '../try-room/serve.js';
+import { CLOSE_TOO_MANY, LIVE_BEHIND_BYTES, refusal, serveTryRoom, visitTrip, type TryRoom, type TryRoomOptions } from '../try-room/serve.js';
 import { DAILY_LIMIT_LINE, HINTS, NOT_IN_YOUR_TRIP, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_MANY_TRIES, tooManyTabs, visitLimitLine } from '../try-room/words.js';
 import { startTestGo, type TestGo } from './helpers/test-go.js';
 
@@ -614,6 +614,77 @@ describe('ids and memory', () => {
   });
 });
 
+describe('Go Live', () => {
+  /** A stand-in for Go's live view: each feed opened, the trip it is for, and a way to send on it. */
+  function fakeLive() {
+    const feeds: Array<{ tripId: string; send: (m: unknown) => void; closed: boolean }> = [];
+    const live: TryRoomOptions['live'] = (tripId, onMessage) => {
+      const feed = { tripId, send: onMessage, closed: false };
+      feeds.push(feed);
+      return { close: () => { feed.closed = true; } };
+    };
+    return { feeds, live };
+  }
+  const lives = (got: any[]) => got.filter((m) => m.type === 'live');
+
+  it("draws the second column only when the room has Go Live, and the page's script still parses", async () => {
+    const plain = roomPage({ title: 'Try Go', nonce: 'n0nce', hints: HINTS, hosted: true });
+    expect(plain).not.toContain('class="split"');
+    expect(plain).not.toContain('onLive(');
+    const html = roomPage({ title: 'Try Go', nonce: 'n0nce', hints: HINTS, hosted: true, live: true });
+    expect(html).toContain('<div class="split"><div class="app">');
+    expect(html).toContain('<aside class="live" id="live" aria-label="Go Live">');
+    expect(html).toContain("} else if (data.type === 'live') {");
+    expect(html).not.toContain('—');
+    const script = html.slice(html.indexOf('<script nonce="n0nce">') + '<script nonce="n0nce">'.length, html.indexOf('</script>'));
+    expect(() => new Function(script)).not.toThrow();
+    const { feeds, live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open });
+    const cookie = await signIn(r);
+    expect(await (await page(r, cookie)).text()).toContain('id="screen"');
+    expect(feeds).toEqual([]);
+  });
+
+  it("gives each socket the feed of its visit's trip once the first message makes it, relays what Go says, and lets it go", async () => {
+    const { feeds, live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open });
+    const cookie = await signIn(r);
+    const l = await inRoom(r, cookie);
+    await pause(50);
+    expect(feeds).toEqual([]); // no trip yet: nothing to watch, and nothing opened
+    sayAs(l, personId(l, 'Rahul'), 'Goa in November?');
+    await until(() => feeds.length === 1);
+    const tripId = r.tripOf(visitOf(cookie))!;
+    expect(feeds[0]!.tripId).toBe(tripId);
+    feeds[0]!.send({ type: 'hello', trip_id: tripId, events: [] });
+    feeds[0]!.send({ type: 'run', event: { type: 'run_start', run_id: 'run_1', group_id: 'grp_1', recipe_id: 'trains.between', label: 'Trains', at: '2026-10-08T06:00:00Z' } });
+    await until(() => lives(l.got).length === 2);
+    expect(lives(l.got)[1]).toEqual({ type: 'live', trip_id: tripId, msg: { type: 'run', event: expect.objectContaining({ run_id: 'run_1' }) } });
+    // Start over: the old trip's feed goes, and the next trip gets its own once someone speaks in it.
+    l.ws.send(JSON.stringify({ type: 'start_over' }));
+    await until(() => feeds[0]!.closed);
+    sayAs(l, personId(l, 'Priya'), 'starting again');
+    await until(() => feeds.length === 2);
+    expect(feeds[1]!.tripId).not.toBe(tripId);
+    l.ws.close();
+    await until(() => feeds[1]!.closed);
+  });
+
+  it("never holds a run's events back behind a big picture", async () => {
+    const { feeds, live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open });
+    const cookie = await signIn(r);
+    const l = await inRoom(r, cookie);
+    sayAs(l, personId(l, 'Rahul'), 'hi');
+    await until(() => feeds.length === 1);
+    const big = 'A'.repeat(LIVE_BEHIND_BYTES + 1024);
+    feeds[0]!.send({ type: 'run', event: { type: 'frames', run_id: 'run_1', frames: [{ label: 'results', at_ms: 1, page: '/hotels/search/result', jpeg_base64: big }] } });
+    feeds[0]!.send({ type: 'run', event: { type: 'run_end', run_id: 'run_1', ok: true, speed: 'page', ms: 10 } });
+    await until(() => lives(l.got).some((m) => m.msg.event?.type === 'run_end'));
+    expect(lives(l.got).map((m) => m.msg.event.type)).toContain('run_end');
+  });
+});
+
 describe('the hosted page and its settings', () => {
   it('draws Start over, the hints, the limit line and the nonce, keeps the same person on a new trip, and leaves the dev room page as it was', () => {
     const html = roomPage({ title: 'Try Go', nonce: 'n0nce', hints: HINTS, hosted: true });
@@ -639,6 +710,9 @@ describe('the hosted page and its settings', () => {
       PORT: 8080, TRY_DAILY_TURNS: 200, TRY_DAILY_MESSAGES: 600, TRY_VISIT_TURNS: 30, TRY_SIMULATED_LINE: SIMULATED_LINE, TRY_INSTANCE: 'try-room',
     });
     expect(TryEnv.parse({ ...base, PORT: '9000', TRY_DAILY_TURNS: '10' })).toMatchObject({ PORT: 9000, TRY_DAILY_TURNS: 10 });
+    expect(TryEnv.parse(base).TRY_LIVE).toBe('0');
+    expect(TryEnv.parse({ ...base, TRY_LIVE: '1' }).TRY_LIVE).toBe('1');
+    expect(() => TryEnv.parse({ ...base, TRY_LIVE: 'yes' })).toThrow();
     expect(() => TryEnv.parse({ ...base, GO_SIGNING_SECRET: 'short' })).toThrow();
     expect(() => TryEnv.parse({ ...base, TRY_PASSCODE: 'nineteen-characters' })).toThrow();
     expect(() => TryEnv.parse({ ...base, TRY_COOKIE_SALT: 'c'.repeat(31) })).toThrow();
