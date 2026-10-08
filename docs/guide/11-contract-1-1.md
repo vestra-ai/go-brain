@@ -27,7 +27,7 @@ Good to know:
 | B1 | A payback someone recorded, once the one paid confirmed it | The Server | the `settlement.recorded` event |
 | B2 | A checklist card; a vault link to add documents | Go; the Server asks | the `checklist` card; `vault_link` `start: "add_documents"` and `context` |
 | B3a | A call's recording and length | Go | `CallCard.recording_url`, `duration_s` |
-| B4 | Whether the people an expense is split between agreed to it | The Server | `Expense.status`, `confirmations`; `expense.changed` `approved`, `disputed` and `by_person_id` |
+| B4 | Whether the people an expense is split between agreed to it; the vault payment an expense was paid with | The Server; Go | `Expense.status`, `confirmations`; `expense.changed` `approved`, `disputed` and `by_person_id`; `add_expense.approval_id` |
 
 Not in 1.1: listening to a call live (B3b), `request_task` (B3c), and the check-in methods (Group C). They come after the hackathon.
 
@@ -161,6 +161,8 @@ A `checklist` card shows who in the group has something ready, one row a person 
 A finished call's card can carry its `recording_url` (Go's own signed link, which stops working after a while) and `duration_s`.
 
 An expense can say whether the people it is split between agreed to it: `status` is `pending`, `approved` or `disputed`, and `confirmations` has one entry for each person in `split_person_ids` other than the payer, with their `state` (`pending`, `approved` or `disputed`), when they answered (`at`), and a `reason` for a dispute. When someone answers, the Server sends `expense.changed` with `change` `approved` or `disputed`, and `by_person_id` says who answered.
+
+`add_expense` gains `approval_id`, the spend approval a vault payment used (the same id as on its booking). With it, the Server records the expense as approved at once. Without it, the Server records it pending, for the people it is split between to answer. A `booking_id` alone does not approve an expense.
 
 Priya disputed the cab, because she took the bus:
 

@@ -8433,6 +8433,18 @@
                 "type": "null"
               }
             ]
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
