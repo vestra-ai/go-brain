@@ -42,8 +42,12 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
   } else if (a.as === 'link') {
     templates.push(['answer.title', a.title]);
     if (a.who) out.push(['answer.who', a.who]);
-  } else {
+  } else if (a.as === 'places') {
     for (const [k, v] of Object.entries(a.suggestions)) if (k !== 'words_param' && typeof v === 'string') out.push([`answer.suggestions.${k}`, v]);
+  }
+  if (r.steps) {
+    out.push(['steps.each', r.steps.each]);
+    for (const [i, s] of r.steps.run.entries()) for (const [name, v] of Object.entries(s.given)) out.push([`steps.run.${i}.given.${name}`, v]);
   }
   if (r.page) templates.push(['page', r.page]);
   if (r.fast) {
@@ -114,6 +118,33 @@ export function loadBook(dir: string = BOOK_DIR): { book: Book; problems: string
       if (input.lookup && lookup?.answer.as !== 'places') {
         problems.push(`${r.id}: input ${name} names the lookup ${input.lookup}, which is not in the book`);
         recipes.delete(r.id);
+      }
+    }
+  }
+  // A composite's steps are searches and links in the book: never a lookup, another composite, or a change on ixigo, and
+  // given every input they need and none they lack (a typo fails here, not in every lane of a run).
+  for (const r of [...recipes.values()]) {
+    for (const step of r.steps?.run ?? []) {
+      const s = recipes.get(step.recipe);
+      const unknown = s ? Object.keys(step.given).filter((name) => !(name in s.inputs)) : [];
+      const missing = s ? Object.entries(s.inputs).filter(([name, i]) => !i.optional && !i.value && !(name in step.given)).map(([name]) => name) : [];
+      const why = !s
+        ? 'which is not in the book'
+        : s.steps
+          ? 'which is a composite too'
+          : s.changes_state
+            ? 'which changes something on ixigo'
+            : s.answer.as === 'places'
+              ? 'which is a lookup'
+              : unknown.length > 0
+                ? `which has no input ${unknown.join(' or ')}`
+                : missing.length > 0
+                  ? `which needs ${missing.join(' and ')}, and is not given it`
+                  : null;
+      if (why) {
+        problems.push(`${r.id}: a step runs ${step.recipe}, ${why}`);
+        recipes.delete(r.id);
+        break;
       }
     }
   }

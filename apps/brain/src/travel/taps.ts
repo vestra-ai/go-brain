@@ -1,6 +1,7 @@
 /**
  * Taps on Go's options cards. "Put it to a vote" opens the vote in code (fast and once); "I'll take this" goes on the
- * desk, so the composer answers the person in the room; "See on ixigo" opens the option's own ixigo.com page.
+ * desk, so the composer answers the person in the room; "See on ixigo" opens the option's own ixigo.com page; "Flights
+ * from my city", on the card of each home city's ways there, opens the flights from the tapper's own city.
  */
 import type { Brain } from '../app.js';
 import type { DeskItem } from '../desk/desk.js';
@@ -75,6 +76,18 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     const set = row ? await d.results.get(tap.trip_id, row.resultsId) : null;
     const url = ixigoPage(set?.page ?? null);
     if (!url) return { result: 'refused', toast: 'This list has no ixigo page' };
+    return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
+  });
+
+  // The ways there: the flights from the tapper's own home city, else from the first city on the card.
+  taps.on('options', 'flights_home', async (tap) => {
+    const row = await d.results.card(tap.trip_id, tap.card_id);
+    const set = row ? await d.results.get(tap.trip_id, row.resultsId) : null;
+    const ways = set?.query['ways_there'] as { flights?: Record<string, string>; home_of?: Record<string, string> } | undefined;
+    const flights = ways?.flights ?? {};
+    const home = ways?.home_of?.[tap.person_id];
+    const url = ixigoPage((home ? flights[home] : undefined) ?? Object.values(flights)[0] ?? null);
+    if (!url) return { result: 'refused', toast: 'This card has no flights page' };
     return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
   });
 

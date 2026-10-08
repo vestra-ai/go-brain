@@ -44,8 +44,9 @@ export interface EngineDeps {
   runner: (tripId: string) => Pick<RecipeRunner, 'read' | 'pageFetch' | 'canPageFetch'> | null;
   /** Keeps a place ixigo resolved; absent in tests that keep nothing. */
   pool?: Pool;
-  /** The trip as a recipe's inputs read it ($trip): its head count and the members' home cities. */
-  trip: (tripId: string) => Promise<{ people: number; homes: string[] }>;
+  /** The trip as a recipe's inputs read it ($trip): its head count, the members' home cities (one per member who gave
+   *  one), and where and from when it goes, once the trip says. */
+  trip: (tripId: string) => Promise<{ people: number; homes: string[]; destination?: string | null; start?: string | null }>;
   /** Holds the trip's computer awake for the travel the trip is talking: called once a run will open a page there. */
   warm?: (tripId: string, recipeId: string) => void;
   now: () => Date;
@@ -64,8 +65,9 @@ export interface RecipeStat {
   p90_ms: number | null;
 }
 /** link: an answer that loads nothing; fast: the page's own call from the trip's warm tab; page: the browser fetch of a
- *  page (a lookup's box, or a results page); kept: a facts answer from earlier, inside its recipe's TTL. */
-export type Speed = 'link' | 'fast' | 'page' | 'kept';
+ *  page (a lookup's box, or a results page); kept: a facts answer from earlier, inside its recipe's TTL; steps: a
+ *  composite, whose steps run at their own speeds. */
+export type Speed = 'link' | 'fast' | 'page' | 'kept' | 'steps';
 /** The last runs a recipe's speeds are measured over. */
 const LAST_RUNS = 100;
 
@@ -75,7 +77,19 @@ const percentile = (sorted: number[], p: number): number | null =>
 export type EngineAnswer =
   | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number }
   | { as: 'facts'; title: string; rows: Array<Record<string, unknown>>; page: string; checkedAt: string; ms: number }
-  | { as: 'link'; link: string; title: string; who: string | null };
+  | { as: 'link'; link: string; title: string; who: string | null }
+  /** A composite's: its inputs as filled, and each entry (a home city) with each step's answer, or why it has none. */
+  | { as: 'compare'; inputs: Record<string, unknown>; entries: Array<{ entry: string; steps: StepAnswer[] }>; checkedAt: string; ms: number };
+
+/** One step of a composite for one entry: its recipe, and its answer or why it has none ("unreachable: ..."). */
+export interface StepAnswer {
+  recipe: string;
+  answer?: EngineAnswer;
+  why?: string;
+}
+
+/** The entries a composite runs for at most, those listed most often first (the home cities most people come from). */
+export const STEPS_ENTRIES_MAX = 4;
 
 /** Facts answers kept by recipe and inputs for the recipe's TTL: a second question about the same place is instant. */
 const KEPT_FACTS_MAX = 200;
@@ -86,7 +100,16 @@ export interface RunFor {
   conditions?: string[];
   signal?: AbortSignal;
   onProgress?: OnProgress;
+  /** A step of a composite: the composite's run, and the entry the step runs for (its lane on the strip). */
+  stepOf?: string;
+  lane?: string;
 }
+
+/**
+ * A step's run on the strip names its composite (step_of) and its lane. Not parent: a parent's run is a lookup, nested
+ * in its search and never counted; a step is a run of its own, side by side with the others.
+ */
+const stepOf = (o: RunFor): { step_of?: string; lane?: string } => ({ ...(o.stepOf ? { step_of: o.stepOf } : {}), ...(o.lane ? { lane: o.lane } : {}) });
 
 /** A choice the model was offered, by its exact name: it resolves without another load, and is kept for the words asked. */
 interface Offered { lookup: string; asked: string; place: Record<string, unknown>; at: number }
@@ -114,7 +137,14 @@ const fastOn = (runner: ReturnType<EngineDeps['runner']>): boolean => !!runner?.
 const choiceLine = (s: Suggestion): string => (s.line ? `"${s.name}" (${s.line})` : `"${s.name}"`);
 
 /** How many rows an answer has, for its run's end; a link has none. */
-const rowsOf = (a: EngineAnswer): { rows?: number } => (a.as === 'options' ? { rows: a.options.length } : a.as === 'facts' ? { rows: a.rows.length } : {});
+const rowsOf = (a: EngineAnswer): { rows?: number } =>
+  a.as === 'options'
+    ? { rows: a.options.length }
+    : a.as === 'facts'
+      ? { rows: a.rows.length }
+      : a.as === 'compare'
+        ? { rows: a.entries.reduce((n, e) => n + e.steps.filter((s) => s.answer).length, 0) }
+        : {};
 
 export function createEngine(d: EngineDeps) {
   const offered = new Map<string, Offered>();
@@ -368,7 +398,7 @@ export function createEngine(d: EngineDeps) {
     if (!recipe.page) throw new TravelError('refused', `${recipe.title} has no page to open.`);
     const runner = d.runner(o.tripId);
     const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && fastOn(runner) ? 'fast' : 'page';
-    const strip = { line: line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed }) };
+    const strip = { line: line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed, ...stepOf(o) }) };
     try {
       const answer = await runRecipe(recipe, recipe.page, given, o, runner, strip, took);
       strip.line.end({ ok: true, ...rowsOf(answer) });
@@ -454,7 +484,7 @@ export function createEngine(d: EngineDeps) {
         d.log?.warn({ recipe: recipe.id, err: String(err).slice(0, 200) }, 'book: the fast speed failed; the page speed runs');
         const fell = strip.line;
         fell.end({ ok: false, fell_to: 'page', why: whyOf(err) });
-        strip.line = line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed: 'page', fell_from: fell.id });
+        strip.line = line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed: 'page', fell_from: fell.id, ...stepOf(o) });
       }
     }
     const plan = await fetchPlanOf(recipe, inputs, bindings);
@@ -474,6 +504,90 @@ export function createEngine(d: EngineDeps) {
     refusePayments(got.finalUrl);
     o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
     return answerFrom(got.captures, filled, started);
+  }
+
+  /**
+   * A composite: its inputs, the entries it runs for, then every step for every entry at once, each a run of its own that
+   * names this one (step_of) and its entry (lane). The trip's computer runs as many fetches at once as its slots allow
+   * (runners.ts), and the rest wait their turn. A step that fails is its entry's why, never the composite's failure; o.signal
+   * ends the steps still going (the turn's time is up), and they answer why too.
+   */
+  async function runSteps(recipe: RecipeFile, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
+    const steps = recipe.steps!;
+    const started = d.now().getTime();
+    let strip: RunLine | null = null;
+    try {
+      if (recipe.changes_state) throw new TravelError('refused', `${recipe.title} changes something on ixigo, so it runs only after the group says yes.`);
+      // A composite has no place inputs (format.ts), so nothing here loads.
+      const inputs = (await inputsOf(recipe, given, o, null))!;
+      for (const [name, input] of Object.entries(recipe.inputs)) {
+        if (!input.optional && (inputs[name] === undefined || inputs[name] === null || inputs[name] === '')) {
+          throw new TravelError('needs_more', `${recipe.title} needs ${input.about ?? name.replace(/_/g, ' ')}.`);
+        }
+      }
+      const trip = await d.trip(o.tripId);
+      const listed = await evaluate(steps.each, inputs, { inputs, trip });
+      // Each entry once, whatever its case or spacing, the most listed first: the cities most people come from.
+      const counts = new Map<string, { entry: string; n: number }>();
+      for (const e of Array.isArray(listed) ? listed : listed === undefined ? [] : [listed]) {
+        if (typeof e !== 'string' || e.trim() === '') continue;
+        const had = counts.get(norm(e));
+        counts.set(norm(e), { entry: had?.entry ?? e.trim(), n: (had?.n ?? 0) + 1 });
+      }
+      const entries = [...counts.values()].sort((a, b) => b.n - a.n).slice(0, STEPS_ENTRIES_MAX).map((c) => c.entry);
+      if (entries.length === 0) throw new TravelError('needs_more', `${recipe.title} has no ${steps.as.replace(/_/g, ' ')} to run for yet.`);
+      const composite = line(o.tripId, { recipe_id: recipe.id, label: `${entries.map((e) => clip(e, 30)).join(', ')} · ${labelOf(recipe, inputs)}`, speed: 'steps' });
+      strip = composite;
+      const stepFor = async (entry: string, step: NonNullable<RecipeFile['steps']>['run'][number]): Promise<StepAnswer> => {
+        try {
+          const stepGiven: Record<string, unknown> = {};
+          for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
+          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, ...(o.conditions ? { conditions: o.conditions } : {}), ...(o.signal ? { signal: o.signal } : {}) };
+          return { recipe: step.recipe, answer: await answer(step.recipe, stepGiven, stepRun) };
+        } catch (err) {
+          if (o.signal?.aborted) return { recipe: step.recipe, why: 'out of time' };
+          if (!(err instanceof TravelError)) d.log?.warn({ recipe: step.recipe, err: String(err).slice(0, 200) }, 'book: a step of a composite failed');
+          return { recipe: step.recipe, why: whyOf(err) };
+        }
+      };
+      const done = await Promise.all(entries.map(async (entry) => ({ entry, steps: await Promise.all(steps.run.map((step) => stepFor(entry, step))) })));
+      const at = d.now();
+      const out: EngineAnswer = { as: 'compare', inputs, entries: done, checkedAt: at.toISOString(), ms: at.getTime() - started };
+      const rows = rowsOf(out);
+      composite.end(rows.rows ? { ok: true, ...rows } : { ok: false, why: 'no step answered' });
+      return out;
+    } catch (err) {
+      (strip ?? line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed: 'steps' })).end({ ok: false, why: whyOf(err) });
+      throw err;
+    }
+  }
+
+  /** Runs a recipe for the given inputs (place inputs as the person's words), timed and recorded. */
+  function answer(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
+    const recipe = d.book.get(id);
+    if (recipe?.steps) return timed(id, 'steps', () => runSteps(recipe, given, o));
+    let speed: Speed = recipe?.answer.as === 'link' ? 'link' : 'page';
+    const took = (s: Speed): void => {
+      speed = s;
+    };
+    if (recipe?.answer.as === 'facts') {
+      const hit = keptHit(recipe, given);
+      if (hit) {
+        const keptRun = line(o.tripId, { recipe_id: id, label: labelOf(recipe, given), speed: 'kept', ...stepOf(o) });
+        return timed(id, 'kept', () => hit).then(
+          (a) => {
+            keptRun.end({ ok: true, ...rowsOf(a) });
+            return a;
+          },
+          (err: unknown) => {
+            keptRun.end({ ok: false, why: whyOf(err) });
+            throw err;
+          },
+        );
+      }
+      return timed(id, () => speed, () => kept(id, given, run(id, given, o, took)));
+    }
+    return timed(id, () => speed, () => run(id, given, o, took));
   }
 
   const factsKey = (id: string, given: Record<string, unknown>): string =>
@@ -523,32 +637,7 @@ export function createEngine(d: EngineDeps) {
         return null;
       }
     },
-    /** Runs a recipe for the given inputs (place inputs as the person's words), timed and recorded. */
-    answer(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
-      const recipe = d.book.get(id);
-      let speed: Speed = recipe?.answer.as === 'link' ? 'link' : 'page';
-      const took = (s: Speed): void => {
-        speed = s;
-      };
-      if (recipe?.answer.as === 'facts') {
-        const hit = keptHit(recipe, given);
-        if (hit) {
-          const keptRun = line(o.tripId, { recipe_id: id, label: labelOf(recipe, given), speed: 'kept' });
-          return timed(id, 'kept', () => hit).then(
-            (a) => {
-              keptRun.end({ ok: true, ...rowsOf(a) });
-              return a;
-            },
-            (err: unknown) => {
-              keptRun.end({ ok: false, why: whyOf(err) });
-              throw err;
-            },
-          );
-        }
-        return timed(id, () => speed, () => kept(id, given, run(id, given, o, took)));
-      }
-      return timed(id, () => speed, () => run(id, given, o, took));
-    },
+    answer,
     /** Each recipe's numbers at each speed, slowest middle first. */
     stats(): RecipeStat[] {
       return [...timings.values()]

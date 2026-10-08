@@ -1,7 +1,7 @@
 import type pg from 'pg';
 
 /** Demo fallbacks that flip at runtime with no redeploy. P7 adds the admin page. */
-export type SwitchName = 'TRAVEL_MODE' | 'TRAVEL_RUNNER' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE';
+export type SwitchName = 'TRAVEL_MODE' | 'TRAVEL_RUNNER' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE' | 'BROWSER_FETCH_SLOTS';
 
 export interface Switches {
   /** The stored value, else the environment's, else the safe default. Read on every use, cached 2 s. */
@@ -21,6 +21,8 @@ export const SWITCH_RULES: Record<SwitchName, { valid: (v: string) => boolean; f
   CALLS_MODE: { valid: oneOf('off', 'allowlist'), fallback: 'off' },
   // "q1,q2,..." names the live Jev questions, empty keeps all in shadow, "off" makes no Jev call (P2's kill switch).
   REFLEX_LIVE: { valid: (v) => /^(off|q(?:10|[1-9])(,q(?:10|[1-9]))*)?$/.test(v), fallback: '' },
+  // Bash's own cap on a computer's browser fetches at once: 2, and 4 once Bash runs four (its #4596).
+  BROWSER_FETCH_SLOTS: { valid: oneOf('1', '2', '3', '4'), fallback: '2' },
 };
 
 export function createSwitches(o: {

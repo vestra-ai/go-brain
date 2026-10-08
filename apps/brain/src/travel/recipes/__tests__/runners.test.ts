@@ -3,7 +3,10 @@ import { V1Error } from '../../../tasks/v1-client.js';
 import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
-import { createBrowserFetchRunner, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, WARM_TAB_MS, type FetchTrace } from '../runners.js';
+import {
+  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, WARM_TAB_MS,
+  type FetchTrace,
+} from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
 type Call = { method: string; path: string; opts: Record<string, unknown> };
@@ -243,5 +246,116 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const downTraces: FetchTrace[] = [];
     await createBrowserFetchRunner(down.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }, { onTrace: (t) => downTraces.push(t) }).catch(() => undefined);
     expect(downTraces).toEqual([expect.objectContaining({ calls: [], failed: { status: 402, why: 'out_of_credit' } })]);
+  });
+});
+
+describe("fetches at once on one trip's computer: Bash runs only so many (409 browser_busy past them)", () => {
+  /** Lets every promise that can move, move: a fetch that got a slot has asked Bash by then. */
+  const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
+  const busy = () => new V1Error(409, 'browser_busy', "This user's browser is already running 2 fetches.", 1_000, { code: 'browser_busy', retry_after_ms: 1_000 });
+
+  it("asks Bash for no more at once than the computer's slots: the rest wait their turn, in order, and the switch lets more in", async () => {
+    let slots = DEFAULT_SLOTS;
+    const ends: Array<() => void> = [];
+    let going = 0;
+    let most = 0;
+    const w = world(async () => {
+      going += 1;
+      most = Math.max(most, going);
+      await new Promise<void>((r) => ends.push(r));
+      going -= 1;
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner({ ...w.deps, slots: () => slots });
+    const asked = () => w.calls.map((c) => `${c.path.split('/')[3]} ${String((c.opts['body'] as { url?: string }).url).split('?n=')[1]}`);
+    const reads = [1, 2, 3, 4, 5].map((n) => runner.read('t1', `${BUSES}?n=${n}`, busPlan));
+    await settle();
+    expect(asked()).toEqual(['u-t1 1', 'u-t1 2']);
+    // Another trip's computer has slots of its own.
+    const other = runner.read('t2', `${BUSES}?n=9`, busPlan);
+    await settle();
+    expect(asked()).toEqual(['u-t1 1', 'u-t1 2', 'u-t2 9']);
+    ends.shift()!();
+    await settle();
+    // The first to wait goes first.
+    expect(asked().slice(3)).toEqual(['u-t1 3']);
+    // Bash runs four now: the next fetch to end lets two more in.
+    slots = 4;
+    ends.shift()!();
+    await settle();
+    expect(asked().slice(4)).toEqual(['u-t1 4', 'u-t1 5']);
+    while (ends.length > 0) {
+      ends.shift()!();
+      await settle();
+    }
+    await Promise.all([...reads, other]);
+    expect(w.calls).toHaveLength(6);
+    expect(most).toBe(4);
+  });
+
+  it("counts by the computer, not the trip: two trips on one /v1 user share its slots", async () => {
+    const ends: Array<() => void> = [];
+    const w = world(async () => {
+      await new Promise<void>((r) => ends.push(r));
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner({ ...w.deps, computer: { userIdFor: () => 'u-box', ensureUser: async () => 'u-box' }, slots: () => 1 });
+    const both = [runner.read('t1', BUSES, busPlan), runner.read('t2', BUSES, busPlan)];
+    await settle();
+    expect(w.calls).toHaveLength(1);
+    ends.shift()!();
+    await settle();
+    expect(w.calls).toHaveLength(2);
+    ends.shift()!();
+    await Promise.all(both);
+  });
+
+  it('frees the slot of a fetch that failed, and lets a waiting fetch whose turn is over leave without asking Bash', async () => {
+    const ends: Array<() => void> = [];
+    const w = world(async (_, n) => {
+      await new Promise<void>((r) => ends.push(r));
+      if (n === 1) throw new V1Error(503, 'not_ready', 'The computer did not wake.');
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner({ ...w.deps, slots: () => 1 });
+    const first = runner.read('t1', BUSES, busPlan).then(() => 'ok', (e: unknown) => (e as TravelError).code);
+    const stop = new AbortController();
+    const gaveUp = runner.read('t1', BUSES, busPlan, { signal: stop.signal }).then(() => 'ok', () => 'left');
+    const next = runner.read('t1', BUSES, busPlan);
+    await settle();
+    stop.abort();
+    expect(await gaveUp).toBe('left');
+    ends.shift()!();
+    expect(await first).toBe('unreachable');
+    await settle();
+    ends.shift()!();
+    await next;
+    // The one that left never reached Bash: the failed fetch's slot went to the next.
+    expect(w.calls).toHaveLength(2);
+  });
+
+  it("waits as long as Bash says when its fetches are all taken, and asks again, then says the computer is busy; a page call doesn't wait", async () => {
+    const twice = world((_, n) => {
+      if (n <= 2) throw busy();
+      return fetched([busCapture]);
+    });
+    const read = await createBrowserFetchRunner(twice.deps).read('t1', BUSES, busPlan);
+    expect(read.captures).toHaveLength(1);
+    expect(twice.calls).toHaveLength(3);
+    expect(twice.elapsed()).toBe(2_000);
+    const always = world(() => {
+      throw busy();
+    });
+    // Not "someone is using the browser": nobody is, the computer is reading other pages.
+    await fails(createBrowserFetchRunner(always.deps).read('t1', BUSES, busPlan), 'unreachable', /busy with other searches/);
+    expect(always.calls).toHaveLength(BUSY_TRIES + 1);
+    // A page call is for speed: a busy one fails at once, and the run falls to the page, which waits its turn.
+    const call = world((_, n) => {
+      if (n === 1) throw busy();
+      return { ...fetched([capture('fast', 'https://www.ixigo.com/plan/goa', '0:{}')]), final_url: 'https://www.ixigo.com/' };
+    });
+    await fails(createBrowserFetchRunner(call.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }), 'unreachable', /409 browser_busy/);
+    expect(call.calls).toHaveLength(1);
+    expect(call.elapsed()).toBe(0);
   });
 });

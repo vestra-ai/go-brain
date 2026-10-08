@@ -106,7 +106,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const dateOf = (iso: string): Date => new Date(`${iso}T00:00:00Z`);
 /** "Fri 6 Nov". */
-const dayText = (iso: string): string => {
+export const dayText = (iso: string): string => {
   const d = dateOf(iso);
   return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 };

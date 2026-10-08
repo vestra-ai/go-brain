@@ -88,8 +88,21 @@ export const Answer = z.discriminatedUnion('as', [
   z.object({ as: z.literal('facts'), title: z.string().min(1), each: Expr, max: z.int().positive().max(50).default(20) }),
   /** A lookup: ixigo's suggestions for the words, which the engine picks from. */
   z.object({ as: z.literal('places'), suggestions: Suggestions }),
+  /** A composite's: each entry's steps side by side, each step's own answer or why it has none (steps). */
+  z.object({ as: z.literal('compare') }),
 ]);
 export type Answer = z.infer<typeof Answer>;
+
+/**
+ * A composite: other recipes in the book, run for each entry of a list at once (each home city's trains, buses and
+ * flights). each is the list, from the inputs and the trip ($trip); as names an entry for the steps; each step's given
+ * are its recipe's inputs, from the inputs ("to") and the entry ("$home").
+ */
+const Steps = z.strictObject({
+  each: Expr,
+  as: z.string().regex(/^[a-z][a-z_]*$/),
+  run: z.array(z.strictObject({ recipe: Id, given: z.record(z.string().regex(/^[a-z][a-z_]*$/), Expr) })).min(1).max(4),
+});
 
 export const RecipeFile = z
   .object({
@@ -151,6 +164,7 @@ export const RecipeFile = z
           .optional(),
       })
       .optional(),
+    steps: Steps.optional(),
     answer: Answer,
     ttl_minutes: z.int().positive().max(60).default(10),
     measured: z.record(z.string(), z.number().nullable()).optional(),
@@ -167,6 +181,10 @@ export const RecipeFile = z
     }
     if (r.answer.as === 'places' && !(r.box && r.capture && r.keeps)) ctx.addIssue({ code: 'custom', message: 'a lookup needs box, capture and keeps' });
     if (r.answer.as === 'link' && !r.page) ctx.addIssue({ code: 'custom', message: 'a link answer needs page' });
+    if ((r.answer.as === 'compare') !== !!r.steps) ctx.addIssue({ code: 'custom', message: 'a composite has steps and answers compare, and only a composite does' });
+    if (r.steps && (r.page || r.fast || r.capture || r.fetch || r.read || r.box || Object.values(r.inputs).some((i) => i.kind === 'place'))) {
+      ctx.addIssue({ code: 'custom', message: 'a composite opens nothing and looks up no place itself: its steps do' });
+    }
     for (const [name, input] of Object.entries(r.inputs)) {
       if (input.kind === 'place' && !input.lookup) ctx.addIssue({ code: 'custom', message: `input ${name}: a place needs its lookup` });
     }

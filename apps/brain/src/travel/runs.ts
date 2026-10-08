@@ -4,8 +4,9 @@
  *
  * It adds one thing the engine doesn't know: which runs went at once. A run with no parent and no fell_from opens a
  * group, or joins the one still going; a lookup joins its search's group, and a speed that fell joins its first speed's.
- * When the last run of a group ends, the group ends, with its wall time and the sum of its runs' times, so a viewer can
- * set one against the other.
+ * A composite's steps (step_of) join the composite's group and count as its runs; the composite itself holds the group
+ * open but never counts, its time being its steps' side by side. When the last run of a group ends, the group ends, with its wall
+ * time and the sum of its runs' times, so a viewer can set one against the other.
  */
 import type { RunEvent } from './book/run-event.js';
 
@@ -42,6 +43,8 @@ interface Group {
   going: Set<string>;
   runs: number;
   sum: number;
+  /** Its composites' runs, whose time is never added: their steps' is. */
+  composites: Set<string>;
 }
 
 interface TripRuns {
@@ -91,12 +94,12 @@ export function createRunLog(o: { now: () => Date; log?: { warn(obj: object, msg
 
   /** The group a run's start joins: its parent's or first speed's, the one still going, or a new one. */
   function join(t: TripRuns, e: RunStart, at: number): Group {
-    const kin = e.parent ?? e.fell_from;
+    const kin = e.parent ?? e.fell_from ?? e.step_of;
     const theirs = kin ? t.groupOf.get(kin) : undefined;
     if (theirs) return theirs;
     if (t.open && t.open.going.size > 0 && at - t.open.last < GROUP_JOIN_MS) return t.open;
     groups += 1;
-    t.open = { id: `grp_${at.toString(36)}_${groups}`, started: at, last: at, going: new Set(), runs: 0, sum: 0 };
+    t.open = { id: `grp_${at.toString(36)}_${groups}`, started: at, last: at, going: new Set(), runs: 0, sum: 0, composites: new Set() };
     return t.open;
   }
 
@@ -113,6 +116,7 @@ export function createRunLog(o: { now: () => Date; log?: { warn(obj: object, msg
           // A lookup's time is inside its search's: it never counts. A fallen speed's next one carries the recipe on.
           if (!e.parent) {
             if (e.fell_from) g.going.delete(`next:${e.fell_from}`);
+            else if (e.speed === 'steps') g.composites.add(e.run_id);
             else g.runs += 1;
             g.going.add(e.run_id);
           }
@@ -124,7 +128,7 @@ export function createRunLog(o: { now: () => Date; log?: { warn(obj: object, msg
         const g = t.groupOf.get(e.run_id);
         if (!g || !g.going.delete(e.run_id)) return;
         g.last = at;
-        g.sum += e.ms;
+        if (!g.composites.has(e.run_id)) g.sum += e.ms;
         if (e.fell_to) g.going.add(`next:${e.run_id}`);
         if (g.going.size > 0) return;
         if (t.open === g) t.open = null;

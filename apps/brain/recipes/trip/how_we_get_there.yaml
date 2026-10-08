@@ -1,0 +1,22 @@
+id: trip.how_we_get_there
+title: How everyone gets to the trip from their home city, by train, bus and flight
+asks:
+  - how do we all get to goa
+  - delhi aur mumbai se goa kaise pahunchenge
+  - ghar se goa kaise pahunchein
+  - compare the trains and buses from our cities
+inputs:
+  to: { kind: text, value: $trip.destination, about: where the trip goes }
+  date: { kind: date, value: $trip.start, about: the day everyone travels }
+steps:
+  # Each member's home city, the cities most people come from first; a home in the trip's own place has no way there.
+  each: $trip.homes[$lowercase($) != $lowercase($$.to)]
+  as: home
+  run:
+    - { recipe: trains.between, given: { from: $home, to: to, date: date } }
+    - { recipe: buses.between, given: { from: $home, to: to, date: date } }
+    - { recipe: flights.search, given: { from: $home, to: to, date: date } }
+answer: { as: compare }
+notes: >-
+  The group showcase: each home city's trains and buses on the day, read side by side on the trip's computer (as many at
+  once as Bash runs), and its flights as a link. Go puts each city's cheapest and fastest on one card (travel/ways-there.ts).

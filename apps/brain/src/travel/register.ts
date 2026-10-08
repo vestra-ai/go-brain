@@ -27,6 +27,7 @@ import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
 import { startComputerAtSetup, warmForTravel } from './warm.js';
+import { waysThereTool } from './ways-there.js';
 
 export const registerTravel: RegisterLane = async (brain) => {
   const env = readTravelEnv(brain.env);
@@ -60,8 +61,13 @@ export const registerTravel: RegisterLane = async (brain) => {
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     pool: brain.pool,
     trip: async (tripId) => {
-      const people = (await brain.packs.get(tripId)).trip.people;
-      return { people: Math.max(1, people.length), homes: people.flatMap((p) => (p.from_city ? [p.from_city] : [])) };
+      const { people, destination, dates } = (await brain.packs.get(tripId)).trip;
+      return {
+        people: Math.max(1, people.length),
+        homes: people.flatMap((p) => (p.from_city ? [p.from_city] : [])),
+        destination: destination?.name ?? null,
+        start: dates?.start ?? null,
+      };
     },
     // A run that opens a page warms for its kind of search; any other recipe's page, for no kind.
     warm: (tripId, recipeId) => warm(tripId, searchKindOf(recipeId)),
@@ -92,6 +98,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
   const recipesTool = ixigoTool({ book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
   if (recipesTool) brain.tools.register(recipesTool);
+  // How everyone gets to the trip, asked for: each home city's trains and buses side by side, on one card.
+  brain.tools.register(waysThereTool({ engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' }));
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,

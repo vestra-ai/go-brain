@@ -4,7 +4,9 @@
  * never a person, a query, a body or a header (a PNR rides in a query).
  *
  * A run is one recipe at one speed. A lookup is a run of its own, its parent the search it finds a place for. A speed
- * that fails ends its run with fell_to and why, and the next speed opens a new run that names it in fell_from.
+ * that fails ends its run with fell_to and why, and the next speed opens a new run that names it in fell_from. A
+ * composite (speed steps) is a run of its own too: each of its steps is a run that names it in step_of, with its lane
+ * (the entry it runs for: a home city), and they run side by side; a lookup inside a step has the step as its parent.
  *
  * Calls and steps come from what Bash says about each call (runners.ts's FetchTrace): the calls it kept, when the
  * computer woke, when the page showed and its first data came, and where a call that failed stopped. Pictures come as a
@@ -22,7 +24,10 @@ import { dateAs } from './expr.js';
 import type { RecipeFile } from './format.js';
 
 export type RunEvent =
-  | { type: 'run_start'; run_id: string; parent?: string; fell_from?: string; recipe_id: string; label: string; speed: Speed; at: string }
+  | {
+      type: 'run_start'; run_id: string; parent?: string; fell_from?: string; step_of?: string; lane?: string;
+      recipe_id: string; label: string; speed: Speed; at: string;
+    }
   /** method: only for a call Go made itself (the fast speed); a page's own calls come back without theirs. */
   | { type: 'call'; run_id: string; method?: 'GET' | 'POST'; path: string; status: number; at_ms: number; ms?: number }
   | { type: 'step'; run_id: string; text: string; at_ms: number }
@@ -75,7 +80,7 @@ export interface RunLine {
 export function runLine(
   emit: (e: RunEvent) => void,
   now: () => Date,
-  start: { recipe_id: string; label: string; speed: Speed; parent?: string; fell_from?: string },
+  start: { recipe_id: string; label: string; speed: Speed; parent?: string; fell_from?: string; step_of?: string; lane?: string },
 ): RunLine {
   const started = now().getTime();
   const run_id = newUlid(started);

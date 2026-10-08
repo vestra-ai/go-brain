@@ -17,6 +17,9 @@ export const OPEN_ACTION = { action_id: 'open', label: 'See on ixigo', style: 's
 /** On a card of stays that shows a few of a longer list: the whole list on ixigo.com, one tap away. */
 export const SEE_ALL_ACTION = { action_id: 'see_all', label: 'See all on ixigo', style: 'secondary' } as const;
 
+/** On the card of each home city's ways to the trip: ixigo's flights from the tapper's own home city. */
+export const FLIGHTS_HOME_ACTION = { action_id: 'flights_home', label: 'Flights from my city', style: 'secondary' } as const;
+
 /** On the card that links to flights on ixigo, when Go can't read them itself. */
 export const SEE_FLIGHTS_ACTION = { action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' } as const;
 
@@ -135,7 +138,7 @@ export function formatClock(hhmm: string): string {
   return `${h12}:${hhmm.slice(3, 5)} ${h < 12 ? 'am' : 'pm'}`;
 }
 
-const CLASS_WORDS: Record<string, string> = { '1A': 'AC First Class', '2A': 'AC 2 Tier', '3A': 'AC 3 Tier', SL: 'Sleeper', CC: 'AC Chair Car', '2S': 'Second Sitting' };
+export const CLASS_WORDS: Record<string, string> = { '1A': 'AC First Class', '2A': 'AC 2 Tier', '3A': 'AC 3 Tier', SL: 'Sleeper', CC: 'AC Chair Car', '2S': 'Second Sitting' };
 
 export function subtitleFor(o: ResultOption): string | null {
   if (o.subtitle) return o.subtitle;
@@ -198,5 +201,23 @@ export function buildOptionsCard(i: { cardId: string; title: string; optionKind:
     checked_at: i.checkedAt,
     options: i.picks.map(cardOption),
     actions: [PICK_ACTION, ...(i.picks.length >= 2 ? [VOTE_ACTION] : []), ...(i.seeAll ? [SEE_ALL_ACTION] : i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [])],
+  });
+}
+
+/**
+ * The card of each home city's ways to the trip: its rows are trains and buses, each with its own ixigo page; flights:
+ * "Flights from my city" opens the tapper's own city's flights. Checked against the contract like any options card.
+ */
+export function buildWaysCard(i: { cardId: string; title: string; homes: string[]; checkedAt: string; picks: CardPick[]; flights: boolean }): OptionsCardT {
+  const homes = i.homes.length < 2 ? (i.homes[0] ?? '') : `${i.homes.slice(0, -1).join(', ')} and ${i.homes.at(-1)}`;
+  return C.OptionsCard.parse({
+    card_id: i.cardId,
+    kind: 'options',
+    fallback_text: clip(`${i.title}: the cheapest and the fastest from ${homes}`, 300),
+    title: clip(i.title, 80),
+    option_kind: i.picks.every((p) => p.option.kind === 'bus') ? 'bus' : 'train',
+    checked_at: i.checkedAt,
+    options: i.picks.map(cardOption),
+    actions: [OPEN_ACTION, ...(i.flights ? [FLIGHTS_HOME_ACTION] : [])],
   });
 }

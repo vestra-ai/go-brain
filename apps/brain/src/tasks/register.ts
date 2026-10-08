@@ -60,7 +60,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   // lane keeps the computer awake while people talk travel.
   const keeper = createKeepWarm({ warm: (tripId, keepMs) => computer.warm(tripId, { keepMs }), now: brain.now, log: brain.log });
   brain.recipeRunners = {
-    browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log }),
+    browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log, slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')) }),
     keepWarm: (tripId) => keeper.touch(tripId),
     start: async (tripId) => {
       await computer.warm(tripId);
