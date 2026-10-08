@@ -49,7 +49,10 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
   if (r.fast) {
     templates.push(['fast.url', r.fast.url]);
     if (r.fast.body) templates.push(['fast.body', r.fast.body]);
+    if (r.fast.list) out.push(['fast.list', r.fast.list]);
+    if (r.fast.each) out.push(['fast.each', r.fast.each]);
   }
+  if (r.box?.open) templates.push(['box.open', r.box.open]);
   for (const [i, c] of [...(r.capture ?? []), ...(r.fetch ?? []).flatMap((f) => f.capture ?? [])].entries()) templates.push([`capture.${i}`, c.match]);
   if (r.read) {
     templates.push(['read.rows.from', r.read.rows.from]);

@@ -159,6 +159,30 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     );
   });
 
+  it("falls to the page when Bash has no page_fetch, naming Bash's own status, never its schema's words (the 8 Oct drill)", async () => {
+    // Today's staging Bash refuses a fetch with no url: "Invalid input: expected string, received undefined".
+    const old = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input: expected string, received undefined');
+    });
+    const err = await createBrowserFetchRunner(old.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TravelError);
+    expect(err).toMatchObject({ code: 'unreachable', message: 'fast unavailable: Bash answered 400 invalid_request' });
+    // An answer with no page call in it at all: fast is unavailable too, not a crash.
+    const odd = world(() => ({ final_url: 'https://www.ixigo.com/', elapsed_ms: 10, woke: false }));
+    await fails(createBrowserFetchRunner(odd.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }), 'unreachable', /fast unavailable: Bash's answer had no page call/);
+  });
+
+  it('logs where a page was when its time ran out, as Bash says it, so the next drill shows the step', async () => {
+    const late = world(() => {
+      throw new V1Error(504, 'timeout', 'The page did not send every capture within 20000 ms (it stopped at 2 type). What it sent is in partial.', null, { code: 'timeout', partial: { captures: [] } });
+    });
+    await fails(createBrowserFetchRunner(late.deps).read('t1', BUSES, busPlan), 'unreachable', /took too long/);
+    expect(late.log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ tripId: 't1', message: expect.stringContaining('it stopped at 2 type') }),
+      'travel: a page ran out of time',
+    );
+  });
+
   it("tells the run strip where each call's time went: the wake, the page, each kept call; and on a timeout, where it stopped", async () => {
     const timings = { wake_ms: 4_000, nav_ms: 5_200, first_capture_ms: 7_000, done_ms: 7_400 };
     const ok = world(() => ({ ...fetched([busCapture]), woke: true, timings }));

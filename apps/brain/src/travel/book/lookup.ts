@@ -33,9 +33,31 @@ const suggestionsOf = (r: RecipeFile) => {
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-/** The fetch that types each end's words into ixigo's box and keeps its suggestion calls. */
-export async function boxPlan(r: RecipeFile, ends: Array<{ end: End; words: string }>): Promise<{ path: string; steps: Step[]; capture: CaptureSpec[] }> {
+/** One fetch of a lookup: the page it opens, the steps it works there, and the suggestion calls it keeps. */
+export interface BoxFetch { path: string; steps: Step[]; capture: CaptureSpec[] }
+
+/**
+ * The fetches that bring ixigo's suggestions for each end's words. With box.open, one per end: the suggestion call's own
+ * address, opened as the page, with nothing typed, so no box, focus or popup can stop it. Otherwise one fetch that types
+ * every end's words into the box.
+ */
+export async function boxFetches(r: RecipeFile, ends: Array<{ end: End; words: string }>): Promise<BoxFetch[]> {
   if (!r.box || !r.capture) throw new Error(`${r.id} has no box`);
+  if (!r.box.open) return [await boxPlan(r, ends)];
+  const open = r.box.open;
+  const capture: CaptureSpec[] = r.capture.map((c) => ({
+    match: c.match,
+    required: c.required,
+    min_count: 1,
+    max_count: 1,
+    ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
+  }));
+  return Promise.all(ends.map(async (e) => ({ path: await fill(open, { words: e.words.trim() }, { url: true }), steps: [], capture })));
+}
+
+/** The fetch that types each end's words into ixigo's box and keeps its suggestion calls. */
+export async function boxPlan(r: RecipeFile, ends: Array<{ end: End; words: string }>): Promise<BoxFetch> {
+  if (!r.box?.page || !r.box.type || !r.capture) throw new Error(`${r.id} has no box to type into`);
   const steps: Step[] = [];
   for (const [i, e] of ends.entries()) {
     const typing = r.box.type[e.end] ?? r.box.type.place ?? r.box.type.from ?? [];

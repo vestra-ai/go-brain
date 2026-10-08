@@ -53,6 +53,16 @@ describe('the early start', () => {
     expect(w.searches).toEqual([]);
   });
 
+  it("never searches the trip's destination for a stay in a place the tables don't know (the 8 Oct drill: Manali ran Goa)", async () => {
+    const w = world();
+    // Manali is not Goa: the composer looks it up on ixigo and searches it, and no Goa search runs first.
+    expect(await w.hook(msg(57, 'p_meher', '@Go hotels in Manali for our dates'), UNSURE_READ, goaPack())).toBeUndefined();
+    expect(w.searches).toEqual([]);
+    // With no place named, the trip's destination it is.
+    expect(await w.hook(msg(58, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack())).toEqual({ dueNow: true });
+    expect(w.searches).toEqual([{ kind: 'stays', q: expect.objectContaining({ area: 'North Goa', mustHave: ['pool'] }), tripId: 't_goa' }]);
+  });
+
   it('starts the search in every travel mode, so a search ask is one model call wherever the list comes from', async () => {
     for (const mode of ['fake', 'ixigo']) {
       const w = world(mode);

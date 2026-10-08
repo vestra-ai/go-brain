@@ -14,7 +14,7 @@ afterEach(() => forgetLearnedPlaces());
 
 const { book } = loadBook();
 const sample = (name: string): string => readFileSync(`${BOOK_DIR}samples/${name}`, 'utf8');
-const TRAINS = 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search';
+const TRAINS = '/trains/v1/search/between/JP/UDZ';
 const RSC = sample('plan.destination.rsc.txt');
 const PAGE = sample('plan.destination.html');
 /** The guide's place is a text input, so its runs go by the recipe's title. */
@@ -45,10 +45,10 @@ function fetched(clock: { ms: number }, o: ReadOptions | undefined, ms: number, 
 describe('the run strip', () => {
   it('shows a search and the lookup under it: each opened page, the calls that came back, and how each ended', async () => {
     const box = capture('searchFor=trainstationsLatLon', 'https://www.ixigo.com/action/content/trainstation?searchFor=trainstationsLatLon&value=Udaipur%20City', sample('trains.station_lookup.udaipur.json'));
-    const trains = capture(TRAINS, `https://${TRAINS}?sourceStationCode=JP&destinationStationCode=UDZ`, sample('trains.between.page.json'));
+    const trains = capture('/trains/v1/search/between/', `https://www.ixigo.com${TRAINS}?date=2026-10-20&languageCode=en`, fixture('trains-ndls-mao-between.json'));
     const s = engineWith({
       read: async (_t, url, _plan, o) => {
-        const results = url.includes('/search-pwa/');
+        const results = url.includes('/search/result/');
         fetched(s.clock, o, results ? 2_000 : 800, [results ? trains : box]);
         return { captures: [results ? trains : box], finalUrl: url };
       },
@@ -58,10 +58,10 @@ describe('the run strip', () => {
     expect(s.events()).toEqual([
       { type: 'run_start', run_id: search, recipe_id: 'trains.between', label: 'Jaipur → Udaipur City · 20 Oct', speed: 'page', at: '2026-10-07T12:00:00.000Z' },
       { type: 'run_start', run_id: lookup, recipe_id: 'trains.station_lookup', label: 'Udaipur City', speed: 'page', parent: search, at: '2026-10-07T12:00:00.000Z' },
-      { type: 'step', run_id: lookup, text: 'opened /trains', at_ms: 0 },
+      { type: 'step', run_id: lookup, text: 'opened /action/content/trainstation', at_ms: 0 },
       { type: 'call', run_id: lookup, path: '/action/content/trainstation', status: 200, at_ms: 1_200 },
       { type: 'run_end', run_id: lookup, ok: true, ms: 800, picked: 'Udaipur City (UDZ)' },
-      { type: 'step', run_id: search, text: 'opened /trains/search-pwa/from/JP/to/UDZ/20-10-2026', at_ms: 800 },
+      { type: 'step', run_id: search, text: 'opened /search/result/train/JP/UDZ/20102026//1/0/0/0/ALL', at_ms: 800 },
       { type: 'call', run_id: search, path: TRAINS, status: 200, at_ms: 2_000 },
       { type: 'run_end', run_id: search, ok: true, ms: 2_800, rows: got.as === 'options' ? got.options.length : -1 },
     ]);

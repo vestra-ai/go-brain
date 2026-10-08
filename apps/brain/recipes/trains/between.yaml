@@ -11,75 +11,144 @@ inputs:
   date: { kind: date, about: the day the train leaves the boarding station }
 auth: none
 changes_state: false
-# ixigo's train results page reads ixigo's own train service (on confirmtkt.com) since October: one call, every train,
-# with each class's fare, seats and ixigo's confirmation chance (p4's map).
-page: /trains/search-pwa/from/{from.code}/to/{to.code}/{date|DD-MM-YYYY}
-# The same call from the trip's warm tab (366 ms in p4's map): confirmtkt.com is on the deployment's allowed sites.
+# The page speed: ixigo's results page, whose own call is on www.ixigo.com (/trains/v1/search/between). One load gives
+# the train list and its seat availability (p4's T1, T2 and T3); ixigo answers trains from the city's other stations
+# too: NDLS gives NZM's, CSMT gives LTT's. The newer page (/trains/search-pwa/…) reads ixigo's train service on
+# confirmtkt.com, which a box's browser keeps only once the deployment allows that site (the 8 Oct drill: every train
+# search timed out waiting for it), so the page speed stays on this one.
+page: /search/result/train/{from.code}/{to.code}/{date|DDMMYYYY}//1/0/0/0/ALL
+# The fast speed: ixigo's train service's own call from the trip's warm tab (366 ms in p4's map), once confirmtkt.com is
+# on the deployment's allowed sites. It answers in a shape of its own, so it reads with its own list and each.
 fast:
   url: https://ixigotrainsapi.confirmtkt.com/api/v1/trains/search?sourceStationCode={from.code}&destinationStationCode={to.code}&addAvailabilityCache=true&excludeMultiTicketAlternates=false&excludeBoostAlternates=false&sortBy=DEFAULT&dateOfJourney={date|DD-MM-YYYY}&enableNearby=true&enableTG=true&tGPlan=ITG-A50&showTGPrediction=false&tgColor=DEFAULT&showPredictionGlobal=true&showNewAlternates=true&showNewAltText=true
+  list: data.trainList
+  # One option per train and class, General quota. The seats are ixigo's cached figure ("2 hrs ago" on the page): the
+  # live one is trains.availability, before anyone books. Fares are per person.
+  each: |
+      (
+        $classWords := {
+          "1A": "AC First Class", "2A": "AC 2 Tier", "3A": "AC 3 Tier", "3E": "AC 3 Economy", "SL": "Sleeper", "CC": "AC Chair Car",
+          "2S": "Second Sitting", "EC": "Executive Chair Car", "EV": "Vistadome", "FC": "First Class"
+        };
+        $status := function($s) {(
+          $avl := $groups($s.availability, "^(?:AVAILABLE|AVL)[-\\s]*0*(\\d+)$", "i");
+          $avl ? "Available " & $avl[0] : $s.availabilityDisplayName ? $s.availabilityDisplayName : $substring($s.availability, 0, 30)
+        )};
+        $train := $;
+        $departAt := $istAt($inputs.date, departureTime);
+        $arriveAt := $istPlus($departAt, duration);
+        $name := $titleWords(trainName);
+        $tatkal := availabilityCacheTatkal;
+        $keys(availabilityCache).(
+          $c := $;
+          $gn := $lookup($train.availabilityCache, $c);
+          $tq := $lookup($tatkal, $c);
+          $fare := $num($gn.fare);
+          $chance := $contains($gn.prediction, "%") ? $gn.predictionPercentage;
+          ($fare > 0) ? {
+            "title": $name & " " & $train.trainNumber,
+            "priceMinor": $paise($fare),
+            "currency": "INR",
+            "priceNote": "per person, " & $c,
+            "journey": {
+              "mode": "train",
+              "origin": { "name": $substring($train.fromStnName ? $train.fromStnName : $train.fromStnCode, 0, 80), "code": $train.fromStnCode },
+              "destination": { "name": $substring($train.toStnName ? $train.toStnName : $train.toStnCode, 0, 80), "code": $train.toStnCode },
+              "depart_at": $departAt,
+              "arrive_at": $arriveAt,
+              "carrier_name": "Indian Railways",
+              "number": $train.trainNumber
+            },
+            "highlights": $highlights(
+              $lookup($classWords, $c) ? $lookup($classWords, $c) : $c,
+              $status($gn),
+              $chance ? $string($chance) & "% chance to confirm",
+              $tq.fare ? "Tatkal: " & $status($tq) & ", " & $rupees($num($tq.fare)) : ($train.duration > 0 ? $hoursMinutes($train.duration))
+            ),
+            "facts": {
+              "class_code": $c,
+              "availability": $status($gn),
+              "chance": $chance,
+              "tatkal_availability": $tq.fare ? $status($tq),
+              "tatkal_fare_minor": $num($tq.fare) ? $paise($num($tq.fare)),
+              "duration_min": $train.duration,
+              "rating": $train.trainRating
+            },
+            "sourceUrl": "https://www.ixigo.com/trains/" & $train.trainNumber & "?orgn=" & $train.fromStnCode & "&dstn=" & $train.toStnCode & "&departDate=" & $inputs.date & "&quota=GN"
+          }
+        )
+      )
 capture:
-  - ixigotrainsapi.confirmtkt.com/api/v1/trains/search
+  - /trains/v1/search/between/
+  - { match: /api/v3/trains/availability, required: false }
 read:
-  rows: { from: ixigotrainsapi.confirmtkt.com/api/v1/trains/search, list: data.trainList }
+  rows:
+    from: /trains/v1/search/between/
+    list: "data.trainsBetweenStations[$not(suspended = true) and $not(attributes.bookable = false)]"
+  also:
+    # Seat status is extra: without it the trains still show, with their fares.
+    seats: { from: /api/v3/trains/availability, value: "data.routesData" }
 answer:
   as: options
   kind: train
-  # One option per train and class, General quota. The seats are ixigo's cached figure ("2 hrs ago" on the page): the
-  # live one is trains.availability, before anyone books. Fares are per person.
+  # One option per train and class, General quota: the seat status, ixigo's chance a waitlisted ticket confirms, and
+  # Tatkal when it is open. Fares are per person, IRCTC taxes and fees in.
   each: |
     (
       $classWords := {
         "1A": "AC First Class", "2A": "AC 2 Tier", "3A": "AC 3 Tier", "3E": "AC 3 Economy", "SL": "Sleeper", "CC": "AC Chair Car",
         "2S": "Second Sitting", "EC": "Executive Chair Car", "EV": "Vistadome", "FC": "First Class"
       };
-      $status := function($s) {(
-        $avl := $groups($s.availability, "^(?:AVAILABLE|AVL)[-\\s]*0*(\\d+)$", "i");
-        $avl ? "Available " & $avl[0] : $s.availabilityDisplayName ? $s.availabilityDisplayName : $substring($s.availability, 0, 30)
+      $status := function($a) {(
+        $t := $trim($a);
+        $avl := $groups($t, "^(?:AVAILABLE|AVL)[-\\s]*0*(\\d+)$", "i");
+        $queue := $groups($t, "^(WL|RAC|GNWL|RLWL|PQWL)\\s*0*(\\d+)$", "i");
+        $avl ? "Available " & $avl[0] : $queue ? $uppercase($queue[0]) & " " & $queue[1] : $substring($t, 0, 30)
       )};
       $train := $;
-      $departAt := $istAt($inputs.date, departureTime);
-      $arriveAt := $istPlus($departAt, duration);
-      $name := $titleWords(trainName);
-      $tatkal := availabilityCacheTatkal;
-      $keys(availabilityCache).(
+      $mine := $seats[trainCode = $train.attributes.number].availabilities;
+      $departAt := $istAt(departDate, attributes.departTime);
+      $arriveAt := $istAt(arrivalDate, attributes.arrivalTime);
+      $minutes := $minutesBetween($departAt, $arriveAt);
+      $name := $titleWords(attributes.localName);
+      $distinct($append(attributes.fareClasses, $keys(fares))).(
         $c := $;
-        $gn := $lookup($train.availabilityCache, $c);
-        $tq := $lookup($tatkal, $c);
-        $fare := $num($gn.fare);
-        $chance := $contains($gn.prediction, "%") ? $gn.predictionPercentage;
-        ($fare > 0) ? {
-          "title": $name & " " & $train.trainNumber,
+        $gn := $mine[c = $c and q = "GN"][0];
+        $tq := $mine[c = $c and q = "TQ"][0];
+        $fare := $gn.f ? $gn.f : $lookup($train.fares, $c).baseFare;
+        $chance := $gn.p ? $floor($gn.p + 0.5);
+        $fare ? {
+          "title": $name & " " & $train.attributes.number,
           "priceMinor": $paise($fare),
           "currency": "INR",
           "priceNote": "per person, " & $c,
           "journey": {
             "mode": "train",
-            "origin": { "name": $substring($train.fromStnName ? $train.fromStnName : $train.fromStnCode, 0, 80), "code": $train.fromStnCode },
-            "destination": { "name": $substring($train.toStnName ? $train.toStnName : $train.toStnCode, 0, 80), "code": $train.toStnCode },
+            "origin": { "name": $substring($train.boardStation ? $train.boardStation : $train.board, 0, 80), "code": $train.board },
+            "destination": { "name": $substring($train.deboardStation ? $train.deboardStation : $train.deboard, 0, 80), "code": $train.deboard },
             "depart_at": $departAt,
             "arrive_at": $arriveAt,
             "carrier_name": "Indian Railways",
-            "number": $train.trainNumber
+            "number": $train.attributes.number
           },
           "highlights": $highlights(
             $lookup($classWords, $c) ? $lookup($classWords, $c) : $c,
-            $status($gn),
+            $gn ? $status($gn.a),
             $chance ? $string($chance) & "% chance to confirm",
-            $tq.fare ? "Tatkal: " & $status($tq) & ", " & $rupees($num($tq.fare)) : ($train.duration > 0 ? $hoursMinutes($train.duration))
+            $tq ? "Tatkal: " & $status($tq.a) & ($tq.f ? ", " & $rupees($tq.f) : "") : ($minutes > 0 ? $hoursMinutes($minutes))
           ),
           "facts": {
             "class_code": $c,
-            "availability": $status($gn),
+            "availability": $gn ? $status($gn.a),
             "chance": $chance,
-            "tatkal_availability": $tq.fare ? $status($tq),
-            "tatkal_fare_minor": $num($tq.fare) ? $paise($num($tq.fare)),
-            "duration_min": $train.duration,
-            "rating": $train.trainRating
+            "tatkal_availability": $tq ? $status($tq.a),
+            "tatkal_fare_minor": ($tq and $tq.f) ? $paise($tq.f),
+            "duration_min": $minutes > 0 ? $minutes
           },
-          "sourceUrl": "https://www.ixigo.com/trains/" & $train.trainNumber & "?orgn=" & $train.fromStnCode & "&dstn=" & $train.toStnCode & "&departDate=" & $inputs.date & "&quota=GN"
+          "sourceUrl": "https://www.ixigo.com/trains/" & $train.attributes.number & "?orgn=" & $train.board & "&dstn=" & $train.deboard & "&departDate=" & $train.departDate & "&quota=GN"
         }
       )
     )
-samples: { page: trains.between.page.json }
+samples: { fast: trains.between.page.json }
 measured: { fast_ms: 366, page_ms: 1605, flow_ms: 4069 }
 notes: Booking is a class tile, then IRCTC's login. ixigo's chance a waitlisted ticket confirms is its own ("38% Chance").

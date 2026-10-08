@@ -108,6 +108,18 @@ describe('reading a travel ask', () => {
     expect(readTravelAsk('@Go flights and a villa for Friday from Delhi to Goa', { ...CTX, kind: 'flights' })?.kind).toBe('flights');
   });
 
+  it("never puts the trip's destination in for a place the tables don't know: the composer looks that one up", () => {
+    // The 8 Oct drill: "hotels in Manali" searched Goa, and Go offered Goa unasked.
+    expect(read('@Go hotels in Manali for our dates')).toBeNull();
+    expect(read('@Go a resort near Dharamshala 6 to 9 Nov')).toBeNull();
+    expect(read('can someone check trains from Mumbai to Kota on Thursday?')).toBeNull();
+    // No other place named: the trip's destination, as before.
+    expect(read('@Go a villa with a pool for our dates')?.query).toMatchObject({ area: 'North Goa', mustHave: ['pool'] });
+    expect(read('@Go hotels near the beach for our dates')?.query).toMatchObject({ area: 'North Goa' });
+    expect(read('@Go stays in our budget in November')?.query).toMatchObject({ area: 'North Goa' });
+    expect(read('can someone check trains from Mumbai on Thursday?')?.query).toMatchObject({ from: 'mumbai', to: 'North Goa' });
+  });
+
   it('gives nothing for less than one whole search of one kind', () => {
     // No date.
     expect(read('@Go flights Delhi to Goa?')).toBeNull();

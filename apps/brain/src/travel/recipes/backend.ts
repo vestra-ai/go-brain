@@ -18,6 +18,7 @@
  * A search answers inline within TRAVEL_WAIT_MS of its start; past that the search tool goes on and the options come when
  * the run finishes (waitMs).
  */
+import { createHash } from 'node:crypto';
 import type { TurnEnd } from '../../composer/context.js';
 import type { Book } from '../book/book.js';
 import type { Engine } from '../book/engine.js';
@@ -31,8 +32,11 @@ export const TRAVEL_WAIT_MS = 12_000;
 
 export interface IxigoWebDeps {
   book: Pick<Book, 'get'>;
-  /** Runs a recipe: the trip's head count and homes, its places and its page are the engine's. */
-  engine: Pick<Engine, 'answer'>;
+  /**
+   * Runs a recipe: the trip's head count and homes, its places and its page are the engine's. requestOf keys a search on
+   * the page it will open, not the words asked; absent in tests whose engine is scripted, which key on the words.
+   */
+  engine: Pick<Engine, 'answer'> & Partial<Pick<Engine, 'requestOf'>>;
   now: () => Date;
   /** The live search card for a run; absent in tests that don't look at it. */
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
@@ -144,20 +148,26 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   }
 
   /** The recipe, its inputs and the search's key, or a plain refusal before anything runs. */
-  function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
+  async function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
     if (!tripId) throw new TravelError('refused', "An ixigo.com search runs on a trip's computer, so it needs the trip.");
     const id = SEARCH_RECIPES[kind];
     const recipe = d.book.get(id);
     if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
     const { given, conditions } = recipeInputs(kind, q);
-    // The page is ixigo's public results, the same in any trip's browser: the trip runs it, the words key it.
+    const link = recipe.answer.as === 'link';
+    // The page is ixigo's public results, the same in any trip's browser: the trip runs it, and the request it makes keys
+    // it (the page and its fetch), so two asks that open the same page are one search whatever their words (8 Oct: an
+    // early "with a pool" and the composer's "sleeping 4, with a pool" ran twice). A place that still needs ixigo's box
+    // has no request until it loads: the words key that one.
+    const request = link ? null : ((await d.engine.requestOf?.(id, given, { tripId, conditions })) ?? null);
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
-    return { tripId, id, given, conditions, link: recipe.answer.as === 'link', ttl, key: `${id}|${keyOf(given, conditions)}` };
+    const key = request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions)}`;
+    return { tripId, id, given, conditions, link, ttl, key };
   }
 
   return {
     async search(kind, q, o?: SearchFor) {
-      const { tripId, id, given, conditions, link, ttl, key } = plan(kind, q, o?.tripId);
+      const { tripId, id, given, conditions, link, ttl, key } = await plan(kind, q, o?.tripId);
       // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
       if (link) {
         const a = await d.engine.answer(id, given, { tripId, conditions });
@@ -221,9 +231,9 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     },
     async waitMs(kind, q, o) {
       // A search that refuses does so at once, and a link loads nothing: nothing to wait for.
-      let p: ReturnType<typeof plan>;
+      let p: Awaited<ReturnType<typeof plan>>;
       try {
-        p = plan(kind, q, o?.tripId);
+        p = await plan(kind, q, o?.tripId);
       } catch {
         return null;
       }

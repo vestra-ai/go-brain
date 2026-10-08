@@ -7,6 +7,9 @@ inputs:
   words: { kind: text, about: the place as the person said it }
 keeps: trains
 box:
+  # The suggestion call itself, opened as the page: no box to find, type into or wait on (the 8 Oct drill: typing
+  # into the box timed out on the box's browser). The box below is how a person does it, for the flow speed.
+  open: "/action/content/trainstation?searchFor=trainstationsLatLon&anchor=false&value={words}"
   page: /trains
   type:
     from:

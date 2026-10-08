@@ -101,8 +101,15 @@ export const RecipeFile = z
     changes_state: z.boolean().default(false),
     /** A lookup: the kind of search whose places it resolves, kept in travel_places under that kind. */
     keeps: z.enum(['flights', 'trains', 'buses', 'stays']).optional(),
-    /** A search page on ixigo with a box (lookups): the steps that type the words, per end of the search. */
-    box: z.object({ page: SitePath, type: z.partialRecord(z.enum(['from', 'to', 'place']), z.array(Step)) }).optional(),
+    /**
+     * A lookup's way to ixigo's suggestions: open, the suggestion call's own address for the words ("{words}"), opened as
+     * the page, one per end, with nothing typed; or a search page with a box (page) and the steps that type the words,
+     * per end of the search (type). open goes first when a recipe has both.
+     */
+    box: z
+      .object({ open: SitePath.optional(), page: SitePath.optional(), type: z.partialRecord(z.enum(['from', 'to', 'place']), z.array(Step)).optional() })
+      .refine((b) => !!b.open || (!!b.page && !!b.type), 'a box opens its suggestion call, or names its page and the steps that type into it')
+      .optional(),
     page: SitePath.optional(),
     /**
      * The fast speed: the page's own call, made from the trip's warm ixigo tab (Bash's page_fetch): a path on ixigo, or a
@@ -115,7 +122,15 @@ export const RecipeFile = z
         headers: z.record(z.string(), z.string()).optional(),
         body: z.string().optional(),
         format: z.enum(BODY_FORMATS).default('json'),
+        /**
+         * When the call answers in a shape of its own, not the page speed's (trains: ixigo's train service on
+         * confirmtkt.com, where the results page reads www.ixigo.com's): its rows (list), read from the call itself, and
+         * an options answer's each. Without them it reads with `read` and `answer`.
+         */
+        list: Expr.optional(),
+        each: Expr.optional(),
       })
+      .refine((f) => !f.each || !!f.list, 'a fast call with its own each needs its own list')
       .optional(),
     capture: z.array(Capture).optional(),
     fetch: z.array(Fetch).optional(),
@@ -144,7 +159,7 @@ export const RecipeFile = z
   })
   .superRefine((r, ctx) => {
     const path = (p: string | undefined): boolean => !!p && /(^|\/)payments(\/|$)/i.test(p);
-    if (path(r.page) || r.capture?.some((c) => path(c.match)) || path(r.box?.page) || path(r.fast?.url)) {
+    if (path(r.page) || r.capture?.some((c) => path(c.match)) || path(r.box?.page) || path(r.box?.open) || path(r.fast?.url)) {
       ctx.addIssue({ code: 'custom', message: 'no recipe may open or read anything under /payments/' });
     }
     if ((r.answer.as === 'options' || r.answer.as === 'facts') && !(r.page && r.capture && r.read)) {

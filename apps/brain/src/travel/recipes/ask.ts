@@ -188,6 +188,28 @@ function conditionsIn(lower: string, kind: TravelKind): Partial<TravelQuery> {
   return out;
 }
 
+/** Words after "in", "at", "near", "around" or "to" that never name a place: "in our budget", "near the beach", "in Dec". */
+const NOT_PLACES = new Set([
+  'our', 'the', 'this', 'that', 'these', 'those', 'my', 'your', 'their', 'his', 'her', 'its', 'some', 'any', 'all', 'one',
+  'budget', 'total', 'cash', 'advance', 'time', 'each', 'there', 'here', 'town', 'city', 'centre', 'center', 'see', 'stay',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+]);
+
+/**
+ * Whether the text names a place the tables don't know where the trip's destination would stand in ("hotels in Manali",
+ * "trains from Mumbai to Kota"): then the destination is not the ask's, and the composer, which looks any place up on
+ * ixigo, searches instead. A word after one of these words counts unless it is part of the destination's name or never
+ * names a place.
+ */
+function namesAnotherPlace(lower: string, destination: string, before: string[]): boolean {
+  const dest = new Set(destination.toLowerCase().split(/[^a-z]+/).filter(Boolean));
+  for (const m of lower.matchAll(new RegExp(`\\b(?:${before.join('|')})\\s+([a-z][a-z-]{2,})`, 'g'))) {
+    if (!NOT_PLACES.has(m[1]!) && !dest.has(m[1]!)) return true;
+  }
+  return false;
+}
+
 /** The must-haves ixigo filters a stay search on, as people say them. */
 const STAY_NEEDS: Array<[NonNullable<TravelQuery['mustHave']>[number], RegExp]> = [
   ['pool', /\bpool\b/],
@@ -215,7 +237,8 @@ export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
   const extra = guests ? { guests } : {};
 
   if (kind === 'stays') {
-    const area = places[0]?.name ?? ctx.destination;
+    // The trip's destination only when the ask names no other place: "hotels in Manali" is never Goa's.
+    const area = places[0]?.name ?? (ctx.destination && !namesAnotherPlace(lower, ctx.destination, ['in', 'at', 'near', 'around']) ? ctx.destination : undefined);
     let checkIn = dates[0]?.day;
     let checkOut = dates[1]?.day;
     const nights = /\b(\d{1,2})\s*(nights?|raat)\b/.exec(lower);
@@ -236,8 +259,8 @@ export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
   if (places.length >= 2) {
     const [a, b] = [places[0]!, places[1]!];
     [from, to] = isFrom(b) && !isFrom(a) ? [b.name, a.name] : [a.name, b.name];
-  } else if (places.length === 1 && isFrom(places[0]!) && ctx.destination) {
-    // "trains from Mumbai on Thursday": to the trip's destination.
+  } else if (places.length === 1 && isFrom(places[0]!) && ctx.destination && !namesAnotherPlace(lower, ctx.destination, ['to'])) {
+    // "trains from Mumbai on Thursday": to the trip's destination; "from Mumbai to Kota" names another, which the composer looks up.
     [from, to] = [places[0]!.name, ctx.destination];
   }
   if (!from || !to || from === to) return null;
