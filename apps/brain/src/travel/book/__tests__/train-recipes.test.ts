@@ -99,14 +99,10 @@ describe('trains.by_name', () => {
   const BOX = 'searchFor=getTrainByNameOrCode';
   const url = (words: string) => `https://www.ixigo.com/action/content/trainstation?searchFor=getTrainByNameOrCode&nameOrCode=${encodeURIComponent(words)}`;
 
-  it("types the words into ixigo's train box and reads the trains they name, each once, both ways", async () => {
-    // The box asks again as the words grow: the answers to "goa" and to "goa express" both come back.
-    const got = await facts('trains.by_name', { train: 'Goa Express' }, [capture(BOX, url('goa'), sample('trains.by_name.json')), capture(BOX, url('goa express'), sample('trains.by_name.json'))]);
-    expect(got.page).toBe('https://www.ixigo.com/trains/name-number');
-    expect(got.runs[0]!.plan.steps).toEqual([
-      { op: 'type', role: 'searchbox', name: 'Search trains by name or number', text: 'Goa Express' },
-      { op: 'wait_for', match: BOX },
-    ]);
+  it("opens the train box's own call with the words in its address, nothing typed, and reads the trains they name, both ways", async () => {
+    const got = await facts('trains.by_name', { train: 'Goa Express' }, [capture(BOX, url('Goa Express'), sample('trains.by_name.json'))]);
+    expect(got.page).toBe(url('Goa Express'));
+    expect(got.runs[0]!.plan).toEqual({ capture: [{ match: BOX, required: true, max_bytes: 200_000 }] });
     expect(got.rows).toEqual([
       { number: '12780', name: 'Goa Express', from: 'New Delhi (NZM)', to: 'Goa (VSG)', classes: ['1A', '2A', '3A', '3E', 'SL'], runs_daily: true },
       { number: '12779', name: 'Goa Express', from: 'Goa (VSG)', to: 'New Delhi (NZM)', classes: ['1A', '2A', '3A', '3E', 'SL'], runs_daily: true },
