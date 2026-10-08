@@ -42,12 +42,13 @@ Good to know:
 - For an ixigo page, `expires_at` is 10 minutes after the tap (`OPEN_FOR_MS` in `travel/taps.ts`). It is how long Go counts the prices as fresh. The page itself keeps working, but do not keep the link: a later tap gets a fresh answer.
 - Go answers a tap within 2.5 seconds (`door/taps.ts`). A button Go has no handler for is refused with "That button doesn't do anything yet."
 
-### The ixigo login card (#220)
+### The ixigo login card (#220, #227)
 
 One person logs in to ixigo on the trip's computer, so Go can later run the recipes that need a login (`travel/login.ts`).
 
-- **Who gets it:** the trip's organizer (`organizer_person_id`), once Go has said hello to a new trip, and only under `TRAVEL_MODE=ixigo_web`. Go posts one line that names and mentions them ("<name>, link ixigo for the trip: one login on the trip's computer, about a minute.") with a `notice` card. The card's `for_person_ids` and every button's `only_for_person_ids` hold that one person.
-- **When Go asks again:** a trip made more than a day ago is not asked at setup. Go asks when a recipe marked `auth: login` needs the login, at most once every 30 minutes, with a new line and a new card. It asks the same person again, or the organizer if that person has left. No recipe in the book needs the login yet (`apps/brain/recipes`), so today only setup asks. The card id is `c_login_<trip_id>_<attempt>`.
+- **Who gets it:** the trip's organizer (`organizer_person_id`), or, if the organizer has paused Go, the first person in the trip who hasn't. Only under `TRAVEL_MODE=ixigo_web`. Go posts one line that names and mentions them ("<name>, link ixigo for the trip: one login on the trip's computer, about a minute.") with a `notice` card. The card's `for_person_ids` and every button's `only_for_person_ids` hold that one person.
+- **When Go asks first:** right after Go's hello to a new trip, before anyone asks for travel (setup, section 5). A trip Go set up before this ask existed is asked once at its first travel ask instead: a search starting, the early start, or a recipe's run. The search never waits for it. Every trip is asked this way once: once the trip has a login row of any kind, "Not now" included, there are no more of these asks.
+- **When Go asks again:** when a recipe marked `auth: login` needs the login, at most once every 30 minutes, with a new line and a new card. It asks the same person if they are still in the trip, haven't paused Go and haven't used "Forget me" there; else the organizer; else the first person who can be asked (#223). No recipe in the book needs the login yet (`apps/brain/recipes`). The card id is `c_login_<trip_id>_<attempt>`.
 - **How the card moves:** Go updates it in place with `replace_card`.
 
 | Card title | Buttons | What a tap does |
@@ -61,7 +62,7 @@ One person logs in to ixigo on the trip's computer, so Go can later run the reci
 - **What each tap answers:** every login button answers `done` with a toast, never `open`. Go answers `refused` when someone else taps ("Only <name> can do this here."), when the card is no longer active, or when Go's computer is not browsing ixigo.
 - **How the person logs in:** `ixigo_login` starts an ordinary job, so Go also posts a `working` card titled "Logging in to ixigo" with Watch and Stop. When the job hands the browser over, that card turns `needs_you` with the person in `for_person_ids`. Their Watch tap answers `open` with a 15-minute screen link in control mode (`tasks/taps.ts`), and anyone else's Watch link is view only. The person types their own number and one-time code on ixigo's page, then taps "I'm logged in".
 - **What Go knows:** Go checks the login only by the status of ixigo's own `POST /api/v2/oauth/userinfo` call (200 means in, 401 or 403 means out). It never reads the account, and the card names the trip member, not the account. Go checks again at most every 6 hours, when a recipe needs it.
-- **Logging out:** Go logs out when the person taps "Log out" or leaves the trip (`person.left`). "Forget me" does not log out yet: `brain.ixigoLogin.personGone` exists, but the memory lane does not call it.
+- **Logging out:** Go logs out when the person taps "Log out", leaves the trip (`person.left`), or uses "Forget me" in the trip (#223, through `brain.ixigoLogin.personGone`).
 - **What the Server and App do:** nothing new. The Server pushes the organizer for the mention and the pin, forwards the taps, and applies `replace_card`. The App shows the buttons only to `only_for_person_ids`, shows the toasts, and opens the Watch link in the system browser sheet.
 
 ## 2. The comparison card is an ordinary options card
@@ -107,16 +108,17 @@ Setup runs on `trip.created` and on any event for a trip that is not set up yet 
 | Order | Step | Where | What it does |
 |---|---|---|---|
 | 1 | `brain.ready` | `room.ts` | Makes Go's side of the trip, then Go says hello. |
-| 2 | `travel.computer` | `travel/warm.ts`, #198 | Makes the trip's computer, with no hold. |
-| 3 | `travel.ixigo_warm`, after `travel.computer` | `travel/warm.ts`, #218 | The computer's browser visits ixigo's home page once and closes its popup, so the first search is not its first visit. |
-| 4 | `travel.ixigo_login`, after `travel.ixigo_warm` | `travel/login.ts`, #220 | Asks the organizer to log in to ixigo (section 1). It waits until Go has said hello. |
+| 2 | `travel.computer` | `travel/warm.ts`, #198 | Starts the trip's computer, with no hold. It never waits for the computer to wake. |
+| 3 | `travel.ixigo_login`, after `travel.computer` | `travel/login.ts`, #220, #227 | Asks the organizer to log in to ixigo (section 1), right after Go's hello. It waits for the hello itself, looking every second for up to 20 seconds. |
+| 4 | `travel.ixigo_warm`, after `travel.computer` | `travel/warm.ts`, #218 | The computer's browser visits ixigo's home page once and closes its popup, so the first search is not its first visit. The login line never waits for it. |
 | 5 | `computer.user` | `tasks/computer.ts` | Makes the trip's `/v1` user, if step 2 has not already made it. |
 
 - Steps 2, 3 and 4 do anything only under `TRAVEL_MODE=ixigo_web`. In the other modes they finish at once.
-- A step that fails is tried again on the trip's next event (at most every 30 seconds) or by setup's sweep (every 2 minutes). So the login line comes a little after Go's hello, usually within two minutes.
-- `travel.ixigo_warm` tries at most 3 times (`IXIGO_WARM_TRIES`, counted per Go process). After that it is done with a warning, and the login prompt goes ahead. Its runs show as a `travel.ixigo_warm` line in `recipes` on `/admin/health.json`.
+- The login line lands a moment after Go's hello: 0.5 seconds after it in p1-b's drill on staging `5e6582e`. If there is still no hello after 20 seconds, the step fails and is tried again.
+- A step that fails is tried again on the trip's next event (at most every 30 seconds) or by setup's sweep (every 2 minutes).
+- `travel.ixigo_warm` tries at most 3 times (`IXIGO_WARM_TRIES`, counted per Go process). After that it is done with a warning. Its runs show as a `travel.ixigo_warm` line in `recipes` on `/admin/health.json`.
 - The old `computer.warm` step is gone (#183). After setup, the computer wakes only when someone asks for travel, a job starts, or a watch is checked.
-- The Server provides nothing new. It sends `trip.created` as before, and Go still answers `accepted` at once and sets up afterwards. Under `ixigo_web`, the Server now sees a second Go message after the hello: the login line with its card.
+- The Server provides nothing new. It sends `trip.created` as before, and Go still answers `accepted` at once and sets up afterwards. Under `ixigo_web`, the Server now sees a second Go message after the hello: the login line with its card. A trip set up before #227 gets that line at its first travel ask instead.
 - Go's `/v1` deployments now allow `ixigotrainsapi.confirmtkt.com` next to `ixigo.com` (#204), and block `ixigo.com/payments/` (#181, commit `6ac6194`, enforced by Bash #4591). These live in `tasks/instructions.ts` and are written by the one-time `setup-v1` script (`pnpm --filter ./apps/brain setup-v1 --browser-fetch`), not by a per-trip step.
 - When Bash blocks a page, Go refuses it with "That's the payment page, and Go never opens it; the payer finishes on ixigo." Go never pays on ixigo.
 - `setup-v1` now checks every model it is given against `GET /v1/models` before it saves anything. If `/v1` does not offer one, the run stops and saves nothing (#221).
