@@ -25,6 +25,3 @@ create table recipe_watches (
 );
 create index recipe_watches_due on recipe_watches (next_check_at) where active;
 create index recipe_watches_trip on recipe_watches (trip_id) where active;
-
--- A nudge the group asked for (a watch): it skips the daily unprompted budget and "two in a row".
-alter table proactive_candidates add column asked boolean not null default false;
