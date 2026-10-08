@@ -1,9 +1,11 @@
 import * as C from '@go/contract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SocketCallError } from '../../door/rpc.js';
 import { statsRegistry } from '../../stats/sources.js';
 import { createPay, type PayEngine } from '../engine.js';
 import { paymentsNow } from '../now.js';
 import { registerMoneyWith } from '../register.js';
+import { NOT_AVAILABLE_YET } from '../vault-link.js';
 import { fakeBrain } from './fake-brain.js';
 import { goaTrip, moneyKit, type MoneyKit } from './kit.js';
 
@@ -71,6 +73,15 @@ describe('registerMoney', () => {
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
     const link = await seen.handlers.get('vault_link')?.({ kind: 'vault', person_id: 'p_rahul', start: 'add_card' }, { instance: 'sim', frameId: 'gs_1' });
     expect(C.Link.parse(link)).toEqual({ url: 'https://vault.test/l/abc', expires_at: '2026-10-05T09:05:00.000Z' });
+  });
+
+  it('answers 1.1\'s add_documents "not available yet" (409 conflict), with any context, and asks the vault nothing', async () => {
+    const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server });
+    await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
+    const asked = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_documents', context: { trip_id: 't_goa', booking_id: 'b_1' } });
+    const err = await seen.handlers.get('vault_link')?.(asked, { instance: 'sim', frameId: 'gs_2' }).then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(SocketCallError);
+    expect(err).toMatchObject({ code: 409, dataCode: 'conflict', message: NOT_AVAILABLE_YET });
   });
 
   it('stays off without the vault settings', async () => {

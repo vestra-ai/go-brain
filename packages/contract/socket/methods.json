@@ -1,5 +1,5 @@
 {
-  "contract": "1.0.0",
+  "contract": "1.1.0",
   "path": "/v1/socket",
   "protocol": "JSON-RPC 2.0 over WebSocket",
   "methods": [

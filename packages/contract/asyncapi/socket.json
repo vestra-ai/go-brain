@@ -2,7 +2,7 @@
   "asyncapi": "3.0.0",
   "info": {
     "title": "The Go brain socket",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Described from Go's side: \"receive\" methods are sent by the Server, \"send\" methods are sent by Go. Frames are JSON-RPC 2.0."
   },
   "servers": {
@@ -2193,6 +2193,19 @@
                 "type": "null"
               }
             ]
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(\\/[A-Za-z0-9_+-]+)*$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2883,6 +2896,229 @@
         ],
         "description": "Spent against the plan, by category."
       },
+      "OptionCost": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "emoji": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          }
+        },
+        "required": [
+          "label",
+          "amount_minor",
+          "currency"
+        ]
+      },
+      "OptionFact": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ]
+      },
+      "OptionDetails": {
+        "type": "object",
+        "properties": {
+          "gallery_urls": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "why": {
+            "anyOf": [
+              {
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 140
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costs": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionCost"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amenities": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activities": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "facts": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionFact"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cancellation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "go_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "Option": {
         "type": "object",
         "properties": {
@@ -3014,6 +3250,50 @@
                 "type": "null"
               }
             ]
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptionDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "return_journey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Journey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_oneway_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_round_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3069,7 +3349,8 @@
               "bus",
               "place",
               "food",
-              "activity"
+              "activity",
+              "cab"
             ]
           },
           "checked_at": {
@@ -3392,6 +3673,29 @@
               }
             ]
           },
+          "recording_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "actions": {
             "anyOf": [
               {
@@ -3674,6 +3978,140 @@
         ],
         "description": "Good to know (with its source) or a heads-up (a deadline, a price change, a clash)."
       },
+      "ChecklistRow": {
+        "type": "object",
+        "properties": {
+          "row_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "started",
+              "done",
+              "info"
+            ]
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "row_id",
+          "label",
+          "status"
+        ]
+      },
+      "ChecklistCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "checklist"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "rows": {
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChecklistRow"
+            }
+          },
+          "actions": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardAction"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "title",
+          "rows"
+        ],
+        "description": "1.1: a checklist (documents, packing, check-ins), each row todo, started, done or info. Updated in place."
+      },
       "Card": {
         "oneOf": [
           {
@@ -3714,6 +4152,9 @@
           },
           {
             "$ref": "#/components/schemas/NoticeCard"
+          },
+          {
+            "$ref": "#/components/schemas/ChecklistCard"
           }
         ],
         "discriminator": {
@@ -3797,6 +4238,17 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3807,6 +4259,54 @@
           "size_bytes"
         ]
       },
+      "LocationAttachment": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "location"
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "lat",
+          "lng"
+        ]
+      },
       "Attachment": {
         "oneOf": [
           {
@@ -3814,11 +4314,39 @@
           },
           {
             "$ref": "#/components/schemas/FileAttachment"
+          },
+          {
+            "$ref": "#/components/schemas/LocationAttachment"
           }
         ],
         "discriminator": {
           "propertyName": "kind"
         }
+      },
+      "QuickReply": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "label"
+        ]
       },
       "Reaction": {
         "type": "object",
@@ -3937,6 +4465,20 @@
               }
             ]
           },
+          "quick_replies": {
+            "anyOf": [
+              {
+                "maxItems": 6,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QuickReply"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "withheld": {
             "type": "boolean"
           },
@@ -4048,6 +4590,20 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quick_replies": {
+            "anyOf": [
+              {
+                "maxItems": 6,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QuickReply"
                 }
               },
               {
@@ -4186,6 +4742,16 @@
               {
                 "type": "string",
                 "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptionDetails"
               },
               {
                 "type": "null"
@@ -4339,6 +4905,18 @@
               "maximum": 9007199254740991
             }
           },
+          "flexible_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "votes": {
             "anyOf": [
               {
@@ -4418,6 +4996,122 @@
           "of",
           "tally",
           "opened_at"
+        ]
+      },
+      "Audience": {
+        "type": "string",
+        "enum": [
+          "group",
+          "shared",
+          "private"
+        ]
+      },
+      "BookingDetail": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ]
+      },
+      "Passenger": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seat": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pnr": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "BookingDocument": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "mime": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Audience"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "document_id",
+          "name",
+          "mime",
+          "size_bytes",
+          "visibility",
+          "url"
         ]
       },
       "BookingKind": {
@@ -4593,6 +5287,58 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BookingDetail"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "return_journey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Journey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "passengers": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Passenger"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "documents": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BookingDocument"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4607,6 +5353,44 @@
           "payer_person_id",
           "for_person_ids",
           "created_at"
+        ]
+      },
+      "ExpenseConfirmation": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "answer": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "disputed"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "person_id",
+          "answer",
+          "at"
         ]
       },
       "Expense": {
@@ -4676,6 +5460,35 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "approved",
+                  "disputed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirmations": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ExpenseConfirmation"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4687,6 +5500,69 @@
           "category",
           "split_person_ids",
           "created_at"
+        ]
+      },
+      "Settlement": {
+        "type": "object",
+        "properties": {
+          "settlement_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "from_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "to_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "upi",
+              "cash",
+              "bank_transfer",
+              "other"
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "settlement_id",
+          "from_person_id",
+          "to_person_id",
+          "amount_minor",
+          "currency",
+          "method",
+          "confirmed_at"
         ]
       },
       "Transfer": {
@@ -4853,6 +5729,32 @@
                 "type": "null"
               }
             ]
+          },
+          "person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audience": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Audience"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4885,6 +5787,17 @@
             "items": {
               "$ref": "#/components/schemas/ItineraryItem"
             }
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5858,6 +6771,28 @@
               "minimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          "flexible": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "const": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retracted": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "const": true
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5905,7 +6840,7 @@
           "type",
           "data"
         ],
-        "description": "Someone voted (or changed their vote)."
+        "description": "Someone voted, changed their vote, said they are flexible (1.1), or took their vote back (1.1)."
       },
       "DecisionClosedData": {
         "type": "object",
@@ -6339,11 +7274,25 @@
             "type": "string",
             "enum": [
               "added",
-              "removed"
+              "removed",
+              "approved",
+              "disputed"
             ]
           },
           "by": {
             "$ref": "#/components/schemas/Actor"
+          },
+          "by_person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6390,7 +7339,62 @@
           "type",
           "data"
         ],
-        "description": "An expense was added or removed."
+        "description": "An expense was added or removed, or (1.1) someone it is split between approved or disputed it."
+      },
+      "SettlementRecordedData": {
+        "type": "object",
+        "properties": {
+          "settlement": {
+            "$ref": "#/components/schemas/Settlement"
+          },
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          }
+        },
+        "required": [
+          "settlement",
+          "by"
+        ]
+      },
+      "SettlementRecorded": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "settlement.recorded"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SettlementRecordedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "1.1: someone paid someone back, and the one paid confirmed it. Only confirmed settlements are sent."
       },
       "Event": {
         "oneOf": [
@@ -6453,6 +7457,9 @@
           },
           {
             "$ref": "#/components/schemas/ExpenseChanged"
+          },
+          {
+            "$ref": "#/components/schemas/SettlementRecorded"
           }
         ],
         "discriminator": {
@@ -7128,6 +8135,58 @@
                 "type": "null"
               }
             ]
+          },
+          "details": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BookingDetail"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "return_journey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Journey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "passengers": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Passenger"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "documents": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BookingDocument"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -7588,6 +8647,21 @@
           "duplicate"
         ]
       },
+      "CardTapPayload": {
+        "type": "object",
+        "properties": {
+          "trip": {
+            "type": "string",
+            "enum": [
+              "oneway",
+              "round"
+            ]
+          }
+        },
+        "required": [
+          "trip"
+        ]
+      },
       "CardTap": {
         "type": "object",
         "properties": {
@@ -7621,6 +8695,16 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CardTapPayload"
               },
               {
                 "type": "null"
@@ -7987,6 +9071,59 @@
           "remaining_facts"
         ]
       },
+      "LinkContext": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "booking_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "card_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "row_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "CreateLink": {
         "type": "object",
         "properties": {
@@ -8008,8 +9145,19 @@
                 "enum": [
                   "home",
                   "add_card",
-                  "add_login"
+                  "add_login",
+                  "add_documents"
                 ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkContext"
               },
               {
                 "type": "null"

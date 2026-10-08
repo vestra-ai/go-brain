@@ -19,10 +19,11 @@ AnyCard = Annotated[
     | models.WorkingCard
     | models.CallCard
     | models.PayCard
-    | models.NoticeCard,
+    | models.NoticeCard
+    | models.ChecklistCard,
     Field(discriminator="kind"),
 ]
 
 
 class Card(RootModel[AnyCard]):
-    """Any of the 13 card kinds. `Card.model_validate_json(body).root` is the specific card."""
+    """Any of the 14 card kinds (1.1 added checklist). `Card.model_validate_json(body).root` is the specific card."""

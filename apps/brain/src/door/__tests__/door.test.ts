@@ -74,7 +74,7 @@ const connect = () => rawServer(`${base}${target()}`, SECRET);
 describe('the door', () => {
   it('GET /v1/health answers without a signature', async () => {
     const r = await http.inject({ method: 'GET', url: '/v1/health' });
-    expect(r.json()).toEqual({ ok: true, contract: '1.0.0' });
+    expect(r.json()).toEqual({ ok: true, contract: '1.1.0' });
   });
 
   it('a good signature opens the socket, and Go pings', async () => {
@@ -155,6 +155,27 @@ describe('the door', () => {
     });
     expect(a.error.code).toBe(422);
     expect(a.error.data).toEqual({ code: 'invalid' });
+    await s.close();
+  });
+
+  // Contract 1.1 tolerance (3): an expense.changed with a change value newer than Go knows is refused 422 invalid,
+  // naming the field, as the guide says (the Server marks it failed and moves on; Go reads the trip at the gap), and
+  // the socket goes on: the next event is taken.
+  it('answers 422 for an expense change value Go does not know, and takes the next event on the same socket', async () => {
+    const s = await connect();
+    const expense = {
+      expense_id: 'x_1', paid_by_person_id: 'p_rahul', amount_minor: 240000, currency: 'INR', note: 'Cab', category: 'getting_around',
+      split_person_ids: ['p_rahul'], created_at: '2026-10-08T10:00:00Z',
+    };
+    const base = { trip_id: 't_goa', occurred_at: '2026-10-08T10:00:00Z', type: 'expense.changed' };
+    const newer = await s.call('send_event', { ...base, event_id: 'ev_x_new', seq: 7, data: { expense, change: 'reopened', by: { kind: 'system' } } });
+    expect(newer.error.code).toBe(422);
+    expect(newer.error.data).toEqual({ code: 'invalid' });
+    expect(newer.error.message).toMatch(/change/);
+    const before = events.length;
+    const known = await s.call('send_event', { ...base, event_id: 'ev_x_ok', seq: 8, data: { expense, change: 'disputed', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' } });
+    expect(known.result).toEqual({ accepted: true, duplicate: false });
+    expect(events.length).toBe(before + 1);
     await s.close();
   });
 

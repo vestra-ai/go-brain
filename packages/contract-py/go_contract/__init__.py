@@ -16,7 +16,7 @@ from .spend_approval import (
     verify_spend_approval,
 )
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 __all__ = [
     "CONTRACT_VERSION",
