@@ -167,9 +167,16 @@ async function payBeat(room: RehearsalRoom, timer: BeatTimer, villas: C.Message 
   }
   const decisionId = vote.card.decision_id;
   for (const person of DEMO_PEOPLE) await room.fake.vote(decisionId, person, 0);
-  const mandate = await room.waitGo(vote.seq, kind('mandate'), 30_000).catch(() => null);
+  // One person books for all: the I'll book it card goes up with the result, and Rahul says it is him.
+  const claim = await room.waitGo(vote.seq, (m) => m.card?.card_id === `c_claim_${decisionId}`, 30_000).catch(() => null);
+  if (!claim) {
+    timer.miss('pay_card', "not reached: no I'll book it card after the vote closed");
+    return;
+  }
+  const claimed = await room.say(DEMO_LINES.claim);
+  const mandate = await room.waitGo(claimed.seq, kind('mandate'), 30_000).catch(() => null);
   if (!mandate) {
-    timer.miss('pay_card', 'not reached: no mandate card after the vote closed');
+    timer.miss('pay_card', "not reached: no mandate card after Rahul said he'd book it");
     return;
   }
   const t = Date.now();
