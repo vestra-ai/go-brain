@@ -8,7 +8,7 @@ function setup(o: { on?: () => boolean; gone?: string[]; recent?: Array<{ tripId
   const holds: Array<{ tripId: string; keepMs: number; at: number }> = [];
   const warn = vi.fn();
   const awake = createTripAwake({
-    hold: async (tripId, keepMs) => {
+    keep: async (tripId, keepMs) => {
       holds.push({ tripId, keepMs, at: Date.now() });
       if (o.fail) throw new Error('warm_limit: too many computers are waking');
     },

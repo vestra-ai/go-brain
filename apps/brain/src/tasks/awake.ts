@@ -24,8 +24,8 @@ export const AWAKE_EVERY_MS = 30_000;
 export const AWAKE_KEEP_MS = 2 * AWAKE_EVERY_MS;
 
 export interface TripAwakeDeps {
-  /** Bash's warm with keep_ms for the trip's computer (computer.hold). */
-  hold: (tripId: string, keepMs: number) => Promise<unknown>;
+  /** Bash's warm with keep_ms for the trip's computer (computer.keepAwake). */
+  keep: (tripId: string, keepMs: number) => Promise<unknown>;
   now: () => Date;
   log: { warn(obj: object, msg: string): void };
   /** Whether the trip's computer is worth holding now: Go reads ixigo.com on it (TRAVEL_MODE ixigo_web). */
@@ -70,7 +70,7 @@ export function createTripAwake(d: TripAwakeDeps): TripAwake {
       beats.delete(tripId);
       return;
     }
-    d.hold(tripId, AWAKE_KEEP_MS).catch((err: unknown) => {
+    d.keep(tripId, AWAKE_KEEP_MS).catch((err: unknown) => {
       if (b.warned) return;
       b.warned = true;
       d.log.warn({ err: String(err), tripId }, "tasks: holding the trip's computer awake while its group talks did not work");

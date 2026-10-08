@@ -64,7 +64,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   brain.recipeRunners = {
     browserFetch,
     keepWarm: (tripId) => keeper.touch(tripId),
-    hold: (tripId, keepMs) => computer.hold(tripId, keepMs),
+    keepAwake: (tripId, keepMs) => computer.keepAwake(tripId, keepMs),
     start: (tripId) => computer.warm(tripId),
     // The new computer's first ixigo visit, travel's setup step after start (runners.ts COLD_COMPUTER).
     prime: async (tripId) => {
@@ -113,7 +113,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   // The trip's computer stays awake while its group talks (awake.ts): a hold every 30 s until 10 quiet minutes, where Go
   // reads ixigo.com on it; after a restart, picked back up from each trip's last person's line.
   const awake = createTripAwake({
-    hold: (tripId, keepMs) => computer.hold(tripId, keepMs),
+    keep: (tripId, keepMs) => computer.keepAwake(tripId, keepMs),
     now: brain.now,
     log: brain.log,
     on: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',

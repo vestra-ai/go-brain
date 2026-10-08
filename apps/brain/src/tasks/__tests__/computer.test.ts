@@ -76,12 +76,12 @@ describe("the trip's computer", () => {
     fake.warmStatus = 'ready';
     try {
       for (let i = 0; i < 7; i += 1) await computer.warm(`t_hold_w${i}`);
-      expect(await computer.hold('t_hold', 60_000)).toBe('ready');
+      expect(await computer.keepAwake('t_hold', 60_000)).toBe('ready');
       expect(fake.callsTo('POST', /\/warm$/).at(-1)!.body).toEqual({ keep_ms: 60_000 });
       // Eight wakes counted in the window: a box seen up 30 s ago still holds; another trip's first hold would wake.
       clock.advance(30_000);
-      expect(await computer.hold('t_hold', 60_000)).toBe('ready');
-      await expect(computer.hold('t_hold_other', 60_000)).rejects.toThrow(/warm_limit/);
+      expect(await computer.keepAwake('t_hold', 60_000)).toBe('ready');
+      await expect(computer.keepAwake('t_hold_other', 60_000)).rejects.toThrow(/warm_limit/);
     } finally {
       fake.warmStatus = 'waking';
     }

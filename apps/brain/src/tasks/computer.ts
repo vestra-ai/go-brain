@@ -33,7 +33,7 @@ export interface Computer {
    * (travel/awake.ts). A box Go saw up within its own last hold is not waking, so that warm skips Go's wake limit; any
    * other counts toward it, as a wake. Never skipped as a repeat.
    */
-  hold(tripId: string, keepMs: number): Promise<'ready' | 'waking'>;
+  keepAwake(tripId: string, keepMs: number): Promise<'ready' | 'waking'>;
   /** The job's own conversation on the trip user: the same one however often it is asked for. */
   conversation(tripId: string, taskId: string): Promise<{ userId: string; conversationId: string }>;
   /** A fresh token in the trip user's TRIP_TOKEN secret, good until `expiresAt`, checked against Go's MCP server. */
@@ -59,7 +59,7 @@ export function v1UserIdFor(tripId: string): string {
 
 export function createComputer(d: ComputerDeps): Computer {
   let warmsIssued: number[] = [];
-  /** When each trip's box last answered a hold as up ('ready'). */
+  /** When each trip's box last answered keepAwake as up ('ready'). */
   const seenUp = new Map<string, number>();
 
   /** Go's own count of computers waking (WARM_LIMIT in WARM_WINDOW_MS): throws when it is full. */
@@ -119,7 +119,7 @@ export function createComputer(d: ComputerDeps): Computer {
       return r.status;
     },
 
-    async hold(tripId, keepMs) {
+    async keepAwake(tripId, keepMs) {
       const userId = await computer.ensureUser(tripId);
       const nowMs = d.now().getTime();
       const up = seenUp.get(tripId);
