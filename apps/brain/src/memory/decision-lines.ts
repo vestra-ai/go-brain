@@ -5,6 +5,9 @@
  * open is done once the vote closes or is cancelled; one written after it closed (who pays) is done once the group sets
  * what to book (a mandate), or the vote is cancelled. Level-triggered: every decision and mandate event, and the
  * 5-minute sweep, mark done whatever is due, so a missed event or a restart never leaves a line in "needs you".
+ *
+ * An open question people raised in the chat before anyone opened the vote ("Candolim or Anjuna for the stay?") has no
+ * vote in its proof: once the vote closes with a winner, a line it answers is linked to it too, and done with it.
  */
 import type * as C from '@go/contract';
 import type { Pool } from 'pg';
@@ -49,8 +52,63 @@ function settled(d: C.Decision | undefined, closesOn: string): boolean {
   return d.status === 'cancelled' || (d.mandate !== null && d.mandate !== undefined);
 }
 
+/** A line's or a vote's words, lowercase, letters and digits only. */
+const wordsOf = (s: string): string[] => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 0);
+/** Words that say nothing about what a question is about. */
+const SMALL = new Set([
+  'the', 'and', 'for', 'our', 'are', 'what', 'which', 'who', 'where', 'when', 'how', 'should', 'shall', 'will', 'would', 'can',
+  'could', 'about', 'with', 'from', 'this', 'that', 'there', 'their', 'have', 'has', 'vote', 'pick', 'choose', 'between',
+  'option', 'options', 'trip', 'group', 'everyone', 'all', 'you', 'not', 'yet', 'still', 'any', 'one', 'go',
+]);
+const sameWord = (a: string, b: string): boolean => a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a)));
+
+/**
+ * Whether an open line asks what this vote settled. Each option is known by its own words (those no other option has,
+ * so "Villa Sol" by "sol", "Saturday 7 Nov" by "saturday"). A choice is answered when the line names two options, or one
+ * and a word of the question ("Stay location: Candolim?" for "Where should we stay in Goa: Candolim or Anjuna?"); a
+ * yes-or-no, when the line shares two words with the question. "Dinner at Candolim?" is not about the stay.
+ */
+export function answers(lineText: string, d: Pick<C.Decision, 'question' | 'kind' | 'options'>, place?: string): boolean {
+  const line = wordsOf(lineText);
+  // The trip's own place says nothing about which question it is: "in Goa" is in half of them.
+  const where = new Set(wordsOf(place ?? ''));
+  const labels = d.options.map((o) => wordsOf(o.label));
+  const own = labels.map((ws, i) =>
+    ws.filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !SMALL.has(w) && !labels.some((other, j) => j !== i && other.includes(w))),
+  );
+  const named = own.filter((ws) => ws.length > 0 && ws.some((w) => line.some((l) => sameWord(l, w)))).length;
+  const optionWords = new Set(own.flat());
+  const topic = wordsOf(d.question).filter((w) => w.length >= 3 && !SMALL.has(w) && !where.has(w) && !optionWords.has(w) && !/^\d+$/.test(w));
+  const shared = new Set(topic.filter((w) => line.some((l) => sameWord(l, w)))).size;
+  return d.kind === 'yesno' ? shared >= 2 : named >= 2 || (named >= 1 && shared >= 1);
+}
+
+/** Links the open lines a closed vote answers that nothing linked yet: written before it closed, still active. */
+async function linkAnswered(pool: Pool, tripId: string, pack: TripPack): Promise<void> {
+  const won = pack.trip.decisions.filter((d) => d.status === 'closed' && d.result_index !== null && d.result_index !== undefined);
+  if (won.length === 0) return;
+  const r = await pool.query<{ line_id: string; line: C.RecordLine }>(
+    `SELECT rl.line_id, rl.line FROM record_lines rl
+      WHERE rl.trip_id = $1 AND rl.status = 'active' AND rl.kind = 'open'
+        AND NOT EXISTS (SELECT 1 FROM line_decisions ld WHERE ld.trip_id = rl.trip_id AND ld.line_id = rl.line_id)`,
+    [tripId],
+  );
+  for (const row of r.rows) {
+    const asked = Date.parse(row.line.created_at);
+    const d = won.find((x) => (!x.closed_at || asked <= Date.parse(x.closed_at)) && answers(row.line.text, x, pack.trip.destination?.name));
+    if (!d) continue;
+    // Settled when the vote ended, as a line written while it was open is.
+    await pool.query(
+      `INSERT INTO line_decisions (trip_id, line_id, decision_id, closes_on) VALUES ($1, $2, $3, 'vote')
+       ON CONFLICT (trip_id, line_id) DO NOTHING`,
+      [tripId, row.line_id, d.decision_id],
+    );
+  }
+}
+
 /** Marks done every active linked line whose vote has settled it. Returns how many it marked. */
 export async function settleDecisionLines(pool: Pool, link: ServerLink, tripId: string, pack: TripPack): Promise<number> {
+  await linkAnswered(pool, tripId, pack);
   const r = await pool.query<{ line_id: string; decision_id: string; closes_on: string; line: C.RecordLine }>(
     `SELECT ld.line_id, ld.decision_id, ld.closes_on, rl.line
        FROM line_decisions ld
