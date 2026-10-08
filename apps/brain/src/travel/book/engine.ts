@@ -735,7 +735,7 @@ export function createEngine(d: EngineDeps) {
         // A recipe that keeps only some of a page's rows by the place's half (hotels.search: North Goa opens all of Goa's
         // page and keeps the north) shares the page with all of Goa, but not its rows, which are read after the keep: the
         // half joins the key, or all of Goa would get North Goa's stays (staging, 8 Oct).
-        if (!recipe.answer.keep) return JSON.stringify([page, plan]);
+        if (recipe.answer.as !== 'options' || !recipe.answer.keep) return JSON.stringify([page, plan]);
         const half = (inputs['place'] as { half?: unknown } | null | undefined)?.half ?? null;
         return JSON.stringify([page, plan, { half }]);
       } catch {
