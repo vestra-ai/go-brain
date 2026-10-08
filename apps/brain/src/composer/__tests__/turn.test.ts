@@ -377,6 +377,41 @@ describe('a composer turn', () => {
     expect(ended).toEqual([{ tripId: r.tripId, turnId: `turn_${r.tripId}`, messageIds: ['m_3', 'm_5'] }]);
   });
 
+  it('a message pulled in is part of what woke the turn for the next round\'s tools: "I will pay" said as a vote closes is that person\'s ask', async () => {
+    const pay = msg(5, 'p_rahul', '@Go Villa Sol it is, I will pay for it');
+    const woke: string[][] = [];
+    const probe: QuickTool<Record<string, never>> = {
+      name: 'what_woke', description: 'Says what woke this turn.', input: z.object({}),
+      run: async (_a, ctx) => {
+        woke.push(ctx.wake.map((w) => (w.kind === 'message' ? w.ref : w.kind)));
+        return { ok: true };
+      },
+    };
+    const call = { name: 'what_woke', input: {} };
+    let claimed = false;
+    const r = room({
+      messages: [],
+      extraTools: [probe],
+      script: [{ tools: [call] }, { text: 'Villa Sol won, 4 to 1.' }, { tools: [call] }, { text: 'Rahul is booking it.' }],
+      claimNew: async (tripId) => {
+        if (claimed) return [];
+        claimed = true;
+        r.pack.messages.push(pay);
+        return [item(tripId, pay, true)];
+      },
+    });
+    const closed: DeskItem = {
+      id: `change:${r.tripId}:ev_1`, tripId: r.tripId, kind: 'trip_change', ref: 'decision:d_villa', dueAt: new Date(),
+      payload: { type: 'decision.closed', decisionId: 'd_villa', reason: 'all_voted' },
+    };
+    const ended: unknown[] = [];
+    r.context.addTurnEnd((t) => ended.push(t));
+    await turn(r, [closed]);
+    expect(woke).toEqual([['trip_change'], ['trip_change', 'm_5']]);
+    expect(r.posts()).toHaveLength(1);
+    expect(ended).toEqual([{ tripId: r.tripId, turnId: `turn_${r.tripId}`, messageIds: ['m_5'] }]);
+  });
+
   it('giving up ends the turn for the lanes too', async () => {
     const ask = msg(3, 'p_arjun', '@Go hello?');
     const r = room({ messages: [ask], script: [] });
