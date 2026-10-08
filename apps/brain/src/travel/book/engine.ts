@@ -204,15 +204,17 @@ export function createEngine(d: EngineDeps) {
       }
       const lookup = d.book.get(input.lookup!)!;
       const kind = lookup.keeps!;
-      const have = known(kind, words);
-      if (have) {
-        out[name] = have;
-        continue;
-      }
+      // A choice the model just made from ixigo's list goes first, even when its name alone resolves ("Udaipur City
+      // (UDZ)", a station's own code): it is kept for the words first asked too, so "Udaipur" means it from then on.
       const chosen = offered.get(`${lookup.id}|${norm(words)}`);
       if (chosen && d.now().getTime() - chosen.at < OFFERED_MS) {
         await keep(lookup, [chosen.asked, words], chosen.place, 'the model chose from ixigo\'s list');
         out[name] = known(kind, words) ?? { words, ...chosen.place };
+        continue;
+      }
+      const have = known(kind, words);
+      if (have) {
+        out[name] = have;
         continue;
       }
       const end: End = name === 'to' ? 'to' : name === 'from' ? 'from' : 'place';
