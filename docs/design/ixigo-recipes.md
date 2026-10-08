@@ -64,8 +64,9 @@ answer: { as: compare }   # each entry with each step's answer, or why it has no
 ```
 
 A step is a search, a link or facts: never a lookup, another composite, or a recipe that changes something on ixigo;
-its `given` names only inputs its recipe has. Every step starts at once, straight through the engine (not the search
-backend, so no shared cache or live search card); the trip's computer runs as many fetches as Bash allows at a time (the `BROWSER_FETCH_SLOTS`
+its `given` names only inputs its recipe has. A step that is one of the searches shares Go's searches, keyed by the
+request it makes: one kept or running for the same request answers it with no load (a `kept` run on the strip), and
+its own run is kept for the next ask; a step has no live search card of its own. Every step starts at once; the trip's computer runs as many fetches as Bash allows at a time (the `BROWSER_FETCH_SLOTS`
 switch: 2, and 4 once Bash runs four), and the rest wait their turn in Go, so Bash never answers `409 browser_busy`
 (when it does, Go waits as long as Bash says and asks again). A step that fails is its entry's why, never the
 composite's failure. On the run strip the composite is a run of speed `steps`, and each step a run that names it in

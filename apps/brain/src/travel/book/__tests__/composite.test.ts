@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
 import { forgetLearnedPlaces } from '../../recipes/places.js';
 import type { Capture, FetchPlan } from '../../recipes/recipe.js';
+import { createIxigoWebBackend } from '../../recipes/backend.js';
 import { createBrowserFetchRunner } from '../../recipes/runners.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { BOOK_DIR, checkRecipe, loadBook } from '../book.js';
@@ -142,6 +143,78 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     await new Promise((r) => setImmediate(r));
     stop.abort();
     expect(stepsOf(await going)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'options'], ['buses.between', 'out of time'], ['flights.search', 'link']] }]);
+  });
+});
+
+describe("a composite's steps share Go's searches, keyed by the request they make", () => {
+  const BUSES = { from: 'Mumbai', to: 'Goa', date: '2026-11-06' };
+  const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
+  const pages = (opened: string[], kind: 'bus_search' | 'train') => opened.filter((u) => u.includes(kind === 'train' ? '/search/result/train/' : '/buses/bus_search/'));
+
+  /** The engine and the search backend wired as Go wires them, on a browser that notes each page it opens. */
+  function wired(o: { hold?: boolean } = {}) {
+    const opened: string[] = [];
+    const events: RunEvent[] = [];
+    let open: () => void = () => undefined;
+    const gate = o.hold ? new Promise<void>((r) => (open = r)) : null;
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        opened.push(url);
+        if (gate) await gate;
+        return { captures: pageFor(url) ?? [], finalUrl: url };
+      },
+    };
+    const now = () => new Date('2026-10-08T12:00:00Z');
+    const engine = createEngine({
+      book, runner: () => runner, trip: async () => ({ ...trip, homes: ['Mumbai'] }), now, onRun: (_t, e) => events.push(e),
+      searches: (id, given, ro, run) => backend.shareStep(id, given, ro, run),
+    });
+    const backend = createIxigoWebBackend({ book, engine, now });
+    return { engine, backend, opened, events, release: () => open() };
+  }
+
+  it('the same city asked alone, then in the composite, gives one load: the step takes the kept search', async () => {
+    const w = wired();
+    const alone = await w.backend.search('buses', BUSES, { tripId: 't_goa' });
+    expect(alone.results.length).toBeGreaterThan(0);
+    const got = await w.engine.answer(WAYS, {}, { tripId: 't_goa' });
+    expect(stepsOf(got)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'options'], ['buses.between', 'options'], ['flights.search', 'link']] }]);
+    expect(pages(w.opened, 'bus_search')).toHaveLength(1);
+    // The same options, and on the strip the step is a kept run in its lane.
+    if (got.as === 'compare') expect(got.entries[0]!.steps[1]!.answer).toMatchObject({ as: 'options', options: alone.results });
+    expect(w.events.find((e) => e.type === 'run_start' && e.recipe_id === 'buses.between' && e.step_of)).toMatchObject({ speed: 'kept', lane: 'Mumbai' });
+  });
+
+  it("and the other way: a step's own search is kept, so the city asked alone after it loads nothing", async () => {
+    const w = wired();
+    await w.engine.answer(WAYS, {}, { tripId: 't_goa' });
+    await w.backend.search('trains', BUSES, { tripId: 't_goa' });
+    await w.backend.search('buses', BUSES, { tripId: 't_goa' });
+    expect([pages(w.opened, 'train'), pages(w.opened, 'bus_search')].map((p) => p.length)).toEqual([1, 1]);
+  });
+
+  it("a step the composite's time cuts short still finishes and is kept: the city asked alone a moment later loads nothing", async () => {
+    const w = wired({ hold: true });
+    const stop = new AbortController();
+    const composite = w.engine.answer(WAYS, {}, { tripId: 't_goa', signal: stop.signal });
+    await settle();
+    stop.abort();
+    expect(stepsOf(await composite)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'out of time'], ['buses.between', 'out of time'], ['flights.search', 'link']] }]);
+    w.release();
+    await settle();
+    await w.backend.search('buses', BUSES, { tripId: 't_goa' });
+    expect(pages(w.opened, 'bus_search')).toHaveLength(1);
+  });
+
+  it('a step that asks what a search still running asks joins it: one page for both', async () => {
+    const w = wired({ hold: true });
+    const alone = w.backend.search('buses', BUSES, { tripId: 't_goa' });
+    await settle();
+    const composite = w.engine.answer(WAYS, {}, { tripId: 't_goa' });
+    await settle();
+    w.release();
+    await Promise.all([alone, composite]);
+    expect(pages(w.opened, 'bus_search')).toHaveLength(1);
   });
 });
 
