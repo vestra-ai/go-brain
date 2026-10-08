@@ -290,6 +290,29 @@ describe('set_mandate on a stay from ixigo.com: the login first, and ixigo\'s pr
     }
   });
 
+  it("Saudades as the demo voted it (₹47,682 for 3 nights): the same price on ixigo says nothing; ₹49,392 says both prices", async () => {
+    const saudades = () => {
+      const t = goaTrip('closed');
+      const vote = t.decisions[0]!;
+      vote.options[0] = { ...vote.options[0]!, label: 'Saudades Homestays', price_minor: 4768200 };
+      return t;
+    };
+    const asked = () => ctxWith([['p_rahul', 'heyy can you try booking Saudades now']]);
+    k.server.trips.set('t_goa', saudades());
+    prepared({ ok: true, priceMinor: 4768200 });
+    const same = await setMandate(k.deps, asked(), noCap);
+    expect(same).toMatchObject({ cardId: expect.any(String), capMinor: marginCap(4768200) });
+    expect('note' in same ? same.note : '').not.toContain('on ixigo now');
+
+    k.server.trips.set('t_goa', saudades());
+    prepared({ ok: true, priceMinor: 4939200 });
+    const ctx = asked();
+    expect(await setMandate(k.deps, ctx, noCap)).toMatchObject({
+      capMinor: marginCap(4939200), note: expect.stringContaining('Saudades Homestays is ₹49,392 on ixigo now, up from ₹47,682 on the vote.'),
+    });
+    expect(ctx.cards[0]).toMatchObject({ fallback_text: expect.stringContaining('Saudades Homestays is ₹49,392 on ixigo now, up from ₹47,682 on the vote. Ready to book Saudades Homestays') });
+  });
+
   it('a check that failed says try again and sets nothing', async () => {
     Object.assign(k.travel, { prepare: async () => { throw new Error('db down'); } });
     expect(await setMandate(k.deps, ctxWith(), noCap)).toEqual({ refused: "I couldn't check Villa Sol just now. Try again in a moment." });

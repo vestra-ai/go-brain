@@ -139,7 +139,8 @@ export async function setMandate(
   const voted = chosen.price_minor ?? null;
   const price = live ?? voted;
   const currency = chosen.currency ?? trip.money.currency;
-  // A price that moved since the vote is said on the mandate, before anyone taps Yes, book it.
+  // A price that moved since the vote is said on the mandate, before anyone taps Yes, book it. prepare reads the same
+  // number the vote showed, or none, so a move said here is a real one.
   const moved = live !== null && voted !== null && live !== voted
     ? `${chosen.label} is ${money(live, currency)} on ixigo now, ${live > voted ? 'up' : 'down'} from ${money(voted, currency)} on the vote.`
     : null;

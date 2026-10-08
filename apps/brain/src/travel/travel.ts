@@ -185,7 +185,8 @@ export interface Travel {
    * Before a mandate (P5's set_mandate): what booking the option needs first, and its price now. A stay from ixigo.com
    * needs the trip's ixigo login: with none, the person is asked on the login card and `resume` waits on the login, so Go
    * carries on with it once the login is in (ok false, and the note for the model). priceMinor is ixigo's price for it
-   * now, or null when there is nothing to read again or the page didn't say. Absent: nothing is needed first.
+   * now, read as the same number the vote showed (the whole stay from the same search's list), or null when that can't
+   * be read: then nothing is said about the price moving. Absent: nothing is needed first.
    */
   prepare?(optionId: string, o: { tripId: string; what: string; resume: Record<string, unknown> }): Promise<{ ok: true; priceMinor: number | null } | { ok: false; note: string }>;
   /** True while searches come from the fake ixigo (TRAVEL_MODE is fake, or ixigo is not set up): the listings are simulated. */

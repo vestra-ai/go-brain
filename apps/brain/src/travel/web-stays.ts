@@ -3,7 +3,7 @@
  * room review page errored on 7 Oct), so the booking is simulated and says so: the receipt reads "Booked (simulated)",
  * the reference is Go's own (SIM-…), never an ixigo booking id, and the payment is the test rail's, with the payer's two
  * approvals as for any booking. What is real: the trip's ixigo login is needed first, and the price is ixigo's own, read
- * again from the stay's page before the mandate and again at the hold.
+ * again before the mandate and again at the hold, as the same number the options card and the vote showed (listingWholeStay).
  *
  * The 8 Oct demo asked "heyy can you try booking Saudades now" on a trip with no login, and Go answered with a link. Now a
  * booking ask with no login brings the login card back ("To book Saudades I need ixigo linked once, Rahul") and the ask
@@ -23,9 +23,12 @@ export const WEB_HOLD_MS = 15 * 60_000;
 export const SIM_VENDOR = 'ixigo (simulated)';
 /** A stay's own page on ixigo.com, as hotels.search links it: the hotel id, then the dates, rooms and guests in its query. */
 const DETAILS = /^https:\/\/www\.ixigo\.com\/hotels\/(\d+)\/details\?/;
+/** The stays results page a search read, which its result set keeps ("See all on ixigo"), and that page's own list call. */
+const SEARCH_PAGE = /^https:\/\/www\.ixigo\.com\/hotels\/search\/result\?/;
+const SEARCH_CALL = '/accommodation-search/api/v3/accommodations/search$';
 
 export interface WebStaysDeps {
-  results: Pick<ResultsStore, 'offer'>;
+  results: Pick<ResultsStore, 'offer' | 'get'>;
   /** The trip's browser fetch; null while the trip's computer is not set up here. */
   runner: () => Pick<RecipeRunner, 'read'> | null;
   login: Pick<IxigoLogin, 'ensure'>;
@@ -60,23 +63,25 @@ export function stayOf(sourceUrl: string): { hotelId: string; nights: number; ro
 }
 
 /**
- * The whole stay's price from the page's rooms call, worked out as hotels.search works out the price a vote shows: the
- * cheapest rate's nightly fare plus taxes and fees, times the nights and the rooms. Null when ixigo listed no rate.
+ * The whole stay's price as the options card and the vote showed it, from ixigo's stays list call: hotels.search prices a
+ * stay at its listing's nightly fare plus taxes and fees (fareDetail, "per room per night", no room or plan named), in
+ * paise, times the nights and the rooms. The same number from the same call, so a move is a real one. Null when the list
+ * doesn't have the stay, or its fare isn't two numbers. (The stay's own rooms call is not the same number: its rates
+ * carry ixigo's coupons, and nothing in it says which one the list showed.)
  */
-export function wholeStayFromRooms(body: string, nights: number, rooms: number): number | null {
+export function listingWholeStay(body: string, hotelId: string, nights: number, rooms: number): number | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
   } catch {
     return null;
   }
-  const first = (Array.isArray(parsed) ? parsed[0] : parsed) as { data?: { rooms?: Array<{ roomOptions?: Array<{ fareDetail?: Record<string, unknown> }> }> } } | undefined;
-  const nightly = (first?.data?.rooms ?? [])
-    .flatMap((r) => r.roomOptions ?? [])
-    .map((o) => o.fareDetail ?? {})
-    .filter((f) => typeof f.displayedBaseFare === 'number')
-    .map((f) => Math.round(((f.displayedBaseFare as number) + (typeof f.taxesAndFees === 'number' ? f.taxesAndFees : 0)) * 100));
-  return nightly.length > 0 ? Math.min(...nightly) * nights * rooms : null;
+  const first = (Array.isArray(parsed) ? parsed[0] : parsed) as { data?: { result?: { inventoryInfoList?: Array<{ hotelId?: unknown; fareDetail?: Record<string, unknown> }> } } } | undefined;
+  const stay = (first?.data?.result?.inventoryInfoList ?? []).find((h) => String(h.hotelId) === hotelId);
+  const base = stay?.fareDetail?.displayedBaseFare;
+  const taxes = stay?.fareDetail?.taxesAndFees;
+  if (typeof base !== 'number' || typeof taxes !== 'number') return null;
+  return Math.round((base + taxes) * 100) * nights * rooms;
 }
 
 export function createWebStays(d: WebStaysDeps): WebStays {
@@ -86,16 +91,24 @@ export function createWebStays(d: WebStaysDeps): WebStays {
     return o as StoredOffer & { sourceUrl: string };
   };
 
-  /** ixigo's price for the whole stay now, read from its own page on the trip's computer; null when the page didn't say. */
-  async function livePrice(tripId: string, sourceUrl: string): Promise<number | null> {
-    const stay = stayOf(sourceUrl);
+  /**
+   * ixigo's price for the whole stay now: the search that showed it, opened again on the trip's computer, and the same
+   * stay's listing read the same way (listingWholeStay). Null when there is no page to open, it didn't answer, or the stay
+   * isn't on it now (a whole state's second page, or gone from the list).
+   */
+  async function livePrice(o: StoredOffer & { sourceUrl: string }): Promise<number | null> {
+    const stay = stayOf(o.sourceUrl);
     const runner = d.runner();
-    if (!stay || !runner) return null;
-    const match = `/accommodations/details/${stay.hotelId}/rooms$`;
+    const page = (await d.results.get(o.tripId, o.resultsId))?.page ?? null;
+    if (!stay || !runner || !page || !SEARCH_PAGE.test(page)) return null;
     try {
-      const { captures } = await runner.read(tripId, sourceUrl, { capture: [{ match, required: true }], timeoutMs: 15_000 });
-      const rooms = captures.find((c) => c.url.includes(`/accommodations/details/${stay.hotelId}/rooms`) && c.status === 200);
-      return rooms ? wholeStayFromRooms(rooms.body, stay.nights, stay.rooms) : null;
+      const { captures } = await runner.read(o.tripId, page, { capture: [{ match: SEARCH_CALL, required: true }], timeoutMs: 20_000 });
+      for (const c of captures) {
+        if (c.status !== 200 || !c.url.includes('/accommodations/search')) continue;
+        const price = listingWholeStay(c.body, stay.hotelId, stay.nights, stay.rooms);
+        if (price !== null) return price;
+      }
+      return null;
     } catch (err) {
       if (err instanceof TravelError) return null;
       throw err;
@@ -114,14 +127,15 @@ export function createWebStays(d: WebStaysDeps): WebStays {
       const park: Parked = { what: o.what, resume: o.resume };
       const login = await d.login.ensure(o.tripId, o.what, { park });
       if (!login.ok) return { ok: false, note: login.note };
-      return { ok: true, priceMinor: await livePrice(o.tripId, offer.sourceUrl) };
+      return { ok: true, priceMinor: await livePrice(offer as StoredOffer & { sourceUrl: string }) };
     },
 
     async hold(offerId) {
       const o = await optionOf(offerId);
       const login = await d.login.ensure(o.tripId, `Booking ${o.title}`);
       if (!login.ok) throw new TravelError('refused', login.note);
-      const amountMinor = await livePrice(o.tripId, o.sourceUrl);
+      // ixigo's price now; when the list didn't have the stay this time, the price Go showed it at, which the vote used.
+      const amountMinor = (await livePrice(o)) ?? o.totalMinor;
       if (amountMinor === null) throw new TravelError('unreachable', `ixigo didn't show a price for ${o.title} just now.`);
       const expiresAt = new Date(d.now().getTime() + WEB_HOLD_MS);
       const h: Hold = {
