@@ -148,6 +148,8 @@ export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of cre
  * matters for a sleeping box, where a stays search ran past 13 s on staging.
  */
 export const FETCH_TIMEOUT_MS = 20_000;
+/** How wide Bash takes a fetch's pictures: the width of its window, so a picture is sharp at its own size, never stretched. */
+export const FRAME_WIDTH = 1280;
 /** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
 export const IN_USE_WAIT_MS = 4_000;
 /** How long a page call may take before the run falls to the page speed: it answers in about 0.4 s on a warm tab. */
@@ -256,7 +258,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
       // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
       // the recipe says how long that takes.
-      frames: plan.settleMs ? { settle_ms: plan.settleMs } : {},
+      frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
     };
     let userId = d.computer.userIdFor(tripId);
     for (let tries = 0; ; tries++) {
