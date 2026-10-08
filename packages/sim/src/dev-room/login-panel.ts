@@ -120,7 +120,7 @@ export const LOGIN_SCRIPT = `
   function tapWatch(c, who) {
     login.asked[keyOf(c, who)] = Date.now();
     delete login.sessions[keyOf(c, who)];
-    send({ type: 'tap', cardId: c.card_id, actionId: watchOf(c).action_id, personId: who });
+    tapCard(c.card_id, watchOf(c).action_id, '', who);
   }
 
   // A Watch answer for a hand-off puts its screen in the panel; anything else opens as it always did.

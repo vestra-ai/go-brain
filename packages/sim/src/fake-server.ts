@@ -78,6 +78,8 @@ export interface SentEvent {
 }
 
 export type TapResult = z.infer<typeof CardActionResult>;
+/** The kind of screen a tap came from (contract 1.1 CardTap payload.device). */
+export type Device = 'desktop' | 'phone';
 
 /** Go's socket URL for this instance: ws(s)://host/v1/socket?instance=<name>. */
 export function socketUrl(goUrl: string, instance: string): string {
@@ -239,9 +241,14 @@ export class FakeServer {
   }
 
   /** Someone taps a button on one of Go's cards: card_tap with a new tap_id, waiting 3.5 s like the Server. */
-  async tap(cardId: string, actionId: string, personId: string, optionId?: string): Promise<TapResult> {
+  async tap(cardId: string, actionId: string, personId: string, optionId?: string, device?: Device): Promise<TapResult> {
     const s = this.state(this.tripWith((t) => t.cardMessage(cardId) !== undefined, `card ${cardId}`));
-    const tap = { tap_id: this.mint('tap_'), trip_id: s.id, card_id: cardId, action_id: actionId, person_id: personId, ...(optionId ? { option_id: optionId } : {}) };
+    const tap = {
+      tap_id: this.mint('tap_'), trip_id: s.id, card_id: cardId, action_id: actionId, person_id: personId,
+      ...(optionId ? { option_id: optionId } : {}),
+      // Contract 1.1: the kind of screen the tap came from, so a page Go opens fits it (Go assumes a phone without it).
+      ...(device ? { payload: { device } } : {}),
+    };
     return CardActionResult.parse(await this.socket.request('card_tap', tap, { timeoutMs: 3500 }));
   }
 

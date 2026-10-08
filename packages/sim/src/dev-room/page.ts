@@ -210,10 +210,48 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
     toastTimer = setTimeout(function () { t.className = 'toast'; }, 2500);
   }
 
+  /** The kind of screen this is, sent with every card tap so a page Go opens fits it: a phone is narrow or touch-first. */
+  function device() {
+    var coarse = false;
+    try { coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (e) {}
+    return (window.innerWidth || 1024) < 700 || coarse ? 'phone' : 'desktop';
+  }
+
+  // A card button tapped and waiting, for the person who tapped it. Go answers a tap by changing the card, so the button
+  // stays pending (disabled, "Opening…") until the card changes, Go refuses or opens a page, or PENDING_MS pass; a second
+  // tap on it is never sent.
+  var PENDING_MS = 15000;
+  var OPENS = ['watch', 'ixigo_watch', 'ixigo_login'];
+  var pending = {};
+  function pendingKey(cardId, actionId, optionId, who) { return cardId + ' ' + actionId + ' ' + (optionId || '') + ' ' + who; }
+  function cardNow(cardId) {
+    var list = state ? state.messages : [];
+    for (var i = 0; i < list.length; i++) if (list[i].card && !list[i].deleted && list[i].card.card_id === cardId) return JSON.stringify(list[i].card);
+    return '';
+  }
+  function settlePending() {
+    var now = Date.now();
+    for (var k in pending) if (now - pending[k].at > PENDING_MS || cardNow(pending[k].card) !== pending[k].was) delete pending[k];
+  }
+  function freePending(cardId, actionId, who) {
+    for (var k in pending) if (pending[k].card === cardId && pending[k].action === actionId && pending[k].who === who) delete pending[k];
+  }
+  /** Taps a card's button for `who`, once until it settles. False when that button is still waiting. */
+  function tapCard(cardId, actionId, optionId, who) {
+    var key = pendingKey(cardId, actionId, optionId, who);
+    if (pending[key]) return false;
+    pending[key] = { card: cardId, action: actionId, who: who, was: cardNow(cardId), at: Date.now() };
+    send({ type: 'tap', cardId: cardId, actionId: actionId, personId: who, optionId: optionId || undefined, device: device() });
+    setTimeout(render, PENDING_MS + 50);
+    return true;
+  }
+
   function visible(action) { return !action.only_for_person_ids || action.only_for_person_ids.indexOf(me) >= 0; }
   function goButton(card, action, optionId) {
+    var busy = !!pending[pendingKey(card.card_id, action.action_id, optionId, me)];
     return '<button class="act ' + (action.style === 'primary' ? 'primary' : 'secondary') + '" data-tap="' + esc(card.card_id) + '" data-action="' + esc(action.action_id) + '"' +
-      (optionId ? ' data-option="' + esc(optionId) + '"' : '') + '>' + esc(action.label) + '</button>';
+      (optionId ? ' data-option="' + esc(optionId) + '"' : '') + (busy ? ' disabled aria-busy="true"' : '') + '>' +
+      esc(busy ? (OPENS.indexOf(action.action_id) >= 0 ? 'Opening…' : 'One moment…') : action.label) + '</button>';
   }
   function goActions(card) {
     var acts = (card.actions || []).filter(function (a) { return !a.per_option && visible(a); });
@@ -391,6 +429,7 @@ ${o.live ? `${liveAside(o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchOr
 
   function render() {
     if (!state) return;
+    settlePending();
     var t = state.trip;
     $('title').innerHTML = esc(t.title) + '<small>' + esc(t.people.length + ' people, change ' + t.seq + (state.connected ? '' : ', Go is not connected')) + '</small>';
     $('people').innerHTML = t.people.map(function (p) {
@@ -421,7 +460,7 @@ ${o.live ? '    renderLogin();\n' : ''}  }
       try { localStorage.setItem('go-dev-room-me', me); } catch (x) {}
       render();
     } else if (d.tap) {
-      send({ type: 'tap', cardId: d.tap, actionId: d.action, personId: me, optionId: d.option || undefined });
+      if (tapCard(d.tap, d.action, d.option, me)) render();
     } else if (d.vote) {
       send({ type: 'vote', decisionId: d.vote, personId: me, optionIndex: Number(d.index) });
     } else if (d.confirm) {
@@ -479,6 +518,11 @@ ${o.live ? '    renderLogin();\n' : ''}  }
         render();
       } else if (data.type === 'tap_result') {
         var r = data.result;
+        // An answer that isn't a change to the card frees its button at once.
+        if (r.result !== 'done') {
+          freePending(data.cardId, data.actionId, data.personId);
+          render();
+        }
         if (watchHere(data)) return; // on screen in Go Live's column
         if (r.result === 'open' && safeUrl(r.url)) {
           window.open(r.url, '_blank', 'noopener');
@@ -488,11 +532,12 @@ ${o.live ? '    renderLogin();\n' : ''}  }
         }
       } else if (data.type === 'forget_result') {
         toast(data.toast);
-      } else if (data.type === 'limit') {
-        if ($('limit')) $('limit').textContent = data.text;
-        toast(data.text);
-      } else if (data.type === 'error') {
-        toast(data.message);
+      } else if (data.type === 'limit' || data.type === 'error') {
+        // The room turned something away before it reached Go: no tap is on its way, so no button waits.
+        pending = {};
+        render();
+        if (data.type === 'limit' && $('limit')) $('limit').textContent = data.text;
+        toast(data.type === 'limit' ? data.text : data.message);
 ${o.live ? LIVE_HOOK : ''}      }
     };
     ws.onopen = function () { fails = 0; };

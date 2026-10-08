@@ -5,7 +5,7 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { FakeServer } from '../fake-server.js';
+import type { Device, FakeServer } from '../fake-server.js';
 import { PAGE_HTML } from './page.js';
 
 export interface DevRoomOptions {
@@ -26,7 +26,7 @@ export interface DevRoom {
 /** What the page may send. Anything else is ignored. */
 export type Action =
   | { type: 'say'; personId: string; text: string }
-  | { type: 'tap'; cardId: string; actionId: string; personId: string; optionId?: string }
+  | { type: 'tap'; cardId: string; actionId: string; personId: string; optionId?: string; device?: Device }
   | { type: 'vote'; decisionId: string; personId: string; optionIndex: number }
   | { type: 'react'; personId: string; messageId: string; emoji: string }
   | { type: 'confirm'; decisionId: string }
@@ -60,10 +60,14 @@ export async function doAction(fake: FakeServer, tripId: string, a: Action, repl
       if (words) await fake.say(a.personId, words, { tripId });
       break;
     }
-    case 'tap':
+    case 'tap': {
+      // The kind of screen the page says it is on, when it is one of the two; anything else is left out.
+      const device = a.device === 'phone' || a.device === 'desktop' ? a.device : undefined;
+      const result = await fake.tap(a.cardId, a.actionId, a.personId, a.optionId, device);
       // The tap comes back with its answer: the page knows a Watch answer for a login hand-off by its card and person.
-      reply({ type: 'tap_result', cardId: a.cardId, actionId: a.actionId, personId: a.personId, result: await fake.tap(a.cardId, a.actionId, a.personId, a.optionId) });
+      reply({ type: 'tap_result', cardId: a.cardId, actionId: a.actionId, personId: a.personId, result });
       break;
+    }
     case 'vote':
       await fake.vote(a.decisionId, a.personId, a.optionIndex);
       break;

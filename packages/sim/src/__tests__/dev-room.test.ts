@@ -117,6 +117,11 @@ describe('the live socket', () => {
     await until(() => got.some((m) => m.type === 'tap_result'));
     expect(got.find((m) => m.type === 'tap_result').result).toEqual({ result: 'done', toast: 'Noted.' });
     expect(g.taps[0]).toMatchObject({ card_id: 'c_w', action_id: 'watch', person_id: 'p_arjun' });
+    expect(g.taps[0].payload).toBeUndefined();
+    // The kind of screen goes to Go as contract 1.1's payload.device; anything but desktop or phone is left out.
+    for (const device of ['phone', 'desktop', 'tablet']) ws.send(JSON.stringify({ type: 'tap', cardId: 'c_w', actionId: 'watch', personId: 'p_arjun', device }));
+    await until(() => g.taps.length === 4);
+    expect(g.taps.slice(1).map((t) => t.payload)).toEqual([{ device: 'phone' }, { device: 'desktop' }, undefined]);
   });
 
   it('"Forget me in this trip": forget_person to Go first, then the join answers cleared, and the toast says nothing is left', async () => {
@@ -172,7 +177,7 @@ describe('the live socket', () => {
  * itself), its height, scroll events, pictures that load, and the socket. The test sets the chat's height to what the
  * browser would lay out, then sends the page a state.
  */
-function pageInBrowser(html: string, o: { column: boolean; me?: string }) {
+function pageInBrowser(html: string, o: { column: boolean; me?: string; width?: number; coarse?: boolean }) {
   const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
   const view = { height: 600, content: 1000 };
   const clamp = (top: number) => Math.max(0, Math.min(top, view.content - view.height));
@@ -228,6 +233,8 @@ function pageInBrowser(html: string, o: { column: boolean; me?: string }) {
     get scrollY() { return winTop; },
     scrollTo: (_x: number, y: number) => { winTop = clamp(y); },
     open: (url: string) => { opened.push(url); },
+    innerWidth: o.width ?? 1280,
+    matchMedia: (q: string) => ({ matches: q === '(pointer: coarse)' && o.coarse === true }),
   };
   const sockets: any[] = [];
   const sent: any[] = [];
@@ -565,6 +572,113 @@ describe("Go's live search card", () => {
   });
 });
 
+describe('a card button', () => {
+  const CARD = 'c_login_t_goa_1';
+  const fromGo = (card: object, n = 1) => ({
+    message_id: `m_go_${n}`, seq: n, updated_seq: n, author: { kind: 'go' }, text: '', attachments: [], mentions_go: false, mentions: [],
+    reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z', card,
+  });
+  const only = (action_id: string, label: string, style = 'secondary') => ({ action_id, label, style, only_for_person_ids: ['p_rahul'] });
+  /** The ixigo login card's ask, and the same card once Go has taken the Log in tap. */
+  const ask = fromGo({
+    kind: 'notice', card_id: CARD, tone: 'info', for_person_ids: ['p_rahul'], fallback_text: 'Link ixigo', title: 'Link ixigo for this trip',
+    body: "One login on Go's computer.", actions: [only('ixigo_login', 'Log in to ixigo', 'primary'), only('ixigo_not_now', 'Not now')],
+  });
+  const opening = fromGo({ ...ask.card, title: 'Logging in to ixigo', actions: [only('ixigo_logged_in', "I'm logged in"), only('ixigo_not_now', 'Not now')] });
+  /** A job's working card, with Watch and Stop for everyone. */
+  const job = (updated_at: string) => fromGo({
+    kind: 'working', card_id: 'c_job', fallback_text: 'Finding villas', task_id: 'task_1', title: 'Finding villas', state: 'running', steps: [], updated_at,
+    actions: [{ action_id: 'watch', label: 'Watch', style: 'primary' }, { action_id: 'stop', label: 'Stop', style: 'secondary' }],
+  }, 2);
+  const LOGIN_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_login', personId: 'p_rahul', device: 'desktop' };
+
+  it('holds a tapped button as Opening… until its card changes, and never sends a second tap', () => {
+    const p = pageInBrowser(PAGE_HTML, { column: false });
+    p.messages([ask], 1000);
+    p.tapCard(CARD, 'ixigo_login');
+    expect(p.sent()).toEqual([LOGIN_TAP]);
+    expect(p.room()).toContain(`data-tap="${CARD}" data-action="ixigo_login" disabled aria-busy="true">Opening…</button>`);
+    // Only that button waits: Not now is still there to tap.
+    expect(p.room()).toContain(`data-tap="${CARD}" data-action="ixigo_not_now">Not now</button>`);
+    // A second tap, a fresh render and Go's done all leave it waiting, and nothing more is sent.
+    p.tapCard(CARD, 'ixigo_login');
+    p.messages([ask], 1000);
+    p.receive({ type: 'tap_result', cardId: CARD, actionId: 'ixigo_login', personId: 'p_rahul', result: { result: 'done', toast: "Opening ixigo's log in on Go's screen" } });
+    p.tapCard(CARD, 'ixigo_login');
+    expect(p.sent()).toEqual([LOGIN_TAP]);
+    expect(p.room()).toContain('disabled aria-busy="true">Opening…</button>');
+    // Go changes the card: the wait is over. Back at its ask later, the button taps again.
+    p.messages([opening], 1000);
+    p.messages([ask], 1000);
+    expect(p.room()).toContain(`data-tap="${CARD}" data-action="ixigo_login">Log in to ixigo</button>`);
+    p.tapCard(CARD, 'ixigo_login');
+    expect(p.sent()).toEqual([LOGIN_TAP, LOGIN_TAP]);
+  });
+
+  it('frees a button when Go refuses or opens a page, and after 15 s at most', () => {
+    const p = pageInBrowser(PAGE_HTML, { column: false });
+    p.messages([job('2026-10-08T10:00:00Z')], 1000);
+    p.tapCard('c_job', 'watch');
+    expect(p.room()).toContain('data-action="watch" disabled aria-busy="true">Opening…</button>');
+    p.receive({ type: 'tap_result', cardId: 'c_job', actionId: 'watch', personId: 'p_rahul', result: { result: 'refused', toast: "Can't open Go's screen right now" } });
+    expect(p.room()).toContain('data-action="watch">Watch</button>');
+    expect(p.el('toast').textContent).toBe("Can't open Go's screen right now");
+    p.tapCard('c_job', 'watch');
+    p.receive({ type: 'tap_result', cardId: 'c_job', actionId: 'watch', personId: 'p_rahul', result: { result: 'open', url: 'https://bash.test/s', expires_at: '2099-01-01T00:00:00Z' } });
+    expect(p.room()).toContain('data-action="watch">Watch</button>');
+    expect(p.opened()).toEqual(['https://bash.test/s']);
+    // Stop is answered done and the card doesn't change: it waits, then frees itself after 15 s.
+    p.tapCard('c_job', 'stop');
+    p.receive({ type: 'tap_result', cardId: 'c_job', actionId: 'stop', personId: 'p_rahul', result: { result: 'done', toast: 'Stopping it' } });
+    expect(p.room()).toContain('data-action="stop" disabled aria-busy="true">One moment…</button>');
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 16_000);
+    try {
+      p.messages([job('2026-10-08T10:00:00Z')], 1000);
+      expect(p.room()).toContain('data-action="stop">Stop</button>');
+    } finally {
+      clock.mockRestore();
+    }
+    // A card that changes (a new picture, a new step) frees it at once.
+    p.tapCard('c_job', 'stop');
+    p.messages([job('2026-10-08T10:00:05Z')], 1000);
+    expect(p.room()).toContain('data-action="stop">Stop</button>');
+    expect(p.sent().map((t) => t.actionId)).toEqual(['watch', 'watch', 'stop', 'stop']);
+  });
+
+  it("waits per person: another person's tap on the same button still goes", () => {
+    const p = pageInBrowser(PAGE_HTML, { column: false });
+    p.messages([job('2026-10-08T10:00:00Z')], 1000);
+    p.tapCard('c_job', 'stop');
+    p.play('p_priya');
+    expect(p.room()).toContain('data-action="stop">Stop</button>');
+    p.tapCard('c_job', 'stop');
+    expect(p.sent().map((t) => t.personId)).toEqual(['p_rahul', 'p_priya']);
+  });
+
+  it('frees a waiting button when the room turns the tap away before it reaches Go', () => {
+    const p = pageInBrowser(roomPage({ title: 'Try Go', hosted: true }), { column: false });
+    p.messages([job('2026-10-08T10:00:00Z')], 1000);
+    p.tapCard('c_job', 'stop');
+    p.receive({ type: 'limit', text: "Today's turns are used up." });
+    expect(p.room()).toContain('data-action="stop">Stop</button>');
+    expect(p.el('limit').textContent).toBe("Today's turns are used up.");
+    expect(p.el('toast').textContent).toBe("Today's turns are used up.");
+    p.tapCard('c_job', 'stop');
+    p.receive({ type: 'error', message: 'That is not in your trip.' });
+    expect(p.room()).toContain('data-action="stop">Stop</button>');
+    expect(p.el('toast').textContent).toBe('That is not in your trip.');
+  });
+
+  it('says with every card tap whether it came from a computer or a phone: narrow or touch-first is a phone', () => {
+    for (const [screen, device] of [[{ width: 1280 }, 'desktop'], [{ width: 699 }, 'phone'], [{ width: 390 }, 'phone'], [{ width: 1280, coarse: true }, 'phone'], [{ width: 700 }, 'desktop']] as const) {
+      const p = pageInBrowser(PAGE_HTML, { column: false, ...screen });
+      p.messages([ask], 1000);
+      p.tapCard(CARD, 'ixigo_login');
+      expect(p.sent()).toEqual([{ ...LOGIN_TAP, device }]);
+    }
+  });
+});
+
 describe("Go Live's login panel", () => {
   const ORIGIN = 'https://bash.test';
   const LIVE_PAGE = roomPage({ title: 'Try Go', hosted: true, live: true, watchOrigin: ORIGIN });
@@ -597,7 +711,7 @@ describe("Go Live's login panel", () => {
     type: 'tap_result', cardId: CARD, actionId: 'ixigo_watch', personId: 'p_rahul',
     result: { result: 'open', url: SESSION, expires_at: '2099-01-01T00:00:00Z' }, ...over,
   });
-  const WATCH_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_watch', personId: 'p_rahul' };
+  const WATCH_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_watch', personId: 'p_rahul', device: 'desktop' };
   /** Rahul's page with his login on screen. */
   const loggingIn = () => {
     const p = pageInBrowser(LIVE_PAGE, { column: true });
@@ -641,7 +755,7 @@ describe("Go Live's login panel", () => {
     p.messages([loginCard('asked')], 1000);
     expect(p.el('login').hidden).toBe(true);
     p.tapCard(CARD, 'ixigo_login');
-    const LOGIN_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_login', personId: 'p_rahul' };
+    const LOGIN_TAP = { type: 'tap', cardId: CARD, actionId: 'ixigo_login', personId: 'p_rahul', device: 'desktop' };
     expect(p.sent()).toEqual([LOGIN_TAP]);
     // Go turns the card at once; Watch comes once the login page is in front (seconds, longer from asleep).
     for (const page of [p, q]) page.messages([loginCard('opening')], 1000);
@@ -795,7 +909,7 @@ describe("Go Live's login panel", () => {
     expect(p.sent()).toEqual([]);
     expect(p.el('live').className).toBe('live');
     p.messages([working('needs_you')], 1000);
-    expect(p.sent()).toEqual([{ type: 'tap', cardId: 'c_job', actionId: 'watch', personId: 'p_rahul' }]);
+    expect(p.sent()).toEqual([{ type: 'tap', cardId: 'c_job', actionId: 'watch', personId: 'p_rahul', device: 'desktop' }]);
     expect(p.el('login-line').textContent).toBe("Go's computer is yours for this step.");
     expect(p.el('login-acts').innerHTML).toContain('data-action="stop">Stop</button>');
     expect(p.el('login-acts').innerHTML).not.toContain('data-action="watch"');
