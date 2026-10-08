@@ -35,14 +35,16 @@ capture:
 # often never brought it, p5's loads of 8 Oct). ixigo's own search for a whole state is slow on its side: all of Goa with a
 # pool sent page 1 at 10.2 s on a warm computer (staging, 8 Oct), and a 12 s limit failed the room's "North Goa with a
 # pool" with nothing caught. So it has Bash's whole 20 s; page 2 sometimes never comes, and then the fetch answers with
-# page 1 at 20 s, which reads as it is. Either way, once the results are in, ixigo's "Best Price
-# Guarantee" popup (once a day per browser) is closed if it is there, so the card's picture is the list: before the
-# scrolls, which it can block, and again after them. Bash's last picture waits 550 ms after the hotels are in, when the
-# cards are drawn.
+# page 1 at 20 s, which reads as it is. ixigo's "Best Price Guarantee" popup (once a day per browser, at most three
+# times) shows 1 s after the page mounts, over everything, so it is closed first: the click looks for it up to 3 s
+# after the page opens (Bash's within_ms), in the live view's first seconds, never after a slow search (staging, 8 Oct:
+# a 21.5 s Goa search kept it over the page to the end). It is looked for again once the results are in, and after the
+# scrolls, which it can block. Bash's last picture waits 550 ms after the hotels are in, when the cards are drawn.
 fetch:
   - when: $wide
     capture: [{ match: /accommodation-search/api/v3/accommodations/search$, min_count: 2, max_count: 2 }]
     steps:
+      - { op: click, name: Close modal, optional: true, within_ms: 3000 }
       - { op: wait_for, match: /accommodation-search/api/v3/accommodations/search$ }
       - { op: click, name: Close modal, optional: true }
       - { op: scroll, times: 6 }
@@ -51,6 +53,7 @@ fetch:
     settle_ms: 550
   - when: "true"
     steps:
+      - { op: click, name: Close modal, optional: true, within_ms: 3000 }
       - { op: wait_for, match: /accommodation-search/api/v3/accommodations/search$ }
       - { op: click, name: Close modal, optional: true }
     settle_ms: 550
