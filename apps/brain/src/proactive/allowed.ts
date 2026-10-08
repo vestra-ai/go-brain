@@ -49,6 +49,9 @@ export function rulesForTurn(wake: DeskItem[]): TurnRules | null {
   for (const a of allowed) for (const t of TOOLS_FOR[a]) tools.add(t);
   // Simulated news goes out only on a notice card, which carries the "Simulated for the demo" label and the pins.
   const mayPostText = allowed.has('message') && !simulated;
+  // A message Go volunteers may offer its choices as quick replies (1.1 A3): "want me to pull up stays?" with a tap to
+  // answer. They ride on Go's words, so only a turn that may post text gets them.
+  if (mayPostText) tools.add('offer_replies');
   return {
     allowed: ACTIONS.filter((a) => allowed.has(a)),
     tools: [...tools],

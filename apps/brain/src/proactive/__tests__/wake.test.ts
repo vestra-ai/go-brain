@@ -61,11 +61,14 @@ describe('rulesForTurn', () => {
     const r = rulesForTurn([proItem(chat, ['react', 'record', 'message'])]);
     expect(r).toMatchObject({ mayPostText: true, pinOnlyFor: null });
     expect(r?.tools).toEqual(expect.arrayContaining(['react', 'record', 'post_notice', 'stay_silent']));
+    // A message Go volunteers may carry quick replies (1.1 A3); a turn that may post no text gets none.
+    expect(r?.tools).toContain('offer_replies');
   });
 
   it('never lets simulated news out as text: a notice card carries its label and pins', () => {
     const toAll = candidate({ dedupeKey: 'sim:flight_status:all', simulated: true, personIds: [] });
     expect(rulesForTurn([proItem(toAll, ['message'])])).toMatchObject({ mayPostText: false, tools: expect.arrayContaining(['post_notice']) });
+    expect(rulesForTurn([proItem(toAll, ['message'])])?.tools).not.toContain('offer_replies');
     expect(composerRules([proItem(toAll, ['message'])])?.mayPostText).toBe(false);
     expect(rulesForTurn([proItem(chat, ['react', 'record', 'message'])])?.mayPostText).toBe(true);
   });
