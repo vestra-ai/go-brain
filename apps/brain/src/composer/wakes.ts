@@ -45,10 +45,13 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const one = refs.length === 1;
   const which = one ? `${refs[0]} doesn't name you, so it is` : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]} don't name you, so they are`;
   return (
-    `${which} the group talking. Answer ${one ? 'it' : 'one'} only if it asks something you can answer with facts or a check ` +
-    '(weather, distances, timings, prices, what the group decided). The friends settle their own questions to each other ' +
-    '(what to do, who brings, pays or does what), and the App gives anyone asking what they missed their own catch-up, ' +
-    "so stay quiet on those. Someone saying what they'd like, or agreeing, gets a ✅ at most. Otherwise call stay_silent."
+    `${which} the group talking. Speak if you can add something real: answer a question you can answer with facts from ` +
+    'ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already ' +
+    'answered it; when the group agrees dates or a place, offer the next step in one line; when people disagree, offer a ' +
+    "vote. Someone saying what they'd like gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
+    "what is the friends' to settle unless the record already says, and the App gives anyone asking what they missed " +
+    'their own catch-up. For banter, greetings, a side conversation, something a person already handled, or when your ' +
+    'last message has had no reply from a person since, call stay_silent.'
   );
 }
 

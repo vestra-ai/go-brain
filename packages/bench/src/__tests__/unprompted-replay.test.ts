@@ -68,7 +68,7 @@ describe('the 15 posts nobody asked for, replayed through the wake as it is now'
     for (const l of missed) expect(wakesNow(l), l.text).toBe(false);
   });
 
-  it('the other ten still wake Go, each with the note: the group talking, answer only facts, else stay quiet', () => {
+  it('the other ten still wake Go, each with the note: the group talking, when to speak and when to stay silent', () => {
     const rest = triggers.filter((l) => !asksWhatTheyMissed(l.text));
     expect(rest).toHaveLength(10);
     for (const l of rest) {

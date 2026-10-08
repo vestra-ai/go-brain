@@ -6,6 +6,7 @@ import { TripGoneError } from '../../trips/gone.js';
 import { registerFireRoute } from '../../watches/admin.js';
 import { candidate, fakeBrain, goaPack, goaTrip, manualTime, seedTrip, turnCtx } from '../fakes.js';
 import { proactiveOf } from '../payload.js';
+import { DAILY_POSTS } from '../policy.js';
 import { startProactive } from '../register.js';
 import { ProactiveStore } from '../store.js';
 
@@ -101,8 +102,8 @@ describe('startProactive', () => {
     const pack = goaPack({ trip: goaTrip({ trip_id: 't_stage' }) });
     const { brain, app, reg, desk, link } = fakeBrain({ pool: db.pool, now: time.now, env: { ADMIN_TOKEN: TOKEN }, pack });
     const h = await startProactive(brain, { intervals: false, travel: null });
-    // The real trip's day so far: three unprompted posts (nobody has spoken since), a hush and an ignored nudge.
-    for (let i = 0; i < 3; i += 1) {
+    // The real trip's day so far: the whole day's unprompted posts (nobody has spoken since), a hush and an ignored nudge.
+    for (let i = 0; i < DAILY_POSTS; i += 1) {
       const c = candidate({ tripId: 't_stage', dedupeKey: `spent:${i}` });
       await h.store.add(c);
       await h.store.promote(c, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-06' }, new Date(time.now().getTime() - (i + 1) * 600_000));

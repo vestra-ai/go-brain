@@ -50,14 +50,19 @@ export interface TripMood {
   pausedPersonIds: string[];
 }
 
-export const BARS: Readonly<Record<Action, number>> = { react: 0.1, record: 0.15, update_card: 0.2, pin: 0.3, message: 0.45 };
+/**
+ * A message's bar is 0.3 (Keshav, 2026-10-08: "go should be proactive bro, whenever it can intervene it should"): a chat
+ * opening (0.49) or a day timer (0.48) clears it by day and after one hush, and still waits out the night (0.55). A pin
+ * sits just below it, so the bars keep rising with loudness.
+ */
+export const BARS: Readonly<Record<Action, number>> = { react: 0.1, record: 0.15, update_card: 0.2, pin: 0.25, message: 0.3 };
 export const NIGHT_RAISE = 0.25;
 export const HUSH_RAISE = 0.15;
 export const HUSH_CAP = 0.45;
 export const HUSH_LASTS_MS = 72 * 3600_000;
 export const IGNORED_RAISE = 0.05;
 export const IGNORED_CAP = 0.2;
-export const DAILY_POSTS = 3;
+export const DAILY_POSTS = 8;
 export const SMALL_HOLD_MS = 6 * 3600_000;
 export const RECHECK_MS = 5 * 60_000;
 

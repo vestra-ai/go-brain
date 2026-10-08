@@ -9,17 +9,41 @@ describe("Go's rules", () => {
     expect(section).toContain('Never say you forgot or deleted anything about a person yourself.');
   });
 
-  it("one person's preference gets a ✅ and quiet, not a question to the group", () => {
+  it("one person's preference gets a ✅ and at most one short offer, never a search on it and not a question to the group", () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
     expect(section).toContain(
-      "- One person saying what they'd like (a place, a date, a budget), or correcting something about themselves (\"actually I eat eggs\"), is their preference: note it with a ✅ and stay quiet, even if you said the old thing earlier. Don't ask the group to confirm it unless someone asks you.",
+      "- One person saying what they'd like (a place, a date, a budget), or correcting something about themselves (\"actually I eat eggs\"), is their preference: note it with a ✅ and make at most one short offer (\"want me to pull up North Goa stays?\"), even if you said the old thing earlier. Never search on it unless someone asks you to, and don't ask the group to confirm it.",
     );
+    expect(section).not.toContain('stay quiet');
+  });
+
+  it('is proactive (Keshav, 2026-10-08): helps whenever it can add something real, even unnamed', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
+    expect(section).not.toContain('quiet is the default');
+    expect(section).toContain('- Help whenever you can add something real, even when nobody names you.');
+    // A question Go can answer gets answered without an @, unless a person already did.
+    expect(section).toContain(
+      '- A question you can answer: someone in the chat asks something you can answer with facts from ixigo or the trip (the record, votes, money, places). Answer it, unless a person already did.',
+    );
+    // Agreed dates or a place get one offer of the next step; a disagreement gets a vote offered.
+    expect(section).toContain(
+      '- A plan point you can move: when the group agrees dates or a place, offer the next step in one line (stays for those dates, how everyone gets there). When people disagree, offer a vote.',
+    );
+    expect(section).toContain('- Something wrong or at risk: say so.');
+  });
+
+  it('stays silent only for banter, reactions, side talk, what a person handled, and never posts twice in a row without a person', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
+    expect(section).toContain(
+      '- Stay silent (call stay_silent) only for banter and greetings, reactions, a side conversation not about the trip, something a person already handled, or when your last message has had no reply from a person since: never two messages in a row, unless the second is a result you promised.',
+    );
+    expect(section).toContain('- One reply per burst: when several messages came together, answer them in one message.');
   });
 
   it('a line marked as answering Go\'s question is a reply to Go, right under "speak when someone replies to you"', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
     expect(section).toContain(
-      'or when you can clearly save the group time.\n- A line marked "(answers Go\'s question #N)" is that person answering what you asked them in #N: it is a reply to you, even without @Go and even much later.\n',
+      'and when a vote closed or a decision is ready to move.\n- A line marked "(answers Go\'s question #N)" is that person answering what you asked them in #N: it is a reply to you, even without @Go and even much later.\n',
     );
   });
 
