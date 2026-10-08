@@ -48,7 +48,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const packs = fakePacks(goaPack({ trip, messages: o.greeted === false ? [] : [hello] }));
   const greet = (): void => packs.set(goaPack({ trip, messages: [hello] }));
   const looks: number[] = [];
-  const hooks: { onSleep?: (n: number) => void } = {};
+  const hooks: { onSleep?: (n: number) => void; onHandOff?: () => void } = {};
   const statuses = [...(o.statuses ?? [])];
   const reads: Array<{ url: string; plan: FetchPlan }> = [];
   const runner = {
@@ -61,6 +61,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
     },
     handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string; check?: { url: string; method: string } }) => {
       handOffs.push({ url, plan, o: ho });
+      hooks.onHandOff?.();
       const s = o.opened ?? 403;
       if (s === 'refused') throw new TravelError('refused', 'Bash would not open the page.');
       return { captures: s === 'timeout' ? [] : [capture('check', `${IXIGO}${USERINFO}`, '{', s)] };
@@ -291,6 +292,16 @@ describe('logging in', () => {
       o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' } },
     }]);
     expect(await w.state()).toBe('logging_in');
+    // At once, before the page: the card flips to logging in, with I'm logged in and Not now but no Watch yet (the room
+    // says it is opening). Then, the page in front, the same card with Watch.
+    const flips = w.link.of('replace_card').map((p) => p.card as C.Card & { kind: 'notice' });
+    expect(flips.at(-2)).toMatchObject({
+      card_id: `c_login_${w.tripId}_0`, title: 'Logging in to ixigo', for_person_ids: ['p_rahul'], body: "Opening ixigo's log in on Go's screen for Rahul.",
+      actions: [
+        { action_id: 'ixigo_logged_in', label: "I'm logged in", only_for_person_ids: ['p_rahul'] },
+        { action_id: 'ixigo_not_now', label: 'Not now', only_for_person_ids: ['p_rahul'] },
+      ],
+    });
     expect(w.last()).toMatchObject({
       card_id: `c_login_${w.tripId}_0`, title: 'Logging in to ixigo',
       body: "ixigo's log in is open on Go's screen. Rahul: tap Watch, log in with your phone, then tap I'm logged in.",
@@ -302,6 +313,19 @@ describe('logging in', () => {
     });
     // Nobody else gets a Watch: they would watch Rahul type his number. Their card says whose login it is, and nothing more.
     for (const a of w.last().actions) expect(a.only_for_person_ids).toEqual(['p_rahul']);
+  });
+
+  it('flips the card to logging in before the page is asked for, so the room can say it is opening at once', async () => {
+    const w = world();
+    await w.setup();
+    let atFetch: string[] | null = null;
+    w.hooks.onHandOff = () => {
+      atFetch = w.last().actions.map((a) => a.action_id);
+    };
+    await w.tap('ixigo_login', 'p_rahul');
+    // When the front fetch started, the card already said logging in, with no Watch.
+    expect(atFetch).toEqual(['ixigo_logged_in', 'ixigo_not_now']);
+    expect(w.last().actions.map((a) => a.action_id)).toEqual(['ixigo_watch', 'ixigo_logged_in', 'ixigo_not_now']);
   });
 
   it("Watch gives only the person logging in Go's screen, with control; anyone else's tap is refused and opens nothing", async () => {

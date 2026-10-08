@@ -151,8 +151,8 @@ export function renderLoginResume(item: DeskItem, pack: TripPack): string | null
   const who = pack.trip.people.find((x) => x.person_id === p.personId)?.name ?? 'Someone';
   return `${who} logged in to ixigo on Go's computer, so carry on with what the group asked for, without asking anyone again: booking ${p.what ?? 'the stay'}. Call set_mandate now with ${JSON.stringify(p.resume ?? {})}, then say in one short line what was set and that the payer taps Yes, book it.`;
 }
-/** Why the card says what it says: not logged in yet, the person left or used Forget me, a log out ixigo didn't take. */
-type Note = 'not_yet' | 'not_opened' | 'expired' | 'left' | 'forgot' | 'logout_failed';
+/** Why the card says what it says: the page still opening, not logged in yet, the person left or used Forget me, a log out ixigo didn't take. */
+type Note = 'opening' | 'not_yet' | 'not_opened' | 'expired' | 'left' | 'forgot' | 'logout_failed';
 const day = (at: Date): string => at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 
 /** The login card for where things stand: who it is for, what it says, and the buttons only they see. */
@@ -181,10 +181,13 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
         title: 'Logging in to ixigo',
         body: note === 'not_yet'
           ? 'Not logged in yet. Finish on Watch, then tap again.'
-          : `ixigo's log in is open on Go's screen. ${name}: tap Watch, log in with your phone, then tap I'm logged in.`,
-        // Watch only for the person logging in: anyone else would watch them type their number.
+          : note === 'opening'
+            ? `Opening ixigo's log in on Go's screen for ${name}.`
+            : `ixigo's log in is open on Go's screen. ${name}: tap Watch, log in with your phone, then tap I'm logged in.`,
+        // Watch only for the person logging in (anyone else would watch them type their number), and only once the page
+        // is in front: while it opens, the card carries I'm logged in and Not now alone (the room says it is opening).
         actions: [
-          button('ixigo_watch', 'Watch', 'primary'),
+          ...(note === 'opening' ? [] : [button('ixigo_watch', 'Watch', 'primary')]),
           button('ixigo_logged_in', "I'm logged in", 'secondary'),
           button('ixigo_not_now', 'Not now', 'secondary'),
         ],
@@ -418,6 +421,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     if (captures.find((c) => c.match === 'check')?.status === 200) {
       await release(row.tripId);
       await show(await loggedIn(now));
+    } else {
+      // The page is in front for them (its taps done, or its time run out with the page kept): now the card carries Watch.
+      await show(now);
     }
   }
 
@@ -536,9 +542,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         if (row.state === 'logged_in') return { result: 'done', toast: 'ixigo is already logged in' };
         const next: LoginRow = { ...row, state: 'logging_in', taskId: null };
         await save(next);
-        // The card first, then the page: whatever the hand-off finds is said after it, never under it.
+        // The card first (opening, no Watch yet), then the page: whatever the hand-off finds is said after it, never under it.
         track('hand-off', row.tripId, (async () => {
-          await show(next);
+          await show(next, 'opening');
           await handOff(next, runner);
         })());
         return { result: 'done', toast: "Opening ixigo's log in on Go's screen" };
