@@ -1,7 +1,8 @@
 // Go Live, the room page's second column (roomPage({ live: true })): the trip's ixigo recipe runs as Go makes them, from
 // Go's live view (/v1/live) as the try room relays it. On the left the chat as it is; on the right the pages Go's computer
-// opened, one tile per run going at once (a grid while runs go in parallel), and the run strip: each run's recipe, speed,
-// data calls and times, newest first, with a group of parallel runs as one block whose wall time is set against its sum.
+// has open, live (Bash's browser watch, one tile per tab, a grid with more than one), or, with none open, one tile per run
+// going at once from each run's own pictures; and the run strip: each run's recipe, speed, data calls and times, newest
+// first, with a group of parallel runs as one block whose wall time is set against its sum.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
 
@@ -37,6 +38,9 @@ export const LIVE_CSS = `
 .speed.page { background: #d97706; }
 .speed.link { background: #64748b; }
 .speed.kept { background: #0891b2; }
+.speed.live { background: #dc2626; }
+.view.hidden { background: #0f172a; }
+.view.hidden .hint { color: #cbd5e1; }
 .speed.fell { background: #cbd5e1; color: #475569; text-decoration: line-through; }
 .ms { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .live-note { color: var(--muted); font-size: 12px; }
@@ -67,7 +71,7 @@ export const LIVE_CSS = `
 export const LIVE_ASIDE = `<aside class="live" id="live" aria-label="Go Live">
   <div class="live-head"><span class="dot" id="live-dot"></span><b>Go Live</b><span class="live-state" id="live-state">Waiting for the trip</span></div>
   <div class="screen" id="screen"></div>
-  <div class="live-note">Each page's pictures arrive as it finishes loading. A fast run reads ixigo's own data inside a page that is already open, so nothing on screen moves: the strip shows it.</div>
+  <div class="live-note">Pages show live as Go's computer opens them, never a payment or sign-in page. A fast run reads ixigo's own data inside a page that is already open, so nothing on screen moves: the strip shows it.</div>
   <div class="strip-head"><b>Runs</b><span id="strip-sum"></span></div>
   <div class="strip" id="strip"></div>
 </aside>`;
@@ -76,12 +80,12 @@ export const LIVE_ASIDE = `<aside class="live" id="live" aria-label="Go Live">
 export const LIVE_SCRIPT = `
   // Go Live. live.runs: each run by id, a speed that fell and the next one sharing one row (ids, speeds); live.order:
   // top-level rows, newest first; live.groups: rows that went at once.
-  var live = { trip: null, state: 'wait', why: '', runs: {}, order: [], groups: {}, frames: {} };
+  var live = { trip: null, state: 'wait', why: '', runs: {}, order: [], groups: {}, frames: {}, screen: { state: null, tabs: {}, order: [] } };
   var HOLD_MS = 2000;
   var PLAY_MS = 2500;
   var BADGE = { fast: 'FAST', page: 'PAGE', link: 'LINK', kept: 'KEPT' };
 
-  function liveReset() { live.runs = {}; live.order = []; live.groups = {}; live.frames = {}; }
+  function liveReset() { live.runs = {}; live.order = []; live.groups = {}; live.frames = {}; live.screen = { state: null, tabs: {}, order: [] }; }
   function fmtMs(ms) { return ms == null ? '' : ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s'; }
   function clock(at) { var d = new Date(at); var p = function (n) { return (n < 10 ? '0' : '') + n; }; return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }
 
@@ -93,7 +97,9 @@ export const LIVE_SCRIPT = `
       live.state = 'on';
       liveReset();
       for (var i = 0; i < (m.events || []).length; i++) liveEvent(m.events[i], true);
+      for (var k = 0; k < (m.screen || []).length; k++) screenEvent(m.screen[k]);
     } else if (m.type === 'run' && m.event) { live.state = 'on'; liveEvent(m.event, false); }
+    else if (m.type === 'screen' && m.event) { live.state = 'on'; screenEvent(m.event); }
     renderLive();
   }
 
@@ -139,6 +145,32 @@ export const LIVE_SCRIPT = `
         if (live.groups[e.group_id]) { live.groups[e.group_id].ended = true; live.groups[e.group_id].wall = e.wall_ms; live.groups[e.group_id].sum = e.sum_ms; }
         break;
     }
+  }
+
+  /** The trip computer's screen, from Bash's browser watch: each open tab and its newest picture, or that it is hidden. */
+  function screenEvent(e) {
+    var s = live.screen;
+    var t = e.tab_id ? s.tabs[e.tab_id] : null;
+    switch (e.type) {
+      case 'state': s.state = e.state; break;
+      case 'tab_open':
+        if (!t) { s.tabs[e.tab_id] = { id: e.tab_id, frame: null, hidden: false }; s.order.push(e.tab_id); }
+        break;
+      case 'frame':
+        if (!t) { screenEvent({ type: 'tab_open', tab_id: e.tab_id }); t = s.tabs[e.tab_id]; }
+        if (!t.hidden) t.frame = e;
+        break;
+      case 'hidden': if (t) { t.hidden = true; t.frame = null; } break;
+      case 'tab_close':
+        delete s.tabs[e.tab_id];
+        s.order = s.order.filter(function (id) { return id !== e.tab_id; });
+        break;
+    }
+  }
+
+  /** The open tabs, in the order they opened, at most four. */
+  function liveTabs() {
+    return live.screen.order.map(function (id) { return live.screen.tabs[id]; }).filter(Boolean).slice(0, 4);
   }
 
   /** At most 40 runs in the strip; older ones go, with their lookups and pictures. */
@@ -199,8 +231,34 @@ export const LIVE_SCRIPT = `
     return "Pages Go opens on the trip's computer show here.";
   }
 
+  /** The tabs open on the trip's computer, live: the newest picture of each, or a dark tile for one Go never shows. */
+  function renderTabs(screen, tabs) {
+    var key = 'tabs:' + tabs.map(function (t) { return t.id; }).join(',');
+    if (screen.getAttribute('data-key') !== key) {
+      screen.setAttribute('data-key', key);
+      screen.className = 'screen' + (tabs.length > 1 ? ' grid' : '');
+      screen.innerHTML = tabs.map(function (t) { return '<div class="tile" data-tab="' + esc(t.id) + '"><div class="tile-bar"></div><div class="view"><img alt=""><span class="hint"></span></div></div>'; }).join('');
+    }
+    var els = screen.querySelectorAll('.tile');
+    for (var i = 0; i < els.length; i++) {
+      var t = live.screen.tabs[els[i].getAttribute('data-tab')];
+      if (!t) continue;
+      els[i].className = 'tile';
+      els[i].querySelector('.tile-bar').innerHTML = '<span class="speed live">LIVE</span><span class="url">' + esc(t.hidden ? 'Not shown' : t.frame ? 'ixigo.com' + t.frame.page : 'Opening') + '</span>';
+      var view = els[i].querySelector('.view');
+      view.className = 'view' + (t.hidden ? ' hidden' : '');
+      var img = view.querySelector('img');
+      var src = t.frame ? 'data:image/jpeg;base64,' + t.frame.jpeg_base64 : '';
+      if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
+      if (!src && img.hasAttribute('src')) img.removeAttribute('src');
+      view.querySelector('.hint').textContent = t.hidden ? 'A page Go never shows (payment or sign-in)' : src ? '' : "Opening the page on the trip's computer";
+    }
+  }
+
   function renderScreen() {
     var screen = $('screen');
+    var tabs = liveTabs();
+    if (tabs.length) { renderTabs(screen, tabs); return; }
     var tiles = tilesNow();
     var idle = false;
     if (!tiles.length) { var last = lastWithPictures(); if (last) { tiles = [last]; idle = true; } }
@@ -281,7 +339,10 @@ export const LIVE_SCRIPT = `
   function renderLive() {
     var tiles = tilesNow();
     $('live-dot').className = 'dot' + (live.state === 'on' ? ' on' : '');
-    $('live-state').textContent = live.state === 'off' ? 'Off' : live.state === 'on' ? (tiles.length > 1 ? tiles.length + ' runs in parallel' : tiles.length ? 'Working' : 'Live') : 'Waiting for the trip';
+    var tabs = liveTabs().length;
+    $('live-state').textContent = live.state === 'off' ? 'Off' : live.state === 'on'
+      ? (tabs > 1 ? tabs + ' pages open, live' : tabs ? 'A page open, live' : tiles.length > 1 ? tiles.length + ' runs in parallel' : tiles.length ? 'Working' : live.screen.state === 'asleep' ? "Live. The trip's computer is asleep" : 'Live')
+      : 'Waiting for the trip';
     renderScreen();
     renderStrip();
   }

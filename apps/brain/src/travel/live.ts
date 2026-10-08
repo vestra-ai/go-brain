@@ -3,8 +3,9 @@
  * screen the Server shows (the try room's Go Live). Signed exactly as the Server's own socket is: x-go-signature over the
  * path and query, each signature good once. Read only: nothing a viewer sends is read.
  *
- * On open, a hello with the trip's recent events and pictures; then every event as it comes. A viewer that falls
- * behind (over MAX_BEHIND_BYTES waiting to go out) misses pictures, never a run's events.
+ * On open, a hello with the trip's recent events and pictures, and its computer's screen as it is; then every event as it
+ * comes: the runs', and the screen's live pictures (screen-feed.ts, Bash's browser watch). A viewer that falls behind
+ * (over MAX_BEHIND_BYTES waiting to go out) misses pictures, never a run's or a tab's events.
  */
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -14,6 +15,7 @@ import type { Brain } from '../app.js';
 import { refuse, signatureParts } from '../door/door.js';
 import { createReplayGuard } from '../door/replay-guard.js';
 import type { LiveEvent, RunLog } from './runs.js';
+import type { ScreenEvent, ScreenFeed } from './screen-feed.js';
 
 export const LIVE_PATH = /^\/v1\/live$/;
 /** Pictures wait while this much is still going out to a viewer. */
@@ -22,10 +24,13 @@ export const MAX_BEHIND_BYTES = 1_000_000;
 const PING_MS = 20_000;
 const TRIP_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
-/** What a viewer reads: the hello first, then one message per event. */
-export type LiveMessage = { type: 'hello'; trip_id: string; events: LiveEvent[] } | { type: 'run'; event: LiveEvent };
+/** What a viewer reads: the hello first (the runs, and the trip computer's screen as it is), then one message per event. */
+export type LiveMessage =
+  | { type: 'hello'; trip_id: string; events: LiveEvent[]; screen: ScreenEvent[] }
+  | { type: 'run'; event: LiveEvent }
+  | { type: 'screen'; event: ScreenEvent };
 
-export function registerLive(brain: Pick<Brain, 'door' | 'env' | 'pool' | 'now' | 'log' | 'onStop'>, runs: RunLog): { viewers(): number } {
+export function registerLive(brain: Pick<Brain, 'door' | 'env' | 'pool' | 'now' | 'log' | 'onStop'>, runs: RunLog, screens?: ScreenFeed): { viewers(): number } {
   const guard = createReplayGuard({ pool: brain.pool, now: brain.now });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4_096 });
   const open = new Set<WebSocket>();
@@ -54,7 +59,12 @@ export function registerLive(brain: Pick<Brain, 'door' | 'env' | 'pool' | 'now' 
     const send = (m: LiveMessage): void => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
     };
-    send({ type: 'hello', trip_id: tripId, events: runs.recent(tripId) });
+    // The screen's live pictures, from Bash's browser watch, opened for the trip's first viewer (screen-feed.ts).
+    const screen = screens?.watch(tripId, (event) => {
+      if (event.type === 'frame' && ws.bufferedAmount > MAX_BEHIND_BYTES) return;
+      send({ type: 'screen', event });
+    });
+    send({ type: 'hello', trip_id: tripId, events: runs.recent(tripId), screen: screen?.now() ?? [] });
     const off = runs.subscribe(tripId, (event) => {
       if (event.type === 'frames' && ws.bufferedAmount > MAX_BEHIND_BYTES) return;
       send({ type: 'run', event });
@@ -66,6 +76,7 @@ export function registerLive(brain: Pick<Brain, 'door' | 'env' | 'pool' | 'now' 
     ws.on('error', () => undefined);
     ws.on('close', () => {
       off();
+      screen?.off();
       clearInterval(ping);
       open.delete(ws);
     });

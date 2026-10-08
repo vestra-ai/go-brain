@@ -22,6 +22,7 @@ import { earlyAnswer, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { createResultsStore } from './results.js';
 import { createRunLog } from './runs.js';
+import { createScreenFeed } from './screen-feed.js';
 import { renderSearchWake } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
@@ -51,7 +52,13 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.setup.addStep({ name: 'travel.computer', run: (tripId) => startComputerAtSetup(brain, tripId) });
   // Every recipe run as it happens, for the Server's live view of a trip (/v1/live): in memory, nothing written.
   const runs = createRunLog({ now: brain.now, log: brain.log });
-  registerLive(brain, runs);
+  // And the trip computer's screen, live, from Bash's browser watch: only where searches run on it (ixigo_web).
+  const screens = createScreenFeed({
+    open: (tripId, signal) => (brain.switches.get('TRAVEL_MODE') === 'ixigo_web' ? brain.recipeRunners?.watch(tripId, signal) ?? null : null),
+    log: brain.log,
+  });
+  brain.onStop(() => screens.stop());
+  registerLive(brain, runs, screens);
   // The recipe book, checked at boot: a file that fails is left out, and the log says why.
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');

@@ -635,6 +635,7 @@ describe('Go Live', () => {
     expect(html).toContain('<div class="split"><div class="app">');
     expect(html).toContain('<aside class="live" id="live" aria-label="Go Live">');
     expect(html).toContain("} else if (data.type === 'live') {");
+    expect(html).toContain("else if (m.type === 'screen' && m.event) { live.state = 'on'; screenEvent(m.event); }");
     expect(html).not.toContain('—');
     const script = html.slice(html.indexOf('<script nonce="n0nce">') + '<script nonce="n0nce">'.length, html.indexOf('</script>'));
     expect(() => new Function(script)).not.toThrow();
