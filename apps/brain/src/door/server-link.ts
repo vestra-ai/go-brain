@@ -2,6 +2,7 @@ import { MAX_FRAME_BYTES } from '@go/contract';
 import type pg from 'pg';
 import { z } from 'zod';
 import type { Log } from '../log.js';
+import { withoutLinks } from './links.js';
 import { TO_SERVER_SCHEMAS, type ToServerMethod, type ToServerParams, type ToServerResult } from './methods.js';
 import { notificationFrame, requestFrame, SocketCallError, type AnswerFrame, type ErrorCodeName, type ErrorFrame } from './rpc.js';
 import { newUlid } from './ulid.js';
@@ -263,13 +264,22 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
     }
   }
 
+  /** A post's text with its links taken out (door/links.ts): a line that was only a link has no text left. */
+  function chatLine(params: Record<string, unknown>): Record<string, unknown> {
+    if (typeof params.text !== 'string') return params;
+    const text = withoutLinks(params.text);
+    if (text === params.text) return params;
+    o.log.warn({ tripId: params.trip_id }, 'door: a link was taken out of a chat line; links go in card actions');
+    return { ...params, text: text || null };
+  }
+
   async function request<M extends ToServerMethod>(
     method: M,
     params: ToServerParams<M>,
     opts: { timeoutMs?: number; turnId?: string } = {},
   ): Promise<ToServerResult<M>> {
     if (method === 'typing') throw new SocketCallError(422, 'typing is a notification: use notify', 'invalid');
-    const parsed = (TO_SERVER_SCHEMAS[method][0] as z.ZodType).safeParse(params);
+    const parsed = (TO_SERVER_SCHEMAS[method][0] as z.ZodType).safeParse(method === 'post_message' ? chatLine(params as Record<string, unknown>) : params);
     if (!parsed.success) throw new SocketCallError(422, `bad ${method}: ${z.prettifyError(parsed.error)}`, 'invalid');
     const body = parsed.data as Record<string, unknown>;
     const timeoutMs = opts.timeoutMs ?? o.timeoutMs ?? 2_500;
