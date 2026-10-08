@@ -92,19 +92,36 @@ describe('the trip computer\'s screen', () => {
     expect(b).toEqual(want);
   });
 
-  it('never passes on a picture of a page Go may not show, whatever Bash sent', async () => {
+  it('never passes on a picture of a page Go may not show, whatever Bash sent: the tab is hidden for good, said once', async () => {
     const { feed, streams } = rig();
     const got: ScreenEvent[] = [];
     feed.watch('t_goa', (e) => got.push(e));
     await settle();
     const s = streams[0]!;
-    s.push('tab_open', { tab_id: 'tab_1' });
-    for (const url of ['https://www.ixigo.com/payments/checkout', 'https://www.ixigo.com/hotels/123/book', 'https://example.com/hotels', 'not a url']) {
-      s.push('frame', { tab_id: 'tab_1', url, width: 960, height: 600, jpeg_base64: '/9j/A' });
+    for (const [i, url] of ['https://www.ixigo.com/payments/checkout', 'https://www.ixigo.com/hotels/123/book', 'https://example.com/hotels', 'not a url'].entries()) {
+      s.push('tab_open', { tab_id: `tab_${i}`, tag: 'r_1' });
+      s.push('frame', { tab_id: `tab_${i}`, url, width: 960, height: 600, jpeg_base64: '/9j/A' });
+      // Never shown again, even of a page Go shows: a tab that was on a refused page stays hidden.
+      s.push('frame', { tab_id: `tab_${i}`, url: RESULTS, width: 960, height: 600, jpeg_base64: '/9j/B' });
     }
     s.push('frame', { tab_id: '../x', url: RESULTS, jpeg_base64: '/9j/A' });
     await settle();
-    expect(got).toEqual([{ type: 'tab_open', tab_id: 'tab_1' }]);
+    expect(got).toEqual([0, 1, 2, 3].flatMap((i) => [
+      { type: 'tab_open', tab_id: `tab_${i}`, tag: 'r_1' },
+      { type: 'hidden', tab_id: `tab_${i}`, tag: 'r_1', reason: 'not_listed' },
+    ]));
+  });
+
+  it("shows the warm tab a page call runs in, on ixigo's home: a viewer never waits on it (the 8 Oct demo's FAST run)", async () => {
+    const { feed, streams } = rig();
+    const got: ScreenEvent[] = [];
+    feed.watch('t_goa', (e) => got.push(e));
+    await settle();
+    const s = streams[0]!;
+    s.push('tab_open', { tab_id: 'tab_1', tag: 'r_fast' });
+    s.push('frame', { tab_id: 'tab_1', tag: 'r_fast', url: 'https://www.ixigo.com/', at: 'x', width: 1280, height: 730, jpeg_base64: '/9j/H' });
+    await settle();
+    expect(got.at(-1)).toEqual({ type: 'frame', tab_id: 'tab_1', tag: 'r_fast', at: 'x', page: '/', width: 1280, height: 730, jpeg_base64: '/9j/H' });
   });
 
   it('a hidden tab shows nothing more, and a viewer who comes late sees the screen as it is', async () => {

@@ -18,6 +18,26 @@ describe('the pages Go may show a picture of', () => {
     }
   });
 
+  it("ixigo's home, the warm tab a page call runs in, and the train and guide pages the book opens", () => {
+    for (const url of [
+      'https://www.ixigo.com/',
+      'https://www.ixigo.com/trains/search-pwa/from/SBC/to/MAS/22-10-2026',
+      'https://www.ixigo.com/trains/12608/running-status',
+      'https://www.ixigo.com/plan/goa',
+      'https://www.ixigo.com/plan/north-goa',
+    ]) {
+      expect(isFramePage(url), url).toBe(true);
+    }
+    // A suggestion call opened as the page is ixigo's JSON, not a page: no picture.
+    for (const url of [
+      'https://www.ixigo.com/hotels-autocompleter/api/v2/results?query=Manali&size=10&v=3',
+      'https://www.ixigo.com/action/content/trainstation?searchFor=trainstationsLatLon&anchor=false&value=Pune',
+      'https://www.ixigo.com/?loginVisible=true',
+    ]) {
+      expect(isFramePage(url), url).toBe(false);
+    }
+  });
+
   it('never a booking, traveller, payment or sign-in page, even on a results address', () => {
     for (const url of [
       'https://www.ixigo.com/flight/booking/1044/1q4hf09hp?fareKey=DEL-GOI-6E5341-06112026&providers=1044',

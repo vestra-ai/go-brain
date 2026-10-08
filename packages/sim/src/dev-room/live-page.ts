@@ -88,6 +88,7 @@ export const LIVE_SCRIPT = `
   var HOLD_MS = 2000;
   var PLAY_MS = 2500;
   var BADGE = { fast: 'FAST', page: 'PAGE', link: 'LINK', kept: 'KEPT', steps: 'GROUP' };
+  var HIDDEN_HINT = { blocked_path: 'A page Go never shows (payment or sign-in)', off_site: 'Another site: Go never shows it', not_listed: 'A page Go shows no picture of' };
 
   function liveReset() { live.runs = {}; live.order = []; live.groups = {}; live.frames = {}; live.screen = { state: null, tabs: {}, order: [] }; }
   function fmtMs(ms) { return ms == null ? '' : ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s'; }
@@ -165,8 +166,10 @@ export const LIVE_SCRIPT = `
         if (e.tag) t.tag = e.tag;
         if (!t.hidden) t.frame = e;
         break;
-      case 'hidden': if (t) { t.hidden = true; t.frame = null; if (e.tag) t.tag = e.tag; } break;
+      case 'hidden': if (t) { t.hidden = e.reason || 'blocked_path'; t.frame = null; if (e.tag) t.tag = e.tag; } break;
       case 'tab_close':
+        // Its last picture stays as its run's: a page drawn after the run answered (a kept tab) is what the run shows.
+        if (t && t.frame && t.tag && live.runs[t.tag]) live.frames[t.tag] = { list: [{ label: 'live', at_ms: 0, page: t.frame.page, jpeg_base64: t.frame.jpeg_base64 }], got: 0 };
         delete s.tabs[e.tab_id];
         s.order = s.order.filter(function (id) { return id !== e.tab_id; });
         break;
@@ -279,7 +282,7 @@ export const LIVE_SCRIPT = `
       var src = t.frame ? 'data:image/jpeg;base64,' + t.frame.jpeg_base64 : '';
       if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
       if (!src && img.hasAttribute('src')) img.removeAttribute('src');
-      view.querySelector('.hint').textContent = t.hidden ? 'A page Go never shows (payment or sign-in)' : src ? '' : "Opening the page on the trip's computer";
+      view.querySelector('.hint').textContent = t.hidden ? HIDDEN_HINT[t.hidden] || HIDDEN_HINT.blocked_path : src ? '' : "Opening the page on the trip's computer";
     }
   }
 

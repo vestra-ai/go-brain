@@ -19,6 +19,8 @@ export type RecipeProgress =
   | { type: 'captured'; ms: number }
   /** Pictures of the page, any time, oldest first. */
   | { type: 'frames'; frames: LiveFrame[] }
+  /** Pictures of the page as ixigo drew it after the answer (runners.ts look): the card's picture, even once it is done. */
+  | { type: 'drawn'; frames: LiveFrame[] }
   /** The options are read, before Go's own constraints are applied. */
   | { type: 'extracted'; count: number }
   /** ixigo knows more than one place for the words: the model or the group chooses, and the search goes on after. */

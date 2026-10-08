@@ -1,8 +1,8 @@
 /**
- * The pages Go may show the room a picture of: ixigo.com's search, results and details pages. Never a booking,
- * traveller, payment or sign-in page. Anything else is refused, including every other site: a page earns a picture
- * only by matching one of these patterns, and a word from the never list anywhere in its path or its query's names
- * refuses it even then.
+ * The pages Go may show the room a picture of: ixigo.com's home, search, results and details pages, and the guide.
+ * Never a booking, traveller, payment or sign-in page. Anything else is refused, including every other site: a page
+ * earns a picture only by matching one of these patterns, and a word from the never list anywhere in its path or its
+ * query's names refuses it even then.
  */
 
 /** In a path, these mean the page is past search: refused whatever else matches. */
@@ -10,8 +10,10 @@ const NEVER = /book|pay|checkout|travell?er|passenger|login|signin|sign-in|accou
 /** The same in a query parameter's name, less "checkout": a hotel search names its dates checkinDate and checkoutDate. */
 const NEVER_IN_NAMES = /book|pay|travell?er|passenger|login|signin|sign-in|account|otp|wallet|review/i;
 
-/** ixigo.com's search, results and details pages, by path. */
+/** ixigo.com's home, search, results and details pages, and the guide, by path. */
 const IXIGO_PAGES: readonly RegExp[] = [
+  // The home page: the warm tab every page call runs in when no search page is kept, and the airport box's page.
+  /^\/$/,
   /^\/(flights|hotels|trains|buses)\/?$/,
   /^\/search\/result\/flight\/?$/,
   /^\/search\/result\/train\/[A-Za-z]+\/[A-Za-z]+\//,
@@ -19,6 +21,9 @@ const IXIGO_PAGES: readonly RegExp[] = [
   /^\/hotels\/\d+\/details\/?$/,
   /^\/buses\/bus_search\//,
   /^\/trains\/\d{4,5}\/?$/,
+  /^\/trains\/\d{4,5}\/running-status\/?$/,
+  /^\/trains\/search-pwa\/from\/[A-Za-z]+\/to\/[A-Za-z]+\//,
+  /^\/plan\/[a-z0-9-]+\/?$/,
 ];
 
 export function isFramePage(raw: string): boolean {

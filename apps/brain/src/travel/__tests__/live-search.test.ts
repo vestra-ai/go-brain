@@ -174,6 +174,32 @@ describe('the live search card', () => {
     expect(new Set(r.cards().map((c) => c.card_id)).size).toBe(1);
   });
 
+  it('takes the page as ixigo drew it after the answer, on a card already done; never on a failed one (the 8 Oct demo)', async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_drawn', ...FLIGHTS });
+    const skeleton = sized(300);
+    const list = sized(1200);
+    live.progress({ type: 'frames', frames: [{ label: 'results', at_ms: 2600, page_url: RESULTS, jpeg_base64: skeleton }] });
+    await live.finish(true);
+    expect(r.cards().at(-1)).toMatchObject({ state: 'done', screenshot_url: 'https://go.test/img/frame-1.jpg' });
+    live.progress({ type: 'drawn', frames: [{ label: 'done', at_ms: 5200, page_url: RESULTS, jpeg_base64: list }] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(r.stored.at(-1)).toEqual(Buffer.from(list, 'base64'));
+    // Still done, every step ticked: only the picture moved on.
+    expect(r.cards().at(-1)).toMatchObject({ state: 'done', screenshot_url: 'https://go.test/img/frame-2.jpg', page_url: RESULTS });
+    expect(r.cards().at(-1)!.steps.every((s) => s.state === 'done')).toBe(true);
+
+    const f = room();
+    const failed = startLiveSearch(f.deps, 't_goa', { runKey: 'k_drawn_failed', ...FLIGHTS });
+    failed.progress({ type: 'failed', code: 'timeout' });
+    await failed.finish(false);
+    const sentBefore = f.sent.length;
+    failed.progress({ type: 'drawn', frames: [{ label: 'done', at_ms: 5200, page_url: RESULTS, jpeg_base64: list }] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(f.stored).toEqual([]);
+    expect(f.sent.length).toBe(sentBefore);
+  });
+
   it('a failed run marks the card failed at the step it was on, and a later finish keeps it failed', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k5', ...FLIGHTS });

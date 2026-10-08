@@ -5,7 +5,9 @@
  * is wanted (Bash ends a stream after 30 minutes). Watching never wakes the computer: while it sleeps, Bash says asleep.
  *
  * Go's own guard on top of Bash's: a picture goes on only of a page Go may show (frame-pages.ts), and with its path
- * alone, never its query. In memory only: each open tab's last picture, for a viewer who comes in late.
+ * alone, never its query. A tab on any other page is hidden for good, said once (not_listed), as Bash hides one on a
+ * page it must not show: a viewer never waits on a tab that will never show. In memory only: each open tab's last
+ * picture, for a viewer who comes in late.
  */
 import type { Log } from '../log.js';
 import type { SseFrame } from '../tasks/sse.js';
@@ -21,7 +23,7 @@ export type ScreenEvent =
   | { type: 'state'; state: 'asleep' | 'live' | 'off' }
   | { type: 'tab_open'; tab_id: string; tag?: string }
   | { type: 'frame'; tab_id: string; tag?: string; at: string; page: string; width: number; height: number; jpeg_base64: string }
-  | { type: 'hidden'; tab_id: string; tag?: string; reason: 'blocked_path' | 'off_site' }
+  | { type: 'hidden'; tab_id: string; tag?: string; reason: 'blocked_path' | 'off_site' | 'not_listed' }
   | { type: 'tab_close'; tab_id: string };
 
 export interface ScreenFeed {
@@ -129,10 +131,16 @@ export function createScreenFeed(d: ScreenFeedDeps): ScreenFeed {
     if (f.event === 'tab_open') {
       tabOf(t, tripId, id, tag);
     } else if (f.event === 'frame') {
-      // Go's own rule: only a page Go may show, and only its path.
-      if (typeof data.url !== 'string' || typeof data.jpeg_base64 !== 'string' || !isFramePage(data.url)) return;
+      if (typeof data.url !== 'string' || typeof data.jpeg_base64 !== 'string') return;
       const tab = tabOf(t, tripId, id, tag);
       if (tab.hidden) return;
+      // Go's own rule: only a page Go may show, and only its path. Any other page hides its tab, as Bash's own rule does.
+      if (!isFramePage(data.url)) {
+        tab.last = null;
+        tab.hidden = { type: 'hidden', tab_id: id, ...tagged(tab.tag), reason: 'not_listed' };
+        tell(t, tripId, tab.hidden);
+        return;
+      }
       tab.last = {
         type: 'frame', tab_id: id, ...tagged(tab.tag), at: typeof data.at === 'string' ? data.at : new Date().toISOString(), page: pathOf(data.url),
         width: num(data.width), height: num(data.height), jpeg_base64: data.jpeg_base64,

@@ -562,9 +562,12 @@ export function createEngine(d: EngineDeps) {
     const got = await runner.read(o.tripId, page, plan, {
       ...fetchFor(o),
       tag: pageRun.id,
-      // The pictures go to the live card as before, and to the run strip's browser pane.
+      // The page stays open as the warm tab, so the live view sees ixigo draw it; never for a check nobody waits on. A
+      // live card takes one more picture of it once ixigo has drawn it (the runner's look).
+      ...(o.background ? {} : { keepOpen: true, ...(o.onProgress ? { look: true } : {}) }),
+      // The pictures go to the live card as before, and to the run strip's browser pane, the drawn page's too.
       onProgress: (e) => {
-        if (e.type === 'frames') pageRun.frames(e.frames, started);
+        if (e.type === 'frames' || e.type === 'drawn') pageRun.frames(e.frames, started);
         o.onProgress?.(e);
       },
       onTrace: (t) => pageRun.trace(t),
