@@ -216,12 +216,20 @@ function pageInBrowser(html: string, o: { me?: string } = {}) {
     documentElement: scrolling,
   };
   const opened: string[] = [];
+  /** A tab the page opened: where it went, what it says, and whether it was closed. */
+  type Tab = { url: string; opener: unknown; closed: boolean; location: { href: string }; document: { title: string; body: { textContent: string } }; close(): void };
+  const tabs: Tab[] = [];
   const winListeners: Record<string, Array<(e: unknown) => void>> = {};
   const window = {
     innerHeight: view.height,
     get scrollY() { return winTop; },
     scrollTo: (_x: number, y: number) => { winTop = clamp(y); },
-    open: (url: string) => { opened.push(url); },
+    open: (url: string): Tab => {
+      if (url) opened.push(url);
+      const tab: Tab = { url, opener: window, closed: false, location: { href: url }, document: { title: '', body: { textContent: '' } }, close() { this.closed = true; } };
+      tabs.push(tab);
+      return tab;
+    },
     addEventListener: (type: string, fn: (e: unknown) => void) => { (winListeners[type] ??= []).push(fn); },
   };
   const sockets: any[] = [];
@@ -273,8 +281,10 @@ function pageInBrowser(html: string, o: { me?: string } = {}) {
     el,
     /** What the page sent on its socket. */
     sent: () => sent,
-    /** The pages it opened in a new window. */
+    /** The pages it opened in a new window, by address. */
     opened: () => opened,
+    /** Every tab it opened, an empty one held for an answer included. */
+    tabs: () => tabs,
     /** The room sends the page one message. */
     receive(data: object) {
       sockets[0].onmessage({ data: JSON.stringify(data) });
@@ -536,7 +546,8 @@ describe('a card button', () => {
     p.tapCard('c_job', 'watch');
     p.receive({ type: 'tap_result', cardId: 'c_job', actionId: 'watch', personId: 'p_rahul', result: { result: 'open', url: 'https://bash.test/s', expires_at: '2099-01-01T00:00:00Z' } });
     expect(p.room()).toContain('data-action="watch">Watch</button>');
-    expect(p.opened()).toEqual(['https://bash.test/s']);
+    // Each Watch opened its tab in the tap: the refused one closed, the other gone to Go's screen.
+    expect(p.tabs().map((t) => [t.location.href, t.closed])).toEqual([['', true], ['https://bash.test/s', false]]);
     // Stop is answered done and the card doesn't change: it waits, then frees itself after 15 s.
     p.tapCard('c_job', 'stop');
     p.receive({ type: 'tap_result', cardId: 'c_job', actionId: 'stop', personId: 'p_rahul', result: { result: 'done', toast: 'Stopping it' } });
@@ -563,6 +574,34 @@ describe('a card button', () => {
     expect(p.room()).toContain('data-action="stop">Stop</button>');
     p.tapCard('c_job', 'stop');
     expect(p.sent().map((t) => t.personId)).toEqual(['p_rahul', 'p_priya']);
+  });
+
+  it("opens Watch's tab inside the tap itself, so no popup blocker stops it, and sends it to Go's screen when the answer comes", () => {
+    const p = pageInBrowser(PAGE_HTML);
+    p.messages([job('2026-10-08T10:00:00Z')], 1000);
+    p.tapCard('c_job', 'watch');
+    // Synchronously, in the tap: one empty tab, cut off from the room, saying it is opening.
+    expect(p.tabs()).toHaveLength(1);
+    const tab = p.tabs()[0]!;
+    expect(tab.url).toBe('');
+    expect(tab.opener).toBeNull();
+    expect(tab.document.title).toBe("Go's screen");
+    expect(tab.document.body.textContent).toBe("Opening Go's screen…");
+    p.receive({ type: 'tap_result', cardId: 'c_job', actionId: 'watch', personId: 'p_rahul', result: { result: 'open', url: 'https://bash.test/s', expires_at: '2099-01-01T00:00:00Z' } });
+    expect(tab.location.href).toBe('https://bash.test/s');
+    expect(tab.closed).toBe(false);
+    // No second window: the answer went to the tab the tap opened.
+    expect(p.tabs()).toHaveLength(1);
+    expect(p.el('toast').textContent).toBe('Opening the page');
+    // Any other button opens no tab.
+    p.tapCard('c_job', 'stop');
+    expect(p.tabs()).toHaveLength(1);
+    // A tap the room turns away closes its tab.
+    p.receive({ type: 'tap_result', cardId: 'c_job', actionId: 'stop', personId: 'p_rahul', result: { result: 'done' } });
+    p.messages([job('2026-10-08T10:00:01Z')], 1000);
+    p.tapCard('c_job', 'watch');
+    p.receive({ type: 'error', message: 'That is not in your trip.' });
+    expect(p.tabs()[1]!.closed).toBe(true);
   });
 
   it('frees a waiting button when the room turns the tap away before it reaches Go', () => {
