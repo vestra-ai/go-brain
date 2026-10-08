@@ -6731,34 +6731,16 @@
         "type": "object",
         "properties": {
           "trip": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "oneway",
-                  "round"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "device": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "phone",
-                  "desktop"
-                ]
-              },
-              {
-                "type": "null"
-              }
+            "type": "string",
+            "enum": [
+              "oneway",
+              "round"
             ]
           }
-        }
+        },
+        "required": [
+          "trip"
+        ]
       },
       "CardTap": {
         "type": "object",
