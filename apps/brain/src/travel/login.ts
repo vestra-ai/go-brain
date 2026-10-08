@@ -1,7 +1,9 @@
 /**
- * One person's ixigo login on the trip's computer. Keshav's word: "first I guess I should login right? it should ask one
- * person to login". Go asks the organizer at setup, once Go has greeted the trip, with one line and a card pinned to
- * them; "Not now" is fine, and Go asks again the first time a recipe needs the login (auth: login). The person logs in
+ * One person's ixigo login on the trip's computer. Keshav's word: "when the trip creates, that's when we [make] the ixigo
+ * connection, and all the warming should happen; connection as in ixigo should be logged in, so prompt someone to login".
+ * One setup flow at trip.created: the box is made (travel.computer), ixigo is opened and warmed on it (travel.ixigo_warm),
+ * and right after, Go prompts the organizer with one line and a card pinned to them. Nothing waits on the login: searches
+ * work logged out. "Not now" is fine, and Go asks again the first time a recipe needs the login (auth: login). The person logs in
  * themselves on Go's screen: their tap starts a job on the trip's computer that opens ixigo's login and hands the
  * browser to them (the working card's Watch, in control), and they type their own number and code. Go never sees
  * either. The login stays in the trip's browser profile, so every later fetch is logged in.
@@ -32,6 +34,9 @@ export const RECHECK_MS = 6 * 3600_000;
 const ASK_AGAIN_MS = 30 * 60_000;
 /** Setup asks only a trip made this recently; an older one is asked the first time a recipe needs the login. */
 const NEW_TRIP_MS = 24 * 3600_000;
+/** The setup step that opens and warms ixigo on the new computer (IXIGO_WARM_STEP in warm.ts, p4's #218): the prompt
+ *  follows it in the same setup pass, whether the warm worked or gave up after its tries. */
+export const AFTER_WARM = 'travel.ixigo_warm';
 
 export type LoginState = 'asked' | 'logging_in' | 'logged_in' | 'skipped' | 'logged_out';
 
@@ -85,7 +90,7 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
     case 'asked':
       return {
         ...base,
-        title: 'Log in to ixigo for this trip',
+        title: 'Link ixigo for this trip',
         body: `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their own phone; Go never sees the number or the code. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
         actions: [button('ixigo_login', 'Log in to ixigo', 'primary'), button('ixigo_not_now', 'Not now', 'secondary')],
         fallback_text: `${name}, log in to ixigo once on Go's computer so Go can check fares and book.`,
@@ -233,7 +238,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   return {
     setupStep: {
       name: 'travel.ixigo_login',
-      after: 'brain.ready',
+      after: AFTER_WARM,
       async run(tripId) {
         // Nothing to log in to while Go doesn't browse ixigo.com; a recipe that needs the login asks then.
         if (!d.live() || (await get(tripId))) return;
@@ -243,7 +248,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         if (!pack.messages.some((m) => m.author.kind === 'go')) throw new Error('waits for Go to greet the trip');
         const organizer = pack.trip.people.find((p) => p.person_id === pack.trip.organizer_person_id && !p.go_paused);
         if (!organizer) return;
-        await ask(tripId, organizer.person_id, 0, "{name}, one thing before we start: log in to ixigo once on Go's computer, so I can check fares and book for the group.");
+        await ask(tripId, organizer.person_id, 0, "{name}, link ixigo for the trip: one login on the trip's computer, about a minute.");
       },
     },
 
@@ -321,7 +326,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       if (!personId) return { ok: false, note: `${what} needs the trip's ixigo login, and nobody can be asked for it now. Say so in one line.` };
       const name = await nameOf(tripId, personId);
       if (!row || row.state !== 'asked' || now - row.askedAt.getTime() >= ASK_AGAIN_MS) {
-        await ask(tripId, personId, row ? row.attempt + 1 : 0, `{name}, this needs ixigo open as you on Go's computer: one login, about a minute.`);
+        await ask(tripId, personId, row ? row.attempt + 1 : 0, "{name}, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.");
       }
       return { ok: false, note: `${what} needs the trip's ixigo login. Go asked ${name} to log in on the card: say so in one line, and never ask for a number or a code in the chat.` };
     },

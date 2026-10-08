@@ -2,18 +2,21 @@ import { readFileSync } from 'node:fs';
 import type * as C from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
+import { silentLog } from '../../log.js';
+import { createSetup } from '../../trips/setup.js';
 import type { CardTapParams, CardTapResult } from '../../door/methods.js';
 import { fakeLink, fakePacks, goaPack, goaTrip, msg } from '../../proactive/fakes.js';
 import type { TaskBrief } from '../../tasks/tasks.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
-import { createIxigoLogin, RECHECK_MS, USERINFO } from '../login.js';
+import { AFTER_WARM, createIxigoLogin, RECHECK_MS, USERINFO } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
 import { IXIGO, type FetchPlan } from '../recipes/recipe.js';
 
-// Keshav, 8 Oct: "first I guess I should login right? it should ask one person to login". The organizer is asked at
-// setup; their own tap starts the job that hands them Go's browser; ixigo's own answer, by its status, says whether the
+// Keshav, 8 Oct: "when the trip creates, that's when we [make] the ixigo connection, and all the warming should happen;
+// connection as in ixigo should be logged in, so prompt someone to login". The organizer is asked right after setup warms
+// ixigo; their own tap starts the job that hands them Go's browser; ixigo's own answer, by its status, says whether the
 // browser is logged in; and nothing of the account ever reaches Go.
 const NOW = new Date('2026-10-08T06:00:00Z');
 
@@ -90,11 +93,11 @@ describe('the ixigo login, asked at setup', () => {
     const [post] = w.link.of('post_message');
     expect(post).toMatchObject({
       trip_id: w.tripId,
-      text: "Rahul, one thing before we start: log in to ixigo once on Go's computer, so I can check fares and book for the group.",
+      text: "Rahul, link ixigo for the trip: one login on the trip's computer, about a minute.",
       mentions: ['p_rahul'],
     });
     expect(post!['card']).toMatchObject({
-      card_id: `c_login_${w.tripId}_0`, kind: 'notice', for_person_ids: ['p_rahul'], title: 'Log in to ixigo for this trip',
+      card_id: `c_login_${w.tripId}_0`, kind: 'notice', for_person_ids: ['p_rahul'], title: 'Link ixigo for this trip',
       actions: [
         { action_id: 'ixigo_login', label: 'Log in to ixigo', style: 'primary', only_for_person_ids: ['p_rahul'] },
         { action_id: 'ixigo_not_now', label: 'Not now', style: 'secondary', only_for_person_ids: ['p_rahul'] },
@@ -106,6 +109,26 @@ describe('the ixigo login, asked at setup', () => {
     // Setup again (a retry, a restart): no second ask.
     await w.setup();
     expect(w.link.of('post_message')).toHaveLength(1);
+  });
+
+  it('is one setup flow at trip.created: the box, then ixigo warmed on it, then the prompt, in the same pass once the warm is done', async () => {
+    const w = world();
+    const setup = createSetup({ pool: db.pool, log: silentLog, now: () => w.clock.now });
+    const ran: string[] = [];
+    let warmed = false;
+    setup.addStep({ name: 'brain.ready', run: async () => { ran.push('ready'); } });
+    setup.addStep({ name: 'travel.computer', after: 'brain.ready', run: async () => { ran.push('computer'); } });
+    setup.addStep({ name: AFTER_WARM, after: 'travel.computer', run: async () => { ran.push('warm'); if (!warmed) throw new Error('ixigo did not answer'); } });
+    setup.addStep(w.login.setupStep);
+    expect(w.login.setupStep.after).toBe('travel.ixigo_warm');
+    // The warm failed this pass: the prompt waits for it.
+    await setup.ensureTrip(w.tripId);
+    expect(w.link.of('post_message')).toEqual([]);
+    warmed = true;
+    await setup.ensureTrip(w.tripId);
+    expect(ran).toEqual(['ready', 'computer', 'warm', 'warm']);
+    expect(w.link.of('post_message')).toHaveLength(1);
+    expect(setup.isReady(w.tripId)).toBe(true);
   });
 
   it('asks nothing while Go does not browse ixigo.com itself, nor of a trip that was going before the login came', async () => {
@@ -176,7 +199,7 @@ describe('a recipe that needs the login', () => {
     expect(no).toEqual({ ok: false, note: "Price lock needs the trip's ixigo login. Go asked Rahul to log in on the card: say so in one line, and never ask for a number or a code in the chat." });
     const posts = w.link.of('post_message');
     expect(posts).toHaveLength(2);
-    expect(posts[1]).toMatchObject({ text: "Rahul, this needs ixigo open as you on Go's computer: one login, about a minute.", card: { card_id: `c_login_${w.tripId}_1` } });
+    expect(posts[1]).toMatchObject({ text: "Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.", card: { card_id: `c_login_${w.tripId}_1` } });
     await w.login.ensure(w.tripId, 'Price lock');
     expect(w.link.of('post_message')).toHaveLength(2);
     w.clock.now = new Date(NOW.getTime() + 31 * 60_000);
@@ -202,7 +225,7 @@ describe('a recipe that needs the login', () => {
     // ixigo says it's gone: Rahul is asked again.
     const gone = await w.login.ensure(w.tripId, 'Price lock');
     expect(gone.ok).toBe(false);
-    expect(w.link.of('post_message').at(-1)).toMatchObject({ text: "Rahul, this needs ixigo open as you on Go's computer: one login, about a minute." });
+    expect(w.link.of('post_message').at(-1)).toMatchObject({ text: "Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute." });
     expect(await w.state()).toBe('asked');
   });
 
