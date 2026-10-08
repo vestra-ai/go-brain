@@ -26,9 +26,9 @@ answer:
       {
         "train": $substringBefore($substringAfter(title, ", "), " Running Status"),
         "state": $join($distinct($map($rows, function($r, $i) { $i > 0 ? $r[4] })), ", "),
-        "stations": $map($rows, function($r, $i) { $i > 0 ? (
+        "stations": [$map($rows, function($r, $i) { $i > 0 ? (
           $r[1] & ": arrives " & $r[2] & ", departs " & $r[3] & ", " & $r[4] & ($r[5] ? ", platform " & $substringBefore($r[5] & " ", " ") : "")
-        ) })
+        ) })]
       }
     )
 ttl_minutes: 5

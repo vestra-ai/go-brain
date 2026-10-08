@@ -27,10 +27,10 @@ answer:
       $code := $inputs.station ? $uppercase($trim($inputs.station));
       {
         "train": $substringBefore(title, " Train Platform"),
-        "platforms": $map($rows, function($r, $i) {
+        "platforms": [$map($rows, function($r, $i) {
           ($i > 0 and ($code ? $substringBefore($r[0], " - ") = $code : true))
             ? $r[0] & ": platform " & $r[1] & ", arrives " & $r[2] & ", departs " & $r[4] & ", day " & $r[5]
-        })
+        })]
       }
     )
 ttl_minutes: 60

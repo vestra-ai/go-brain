@@ -34,11 +34,11 @@ answer:
         "takes": $lookup($facts, "Duration"),
         "type": $lookup($facts, "Type"),
         "pantry": $lookup($facts, "Pantry"),
-        "stops": $map($stops, function($r, $i) { $i > 0 ? (
+        "stops": [$map($stops, function($r, $i) { $i > 0 ? (
           $r[1] & " (" & $r[0] & "): " & ($r[2] = "starts" ? "starts" : "arrives " & $r[2]) & ", " & ($r[3] = "ends" ? "ends" : "departs " & $r[3])
             & ", day " & $r[8] & ($r[6] != "-" ? ", platform " & $r[6] : "") & ($r[5] != "0" ? ", " & $r[5] : "")
             & ($r[9] ? ", usual delay " & $r[9] : "")
-        ) })
+        ) })]
       }
     )
 ttl_minutes: 60

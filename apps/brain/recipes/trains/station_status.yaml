@@ -28,7 +28,7 @@ answer:
       $rows := $reduce(tables, function($found, $t) { $t[0][0] = "Train Name/No." ? $t : $found }, []);
       {
         "station": $substringBefore(title, " Railway Station"),
-        "trains": $map($rows, function($r, $i) { ($i > 0 and $exists($r[1])) ? $r[0] & ": arrives " & $r[1] & ", departs " & $r[2] & ", halt " & $r[3] })
+        "trains": [$map($rows, function($r, $i) { ($i > 0 and $exists($r[1])) ? $r[0] & ": arrives " & $r[1] & ", departs " & $r[2] & ", halt " & $r[3] })]
       }
     )
 ttl_minutes: 60
