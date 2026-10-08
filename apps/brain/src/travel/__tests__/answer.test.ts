@@ -79,13 +79,13 @@ const priced = (kind: TravelOption['kind'], title: string, priceMinor: number, o
 });
 const leaving = (at: string, number?: string) => ({ journey: { mode: 'flight' as const, origin: { name: 'Delhi' }, destination: { name: 'Goa' }, depart_at: `2026-11-06T${at}:00+05:30`, arrive_at: '2026-11-06T23:00:00+05:30', ...(number ? { number } : {}) } });
 
-describe("the card's line, built from the search", () => {
-  it('says the scope, the conditions and the cheapest price that fits, never a count', () => {
-    const stays = { checkedAt: 'x', results: [priced('stay', 'Casa Azul', 1_200_000), priced('stay', 'Meritas', 433_400), priced('stay', 'Villa Sol', 980_000)] };
+describe("the card's line, built from the options the card shows", () => {
+  it('says the scope, the conditions and the cheapest price on the card, never a count', () => {
+    const stays = [priced('stay', 'Casa Azul', 1_200_000), priced('stay', 'Meritas', 433_400), priced('stay', 'Villa Sol', 980_000)];
     expect(answerLine('stays', VILLAS, stays)).toBe('Pool stays in North Goa for 6 to 9 Nov, from ₹4,334 a night.');
-    const flights = { checkedAt: 'x', results: [priced('flight', 'IndiGo 6E 2134', 420_000), priced('flight', 'Air India', 389_000)] };
+    const flights = [priced('flight', 'IndiGo 6E 2134', 420_000), priced('flight', 'Air India', 389_000)];
     expect(answerLine('flights', FLIGHTS, flights)).toBe('Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from ₹3,890 per person.');
-    const buses = { checkedAt: 'x', results: [priced('bus', 'Paulo Travels', 150_000)] };
+    const buses = [priced('bus', 'Paulo Travels', 150_000)];
     expect(answerLine('buses', { from: 'mumbai', to: 'goa', date: '2026-11-05' }, buses)).toBe('Buses Mumbai to Goa on Thu 5 Nov, from ₹1,500 per seat.');
     expect(answerLine('stays', { area: 'goa', checkIn: '2026-11-30', checkOut: '2026-12-02' }, stays)).toBe('Stays in Goa for 30 Nov to 2 Dec, from ₹4,334 a night.');
   });

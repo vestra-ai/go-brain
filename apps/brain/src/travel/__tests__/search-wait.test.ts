@@ -10,8 +10,9 @@ import { goaPack } from '../../tasks/testing/goa.js';
 import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import { createIxigoWebBackend } from '../recipes/backend.js';
-import { renderSearchWake } from '../search-wake.js';
-import { travelTools } from '../tools.js';
+import { renderSearchWake, searchWakeAnswer } from '../search-wake.js';
+import { handOver, putUpCard, searchAnswer, travelTools } from '../tools.js';
+import { makeTurnCtx } from '../../composer/tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
 
 const FOUND: TravelSearch = {
@@ -90,6 +91,79 @@ describe('a search that outlives its turn', () => {
   it('waits for the search when there is no desk to wake Go on, as before', async () => {
     const w = setup(() => new Promise((r) => setTimeout(() => r(FOUND), 50)), 0, false);
     expect(await w.run()).toMatchObject({ count: 1 });
+  });
+});
+
+describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 s)', () => {
+  const stay = (title: string, priceMinor: number) => ({
+    kind: 'stay' as const, title, priceMinor, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {},
+    sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
+  });
+  const STAYS: TravelSearch = {
+    checkedAt: '2026-10-07T12:00:30.000Z', found: 4, runId: 'ixigo.hotels|anjuna|1791370800000',
+    results: [stay('Anjuna Beach Villa', 650_000), stay('Casa Anjuna', 480_000), stay('Hilltop Stay', 720_000), stay('Budget Inn', 179_000)],
+  };
+  const ANJUNA = { area: 'Anjuna', check_in: '2026-11-06', check_out: '2026-11-09' };
+
+  /** A results store that keeps what it saves, as the real one does, and the cards put up from it. */
+  function store() {
+    const sets = new Map<string, Record<string, unknown>>();
+    let n = 0;
+    return {
+      save: async (s: Record<string, unknown>) => {
+        n += 1;
+        const set = { ...s, resultsId: `r_stays${n}` };
+        sets.set(set.resultsId, set);
+        return set;
+      },
+      get: async (_t: string, id: string) => sets.get(id) ?? null,
+      saveCard: async () => undefined,
+      card: async () => null,
+    } as unknown as ResultsStore;
+  }
+  const images = { rehostUrl: async (u: string) => u } as unknown as Images;
+
+  it('posts its card and one line when it finishes, after its turn ended, with no model call', async () => {
+    const run = later<TravelSearch>();
+    const puts: DeskItem[] = [];
+    const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
+    const results = store();
+    const travel = { search: async () => run.p, waitMs: async () => 0 } as unknown as Travel;
+    const tools = travelTools({ travel, results, images, now: () => new Date('2026-10-07T12:00:31Z'), desk });
+    const out = (await tools.find((t) => t.name === 'search_stays')!.run(ANJUNA, ctx)) as Record<string, unknown>;
+    expect(out).toMatchObject({ running: true, tell_the_room: SAY_NOTHING });
+    expect(String(out.note)).not.toMatch(/join/i);
+    run.resolve(STAYS);
+    await vi.waitFor(() => expect(puts).toHaveLength(1));
+    const pack = goaPack();
+    const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w9', link: {} as never, pack, wake: [puts[0]!], signal: new AbortController().signal });
+    expect(await searchWakeAnswer({ results, images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(true);
+    expect(next.cards).toHaveLength(1);
+    expect((next.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Anjuna Beach Villa', 'Casa Anjuna', 'Hilltop Stay']);
+    // One line, the card's, from its own cheapest: never the cheaper stay the card leaves out.
+    expect(next.lines).toEqual(['Stays in Anjuna for 6 to 9 Nov, from ₹4,800 a night.']);
+    expect(next.answered).toBe(true);
+  });
+
+  it('wakes nothing for a run whose options a card in the room already showed, and leaves a failure or nothing found to the model', async () => {
+    const results = store();
+    const puts: DeskItem[] = [];
+    const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
+    const now = () => new Date('2026-10-07T12:00:31Z');
+    const query = { area: 'anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09' };
+    const found = { ...STAYS, runId: 'ixigo.hotels|anjuna|shown' };
+    // The model showed this run's options in its own turn (show_options on the search's results_id).
+    const a = await searchAnswer('stays', query, found, 't_goa', { results, now });
+    const shown = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w8', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
+    await putUpCard((await results.get('t_goa', a.results_id!))!, [1, 2, 3], { title: 'Stays in Anjuna', line: 'x' }, shown, { results, images });
+    handOver('stays', query, Promise.resolve(found), { tripId: 't_goa', fallbackId: 'early:m_1' }, { desk, now, results });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(puts).toEqual([]);
+    // A wake with nothing found or a failure is the model's, which says so in one line.
+    const pack = goaPack();
+    const failed: DeskItem = { id: 'search:t_goa:x:failed', tripId: 't_goa', kind: 'search', ref: 'stays', dueAt: now(), payload: { source: 'travel_search', search: 'stays', count: 0, resultsId: null, summary: '', error: 'unreachable' } };
+    const ctx2 = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w7', link: {} as never, pack, wake: [failed], signal: new AbortController().signal });
+    expect(await searchWakeAnswer({ results, images })({ tripId: 't_goa', wake: [failed], pack, ctx: ctx2 })).toBe(false);
   });
 });
 

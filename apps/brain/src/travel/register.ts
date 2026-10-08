@@ -24,7 +24,7 @@ import { loadLearnedPlaces } from './recipes/places-store.js';
 import { createResultsStore } from './results.js';
 import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
-import { renderSearchWake } from './search-wake.js';
+import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import type { TravelKind } from './travel.js';
@@ -175,10 +175,12 @@ export const registerTravel: RegisterLane = async (brain) => {
     linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
-  brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
+  brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now, desk: brain.desk, log: brain.log }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.
-  brain.context.addDirect(earlyAnswer({ early, results, images, travel, today }));
-  // A search that outlived its turn wakes Go with its options.
+  // One still running is handed over, and the turn says nothing: the live card covers the wait.
+  brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, log: brain.log }));
+  // A search that outlived its turn wakes Go with its options, and that wake puts them up itself: card and line.
+  brain.context.addDirect(searchWakeAnswer({ results, images }));
   brain.context.addWake('search', renderSearchWake);
   // A turn that ends ends the live search cards it left open.
   brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));

@@ -14,7 +14,7 @@ import { asked } from './filters.js';
 import { agreedDates, readTravelAsk } from './recipes/ask.js';
 import { airportOf, busCityOf, norm, stationOf, stayPlaceOf } from './recipes/places.js';
 import type { ResultOption } from './results.js';
-import type { TravelKind, TravelQuery, TravelSearch } from './travel.js';
+import type { TravelKind, TravelQuery } from './travel.js';
 
 export type Plain = { ok: true } | { ok: false; why: string };
 const no = (why: string): Plain => ({ ok: false, why });
@@ -143,12 +143,14 @@ export function answerTitle(kind: TravelKind, q: TravelQuery): string {
 }
 
 /**
- * The card's line, built from the search: its scope and conditions and the cheapest price that fits, said to whoever
- * asked (CARD_LINE: no ids, no "I'll", no count of the card's options). "Pool stays in North Goa for 6 to 9 Nov, from
- * ₹4,334 a night." "Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from ₹3,890 per person."
+ * The card's line, built from the options the card shows: the search's scope and conditions and the cheapest price on
+ * the card, said to whoever asked (CARD_LINE: no ids, no "I'll", no count of the card's options). Never a price the card
+ * does not show (a stays card shows the engine's first three, not the cheapest: staging pass, 8 Oct). "Pool stays in
+ * North Goa for 6 to 9 Nov, from ₹4,334 a night." "Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from
+ * ₹3,890 per person."
  */
-export function answerLine(kind: TravelKind, q: TravelQuery, found: TravelSearch): string {
-  const priced = found.results.filter((o) => o.priceMinor > 0);
+export function answerLine(kind: TravelKind, q: TravelQuery, shown: ReadonlyArray<{ priceMinor?: number; priceNote?: string }>): string {
+  const priced = shown.filter((o): o is { priceMinor: number; priceNote?: string } => (o.priceMinor ?? 0) > 0);
   const cheapest = priced.reduce<(typeof priced)[number] | undefined>((a, o) => (!a || o.priceMinor < a.priceMinor ? o : a), undefined);
   const unit = kind === 'stays' ? 'a night' : (cheapest?.priceNote ?? 'per person').replace(/,\s*from$/i, '');
   const from = cheapest ? `, from ${formatInr(cheapest.priceMinor)} ${unit}` : '';
