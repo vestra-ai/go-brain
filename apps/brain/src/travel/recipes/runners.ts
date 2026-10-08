@@ -197,6 +197,12 @@ export const PRIME_TIMEOUT_MS = 15_000;
 export const LOOK_AFTER_MS = 2_500;
 /** The look's own time: a tab already open and one tiny call inside it. */
 export const LOOK_TIMEOUT_MS = 5_000;
+/**
+ * The look's pictures, taken through Bash's settle window (its most). Without one, a look ends about 0.3 s after it starts
+ * and Bash waits only 100 ms for the picture still being taken, so it came back with none (the 8 Oct verify of #242: the
+ * card kept the skeleton). With it, three pictures of the drawn page in about 1 s (probe: 155, 496 and 836 ms, 116 KB).
+ */
+export const LOOK_SETTLE_MS = 700;
 /** The one call a look makes inside the tab: Bash takes no fetch without a call or a capture, and ixigo's icon is the smallest. */
 const LOOK_STEP = { op: 'page_fetch', url: '/favicon.ico', method: 'GET', capture_as: 'look', max_bytes: 1_000 };
 
@@ -364,7 +370,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
    * another page (a later search kept its own), tells nothing, and the card keeps the picture it has. Never awaited.
    */
   function look(tripId: string, pageUrl: string, fetchStarted: number, onProgress: OnProgress, tag: string | undefined): void {
-    const body = { steps: [LOOK_STEP], keep_open_ms: WARM_TAB_MS, timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH }, ...(tag ? { tag } : {}) };
+    const body = { steps: [LOOK_STEP], keep_open_ms: WARM_TAB_MS, timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH, settle_ms: LOOK_SETTLE_MS }, ...(tag ? { tag } : {}) };
     void sleep(LOOK_AFTER_MS)
       .then(() => inSlot(tripId, {}, async () => {
         const lookStarted = d.now().getTime();

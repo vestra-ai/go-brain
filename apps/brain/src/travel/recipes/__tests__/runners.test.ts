@@ -5,7 +5,7 @@ import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
   BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS,
-  LOOK_TIMEOUT_MS, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
+  LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -154,7 +154,8 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
     expect(w.calls.map((c) => c.opts['body'])[1]).toEqual({
       steps: [{ op: 'page_fetch', url: '/favicon.ico', method: 'GET', capture_as: 'look', max_bytes: 1_000 }],
-      keep_open_ms: WARM_TAB_MS, timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH }, tag: '01JRUNPAGE',
+      // Through Bash's settle window: without one, Bash answers before the tab's picture is back, with none.
+      keep_open_ms: WARM_TAB_MS, timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH, settle_ms: LOOK_SETTLE_MS }, tag: '01JRUNPAGE',
     });
     // Only the run's own page, timed from the page's fetch: the look went LOOK_AFTER_MS after the answer.
     expect(seen.at(-1)).toEqual({ type: 'drawn', frames: [{ ...pic(BUSES, '/9j/D'), at_ms: LOOK_AFTER_MS + 120 }] });
