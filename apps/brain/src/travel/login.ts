@@ -169,7 +169,7 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
           ? "Go couldn't open ixigo's log in on its screen just now. Tap Log in to ixigo to try again."
           : note === 'expired'
             ? "ixigo's log in closed on Go's screen after 10 minutes. Tap Log in to ixigo to open it again."
-            : `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their own phone; Go never sees the number or the code. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
+            : `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their mobile number and its code; Go never sees either. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
         actions: [button('ixigo_login', 'Log in to ixigo', 'primary'), button('ixigo_not_now', 'Not now', 'secondary')],
         fallback_text: `${name}, log in to ixigo once on Go's computer so Go can check fares and book.`,
       };
@@ -183,7 +183,7 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
           ? 'Not logged in yet. Finish on Watch, then tap again.'
           : note === 'opening'
             ? `Opening ixigo's log in on Go's screen for ${name}.`
-            : `ixigo's log in is open on Go's screen. ${name}: tap Watch, log in with your phone, then tap I'm logged in.`,
+            : `ixigo's log in is open on Go's screen. ${name}: tap Watch, log in with your mobile number, then tap I'm logged in.`,
         // Watch only for the person logging in (anyone else would watch them type their number), and only once the page
         // is in front: while it opens, the card carries I'm logged in and Not now alone (the room says it is opening).
         actions: [
