@@ -40,11 +40,13 @@ describe('registerTravel', () => {
     expect(lb.brain.travel).toBeDefined();
     // A new trip's computer is started at setup (warm.ts startComputerAtSetup); right after Go's hello its organizer is
     // asked to log in to ixigo (login.ts); then its Chrome visits ixigo once (the warm). Both wait only on the box, and
-    // the login is registered first, so setup runs travel.computer, travel.ixigo_login, travel.ixigo_warm.
+    // the login is registered first, so setup runs travel.computer, travel.ixigo_login, travel.ixigo_warm. After the warm,
+    // the stays head start: the trip's likely first stays search, on the warm Chrome (warm.ts createStaysHeadStart).
     const names = lb.setup.steps.map((s) => s.name);
-    expect(names.filter((n) => n.startsWith('travel.'))).toEqual(['travel.computer', 'travel.ixigo_login', 'travel.ixigo_warm']);
+    expect(names.filter((n) => n.startsWith('travel.'))).toEqual(['travel.computer', 'travel.ixigo_login', 'travel.ixigo_warm', 'travel.stays_head_start']);
     expect(lb.setup.steps.find((s) => s.name === 'travel.ixigo_login')).toMatchObject({ after: 'travel.computer' });
     expect(lb.setup.steps.find((s) => s.name === 'travel.ixigo_warm')).toMatchObject({ after: 'travel.computer' });
+    expect(lb.setup.steps.find((s) => s.name === 'travel.stays_head_start')).toMatchObject({ after: 'travel.ixigo_warm' });
     // The ixigo tool runs the book's other recipes (the destination guide and more).
     // compare_ways_there: each home city's ways to the trip, side by side (the composite trip.how_we_get_there).
     // watch_ixigo and stop_watch: the watches a group asks Go to keep on ixigo (travel/recipe-watches.ts).
