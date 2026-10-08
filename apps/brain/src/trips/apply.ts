@@ -95,6 +95,8 @@ export function applyEvent(pack: TripPack, ev: TripEvent): 'ok' | 'reread' {
         // 1.1: "I'm flexible" or a vote taken back: whatever they picked before is no longer their vote.
         d.votes = (d.votes ?? []).filter((v) => v.person_id !== pid);
       }
+      // 1.1: the event carries no flexible_count, and a flexible vote names no pick: the Server's decision has both.
+      if (data.flexible || data.retracted) return 'reread';
       break;
     }
     case 'decision.cancelled': {

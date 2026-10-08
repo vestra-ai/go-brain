@@ -1,5 +1,6 @@
 import type * as C from '@go/contract';
 import type { Packs } from '../trips/pack.js';
+import { flexibleOf } from '../trips/votes.js';
 import type { NowProvider } from './context.js';
 import { dataBlock, defuse, inlineData, personName } from './fence.js';
 
@@ -41,6 +42,9 @@ function votersOf(d: C.Decision, people: C.Person[]): string {
   if (!d.votes) return ". Who has voted isn't known: counts only";
   const voted = new Set(d.votes.map((v) => v.person_id));
   const names = (ps: C.Person[]): string => ps.map((p) => personName(p.name)).join(', ') || 'nobody';
+  // 1.1: a flexible vote counts as voted but names no pick, so who hasn't voted can't be told apart from who is flexible.
+  const flexible = flexibleOf(d);
+  if (flexible > 0) return `. Picked: ${names(people.filter((p) => voted.has(p.person_id)))}; ${flexible} flexible. Who hasn't voted isn't known by name: counts only`;
   return `. Voted: ${names(people.filter((p) => voted.has(p.person_id)))}. Not yet: ${names(people.filter((p) => !voted.has(p.person_id)))}`;
 }
 
@@ -77,7 +81,7 @@ export function tripNow(packs: Packs): NowProvider {
       for (const d of trip.decisions.filter((x) => x.status === 'open')) {
         const tally = d.options.map((op, k) => `${inlineData(op.label)} ${d.tally[k] ?? 0}`).join(', ');
         lines.push(
-          `Open vote ${d.decision_id}: ${inlineData(d.question)}: ${tally} (${d.voted} of ${d.of} voted${d.closes_at ? `, closes ${d.closes_at}` : ''})` +
+          `Open vote ${d.decision_id}: ${inlineData(d.question)}: ${tally} (${d.voted} of ${d.of} voted${flexibleOf(d) ? `, ${flexibleOf(d)} flexible` : ''}${d.closes_at ? `, closes ${d.closes_at}` : ''})` +
             votersOf(d, trip.people),
         );
       }

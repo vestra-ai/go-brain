@@ -253,9 +253,20 @@ describe('the room\'s tools', () => {
     expect(ctx.outcome.silent).toBe(true);
   });
 
+  it('offer_replies puts up to six tap-to-answer choices on the turn, short, and asks Go not to list them (1.1 A3)', async () => {
+    const { ctx } = ctxWith({});
+    const offer = tool('offer_replies');
+    expect(offer.input.safeParse({ replies: [{ label: 'Beach' }] }).success).toBe(false);
+    expect(offer.input.safeParse({ replies: Array.from({ length: 7 }, (_, k) => ({ label: `Day ${k}` })) }).success).toBe(false);
+    expect(offer.input.safeParse({ replies: [{ label: 'x'.repeat(41) }, { label: 'Hills' }] }).success).toBe(false);
+    const out = await offer.run(offer.input.parse({ replies: [{ label: 'Beach' }, { label: 'Mountains', text: 'Mountains for me' }] }), ctx);
+    expect(ctx.quickReplies).toEqual([{ label: 'Beach' }, { label: 'Mountains', text: 'Mountains for me' }]);
+    expect(out).toMatchObject({ ok: true, shown: ['Beach', 'Mountains'], tell_the_room: expect.stringContaining('do not list them') });
+  });
+
   it('no tool can pay, book or touch a card', () => {
     const names = roomTools({ now: () => new Date(), pool: db.pool }).map((t) => t.name).sort();
-    expect(names).toEqual(['close_vote', 'open_vote', 'react', 'stay_silent', 'update_trip']);
+    expect(names).toEqual(['close_vote', 'offer_replies', 'open_vote', 'react', 'stay_silent', 'update_trip']);
     for (const n of names) expect(n).not.toMatch(/pay|book|card|spend|charge/);
   });
 });

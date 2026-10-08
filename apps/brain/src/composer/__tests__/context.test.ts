@@ -476,6 +476,23 @@ describe('why Go woke, and the trip block', () => {
     expect(beach).not.toMatch(/Rahul|Priya|Arjun|Meher|Kabir/);
   });
 
+  it('counts a flexible vote as voted and names nobody as not yet then; a closed vote says how many were flexible (1.1 A5)', async () => {
+    // Priya and Kabir picked; Arjun said he is flexible (counted in voted, never in the tally, named in no pick).
+    const votes = [{ person_id: 'p_priya', option_index: 0 }, { person_id: 'p_kabir', option_index: 0 }];
+    const trip = goaSnapshot({ decisions: [vote({ decision_id: 'd_stay', voted: 3, tally: [2, 0], votes, flexible_count: 1 })] });
+    const block = await tripNow({ get: async () => packOf([], trip), invalidate: () => undefined }).render('t_goa', []);
+    const stay = block.split('\n').find((l) => l.startsWith('Open vote d_stay'))!;
+    expect(stay).toContain("(3 of 5 voted, 1 flexible). Picked: Priya, Kabir; 1 flexible. Who hasn't voted isn't known by name: counts only");
+    expect(stay).not.toContain('Not yet');
+    // A retract: the Server's new totals, with nobody flexible, read as before.
+    const back = goaSnapshot({ decisions: [vote({ decision_id: 'd_stay', voted: 1, tally: [1, 0], votes: [votes[0]!], flexible_count: 0 })] });
+    const after = (await tripNow({ get: async () => packOf([], back), invalidate: () => undefined }).render('t_goa', [])).split('\n').find((l) => l.startsWith('Open vote d_stay'))!;
+    expect(after).toContain('(1 of 5 voted). Voted: Priya. Not yet: Rahul, Arjun, Meher, Kabir');
+    const closed = goaSnapshot({ decisions: [vote({ decision_id: 'd_flex', status: 'closed', voted: 5, tally: [3, 1], flexible_count: 1, result_index: 0, closed_at: '2026-10-05T12:00:00Z' })] });
+    const text = context().renderWake(wake({ kind: 'trip_change', ref: 'decision:d_flex', payload: { type: 'decision.closed', decisionId: 'd_flex' } }), packOf([], closed));
+    expect(text).toContain('(<data>Villa Sol</data> 3, <data>Casa Azul</data> 1; 5 of 5 voted, 1 flexible)');
+  });
+
   it('two lanes render "tap": the first returns null for this item, so the second one\'s text is used', () => {
     const c = context();
     const asked: string[] = [];

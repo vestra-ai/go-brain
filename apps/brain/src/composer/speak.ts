@@ -12,6 +12,8 @@ export interface PostArgs {
   text: string | null;
   cards: C.Card[];
   replyTo?: string;
+  /** 1.1: tap-to-answer choices under the message's words (offer_replies); sent only with words. */
+  quickReplies?: C.QuickReply[];
   /** Given, it is sent as it is; left out, it comes from `people` named in the text. */
   mentions?: string[];
   /** The trip's people: the ones Go's text names go in mentions, so they get a push. */
@@ -124,6 +126,7 @@ export function createSpeak(o: {
           ...(first ? { card: first } : {}),
           ...(p.replyTo ? { reply_to: p.replyTo } : {}),
           ...(mentions.length ? { mentions } : {}),
+          ...(text && p.quickReplies?.length ? { quick_replies: p.quickReplies.map((q) => sanitizeDeep(q)) } : {}),
         });
         ids.push(r.message_id);
       }

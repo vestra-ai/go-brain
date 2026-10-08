@@ -125,6 +125,18 @@ describe("Go's rules", () => {
     );
   });
 
+  it('asks the group to pick with quick replies, never a list in its words (1.1 A3)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
+    expect(section).toContain(
+      '- When you ask the group to pick between a few things (beach or mountains, North or South Goa), give the choices with offer_replies and ask the question in one line. Never list the choices in your words: they show as buttons.',
+    );
+  });
+
+  it("never asks someone who said they're flexible to pick (1.1 A5)", () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nVotes and the trip\n'));
+    expect(section).toContain("- Someone who said they're flexible on a vote has voted: never ask them to pick.");
+  });
+
   it('use no em dashes or en dashes, as they ask of Go', () => {
     expect(GO_RULES).not.toMatch(/[—–]/);
   });
