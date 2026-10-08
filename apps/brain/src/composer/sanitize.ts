@@ -21,6 +21,33 @@ export function sanitize(text: string): string {
     .trim();
 }
 
+/**
+ * What a turn's refused calls rule out of its reply: the tools that refused quietly (tell_the_room: say nothing), whose
+ * names never appear; and the words each tool declares would claim its work done, for a tool none of whose calls went
+ * through this turn.
+ */
+export interface Refusals {
+  names: readonly string[];
+  claims: readonly RegExp[];
+}
+
+/**
+ * A reply after calls in its turn were refused (8 Oct: "The record call was refused, so I'll just acknowledge in the
+ * chat. Noted, speaker for the beach day is down as Arjun's." when nothing was noted): a sentence that names a quietly
+ * refused tool goes, and so does one that claims a refused tool's work. Read from what the turn did, never from a list
+ * of phrases about refusals; the rest of the reply stands.
+ */
+export function withoutRefused(text: string, r: Refusals): string {
+  if (r.names.length === 0 && r.claims.length === 0) return text;
+  const named = r.names.map((n) => new RegExp(String.raw`\b${n.split('_').join('[ _]')}\b`, 'i'));
+  const keep = (sentence: string): boolean => !named.some((x) => x.test(sentence)) && !r.claims.some((x) => x.test(sentence));
+  return text
+    .split(/\n{2,}/)
+    .map((para) => (para.match(/[^.!?]+(?:[.!?]+|$)\s*/g) ?? [para]).filter(keep).join('').trim())
+    .filter((para) => para.length > 0)
+    .join('\n\n');
+}
+
 // Go reads the chat as "#57 Priya: ...", so the model may cite message numbers, which mean nothing to people.
 // A reference is "#" and digits on its own: not inside a word or a link ("page#21"), not before a letter ("#3B").
 const REF = String.raw`(?<![\w/#])#(\d{1,6})(?!\w)`;

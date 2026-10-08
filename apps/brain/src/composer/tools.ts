@@ -25,6 +25,11 @@ export interface QuickTool<A = unknown> {
    */
   endsTurn?: boolean;
   /**
+   * The words a reply would use to say this tool's work was done ("Noted"). When the tool refused everything it was asked
+   * this turn, a sentence with them is not posted (sanitize.ts withoutRefused): Go never claims what it didn't do.
+   */
+  claims?: RegExp;
+  /**
    * When two or more calls in one reply use this same summary (the searches), the loop adds its line after their results:
    * a tally the model reads once, in code, instead of counting results itself.
    */

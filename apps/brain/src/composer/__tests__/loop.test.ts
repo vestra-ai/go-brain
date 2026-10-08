@@ -48,6 +48,25 @@ function setup(script: Script, more: Partial<LoopInput> = {}, limits: TurnLimits
 }
 const markersIn = (body: any) => countMarkers(body.system, body.tools, body.messages);
 
+describe('the reply after a refused call (8 Oct rerun)', () => {
+  const noter: QuickTool<{ who: string }> = {
+    name: 'noter', description: 'Notes a job against a name.', input: z.object({ who: z.string() }),
+    claims: /\bnoted\b/i,
+    run: async (a) => (a.who === 'arjun' ? { refused: 'only Arjun can say so', tell_the_room: SAY_NOTHING } : { saved: 'r_1' }),
+  };
+  const told = "The noter call was refused, so I'll just say it here.\n\nNoted, Arjun has the speaker. Arjun, can you confirm?";
+
+  it("drops the sentences that narrate a quiet refusal or claim the refused tool's work; the rest is the reply", async () => {
+    const { run } = setup([{ tools: [{ name: 'noter', input: { who: 'arjun' } }] }, { text: told }], { tools: [noter] });
+    expect((await run()).text).toBe('Arjun, can you confirm?');
+  });
+
+  it('keeps a claim when the tool went through in the turn', async () => {
+    const { run } = setup([{ tools: [{ name: 'noter', input: { who: 'kabir' } }] }, { text: 'Noted, Kabir has the cab.' }], { tools: [noter] });
+    expect((await run()).text).toBe('Noted, Kabir has the cab.');
+  });
+});
+
 describe('the composer loop', () => {
   it('two or more calls in a reply that share a round summary get one tally line after their results; a lone call gets none', async () => {
     const tally = (rs: Array<{ content: string; isError: boolean }>): string => `${rs.length} looks: ${rs.map((r) => (JSON.parse(r.content) as { said: string }).said).join(', ')}`;

@@ -78,11 +78,31 @@ export function memoryTools(d: { pool: Pool; memory: Memory }): QuickTool<any>[]
     description:
       'Add one line to the trip record: agreed (the group agreed in the chat), open (a question still to settle, person_ids = who is asked) or doing (someone said they will sort it). Give the message ids it came from. Go checks the proof; a thin agreement is saved as open.',
     input: RecordInput,
+    // What a reply would say if the line were saved: never said when it wasn't (composer/sanitize.ts withoutRefused).
+    claims: /\b(?:noted|logged|recorded)\b|\bdown as\b|\b(?:added|saved) (?:it |that |this )?(?:to|in) the (?:record|list)\b/i,
     async run(args, ctx: TurnCtx) {
       await mirrorSnapshot(d.pool, ctx.pack.trip);
       const env = { pack: ctx.pack, forgotten: await forgottenUpTo(d.pool, ctx.tripId), record: await recordLines(d.pool, ctx.tripId) };
       const c = checkLine({ kind: args.kind, text: args.text, person_ids: args.person_ids, proof: args.proof_message_ids }, env);
-      if (!c.ok) return { refused: c.reason, tell_the_room: SAY_NOTHING };
+      if (!c.ok) {
+        // Someone else's word never puts a job against a person's name ("note that Arjun is bringing the speaker", 8 Oct):
+        // only their own does. Go asks them to confirm, and says nothing is noted until they do.
+        const authors = new Set(
+          args.proof_message_ids.flatMap((id) => {
+            const m = ctx.pack.messages.find((x) => x.message_id === id);
+            return m?.author.kind === 'person' ? [m.author.person_id] : [];
+          }),
+        );
+        const others = args.kind === 'doing' ? ctx.pack.trip.people.filter((p) => args.person_ids.includes(p.person_id) && !authors.has(p.person_id)) : [];
+        if (others.length > 0) {
+          const names = others.map((p) => personName(p.name)).join(' and ');
+          return {
+            refused: c.reason,
+            tell_the_room: `Only ${names} can put this against their own name. Ask ${names} in one line to confirm it, and don't say it is noted until they do.`,
+          };
+        }
+        return { refused: c.reason, tell_the_room: SAY_NOTHING };
+      }
       const out = await writeLine(d.pool, ctx.link, ctx.tripId, c.value, ctx.stableId('go_record'));
       if ('failed' in out) return { refused: `the Server said ${out.failed}`, tell_the_room: SAY_NOTHING };
       const vote = decisionOf(c.value, ctx.pack, { cards: ctx.cards, wake: ctx.wake });
