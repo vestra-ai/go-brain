@@ -18,7 +18,9 @@ import { activeWatches, DROPS_PCT, flipped, flipsOf, startWatch, stopWatch, WATC
 export interface WatchToolDeps {
   pool: pg.Pool;
   book: Pick<Book, 'all'>;
-  engine: Pick<Engine, 'answer'>;
+  /** answerShared: a search in the same round (search_stays beside watch_ixigo), or a minute ago, answers the first
+   *  check with no second load (8 Oct drill: two pages for one request). */
+  engine: Pick<Engine, 'answerShared'>;
   switches: Pick<Switches, 'get'>;
   now: () => Date;
 }
@@ -98,7 +100,7 @@ export function watchTools(d: WatchToolDeps): Array<QuickTool<any>> {
       // The first check, now: what is already true is answered, and no watch is kept.
       let first: Awaited<ReturnType<typeof flipped>>;
       try {
-        const answer = await d.engine.answer(a.recipe, a.inputs, { tripId: ctx.tripId, conditions, signal: ctx.signal });
+        const answer = await d.engine.answerShared(a.recipe, a.inputs, { tripId: ctx.tripId, conditions, signal: ctx.signal });
         first = await flipped(recipe, a.flip, answer, { inputs: a.inputs, limit, baseline: null });
       } catch (err) {
         if (!(err instanceof TravelError)) throw err;

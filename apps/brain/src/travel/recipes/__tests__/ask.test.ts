@@ -120,6 +120,15 @@ describe('reading a travel ask', () => {
     expect(read('can someone check trains from Mumbai on Thursday?')?.query).toMatchObject({ from: 'mumbai', to: 'North Goa' });
   });
 
+  it('starts no search for a watch the group asks Go to keep: that is watch_ixigo, in the turn (8 Oct drill)', () => {
+    expect(read('@Go let us know if a pool stay in North Goa for our dates goes under ₹3,000')).toBeNull();
+    expect(read('@Go tell us when the Mumbai to Goa bus on 6 Nov drops below 900')).toBeNull();
+    expect(read('@Go keep an eye on villas in North Goa for our dates')).toBeNull();
+    expect(read('@Go can you watch trains from Mumbai to Goa on 6 Nov for us')).toBeNull();
+    // The plain ask still starts.
+    expect(read('@Go a villa with a pool in North Goa for our dates')?.kind).toBe('stays');
+  });
+
   it('gives nothing for less than one whole search of one kind', () => {
     // No date.
     expect(read('@Go flights Delhi to Goa?')).toBeNull();

@@ -36,6 +36,9 @@ const KINDS: Array<[TravelKind, RegExp]> = [
 
 /** Another job for Go about the same things: a vote, a booking, a payment, a reminder. Never a search to start. */
 const NOT_A_SEARCH = /\b(vote|votes|voting|poll|book|booked|booking|pay|paid|payment|cancel|remind)\b/i;
+/** A watch the group asks Go to keep ("let us know if a pool stay goes under 3k", "tell us when it confirms"): the
+ *  composer's watch_ixigo, never a search started early (8 Oct drill: one ran, failed, and cost a load and 12 s). */
+const A_WATCH = /\b(let (us|me) know (if|when)|tell (us|me) (if|when)|notify|alert (us|me)|keep an eye|watch(ing)?|bata(na|dena) (jab|agar))\b/i;
 
 const WEEKDAYS: Record<string, number> = {
   sunday: 0, monday: 1, tuesday: 2, tues: 2, wednesday: 3, weds: 3, thursday: 4, thurs: 4, friday: 5, fri: 5, saturday: 6,
@@ -226,7 +229,7 @@ export function guestsIn(lower: string): number | undefined {
 
 /** The ask in a message, or null when it is not one whole search of one kind. */
 export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
-  if (NOT_A_SEARCH.test(text)) return null;
+  if (NOT_A_SEARCH.test(text) || A_WATCH.test(text)) return null;
   const kinds = ctx.kind ? [ctx.kind] : KINDS.filter(([, re]) => re.test(text)).map(([k]) => k);
   if (kinds.length !== 1) return null;
   const kind = kinds[0]!;

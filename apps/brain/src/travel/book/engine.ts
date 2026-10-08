@@ -648,6 +648,19 @@ export function createEngine(d: EngineDeps) {
     );
   }
 
+  /**
+   * A recipe's answer through Go's searches (the search backend's, by the request it makes), when it is one of the
+   * searches: a search kept or running for the same page answers it with no load (a kept run on the strip), and a run of
+   * its own is kept for the next ask. Anything else, or with no searches wired, is answer()'s. o.signal ends only the
+   * wait: the run itself finishes and is kept. A watch's checks take it, so a search the group just made answers them.
+   */
+  async function answerShared(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
+    const { signal, ...run } = o;
+    const shared = d.searches ? await d.searches(id, given, run, () => answer(id, given, run)) : null;
+    if (!shared) return answer(id, given, o);
+    return untilAborted(shared.joined ? fromKept(id, given, run, shared.answer) : shared.answer, signal);
+  }
+
   /** Runs a recipe for the given inputs (place inputs as the person's words), timed and recorded. */
   function answer(id: string, given: Record<string, unknown>, o: RunFor): Promise<EngineAnswer> {
     const recipe = d.book.get(id);
@@ -712,6 +725,7 @@ export function createEngine(d: EngineDeps) {
       }
     },
     answer,
+    answerShared,
     /** Each recipe's numbers at each speed, slowest middle first. */
     stats(): RecipeStat[] {
       return [...timings.values()]
