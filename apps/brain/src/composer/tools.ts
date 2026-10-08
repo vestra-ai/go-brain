@@ -37,6 +37,9 @@ export interface QuickTool<A = unknown> {
   summarizeRound?(results: Array<{ content: string; isError: boolean }>): string | null;
 }
 
+/** A 1.1 quick reply: the contract exports its schema only. */
+export type QuickReply = z.infer<typeof C.QuickReply>;
+
 export interface TurnCtx {
   tripId: string;
   turnId: string;
@@ -63,7 +66,7 @@ export interface TurnCtx {
   /** Set by a tool that put up its card and its line itself (a finished plain search): the turn ends on them. */
   answered?: boolean;
   /** 1.1 quick replies under this turn's message (offer_replies): each tap comes back as the tapper's own message. */
-  quickReplies?: C.QuickReply[];
+  quickReplies?: QuickReply[];
 }
 
 export interface TurnOutcome {

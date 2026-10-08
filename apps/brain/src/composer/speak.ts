@@ -2,6 +2,7 @@ import type * as C from '@go/contract';
 import type pg from 'pg';
 import type { ServerLink } from '../door/server-link.js';
 import { clip, sanitize, sanitizeDeep, stripIds, stripMessageRefs } from './sanitize.js';
+import type { QuickReply } from './tools.js';
 
 export interface PostArgs {
   link: ServerLink;
@@ -13,7 +14,7 @@ export interface PostArgs {
   cards: C.Card[];
   replyTo?: string;
   /** 1.1: tap-to-answer choices under the message's words (offer_replies); sent only with words. */
-  quickReplies?: C.QuickReply[];
+  quickReplies?: QuickReply[];
   /** Given, it is sent as it is; left out, it comes from `people` named in the text. */
   mentions?: string[];
   /** The trip's people: the ones Go's text names go in mentions, so they get a push. */
