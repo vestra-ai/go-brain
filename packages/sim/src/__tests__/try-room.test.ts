@@ -8,7 +8,10 @@ import { Caps, DEFAULT_CAPS } from '../try-room/caps.js';
 import { TryEnv } from '../try-room/env.js';
 import { COOKIE_NAME, Gate, WrongTries, clientAddress } from '../try-room/gate.js';
 import { CLOSE_TOO_MANY, LIVE_BEHIND_BYTES, refusal, serveTryRoom, visitTrip, type TryRoom, type TryRoomOptions } from '../try-room/serve.js';
-import { DAILY_LIMIT_LINE, HINTS, NOT_IN_YOUR_TRIP, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_MANY_TRIES, tooManyTabs, visitLimitLine } from '../try-room/words.js';
+import {
+  DAILY_LIMIT_LINE, HINTS, LIVE_HINTS, LIVE_LINE, NOT_IN_YOUR_TRIP, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_MANY_TRIES, tooManyTabs,
+  visitLimitLine,
+} from '../try-room/words.js';
 import { startTestGo, type TestGo } from './helpers/test-go.js';
 
 const secret = 'sim-test-secret-0123456789abcdef';
@@ -681,6 +684,28 @@ describe('Go Live', () => {
     await until(() => feeds[1]!.closed);
   });
 
+  it('says what is real in a live room, and offers only the hints that work there: no flights', async () => {
+    const { live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open });
+    const cookie = await signIn(r);
+    const html = await (await page(r, cookie)).text();
+    for (const hint of LIVE_HINTS) expect(html).toContain(`data-fill="${hint}"`);
+    expect(html.match(/data-fill=/g)).toHaveLength(LIVE_HINTS.length);
+    expect(html).not.toMatch(/data-fill="[^"]*flight/i);
+    const l = await inRoom(r, cookie);
+    expect(states(l.got)[0].about).toEqual(['Go is live: this room talks to the real Go (contract 1.0.0).', LIVE_LINE]);
+    expect(LIVE_LINE).toMatch(/payments are blocked/i);
+    expect(LIVE_LINE).not.toMatch(/simulated/i);
+    for (const words of [LIVE_LINE, ...LIVE_HINTS]) expect(words).not.toMatch(/[\u2014\u2013]|claude/i);
+  });
+
+  it('keeps a line set by TRY_SIMULATED_LINE, live or not', async () => {
+    const { live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open, simulatedLine: 'Payments are blocked here.' });
+    const l = await inRoom(r, await signIn(r));
+    expect(states(l.got)[0].about[1]).toBe('Payments are blocked here.');
+  });
+
   it("never holds a run's events back behind a big picture", async () => {
     const { feeds, live: open } = fakeLive();
     const { room: r } = await setUp({ live: open });
@@ -718,8 +743,11 @@ describe('the hosted page and its settings', () => {
       GO_URL: 'https://brain-try.example', GO_SIGNING_SECRET: 'a'.repeat(64), TRY_PASSCODE: 'judges-only-2026-passcode', TRY_COOKIE_SALT: 'b'.repeat(64),
     };
     expect(TryEnv.parse(base)).toMatchObject({
-      PORT: 8080, TRY_DAILY_TURNS: 200, TRY_DAILY_MESSAGES: 600, TRY_VISIT_TURNS: 30, TRY_SIMULATED_LINE: SIMULATED_LINE, TRY_INSTANCE: 'try-room',
+      PORT: 8080, TRY_DAILY_TURNS: 200, TRY_DAILY_MESSAGES: 600, TRY_VISIT_TURNS: 30, TRY_INSTANCE: 'try-room',
     });
+    // Left out, the room picks its own line: SIMULATED_LINE, or LIVE_LINE with TRY_LIVE=1.
+    expect(TryEnv.parse({ ...base, TRY_LIVE: '1' }).TRY_SIMULATED_LINE).toBeUndefined();
+    expect(TryEnv.parse({ ...base, TRY_SIMULATED_LINE: 'Payments are blocked here.' }).TRY_SIMULATED_LINE).toBe('Payments are blocked here.');
     expect(TryEnv.parse({ ...base, PORT: '9000', TRY_DAILY_TURNS: '10' })).toMatchObject({ PORT: 9000, TRY_DAILY_TURNS: 10 });
     expect(TryEnv.parse(base).TRY_LIVE).toBe('0');
     expect(TryEnv.parse({ ...base, TRY_LIVE: '1' }).TRY_LIVE).toBe('1');
