@@ -108,6 +108,35 @@ describe('the notes pass', () => {
     expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['Stay in Candolim', 'Meher sorts the airport cab']);
   });
 
+  it('"Candolim it is" closes "Stay in Candolim?" (staging run B, 8 Oct): by what it answers, never by matching words', async () => {
+    const said = [
+      msg(250, 'p_priya', 'how about we stay in Candolim?'),
+      msg(251, 'p_rahul', 'Candolim it is'),
+      msg(252, 'p_arjun', 'yes Candolim'),
+    ];
+    // The line the notes pass wrote for Priya's proposal in run B, still open and in everyone's "needs you".
+    await mirrorLine(db.pool, 't_n31', {
+      line_id: 'r_candolim', kind: 'open', text: 'Stay in Candolim?', status: 'active', proof: [{ message_id: 'm_0250', person_id: 'p_priya' }],
+      person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'], source: 'go', created_at: '2026-10-06T09:00:00Z', updated_at: '2026-10-06T09:00:00Z',
+    }, 1);
+    // The yes lines alone as proof: the model names the question the agreement answers.
+    const named = JSON.stringify({ facts: [], lines: [{ kind: 'agreed', text: 'Staying in Candolim', person_ids: [], proof: [251, 252], settles: ['r_candolim'] }] });
+    const { link, notes } = setup('t_n31', said, [named]);
+    await notes.run('t_n31');
+    expect(link.calls.filter((c) => c.method === 'update_record_line').map((c) => [c.params.line_id, c.params.status])).toEqual([['r_candolim', 'done']]);
+    // The same agreement with no line named and no proposal in its proof answers nothing Go can point to: the question
+    // stays open rather than being closed on its words.
+    const said2 = said.map((m) => ({ ...m }));
+    await mirrorLine(db.pool, 't_n32', {
+      line_id: 'r_candolim2', kind: 'open', text: 'Stay in Candolim?', status: 'active', proof: [{ message_id: 'm_0250', person_id: 'p_priya' }],
+      person_ids: [], source: 'go', created_at: '2026-10-06T09:00:00Z', updated_at: '2026-10-06T09:00:00Z',
+    }, 1);
+    const unnamed = JSON.stringify({ facts: [], lines: [{ kind: 'agreed', text: 'Staying in Candolim', person_ids: [], proof: [251, 252] }] });
+    const second = setup('t_n32', said2, [unnamed]);
+    await second.notes.run('t_n32');
+    expect(second.link.calls.filter((c) => c.method === 'update_record_line')).toEqual([]);
+  });
+
   it('an ask to Go gets Go\'s answer, not a receipt: no open line and no ✅ on it; a plan stated to Go and a group question are noted', async () => {
     // Live drill (t_p1a_572dd322): "@Go what's planned for Sunday?" got an open line and a ✅ after Go had answered it.
     const said = [
