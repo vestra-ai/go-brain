@@ -12,6 +12,7 @@
 import * as C from '@go/contract';
 import { isForgotten } from '../composer/fence.js';
 import type { Message } from '../door/methods.js';
+import { looksLikeMoney, saysMoneyMoved } from '../reflex/money-line.js';
 import { messageText } from '../reflex/questions.js';
 import { hasSecret } from '../reflex/secrets.js';
 import { partOfAskToGo, plainlyNamesGo } from '../trips/names-go.js';
@@ -99,6 +100,9 @@ export function checkFact(p: FactProposal, env: CheckEnv): Checked<CheckedFact> 
   const text = cleanText(p.text, 200);
   if (!text) return no('the fact text is empty or too long');
   if (hasSecret(text) || MASKED.test(text)) return no('the fact holds a secret');
+  // A budget is private to its trip (the App asks it, and Go only knows the lowest band): never a fact that carries
+  // across trips, whether its topic says budget or its text names an amount ("Pool stay under ₹3,000 per night").
+  if (normTopic(p.topic) === 'budget' || looksLikeMoney(text)) return no("a person's budget or money stays private to the trip");
   return {
     ok: true,
     value: {
@@ -169,6 +173,8 @@ export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> 
     // the same breath ("@Go I'll sort the cab, you do flights") goes too: code cannot tell it from the ask beside it, and a
     // wrong name in everyone's record costs more than a line the person can say again.
     if (proof.some((m) => plainlyNamesGo(m, pack))) return no('a doing line cannot rest on a message to Go: that is an ask, and Go does it');
+    // "I paid 2400 for the cab" is an expense, kept by record_expense with who shares it: not a job someone is doing.
+    if (proof.some((m) => saysMoneyMoved(m.text))) return no('a payment or a debt is a money record, not a doing line');
     if (personIds.length === 0) personIds = [...new Set(authors)];
     if (personIds.length === 0 || !personIds.every((id) => authors.includes(id))) {
       return no('a doing line names someone who did not say they would do it');

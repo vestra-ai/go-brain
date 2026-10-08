@@ -104,6 +104,27 @@ describe("Go's rules", () => {
     expect(section).toContain('- Never write a message number ("#57") in what you say: people don\'t see them. Say whose message it was, or leave it out.\n');
   });
 
+  it('an offer follows from the message it answers: a birthday answer gets no villa offer (staging, 8 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
+    expect(section).toContain(
+      '- An offer must follow from the message you are answering. Answer what was asked and stop: never add an offer about something else ("when is Meher\'s birthday?" gets the birthday, never "want me to pull up villas?").',
+    );
+  });
+
+  it('brings up an open vote only when the message is about it, or once before it closes unseen: never as a tail, never on a refusal (staging, 8 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nVotes and the trip\n'));
+    expect(section).toContain(
+      "- Bring up an open vote only when the message you are answering is about it or what it decides, or once when it is about to close with people who haven't voted. Never add it to a reply about something else, and never to a refusal.",
+    );
+  });
+
+  it('never tells the room who used Forget me, nor that anyone asked Go to forget them (staging, 8 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nForget me\n'), GO_RULES.indexOf('\nVotes and the trip\n'));
+    expect(section).toContain(
+      "- Never tell the room that someone used Forget me or asked you to forget them. If someone asks about a thing you no longer know, say you don't have it, and that they can ask that person.",
+    );
+  });
+
   it('use no em dashes or en dashes, as they ask of Go', () => {
     expect(GO_RULES).not.toMatch(/[—–]/);
   });
