@@ -1,5 +1,6 @@
 import type { Message } from '../door/methods.js';
 import type { TripPack } from '../trips/pack.js';
+import { mentionsIn } from './speak.js';
 
 const LINE_MAX = 1_500;
 
@@ -73,11 +74,52 @@ export function chatLine<L extends string | null>(m: Message, view: ChatView<L>)
   return isForgotten(m, view.forgotten) ? `#${m.seq} ${HIDDEN}` : shown;
 }
 
+/** A link in Go's words: its "?" starts a query, not a question. */
+const LINK = /\bhttps?:\/\/\S+/gi;
+
+/**
+ * The people one of Go's messages asks something: the ones it @mentions or pins its card to, or, only when it has
+ * neither, the ones its words name ("Rahul, want me to try again?"). Nobody when it asks nothing.
+ */
+function askedIn(m: Message, people: TripPack['trip']['people']): string[] {
+  if (!m.text?.replace(LINK, '').includes('?')) return [];
+  const structured = [...m.mentions, ...(m.card?.for_person_ids ?? [])];
+  return structured.length ? structured : mentionsIn(m.text, people);
+}
+
+/**
+ * Plain answers to Go's questions, message id to the question's number. The chat app's reply feature marks a reply to
+ * Go; a plain answer carried no mark, so the turn guessed it was the group talking and stayed silent ("Rahul, want me to
+ * try again?", then 48 minutes later "heyy can you try creating the tickets now", trip t_try_7f4e8e657c4f). A person's
+ * message answers Go when Go's latest message before it asks them something, nobody spoke in between (Go included), and
+ * it is the first thing they said since. A message made with the reply feature keeps its own mark only.
+ */
+export function answersToGo(pack: TripPack): Map<string, number> {
+  const out = new Map<string, number>();
+  let open: { seq: number; to: string[] } | null = null;
+  for (const m of pack.messages) {
+    const a = m.author;
+    if (m.deleted || a.kind === 'system') continue;
+    if (a.kind === 'go') {
+      const to = askedIn(m, pack.trip.people);
+      open = to.length ? { seq: m.seq, to } : null;
+      continue;
+    }
+    if (open?.to.includes(a.person_id) && !m.reply_to) out.set(m.message_id, open.seq);
+    open = null;
+  }
+  return out;
+}
+
 /** The composer's view of a trip's chat: "#57 Priya: text", names and message numbers as the trip has them now. */
 export function roomView(pack: TripPack, forgotten: Forgotten): ChatView {
   const names = new Map(pack.trip.people.map((p) => [p.person_id, personName(p.name)]));
   const seqs = new Map(pack.messages.map((m) => [m.message_id, m.seq]));
-  return { forgotten, label: (m) => roomLabel(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)) };
+  const answers = answersToGo(pack);
+  return {
+    forgotten,
+    label: (m) => roomLabel(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id), (id) => answers.get(id)),
+  };
 }
 
 /**
@@ -88,6 +130,7 @@ function roomLabel(
   m: Message,
   nameOf: (personId: string) => string,
   seqOf: (messageId: string) => number | undefined,
+  answerOf: (messageId: string) => number | undefined,
 ): string | null {
   if (m.deleted || m.withheld) return null;
   const a = m.author;
@@ -95,6 +138,9 @@ function roomLabel(
   const parts: string[] = [];
   const replyTo = m.reply_to ? seqOf(m.reply_to) : undefined;
   if (replyTo !== undefined) parts.push(`(reply to #${replyTo})`);
+  // A plain answer to a question Go asked this person: a reply to Go without the reply feature (answersToGo).
+  const answers = answerOf(m.message_id);
+  if (answers !== undefined) parts.push(`(answers Go's question #${answers})`);
   // "Ask Go about this": the message it asks about is its subject.
   const about = m.about_message_id ? seqOf(m.about_message_id) : undefined;
   if (about !== undefined) parts.push(`(about #${about})`);

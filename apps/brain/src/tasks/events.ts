@@ -223,7 +223,8 @@ export function createTaskEvents(d: TaskEventsDeps): TaskEvents {
     if (!moved) return;
     const fresh = await d.store.get(row.id);
     if (fresh) await d.tasks.pushCard(fresh, true);
-    await wake(row, 'done', { event: 'completed', taskId: row.id, title: row.title, resultsId: set?.resultsId ?? null, count: read.options.length, summary: read.summary });
+    // A quiet job's lane speaks for it (the ixigo login's own card), so its end never wakes the composer.
+    if (!row.quiet) await wake(row, 'done', { event: 'completed', taskId: row.id, title: row.title, resultsId: set?.resultsId ?? null, count: read.options.length, summary: read.summary });
     await d.tasks.afterEnd(row.tripId);
   }
 

@@ -356,6 +356,7 @@ export function createEngine(d: EngineDeps) {
                 lookupRun.step(`opened ${pathOf(f.path)}`);
                 return runner.read(o.tripId, `${IXIGO}${f.path}`, { capture: f.capture, steps: f.steps }, {
                   ...fetchFor(o),
+                  tag: lookupRun.id,
                   onProgress: (e) => {
                     if (e.type === 'frames') lookupRun.frames(e.frames, fetchStarted);
                   },
@@ -529,7 +530,7 @@ export function createEngine(d: EngineDeps) {
           ...(recipe.fast.body ? { body: await fill(recipe.fast.body, inputs, { url: false, bindings }) } : {}),
         };
         const fastRun = strip.line;
-        const got = await runner.pageFetch(o.tripId, call, { ...fetchFor(o), onTrace: (t) => fastRun.trace(t) });
+        const got = await runner.pageFetch(o.tripId, call, { ...fetchFor(o), onTrace: (t) => fastRun.trace(t), tag: fastRun.id });
         const absolute = new URL(got.url || url, IXIGO).toString();
         refusePayments(absolute);
         // A call in a shape of its own (trains: confirmtkt's, where the page reads www.ixigo.com's) reads with the fast
@@ -560,6 +561,7 @@ export function createEngine(d: EngineDeps) {
     pageRun.step(`opened ${pathOf(page)}`);
     const got = await runner.read(o.tripId, page, plan, {
       ...fetchFor(o),
+      tag: pageRun.id,
       // The pictures go to the live card as before, and to the run strip's browser pane.
       onProgress: (e) => {
         if (e.type === 'frames') pageRun.frames(e.frames, started);
@@ -731,7 +733,13 @@ export function createEngine(d: EngineDeps) {
         if (!inputs) return null;
         const bindings = await bindingsOf(recipe, inputs, o);
         const page = `${IXIGO}${await fill(recipe.page, inputs, { url: true, bindings })}`;
-        return JSON.stringify([page, await fetchPlanOf(recipe, inputs, bindings)]);
+        const plan = await fetchPlanOf(recipe, inputs, bindings);
+        // A recipe that keeps only some of a page's rows by the place's half (hotels.search: North Goa opens all of Goa's
+        // page and keeps the north) shares the page with all of Goa, but not its rows, which are read after the keep: the
+        // half joins the key, or all of Goa would get North Goa's stays (staging, 8 Oct).
+        if (recipe.answer.as !== 'options' || !recipe.answer.keep) return JSON.stringify([page, plan]);
+        const half = (inputs['place'] as { half?: unknown } | null | undefined)?.half ?? null;
+        return JSON.stringify([page, plan, { half }]);
       } catch {
         // An ask the run itself refuses (a missing date): keyed by its words, and the run says why.
         return null;

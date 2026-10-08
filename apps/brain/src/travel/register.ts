@@ -192,9 +192,9 @@ export const registerTravel: RegisterLane = async (brain) => {
     linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
-  brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now, desk: brain.desk, log: brain.log }));
+  brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.
-  // One still running is handed over, and the turn says nothing: the live card covers the wait.
+  // One still running is handed over, and the turn says nothing more: the live card covers the wait.
   brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, log: brain.log }));
   // A search that outlived its turn wakes Go with its options, and that wake puts them up itself: card and line.
   brain.context.addDirect(searchWakeAnswer({ results, images }));

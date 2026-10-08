@@ -131,6 +131,33 @@ describe('the ixigo_web backend', () => {
     expect(reads[1]).toContain('adultCount=2');
   });
 
+  it('keeps North Goa and all of Goa apart though they open one page: all of Goa gets the south stays too (8 Oct)', async () => {
+    const reads: string[] = [];
+    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+    const SEARCH_URL = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
+    const runner = {
+      read: async (_t: string, url: string) => {
+        reads.push(url);
+        return { captures: [capture(SEARCH, SEARCH_URL, fixture('stays-goa-page1.json')), capture(SEARCH, SEARCH_URL, fixture('stays-goa-page2.json'))], finalUrl: url };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now });
+    const b = createIxigoWebBackend({ book, engine, now });
+    const dates = { checkIn: '2026-11-06', checkOut: '2026-11-09' };
+    const north = await b.search('stays', { area: 'North Goa', ...dates }, { tripId: 't_goa', turnId: 'turn_1' });
+    const all = await b.search('stays', { area: 'Goa', ...dates }, { tripId: 't_goa', turnId: 'turn_2' });
+    // One page (all of Goa's), read twice: North Goa keeps the north, so its rows are not all of Goa's.
+    expect(reads).toHaveLength(2);
+    expect(reads[1]).toBe(reads[0]);
+    // Soul Vacation is in Fatona, Colva: South Goa.
+    expect(north.results.map((o) => o.title)).not.toContain('Soul Vacation Resort and Spa, Colva');
+    expect(all.results.map((o) => o.title)).toContain('Soul Vacation Resort and Spa, Colva');
+    expect(all.results.length).toBeGreaterThan(north.results.length);
+    // North Goa asked again, in other words, still shares its own search.
+    expect(await b.search('stays', { area: 'north goa', ...dates }, { tripId: 't_goa', turnId: 'turn_3' })).toBe(north);
+    expect(reads).toHaveLength(2);
+  });
+
   it('never keeps a failed search: the next ask runs it again', async () => {
     const e = scripted('fail', 'fail');
     const b = backend(e.engine);

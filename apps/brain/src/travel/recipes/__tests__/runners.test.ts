@@ -120,6 +120,18 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     await fails(createBrowserFetchRunner(blocked.deps).pageFetch!('t1', { url: '/payments/x', method: 'GET' }), 'unreachable', /blocked/);
   });
 
+  it("names each fetch's tab by its run, so Bash's browser watch labels it: on a page and on a page call", async () => {
+    const w = world((c) =>
+      (c.opts['body'] as { steps?: Array<{ op: string }> }).steps?.[0]?.op === 'page_fetch'
+        ? { ...fetched([capture('fast', 'https://www.ixigo.com/plan/goa', '0:{}')]), final_url: 'https://www.ixigo.com/' }
+        : fetched([busCapture]));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.read('t1', BUSES, busPlan, { tag: '01JRUNPAGE' });
+    await runner.pageFetch!('t1', { url: '/plan/goa', method: 'GET' }, { tag: '01JRUNFAST' });
+    await runner.read('t1', BUSES, busPlan);
+    expect(w.calls.map((c) => (c.opts['body'] as { tag?: string }).tag)).toEqual(['01JRUNPAGE', '01JRUNFAST', undefined]);
+  });
+
   it('makes the trip user when /v1 does not have it, then asks once more', async () => {
     const w = world((_, n) => {
       if (n === 1) throw new V1Error(404, 'user_not_found', 'No such user.');

@@ -8,7 +8,7 @@ const row = (over: Partial<TaskRow> = {}): TaskRow => ({
   id: 'gt_1', tripId: 't_goa', title: 'Finding villas with a pool in North Goa', goal: 'g', returnsKind: 'stays', returns: {}, context: {}, successCriteria: null, askedBy: 'p_meher',
   state: 'running', cardId: 'c_work_1', messageId: 'm_go_1', steps: plannedSteps(['Search stays', 'Read reviews']), screenshotUrl: null, needsPersonId: null, conversationId: 'conv_1',
   v1TurnId: 'turn_1', v1TaskId: 'task_1', deadlineAt: null, result: null, resultsId: null, error: null, endReason: null, createdAt: NOW, startedAt: NOW, endedAt: null,
-  stopRequestedAt: null, todosAt: null, costUsd: null, ...over,
+  stopRequestedAt: null, todosAt: null, costUsd: null, quiet: false, ...over,
 });
 
 describe('the working card', () => {

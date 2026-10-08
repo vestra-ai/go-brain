@@ -129,6 +129,14 @@ describe('reading a travel ask', () => {
     expect(read('@Go a villa with a pool in North Goa for our dates')?.kind).toBe('stays');
   });
 
+  it("starts no search for ixigo's offers: another job, not a list (staging, 8 Oct: Go's only answer was a stays card)", () => {
+    expect(read('@Go any ixigo offers on hotels right now?')).toBeNull();
+    expect(read('@Go any deals or coupons on flights Delhi to Goa on Friday?')).toBeNull();
+    expect(read('@Go a bus Mumbai to Goa on 6 Nov, any discount?')).toBeNull();
+    // The plain ask still starts.
+    expect(read('@Go hotels in Anjuna for our dates')?.kind).toBe('stays');
+  });
+
   it('gives nothing for less than one whole search of one kind', () => {
     // No date.
     expect(read('@Go flights Delhi to Goa?')).toBeNull();
