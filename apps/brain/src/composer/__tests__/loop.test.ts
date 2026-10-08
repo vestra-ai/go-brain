@@ -168,6 +168,26 @@ describe('the composer loop', () => {
     expect(limited.bodies[0].system).toEqual(free.bodies[0].system);
   });
 
+  it('ends the turn on a tool that answered itself with its card and line: no model round after it', async () => {
+    const line = 'Pool stays in North Goa for 6 to 9 Nov, from ₹4,334 a night.';
+    const answering: QuickTool<{ say: string }> = {
+      ...echo,
+      name: 'search_stays',
+      run: async (_a, ctx) => {
+        ctx.cards.push({ card_id: 'c_opt_1', kind: 'options' } as never);
+        ctx.lines.push(line);
+        ctx.answered = true;
+        return { answered: true };
+      },
+    };
+    const { bodies, ctx, run } = setup([{ tools: [{ name: 'search_stays', input: { say: 'x' } }] }, { text: 'never asked' }], { tools: [answering] });
+    const r = await run();
+    expect(bodies).toHaveLength(1);
+    expect(r).toMatchObject({ text: line, rounds: 1, stopReason: 'cards_up' });
+    // The tool saw that it was its round's only call.
+    expect(ctx.roundTools).toEqual(['search_stays']);
+  });
+
   it('when the last round writes nothing, the latest earlier text is the answer', async () => {
     const { run } = setup([{ text: 'Opening a vote now!', tools: [echoCall('x')] }, {}]);
     expect((await run()).text).toBe('Opening a vote now!');

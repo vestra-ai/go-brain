@@ -3,7 +3,10 @@ import { CARD_LINE } from '../../../composer/rules.js';
 import type { DeskItem } from '../../../desk/desk.js';
 import type { TravelOption, TravelSearch } from '../../travel.js';
 import type { EarlySearch } from '../early.js';
-import { EARLY_WAIT_MS, earlySearchNow } from '../now.js';
+import { EARLY_WAIT_MS, earlyAnswer, earlySearchNow } from '../now.js';
+import { msg } from '../../../__tests__/fixtures/goa.js';
+import { makeTurnCtx } from '../../../composer/tools.js';
+import { goaPack } from '../../../tasks/testing/goa.js';
 
 const flight = (title: string, priceMinor: number, dep: string): TravelOption => ({
   kind: 'flight', title, priceMinor, currency: 'INR', priceNote: 'per person', highlights: ['Non-stop'], facts: { stops: 0 },
@@ -112,5 +115,50 @@ describe('the early search block', () => {
     expect(block).toContain('nothing to show');
     expect(block).toContain('Nothing came back: there are no flights from delhi to goa on 2026-10-09 at all.');
     expect(w.results.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('the early answer, with no model call', () => {
+  // The Goa trip (6 to 9 Nov): "Friday" is the trip's, 6 Nov. Today is 7 Oct.
+  const query = { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '19:00' };
+  const late = (title: string, priceMinor: number, dep: string): TravelOption => ({ ...flight(title, priceMinor, dep), journey: { ...flight(title, priceMinor, dep).journey!, depart_at: `2026-11-06T${dep}:00+05:30` } });
+  const found: TravelSearch = { checkedAt: '2026-10-07T12:00:00.000Z', found: 3, results: [late('IndiGo 6E 2134', 420_000, '19:10'), late('Air India AI 2981', 389_000, '20:45'), late('Akasa QP 1846', 450_000, '21:30')] };
+  function answer(text: string, search: Promise<TravelSearch> | null = Promise.resolve(found)) {
+    const line = msg(57, 'p_rahul', text);
+    const pack = { ...goaPack(), messages: [...goaPack().messages, line] };
+    const early = { searchFor: (_t: string, id: string): EarlySearch | null => (search && id === line.message_id ? { kind: 'flights', query, search, live: false } : null) };
+    const cards: Array<{ cardId: string }> = [];
+    const results = {
+      save: vi.fn(async (s: Record<string, unknown>) => ({ ...s, resultsId: 'r_direct1' }) as never),
+      saveCard: vi.fn(async (row: { cardId: string }) => { cards.push(row); }),
+      card: vi.fn(async () => null),
+    };
+    const run = earlyAnswer({ early, results: results as never, images: { rehostUrl: async (u: string) => u } as never, travel: { waitMs: async () => null }, today: async () => '2026-10-07', wait: async () => undefined });
+    const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d1', link: {} as never, pack, wake: [wakeFor(line.message_id, 57)], signal: new AbortController().signal });
+    return { go: () => run({ tripId: 't_goa', wake: ctx.wake, pack, ctx }), ctx, results };
+  }
+
+  it('answers a plain ask whose early search found options: the card and a line from the data, nothing for the model', async () => {
+    const a = answer('@Go flights Delhi to Goa Friday after 7 pm');
+    expect(await a.go()).toBe(true);
+    expect(a.ctx.lines).toEqual(['Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from ₹3,890 per person.']);
+    expect(a.ctx.cards).toHaveLength(1);
+    expect(a.ctx.cards[0]).toMatchObject({ kind: 'options', title: 'Flights, Delhi to Goa' });
+    // The three cheapest, by departure.
+    expect((a.ctx.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['IndiGo 6E 2134', 'Air India AI 2981', 'Akasa QP 1846']);
+    expect(a.ctx.answered).toBe(true);
+  });
+
+  it("5. leaves the turn to the model when nothing fits, the search failed or is still running, or it isn't a plain ask", async () => {
+    expect(await answer('@Go flights Delhi to Goa Friday after 7 pm', Promise.resolve({ checkedAt: 'x', found: 4, results: [] })).go()).toBe(false);
+    const failed = Promise.reject(new Error('ixigo took too long'));
+    failed.catch(() => undefined);
+    expect(await answer('@Go flights Delhi to Goa Friday after 7 pm', failed).go()).toBe(false);
+    expect(await answer('@Go flights Delhi to Goa Friday after 7 pm', new Promise<TravelSearch>(() => undefined)).go()).toBe(false);
+    const question = answer('@Go flights Delhi to Goa Friday after 7 pm, which is the best?');
+    expect(await question.go()).toBe(false);
+    expect(question.ctx.cards).toEqual([]);
+    expect(question.results.save).not.toHaveBeenCalled();
+    expect(await answer('@Go flights Delhi to Goa Friday after 7 pm', null).go()).toBe(false);
   });
 });

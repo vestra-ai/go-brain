@@ -7,11 +7,13 @@
  * search tool joins it. Under ixigo_web the live card already said "On it." in the room, so the block tells the model
  * not to say it again, and the search tool hands the running search over so it wakes Go when it finishes.
  */
-import type { NowProvider } from '../../composer/context.js';
+import type { DirectAnswer, NowProvider } from '../../composer/context.js';
 import { dataBlock, defuse, oneLine } from '../../composer/fence.js';
 import { CARD_LINE } from '../../composer/rules.js';
+import { plainAsk } from '../answer.js';
+import type { Images } from '../images.js';
 import type { ResultsStore } from '../results.js';
-import { searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
+import { answerItself, searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
 import type { Travel } from '../travel.js';
 import { TRAVEL_WAIT_MS } from './backend.js';
 import type { EarlyStart } from './early.js';
@@ -101,5 +103,39 @@ export function earlySearchNow(d: EarlySearchNowDeps): NowProvider {
       }
       return blocks.length ? blocks.join('\n\n') : null;
     },
+  };
+}
+
+export interface EarlyAnswerDeps {
+  early: Pick<EarlyStart, 'searchFor'>;
+  results: ResultsStore;
+  images: Images;
+  /** How much longer the search may hold up the turn. */
+  travel: Pick<Travel, 'waitMs'>;
+  /** Today in the trip's time zone, YYYY-MM-DD. */
+  today: (tripId: string) => Promise<string>;
+  wait?: (ms: number) => Promise<void>;
+}
+
+/**
+ * The turn's answer with no model call at all: it woke for one plain search ask whose early search found options (the
+ * early read is the search, so the card and its line come from it). Any doubt, a search still running or one that
+ * failed or found nothing, and the turn goes to the model as before, with the block above.
+ */
+export function earlyAnswer(d: EarlyAnswerDeps): DirectAnswer {
+  const wait = d.wait ?? nap;
+  return async ({ tripId, wake, pack, ctx }) => {
+    const item = wake[0];
+    if (wake.length !== 1 || item?.kind !== 'message') return false;
+    const messageId = (item.payload as { messageId?: string } | null)?.messageId;
+    const early = messageId ? d.early.searchFor(tripId, messageId) : null;
+    if (!early) return false;
+    // As long as the block would wait for it: the backend's own wait from the run's start, or the block's.
+    const allowed = d.travel.waitMs ? await d.travel.waitMs(early.kind, early.query, { tripId }).catch(() => null) : null;
+    const found = await Promise.race([early.search.then((f) => f, () => null), wait(Math.max(0, allowed ?? EARLY_WAIT_MS)).then(() => null)]);
+    if (!found || found.results.length === 0) return false;
+    if (!plainAsk(early.kind, early.query, { wake, pack, today: await d.today(tripId) }).ok) return false;
+    await answerItself(early.kind, early.query, found, ctx, d);
+    return true;
   };
 }

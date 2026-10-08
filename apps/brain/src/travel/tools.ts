@@ -9,6 +9,9 @@ import { CardLineArg, SAY_NOTHING, type QuickTool, type TurnCtx } from '../compo
 import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
 import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
+import { localDay } from '../proactive/clock.js';
+import { answerLine, directPicks, linkLine, plainAsk } from './answer.js';
+import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
@@ -16,7 +19,7 @@ import { guestsIn } from './recipes/ask.js';
 import { TRAVEL_WAIT_MS } from './recipes/backend.js';
 import { airportCity } from './recipes/places.js';
 import { TravelError } from './mcp-travel.js';
-import { toResultOption, type OptionKind, type ResultOption, type ResultsStore } from './results.js';
+import { toResultOption, type OptionKind, type ResultOption, type ResultSet, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
 import { openVoteFromCard } from './votes.js';
@@ -31,7 +34,12 @@ export interface TravelToolDeps {
   log?: { warn(obj: object, msg: string): void };
   /** Wakes the trip's computer for a search of this kind (travel/warm.ts); absent in tests that don't look at it. */
   warmForTravel?: (tripId: string, kind: TravelKind) => void;
+  /** Today in the trip's time zone (YYYY-MM-DD), to read the ask a search answers. Default: India's. */
+  today?: (tripId: string) => Promise<string>;
 }
+
+const todayOf = (d: Pick<TravelToolDeps, 'today' | 'now'>, tripId: string): Promise<string> =>
+  d.today ? d.today(tripId) : Promise.resolve(localDay(d.now(), DEFAULT_TRIP_TZ));
 
 export const OPTION_KIND: Record<TravelKind, OptionKind> = { flights: 'flight', trains: 'train', buses: 'bus', stays: 'stay' };
 
@@ -235,7 +243,7 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
     found = first;
   } catch (err) {
     const search = searchName(kind, q);
-    if (err instanceof TravelError && err.code === 'link_only' && err.link) return linkAnswer(kind, q, err.link, ctx);
+    if (err instanceof TravelError && err.code === 'link_only' && err.link) return linkAnswer(kind, q, err.link, ctx, plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok);
     if (err instanceof TravelError && err.code === 'unknown_place') return pageAnswer(kind, q, ctx);
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
     if (err instanceof TravelError && err.code === 'past_date') return { search, count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
@@ -244,7 +252,54 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
     }
     throw err;
   }
+  // The turn's one plain ask, found: the search answers it, card and line, and no model round follows.
+  if (found.results.length > 0 && plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok) {
+    return answerItself(kind, q, found, ctx, d);
+  }
   return searchAnswer(kind, q, found, ctx.tripId, d);
+}
+
+/**
+ * Puts an options card up from a saved set, with its line: the picks by their numbers, saved before the card is shown
+ * so a tap always finds its offers. show_options and a search that answers itself both come here.
+ */
+export async function putUpCard(
+  set: ResultSet,
+  numbers: number[],
+  given: { title: string; line: string },
+  ctx: TurnCtx,
+  d: Pick<TravelToolDeps, 'results' | 'images'>,
+): Promise<{ cardId: string; shown: number }> {
+  const cardId = ctx.stableId('c_opt');
+  const picks = await Promise.all(
+    numbers.map(async (n, i) => {
+      const option = set.options[n - 1]!;
+      return { n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null };
+    }),
+  );
+  const title = stayCardTitle(given.title, set.query, picks.map((p) => p.option));
+  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks });
+  await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
+  // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
+  const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
+  ctx.cards.push(shown);
+  ctx.lines.push(given.line);
+  return { cardId, shown: shown.options.length };
+}
+
+/**
+ * A finished search that answers the turn's plain ask itself: its list saved, its picks on a card (the engine's order:
+ * the first three stays, the three cheapest journeys), and a line built from its data. The turn ends on them, with no
+ * model round after the search. "See on ixigo" on the card opens each option's own page, as on any card.
+ */
+export async function answerItself(kind: TravelKind, q: TravelQuery, found: TravelSearch, ctx: TurnCtx, d: Pick<TravelToolDeps, 'results' | 'images'>): Promise<unknown> {
+  const options = found.results.slice(0, 10).map(toResultOption);
+  const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt });
+  // The early read keeps places as typed ("north goa"): the card's title names them properly.
+  const titled = { ...q, ...(q.from ? { from: titleWords(q.from) } : {}), ...(q.to ? { to: titleWords(q.to) } : {}), ...(q.area ? { area: titleWords(q.area) } : {}) };
+  const { cardId, shown } = await putUpCard(set, directPicks(kind, options), { title: suggestTitle(kind, titled), line: answerLine(kind, q, found) }, ctx, d);
+  ctx.answered = true;
+  return { search: searchName(kind, q), results_id: set.resultsId, card_id: cardId, shown, answered: true, note: 'The card and its line are up: this turn has said what it needed to.' };
 }
 
 /** The loop waits this long for a search tool: the search's own wait (TRAVEL_WAIT_MS) and its answer fit inside. */
@@ -295,9 +350,14 @@ export function flyingFor(url: string): string | null {
  * (the recipe's own link: ixigo's results page with what people asked for already on it).
  * Go books no flights, so the line it adds sends people to ixigo to book, and offers only to note their pick.
  */
-function linkAnswer(kind: TravelKind, q: TravelQuery, url: string, ctx: TurnCtx): unknown {
+function linkAnswer(kind: TravelKind, q: TravelQuery, url: string, ctx: TurnCtx, plain = false): unknown {
   const who = kind === 'flights' ? flyingFor(url) : null;
   ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: suggestTitle(kind, q), url, who }));
+  // The turn's one plain ask: the card's line is built here too, and the turn ends on it.
+  if (plain) {
+    ctx.lines.push(linkLine(kind, q, who));
+    ctx.answered = true;
+  }
   return {
     search: searchName(kind, q),
     count: 0,
@@ -505,22 +565,8 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       if (!set || set.options.length === 0) return { error: 'unknown_results', note: 'Search again, then show the new results.' };
       const numbers = [...new Set(a.option_numbers ?? set.options.slice(0, 3).map((_, i) => i + 1))].filter((n) => n <= set.options.length).slice(0, 5);
       if (numbers.length === 0) return { error: 'no_such_options', note: `Pick numbers from 1 to ${set.options.length}.` };
-      const cardId = ctx.stableId('c_opt');
-      const picks = await Promise.all(
-        numbers.map(async (n, i) => {
-          const option = set.options[n - 1]!;
-          return { n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null };
-        }),
-      );
-      const title = stayCardTitle(a.title, set.query, picks.map((p) => p.option));
-      const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks });
-      // Saved before it is shown, so a tap on it always finds its offers.
-      await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
-      // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
-      const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
-      ctx.cards.push(shown);
-      ctx.lines.push(a.line);
-      return { card_id: cardId, shown: shown.options.length, checked: ageText(set.checkedAt, d.now()), note: 'The card goes out with your line.' };
+      const { cardId, shown } = await putUpCard(set, numbers, { title: a.title, line: a.line }, ctx, d);
+      return { card_id: cardId, shown, checked: ageText(set.checkedAt, d.now()), note: 'The card goes out with your line.' };
     },
   };
   const putToVote: QuickTool<z.infer<typeof VoteArgs>> = {

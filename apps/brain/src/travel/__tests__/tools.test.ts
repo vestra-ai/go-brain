@@ -3,6 +3,8 @@ import * as C from '@go/contract';
 import { CARD_LINE } from '../../composer/rules.js';
 import { SAY_NOTHING } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
+import { msg } from '../../__tests__/fixtures/goa.js';
+import { goaPack } from '../../tasks/testing/goa.js';
 import { makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
 import { createImages } from '../images.js';
@@ -169,6 +171,40 @@ describe('a reply of several searches', () => {
     expect(searchRoundSummary([{ content: 'socket timeout', isError: true }, { content: JSON.stringify({ search: 'stays in Goa', count: 3 }), isError: false }])).toBe(
       '1 of 2 searches came back with options: stays in Goa (3). Failed: one search. Count only what came back.',
     );
+  });
+});
+
+describe('a search that answers itself', () => {
+  /** The turn woke for one message to Go, and this search is the only tool of its round. */
+  const turnFor = (text: string, turnId: string) => {
+    const line = msg(90, 'p_rahul', text);
+    return lb.ctx({
+      turnId, pack: { ...goaPack(), messages: [...goaPack().messages, line] }, roundTools: ['search_stays'],
+      wake: [{ id: `msg:t_goa:${line.message_id}`, tripId: 't_goa', kind: 'message', ref: line.message_id, dueAt: new Date(), payload: { messageId: line.message_id, seq: 90, namesGo: true } }],
+    });
+  };
+
+  it("puts up the card and a line from its data for the turn's plain ask, and ends the turn: no model round after it", async () => {
+    const ctx = turnFor('@Go villas with a pool in North Goa near the beach for 5 of us', 'turn_s1');
+    const out = (await lb.tools.run('search_stays', STAYS, ctx)) as any;
+    expect(out).toMatchObject({ answered: true, card_id: 'c_opt_turn_s1_1' });
+    expect(ctx.answered).toBe(true);
+    const card = C.OptionsCard.parse(ctx.cards[0]);
+    expect(card.options.map((o) => o.title)).toEqual(['Casa Mareia', 'Villa Sol', 'The Palms Villa']);
+    expect(ctx.lines).toHaveLength(1);
+    expect(ctx.lines[0]).toMatch(/^Pool stays in North Goa for 6 to 9 Nov, .+, from ₹[\d,]+ a night\.$/);
+    // No count of the card's options: price and scope only.
+    expect(ctx.lines[0]).not.toMatch(/\b\d+ (pool )?stays\b/i);
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+  });
+
+  it('gives the model the list as before when the ask needs judgement, so a question is never swallowed', async () => {
+    const ctx = turnFor('@Go villas with a pool in North Goa near the beach for 5 of us, which has the best reviews?', 'turn_s2');
+    const out = (await lb.tools.run('search_stays', STAYS, ctx)) as any;
+    expect(out).toMatchObject({ count: expect.any(Number), results_id: expect.any(String) });
+    expect(out.answered).toBeUndefined();
+    expect(ctx.cards).toEqual([]);
+    expect(ctx.answered).toBeUndefined();
   });
 });
 
