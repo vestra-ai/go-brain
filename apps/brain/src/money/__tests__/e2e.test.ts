@@ -8,11 +8,15 @@ let room: Awaited<ReturnType<typeof startMoneyRoom>>;
 let rahul: TestAuthenticator;
 let mandateAsked = false;
 
-/** The model: once the stay vote has closed with no mandate, it sets one (Rahul pays, refundable, the price plus a little); otherwise it stays quiet. */
+/**
+ * The model: once the stay vote has closed with no mandate and Rahul asked to book it himself (his ask is his claim,
+ * contract 1.1 A10), it sets one (Rahul pays, refundable, the price plus a little); otherwise it stays quiet. The closed
+ * vote's own turn puts up the I'll book it card.
+ */
 function script(body: any): Reply {
   if (afterTools(body)) return { text: 'Villa Sol it is. Rahul, tap Yes, book it when you are ready.' };
   const vote = room?.server.trip().decisions.find((d) => d.decision_id === 'd_villa');
-  if (vote?.status === 'closed' && !vote.mandate && !mandateAsked) {
+  if (vote?.status === 'closed' && !vote.mandate && !mandateAsked && JSON.stringify(body).includes('I will pay for it')) {
     mandateAsked = true;
     return { tools: [{ name: 'set_mandate', input: { decision_id: 'd_villa', choice_index: 0, cap_minor: 5500000, refundable_only: true, payer_person_id: 'p_rahul' } }] };
   }

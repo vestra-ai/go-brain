@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type pg from 'pg';
 import type { ServerLink } from '../door/server-link.js';
 import type { Travel } from '../travel/travel.js';
+import type { Claims } from './claims.js';
 import type { PaymentKind, VaultClient } from './vault-client.js';
 import { clip, plain } from './words.js';
 
@@ -17,6 +18,8 @@ export interface MoneyDeps {
   log: FastifyBaseLogger;
   /** The vault call inside an Approve tap. P1's tap router answers within 2.5 s. */
   tapVaultMs?: number;
+  /** Who books a stay for the group (claims.ts): the payer is whoever claimed it, never Go's pick. Absent: no claims. */
+  claims?: Claims;
 }
 
 /** One line in Go's voice, outside a turn. The request id comes from what triggered it, so a retry posts it once. */

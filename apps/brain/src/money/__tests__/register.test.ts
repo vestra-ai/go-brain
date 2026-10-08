@@ -31,7 +31,7 @@ describe('registerMoney', () => {
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
     expect(brain.pay).toBeDefined();
     expect(seen.tools.map((t) => t.name).sort()).toEqual(['ask_to_pay', 'record_expense', 'set_mandate', 'who_owes_what']);
-    expect([...seen.taps.keys()].sort()).toEqual(['pay:approve', 'pay:decline']);
+    expect([...seen.taps.keys()].sort()).toEqual(['notice:claim', 'pay:approve', 'pay:decline']);
     expect([...seen.handlers.keys()]).toEqual(['vault_link']);
     expect(seen.nows.map((n) => [n.name, n.order])).toEqual([['payments', 40]]);
     expect(seen.listeners).toHaveLength(1);

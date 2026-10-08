@@ -48,6 +48,12 @@ const ddmmyyyy = (s: string | null): Date | null => {
   return m ? new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00Z`) : null;
 };
 
+/** A stay page's check-in day (YYYY-MM-DD), from its address; null for anything else. */
+export function checkInOf(sourceUrl: string | null | undefined): string | null {
+  if (!sourceUrl || !DETAILS.test(sourceUrl)) return null;
+  return ddmmyyyy(new URL(sourceUrl).searchParams.get('checkinDate'))?.toISOString().slice(0, 10) ?? null;
+}
+
 /** The stay's dates and rooms, from its page's own address. */
 export function stayOf(sourceUrl: string): { hotelId: string; nights: number; rooms: number } | null {
   const id = DETAILS.exec(sourceUrl)?.[1];

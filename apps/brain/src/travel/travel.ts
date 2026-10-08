@@ -174,7 +174,11 @@ export interface Travel {
    * came from a job's web browsing (P5 refuses to book those). priceMinor is what a vote and a payment use: the whole stay
    * for a stay, the fare per person for a journey. Null when Go never showed that option.
    */
-  offer(optionId: string): Promise<{ offerId: string | null; title: string; priceMinor: number | null; currency: string | null; kind: 'flight' | 'train' | 'bus' | 'stay'; link: string | null } | null>;
+  offer(optionId: string): Promise<{
+    offerId: string | null; title: string; priceMinor: number | null; currency: string | null; kind: 'flight' | 'train' | 'bus' | 'stay'; link: string | null;
+    /** The check-in or departure day (YYYY-MM-DD) when Go knows it, and past when that day is before today in the trip's time zone. */
+    day?: string | null; past?: true;
+  } | null>;
   /** The option's own name, place and area, for saving a stay or place a vote picked (composer/room-tools.ts). */
   placeOf?(optionId: string): Promise<OptionPlace | null>;
   /** Booking is two steps so card details only ever travel between the vault and the rail. Composer and P5 only. */
