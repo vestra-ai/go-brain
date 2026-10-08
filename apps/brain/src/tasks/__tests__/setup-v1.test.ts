@@ -84,7 +84,8 @@ describe('setupV1', () => {
     const lines: string[] = [];
     const r = await setupV1({ baseUrl: 'https://api.test', key: KEY, publicUrl: 'https://go.example', browserFetch: true, recipeModel: 'fast-model', fetch: f, log: (l) => lines.push(l) });
     const trip = calls.find((c) => c.method === 'POST' && c.path === '/v1/deployments' && c.body.slug === 'go-trip-task')!;
-    expect(trip.body.manifest.browser).toEqual({ allowed_domains: ['ixigo.com'] });
+    // ixigo, and the host its train pages read their data from.
+    expect(trip.body.manifest.browser).toEqual({ allowed_domains: ['ixigo.com', 'ixigotrainsapi.confirmtkt.com'] });
     const recipe = calls.find((c) => c.method === 'POST' && c.path === '/v1/deployments' && c.body.slug === 'go-recipe')!;
     expect(recipe.body.manifest).toMatchObject({ model: 'fast-model', memory: { mode: 'none' }, limits: { spend_per_task_usd: 0.5 } });
     expect(recipe.body.manifest.instructions).toContain('computer_eval');

@@ -6,8 +6,11 @@ export const GO_MCP_SLUG = 'go-trip';
 export const GO_DEPLOYMENT_SLUG = 'go-trip-task';
 /** The fallback travel search: one page opened and read on the trip's computer, on a model of its own. */
 export const GO_RECIPE_SLUG = 'go-recipe';
-/** Where Bash's browser fetch may go for Go's travel search ("ixigo.com" covers www.ixigo.com). */
-export const GO_BROWSER_DOMAINS = ['ixigo.com'] as const;
+/**
+ * Where Bash's browser fetch may go for Go's travel search ("ixigo.com" covers www.ixigo.com). ixigo's train pages read
+ * their data from ixigotrainsapi.confirmtkt.com (p4's train recipes time out without it).
+ */
+export const GO_BROWSER_DOMAINS = ['ixigo.com', 'ixigotrainsapi.confirmtkt.com'] as const;
 
 /** Go's MCP tools that only read. An approval for one of them is answered yes; anything else no. */
 export const GO_READ_ONLY_TOOLS = ['trip', 'person', 'recall', 'search_flights', 'search_trains', 'search_buses', 'search_stays'] as const;
