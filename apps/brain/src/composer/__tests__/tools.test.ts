@@ -161,12 +161,11 @@ describe('the room\'s tools', () => {
     const { ctx, calls } = ctxWith({ update_trip: () => ({ seq: 62 }) });
     expect(await tool('update_trip').run({}, ctx)).toEqual({ ok: false, error: 'Nothing to change.' });
     expect(await tool('update_trip').run({ dates: { start: '2026-11-09', end: '2026-11-06' } }, ctx)).toMatchObject({ ok: false });
+    // The trip is already North Goa: only the dates change.
     expect(await tool('update_trip').run({ destination: 'North Goa', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx)).toEqual({
-      ok: true, changed: ['destination', 'dates'],
+      ok: true, changed: ['dates'],
     });
-    expect(calls[0]?.params).toEqual({
-      request_id: 'go_trip_turn_T_1', trip_id: 't_goa', destination: { name: 'North Goa' }, dates: { start: '2026-11-06', end: '2026-11-09' },
-    });
+    expect(calls[0]?.params).toEqual({ request_id: 'go_trip_turn_T_1', trip_id: 't_goa', dates: { start: '2026-11-06', end: '2026-11-09' } });
   });
 
   describe('update_trip and a decided vote', () => {
@@ -174,15 +173,26 @@ describe('the room\'s tools', () => {
     const casa = { kind: 'stay', title: 'Casa Mareia', place: { name: 'Casa Mareia', address: 'Vagator, North Goa' }, area: 'Vagator' };
     const north = { kind: 'place', title: 'North Goa', place: { name: 'North Goa', address: null }, area: null };
     const options: Record<string, unknown> = { opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } } };
-    const travel = { placeOf: async (id: string) => options[id] ?? null } as unknown as Travel;
+    // ixigo's places: Goa and Candolim inside it, and Kerala far away (findPlace).
+    const GOA = { name: 'Goa', place_id: 'ixigo_goa', lat: 15.3, lng: 74.1, photo_url: 'https://images.ixigo.com/goa.jpg' };
+    const places: Record<string, unknown> = {
+      goa: GOA,
+      candolim: { name: 'Candolim', place_id: 'ixigo_candolim', lat: 15.52, lng: 73.76, photo_url: null },
+      kerala: { name: 'Kerala', place_id: 'ixigo_kerala', lat: 10.85, lng: 76.27, photo_url: 'https://images.ixigo.com/kerala.jpg' },
+    };
+    const travel = {
+      placeOf: async (id: string) => options[id] ?? null,
+      findPlace: async (name: string) => places[name.toLowerCase()] ?? null,
+    } as unknown as Travel;
     // Built in each test: the database is ready only once beforeAll has run.
     const updateTrip = { run: (a: unknown, ctx: Parameters<QuickTool['run']>[1]) => roomTools({ now: () => new Date('2026-10-06T09:00:00Z'), pool: db.pool, travel: () => travel }).find((x) => x.name === 'update_trip')!.run(a, ctx) };
     const closed = (id: string, refs: string[], won: number, at: string) =>
       vote({ decision_id: id, status: 'closed', result_index: won, closed_at: at, options: refs.map((r) => ({ label: r, option_ref: r })), tally: refs.map(() => 0) });
-    const run = (decisions: ReturnType<typeof vote>[]) => {
+    const run = (decisions: ReturnType<typeof vote>[], destination: typeof GOA | null = null) => {
       const f = fakeLink({ update_trip: () => ({ seq: 70 }) });
       const p = pack();
       p.trip.decisions = decisions;
+      if (destination) p.trip.destination = destination;
       return { ...f, ctx: makeTurnCtx({ tripId: 't_goa', turnId: 'turn_S', link: f.link, pack: p, wake: [], signal: new AbortController().signal }) };
     };
 
@@ -200,13 +210,29 @@ describe('the room\'s tools', () => {
       expect(calls).toHaveLength(1);
     });
 
-    it('saves a place the vote picked from the option, refuses another, and leaves words alone when no vote decided one', async () => {
-      const { ctx, calls } = run([closed('d_area', ['opt_north', 'opt_south'], 0, '2026-10-05T18:00:00Z')]);
-      expect(await updateTrip.run({ destination: 'north goa' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
-      expect(calls[0]?.params).toMatchObject({ destination: { name: 'North Goa' } });
+    it('never makes an area of the destination the trip\'s place, voted or said (the Server, 6 Oct): Goa keeps its place_id', async () => {
+      // North vs South decided where in Goa to stay, not where the trip goes.
+      const { ctx, calls } = run([closed('d_area', ['opt_north', 'opt_south'], 0, '2026-10-05T18:00:00Z')], GOA);
+      expect(await updateTrip.run({ destination: 'north goa' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('North Goa is in Goa'), tell_the_room: SAY_NOTHING });
       expect(await updateTrip.run({ destination: 'South Goa' }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
+      // Staging, 8 Oct, after "Where should we stay in Goa: Candolim or Anjuna?": the name says it is in Goa, or ixigo's
+      // place is a few km from Goa's. The dates said with it still save.
+      const said = run([], GOA);
+      expect(await updateTrip.run({ destination: 'Candolim, Goa', dates: { start: '2026-11-06', end: '2026-11-09' } }, said.ctx))
+        .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining('Candolim, Goa is in Goa') });
+      expect(await updateTrip.run({ destination: 'Candolim' }, said.ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Candolim is in Goa') });
+      expect([...calls, ...said.calls].map((c) => c.params.destination)).toEqual([undefined]);
       const none = run([]);
       expect(await updateTrip.run({ stay: 'Villa Sol, Assagao' }, none.ctx)).toEqual({ ok: true, changed: ['stay'], stay: 'Villa Sol, Assagao' });
+    });
+
+    it('sends a new destination as ixigo\'s full Place, never a bare name; one ixigo cannot find is the organizer\'s to set', async () => {
+      const { ctx, calls } = run([], GOA);
+      expect(await updateTrip.run({ destination: 'Kerala' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(calls[0]?.params.destination).toEqual(places['kerala']);
+      expect(await updateTrip.run({ destination: 'Atlantis' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("can't look up Atlantis"), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ destination: 'goa' }, ctx)).toMatchObject({ ok: false, error: 'The trip already has that.' });
+      expect(calls).toHaveLength(1);
     });
   });
 

@@ -177,6 +177,11 @@ export interface Travel {
   offer(optionId: string): Promise<{ offerId: string | null; title: string; priceMinor: number | null; currency: string | null; kind: 'flight' | 'train' | 'bus' | 'stay'; link: string | null } | null>;
   /** The option's own name, place and area, for saving a stay or place a vote picked (composer/room-tools.ts). */
   placeOf?(optionId: string): Promise<OptionPlace | null>;
+  /**
+   * A place's name to its full Place from ixigo (place_id, lat/lng, photo, time zone); null when ixigo can't find it.
+   * The trip's destination is only ever saved as one (trips/save-trip.ts).
+   */
+  findPlace?(name: string, o?: { tripId?: string }): Promise<Place | null>;
   /** Booking is two steps so card details only ever travel between the vault and the rail. Composer and P5 only. */
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   /** Safe to repeat: the same hold confirmed twice gives the same answer. */
