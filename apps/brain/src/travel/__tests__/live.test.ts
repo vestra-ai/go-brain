@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { WebSocket } from 'ws';
+import { WebSocket } from 'ws';
 import { signedHeaders, tryOpen } from '../../__tests__/fixtures/raw-server.js';
 import { withSchema } from '../../db/test-db.js';
 import { createDoor, type DoorImpl } from '../../door/door.js';
@@ -50,14 +50,16 @@ const start = (tripId: string, run_id: string, recipe_id: string): void =>
   runs.record(tripId, { type: 'run_start', run_id, recipe_id, label: 'Goa', speed: 'page', at: new Date().toISOString() });
 const end = (tripId: string, run_id: string): void => runs.record(tripId, { type: 'run_end', run_id, ok: true, ms: 10, rows: 4 } satisfies RunEvent);
 
-/** Opens the live view of a trip, signed as the Server signs; collects what Go sends. */
+/**
+ * Opens the live view of a trip, signed as the Server signs; collects what Go sends. The listener is on before the socket
+ * opens: Go's hello comes at once, and could land before a listener added after 'open'.
+ */
 async function watch(tripId: string): Promise<{ ws: WebSocket; got: LiveMessage[]; next: (pred: (m: LiveMessage) => boolean) => Promise<LiveMessage> }> {
   const target = `/v1/live?trip_id=${tripId}`;
-  const r = await tryOpen(`${base}${target}`, signedHeaders(target, SECRET));
-  if (!('ws' in r)) throw new Error(`refused: ${r.status} ${r.body}`);
+  const ws = new WebSocket(`${base}${target}`, { headers: signedHeaders(target, SECRET) });
   const got: LiveMessage[] = [];
   const waiters: Array<{ pred: (m: LiveMessage) => boolean; resolve: (m: LiveMessage) => void }> = [];
-  r.ws.on('message', (d) => {
+  ws.on('message', (d) => {
     const m = JSON.parse(String(d)) as LiveMessage;
     got.push(m);
     for (const w of waiters.splice(0)) {
@@ -65,11 +67,16 @@ async function watch(tripId: string): Promise<{ ws: WebSocket; got: LiveMessage[
       else waiters.push(w);
     }
   });
+  await new Promise<void>((resolve, reject) => {
+    ws.once('open', () => resolve());
+    ws.once('unexpected-response', (_req, res) => reject(new Error(`refused: ${res.statusCode}`)));
+    ws.once('error', reject);
+  });
   const next = (pred: (m: LiveMessage) => boolean): Promise<LiveMessage> => {
     const have = got.find(pred);
     return have ? Promise.resolve(have) : new Promise((resolve) => waiters.push({ pred, resolve }));
   };
-  return { ws: r.ws, got, next };
+  return { ws, got, next };
 }
 
 describe('the live view socket', () => {
