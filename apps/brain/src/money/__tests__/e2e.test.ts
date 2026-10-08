@@ -6,20 +6,13 @@ import { afterTools, goaWithStayVote, startMoneyRoom } from './money-room.js';
 
 let room: Awaited<ReturnType<typeof startMoneyRoom>>;
 let rahul: TestAuthenticator;
-let mandateAsked = false;
 
 /**
- * The model: once the stay vote has closed with no mandate and Rahul asked to book it himself (his ask is his claim,
- * contract 1.1 A10), it sets one (Rahul pays, refundable, the price plus a little); otherwise it stays quiet. The closed
- * vote's own turn puts up the I'll book it card.
+ * The model stays quiet: who books the stay is the group's to say, never Go's (contract 1.1 A10). The closed vote's turn
+ * puts the I'll book it card on its post, and Rahul's tap on it sets the mandate with no model turn at all.
  */
 function script(body: any): Reply {
   if (afterTools(body)) return { text: 'Villa Sol it is. Rahul, tap Yes, book it when you are ready.' };
-  const vote = room?.server.trip().decisions.find((d) => d.decision_id === 'd_villa');
-  if (vote?.status === 'closed' && !vote.mandate && !mandateAsked && JSON.stringify(body).includes('I will pay for it')) {
-    mandateAsked = true;
-    return { tools: [{ name: 'set_mandate', input: { decision_id: 'd_villa', choice_index: 0, cap_minor: 5500000, refundable_only: true, payer_person_id: 'p_rahul' } }] };
-  }
   return { tools: [{ name: 'stay_silent', input: { reason: 'nothing for Go' } }] };
 }
 
@@ -40,12 +33,15 @@ describe('G4: Go books with two keys', () => {
     }
     // The fifth vote closes it in the simulator (everyone voted); close it by time only if it is still open.
     if (s.trip().decisions.find((d) => d.decision_id === 'd_villa')?.status === 'open') await s.closeVoteByTime('d_villa');
-    // Whether or not the closed vote woke Go, Rahul's message does.
-    await s.say('p_rahul', '@Go Villa Sol it is, I will pay for it');
+    // One person books it for all: the closed vote's turn puts up I'll book it, and Rahul takes it.
+    const claim = await s.waitFor(() => s.messages().find((m) => m.card?.card_id === 'c_claim_d_villa'), 10_000);
+    expect(claim.card).toMatchObject({ kind: 'notice', title: 'One person books for all', actions: [{ action_id: 'claim', label: "I'll book it" }] });
+    expect(await s.tap('c_claim_d_villa', 'claim', 'p_rahul')).toMatchObject({ result: 'done' });
+    expect(await s.tap('c_claim_d_villa', 'claim', 'p_priya')).toMatchObject({ result: 'refused', toast: 'Rahul is already booking this.' });
 
-    // The composer sets the mandate and posts the mandate card with its line.
+    // His tap sets the mandate (the price plus a little, nobody said a number) and posts the mandate card with its line.
     const mandate = await s.waitFor(() => s.trip().decisions.find((d) => d.decision_id === 'd_villa')?.mandate, 10_000);
-    expect(mandate).toMatchObject({ choice_index: 0, cap_minor: 5500000, payer_person_id: 'p_rahul', refundable_only: true });
+    expect(mandate).toMatchObject({ choice_index: 0, cap_minor: 5900000, payer_person_id: 'p_rahul', refundable_only: false });
     await s.waitFor(() => s.messages().find((m) => m.card?.kind === 'mandate'), 10_000);
 
     // Rahul taps "Yes, book it": Go asks right away, with no model turn in between.
