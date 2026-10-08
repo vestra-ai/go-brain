@@ -1,7 +1,7 @@
 import type * as C from '@go/contract';
 import type { CardTapParams, CardTapResult } from '../door/methods.js';
 import type { AskResult } from './ask.js';
-import { postLine, type Later, type MoneyDeps } from './deps.js';
+import { payerOf, postLine, type Later, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
 import { byApproval, EXPIRY_GRACE_MS, patchPayment, transition, type PaymentRow } from './store.js';
 import type { PayLinkInput, PaymentKind } from './vault-client.js';
@@ -61,7 +61,7 @@ function startAgain(t: TapDeps, row: PaymentRow, tapId: string): void {
     await t.reconcile(row.payment_id);
     // The vote's option_ref again: the fresh ask resolves it to the travel offer and holds it anew.
     const r = await t.ask(row.trip_id, { decisionId: row.decision_id, optionRef: row.option_ref, purpose: row.purpose }, tapId);
-    if ('refused' in r && r.say) await postLine(t.d, row.trip_id, r.refused, rid('go_said', tapId));
+    if ('refused' in r && r.say) await postLine(t.d, row.trip_id, r.refused, rid('go_said', tapId), payerOf(row));
   });
 }
 

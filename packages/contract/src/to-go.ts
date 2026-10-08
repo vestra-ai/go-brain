@@ -25,7 +25,7 @@ export const CardTap = z
     person_id: Id,
     /** Set when the button was on one option of an options card. */
     option_id: Id.nullish(),
-    /** 1.1: what the tapper chose on the button's sheet: one way or the round trip, on an option with both prices. */
+    /** 1.1: what the tapper chose on the button's sheet: one way or the round trip, on an option with both prices (sent with pick). */
     payload: z.object({ trip: z.enum(['oneway', 'round']) }).meta({ id: 'CardTapPayload' }).nullish(),
   })
   .meta({ id: 'CardTap' });

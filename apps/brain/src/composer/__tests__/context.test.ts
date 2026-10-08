@@ -327,7 +327,7 @@ describe('why Go woke, and the trip block', () => {
     expect(hello).not.toMatch(/open_vote|first vote/);
     expect(c.renderWake(wake({ kind: 'trip_change', ref: 'decision:d_stay', payload: { type: 'decision.closed', decisionId: 'd_stay' } }), p)).toBe(
       'the vote <data>Where do we stay?</data> closed: <data>Villa Sol</data> won (<data>Villa Sol</data> 3, <data>Casa Azul</data> 1; 4 of 5 voted). ' +
-        "If it settled the trip's dates or place, save them with update_trip first (days without a year are the next ones from today). " +
+        "If it settled the trip's dates, save them with update_trip first (days without a year are the next ones from today). If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. " +
         'Then say the result in one line, using exactly these numbers, and the next step.',
     );
     expect(c.renderWake(wake({ kind: 'timer', ref: 'vote_closes', payload: {} }), p)).toBe('timer (vote_closes)');
@@ -418,7 +418,9 @@ describe('why Go woke, and the trip block', () => {
     expect(closed('d_dates')).toContain('<data>6-9 Nov</data> won (<data>6-9 Nov</data> 4, <data>13-16 Nov</data> 1; 5 of 5 voted)');
     expect(closed('d_dates')).toContain('using exactly these numbers');
     expect(closed('d_split')).toContain('no clear winner (<data>Villa Sol</data> 2, <data>Casa Azul</data> 2; 4 of 5 voted)');
-    expect(closed('d_dates')).toContain("If it settled the trip's dates or place, save them with update_trip first");
+    expect(closed('d_dates')).toContain("If it settled the trip's dates, save them with update_trip first");
+    // Staging, 8 Oct: a vote on where to stay in Goa became the trip's destination.
+    expect(closed('d_dates')).toContain('If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination');
     expect(closed('d_dates')).toContain('days without a year are the next ones from today');
     // No winner, nothing to save: the group settles it first.
     expect(closed('d_split')).toContain('no clear winner');

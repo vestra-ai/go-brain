@@ -137,7 +137,9 @@ export function createScreens(d: ScreensDeps): Screens {
         }
       }
     } catch (err) {
-      if (!(err instanceof V1Error && err.code === 'browser_not_open')) d.log.warn({ err, tripId }, "tasks: reading the trip's screen failed");
+      // No browser, or a person signing in on the screen (Bash shows that page to them alone): no picture now, quietly.
+      const none = err instanceof V1Error && (err.code === 'browser_not_open' || err.code === 'browser_in_use');
+      if (!none) d.log.warn({ err, tripId }, "tasks: reading the trip's screen failed");
     } finally {
       pace.gapMs = !live ? SLOW_GAP_MS : changed ? LIVE_GAP_MS : Math.min(pace.gapMs * 2, SLOW_GAP_MS);
       pace.dueAt = startMs + pace.gapMs;

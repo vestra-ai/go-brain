@@ -30,6 +30,9 @@ describe('contract 1.1', () => {
     expect(Decision.shape.options.element.parse({ label: 'Villa Maya', details }).details?.go_note).toBe('The quietest of the three.');
     expect(CardTap.parse({ tap_id: 'tp_1', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', option_id: 'o_1', payload: { trip: 'round' } }).payload?.trip).toBe('round');
     expect(CardTap.safeParse({ tap_id: 'tp_1', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', payload: { trip: 'both' } }).success).toBe(false);
+    // Mobile only: no device in 1.1. A payload is A2's trip, and a device a room still sends is dropped, never refused.
+    const tap = CardTap.parse({ tap_id: 'tp_2', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', option_id: 'o_1', payload: { trip: 'oneway', device: 'desktop' } });
+    expect(tap.payload).toEqual({ trip: 'oneway' });
   });
 
   it('A3 Go can offer up to six quick replies, kept on the message', () => {

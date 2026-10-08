@@ -1,7 +1,8 @@
 import type { Confirmed } from '../travel/travel.js';
 import { payCardOf } from './ask.js';
 import { ticketCard } from './cards.js';
-import { postLine, type MoneyDeps } from './deps.js';
+import { mentionsIn } from '../composer/speak.js';
+import { payerOf, postLine, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
 import {
   byApproval,
@@ -162,12 +163,15 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
     await patchPayment(d.pool, row.payment_id, { card_state: 'paid' }, d.now());
   }
 
-  // 5. The ticket, with one line in Go's voice.
+  // 5. The ticket, with one line in Go's voice. The payer it names gets a push.
   if (!row.ticket_posted_at) {
+    const text = bookedLine({ title: confirmed.title, payer: row.payer_name, amount: money(amountMinor, row.currency), people: row.for_person_ids.length, simulated: confirmed.simulated === true });
+    const mentions = mentionsIn(text, payerOf(row));
     await d.link.request('post_message', {
       request_id: id('ticket'),
       trip_id: row.trip_id,
-      text: bookedLine({ title: confirmed.title, payer: row.payer_name, amount: money(amountMinor, row.currency), people: row.for_person_ids.length, simulated: confirmed.simulated === true }),
+      text,
+      ...(mentions.length ? { mentions } : {}),
       card: ticketCard({ cardId: rid('c_ticket', approvalId), bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil, simulated: confirmed.simulated === true }),
     });
     await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
@@ -213,7 +217,7 @@ async function finishClosed(d: MoneyDeps, row: PaymentRow, state: 'declined' | '
   // 3. One line for a decline or a failure. An expiry stays quiet: the card already says it.
   if ((state === 'declined' || state === 'failed') && !row.said_at) {
     const text = state === 'declined' ? declinedLine(row.label) : failedLine({ payer: row.payer_name, what: row.label, reason: row.fail_reason });
-    await postLine(d, row.trip_id, text, id('said'));
+    await postLine(d, row.trip_id, text, id('said'), payerOf(row));
     await patchPayment(d.pool, row.payment_id, { said_at: d.now() }, d.now());
   }
 }

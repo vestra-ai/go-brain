@@ -77,6 +77,66 @@ describe('the notes pass', () => {
     expect(adds).toEqual([['doing', 'Kabir books the airport cab', ['p_kabir']]]);
   });
 
+  it('closes the open questions a settled line answers: one the agreed line cites, and one the model names (Server, 6 Oct)', async () => {
+    const said = [
+      msg(240, 'p_priya', "Candolim or Anjuna for the stay? I can't decide"),
+      msg(241, 'p_rahul', 'Candolim for sure'),
+      msg(242, 'p_arjun', 'yes Candolim'),
+      msg(243, 'p_kabir', 'who is sorting the airport cab?'),
+      msg(244, 'p_meher', "I'll sort the airport cab"),
+    ];
+    const open = (line_id: string, text: string, seq: number, who: string) => ({
+      line_id, kind: 'open' as const, text, status: 'active' as const, proof: [{ message_id: `m_0${seq}`, person_id: who }], person_ids: [],
+      source: 'go' as const, created_at: '2026-10-06T09:00:00Z', updated_at: '2026-10-06T09:00:00Z',
+    });
+    await mirrorLine(db.pool, 't_n30', open('r_stay', 'Candolim or Anjuna for the stay?', 240, 'p_priya'), 1);
+    await mirrorLine(db.pool, 't_n30', open('r_cab', 'Who sorts the airport cab?', 243, 'p_kabir'), 1);
+    await mirrorLine(db.pool, 't_n30', open('r_scuba', 'Scuba on Saturday?', 230, 'p_arjun'), 1);
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [
+        // Cites the question it settles: closed with no name given.
+        { kind: 'agreed', text: 'Stay in Candolim', person_ids: [], proof: [240, 241, 242] },
+        // Names the question it settles.
+        { kind: 'doing', text: 'Meher sorts the airport cab', person_ids: ['p_meher'], proof: [244], settles: ['r_cab'] },
+      ],
+    });
+    const { link, notes } = setup('t_n30', said, [answer]);
+    await notes.run('t_n30');
+    const closed = link.calls.filter((c) => c.method === 'update_record_line').map((c) => [c.params.line_id, c.params.status, c.params.kind]);
+    expect(closed.sort()).toEqual([['r_cab', 'done', 'open'], ['r_stay', 'done', 'open']]);
+    expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['Stay in Candolim', 'Meher sorts the airport cab']);
+  });
+
+  it('"Candolim it is" closes "Stay in Candolim?" (staging run B, 8 Oct): by what it answers, never by matching words', async () => {
+    const said = [
+      msg(250, 'p_priya', 'how about we stay in Candolim?'),
+      msg(251, 'p_rahul', 'Candolim it is'),
+      msg(252, 'p_arjun', 'yes Candolim'),
+    ];
+    // The line the notes pass wrote for Priya's proposal in run B, still open and in everyone's "needs you".
+    await mirrorLine(db.pool, 't_n31', {
+      line_id: 'r_candolim', kind: 'open', text: 'Stay in Candolim?', status: 'active', proof: [{ message_id: 'm_0250', person_id: 'p_priya' }],
+      person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'], source: 'go', created_at: '2026-10-06T09:00:00Z', updated_at: '2026-10-06T09:00:00Z',
+    }, 1);
+    // The yes lines alone as proof: the model names the question the agreement answers.
+    const named = JSON.stringify({ facts: [], lines: [{ kind: 'agreed', text: 'Staying in Candolim', person_ids: [], proof: [251, 252], settles: ['r_candolim'] }] });
+    const { link, notes } = setup('t_n31', said, [named]);
+    await notes.run('t_n31');
+    expect(link.calls.filter((c) => c.method === 'update_record_line').map((c) => [c.params.line_id, c.params.status])).toEqual([['r_candolim', 'done']]);
+    // The same agreement with no line named and no proposal in its proof answers nothing Go can point to: the question
+    // stays open rather than being closed on its words.
+    const said2 = said.map((m) => ({ ...m }));
+    await mirrorLine(db.pool, 't_n32', {
+      line_id: 'r_candolim2', kind: 'open', text: 'Stay in Candolim?', status: 'active', proof: [{ message_id: 'm_0250', person_id: 'p_priya' }],
+      person_ids: [], source: 'go', created_at: '2026-10-06T09:00:00Z', updated_at: '2026-10-06T09:00:00Z',
+    }, 1);
+    const unnamed = JSON.stringify({ facts: [], lines: [{ kind: 'agreed', text: 'Staying in Candolim', person_ids: [], proof: [251, 252] }] });
+    const second = setup('t_n32', said2, [unnamed]);
+    await second.notes.run('t_n32');
+    expect(second.link.calls.filter((c) => c.method === 'update_record_line')).toEqual([]);
+  });
+
   it('an ask to Go gets Go\'s answer, not a receipt: no open line and no ✅ on it; a plan stated to Go and a group question are noted', async () => {
     // Live drill (t_p1a_572dd322): "@Go what's planned for Sunday?" got an open line and a ✅ after Go had answered it.
     const said = [
@@ -317,6 +377,29 @@ describe("the trip's dates and place, from an agreed line (8 Oct regression pass
     const again = dateless('t_d4', said.slice(0, 1), [same], { start: '2026-11-06', end: '2026-11-09' });
     await again.notes.run('t_d4');
     expect(trips(again.link)).toEqual([]);
+  });
+
+  it('agreeing on "North Goa, not South" leaves the trip\'s destination as Goa with its place_id: an area is where to stay (the Server, 6 Oct)', async () => {
+    const goa = { name: 'Goa', place_id: 'ixigo_goa', lat: 15.3, lng: 74.1, photo_url: 'https://images.ixigo.com/goa.jpg' };
+    const said = [msg(122, 'p_priya', 'North Goa this time, not South?'), msg(124, 'p_arjun', 'yes North'), msg(125, 'p_rahul', 'North it is')];
+    const answer = JSON.stringify({
+      facts: [],
+      // What the old prompt's own example led the side model to give.
+      lines: [{ kind: 'agreed', text: 'North Goa, not South', person_ids: [], proof: [122, 124, 125], trip: { destination: 'North Goa' } }],
+    });
+    const packs = fakePacks({ t_d6: packOf(said, goaTrip({ trip_id: 't_d6', destination: goa })) });
+    const link = fakeLink();
+    const side = scriptedSide([answer]);
+    const notes = createNotes({ pool: db.pool, packs, link, side, log: silentLog, now: () => new Date('2026-10-08T10:00:00Z') });
+    const out = await notes.run('t_d6');
+    // The agreement is in the record; the trip is not touched (no Place for it was resolved, and a bare name is never
+    // sent), so Goa keeps its place_id, coordinates and photo.
+    expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['North Goa, not South']);
+    expect(trips(link)).toEqual([]);
+    expect(out.refused).toEqual([expect.stringContaining("can't look up North Goa")]);
+    // The prompt's example is a real change of destination, and says an area is never the trip's place.
+    expect(side.prompts[0]!.system).not.toContain('{"destination": "North Goa"}');
+    expect(side.prompts[0]!.system).toContain('an area inside it ("North Goa, not South", "Candolim", "Anjuna") is where to stay there');
   });
 
   it('a "trip" that does not read is dropped, never the rest of the answer', async () => {

@@ -116,6 +116,16 @@ export interface Confirmed {
   simulated?: true;
 }
 
+/** A place ixigo resolved (placeFor). */
+export interface ResolvedPlace {
+  /** Contract 1.1's Place: place_id "ixigo:<locationId>", lat/lng from ixigo, timezone from its country, photo_url from ixigo's guide. */
+  place: Place;
+  /** ixigo's type: a state (Goa), a city (Manali), or an area inside one (Candolim, Old Manali). */
+  kind: 'state' | 'city' | 'area';
+  /** The city and state it is in, by ixigo's own names: Old Manali is in ["Manali", "Himachal Pradesh"]; a state, []. */
+  within: string[];
+}
+
 /** One option Go showed on an options card, kept so a tap, a vote or a payment can name it later. */
 export interface StoredOffer {
   optionId: string;
@@ -177,6 +187,11 @@ export interface Travel {
   offer(optionId: string): Promise<{ offerId: string | null; title: string; priceMinor: number | null; currency: string | null; kind: 'flight' | 'train' | 'bus' | 'stay'; link: string | null } | null>;
   /** The option's own name, place and area, for saving a stay or place a vote picked (composer/room-tools.ts). */
   placeOf?(optionId: string): Promise<OptionPlace | null>;
+  /**
+   * A place by the words for it, as ixigo's hotel box knows it; null when ixigo doesn't know it (or it is a hotel). The
+   * trip's destination is only ever saved as its place (trips/save-trip.ts). Filled by the travel lane (p4, place-for.ts).
+   */
+  placeFor?(words: string, o: { tripId: string }): Promise<ResolvedPlace | null>;
   /** Booking is two steps so card details only ever travel between the vault and the rail. Composer and P5 only. */
   hold(offerId: string, lead: { name: string; personIds: string[] }): Promise<Hold>;
   /** Safe to repeat: the same hold confirmed twice gives the same answer. */
