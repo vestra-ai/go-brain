@@ -84,10 +84,12 @@ describe('setupV1', () => {
     const lines: string[] = [];
     const r = await setupV1({ baseUrl: 'https://api.test', key: KEY, publicUrl: 'https://go.example', browserFetch: true, recipeModel: 'fast-model', fetch: f, log: (l) => lines.push(l) });
     const trip = calls.find((c) => c.method === 'POST' && c.path === '/v1/deployments' && c.body.slug === 'go-trip-task')!;
-    // ixigo, and the host its train pages read their data from.
-    expect(trip.body.manifest.browser).toEqual({ allowed_domains: ['ixigo.com', 'ixigotrainsapi.confirmtkt.com'] });
+    // ixigo and its train data, never ixigo's payment page (one click pays with a saved card there).
+    expect(trip.body.manifest.browser).toEqual({ allowed_domains: ['ixigo.com', 'ixigotrainsapi.confirmtkt.com'], blocked_paths: ['ixigo.com/payments/'] });
     const recipe = calls.find((c) => c.method === 'POST' && c.path === '/v1/deployments' && c.body.slug === 'go-recipe')!;
     expect(recipe.body.manifest).toMatchObject({ model: 'fast-model', memory: { mode: 'none' }, limits: { spend_per_task_usd: 0.5 } });
+    // The job's own browsing (computer_*) never acts on ixigo's payment page either.
+    expect(recipe.body.manifest.browser).toEqual({ blocked_paths: ['ixigo.com/payments/'] });
     expect(recipe.body.manifest.instructions).toContain('computer_eval');
     expect(r.recipeDeploymentId).toBe('dep_recipe1');
     expect(lines).toContain('VESTRA_RECIPE_DEPLOYMENT_ID=dep_recipe1');

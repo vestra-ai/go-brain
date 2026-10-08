@@ -4,8 +4,8 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, OUT_OF_CREDIT, WARM_TAB_MS,
-  type FetchTrace,
+  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, OUT_OF_CREDIT,
+  PAYMENT_PAGE_BLOCKED, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -161,6 +161,11 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       expect.objectContaining({ tripId: 't1', page: '/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', code: 'domain_not_allowed' }),
       expect.any(String),
     );
+    // ixigo's payment page, blocked by Bash (#4591): said plainly, and not logged as a fault of Go's setup.
+    const payment = await said(new V1Error(403, 'page_blocked', 'ixigo.com/payments/ is blocked.'));
+    expect(payment.err).toMatchObject({ code: 'refused', message: PAYMENT_PAGE_BLOCKED });
+    expect(PAYMENT_PAGE_BLOCKED).toBe("That's the payment page, and Go never opens it; the payer finishes on ixigo.");
+    expect(payment.w.log.warn).not.toHaveBeenCalled();
   });
 
   it("falls to the page when Bash has no page_fetch, naming Bash's own status, never its schema's words (the 8 Oct drill)", async () => {
