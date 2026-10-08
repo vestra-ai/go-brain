@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import type { TurnCtx } from '../../../composer/tools.js';
 import { matches, type Capture, type FetchPlan } from '../../recipes/recipe.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { readBodyAs } from '../bodies.js';
 import { BOOK_DIR, checkRecipe, loadBook } from '../book.js';
+import type { ResultsStore } from '../../results.js';
 import { createEngine } from '../engine.js';
-import { readFacts } from '../read.js';
+import { ixigoTool } from '../tool.js';
 
 // The facts recipes for a stay's own page, its place's filters and offers, ixigo's trip explorer, its help centre and its
 // offers pages, each read from its own sample: the address each opens, what its fetch keeps, and the facts it answers.
@@ -14,16 +16,25 @@ const { book } = loadBook();
 const sample = (name: string): string => readFileSync(`${BOOK_DIR}samples/${name}`, 'utf8');
 const IXIGO = 'https://www.ixigo.com';
 
-function engineWith(answer: (url: string, plan: FetchPlan) => Capture[]) {
+function engineWith(answer: (url: string, plan: FetchPlan) => Capture[], fast?: (call: { url: string; method: string; headers?: Record<string, string> }) => Capture) {
   const runs: Array<{ url: string; plan: FetchPlan }> = [];
+  const calls: Array<{ url: string; method: string; headers?: Record<string, string> }> = [];
   const runner = {
     read: async (_trip: string, url: string, plan: FetchPlan) => {
       runs.push({ url, plan });
       return { captures: answer(url, plan), finalUrl: url };
     },
+    ...(fast
+      ? {
+          pageFetch: async (_trip: string, call: { url: string; method: string; headers?: Record<string, string> }) => {
+            calls.push(call);
+            return fast(call);
+          },
+        }
+      : {}),
   };
   const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-08T12:00:00Z') });
-  return { engine, runs };
+  return { engine, runs, calls };
 }
 
 /** One recipe's facts, from the calls its page sent. */
@@ -127,6 +138,23 @@ describe("a stay's own page", () => {
   });
 });
 
+describe('a stay from search results', () => {
+  it("takes the stay as an option of the trip's results: the tool opens that option's own page", async () => {
+    const { engine, runs } = engineWith(() => [capture('/x', `${HOTEL_API}/accommodations/reviews/aiReviews/37957`, sample('hotels.reviews.json'))]);
+    const results = {
+      get: async (tripId: string, id: string) => (tripId === 't_goa' && id === 'r_ab12' ? { options: [{ sourceUrl: HIGH_FIVE }, { sourceUrl: MOJIGAO }] } : null),
+    } as unknown as Pick<ResultsStore, 'get'>;
+    const tool = ixigoTool({ book, engine, results, live: () => true })!;
+    expect(tool.description).toContain('- hotels.reviews: What guests said about a stay');
+    expect(tool.description).toContain('hotel (an option from search results, written results_id#n, like r_ab12#2)');
+    const turn = { tripId: 't_goa', turnId: 'turn_1', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
+    const out = (await tool.run({ recipe: 'hotels.reviews', inputs: { hotel: 'r_ab12#2' } }, turn)) as { facts: unknown[]; source: string; title: string };
+    expect(runs.map((r) => r.url)).toEqual([MOJIGAO]);
+    expect(out).toMatchObject({ title: 'Reviews of Mojigao - Eco Resort', source: MOJIGAO });
+    expect(out.facts).toHaveLength(4);
+  });
+});
+
 describe("a place's stays", () => {
   const DATES = { check_in: '2026-11-06', check_out: '2026-11-09' };
   const results = (place: string, id: number, type: string, master: number) =>
@@ -199,8 +227,13 @@ describe("ixigo's trip explorer", () => {
       capture: [{ match: '/plan?origin=', required: true, max_bytes: 1_000_000 }, { match: '/itinerary-planner/api/explore?', required: true }],
       steps: [{ op: 'click', text: 'Beaches' }, { op: 'wait_for', match: '/itinerary-planner/api/explore?' }],
     });
+    expect(got.title).toBe('Where to go from New Delhi in October, beaches');
     expect(got.rows.map((r) => r['place'])).toEqual(['Denpasar, Bali, Indonesia', 'Devgad, Maharashtra, India', 'Chandpur, Chittagong, Bangladesh', 'Tajpur, West Bengal, India']);
     expect(got.rows[1]).toMatchObject({ getting_there: 'Prices starting from ₹10,041', weather: '23 to 35 C', guide: 'devgad' });
+    // A theme the page has no chip for clicks nothing: the page's own list.
+    const snow = await facts('plan.explore', { origin: 'Delhi', month: '2026-12-12', theme: 'snow' }, [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))]);
+    expect(snow.runs[0]!.plan).not.toHaveProperty('steps');
+    expect(snow.title).toBe('Where to go from Delhi in December');
   });
 
   it("plan.top_locations answers the planner's popular places", async () => {
@@ -237,6 +270,14 @@ describe("ixigo's help centre", () => {
     expect(runs[0]!.plan).toEqual({ capture: [{ match: '/support/helpcenter/api/v1/questions/general?tags=about-ixigo', required: true }] });
   });
 
+  it("help.faq at the fast speed asks for the topic's answers straight away, with ixigo's two client headers", async () => {
+    const { engine, runs, calls } = engineWith(() => [], (call) => capture('/x', call.url, sample('help.faq.money.json')));
+    const got = await engine.answer('help.faq', { topic: 'money-faq' }, { tripId: 't_goa' });
+    expect(calls).toEqual([{ url: '/support/helpcenter/api/v1/questions/general?tags=money-faq', method: 'GET', headers: { ixisrc: 'ixiweb', clientid: 'ixiweb' } }]);
+    expect(runs).toEqual([]);
+    expect(got).toMatchObject({ as: 'facts', page: `${IXIGO}/support`, rows: expect.arrayContaining([expect.objectContaining({ question: 'Checking ixigo money balance' })]) });
+  });
+
   it('help.downtime says plainly whether anything is down', async () => {
     const got = await facts('help.downtime', {}, [capture('/x', `${IXIGO}/support/helpcenter/api/v1/downtime?ongoing=true`, sample('help.downtime.json'))]);
     expect(got.rows).toEqual([{ anything_down: false, notices: [] }]);
@@ -262,14 +303,15 @@ describe("ixigo's offers pages", () => {
     expect(got.rows).toHaveLength(11);
   });
 
-  it("offers.list reads its fast call, every domestic offer at once, the same way as the page", async () => {
-    const r = book.get('offers.list')!;
-    expect(r.fast).toEqual({ url: '/upahaar-inventory/api/offers/v2/list?journeyType=DOMESTIC&page=1&limit=50', method: 'GET', headers: { ixisrc: 'ixiweb', clientid: 'ixiweb' }, format: 'json' });
-    // The fast speed reads its call with the recipe's own read, in the fast call's format.
-    const fast = { ...r, read: { ...r.read!, rows: { ...r.read!.rows, format: r.fast!.format } } };
-    const rows = await readFacts(fast, [capture('/x', `${IXIGO}${r.fast!.url}`, sample('offers.list.fast.json'))], {}, `${IXIGO}/offers`);
-    expect(rows[0]).toEqual({ offers_on_ixigo: 49 });
-    expect(rows.slice(2).map((o) => o['code'] ?? o['campaign'])).toEqual(['grandtravelfest', 'grandtravelfest_', 'FLAT80', 'hsbc_flight', 'IDFCEMI3', 'IXAXIS']);
+  it('offers.list at the fast speed asks for every domestic offer at once, and reads it the same way as the page', async () => {
+    const { engine, runs, calls } = engineWith(() => [], (call) => capture('/x', call.url, sample('offers.list.fast.json')));
+    const got = await engine.answer('offers.list', {}, { tripId: 't_goa' });
+    if (got.as !== 'facts') throw new Error('not facts');
+    expect(calls).toEqual([{ url: '/upahaar-inventory/api/offers/v2/list?journeyType=DOMESTIC&page=1&limit=50', method: 'GET', headers: { ixisrc: 'ixiweb', clientid: 'ixiweb' } }]);
+    expect(runs).toEqual([]);
+    expect(got.rows[0]).toEqual({ offers_on_ixigo: 49 });
+    expect(got.rows.slice(2).map((o) => o['code'] ?? o['campaign'])).toEqual(['grandtravelfest', 'grandtravelfest_', 'FLAT80', 'hsbc_flight', 'IDFCEMI3', 'IXAXIS']);
+    expect(engine.stats()).toEqual([expect.objectContaining({ recipe: 'offers.list', speed: 'fast', runs: 1, failed: 0 })]);
   });
 
   it("offers.details opens the offer's own page, from its name or its link, and answers its terms one line an item", async () => {

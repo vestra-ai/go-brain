@@ -16,36 +16,24 @@ changes_state: false
 # makes the explorer's call, which then holds the places.
 let:
   month_name: "$fromMillis($toMillis(month), '[MNn]')"
-  theme_name: "$lowercase($trim(theme))"
+  # A theme is its chip's name on the page; one the page has no chip for is left out, and the page's own list is read.
+  theme_chip: >-
+    ($t := $lowercase($trim(theme)); $t in ['beaches', 'festivals', 'mountains', 'wildlife', 'cultural', 'romantic']
+    ? $uppercase($substring($t, 0, 1)) & $substring($t, 1))
 page: /plan?origin={origin}&travelMonth={$lowercase($month_name)}
 capture:
   - { match: /plan?origin=, max_bytes: 1000000 }
 fetch:
-  - when: "$theme_name = 'beaches'"
+  - when: "$exists($theme_chip)"
     capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
-    steps: [{ op: click, text: Beaches }, { op: wait_for, match: /itinerary-planner/api/explore? }]
-  - when: "$theme_name = 'festivals'"
-    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
-    steps: [{ op: click, text: Festivals }, { op: wait_for, match: /itinerary-planner/api/explore? }]
-  - when: "$theme_name = 'mountains'"
-    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
-    steps: [{ op: click, text: Mountains }, { op: wait_for, match: /itinerary-planner/api/explore? }]
-  - when: "$theme_name = 'wildlife'"
-    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
-    steps: [{ op: click, text: Wildlife }, { op: wait_for, match: /itinerary-planner/api/explore? }]
-  - when: "$theme_name = 'cultural'"
-    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
-    steps: [{ op: click, text: Cultural }, { op: wait_for, match: /itinerary-planner/api/explore? }]
-  - when: "$theme_name = 'romantic'"
-    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
-    steps: [{ op: click, text: Romantic }, { op: wait_for, match: /itinerary-planner/api/explore? }]
+    steps: [{ op: click, text: "{$theme_chip}" }, { op: wait_for, match: /itinerary-planner/api/explore? }]
 read:
   rows: { from: /plan?origin=, format: next_html, list: '$themed ? $themed : $find($, "destinations").destinations' }
   also:
     themed: { from: /itinerary-planner/api/explore?, value: '($type($) = "array" ? $[-1] : $).data.destinations' }
 answer:
   as: facts
-  title: "Where to go from {origin} in {$month_name}"
+  title: "Where to go from {origin} in {$month_name}{$theme_chip ? ', ' & $lowercase($theme_chip)}"
   max: 15
   # ixigo's prices here are its own estimates: the cheapest way there, and a night's stay.
   each: |
@@ -67,4 +55,4 @@ samples: { page: plan.explore.html, beaches: plan.explore.beaches.json }
 measured: { fast_ms: 224, page_ms: 2980, flow_ms: null }
 notes: >-
   "guide" is the place's name for plan.destination. The explorer's budget, travel time and weather sliders are left out
-  for now. Each theme is its own fetch until a step can take its words from an input.
+  for now.

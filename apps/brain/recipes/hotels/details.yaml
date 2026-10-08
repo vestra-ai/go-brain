@@ -7,11 +7,11 @@ asks:
   - are kids allowed at that hotel
   - how far is it from the beach
 inputs:
-  hotel: { kind: text, about: "the stay's ixigo page, as a stay Go found links it" }
+  hotel: { kind: option, about: "the stay, one of Go's search results" }
 auth: none
 changes_state: false
-# The stay's own page, as a hotels.search option links it: /hotels/{id}/details with the place, the dates and the guests
-# in its query, which is kept as it is. The page's details call holds everything here; its map call adds the map.
+# The stay's own page, which the ixigo tool gives for the option ("r_ab12#2"), as hotels.search links it: /hotels/{id}/details
+# with the place, the dates and the guests in its query, which is kept as it is. The page's details call holds everything here; its map call adds the map.
 let:
   hotel_id: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/(\\d+)/details\\?")[0]'
   hotel_query: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/\\d+/details\\?([^#\\s]*)$")[0]'

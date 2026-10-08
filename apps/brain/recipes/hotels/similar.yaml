@@ -5,7 +5,7 @@ asks:
   - other places like that hotel
   - aisa hi koi aur hotel dikhao
 inputs:
-  hotel: { kind: text, about: "the stay's ixigo page, as a stay Go found links it" }
+  hotel: { kind: option, about: "the stay, one of Go's search results" }
 auth: none
 changes_state: false
 # The stay's own page (see hotels.details): its similar call lists the stays ixigo shows under it, for the same dates.

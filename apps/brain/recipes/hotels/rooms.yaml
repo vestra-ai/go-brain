@@ -7,7 +7,7 @@ asks:
   - can we pay at the hotel
   - kitne ka room hai wahan
 inputs:
-  hotel: { kind: text, about: "the stay's ixigo page, as a stay Go found links it" }
+  hotel: { kind: option, about: "the stay, one of Go's search results" }
 auth: none
 changes_state: false
 # The stay's own page (see hotels.details): its rooms call lists every room and, under each, its rates.

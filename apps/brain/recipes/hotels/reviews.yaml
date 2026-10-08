@@ -6,7 +6,7 @@ asks:
   - reviews from families for that hotel
   - log kya bol rahe hain is hotel ke baare mein
 inputs:
-  hotel: { kind: text, about: "the stay's ixigo page, as a stay Go found links it" }
+  hotel: { kind: option, about: "the stay, one of Go's search results" }
 auth: none
 changes_state: false
 # The stay's own page (see hotels.details): its reviews call answers the ten most recent, all kinds of guests. A guest's
