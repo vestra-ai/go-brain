@@ -25,7 +25,7 @@ const VILLAS: TravelQuery = { area: 'north goa', checkIn: '2026-11-06', checkOut
 describe('a plain search ask, which the search answers itself', () => {
   it('is one message to Go, plainly English, read as this very search, asking nothing more', () => {
     expect(plain('flights', FLIGHTS, '@Go flights Delhi to Goa Friday after 7 pm')).toEqual({ ok: true });
-    expect(plain('stays', VILLAS, '@Go villas with a pool in North Goa')).toEqual({ ok: true });
+    expect(plain('stays', VILLAS, '@Go stays with a pool in North Goa')).toEqual({ ok: true });
     // The model's own call, its one tool this round: places as it wrote them, and a condition more than the read took.
     expect(plain('flights', { ...FLIGHTS, from: 'Delhi', to: 'Goa', maxPriceMinor: 600_000 }, '@Go flights Delhi to Goa Friday after 7 pm', { roundTools: ['search_flights'] })).toEqual({ ok: true });
   });
@@ -48,6 +48,22 @@ describe('a plain search ask, which the search answers itself', () => {
   it('4. not when the round asked for more than this one search', () => {
     expect(plain('flights', FLIGHTS, '@Go flights Delhi to Goa Friday after 7 pm', { roundTools: ['search_flights', 'search_flights'] })).toMatchObject({ ok: false, why: 'more than one tool' });
     expect(plain('flights', FLIGHTS, '@Go flights Delhi to Goa Friday after 7 pm', { roundTools: ['search_flights', 'put_to_vote'] })).toMatchObject({ ok: false });
+  });
+
+  // Staging, 9 Oct: "Pool villas in North Goa under 15k for 4" answered itself from the kept pool stays, an apartment hotel
+  // among them. A kind of stay, an amenity or a preference is the model's to map onto ixigo's filters or pick on.
+  it('5. not when it names anything the read does not hold: a kind of stay, an amenity, a preference, however it is put', () => {
+    const POOL_UNDER: TravelQuery = { ...VILLAS, maxPriceMinor: 1_500_000, guests: 4 };
+    expect(plain('stays', POOL_UNDER, 'Pool villas in North Goa under 15k for 4 @Go')).toMatchObject({ ok: false, why: 'asks more ("villas")' });
+    expect(plain('stays', POOL_UNDER, '@Go stays with a pool in North Goa under 15k for 4 people')).toEqual({ ok: true });
+    // Asks nobody wrote a rule for.
+    expect(plain('stays', VILLAS, '@Go pet friendly stays with a pool in North Goa')).toMatchObject({ ok: false, why: 'asks more ("pet")' });
+    expect(plain('stays', VILLAS, '@Go beachfront stays with a pool in North Goa')).toMatchObject({ ok: false, why: 'asks more ("beachfront")' });
+    expect(plain('flights', FLIGHTS, '@Go morning flights Delhi to Goa Friday after 7 pm')).toMatchObject({ ok: false, why: 'asks more ("morning")' });
+    // A filter of ixigo's own the search applies holds its words.
+    expect(plain('stays', { ...VILLAS, siteFilters: ['Pet-friendly property'] }, '@Go pet friendly stays with a pool in North Goa')).toEqual({ ok: true });
+    // The dates, the head count and the trip's own place are the read's.
+    expect(plain('stays', { area: 'anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09' }, '@Go stays in Anjuna, Goa for our dates')).toEqual({ ok: true });
   });
 
   it('6. not when the search is not the one the message asks for (the model searched from earlier context)', () => {

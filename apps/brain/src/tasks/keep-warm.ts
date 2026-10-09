@@ -10,7 +10,7 @@ export const EXTEND_WITHIN_MS = 20_000;
 const HOLDS_MAX = 500;
 
 export interface KeepWarmDeps {
-  /** computer.warm with a hold. */
+  /** The trip's browser's warm with a hold (browsers.warm). */
   warm: (tripId: string, keepMs: number) => Promise<unknown>;
   now: () => Date;
   log: { warn(obj: object, msg: string): void };

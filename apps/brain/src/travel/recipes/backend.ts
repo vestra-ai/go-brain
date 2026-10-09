@@ -46,6 +46,7 @@ import type { Engine, EngineAnswer, RunFor, ShareSearch } from '../book/engine.j
 import type { LiveSearch } from '../live-search.js';
 import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
+import { offersText, sameName } from './offers.js';
 import { RECIPE_TTL_MS, type RecipeOption } from './recipe.js';
 import { NothingCaughtError } from './runners.js';
 
@@ -109,11 +110,39 @@ export const searchKindOf = (recipeId: string): TravelKind | null =>
   (Object.entries(LINK_FALLBACK) as Array<[TravelKind, string]>).find(([, id]) => id === recipeId)?.[0] ??
   null;
 
-/** A search's query as its recipe's inputs: the places as the person's words, and the conditions ixigo may filter on. */
-export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; conditions: string[] } {
+/** The site's own filters and sort an ask names, by their names on the site's list (recipes/offers.ts). */
+export interface SiteAsk {
+  filters: string[];
+  sort?: string;
+}
+const NO_SITE: SiteAsk = { filters: [] };
+/**
+ * What the site did with this ask's own filters and sort: a search joined, or read for an ask that named none, applied
+ * none of them (its names had no list to go by), so every name it didn't apply is this ask's to pick (unknown).
+ */
+function forAsk(found: TravelSearch, site: SiteAsk): TravelSearch {
+  const asked = [...site.filters, ...(site.sort ? [site.sort] : [])];
+  if (!found.site || asked.length === 0) return found;
+  const applied = [...found.site.filtered, ...(found.site.sorted ? [found.site.sorted] : [])];
+  const unknown = asked.filter((n) => !applied.some((a) => sameName(a, n)));
+  return { ...found, site: { ...found.site, unknown } };
+}
+
+/** A run's site filters and sort, as the engine takes them. */
+const siteRun = (site: SiteAsk): Pick<RunFor, 'siteFilters' | 'siteSort'> => ({
+  ...(site.filters.length > 0 ? { siteFilters: site.filters } : {}),
+  ...(site.sort ? { siteSort: site.sort } : {}),
+});
+
+/**
+ * A search's query as its recipe's inputs: the places as the person's words, the conditions ixigo may filter on, and the
+ * site's own filters and sort the ask names.
+ */
+export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; conditions: string[]; site: SiteAsk } {
   const conditions = [...(q.mustHave ?? [])];
   if (kind === 'stays') {
-    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, conditions };
+    const site = { filters: [...(q.siteFilters ?? [])], ...(q.siteSort ? { sort: q.siteSort } : {}) };
+    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, conditions, site };
   }
   if (kind === 'flights') {
     return {
@@ -122,19 +151,21 @@ export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<
         depart_after: q.departAfter, depart_before: q.departBefore, arrive_before: q.arriveBefore, max_price: q.maxPriceMinor,
       },
       conditions,
+      site: NO_SITE,
     };
   }
-  return { given: { from: q.from, to: q.to, date: q.date }, conditions };
+  return { given: { from: q.from, to: q.to, date: q.date }, conditions, site: NO_SITE };
 }
 
 /** The same ask, whatever its spacing or case: "North Goa" and " north goa" are one search. */
-const keyOf = (given: Record<string, unknown>, conditions: string[]): string =>
+const keyOf = (given: Record<string, unknown>, conditions: string[], site: SiteAsk = NO_SITE): string =>
   JSON.stringify([
     Object.entries(given)
       .filter(([, v]) => v !== undefined)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => [k, typeof v === 'string' ? v.trim().toLowerCase().replace(/\s+/g, ' ') : v]),
     [...conditions].sort(),
+    ...(site.filters.length > 0 || site.sort ? [[...site.filters].map((f) => f.trim().toLowerCase()).sort(), site.sort?.trim().toLowerCase() ?? null] : []),
   ]);
 
 /** A search's answer from what is kept, loading nothing; null when nothing kept answers it. */
@@ -309,11 +340,12 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const id = SEARCH_RECIPES[kind];
     const recipe = d.book.get(id);
     if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
-    const { given, conditions } = recipeInputs(kind, q);
+    const { given, conditions, site } = recipeInputs(kind, q);
     const link = recipe.answer.as === 'link';
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
-    const key = link ? `${id}|${keyOf(given, conditions)}` : await keyFor(id, given, conditions, tripId);
-    return { tripId, id, given, conditions, link, ttl, key, page: conditions.length > 0 && !link ? await keyFor(id, given, [], tripId) : key };
+    const key = link ? `${id}|${keyOf(given, conditions, site)}` : await keyFor(id, given, conditions, tripId, site);
+    const plain = conditions.length === 0 && site.filters.length === 0 && !site.sort;
+    return { tripId, id, given, conditions, site, link, ttl, key, page: !plain && !link ? await keyFor(id, given, [], tripId) : key };
   }
 
   /**
@@ -322,14 +354,14 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
    * (8 Oct: an early "with a pool" and the composer's "sleeping 4, with a pool" ran twice). A place that still needs
    * ixigo's box has no request until it loads: the words key that one.
    */
-  async function keyFor(id: string, given: Record<string, unknown>, conditions: string[], tripId: string): Promise<string> {
-    const request = (await d.engine.requestOf?.(id, given, { tripId, conditions })) ?? null;
-    return request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions)}`;
+  async function keyFor(id: string, given: Record<string, unknown>, conditions: string[], tripId: string, site: SiteAsk = NO_SITE): Promise<string> {
+    const request = (await d.engine.requestOf?.(id, given, { tripId, conditions, ...siteRun(site) })) ?? null;
+    return request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions, site)}`;
   }
 
   /** One search on ixigo's page: kept, joined or run, its live card from start to end. */
   async function searchPage(kind: TravelKind, q: TravelQuery, o?: SearchFor): Promise<TravelSearch> {
-    const { tripId, id, given, conditions, link, ttl, key, page } = await plan(kind, q, o?.tripId);
+    const { tripId, id, given, conditions, site, link, ttl, key, page } = await plan(kind, q, o?.tripId);
     // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
     if (link) {
       const a = await d.engine.answer(id, given, { tripId, conditions });
@@ -344,7 +376,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     // answers from its rows, and the search itself runs in the background (unless it is running already). Only an ask
     // that can be narrowed waits here, so every other search reads what is kept and keeps its own with no wait between.
     const byPage = narrowedBy(id, conditions);
-    if (byPage && !(fresh(hit) && hit.done)) {
+    // Never for an ask that names the site's own filters or sort: ixigo's own read applies them.
+    if (byPage && site.filters.length === 0 && !site.sort && !(fresh(hit) && hit.done)) {
       const narrowed = await fromKept(id, given, byPage, tripId);
       // The wait let another search of this key start, or finish: what is kept is read again.
       hit = kept.get(key);
@@ -357,7 +390,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       // The composer joining a run its early start began takes the card: if that run fails, nothing retries it.
       const running = cards.get(cardKey);
       if (running?.running && owner?.kind === 'turn') running.owner = owner;
-      return hit.search;
+      return hit.search.then((found) => forAsk(found, site));
     }
     // A paced page (flights) held back: no card and no run, and search answers with its link.
     if (d.engine.pacedOut?.(id)) throw new TravelError('unreachable', `ixigo is given a moment between ${kind} pages.`);
@@ -384,14 +417,18 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       card = null;
     }
     const live = card?.live;
-    // A page condition the stays say (byPage) that ixigo's page catches nothing with: the page again without them.
+    // A page filtered on ixigo (the conditions the stays say, byPage, or the site's own filters) that catches nothing:
+    // the page again without them, at once. A search never fails because ixigo was slow on a filter.
+    const filtered = [...(byPage ?? []), ...site.filters];
     let unapplied: string[] | null = null;
-    const asked = d.engine.answer(id, given, { tripId, conditions, ...(byPage ? { fallsBack: true } : {}), ...(live ? { onProgress: live.progress } : {}) });
-    const read = byPage
+    const asked = d.engine.answer(id, given, {
+      tripId, conditions, ...siteRun(site), ...(filtered.length > 0 ? { fallsBack: true } : {}), ...(live ? { onProgress: live.progress } : {}),
+    });
+    const read = filtered.length > 0
       ? asked.catch((err: unknown) => {
           if (!(err instanceof NothingCaughtError)) throw err;
-          unapplied = byPage;
-          d.log?.warn({ tripId, recipe: id, conditions: byPage }, 'travel: a filtered stays page caught nothing; reading it without its filters');
+          unapplied = filtered;
+          d.log?.warn({ tripId, recipe: id, conditions: byPage ?? [], site: site.filters.length }, 'travel: a filtered stays page caught nothing; reading it without its filters');
           return unfiltered(page, id, given, tripId, ttl, live?.progress);
         })
       : asked;
@@ -407,7 +444,10 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         live?.progress({ type: 'extracted', count: run.options.length });
         // The card is done before the options card posts.
         if (card) await end(cardKey, card, true);
-        return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}) };
+        const said = run.site
+          ? { filtered: run.site.filtered, sorted: run.site.sorted, unknown: run.site.unknown, listed: run.site.listed, offers: run.site.list ? offersText(run.site.list) : null }
+          : null;
+        return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}), ...(said ? { site: said } : {}) };
       },
       async (err: unknown): Promise<never> => {
         if (card) {
@@ -430,7 +470,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       },
     );
     keep(key, { at: nowMs, ttl, search, ran, page });
-    return search;
+    return search.then((found) => forAsk(found, site));
   }
 
   return {

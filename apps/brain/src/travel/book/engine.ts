@@ -11,7 +11,8 @@ import { TravelError } from '../mcp-travel.js';
 import { airportOf, busCityOf, goaHalves, norm, stationOf, stayPlaceOf, wordsOf } from '../recipes/places.js';
 import { keepPlace } from '../recipes/places-store.js';
 import type { OnProgress } from '../recipes/progress.js';
-import { IXIGO, type Capture, type CaptureSpec, type FetchPlan, type RecipeOption } from '../recipes/recipe.js';
+import { asOffers, offerWords, pickOffers, type Offer, type OfferList, type Offers } from '../recipes/offers.js';
+import { IXIGO, matches, type Capture, type CaptureSpec, type FetchPlan, type RecipeOption } from '../recipes/recipe.js';
 import type { RecipeRunner } from '../recipes/runners.js';
 import type { TravelKind } from '../travel.js';
 import type { Book } from './book.js';
@@ -44,6 +45,8 @@ export interface EngineDeps {
   runner: (tripId: string) => Pick<RecipeRunner, 'read' | 'pageFetch' | 'canPageFetch'> | null;
   /** Keeps a place ixigo resolved; absent in tests that keep nothing. */
   pool?: Pool;
+  /** The lists of what each recipe's page offers, per place (offers.ts); absent, no run filters on the site's own list. */
+  offers?: Offers;
   /** The trip as a recipe's inputs read it ($trip): its head count, the members' home cities (one per member who gave
    *  one), and where and from when it goes, once the trip says. */
   trip: (tripId: string) => Promise<{ people: number; homes: string[]; destination?: string | null; start?: string | null }>;
@@ -113,8 +116,29 @@ const LAST_RUNS = 100;
 const percentile = (sorted: number[], p: number): number | null =>
   sorted.length === 0 ? null : sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))]!;
 
+/**
+ * What the site itself did with the ask (a recipe with offers): the filters it applied and the sort, in words; the names
+ * the run asked for that it didn't (not on its list, or no list kept yet: listed false); and its list as now known.
+ */
+export interface SiteSaid {
+  filtered: string[];
+  sorted: string | null;
+  unknown: string[];
+  listed: boolean;
+  list: OfferList | null;
+}
+
+/** A run's ask of the site's own list (siteOf): the list's key for the place, what of it applies, and what isn't on it. */
+interface Site {
+  key: string | null;
+  filters: Offer[];
+  sort: Offer | null;
+  unknown: string[];
+  listed: boolean;
+}
+
 export type EngineAnswer =
-  | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number }
+  | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid }
   | { as: 'facts'; title: string; rows: Array<Record<string, unknown>>; page: string; checkedAt: string; ms: number }
   | { as: 'link'; link: string; title: string; who: string | null }
   /** A composite's: its inputs as filled, and each entry (a home city) with each step's answer, or why it has none. */
@@ -156,9 +180,17 @@ export interface RunFor {
    * its filters): the page is asked once, and throws NothingCaughtError (runners.ts).
    */
   fallsBack?: boolean;
+  /** The site's own filters and sort the run asks for, by their names on the list the recipe's page offers (offers.ts). */
+  siteFilters?: string[];
+  siteSort?: string;
 }
 
 export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
+
+/** The most of the site's list of what it offers that a read keeps (ixigo's stays metadata: about 23 KB). */
+export const OFFERS_MAX_BYTES = 300_000;
+/** How long past the rest a read waits for the site's list while none is kept for the place: Bash's most grace. */
+export const OFFERS_GRACE_MS = 3_000;
 
 /** A check nobody is waiting on (a watch) waits behind every fetch a person is. */
 export const BACKGROUND_PRIORITY = 9;
@@ -179,6 +211,7 @@ const stepOf = (o: RunFor): { step_of?: string; lane?: string } => ({ ...(o.step
 const aboutOf = (recipe: RecipeFile, o: RunFor, bindings: Record<string, unknown>): Record<string, string | boolean | string[]> => ({
   recipe: recipe.id,
   conditions: Object.keys(recipe.conditions ?? {}).filter((c) => o.conditions?.includes(c)),
+  site: Array.isArray(bindings['site']) ? (bindings['site'] as unknown[]).filter((c): c is string => typeof c === 'string') : [],
   ...Object.fromEntries(Object.entries(bindings).filter((e): e is [string, boolean] => typeof e[1] === 'boolean')),
 });
 
@@ -445,13 +478,42 @@ export function createEngine(d: EngineDeps) {
     return inputs;
   }
 
-  /** $conditions and the recipe's let, worked out once. */
-  async function bindingsOf(recipe: RecipeFile, inputs: Record<string, unknown>, o: RunFor): Promise<Record<string, unknown>> {
+  /**
+   * The site's own filters and sort a run asks for by name, from the list the recipe's page offers for this place: their
+   * codes for the page, and the names that aren't on it. With no list kept yet nothing is filtered: the run reads the
+   * page as it is, which brings the list (keepOffers).
+   */
+  async function siteOf(recipe: RecipeFile, inputs: Record<string, unknown>, o: RunFor): Promise<Site> {
+    const asked = [...(o.siteFilters ?? []), ...(o.siteSort ? [o.siteSort] : [])];
+    const key = recipe.offers ? await fill(recipe.offers.for, inputs, { url: false }) : null;
+    const list = key !== null ? (d.offers?.get(recipe.id, key) ?? null) : null;
+    if (!list) return { key, filters: [], sort: null, unknown: asked, listed: false };
+    const f = pickOffers(list.offers, o.siteFilters ?? [], 'filter');
+    const s = o.siteSort ? pickOffers(list.offers, [o.siteSort], 'sort') : { picked: [], unknown: [] };
+    return { key, filters: f.picked, sort: s.picked[0] ?? null, unknown: [...f.unknown, ...s.unknown], listed: true };
+  }
+
+  /** The list the page offers, from the call it made (recipe.offers.from), kept for the place; a list that won't read is logged, never the run's failure. */
+  async function keepOffers(recipe: RecipeFile, site: Site, inputs: Record<string, unknown>, captures: Capture[], tripId: string): Promise<void> {
+    const offers = recipe.offers;
+    const call = offers ? captures.find((c) => matches(offers.from, c.url) && c.status >= 200 && c.status < 300 && !c.truncated) : undefined;
+    if (!offers || !call || site.key === null) return;
+    try {
+      const body: unknown = JSON.parse(call.body);
+      const list = asOffers(await evaluate(offers.list, body, {}));
+      d.offers?.keep(recipe.id, site.key, await fill(offers.about, inputs, { url: false }), list, tripId);
+    } catch (err) {
+      d.log?.warn({ recipe: recipe.id, err: String(err).slice(0, 200) }, "book: the site's list of what it offers did not read");
+    }
+  }
+
+  /** $conditions, the site's own filters and sort ($site, $site_sort) and the recipe's let, worked out once. */
+  async function bindingsOf(recipe: RecipeFile, inputs: Record<string, unknown>, o: RunFor, site: Site): Promise<Record<string, unknown>> {
     const conditions: unknown[] = [];
     for (const [name, source] of Object.entries(recipe.conditions ?? {})) {
       if (o.conditions?.includes(name)) conditions.push(await evaluate(source, inputs, { inputs }));
     }
-    const bindings: Record<string, unknown> = { conditions };
+    const bindings: Record<string, unknown> = { conditions, site: site.filters.map((f) => f.code), site_sort: site.sort?.code ?? null };
     for (const [name, source] of Object.entries(recipe.let ?? {})) bindings[name] = await evaluate(source, inputs, { inputs, ...bindings });
     return bindings;
   }
@@ -480,6 +542,19 @@ export function createEngine(d: EngineDeps) {
       };
     }
     return { capture: await captures(recipe.capture) };
+  }
+
+  /**
+   * A read's plan with the call that lists what the site offers kept too, when Go keeps lists. While no list is kept for
+   * the place it is waited for, a grace at most after the rest (a fresh computer's first North Goa read, 10 Oct: the
+   * page made it after Bash had answered, so the list never came); once one is kept, it is only taken when it comes.
+   */
+  function withOffers(plan: FetchPlan, recipe: RecipeFile, site: Site): FetchPlan {
+    if (!recipe.offers || !d.offers || site.key === null) return plan;
+    const call: CaptureSpec = { match: recipe.offers.from, required: false, max_bytes: OFFERS_MAX_BYTES };
+    return site.listed
+      ? { ...plan, capture: [...plan.capture, { ...call, besides: true }] }
+      : { ...plan, capture: [...plan.capture, call], graceMs: plan.graceMs ?? OFFERS_GRACE_MS };
   }
 
   /** Runs a recipe for the given inputs (place inputs as the person's words), on the run strip from its first speed. */
@@ -514,7 +589,8 @@ export function createEngine(d: EngineDeps) {
   ): Promise<EngineAnswer> {
     if (recipe.answer.as !== 'link' && !o.background) d.warm?.(o.tripId, recipe.id);
     const inputs = (await inputsOf(recipe, given, o, strip.line.id))!;
-    const bindings = await bindingsOf(recipe, inputs, o);
+    const site = await siteOf(recipe, inputs, o);
+    const bindings = await bindingsOf(recipe, inputs, o, site);
     const page = `${IXIGO}${await fill(pageTemplate, inputs, { url: true, bindings })}`;
     refusePayments(page);
     if (recipe.answer.as === 'link') {
@@ -581,7 +657,7 @@ export function createEngine(d: EngineDeps) {
       }
     }
     const readPage = async (): Promise<EngineAnswer> => {
-      const plan = await fetchPlanOf(recipe, inputs, bindings);
+      const plan = withOffers(await fetchPlanOf(recipe, inputs, bindings), recipe, site);
       const started = d.now().getTime();
       const pageRun = strip.line;
       o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
@@ -603,7 +679,12 @@ export function createEngine(d: EngineDeps) {
       });
       refusePayments(got.finalUrl);
       o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
-      return answerFrom(got.captures, filled, started);
+      await keepOffers(recipe, site, inputs, got.captures, o.tripId);
+      const answer = await answerFrom(got.captures, filled, started);
+      if (!recipe.offers || answer.as !== 'options') return answer;
+      // What the site did with the ask, and its list as it is now known (the page just brought it, when none was kept).
+      const list = site.key !== null ? (d.offers?.get(recipe.id, site.key) ?? null) : null;
+      return { ...answer, site: { filtered: site.filters.map(offerWords), sorted: site.sort?.name ?? null, unknown: site.unknown, listed: site.listed, list } };
     };
     // A paced page (pace: flights) loads at most once a gap across every trip, and not in its quiet after a failure;
     // one held back fails at once, and its caller has another way (the link to ixigo's own page).
@@ -777,7 +858,7 @@ export function createEngine(d: EngineDeps) {
       try {
         const inputs = await inputsOf(recipe, given, o, null);
         if (!inputs) return null;
-        const bindings = await bindingsOf(recipe, inputs, o);
+        const bindings = await bindingsOf(recipe, inputs, o, await siteOf(recipe, inputs, o));
         const page = `${IXIGO}${await fill(recipe.page, inputs, { url: true, bindings })}`;
         const plan = await fetchPlanOf(recipe, inputs, bindings);
         // A recipe that keeps only some of a page's rows by the place's half (hotels.search: North Goa opens all of Goa's

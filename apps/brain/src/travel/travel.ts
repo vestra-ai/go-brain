@@ -30,6 +30,11 @@ export const TravelQuery = z.object({
   maxPriceMinor: z.int().positive().optional(),
   mustHave: z.array(z.enum(MUST_HAVES)).max(5).optional(),
   minRating: z.number().min(0).max(5).optional(),
+  /** The site's own filters and sort for the ask, by their names on the site's own list (recipes/offers.ts). */
+  siteFilters: z.array(z.string().min(1).max(80)).max(8).optional(),
+  siteSort: z.string().min(1).max(80).optional(),
+  /** Anything else the group asked for, in their words: the model picks it from the results. */
+  wants: z.array(z.string().min(1).max(80)).max(8).optional(),
 });
 export type TravelQuery = z.infer<typeof TravelQuery>;
 
@@ -86,6 +91,12 @@ export interface TravelSearch {
    * shows the list without them and says so; then these are the ones it left off.
    */
   unapplied?: string[];
+  /**
+   * What the site itself did with the ask's site filters and sort (ixigo_web): what it filtered on and sorted by, in words;
+   * the names it didn't apply (not on its list, or its list not known before this read: listed false); and its list as
+   * it is now known, in words, for the model.
+   */
+  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null };
 }
 
 export type StatusQuery =

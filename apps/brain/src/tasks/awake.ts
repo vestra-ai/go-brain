@@ -24,7 +24,7 @@ export const AWAKE_EVERY_MS = 30_000;
 export const AWAKE_KEEP_MS = 2 * AWAKE_EVERY_MS;
 
 export interface TripAwakeDeps {
-  /** Bash's warm with keep_ms for the trip's computer (computer.keepAwake). */
+  /** Bash's warm with keep_ms for the trip's browser, the person's computer (browsers.keepAwake). */
   keep: (tripId: string, keepMs: number) => Promise<unknown>;
   now: () => Date;
   log: { warn(obj: object, msg: string): void };

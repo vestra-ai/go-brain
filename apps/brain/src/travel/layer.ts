@@ -53,9 +53,19 @@ function backendQuery(q: TravelQuery): TravelQuery {
   };
 }
 
-/** What a backend sees. ixigo_web also sees the must-haves: ixigo filters on some itself, so its list holds the right stays. */
+/**
+ * What a backend sees. ixigo_web also sees the must-haves, and the site's own filters and sort: ixigo filters on them
+ * itself, so its list holds the right stays.
+ */
 const queryFor = (backend: string, q: TravelQuery): TravelQuery =>
-  backend === 'ixigo_web' && q.mustHave ? { ...backendQuery(q), mustHave: q.mustHave } : backendQuery(q);
+  backend === 'ixigo_web'
+    ? {
+        ...backendQuery(q),
+        ...(q.mustHave ? { mustHave: q.mustHave } : {}),
+        ...(q.siteFilters?.length ? { siteFilters: q.siteFilters } : {}),
+        ...(q.siteSort ? { siteSort: q.siteSort } : {}),
+      }
+    : backendQuery(q);
 
 const keyOf = (q: TravelQuery): string =>
   JSON.stringify(Object.entries(q).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, typeof v === 'string' ? v.trim().toLowerCase() : v]));
@@ -113,16 +123,20 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       const found = name === 'ixigo_web' ? await b.search(kind, base, o) : await kept(`${name}|${kind}|${keyOf(base)}`, () => b.search(kind, base, o));
       const all = found.results;
       // Conditions ixigo did not filter on (unapplied): the options that say them fit as ever; when none does, the options
-      // without those conditions, and the search says it left them off.
-      const fit = applyConstraints(kind, parsed, all);
+      // without those conditions, and the search says it left them off. The site's own filters it left off are no Go
+      // check's: they go on, for the model to pick from the results.
+      // The site's own sort, when it applied one, is the order the group asked for: Go keeps it.
+      const order = { keepOrder: !!found.site?.sorted };
+      const fit = applyConstraints(kind, parsed, all, order);
       const mustHave: readonly string[] = parsed.mustHave ?? [];
       const off = fit.length === 0 ? (found.unapplied ?? []).filter((c) => mustHave.includes(c)) : [];
-      const loose = off.length > 0 ? applyConstraints(kind, { ...parsed, mustHave: (parsed.mustHave ?? []).filter((c) => !off.includes(c)) }, all) : [];
+      const loose = off.length > 0 ? applyConstraints(kind, { ...parsed, mustHave: (parsed.mustHave ?? []).filter((c) => !off.includes(c)) }, all, order) : [];
       const results = loose.length > 0 ? loose : fit;
+      const unapplied = [...(loose.length > 0 ? off : []), ...(found.unapplied ?? []).filter((c) => !mustHave.includes(c))];
       const near = results.length === 0 ? closest(kind, parsed, all) : null;
       return {
         checkedAt: found.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}), ...(found.runId ? { runId: found.runId } : {}),
-        ...(found.page ? { page: found.page } : {}), ...(loose.length > 0 ? { unapplied: off } : {}),
+        ...(found.page ? { page: found.page } : {}), ...(unapplied.length > 0 ? { unapplied } : {}), ...(found.site ? { site: found.site } : {}),
       };
     },
     async waitMs(kind, q, o) {

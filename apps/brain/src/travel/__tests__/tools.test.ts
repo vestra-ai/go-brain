@@ -193,7 +193,7 @@ describe('a search that answers itself', () => {
   };
 
   it("puts up the card and a line from its data for the turn's plain ask, and ends the turn: no model round after it", async () => {
-    const ctx = turnFor('@Go villas with a pool in North Goa near the beach for 5 of us', 'turn_s1');
+    const ctx = turnFor('@Go stays with a pool in North Goa near the beach for 5 of us', 'turn_s1');
     const out = (await lb.tools.run('search_stays', STAYS, ctx)) as any;
     expect(out).toMatchObject({ answered: true, card_id: 'c_opt_turn_s1_1' });
     expect(ctx.answered).toBe(true);
@@ -207,7 +207,7 @@ describe('a search that answers itself', () => {
   });
 
   it('gives the model the list as before when the ask needs judgement, so a question is never swallowed', async () => {
-    const ctx = turnFor('@Go villas with a pool in North Goa near the beach for 5 of us, which has the best reviews?', 'turn_s2');
+    const ctx = turnFor('@Go stays with a pool in North Goa near the beach for 5 of us, which has the best reviews?', 'turn_s2');
     const out = (await lb.tools.run('search_stays', STAYS, ctx)) as any;
     expect(out).toMatchObject({ count: expect.any(Number), results_id: expect.any(String) });
     expect(out.answered).toBeUndefined();
@@ -350,6 +350,23 @@ describe('put_to_vote', () => {
     const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_anon2' }))) as any;
     await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id, anonymous: true }, lb.ctx({ turnId: 'turn_anon3' }));
     expect(lb.link.sent('open_vote').at(-1)).toMatchObject({ request_id: 'go_vote_turn_anon3_1', anonymous: true });
+  });
+
+  // 8 Oct run sheet: a card with one stay could not go to a vote, so Go opened an unbound yes/no vote of its own, and
+  // "I'll book it" then had nothing to book.
+  it('puts a one-option card to a vote too: that option, bound to its offer, or "Keep looking"', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_one1' }))) as any;
+    const showCtx = lb.ctx({ turnId: 'turn_one2' });
+    const shown = (await lb.tools.run('show_options', { line: 'One fits.', results_id: found.results_id, option_numbers: [2], title: 'Villas' }, showCtx)) as any;
+    const card = C.OptionsCard.parse(showCtx.cards[0]);
+    expect(card.options).toHaveLength(1);
+    const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, lb.ctx({ turnId: 'turn_one3' }))) as any;
+    expect(out.decision_id).toBeDefined();
+    const vote = lb.link.sent('open_vote').at(-1)!;
+    expect(vote).toMatchObject({ kind: 'choice', question: `Go with ${card.options[0]!.title}?` });
+    const options = vote.options as Array<{ label: string; option_ref?: string }>;
+    expect(options.map((o) => o.option_ref)).toEqual([card.options[0]!.option_id, undefined]);
+    expect(options[1]!.label).toBe('Keep looking');
   });
 
   it('shows the same vote again when the same turn runs again, and refuses a second vote from another turn', async () => {

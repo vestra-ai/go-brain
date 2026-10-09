@@ -16,6 +16,8 @@ export interface CaptureSpec {
   /** Bash waits for this many matching responses (pages) before it answers, and keeps at most max_count. */
   min_count?: number;
   max_count?: number;
+  /** Never waited for, grace or none: kept when it came by the time the rest are in (a site's list of what it offers). */
+  besides?: boolean;
 }
 
 /** One response the page received, as the browser fetch answers it. */

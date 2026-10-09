@@ -168,6 +168,34 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     expect(own.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.`]);
   });
 
+  it("leaves what ixigo didn't filter to the model, which picks it from each stay's amenities: never a card of the engine's first three", async () => {
+    const results = store();
+    const withAmenities = { ...STAYS, results: STAYS.results.map((o, i) => ({ ...o, amenities: i === 0 ? ['Beach access', 'Free Wifi'] : ['Free Wifi'], facts: { distance: `${i + 1} km from Anjuna Beach` } })) };
+    const site = { filtered: ['Pet-friendly property'], sorted: null, unknown: ['beachfront'], listed: true, offers: null };
+    const found: TravelSearch = { ...withAmenities, runId: 'ixigo.hotels|anjuna|pick', site };
+    // The search tool: a plain ask, but with something left to pick, so no card of its own.
+    const travel = { search: async () => found, waitMs: async () => null } as unknown as Travel;
+    const tools = travelTools({ travel, results, images, now: () => new Date('2026-10-07T12:00:31Z') });
+    const args = { ...ANJUNA, check_in: '2026-11-06', check_out: '2026-11-09', site_filters: ['Pet-friendly property', 'beachfront'], wants: ['quiet'] };
+    const out = (await tools.find((t) => t.name === 'search_stays')!.run(args, ctx)) as Record<string, unknown>;
+    expect(out).not.toHaveProperty('answered');
+    expect(String(out.summary)).toContain("Pet-friendly property (ixigo's filter)");
+    expect(String(out.summary)).toContain("Not filtered by ixigo, for you to pick from each option's amenities and details: beachfront and quiet.");
+    expect((out.results as Array<Record<string, unknown>>)[0]).toMatchObject({ amenities: ['Beach access', 'Free Wifi'], distance: '1 km from Anjuna Beach' });
+    expect(String(out.note)).toContain('Show only the options whose amenities or details fit beachfront and quiet');
+    // Past its turn: the wake is the model's, to pick, not a card posted with no model call.
+    const puts: DeskItem[] = [];
+    const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
+    const q = { area: 'anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Pet-friendly property', 'beachfront'], wants: ['quiet'] };
+    handOver('stays', q, Promise.resolve({ ...found, runId: 'ixigo.hotels|anjuna|pick2' }), { tripId: 't_goa', fallbackId: 'turn_w3:stays' }, { desk, now: () => new Date('2026-10-07T12:00:31Z'), results });
+    await vi.waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]!.payload).toMatchObject({ pick: true });
+    const pack = goaPack();
+    const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w2', link: {} as never, pack, wake: [puts[0]!], signal: new AbortController().signal });
+    expect(await searchWakeAnswer({ results, images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(false);
+    expect(next.cards).toEqual([]);
+  });
+
   it('wakes nothing for a run whose options a card in the room already showed, and leaves a failure or nothing found to the model', async () => {
     const results = store();
     const puts: DeskItem[] = [];

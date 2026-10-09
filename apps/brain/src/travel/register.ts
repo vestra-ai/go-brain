@@ -13,12 +13,15 @@ import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
 import { createIxigoLogin, renderLoginResume } from './login.js';
+import { createLoginKeepAlive } from './login-keepalive.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
 import { startLiveSearch } from './live-search.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
 import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/backend.js';
+import { createOffers } from './recipes/offers.js';
+import { offersNow } from './recipes/offers-now.js';
 import { createEarlyStart } from './recipes/early.js';
 import { earlyAnswer, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
@@ -66,12 +69,26 @@ export const registerTravel: RegisterLane = async (brain) => {
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     tasks: () => brain.tasks ?? null,
     screen: () => brain.recipeRunners?.screen ?? null,
+    browser: () => brain.recipeRunners?.login ?? null,
     desk: brain.desk,
     live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
     now: brain.now,
     log: brain.log,
   });
   login.registerTaps(brain.taps);
+  // The person's login kept alive in their browser: one read every few hours while it is logged in (login-keepalive.ts).
+  // The browsers are the tasks lane's, which registers after this one: read when a pass runs, none without them.
+  const keepAlive = createLoginKeepAlive({
+    loggedInSince: async (before) => (await brain.recipeRunners?.login?.loggedInSince(before)) ?? [],
+    status: (tripId) => login.status(tripId),
+    live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    now: brain.now,
+    log: brain.log,
+  });
+  keepAlive.start();
+  brain.onStop(function stopLoginKeepAlive() {
+    keepAlive.stop();
+  });
   // Go's hello carries the login card and its line: one message to open a new trip, never two in a row.
   brain.context.addTurnCard((i) => login.helloCard(i));
   // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.
@@ -101,10 +118,13 @@ export const registerTravel: RegisterLane = async (brain) => {
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');
   // The tasks lane, which registers after this one, sets the browser fetch: a recipe reads it when it runs.
+  // What each site's page offers to filter and sort on, as it lists them itself, per place: read on every search.
+  const offers = createOffers({ now: brain.now });
   const engine = createEngine({
     book,
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     pool: brain.pool,
+    offers,
     trip: async (tripId) => {
       const { people, destination, dates } = (await brain.packs.get(tripId)).trip;
       return {
@@ -212,6 +232,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
+  // The sites' own filter lists the trip's searches brought: the model maps the ask onto them (site_filters).
+  brain.context.addNow(offersNow({ offers }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.
   // One still running is handed over, and the turn says nothing more: the live card covers the wait.
   brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, log: brain.log }));

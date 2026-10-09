@@ -258,6 +258,35 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     expect(none).not.toHaveProperty('closest');
   });
 
+  it("hands ixigo_web the site's own filters and sort, keeps the site's order when it sorted, and passes on what the site did", async () => {
+    const stay = (title: string, rating: number, priceMinor: number): TravelOption => ({
+      kind: 'stay', title, priceMinor, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {}, rating,
+      sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
+    });
+    const queries: TravelQuery[] = [];
+    const refused = async (): Promise<never> => {
+      throw new TravelError('refused', 'Booked on ixigo.');
+    };
+    const site = { filtered: ['Pet-friendly property'], sorted: 'Price (Low to High)', unknown: ['beachfront'], listed: true, offers: 'Facilities: Pet-friendly property' };
+    const b: TravelBackend = {
+      search: async (_kind, q) => {
+        queries.push(q);
+        return { checkedAt: '2026-10-07T12:00:00.000Z', results: [stay('Cheap', 3.9, 90_000), stay('Dear', 4.8, 900_000)], site, unapplied: ['beachfront'] };
+      },
+      status: refused,
+      hold: refused,
+      confirm: refused,
+    };
+    const { switches, layer } = setup(true, { ixigoWeb: b });
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    const ask = { area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Pet-friendly property', 'beachfront'], siteSort: 'Price (Low to High)', wants: ['quiet'] };
+    const found = await layer.search('stays', ask, { tripId: 't_goa' });
+    expect(queries).toEqual([{ area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Pet-friendly property', 'beachfront'], siteSort: 'Price (Low to High)' }]);
+    // ixigo's cheapest first, not Go's best rated first.
+    expect(found.results.map((o) => o.title)).toEqual(['Cheap', 'Dear']);
+    expect(found).toMatchObject({ site, unapplied: ['beachfront'] });
+  });
+
   it("searches in the trip's own browser: the trip goes with every search (ixigo_web keeps its own), and nothing is simulated", async () => {
     const ixigoWeb = web();
     const { switches, layer, fake } = setup(true, { ixigoWeb: ixigoWeb.b });

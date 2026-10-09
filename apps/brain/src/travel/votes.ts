@@ -2,7 +2,8 @@
  * Opening a vote from an options card, once per card: a claim on the card's row (a turn id or a tap id) makes a second
  * tap a no-op, and the same key again (a rerun of the same turn) gets the same vote back. Each vote option's option_ref
  * is the option's id, so P5 finds the offer with brain.travel.offer(option_ref). A stay is put to the vote at its
- * whole-stay price, which is what gets paid. The caller shows the vote card: a turn puts it in ctx.cards, a tap posts it.
+ * whole-stay price, which is what gets paid. A card with one option is that option or "Keep looking". The caller shows
+ * the vote card: a turn puts it in ctx.cards, a tap posts it.
  */
 import type * as C from '@go/contract';
 import type { ServerLink } from '../door/server-link.js';
@@ -32,7 +33,10 @@ function stayQuestion(question: string, offers: StoredOffer[]): string {
   return question.replace(new RegExp(`\\b(${kind})(s?)\\b`, 'gi'), (_w, k: string, s: string) => `${k[0] === k[0]!.toUpperCase() ? 'S' : 's'}tay${s}`);
 }
 
-interface VoteOption { label: string; image_url?: string; price_minor?: number; currency?: string; option_ref: string; note?: string }
+interface VoteOption { label: string; image_url?: string; price_minor?: number; currency?: string; option_ref?: string; note?: string }
+
+/** The other answer of a one-option vote: no offer behind it, so nothing is ever booked when it wins. */
+export const KEEP_LOOKING = 'Keep looking';
 
 function voteOptions(offers: StoredOffer[], shown: Map<string, { image_url?: string | null | undefined; subtitle?: string | null | undefined }>): VoteOption[] {
   return offers.slice(0, 10).map((of) => {
@@ -61,14 +65,18 @@ export async function openVoteFromCard(
   if (!row) return { ok: false, reason: 'unknown_card' };
   const offers = await d.results.offersOnCard(o.cardId);
   const shown = new Map(row.card.options.map((op) => [op.option_id, op]));
-  const options = voteOptions(offers, shown);
-  const question = clip(stayQuestion(o.question ?? QUESTIONS[row.optionKind], offers), 200);
+  // A card with one option is put to the group as that option or keep looking: still a choice vote on the offer
+  // itself, so its winner can be booked (8 Oct run sheet: a one-option card's vote failed here, Go opened a yes/no vote
+  // of its own, and "I'll book it" then had nothing to book).
+  const one = offers.length === 1;
+  const options = one ? [...voteOptions(offers, shown), { label: KEEP_LOOKING }] : voteOptions(offers, shown);
+  const question = clip(one ? (o.question ?? `Go with ${clip(offers[0]!.title, 120)}?`) : stayQuestion(o.question ?? QUESTIONS[row.optionKind], offers), 200);
   if (row.decisionId && !row.decisionId.startsWith('pending:')) {
     // The same key again is a rerun of the turn that opened it: show the same vote, open nothing new.
     if (row.voteKey === o.key) return { ok: true, decisionId: row.decisionId, voteCard: voteCardFor(o.voteCardId, row.decisionId, question, options) };
     return { ok: false, reason: 'already_voting', decisionId: row.decisionId };
   }
-  if (offers.length < 2) return { ok: false, reason: 'too_few_options' };
+  if (offers.length === 0) return { ok: false, reason: 'too_few_options' };
   if (!(await d.results.claimVote(o.cardId, o.key))) return { ok: false, reason: 'already_voting' };
   try {
     const closesAt = new Date(d.now().getTime() + (o.closesInHours ?? 3) * 3_600_000).toISOString();

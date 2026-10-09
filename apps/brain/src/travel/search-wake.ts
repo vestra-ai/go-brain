@@ -26,6 +26,8 @@ export interface SearchWake {
   error: string | null;
   /** Words before the card's line: a search ixigo left filters off says so first (answer.ts leftOff). */
   lead?: string;
+  /** Something is left for the model to pick from the results (tools.ts leftToPick): the wake is the model's. */
+  pick?: boolean;
   /**
    * A search that answered with ixigo's own page instead of a list (link_only: flights held back or refused): its link
    * card and line, put up as the search's own turn would have (tools.ts linkAnswer), never "it didn't work".
@@ -69,7 +71,7 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images'>):
       ctx.answered = true;
       return true;
     }
-    if (w?.source !== 'travel_search' || w.error || !w.resultsId || !w.count) return false;
+    if (w?.source !== 'travel_search' || w.error || !w.resultsId || !w.count || w.pick === true) return false;
     const set = await d.results.get(tripId, w.resultsId);
     if (!set || set.options.length === 0) return false;
     const kind = item.ref as TravelKind;

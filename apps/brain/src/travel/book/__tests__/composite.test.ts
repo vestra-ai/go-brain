@@ -136,7 +136,7 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
       },
     };
     const runner = createBrowserFetchRunner({
-      v1, computer: { userIdFor: (t) => `u-${t}`, ensureUser: async (t) => `u-${t}` }, now: () => new Date(), log: { warn: () => undefined }, slots: () => 1,
+      v1, browser: { userFor: async (t) => `u-${t}`, again: async (t) => `u-${t}` }, now: () => new Date(), log: { warn: () => undefined }, slots: () => 1,
     });
     const engine = createEngine({ book, runner: () => runner, trip: async () => trip, now: () => new Date('2026-10-08T12:00:00Z') });
     const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -170,7 +170,7 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
         },
       };
       const runner = createBrowserFetchRunner({
-        v1, computer: { userIdFor: (t) => `u-${t}`, ensureUser: async (t) => `u-${t}` }, now: () => new Date(), log: { warn: () => undefined }, slots: () => slots,
+        v1, browser: { userFor: async (t) => `u-${t}`, again: async (t) => `u-${t}` }, now: () => new Date(), log: { warn: () => undefined }, slots: () => slots,
       });
       const engine = createEngine({ book, runner: () => runner, trip: async () => trip, now: () => new Date('2026-10-08T12:00:00Z') });
       await engine.answer(WAYS, {}, { tripId: 't_goa' });
