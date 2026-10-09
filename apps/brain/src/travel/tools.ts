@@ -77,7 +77,7 @@ export const StaysArgs = z.object({
   must_have: z.array(z.enum(MUST_HAVES)).max(5).optional().describe('pool, beach (10 minutes or less), breakfast, free_cancellation'),
   min_rating: z.number().min(0).max(5).optional(),
   site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
-    .describe("ixigo's own filters the ask means, by their names on ixigo's list for the place (in your context): ixigo filters the stays itself"),
+    .describe("ixigo's own filters the ask means, by their names on ixigo's list for the place (in your context), the nearest one for what they said: ixigo filters the stays itself"),
   site_sort: z.string().min(1).max(80).optional().describe("ixigo's own sort the ask means, by its name on that list"),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
     .describe("Anything else the group asked for that no filter covers, in their words: you pick it from the results' amenities and details"),

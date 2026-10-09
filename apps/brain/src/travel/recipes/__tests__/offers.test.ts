@@ -77,8 +77,10 @@ describe("a site's own list of what it offers (hotels.search: ixigo's metadata c
     expect(said).toContain("ixigo's own filters and sorts for stays in Goa, as its page lists them: ");
     expect(said).toContain('Facilities: Internet access');
     expect(said).toContain('Swimming Pool');
-    expect(said).toContain('On search_stays, put the ones the ask means in site_filters (and site_sort), by these names (a bare number with its heading: "Star Rating 5")');
-    expect(said).toContain('anything else the group asked for goes in wants, and you pick it from the results');
+    expect(said).toContain('On search_stays, put the ones the ask means in site_filters (and site_sort), by these names, so ixigo filters itself');
+    // ixigo lists no villa, only "Entire house" (10 Oct): the nearest name, the group's own word kept to check it by.
+    expect(said).toContain("the nearest name for what they said, as a person would pick it on ixigo's page, keeping their own word in wants too");
+    expect(said).toContain('Anything else the group asked for goes in wants, and you pick it from the results');
     expect(await now.render('t_other', [])).toBeNull();
   });
 });
