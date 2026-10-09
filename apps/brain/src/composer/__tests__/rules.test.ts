@@ -81,11 +81,29 @@ describe("Go's rules", () => {
     expect(rule).toContain('Say your assumptions');
     // Private bands stay private, and a yes goes into the plan through the record tool.
     expect(rule).toContain('never whose band it is');
-    expect(rule).toContain('save it with record as one agreed line');
+    expect(rule).toContain('keep it with set_budget (the top of your range) and save it with record as one agreed line');
     // The rules it sits beside no longer forbid it: live prices only, and a person's own budget only.
     expect(section).toContain('No check, no live number. A budget to plan for is not a live price');
     expect(section).toContain("Never guess a person's own budget. Suggesting what the group could plan for, when someone asks, is not guessing anyone's.");
     expect(section).not.toContain('No check, no number.');
+  });
+
+  // Keshav, 9 Oct: "go should be super flexible, if users decide the budget it should stick to that, if they rather not and
+  // genuinely have no idea it should gather that from context and intent".
+  it('a budget the group decided sticks until they change it; with none, Go reads a working band from the group and never asks', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
+    const decided = section.split('\n').find((l) => l.startsWith('- A budget the group decided sticks'))!;
+    expect(decided).toContain('keep it with set_budget');
+    expect(decided).toContain('set the new one');
+    expect(decided).toContain('when they drop it, clear it');
+    expect(decided).toContain('anything over it that you show, you say is over');
+    expect(decided).toContain("One person's number alone is their wish");
+    const none = section.split('\n').find((l) => l.startsWith('- With no budget decided'))!;
+    expect(none).toContain('never ask the group for one');
+    expect(none).toContain('the vibe');
+    expect(none).toContain('what they liked or picked');
+    expect(none).toContain('move it as they react');
+    expect(none).toContain('never set_budget on a guess');
   });
 
   it("the one line that goes with a card is the card tool's line", () => {
