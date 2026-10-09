@@ -16,6 +16,7 @@ import {
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
 import { ChallengedError } from '../recipes/runners.js';
+import type { BrowserLogin } from '../../tasks/browsers.js';
 import { IXIGO, type Capture, type FetchPlan } from '../recipes/recipe.js';
 
 // Keshav, 8 Oct: "when the trip creates, that's when we [make] the ixigo connection, and all the warming should happen;
@@ -44,6 +45,8 @@ let trips = 0;
  *  loaded again) and for a check in the background. */
 function world(o: {
   live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged' | 'dead'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
+  /** The person's browser (tasks/browsers.ts), shared by every world given the same one: one login for all their trips. */
+  browser?: FakeBrowser;
 } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
@@ -120,6 +123,7 @@ function world(o: {
   const said: object[] = [];
   const login = createIxigoLogin({
     pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, screen: () => screen, desk, live: () => o.live !== false, now: () => clock.now,
+    ...(o.browser ? { browser: () => o.browser! } : {}),
     log: { warn: () => undefined, info: (obj) => said.push(obj) },
     sleep: async (ms) => {
       clock.now = new Date(clock.now.getTime() + ms);
@@ -159,6 +163,23 @@ function world(o: {
     greet, looks, hooks, said, setup: () => login.setupStep.run(tripId),
   };
 }
+
+/** A person's browser as tasks/browsers.ts keeps it: where its ixigo login stands, and every time ixigo said so. */
+type FakeBrowser = ReturnType<typeof fakeBrowser>;
+function fakeBrowser(state: BrowserLogin | null = null) {
+  const b = {
+    state,
+    sets: [] as Array<{ tripId: string; login: 'in' | 'out' }>,
+    login: async (_tripId: string): Promise<BrowserLogin | null> => b.state,
+    setLogin: async (tripId: string, login: 'in' | 'out'): Promise<void> => {
+      b.sets.push({ tripId, login });
+      const loggedInAt = login === 'in' && b.state?.login !== 'in' ? NOW : (b.state?.loggedInAt ?? null);
+      b.state = { login, at: NOW, loggedInAt };
+    },
+  };
+  return b;
+}
+const greetWake: DeskItem = { id: 'setup:greet', tripId: 't', kind: 'setup', ref: 'greet', dueAt: NOW, payload: {} };
 
 /**
  * ixigo's page as it loads, by the calls Go keeps (staging, 9 Oct): logged in (200), its wallet and with-identity calls
@@ -677,6 +698,88 @@ describe('a login that lands with nothing waiting on it (Keshav, 9 Oct 14:52: "t
   });
 });
 
+describe("one login for all of a person's trips: their browser (tasks/browsers.ts; Keshav, 9 Oct: \"I dont want to login again and again\")", () => {
+  it("a person whose browser is logged in already is not asked: Go's hello carries no login, and setup confirms it with one read", async () => {
+    const b = fakeBrowser({ login: 'in', at: NOW, loggedInAt: new Date(NOW.getTime() - 3600_000) });
+    const w = world({ browser: b, statuses: [200] });
+    expect(await w.login.helloCard({ tripId: w.tripId, wake: [greetWake], pack: goaPack({ trip: w.trip }) })).toBeNull();
+    expect(await w.state()).toBe('logged_in');
+    await w.setup();
+    // One read of ixigo's home page, and nothing said in the room: no ask, no card.
+    expect(w.reads).toHaveLength(1);
+    expect(w.reads[0]).toMatchObject({ url: 'https://www.ixigo.com/', plan: LOGIN_CALLS });
+    expect(w.link.of('post_message')).toEqual([]);
+    expect(w.link.of('replace_card')).toEqual([]);
+    // A booking now is ok at once, with nothing read again.
+    expect(await w.login.ensure(w.tripId, 'Price lock')).toEqual({ ok: true });
+    expect(w.reads).toHaveLength(1);
+  });
+
+  it("setup's read that finds the browser's login gone asks once, with its own card; a first search's nudge asks nothing on a logged-in browser", async () => {
+    const b = fakeBrowser({ login: 'in', at: NOW, loggedInAt: NOW });
+    const w = world({ browser: b, statuses: ['dead'] });
+    expect(await w.login.helloCard({ tripId: w.tripId, wake: [greetWake], pack: goaPack({ trip: w.trip }) })).toBeNull();
+    await w.setup();
+    expect(b.state?.login).toBe('out');
+    expect(await w.state()).toBe('asked');
+    expect(w.link.of('post_message')).toEqual([
+      expect.objectContaining({ text: "Rahul, link ixigo for the trip: one login on the trip's computer, about a minute.", card: expect.objectContaining({ card_id: `c_login_${w.tripId}_1` }) }),
+    ]);
+
+    const n = world({ browser: fakeBrowser({ login: 'in', at: NOW, loggedInAt: NOW }) });
+    n.login.nudge(n.tripId);
+    await n.login.settled();
+    expect(n.link.of('post_message')).toEqual([]);
+    expect(await n.state()).toBe('logged_in');
+  });
+
+  it('a login on one trip is the login on every other trip of the same person: a booking there is ok at once, read nothing, ask nothing', async () => {
+    const b = fakeBrowser();
+    const one = world({ browser: b, statuses: [200] });
+    await one.setup();
+    await one.tap('ixigo_login', 'p_rahul');
+    await one.tap('ixigo_logged_in', 'p_rahul');
+    // ixigo's answer on the first trip is the browser's.
+    expect(b.sets.map((x) => x.login)).toEqual(['out', 'in']);
+    expect(b.state?.login).toBe('in');
+    const two = world({ browser: b });
+    expect(await two.login.helloCard({ tripId: two.tripId, wake: [greetWake], pack: goaPack({ trip: two.trip }) })).toBeNull();
+    expect(await two.login.ensure(two.tripId, 'Price lock')).toEqual({ ok: true });
+    expect(two.reads).toEqual([]);
+    expect(two.link.of('post_message')).toEqual([]);
+  });
+
+  it('a trip that asked while its person logged in on another trip: the next booking is ok, and its card says logged in', async () => {
+    const b = fakeBrowser();
+    const w = world({ browser: b });
+    await w.setup();
+    expect(await w.state()).toBe('asked');
+    b.state = { login: 'in', at: NOW, loggedInAt: NOW };
+    expect(await w.login.ensure(w.tripId, 'Price lock')).toEqual({ ok: true });
+    await w.login.settled();
+    expect(await w.state()).toBe('logged_in');
+    expect(w.last()).toMatchObject({ title: 'ixigo: logged in as Rahul' });
+    expect(w.reads).toEqual([]);
+  });
+
+  it("the browser's login gone since this trip checked ends this trip's login: the next booking asks again, reading nothing", async () => {
+    const b = fakeBrowser();
+    const w = world({ browser: b, statuses: [200] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    const reads = w.reads.length;
+    // The keep-alive (or another trip's check) found the token refused a minute later.
+    w.clock.now = new Date(NOW.getTime() + 60_000);
+    b.state = { login: 'out', at: w.clock.now, loggedInAt: NOW };
+    const r = await w.login.ensure(w.tripId, 'Price lock');
+    expect(r.ok).toBe(false);
+    expect(await w.state()).toBe('asked');
+    expect(w.link.of('post_message').at(-1)).toMatchObject({ text: "Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute." });
+    expect(w.reads).toHaveLength(reads);
+  });
+});
+
 describe('a recipe that needs the login', () => {
   it('after Not now, asks the same person again with a fresh card, at most once in half an hour, and gives the model its line', async () => {
     const w = world();
@@ -706,6 +809,7 @@ describe('a recipe that needs the login', () => {
     // Its wallet and with-identity calls now 401: out, and the login Go held is gone.
     expect(await w.login.status(w.tripId)).toBe('out');
     expect(await w.state()).toBe('logged_out');
+    await w.login.settled();
     expect(w.last()).toMatchObject({ title: 'Logged out of ixigo', body: "Go's computer is no longer logged in to ixigo as Rahul." });
     // A booking asks again at once, with a fresh card: no stale login stands in for it.
     const posts = w.link.of('post_message').length;

@@ -641,6 +641,14 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       expect(w.calls).toHaveLength(3);
     });
 
+    it("primes the person's browser once: a new trip of the same person (one browser, tasks/browsers.ts) needs no first visit", async () => {
+      const w = world(() => ({ ...fetched([capture('prime', 'https://www.ixigo.com/', '<html>')]), final_url: 'https://www.ixigo.com/' }));
+      const runner = createBrowserFetchRunner({ ...w.deps, browser: { userFor: async () => 'u-rahul', again: async () => 'u-rahul' } });
+      await runner.prime!('t_first');
+      await runner.prime!('t_second');
+      expect(w.calls.map((c) => c.path)).toEqual(['/v1/users/u-rahul/browser/fetch']);
+    });
+
     it('a prime ixigo did not answer throws, so setup tries again, and leaves the first search its one more ask', async () => {
       const w = world((_, n) => {
         if (n === 1) throw new V1Error(503, 'box_unavailable', 'The computer did not wake.');

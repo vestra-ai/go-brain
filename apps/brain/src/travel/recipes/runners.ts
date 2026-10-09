@@ -626,6 +626,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   /** COLD_COMPUTER's prime: ixigo's home on the trip's computer, its popup closed, and one call from inside the page. */
   async function prime(tripId: string): Promise<void> {
     const userId = await d.browser.userFor(tripId);
+    // The person's browser serves all of their trips: one Go has read ixigo on already needs no first visit.
+    if (warm.has(userId)) return;
     const body = {
       url: `${IXIGO}/`,
       steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'prime', max_bytes: 1_000 }],
