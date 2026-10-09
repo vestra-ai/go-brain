@@ -4,7 +4,7 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
+  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
   LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -204,6 +204,62 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const stays = world(() => fetched([homeDoc(403)], HOME));
     expect(await createBrowserFetchRunner(stays.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [], challenged: true });
     expect(stays.calls).toHaveLength(1 + CHALLENGE_TRIES);
+  });
+
+  it("gives the loads again their own time: a hand-off stuck on the check for its whole 12 s still loads once more, and is done within 25 s", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const homeDoc = (status: number, at_ms: number) => ({ ...capture('/$', HOME, '<', status), at_ms });
+    const WALLET = capture('/api/v3/ixigo-money/wallet', `${HOME}api/v3/ixigo-money/wallet`, '{', 200);
+    // The login's own plan: Bash waits for ixigo's nearby call, which a page on the check never makes.
+    const plan: FetchPlan = {
+      capture: [{ match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 }], steps: [{ op: 'wait_for', match: '/api/flights/locations/nearby' }], timeoutMs: 12_000, graceMs: 3_000,
+    };
+    const timeOf = (c: Call): number => (c.opts['body'] as { timeout_ms: number }).timeout_ms;
+    /** A load that stays on the check runs to its time on Bash's clock, then times out with only its document. */
+    const stuck = async (w: ReturnType<typeof world>, c: Call): Promise<never> => {
+      await w.deps.sleep(timeOf(c));
+      throw new V1Error(504, 'timeout', 'The page did not send every capture (it stopped at 1 wait_for).', null, { partial: { captures: [homeDoc(403, 300)] } });
+    };
+    const loads = (w: ReturnType<typeof world>) => w.calls.map((c) => timeOf(c));
+    const hand = (w: ReturnType<typeof world>) => createBrowserFetchRunner(w.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' });
+
+    // On the check for all of its 12 s; loaded again 1 s later with the 11 s left, where the check passes in the page
+    // (about 5 s) and the page answers.
+    const passes: ReturnType<typeof world> = world(async (c, n) => {
+      if (n === 1) return stuck(passes, c);
+      await passes.deps.sleep(9_500);
+      return fetched([homeDoc(403, 300), homeDoc(200, 5_500), WALLET], HOME);
+    });
+    expect(await hand(passes)).toEqual({ captures: [WALLET] });
+    expect(loads(passes)).toEqual([12_000, 11_000]);
+    expect(passes.elapsed()).toBe(12_000 + CHALLENGE_WAIT_MS + 9_500);
+    expect(challengeTime(12_000)).toBeLessThanOrEqual(25_000);
+
+    // On it both times: the card comes at 24 s, with no third load that would not fit (less than CHALLENGE_LOAD_MS left).
+    const stays: ReturnType<typeof world> = world(async (c) => stuck(stays, c));
+    expect(await hand(stays)).toEqual({ captures: [], challenged: true });
+    expect(loads(stays)).toEqual([12_000, 11_000]);
+    expect(stays.elapsed()).toBe(challengeTime(12_000));
+
+    // The common good case: a check that passes in the page, its nearby call late, the load running out its time with the
+    // page in: never loaded again.
+    const late: ReturnType<typeof world> = world(async (c) => {
+      await late.deps.sleep(timeOf(c));
+      throw new V1Error(504, 'timeout', 'The page did not send every capture.', null, { partial: { captures: [homeDoc(403, 300), homeDoc(200, 6_000), WALLET] } });
+    });
+    expect(await hand(late)).toEqual({ captures: [WALLET] });
+    expect(late.calls).toHaveLength(1);
+
+    // A read the same way: a recipe page's 20 s, then once more with the 19 s left, within the 40 s.
+    const read: ReturnType<typeof world> = world(async (c, n) => {
+      if (n === 1) {
+        await read.deps.sleep(timeOf(c));
+        throw onCheck([docAt(403, 300)]);
+      }
+      return fetched([busCapture]);
+    });
+    expect((await createBrowserFetchRunner(read.deps).read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+    expect(loads(read)).toEqual([FETCH_TIMEOUT_MS, challengeTime(FETCH_TIMEOUT_MS) - FETCH_TIMEOUT_MS - CHALLENGE_WAIT_MS]);
   });
 
   it('answers a timed-out fetch with what it did get when every required call is in it, and shows the pictures it took', async () => {

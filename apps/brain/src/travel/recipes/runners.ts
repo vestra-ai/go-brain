@@ -254,11 +254,26 @@ const LOOK_STEP = { op: 'page_fetch', url: '/favicon.ico', method: 'GET', captur
  * instead of the page: about 1 in 7 front loads on a staging box (8 Oct), where every box leaves through one address.
  * The page's own document then answers 403 (or 503) at the address asked, and the page makes none of its calls. So every
  * page Go opens keeps its document's answer too (pageDoc: one byte, its status, never waited for). A check that passes
- * loads the page again (200), so the last answer says. A page still on the check is opened again CHALLENGE_WAIT_MS later,
- * at most CHALLENGE_TRIES more times; it is never read as anything, and never handed to a person.
+ * in the page (a real browser's usually does, in about 5 s) loads it again (200), so the last answer says, and that load
+ * keeps its whole time. A page still on the check when its time ran out is opened again CHALLENGE_WAIT_MS later, at most
+ * CHALLENGE_TRIES more times, while the loads fit in twice the page's own time (challengeTime: a hand-off's 12 s makes
+ * 24 s before Watch or its card) with at least CHALLENGE_LOAD_MS for the next. It is never read as anything, and never
+ * handed to a person.
  */
-export const CHALLENGE_WAIT_MS = 3_000;
+export const CHALLENGE_WAIT_MS = 1_000;
 export const CHALLENGE_TRIES = 2;
+/** The least a load again may have: a check that passes takes about 5 s, then the page's own calls about 3 s. */
+export const CHALLENGE_LOAD_MS = 8_000;
+/** How long all of a page's loads may take, from the first one's start: twice the page's own time. */
+export const challengeTime = (pageMs: number): number => 2 * pageMs;
+/**
+ * The time the next load gets, Go waits CHALLENGE_WAIT_MS first: the page's own, or what is left of challengeTime; null
+ * when that is less than CHALLENGE_LOAD_MS, or the tries are used up.
+ */
+function nextLoadMs(pageMs: number, started: number, now: number, loadsAgain: number): number | null {
+  const left = started + challengeTime(pageMs) - now - CHALLENGE_WAIT_MS;
+  return loadsAgain >= CHALLENGE_TRIES || left < CHALLENGE_LOAD_MS ? null : Math.min(pageMs, left);
+}
 export const CHALLENGED = "ixigo asked the trip's computer to wait a moment. Try again in a minute.";
 /** A read whose page stayed on the check: unreachable, saying so; a caller that must tell it from other failures asks for this class. */
 export class ChallengedError extends TravelError {
@@ -403,16 +418,23 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     };
     let userId = d.computer.userIdFor(tripId);
     let coldAgain = false;
+    const pageMs = body.timeout_ms;
+    const started = d.now().getTime();
     let checks = 0;
-    /** CLOUDFLARE: the page opened again after a wait while it may be, with the caller's time left; else a read that fails, saying so. */
+    /**
+     * CLOUDFLARE: the page opened again after a wait, with the time left for it, while it fits and the caller still waits;
+     * else a read that fails, saying so.
+     */
     const againAfterCheck = async (): Promise<void> => {
-      if (checks >= CHALLENGE_TRIES || o.signal?.aborted) {
+      const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
+      if (next === null || o.signal?.aborted) {
         d.log.warn({ tripId, page: what.id, loads: checks + 1 }, "travel: ixigo's page stayed on Cloudflare's check");
         throw new ChallengedError();
       }
       checks += 1;
-      d.log.warn({ tripId, page: what.id, again: checks }, "travel: ixigo's page was Cloudflare's check; opening it again");
+      d.log.warn({ tripId, page: what.id, again: checks, ms: next }, "travel: ixigo's page was Cloudflare's check; opening it again");
       await sleep(CHALLENGE_WAIT_MS);
+      body = { ...body, timeout_ms: next };
     };
     for (let tries = 0; ; tries++) {
       const startedAt = d.now().getTime();
@@ -572,7 +594,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
     const steps = [...check, ...(plan.steps ?? [])];
     const doc = pageDoc(url);
-    const body = {
+    let body = {
       url,
       capture: [
         ...plan.capture.map((c) => ({ match: c.match, ...(plan.graceMs ? { required: c.required } : {}), ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
@@ -585,6 +607,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       keep_open_ms: o.keepOpenMs,
       tab: o.tab,
     };
+    const pageMs = body.timeout_ms;
+    const started = d.now().getTime();
     for (let checks = 0; ; checks++) {
       let captures: Capture[];
       try {
@@ -596,14 +620,16 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         captures = partialCaptures(err);
       }
       if (!challenged(captures, doc)) return { captures: captures.filter((c) => c.match !== doc) };
-      // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front; still on it after
-      // CHALLENGE_TRIES more, the caller closes it and says so.
-      if (checks >= CHALLENGE_TRIES) {
+      // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
+      // it; still on it when no load fits, the caller closes it and says so.
+      const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
+      if (next === null) {
         d.log.warn({ tripId, tab: o.tab, loads: checks + 1 }, "travel: a hand-off's page stayed on Cloudflare's check");
         return { captures: [], challenged: true };
       }
-      d.log.warn({ tripId, tab: o.tab, again: checks + 1 }, "travel: a hand-off's page was Cloudflare's check; opening it again");
+      d.log.warn({ tripId, tab: o.tab, again: checks + 1, ms: next }, "travel: a hand-off's page was Cloudflare's check; opening it again");
       await sleep(CHALLENGE_WAIT_MS);
+      body = { ...body, timeout_ms: next };
     }
   }
 
