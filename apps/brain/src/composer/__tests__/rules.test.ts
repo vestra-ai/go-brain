@@ -57,10 +57,35 @@ describe("Go's rules", () => {
 
   it("never says a person's budget to the room or ties one to a name, next to the private-budget rule", () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
-    const privateRule = "- Budgets are private. You only know the lowest band anyone picked, never who picked what. Never guess anyone's budget.";
+    const privateRule =
+      "- Budgets people set for themselves are private. You only know the lowest band anyone picked, never who picked what. Never guess a person's own budget. " +
+      "Suggesting what the group could plan for, when someone asks, is not guessing anyone's.";
     const noNames =
       "- Never repeat a person's budget to the room or tie a budget to a name, even one they said in the chat. When a budget matters, use the group's lowest band without names, or ask people to answer the budget question in the App.";
     expect(section).toContain(`${privateRule}\n${noNames}`);
+  });
+
+  // Keshav's Go Live room, 9 Oct: "what should we keep the budget for the Goa trip?" got "I can't say": no check, no number,
+  // and "never guess anyone's budget", read as covering the group's plan.
+  it('a budget to plan for gets an answer like a well-travelled friend: ranges, grounded in stays when it can, and an offer to put it in the plan', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
+    const rule = section.split('\n').find((l) => l.startsWith('- When someone asks what budget to plan'))!;
+    expect(rule).toBeDefined();
+    // Never a refusal; per person and for the group, as typical ranges.
+    expect(rule).toContain('never with "I can\'t say"');
+    expect(rule).toContain('per person and for the whole group');
+    expect(rule).toContain('ranges you call typical');
+    // Grounded: with a place and dates, a stays search first and its prices with their age.
+    expect(rule).toContain('with a place and dates, call search_stays first and use its prices, saying how old they are');
+    expect(rule).toContain("getting there from each person's city, food a day and things to do");
+    expect(rule).toContain('Say your assumptions');
+    // Private bands stay private, and a yes goes into the plan through the record tool.
+    expect(rule).toContain('never whose band it is');
+    expect(rule).toContain('save it with record as one agreed line');
+    // The rules it sits beside no longer forbid it: live prices only, and a person's own budget only.
+    expect(section).toContain('No check, no live number. A budget to plan for is not a live price');
+    expect(section).toContain("Never guess a person's own budget. Suggesting what the group could plan for, when someone asks, is not guessing anyone's.");
+    expect(section).not.toContain('No check, no number.');
   });
 
   it("the one line that goes with a card is the card tool's line", () => {
