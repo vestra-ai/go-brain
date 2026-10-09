@@ -28,7 +28,7 @@ export interface TripBudget {
 
 export interface TripBudgets {
   /** The decided budget: the chat's, else the App's lowest band (its top), else null. */
-  get(tripId: string, trip: Pick<C.Trip, 'budget'>): Promise<TripBudget | null>;
+  get(tripId: string, trip: Pick<C.TripSnapshot, 'budget'>): Promise<TripBudget | null>;
   set(tripId: string, b: { perPersonMinor: number; covers: BudgetCovers; messageId: string }): Promise<void>;
   clear(tripId: string): Promise<void>;
 }
@@ -70,7 +70,7 @@ export function budgetWords(b: TripBudget): string {
 }
 
 /** "Right now": the decided budget, and that it holds. */
-export function budgetNow(d: { budgets: TripBudgets; trip: (tripId: string) => Promise<Pick<C.Trip, 'budget'>> }): NowProvider {
+export function budgetNow(d: { budgets: TripBudgets; trip: (tripId: string) => Promise<Pick<C.TripSnapshot, 'budget'>> }): NowProvider {
   return {
     name: 'trip_budget',
     order: 12,

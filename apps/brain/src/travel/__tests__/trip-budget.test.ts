@@ -29,8 +29,8 @@ afterAll(async () => {
 });
 
 /** A trip as the budget reads it: the App's lowest band, or none. */
-const tripWith = (lowest: { min_minor: number; max_minor: number | null } | null): Pick<C.Trip, 'budget'> =>
-  ({ budget: { lowest: lowest ? { ...lowest, currency: 'INR' } : null, answered: lowest ? 3 : 0, of: 4 } }) as unknown as Pick<C.Trip, 'budget'>;
+const tripWith = (lowest: { min_minor: number; max_minor: number | null } | null): Pick<C.TripSnapshot, 'budget'> =>
+  ({ budget: { lowest: lowest ? { ...lowest, currency: 'INR' } : null, answered: lowest ? 3 : 0, of: 4 } }) as unknown as Pick<C.TripSnapshot, 'budget'>;
 const NO_APP_BAND = tripWith(null);
 
 describe('a decided budget is context for the turn, never a filter in code', () => {
