@@ -188,7 +188,7 @@ describe('the early answer, with no model call', () => {
   });
 
   it('on a card of stays from ixigo.com, puts "See all on ixigo" for the whole list the search read', async () => {
-    const line = msg(58, 'p_priya', '@Go villas with a pool in North Goa');
+    const line = msg(58, 'p_priya', '@Go stays with a pool in North Goa');
     const pack = { ...goaPack(), messages: [...goaPack().messages, line] };
     const stay = (title: string, priceMinor: number): TravelOption => ({
       kind: 'stay', title, priceMinor, currency: 'INR', priceNote: 'per night, per room', highlights: ['Pool'], facts: { pool: true },
