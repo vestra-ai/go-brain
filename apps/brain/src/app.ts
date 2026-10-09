@@ -21,6 +21,7 @@ import type { Env } from './env.js';
 import type { Memory } from './memory/memory.js';
 import type { Pay } from './money/pay.js';
 import { unsureReflex, type Reflex } from './reflex/reflex.js';
+import type { Browsers } from './tasks/browsers.js';
 import type { Tasks } from './tasks/tasks.js';
 import type { RecipeStat } from './travel/book/engine.js';
 import type { IxigoLogin } from './travel/login.js';
@@ -72,8 +73,9 @@ export interface Brain {
   /** Set by P4. */
   tasks?: Tasks;
   /**
-   * Set by P4's tasks lane, which owns the trip's computer: the browser fetch the recipe engine reads ixigo.com pages
-   * with; keepWarm, which holds the computer awake for two minutes (Bash's warm keep_ms), which only travel's
+   * Set by P4's tasks lane, which owns the computers. All of these use the trip's browser, the organizer's own computer
+   * shared by all of their trips (tasks/browsers.ts), never the trip's job computer: the browser fetch the recipe engine
+   * reads ixigo.com pages with; keepWarm, which holds the computer awake for two minutes (Bash's warm keep_ms), which only travel's
    * warmForTravel calls; start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step and a
    * watch's check, and says whether it was up ('ready'), is on its way ('waking'), or was woken in the last minute
    * ('skipped'); prime, the computer's first ixigo visit, travel's next setup step (it throws when ixigo did not answer);
@@ -89,6 +91,8 @@ export interface Brain {
     watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
     /** A fresh 15-minute session on the trip's screen, in control or to view (POST /v1/sessions): the ixigo login's Watch. */
     screen(tripId: string, mode: 'view' | 'control'): Promise<{ url: string; expires_at: string }>;
+    /** Where the trip's browser's ixigo login stands: one browser, and one login, for every trip of its organizer. */
+    login?: Pick<Browsers, 'login' | 'setLogin' | 'loggedInSince'>;
   };
   /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */
   recipeStats?: () => RecipeStat[];

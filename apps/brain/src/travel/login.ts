@@ -31,6 +31,7 @@ import type { Tasks } from '../tasks/tasks.js';
 import { TravelError } from './mcp-travel.js';
 import { IXIGO, type Capture, type FetchPlan } from './recipes/recipe.js';
 import { ChallengedError, type RecipeRunner } from './recipes/runners.js';
+import type { BrowserLogin, Browsers } from '../tasks/browsers.js';
 
 /**
  * Calls ixigo's page makes as it loads only when it has a login, with its own token and keys. A call of Go's own is
@@ -78,6 +79,8 @@ export function loginFrom(captures: Capture[]): { login: 'in' | 'out' | 'unknown
 }
 /** A login is taken as it stands for this long, then checked again the next time a recipe needs it. */
 export const RECHECK_MS = 6 * 3600_000;
+/** A booking stands on a login ixigo confirmed this recently; past it, the booking reads ixigo first. */
+export const BOOKING_RECHECK_MS = 60_000;
 /** Asked again at most this often when recipes keep needing a login nobody has made. */
 const ASK_AGAIN_MS = 30 * 60_000;
 /** Go's hello is a queued turn: the prompt waits for it this long, looking every HELLO_POLL_MS, before setup tries later. */
@@ -100,6 +103,8 @@ export const LOGIN_URL = 'https://www.ixigo.com/';
 const BOOK_ASK_AGAIN_MS = 2 * 60_000;
 /** The first ask, at setup or at a trip's first search, when Go's hello went without it. */
 const FIRST_LINE = "{name}, link ixigo for the trip: one login on the trip's computer, about a minute.";
+/** The ask when the person's browser lost the login (the keep-alive, another trip's check), at the trip's next travel talk. */
+const GONE_LINE = "{name}, ixigo logged Go's computer out: one login brings it back, about a minute.";
 /** The hello's last line, for the person asked, with the login card on the same message. */
 export const HELLO_LINE = '{name}, first link ixigo once so I can search and book for everyone.';
 
@@ -136,6 +141,11 @@ export interface LoginDeps {
   tasks: () => Pick<Tasks, 'handoff' | 'stop'> | null;
   /** A fresh session on the trip's screen, in control or to view (POST /v1/sessions); null with no trip computer here. */
   screen: () => ((tripId: string, mode: 'view' | 'control') => Promise<{ url: string; expires_at: string }>) | null;
+  /**
+   * Where the trip's browser's ixigo login stands (tasks/browsers.ts): one browser, and one login, for every trip of its
+   * organizer, so a trip whose person logged in on another trip of theirs asks nothing. Null with no browsers here.
+   */
+  browser?: () => Pick<Browsers, 'login' | 'setLogin'> | null;
   /** A booking parked on the login wakes the composer when the login is in. */
   desk: Pick<Desk, 'put'>;
   /** Whether Go searches ixigo.com itself (TRAVEL_MODE ixigo_web): only then is there a login to ask for. */
@@ -159,16 +169,19 @@ export interface IxigoLogin {
   setupStep: SetupStep;
   /**
    * Travel intent on a trip (warmForTravel's callers: a search tool starting, the early start, a recipe's run): a trip
-   * with no login row at all is asked now, once. Fire and forget: the search never waits on it.
+   * with no login row at all is asked now, once; a trip whose login the person's browser has lost since (the keep-alive,
+   * another trip's check) is asked now, once, so they learn before a booking fails. Never into a quiet chat: only on
+   * travel talk. Fire and forget: the search never waits on it.
    */
   nudge(tripId: string): void;
   registerTaps(taps: Pick<TapRouter, 'on'>): void;
   /**
    * For a recipe or a booking that needs the login: ok, or the line for the model (and the person was asked). A booking
    * (park) is asked with its own line ("To book Saudades I need ixigo linked once, Rahul") and waits on the login: when
-   * the login is in, the composer wakes and carries on with it.
+   * the login is in, the composer wakes and carries on with it. booking: money is about to move, so ixigo is read now
+   * unless it said in within BOOKING_RECHECK_MS: a token it refuses flips the browser and asks, never failing silently.
    */
-  ensure(tripId: string, what: string, o?: { park?: Parked }): Promise<{ ok: true } | { ok: false; note: string }>;
+  ensure(tripId: string, what: string, o?: { park?: Parked; booking?: boolean }): Promise<{ ok: true } | { ok: false; note: string }>;
   /**
    * ixigo's own answer for the trip's browser: in, out, or unknown (the page never said); challenged when its page stayed
    * on Cloudflare's check, which says nothing about the login either way. Out on a login Go held lets it go (logged out),
@@ -342,14 +355,46 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     });
   }
 
-  /** ixigo's answer from its page's calls, logged for the stage desk by call and status alone: never the account. */
-  function said(tripId: string, captures: Capture[], where: string): 'in' | 'out' | 'unknown' {
+  /**
+   * ixigo's answer from its page's calls, logged for the stage desk by call and status alone: never the account. In or out
+   * is the person's browser's, for every trip of theirs (tasks/browsers.ts).
+   */
+  async function said(tripId: string, captures: Capture[], where: string): Promise<'in' | 'out' | 'unknown'> {
     const { login, call, status: s } = loginFrom(captures);
     d.log.info(
       { tripId, login, call, status: s, calls: captures.map((c) => `${c.match} ${c.status}`), where },
       'travel: ixigo said whether the trip computer is logged in',
     );
+    if (login !== 'unknown') {
+      await d.browser?.()?.setLogin(tripId, login).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the browser's login was not kept"));
+    }
     return login;
+  }
+
+  /** Where the trip's browser's login stands, as ixigo last said it on any trip of the person's; null when unknown. */
+  async function browserLogin(tripId: string): Promise<BrowserLogin | null> {
+    try {
+      return (await d.browser?.()?.login(tripId)) ?? null;
+    } catch (err) {
+      d.log.warn({ err, tripId }, "travel: the browser's login could not be read");
+      return null;
+    }
+  }
+
+  /**
+   * The person's browser is logged in already (on another trip of theirs): this trip starts logged in and asks nothing,
+   * its row made only where there is none. Not yet confirmed here (checkedAt null): setup reads ixigo once to confirm.
+   */
+  async function fromBrowser(tripId: string, personId: string): Promise<boolean> {
+    const b = await browserLogin(tripId);
+    if (b?.login !== 'in') return false;
+    const now = d.now();
+    await d.pool.query(
+      `insert into ixigo_logins (trip_id, person_id, state, attempt, asked_at, logged_in_at, updated_at) values ($1, $2, 'logged_in', 0, $3, $4, $3)
+       on conflict (trip_id) do nothing`,
+      [tripId, personId, now, b.loggedInAt ?? now],
+    );
+    return true;
   }
 
   /** ixigo's answer for the trip's browser, read from its home page; nothing changes on the row. */
@@ -366,7 +411,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       d.log.info({ tripId, status: null, login: 'unknown', why: check ? 'challenge' : err.code }, 'travel: ixigo said whether the trip computer is logged in');
       return check ? 'challenged' : 'unknown';
     }
-    return said(tripId, captures, 'home page');
+    return await said(tripId, captures, 'home page');
   }
 
   /**
@@ -381,7 +426,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         const out: LoginRow = { ...row, state: 'logged_out', checkedAt: d.now() };
         await save(out);
         d.log.info({ tripId }, "travel: ixigo no longer has the trip computer's login; the next booking asks again");
-        await show(out);
+        // A trip that took its login from the person's browser never had a card to change: the card is best effort.
+        track('card', tripId, show(out));
       }
     }
     return s;
@@ -450,8 +496,6 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   /** Each trip's hand-off end (HANDOFF_MS), cancelled when the login ends sooner. In this process: Bash closes the tab itself. */
   const ending = new Map<string, () => void>();
   const nudging = new Set<string>();
-  /** Trips known to have a login row: a nudge there reads nothing. */
-  const hasRow = new Set<string>();
 
   /** Who is asked first: the organizer, or the first person in the trip who hasn't paused Go. */
   function askable(pack: TripPack): string | null {
@@ -475,6 +519,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function firstAsk(tripId: string, pack: TripPack): Promise<void> {
     const personId = askable(pack);
     if (!personId) return;
+    // Logged in already on the person's browser: nothing to ask; setup confirms it with one read (setupStep).
+    if (await fromBrowser(tripId, personId)) return;
     const now = d.now();
     const made = await d.pool.query(
       `insert into ixigo_logins (trip_id, person_id, state, attempt, asked_at, updated_at) values ($1, $2, 'asked', 0, $3, $3)
@@ -533,7 +579,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       await heldByCheck(now);
       return;
     }
-    if (said(row.tripId, opened.captures, 'hand-off') === 'in') {
+    if ((await said(row.tripId, opened.captures, 'hand-off')) === 'in') {
       await release(row.tripId);
       await show(await loggedIn(now, { carryOn: true }));
     } else {
@@ -566,7 +612,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       d.log.info({ tripId, status: null, login: 'unknown', why: 'challenge', where: 'log in page' }, 'travel: ixigo said whether the trip computer is logged in');
       return 'challenged';
     }
-    const login = said(tripId, opened.captures, 'log in page');
+    const login = await said(tripId, opened.captures, 'log in page');
     if (login !== 'in') {
       await runner.tabSteps?.(tripId, LOGIN_TAB, [LOGIN_BUTTON, MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
         .catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's taps did not run"));
@@ -627,7 +673,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     async helloCard(i) {
       if (!d.live() || !i.wake.some((w) => w.kind === 'setup' && w.ref === 'greet')) return null;
       // Claimed before the hello goes, so the setup step (and a first search's nudge) finds the ask made and asks nothing.
+      // A person whose browser is logged in already (another trip of theirs) is not asked: the trip starts logged in.
       const personId = askable(i.pack);
+      if (personId && (await fromBrowser(i.tripId, personId))) return null;
       if (personId) {
         await d.pool.query(
           `insert into ixigo_logins (trip_id, person_id, state, attempt, asked_at, updated_at) values ($1, $2, 'asked', 0, $3, $3)
@@ -649,25 +697,40 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       after: 'travel.computer',
       async run(tripId) {
         // Nothing to log in to while Go doesn't browse ixigo.com; a recipe that needs the login asks then.
-        if (!d.live() || (await get(tripId))) return;
-        const { pack, greeted } = await afterHello(tripId);
-        // Still no hello: the setup sweep tries again.
-        if (!greeted) throw new Error('waits for Go to greet the trip');
-        await firstAsk(tripId, pack);
+        if (!d.live()) return;
+        if (!(await get(tripId))) {
+          const { pack, greeted } = await afterHello(tripId);
+          // Still no hello: the setup sweep tries again.
+          if (!greeted) throw new Error('waits for Go to greet the trip');
+          await firstAsk(tripId, pack);
+        }
+        // A login the trip took from the person's browser (helloCard, firstAsk): one read of ixigo confirms it before Go
+        // stands on it. Gone, and Go asks, once, with its own card; ixigo can't say, and it stands, as a check's does.
+        const row = await get(tripId);
+        if (row?.state === 'logged_in' && row.checkedAt === null) {
+          const s = await look(tripId);
+          if (s === 'in') await save({ ...row, checkedAt: d.now() });
+          else if (s === 'out') await ask(tripId, row.personId, row.attempt + 1, FIRST_LINE);
+        }
       },
     },
 
     nudge(tripId) {
-      if (!d.live() || hasRow.has(tripId) || nudging.has(tripId)) return;
+      if (!d.live() || nudging.has(tripId)) return;
       nudging.add(tripId);
       track('first ask', tripId, (async () => {
-        if (await get(tripId)) {
-          hasRow.add(tripId);
+        const row = await get(tripId);
+        if (!row) {
+          // After Go's hello when it comes; a hello that never comes doesn't stop the ask.
+          const { pack } = await afterHello(tripId);
+          await firstAsk(tripId, pack);
           return;
         }
-        // After Go's hello when it comes; a hello that never comes doesn't stop the ask.
-        const { pack } = await afterHello(tripId);
-        await firstAsk(tripId, pack);
+        // The person's browser lost the login since this trip last checked it: asked once, now, on travel talk.
+        const b = await browserLogin(tripId);
+        if (row.state === 'logged_in' && b?.login === 'out' && b.at && (!row.checkedAt || b.at > row.checkedAt)) {
+          await ask(tripId, row.personId, row.attempt + 1, GONE_LINE);
+        }
       })().finally(() => nudging.delete(tripId)));
     },
 
@@ -742,10 +805,31 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
 
     async ensure(tripId, what, o = {}) {
       const park = o.park ?? null;
-      const row = await get(tripId);
+      let row = await get(tripId);
       const now = d.now().getTime();
+      // How long a login ixigo confirmed is taken as it stands: a booking reads ixigo again past a minute.
+      const trust = o.booking ? BOOKING_RECHECK_MS : RECHECK_MS;
+      // The person's browser, as ixigo last said on any trip of theirs: in within that is this trip's login too; out
+      // since this trip last checked ends this trip's login, and the ask below asks again.
+      const b = await browserLogin(tripId);
+      if (b?.login === 'in' && b.at && now - b.at.getTime() < trust) {
+        if (!row) {
+          const pack = await d.packs.get(tripId);
+          await fromBrowser(tripId, askable(pack) ?? pack.trip.organizer_person_id);
+        } else if (row.state !== 'logged_in') {
+          // Logged in on another trip of theirs while this one asked: its card says logged in, its open log in closes.
+          if (row.state === 'logging_in') await release(tripId);
+          const next = await loggedIn(row);
+          track('card', tripId, show(next));
+        }
+        return { ok: true };
+      }
+      if (b?.login === 'out' && row?.state === 'logged_in' && b.at && (!row.checkedAt || b.at > row.checkedAt)) {
+        row = { ...row, state: 'logged_out', checkedAt: b.at };
+        await save(row);
+      }
       if (row && (row.state === 'logged_in' || row.state === 'logging_in')) {
-        if (row.state === 'logged_in' && row.checkedAt && now - row.checkedAt.getTime() < RECHECK_MS) return { ok: true };
+        if (row.state === 'logged_in' && row.checkedAt && now - row.checkedAt.getTime() < trust) return { ok: true };
         const s = await status(tripId);
         if (s === 'in') {
           const next = await loggedIn(row);

@@ -34,10 +34,11 @@ function world(handler: (c: Call, n: number) => unknown) {
       return (await handler(c, calls.length)) as T;
     },
   };
-  const computer = { userIdFor: (t: string) => `u-${t}`, ensureUser: vi.fn(async (t: string) => `u2-${t}`) };
+  // The trip's browser (tasks/browsers.ts): its /v1 user, and the same made again when /v1 does not know it.
+  const browser = { userFor: async (t: string) => `u-${t}`, again: vi.fn(async (t: string) => `u2-${t}`) };
   const log = { warn: vi.fn() };
-  const deps = { v1, computer, log, now: () => new Date(nowMs), sleep: async (ms: number) => { nowMs += ms; } };
-  return { calls, computer, log, deps, elapsed: () => nowMs - Date.parse('2026-11-01T10:00:00Z') };
+  const deps = { v1, browser, log, now: () => new Date(nowMs), sleep: async (ms: number) => { nowMs += ms; } };
+  return { calls, browser, log, deps, elapsed: () => nowMs - Date.parse('2026-11-01T10:00:00Z') };
 }
 
 const BUSES = 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O';
@@ -503,7 +504,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       return fetched([busCapture]);
     });
     const read = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan);
-    expect(w.computer.ensureUser).toHaveBeenCalledWith('t1');
+    expect(w.browser.again).toHaveBeenCalledWith('t1');
     expect(w.calls.map((c) => c.path)).toEqual(['/v1/users/u-t1/browser/fetch', '/v1/users/u2-t1/browser/fetch']);
     expect(read.captures).toHaveLength(1);
   });
@@ -658,6 +659,14 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       });
       await fails(runner.read('t1', BUSES, busPlan), 'unreachable', /took too long/);
       expect(w.calls).toHaveLength(3);
+    });
+
+    it("primes the person's browser once: a new trip of the same person (one browser, tasks/browsers.ts) needs no first visit", async () => {
+      const w = world(() => ({ ...fetched([capture('prime', 'https://www.ixigo.com/', '<html>')]), final_url: 'https://www.ixigo.com/' }));
+      const runner = createBrowserFetchRunner({ ...w.deps, browser: { userFor: async () => 'u-rahul', again: async () => 'u-rahul' } });
+      await runner.prime!('t_first');
+      await runner.prime!('t_second');
+      expect(w.calls.map((c) => c.path)).toEqual(['/v1/users/u-rahul/browser/fetch']);
     });
 
     it('a prime ixigo did not answer throws, so setup tries again, and leaves the first search its one more ask', async () => {
@@ -829,7 +838,7 @@ describe("fetches at once on one trip's computer: Bash runs only so many (409 br
       await new Promise<void>((r) => ends.push(r));
       return fetched([busCapture]);
     });
-    const runner = createBrowserFetchRunner({ ...w.deps, computer: { userIdFor: () => 'u-box', ensureUser: async () => 'u-box' }, slots: () => 1 });
+    const runner = createBrowserFetchRunner({ ...w.deps, browser: { userFor: async () => 'u-box', again: async () => 'u-box' }, slots: () => 1 });
     const both = [runner.read('t1', BUSES, busPlan), runner.read('t2', BUSES, busPlan)];
     await settle();
     expect(w.calls).toHaveLength(1);
