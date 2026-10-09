@@ -693,20 +693,20 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       async run(tripId) {
         // Nothing to log in to while Go doesn't browse ixigo.com; a recipe that needs the login asks then.
         if (!d.live()) return;
-        const row = await get(tripId);
+        if (!(await get(tripId))) {
+          const { pack, greeted } = await afterHello(tripId);
+          // Still no hello: the setup sweep tries again.
+          if (!greeted) throw new Error('waits for Go to greet the trip');
+          await firstAsk(tripId, pack);
+        }
         // A login the trip took from the person's browser (helloCard, firstAsk): one read of ixigo confirms it before Go
         // stands on it. Gone, and Go asks, once, with its own card; ixigo can't say, and it stands, as a check's does.
+        const row = await get(tripId);
         if (row?.state === 'logged_in' && row.checkedAt === null) {
           const s = await look(tripId);
           if (s === 'in') await save({ ...row, checkedAt: d.now() });
           else if (s === 'out') await ask(tripId, row.personId, row.attempt + 1, FIRST_LINE);
-          return;
         }
-        if (row) return;
-        const { pack, greeted } = await afterHello(tripId);
-        // Still no hello: the setup sweep tries again.
-        if (!greeted) throw new Error('waits for Go to greet the trip');
-        await firstAsk(tripId, pack);
       },
     },
 
