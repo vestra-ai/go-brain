@@ -128,6 +128,7 @@ export interface WatchRow {
   trip_id: string;
   recipe_id: string;
   inputs: Record<string, unknown>;
+  /** ixigo's own filters the watch names, by their names on its list (a row from before them: "pool", which the name matcher takes as Swimming Pool). */
   conditions: string[];
   flip: string;
   flip_limit: string | null;
@@ -251,7 +252,11 @@ export function createWatchRunner(d: WatchRunnerDeps): { tick(): Promise<number>
     recent.push(now.getTime());
     let answer: EngineAnswer;
     try {
-      answer = await d.engine.answerShared(w.recipe_id, w.inputs, { tripId: w.trip_id, conditions: w.conditions, background: true });
+      answer = await d.engine.answerShared(w.recipe_id, w.inputs, { tripId: w.trip_id, siteFilters: w.conditions, background: true });
+      // ixigo's own filters the watch names (its conditions) that this read didn't apply: not a reading of the watched
+      // list, so a failed check, never a flip.
+      const unknown = answer.as === 'options' ? (answer.site?.unknown ?? []) : [];
+      if (unknown.length > 0) throw new Error(`ixigo applied no filter named ${unknown.join(', ')}`);
     } catch (err) {
       // The Server's socket went under the check: not the watch's failure, and it stays due for the link's return.
       if (!d.linkOpen()) return false;

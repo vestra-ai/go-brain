@@ -22,14 +22,15 @@ const RIVA: ResultOption = {
   },
   sourceUrl: 'https://www.ixigo.com/hotels/4599837/details',
 };
-const ASK = { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool' as const, 'beach' as const], maxPriceMinor: 1_000_000 };
+/** The ask as the search answered it: what ixigo filtered on, by its own names, and Go's own price cap. */
+const ASK = { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool', 'Pet-friendly property'], maxPriceMinor: 1_000_000 };
 
 describe("a stay's details sheet", () => {
   it("is what the search read, nothing made up: photos, why it fits the ask, the stay split between its people, ixigo's words and rating", () => {
     const d = stayDetails(RIVA, ASK, 4, ['https://go.test/img/u1.jpg', 'https://go.test/img/u2.jpg'])!;
     expect(d).toEqual({
       gallery_urls: ['https://go.test/img/u1.jpg', 'https://go.test/img/u2.jpg'],
-      why: ['Has a pool, as asked', 'About 2 min on foot to the beach', 'Within ₹10,000 a night'],
+      why: ['Swimming Pool, as asked', 'Pet-friendly property, as asked', 'Within ₹10,000 a night'],
       costs: [{ label: '3 nights, each of 4', emoji: '🛏️', amount_minor: 1_485_600, currency: 'INR' }],
       total_minor: 1_485_600,
       amenities: ['Free Wifi', 'Swimming pool at the property', 'Private Beach', 'Restaurants'],

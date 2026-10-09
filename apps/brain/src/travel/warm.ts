@@ -137,7 +137,7 @@ export interface StaysHeadStartDeps {
    * (an ask got there first, or the same dates were agreed again).
    */
   onChangedKept?(tripId: string, ask: HeadStartAsk, startedAt: Date): void;
-  /** A stays search of this place and dates is kept or running, with any conditions (the backend's pageKept). */
+  /** A stays search of this place and dates is kept or running, with any filters (the backend's pageKept). */
   staysKept?(tripId: string, ask: HeadStartAsk): Promise<boolean>;
 }
 
@@ -145,7 +145,7 @@ const DAY_MS = 86_400_000;
 
 /**
  * The stays head start, under ixigo_web: the trip's likely first stays search (its destination, its dates, its head
- * count, no conditions) run before anyone asks, so "stays for our dates" answers from the kept search in under a second.
+ * count, no filters) run before anyone asks, so "stays for our dates" answers from the kept search in under a second.
  * It runs after the ixigo warm at setup, when the trip's dates or destination change (settled HEAD_START_SETTLE_MS), and
  * on a person's first line after the last one ran out of its time (at most once in HEAD_START_ON_MESSAGE_MS). It goes
  * through Go's searches, so it posts nothing in the room and an ask of the same page joins it; nothing loads when a
@@ -179,7 +179,7 @@ export function createStaysHeadStart(d: StaysHeadStartDeps): {
     const nights = Math.round((Date.parse(t.end) - Date.parse(t.start)) / DAY_MS);
     if (!(nights >= 1 && nights <= HEAD_START_MAX_NIGHTS) || t.start < (await d.today(tripId))) return;
     const ask: HeadStartAsk = { place: t.destination, check_in: t.start, check_out: t.end };
-    // A stays search of the same place and dates, kept or running with any conditions (the turn's own on an agreement,
+    // A stays search of the same place and dates, kept or running with any filters (the turn's own on an agreement,
     // "pool stays for 6 to 9 Nov"), already answers "stays for these dates": a head start would only load a second page,
     // and every load opens a window on the trip's computer. One load per agreement.
     if (await d.staysKept?.(tripId, ask)) {

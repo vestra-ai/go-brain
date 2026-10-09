@@ -6,6 +6,7 @@ import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { readBodyAs } from '../bodies.js';
 import { BOOK_DIR, checkRecipe, loadBook } from '../book.js';
 import type { ResultsStore } from '../../results.js';
+import { createOffers } from '../../recipes/offers.js';
 import { createEngine } from '../engine.js';
 import { ixigoTool } from '../tool.js';
 
@@ -187,17 +188,28 @@ describe("a place's stays", () => {
     expect(got.rows[0]).toEqual({ offer: 'Flat 15% Off up to ₹1,500 on Domestic Hotels with AU Bank Credit Cards', code: 'AUSFD', terms: `${IXIGO}/offers/ausfd_hotels` });
   });
 
-  it('hotels.search asks ixigo for paying at the hotel or nothing now, and orders the list by the codes the page has', async () => {
-    const { engine, runs } = engineWith(() => [
-      capture('/accommodation-search/api/v3/accommodations/search$', `${IXIGO}/accommodation-search/api/v3/accommodations/search`, fixture('stays-goa-page1.json')),
-    ]);
-    const page = async (conditions: string[], sort?: string) =>
-      (await engine.answer('hotels.search', { place: 'Anjuna', ...DATES, ...(sort ? { sort } : {}) }, { tripId: 't_goa', conditions })) as { page: string };
-    expect((await page(['pay_at_hotel'])).page).toBe(`${results('Anjuna', 1026, 'C', 50347)}&filters=PT_PAY_AT_HOTEL`);
-    expect((await page(['book_with_zero', 'free_cancellation'], 'SC_P_LH')).page).toBe(`${results('Anjuna', 1026, 'C', 50347)}&filters=MP_FC%2CPT_BOOK_WITH_ZERO_PAYMENT&sort=SC_P_LH`);
-    // A sort the page has no code for adds nothing to the address.
+  it("hotels.search asks ixigo for paying at the hotel or nothing now, and orders the list, by the names on ixigo's own list", async () => {
+    const offers = createOffers({ now: () => new Date('2026-10-08T12:00:00Z') });
+    const runner = {
+      read: async (_trip: string, url: string) => ({
+        captures: [
+          capture('/accommodation-search/api/v3/accommodations/search$', `${IXIGO}/accommodation-search/api/v3/accommodations/search`, fixture('stays-goa-page1.json')),
+          capture('/accommodation-search/api/v2/accommodations/search/metadata$', `${IXIGO}/accommodation-search/api/v2/accommodations/search/metadata`, sample('hotels.search_filters.json')),
+        ],
+        finalUrl: url,
+      }),
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-08T12:00:00Z'), offers });
+    const page = async (siteFilters: string[], siteSort?: string) =>
+      (await engine.answer('hotels.search', { place: 'Anjuna', ...DATES }, { tripId: 't_goa', siteFilters, ...(siteSort ? { siteSort } : {}) })) as { page: string };
+    // The first read brings ixigo's list for the place; the asks after it are by its names.
+    expect((await page([])).page).toBe(results('Anjuna', 1026, 'C', 50347));
+    expect((await page(['Pay At Hotel'])).page).toBe(`${results('Anjuna', 1026, 'C', 50347)}&filters=PT_PAY_AT_HOTEL`);
+    expect((await page(['Book with ₹0 payment', 'Free Cancellation'], 'Price (Low to High)')).page).toBe(
+      `${results('Anjuna', 1026, 'C', 50347)}&filters=MP_FC%2CPT_BOOK_WITH_ZERO_PAYMENT&sort=SC_P_LH`,
+    );
+    // A sort the list has no name for adds nothing to the address.
     expect((await page([], 'cheapest&x=1')).page).toBe(results('Anjuna', 1026, 'C', 50347));
-    expect(runs).toHaveLength(3);
   });
 });
 

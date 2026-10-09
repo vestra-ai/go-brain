@@ -263,7 +263,7 @@ describe('watch_ixigo', () => {
   });
 
   const POOL_UNDER_3K = {
-    recipe: 'hotels.search', inputs: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' }, conditions: ['pool'],
+    recipe: 'hotels.search', inputs: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' }, site_filters: ['Swimming Pool'],
     flip: 'under', limit: 3000, label: 'a pool stay under ₹3,000',
   };
 
@@ -281,15 +281,18 @@ describe('watch_ixigo', () => {
       card: async () => null,
     } as never;
     const images = { rehostUrl: async (u: string) => u } as never;
-    const e = engine(stays(stay('Arambol Sweet Lake Resort', 1790), stay('Villa Sol', 5200), stay('Casa Azul', 2600)));
+    // ixigo's own pool filter applied, as the engine says it with the answer.
+    const site = { filtered: ['Swimming Pool'], sorted: null, unknown: [], listed: true, list: null };
+    const e = engine({ ...stays(stay('Arambol Sweet Lake Resort', 1790), stay('Villa Sol', 5200), stay('Casa Azul', 2600)), site } as EngineAnswer);
     const [watch] = watchTools({ pool: db.pool, book, engine: e, switches: switches(), now: () => START, results, images });
     const c = ctx('t_already_stays', 'rw_w2');
     expect(await watch!.run(POOL_UNDER_3K, c)).toMatchObject({ already: true, results_id: 'r_w2', answered: true });
     // The ones under ₹3,000, in ixigo's order, and the card's line: the turn ends on them, with the card's vote button.
     expect(c.cards).toHaveLength(1);
     expect((c.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Arambol Sweet Lake Resort', 'Casa Azul']);
-    expect(c.lines).toEqual(['Already on ixigo: pool stays in North Goa for 6 to 9 Nov, at most ₹3,000 a night, from ₹1,790 a night.']);
-    expect(saved[0]).toMatchObject({ optionKind: 'stay', query: { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', maxPriceMinor: 300_000, mustHave: ['pool'] } });
+    // ixigo's filter, as the engine says it applied it: the line names it.
+    expect(c.lines).toEqual(["Already on ixigo: stays in North Goa for 6 to 9 Nov, at most ₹3,000 a night and Swimming Pool (ixigo's filter), from ₹1,790 a night."]);
+    expect(saved[0]).toMatchObject({ optionKind: 'stay', query: { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', maxPriceMinor: 300_000, siteFilters: ['Swimming Pool'] } });
     expect((await db.pool.query('select 1 from recipe_watches where trip_id = $1', ['t_already_stays'])).rowCount).toBe(0);
   });
 
@@ -305,7 +308,7 @@ describe('watch_ixigo', () => {
     const [watch] = watchTools({ pool: db.pool, book, engine: e, switches: switches(), now: () => START, kept });
     expect(await watch!.run(POOL_UNDER_3K, ctx('t_kept1', 'rw_k1'))).toMatchObject({ already: true, now: '1 on ixigo; the cheapest ₹1,790: Arambol Sweet Lake Resort' });
     expect(e.calls).toHaveLength(0);
-    expect(keptReads[0]).toMatchObject({ tripId: 't_kept1', conditions: ['pool'] });
+    expect(keptReads[0]).toMatchObject({ tripId: 't_kept1', siteFilters: ['Swimming Pool'] });
     // Not so in what is kept, which may be part of the page: the page says, and the watch starts from it.
     expect(await watch!.run({ ...POOL_UNDER_3K, limit: 1000 }, ctx('t_kept2', 'rw_k2'))).toMatchObject({ watching: true });
     expect(e.calls).toHaveLength(1);
@@ -347,8 +350,8 @@ describe('a watch shares Go\'s searches', () => {
       pack: { trip: { dates: { start: '2026-11-06', end: '2026-11-09' } }, messages: [] },
     }) as unknown as TurnCtx;
     // The composer's search_stays and watch_ixigo, in one round.
-    const searched = backend.search('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { tripId: 't_share', turnId: 'turn_1' });
-    const watched = watch!.run({ recipe: 'hotels.search', inputs: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' }, conditions: ['pool'], flip: 'under', limit: 3000, label: 'a pool stay under 3k' }, ctx);
+    const searched = backend.search('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool'] }, { tripId: 't_share', turnId: 'turn_1' });
+    const watched = watch!.run({ recipe: 'hotels.search', inputs: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' }, site_filters: ['Swimming Pool'], flip: 'under', limit: 3000, label: 'a pool stay under 3k' }, ctx);
     await new Promise((resolve) => setTimeout(resolve, 0));
     release();
     await searched;

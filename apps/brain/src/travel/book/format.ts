@@ -154,10 +154,7 @@ export const RecipeFile = z
       .optional(),
     capture: z.array(Capture).optional(),
     fetch: z.array(Fetch).optional(),
-    /** The person's conditions ixigo filters on itself, each as the page's own code or param ({pool: "'FL_HF_29'"}); the
-     *  ones the person set are bound as $conditions. Go's own filters still check every option. */
-    conditions: z.record(z.string(), Expr).optional(),
-    /** Values worked out once from the inputs and $conditions, bound by name for the page, fetch and answer. */
+    /** Values worked out once from the inputs and the site's own filters and sort ($site, $site_sort), bound by name for the page, fetch and answer. */
     let: z.record(z.string().regex(/^[a-z][a-z_]*$/), Expr).optional(),
     /**
      * What the page offers to narrow and order its results, as the site itself lists them, read at run time from a call

@@ -58,7 +58,7 @@ export interface ReadOptions {
    * backend.ts): such a page is never asked twice here, and throws NothingCaughtError.
    */
   fallsBack?: boolean;
-  /** What the read is, for the log when its time runs out: its recipe, its conditions, its yes-or-no lets. No words, no dates. */
+  /** What the read is, for the log when its time runs out: its recipe, the site's codes, its yes-or-no lets. No words, no dates. */
   about?: Record<string, string | boolean | string[]>;
 }
 

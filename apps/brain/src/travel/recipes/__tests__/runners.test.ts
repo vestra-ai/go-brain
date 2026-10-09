@@ -681,7 +681,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
         code: 'timeout', partial: { step: '2 wait_for', captures: [{ ...capture(BUS_DOC, BUSES, '<'), max_bytes: 1 }] },
       });
     });
-    const about = { recipe: 'hotels.search', conditions: ['pool'], wide: true };
+    const about = { recipe: 'hotels.search', site: ['FL_HF_29'], wide: true };
     await fails(createBrowserFetchRunner(late.deps).read('t1', BUSES, busPlan, { about }), 'unreachable', /took too long/);
     // Bash's words go under bash, never message: Railway's log takes a field named message for the line's own (9 Oct).
     const logged = late.log.warn.mock.calls.find((c) => c[1] === 'travel: a page ran out of time')?.[0] as Record<string, unknown>;

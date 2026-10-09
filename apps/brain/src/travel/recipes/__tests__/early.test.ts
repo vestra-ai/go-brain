@@ -60,7 +60,8 @@ describe('the early start', () => {
     expect(w.searches).toEqual([]);
     // With no place named, the trip's destination it is.
     expect(await w.hook(msg(58, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack())).toEqual({ dueNow: true });
-    expect(w.searches).toEqual([{ kind: 'stays', q: expect.objectContaining({ area: 'North Goa', mustHave: ['pool'] }), tripId: 't_goa' }]);
+    // The place and the dates: the pool is the model's to map onto ixigo's own list.
+    expect(w.searches).toEqual([{ kind: 'stays', q: { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, tripId: 't_goa' }]);
   });
 
   it('starts the search in every travel mode, so a search ask is one model call wherever the list comes from', async () => {
@@ -125,7 +126,7 @@ describe('the early start', () => {
     expect(await w.hook(msg(71, 'p_rahul', 'Go, find us a villa with a pool in North Goa'), UNSURE_READ, undated([agreed]))).toEqual({ dueNow: true });
     expect(w.searches.map((s) => s.q)).toEqual([
       { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '17:00' },
-      { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] },
+      { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09' },
     ]);
     // No dates anywhere: "Friday" could be this week's or the trip's, so the composer reads the chat.
     expect(await w.hook(msg(72, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, undated([]))).toBeUndefined();

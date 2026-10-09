@@ -97,7 +97,7 @@ describe("Go's MCP server", () => {
   it('searches stays read-only, each result with its offer id and checked prices, and keeps what it showed for this trip', async () => {
     const r = await searchAsTheJob({
       goUrl: base, token: await tokens.mint('t_goa', LATER), tool: 'search_stays',
-      args: { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5, must_have: ['pool'] },
+      args: { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5 },
     });
     expect(r.checked_at).toBe('2026-10-07T12:00:00.000Z');
     const sol = r.results.find((x) => x.title === 'Villa Sol')!;

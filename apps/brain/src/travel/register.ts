@@ -152,13 +152,13 @@ export const registerTravel: RegisterLane = async (brain) => {
       return { destination: destination?.name ?? null, start: dates?.start ?? null, end: dates?.end ?? null };
     },
     today: tripToday(brain.pool, brain.now),
-    share: (tripId, ask, run) => ixigoWeb.shareStep('hotels.search', { ...ask }, { tripId, conditions: [], background: true }, run),
-    run: (tripId, ask) => engine.answer('hotels.search', { ...ask }, { tripId, conditions: [], background: true }),
+    share: (tripId, ask, run) => ixigoWeb.shareStep('hotels.search', { ...ask }, { tripId, background: true }, run),
+    run: (tripId, ask) => engine.answer('hotels.search', { ...ask }, { tripId, background: true }),
     ttlMs: (book.get('hotels.search')?.ttl_minutes ?? 10) * 60_000,
     warmGaveUp: (tripId) => ixigoWarm.gaveUp(tripId),
     computerSetUp: () => brain.recipeRunners !== undefined,
     // Dates agreed on a trip with a place: the kept stays go up as one card, unless Go has the last word.
-    // A turn's own stays search for these dates, with any conditions, is the trip's one load: the head start skips it.
+    // A turn's own stays search for these dates, with any filters, is the trip's one load: the head start skips it.
     staysKept: (tripId, ask) => ixigoWeb.pageKept('hotels.search', { ...ask }, { tripId }),
     onChangedKept: showHeadStartStays({ travel: () => brain.travel, packs: brain.packs, desk: brain.desk, results, now: brain.now, log: brain.log }),
   });

@@ -220,42 +220,39 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     return { b, calls, queries };
   }
 
-  it('lets ixigo_web see the must-haves, since ixigo filters on them itself; the other conditions stay in code', async () => {
+  it("lets ixigo_web see non-stop and ixigo's own filters, since its page takes them itself; the other conditions stay in code", async () => {
     const ixigoWeb = web();
     const { switches, layer } = setup(true, { ixigoWeb: ixigoWeb.b });
     await switches.set('TRAVEL_MODE', 'ixigo_web');
-    await layer.search('stays', { area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'], maxPriceMinor: 800000 }, { tripId: 't_goa' });
-    expect(ixigoWeb.queries).toEqual([{ area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }]);
+    await layer.search('stays', { area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool'], maxPriceMinor: 800000 }, { tripId: 't_goa' });
+    await layer.search('flights', { ...Q, nonStop: true, departAfter: '06:00' }, { tripId: 't_goa' });
+    expect(ixigoWeb.queries).toEqual([
+      { area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool'] },
+      { ...Q, nonStop: true },
+    ]);
   });
 
-  it("picks the stays that say a filter ixigo left off (unapplied); when none does, shows the stays without it and says so", async () => {
+  it('passes on the filters ixigo left off (unapplied), for the model to pick on: Go drops no stay for them', async () => {
     const stay = (title: string, pool: boolean, priceMinor = 500_000): TravelOption => ({
       kind: 'stay', title, priceMinor, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: { pool, area: 'Anjuna' }, rating: 4.5,
       sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
     });
-    let list: TravelOption[] = [];
     const refused = async (): Promise<never> => {
       throw new TravelError('refused', 'Booked on ixigo.');
     };
+    const list = [stay('Casa Azul', false), stay('Villa Sol', true), stay('Grand Palace', false, 2_000_000)];
     const b: TravelBackend = {
-      search: async () => ({ checkedAt: '2026-10-07T12:00:00.000Z', results: list, unapplied: ['pool'] }),
+      search: async () => ({ checkedAt: '2026-10-07T12:00:00.000Z', results: list, unapplied: ['Swimming Pool'] }),
       status: refused,
       hold: refused,
       confirm: refused,
     };
     const { switches, layer } = setup(true, { ixigoWeb: b });
     await switches.set('TRAVEL_MODE', 'ixigo_web');
-    const ask = { area: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 5, mustHave: ['pool' as const] };
-    list = [stay('Villa Sol', true), stay('Casa Azul', false)];
-    const some = await layer.search('stays', ask, { tripId: 't_goa' });
-    expect(some.results.map((o) => o.title)).toEqual(['Villa Sol']);
-    expect(some).not.toHaveProperty('unapplied');
-    list = [stay('Casa Azul', false), stay('Budget Inn', false), stay('Grand Palace', false, 2_000_000)];
-    const none = await layer.search('stays', { ...ask, maxPriceMinor: 1_000_000 }, { tripId: 't_goa' });
-    // Go's other conditions still hold: a stay over the price is never shown.
-    expect(none.results.map((o) => o.title)).toEqual(['Casa Azul', 'Budget Inn']);
-    expect(none).toMatchObject({ unapplied: ['pool'], found: 3 });
-    expect(none).not.toHaveProperty('closest');
+    const found = await layer.search('stays', { area: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 5, siteFilters: ['Swimming Pool'], maxPriceMinor: 1_000_000 }, { tripId: 't_goa' });
+    // Go's own conditions still hold: a stay over the price is never shown.
+    expect(found.results.map((o) => o.title)).toEqual(['Casa Azul', 'Villa Sol']);
+    expect(found).toMatchObject({ unapplied: ['Swimming Pool'], found: 3 });
   });
 
   it("hands ixigo_web the site's own filters and sort, keeps the site's order when it sorted, and passes on what the site did", async () => {

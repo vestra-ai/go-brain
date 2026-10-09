@@ -188,7 +188,7 @@ describe('the early answer, with no model call', () => {
   });
 
   it('on a card of stays from ixigo.com, puts "See all on ixigo" for the whole list the search read', async () => {
-    const line = msg(58, 'p_priya', '@Go stays with a pool in North Goa');
+    const line = msg(58, 'p_priya', '@Go stays in North Goa');
     const pack = { ...goaPack(), messages: [...goaPack().messages, line] };
     const stay = (title: string, priceMinor: number): TravelOption => ({
       kind: 'stay', title, priceMinor, currency: 'INR', priceNote: 'per night, per room', highlights: ['Pool'], facts: { pool: true },
@@ -196,7 +196,7 @@ describe('the early answer, with no model call', () => {
     });
     const page = 'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&filters=FL_HF_29';
     const stays: TravelSearch = { checkedAt: '2026-10-07T12:00:00.000Z', found: 4, page, results: [stay('Casa Azul', 980_000), stay('Meritas', 433_400), stay('Vedic Resort', 610_000), stay('HOLITEL', 520_000)] };
-    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool' as const] };
+    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
     const saved: Array<Record<string, unknown>> = [];
     const run = earlyAnswer({
       early: { searchFor: (_t: string, id: string): EarlySearch | null => (id === line.message_id ? { kind: 'stays', query, search: Promise.resolve(stays), live: true } : null) },
@@ -207,11 +207,11 @@ describe('the early answer, with no model call', () => {
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d2', link: {} as never, pack, wake: [wakeFor(line.message_id, 58)], signal: new AbortController().signal });
     expect(await run({ tripId: 't_goa', wake: ctx.wake, pack, ctx })).toBe(true);
     expect(saved[0]).toMatchObject({ page });
-    expect(ctx.cards[0]).toMatchObject({ kind: 'options', title: 'Pool stays in North Goa, 6 to 9 Nov' });
+    expect(ctx.cards[0]).toMatchObject({ kind: 'options', title: 'Stays in North Goa, 6 to 9 Nov' });
     expect((ctx.cards[0] as { actions: Array<{ action_id: string }> }).actions.map((x) => x.action_id)).toEqual(['pick', 'vote', 'see_all']);
     // The engine's first three, in its order.
     expect((ctx.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Casa Azul', 'Meritas', 'Vedic Resort']);
-    expect(ctx.lines).toEqual(['Pool stays in North Goa for 6 to 9 Nov, from ₹4,334 a night.']);
+    expect(ctx.lines).toEqual(['Stays in North Goa for 6 to 9 Nov, from ₹4,334 a night.']);
   });
 
   it("5. leaves the turn to the model when nothing fits, the search failed, or it isn't a plain ask, found or still running", async () => {

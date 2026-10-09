@@ -145,27 +145,23 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     expect(next.answered).toBe(true);
   });
 
-  it("says first that ixigo's filter was left off: the card is titled and lined as searched without it (staging, 9 Oct: Goa with a pool)", async () => {
+  it("leaves a filter ixigo left off to the model, its summary saying so (staging, 9 Oct: Goa with a pool): no card with no model call", async () => {
     const results = store();
     const puts: DeskItem[] = [];
     const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
     const now = () => new Date('2026-10-07T12:00:31Z');
-    const query = { area: 'goa', checkIn: '2026-10-12', checkOut: '2026-10-14', guests: 5, mustHave: ['pool' as const] };
-    const left = "ixigo's pool filter didn't load in time, so these aren't filtered for a pool";
-    handOver('stays', query, Promise.resolve({ ...STAYS, runId: 'ixigo.hotels|goa|left', unapplied: ['pool'] }), { tripId: 't_goa', fallbackId: 'turn_w5:stays' }, { desk, now, results });
+    const query = { area: 'goa', checkIn: '2026-10-12', checkOut: '2026-10-14', guests: 5, siteFilters: ['Swimming Pool'] };
+    const left = "ixigo's Swimming Pool filter didn't load in time, so these aren't filtered for it";
+    handOver('stays', query, Promise.resolve({ ...STAYS, runId: 'ixigo.hotels|goa|left', unapplied: ['Swimming Pool'] }), { tripId: 't_goa', fallbackId: 'turn_w5:stays' }, { desk, now, results });
     await vi.waitFor(() => expect(puts).toHaveLength(1));
-    expect(puts[0]!.payload).toMatchObject({ lead: `${left}: `, summary: expect.stringContaining(`${left}.`) });
+    expect(puts[0]!.payload).toMatchObject({ pick: true, summary: expect.stringContaining(`${left}.`) });
+    expect((puts[0]!.payload as { summary: string }).summary).toContain("for you to pick from each option's amenities and details: Swimming Pool.");
     const saved = await results.get('t_goa', (puts[0]!.payload as { resultsId: string }).resultsId);
-    expect(saved?.query).toMatchObject({ mustHave: [] });
+    expect(saved?.query).not.toHaveProperty('siteFilters');
     const pack = goaPack();
     const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w6', link: {} as never, pack, wake: [puts[0]!], signal: new AbortController().signal });
-    expect(await searchWakeAnswer({ results, images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(true);
-    expect(next.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.`]);
-    expect((next.cards[0] as { title: string }).title).toBe('Stays in Goa, 12 to 14 Oct');
-    // The search answering its own turn says it the same way.
-    const own = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w4', link: {} as never, pack, wake: [], signal: new AbortController().signal });
-    await answerItself('stays', query, { ...STAYS, unapplied: ['pool'] }, own, { results, images });
-    expect(own.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.`]);
+    expect(await searchWakeAnswer({ results, images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(false);
+    expect(next.cards).toEqual([]);
   });
 
   it("leaves what ixigo didn't filter to the model, which picks it from each stay's amenities: never a card of the engine's first three", async () => {
