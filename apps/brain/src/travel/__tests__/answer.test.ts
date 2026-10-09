@@ -110,6 +110,11 @@ describe("the card's line, built from the options the card shows", () => {
     expect(linkLine('flights', FLIGHTS, 'for 3 from Delhi')).toBe(
       'Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 3 from Delhi, leaving after 7:00 pm: book there, and tell me which one so I can note it for the group.',
     );
+    // What the link can't set, the group picks on ixigo's page: an ask nobody wrote an argument for.
+    expect(linkLine('flights', { ...FLIGHTS, wants: ['IndiGo only', 'a window seat'] }, 'for 3 from Delhi')).toBe(
+      'Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 3 from Delhi, leaving after 7:00 pm (for IndiGo only and a window seat, pick on the page): ' +
+        'book there, and tell me which one so I can note it for the group.',
+    );
   });
 });
 
