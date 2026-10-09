@@ -704,7 +704,8 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   const putToVote: QuickTool<z.infer<typeof VoteArgs>> = {
     name: 'put_to_vote',
     description:
-      'Opens a vote on the options of an options card Go showed (card_id). To show options and put them to a vote at once, ' +
+      'Opens a vote on the options of an options card Go showed (card_id), even a card with one option (that option or keep looking). ' +
+      'Only this vote can be booked: never open_vote for options on a card. To show options and put them to a vote at once, ' +
       'call show_options and then this with no card_id, in the same reply. The vote card goes out with the line you give it. ' +
       `${CARD_LINE} Use it when the group should decide together. ` +
       'Set anonymous when someone asks for a secret or anonymous vote.',
