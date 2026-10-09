@@ -82,9 +82,11 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
       const concerns = c.personIds.length > 0 ? ` It concerns ${who(c.personIds)}.` : '';
       // How it reads: a friend's heads-up, what changes for them and the one next step, never a status alert (the
       // demo's 3:40 read "your flight is about 120 minutes behind… It may be worth moving the pickup later").
-      const moves = late ? ` (anything in the note set around the old time moves by ${late} too)` : '';
+      const moves = lands
+        ? ` (anything in the note set around the old time has to fit the new landing, ${localWhen(lands, tz)})`
+        : late ? ` (anything in the note set around the old time moves by ${late} too)` : '';
       const how = c.personIds.length > 0
-        ? ` Write it as a friend's heads-up to ${who(c.personIds)}: their name first, what changed in plain words, then what it changes for them${moves}, and the one next step as a question with the new time ("Want me to move your cab to 11 pm?"). Say hours, not minutes, and never "flight status" or "it may be worth".`
+        ? ` Write it as a friend's heads-up to ${who(c.personIds)}: their name first, what changed in plain words${lands ? ' and when they now land' : ''}, then what it changes for them${moves}, and the one next step as a question with the new time, using only what the flight and the note say (for example "Want me to move your cab to 11 pm?"). Say hours, not minutes, and never "flight status" or "it may be worth".`
         : '';
       return `${quote(str('label') || 'A flight')} ${state}${when}${checked}.${note}${concerns}${how}`;
     }

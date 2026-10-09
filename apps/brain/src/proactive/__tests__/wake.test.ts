@@ -154,9 +154,14 @@ describe('the wake text', () => {
     const text = describeNoticed(delay, goaPack(), 'Asia/Kolkata', NOW);
     expect(text).toContain('"IndiGo 6E 2134" is running 2 hours late, now landing');
     expect(text).toContain('10:45 pm');
-    expect(text).toContain("Write it as a friend's heads-up to Arjun: their name first");
-    expect(text).toContain('anything in the note set around the old time moves by 2 hours too');
+    expect(text).toContain("Write it as a friend's heads-up to Arjun: their name first, what changed in plain words and when they now land");
+    // The new landing is known: what the note times around the old one has to fit it.
+    expect(text).toContain('anything in the note set around the old time has to fit the new landing');
+    expect(text).toContain('using only what the flight and the note say');
     expect(text).toContain('Want me to move your cab to 11 pm?');
+    // With no landing time, the note moves by the delay.
+    const noLanding = candidate({ ...delay, facts: { ...delay.facts, arriveAt: undefined } });
+    expect(describeNoticed(noLanding, goaPack(), 'Asia/Kolkata', NOW)).toContain('anything in the note set around the old time moves by 2 hours too');
     expect(text).not.toContain('120 minutes');
     expect(text).not.toContain('—');
     // Nobody to tell: what happened, and no heads-up wording.

@@ -130,12 +130,13 @@ function actionsBlock(v: AdminView): string {
     ? `<select name="person_id">${v.people.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select>`
     : '<input name="person_id" placeholder="p_arjun" required>';
   return `<div class="card"><b>Fire a watch</b>
-<p>A flight delay for one person. Go's notice says "Simulated for the demo", and the presenter says so too.</p>
+<p>A flight delay for one person. Go's notice says "Simulated for the demo", and the presenter says so too. "Now lands at" is in the trip's own time; with it, the notice says when they land and moves what the note times around it.</p>
 <form method="post" action="${esc(link('/admin/fire-watch', v))}">${trip}
 <div class="grid">
 <label>Person ${person}</label>
 <label>Flight <input name="label" value="IndiGo 6E 2134"></label>
 <label>Late by, minutes <input name="delay_minutes" value="120" inputmode="numeric"></label>
+<label>Now lands at <input type="datetime-local" name="lands_at"></label>
 <label>Note <input name="note" placeholder="The airport cab is booked for 9 pm"></label>
 </div><button>Fire a watch</button></form></div>
 <div class="card"><b>Between rehearsals</b>
