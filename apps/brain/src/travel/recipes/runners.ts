@@ -271,7 +271,8 @@ const LOOK_STEP = { op: 'page_fetch', url: '/favicon.ico', method: 'GET', captur
  * keeps its whole time. A page still on the check when its time ran out is opened again CHALLENGE_WAIT_MS later, at most
  * CHALLENGE_TRIES more times, while the loads fit in twice the page's own time (challengeTime: a hand-off's 12 s makes
  * 24 s before Watch or its card) with at least CHALLENGE_LOAD_MS for the next. It is never read as anything, and never
- * handed to a person.
+ * handed to a person. ixigo's own "too many requests" (429 on the document, staging 9 Oct: the morning computer's
+ * hotels page at 18:01 and 18:04, the page then making no call for 20 s) is waited out the same way.
  */
 export const CHALLENGE_WAIT_MS = 1_000;
 export const CHALLENGE_TRIES = 2;
@@ -311,8 +312,9 @@ export class NothingCaughtError extends TravelError {
 export const pageDoc = (url: string): string => `${new URL(url).pathname}$`;
 const docCapture = (doc: string) => ({ match: doc, required: false, max_bytes: 1, max_count: 4 });
 /**
- * Whether the page ended on Cloudflare's check: the last answer at the page's own address (its origin and path exactly,
- * the query aside: the check's own load again adds one) was 403 or 503. Another response its match took is never it.
+ * Whether the page ended on Cloudflare's check, or ixigo's "too many requests": the last answer at the page's own address
+ * (its origin and path exactly, the query aside: the check's own load again adds one) was 403, 429 or 503. Another
+ * response its match took is never it.
  */
 export function challenged(captures: Capture[], pageUrl: string): boolean {
   const page = new URL(pageUrl);
@@ -326,7 +328,7 @@ export function challenged(captures: Capture[], pageUrl: string): boolean {
     }
   };
   const last = captures.filter(own).sort((a, b) => a.at_ms - b.at_ms).at(-1)?.status;
-  return last === 403 || last === 503;
+  return last === 403 || last === 429 || last === 503;
 }
 
 interface FetchAnswer {
@@ -449,7 +451,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       capture: [
         ...plan.capture.map((c) => ({
           match: c.match,
-          ...(plan.graceMs ? { required: c.required } : {}),
+          ...(plan.graceMs ? { required: c.required } : c.besides ? { required: false } : {}),
           ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
           ...(c.min_count ? { min_count: c.min_count } : {}),
           ...(c.max_count ? { max_count: c.max_count } : {}),

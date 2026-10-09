@@ -20,6 +20,8 @@ import { startLiveSearch } from './live-search.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
 import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/backend.js';
+import { createOffers } from './recipes/offers.js';
+import { offersNow } from './recipes/offers-now.js';
 import { createEarlyStart } from './recipes/early.js';
 import { earlyAnswer, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
@@ -116,10 +118,13 @@ export const registerTravel: RegisterLane = async (brain) => {
   const { book, problems } = loadBook();
   for (const problem of problems) brain.log.warn({ problem }, 'travel: a recipe file was left out');
   // The tasks lane, which registers after this one, sets the browser fetch: a recipe reads it when it runs.
+  // What each site's page offers to filter and sort on, as it lists them itself, per place: read on every search.
+  const offers = createOffers({ now: brain.now });
   const engine = createEngine({
     book,
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     pool: brain.pool,
+    offers,
     trip: async (tripId) => {
       const { people, destination, dates } = (await brain.packs.get(tripId)).trip;
       return {
@@ -227,6 +232,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
+  // The sites' own filter lists the trip's searches brought: the model maps the ask onto them (site_filters).
+  brain.context.addNow(offersNow({ offers }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.
   // One still running is handed over, and the turn says nothing more: the live card covers the wait.
   brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, log: brain.log }));

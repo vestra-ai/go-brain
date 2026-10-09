@@ -33,14 +33,51 @@ export function plainEnglish(text: string): boolean {
   return !HINGLISH.test(text.toLowerCase());
 }
 
-/** A judgement or second-request word in the ask, other than one the search itself already holds (its must-haves). */
+/** A judgement or second-request word in the ask, other than one the search itself already holds (its must-haves, the site's filters it asked for). */
 export function judgementIn(text: string, q: TravelQuery): string | null {
   const explained = new Set<string>([
     ...(q.mustHave?.includes('breakfast') ? ['breakfast'] : []),
     ...(q.mustHave?.includes('beach') ? ['beach', 'near', 'close'] : []),
+    ...(q.siteFilters ?? []).flatMap((f) => wordsOf(f)),
   ]);
   for (const m of text.toLowerCase().matchAll(JUDGEMENT)) if (!explained.has(m[1]!)) return m[1]!;
   return null;
+}
+
+/**
+ * The words a plain ask may hold besides its places and its search's own conditions: asking, the kind of search, dates,
+ * head counts, a price cap and the times the read takes. Nothing that names a kind of stay, an amenity or a preference:
+ * those are the model's (site filters, wants), so an ask with one is never answered by the read alone (staging, 9 Oct:
+ * "Pool villas in North Goa under 15k for 4" answered with an apartment hotel).
+ */
+const PLAIN_WORDS = new Set([
+  'go', 'hey', 'hi', 'hello', 'please', 'pls', 'find', 'show', 'search', 'get', 'look', 'looking', 'need', 'want', 'check', 'see', 'give', 'list',
+  'some', 'any', 'the', 'a', 'an', 'for', 'in', 'at', 'to', 'from', 'on', 'of', 'with', 'and', 'or', 'me', 'us', 'our', 'we', 'i', 'my', 'you',
+  'can', 'all', 'there', 'that', 'this', 'these', 'is', 'are', 'be', 'it', 's', 'options', 'available',
+  'hotel', 'hotels', 'stay', 'stays', 'place', 'places', 'flight', 'flights', 'train', 'trains', 'bus', 'buses', 'ticket', 'tickets',
+  'today', 'tomorrow', 'tonight', 'next', 'coming', 'weekend', 'week', 'night', 'nights', 'day', 'days', 'date', 'dates', 'till', 'until',
+  'people', 'person', 'persons', 'adult', 'adults', 'guest', 'guests', 'pax', 'members', 'travellers', 'travelers',
+  'under', 'below', 'less', 'than', 'within', 'max', 'upto', 'up', 'rs', 'inr', 'thousand', 'per',
+  'after', 'before', 'by', 'am', 'pm', 'evening', 'arrive', 'arriving', 'reach', 'reaching', 'land', 'landing',
+]);
+const DATE_WORD =
+  /^(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sept?(ember)?|oct(ober)?|nov(ember)?|dec(ember)?|(mon|tues?|wed(nes)?|thu(rs?)?|fri|sat(ur)?|sun)(day)?|\d+(st|nd|rd|th|k)?)$/;
+/** The words of each must-have a search holds, as people say them. */
+const NEED_WORDS: Record<string, string[]> = {
+  pool: ['pool', 'pools'], breakfast: ['breakfast'], free_cancellation: ['free', 'cancellation', 'cancelation'],
+  beach: ['beach', 'near', 'close'], non_stop: ['non', 'stop', 'nonstop', 'direct'],
+};
+const wordsOf = (s: string | undefined | null): string[] => (s ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+/** A word of the ask that neither the read nor the search holds: the ask asks for more than the read alone answers. */
+export function unreadWord(text: string, q: TravelQuery, destination: string | null): string | null {
+  const held = new Set([
+    ...wordsOf(q.area), ...wordsOf(q.to), ...wordsOf(q.from), ...wordsOf(destination),
+    ...(q.mustHave ?? []).flatMap((m) => NEED_WORDS[m] ?? []),
+    // The site's own filters the search asked for: ixigo applies them, by their names.
+    ...(q.siteFilters ?? []).flatMap(wordsOf),
+  ]);
+  return wordsOf(text).find((w) => !PLAIN_WORDS.has(w) && !DATE_WORD.test(w) && !held.has(w)) ?? null;
 }
 
 /** The same place, as typed or by the code the recipes resolve it to ("delhi" and "DEL"). */
@@ -97,7 +134,7 @@ export function plainAsk(kind: TravelKind, q: TravelQuery, c: PlainAskContext): 
   });
   if (!read || read.kind !== kind) return no('not read as this search');
   if (!agrees(kind, read.query, q)) return no('not the search asked for');
-  const word = judgementIn(m.text, q);
+  const word = judgementIn(m.text, q) ?? unreadWord(m.text, q, trip.destination?.name ?? null);
   if (word) return no(`asks more ("${word}")`);
   return { ok: true };
 }

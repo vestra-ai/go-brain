@@ -76,6 +76,11 @@ export const StaysArgs = z.object({
   max_price_per_night: Rupees.optional().describe('In rupees, for the whole place per night'),
   must_have: z.array(z.enum(MUST_HAVES)).max(5).optional().describe('pool, beach (10 minutes or less), breakfast, free_cancellation'),
   min_rating: z.number().min(0).max(5).optional(),
+  site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
+    .describe("ixigo's own filters the ask means, by their names on ixigo's list for the place (in your context), the nearest one for what they said: ixigo filters the stays itself"),
+  site_sort: z.string().min(1).max(80).optional().describe("ixigo's own sort the ask means, by its name on that list"),
+  wants: z.array(z.string().min(1).max(80)).max(8).optional()
+    .describe("Anything else the group asked for that no filter covers, in their words: you pick it from the results' amenities and details"),
 });
 
 export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
@@ -130,6 +135,9 @@ export function staysQuery(a: z.infer<typeof StaysArgs>): TravelQuery {
     ...(a.max_price_per_night ? { maxPriceMinor: toPaise(a.max_price_per_night) } : {}),
     ...(a.must_have ? { mustHave: a.must_have } : {}),
     ...(a.min_rating !== undefined ? { minRating: a.min_rating } : {}),
+    ...(a.site_filters?.length ? { siteFilters: a.site_filters } : {}),
+    ...(a.site_sort ? { siteSort: a.site_sort } : {}),
+    ...(a.wants?.length ? { wants: a.wants } : {}),
   };
 }
 
@@ -143,9 +151,18 @@ export function ageText(checkedAt: string, now: Date): string {
 /** A stay's area exactly as the data gives it, so the model never fills one in from what people asked for. */
 const areaOf = (o: { facts: Record<string, string | number | boolean> }): string => (typeof o.facts.area === 'string' ? o.facts.area : 'not in the data');
 
-export function compactOption(n: number, o: ResultOption): Record<string, unknown> {
+/** An option in short for the model; with details, what it has (a stay's amenities, its distance, its kind), to pick on. */
+export function compactOption(n: number, o: ResultOption, details = false): Record<string, unknown> {
   const when = o.journey ? subtitleFor(o) : null;
   const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
+  const has = details && o.kind === 'stay'
+    ? {
+        ...(o.amenities?.length ? { amenities: o.amenities.slice(0, 12) } : {}),
+        ...(typeof o.facts.distance === 'string' ? { distance: o.facts.distance } : {}),
+        ...(typeof o.facts.type === 'string' ? { type: o.facts.type } : {}),
+        ...(typeof o.facts.stars === 'number' ? { stars: o.facts.stars } : {}),
+      }
+    : {};
   return {
     n,
     title: o.title,
@@ -156,6 +173,7 @@ export function compactOption(n: number, o: ResultOption): Record<string, unknow
     ...(o.totalMinor !== undefined && nights ? { total: `${formatInr(o.totalMinor)} for ${nights} nights` } : {}),
     ...(o.rating !== undefined ? { rating: o.rating } : {}),
     highlights: o.highlights,
+    ...has,
   };
 }
 
@@ -253,8 +271,9 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
     }
     throw err;
   }
-  // The turn's one plain ask, found: the search answers it, card and line, and no model round follows.
-  if (found.results.length > 0 && plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok) {
+  // The turn's one plain ask, found: the search answers it, card and line, and no model round follows. Never with
+  // something left to pick: the model picks it from the results.
+  if (found.results.length > 0 && leftToPick(q, found).length === 0 && plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok) {
     return answerItself(kind, q, found, ctx, d);
   }
   return searchAnswer(kind, q, found, ctx.tripId, d);
@@ -329,10 +348,32 @@ export async function answerItself(
   return { search: searchName(kind, searched), results_id: set.resultsId, card_id: cardId, shown, answered: true, note: 'The card and its line are up: this turn has said what it needed to.' };
 }
 
-/** The ask as a search answered it: without the conditions ixigo left off (TravelSearch.unapplied). */
+/**
+ * The ask as a search answered it: without the conditions ixigo left off (TravelSearch.unapplied), and with the site's
+ * own filters and sort only as the site applied them, in its words. What it didn't apply is the model's to pick (leftToPick).
+ */
 function answeredAs(q: TravelQuery, found: TravelSearch): TravelQuery {
   const off = found.unapplied ?? [];
-  return off.length > 0 ? { ...q, mustHave: (q.mustHave ?? []).filter((c) => !off.includes(c)) } : q;
+  const searched: TravelQuery = { ...q };
+  delete searched.siteFilters;
+  delete searched.siteSort;
+  const filtered = found.site?.filtered ?? [];
+  return {
+    ...searched,
+    ...(off.length > 0 ? { mustHave: (q.mustHave ?? []).filter((c) => !off.includes(c)) } : {}),
+    ...(filtered.length > 0 ? { siteFilters: filtered } : {}),
+    ...(found.site?.sorted ? { siteSort: found.site.sorted } : {}),
+  };
+}
+
+/**
+ * What a search leaves to the model to pick from its results: the wants, and the site's own filters and sort the site
+ * didn't apply (not on its list, its list not known yet, or its filtered page slow). The search never fails for them.
+ */
+export function leftToPick(q: TravelQuery, found: TravelSearch): string[] {
+  const asked = [...(q.siteFilters ?? []), ...(q.siteSort ? [q.siteSort] : [])];
+  const notApplied = found.site ? [...found.site.unknown, ...(found.unapplied ?? []).filter((n) => asked.includes(n))] : asked;
+  return [...new Set([...notApplied, ...(q.wants ?? [])])];
 }
 
 /** What goes before the card's line of a search ixigo left filters off: "ixigo's pool filter didn't load in time, …: ". */
@@ -380,8 +421,11 @@ export function handOver(
         if (found.runId && shownRuns.has(`${o.tripId}:${found.runId}`)) return;
         const a = await searchAnswer(kind, q, found, o.tripId, d);
         const lead = leftOffLead(found);
+        // Something left to pick goes to the model, which picks it; the rest posts its card with no model call.
+        const pick = leftToPick(q, found).length > 0;
         const payload: SearchWake = {
-          source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null, ...(lead ? { lead } : {}),
+          source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null,
+          ...(lead ? { lead } : {}), ...(pick ? { pick } : {}),
         };
         await wake(`search:${o.tripId}:${found.runId ?? o.fallbackId}`, payload);
       },
@@ -484,6 +528,10 @@ export interface SearchAnswer {
 export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: TravelSearch, tripId: string, d: { results: Pick<ResultsStore, 'save'>; now: () => Date }): Promise<SearchAnswer> {
   const q = answeredAs(ask, found);
   const left = found.unapplied?.length ? leftOff(found.unapplied) : null;
+  const pick = leftToPick(ask, found);
+  // The site's own list, when the ask named filters the site couldn't apply for want of it, and this read brought it;
+  // never after a filtered page that didn't load (unapplied): searching with it again would wait on it again.
+  const list = found.site && !found.site.listed && found.site.unknown.length > 0 && found.site.offers && !found.unapplied?.length ? found.site.offers : null;
   const scope = searchScope(kind, q);
   const terms = asked(kind, q);
   const search = searchName(kind, q);
@@ -527,20 +575,27 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     }` +
     `${prices ? `: ${prices}` : ''}${areas.length ? `, in ${listOf(areas)}` : ''}.` +
     `${fit > options.length ? ` The best ${options.length} are below.` : ''}` +
-    `${left ? ` ${left}.` : ''}`;
+    `${left ? ` ${left}.` : ''}` +
+    `${pick.length ? ` Not filtered by ixigo, for you to pick from each option's amenities and details: ${listOf(pick)}.` : ''}` +
+    `${list ? ` ixigo's own filters for this place, now known: ${list}.` : ''}`;
   return {
     search,
     results_id: set.resultsId,
     checked: ageText(found.checkedAt, d.now()),
     count: options.length,
     summary,
-    results: options.map((o, i) => compactOption(i + 1, o)),
+    results: options.map((o, i) => compactOption(i + 1, o, pick.length > 0)),
     card: { results_id: set.resultsId, option_numbers: options.slice(0, 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
     note:
       'To show options, call show_options with this results_id. Quote prices only from these results, and say how long ago they were checked when it is not just now. ' +
       "Each option's area, time and price are as given here: name no other, and say no count the summary does not give. " +
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
       `${left ? `Say in the line that ${left}. ` : ''}` +
+      (pick.length
+        ? `Show only the options whose amenities or details fit ${listOf(pick)}, best first, and say which part ixigo filtered and which you picked; ` +
+          'if none clearly fits, say so and show the closest. ' +
+          (list ? "If one of ixigo's own filters is what was asked, you may search again with it in site_filters. " : '')
+        : '') +
       CARD_LINE,
   };
 }
@@ -621,7 +676,10 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   };
   const searchStays: QuickTool<z.infer<typeof StaysArgs>> = {
     name: 'search_stays',
-    description: `Searches villas and hotels for check-in and check-out dates. ${SEARCH_RULE} For a deep comparison (reviews, many sites), use start_task instead.`,
+    description:
+      `Searches villas and hotels for check-in and check-out dates. ${SEARCH_RULE} ` +
+      "ixigo's own filters for the place, once Go has read them, are in your context: the ones the ask means go in site_filters, and the rest of the ask in wants, which you pick from the results. " +
+      'For a deep comparison (reviews, many sites), use start_task instead.',
     input: StaysArgs,
     run: (a, ctx) => runSearch('stays', staysQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,

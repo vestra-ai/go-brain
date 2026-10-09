@@ -184,6 +184,26 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ again: 1 }), "travel: ixigo's page was Cloudflare's check; opening it again");
   });
 
+  it("waits out ixigo's own \"too many requests\" on the page the same way (staging, 9 Oct: 429 on the morning computer's hotels page, no call for 20 s)", async () => {
+    const w = world((_, n) => {
+      if (n === 1) throw onCheck([docAt(429, 370)]);
+      return fetched([docAt(200, 900), busCapture]);
+    });
+    const read = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan);
+    expect(read.captures).toEqual([busCapture]);
+    expect(w.calls).toHaveLength(2);
+    expect(w.elapsed()).toBe(CHALLENGE_WAIT_MS);
+    expect(challenged([docAt(429, 370)], BUSES)).toBe(true);
+  });
+
+  it("asks for a capture it never waits for (besides: a site's list of what it offers) as not required, grace or none", async () => {
+    const w = world(() => fetched([busCapture]));
+    const META = '/accommodation-search/api/v2/accommodations/search/metadata$';
+    await createBrowserFetchRunner(w.deps).read('t1', BUSES, { capture: [...busPlan.capture, { match: META, required: false, besides: true, max_bytes: 300_000 }] });
+    const sent = (w.calls[0]!.opts['body'] as { capture: unknown[] }).capture;
+    expect(sent).toEqual([{ match: '/buslist/v3/services$' }, { match: META, required: false, max_bytes: 300_000 }, docOf(BUS_DOC)]);
+  });
+
   it(`a page still on the check after ${CHALLENGE_TRIES} more loads fails saying so, and is never the cold computer's retry`, async () => {
     const w = world(() => {
       throw onCheck([docAt(403, 300)]);

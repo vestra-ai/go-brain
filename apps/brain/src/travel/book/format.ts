@@ -159,6 +159,13 @@ export const RecipeFile = z
     conditions: z.record(z.string(), Expr).optional(),
     /** Values worked out once from the inputs and $conditions, bound by name for the page, fetch and answer. */
     let: z.record(z.string().regex(/^[a-z][a-z_]*$/), Expr).optional(),
+    /**
+     * What the page offers to narrow and order its results, as the site itself lists them, read at run time from a call
+     * the page makes (from) and never written here: list turns that call into rows of { kind: filter | sort, group, name,
+     * code }; for names what the list is kept for (a place), about says it in words. A run's site filters and sort, by
+     * their names on the list, are bound as $site (their codes) and $site_sort (recipes/offers.ts).
+     */
+    offers: z.object({ from: z.string().min(1), list: Expr, for: z.string().min(1), about: z.string().min(1) }).optional(),
     /** What the answer reads: the rows, from one captured call; other calls by name. */
     read: z
       .object({
@@ -193,6 +200,7 @@ export const RecipeFile = z
       ctx.addIssue({ code: 'custom', message: `a${r.answer.as === 'options' ? 'n options' : ' facts'} answer needs page, capture and read` });
     }
     if (r.answer.as === 'places' && !(r.box && r.capture && r.keeps)) ctx.addIssue({ code: 'custom', message: 'a lookup needs box, capture and keeps' });
+    if (r.offers && !(r.page && r.capture)) ctx.addIssue({ code: 'custom', message: 'offers are read from a call the page makes: they need page and capture' });
     if (r.answer.as === 'link' && !r.page) ctx.addIssue({ code: 'custom', message: 'a link answer needs page' });
     if ((r.answer.as === 'compare') !== !!r.steps) ctx.addIssue({ code: 'custom', message: 'a composite has steps and answers compare, and only a composite does' });
     if (r.steps && (r.page || r.fast || r.capture || r.fetch || r.read || r.box || Object.values(r.inputs).some((i) => i.kind === 'place'))) {

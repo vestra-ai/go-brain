@@ -55,7 +55,8 @@ function answerBlock(seq: number | undefined, a: SearchAnswer, live: boolean): s
     'Show them now with show_options (this results_id, the best up to 3, a short title) and your one short line, in this reply: no need to search again. ' +
     `${CARD_LINE} ` +
     (live ? 'The live card already told the room you are on it: don\'t say so again. ' : '') +
-    'Only if people gave a condition the summary does not name (a time, a price cap, non-stop), call the search tool with it first: it answers at once from this same search. ' +
+    'Only if people gave a condition the summary does not name (a time, a price cap, non-stop, a kind of stay, an amenity, anything), call the search tool with it first, ' +
+    "ixigo's own filters in site_filters and the rest in wants: it answers from this same search, or ixigo's filtered one, and you pick what no filter covers. " +
     'If they meant another day or place than the summary\'s (the trip\'s Friday, not this week\'s), search for theirs instead. ' +
     "Quote prices, times and areas only as given here. " +
     `${ASKED_ELSE}\n` +

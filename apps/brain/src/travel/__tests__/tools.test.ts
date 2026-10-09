@@ -185,7 +185,7 @@ describe('a search that answers itself', () => {
   };
 
   it("puts up the card and a line from its data for the turn's plain ask, and ends the turn: no model round after it", async () => {
-    const ctx = turnFor('@Go villas with a pool in North Goa near the beach for 5 of us', 'turn_s1');
+    const ctx = turnFor('@Go stays with a pool in North Goa near the beach for 5 of us', 'turn_s1');
     const out = (await lb.tools.run('search_stays', STAYS, ctx)) as any;
     expect(out).toMatchObject({ answered: true, card_id: 'c_opt_turn_s1_1' });
     expect(ctx.answered).toBe(true);
@@ -199,7 +199,7 @@ describe('a search that answers itself', () => {
   });
 
   it('gives the model the list as before when the ask needs judgement, so a question is never swallowed', async () => {
-    const ctx = turnFor('@Go villas with a pool in North Goa near the beach for 5 of us, which has the best reviews?', 'turn_s2');
+    const ctx = turnFor('@Go stays with a pool in North Goa near the beach for 5 of us, which has the best reviews?', 'turn_s2');
     const out = (await lb.tools.run('search_stays', STAYS, ctx)) as any;
     expect(out).toMatchObject({ count: expect.any(Number), results_id: expect.any(String) });
     expect(out.answered).toBeUndefined();
