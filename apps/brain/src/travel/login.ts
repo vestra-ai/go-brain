@@ -186,11 +186,17 @@ export interface IxigoLogin {
 
 const cardId = (tripId: string, attempt: number): string => `c_login_${tripId}_${attempt}`;
 
-/** How a booking that waited on the login reads in "why Go woke", once the login is in. Null for other taps. */
+/**
+ * How a login that just landed reads in "why Go woke": a booking that waited on it carries on (resume), or, with nothing
+ * waiting, Go takes off with the trip (linked). Null for other taps.
+ */
 export function renderLoginResume(item: DeskItem, pack: TripPack): string | null {
   const p = item.payload as { source?: string; action?: string; personId?: string; what?: string; resume?: Record<string, unknown> };
-  if (p.source !== 'ixigo_login' || p.action !== 'resume') return null;
+  if (p.source !== 'ixigo_login' || (p.action !== 'resume' && p.action !== 'linked')) return null;
   const who = pack.trip.people.find((x) => x.person_id === p.personId)?.name ?? 'Someone';
+  if (p.action === 'linked') {
+    return `${who} just linked ixigo on Go's computer, so carry on with the trip now, without asking anyone again: take the most useful next step for what the group has asked for (such as searching stays or flights on ixigo for their place and dates) and post what you find. If where or when is still missing, ask only for that.`;
+  }
   return `${who} logged in to ixigo on Go's computer, so carry on with what the group asked for, without asking anyone again: booking ${p.what ?? 'the stay'}. Call set_mandate now with ${JSON.stringify(p.resume ?? {})}, then say in one short line what was set and that the payer taps Yes, book it.`;
 }
 /**
@@ -360,7 +366,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     return said(tripId, captures, 'home page');
   }
 
-  async function loggedIn(row: LoginRow): Promise<LoginRow> {
+  /**
+   * The login in. carryOn: the person's own login just landed (the hand-off's first look, or "I'm logged in"), not a
+   * recipe's check, whose turn is already carrying on.
+   */
+  async function loggedIn(row: LoginRow, o: { carryOn?: boolean } = {}): Promise<LoginRow> {
     const now = d.now();
     // A booking that waited on this login carries on: the composer wakes with it, before the row lets it go, so a
     // failed write here leaves it parked for the next time the login reads in (the desk item's id makes it once).
@@ -368,6 +378,13 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       await d.desk.put({
         id: `travel:login_resume:${row.tripId}:${row.attempt}`, tripId: row.tripId, kind: 'tap', ref: cardId(row.tripId, row.attempt), dueAt: now,
         payload: { source: 'ixigo_login', action: 'resume', personId: row.personId, what: row.parked.what, resume: row.parked.resume },
+      });
+    } else if (o.carryOn && row.state !== 'logged_in') {
+      // Nothing waited on it: Go takes off with the trip (Keshav, 9 Oct: "take off with the main task after login"), once
+      // for this login, never for a check of a login it had already (the desk item's id makes it once, too).
+      await d.desk.put({
+        id: `travel:login_linked:${row.tripId}:${row.attempt}`, tripId: row.tripId, kind: 'tap', ref: cardId(row.tripId, row.attempt), dueAt: now,
+        payload: { source: 'ixigo_login', action: 'linked', personId: row.personId },
       });
     }
     const next: LoginRow = { ...row, state: 'logged_in', loggedInAt: row.state === 'logged_in' ? row.loggedInAt : now, checkedAt: now, parked: null };
@@ -495,7 +512,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     }
     if (said(row.tripId, opened.captures, 'hand-off') === 'in') {
       await release(row.tripId);
-      await show(await loggedIn(now));
+      await show(await loggedIn(now, { carryOn: true }));
     } else {
       // The page is in front for them: now the card carries Watch. Then ixigo's Login and the mobile box, tapped on the
       // page they watch (best effort: the page stays theirs if a tap finds nothing), and the page takes the keyboard.
@@ -672,7 +689,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           const s = await statusInLogin(row.tripId);
           if (s === 'in') {
             await release(row.tripId);
-            await show(await loggedIn(row));
+            await show(await loggedIn(row, { carryOn: true }));
           } else if (s === 'challenged') await heldByCheck(row);
           else await show(row, 'not_yet');
         })());

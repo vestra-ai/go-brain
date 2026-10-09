@@ -221,7 +221,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));
   // Null for taps on other cards (pay, call): the next lane's renderer, or P1's generic line, reads those.
   brain.context.addWake('tap', renderOptionsTap);
-  // A booking that waited on the ixigo login, once the login is in.
+  // A login that just landed: a booking that waited on it carries on, or, with none, Go takes off with the trip.
   brain.context.addWake('tap', renderLoginResume);
   brain.travel = travel;
 };

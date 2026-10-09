@@ -625,6 +625,53 @@ describe("ixigo's page on Cloudflare's check (CLOUDFLARE, recipes/runners.ts)", 
   });
 });
 
+describe('a login that lands with nothing waiting on it (Keshav, 9 Oct 14:52: "take off with the main task after login")', () => {
+  const linked = (w: ReturnType<typeof world>) => w.wakes.filter((x) => (x.payload as { action?: string }).action === 'linked');
+
+  it("I'm logged in reading in wakes Go once, to carry on with the trip, with its own line", async () => {
+    const w = world({ statuses: [200, 200] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(w.wakes).toEqual([]);
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    expect(w.wakes).toEqual([
+      expect.objectContaining({
+        id: `travel:login_linked:${w.tripId}:0`, tripId: w.tripId, kind: 'tap', ref: `c_login_${w.tripId}_0`,
+        payload: { source: 'ixigo_login', action: 'linked', personId: 'p_rahul' },
+      }),
+    ]);
+    expect(renderLoginResume(w.wakes[0]!, goaPack({ trip: w.trip }))).toBe(
+      "Rahul just linked ixigo on Go's computer, so carry on with the trip now, without asking anyone again: take the most useful next step for what the group has asked for " +
+        '(such as searching stays or flights on ixigo for their place and dates) and post what you find. If where or when is still missing, ask only for that.',
+    );
+    // Never twice for one login: "I'm logged in" again, and a recipe's check of it six hours on, wake nothing more.
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    w.clock.now = new Date(NOW.getTime() + RECHECK_MS + 60_000);
+    expect(await w.login.ensure(w.tripId, 'Price lock')).toEqual({ ok: true });
+    expect(w.wakes).toHaveLength(1);
+  });
+
+  it("a computer that was logged in already when Log in was tapped carries on too, once", async () => {
+    const w = world({ opened: 200 });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    expect(linked(w)).toHaveLength(1);
+    expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: 'ixigo is already logged in' });
+    expect(linked(w)).toHaveLength(1);
+  });
+
+  it("a recipe's own check that finds the login in wakes nothing: its turn is carrying on already", async () => {
+    const w = world({ statuses: [200] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.login.ensure(w.tripId, 'Price lock')).toEqual({ ok: true });
+    expect(await w.state()).toBe('logged_in');
+    expect(w.wakes).toEqual([]);
+  });
+});
+
 describe('a recipe that needs the login', () => {
   it('after Not now, asks the same person again with a fresh card, at most once in half an hour, and gives the model its line', async () => {
     const w = world();
@@ -812,11 +859,11 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
 
     await w.tap('ixigo_not_now', 'p_rahul');
     expect(await w.parked()).toBeNull();
-    // Logged in later, from another ask: nothing was waiting, so nothing carries on.
+    // Logged in later, from another ask: no booking was waiting, so none carries on; Go takes off with the trip instead.
     await w.tap('ixigo_login', 'p_rahul');
     await w.tap('ixigo_logged_in', 'p_rahul');
     expect(await w.state()).toBe('logged_in');
-    expect(w.wakes).toEqual([]);
+    expect(w.wakes.map((x) => (x.payload as { action: string }).action)).toEqual(['linked']);
   });
 
   it('with the login already in, is ok at once and parks nothing', async () => {
@@ -824,8 +871,10 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
     await w.setup();
     await w.tap('ixigo_login', 'p_rahul');
     await w.tap('ixigo_logged_in', 'p_rahul');
+    const linked = w.wakes.length;
     expect(await w.login.ensure(w.tripId, what, { park: { what, resume } })).toEqual({ ok: true });
     expect(await w.parked()).toBeNull();
-    expect(w.wakes).toEqual([]);
+    // No booking waits, and the login Go already had wakes nothing more.
+    expect(w.wakes).toHaveLength(linked);
   });
 });
