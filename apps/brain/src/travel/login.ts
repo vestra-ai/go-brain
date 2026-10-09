@@ -34,6 +34,14 @@ import type { RecipeRunner } from './recipes/runners.js';
 
 /** ixigo's own call that says whether the browser is logged in (about 900 bytes logged in), read by its status only. */
 export const USERINFO = '/api/v2/oauth/userinfo';
+/**
+ * ixigo's own userinfo call, the one its page makes as it loads, with its own token and keys: one byte of it, for its
+ * status. Only it can say whether the browser is logged in. A call of Go's own from inside the page is 403 even then:
+ * ixigo's wrapper adds Authorization (its "at" cookie), apikey, clientid, deviceid and more (staging, 9 Oct: Keshav
+ * logged in with Google, and Go's own call still said 403).
+ */
+export const OWN_USERINFO = [{ match: USERINFO, required: true, max_bytes: 1 }];
+const ownStatus = (captures: Capture[]): number | undefined => captures.find((c) => c.url.includes(USERINFO))?.status;
 /** A login is taken as it stands for this long, then checked again the next time a recipe needs it. */
 export const RECHECK_MS = 6 * 3600_000;
 /** Asked again at most this often when recipes keep needing a login nobody has made. */
@@ -91,7 +99,7 @@ export interface LoginDeps {
   link: Pick<ServerLink, 'request'>;
   packs: Pick<Packs, 'get'>;
   /** The trip's browser fetch, its hand-off in front included; null while the trip's computer is not set up here. */
-  runner: () => Pick<RecipeRunner, 'read' | 'handOff' | 'release' | 'tabCall' | 'tabSteps'> | null;
+  runner: () => Pick<RecipeRunner, 'read' | 'handOff' | 'release' | 'tabSteps'> | null;
   /** The jobs lane: a login started as a job before the hand-off had no model (a row with a taskId) is settled there. */
   tasks: () => Pick<Tasks, 'handoff' | 'stop'> | null;
   /** A fresh session on the trip's screen, in control or to view (POST /v1/sessions); null with no trip computer here. */
@@ -402,9 +410,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   /**
    * The hand-off, with no model: ixigo's home page opened IN FRONT of the person's window on the trip's computer (Bash's
    * front fetch, as a phone), its Login tapped and its mobile number box clicked, and the tab kept there for them for
-   * HANDOFF_MS. ixigo's own userinfo, asked from inside the page first, says whether the browser is logged in already:
-   * then there is nothing to hand over (its Login is not there, so the page's time runs out first). A page Bash would
-   * not open puts the card back to its ask, saying so.
+   * HANDOFF_MS. ixigo's own userinfo call as the page loads (OWN_USERINFO) says whether the browser is logged in
+   * already: then there is nothing to hand over (its Login is not there, so the page's time runs out first). A page Bash
+   * would not open puts the card back to its ask, saying so.
    */
   async function handOff(row: LoginRow, runner: Pick<RecipeRunner, 'handOff' | 'release' | 'tabSteps'>): Promise<void> {
     // The hand-off ends at HANDOFF_MS whatever happens: Bash closes the tab then, and the card goes back to its ask.
@@ -415,10 +423,10 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       ({ captures } = await runner.handOff!(
         row.tripId,
         LOGIN_URL,
-        // The page and the check alone: Watch comes as soon as the page is in front (its crop is set before it loads), and
-        // the taps run after, while Watch's picture connects (staging, 8 Oct: they were 2 to 3 s of the wait for Watch).
-        { capture: [], steps: [], timeoutMs: HANDOFF_PAGE_MS },
-        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' } },
+        // The page and ixigo's own userinfo call alone: Watch comes as soon as the page is in front (its crop is set before
+        // it loads), and the taps run after, while Watch's picture connects (staging, 8 Oct: they were 2 to 3 s of the wait).
+        { capture: OWN_USERINFO, steps: [], timeoutMs: HANDOFF_PAGE_MS },
+        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB },
       ));
     } catch (err) {
       // Loud, and nothing left open: no second path.
@@ -434,7 +442,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     const now = await get(row.tripId);
     // Not now while the page opened, or another try: this hand-off is no longer theirs to finish.
     if (now?.state !== 'logging_in' || now.attempt !== row.attempt) return;
-    if (captures.find((c) => c.match === 'check')?.status === 200) {
+    if (ownStatus(captures) === 200) {
       await release(row.tripId);
       await show(await loggedIn(now));
     } else {
@@ -447,24 +455,29 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   }
 
   /**
-   * ixigo's userinfo answer from inside the open log in page (one byte, by its status), keeping the page for them. With no
-   * log in page open (its 10 minutes ran out), the home page's own answer, as any check reads it.
+   * ixigo's own answer to "I'm logged in": its log in page loads again in the hand-off's tab (front, kept for them), and
+   * the userinfo call ixigo's own code makes as it loads is caught, one byte, by its status (OWN_USERINFO). Not logged in
+   * yet, the page is theirs again with ixigo's Login and its mobile number box tapped, as the hand-off left it.
    */
   async function statusInLogin(tripId: string): Promise<'in' | 'out' | 'unknown'> {
     const runner = d.runner();
-    if (!runner?.tabCall) return status(tripId);
-    let got: Capture | null;
+    if (!runner?.handOff) return status(tripId);
+    let captures: Capture[];
     try {
-      got = await runner.tabCall(tripId, LOGIN_TAB, { url: USERINFO, method: 'POST' }, HANDOFF_MS);
+      ({ captures } = await runner.handOff(tripId, LOGIN_URL, { capture: OWN_USERINFO, steps: [], timeoutMs: HANDOFF_PAGE_MS }, { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB }));
     } catch (err) {
       if (!(err instanceof TravelError)) throw err;
       d.log.info({ tripId, status: null, login: 'unknown', why: err.code }, 'travel: ixigo said whether the trip computer is logged in');
       return 'unknown';
     }
-    if (got === null) return status(tripId);
-    const said = got.status === 200 ? 'in' : got.status === 401 || got.status === 403 ? 'out' : 'unknown';
+    const s = ownStatus(captures);
+    const said = s === 200 ? 'in' : s === 401 || s === 403 ? 'out' : 'unknown';
     // The status alone, for the stage desk's log: never the account.
-    d.log.info({ tripId, status: got.status, login: said, where: 'log in page' }, 'travel: ixigo said whether the trip computer is logged in');
+    d.log.info({ tripId, status: s ?? null, login: said, where: 'log in page' }, 'travel: ixigo said whether the trip computer is logged in');
+    if (said !== 'in') {
+      await runner.tabSteps?.(tripId, LOGIN_TAB, [LOGIN_BUTTON, MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
+        .catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's taps did not run"));
+    }
     return said;
   }
 
@@ -590,8 +603,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         track('check', row.tripId, (async () => {
           // A login started as a job (before the hand-off had no model): its hand-off settled for them, quietly.
           if (row.taskId) await d.tasks()?.handoff(row.taskId, 'done').catch(() => undefined);
-          // ixigo's own answer, read from inside the log in page: nothing opens over it, and an early tap (still waiting for
-          // the code) keeps its place. Logged in: the window closes. Not yet: it stays in front, untouched.
+          // ixigo's own answer, from its log in page loaded again in the hand-off's tab. Logged in: the window closes. Not
+          // yet: it stays in front for them, its log in box open again.
           if ((await statusInLogin(row.tripId)) === 'in') {
             await release(row.tripId);
             await show(await loggedIn(row));
