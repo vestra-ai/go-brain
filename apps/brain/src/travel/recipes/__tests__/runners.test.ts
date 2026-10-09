@@ -4,7 +4,7 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
+  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
   LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -32,7 +32,7 @@ const busPlan: FetchPlan = { capture: [{ match: '/buslist/v3/services$', require
 const busCapture = capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', fixture('buses-mumbai-goa.json'));
 const fetched = (captures: unknown[], finalUrl = BUSES) => ({ final_url: finalUrl, elapsed_ms: 2300, woke: false, captures });
 /** The page's own document as every fetch keeps it (CLOUDFLARE): one byte, its status, never waited for. */
-const docOf = (match: string) => ({ match, required: false, max_bytes: 1, max_count: 2 });
+const docOf = (match: string) => ({ match, required: false, max_bytes: 1, max_count: 4 });
 const fails = async (p: Promise<unknown>, code: TravelError['code'], words: RegExp): Promise<void> => {
   const err = await p.then(() => null, (e: unknown) => e);
   expect(err).toBeInstanceOf(TravelError);
@@ -204,6 +204,24 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const stays = world(() => fetched([homeDoc(403)], HOME));
     expect(await createBrowserFetchRunner(stays.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [], challenged: true });
     expect(stays.calls).toHaveLength(1 + CHALLENGE_TRIES);
+  });
+
+  it("reads only the page's own address as its document: an API path ending in / that answers 403 on the home page is not the check", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const at = (url: string, status: number, at_ms: number) => ({ ...capture('/$', url, '<', status), at_ms });
+    // The home page's "/$" also takes a same-site API whose path ends in "/": a logged-out page's 403 there is not the check.
+    const stray = [at(HOME, 200, 300), at('https://www.ixigo.com/api/x/', 403, 2_400)];
+    expect(challenged(stray, HOME)).toBe(false);
+    // The page's own address, its query aside (the check's own load again adds one), is: on the check, and passed.
+    expect(challenged([at(HOME, 403, 300), at('https://www.ixigo.com/api/x/', 200, 900)], HOME)).toBe(true);
+    expect(challenged([at(HOME, 403, 300), at('https://www.ixigo.com/?__cf_chl_tk=t', 200, 5_400)], HOME)).toBe(false);
+    // Another site's "/" is never the page's.
+    expect(challenged([at(HOME, 200, 300), at('https://images.ixigo.com/', 403, 900)], HOME)).toBe(false);
+    // A hand-off on that page is handed over at once, never loaded again.
+    const w = world(() => fetched(stray, HOME));
+    const plan: FetchPlan = { capture: [], timeoutMs: 12_000 };
+    expect(await createBrowserFetchRunner(w.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [] });
+    expect(w.calls).toHaveLength(1);
   });
 
   it("gives the loads again their own time: a hand-off stuck on the check for its whole 12 s still loads once more, and is done within 25 s", async () => {

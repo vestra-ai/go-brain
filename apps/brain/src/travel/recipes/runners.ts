@@ -281,12 +281,29 @@ export class ChallengedError extends TravelError {
     super('unreachable', CHALLENGED);
   }
 }
-/** The capture of a page's own document: its path, to the end. */
+/**
+ * The capture of a page's own document: its path, to the end. Bash matches it on any allowed site's response whose path
+ * ends so (the home page's "/$" takes an API path ending in "/" too), so up to 4 are kept, and challenged reads only the
+ * page's own.
+ */
 export const pageDoc = (url: string): string => `${new URL(url).pathname}$`;
-const docCapture = (doc: string) => ({ match: doc, required: false, max_bytes: 1, max_count: 2 });
-/** Whether the page ended on Cloudflare's check: its own document's last answer was 403 or 503. */
-export function challenged(captures: Capture[], doc: string): boolean {
-  const last = captures.filter((c) => c.match === doc).sort((a, b) => a.at_ms - b.at_ms).at(-1)?.status;
+const docCapture = (doc: string) => ({ match: doc, required: false, max_bytes: 1, max_count: 4 });
+/**
+ * Whether the page ended on Cloudflare's check: the last answer at the page's own address (its origin and path exactly,
+ * the query aside: the check's own load again adds one) was 403 or 503. Another response its match took is never it.
+ */
+export function challenged(captures: Capture[], pageUrl: string): boolean {
+  const page = new URL(pageUrl);
+  const own = (c: Capture): boolean => {
+    if (c.match !== pageDoc(pageUrl)) return false;
+    try {
+      const at = new URL(c.url);
+      return at.origin === page.origin && at.pathname === page.pathname;
+    } catch {
+      return false;
+    }
+  };
+  const last = captures.filter(own).sort((a, b) => a.at_ms - b.at_ms).at(-1)?.status;
   return last === 403 || last === 503;
 }
 
@@ -442,7 +459,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
         const calls = answer.captures.map((c) => ({ url: c.url, status: c.status, at_ms: c.at_ms }));
         // CLOUDFLARE: its pictures never go to the card, and the page is opened again.
-        if (challenged(answer.captures, doc)) {
+        if (challenged(answer.captures, url)) {
           o.onTrace?.({ started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null, calls, failed: { status: 0, why: 'challenge' } });
           await againAfterCheck();
           continue;
@@ -475,7 +492,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           continue;
         }
         // CLOUDFLARE: a page still on the check when its time ran out, opened again; never its pictures.
-        if (err.status === 504 && challenged(partialCaptures(err), doc)) {
+        if (err.status === 504 && challenged(partialCaptures(err), url)) {
           o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
           await againAfterCheck();
           continue;
@@ -619,7 +636,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         if (!(err instanceof V1Error) || err.status !== 504) throw pageCallFailed(err);
         captures = partialCaptures(err);
       }
-      if (!challenged(captures, doc)) return { captures: captures.filter((c) => c.match !== doc) };
+      if (!challenged(captures, url)) return { captures: captures.filter((c) => c.match !== doc) };
       // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
       // it; still on it when no load fits, the caller closes it and says so.
       const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
