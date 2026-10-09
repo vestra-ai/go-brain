@@ -92,6 +92,15 @@ describe('intake', () => {
     expect(h.emitted).toEqual([e.event_id]);
   });
 
+  it("keeps the Server instance that first brought the trip: the person's browser is keyed by it (tasks/browsers.ts)", async () => {
+    const h = harness();
+    await h.send(created('t_in_inst'));
+    await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'see you all there') }, 't_in_inst'), { instance: 'another', frameId: 'gs_other' });
+    await h.intake.idle();
+    const { rows } = await db.pool.query<{ server_instance: string }>('select server_instance from trips where trip_id = $1', ['t_in_inst']);
+    expect(rows[0]?.server_instance).toBe('test');
+  });
+
   it('trip.created: the pack comes from the event, setup runs, and Go is due to say hello', async () => {
     const h = harness();
     await h.send(created('t_in_2'));

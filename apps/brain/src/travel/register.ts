@@ -13,6 +13,7 @@ import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
 import { createIxigoLogin, renderLoginResume } from './login.js';
+import { createLoginKeepAlive } from './login-keepalive.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
 import { startLiveSearch } from './live-search.js';
@@ -67,12 +68,26 @@ export const registerTravel: RegisterLane = async (brain) => {
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     tasks: () => brain.tasks ?? null,
     screen: () => brain.recipeRunners?.screen ?? null,
+    browser: () => brain.recipeRunners?.login ?? null,
     desk: brain.desk,
     live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
     now: brain.now,
     log: brain.log,
   });
   login.registerTaps(brain.taps);
+  // The person's login kept alive in their browser: one read every few hours while it is logged in (login-keepalive.ts).
+  // The browsers are the tasks lane's, which registers after this one: read when a pass runs, none without them.
+  const keepAlive = createLoginKeepAlive({
+    loggedInSince: async (before) => (await brain.recipeRunners?.login?.loggedInSince(before)) ?? [],
+    status: (tripId) => login.status(tripId),
+    live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    now: brain.now,
+    log: brain.log,
+  });
+  keepAlive.start();
+  brain.onStop(function stopLoginKeepAlive() {
+    keepAlive.stop();
+  });
   // Go's hello carries the login card and its line: one message to open a new trip, never two in a row.
   brain.context.addTurnCard((i) => login.helloCard(i));
   // The one owner of waking the trip's computer for travel (see warmForTravel); a new trip's computer is made at setup.

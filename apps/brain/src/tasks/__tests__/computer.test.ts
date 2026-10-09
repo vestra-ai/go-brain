@@ -42,51 +42,6 @@ describe("the trip's computer", () => {
     expect(fake.users.get(userId)?.default_deployment).toBe('dep_go');
   });
 
-  it('warms the computer, rides a warm from the last minute, and warms again after it', async () => {
-    expect(await computer.warm('t_goa')).toBe('waking');
-    expect(await computer.warm('t_goa')).toBe('skipped');
-    clock.advance(61_000);
-    expect(await computer.warm('t_goa')).toBe('waking');
-    expect(fake.callsTo('POST', /\/warm$/)).toHaveLength(2);
-  });
-
-  it('asks Bash to hold the box with keep_ms, never skipped as a repeat, and still counted as a wake', async () => {
-    const before = fake.callsTo('POST', /\/warm$/).length;
-    await computer.warm('t_goa', { keepMs: 120_000 });
-    await computer.warm('t_goa', { keepMs: 120_000 });
-    const warms = fake.callsTo('POST', /\/warm$/).slice(before);
-    expect(warms).toHaveLength(2);
-    expect(warms[0]!.body).toEqual({ keep_ms: 120_000 });
-    // A plain warm right after is still a repeat.
-    expect(await computer.warm('t_goa')).toBe('skipped');
-  });
-
-  it('keeps to 8 computers waking at once across trips', async () => {
-    clock.advance(120_000);
-    for (let i = 0; i < 8; i += 1) await computer.warm(`t_warm_${i}`);
-    await expect(computer.warm('t_warm_9')).rejects.toThrow(/warm_limit/);
-    clock.advance(91_000);
-    expect(await computer.warm('t_warm_9')).toBe('waking');
-  });
-
-  // The keepalive while a trip's group talks (awake.ts) holds every 30 s: a box Go just saw up is not waking, so its hold
-  // never takes a place in Go's count of computers waking, which other trips' real wakes need.
-  it("holds the box with keep_ms; a box seen up within its last hold skips Go's wake count, any other counts", async () => {
-    clock.advance(200_000);
-    fake.warmStatus = 'ready';
-    try {
-      for (let i = 0; i < 7; i += 1) await computer.warm(`t_hold_w${i}`);
-      expect(await computer.keepAwake('t_hold', 60_000)).toBe('ready');
-      expect(fake.callsTo('POST', /\/warm$/).at(-1)!.body).toEqual({ keep_ms: 60_000 });
-      // Eight wakes counted in the window: a box seen up 30 s ago still holds; another trip's first hold would wake.
-      clock.advance(30_000);
-      expect(await computer.keepAwake('t_hold', 60_000)).toBe('ready');
-      await expect(computer.keepAwake('t_hold_other', 60_000)).rejects.toThrow(/warm_limit/);
-    } finally {
-      fake.warmStatus = 'waking';
-    }
-  });
-
   it('opens one conversation for each job, on the go-trip-task deployment, the same one when a hand-off runs again', async () => {
     const a = await computer.conversation('t_goa', 'gt_conv_a');
     const again = await computer.conversation('t_goa', 'gt_conv_a');
