@@ -177,10 +177,12 @@ export function createIntake(d: IntakeDeps) {
     await setProcessed(tripId, ev.seq);
   }
 
-  const sendEvent: ToGoHandler<'send_event'> = async (raw) => {
+  const sendEvent: ToGoHandler<'send_event'> = async (raw, meta) => {
     // People's text is screened before it is written anywhere: from here on, every copy holds the masked text.
     const ev = screenEvent(raw);
     const r = await d.tripLog.append(ev);
+    // The Server instance that brought the trip, the first time: half of the key of the person's browser (tasks/browsers.ts).
+    if (r === 'new') await d.pool.query('update trips set server_instance = $2 where trip_id = $1 and server_instance is null', [ev.trip_id, meta.instance]);
     // Answered as soon as the event is written; the work happens after, in seq order per trip.
     if (r === 'new') void enqueue(ev.trip_id, () => processEvent(ev));
     return { accepted: true, duplicate: r === 'duplicate' };

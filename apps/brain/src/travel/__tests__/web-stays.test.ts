@@ -42,7 +42,7 @@ const offer = (over: Partial<StoredOffer> = {}): StoredOffer => ({
 function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredOffer | null; page?: string | null } = {}) {
   const stored = o.stored === undefined ? offer() : o.stored;
   const reads: Array<{ url: string; plan: FetchPlan }> = [];
-  const ensured: Array<{ tripId: string; what: string; park?: Parked }> = [];
+  const ensured: Array<{ tripId: string; what: string; park?: Parked; booking?: boolean }> = [];
   const stays = createWebStays({
     results: {
       offer: async (id) => (stored && id === stored.optionId ? stored : null),
@@ -61,7 +61,7 @@ function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredO
     }),
     login: {
       ensure: async (tripId, what, x) => {
-        ensured.push({ tripId, what, ...(x?.park ? { park: x.park } : {}) });
+        ensured.push({ tripId, what, ...(x?.park ? { park: x.park } : {}), ...(x?.booking ? { booking: x.booking } : {}) });
         return o.login === 'out' ? { ok: false as const, note: `Go asked Rahul to link ixigo for ${what}.` } : { ok: true as const };
       },
     },
@@ -117,7 +117,8 @@ describe('before the mandate', () => {
     expect(await w.stays.prepare('opt_saudades', { tripId: 't_goa', what: 'Saudades Homestays', resume })).toEqual({
       ok: false, note: 'Go asked Rahul to link ixigo for Saudades Homestays.',
     });
-    expect(w.ensured).toEqual([{ tripId: 't_goa', what: 'Saudades Homestays', park: { what: 'Saudades Homestays', resume } }]);
+    // A booking reads ixigo now (booking): a login it no longer has asks again, never standing on a stale one.
+    expect(w.ensured).toEqual([{ tripId: 't_goa', what: 'Saudades Homestays', park: { what: 'Saudades Homestays', resume }, booking: true }]);
     expect(w.reads).toEqual([]);
   });
 
@@ -152,7 +153,7 @@ describe('the hold and the booking, on the test rail', () => {
       holdId: `${WEB_STAY}opt_saudades:${Date.parse('2026-10-08T10:45:00Z')}`, amountMinor: 4939200, currency: 'INR',
       merchant: `${SIM_VENDOR}: Saudades Homestays`, expiresAt: '2026-10-08T10:45:00.000Z', payment: { kind: 'fake' },
     });
-    expect(w.ensured).toEqual([{ tripId: 't_goa', what: 'Booking Saudades Homestays' }]);
+    expect(w.ensured).toEqual([{ tripId: 't_goa', what: 'Booking Saudades Homestays', booking: true }]);
   });
 
   it('with no price read this time, holds at the price the card and the vote showed; with none at all, nothing', async () => {

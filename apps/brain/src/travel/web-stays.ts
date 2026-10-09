@@ -131,14 +131,15 @@ export function createWebStays(d: WebStaysDeps): WebStays {
       const offer = await d.results.offer(optionId);
       if (!offer?.sourceUrl || offer.offerId || offer.kind !== 'stay' || !stayOf(offer.sourceUrl)) return { ok: true, priceMinor: null };
       const park: Parked = { what: o.what, resume: o.resume };
-      const login = await d.login.ensure(o.tripId, o.what, { park });
+      // Money is about to move: ixigo is read now, so a login it no longer has asks again instead of standing.
+      const login = await d.login.ensure(o.tripId, o.what, { park, booking: true });
       if (!login.ok) return { ok: false, note: login.note };
       return { ok: true, priceMinor: await livePrice(offer as StoredOffer & { sourceUrl: string }) };
     },
 
     async hold(offerId) {
       const o = await optionOf(offerId);
-      const login = await d.login.ensure(o.tripId, `Booking ${o.title}`);
+      const login = await d.login.ensure(o.tripId, `Booking ${o.title}`, { booking: true });
       if (!login.ok) throw new TravelError('refused', login.note);
       // ixigo's price now; when the list didn't have the stay this time, the price Go showed it at, which the vote used.
       const amountMinor = (await livePrice(o)) ?? o.totalMinor;
