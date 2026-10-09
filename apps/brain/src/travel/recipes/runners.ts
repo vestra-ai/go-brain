@@ -346,15 +346,18 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     const steps = plan.steps && d.now().getTime() < noLookUntil ? withoutLook(plan.steps) : plan.steps;
     let body = {
       url,
-      // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer.
+      // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer. A plan
+      // with a grace says which are required, so Bash answers once they are in and the rest have had the grace.
       capture: plan.capture.map((c) => ({
         match: c.match,
+        ...(plan.graceMs ? { required: c.required } : {}),
         ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
         ...(c.min_count ? { min_count: c.min_count } : {}),
         ...(c.max_count ? { max_count: c.max_count } : {}),
       })),
       ...(steps ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
+      ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
       // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
       // the recipe says how long that takes.
       frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
@@ -510,9 +513,10 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     const steps = [...check, ...(plan.steps ?? [])];
     const body = {
       url,
-      capture: plan.capture.map((c) => ({ match: c.match, ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
+      capture: plan.capture.map((c) => ({ match: c.match, ...(plan.graceMs ? { required: c.required } : {}), ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
       ...(steps.length ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
+      ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
       front: true,
       keep_open_ms: o.keepOpenMs,
       tab: o.tab,

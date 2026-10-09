@@ -35,8 +35,11 @@ export type { Step } from '../book/format.js';
 /**
  * What the browser fetch keeps and does, how long it may take when that is less than Bash's most, and how long Bash
  * waits after the data is in before its last picture (settleMs; none when the page is not drawn by then, as buses).
+ * graceMs (Bash's most is 3000): Bash answers once the required captures are in, waiting at most this long more for
+ * the others, for a page whose calls depend on what it finds (ixigo's login calls). Without it Bash waits for every
+ * capture.
  */
-export interface FetchPlan { capture: CaptureSpec[]; steps?: Step[]; timeoutMs?: number; settleMs?: number }
+export interface FetchPlan { capture: CaptureSpec[]; steps?: Step[]; timeoutMs?: number; settleMs?: number; graceMs?: number }
 
 /** An option as a recipe reads it: no offer id (booking stays on ixigo), and the option's own page on ixigo.com. */
 export type RecipeOption = Omit<TravelOption, 'offerId'> & { sourceUrl: string };

@@ -10,10 +10,12 @@ import type { TaskBrief } from '../../tasks/tasks.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
-import { createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, LOGIN_TAB, LOGIN_URL, OWN_USERINFO, RECHECK_MS, renderLoginResume, USERINFO } from '../login.js';
+import {
+  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, LOGIN_CALLS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume, USERINFO, WALLET,
+} from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
-import { IXIGO, type FetchPlan } from '../recipes/recipe.js';
+import { IXIGO, type Capture, type FetchPlan } from '../recipes/recipe.js';
 
 // Keshav, 8 Oct: "when the trip creates, that's when we [make] the ixigo connection, and all the warming should happen;
 // connection as in ixigo should be logged in, so prompt someone to login". The organizer is asked right after setup warms
@@ -35,9 +37,9 @@ let trips = 0;
  * One trip (the Goa five, Rahul organizing), its chat, the trip's browser and the jobs lane, all recorded. The trip says it
  * was made on 5 Oct, as the sim's Goa trip always does: nothing here goes by that. Waits for Go's hello move the clock.
  */
-/** opened: the status of ixigo's own userinfo call on the log in page the hand-off opens (403 by default: logged out),
- *  'timeout' for a page that caught nothing in its time, 'refused' for a hand-off Bash would not open. statuses: what
- *  ixigo says after, in turn: to "I'm logged in" (its page loaded again) and to a check in the background. */
+/** opened: how ixigo's page loads in the hand-off (load: 200 logged in, 403 its login gone, by default), 'timeout' for
+ *  a page that caught nothing in its time, 'refused' for a hand-off Bash would not open. statuses: how it loads after,
+ *  in turn: for "I'm logged in" (its page loaded again) and for a check in the background. */
 function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout'>; opened?: number | 'timeout' | 'refused'; taps?: 'fail' } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
@@ -57,10 +59,10 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const runner = {
     read: async (_trip: string, url: string, plan: FetchPlan) => {
       reads.push({ url, plan });
-      if (plan.capture[0]?.match !== USERINFO) return { captures: [], finalUrl: url };
+      if (plan !== LOGIN_CALLS) return { captures: [], finalUrl: url };
       const s = statuses.shift() ?? 'timeout';
       if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
-      return { captures: [capture(USERINFO, `${IXIGO}${USERINFO}`, '{', s)], finalUrl: url };
+      return { captures: load(s), finalUrl: url };
     },
     handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string }) => {
       handOffs.push({ url, plan, o: ho });
@@ -68,7 +70,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
       // "I'm logged in" loads the log in page again: ixigo's answers to it come in turn, as for any later check.
       const s = checking ? (statuses.shift() ?? 'timeout') : (o.opened ?? 403);
       if (s === 'refused') throw new TravelError('refused', 'Bash would not open the page.');
-      return { captures: s === 'timeout' ? [] : [capture(USERINFO, `${IXIGO}${USERINFO}`, '{', s)] };
+      return { captures: s === 'timeout' ? [] : load(s) };
     },
     release: async (_trip: string, tab: string) => {
       releases.push(tab);
@@ -109,9 +111,10 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   };
   const wakes: DeskItem[] = [];
   const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { wakes.push({ id: item.id ?? '', ...item }); } };
+  const said: object[] = [];
   const login = createIxigoLogin({
     pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, screen: () => screen, desk, live: () => o.live !== false, now: () => clock.now,
-    log: { warn: () => undefined, info: () => undefined },
+    log: { warn: () => undefined, info: (obj) => said.push(obj) },
     sleep: async (ms) => {
       clock.now = new Date(clock.now.getTime() + ms);
       looks.push(ms);
@@ -147,11 +150,18 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
     (await db.pool.query<{ parked: unknown }>('select parked from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.parked ?? null;
   return {
     tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, tabStepCalls, wakes, login, tap, last, state, parked,
-    greet, looks, hooks, setup: () => login.setupStep.run(tripId),
+    greet, looks, hooks, said, setup: () => login.setupStep.run(tripId),
   };
 }
 
-const STATUS_PLAN = { capture: [{ match: USERINFO, required: true, max_bytes: 1 }], timeoutMs: 12_000 };
+/**
+ * ixigo's page as it loads, by the calls Go keeps (staging, 9 Oct): logged in (200), its wallet and with-identity calls
+ * answer 200 and it never calls userinfo (08:40); a login it holds that is gone (401, 403), its userinfo call is refused.
+ */
+const call = (match: string, status: number): Capture => capture(match, `${IXIGO}${match}`, '{', status);
+function load(s: number): Capture[] {
+  return s === 200 ? [call(WALLET, 200), call(IDENTITY, 200)] : [call(USERINFO, s)];
+}
 
 describe('the ixigo login, asked at setup', () => {
   it("waits for Go's hello, looking every second, then asks; with no hello in 20 s, setup tries again later", async () => {
@@ -295,12 +305,21 @@ describe('logging in', () => {
     // No job: no model clicks its way to the box (87 to 96 s on staging, 8 Oct).
     expect(w.starts).toEqual([]);
     // ixigo's home page in FRONT of Rahul's window (as a phone: Bash's front), the tab kept there for him for Bash's most;
-    // the userinfo call ixigo's own code makes as the page loads caught, one byte, read by its status only. The page and
-    // that call alone: Watch comes as soon as the page is in front.
+    // the calls ixigo's own code makes as the page loads caught, one byte each, read by their status only. None is waited
+    // for: the page's nearby call (logged in or out), then up to 3 s for the login's own calls.
     expect(LOGIN_URL).toBe('https://www.ixigo.com/');
     expect(HANDOFF_MS).toBe(600_000);
-    expect(OWN_USERINFO).toEqual([{ match: USERINFO, required: true, max_bytes: 1 }]);
-    expect(w.handOffs).toEqual([{ url: LOGIN_URL, plan: { capture: OWN_USERINFO, steps: [], timeoutMs: HANDOFF_PAGE_MS }, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } }]);
+    expect(LOGIN_CALLS).toEqual({
+      capture: [
+        { match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 },
+        { match: '/api/profile/secure/booking/with-identity', required: false, max_bytes: 1 },
+        { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 },
+      ],
+      steps: [{ op: 'wait_for', match: '/api/flights/locations/nearby' }],
+      timeoutMs: HANDOFF_PAGE_MS,
+      graceMs: 3_000,
+    });
+    expect(w.handOffs).toEqual([{ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } }]);
     // Then, with Watch on the card, ixigo's own Login and the cursor in its mobile number box, on the page he watches.
     expect(w.tabStepCalls).toEqual([{
       tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }],
@@ -495,11 +514,11 @@ describe('logging in', () => {
     expect(await w.tap('ixigo_logged_in', 'p_rahul')).toEqual({ result: 'done', toast: 'Checking your login' });
     // No job to settle.
     expect(w.handoffs).toEqual([]);
-    // ixigo's log in page loads again in the hand-off's tab, in front and kept for them, and the userinfo call ixigo's own
-    // code makes (with its own token and keys) is what answers: a call of Go's own is 403 even logged in. The status is
-    // read (one byte), the account never is.
+    // ixigo's log in page loads again in the hand-off's tab, in front and kept for them, and the calls ixigo's own code
+    // makes (with its own token and keys) are what answer: a call of Go's own is 403 even logged in. Their status is read
+    // (one byte), the account never is.
     expect(w.handOffs).toHaveLength(2);
-    expect(w.handOffs[1]).toEqual({ url: LOGIN_URL, plan: { capture: OWN_USERINFO, steps: [], timeoutMs: HANDOFF_PAGE_MS }, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } });
+    expect(w.handOffs[1]).toEqual({ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } });
     expect(w.reads).toHaveLength(reads);
     // An early tap, still waiting for the code: the window stays in front, its log in box open again for them.
     expect(await w.state()).toBe('logging_in');
@@ -508,7 +527,7 @@ describe('logging in', () => {
     expect(w.tabStepCalls[1]).toMatchObject({ tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }] });
     expect(w.last()).toMatchObject({ tone: 'heads_up', body: 'Not logged in yet. Finish on Watch, then tap again.' });
 
-    // ixigo's own call says 200 (Keshav's Google log in, 9 Oct): logged in, the page closes.
+    // ixigo's own calls work (Keshav's Google log in, 9 Oct): logged in, the page closes.
     await w.tap('ixigo_logged_in', 'p_rahul');
     expect(await w.state()).toBe('logged_in');
     expect(w.releases).toEqual([LOGIN_TAB]);
@@ -518,6 +537,38 @@ describe('logging in', () => {
       body: "Since 8 Oct. Searches and bookings for this trip use Rahul's ixigo account; the group never sees its details, and Go never opens the payment page.",
       actions: [{ action_id: 'ixigo_logout', label: 'Log out', only_for_person_ids: ['p_rahul'] }],
     });
+  });
+});
+
+describe("ixigo's answer, from the calls its page makes as it loads (staging, 9 Oct)", () => {
+  it("a logged-in load (08:40: wallet and with-identity 200, no userinfo call) reads in; a refused userinfo reads out; else unknown", () => {
+    // Keshav's logged-in page, loaded again by "I'm logged in": Go waited for a userinfo call that never came, and said unknown.
+    expect(loginFrom([call(WALLET, 200), call(IDENTITY, 200)])).toEqual({ login: 'in', call: WALLET, status: 200 });
+    expect(loginFrom([call(IDENTITY, 200)])).toEqual({ login: 'in', call: IDENTITY, status: 200 });
+    // A login the page holds that is gone.
+    expect(loginFrom([call(USERINFO, 403)])).toEqual({ login: 'out', call: USERINFO, status: 403 });
+    expect(loginFrom([call(USERINFO, 401)])).toEqual({ login: 'out', call: USERINFO, status: 401 });
+    // A logged-out load (08:41, the new trip): none of them, only its nearby call, which Go does not keep.
+    expect(loginFrom([])).toEqual({ login: 'unknown', call: null, status: null });
+    // Anything else is not ixigo saying either: a wallet call that failed, or a userinfo call that worked.
+    expect(loginFrom([call(WALLET, 401)]).login).toBe('unknown');
+    expect(loginFrom([call(USERINFO, 200)]).login).toBe('unknown');
+    // A login's own call that worked says in, whatever userinfo said.
+    expect(loginFrom([call(USERINFO, 403), call(WALLET, 200)]).login).toBe('in');
+  });
+
+  it("I'm logged in on the 08:40 page reads in, and the log says which call and its status, never what it answered", async () => {
+    const w = world({ statuses: [200] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    expect(w.said.at(-1)).toEqual({
+      tripId: w.tripId, login: 'in', call: WALLET, status: 200, where: 'log in page',
+      calls: ['/api/v3/ixigo-money/wallet 200', '/api/profile/secure/booking/with-identity 200'],
+    });
+    // The hand-off's first look, on a page with its login gone: out, by userinfo's 403.
+    expect(w.said[0]).toMatchObject({ login: 'out', call: USERINFO, status: 403, where: 'hand-off' });
   });
 });
 
@@ -601,7 +652,7 @@ describe('logging out', () => {
       url: 'https://www.ixigo.com/',
       plan: { capture: [], steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }], timeoutMs: 15_000 },
     });
-    expect(w.reads.at(-1)).toEqual({ url: 'https://www.ixigo.com/', plan: STATUS_PLAN });
+    expect(w.reads.at(-1)).toEqual({ url: 'https://www.ixigo.com/', plan: LOGIN_CALLS });
     expect(await w.state()).toBe('logged_out');
     expect(w.last()).toMatchObject({ title: 'Logged out of ixigo', body: "Go's computer is no longer logged in to ixigo as Rahul.", actions: [] });
   });
