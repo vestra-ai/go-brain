@@ -5,6 +5,25 @@ a person can do is a recipe file. One engine in Go runs any of them, so a new ca
 recipe knows how to use the site, never what is on it: no list of cities, airports, stations, hotels or areas. ixigo
 resolves every place through its own search box, and Go keeps what it resolved.
 
+## The recipe contract
+
+Keshav's rule (9 Oct), for every recipe: Go works ixigo the way a sharp person does, and AI comes from Go, never from
+the site.
+
+1. **Search as a person does.** A recipe opens ixigo's own page through its own flow: the results page a person reaches,
+   with the place, the dates and the head count a person types.
+2. **Use what the site offers for the ask, discovered at run time.** Its own filters and sorts, more pages, detail pages:
+   read from the site as it runs (a recipe's `offers`, kept per place), never from a list we wrote. Go's own judgment (the
+   model) maps the group's ask onto them by the site's names (`site_filters`, `site_sort`).
+3. **Go picks the rest.** What the site can't filter, the model picks from the results (`wants`), on each option's own
+   details, and says what ixigo filtered and what Go picked. An answer may skip the model only when the code understood
+   every word of the ask.
+4. **No part of an ask fails a search.** A slow or failed refinement degrades to what is in hand: a filtered page that
+   catches nothing is read again plain at once, and the model picks on what was left off.
+
+A new ask nobody listed ("beachfront", "pet friendly", "morning flights only", "an AC sleeper bus") must just work:
+through the site's filter when it has one, else through Go's pick.
+
 ## 1. The book
 
 - `apps/brain/recipes/<section>/<name>.yaml`: one recipe, its id `section.name` (`trains.between`, `hotels.search`).
@@ -39,8 +58,10 @@ answer:
     ( ... { "title": $trim(travelerAgentName), "priceMinor": $paise(fares.offerPrice ? fares.offerPrice : fares.fare), ... } )
 ```
 
-Also: `conditions` (the person's conditions ixigo filters on itself, as its own codes: `pool: "'FL_HF_29'"`, bound as
-`$conditions`), `let` (values worked out once, such as the filters list), `fetch` (another plan when a condition holds:
+Also: `offers` (where the page lists what it offers to filter and sort on: the call it makes, a `list` expression turning
+it into `{ kind, group, name, code }` rows, `for` the place it is kept by; the run's site filters and sort by those names
+are bound as `$site` and `$site_sort`, contract rule 2), `let` (values worked out once, such as the filters list), `fetch`
+(another plan when a condition holds:
 two pages for a whole state, the popup's close, the settle before the last picture), `keep` (which options stay),
 `ttl_minutes`, `samples`, `measured` and `notes`.
 
@@ -150,7 +171,8 @@ left extends it.
 "Tell us when 12608's waitlist confirms", "if a pool stay in North Goa under ₹4k opens up": `watch_ixigo` keeps a recipe
 from the book on watch for the trip (`travel/recipe-watches.ts`, table `recipe_watches`).
 
-- **A watch is** a recipe, the ask's inputs and conditions, and a **flip** picked by name: a search's own (`appears`,
+- **A watch is** a recipe, the ask's inputs, ixigo's own filters by their names on its list (`site_filters`, kept in the
+  row's `conditions`; a check ixigo didn't apply them to is a failed check, never a flip), and a **flip** picked by name: a search's own (`appears`,
   `under` a price, `drops` a percent from the first check) or one its file names under `watch:` (trains.confirm_chance's
   `confirms`). The model never writes an expression.
 - **The first check runs at once.** Something already true is answered then, and no watch is kept.
@@ -210,8 +232,8 @@ The suggestion data call is `/action/content/city?searchFor=airportSuggestions&v
 
 **Results page**
 - **Smart Filters:** textbox "Ask something like: I want to see flights with no stops under ₹25000." plus button
-  "Filter Flights". ixigo turns plain words into its own filters: "non stop flights only" added `&stops=0`. Go can pass the
-  person's conditions here in their own words.
+  "Filter Flights". ixigo turns plain words into its own filters: "non stop flights only" added `&stops=0`. Go never uses
+  it: the ask is mapped by Go's own judgment onto ixigo's own filters (contract rule 2).
 - **Filters** (unnamed checkboxes; the label is the paragraph next to each): Stops (Non-Stop, 1 Stop, 2+ Stops, each with
   its lowest price), Baggage, Flight Price slider, Duration slider, Airlines (count and lowest price), Departure Airport,
   Arrival Airport, departure time bands, Hide Non Refundable.
