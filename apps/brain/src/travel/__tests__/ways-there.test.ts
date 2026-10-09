@@ -105,9 +105,9 @@ describe("each home city's ways to the trip", () => {
     ]);
     // What didn't come back is said once, after the cities.
     expect(waysLine(ways, '2026-11-06')).toBe(
-      'From Delhi, the cheapest is the Goa Express 12779 in Sleeper at ₹645 (26 h 10 m), the fastest the Rajdhani 22413 in AC 3 Tier at ₹2,140 (15 h 30 m). ' +
+      'From Delhi, the cheapest is the Goa Express 12779 in Sleeper at ₹645 (26 h 10 m), the fastest by train or bus the Rajdhani 22413 in AC 3 Tier at ₹2,140 (15 h 30 m). ' +
         'From Bangalore, ixigo has no trains or buses on Fri 6 Nov. ' +
-        'From Mumbai, the Konkan Kanya 10111 in Sleeper is the cheapest and the fastest, at ₹420 (11 h 40 m). ' +
+        'From Mumbai, the Konkan Kanya 10111 in Sleeper is the cheapest and the fastest by train or bus, at ₹420 (11 h 40 m). ' +
         "Buses didn't come back for Delhi. Flights from your own city are a tap away on the card.",
     );
   });
@@ -116,10 +116,40 @@ describe("each home city's ways to the trip", () => {
     const way = (home: string, savesMin: number): WayThere => {
       const slow = toResultOption(train('Slow', '1', 'SL', 500, at(6, '06:00'), at(7, '06:00')));
       const quick = toResultOption(train('Quick', '2', '3A', 1_500, at(6, '06:00'), new Date(Date.parse(at(7, '06:00')) - savesMin * 60_000).toISOString()));
-      return { home, people: 1, cheapest: slow, fastest: quick, only: false, flights: null, missed: [] };
+      return { home, people: 1, cheapest: slow, fastest: quick, only: false, flights: null, flown: false, missed: [] };
     };
     const rows = waysRows([way('Delhi', 600), way('Mumbai', 60), way('Pune', 300), way('Jaipur', 30)]);
     expect(rows.map((r) => `${r.way.home} ${r.is}`)).toEqual(['Delhi cheapest', 'Delhi fastest', 'Mumbai cheapest', 'Pune cheapest', 'Jaipur cheapest']);
+  });
+
+  it("compares a city's flights with its trains and buses: a 2 h flight is its fastest, never a 15 h train; a city whose flights didn't come says by train or bus", () => {
+    const flight = (number: string, rupees: number, depart: string, arrive: string): RecipeOption => ({
+      kind: 'flight', title: `Air-India Express ${number}`, priceMinor: rupees * 100, currency: 'INR', priceNote: 'per person',
+      journey: { mode: 'flight', origin: { name: 'New Delhi', code: 'DEL' }, destination: { name: 'Goa', code: 'GOI' }, depart_at: depart, arrive_at: arrive, carrier_name: 'Air-India Express', carrier_code: 'IX', number, stops: 0 },
+      highlights: ['Non-stop', hoursMinutes((Date.parse(arrive) - Date.parse(depart)) / 60_000)], facts: { stops: 0 },
+      sourceUrl: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&adults=3',
+    });
+    if (COMPARE.as !== 'compare') return;
+    const [delhi, , mumbai] = COMPARE.entries;
+    const flown: EngineAnswer = {
+      ...COMPARE,
+      entries: [
+        { entry: 'Delhi', steps: [...delhi!.steps.slice(0, 2), { recipe: 'flights.results', answer: options([flight('IX1196', 8_630, at(6, '18:35'), at(6, '21:15')), flight('IX1108', 8_934, at(6, '20:35'), at(6, '23:15'))]) }, flights('DEL')] },
+        // Mumbai's flights page was held back (one flights page in 20 s): its link stands.
+        { entry: 'Mumbai', steps: [...mumbai!.steps.slice(0, 2), { recipe: 'flights.results', why: 'unreachable: ixigo is given a moment between flights pages.' }, flights('BOM')] },
+      ],
+    };
+    if (flown.as !== 'compare') return;
+    const ways = waysOf(flown, lb.ctx().pack.trip.people);
+    expect(ways.map((w) => [w.home, w.cheapest?.title, w.fastest?.title, w.flown, w.missed])).toEqual([
+      ['Delhi', 'Goa Express 12779', 'Air-India Express IX1196', true, ['buses']],
+      ['Mumbai', 'Konkan Kanya 10111', 'Konkan Kanya 10111', false, []],
+    ]);
+    expect(waysLine(ways, '2026-11-06')).toBe(
+      'From Delhi, the cheapest is the Goa Express 12779 in Sleeper at ₹645 (26 h 10 m), the fastest the Air-India Express IX1196 flight at ₹8,630 (2 h 40 m). ' +
+        'From Mumbai, the Konkan Kanya 10111 in Sleeper is the cheapest and the fastest by train or bus, at ₹420 (11 h 40 m). ' +
+        "Buses didn't come back for Delhi. Flights from your own city are a tap away on the card.",
+    );
   });
 
   it('puts them on one card, each row with its own ixigo page, posts the line with it, and ends the turn there', async () => {
@@ -133,8 +163,8 @@ describe("each home city's ways to the trip", () => {
     expect(card.title).toBe('Ways to North Goa from Delhi and Mumbai, Fri 6 Nov');
     expect(card.options.map((o) => [o.title, o.highlights[0], o.price_minor])).toEqual([
       ['From Delhi: Goa Express 12779', 'Cheapest, 26 h 10 m', 64_500],
-      ['From Delhi: Rajdhani 22413', 'Fastest, 15 h 30 m', 214_000],
-      ['From Mumbai: Konkan Kanya 10111', 'Cheapest and fastest, 11 h 40 m', 42_000],
+      ['From Delhi: Rajdhani 22413', 'Fastest by train or bus, 15 h 30 m', 214_000],
+      ['From Mumbai: Konkan Kanya 10111', 'Cheapest and fastest by train or bus, 11 h 40 m', 42_000],
     ]);
     expect(card.actions?.map((a) => a.action_id)).toEqual(['open', 'flights_home']);
     // "See on ixigo" on a row opens that train's own page.
@@ -186,7 +216,7 @@ describe("each home city's ways to the trip", () => {
     await toolWith(async () => drill).run({}, ctx);
     expect(ctx.lines).toEqual([
       'From Delhi, the one bus is the NTC Smart Bus, at ₹5,300 (40 h 30 m). ' +
-        'From Mumbai, the cheapest is the Naik Tours & Travels bus at ₹1,500 (14 h 30 m), the fastest the IntrCity SmartBus at ₹3,182 (9 h 55 m). ' +
+        'From Mumbai, the cheapest is the Naik Tours & Travels bus at ₹1,500 (14 h 30 m), the fastest by train or bus the IntrCity SmartBus at ₹3,182 (9 h 55 m). ' +
         "Trains didn't come back for any city. Flights from your own city are a tap away on the card.",
     ]);
     const card = C.Card.parse(ctx.cards[0]);
@@ -194,7 +224,7 @@ describe("each home city's ways to the trip", () => {
     expect(card.options.map((o) => o.highlights)).toEqual([
       ['The only bus, 40 h 30 m', 'A/C Sleeper'],
       ['Cheapest, 14 h 30 m', 'A/C Sleeper'],
-      ['Fastest, 9 h 55 m', 'A/C Sleeper'],
+      ['Fastest by train or bus, 9 h 55 m', 'A/C Sleeper'],
     ]);
   });
 

@@ -229,6 +229,20 @@ export function createEngine(d: EngineDeps) {
   const listed = new Map<string, { choices: Suggestion[]; at: number }>();
   const keptFacts = new Map<string, { at: number; answer: Promise<EngineAnswer> }>();
   const timings = new Map<string, { recipe: string; speed: Speed; ms: number[]; runs: number; failed: number }>();
+  /**
+   * Each paced recipe's (pace) last page load and the end of its quiet after one failed, in ms. One per process, for every
+   * trip at once: ixigo sees all of our boxes as one address.
+   */
+  const paces = new Map<string, { at: number; quietUntil: number }>();
+
+  /** Whether a paced recipe's page may not load now: within its gap of the last load, or in its quiet after a failure. */
+  function pacedOut(id: string): boolean {
+    const pace = d.book.get(id)?.pace;
+    const p = paces.get(id);
+    if (!pace || !p) return false;
+    const now = d.now().getTime();
+    return now < p.quietUntil || now - p.at < pace.gap_seconds * 1_000;
+  }
 
   /** One run, in the log and the numbers: recipe, speed, how long, and how it ended. */
   function record(recipe: string, speed: Speed, ms: number, outcome: string): void {
@@ -566,29 +580,44 @@ export function createEngine(d: EngineDeps) {
         strip.line = line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed: 'page', fell_from: fell.id, ...stepOf(o) });
       }
     }
-    const plan = await fetchPlanOf(recipe, inputs, bindings);
-    const started = d.now().getTime();
-    const pageRun = strip.line;
-    o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
-    pageRun.step(`opened ${pathOf(page)}`);
-    const got = await runner.read(o.tripId, page, plan, {
-      ...fetchFor(o),
-      tag: pageRun.id,
-      // The page stays open as the warm tab, so the live view sees ixigo draw it; never for a check nobody waits on. A
-      // live card takes one more picture of it once ixigo has drawn it (the runner's look).
-      ...(o.background ? {} : { keepOpen: true, ...(o.onProgress ? { look: true } : {}) }),
-      // The pictures go to the live card as before, and to the run strip's browser pane, the drawn page's too.
-      onProgress: (e) => {
-        if (e.type === 'frames' || e.type === 'drawn') pageRun.frames(e.frames, started);
-        o.onProgress?.(e);
-      },
-      onTrace: (t) => pageRun.trace(t),
-      ...(o.fallsBack ? { fallsBack: true } : {}),
-      about: aboutOf(recipe, o, bindings),
-    });
-    refusePayments(got.finalUrl);
-    o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
-    return answerFrom(got.captures, filled, started);
+    const readPage = async (): Promise<EngineAnswer> => {
+      const plan = await fetchPlanOf(recipe, inputs, bindings);
+      const started = d.now().getTime();
+      const pageRun = strip.line;
+      o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
+      pageRun.step(`opened ${pathOf(page)}`);
+      const got = await runner.read(o.tripId, page, plan, {
+        ...fetchFor(o),
+        tag: pageRun.id,
+        // The page stays open as the warm tab, so the live view sees ixigo draw it; never for a check nobody waits on. A
+        // live card takes one more picture of it once ixigo has drawn it (the runner's look).
+        ...(o.background ? {} : { keepOpen: true, ...(o.onProgress ? { look: true } : {}) }),
+        // The pictures go to the live card as before, and to the run strip's browser pane, the drawn page's too.
+        onProgress: (e) => {
+          if (e.type === 'frames' || e.type === 'drawn') pageRun.frames(e.frames, started);
+          o.onProgress?.(e);
+        },
+        onTrace: (t) => pageRun.trace(t),
+        ...(o.fallsBack ? { fallsBack: true } : {}),
+        about: aboutOf(recipe, o, bindings),
+      });
+      refusePayments(got.finalUrl);
+      o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
+      return answerFrom(got.captures, filled, started);
+    };
+    // A paced page (pace: flights) loads at most once a gap across every trip, and not in its quiet after a failure;
+    // one held back fails at once, and its caller has another way (the link to ixigo's own page).
+    const pace = recipe.pace;
+    if (!pace) return readPage();
+    if (pacedOut(recipe.id)) throw new TravelError('unreachable', `ixigo is given a moment between ${recipe.id.split('.')[0]} pages.`);
+    paces.set(recipe.id, { at: d.now().getTime(), quietUntil: 0 });
+    try {
+      return await readPage();
+    } catch (err) {
+      // ixigo refused or didn't answer: quiet. A run our own time cut short (a composite's) says nothing about ixigo.
+      if (!o.signal?.aborted) paces.set(recipe.id, { at: d.now().getTime(), quietUntil: d.now().getTime() + pace.quiet_minutes * 60_000 });
+      throw err;
+    }
   }
 
   /**
@@ -764,6 +793,8 @@ export function createEngine(d: EngineDeps) {
     },
     answer,
     answerShared,
+    /** Whether a paced recipe's page may not load now (pace): its caller goes another way at once, loading nothing. */
+    pacedOut,
     /**
      * A place as ixigo's box answers it for the words: the suggestion a person would pick, with what it shows (its
      * region, its country) and the place it stands for (place-for.ts reads its coordinates). Null when ixigo knows none,

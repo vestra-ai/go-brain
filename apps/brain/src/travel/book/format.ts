@@ -179,6 +179,12 @@ export const RecipeFile = z
      */
     watch: z.record(z.string().regex(/^[a-z][a-z_]*$/), Expr).optional(),
     answer: Answer,
+    /**
+     * A page ixigo refuses our boxes' one shared address under a burst (flights: 403 and 429, 9 Oct): loaded at most once
+     * in gap_seconds across every trip, and not at all for quiet_minutes after a load that failed. A run it holds back
+     * fails at once (unreachable), and its caller has another way: flights.search, the link to ixigo's own page.
+     */
+    pace: z.strictObject({ gap_seconds: z.int().positive().max(600), quiet_minutes: z.int().positive().max(120) }).optional(),
     ttl_minutes: z.int().positive().max(60).default(10),
     measured: z.record(z.string(), z.number().nullable()).optional(),
     samples: z.record(z.string(), z.string()).optional(),
@@ -194,6 +200,7 @@ export const RecipeFile = z
     }
     if (r.answer.as === 'places' && !(r.box && r.capture && r.keeps)) ctx.addIssue({ code: 'custom', message: 'a lookup needs box, capture and keeps' });
     if (r.answer.as === 'link' && !r.page) ctx.addIssue({ code: 'custom', message: 'a link answer needs page' });
+    if (r.pace && r.answer.as !== 'options') ctx.addIssue({ code: 'custom', message: 'only a page read with options is paced' });
     if ((r.answer.as === 'compare') !== !!r.steps) ctx.addIssue({ code: 'custom', message: 'a composite has steps and answers compare, and only a composite does' });
     if (r.steps && (r.page || r.fast || r.capture || r.fetch || r.read || r.box || Object.values(r.inputs).some((i) => i.kind === 'place'))) {
       ctx.addIssue({ code: 'custom', message: 'a composite opens nothing and looks up no place itself: its steps do' });

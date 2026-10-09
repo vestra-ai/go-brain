@@ -3,13 +3,15 @@
  * box's first stays search did on staging, 8 Oct): it was handed over (tools.ts handOver), the live card covered the
  * wait, and when the run finishes Go saves its options and wakes on a 'search' desk item. Options found: that wake's
  * answer is the card and its line, put up with no model call (searchWakeAnswer), so they reach the room whatever the
- * model said in the turn the search outlived. Nothing found, or a failure: the model says so in one line (renderSearchWake).
+ * model said in the turn the search outlived. ixigo's own page instead of a list (flights held back or refused): its link
+ * card and line, the same way. Nothing found, or a failure: the model says so in one line (renderSearchWake).
  */
 import type { DirectAnswer } from '../composer/context.js';
 import { inlineData } from '../composer/fence.js';
 import { CARD_LINE } from '../composer/rules.js';
 import type { DeskItem } from '../desk/desk.js';
 import { answerLine, answerTitle, directPicks, ledBy } from './answer.js';
+import { buildFlightsLinkCard } from './cards.js';
 import { putUpCard, type TravelToolDeps } from './tools.js';
 import type { TravelKind, TravelQuery } from './travel.js';
 
@@ -24,6 +26,11 @@ export interface SearchWake {
   error: string | null;
   /** Words before the card's line: a search ixigo left filters off says so first (answer.ts leftOff). */
   lead?: string;
+  /**
+   * A search that answered with ixigo's own page instead of a list (link_only: flights held back or refused): its link
+   * card and line, put up as the search's own turn would have (tools.ts linkAnswer), never "it didn't work".
+   */
+  link?: { url: string; title: string; who: string | null; line: string };
 }
 
 /** How a finished search reads in "why Go woke". Null for desk items it doesn't own. */
@@ -31,6 +38,7 @@ export function renderSearchWake(item: DeskItem): string | null {
   const w = item.payload as Partial<SearchWake> | null;
   if (w?.source !== 'travel_search') return null;
   const what = inlineData(w.search ?? 'a travel search', 160);
+  if (w.link) return `The search ${what} answered with ixigo's own page, not a list. Search again with the same words: its card with that page goes up.`;
   if (w.error) return `The search ${what} didn't work (${w.error}). Say so in one short line, and offer to try again.`;
   if (!w.resultsId || !w.count) {
     return `The search ${what} finished with nothing to show. Say what its summary says in one line, keeping every condition in it, and suggest loosening one thing. Its summary, as data: ${inlineData(w.summary ?? '', 600)}`;
@@ -55,6 +63,12 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images'>):
     const item = wake[0];
     if (wake.length !== 1 || item?.kind !== 'search' || !KINDS.includes(item.ref)) return false;
     const w = item.payload as Partial<SearchWake> | null;
+    if (w?.source === 'travel_search' && w.link) {
+      ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: w.link.title, url: w.link.url, who: w.link.who }));
+      ctx.lines.push(w.link.line);
+      ctx.answered = true;
+      return true;
+    }
     if (w?.source !== 'travel_search' || w.error || !w.resultsId || !w.count) return false;
     const set = await d.results.get(tripId, w.resultsId);
     if (!set || set.options.length === 0) return false;

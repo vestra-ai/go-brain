@@ -24,6 +24,8 @@ export const TravelQuery = z.object({
   departAfter: Clock.optional(),
   departBefore: Clock.optional(),
   arriveBefore: Clock.optional(),
+  /** Why a time applies when this ask didn't say it: from the trip ("Rahul can leave Friday after 6 pm"). Said with it. */
+  because: z.string().min(3).max(80).optional(),
   /** Per person for journeys, per night for stays. */
   maxPriceMinor: z.int().positive().optional(),
   mustHave: z.array(z.enum(MUST_HAVES)).max(5).optional(),

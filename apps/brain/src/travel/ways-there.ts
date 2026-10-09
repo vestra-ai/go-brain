@@ -1,8 +1,9 @@
 /**
  * How everyone gets to the trip, asked for. The composite trip.how_we_get_there (recipes/trip/) runs each home city's
- * trains and buses on the day side by side on the trip's computer, and its flights as a link. Go puts each city's
- * cheapest and fastest on one options card, each row with "See on ixigo", and posts a line built from the same data,
- * with no model round after. "Flights from my city" opens the tapper's own city's flights.
+ * trains, buses and flights on the day side by side on the trip's computer (flights when ixigo shows them: one flights
+ * page across every trip in 20 s), and its flights' link. Go puts each city's cheapest and fastest, across all three, on
+ * one options card, each row with "See on ixigo", and posts a line built from the same data, with no model round after.
+ * "Flights from my city" opens the tapper's own city's flights.
  *
  * Three cities on a computer that runs two pages at once take about 25 s, longer than a turn. So the room sees the run
  * from the start: an "On it." live card, "Checking 3 cities", a step per city ticking done or failed. A comparison that
@@ -48,10 +49,12 @@ export interface WayThere {
   people: number;
   cheapest: ResultOption | null;
   fastest: ResultOption | null;
-  /** The one train or bus people can take from there: the line says "the one bus" rather than cheapest and fastest. */
+  /** The one train, bus or flight people can take from there: the line says "the one bus" rather than cheapest and fastest. */
   only: boolean;
   /** ixigo's flights page from the city, set for its people; null when its link didn't come. */
   flights: string | null;
+  /** Whether its flights came back: without them its fastest is only the fastest by train or bus, and says so. */
+  flown: boolean;
   /** The searches that didn't come back for the city. */
   missed: Array<'trains' | 'buses'>;
 }
@@ -66,7 +69,7 @@ function bookable(o: ResultOption): boolean {
   return o.facts.seats_left !== 0;
 }
 
-/** Each home city's cheapest and fastest train or bus, its flights link, and what didn't come back. */
+/** Each home city's cheapest and fastest train, bus or flight, its flights link, and what didn't come back. */
 export function waysOf(got: Compare, people: Array<{ from_city?: string | null | undefined }>): WayThere[] {
   return got.entries.map(({ entry, steps }) => {
     const options: ResultOption[] = [];
@@ -79,12 +82,13 @@ export function waysOf(got: Compare, people: Array<{ from_city?: string | null |
       else if (!s.answer && (kind === 'trains' || kind === 'buses')) missed.push(kind);
     }
     const ok = options.filter(bookable);
+    const flown = ok.some((o) => o.kind === 'flight');
     const cheapest = [...ok].sort((a, b) => a.priceMinor! - b.priceMinor! || minutesOf(a) - minutesOf(b))[0] ?? null;
     const fastest = [...ok].sort((a, b) => minutesOf(a) - minutesOf(b) || a.priceMinor! - b.priceMinor!)[0] ?? null;
     // A train comes back once a class: one train in three classes is still the one train.
     const journeys = new Set(ok.map((o) => `${o.kind}|${o.journey?.number ?? o.title}|${o.journey?.depart_at}`));
     const n = people.filter((p) => p.from_city && norm(p.from_city) === norm(entry)).length;
-    return { home: entry, people: n, cheapest, fastest, only: journeys.size === 1, flights, missed };
+    return { home: entry, people: n, cheapest, fastest, only: journeys.size === 1, flights, flown, missed };
   });
 }
 
@@ -102,11 +106,11 @@ export function waysRows(ways: WayThere[]): Row[] {
   return rows.filter((r) => !dropped.has(r));
 }
 
-const modeOf = (o: ResultOption): string => (o.kind === 'train' ? 'train' : 'bus');
+const modeOf = (o: ResultOption): string => (o.kind === 'train' ? 'train' : o.kind === 'flight' ? 'flight' : 'bus');
 
 /** A row as the card shows it: its city in its title, and which it is with its time first among its highlights, once. */
 function rowOption(r: Row): ResultOption {
-  const tag = r.way.only ? `The only ${modeOf(r.option)}` : { cheapest: 'Cheapest', fastest: 'Fastest', both: 'Cheapest and fastest' }[r.is];
+  const tag = r.way.only ? `The only ${modeOf(r.option)}` : { cheapest: 'Cheapest', fastest: `Fastest${byLand(r.way)}`, both: `Cheapest and fastest${byLand(r.way)}` }[r.is];
   const took = hoursMinutes(minutesOf(r.option));
   return {
     ...r.option,
@@ -115,12 +119,15 @@ function rowOption(r: Row): ResultOption {
   };
 }
 
-/** "the Goa Express 12779 in Sleeper", "the Zingbus bus", "the NTC Smart Bus", "the IntrCity SmartBus". */
+/** "the Goa Express 12779 in Sleeper", "the Zingbus bus", "the NTC Smart Bus", "the IntrCity SmartBus", "the IndiGo 6E357 flight". */
 function nameOf(o: ResultOption): string {
+  if (o.kind === 'flight') return `the ${o.title} flight`;
   if (o.kind !== 'train') return /bus$/i.test(o.title) ? `the ${o.title}` : `the ${o.title} bus`;
   const code = typeof o.facts.class_code === 'string' ? o.facts.class_code : null;
   return code ? `the ${o.title} in ${CLASS_WORDS[code] ?? code}` : `the ${o.title}`;
 }
+/** A fastest with no flights beside it (held back, or none came) is only the fastest by train or bus: never a 25 h train as the fastest. */
+const byLand = (w: WayThere): string => (w.flown ? '' : ' by train or bus');
 const priced = (o: ResultOption): string => `${formatInr(o.priceMinor!)} (${hoursMinutes(minutesOf(o))})`;
 const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
 
@@ -136,9 +143,9 @@ export function waysLine(ways: WayThere[], date: string): string {
     }
     if (w.only) return [`From ${w.home}, the one ${modeOf(w.cheapest)} is ${nameOf(w.cheapest)}, at ${priced(w.cheapest)}.`];
     if (w.fastest && w.fastest !== w.cheapest) {
-      return [`From ${w.home}, the cheapest is ${nameOf(w.cheapest)} at ${priced(w.cheapest)}, the fastest ${nameOf(w.fastest)} at ${priced(w.fastest)}.`];
+      return [`From ${w.home}, the cheapest is ${nameOf(w.cheapest)} at ${priced(w.cheapest)}, the fastest${byLand(w)} ${nameOf(w.fastest)} at ${priced(w.fastest)}.`];
     }
-    return [`From ${w.home}, ${nameOf(w.cheapest)} is the cheapest and the fastest, at ${priced(w.cheapest)}.`];
+    return [`From ${w.home}, ${nameOf(w.cheapest)} is the cheapest and the fastest${byLand(w)}, at ${priced(w.cheapest)}.`];
   });
   for (const kind of ['trains', 'buses'] as const) {
     const cities = ways.filter((w) => w.missed.includes(kind)).map((w) => w.home);

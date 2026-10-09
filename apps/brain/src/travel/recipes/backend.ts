@@ -58,7 +58,7 @@ export interface IxigoWebDeps {
    * Runs a recipe: the trip's head count and homes, its places and its page are the engine's. requestOf keys a search on
    * the page it will open, not the words asked; absent in tests whose engine is scripted, which key on the words.
    */
-  engine: Pick<Engine, 'answer'> & Partial<Pick<Engine, 'requestOf'>>;
+  engine: Pick<Engine, 'answer'> & Partial<Pick<Engine, 'requestOf' | 'pacedOut'>>;
   now: () => Date;
   /** The live search card for a run; absent in tests that don't look at it. */
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
@@ -97,11 +97,17 @@ function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch {
 }
 
 /** Each kind of search's recipe in the book. */
-export const SEARCH_RECIPES: Record<TravelKind, string> = { flights: 'flights.search', trains: 'trains.between', buses: 'buses.between', stays: 'hotels.search' };
+export const SEARCH_RECIPES: Record<TravelKind, string> = { flights: 'flights.results', trains: 'trains.between', buses: 'buses.between', stays: 'hotels.search' };
+/** The link that answers in a search's place when ixigo won't show Go its page (flights: refused, paced, or empty). */
+export const LINK_FALLBACK: Partial<Record<TravelKind, string>> = { flights: 'flights.search' };
+/** A search's failures that ask the person something (which place, which date, what more): said, never a link. */
+const ASKS_THE_PERSON: ReadonlySet<string> = new Set(['pick_place', 'unknown_place', 'past_date', 'needs_more']);
 
-/** The kind of search a recipe is, when it is one of the four. */
+/** The kind of search a recipe is, when it is one of the four or the link that answers for one. */
 export const searchKindOf = (recipeId: string): TravelKind | null =>
-  (Object.entries(SEARCH_RECIPES) as Array<[TravelKind, string]>).find(([, id]) => id === recipeId)?.[0] ?? null;
+  (Object.entries(SEARCH_RECIPES) as Array<[TravelKind, string]>).find(([, id]) => id === recipeId)?.[0] ??
+  (Object.entries(LINK_FALLBACK) as Array<[TravelKind, string]>).find(([, id]) => id === recipeId)?.[0] ??
+  null;
 
 /** A search's query as its recipe's inputs: the places as the person's words, and the conditions ixigo may filter on. */
 export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; conditions: string[] } {
@@ -175,7 +181,10 @@ export const CHOOSING_MS = 15 * 60_000;
 /** Turns and messages remembered as over, so a run that fails after its turn ended ends its card at once. */
 const OVER_MAX = 2_000;
 
-/** Flights: ixigo answers our box egress with "No flights found", then a 403 (7 Oct), so flights.search is a link. */
+/**
+ * Flights never start early: their page is paced (flights.results pace: one load in 20 s across every trip, as ixigo
+ * refuses our boxes' shared address under a burst, 9 Oct), and a page held back or refused answers with its link.
+ */
 export const LINK_ONLY_KINDS: ReadonlySet<TravelKind> = new Set(['flights']);
 
 const BOOK_ON_IXIGO = 'Options from ixigo.com are booked on ixigo, from their link.';
@@ -318,108 +327,130 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     return request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions)}`;
   }
 
+  /** One search on ixigo's page: kept, joined or run, its live card from start to end. */
+  async function searchPage(kind: TravelKind, q: TravelQuery, o?: SearchFor): Promise<TravelSearch> {
+    const { tripId, id, given, conditions, link, ttl, key, page } = await plan(kind, q, o?.tripId);
+    // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
+    if (link) {
+      const a = await d.engine.answer(id, given, { tripId, conditions });
+      if (a.as === 'link') throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
+    }
+    const owner: Owner = o?.turnId ? { kind: 'turn', id: o.turnId } : o?.messageId ? { kind: 'message', id: o.messageId } : null;
+    const cardKey = `${tripId}|${key}`;
+    const nowMs = d.now().getTime();
+    const fresh = (k: Kept | undefined): k is Kept => k !== undefined && nowMs - k.at < k.ttl;
+    let hit = kept.get(key);
+    // The search itself kept and done answers as it is; until then, a kept search of the same page with no conditions
+    // answers from its rows, and the search itself runs in the background (unless it is running already). Only an ask
+    // that can be narrowed waits here, so every other search reads what is kept and keeps its own with no wait between.
+    const byPage = narrowedBy(id, conditions);
+    if (byPage && !(fresh(hit) && hit.done)) {
+      const narrowed = await fromKept(id, given, byPage, tripId);
+      // The wait let another search of this key start, or finish: what is kept is read again.
+      hit = kept.get(key);
+      if (narrowed && !(fresh(hit) && hit.done)) {
+        if (!fresh(hit)) void runKept(key, page, id, given, { tripId, conditions, background: true }, ttl);
+        return narrowed;
+      }
+    }
+    if (fresh(hit)) {
+      // The composer joining a run its early start began takes the card: if that run fails, nothing retries it.
+      const running = cards.get(cardKey);
+      if (running?.running && owner?.kind === 'turn') running.owner = owner;
+      return hit.search;
+    }
+    // A paced page (flights) held back: no card and no run, and search answers with its link.
+    if (d.engine.pacedOut?.(id)) throw new TravelError('unreachable', `ixigo is given a moment between ${kind} pages.`);
+    const runId = `${key}|${nowMs}`;
+    // A failed early start's card, still open in its turn, carries on with this search, and so does a card waiting on a
+    // pick of this kind of search, whatever this search's words ("Udaipur City (UDZ)" after "Udaipur"); otherwise the
+    // run gets its own.
+    let card = cards.get(cardKey) ?? null;
+    const waiting = card ? null : choosingCard(tripId, kind);
+    if (waiting) {
+      cards.delete(waiting[0]);
+      card = waiting[1];
+      cards.set(cardKey, card);
+    }
+    if (card && !card.running) {
+      card.running = true;
+      card.choosingSince = null;
+      card.owner = owner ?? card.owner;
+    } else if (d.live) {
+      const make = d.live;
+      card = { live: shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey: runId, kind, query: q })), kind, owner, running: true, code: 'failed', choosingSince: null };
+      cards.set(cardKey, card);
+    } else {
+      card = null;
+    }
+    const live = card?.live;
+    // A page condition the stays say (byPage) that ixigo's page catches nothing with: the page again without them.
+    let unapplied: string[] | null = null;
+    const asked = d.engine.answer(id, given, { tripId, conditions, ...(byPage ? { fallsBack: true } : {}), ...(live ? { onProgress: live.progress } : {}) });
+    const read = byPage
+      ? asked.catch((err: unknown) => {
+          if (!(err instanceof NothingCaughtError)) throw err;
+          unapplied = byPage;
+          d.log?.warn({ tripId, recipe: id, conditions: byPage }, 'travel: a filtered stays page caught nothing; reading it without its filters');
+          return unfiltered(page, id, given, tripId, ttl, live?.progress);
+        })
+      : asked;
+    // A search that shares this one (shareStep: a watch's check) reads ixigo's filtered list: from the page read without
+    // the filters, the stays that say them. Handled here, so one nobody shares never goes unhandled; search says it.
+    const ran = byPage
+      ? read.then((run) => (unapplied && run.as === 'options' ? { ...run, options: run.options.filter((o) => byPage.every((c) => o.facts[c] === true)) } : run))
+      : read;
+    ran.catch(() => undefined);
+    const search = read.then(
+      async (run): Promise<TravelSearch> => {
+        if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
+        live?.progress({ type: 'extracted', count: run.options.length });
+        // The card is done before the options card posts.
+        if (card) await end(cardKey, card, true);
+        return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}) };
+      },
+      async (err: unknown): Promise<never> => {
+        if (card) {
+          card.code = err instanceof TravelError ? err.code : 'failed';
+          if (err instanceof TravelError && err.code === 'pick_place') {
+            // Not a failure: the model, or the group, chooses between the places ixigo knows. The card says so and
+            // waits, through the turn's end, for the search after the pick.
+            card.running = false;
+            card.choosingSince = d.now().getTime();
+            card.live.progress({ type: 'choosing', between: err.choices });
+          } else if (card.owner?.kind === 'message' && !over.has(`${tripId}|${ownerKey(card.owner)}`)) {
+            // A failed early start waits, open, for the composer's search in its turn. Anything else ends failed now,
+            // before the search answers: the composer's own search, a job's, or one whose turn is already over.
+            card.running = false;
+          } else {
+            await end(cardKey, card, false);
+          }
+        }
+        throw err;
+      },
+    );
+    keep(key, { at: nowMs, ttl, search, ran, page });
+    return search;
+  }
+
   return {
     async search(kind, q, o?: SearchFor) {
-      const { tripId, id, given, conditions, link, ttl, key, page } = await plan(kind, q, o?.tripId);
-      // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
-      if (link) {
-        const a = await d.engine.answer(id, given, { tripId, conditions });
-        if (a.as === 'link') throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
+      const linkId = LINK_FALLBACK[kind];
+      if (!linkId) return searchPage(kind, q, o);
+      // Flights: ixigo refuses our boxes' one shared address now and then (403 or 429 under a burst), so its page is paced
+      // (flights.results pace). One held back, refused, or with nothing on it is ixigo's own page, set as they asked:
+      // never "no flights".
+      try {
+        const found = await searchPage(kind, q, o);
+        if (found.results.length > 0) return found;
+      } catch (err) {
+        if (err instanceof TravelError && ASKS_THE_PERSON.has(err.code)) throw err;
+        d.log?.warn({ tripId: o?.tripId, kind, code: err instanceof TravelError ? err.code : 'failed' }, "travel: ixigo's page didn't answer; its link answers instead");
       }
-      const owner: Owner = o?.turnId ? { kind: 'turn', id: o.turnId } : o?.messageId ? { kind: 'message', id: o.messageId } : null;
-      const cardKey = `${tripId}|${key}`;
-      const nowMs = d.now().getTime();
-      const fresh = (k: Kept | undefined): k is Kept => k !== undefined && nowMs - k.at < k.ttl;
-      let hit = kept.get(key);
-      // The search itself kept and done answers as it is; until then, a kept search of the same page with no conditions
-      // answers from its rows, and the search itself runs in the background (unless it is running already). Only an ask
-      // that can be narrowed waits here, so every other search reads what is kept and keeps its own with no wait between.
-      const byPage = narrowedBy(id, conditions);
-      if (byPage && !(fresh(hit) && hit.done)) {
-        const narrowed = await fromKept(id, given, byPage, tripId);
-        // The wait let another search of this key start, or finish: what is kept is read again.
-        hit = kept.get(key);
-        if (narrowed && !(fresh(hit) && hit.done)) {
-          if (!fresh(hit)) void runKept(key, page, id, given, { tripId, conditions, background: true }, ttl);
-          return narrowed;
-        }
-      }
-      if (fresh(hit)) {
-        // The composer joining a run its early start began takes the card: if that run fails, nothing retries it.
-        const running = cards.get(cardKey);
-        if (running?.running && owner?.kind === 'turn') running.owner = owner;
-        return hit.search;
-      }
-      const runId = `${key}|${nowMs}`;
-      // A failed early start's card, still open in its turn, carries on with this search, and so does a card waiting on a
-      // pick of this kind of search, whatever this search's words ("Udaipur City (UDZ)" after "Udaipur"); otherwise the
-      // run gets its own.
-      let card = cards.get(cardKey) ?? null;
-      const waiting = card ? null : choosingCard(tripId, kind);
-      if (waiting) {
-        cards.delete(waiting[0]);
-        card = waiting[1];
-        cards.set(cardKey, card);
-      }
-      if (card && !card.running) {
-        card.running = true;
-        card.choosingSince = null;
-        card.owner = owner ?? card.owner;
-      } else if (d.live) {
-        const make = d.live;
-        card = { live: shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey: runId, kind, query: q })), kind, owner, running: true, code: 'failed', choosingSince: null };
-        cards.set(cardKey, card);
-      } else {
-        card = null;
-      }
-      const live = card?.live;
-      // A page condition the stays say (byPage) that ixigo's page catches nothing with: the page again without them.
-      let unapplied: string[] | null = null;
-      const asked = d.engine.answer(id, given, { tripId, conditions, ...(byPage ? { fallsBack: true } : {}), ...(live ? { onProgress: live.progress } : {}) });
-      const read = byPage
-        ? asked.catch((err: unknown) => {
-            if (!(err instanceof NothingCaughtError)) throw err;
-            unapplied = byPage;
-            d.log?.warn({ tripId, recipe: id, conditions: byPage }, 'travel: a filtered stays page caught nothing; reading it without its filters');
-            return unfiltered(page, id, given, tripId, ttl, live?.progress);
-          })
-        : asked;
-      // A search that shares this one (shareStep: a watch's check) reads ixigo's filtered list: from the page read without
-      // the filters, the stays that say them. Handled here, so one nobody shares never goes unhandled; search says it.
-      const ran = byPage
-        ? read.then((run) => (unapplied && run.as === 'options' ? { ...run, options: run.options.filter((o) => byPage.every((c) => o.facts[c] === true)) } : run))
-        : read;
-      ran.catch(() => undefined);
-      const search = read.then(
-        async (run): Promise<TravelSearch> => {
-          if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
-          live?.progress({ type: 'extracted', count: run.options.length });
-          // The card is done before the options card posts.
-          if (card) await end(cardKey, card, true);
-          return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}) };
-        },
-        async (err: unknown): Promise<never> => {
-          if (card) {
-            card.code = err instanceof TravelError ? err.code : 'failed';
-            if (err instanceof TravelError && err.code === 'pick_place') {
-              // Not a failure: the model, or the group, chooses between the places ixigo knows. The card says so and
-              // waits, through the turn's end, for the search after the pick.
-              card.running = false;
-              card.choosingSince = d.now().getTime();
-              card.live.progress({ type: 'choosing', between: err.choices });
-            } else if (card.owner?.kind === 'message' && !over.has(`${tripId}|${ownerKey(card.owner)}`)) {
-              // A failed early start waits, open, for the composer's search in its turn. Anything else ends failed now,
-              // before the search answers: the composer's own search, a job's, or one whose turn is already over.
-              card.running = false;
-            } else {
-              await end(cardKey, card, false);
-            }
-          }
-          throw err;
-        },
-      );
-      keep(key, { at: nowMs, ttl, search, ran, page });
-      return search;
+      const { tripId, given, conditions } = await plan(kind, q, o?.tripId);
+      const a = await d.engine.answer(linkId, given, { tripId, conditions });
+      if (a.as === 'link') throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
+      throw new TravelError('refused', `${linkId} gives no link.`);
     },
     async shareStep(id, given, o, run) {
       const kind = searchKindOf(id);
@@ -480,7 +511,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       } catch {
         return null;
       }
-      if (p.link) return null;
+      // A paced page held back answers with its link at once (flights).
+      if (p.link || (LINK_FALLBACK[kind] && d.engine.pacedOut?.(p.id))) return null;
       const started = kept.get(p.key)?.at ?? d.now().getTime();
       return Math.max(0, TRAVEL_WAIT_MS - (d.now().getTime() - started));
     },
