@@ -64,7 +64,8 @@ export function chatOpening(msg: Message, read: ReflexRead, pack: TripPack, now:
     urgency: 0.9,
     useful: ['react', 'record', 'message'],
     personIds: [],
-    facts: { message_id: msg.message_id, seq: msg.seq },
+    // When it was said: a chime-in on a line this fresh skips the night raise (policy.ts repliesToSomeoneAwake).
+    facts: { message_id: msg.message_id, seq: msg.seq, said_at: msg.sent_at },
     simulated: false,
     small: false,
   };
