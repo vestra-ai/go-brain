@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import type { TripPack } from '../../trips/pack.js';
 import { browserUserIdFor, createBrowsers, type Browsers } from '../browsers.js';
@@ -15,6 +15,7 @@ let db: Awaited<ReturnType<typeof withSchema>>;
 let fake: FakeV1;
 let clock: FakeClock;
 let browsers: Browsers;
+const log = { warn: vi.fn() };
 /** Each trip's organizer, as its pack says it; a test changes one to see the trip's browser stay. */
 const organizers = new Map<string, string>();
 
@@ -31,7 +32,7 @@ beforeAll(async () => {
   await fake.start();
   const v1 = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
   const packs = { get: async (tripId: string) => ({ trip: { organizer_person_id: organizers.get(tripId) ?? 'p_nobody' } }) as unknown as TripPack };
-  browsers = createBrowsers({ pool: db.pool, v1, packs, env: { VESTRA_DEPLOYMENT_ID: 'dep_go' }, now: clock.now });
+  browsers = createBrowsers({ pool: db.pool, v1, packs, env: { VESTRA_DEPLOYMENT_ID: 'dep_go' }, now: clock.now, log });
 });
 afterAll(async () => {
   await fake.close();
@@ -67,6 +68,25 @@ describe("the person's browser", () => {
     // A trip whose Server instance Go has not heard yet takes the door's own name for a socket that gives none.
     await trip('t_b_noinst', null, 'p_rahul');
     expect(await browsers.userFor('t_b_noinst')).toBe(browserUserIdFor('default', 'p_rahul'));
+  });
+
+  it("says in the log when one organizer comes under two Server instances within a day: their Server must use one name", async () => {
+    log.warn.mockClear();
+    await trip('t_b_name_1', 'server-replica-a', 'p_twice');
+    await browsers.userFor('t_b_name_1');
+    expect(log.warn).not.toHaveBeenCalled();
+    await trip('t_b_name_2', 'server-replica-b', 'p_twice');
+    await browsers.userFor('t_b_name_2');
+    expect(log.warn).toHaveBeenCalledWith(
+      { personId: 'p_twice', instance: 'server-replica-b', others: ['server-replica-a'] },
+      expect.stringContaining('one organizer under two Server instances within a day'),
+    );
+    // A day on, the old name is history: nothing said.
+    log.warn.mockClear();
+    clock.advance(25 * 3600_000);
+    await trip('t_b_name_3', 'server-replica-c', 'p_twice');
+    await browsers.userFor('t_b_name_3');
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
   it('is made on /v1 again when /v1 says it does not know it', async () => {

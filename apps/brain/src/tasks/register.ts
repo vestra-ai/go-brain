@@ -61,7 +61,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   addComputerSteps(brain.setup, computer);
   // ixigo.com searches (TRAVEL_MODE ixigo_web) run in the person's browser (browsers.ts), one computer for every trip
   // the organizer has, through its browser fetch; the travel lane keeps it awake while people talk travel.
-  const browsers = createBrowsers({ pool: brain.pool, v1, packs: brain.packs, env, now: brain.now });
+  const browsers = createBrowsers({ pool: brain.pool, v1, packs: brain.packs, env, now: brain.now, log: brain.log });
   const keeper = createKeepWarm({ warm: (tripId, keepMs) => browsers.warm(tripId, { keepMs }), now: brain.now, log: brain.log });
   const browserFetch = createBrowserFetchRunner({ v1, browser: browsers, now: brain.now, log: brain.log, slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')) });
   brain.recipeRunners = {

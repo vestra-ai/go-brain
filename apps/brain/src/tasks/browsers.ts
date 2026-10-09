@@ -26,6 +26,8 @@ const WARM_COOLDOWN_MS = 60_000;
 const SEEN_UP_MAX = 500;
 /** The instance the door gives a socket that names none. */
 const NO_INSTANCE = 'default';
+/** One organizer under two Server instances within this long is said in the log: their Server's replicas name themselves apart. */
+const TWO_NAMES_MS = 24 * 3600_000;
 
 /** /v1 user ids allow letters, digits and ._:@- only, so the instance and the person are hashed. */
 export function browserUserIdFor(instance: string, personId: string): string {
@@ -69,6 +71,7 @@ export interface BrowsersDeps {
   packs: Pick<Packs, 'get'>;
   env: Pick<TasksRuntime, 'VESTRA_DEPLOYMENT_ID'>;
   now: () => Date;
+  log: { warn(obj: object, msg: string): void };
 }
 
 export function createBrowsers(d: BrowsersDeps): Browsers {
@@ -101,10 +104,29 @@ export function createBrowsers(d: BrowsersDeps): Browsers {
       'insert into browsers (v1_user_id, server_instance, person_id, created_at) values ($1, $2, $3, $4) on conflict (v1_user_id) do nothing',
       [userId, instance, personId, d.now()],
     );
-    await d.pool.query('insert into trip_browsers (trip_id, v1_user_id, created_at) values ($1, $2, $3) on conflict (trip_id) do nothing', [tripId, userId, d.now()]);
+    const made = await d.pool.query('insert into trip_browsers (trip_id, v1_user_id, created_at) values ($1, $2, $3) on conflict (trip_id) do nothing', [tripId, userId, d.now()]);
+    if ((made.rowCount ?? 0) > 0) await sayTwoNames(personId, instance);
     // Two first uses at once store one: the one stored is the trip's.
     const stored = await mapped();
     return { userId: stored!.v1_user_id, readyAt: stored!.user_ready_at };
+  }
+
+  /**
+   * One organizer under two Server instances within a day: the Server must use one instance name across its restarts
+   * and replicas, or the person gets one browser, and one ixigo login, per name. Said once a new trip maps, never acted on.
+   */
+  async function sayTwoNames(personId: string, instance: string): Promise<void> {
+    const { rows } = await d.pool.query<{ server_instance: string }>(
+      `select distinct b.server_instance from trip_browsers t join browsers b using (v1_user_id)
+       where b.person_id = $1 and b.server_instance <> $2 and t.created_at > $3`,
+      [personId, instance, new Date(d.now().getTime() - TWO_NAMES_MS)],
+    );
+    if (rows.length > 0) {
+      d.log.warn(
+        { personId, instance, others: rows.map((r) => r.server_instance) },
+        'browsers: one organizer under two Server instances within a day: each name gets its own browser and its own ixigo login',
+      );
+    }
   }
 
   /** The browser's /v1 user, with the go-trip-task deployment (as the trip's own user is made); safe to repeat. */

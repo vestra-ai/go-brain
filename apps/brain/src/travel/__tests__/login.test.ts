@@ -585,6 +585,8 @@ describe("ixigo's answer, from the calls its page makes as it loads (staging, 9 
     expect(loginFrom([call(IDENTITY, 403)])).toEqual({ login: 'out', call: IDENTITY, status: 403 });
     // Anything else is not ixigo saying either: a wallet call that failed some other way, or a userinfo call that worked.
     expect(loginFrom([call(WALLET, 500)]).login).toBe('unknown');
+    // ixigo slowing our shared address down (429, 9 Oct) is never the login ending: unknown, and the login stands.
+    expect(loginFrom([call(WALLET, 429), call(IDENTITY, 429)]).login).toBe('unknown');
     expect(loginFrom([call(USERINFO, 200)]).login).toBe('unknown');
     // A login's own call that worked says in, whatever userinfo said.
     expect(loginFrom([call(USERINFO, 403), call(WALLET, 200)]).login).toBe('in');
@@ -760,6 +762,56 @@ describe("one login for all of a person's trips: their browser (tasks/browsers.t
     expect(await w.state()).toBe('logged_in');
     expect(w.last()).toMatchObject({ title: 'ixigo: logged in as Rahul' });
     expect(w.reads).toEqual([]);
+  });
+
+  it("a login the browser lost (the keep-alive found it gone) is asked for once at the trip's next travel talk, never into a quiet chat", async () => {
+    const b = fakeBrowser();
+    const w = world({ browser: b, statuses: [200] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    const posts = w.link.of('post_message').length;
+    // The keep-alive's read found the token refused; nobody in the trip has talked travel since: nothing posted.
+    w.clock.now = new Date(NOW.getTime() + 60_000);
+    b.state = { login: 'out', at: w.clock.now, loggedInAt: NOW };
+    expect(w.link.of('post_message')).toHaveLength(posts);
+    // Then someone asks for a search: the card, once, before any booking can fail.
+    w.login.nudge(w.tripId);
+    await w.login.settled();
+    expect(w.link.of('post_message')).toHaveLength(posts + 1);
+    expect(w.link.of('post_message').at(-1)).toMatchObject({
+      text: "Rahul, ixigo logged Go's computer out: one login brings it back, about a minute.", card: expect.objectContaining({ card_id: `c_login_${w.tripId}_1` }),
+    });
+    expect(await w.state()).toBe('asked');
+    // More travel talk asks nothing more.
+    w.login.nudge(w.tripId);
+    await w.login.settled();
+    expect(w.link.of('post_message')).toHaveLength(posts + 1);
+  });
+
+  it("a booking reads ixigo even with the browser said in: a token ixigo refuses flips the browser and asks once, never failing silently", async () => {
+    const b = fakeBrowser({ login: 'in', at: NOW, loggedInAt: NOW });
+    const w = world({ browser: b, statuses: ['dead'] });
+    expect(await w.login.helloCard({ tripId: w.tripId, wake: [greetWake], pack: goaPack({ trip: w.trip }) })).toBeNull();
+    // A search two minutes on stands on the browser's login with no read; a booking does not.
+    w.clock.now = new Date(NOW.getTime() + 2 * 60_000);
+    expect(await w.login.ensure(w.tripId, 'Price lock')).toEqual({ ok: true });
+    expect(w.reads).toEqual([]);
+    const what = 'Saudades Homestays';
+    const first = await w.login.ensure(w.tripId, what, { park: { what, resume: { decision_id: 'd_villa' } }, booking: true });
+    expect(w.reads).toHaveLength(1);
+    expect(first.ok).toBe(false);
+    expect(b.state?.login).toBe('out');
+    expect(await w.state()).toBe('asked');
+    const posts = w.link.of('post_message');
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ text: "To book Saudades Homestays I need ixigo linked once, Rahul: one login on the trip's computer, about a minute." });
+    // The same booking asked again a moment later: no second card, no second read.
+    w.clock.now = new Date(w.clock.now.getTime() + 30_000);
+    const again = await w.login.ensure(w.tripId, what, { park: { what, resume: { decision_id: 'd_villa' } }, booking: true });
+    expect(again.ok).toBe(false);
+    expect(w.link.of('post_message')).toHaveLength(1);
+    expect(w.reads).toHaveLength(1);
   });
 
   it("the browser's login gone since this trip checked ends this trip's login: the next booking asks again, reading nothing", async () => {
