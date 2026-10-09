@@ -547,6 +547,39 @@ describe('a trip for each visit', () => {
     await until(() => g.events.filter((e) => e.type === 'trip.created').length === 2);
   });
 
+  it('with stablePeople, every visit and Start over keeps the five ids, so the trips share their organizer', async () => {
+    const { go: g, room: r } = await setUp({ stablePeople: true });
+    const cookieA = await signIn(r);
+    const cookieB = await signIn(r);
+    const a = await inRoom(r, cookieA);
+    const b = await inRoom(r, cookieB);
+    const five = ['rahul', 'priya', 'arjun', 'meher', 'kabir'].map((n) => `p_${n}`);
+    expect(lastState(a.got).trip.people.map((p: { person_id: string }) => p.person_id)).toEqual(five);
+    expect(lastState(b.got).trip.people.map((p: { person_id: string }) => p.person_id)).toEqual(five);
+    sayAs(a, 'p_rahul', 'trip A begins');
+    sayAs(b, 'p_rahul', 'trip B begins');
+    await until(() => r.tripOf(visitOf(cookieA)) !== undefined && r.tripOf(visitOf(cookieB)) !== undefined);
+    const tripA = r.tripOf(visitOf(cookieA))!;
+    const tripB = r.tripOf(visitOf(cookieB))!;
+    // Two trips, one organizer.
+    expect(tripA).not.toBe(tripB);
+    await until(() => g.events.filter((e) => e.type === 'trip.created').length === 2);
+    const created = g.events.filter((e) => e.type === 'trip.created').map((e) => e.data.trip);
+    expect(created.map((t: { organizer_person_id: string }) => t.organizer_person_id)).toEqual(['p_rahul', 'p_rahul']);
+    a.ws.send(JSON.stringify({ type: 'start_over' }));
+    await until(() => lastState(a.got).trip.trip_id !== tripA);
+    expect(lastState(a.got).trip.organizer_person_id).toBe('p_rahul');
+    expect(personId(a, 'Kabir')).toBe('p_kabir');
+  });
+
+  it('keeps every visit to ids of its own by default (the public room)', () => {
+    expect(visitTrip('t_try_abc123', 'abc123').organizer_person_id).toBe('p_rahul_abc123');
+    const stable = visitTrip('t_try_abc123', 'abc123', true);
+    expect(stable.trip_id).toBe('t_try_abc123');
+    expect(stable.organizer_person_id).toBe('p_rahul');
+    expect(stable.people.map((p) => p.person_id)).toEqual(goaFreshTrip().people.map((p) => p.person_id));
+  });
+
   it('makes a trip with person ids of its own, the same names, and nothing else changed', () => {
     const trip = visitTrip('t_try_abc123', 'abc123');
     const fresh = goaFreshTrip();

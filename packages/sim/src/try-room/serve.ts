@@ -82,6 +82,13 @@ export interface TryRoomOptions {
   wrongTriesPerSecond?: number;
   /** A trip nobody has used or watched for this long is dropped (default 6 hours). */
   idleTripMs?: number;
+  /**
+   * A room for one person on their own machine: every trip keeps the five people's own ids (p_rahul, ...), across visits
+   * and Start over, so their trips share an organizer and what Go keeps for that organizer (one ixigo login for all
+   * their trips). Off by default: the public room gives each visit ids of its own (visitTrip), so nothing Go learns
+   * about one visitor's people reaches another's.
+   */
+  stablePeople?: boolean;
   now?: () => Date;
   /** For tests: Go's health without a call over the network. */
   goHealth?: () => Promise<GoHealth>;
@@ -102,10 +109,12 @@ type PageAction = Action | { type: 'start_over' };
 
 /**
  * A fresh Goa trip for one visit. Its five people keep their names but get ids of their own (p_rahul_<suffix>), so
- * nothing Go learns about a person in one visit's trip can carry over to another visit's.
+ * nothing Go learns about a person in one visit's trip can carry over to another visit's. With stablePeople (a room for
+ * one person), they keep the ids they always have (p_rahul): only the trip is new.
  */
-export function visitTrip(tripId: string, suffix: string): TripSnapshot {
+export function visitTrip(tripId: string, suffix: string, stablePeople = false): TripSnapshot {
   const fresh = goaFreshTrip();
+  if (stablePeople) return { ...fresh, trip_id: tripId };
   const ids = new Set(fresh.people.map((p) => p.person_id));
   const text = JSON.stringify({ ...fresh, trip_id: tripId }, (_key, value: unknown) =>
     typeof value === 'string' && ids.has(value) ? `${value}_${suffix}` : value,
@@ -242,7 +251,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     let trip = pending.get(visit);
     if (!trip) {
       const suffix = randomBytes(6).toString('hex');
-      trip = visitTrip(`t_try_${suffix}`, suffix);
+      trip = visitTrip(`t_try_${suffix}`, suffix, o.stablePeople === true);
       pending.set(visit, trip);
     }
     return trip;
