@@ -9,7 +9,7 @@ import { createTravelLayer } from '../layer.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import { createResultsStore } from '../results.js';
 import { travelTools } from '../tools.js';
-import { budgetCap, budgetNow, budgetTool, budgetWords, createTripBudgets, withBudget, type TripBudget, type TripBudgets } from '../trip-budget.js';
+import { budgetNow, budgetTool, budgetWords, createTripBudgets, type TripBudgets } from '../trip-budget.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -22,51 +22,32 @@ beforeAll(async () => {
   const results = createResultsStore(db.pool);
   const store = new FakeIxigoStore({ now: lb.clock.now });
   const travel = createTravelLayer({ switches: lb.switches, now: lb.clock.now, fake: createFakeTravel({ store, now: lb.clock.now, payRail: () => 'fake' }), ixigo: null, results });
-  for (const t of travelTools({ travel, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now: lb.clock.now, budgets })) lb.tools.register(t);
+  for (const t of travelTools({ travel, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now: lb.clock.now })) lb.tools.register(t);
 });
 afterAll(async () => {
   await db.drop();
 });
 
-const chat = (rupees: number, covers: TripBudget['covers']): TripBudget => ({ perPersonMinor: rupees * 100, covers, source: 'chat', messageId: 'm_1' });
 /** A trip as the budget reads it: the App's lowest band, or none. */
 const tripWith = (lowest: { min_minor: number; max_minor: number | null } | null): Pick<C.Trip, 'budget'> =>
   ({ budget: { lowest: lowest ? { ...lowest, currency: 'INR' } : null, answered: lowest ? 3 : 0, of: 4 } }) as unknown as Pick<C.Trip, 'budget'>;
 const NO_APP_BAND = tripWith(null);
-const STAYS_Q = { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
 
-describe("the trip's budget caps the searches it covers", () => {
-  it('a stay: the budget per person, times the people, over the nights, for the whole place a night; a journey: per person', () => {
-    // ₹10,000 each for the stay, 4 people, 3 nights: ₹13,333 a night for the place.
-    expect(budgetCap('stays', STAYS_Q, chat(10_000, 'stay'), 4)).toBe(1_333_333);
-    // The search's own guests count, when it has one.
-    expect(budgetCap('stays', { ...STAYS_Q, guests: 6 }, chat(10_000, 'stay'), 4)).toBe(2_000_000);
-    expect(budgetCap('flights', { from: 'Delhi', to: 'Goa' }, chat(6_000, 'travel'), 4)).toBe(600_000);
-    // Each part is capped at the whole: a stay alone over the whole trip's budget is over, whatever the split.
-    expect(budgetCap('stays', STAYS_Q, chat(20_000, 'whole_trip'), 4)).toBe(2_666_666);
-    expect(budgetCap('trains', { from: 'Pune', to: 'Goa' }, chat(20_000, 'whole_trip'), 4)).toBe(2_000_000);
-    // What it doesn't cover, and a stay with no nights, it leaves alone.
-    expect(budgetCap('flights', { from: 'Delhi', to: 'Goa' }, chat(10_000, 'stay'), 4)).toBeNull();
-    expect(budgetCap('stays', STAYS_Q, chat(6_000, 'travel'), 4)).toBeNull();
-    expect(budgetCap('stays', { area: 'North Goa' }, chat(10_000, 'stay'), 4)).toBeNull();
-  });
-
-  it("keeps the model's own tighter cap, and replaces a looser one or none", () => {
-    expect(withBudget('stays', { ...STAYS_Q, maxPriceMinor: 800_000 }, chat(10_000, 'stay'), 4)).toEqual({ q: { ...STAYS_Q, maxPriceMinor: 800_000 }, capped: null });
-    expect(withBudget('stays', { ...STAYS_Q, maxPriceMinor: 5_000_000 }, chat(10_000, 'stay'), 4).capped).toBe(1_333_333);
-    expect(withBudget('stays', STAYS_Q, chat(10_000, 'stay'), 4).q.maxPriceMinor).toBe(1_333_333);
-    expect(withBudget('stays', STAYS_Q, null, 4)).toEqual({ q: STAYS_Q, capped: null });
-  });
-
-  it('search_stays stays within a decided budget and says so; nothing over it comes back', async () => {
+describe('a decided budget is context for the turn, never a filter in code', () => {
+  it('search_stays returns what it finds, over the budget too: Go picks with judgment, nothing is dropped for it', async () => {
     const tripId = 't_goa';
-    // ₹7,800 each for the stay, 5 guests, 3 nights: ₹13,000 a night for the place.
-    await budgets.set(tripId, { perPersonMinor: 780_000, covers: 'stay', messageId: 'm_budget' });
-    const out = (await lb.tools.run('search_stays', { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5 }, lb.ctx({ turnId: 'turn_b1' }))) as any;
-    expect(out.budget).toBe("Kept within the trip's budget, up to ₹7,800 per person for the stay: nothing over it is in these results.");
-    const perNight = out.results.map((r: { price: string }) => Number(r.price.replace(/[^\d]/g, '')));
-    expect(perNight.length).toBeGreaterThan(0);
-    expect(perNight.every((p: number) => p <= 13_000)).toBe(true);
+    const ask = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5 };
+    const perNight = (out: any): number[] => out.results.map((r: { price: string }) => Number(r.price.replace(/[^\d]/g, '')));
+    const before = (await lb.tools.run('search_stays', ask, lb.ctx({ turnId: 'turn_b0' }))) as any;
+    const dearest = Math.max(...perNight(before));
+    // A stay budget the dearest of them is over: per person, for 5 people and 3 nights, just under its price a night.
+    await budgets.set(tripId, { perPersonMinor: Math.floor(((dearest - 100) * 3 * 100) / 5), covers: 'stay', messageId: 'm_budget' });
+    const after = (await lb.tools.run('search_stays', ask, lb.ctx({ turnId: 'turn_b1' }))) as any;
+    // The same results, the stay over the budget still among them, and no budget note: the turn reads the budget from
+    // "Right now" and picks with judgment.
+    expect(after.results.map((r: { title: string }) => r.title)).toEqual(before.results.map((r: { title: string }) => r.title));
+    expect(perNight(after)).toContain(dearest);
+    expect(after.budget).toBeUndefined();
     await budgets.clear(tripId);
   });
 });
@@ -92,8 +73,8 @@ describe('the decided budget, kept and read', () => {
     expect(await now.render('t_now', [])).toBeNull();
     await budgets.set('t_now', { perPersonMinor: 2_000_000, covers: 'whole_trip', messageId: 'm_3' });
     expect(await now.render('t_now', [])).toBe(
-      "The trip's budget, decided in the chat: up to ₹20,000 per person for the whole trip. Every search stays within it (Go caps them), " +
-        'and anything you show over it you say is over. It holds until the group changes it.',
+      "The trip's budget, decided in the chat: up to ₹20,000 per person for the whole trip. Search and pick with it in mind, mostly within it; " +
+        'anything you show over it, say so plainly. It holds until the group changes it.',
     );
     expect(budgetWords({ perPersonMinor: 1_500_000, covers: 'stay', source: 'app', messageId: null })).toBe(
       'up to ₹15,000 per person for the stay and food (the lowest band in the App answers, flights separate)',

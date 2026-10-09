@@ -1,19 +1,17 @@
 /**
  * The trip's budget, once the group decides one (Keshav, 9 Oct: "if users decide the budget it should stick to that").
- * Decided in the chat ("let's keep it under 20k each", set with set_budget on the group's word) or, with nothing decided
- * there, the App's budget answers (the lowest band anyone picked, never whose). It holds until the group changes it.
+ * Decided in the chat ("let's keep it under 20k each", kept with set_budget on the group's word); the App's budget answers
+ * reach the turn on their own line (composer/trip-now.ts). It holds until the group changes it.
  *
- * It caps every search Go runs that it covers, when the model gave no cap of its own: a stay never costs more than the
- * budget for it, a journey never more per person than the budget for travel. A budget for the whole trip caps each part
- * at the whole (a stay alone over the whole trip's budget is over, whatever the split): never a filter that drops
- * something within it. With no budget, nothing here applies: Go reads the group's intent itself (composer/rules.ts).
+ * Strong context, never a filter (Keshav, 9 Oct: "no enforcement, rather it should be naturally decided"): "Right now"
+ * carries it every turn, and Go searches and picks with it in mind (composer/rules.ts), mostly within it, a standout a
+ * little over shown and said to be over. Nothing here caps a search or drops a result.
  */
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import type * as C from '@go/contract';
 import type { NowProvider } from '../composer/context.js';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
-import type { TravelKind, TravelQuery } from './travel.js';
 
 /** What a budget is for: the stay, getting there and back, or everything. */
 export type BudgetCovers = 'stay' | 'travel' | 'whole_trip';
@@ -62,35 +60,6 @@ export function createTripBudgets(d: { pool: Pool; now: () => Date }): TripBudge
   };
 }
 
-const nightsOf = (q: TravelQuery): number => {
-  if (!q.checkIn || !q.checkOut) return 0;
-  return Math.max(0, Math.round((Date.parse(q.checkOut) - Date.parse(q.checkIn)) / 86_400_000));
-};
-
-/**
- * The cap a search gets from the budget: per night for the whole place for a stay (the budget per person, times the
- * guests, over the nights), per person for a journey. Null when the budget doesn't cover this kind, or the search
- * can't be costed (a stay with no nights).
- */
-export function budgetCap(kind: TravelKind, q: TravelQuery, b: TripBudget, people: number): number | null {
-  if (kind === 'stays') {
-    if (b.covers === 'travel') return null;
-    const nights = nightsOf(q);
-    if (nights === 0) return null;
-    return Math.floor((b.perPersonMinor * (q.guests ?? Math.max(1, people))) / nights);
-  }
-  if (b.covers === 'stay') return null;
-  return b.perPersonMinor;
-}
-
-/** The search as the group's budget caps it: a cap the model gave stays, the tighter of the two. */
-export function withBudget(kind: TravelKind, q: TravelQuery, b: TripBudget | null, people: number): { q: TravelQuery; capped: number | null } {
-  if (!b) return { q, capped: null };
-  const cap = budgetCap(kind, q, b, people);
-  if (cap === null || (q.maxPriceMinor !== undefined && q.maxPriceMinor <= cap)) return { q, capped: null };
-  return { q: { ...q, maxPriceMinor: cap }, capped: cap };
-}
-
 const rupees = (minor: number): string => `₹${Math.round(minor / 100).toLocaleString('en-IN')}`;
 const COVERS_WORDS: Record<BudgetCovers, string> = { stay: 'the stay', travel: 'getting there and back', whole_trip: 'the whole trip' };
 
@@ -109,8 +78,8 @@ export function budgetNow(d: { budgets: TripBudgets; trip: (tripId: string) => P
       const b = await d.budgets.get(tripId, await d.trip(tripId));
       if (!b || b.source !== 'chat') return null;
       return (
-        `The trip's budget, decided in the chat: ${budgetWords(b)}. Every search stays within it (Go caps them), and ` +
-        'anything you show over it you say is over. It holds until the group changes it.'
+        `The trip's budget, decided in the chat: ${budgetWords(b)}. Search and pick with it in mind, mostly within it; ` +
+        'anything you show over it, say so plainly. It holds until the group changes it.'
       );
     },
   };
@@ -137,7 +106,7 @@ export function budgetTool(d: { budgets: TripBudgets }): QuickTool<z.infer<typeo
     name: 'set_budget',
     description:
       "Keeps the budget the group decided for the trip (\"let's keep it under 20k each\", \"let's go cheaper, 15k\"), so every " +
-      'search stays within it, or drops it (clear). Only on the group\'s word: the organizer\'s, or two people agreeing.',
+      'turn has it in mind, or drops it (clear). Only on the group\'s word: the organizer\'s, or two people agreeing.',
     input: SetBudgetArgs,
     claims: /\bbudget (?:is )?(?:set|saved|locked|noted|updated)\b/i,
     async run(a, ctx: TurnCtx) {
@@ -165,7 +134,7 @@ export function budgetTool(d: { budgets: TripBudgets }): QuickTool<z.infer<typeo
       await d.budgets.set(ctx.tripId, b);
       return {
         saved: budgetWords({ ...b, source: 'chat' }),
-        tell_the_room: 'Say in a few words that you will keep searches and picks within it.',
+        tell_the_room: 'Say in a few words that you will keep it in mind.',
       };
     },
   };

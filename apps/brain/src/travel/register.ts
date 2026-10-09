@@ -177,9 +177,9 @@ export const registerTravel: RegisterLane = async (brain) => {
     placeFor: createPlaceFor({ pool: brain.pool, engine, images, log: brain.log }),
   });
   const today = tripToday(brain.pool, brain.now);
-  // The budget the group decided: every search it covers stays within it, and "Right now" says it holds.
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today })) brain.tools.register(t);
+  // The budget the group decided: kept with set_budget, and in "Right now" for every turn, as strong context, never a filter.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, budgets })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).

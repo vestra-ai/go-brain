@@ -23,7 +23,6 @@ import { TravelError } from './mcp-travel.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultSet, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
-import { budgetWords, withBudget, type TripBudgets } from './trip-budget.js';
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelToolDeps {
@@ -38,8 +37,6 @@ export interface TravelToolDeps {
   warmForTravel?: (tripId: string, kind: TravelKind) => void;
   /** Today in the trip's time zone (YYYY-MM-DD), to read the ask a search answers. Default: India's. */
   today?: (tripId: string) => Promise<string>;
-  /** The trip's decided budget (trip-budget.ts): every search it covers is capped by it. Absent: no budget applies. */
-  budgets?: TripBudgets;
 }
 
 const todayOf = (d: Pick<TravelToolDeps, 'today' | 'now'>, tripId: string): Promise<string> =>
@@ -231,19 +228,7 @@ const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '')
  * prices and the stays' areas. When nothing fits it names the conditions and the closest miss, so a line about it can
  * never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
  */
-/**
- * A search within the trip's decided budget (trip-budget.ts): with no cap of the model's own, or a looser one, the
- * budget's cap applies, and the answer says so, so Go can say it kept to it. Anything else is searchWithin's.
- */
 async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
-  const b = d.budgets ? await d.budgets.get(ctx.tripId, ctx.pack.trip).catch(() => null) : null;
-  const within = withBudget(kind, q, b, ctx.pack.trip.people.length);
-  const out = await searchWithin(kind, within.q, ctx, d);
-  if (within.capped === null || !b || !out || typeof out !== 'object') return out;
-  return { ...(out as Record<string, unknown>), budget: `Kept within the trip's budget, ${budgetWords(b)}: nothing over it is in these results.` };
-}
-
-async function searchWithin(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
   // A search starting is travel intent: the trip's computer stays awake for the follow-ups too.
   d.warmForTravel?.(ctx.tripId, kind);
   const pending = d.travel.search(kind, q, { tripId: ctx.tripId, turnId: ctx.turnId });

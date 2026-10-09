@@ -96,7 +96,11 @@ describe("Go's rules", () => {
     expect(decided).toContain('keep it with set_budget');
     expect(decided).toContain('set the new one');
     expect(decided).toContain('when they drop it, clear it');
-    expect(decided).toContain('anything over it that you show, you say is over');
+    // Keshav, 9 Oct: "no enforcement, rather it should be naturally decided": context, never a filter.
+    expect(decided).toContain('strong context, never a hard filter');
+    expect(decided).toContain('pick mostly within it');
+    expect(decided).toContain('a standout a little over, shown and said plainly');
+    expect(decided).toContain('when nothing good fits, say so and show the closest');
     expect(decided).toContain("One person's number alone is their wish");
     const none = section.split('\n').find((l) => l.startsWith('- With no budget decided'))!;
     expect(none).toContain('never ask the group for one');
