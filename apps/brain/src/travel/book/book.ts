@@ -24,7 +24,6 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
   const out: Array<[string, string]> = [];
   const templates: Array<[string, string]> = [];
   for (const [name, input] of Object.entries(r.inputs)) if (input.value) out.push([`inputs.${name}.value`, input.value]);
-  for (const [name, c] of Object.entries(r.conditions ?? {})) out.push([`conditions.${name}`, c]);
   for (const [name, l] of Object.entries(r.let ?? {})) out.push([`let.${name}`, l]);
   if (r.offers) out.push(['offers.list', r.offers.list]);
   for (const [i, f] of (r.fetch ?? []).entries()) out.push([`fetch.${i}.when`, f.when]);

@@ -18,7 +18,7 @@ import { createStaysHeadStart, HEAD_START_SETTLE_MS, type HeadStartAsk } from '.
 
 const { book } = loadBook();
 const now = () => new Date('2026-10-08T12:00:00Z');
-/** The trip's stays head start for Goa, 6 to 9 Nov: its place and dates, no conditions (warm.ts). */
+/** The trip's stays head start for Goa, 6 to 9 Nov: its place and dates, no filters (warm.ts). */
 const HEAD: HeadStartAsk = { place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' };
 const stay = (n: number): RecipeOption => ({
   kind: 'stay', title: `Stay ${n}`, priceMinor: 500_000 + n, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {},
@@ -32,12 +32,12 @@ const stay = (n: number): RecipeOption => ({
 function rig() {
   const loads: string[][] = [];
   const answer: Engine['answer'] = async (_id, _given, o) => {
-    loads.push(o.conditions ?? []);
+    loads.push(o.siteFilters ?? []);
     return { as: 'options', options: [stay(1), stay(2), stay(3), stay(4)], page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-08T11:59:00.000Z', ms: 9_000 };
   };
   const b = createIxigoWebBackend({ book, engine: { answer }, now });
   const headStart = async (): Promise<void> => {
-    const shared = await b.shareStep('hotels.search', { ...HEAD }, { tripId: 't_goa', conditions: [], background: true }, () => answer('hotels.search', { ...HEAD }, { tripId: 't_goa', conditions: [], background: true }));
+    const shared = await b.shareStep('hotels.search', { ...HEAD }, { tripId: 't_goa', background: true }, () => answer('hotels.search', { ...HEAD }, { tripId: 't_goa', background: true }));
     await shared?.answer;
   };
   const travel = { search: (...a: Parameters<Travel['search']>) => b.search(...a) } as unknown as Travel;
@@ -151,8 +151,8 @@ describe('one ixigo load per agreement: the turn\'s own stays search, then the h
         switches, now, log,
         trip: async () => ({ destination: 'Goa', start: '2026-11-06', end: '2026-11-09' }),
         today: async () => '2026-10-08',
-        share: (tripId, ask, run) => r.b.shareStep('hotels.search', { ...ask }, { tripId, conditions: [], background: true }, run),
-        run: (tripId, ask) => r.answer('hotels.search', { ...ask }, { tripId, conditions: [], background: true }),
+        share: (tripId, ask, run) => r.b.shareStep('hotels.search', { ...ask }, { tripId, background: true }, run),
+        run: (tripId, ask) => r.answer('hotels.search', { ...ask }, { tripId, background: true }),
         ttlMs: 30 * 60_000,
         warmGaveUp: () => false,
         computerSetUp: () => true,
@@ -160,13 +160,13 @@ describe('one ixigo load per agreement: the turn\'s own stays search, then the h
         onChangedKept: kept,
       });
       // "locking 6 to 9 Nov then": the turn shows pool stays for the dates (staging, 8 Oct: the hello promises a pool).
-      await r.travel.search('stays', { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_lock' });
-      expect(r.loads).toEqual([['pool']]);
+      await r.travel.search('stays', { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool'] }, { tripId: 't_goa', turnId: 'turn_lock' });
+      expect(r.loads).toEqual([['Swimming Pool']]);
       // The notes pass saved the dates: trip.updated, and the head start once the edit settles.
       hs.onEvent({ event_id: 'e_dates', trip_id: 't_goa', seq: 9, type: 'trip.updated', data: { by: { kind: 'go' }, changed: ['dates'] } } as never);
       await vi.advanceTimersByTimeAsync(HEAD_START_SETTLE_MS);
       await vi.waitFor(() => expect(log.info).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't_goa', why: 'changed' }), expect.stringContaining('kept already')));
-      expect(r.loads).toEqual([['pool']]);
+      expect(r.loads).toEqual([['Swimming Pool']]);
       expect(kept).not.toHaveBeenCalled();
       // With nothing kept for those dates (no turn searched), the head start is the one load, and it hands its stays on.
       const other = rig();
@@ -174,8 +174,8 @@ describe('one ixigo load per agreement: the turn\'s own stays search, then the h
         switches, now, log,
         trip: async () => ({ destination: 'Goa', start: '2026-11-13', end: '2026-11-16' }),
         today: async () => '2026-10-08',
-        share: (tripId, ask, run) => other.b.shareStep('hotels.search', { ...ask }, { tripId, conditions: [], background: true }, run),
-        run: (tripId, ask) => other.answer('hotels.search', { ...ask }, { tripId, conditions: [], background: true }),
+        share: (tripId, ask, run) => other.b.shareStep('hotels.search', { ...ask }, { tripId, background: true }, run),
+        run: (tripId, ask) => other.answer('hotels.search', { ...ask }, { tripId, background: true }),
         ttlMs: 30 * 60_000,
         warmGaveUp: () => false,
         computerSetUp: () => true,

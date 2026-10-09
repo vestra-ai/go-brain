@@ -18,7 +18,7 @@ import { eventually } from '../testing/lane-brain.js';
 const WEBHOOK_SECRET = 'whsec_e2e_0123456789abcdef';
 const TRIP = 't_goa';
 /** The job's search, as its instructions ask: Go's search_stays for the trip's dates and people, pools only. */
-const STAY_SEARCH = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5, must_have: ['pool'] };
+const STAY_SEARCH = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5 };
 /** What the job returns: three of the villas Go's search showed, each with its offer_id and whole-stay price. */
 const VILLAS = {
   summary: 'Three villas with a pool near the beach.',

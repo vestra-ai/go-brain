@@ -33,13 +33,9 @@ export function plainEnglish(text: string): boolean {
   return !HINGLISH.test(text.toLowerCase());
 }
 
-/** A judgement or second-request word in the ask, other than one the search itself already holds (its must-haves, the site's filters it asked for). */
+/** A judgement or second-request word in the ask, other than one the search itself already holds (the site's filters it asked for). */
 export function judgementIn(text: string, q: TravelQuery): string | null {
-  const explained = new Set<string>([
-    ...(q.mustHave?.includes('breakfast') ? ['breakfast'] : []),
-    ...(q.mustHave?.includes('beach') ? ['beach', 'near', 'close'] : []),
-    ...(q.siteFilters ?? []).flatMap((f) => wordsOf(f)),
-  ]);
+  const explained = new Set<string>((q.siteFilters ?? []).flatMap((f) => wordsOf(f)));
   for (const m of text.toLowerCase().matchAll(JUDGEMENT)) if (!explained.has(m[1]!)) return m[1]!;
   return null;
 }
@@ -62,18 +58,15 @@ const PLAIN_WORDS = new Set([
 ]);
 const DATE_WORD =
   /^(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sept?(ember)?|oct(ober)?|nov(ember)?|dec(ember)?|(mon|tues?|wed(nes)?|thu(rs?)?|fri|sat(ur)?|sun)(day)?|\d+(st|nd|rd|th|k)?)$/;
-/** The words of each must-have a search holds, as people say them. */
-const NEED_WORDS: Record<string, string[]> = {
-  pool: ['pool', 'pools'], breakfast: ['breakfast'], free_cancellation: ['free', 'cancellation', 'cancelation'],
-  beach: ['beach', 'near', 'close'], non_stop: ['non', 'stop', 'nonstop', 'direct'],
-};
+/** A non-stop flight, as people say it. */
+const NON_STOP_WORDS = ['non', 'stop', 'nonstop', 'direct'];
 const wordsOf = (s: string | undefined | null): string[] => (s ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 
 /** A word of the ask that neither the read nor the search holds: the ask asks for more than the read alone answers. */
 export function unreadWord(text: string, q: TravelQuery, destination: string | null): string | null {
   const held = new Set([
     ...wordsOf(q.area), ...wordsOf(q.to), ...wordsOf(q.from), ...wordsOf(destination),
-    ...(q.mustHave ?? []).flatMap((m) => NEED_WORDS[m] ?? []),
+    ...(q.nonStop ? NON_STOP_WORDS : []),
     // The site's own filters the search asked for: ixigo applies them, by their names.
     ...(q.siteFilters ?? []).flatMap(wordsOf),
   ]);
@@ -101,8 +94,7 @@ function agrees(kind: TravelKind, read: TravelQuery, q: TravelQuery): boolean {
     if (!samePlace(kind, read.area, q.area ?? q.to) || read.checkIn !== q.checkIn || read.checkOut !== q.checkOut) return false;
   } else if (!samePlace(kind, read.from, q.from) || !samePlace(kind, read.to, q.to) || read.date !== q.date) return false;
   const same = <K extends keyof TravelQuery>(k: K): boolean => read[k] === undefined || read[k] === q[k];
-  return same('departAfter') && same('departBefore') && same('arriveBefore') && same('maxPriceMinor') && same('guests') &&
-    (read.mustHave ?? []).every((m) => (q.mustHave ?? []).includes(m));
+  return same('departAfter') && same('departBefore') && same('arriveBefore') && same('maxPriceMinor') && same('guests') && same('nonStop');
 }
 
 export interface PlainAskContext {
@@ -164,27 +156,26 @@ const dayMonth = (iso: string): string => {
 };
 
 /**
- * The card's title for a search that answers itself, as the model's titles read: the kind with its condition, the
- * places, and the day or the stay's dates. "Pool stays in North Goa, 6 to 9 Nov", "Buses, Mumbai to Goa, 6 Nov",
- * "Non-stop flights, Delhi to Goa, 6 Nov".
+ * The card's title for a search that answers itself, as the model's titles read: the kind, the places, and the day or
+ * the stay's dates. "Stays in North Goa, 6 to 9 Nov", "Buses, Mumbai to Goa, 6 Nov", "Non-stop flights, Delhi to Goa,
+ * 6 Nov". What ixigo filtered on is the line's to say.
  */
 export function answerTitle(kind: TravelKind, q: TravelQuery): string {
   if (kind === 'stays') {
-    const head = q.mustHave?.includes('pool') ? 'Pool stays' : 'Stays';
     const when = q.checkIn && q.checkOut ? `, ${rangeText(q.checkIn, q.checkOut)}` : '';
-    return clip(`${head} in ${titleWords(q.area ?? q.to ?? 'Goa')}${when}`, 80);
+    return clip(`Stays in ${titleWords(q.area ?? q.to ?? 'Goa')}${when}`, 80);
   }
   const noun = { flights: 'Flights', trains: 'Trains', buses: 'Buses' }[kind];
-  const head = q.mustHave?.includes('non_stop') ? `Non-stop ${noun.toLowerCase()}` : noun;
+  const head = q.nonStop ? `Non-stop ${noun.toLowerCase()}` : noun;
   return clip(`${head}, ${titleWords(q.from ?? '')} to ${titleWords(q.to ?? '')}${q.date ? `, ${dayMonth(q.date)}` : ''}`, 80);
 }
 
 /**
  * The card's line, built from the options the card shows: the search's scope and conditions and the cheapest price on
  * the card, said to whoever asked (CARD_LINE: no ids, no "I'll", no count of the card's options). Never a price the card
- * does not show (a stays card shows the engine's first three, not the cheapest: staging pass, 8 Oct). "Pool stays in
- * North Goa for 6 to 9 Nov, from ₹4,334 a night." "Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from
- * ₹3,890 per person."
+ * does not show (a stays card shows the engine's first three, not the cheapest: staging pass, 8 Oct). "Stays in North
+ * Goa for 6 to 9 Nov, Swimming Pool (ixigo's filter), from ₹4,334 a night." "Flights Delhi to Goa on Fri 6 Nov, leaving
+ * after 7:00 pm, from ₹3,890 per person."
  */
 export function answerLine(kind: TravelKind, q: TravelQuery, shown: ReadonlyArray<{ priceMinor?: number; priceNote?: string }>): string {
   const priced = shown.filter((o): o is { priceMinor: number; priceNote?: string } => (o.priceMinor ?? 0) > 0);
@@ -192,10 +183,9 @@ export function answerLine(kind: TravelKind, q: TravelQuery, shown: ReadonlyArra
   const unit = kind === 'stays' ? 'a night' : (cheapest?.priceNote ?? 'per person').replace(/,\s*from$/i, '');
   const from = cheapest ? `, from ${formatInr(cheapest.priceMinor)} ${unit}` : '';
   if (kind === 'stays') {
-    const terms = asked(kind, q).filter((t) => t !== 'with a pool');
-    const head = q.mustHave?.includes('pool') ? 'Pool stays' : 'Stays';
+    const terms = asked(kind, q);
     const when = q.checkIn && q.checkOut ? ` for ${rangeText(q.checkIn, q.checkOut)}` : '';
-    return `${head} in ${titleWords(q.area ?? q.to ?? 'Goa')}${when}${terms.length ? `, ${listOf(terms)}` : ''}${from}.`;
+    return `Stays in ${titleWords(q.area ?? q.to ?? 'Goa')}${when}${terms.length ? `, ${listOf(terms)}` : ''}${from}.`;
   }
   const noun = { flights: 'Flights', trains: 'Trains', buses: 'Buses' }[kind];
   const terms = asked(kind, q);
@@ -203,16 +193,13 @@ export function answerLine(kind: TravelKind, q: TravelQuery, shown: ReadonlyArra
 }
 
 /** A filter by its name and by what it filters for: "pool", "a pool". */
-const FILTERS: Record<string, [string, string]> = { pool: ['pool', 'a pool'], breakfast: ['breakfast', 'breakfast'], free_cancellation: ['free cancellation', 'free cancellation'] };
-
 /**
- * Options read without filters ixigo left off (TravelSearch.unapplied), in plain words: "ixigo's pool filter didn't load
- * in time, so these aren't filtered for a pool". Before the card's line, and in the search's summary.
+ * Options read without filters ixigo left off (TravelSearch.unapplied), by their names on ixigo's list: "ixigo's Swimming
+ * Pool filter didn't load in time, so these aren't filtered for it". Before the card's line, and in the search's summary.
  */
 export function leftOff(unapplied: readonly string[]): string {
-  const of = (c: string): [string, string] => FILTERS[c] ?? [c.replace(/_/g, ' '), c.replace(/_/g, ' ')];
-  const names = unapplied.map((c) => of(c)[0]);
-  return `ixigo's ${listOf(names)} filter${names.length > 1 ? 's' : ''} didn't load in time, so these aren't filtered for ${listOf(unapplied.map((c) => of(c)[1]))}`;
+  const many = unapplied.length > 1;
+  return `ixigo's ${listOf([...unapplied])} filter${many ? 's' : ''} didn't load in time, so these aren't filtered for ${many ? 'them' : 'it'}`;
 }
 
 /** A line with words before it ("Already on ixigo: "), its own first letter then lower case. */

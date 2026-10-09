@@ -182,7 +182,7 @@ function conditionsIn(lower: string, kind: TravelKind): Partial<TravelQuery> {
     if (/\b(arriv|reach|land|pahunch|there)\w*\b[^.?!]{0,24}$/.test(rest.slice(0, m.index))) out.arriveBefore = t;
     else out.departBefore = t;
   }
-  if (kind === 'flights' && /\b(non[\s-]?stop|direct)\b/.test(rest)) out.mustHave = ['non_stop'];
+  if (kind === 'flights' && /\b(non[\s-]?stop|direct)\b/.test(rest)) out.nonStop = true;
   // A cap per person: "under 6k", "below ₹5,500". Not one for everyone together, and not hours or kilometres.
   const cap = /\b(?:under|below|less than|within|max|upto|up to)\s*(?:rs\.?\s*|₹\s*|inr\s*)?(\d[\d,]*(?:\.\d+)?)\s*(k|thousand)?(?![a-z\d])(?!\s*(?:hours?|hrs?|mins?|minutes?|km|kms|stops?|people|log)\b)/.exec(rest);
   if (cap && !/\b(total|in all|for all|altogether|for everyone)\b/.test(rest)) {
@@ -214,13 +214,6 @@ function namesAnotherPlace(lower: string, destination: string, before: string[])
   return false;
 }
 
-/** The must-haves ixigo filters a stay search on, as people say them. */
-const STAY_NEEDS: Array<[NonNullable<TravelQuery['mustHave']>[number], RegExp]> = [
-  ['pool', /\bpool\b/],
-  ['breakfast', /\b(breakfast|nashta)\b/],
-  ['free_cancellation', /\bfree cancell?ation\b/],
-];
-
 /** People said how many: "4 people", "5 log", "6 of us". */
 export function guestsIn(lower: string): number | undefined {
   const m = /\b(\d{1,2})\s*(people|persons|adults|log|logon|of us|travellers|travelers|guests|pax|members)\b/.exec(lower);
@@ -249,8 +242,9 @@ export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
     if (checkIn && !checkOut && nights) checkOut = addDays(checkIn, Number(nights[1]));
     if (!checkIn && ctx.dates) [checkIn, checkOut] = [ctx.dates.start, ctx.dates.end];
     if (!area || !checkIn || !checkOut || checkOut <= checkIn) return null;
-    const needs = STAY_NEEDS.filter(([, re]) => re.test(lower)).map(([need]) => need);
-    return { kind, query: { area, checkIn, checkOut, ...extra, ...(needs.length ? { mustHave: needs } : {}) } };
+    // The place, the dates and the head count only: anything else asked of the stays (a pool, a kind of stay) is the
+    // model's to map onto ixigo's own filters (site_filters) or to pick (wants), never this read's guess.
+    return { kind, query: { area, checkIn, checkOut, ...extra } };
   }
 
   const date = dates[0]?.day;

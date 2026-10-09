@@ -11,9 +11,9 @@ describe('reading a travel ask', () => {
     // c03
     // c03: the trip's Friday, 6 Nov, not this week's.
     expect(read("@Go flights Delhi to Goa Friday evening, Arjun can't leave before 6")).toEqual({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '18:00' } });
-    // c05: no dates of its own, so the trip's.
+    // c05: no dates of its own, so the trip's. The pool, the villa and the beach are the model's to map onto ixigo's list.
     expect(read('Go find us a villa with a private pool in North Goa under 8k a head, close to the beach')).toEqual({
-      kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] },
+      kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09' },
     });
     // c30: from Mumbai, to the trip's destination.
     // The day before the trip starts: an overnight train.
@@ -37,9 +37,8 @@ describe('reading a travel ask', () => {
     expect(read('@Go flights Delhi to Goa 3rd Jan')?.query).toMatchObject({ date: '2027-01-03' });
     expect(read('@Go hotels in Anjuna 6 to 9 Nov for 4 people')).toEqual({ kind: 'stays', query: { area: 'anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 4 } });
     expect(read('@Go villa in Vagator from 7 Nov, 2 nights')?.query).toMatchObject({ area: 'vagator', checkIn: '2026-11-07', checkOut: '2026-11-09' });
-    // The must-haves ixigo filters a stay on; "non-refundable" is not free cancellation.
-    expect(read('@Go hotel in Candolim with breakfast and free cancellation')?.query.mustHave).toEqual(['breakfast', 'free_cancellation']);
-    expect(read('@Go hotel in Candolim, non-refundable is fine')?.query).not.toHaveProperty('mustHave');
+    // A stay's must-haves are never this read's guess: the place, the dates and the head count only.
+    expect(read('@Go hotel in Candolim with breakfast and free cancellation')?.query).toEqual({ area: 'candolim', checkIn: '2026-11-06', checkOut: '2026-11-09' });
     // Once the trip is over, "Friday" is the coming one, and "Friday" said on a Friday is next week's.
     expect(readTravelAsk('@Go flights Delhi to Goa Friday', { ...CTX, today: '2026-11-13' })?.query).toMatchObject({ date: '2026-11-20' });
   });
@@ -87,8 +86,8 @@ describe('reading a travel ask', () => {
     expect(q('@Go flights Delhi to Goa Friday after 11 am before 3 pm')).toMatchObject({ departAfter: '11:00', departBefore: '15:00' });
     expect(q('@Go trains Mumbai to Madgaon 6/11 arriving before 10 am')).toMatchObject({ arriveBefore: '10:00' });
     expect(q('@Go flights Delhi to Goa 6 Nov, need to reach by 2 pm')).toMatchObject({ arriveBefore: '14:00' });
-    expect(q('@Go non-stop flights Delhi to Goa Friday under 6k')).toMatchObject({ mustHave: ['non_stop'], maxPriceMinor: 600_000 });
-    expect(q('@Go direct flights BOM to GOI on Nov 6 below ₹5,500 per person')).toMatchObject({ mustHave: ['non_stop'], maxPriceMinor: 550_000 });
+    expect(q('@Go non-stop flights Delhi to Goa Friday under 6k')).toMatchObject({ nonStop: true, maxPriceMinor: 600_000 });
+    expect(q('@Go direct flights BOM to GOI on Nov 6 below ₹5,500 per person')).toMatchObject({ nonStop: true, maxPriceMinor: 550_000 });
     expect(q('@Go buses Mumbai to Goa 6 Nov under 1500')).toMatchObject({ maxPriceMinor: 150_000 });
   });
 
@@ -99,7 +98,7 @@ describe('reading a travel ask', () => {
     expect(read('@Go flights Delhi to Goa Friday under 30k total')?.query).toEqual(bare);
     expect(read('@Go flights Delhi to Goa after 6 Nov')?.query).toEqual({ from: 'delhi', to: 'goa', date: '2026-11-06' });
     expect(read('Go find us a villa with a private pool in North Goa under 8k a head, close to the beach')?.query).toEqual({
-      area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'],
+      area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09',
     });
   });
 
@@ -114,7 +113,7 @@ describe('reading a travel ask', () => {
     expect(read('@Go a resort near Dharamshala 6 to 9 Nov')).toBeNull();
     expect(read('can someone check trains from Mumbai to Kota on Thursday?')).toBeNull();
     // No other place named: the trip's destination, as before.
-    expect(read('@Go a villa with a pool for our dates')?.query).toMatchObject({ area: 'North Goa', mustHave: ['pool'] });
+    expect(read('@Go a villa with a pool for our dates')?.query).toEqual({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' });
     expect(read('@Go hotels near the beach for our dates')?.query).toMatchObject({ area: 'North Goa' });
     expect(read('@Go stays in our budget in November')?.query).toMatchObject({ area: 'North Goa' });
     expect(read('can someone check trains from Mumbai on Thursday?')?.query).toMatchObject({ from: 'mumbai', to: 'North Goa' });

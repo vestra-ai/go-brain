@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadBook } from '../../book/book.js';
 import { createEngine, type Engine, type RunFor } from '../../book/engine.js';
 import { TravelError } from '../../mcp-travel.js';
-import { CARD_DELAY_MS, CHOOSING_MS, createIxigoWebBackend, NARROW_MIN, TRAVEL_WAIT_MS } from '../backend.js';
+import { CARD_DELAY_MS, CHOOSING_MS, createIxigoWebBackend, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
 import { NothingCaughtError } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -14,7 +14,7 @@ const OPTION: RecipeOption = {
 };
 
 type Answer = Engine['answer'];
-type Run = { id: string; given: Record<string, unknown>; tripId: string; conditions: string[] };
+type Run = { id: string; given: Record<string, unknown>; tripId: string; site: string[] };
 
 /** A recipe engine whose runs fail or answer in turn; hold() keeps the runs waiting until release(). */
 function scripted(...outcomes: Array<'fail' | 'ok' | 'pick'>) {
@@ -22,7 +22,7 @@ function scripted(...outcomes: Array<'fail' | 'ok' | 'pick'>) {
   let gate: Promise<void> | null = null;
   let open: () => void = () => undefined;
   const answer: Answer = async (id, given, o) => {
-    runs.push({ id, given, tripId: o.tripId, conditions: o.conditions ?? [] });
+    runs.push({ id, given, tripId: o.tripId, site: o.siteFilters ?? [] });
     const outcome = outcomes[runs.length - 1] ?? 'ok';
     o.onProgress?.({ type: 'opening', recipeId: id, url: 'https://www.ixigo.com/x' });
     if (gate) await gate;
@@ -57,17 +57,17 @@ const linkEngine = (people: number, homes: string[]) =>
   createEngine({ book, runner: () => null, trip: async () => ({ people, homes }), now });
 
 describe('the ixigo_web backend', () => {
-  it("runs each kind's recipe from the book, with the person's words and conditions as its inputs", async () => {
+  it("runs each kind's recipe from the book, with the person's words and ixigo's own filters as its inputs", async () => {
     const e = scripted();
     const found = await backend(e.engine).search('trains', TRAINS, { tripId: 't_goa' });
     // With the results page it read: "See all on ixigo" opens it.
     expect(found).toEqual({ results: [OPTION], checkedAt: '2026-10-07T12:00:03.000Z', runId: expect.stringMatching(/^trains\.between\|/), page: 'https://www.ixigo.com/x' });
-    await backend(e.engine).search('stays', { area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 7, mustHave: ['pool'] }, { tripId: 't_goa' });
+    await backend(e.engine).search('stays', { area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 7, siteFilters: ['Swimming Pool'] }, { tripId: 't_goa' });
     await backend(e.engine).search('buses', TRAINS, { tripId: 't_goa' });
     expect(e.runs).toEqual([
-      { id: 'trains.between', given: { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, tripId: 't_goa', conditions: [] },
-      { id: 'hotels.search', given: { place: 'Vagator', check_in: '2026-11-06', check_out: '2026-11-09', adults: 7 }, tripId: 't_goa', conditions: ['pool'] },
-      { id: 'buses.between', given: { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, tripId: 't_goa', conditions: [] },
+      { id: 'trains.between', given: { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, tripId: 't_goa', site: [] },
+      { id: 'hotels.search', given: { place: 'Vagator', check_in: '2026-11-06', check_out: '2026-11-09', adults: 7 }, tripId: 't_goa', site: ['Swimming Pool'] },
+      { id: 'buses.between', given: { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, tripId: 't_goa', site: [] },
     ]);
   });
 
@@ -119,15 +119,15 @@ describe('the ixigo_web backend', () => {
     const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now });
     const b = createIxigoWebBackend({ book, engine, now });
     // The early start reads no head count; the composer says "sleeping 4", in a trip of four: one page, adultCount=4.
-    const early = b.search('stays', { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }, { tripId: 't_goa', messageId: 'm_1' });
-    const composer = b.search('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 4, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_1' });
+    const early = b.search('stays', { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { tripId: 't_goa', messageId: 'm_1' });
+    const composer = b.search('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 4 }, { tripId: 't_goa', turnId: 'turn_1' });
     await new Promise((resolve) => setTimeout(resolve, 0));
     release();
     expect(await composer).toBe(await early);
     expect(reads).toHaveLength(1);
     expect(reads[0]).toContain('adultCount=4');
     // Two of the four is another page: a search of its own.
-    await b.search('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 2, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_2' });
+    await b.search('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 2 }, { tripId: 't_goa', turnId: 'turn_2' });
     expect(reads).toHaveLength(2);
     expect(reads[1]).toContain('adultCount=2');
   });
@@ -211,7 +211,7 @@ describe('the ixigo_web backend', () => {
       book, engine: linkEngine(4, []), now,
       live: ((tripId: string) => { cards.push(tripId); return { progress: () => undefined, finish: async () => undefined }; }) as never,
     });
-    const err = (await b.search('flights', { ...FLIGHTS, departAfter: '18:00', mustHave: ['non_stop'] }, { tripId: 't_goa' }).catch((e: unknown) => e)) as TravelError;
+    const err = (await b.search('flights', { ...FLIGHTS, departAfter: '18:00', nonStop: true }, { tripId: 't_goa' }).catch((e: unknown) => e)) as TravelError;
     expect(err).toMatchObject({
       code: 'link_only',
       link: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form&stops=0&takeOff=NIGHT&sort_type=cheapest',
@@ -389,45 +389,44 @@ describe('a fast answer', () => {
 });
 
 /** A stay as hotels.search reads one: with a pool or not (facts.pool), and any other fact it says. */
-const stay = (n: number, pool: boolean, more: Record<string, boolean> = {}): RecipeOption => ({
+const stay = (n: number, pool: boolean, more: Record<string, boolean | string> = {}): RecipeOption => ({
   kind: 'stay', title: `Stay ${n}`, priceMinor: 500_000 + n, currency: 'INR', priceNote: 'per night, per room', highlights: pool ? ['Pool'] : [],
   facts: { pool, ...more }, sourceUrl: `https://www.ixigo.com/hotels/${n}/details`,
 });
 const IXIGO_POOL_LIST = [stay(91, true), stay(92, true), stay(93, true), stay(94, true)];
-/** The trip's stays head start: its destination and dates, no conditions (warm.ts createStaysHeadStart). */
+/** The trip's stays head start: its destination and dates, no filters (warm.ts createStaysHeadStart). */
 const HEAD = { place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' };
-const POOL = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
+/** "Pool stays in Goa for our dates", as the model makes it from ixigo's own list in its context. */
+const POOL = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool'] };
+/** ixigo's own list for Goa, as the engine says it with an answer: two of its names. */
+const LISTED = ['Swimming Pool', 'Pet-friendly property'];
+const LIST = { recipeId: 'hotels.search', about: 'stays in Goa', at: 0, offers: LISTED.map((name, i) => ({ kind: 'filter' as const, group: 'Facilities', name, code: `FL_HF_${i}` })) };
 
 /**
- * hotels.search scripted: with no conditions it lists `wide` (checked at 12:00), and with any it lists ixigo's own filtered
- * stays (checked at 12:20): `filtered`, or IXIGO_POOL_LIST. Each run is recorded with its conditions and whether it ran in
- * the background, and its options as asked (asks). With requestOf, searches key on the page they open, as on staging;
- * without, on the words. hangs: a filtered page catches nothing, as the runner says it (NothingCaughtError for a caller
- * that falls back, else a timeout).
+ * hotels.search scripted: with no site filters it lists `wide` (checked at 12:00), and with any it lists ixigo's own
+ * filtered stays (checked at 12:20): `filtered`, or IXIGO_POOL_LIST, saying which names ixigo's list has (LISTED). Each
+ * run is recorded with its site filters and whether it ran in the background, and its options as asked (asks). With
+ * requestOf, searches key on the page they open, as on staging; without, on the words. hangs: a filtered page catches
+ * nothing, as the runner says it (NothingCaughtError for a caller that falls back, else a timeout). said: a plain read
+ * says what the site did too (nothing), as a recipe with offers does.
  */
 function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?: Record<string, unknown>; requestOf?: Engine['requestOf']; hangs?: boolean; said?: boolean } = {}) {
   const head = o.head ?? HEAD;
-  const runs: Array<{ conditions: string[]; background: boolean }> = [];
+  const runs: Array<{ site: string[]; background: boolean }> = [];
   const asks: RunFor[] = [];
   const answer: Answer = async (_id, _given, ro) => {
-    const conditions = ro.conditions ?? [];
-    runs.push({ conditions, background: ro.background === true });
+    const site = ro.siteFilters ?? [];
+    runs.push({ site, background: ro.background === true });
     asks.push(ro);
-    const filtered = conditions.length > 0 || (ro.siteFilters?.length ?? 0) > 0;
-    if (o.hangs && filtered) throw ro.fallsBack ? new NothingCaughtError() : new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
-    // ixigo's own filters by their names on its list (site_filters): what the engine says the site did with them.
-    if (ro.siteFilters?.length) {
-      const list = { recipeId: 'hotels.search', about: 'stays in Goa', at: 0, offers: [{ kind: 'filter' as const, group: 'Facilities', name: 'Pet-friendly property', code: 'FL_HF_21' }] };
-      const site = { filtered: ro.siteFilters.filter((n) => n === 'Pet-friendly property'), sorted: null, unknown: ro.siteFilters.filter((n) => n !== 'Pet-friendly property'), listed: true, list };
-      return { as: 'options', options: o.filtered ?? IXIGO_POOL_LIST, page: 'https://www.ixigo.com/hotels/search/result?filters=FL_HF_21', checkedAt: '2026-10-07T12:20:00.000Z', ms: 9_000, site };
+    if (o.hangs && site.length > 0) throw ro.fallsBack ? new NothingCaughtError() : new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+    if (site.length > 0) {
+      const said = { filtered: site.filter((n) => LISTED.includes(n)), sorted: null, unknown: site.filter((n) => !LISTED.includes(n)), listed: true, list: LIST };
+      return { as: 'options', options: o.filtered ?? IXIGO_POOL_LIST, page: 'https://www.ixigo.com/hotels/search/result?filters=FL_HF_0', checkedAt: '2026-10-07T12:20:00.000Z', ms: 9_000, site: said };
     }
-    return conditions.length > 0
-      ? { as: 'options', options: o.filtered ?? IXIGO_POOL_LIST, page: 'https://www.ixigo.com/hotels/search/result?filters=FL_HF_29', checkedAt: '2026-10-07T12:20:00.000Z', ms: 9_000 }
-      : {
-          as: 'options', options: wide, page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-07T12:00:00.000Z', ms: 9_000,
-          // said: the engine's word on the site, as a recipe with offers gives it: a plain read applied nothing.
-          ...(o.said ? { site: { filtered: [], sorted: null, unknown: [], listed: false, list: null } } : {}),
-        };
+    return {
+      as: 'options', options: wide, page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-07T12:00:00.000Z', ms: 9_000,
+      ...(o.said ? { site: { filtered: [], sorted: null, unknown: [], listed: false, list: null } } : {}),
+    };
   };
   const cards: string[] = [];
   const b = createIxigoWebBackend({
@@ -436,129 +435,50 @@ function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?
   });
   /** The head start: hotels.search for the trip's place and dates, through Go's searches, kept once it finishes. */
   const headStart = async (): Promise<void> => {
-    const shared = await b.shareStep('hotels.search', head, { tripId: 't_goa', conditions: [] }, () => answer('hotels.search', head, { tripId: 't_goa', conditions: [] }));
+    const shared = await b.shareStep('hotels.search', head, { tripId: 't_goa' }, () => answer('hotels.search', head, { tripId: 't_goa' }));
     await shared?.answer;
     await tick();
   };
   return { b, runs, asks, cards, headStart };
 }
 
-describe('a stays ask answered from a kept search with no conditions (the head start)', () => {
-  it("answers a pool ask at once from the kept list, its stays with a pool, in one search with no live card", async () => {
-    const s = staysEngine([stay(1, true), stay(2, false), stay(3, true), stay(4, true), stay(5, false)]);
-    await s.headStart();
-    const found = await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
-    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 3', 'Stay 4']);
-    // The card says when the kept list was checked, and "See all on ixigo" opens that page.
-    expect(found).toMatchObject({ checkedAt: '2026-10-07T12:00:00.000Z', page: 'https://www.ixigo.com/hotels/search/result' });
-    expect(s.cards).toEqual([]);
-    // ixigo's own pool search starts in the background: no card, no hold.
-    expect(s.runs).toEqual([{ conditions: [], background: false }, { conditions: ['pool'], background: true }]);
-    // A condition that is not the page's (a beach) is Go's own filter's: the pool still narrows.
-    const near = await s.b.search('stays', { ...POOL, mustHave: ['pool', 'beach'] }, { tripId: 't_goa', turnId: 'turn_2' });
-    expect(near.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 3', 'Stay 4']);
-  });
-
-  it('keeps the filtered search it ran: the next pool ask answers from it, loading nothing', async () => {
-    const s = staysEngine([stay(1, true), stay(2, true), stay(3, true)]);
-    await s.headStart();
-    await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
-    await tick();
-    const again = await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_2' });
-    expect(again.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
-    expect(again.checkedAt).toBe('2026-10-07T12:20:00.000Z');
-    expect(s.runs).toHaveLength(2);
-    expect(s.cards).toEqual([]);
-  });
-
-  it(`runs its own search, with its card, when fewer than ${NARROW_MIN} kept stays have a pool`, async () => {
-    const s = staysEngine([stay(1, true), stay(2, true), stay(3, false), stay(4, false)]);
+describe('a stays search answers only the ask it was read for (staging, 9 Oct: "pool villas" answered with an apartment hotel)', () => {
+  it("runs ixigo's own filtered page for an ask by its filters, never the kept plain list, and keeps it for the same ask", async () => {
+    const s = staysEngine([stay(1, true), stay(2, false), stay(3, true), stay(4, true)]);
     await s.headStart();
     const found = await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
     expect(found.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
-    expect(s.runs).toEqual([{ conditions: [], background: false }, { conditions: ['pool'], background: false }]);
+    expect(found.site).toEqual({ filtered: ['Swimming Pool'], sorted: null, unknown: [], listed: true, offers: 'Facilities: Swimming Pool, Pet-friendly property' });
+    expect(s.runs).toEqual([{ site: [], background: false }, { site: ['Swimming Pool'], background: false }]);
     expect(s.cards).toEqual(['t_goa']);
-  });
-
-  /**
-   * The lead's trip on staging, 8 Oct: five people in North Goa. The head start's list has three stays with a pool, one
-   * of them with free cancellation; ixigo's own pool list has three with it. Keyed by the page, as on staging.
-   */
-  const NORTH = { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
-  function fiveInNorthGoa() {
-    const fiveOfUs = createEngine({ book, runner: () => null, trip: async () => ({ people: 5, homes: [] }), now });
-    const fc = { free_cancellation: true };
-    return staysEngine([stay(1, true, fc), stay(2, true), stay(3, true), stay(4, false)], {
-      head: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' },
-      filtered: [stay(91, true, fc), stay(92, true, fc), stay(93, true), stay(94, true, fc)],
-      requestOf: (id, given, ro) => fiveOfUs.requestOf(id, given, ro),
-    });
-  }
-
-  // Staging, 8 Oct, run 1: the pool card came from the head start's list. Priya then asked "which of these has free
-  // cancellation?", and the model searched "sleeping 5, with a pool, with free cancellation": a page load of 13 s, though
-  // the pool search kept behind the card had them.
-  it('answers "which of these has free cancellation?" after the pool card from the pool search kept behind it, sleeping 5 in a trip of five', async () => {
-    const s = fiveInNorthGoa();
-    await s.headStart();
-    // "@Go find a villa with a pool in North Goa": the card at once from the head start's list, and ixigo's pool search kept behind it.
-    const card = await s.b.search('stays', { ...NORTH, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_1' });
-    expect(card.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
+    // The same ask again answers from it, loading nothing.
     await tick();
-    // The head start has one with both; the pool search has three, and answers at once. "Sleeping 5" is the trip's own
-    // head count, the page both searches opened, not a condition.
-    const asked = await s.b.search('stays', { ...NORTH, guests: 5, mustHave: ['pool', 'free_cancellation'] }, { tripId: 't_goa', turnId: 'turn_2' });
-    expect(asked.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 94']);
-    expect(asked.checkedAt).toBe('2026-10-07T12:20:00.000Z');
-    expect(s.runs).toEqual([
-      { conditions: [], background: false },
-      { conditions: ['pool'], background: true },
-      { conditions: ['pool', 'free_cancellation'], background: true },
-    ]);
-    expect(s.cards).toEqual([]);
+    const again = await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(again.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
+    expect(s.runs).toHaveLength(2);
   });
 
-  // Run 2: Go's own pool card when the dates were locked ("Dates are locked, so here are pool stays…"), then "@Go find a
-  // villa with a pool in North Goa", then the same follow-up, which loaded a page for 14 s.
-  it("answers the follow-up at once in run 2's order too: Go's own pool card, the villa ask, then free cancellation", async () => {
-    const s = fiveInNorthGoa();
-    await s.headStart();
-    const proactive = await s.b.search('stays', { ...NORTH, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_1' });
-    expect(proactive.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
-    await tick();
-    // The villa ask: ixigo's pool search, kept behind Go's card, as it is.
-    const villa = await s.b.search('stays', { ...NORTH, mustHave: ['pool'] }, { tripId: 't_goa', turnId: 'turn_2' });
-    expect(villa.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
-    const asked = await s.b.search('stays', { ...NORTH, guests: 5, mustHave: ['pool', 'free_cancellation'] }, { tripId: 't_goa', turnId: 'turn_3' });
-    expect(asked.results.map((r) => r.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 94']);
-    expect(s.runs).toEqual([
-      { conditions: [], background: false },
-      { conditions: ['pool'], background: true },
-      { conditions: ['pool', 'free_cancellation'], background: true },
-    ]);
-    expect(s.cards).toEqual([]);
-  });
-
-  it("answers a watch's first check from what is kept, loading nothing: the kept stays narrowed, or null when nothing kept answers", async () => {
+  it("answers a watch's first check from what is kept only for the very ask it was read for", async () => {
     const s = staysEngine([stay(1, true), stay(2, true), stay(3, true), stay(4, false)]);
-    const pool = { tripId: 't_goa', conditions: ['pool'] };
-    expect(await s.b.keptAnswer('hotels.search', HEAD, pool)).toBeNull();
+    const pool = { tripId: 't_goa', siteFilters: ['Swimming Pool'] };
     await s.headStart();
+    // The plain head start answers a plain check; never a pool one.
+    expect(await s.b.keptAnswer('hotels.search', HEAD, { tripId: 't_goa' })).toMatchObject({ as: 'options', checkedAt: '2026-10-07T12:00:00.000Z' });
+    expect(await s.b.keptAnswer('hotels.search', HEAD, pool)).toBeNull();
+    await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
+    await tick();
     const kept = await s.b.keptAnswer('hotels.search', HEAD, pool);
-    expect(kept).toMatchObject({ as: 'options', checkedAt: '2026-10-07T12:00:00.000Z', page: 'https://www.ixigo.com/hotels/search/result' });
-    expect(kept?.as === 'options' && kept.options.map((o) => o.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
-    // A page condition the stays don't say (paying at the hotel), or a recipe that is not a search: nothing kept answers.
-    expect(await s.b.keptAnswer('hotels.search', HEAD, { tripId: 't_goa', conditions: ['pay_at_hotel'] })).toBeNull();
+    expect(kept?.as === 'options' && kept.options.map((x) => x.title)).toEqual(['Stay 91', 'Stay 92', 'Stay 93', 'Stay 94']);
+    // A recipe that is not a search: nothing kept answers.
     expect(await s.b.keptAnswer('trains.confirm_chance', { from: 'Bangalore', to: 'Chennai', date: '2026-10-22' }, { tripId: 't_goa' })).toBeNull();
-    // Reading what is kept runs nothing.
-    expect(s.runs).toEqual([{ conditions: [], background: false }]);
+    expect(s.runs).toHaveLength(2);
   });
 
-  it('knows a page is kept or running with any conditions (pageKept), so the head start loads nothing behind a pool search', async () => {
+  it('knows a page is kept or running with any filters (pageKept), so the head start loads nothing behind a pool search', async () => {
     const s = staysEngine([stay(1, true), stay(2, true), stay(3, true)]);
     const trip = { tripId: 't_goa' };
     expect(await s.b.pageKept('hotels.search', HEAD, trip)).toBe(false);
-    // The turn's own "pool stays for 6 to 9 Nov": the same page with a condition.
+    // The turn's own "pool stays for 6 to 9 Nov": the same page with ixigo's filter.
     await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_0' });
     expect(await s.b.pageKept('hotels.search', HEAD, trip)).toBe(true);
     // Other dates, or another place, are other pages.
@@ -572,73 +492,7 @@ describe('a stays ask answered from a kept search with no conditions (the head s
       nowMs -= 31 * 60_000;
     }
     // Asking runs nothing.
-    expect(s.runs).toEqual([{ conditions: ['pool'], background: false }]);
-  });
-
-  it("runs its own search for a page condition the stays don't say (paying at the hotel), and with no kept search", async () => {
-    const s = staysEngine([stay(1, true), stay(2, true), stay(3, true)]);
-    await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_0' });
-    expect(s.runs).toEqual([{ conditions: ['pool'], background: false }]);
-    await s.headStart();
-    await s.b.search('stays', { ...POOL, mustHave: ['pay_at_hotel'] }, { tripId: 't_goa', turnId: 'turn_1' });
-    expect(s.runs.at(-1)).toEqual({ conditions: ['pay_at_hotel'], background: false });
-    expect(s.cards).toEqual(['t_goa', 't_goa']);
-  });
-});
-
-describe("a filtered stays search whose page catches nothing (staging, 9 Oct: Goa sleeping 5 with a pool, 20 s on a logged-in computer)", () => {
-  it('reads the page again at once without its filters, on the same card, and says which ixigo left off', async () => {
-    const s = staysEngine([stay(1, true), stay(2, false), stay(3, true)], { hangs: true });
-    const found = await s.b.search('stays', { ...POOL, guests: 5 }, { tripId: 't_goa', turnId: 'turn_1' });
-    // The filtered page once, asked as one that falls back; then the page without the pool, the head count kept.
-    expect(s.runs).toEqual([{ conditions: ['pool'], background: false }, { conditions: [], background: false }]);
-    expect(s.asks[0]).toMatchObject({ fallsBack: true });
-    expect(s.asks[1]).not.toHaveProperty('fallsBack');
-    // Every stay the page has: Go's own filters pick from them (layer.ts), and the answer says the pool was left off.
-    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
-    expect(found).toMatchObject({ unapplied: ['pool'], checkedAt: '2026-10-07T12:00:00.000Z', page: 'https://www.ixigo.com/hotels/search/result' });
-    expect(s.cards).toEqual(['t_goa']);
-    // A condition that is not the page's (a beach) is Go's own filter's either way: the page is read with none.
-    const near = staysEngine([stay(1, true)], { hangs: true });
-    await near.b.search('stays', { ...POOL, mustHave: ['pool', 'beach'] }, { tripId: 't_goa', turnId: 'turn_2' });
-    expect(near.runs.map((r) => r.conditions)).toEqual([['pool', 'beach'], []]);
-  });
-
-  it("takes a fresh read of the page kept or running (the head start) instead of loading it again", async () => {
-    const s = staysEngine([stay(1, true), stay(2, false)], { hangs: true });
-    await s.headStart();
-    // Fewer than NARROW_MIN kept stays have a pool, so the ask runs ixigo's pool search, which catches nothing.
-    const found = await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
-    expect(s.runs).toEqual([{ conditions: [], background: false }, { conditions: ['pool'], background: false }]);
-    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
-    expect(found.unapplied).toEqual(['pool']);
-  });
-
-  it("never answers for the filter from the list read without it: a search sharing it reads the stays that say it, and what is kept is narrowed", async () => {
-    const s = staysEngine([stay(1, true), stay(2, false), stay(3, false)], { hangs: true });
-    await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
-    const shared = await s.b.shareStep('hotels.search', HEAD, { tripId: 't_goa', conditions: ['pool'] }, () => {
-      throw new Error('the kept search answers');
-    });
-    expect(shared?.joined).toBe(true);
-    const a = await shared!.answer;
-    expect(a.as === 'options' && a.options.map((o) => o.title)).toEqual(['Stay 1']);
-    await tick();
-    // One stay with a pool is fewer than NARROW_MIN: nothing kept answers a watch's first check.
-    expect(await s.b.keptAnswer('hotels.search', HEAD, { tripId: 't_goa', conditions: ['pool'] })).toBeNull();
-    expect(s.runs).toHaveLength(2);
-  });
-
-  it('fails as ever on anything else, and an ask with no filter the stays say never falls back', async () => {
-    const s = staysEngine([stay(1, true)], { hangs: true });
-    // Paying at the hotel: no stay says it, so its page is asked as ever, and its timeout is the search's.
-    await expect(s.b.search('stays', { ...POOL, mustHave: ['pay_at_hotel'] }, { tripId: 't_goa', turnId: 'turn_1' })).rejects.toMatchObject({ code: 'unreachable' });
-    expect(s.runs).toEqual([{ conditions: ['pay_at_hotel'], background: false }]);
-    expect(s.asks[0]).not.toHaveProperty('fallsBack');
-    // No conditions at all: the page itself, asked once.
-    const plain = await s.b.search('stays', { ...POOL, mustHave: [] }, { tripId: 't_goa', turnId: 'turn_2' });
-    expect(plain).not.toHaveProperty('unapplied');
-    expect(s.asks[1]).not.toHaveProperty('fallsBack');
+    expect(s.runs).toEqual([{ site: ['Swimming Pool'], background: false }]);
   });
 });
 
@@ -652,9 +506,9 @@ describe("a stays ask by ixigo's own filters, by their names on its list (site_f
     // Not the kept plain page: ixigo's own filtered one.
     expect(s.runs).toHaveLength(2);
     expect(s.asks[1]).toMatchObject({ siteFilters: ['Pet-friendly property', 'beachfront'], fallsBack: true });
-    expect(found.site).toEqual({ filtered: ['Pet-friendly property'], sorted: null, unknown: ['beachfront'], listed: true, offers: 'Facilities: Pet-friendly property' });
+    expect(found.site).toEqual({ filtered: ['Pet-friendly property'], sorted: null, unknown: ['beachfront'], listed: true, offers: 'Facilities: Swimming Pool, Pet-friendly property' });
     expect(found).not.toHaveProperty('unapplied');
-    // The same ask again joins it; the plain page is another search.
+    // The same ask again joins it.
     await s.b.search('stays', PETS, { tripId: 't_goa', turnId: 'turn_2' });
     expect(s.runs).toHaveLength(2);
   });
@@ -677,5 +531,34 @@ describe("a stays ask by ixigo's own filters, by their names on its list (site_f
     expect(s.runs).toHaveLength(2);
     expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
     expect(found.unapplied).toEqual(['Pet-friendly property', 'beachfront']);
+  });
+
+  it('with no fresh plain read in hand, reads the plain page on the same card, asked as one that never falls back', async () => {
+    const s = staysEngine([stay(1, true), stay(2, false), stay(3, true)], { hangs: true });
+    const found = await s.b.search('stays', { ...POOL, guests: 5 }, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(s.runs).toEqual([{ site: ['Swimming Pool'], background: false }, { site: [], background: false }]);
+    expect(s.asks[0]).toMatchObject({ fallsBack: true });
+    expect(s.asks[1]).not.toHaveProperty('fallsBack');
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
+    expect(found).toMatchObject({ unapplied: ['Swimming Pool'], checkedAt: '2026-10-07T12:00:00.000Z', page: 'https://www.ixigo.com/hotels/search/result' });
+    expect(s.cards).toEqual(['t_goa']);
+  });
+
+  it("never hands a search sharing the filtered one (a watch's check) the plain list: it gets the filtered read's own failure", async () => {
+    const s = staysEngine([stay(1, true), stay(2, false)], { hangs: true });
+    await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
+    const shared = await s.b.shareStep('hotels.search', HEAD, { tripId: 't_goa', siteFilters: ['Swimming Pool'] }, () => {
+      throw new Error('the kept search answers');
+    });
+    expect(shared?.joined).toBe(true);
+    await expect(shared!.answer).rejects.toBeInstanceOf(NothingCaughtError);
+    expect(await s.b.keptAnswer('hotels.search', HEAD, { tripId: 't_goa', siteFilters: ['Swimming Pool'] })).toBeNull();
+  });
+
+  it('asks a plain page as one that never falls back', async () => {
+    const s = staysEngine([stay(1, true)], { hangs: true });
+    const plain = await s.b.search('stays', { ...POOL, siteFilters: [] }, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(plain).not.toHaveProperty('unapplied');
+    expect(s.asks[0]).not.toHaveProperty('fallsBack');
   });
 });

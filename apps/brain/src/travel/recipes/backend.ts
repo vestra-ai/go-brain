@@ -25,19 +25,16 @@
  * A search answers inline within TRAVEL_WAIT_MS of its start; past that the search tool goes on and the options come when
  * the run finishes (waitMs).
  *
- * A stays ask whose only page conditions are ones ixigo's own rows say (NARROWED_BY: pool, breakfast, free cancellation)
- * answers at once from a finished, kept search of the same page with fewer of them: the trip's stays head start with
- * none, or an earlier ask's ("a villa with a pool", then "which of these has free cancellation?"). Of those, the one
- * with the most rows that have them all answers, when at least NARROW_MIN do; the card's checked time is that search's.
- * The filtered search then runs in the background, with no card and no message, and is kept under its own key for the
- * next ask. The posted card is never touched. The head count is the page's, not a condition: "sleeping 5" in a trip of
- * five opens the same page as the trip's own search (keyFor).
+ * A stays ask filters on ixigo's own list for the place (site_filters, offers.ts): its page with those filters on is
+ * its own search, kept under its own key. A search answers only the ask it was read for: anything more is a filtered
+ * read or the model's pick (forAsk), never a kept list passed off as filtered (staging, 9 Oct: "pool villas" answered
+ * with an apartment hotel from the kept pool stays). The head count is the page's: "sleeping 5" in a trip of five opens
+ * the same page as the trip's own search (keyFor).
  *
- * Such an ask's page that catches nothing in its time is read again at once without its page conditions: ixigo's own
- * filter can be what hangs (staging, 9 Oct: Goa sleeping 5 with a pool caught nothing in 20 s on a logged-in computer,
- * and the same computer read Goa's stays in 8 s after). A fresh read of that page, kept or running (the head start),
- * answers instead of a new one. The answer says which conditions ixigo did not filter on (unapplied), and Go's own
- * filters pick from its stays (layer.ts).
+ * A filtered page that catches nothing in its time is read again at once without its filters: ixigo's own filter can be
+ * what hangs (staging, 9 Oct: Goa sleeping 5 with a pool caught nothing in 20 s on a logged-in computer, and the same
+ * computer read Goa's stays in 8 s after). A fresh read of that page, kept or running (the head start), answers instead
+ * of a new one. The answer says which filters ixigo left off (unapplied), and the model picks on them.
  */
 import { createHash } from 'node:crypto';
 import type { TurnEnd } from '../../composer/context.js';
@@ -128,44 +125,39 @@ const siteRun = (site: SiteAsk): Pick<RunFor, 'siteFilters' | 'siteSort'> => ({
   ...(site.sort ? { siteSort: site.sort } : {}),
 });
 
-/**
- * A search's query as its recipe's inputs: the places as the person's words, the conditions ixigo may filter on, and the
- * site's own filters and sort the ask names.
- */
-export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; conditions: string[]; site: SiteAsk } {
-  const conditions = [...(q.mustHave ?? [])];
+/** A search's query as its recipe's inputs: the places as the person's words, and the site's own filters and sort the ask names. */
+export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; site: SiteAsk } {
   if (kind === 'stays') {
     const site = { filters: [...(q.siteFilters ?? [])], ...(q.siteSort ? { sort: q.siteSort } : {}) };
-    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, conditions, site };
+    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, site };
   }
   if (kind === 'flights') {
     return {
       given: {
         from: q.from, to: q.to, date: q.date, adults: q.guests,
         depart_after: q.departAfter, depart_before: q.departBefore, arrive_before: q.arriveBefore, max_price: q.maxPriceMinor,
+        stops: q.nonStop ? 0 : undefined,
       },
-      conditions,
       site: NO_SITE,
     };
   }
-  return { given: { from: q.from, to: q.to, date: q.date }, conditions, site: NO_SITE };
+  return { given: { from: q.from, to: q.to, date: q.date }, site: NO_SITE };
 }
 
 /** The same ask, whatever its spacing or case: "North Goa" and " north goa" are one search. */
-const keyOf = (given: Record<string, unknown>, conditions: string[], site: SiteAsk = NO_SITE): string =>
+const keyOf = (given: Record<string, unknown>, site: SiteAsk = NO_SITE): string =>
   JSON.stringify([
     Object.entries(given)
       .filter(([, v]) => v !== undefined)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => [k, typeof v === 'string' ? v.trim().toLowerCase().replace(/\s+/g, ' ') : v]),
-    [...conditions].sort(),
     ...(site.filters.length > 0 || site.sort ? [[...site.filters].map((f) => f.trim().toLowerCase()).sort(), site.sort?.trim().toLowerCase() ?? null] : []),
   ]);
 
 /** A search's answer from what is kept, loading nothing; null when nothing kept answers it. */
 export type KeptAnswer = (id: string, given: Record<string, unknown>, o: RunFor) => Promise<EngineAnswer | null>;
 
-/** Whether a search of this page, with any conditions, is kept or running: it already answers the page's asks. */
+/** Whether a search of this page, with any filters, is kept or running: the page is already being read. */
 export type PageKept = (id: string, given: Record<string, unknown>, o: { tripId: string }) => Promise<boolean>;
 
 /** The ixigo_web backend, and the hook a turn's end calls to end the live cards it left open. */
@@ -178,7 +170,7 @@ type Owner = { kind: 'message' | 'turn'; id: string } | null;
 interface Kept {
   at: number;
   ttl: number;
-  /** The same search's key with no conditions: its page, whatever it filters (pageKept). */
+  /** The same search's key with no filters: its page, whatever it filters (pageKept). */
   page: string;
   search: Promise<TravelSearch>;
   ran: Promise<EngineAnswer>;
@@ -212,16 +204,6 @@ export const LINK_ONLY_KINDS: ReadonlySet<TravelKind> = new Set(['flights']);
 const BOOK_ON_IXIGO = 'Options from ixigo.com are booked on ixigo, from their link.';
 const CACHE_MAX = 200;
 
-/** The conditions a kept stays search with none answers from its own rows: each stay says them (facts.pool and the rest). */
-export const NARROWED_BY: ReadonlySet<string> = new Set(['pool', 'breakfast', 'free_cancellation']);
-/** The fewest rows a kept search must have with the conditions to answer from them; fewer, and the ask runs its own search. */
-export const NARROW_MIN = 3;
-
-/** Every set of fewer of these conditions, the most first: [pool, free_cancellation] gives [pool], [free_cancellation], []. */
-const fewerOf = (conditions: string[]): string[][] =>
-  Array.from({ length: (1 << conditions.length) - 1 }, (_, mask) => conditions.filter((_c, i) => (mask & (1 << i)) !== 0))
-    .sort((a, b) => b.length - a.length);
-
 export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   /** Searches by request: the run's own answer (ran) and the search made of it, which a step and a search each take. */
   const kept = new Map<string, Kept>();
@@ -245,37 +227,6 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     );
   }
 
-  /**
-   * The ask's page conditions, when there are some and each is NARROWED_BY, so a kept search with none can answer it;
-   * null otherwise. Conditions that are not the page's (a beach, a villa) are not ixigo's to filter: Go's own filters read
-   * them as ever.
-   */
-  function narrowedBy(id: string, conditions: string[]): string[] | null {
-    const recipe = d.book.get(id);
-    const byPage = conditions.filter((c) => recipe?.conditions !== undefined && Object.hasOwn(recipe.conditions, c));
-    return byPage.length > 0 && byPage.every((c) => NARROWED_BY.has(c)) ? byPage : null;
-  }
-
-  /**
-   * A stays ask answered from a finished, kept search of the same page with fewer of the ask's page conditions (none, the
-   * head start; some, an earlier ask's): the rows that have every one of them (narrowedBy), from the search with the most;
-   * null when there is no such search, or fewer than NARROW_MIN rows fit. On staging (8 Oct) only the search with none
-   * was read, and fewer than three of its stays had both a pool and free cancellation, so "which of these has free
-   * cancellation?" after the pool card loaded a page for 13 s while the pool search kept behind that card had them.
-   */
-  async function fromKept(id: string, given: Record<string, unknown>, byPage: string[], tripId: string): Promise<TravelSearch | null> {
-    let best: TravelSearch | null = null;
-    for (const fewer of fewerOf(byPage)) {
-      const wide = kept.get(await keyFor(id, given, fewer, tripId));
-      if (!wide?.done || d.now().getTime() - wide.at >= wide.ttl) continue;
-      const rows = wide.done.results.filter((o) => byPage.every((c) => o.facts[c] === true));
-      if (rows.length >= NARROW_MIN && rows.length > (best?.results.length ?? 0)) {
-        best = { ...wide.done, results: rows, runId: `${wide.done.runId ?? id}|${[...byPage].sort().join('+')}` };
-      }
-    }
-    return best;
-  }
-
   /** A search with no card of its own, kept under its key for the next ask: its run. */
   function runKept(key: string, page: string, id: string, given: Record<string, unknown>, o: RunFor, ttl: number): Promise<EngineAnswer> {
     const nowMs = d.now().getTime();
@@ -290,13 +241,13 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   }
 
   /**
-   * The page with no conditions, for a filtered search whose page caught nothing (NothingCaughtError): a fresh read of it
+   * The page with no filters, for a filtered search whose page caught nothing (NothingCaughtError): a fresh read of it
    * kept or running (the head start), or one run now on the ask's live card, kept under the page's key.
    */
   function unfiltered(page: string, id: string, given: Record<string, unknown>, tripId: string, ttl: number, onProgress: RunFor['onProgress']): Promise<EngineAnswer> {
     const hit = kept.get(page);
     if (hit && d.now().getTime() - hit.at < hit.ttl) return hit.ran;
-    return runKept(page, page, id, given, { tripId, conditions: [], ...(onProgress ? { onProgress } : {}) }, ttl);
+    return runKept(page, page, id, given, { tripId, ...(onProgress ? { onProgress } : {}) }, ttl);
   }
   /** The live cards that have not ended, by trip and search. */
   const cards = new Map<string, OpenCard>();
@@ -331,12 +282,12 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const id = SEARCH_RECIPES[kind];
     const recipe = d.book.get(id);
     if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
-    const { given, conditions, site } = recipeInputs(kind, q);
+    const { given, site } = recipeInputs(kind, q);
     const link = recipe.answer.as === 'link';
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
-    const key = link ? `${id}|${keyOf(given, conditions, site)}` : await keyFor(id, given, conditions, tripId, site);
-    const plain = conditions.length === 0 && site.filters.length === 0 && !site.sort;
-    return { tripId, id, given, conditions, site, link, ttl, key, page: !plain && !link ? await keyFor(id, given, [], tripId) : key };
+    const key = link ? `${id}|${keyOf(given, site)}` : await keyFor(id, given, tripId, site);
+    const plain = site.filters.length === 0 && !site.sort;
+    return { tripId, id, given, site, link, ttl, key, page: !plain && !link ? await keyFor(id, given, tripId) : key };
   }
 
   /**
@@ -345,38 +296,24 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
    * (8 Oct: an early "with a pool" and the composer's "sleeping 4, with a pool" ran twice). A place that still needs
    * ixigo's box has no request until it loads: the words key that one.
    */
-  async function keyFor(id: string, given: Record<string, unknown>, conditions: string[], tripId: string, site: SiteAsk = NO_SITE): Promise<string> {
-    const request = (await d.engine.requestOf?.(id, given, { tripId, conditions, ...siteRun(site) })) ?? null;
-    return request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions, site)}`;
+  async function keyFor(id: string, given: Record<string, unknown>, tripId: string, site: SiteAsk = NO_SITE): Promise<string> {
+    const request = (await d.engine.requestOf?.(id, given, { tripId, ...siteRun(site) })) ?? null;
+    return request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, site)}`;
   }
 
   return {
     async search(kind, q, o?: SearchFor) {
-      const { tripId, id, given, conditions, site, link, ttl, key, page } = await plan(kind, q, o?.tripId);
+      const { tripId, id, given, site, link, ttl, key, page } = await plan(kind, q, o?.tripId);
       // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
       if (link) {
-        const a = await d.engine.answer(id, given, { tripId, conditions });
+        const a = await d.engine.answer(id, given, { tripId });
         if (a.as === 'link') throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
       }
       const owner: Owner = o?.turnId ? { kind: 'turn', id: o.turnId } : o?.messageId ? { kind: 'message', id: o.messageId } : null;
       const cardKey = `${tripId}|${key}`;
       const nowMs = d.now().getTime();
       const fresh = (k: Kept | undefined): k is Kept => k !== undefined && nowMs - k.at < k.ttl;
-      let hit = kept.get(key);
-      // The search itself kept and done answers as it is; until then, a kept search of the same page with no conditions
-      // answers from its rows, and the search itself runs in the background (unless it is running already). Only an ask
-      // that can be narrowed waits here, so every other search reads what is kept and keeps its own with no wait between.
-      const byPage = narrowedBy(id, conditions);
-      // Never for an ask that names the site's own filters or sort: ixigo's own read applies them.
-      if (byPage && site.filters.length === 0 && !site.sort && !(fresh(hit) && hit.done)) {
-        const narrowed = await fromKept(id, given, byPage, tripId);
-        // The wait let another search of this key start, or finish: what is kept is read again.
-        hit = kept.get(key);
-        if (narrowed && !(fresh(hit) && hit.done)) {
-          if (!fresh(hit)) void runKept(key, page, id, given, { tripId, conditions, background: true }, ttl);
-          return narrowed;
-        }
-      }
+      const hit = kept.get(key);
       if (fresh(hit)) {
         // The composer joining a run its early start began takes the card: if that run fails, nothing retries it.
         const running = cards.get(cardKey);
@@ -406,27 +343,24 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         card = null;
       }
       const live = card?.live;
-      // A page filtered on ixigo (the conditions the stays say, byPage, or the site's own filters) that catches nothing:
-      // the page again without them, at once. A search never fails because ixigo was slow on a filter.
-      const filtered = [...(byPage ?? []), ...site.filters];
+      // A page filtered on ixigo's own filters that catches nothing: the page again without them, at once. A search never
+      // fails because ixigo was slow on a filter.
+      const filtered = site.filters;
       let unapplied: string[] | null = null;
       const asked = d.engine.answer(id, given, {
-        tripId, conditions, ...siteRun(site), ...(filtered.length > 0 ? { fallsBack: true } : {}), ...(live ? { onProgress: live.progress } : {}),
+        tripId, ...siteRun(site), ...(filtered.length > 0 ? { fallsBack: true } : {}), ...(live ? { onProgress: live.progress } : {}),
       });
       const read = filtered.length > 0
         ? asked.catch((err: unknown) => {
             if (!(err instanceof NothingCaughtError)) throw err;
             unapplied = filtered;
-            d.log?.warn({ tripId, recipe: id, conditions: byPage ?? [], site: site.filters.length }, 'travel: a filtered stays page caught nothing; reading it without its filters');
+            d.log?.warn({ tripId, recipe: id, site: filtered.length }, 'travel: a filtered stays page caught nothing; reading it without its filters');
             return unfiltered(page, id, given, tripId, ttl, live?.progress);
           })
         : asked;
-      // A search that shares this one (shareStep: a watch's check) reads ixigo's filtered list: from the page read without
-      // the filters, the stays that say them. Handled here, so one nobody shares never goes unhandled; search says it.
-      const ran = byPage
-        ? read.then((run) => (unapplied && run.as === 'options' ? { ...run, options: run.options.filter((o) => byPage.every((c) => o.facts[c] === true)) } : run))
-        : read;
-      ran.catch(() => undefined);
+      // A search that shares this one (shareStep: a watch's check) reads ixigo's filtered page itself, or its failure:
+      // never the page read without the filters, passed off as filtered.
+      const ran = asked;
       const search = read.then(
         async (run): Promise<TravelSearch> => {
           if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
@@ -466,9 +400,9 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       const recipe = d.book.get(id);
       // A link loads nothing, and anything else is not a search: the step runs on its own.
       if (!kind || !recipe || recipe.answer.as !== 'options') return null;
-      const conditions = o.conditions ?? [];
-      const key = await keyFor(id, given, conditions, o.tripId);
-      const page = conditions.length > 0 ? await keyFor(id, given, [], o.tripId) : key;
+      const site: SiteAsk = { filters: o.siteFilters ?? [], ...(o.siteSort ? { sort: o.siteSort } : {}) };
+      const key = await keyFor(id, given, o.tripId, site);
+      const page = site.filters.length > 0 || site.sort ? await keyFor(id, given, o.tripId) : key;
       const nowMs = d.now().getTime();
       const hit = kept.get(key);
       if (hit && nowMs - hit.at < hit.ttl) return { answer: hit.ran, joined: true };
@@ -488,26 +422,25 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       return { answer: ran, joined: false };
     },
     /**
-     * A search's answer from what is kept, loading nothing: the search itself, kept and done, or for a stays ask that can
-     * be narrowed, a kept search with fewer of its conditions (fromKept). Null when nothing kept answers it. A watch's
-     * first check reads it before it loads a page (watch-tools.ts), as an ask does.
+     * A search's answer from what is kept, loading nothing: the search itself, kept and done, as its filters were applied.
+     * Null when nothing kept answers it: one read without the ask's filters (unapplied) never does. A watch's first check
+     * reads it before it loads a page (watch-tools.ts), as an ask does.
      */
     async keptAnswer(id, given, o) {
       const recipe = d.book.get(id);
       if (!searchKindOf(id) || !recipe || recipe.answer.as !== 'options') return null;
-      const conditions = o.conditions ?? [];
-      const hit = kept.get(await keyFor(id, given, conditions, o.tripId));
-      const byPage = narrowedBy(id, conditions);
-      // An answer read without the ask's filters (unapplied) never answers for them: what is kept is narrowed instead.
-      const found = hit?.done && !hit.done.unapplied && d.now().getTime() - hit.at < hit.ttl ? hit.done : byPage ? await fromKept(id, given, byPage, o.tripId) : null;
+      const site: SiteAsk = { filters: o.siteFilters ?? [], ...(o.siteSort ? { sort: o.siteSort } : {}) };
+      const hit = kept.get(await keyFor(id, given, o.tripId, site));
+      const done = hit?.done && d.now().getTime() - hit.at < hit.ttl ? forAsk(hit.done, site) : null;
+      const found = done && !done.unapplied && (done.site?.unknown.length ?? 0) === 0 ? done : null;
       return found ? { as: 'options', options: found.results as RecipeOption[], page: found.page ?? '', checkedAt: found.checkedAt, ms: 0 } : null;
     },
     /**
-     * A search of this page kept or running, with any conditions, finished or not: "pool stays for our dates" answers
-     * "stays for our dates" too, so the stays head start loads nothing behind it (warm.ts). A failed run is not kept.
+     * A search of this page kept or running, with any filters, finished or not: the page is already being read, so the
+     * stays head start loads nothing behind it (warm.ts). A failed run is not kept.
      */
     async pageKept(id, given, o) {
-      const page = await keyFor(id, given, [], o.tripId);
+      const page = await keyFor(id, given, o.tripId);
       const nowMs = d.now().getTime();
       for (const k of kept.values()) if (k.page === page && nowMs - k.at < k.ttl) return true;
       return false;

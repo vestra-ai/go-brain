@@ -81,14 +81,20 @@ export const offerWords = (o: Offer): string => (/^[\d.+]+$/.test(o.name.trim())
 
 /**
  * The names asked for, as the site lists them: each matches an offer of that kind by its name, its words, or its heading
- * and name ("Star Rating: 5"), case, spacing and punctuation aside. The rest are not the site's (unknown).
+ * and name ("Star Rating: 5"), case, spacing and punctuation aside; failing that, the first offer, in the site's order,
+ * whose name holds every word of it ("pool": Swimming Pool; a watch kept before the site's own names, 10 Oct). The rest
+ * are not the site's (unknown).
  */
 export function pickOffers(offers: Offer[], names: string[], kind: Offer['kind']): { picked: Offer[]; unknown: string[] } {
   const picked: Offer[] = [];
   const unknown: string[] = [];
+  const mine = offers.filter((o) => o.kind === kind);
   for (const name of names) {
     const want = plain(name);
-    const hit = offers.find((o) => o.kind === kind && [o.name, offerWords(o), `${o.group} ${o.name}`].some((s) => plain(s) === want));
+    const words = want.split(' ').filter(Boolean);
+    const hit =
+      mine.find((o) => [o.name, offerWords(o), `${o.group} ${o.name}`].some((s) => plain(s) === want)) ??
+      (words.length > 0 ? mine.find((o) => words.every((w) => plain(o.name).split(' ').includes(w))) : undefined);
     if (!hit) unknown.push(name);
     else if (!picked.includes(hit)) picked.push(hit);
   }

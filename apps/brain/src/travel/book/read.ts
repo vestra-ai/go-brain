@@ -121,7 +121,7 @@ export async function readFacts(recipe: RecipeFile, captures: Capture[], inputs:
 }
 
 /**
- * The options a page's calls hold, as the recipe reads them. bindings: the recipe's own values ($conditions and its let),
+ * The options a page's calls hold, as the recipe reads them. bindings: the recipe's own values ($site and its let),
  * besides $inputs and $page.
  */
 export async function readOptions(

@@ -159,8 +159,6 @@ const KEPT_FACTS_MAX = 200;
 
 export interface RunFor {
   tripId: string;
-  /** The conditions the person set that a recipe may ask ixigo to filter on: pool, non_stop, … */
-  conditions?: string[];
   signal?: AbortSignal;
   onProgress?: OnProgress;
   /** A step of a composite: the composite's run, and the entry the step runs for (its lane on the strip). */
@@ -207,10 +205,9 @@ const fetchFor = (o: RunFor): { signal?: AbortSignal; priority: number } => ({
  */
 const stepOf = (o: RunFor): { step_of?: string; lane?: string } => ({ ...(o.stepOf ? { step_of: o.stepOf } : {}), ...(o.lane ? { lane: o.lane } : {}) });
 
-/** A page read as the log says it when its time runs out: its recipe, the conditions it filters on, its yes-or-no lets ("wide"). */
-const aboutOf = (recipe: RecipeFile, o: RunFor, bindings: Record<string, unknown>): Record<string, string | boolean | string[]> => ({
+/** A page read as the log says it when its time runs out: its recipe, the site's codes it filters on, its yes-or-no lets ("wide"). */
+const aboutOf = (recipe: RecipeFile, bindings: Record<string, unknown>): Record<string, string | boolean | string[]> => ({
   recipe: recipe.id,
-  conditions: Object.keys(recipe.conditions ?? {}).filter((c) => o.conditions?.includes(c)),
   site: Array.isArray(bindings['site']) ? (bindings['site'] as unknown[]).filter((c): c is string => typeof c === 'string') : [],
   ...Object.fromEntries(Object.entries(bindings).filter((e): e is [string, boolean] => typeof e[1] === 'boolean')),
 });
@@ -493,13 +490,9 @@ export function createEngine(d: EngineDeps) {
     }
   }
 
-  /** $conditions, the site's own filters and sort ($site, $site_sort) and the recipe's let, worked out once. */
-  async function bindingsOf(recipe: RecipeFile, inputs: Record<string, unknown>, o: RunFor, site: Site): Promise<Record<string, unknown>> {
-    const conditions: unknown[] = [];
-    for (const [name, source] of Object.entries(recipe.conditions ?? {})) {
-      if (o.conditions?.includes(name)) conditions.push(await evaluate(source, inputs, { inputs }));
-    }
-    const bindings: Record<string, unknown> = { conditions, site: site.filters.map((f) => f.code), site_sort: site.sort?.code ?? null };
+  /** The site's own filters and sort ($site, $site_sort) and the recipe's let, worked out once. */
+  async function bindingsOf(recipe: RecipeFile, inputs: Record<string, unknown>, site: Site): Promise<Record<string, unknown>> {
+    const bindings: Record<string, unknown> = { site: site.filters.map((f) => f.code), site_sort: site.sort?.code ?? null };
     for (const [name, source] of Object.entries(recipe.let ?? {})) bindings[name] = await evaluate(source, inputs, { inputs, ...bindings });
     return bindings;
   }
@@ -576,7 +569,7 @@ export function createEngine(d: EngineDeps) {
     if (recipe.answer.as !== 'link' && !o.background) d.warm?.(o.tripId, recipe.id);
     const inputs = (await inputsOf(recipe, given, o, strip.line.id))!;
     const site = await siteOf(recipe, inputs, o);
-    const bindings = await bindingsOf(recipe, inputs, o, site);
+    const bindings = await bindingsOf(recipe, inputs, site);
     const page = `${IXIGO}${await fill(pageTemplate, inputs, { url: true, bindings })}`;
     refusePayments(page);
     if (recipe.answer.as === 'link') {
@@ -660,7 +653,7 @@ export function createEngine(d: EngineDeps) {
       },
       onTrace: (t) => pageRun.trace(t),
       ...(o.fallsBack ? { fallsBack: true } : {}),
-      about: aboutOf(recipe, o, bindings),
+      about: aboutOf(recipe, bindings),
     });
     refusePayments(got.finalUrl);
     o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
@@ -713,7 +706,7 @@ export function createEngine(d: EngineDeps) {
         try {
           const stepGiven: Record<string, unknown> = {};
           for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
-          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority, ...(o.conditions ? { conditions: o.conditions } : {}) };
+          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority };
           const own = (signal?: AbortSignal): Promise<EngineAnswer> => answer(step.recipe, stepGiven, { ...stepRun, ...(signal ? { signal } : {}) });
           // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load. A
           // step's own search is kept for the next ask, so the composite's time never cuts it short: it finishes in the
@@ -829,7 +822,7 @@ export function createEngine(d: EngineDeps) {
       try {
         const inputs = await inputsOf(recipe, given, o, null);
         if (!inputs) return null;
-        const bindings = await bindingsOf(recipe, inputs, o, await siteOf(recipe, inputs, o));
+        const bindings = await bindingsOf(recipe, inputs, await siteOf(recipe, inputs, o));
         const page = `${IXIGO}${await fill(recipe.page, inputs, { url: true, bindings })}`;
         const plan = await fetchPlanOf(recipe, inputs, bindings);
         // A recipe that keeps only some of a page's rows by the place's half (hotels.search: North Goa opens all of Goa's

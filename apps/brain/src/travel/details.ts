@@ -22,21 +22,13 @@ const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFi
 const text = (v: unknown): string | null => (typeof v === 'string' && v.trim().length > 0 ? v.trim() : null);
 const fact = (label: string, value: string | null): Array<{ label: string; value: string }> => (value ? [{ label, value: clip(value, 200) }] : []);
 
-/** The beach within this many minutes on foot is "near the beach" (filters.ts). */
-const BEACH_NEAR_MINUTES = 10;
-
 /**
  * Why a stay fits, from the ask: each thing people asked for that the stay has, a reason a line. Only what was asked:
- * a pool nobody asked for is on the card already.
+ * a pool nobody asked for is on the card already. What ixigo filtered on for the ask, every stay on its list has.
  */
 function whyStay(o: ResultOption, q: TravelQuery): string[] {
   const why: string[] = [];
-  const asked = new Set(q.mustHave ?? []);
-  if (asked.has('pool') && o.facts['pool'] === true) why.push('Has a pool, as asked');
-  if (asked.has('breakfast') && o.facts['breakfast'] === true) why.push('Breakfast included, as asked');
-  if (asked.has('free_cancellation') && o.facts['free_cancellation'] === true) why.push('Free cancellation, as asked');
-  const walk = num(o.facts['beach_minutes']);
-  if (asked.has('beach') && walk !== null && walk <= BEACH_NEAR_MINUTES) why.push(`About ${walk} min on foot to the beach`);
+  for (const f of q.siteFilters ?? []) why.push(`${f}, as asked`);
   if (q.maxPriceMinor !== undefined && o.priceMinor !== undefined && o.priceMinor <= q.maxPriceMinor) {
     why.push(`Within ${formatInr(q.maxPriceMinor)} a night`);
   }

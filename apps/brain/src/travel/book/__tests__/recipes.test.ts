@@ -62,28 +62,28 @@ describe('hotels.search', () => {
     'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&locationName=Goa&locationType=S&masterLocationId=48569&countryId=1' +
     '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0&searchLocationId=32&hotelInfoToken=true%7C3001%7C1' +
     '&hName=Meritas%20Auberge%20Calangute%20Goa';
-  const stays = async (place: string, conditions: string[] = [], caps = pages(), extra: Record<string, unknown> = {}) => {
+  const stays = async (place: string, caps = pages(), extra: Record<string, unknown> = {}) => {
     const e = engineWith(() => caps);
-    const got = await e.engine.answer('hotels.search', { place, ...DATES, ...extra }, { tripId: 't_goa', conditions });
+    const got = await e.engine.answer('hotels.search', { place, ...DATES, ...extra }, { tripId: 't_goa' });
     if (got.as !== 'options') throw new Error('not options');
     return { ...got, runs: e.runs };
   };
 
-  it('opens all of Goa for Goa, two to a room; an area, or a place of its own, with ixigo filtering it and the must-haves it has codes for', async () => {
+  it('opens all of Goa for Goa, two to a room; an area of it filtered by its own code, or a place of its own', async () => {
     expect((await stays('Goa')).page).toBe(
       'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&locationType=S&masterLocationId=48569&countryId=1' +
       '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0',
     );
-    expect((await stays('Vagator', ['pool', 'beach'])).page).toBe(
+    expect((await stays('Vagator')).page).toBe(
       'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&locationType=S&masterLocationId=48569&countryId=1' +
-      '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0&filters=FL_HF_29%2CPA_C_78528',
+      '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0&filters=PA_C_78528',
     );
-    expect((await stays('Anjuna', ['free_cancellation', 'breakfast'])).page).toBe(
+    expect((await stays('Anjuna')).page).toBe(
       'https://www.ixigo.com/hotels/search/result?locationId=1026&locationName=Anjuna&locationType=C&masterLocationId=50347&countryId=1' +
-      '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0&filters=MP_FB%2CMP_FC',
+      '&checkinDate=06112026&checkoutDate=09112026&adultCount=4&roomCount=2&childCount=0',
     );
     // Five people: three rooms.
-    expect((await stays('Anjuna, Goa', [], pages(), { adults: 5 })).page).toContain('&adultCount=5&roomCount=3&');
+    expect((await stays('Anjuna, Goa', pages(), { adults: 5 })).page).toContain('&adultCount=5&roomCount=3&');
   });
 
   it('takes pages 1 and 2 for all of Goa or a half of it, six scrolls bringing page 2, and page 1 for an area; closes the popup; settles 550 ms', async () => {
@@ -96,9 +96,9 @@ describe('hotels.search', () => {
       timeoutMs: 20_000,
       settleMs: 550,
     };
-    for (const area of ['Goa', 'North Goa', 'South Goa']) expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual(two);
+    for (const area of ['Goa', 'North Goa', 'South Goa']) expect((await stays(area)).runs[0]!.plan, area).toEqual(two);
     for (const area of ['Vagator', 'Anjuna', 'Candolim']) {
-      expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual({
+      expect((await stays(area)).runs[0]!.plan, area).toEqual({
         capture: [{ match: SEARCH, required: true }],
         steps: [POPUP, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
         settleMs: 550,
@@ -128,15 +128,14 @@ describe('hotels.search', () => {
     expect(options[1]).toMatchObject({ place: { address: 'Fatona, Colva' }, facts: { area: 'Fatona', beach_minutes: 4, breakfast: true } });
     expect(options[4]!.facts).not.toHaveProperty('beach_minutes');
     // Page 1 alone, when that is all that came back.
-    expect((await stays('Goa', [], pages().slice(0, 2))).options).toHaveLength(3);
-    // The filters keep a stated free cancellation and a beach within 10 minutes.
-    const near = applyConstraints('stays', { mustHave: ['beach', 'free_cancellation'] }, options.map((o) => ({ ...o, offerId: 'x' }) as TravelOption));
-    expect(near.map((o) => o.title)).toEqual(['Soul Vacation Resort and Spa, Colva']);
+    expect((await stays('Goa', pages().slice(0, 2))).options).toHaveLength(3);
+    // A beach or free cancellation is ixigo's filter or the model's pick: Go's own constraints drop no stay for them.
+    expect(applyConstraints('stays', {}, options.map((o) => ({ ...o, offerId: 'x' }) as TravelOption))).toHaveLength(options.length);
   });
 
   // What ixigo's list gives for a stay (staging, 8 Oct, Anjuna, saved whole): up to seven photos, a few amenities.
   it("reads a stay's photos from ixigo's list, up to seven and larger, and its amenities in ixigo's words", async () => {
-    const { options } = await stays('Anjuna', [], [capture(SEARCH, SEARCH_URL, fixture('stays-anjuna-full.json'))]);
+    const { options } = await stays('Anjuna', [capture(SEARCH, SEARCH_URL, fixture('stays-anjuna-full.json'))]);
     const riva = options.find((o) => o.title === 'Riva Beach Resort')!;
     expect(riva.imageUrls).toHaveLength(7);
     expect(riva.imageUrls![0]).toBe('https://pix8.agoda.net/property/109600/0/047a9028e97fbe184313ae32363b5282.jpeg?ce=0&s=1024x768');
@@ -156,11 +155,9 @@ describe('hotels.search', () => {
     expect((await stays('South Goa')).options.map((o) => o.title)).toEqual(['Soul Vacation Resort and Spa, Colva']);
   });
 
-  it('takes what ixigo filtered on as true of every stay it gave, even one that does not list it', async () => {
-    const [meritas] = (await stays('Goa', ['breakfast'], pages().slice(0, 2))).options;
-    expect(meritas!.facts).toMatchObject({ breakfast: true, pool: true });
-    expect(meritas!.highlights).toContain('Breakfast included');
-    expect((await stays('Goa', [], pages().slice(0, 2))).options[0]!.facts).toMatchObject({ breakfast: false });
+  it("takes a stay's pool, breakfast and free cancellation from what its own row lists", async () => {
+    const [meritas] = (await stays('Goa', pages().slice(0, 2))).options;
+    expect(meritas!.facts).toMatchObject({ breakfast: false, pool: true, free_cancellation: true });
   });
 
   it("reads a hotel with null details (O Hotel Goa's null image), and leaves out one it can't read, never the whole page", async () => {
@@ -172,8 +169,8 @@ describe('hotels.search', () => {
     first['userRatingCount'] = null;
     first['hotelInfoToken'] = null;
     delete second['fareDetail'];
-    const read = (await stays('Goa', [], [capture(SEARCH, SEARCH_URL, fixture('stays-goa-page1.json'))])).options;
-    const options = (await stays('Goa', [], [capture(SEARCH, SEARCH_URL, JSON.stringify(page))])).options;
+    const read = (await stays('Goa', [capture(SEARCH, SEARCH_URL, fixture('stays-goa-page1.json'))])).options;
+    const options = (await stays('Goa', [capture(SEARCH, SEARCH_URL, JSON.stringify(page))])).options;
     expect(options.map((o) => o.title)).toEqual(read.map((o) => o.title).filter((t) => t !== String(second['name']).trim()));
     const o = options.find((x) => x.title === String(first['name']).trim())!;
     expect(o).not.toHaveProperty('imageUrl');
@@ -182,9 +179,9 @@ describe('hotels.search', () => {
     expect(o.facts).not.toHaveProperty('reviews');
     // Every hotel unreadable: a changed shape, said plainly, never "no stays".
     for (const h of list) delete h['fareDetail'];
-    await expect(stays('Goa', [], [capture(SEARCH, SEARCH_URL, JSON.stringify(page))])).rejects.toThrow(/shape Go does not read/);
+    await expect(stays('Goa', [capture(SEARCH, SEARCH_URL, JSON.stringify(page))])).rejects.toThrow(/shape Go does not read/);
     // The page never loaded its hotels.
-    await expect(stays('Goa', [], pages().slice(0, 1))).rejects.toThrow(/did not send/);
+    await expect(stays('Goa', pages().slice(0, 1))).rejects.toThrow(/did not send/);
   });
 });
 
@@ -346,7 +343,7 @@ describe('flights.search', () => {
     const { engine, runs } = engineWith(() => [], 5);
     const base = (from: string, adults: number) =>
       `https://www.ixigo.com/search/result/flight?from=${from}&to=GOI&date=06112026&returnDate=&adults=${adults}&children=0&infants=0&class=e&source=Search%20Form`;
-    expect(await engine.answer('flights.search', { from: 'Delhi', to: 'Goa', date: '2026-11-06', depart_after: '18:00' }, { tripId: 't_goa', conditions: ['non_stop'] }))
+    expect(await engine.answer('flights.search', { from: 'Delhi', to: 'Goa', date: '2026-11-06', depart_after: '18:00', stops: 0 }, { tripId: 't_goa' }))
       .toEqual({ as: 'link', link: `${base('DEL', 3)}&stops=0&takeOff=NIGHT&sort_type=cheapest`, title: 'Flights, Delhi to Goa', who: 'for 3 from Delhi' });
     expect(await engine.answer('flights.search', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', arrive_before: '12:00', max_price: 900_050 }, { tripId: 't_goa' }))
       .toEqual({ as: 'link', link: `${base('BOM', 1)}&landing=EARLY_MORNING,MORNING&price=0,9000&sort_type=cheapest`, title: 'Flights, Mumbai to Goa', who: 'for 1 from Mumbai' });

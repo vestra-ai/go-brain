@@ -1,40 +1,12 @@
 /**
- * Constraints people gave, applied in code to what the backend found. The model passes them as arguments; it is never
- * trusted to drop an option itself. Journeys sort by departure, stays by rating then price.
+ * Constraints people gave as arguments (times, price, rating, head count, non-stop), applied in code to what the backend
+ * found: the model is never trusted to drop an option on them itself. What a site filtered is the site's, and anything
+ * else asked (wants) the model picks from the results. Journeys sort by departure, stays by rating then price.
  */
 import { arrivalWords, daysLater, formatClock, formatInr, localClock } from './cards.js';
 import type { TravelKind, TravelOption, TravelQuery } from './travel.js';
 
-/** "Near the beach" means this many minutes or less. */
-const BEACH_NEAR_MINUTES = 10;
-
-type MustHave = NonNullable<TravelQuery['mustHave']>[number];
-
-function has(o: TravelOption, need: MustHave): boolean {
-  switch (need) {
-    case 'pool':
-      return o.facts.pool === true;
-    case 'beach':
-      return typeof o.facts.beach_minutes === 'number' && o.facts.beach_minutes <= BEACH_NEAR_MINUTES;
-    case 'breakfast':
-      return o.facts.breakfast === true;
-    case 'free_cancellation':
-      // A date when the backend gives one; ixigo's hotel list says "Free Cancellation" without it.
-      return o.refundableUntil !== undefined || o.facts.free_cancellation === true;
-    case 'non_stop':
-      return o.journey?.stops === 0;
-  }
-}
-
 const per = (kind: TravelKind): string => (kind === 'stays' ? ' a night' : ' a person');
-
-const MISSING: Record<MustHave, string> = {
-  pool: 'no pool',
-  beach: `not within ${BEACH_NEAR_MINUTES} minutes of the beach`,
-  breakfast: 'no breakfast',
-  free_cancellation: 'no free cancellation',
-  non_stop: 'not non-stop',
-};
 
 /** Each constraint this option does not meet, in plain words ("no pool", "₹12,200 a night, over ₹10,000"); none means it fits. */
 export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): string[] {
@@ -49,7 +21,7 @@ export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): strin
   if (q.maxPriceMinor !== undefined && o.priceMinor > q.maxPriceMinor) out.push(`${formatInr(o.priceMinor)}${per(kind)}, over ${formatInr(q.maxPriceMinor)}`);
   if (q.minRating !== undefined && (o.rating ?? 0) < q.minRating) out.push(o.rating === undefined ? 'no rating' : `rated ${o.rating}, under ${q.minRating}`);
   if (kind === 'stays' && q.guests !== undefined && typeof o.facts.sleeps === 'number' && o.facts.sleeps < q.guests) out.push(`sleeps ${o.facts.sleeps}, fewer than ${q.guests}`);
-  for (const need of q.mustHave ?? []) if (!has(o, need)) out.push(MISSING[need]);
+  if (q.nonStop && o.journey?.stops !== 0) out.push('not non-stop');
   return out;
 }
 
@@ -62,14 +34,7 @@ export function asked(kind: TravelKind, q: TravelQuery): string[] {
   if (q.maxPriceMinor !== undefined) out.push(`at most ${formatInr(q.maxPriceMinor)}${per(kind)}`);
   if (q.minRating !== undefined) out.push(`rated ${q.minRating} or more`);
   if (kind === 'stays' && q.guests !== undefined) out.push(`sleeping ${q.guests}`);
-  const words: Record<MustHave, string> = {
-    pool: 'with a pool',
-    beach: `within ${BEACH_NEAR_MINUTES} minutes of the beach`,
-    breakfast: 'with breakfast',
-    free_cancellation: 'with free cancellation',
-    non_stop: 'non-stop',
-  };
-  for (const need of q.mustHave ?? []) out.push(words[need]);
+  if (q.nonStop) out.push('non-stop');
   // The site's own filters and sort, by their names on its list: ixigo applied them, not Go.
   for (const f of q.siteFilters ?? []) out.push(`${f} (ixigo's filter)`);
   if (q.siteSort) out.push(`sorted by ${q.siteSort} on ixigo`);

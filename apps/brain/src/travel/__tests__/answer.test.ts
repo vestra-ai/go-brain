@@ -20,7 +20,8 @@ const plain = (kind: Parameters<typeof plainAsk>[0], q: TravelQuery, text: strin
 };
 
 const FLIGHTS: TravelQuery = { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '19:00' };
-const VILLAS: TravelQuery = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
+/** "Pool stays in North Goa", as the model makes it from ixigo's own list: ixigo's Swimming Pool filter. */
+const VILLAS: TravelQuery = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool'] };
 
 describe('a plain search ask, which the search answers itself', () => {
   it('is one message to Go, plainly English, read as this very search, asking nothing more', () => {
@@ -61,7 +62,7 @@ describe('a plain search ask, which the search answers itself', () => {
     expect(plain('stays', VILLAS, '@Go beachfront stays with a pool in North Goa')).toMatchObject({ ok: false, why: 'asks more ("beachfront")' });
     expect(plain('flights', FLIGHTS, '@Go morning flights Delhi to Goa Friday after 7 pm')).toMatchObject({ ok: false, why: 'asks more ("morning")' });
     // A filter of ixigo's own the search applies holds its words.
-    expect(plain('stays', { ...VILLAS, siteFilters: ['Pet-friendly property'] }, '@Go pet friendly stays with a pool in North Goa')).toEqual({ ok: true });
+    expect(plain('stays', { ...VILLAS, siteFilters: ['Swimming Pool', 'Pet-friendly property'] }, '@Go pet friendly stays with a pool in North Goa')).toEqual({ ok: true });
     // The dates, the head count and the trip's own place are the read's.
     expect(plain('stays', { area: 'anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09' }, '@Go stays in Anjuna, Goa for our dates')).toEqual({ ok: true });
   });
@@ -98,7 +99,7 @@ const leaving = (at: string, number?: string) => ({ journey: { mode: 'flight' as
 describe("the card's line, built from the options the card shows", () => {
   it('says the scope, the conditions and the cheapest price on the card, never a count', () => {
     const stays = [priced('stay', 'Casa Azul', 1_200_000), priced('stay', 'Meritas', 433_400), priced('stay', 'Villa Sol', 980_000)];
-    expect(answerLine('stays', VILLAS, stays)).toBe('Pool stays in North Goa for 6 to 9 Nov, from ₹4,334 a night.');
+    expect(answerLine('stays', VILLAS, stays)).toBe("Stays in North Goa for 6 to 9 Nov, Swimming Pool (ixigo's filter), from ₹4,334 a night.");
     const flights = [priced('flight', 'IndiGo 6E 2134', 420_000), priced('flight', 'Air India', 389_000)];
     expect(answerLine('flights', FLIGHTS, flights)).toBe('Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from ₹3,890 per person.');
     const buses = [priced('bus', 'Paulo Travels', 150_000)];
@@ -119,8 +120,8 @@ describe("the card's line, built from the options the card shows", () => {
 });
 
 describe("the card's title, built from the search as the model's titles read", () => {
-  it('stays: the kind with its condition, the place, and the stay\'s dates', () => {
-    expect(answerTitle('stays', VILLAS)).toBe('Pool stays in North Goa, 6 to 9 Nov');
+  it('stays: the kind, the place, and the stay\'s dates; what ixigo filtered on is the line\'s to say', () => {
+    expect(answerTitle('stays', VILLAS)).toBe('Stays in North Goa, 6 to 9 Nov');
     expect(answerTitle('stays', { area: 'anjuna', checkIn: '2026-11-30', checkOut: '2026-12-02' })).toBe('Stays in Anjuna, 30 Nov to 2 Dec');
   });
 
@@ -128,7 +129,7 @@ describe("the card's title, built from the search as the model's titles read", (
     expect(answerTitle('buses', { from: 'mumbai', to: 'goa', date: '2026-11-06' })).toBe('Buses, Mumbai to Goa, 6 Nov');
     expect(answerTitle('trains', { from: 'mumbai', to: 'madgaon', date: '2026-11-05' })).toBe('Trains, Mumbai to Madgaon, 5 Nov');
     expect(answerTitle('flights', FLIGHTS)).toBe('Flights, Delhi to Goa, 6 Nov');
-    expect(answerTitle('flights', { ...FLIGHTS, mustHave: ['non_stop'] })).toBe('Non-stop flights, Delhi to Goa, 6 Nov');
+    expect(answerTitle('flights', { ...FLIGHTS, nonStop: true })).toBe('Non-stop flights, Delhi to Goa, 6 Nov');
   });
 });
 

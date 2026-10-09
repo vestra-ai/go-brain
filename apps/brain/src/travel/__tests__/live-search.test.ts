@@ -42,7 +42,7 @@ function room(o: { delayMs?: number; hang?: boolean; failPost?: boolean } = {}) 
   return { sent, stored, warnings, deps, cards };
 }
 
-const FLIGHTS = { kind: 'flights' as const, query: { from: 'Delhi', to: 'Goa', date: '2026-11-06', departAfter: '18:00', mustHave: ['non_stop' as const] } };
+const FLIGHTS = { kind: 'flights' as const, query: { from: 'Delhi', to: 'Goa', date: '2026-11-06', departAfter: '18:00', nonStop: true } };
 
 describe('the live search card', () => {
   it('posts at once with "On it." and the planned steps, the first one under way', async () => {
@@ -254,10 +254,10 @@ describe('the live search card', () => {
 
 describe('the planned steps', () => {
   it('say what is being picked, in the words a search result uses', () => {
-    expect(liveSteps('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'], maxPriceMinor: 1_000_000 })).toEqual([
+    expect(liveSteps('stays', { area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool'], maxPriceMinor: 1_000_000 })).toEqual([
       'Opening ixigo hotels',
       'Reading the results',
-      'Picking hotels: at most ₹10,000 a night, with a pool',
+      "Picking hotels: at most ₹10,000 a night, Swimming Pool (ixigo's filter)",
     ]);
     expect(liveSteps('buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' })[2]).toBe('Picking the best buses');
   });

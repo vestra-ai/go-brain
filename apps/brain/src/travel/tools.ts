@@ -22,7 +22,7 @@ import { airportCity } from './recipes/places.js';
 import { TravelError } from './mcp-travel.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultSet, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
-import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
+import { Clock, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelToolDeps {
@@ -78,7 +78,6 @@ export const StaysArgs = z.object({
   check_out: z.iso.date(),
   guests: z.int().min(1).max(30).optional(),
   max_price_per_night: Rupees.optional().describe('In rupees, for the whole place per night'),
-  must_have: z.array(z.enum(MUST_HAVES)).max(5).optional().describe('pool, beach (10 minutes or less), breakfast, free_cancellation'),
   min_rating: z.number().min(0).max(5).optional(),
   site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
     .describe("ixigo's own filters the ask means, by their names on ixigo's list for the place (in your context), the nearest one for what they said: ixigo filters the stays itself"),
@@ -96,7 +95,7 @@ export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
     ...(a.depart_before ? { departBefore: a.depart_before } : {}),
     ...(a.arrive_before ? { arriveBefore: a.arrive_before } : {}),
     ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
-    ...(a.non_stop ? { mustHave: ['non_stop' as const] } : {}),
+    ...(a.non_stop ? { nonStop: true } : {}),
     ...(a.travellers ? { guests: a.travellers } : {}),
     ...(a.wants?.length ? { wants: a.wants } : {}),
   };
@@ -139,7 +138,6 @@ export function staysQuery(a: z.infer<typeof StaysArgs>): TravelQuery {
     checkOut: a.check_out,
     ...(a.guests ? { guests: a.guests } : {}),
     ...(a.max_price_per_night ? { maxPriceMinor: toPaise(a.max_price_per_night) } : {}),
-    ...(a.must_have ? { mustHave: a.must_have } : {}),
     ...(a.min_rating !== undefined ? { minRating: a.min_rating } : {}),
     ...(a.site_filters?.length ? { siteFilters: a.site_filters } : {}),
     ...(a.site_sort ? { siteSort: a.site_sort } : {}),
@@ -237,16 +235,14 @@ const titleWords = (s: string): string => s.replace(/\b[a-z]/g, (c) => c.toUpper
 
 /**
  * An options card's title for stays from ixigo.com: the model's, unless it names a kind of place ("Pool villas in North
- * Goa") that not every option on the card is by its own name; then what was searched ("Stays with a pool in North Goa").
- * ixigo has no villa type, and a pool search there gives hotels and resorts (re-drill 6). Other searches keep the title.
+ * Goa") that not every option on the card is by its own name; then what was searched, with what ixigo filtered on
+ * ("Stays with Swimming Pool in North Goa"). ixigo has no villa type (re-drill 6). Other searches keep the title.
  */
 function stayCardTitle(title: string, query: Record<string, unknown>, shown: ResultOption[]): string {
   if (!shown.some((o) => o.kind === 'stay' && ixigoPage(o.sourceUrl ?? null)) || !placeKindNotAll(title, shown.map((o) => o.title))) return title;
-  const needs = Array.isArray(query['mustHave']) ? (query['mustHave'] as string[]) : [];
-  const withs = [needs.includes('pool') && 'a pool', needs.includes('breakfast') && 'breakfast', needs.includes('free_cancellation') && 'free cancellation']
-    .filter((w): w is string => typeof w === 'string');
+  const filtered = Array.isArray(query['siteFilters']) ? (query['siteFilters'] as unknown[]).filter((f): f is string => typeof f === 'string') : [];
   const area = typeof query['area'] === 'string' ? titleWords(query['area']) : '';
-  return clip(`Stays${withs.length ? ` with ${listOf(withs)}` : ''}${needs.includes('beach') ? ' near the beach' : ''}${area ? ` in ${area}` : ''}`, 80);
+  return clip(`Stays${filtered.length ? ` with ${listOf(filtered)}` : ''}${area ? ` in ${area}` : ''}`, 80);
 }
 
 const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
@@ -335,8 +331,8 @@ export async function putUpCard(
  * A finished search that answers the turn's plain ask itself: its list saved, its picks on a card (the engine's order:
  * the first three stays, the three cheapest journeys), and a line built from its data. The turn ends on them, with no
  * model round after the search. "See on ixigo" on the card opens each option's own page, as on any card. lead goes
- * before the line ("Already on ixigo: pool stays in…", a watch that is already so). Options read without filters ixigo
- * left off (unapplied) are saved and titled as searched without them, and the line says so first.
+ * before the line ("Already on ixigo: stays in…", a watch that is already so). The card and the line name only what ixigo
+ * filtered on (answeredAs).
  */
 export async function answerItself(
   kind: TravelKind,
@@ -352,25 +348,23 @@ export async function answerItself(
   noteRun(set.resultsId, ctx.tripId, found.runId);
   const numbers = directPicks(kind, options);
   // The line's "from" is the card's own cheapest, never one of the results the card leaves out.
-  const line = ledBy(lead ?? leftOffLead(found), answerLine(kind, searched, numbers.map((n) => options[n - 1]!)));
+  const line = ledBy(lead, answerLine(kind, searched, numbers.map((n) => options[n - 1]!)));
   const { cardId, shown } = await putUpCard(set, numbers, { title: answerTitle(kind, searched), line }, ctx, d);
   ctx.answered = true;
   return { search: searchName(kind, searched), results_id: set.resultsId, card_id: cardId, shown, answered: true, note: 'The card and its line are up: this turn has said what it needed to.' };
 }
 
 /**
- * The ask as a search answered it: without the conditions ixigo left off (TravelSearch.unapplied), and with the site's
- * own filters and sort only as the site applied them, in its words. What it didn't apply is the model's to pick (leftToPick).
+ * The ask as a search answered it: the site's own filters and sort only as the site applied them, in its words. What it
+ * didn't apply, or left off (unapplied), is the model's to pick (leftToPick).
  */
 function answeredAs(q: TravelQuery, found: TravelSearch): TravelQuery {
-  const off = found.unapplied ?? [];
   const searched: TravelQuery = { ...q };
   delete searched.siteFilters;
   delete searched.siteSort;
   const filtered = found.site?.filtered ?? [];
   return {
     ...searched,
-    ...(off.length > 0 ? { mustHave: (q.mustHave ?? []).filter((c) => !off.includes(c)) } : {}),
     ...(filtered.length > 0 ? { siteFilters: filtered } : {}),
     ...(found.site?.sorted ? { siteSort: found.site.sorted } : {}),
   };
@@ -386,8 +380,6 @@ export function leftToPick(q: TravelQuery, found: TravelSearch): string[] {
   return [...new Set([...notApplied, ...(q.wants ?? [])])];
 }
 
-/** What goes before the card's line of a search ixigo left filters off: "ixigo's pool filter didn't load in time, …: ". */
-const leftOffLead = (found: TravelSearch): string | undefined => (found.unapplied?.length ? `${leftOff(found.unapplied)}: ` : undefined);
 
 /** The loop waits this long for a search tool: the search's own wait (TRAVEL_WAIT_MS) and its answer fit inside. */
 const SEARCH_TOOL_MS = TRAVEL_WAIT_MS + 2_000;
@@ -430,12 +422,10 @@ export function handOver(
       async (found) => {
         if (found.runId && shownRuns.has(`${o.tripId}:${found.runId}`)) return;
         const a = await searchAnswer(kind, q, found, o.tripId, d);
-        const lead = leftOffLead(found);
         // Something left to pick goes to the model, which picks it; the rest posts its card with no model call.
         const pick = leftToPick(q, found).length > 0;
         const payload: SearchWake = {
-          source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null,
-          ...(lead ? { lead } : {}), ...(pick ? { pick } : {}),
+          source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null, ...(pick ? { pick } : {}),
         };
         await wake(`search:${o.tripId}:${found.runId ?? o.fallbackId}`, payload);
       },

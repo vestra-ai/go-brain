@@ -730,7 +730,7 @@ describe('show the options and put them to a vote in one reply', () => {
     const travel = createTravelLayer({ switches: { get: () => 'fake' }, now, fake, ixigo: null, results });
     return travelTools({ travel, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now });
   };
-  const STAYS = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5, must_have: ['pool', 'beach'] };
+  const STAYS = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5 };
   const resultsIdOf = (body: any): string => JSON.parse(body.messages.at(-1).content[0].content).results_id;
 
   it('the card, the vote and the line in one reply: one model call after the search, one vote opened', async () => {

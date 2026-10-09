@@ -21,15 +21,21 @@ describe('constraints applied in code', () => {
 
   it('applies before, price and non-stop together', async () => {
     const { results } = await fake.search('flights', { from: 'Delhi', to: 'Goa', date: FRIDAY });
-    expect(applyConstraints('flights', { departBefore: '10:00', mustHave: ['non_stop'] }, results).map((o) => o.title)).toEqual(['IndiGo 6E 515', 'IndiGo 6E 6153', 'SpiceJet SG 8169']);
+    expect(applyConstraints('flights', { departBefore: '10:00', nonStop: true }, results).map((o) => o.title)).toEqual(['IndiGo 6E 515', 'IndiGo 6E 6153', 'SpiceJet SG 8169']);
     expect(applyConstraints('flights', { maxPriceMinor: 550000 }, results).every((o) => o.priceMinor <= 550000)).toBe(true);
   });
 
-  it('keeps villas with a pool near the beach that sleep everyone, best rated first, within a nightly price', async () => {
+  it("keeps the stays that sleep everyone within a nightly price; a pool or the beach is ixigo's filter or the model's pick, never Go's", async () => {
     const { results } = await fake.search('stays', { area: 'North Goa', checkIn: FRIDAY, checkOut: '2026-11-09' });
-    const kept = applyConstraints('stays', { guests: 5, mustHave: ['pool', 'beach'] }, results);
-    expect(kept.map((o) => o.title)).toEqual(['Casa Mareia', 'Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    expect(applyConstraints('stays', { guests: 5, mustHave: ['pool', 'beach'], maxPriceMinor: 1300000 }, results).map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa']);
+    const sleepsFive = results.filter((o) => typeof o.facts.sleeps === 'number' && o.facts.sleeps >= 5);
+    const kept = applyConstraints('stays', { guests: 5 }, results);
+    expect(kept).toHaveLength(sleepsFive.length);
+    expect(kept.every((o) => (o.facts.sleeps as number) >= 5)).toBe(true);
+    // A stay with no pool stays in: nobody's code guesses one for the ask.
+    expect(kept.some((o) => o.facts.pool === false)).toBe(true);
+    const capped = applyConstraints('stays', { guests: 5, maxPriceMinor: 1300000 }, results);
+    expect(capped.length).toBeGreaterThan(0);
+    expect(capped.every((o) => o.priceMinor <= 1300000 && (o.facts.sleeps as number) >= 5)).toBe(true);
   });
 
   it('spreads a region ask across its areas: the best good stay of each area first, then each one\'s second (re-drill 4)', () => {

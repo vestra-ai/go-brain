@@ -10,9 +10,10 @@ export const TravelKind = z.enum(['flights', 'trains', 'buses', 'stays']);
 export type TravelKind = z.infer<typeof TravelKind>;
 
 export const Clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use 24-hour HH:MM, like 18:00.');
-export const MUST_HAVES = ['pool', 'beach', 'breakfast', 'free_cancellation', 'non_stop'] as const;
-
-/** One search. The constraints (times, price, must-haves, rating) are applied in code after the search. */
+/**
+ * One search. The constraints (times, price, non-stop, rating) are applied in code after the search; the site's own
+ * filters and sort (siteFilters, siteSort) by the site; anything else (wants) by the model, from the results.
+ */
 export const TravelQuery = z.object({
   from: z.string().min(2).max(60).optional(),
   to: z.string().min(2).max(60).optional(),
@@ -26,7 +27,8 @@ export const TravelQuery = z.object({
   arriveBefore: Clock.optional(),
   /** Per person for journeys, per night for stays. */
   maxPriceMinor: z.int().positive().optional(),
-  mustHave: z.array(z.enum(MUST_HAVES)).max(5).optional(),
+  /** Flights with no stop: ixigo's own stops param on its page, and Go's check of each flight. */
+  nonStop: z.boolean().optional(),
   minRating: z.number().min(0).max(5).optional(),
   /** The site's own filters and sort for the ask, by their names on the site's own list (recipes/offers.ts). */
   siteFilters: z.array(z.string().min(1).max(80)).max(8).optional(),
@@ -84,9 +86,8 @@ export interface TravelSearch {
   /** The results page it read on ixigo.com, where the whole list is (ixigo_web). */
   page?: string;
   /**
-   * The conditions ixigo was asked to filter on and did not: its filtered page caught nothing in time, so the list is the
-   * same page without them (ixigo_web, backend.ts). The travel layer picks the stays that say them, or, when none does,
-   * shows the list without them and says so; then these are the ones it left off.
+   * ixigo's own filters it was asked to filter on and did not: its filtered page caught nothing in time, so the list is
+   * the same page without them (ixigo_web, backend.ts), and the model picks on them from the results.
    */
   unapplied?: string[];
   /**

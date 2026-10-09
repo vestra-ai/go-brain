@@ -20,10 +20,10 @@ inputs:
   depart_before: { kind: text, optional: true, about: 24-hour HH:MM }
   arrive_before: { kind: text, optional: true, about: 24-hour HH:MM }
   max_price: { kind: money, optional: true, about: "per person, in paise" }
+  # ixigo's own stops param, as its page's Non-stop filter writes it: 0 for non-stop.
+  stops: { kind: count, optional: true, min: 0, max: 2, about: "0 for non-stop" }
 auth: none
 changes_state: false
-conditions:
-  non_stop: "'stops=0'"
 let:
   # ixigo's departure and arrival windows, as the page's own filter shows them (p1-b's flights map).
   windows: |
@@ -38,7 +38,7 @@ let:
     arrive_before ? $join($windows[from < $$.arrive_before and to > "00:00"].name, ",")
   # What people asked for, in ixigo's own params, and the cheapest first (the param ixigo's "Price / Low to High" writes).
   params: |
-    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), "sort_type=cheapest"]), "&")
+    $join([$exists(stops) ? "stops=" & $string(stops), $take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), "sort_type=cheapest"], "&")
 page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children=0&infants=0&class=e&source=Search%20Form&{$params|raw}
 answer:
   # ixigo answers flight pages with a 403 from the boxes' shared egress: the group gets the page, set as they asked.

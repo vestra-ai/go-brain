@@ -32,7 +32,8 @@ afterAll(async () => {
 });
 
 const FLIGHTS = { from: 'Delhi', to: 'Goa', date: '2026-11-06', depart_after: '18:00' };
-const STAYS = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5, must_have: ['pool', 'beach'] };
+/** Stays in North Goa for the trip's dates, for the five of them: the fake's seven that sleep five, best rated first. */
+const STAYS = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5 };
 
 describe('search tools', () => {
   it("search_flights applies Arjun's 6 pm in code and answers compact, priced, dated results", async () => {
@@ -62,27 +63,23 @@ describe('search tools', () => {
     lb.clock.advance(-120_000);
   });
 
-  it('search_stays keeps villas with a pool near the beach for everyone, and answers plainly when nothing fits', async () => {
+  it('search_stays keeps the stays that sleep everyone, best rated first, and answers plainly when nothing fits', async () => {
     const out = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_s3' }))) as any;
-    expect(out.results.map((r: { title: string }) => r.title)).toEqual(['Casa Mareia', 'Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    expect(out.results[1]).toMatchObject({ price: '₹12,800 per night', total: '₹38,400 for 3 nights' });
+    expect(out.results.map((r: { title: string }) => r.title)).toEqual(['Casa Mareia', 'Casa Azul', 'Villa Sol', 'The Palms Villa', 'Villa Verde', 'Ocean Breeze Villa', 'Saudade Villa']);
+    expect(out.results[2]).toMatchObject({ price: '₹12,800 per night', total: '₹38,400 for 3 nights' });
     const missing = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_night: 5000 }, lb.ctx())) as any;
     expect(missing.count).toBe(0);
     // The fake gives 7 that sleep 5; none is under ₹5,000 a night.
-    expect(missing.summary).toMatch(/^None of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹5,000 a night, sleeping 5, with a pool and within 10 minutes of the beach\. Closest: /);
+    expect(missing.summary).toMatch(/^None of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹5,000 a night and sleeping 5\. Closest: /);
     expect(missing.note).toContain('keeping every condition in it');
   });
 
-  it('nothing fits a pool villa under ₹10,000 a night: the summary keeps the pool and names the closest miss and why', async () => {
-    const none = (await lb.tools.run(
-      'search_stays',
-      { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', must_have: ['pool'], max_price_per_night: 10000 },
-      lb.ctx({ turnId: 'turn_pf1' }),
-    )) as any;
-    expect(none).toMatchObject({ count: 0, search: 'stays in North Goa, 2026-11-06 to 2026-11-09, at most ₹10,000 a night, with a pool' });
-    // The ₹9,800 villa the next search can show is named here, with the pool it lacks, so "nothing at ₹8 to 10k" cannot be said.
+  it('nothing fits under ₹9,000 a night: the summary keeps the cap and names the closest miss and why', async () => {
+    const none = (await lb.tools.run('search_stays', { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', max_price_per_night: 9000 }, lb.ctx({ turnId: 'turn_pf1' }))) as any;
+    expect(none).toMatchObject({ count: 0, search: 'stays in North Goa, 2026-11-06 to 2026-11-09, at most ₹9,000 a night' });
+    // The ₹9,800 villa the next search can show is named here, with what it misses, so "nothing at ₹8 to 9k" cannot be said.
     expect(none.summary).toBe(
-      'None of the 8 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹10,000 a night and with a pool. Closest: Saudade Villa (Parra), ₹9,800 per night, but no pool.',
+      'None of the 8 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹9,000 a night. Closest: Saudade Villa (Parra), ₹9,800 per night, but ₹9,800 a night, over ₹9,000.',
     );
     expect(none.results_id).toBeUndefined();
   });
@@ -95,10 +92,11 @@ describe('search tools', () => {
   it('every stay carries its own area as the data gives it, and the summary names the areas and the price range', async () => {
     const out = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_pf3' }))) as any;
     expect(out.results.map((r: { title: string; area: string }) => [r.title, r.area])).toEqual([
-      ['Casa Mareia', 'Morjim'], ['Villa Sol', 'Anjuna'], ['The Palms Villa', 'Vagator'], ['Ocean Breeze Villa', 'Candolim'],
+      ['Casa Mareia', 'Morjim'], ['Casa Azul', 'Assagao'], ['Villa Sol', 'Anjuna'], ['The Palms Villa', 'Vagator'], ['Villa Verde', 'Siolim'],
+      ['Ocean Breeze Villa', 'Candolim'], ['Saudade Villa', 'Parra'],
     ]);
     expect(out.summary).toBe(
-      '4 of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fit sleeping 5, with a pool and within 10 minutes of the beach: ₹12,200 to ₹16,900 per night, in Morjim, Anjuna, Vagator and Candolim.',
+      '7 of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fit sleeping 5: ₹9,800 to ₹16,900 per night, in Morjim, Assagao, Anjuna, Vagator, Siolim, Candolim and Parra.',
     );
     expect(out.note).toContain("Each option's area, time and price are as given here: name no other");
     // The option's area wins over the asker's words.
@@ -166,8 +164,8 @@ describe('a count in a summary', () => {
     expect(await say('stays', STAYS, { results: [stay('Villa Sol')], found: 1 })).toBe('1 stay in Anjuna, 2026-11-06 to 2026-11-09: ₹9,000 per night, in Anjuna.');
     expect(await say('stays', STAYS, { results: [stay('Villa Sol'), stay('Casa Mareia')], found: 2 })).toBe('2 stays in Anjuna, 2026-11-06 to 2026-11-09: ₹9,000 per night, in Anjuna.');
     expect(await say('buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { results: [bus], found: 1 })).toBe('1 bus from Mumbai to Goa on 2026-11-06: ₹2,700 per seat, from.');
-    expect(await say('stays', { ...STAYS, mustHave: ['pool'] }, { results: [stay('Villa Sol')], found: 7 })).toBe('1 of the 7 stays in Anjuna, 2026-11-06 to 2026-11-09 fits with a pool: ₹9,000 per night, in Anjuna.');
-    expect(await say('stays', { ...STAYS, mustHave: ['pool'] }, { results: [], found: 1 })).toBe("The one stay in Anjuna, 2026-11-06 to 2026-11-09 doesn't fit with a pool.");
+    expect(await say('stays', { ...STAYS, maxPriceMinor: 1_000_000 }, { results: [stay('Villa Sol')], found: 7 })).toBe('1 of the 7 stays in Anjuna, 2026-11-06 to 2026-11-09 fits at most ₹10,000 a night: ₹9,000 per night, in Anjuna.');
+    expect(await say('stays', { ...STAYS, maxPriceMinor: 1_000_000 }, { results: [], found: 1 })).toBe("The one stay in Anjuna, 2026-11-06 to 2026-11-09 doesn't fit at most ₹10,000 a night.");
   });
 });
 
@@ -199,21 +197,21 @@ describe('a search that answers itself', () => {
   };
 
   it("puts up the card and a line from its data for the turn's plain ask, and ends the turn: no model round after it", async () => {
-    const ctx = turnFor('@Go stays with a pool in North Goa near the beach for 5 of us', 'turn_s1');
+    const ctx = turnFor('@Go stays in North Goa for 5 of us', 'turn_s1');
     const out = (await lb.tools.run('search_stays', STAYS, ctx)) as any;
     expect(out).toMatchObject({ answered: true, card_id: 'c_opt_turn_s1_1' });
     expect(ctx.answered).toBe(true);
     const card = C.OptionsCard.parse(ctx.cards[0]);
-    expect(card.options.map((o) => o.title)).toEqual(['Casa Mareia', 'Villa Sol', 'The Palms Villa']);
+    expect(card.options.map((o) => o.title)).toEqual(['Casa Mareia', 'Casa Azul', 'Villa Sol']);
     expect(ctx.lines).toHaveLength(1);
-    expect(ctx.lines[0]).toMatch(/^Pool stays in North Goa for 6 to 9 Nov, .+, from ₹[\d,]+ a night\.$/);
+    expect(ctx.lines[0]).toMatch(/^Stays in North Goa for 6 to 9 Nov, sleeping 5, from ₹[\d,]+ a night\.$/);
     // No count of the card's options: price and scope only.
     expect(ctx.lines[0]).not.toMatch(/\b\d+ (pool )?stays\b/i);
     expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
   });
 
   it('gives the model the list as before when the ask needs judgement, so a question is never swallowed', async () => {
-    const ctx = turnFor('@Go stays with a pool in North Goa near the beach for 5 of us, which has the best reviews?', 'turn_s2');
+    const ctx = turnFor('@Go stays in North Goa for 5 of us, which has the best reviews?', 'turn_s2');
     const out = (await lb.tools.run('search_stays', STAYS, ctx)) as any;
     expect(out).toMatchObject({ count: expect.any(Number), results_id: expect.any(String) });
     expect(out.answered).toBeUndefined();
@@ -234,13 +232,13 @@ describe('show_options', () => {
     expect(ctx.lines).toEqual(['Here are the villas.']);
     const card = C.OptionsCard.parse(ctx.cards[0]);
     expect(card.card_id).toBe(shown.card_id);
-    expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    expect(card.options[0]).toMatchObject({ price_minor: 1280000, price_note: 'per night', subtitle: 'Anjuna, ₹38,400 for 3 nights' });
+    expect(card.options.map((o) => o.title)).toEqual(['Casa Azul', 'Villa Sol', 'The Palms Villa']);
+    expect(card.options[0]).toMatchObject({ price_minor: 1460000, price_note: 'per night', subtitle: 'Assagao, ₹43,800 for 3 nights' });
     expect(card.options[0]!.image_url).toMatch(/^https:\/\/go\.test\/img\/u[0-9a-f]{32}\.jpg$/);
     expect(lb.link.sent('post_message')).toHaveLength(posts);
     // The day it is for (its search's check-in), so a vote that outlives it is refused, never booked (#264).
-    expect(await travel.offer(card.options[0]!.option_id)).toEqual({ offerId: 'fake:st-villa-sol-anjuna-20261106-20261109-5', title: 'Villa Sol', priceMinor: 3840000, currency: 'INR', kind: 'stay', link: null, day: '2026-11-06' });
-    expect(await results.offer(card.options[0]!.option_id)).toMatchObject({ n: 1, totalMinor: 3840000, priceMinor: 1280000 });
+    expect(await travel.offer(card.options[0]!.option_id)).toEqual({ offerId: 'fake:st-casa-azul-assagao-20261106-20261109-5', title: 'Casa Azul', priceMinor: 4380000, currency: 'INR', kind: 'stay', link: null, day: '2026-11-06' });
+    expect(await results.offer(card.options[0]!.option_id)).toMatchObject({ n: 1, totalMinor: 4380000, priceMinor: 1460000 });
   });
 
   it('a stays card asks for a budget while nobody in the trip has a band, and not once someone has one', async () => {
@@ -284,7 +282,7 @@ describe('show_options', () => {
       kind: 'stay' as const, title, priceMinor: 900_000, currency: 'INR', priceNote: 'per night, per room', highlights: ['Pool'], facts: { area, pool: true },
       sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
     });
-    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
+    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool'] };
     const show = async (options: ReturnType<typeof stay>[], title: string, turnId: string) => {
       const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query, options, checkedAt: '2026-10-07T12:00:00.000Z' });
       const ctx = lb.ctx({ turnId });
@@ -292,8 +290,8 @@ describe('show_options', () => {
       return C.OptionsCard.parse(ctx.cards[0]).title;
     };
     const hotels = [stay('Meritas Auberge Calangute Goa', 'Candolim'), stay('3102bce - A Vedic Resort', 'Vagator'), stay('Villa Mandrem', 'Mandrem')];
-    expect(await show(hotels, 'Pool villas in North Goa', 'turn_t1')).toBe('Stays with a pool in North Goa');
-    expect(await show(hotels, 'Resorts with a pool', 'turn_t2')).toBe('Stays with a pool in North Goa');
+    expect(await show(hotels, 'Pool villas in North Goa', 'turn_t1')).toBe('Stays with Swimming Pool in North Goa');
+    expect(await show(hotels, 'Resorts with a pool', 'turn_t2')).toBe('Stays with Swimming Pool in North Goa');
     // Every option a villa by its name, or a title that names no kind of place: the model's title stands.
     expect(await show([stay('Villa Mandrem', 'Mandrem'), stay('The Palms Villa', 'Vagator')], 'Pool villas in North Goa', 'turn_t3')).toBe('Pool villas in North Goa');
     expect(await show(hotels, 'Top picks near the beach', 'turn_t4')).toBe('Top picks near the beach');
@@ -336,7 +334,7 @@ describe('put_to_vote', () => {
       kind: 'stay' as const, title, priceMinor: 900_000, currency: 'INR', priceNote: 'per night, per room', highlights: ['Pool'], facts: { pool: true },
       sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
     });
-    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
+    const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Swimming Pool'] };
     const asked = async (names: string[], question: string, turn: string) => {
       const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query, options: names.map(stay), checkedAt: '2026-10-07T12:00:00.000Z' });
       const show = lb.ctx({ turnId: `${turn}a` });
