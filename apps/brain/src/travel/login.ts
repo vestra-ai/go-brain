@@ -30,7 +30,7 @@ import type { Packs, TripPack } from '../trips/pack.js';
 import type { Tasks } from '../tasks/tasks.js';
 import { TravelError } from './mcp-travel.js';
 import { IXIGO, type Capture, type FetchPlan } from './recipes/recipe.js';
-import type { RecipeRunner } from './recipes/runners.js';
+import { ChallengedError, type RecipeRunner } from './recipes/runners.js';
 
 /**
  * Calls ixigo's page makes as it loads only when it has a login, with its own token and keys. A call of Go's own is
@@ -164,8 +164,11 @@ export interface IxigoLogin {
    * the login is in, the composer wakes and carries on with it.
    */
   ensure(tripId: string, what: string, o?: { park?: Parked }): Promise<{ ok: true } | { ok: false; note: string }>;
-  /** ixigo's own answer for the trip's browser: in, out, or unknown (the page never said). */
-  status(tripId: string): Promise<'in' | 'out' | 'unknown'>;
+  /**
+   * ixigo's own answer for the trip's browser: in, out, or unknown (the page never said); challenged when its page stayed
+   * on Cloudflare's check, which says nothing about the login either way.
+   */
+  status(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'>;
   onEvent(ev: C.Event): Promise<void>;
   /**
    * A person gone from their login: they left the trip, or used "Forget me" in it. When the trip's login is theirs, Go
@@ -186,8 +189,11 @@ export function renderLoginResume(item: DeskItem, pack: TripPack): string | null
   const who = pack.trip.people.find((x) => x.person_id === p.personId)?.name ?? 'Someone';
   return `${who} logged in to ixigo on Go's computer, so carry on with what the group asked for, without asking anyone again: booking ${p.what ?? 'the stay'}. Call set_mandate now with ${JSON.stringify(p.resume ?? {})}, then say in one short line what was set and that the payer taps Yes, book it.`;
 }
-/** Why the card says what it says: the page still opening, not logged in yet, the person left or used Forget me, a log out ixigo didn't take. */
-type Note = 'opening' | 'not_yet' | 'not_opened' | 'expired' | 'left' | 'forgot' | 'logout_failed';
+/**
+ * Why the card says what it says: the page still opening, not logged in yet, the person left or used Forget me, a log out
+ * ixigo didn't take, or ixigo's page held on Cloudflare's check (challenge).
+ */
+type Note = 'opening' | 'not_yet' | 'not_opened' | 'expired' | 'left' | 'forgot' | 'logout_failed' | 'challenge';
 const day = (at: Date): string => at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 
 /** The login card for where things stand: who it is for, what it says, and the buttons only they see. */
@@ -202,9 +208,11 @@ export function loginCard(row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 
         title: 'Link ixigo for this trip',
         body: note === 'not_opened'
           ? "Go couldn't open ixigo's log in on its screen just now. Tap Log in to ixigo to try again."
-          : note === 'expired'
-            ? "ixigo's log in closed on Go's screen after 10 minutes. Tap Log in to ixigo to open it again."
-            : `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their mobile number and its code; Go never sees either. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
+          : note === 'challenge'
+            ? "ixigo asked Go's computer to wait a moment before its log in. Tap Log in to ixigo to try again in a minute."
+            : note === 'expired'
+              ? "ixigo's log in closed on Go's screen after 10 minutes. Tap Log in to ixigo to open it again."
+              : `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their mobile number and its code; Go never sees either. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
         actions: [button('ixigo_login', 'Log in to ixigo', 'primary'), button('ixigo_not_now', 'Not now', 'secondary')],
         fallback_text: `${name}, log in to ixigo once on Go's computer so Go can check fares and book.`,
       };
@@ -332,7 +340,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     return login;
   }
 
-  async function status(tripId: string): Promise<'in' | 'out' | 'unknown'> {
+  async function status(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
     const runner = d.runner();
     if (!runner) return 'unknown';
     let captures: Capture[];
@@ -341,8 +349,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       ({ captures } = await runner.read(tripId, `${IXIGO}/`, LOGIN_CALLS));
     } catch (err) {
       if (!(err instanceof TravelError)) throw err;
-      d.log.info({ tripId, status: null, login: 'unknown', why: err.code }, 'travel: ixigo said whether the trip computer is logged in');
-      return 'unknown';
+      const check = err instanceof ChallengedError;
+      d.log.info({ tripId, status: null, login: 'unknown', why: check ? 'challenge' : err.code }, 'travel: ixigo said whether the trip computer is logged in');
+      return check ? 'challenged' : 'unknown';
     }
     return said(tripId, captures, 'home page');
   }
@@ -377,7 +386,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         d.log.warn({ tripId: row.tripId, err: err.message }, "travel: ixigo's log out did not run");
       }
     }
-    if ((await status(row.tripId)) === 'in') {
+    // Still in, or a page on Cloudflare's check, which can't say: the log out is not taken as done.
+    const s = await status(row.tripId);
+    if (s === 'in' || s === 'challenged') {
       await show(row, 'logout_failed');
       return;
     }
@@ -450,16 +461,16 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     // The hand-off ends at HANDOFF_MS whatever happens: Bash closes the tab then, and the card goes back to its ask.
     ending.get(row.tripId)?.();
     ending.set(row.tripId, later(HANDOFF_MS, () => track('end', row.tripId, expire(row))));
-    let captures: Capture[];
+    let opened: { captures: Capture[]; challenged?: true };
     try {
-      ({ captures } = await runner.handOff!(
+      opened = await runner.handOff!(
         row.tripId,
         LOGIN_URL,
         // The page and ixigo's own calls alone: Watch comes as soon as they have said (its crop is set before the page
         // loads), and the taps run after, while Watch's picture connects (staging, 8 Oct: they were 2 to 3 s of the wait).
         LOGIN_CALLS,
         { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB },
-      ));
+      );
     } catch (err) {
       // Loud, and nothing left open: no second path.
       await release(row.tripId);
@@ -474,7 +485,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     const now = await get(row.tripId);
     // Not now while the page opened, or another try: this hand-off is no longer theirs to finish.
     if (now?.state !== 'logging_in' || now.attempt !== row.attempt) return;
-    if (said(row.tripId, captures, 'hand-off') === 'in') {
+    if (opened.challenged) {
+      await heldByCheck(now);
+      return;
+    }
+    if (said(row.tripId, opened.captures, 'hand-off') === 'in') {
       await release(row.tripId);
       await show(await loggedIn(now));
     } else {
@@ -491,18 +506,23 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
    * the calls ixigo's own code makes as it loads are caught, one byte each, by their status (LOGIN_CALLS). Not logged in
    * yet, the page is theirs again with ixigo's Login and its mobile number box tapped, as the hand-off left it.
    */
-  async function statusInLogin(tripId: string): Promise<'in' | 'out' | 'unknown'> {
+  async function statusInLogin(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
     const runner = d.runner();
     if (!runner?.handOff) return status(tripId);
-    let captures: Capture[];
+    let opened: { captures: Capture[]; challenged?: true };
     try {
-      ({ captures } = await runner.handOff(tripId, LOGIN_URL, LOGIN_CALLS, { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB }));
+      opened = await runner.handOff(tripId, LOGIN_URL, LOGIN_CALLS, { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB });
     } catch (err) {
       if (!(err instanceof TravelError)) throw err;
       d.log.info({ tripId, status: null, login: 'unknown', why: err.code }, 'travel: ixigo said whether the trip computer is logged in');
       return 'unknown';
     }
-    const login = said(tripId, captures, 'log in page');
+    // Cloudflare's check says nothing about the login: neither in nor out, and nothing tapped on it.
+    if (opened.challenged) {
+      d.log.info({ tripId, status: null, login: 'unknown', why: 'challenge', where: 'log in page' }, 'travel: ixigo said whether the trip computer is logged in');
+      return 'challenged';
+    }
+    const login = said(tripId, opened.captures, 'log in page');
     if (login !== 'in') {
       await runner.tabSteps?.(tripId, LOGIN_TAB, [LOGIN_BUTTON, MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
         .catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's taps did not run"));
@@ -518,6 +538,17 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     ending.get(tripId)?.();
     ending.delete(tripId);
     await d.runner()?.release?.(tripId, LOGIN_TAB).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's tab did not close"));
+  }
+
+  /**
+   * ixigo's page stayed on Cloudflare's check through the runner's tries (CLOUDFLARE, recipes/runners.ts): nothing is
+   * handed over and no Watch is offered on it. The tab closes, and the card goes back to its ask, saying so.
+   */
+  async function heldByCheck(row: LoginRow): Promise<void> {
+    await release(row.tripId);
+    const back: LoginRow = { ...row, state: 'asked' };
+    await save(back);
+    await show(back, 'challenge');
   }
 
   /** A hand-off that ran its HANDOFF_MS: its tab is closed, and its card goes back to its ask, saying so. */
@@ -633,11 +664,13 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           // A login started as a job (before the hand-off had no model): its hand-off settled for them, quietly.
           if (row.taskId) await d.tasks()?.handoff(row.taskId, 'done').catch(() => undefined);
           // ixigo's own answer, from its log in page loaded again in the hand-off's tab. Logged in: the window closes. Not
-          // yet: it stays in front for them, its log in box open again.
-          if ((await statusInLogin(row.tripId)) === 'in') {
+          // yet: it stays in front for them, its log in box open again. Still on Cloudflare's check: closed, asked again.
+          const s = await statusInLogin(row.tripId);
+          if (s === 'in') {
             await release(row.tripId);
             await show(await loggedIn(row));
-          } else await show(row, 'not_yet');
+          } else if (s === 'challenged') await heldByCheck(row);
+          else await show(row, 'not_yet');
         })());
         return { result: 'done', toast: 'Checking your login' };
       }));
@@ -675,8 +708,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           if (row.state !== 'logged_in') track('card', tripId, show(next));
           return { ok: true };
         }
-        // ixigo can't say: a login Go saw stands until it can.
-        if (s === 'unknown' && row.state === 'logged_in') return { ok: true };
+        // ixigo can't say (its page never said, or stayed on Cloudflare's check): a login Go saw stands until it can.
+        if ((s === 'unknown' || s === 'challenged') && row.state === 'logged_in') return { ok: true };
         if (row.state === 'logging_in') {
           if (park) await save({ ...row, parked: park });
           const name = await nameOf(tripId, row.personId);

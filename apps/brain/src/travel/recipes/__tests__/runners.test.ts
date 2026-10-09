@@ -4,7 +4,7 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
+  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
   LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -31,6 +31,8 @@ const BUSES = 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-202
 const busPlan: FetchPlan = { capture: [{ match: '/buslist/v3/services$', required: true }] };
 const busCapture = capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', fixture('buses-mumbai-goa.json'));
 const fetched = (captures: unknown[], finalUrl = BUSES) => ({ final_url: finalUrl, elapsed_ms: 2300, woke: false, captures });
+/** The page's own document as every fetch keeps it (CLOUDFLARE): one byte, its status, never waited for. */
+const docOf = (match: string) => ({ match, required: false, max_bytes: 1, max_count: 4 });
 const fails = async (p: Promise<unknown>, code: TravelError['code'], words: RegExp): Promise<void> => {
   const err = await p.then(() => null, (e: unknown) => e);
   expect(err).toBeInstanceOf(TravelError);
@@ -58,7 +60,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
         body: {
           url: page,
           // Go's own required flag is never sent: Go decides what a timed-out fetch can still answer.
-          capture: [{ match: SEARCH, max_bytes: 2_000_000, min_count: 2, max_count: 2 }],
+          capture: [{ match: SEARCH, max_bytes: 2_000_000, min_count: 2, max_count: 2 }, docOf('/hotels/search/result$')],
           steps: plan.steps,
           timeout_ms: 12_000,
           // Bash's last picture once the hotels have drawn (#4585).
@@ -73,7 +75,9 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(FETCH_TIMEOUT_MS).toBe(20_000);
     const plain = world(() => fetched([busCapture]));
     await createBrowserFetchRunner(plain.deps).read('t1', BUSES, busPlan);
-    expect(plain.calls[0]!.opts['body']).toEqual({ url: BUSES, capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS, frames: { width: FRAME_WIDTH } });
+    expect(plain.calls[0]!.opts['body']).toEqual({
+      url: BUSES, capture: [{ match: '/buslist/v3/services$' }, docOf('/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O$')], timeout_ms: FETCH_TIMEOUT_MS, frames: { width: FRAME_WIDTH },
+    });
   });
 
   it("a plan with a grace tells Bash which captures it needs, on a page read and in a hand-off: the rest get the grace", async () => {
@@ -88,7 +92,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const runner = createBrowserFetchRunner(w.deps);
     await runner.read('t1', 'https://www.ixigo.com/', plan);
     await runner.handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login' });
-    const sent = [{ match: WALLET, required: false, max_bytes: 1 }, { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 }];
+    const sent = [{ match: WALLET, required: false, max_bytes: 1 }, { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 }, docOf('/$')];
     expect(w.calls.map((c) => c.opts['body'])).toEqual([
       { url: 'https://www.ixigo.com/', capture: sent, steps: plan.steps, timeout_ms: 12_000, grace_ms: 3_000, frames: { width: FRAME_WIDTH } },
       { url: 'https://www.ixigo.com/', capture: sent, steps: plan.steps, timeout_ms: 12_000, grace_ms: 3_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login' },
@@ -135,6 +139,145 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     });
     await createBrowserFetchRunner(other.deps).read('t1', page, plan).catch(() => undefined);
     expect(other.calls).toHaveLength(1);
+  });
+
+  // CLOUDFLARE: ixigo's "Just a moment..." check (about 1 in 7 front loads on a staging box, 8 Oct) answers the page's
+  // own document 403 and the page makes none of its calls, so the fetch runs out of time with only that.
+  const BUS_DOC = '/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O$';
+  const docAt = (status: number, at_ms: number) => ({ ...capture(BUS_DOC, BUSES, '<', status), at_ms });
+  const onCheck = (captures: unknown[]) => new V1Error(504, 'timeout', 'The page did not send every capture within 20000 ms (it stopped at captures).', null, {
+    code: 'timeout', partial: { captures, frames: [{ label: 'navigated', at_ms: 900, page_url: BUSES, jpeg_base64: '/9j/CHECK' }] },
+  });
+
+  it("opens a page on Cloudflare's check again after a wait, and reads it once it is the page: the check is never read, nor pictured", async () => {
+    const w = world((_, n) => {
+      if (n === 1) throw onCheck([docAt(403, 300)]);
+      // The second load met the check too, and it passed in the page: the page loaded again, and answered.
+      return fetched([docAt(403, 300), docAt(200, 2_100), busCapture]);
+    });
+    const seen: RecipeProgress[] = [];
+    const read = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan, { onProgress: (e) => seen.push(e) });
+    expect(read.captures).toEqual([busCapture]);
+    expect(w.calls).toHaveLength(2);
+    expect(w.elapsed()).toBe(CHALLENGE_WAIT_MS);
+    expect(seen).toEqual([]);
+    expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ again: 1 }), "travel: ixigo's page was Cloudflare's check; opening it again");
+  });
+
+  it(`a page still on the check after ${CHALLENGE_TRIES} more loads fails saying so, and is never the cold computer's retry`, async () => {
+    const w = world(() => {
+      throw onCheck([docAt(403, 300)]);
+    });
+    const err = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan).then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(ChallengedError);
+    expect(err).toMatchObject({ code: 'unreachable', message: CHALLENGED });
+    expect(w.calls).toHaveLength(1 + CHALLENGE_TRIES);
+    // An answer that ends on the check is one too, and a page whose time is up for its caller is not loaded again.
+    const ended = new AbortController();
+    const fast = world(() => {
+      ended.abort();
+      return fetched([docAt(503, 300)]);
+    });
+    await expect(createBrowserFetchRunner(fast.deps).read('t1', BUSES, busPlan, { signal: ended.signal })).rejects.toBeInstanceOf(ChallengedError);
+    expect(fast.calls).toHaveLength(1);
+    // A cold computer's page that caught only its document, 200, is the cold retry as before: no check, no wait.
+    const cold = world((_, n) => {
+      if (n === 1) throw onCheck([docAt(200, 300)]);
+      return fetched([busCapture]);
+    });
+    expect((await createBrowserFetchRunner(cold.deps).read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+    expect(cold.elapsed()).toBe(0);
+  });
+
+  it("never hands a page on the check to the person: a hand-off loads it again, and says challenged when it stays", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const homeDoc = (status: number) => ({ ...capture('/$', HOME, '<', status), at_ms: 300 });
+    const WALLET = capture('/api/v3/ixigo-money/wallet', `${HOME}api/v3/ixigo-money/wallet`, '{', 200);
+    const plan: FetchPlan = { capture: [{ match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 }], timeoutMs: 12_000, graceMs: 3_000 };
+    const passes = world((_, n) => {
+      if (n < 3) throw new V1Error(504, 'timeout', 'The page did not send every capture.', null, { partial: { captures: [homeDoc(403)] } });
+      return fetched([homeDoc(200), WALLET], HOME);
+    });
+    expect(await createBrowserFetchRunner(passes.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [WALLET] });
+    expect(passes.calls).toHaveLength(3);
+    expect(passes.elapsed()).toBe(2 * CHALLENGE_WAIT_MS);
+    const stays = world(() => fetched([homeDoc(403)], HOME));
+    expect(await createBrowserFetchRunner(stays.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [], challenged: true });
+    expect(stays.calls).toHaveLength(1 + CHALLENGE_TRIES);
+  });
+
+  it("reads only the page's own address as its document: an API path ending in / that answers 403 on the home page is not the check", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const at = (url: string, status: number, at_ms: number) => ({ ...capture('/$', url, '<', status), at_ms });
+    // The home page's "/$" also takes a same-site API whose path ends in "/": a logged-out page's 403 there is not the check.
+    const stray = [at(HOME, 200, 300), at('https://www.ixigo.com/api/x/', 403, 2_400)];
+    expect(challenged(stray, HOME)).toBe(false);
+    // The page's own address, its query aside (the check's own load again adds one), is: on the check, and passed.
+    expect(challenged([at(HOME, 403, 300), at('https://www.ixigo.com/api/x/', 200, 900)], HOME)).toBe(true);
+    expect(challenged([at(HOME, 403, 300), at('https://www.ixigo.com/?__cf_chl_tk=t', 200, 5_400)], HOME)).toBe(false);
+    // Another site's "/" is never the page's.
+    expect(challenged([at(HOME, 200, 300), at('https://images.ixigo.com/', 403, 900)], HOME)).toBe(false);
+    // A hand-off on that page is handed over at once, never loaded again.
+    const w = world(() => fetched(stray, HOME));
+    const plan: FetchPlan = { capture: [], timeoutMs: 12_000 };
+    expect(await createBrowserFetchRunner(w.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [] });
+    expect(w.calls).toHaveLength(1);
+  });
+
+  it("gives the loads again their own time: a hand-off stuck on the check for its whole 12 s still loads once more, and is done within 25 s", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const homeDoc = (status: number, at_ms: number) => ({ ...capture('/$', HOME, '<', status), at_ms });
+    const WALLET = capture('/api/v3/ixigo-money/wallet', `${HOME}api/v3/ixigo-money/wallet`, '{', 200);
+    // The login's own plan: Bash waits for ixigo's nearby call, which a page on the check never makes.
+    const plan: FetchPlan = {
+      capture: [{ match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 }], steps: [{ op: 'wait_for', match: '/api/flights/locations/nearby' }], timeoutMs: 12_000, graceMs: 3_000,
+    };
+    const timeOf = (c: Call): number => (c.opts['body'] as { timeout_ms: number }).timeout_ms;
+    /** A load that stays on the check runs to its time on Bash's clock, then times out with only its document. */
+    const stuck = async (w: ReturnType<typeof world>, c: Call): Promise<never> => {
+      await w.deps.sleep(timeOf(c));
+      throw new V1Error(504, 'timeout', 'The page did not send every capture (it stopped at 1 wait_for).', null, { partial: { captures: [homeDoc(403, 300)] } });
+    };
+    const loads = (w: ReturnType<typeof world>) => w.calls.map((c) => timeOf(c));
+    const hand = (w: ReturnType<typeof world>) => createBrowserFetchRunner(w.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' });
+
+    // On the check for all of its 12 s; loaded again 1 s later with the 11 s left, where the check passes in the page
+    // (about 5 s) and the page answers.
+    const passes: ReturnType<typeof world> = world(async (c, n) => {
+      if (n === 1) return stuck(passes, c);
+      await passes.deps.sleep(9_500);
+      return fetched([homeDoc(403, 300), homeDoc(200, 5_500), WALLET], HOME);
+    });
+    expect(await hand(passes)).toEqual({ captures: [WALLET] });
+    expect(loads(passes)).toEqual([12_000, 11_000]);
+    expect(passes.elapsed()).toBe(12_000 + CHALLENGE_WAIT_MS + 9_500);
+    expect(challengeTime(12_000)).toBeLessThanOrEqual(25_000);
+
+    // On it both times: the card comes at 24 s, with no third load that would not fit (less than CHALLENGE_LOAD_MS left).
+    const stays: ReturnType<typeof world> = world(async (c) => stuck(stays, c));
+    expect(await hand(stays)).toEqual({ captures: [], challenged: true });
+    expect(loads(stays)).toEqual([12_000, 11_000]);
+    expect(stays.elapsed()).toBe(challengeTime(12_000));
+
+    // The common good case: a check that passes in the page, its nearby call late, the load running out its time with the
+    // page in: never loaded again.
+    const late: ReturnType<typeof world> = world(async (c) => {
+      await late.deps.sleep(timeOf(c));
+      throw new V1Error(504, 'timeout', 'The page did not send every capture.', null, { partial: { captures: [homeDoc(403, 300), homeDoc(200, 6_000), WALLET] } });
+    });
+    expect(await hand(late)).toEqual({ captures: [WALLET] });
+    expect(late.calls).toHaveLength(1);
+
+    // A read the same way: a recipe page's 20 s, then once more with the 19 s left, within the 40 s.
+    const read: ReturnType<typeof world> = world(async (c, n) => {
+      if (n === 1) {
+        await read.deps.sleep(timeOf(c));
+        throw onCheck([docAt(403, 300)]);
+      }
+      return fetched([busCapture]);
+    });
+    expect((await createBrowserFetchRunner(read.deps).read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+    expect(loads(read)).toEqual([FETCH_TIMEOUT_MS, challengeTime(FETCH_TIMEOUT_MS) - FETCH_TIMEOUT_MS - CHALLENGE_WAIT_MS]);
   });
 
   it('answers a timed-out fetch with what it did get when every required call is in it, and shows the pictures it took', async () => {
@@ -192,7 +335,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(w.calls).toEqual([{
       method: 'POST', path: '/v1/users/u-t1/browser/fetch',
       opts: { body: {
-        url: 'https://www.ixigo.com/', capture: [],
+        url: 'https://www.ixigo.com/', capture: [docOf('/$')],
         steps: [
           { op: 'page_fetch', url: '/api/v2/oauth/userinfo', method: 'POST', capture_as: 'check', max_bytes: 1 },
           { op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' },

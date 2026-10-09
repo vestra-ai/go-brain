@@ -72,9 +72,10 @@ export interface RecipeRunner {
    * A hand-off the person finishes themselves (the ixigo login), with no model: the page opens in FRONT of their window on
    * the trip's computer (Bash's front), its steps run, and its tab stays there for them, kept under `tab`. A page that ran
    * out of time stays open for them all the same, with what it caught. `check`: one call from inside the page before the
-   * steps (one byte, its status, as capture `check`). Throws a TravelError when Bash would not open it.
+   * steps (one byte, its status, as capture `check`). Throws a TravelError when Bash would not open it. challenged: the
+   * page stayed on Cloudflare's check (CLOUDFLARE), and the caller closes it: it is never the person's.
    */
-  handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[] }>;
+  handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[]; challenged?: true }>;
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
   /**
@@ -248,6 +249,64 @@ export const LOOK_SETTLE_MS = 700;
 /** The one call a look makes inside the tab: Bash takes no fetch without a call or a capture, and ixigo's icon is the smallest. */
 const LOOK_STEP = { op: 'page_fetch', url: '/favicon.ico', method: 'GET', capture_as: 'look', max_bytes: 1_000 };
 
+/**
+ * CLOUDFLARE. ixigo sits behind Cloudflare, which now and then answers a page load with its own check ("Just a moment...")
+ * instead of the page: about 1 in 7 front loads on a staging box (8 Oct), where every box leaves through one address.
+ * The page's own document then answers 403 (or 503) at the address asked, and the page makes none of its calls. So every
+ * page Go opens keeps its document's answer too (pageDoc: one byte, its status, never waited for). A check that passes
+ * in the page (a real browser's usually does, in about 5 s) loads it again (200), so the last answer says, and that load
+ * keeps its whole time. A page still on the check when its time ran out is opened again CHALLENGE_WAIT_MS later, at most
+ * CHALLENGE_TRIES more times, while the loads fit in twice the page's own time (challengeTime: a hand-off's 12 s makes
+ * 24 s before Watch or its card) with at least CHALLENGE_LOAD_MS for the next. It is never read as anything, and never
+ * handed to a person.
+ */
+export const CHALLENGE_WAIT_MS = 1_000;
+export const CHALLENGE_TRIES = 2;
+/** The least a load again may have: a check that passes takes about 5 s, then the page's own calls about 3 s. */
+export const CHALLENGE_LOAD_MS = 8_000;
+/** How long all of a page's loads may take, from the first one's start: twice the page's own time. */
+export const challengeTime = (pageMs: number): number => 2 * pageMs;
+/**
+ * The time the next load gets, Go waits CHALLENGE_WAIT_MS first: the page's own, or what is left of challengeTime; null
+ * when that is less than CHALLENGE_LOAD_MS, or the tries are used up.
+ */
+function nextLoadMs(pageMs: number, started: number, now: number, loadsAgain: number): number | null {
+  const left = started + challengeTime(pageMs) - now - CHALLENGE_WAIT_MS;
+  return loadsAgain >= CHALLENGE_TRIES || left < CHALLENGE_LOAD_MS ? null : Math.min(pageMs, left);
+}
+export const CHALLENGED = "ixigo asked the trip's computer to wait a moment. Try again in a minute.";
+/** A read whose page stayed on the check: unreachable, saying so; a caller that must tell it from other failures asks for this class. */
+export class ChallengedError extends TravelError {
+  constructor() {
+    super('unreachable', CHALLENGED);
+  }
+}
+/**
+ * The capture of a page's own document: its path, to the end. Bash matches it on any allowed site's response whose path
+ * ends so (the home page's "/$" takes an API path ending in "/" too), so up to 4 are kept, and challenged reads only the
+ * page's own.
+ */
+export const pageDoc = (url: string): string => `${new URL(url).pathname}$`;
+const docCapture = (doc: string) => ({ match: doc, required: false, max_bytes: 1, max_count: 4 });
+/**
+ * Whether the page ended on Cloudflare's check: the last answer at the page's own address (its origin and path exactly,
+ * the query aside: the check's own load again adds one) was 403 or 503. Another response its match took is never it.
+ */
+export function challenged(captures: Capture[], pageUrl: string): boolean {
+  const page = new URL(pageUrl);
+  const own = (c: Capture): boolean => {
+    if (c.match !== pageDoc(pageUrl)) return false;
+    try {
+      const at = new URL(c.url);
+      return at.origin === page.origin && at.pathname === page.pathname;
+    } catch {
+      return false;
+    }
+  };
+  const last = captures.filter(own).sort((a, b) => a.at_ms - b.at_ms).at(-1)?.status;
+  return last === 403 || last === 503;
+}
+
 interface FetchAnswer {
   final_url: string;
   elapsed_ms: number;
@@ -263,10 +322,10 @@ const isFrame = (f: unknown): f is LiveFrame =>
   typeof f === 'object' && f !== null && typeof (f as LiveFrame).jpeg_base64 === 'string' && typeof (f as LiveFrame).page_url === 'string';
 
 /** The pictures a timed-out fetch did take, which Bash sends with its partial captures. */
-/** A timed-out fetch that caught nothing at all. */
-function caughtNothing(err: V1Error): boolean {
+/** A timed-out fetch that caught nothing at all but its page's own document. */
+function caughtNothing(err: V1Error, doc: string): boolean {
   const captures = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
-  return !Array.isArray(captures) || captures.length === 0;
+  return !Array.isArray(captures) || captures.every((c) => (c as Capture | null)?.match === doc);
 }
 
 function partialFrames(err: V1Error): LiveFrame[] {
@@ -276,6 +335,11 @@ function partialFrames(err: V1Error): LiveFrame[] {
 
 const isCapture = (c: unknown): c is Capture =>
   typeof c === 'object' && c !== null && typeof (c as Capture).url === 'string' && typeof (c as Capture).body === 'string' && typeof (c as Capture).status === 'number';
+/** What a timed-out fetch did catch. */
+const partialCaptures = (err: V1Error): Capture[] => {
+  const captures = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
+  return Array.isArray(captures) ? captures.filter(isCapture) : [];
+};
 
 /** A failed fetch as Go says it; on a timeout, the captures it did get when every required one is among them. */
 function fetchFailed(err: V1Error, what: { id: string; capture: CaptureSpec[] }, tripId: string, log: RunnerDeps['log']): Capture[] {
@@ -344,17 +408,21 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     o: ReadOptions,
   ): Promise<{ captures: Capture[]; finalUrl: string }> {
     const steps = plan.steps && d.now().getTime() < noLookUntil ? withoutLook(plan.steps) : plan.steps;
+    const doc = pageDoc(url);
     let body = {
       url,
       // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer. A plan
       // with a grace says which are required, so Bash answers once they are in and the rest have had the grace.
-      capture: plan.capture.map((c) => ({
-        match: c.match,
-        ...(plan.graceMs ? { required: c.required } : {}),
-        ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
-        ...(c.min_count ? { min_count: c.min_count } : {}),
-        ...(c.max_count ? { max_count: c.max_count } : {}),
-      })),
+      capture: [
+        ...plan.capture.map((c) => ({
+          match: c.match,
+          ...(plan.graceMs ? { required: c.required } : {}),
+          ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
+          ...(c.min_count ? { min_count: c.min_count } : {}),
+          ...(c.max_count ? { max_count: c.max_count } : {}),
+        })),
+        docCapture(doc),
+      ],
       ...(steps ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
       ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
@@ -367,20 +435,43 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     };
     let userId = d.computer.userIdFor(tripId);
     let coldAgain = false;
+    const pageMs = body.timeout_ms;
+    const started = d.now().getTime();
+    let checks = 0;
+    /**
+     * CLOUDFLARE: the page opened again after a wait, with the time left for it, while it fits and the caller still waits;
+     * else a read that fails, saying so.
+     */
+    const againAfterCheck = async (): Promise<void> => {
+      const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
+      if (next === null || o.signal?.aborted) {
+        d.log.warn({ tripId, page: what.id, loads: checks + 1 }, "travel: ixigo's page stayed on Cloudflare's check");
+        throw new ChallengedError();
+      }
+      checks += 1;
+      d.log.warn({ tripId, page: what.id, again: checks, ms: next }, "travel: ixigo's page was Cloudflare's check; opening it again");
+      await sleep(CHALLENGE_WAIT_MS);
+      body = { ...body, timeout_ms: next };
+    };
     for (let tries = 0; ; tries++) {
       const startedAt = d.now().getTime();
       try {
         const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
-        if (answer.captures.length > 0) warm.add(userId);
+        const calls = answer.captures.map((c) => ({ url: c.url, status: c.status, at_ms: c.at_ms }));
+        // CLOUDFLARE: its pictures never go to the card, and the page is opened again.
+        if (challenged(answer.captures, url)) {
+          o.onTrace?.({ started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null, calls, failed: { status: 0, why: 'challenge' } });
+          await againAfterCheck();
+          continue;
+        }
+        const captures = answer.captures.filter((c) => c.match !== doc);
+        if (captures.length > 0) warm.add(userId);
         // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
         if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
-        o.onTrace?.({
-          started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null,
-          calls: answer.captures.map((c) => ({ url: c.url, status: c.status, at_ms: c.at_ms })),
-        });
+        o.onTrace?.({ started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null, calls });
         const finalUrl = typeof answer.final_url === 'string' ? answer.final_url : url;
         if (o.keepOpen && o.look && o.onProgress) look(tripId, finalUrl, startedAt, o.onProgress, o.tag);
-        return { captures: answer.captures, finalUrl };
+        return { captures, finalUrl };
       } catch (err) {
         if (!(err instanceof V1Error)) throw err;
         // Once only: a trip whose user /v1 does not have yet, or a person who just used the browser.
@@ -400,8 +491,14 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           d.log.warn({ tripId, page: what.id }, "travel: this Bash takes no within_ms on a click yet; its optional clicks look once");
           continue;
         }
+        // CLOUDFLARE: a page still on the check when its time ran out, opened again; never its pictures.
+        if (err.status === 504 && challenged(partialCaptures(err), url)) {
+          o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
+          await againAfterCheck();
+          continue;
+        }
         // A cold computer's page that caught nothing (COLD_COMPUTER): once more, now that it has been to ixigo.
-        if (err.status === 504 && !coldAgain && !warm.has(userId) && caughtNothing(err) && !o.signal?.aborted) {
+        if (err.status === 504 && !coldAgain && !warm.has(userId) && caughtNothing(err, doc) && !o.signal?.aborted) {
           coldAgain = true;
           o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
           d.log.warn({ tripId, page: what.id }, 'travel: a cold computer caught nothing; asking once more');
@@ -413,7 +510,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           if (frames.length > 0) o.onProgress?.({ type: 'frames', frames });
         }
         o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
-        return { captures: fetchFailed(err, what, tripId, d.log), finalUrl: url };
+        return { captures: fetchFailed(err, what, tripId, d.log).filter((c) => c.match !== doc), finalUrl: url };
       }
     }
   }
@@ -507,13 +604,19 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     warm.add(userId);
   }
 
-  async function handOff(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[] }> {
+  async function handOff(
+    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall },
+  ): Promise<{ captures: Capture[]; challenged?: true }> {
     // The check first, from inside the page as soon as it is there (one byte, its status), then the plan's own steps.
     const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
     const steps = [...check, ...(plan.steps ?? [])];
-    const body = {
+    const doc = pageDoc(url);
+    let body = {
       url,
-      capture: plan.capture.map((c) => ({ match: c.match, ...(plan.graceMs ? { required: c.required } : {}), ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
+      capture: [
+        ...plan.capture.map((c) => ({ match: c.match, ...(plan.graceMs ? { required: c.required } : {}), ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
+        docCapture(doc),
+      ],
       ...(steps.length ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
       ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
@@ -521,16 +624,29 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       keep_open_ms: o.keepOpenMs,
       tab: o.tab,
     };
-    try {
-      const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, { body });
-      return { captures: Array.isArray(answer.captures) ? answer.captures : [] };
-    } catch (err) {
-      // Bash keeps a timed-out tab: the page is in front for the person, with what it caught.
-      if (err instanceof V1Error && err.status === 504) {
-        const partial = err.detail?.['partial'] as Partial<FetchAnswer> | undefined;
-        return { captures: Array.isArray(partial?.captures) ? partial.captures.filter(isCapture) : [] };
+    const pageMs = body.timeout_ms;
+    const started = d.now().getTime();
+    for (let checks = 0; ; checks++) {
+      let captures: Capture[];
+      try {
+        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, { body });
+        captures = Array.isArray(answer.captures) ? answer.captures : [];
+      } catch (err) {
+        // Bash keeps a timed-out tab: the page is in front for the person, with what it caught.
+        if (!(err instanceof V1Error) || err.status !== 504) throw pageCallFailed(err);
+        captures = partialCaptures(err);
       }
-      throw pageCallFailed(err);
+      if (!challenged(captures, url)) return { captures: captures.filter((c) => c.match !== doc) };
+      // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
+      // it; still on it when no load fits, the caller closes it and says so.
+      const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
+      if (next === null) {
+        d.log.warn({ tripId, tab: o.tab, loads: checks + 1 }, "travel: a hand-off's page stayed on Cloudflare's check");
+        return { captures: [], challenged: true };
+      }
+      d.log.warn({ tripId, tab: o.tab, again: checks + 1, ms: next }, "travel: a hand-off's page was Cloudflare's check; opening it again");
+      await sleep(CHALLENGE_WAIT_MS);
+      body = { ...body, timeout_ms: next };
     }
   }
 
