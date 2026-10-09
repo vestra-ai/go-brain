@@ -529,8 +529,9 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
   const q = answeredAs(ask, found);
   const left = found.unapplied?.length ? leftOff(found.unapplied) : null;
   const pick = leftToPick(ask, found);
-  // The site's own list, when the ask named filters the site couldn't apply for want of it, and this read brought it.
-  const list = found.site && !found.site.listed && found.site.unknown.length > 0 && found.site.offers ? found.site.offers : null;
+  // The site's own list, when the ask named filters the site couldn't apply for want of it, and this read brought it;
+  // never after a filtered page that didn't load (unapplied): searching with it again would wait on it again.
+  const list = found.site && !found.site.listed && found.site.unknown.length > 0 && found.site.offers && !found.unapplied?.length ? found.site.offers : null;
   const scope = searchScope(kind, q);
   const terms = asked(kind, q);
   const search = searchName(kind, q);

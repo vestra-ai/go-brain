@@ -187,8 +187,10 @@ export interface RunFor {
 
 export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
 
-/** The most of the site's list of what it offers that a read keeps (ixigo's stays metadata: about 30 KB). */
+/** The most of the site's list of what it offers that a read keeps (ixigo's stays metadata: about 23 KB). */
 export const OFFERS_MAX_BYTES = 300_000;
+/** How long past the rest a read waits for the site's list while none is kept for the place: Bash's most grace. */
+export const OFFERS_GRACE_MS = 3_000;
 
 /** A check nobody is waiting on (a watch) waits behind every fetch a person is. */
 export const BACKGROUND_PRIORITY = 9;
@@ -516,18 +518,29 @@ export function createEngine(d: EngineDeps) {
           ...('name' in s && s.name ? { name: await fill(s.name, inputs, { url: false, bindings }) } : {}),
         }) as Step),
       );
-    // The site's list of what it offers, from the call the page makes for it: kept when it came, never waited for.
-    const offered: CaptureSpec[] = recipe.offers ? [{ match: recipe.offers.from, required: false, besides: true, max_bytes: OFFERS_MAX_BYTES }] : [];
     for (const f of recipe.fetch ?? []) {
       if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
       return {
-        capture: [...(await captures(f.capture ?? recipe.capture)), ...offered],
+        capture: await captures(f.capture ?? recipe.capture),
         ...(f.steps ? { steps: await filledSteps(f.steps) } : {}),
         ...(f.timeout_ms ? { timeoutMs: f.timeout_ms } : {}),
         ...(f.settle_ms ? { settleMs: f.settle_ms } : {}),
       };
     }
-    return { capture: [...(await captures(recipe.capture)), ...offered] };
+    return { capture: await captures(recipe.capture) };
+  }
+
+  /**
+   * A read's plan with the call that lists what the site offers kept too, when Go keeps lists. While no list is kept for
+   * the place it is waited for, a grace at most after the rest (a fresh computer's first North Goa read, 10 Oct: the
+   * page made it after Bash had answered, so the list never came); once one is kept, it is only taken when it comes.
+   */
+  function withOffers(plan: FetchPlan, recipe: RecipeFile, site: Site): FetchPlan {
+    if (!recipe.offers || !d.offers || site.key === null) return plan;
+    const call: CaptureSpec = { match: recipe.offers.from, required: false, max_bytes: OFFERS_MAX_BYTES };
+    return site.listed
+      ? { ...plan, capture: [...plan.capture, { ...call, besides: true }] }
+      : { ...plan, capture: [...plan.capture, call], graceMs: plan.graceMs ?? OFFERS_GRACE_MS };
   }
 
   /** Runs a recipe for the given inputs (place inputs as the person's words), on the run strip from its first speed. */
@@ -629,7 +642,7 @@ export function createEngine(d: EngineDeps) {
         strip.line = line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed: 'page', fell_from: fell.id, ...stepOf(o) });
       }
     }
-    const plan = await fetchPlanOf(recipe, inputs, bindings);
+    const plan = withOffers(await fetchPlanOf(recipe, inputs, bindings), recipe, site);
     const started = d.now().getTime();
     const pageRun = strip.line;
     o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });

@@ -46,7 +46,7 @@ import type { Engine, EngineAnswer, RunFor, ShareSearch } from '../book/engine.j
 import type { LiveSearch } from '../live-search.js';
 import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
-import { offersText } from './offers.js';
+import { offersText, sameName } from './offers.js';
 import { RECIPE_TTL_MS, type RecipeOption } from './recipe.js';
 import { NothingCaughtError } from './runners.js';
 
@@ -110,6 +110,18 @@ export interface SiteAsk {
   sort?: string;
 }
 const NO_SITE: SiteAsk = { filters: [] };
+/**
+ * What the site did with this ask's own filters and sort: a search joined, or read for an ask that named none, applied
+ * none of them (its names had no list to go by), so every name it didn't apply is this ask's to pick (unknown).
+ */
+function forAsk(found: TravelSearch, site: SiteAsk): TravelSearch {
+  const asked = [...site.filters, ...(site.sort ? [site.sort] : [])];
+  if (!found.site || asked.length === 0) return found;
+  const applied = [...found.site.filtered, ...(found.site.sorted ? [found.site.sorted] : [])];
+  const unknown = asked.filter((n) => !applied.some((a) => sameName(a, n)));
+  return { ...found, site: { ...found.site, unknown } };
+}
+
 /** A run's site filters and sort, as the engine takes them. */
 const siteRun = (site: SiteAsk): Pick<RunFor, 'siteFilters' | 'siteSort'> => ({
   ...(site.filters.length > 0 ? { siteFilters: site.filters } : {}),
@@ -355,7 +367,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       // answers from its rows, and the search itself runs in the background (unless it is running already). Only an ask
       // that can be narrowed waits here, so every other search reads what is kept and keeps its own with no wait between.
       const byPage = narrowedBy(id, conditions);
-      if (byPage && !(fresh(hit) && hit.done)) {
+      // Never for an ask that names the site's own filters or sort: ixigo's own read applies them.
+      if (byPage && site.filters.length === 0 && !site.sort && !(fresh(hit) && hit.done)) {
         const narrowed = await fromKept(id, given, byPage, tripId);
         // The wait let another search of this key start, or finish: what is kept is read again.
         hit = kept.get(key);
@@ -368,7 +381,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         // The composer joining a run its early start began takes the card: if that run fails, nothing retries it.
         const running = cards.get(cardKey);
         if (running?.running && owner?.kind === 'turn') running.owner = owner;
-        return hit.search;
+        return hit.search.then((found) => forAsk(found, site));
       }
       const runId = `${key}|${nowMs}`;
       // A failed early start's card, still open in its turn, carries on with this search, and so does a card waiting on a
@@ -446,7 +459,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         },
       );
       keep(key, { at: nowMs, ttl, search, ran, page });
-      return search;
+      return search.then((found) => forAsk(found, site));
     },
     async shareStep(id, given, o, run) {
       const kind = searchKindOf(id);
