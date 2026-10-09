@@ -65,13 +65,14 @@ export const LOGIN_CALLS: FetchPlan = {
 };
 
 /**
- * ixigo's answer from its page's calls: a login's own call that worked says in, userinfo refused says out, anything else
- * unknown. With the call that said it, and its status, for the log: never what the call answered.
+ * ixigo's answer from its page's calls: a login's own call that worked says in; one of them refused (401 or 403) says out,
+ * the token the page holds dead (staging, 9 Oct 17:43: the morning box's wallet and with-identity both 401, hours after
+ * they were 200); anything else unknown. With the call that said it, and its status, for the log: never what it answered.
  */
 export function loginFrom(captures: Capture[]): { login: 'in' | 'out' | 'unknown'; call: string | null; status: number | null } {
   const worked = captures.find((c) => (c.match === WALLET || c.match === IDENTITY) && c.status === 200);
   if (worked) return { login: 'in', call: worked.match, status: worked.status };
-  const refused = captures.find((c) => c.match === USERINFO && (c.status === 401 || c.status === 403));
+  const refused = captures.find((c) => (c.match === WALLET || c.match === IDENTITY || c.match === USERINFO) && (c.status === 401 || c.status === 403));
   if (refused) return { login: 'out', call: refused.match, status: refused.status };
   return { login: 'unknown', call: null, status: null };
 }
@@ -170,7 +171,8 @@ export interface IxigoLogin {
   ensure(tripId: string, what: string, o?: { park?: Parked }): Promise<{ ok: true } | { ok: false; note: string }>;
   /**
    * ixigo's own answer for the trip's browser: in, out, or unknown (the page never said); challenged when its page stayed
-   * on Cloudflare's check, which says nothing about the login either way.
+   * on Cloudflare's check, which says nothing about the login either way. Out on a login Go held lets it go (logged out),
+   * so the next booking asks again.
    */
   status(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'>;
   onEvent(ev: C.Event): Promise<void>;
@@ -350,7 +352,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     return login;
   }
 
-  async function status(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
+  /** ixigo's answer for the trip's browser, read from its home page; nothing changes on the row. */
+  async function look(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
     const runner = d.runner();
     if (!runner) return 'unknown';
     let captures: Capture[];
@@ -364,6 +367,24 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       return check ? 'challenged' : 'unknown';
     }
     return said(tripId, captures, 'home page');
+  }
+
+  /**
+   * ixigo's answer, and a login Go held that ixigo no longer has (a token it refuses) let go: the row says logged out and
+   * its card says so, so the next booking that needs the login asks again instead of standing on a stale one.
+   */
+  async function status(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
+    const s = await look(tripId);
+    if (s === 'out') {
+      const row = await get(tripId);
+      if (row?.state === 'logged_in') {
+        const out: LoginRow = { ...row, state: 'logged_out', checkedAt: d.now() };
+        await save(out);
+        d.log.info({ tripId }, "travel: ixigo no longer has the trip computer's login; the next booking asks again");
+        await show(out);
+      }
+    }
+    return s;
   }
 
   /**
@@ -397,8 +418,10 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     const runner = d.runner();
     if (runner) {
       try {
+        // The home page's nearby call is the one capture Bash waits for: it refuses a fetch with none required and no
+        // page_fetch step (400 invalid_request), so a plan of clicks alone never ran.
         await runner.read(row.tripId, `${IXIGO}/`, {
-          capture: [],
+          capture: [{ match: NEARBY, required: true, max_bytes: 1 }],
           steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }],
           timeoutMs: 15_000,
         });
@@ -408,7 +431,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       }
     }
     // Still in, or a page on Cloudflare's check, which can't say: the log out is not taken as done.
-    const s = await status(row.tripId);
+    const s = await look(row.tripId);
     if (s === 'in' || s === 'challenged') {
       await show(row, 'logout_failed');
       return;

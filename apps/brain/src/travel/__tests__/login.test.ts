@@ -43,7 +43,7 @@ let trips = 0;
  *  on Cloudflare's check through the runner's tries. statuses: how it loads after, in turn: for "I'm logged in" (its page
  *  loaded again) and for a check in the background. */
 function world(o: {
-  live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
+  live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged' | 'dead'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
 } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
@@ -165,7 +165,9 @@ function world(o: {
  * answer 200 and it never calls userinfo (08:40); a login it holds that is gone (401, 403), its userinfo call is refused.
  */
 const call = (match: string, status: number): Capture => capture(match, `${IXIGO}${match}`, '{', status);
-function load(s: number): Capture[] {
+function load(s: number | 'dead'): Capture[] {
+  // dead: a token ixigo refuses (the morning box, 9 Oct 17:43): its wallet and with-identity calls both 401.
+  if (s === 'dead') return [call(WALLET, 401), call(IDENTITY, 401)];
   return s === 200 ? [call(WALLET, 200), call(IDENTITY, 200)] : [call(USERINFO, s)];
 }
 
@@ -557,8 +559,11 @@ describe("ixigo's answer, from the calls its page makes as it loads (staging, 9 
     expect(loginFrom([call(USERINFO, 401)])).toEqual({ login: 'out', call: USERINFO, status: 401 });
     // A logged-out load (08:41, the new trip): none of them, only its nearby call, which Go does not keep.
     expect(loginFrom([])).toEqual({ login: 'unknown', call: null, status: null });
-    // Anything else is not ixigo saying either: a wallet call that failed, or a userinfo call that worked.
-    expect(loginFrom([call(WALLET, 401)]).login).toBe('unknown');
+    // A token ixigo refuses (the morning box at 17:43, hours after its wallet said 200): its own calls 401 or 403, out.
+    expect(loginFrom([call(WALLET, 401), call('/api/flights/locations/nearby', 200), call(IDENTITY, 401)])).toEqual({ login: 'out', call: WALLET, status: 401 });
+    expect(loginFrom([call(IDENTITY, 403)])).toEqual({ login: 'out', call: IDENTITY, status: 403 });
+    // Anything else is not ixigo saying either: a wallet call that failed some other way, or a userinfo call that worked.
+    expect(loginFrom([call(WALLET, 500)]).login).toBe('unknown');
     expect(loginFrom([call(USERINFO, 200)]).login).toBe('unknown');
     // A login's own call that worked says in, whatever userinfo said.
     expect(loginFrom([call(USERINFO, 403), call(WALLET, 200)]).login).toBe('in');
@@ -692,6 +697,23 @@ describe('a recipe that needs the login', () => {
     expect(w.link.of('post_message')).toHaveLength(3);
   });
 
+  it("a login whose token ixigo refuses is let go: the card says so, and the next booking asks again", async () => {
+    const w = world({ statuses: [200, 'dead'] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    // Its wallet and with-identity calls now 401: out, and the login Go held is gone.
+    expect(await w.login.status(w.tripId)).toBe('out');
+    expect(await w.state()).toBe('logged_out');
+    expect(w.last()).toMatchObject({ title: 'Logged out of ixigo', body: "Go's computer is no longer logged in to ixigo as Rahul." });
+    // A booking asks again at once, with a fresh card: no stale login stands in for it.
+    const posts = w.link.of('post_message').length;
+    expect((await w.login.ensure(w.tripId, 'Price lock')).ok).toBe(false);
+    expect(w.link.of('post_message')).toHaveLength(posts + 1);
+    expect(await w.state()).toBe('asked');
+  });
+
   it("a login stands for six hours; then ixigo is asked again, and one it no longer has is asked for again", async () => {
     const w = world({ statuses: [200, 200, 'timeout', 401] });
     await w.setup();
@@ -750,7 +772,8 @@ describe('logging out', () => {
     expect(await w.tap('ixigo_logout', 'p_rahul')).toEqual({ result: 'done', toast: 'Logging out of ixigo' });
     expect(w.reads.at(-2)).toEqual({
       url: 'https://www.ixigo.com/',
-      plan: { capture: [], steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }], timeoutMs: 15_000 },
+      // Bash takes no fetch without a required capture or a page_fetch step: the home page's nearby call is it.
+      plan: { capture: [{ match: '/api/flights/locations/nearby', required: true, max_bytes: 1 }], steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }], timeoutMs: 15_000 },
     });
     expect(w.reads.at(-1)).toEqual({ url: 'https://www.ixigo.com/', plan: LOGIN_CALLS });
     expect(await w.state()).toBe('logged_out');
