@@ -32,6 +32,7 @@ import { createScreenFeed } from './screen-feed.js';
 import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
+import { budgetNow, budgetTool, createTripBudgets } from './trip-budget.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
@@ -197,6 +198,10 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   const today = tripToday(brain.pool, brain.now);
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today })) brain.tools.register(t);
+  // The budget the group decided: kept with set_budget, and in "Right now" for every turn, as strong context, never a filter.
+  const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
+  brain.tools.register(budgetTool({ budgets }));
+  brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
   const recipesTool = ixigoTool({ book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
   if (recipesTool) brain.tools.register(recipesTool);

@@ -57,10 +57,57 @@ describe("Go's rules", () => {
 
   it("never says a person's budget to the room or ties one to a name, next to the private-budget rule", () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
-    const privateRule = "- Budgets are private. You only know the lowest band anyone picked, never who picked what. Never guess anyone's budget.";
+    const privateRule =
+      "- Budgets people set for themselves are private. You only know the lowest band anyone picked, never who picked what. Never guess a person's own budget. " +
+      "Suggesting what the group could plan for, when someone asks, is not guessing anyone's.";
     const noNames =
       "- Never repeat a person's budget to the room or tie a budget to a name, even one they said in the chat. When a budget matters, use the group's lowest band without names, or ask people to answer the budget question in the App.";
     expect(section).toContain(`${privateRule}\n${noNames}`);
+  });
+
+  // Keshav's Go Live room, 9 Oct: "what should we keep the budget for the Goa trip?" got "I can't say": no check, no number,
+  // and "never guess anyone's budget", read as covering the group's plan.
+  it('a budget to plan for gets an answer like a well-travelled friend: ranges, grounded in stays when it can, and an offer to put it in the plan', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
+    const rule = section.split('\n').find((l) => l.startsWith('- When someone asks what budget to plan'))!;
+    expect(rule).toBeDefined();
+    // Never a refusal; per person and for the group, as typical ranges.
+    expect(rule).toContain('never with "I can\'t say"');
+    expect(rule).toContain('per person and for the whole group');
+    expect(rule).toContain('ranges you call typical');
+    // Grounded: with a place and dates, a stays search first and its prices with their age.
+    expect(rule).toContain('with a place and dates, call search_stays first and use its prices, saying how old they are');
+    expect(rule).toContain("getting there from each person's city, food a day and things to do");
+    expect(rule).toContain('Say your assumptions');
+    // Private bands stay private, and a yes goes into the plan through the record tool.
+    expect(rule).toContain('never whose band it is');
+    expect(rule).toContain('keep it with set_budget (the top of your range) and save it with record as one agreed line');
+    // The rules it sits beside no longer forbid it: live prices only, and a person's own budget only.
+    expect(section).toContain('No check, no live number. A budget to plan for is not a live price');
+    expect(section).toContain("Never guess a person's own budget. Suggesting what the group could plan for, when someone asks, is not guessing anyone's.");
+    expect(section).not.toContain('No check, no number.');
+  });
+
+  // Keshav, 9 Oct: "go should be super flexible, if users decide the budget it should stick to that, if they rather not and
+  // genuinely have no idea it should gather that from context and intent".
+  it('a budget the group decided sticks until they change it; with none, Go reads a working band from the group and never asks', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
+    const decided = section.split('\n').find((l) => l.startsWith('- A budget the group decided sticks'))!;
+    expect(decided).toContain('keep it with set_budget');
+    expect(decided).toContain('set the new one');
+    expect(decided).toContain('when they drop it, clear it');
+    // Keshav, 9 Oct: "no enforcement, rather it should be naturally decided": context, never a filter.
+    expect(decided).toContain('strong context, never a hard filter');
+    expect(decided).toContain('pick mostly within it');
+    expect(decided).toContain('a standout a little over, shown and said plainly');
+    expect(decided).toContain('when nothing good fits, say so and show the closest');
+    expect(decided).toContain("One person's number alone is their wish");
+    const none = section.split('\n').find((l) => l.startsWith('- With no budget decided'))!;
+    expect(none).toContain('never ask the group for one');
+    expect(none).toContain('the vibe');
+    expect(none).toContain('what they liked or picked');
+    expect(none).toContain('move it as they react');
+    expect(none).toContain('never set_budget on a guess');
   });
 
   it("the one line that goes with a card is the card tool's line", () => {
