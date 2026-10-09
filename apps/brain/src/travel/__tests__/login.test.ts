@@ -15,6 +15,7 @@ import {
 } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
+import { ChallengedError } from '../recipes/runners.js';
 import { IXIGO, type Capture, type FetchPlan } from '../recipes/recipe.js';
 
 // Keshav, 8 Oct: "when the trip creates, that's when we [make] the ixigo connection, and all the warming should happen;
@@ -38,9 +39,12 @@ let trips = 0;
  * was made on 5 Oct, as the sim's Goa trip always does: nothing here goes by that. Waits for Go's hello move the clock.
  */
 /** opened: how ixigo's page loads in the hand-off (load: 200 logged in, 403 its login gone, by default), 'timeout' for
- *  a page that caught nothing in its time, 'refused' for a hand-off Bash would not open. statuses: how it loads after,
- *  in turn: for "I'm logged in" (its page loaded again) and for a check in the background. */
-function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout'>; opened?: number | 'timeout' | 'refused'; taps?: 'fail' } = {}) {
+ *  a page that caught nothing in its time, 'refused' for a hand-off Bash would not open, 'challenged' for one that stayed
+ *  on Cloudflare's check through the runner's tries. statuses: how it loads after, in turn: for "I'm logged in" (its page
+ *  loaded again) and for a check in the background. */
+function world(o: {
+  live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
+} = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
   const clock = { now: NOW };
@@ -62,6 +66,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
       if (plan !== LOGIN_CALLS) return { captures: [], finalUrl: url };
       const s = statuses.shift() ?? 'timeout';
       if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+      if (s === 'challenged') throw new ChallengedError();
       return { captures: load(s), finalUrl: url };
     },
     handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string }) => {
@@ -70,6 +75,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
       // "I'm logged in" loads the log in page again: ixigo's answers to it come in turn, as for any later check.
       const s = checking ? (statuses.shift() ?? 'timeout') : (o.opened ?? 403);
       if (s === 'refused') throw new TravelError('refused', 'Bash would not open the page.');
+      if (s === 'challenged') return { captures: [], challenged: true as const };
       return { captures: s === 'timeout' ? [] : load(s) };
     },
     release: async (_trip: string, tab: string) => {
@@ -569,6 +575,52 @@ describe("ixigo's answer, from the calls its page makes as it loads (staging, 9 
     });
     // The hand-off's first look, on a page with its login gone: out, by userinfo's 403.
     expect(w.said[0]).toMatchObject({ login: 'out', call: USERINFO, status: 403, where: 'hand-off' });
+  });
+});
+
+describe("ixigo's page on Cloudflare's check (CLOUDFLARE, recipes/runners.ts)", () => {
+  const CHECK_BODY = "ixigo asked Go's computer to wait a moment before its log in. Tap Log in to ixigo to try again in a minute.";
+  const everWatch = (w: ReturnType<typeof world>): boolean =>
+    w.link.of('replace_card').some((p) => ((p.card as { actions?: Array<{ action_id: string }> }).actions ?? []).some((a) => a.action_id === 'ixigo_watch'));
+
+  it('a hand-off still on the check is never handed over: no Watch, no taps, the tab closed, and the card asks again, saying so', async () => {
+    const w = world({ opened: 'challenged' });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(everWatch(w)).toBe(false);
+    expect(w.tabStepCalls).toEqual([]);
+    expect(w.releases).toEqual([LOGIN_TAB]);
+    expect(w.timers.every((t) => t.cancelled)).toBe(true);
+    expect(await w.state()).toBe('asked');
+    expect(w.last()).toMatchObject({ title: 'Link ixigo for this trip', body: CHECK_BODY, actions: [{ action_id: 'ixigo_login' }, { action_id: 'ixigo_not_now' }] });
+  });
+
+  it("I'm logged in on the check reads neither in nor out: nothing tapped on it, the tab closed, and Log in asked again", async () => {
+    const w = world({ statuses: ['challenged'] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(w.tabStepCalls).toHaveLength(1);
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    expect(w.tabStepCalls).toHaveLength(1);
+    expect(w.releases).toEqual([LOGIN_TAB]);
+    expect(await w.state()).toBe('asked');
+    expect(w.last()).toMatchObject({ body: CHECK_BODY });
+    expect(w.said.at(-1)).toMatchObject({ login: 'unknown', why: 'challenge', where: 'log in page' });
+  });
+
+  it('a login Go saw stands through a check in the background, and a log out is never taken as done on one', async () => {
+    const w = world({ statuses: [200, 'challenged', 'challenged', 'challenged'] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    w.clock.now = new Date(NOW.getTime() + RECHECK_MS + 60_000);
+    expect(await w.login.status(w.tripId)).toBe('challenged');
+    expect(await w.login.ensure(w.tripId, 'Price lock')).toEqual({ ok: true });
+    expect(await w.state()).toBe('logged_in');
+    expect(w.link.of('post_message')).toHaveLength(1);
+    await w.tap('ixigo_logout', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    expect(w.last()).toMatchObject({ title: 'ixigo: logged in as Rahul', body: "Go couldn't log out just now. Tap Log out to try again, or log out on Go's screen." });
   });
 });
 
