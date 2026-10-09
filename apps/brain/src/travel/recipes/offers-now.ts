@@ -23,8 +23,9 @@ export function offersNow(d: { offers: Offers }): NowProvider {
         if (!kind) return [];
         return [
           `ixigo's own filters and sorts for ${l.about}, as its page lists them: ${clip(offersText(l), MAX_CHARS)}. ` +
-            `On search_${kind}, put the ones the ask means in site_filters (and site_sort), by these names (a bare number with its heading: "Star Rating 5"), so ixigo filters itself; ` +
-            'anything else the group asked for goes in wants, and you pick it from the results.',
+            `On search_${kind}, put the ones the ask means in site_filters (and site_sort), by these names, so ixigo filters itself: ` +
+            "the nearest name for what they said, as a person would pick it on ixigo's page, keeping their own word in wants too when ixigo's is only near it; " +
+            'a bare number with its heading ("Star Rating 5"). Anything else the group asked for goes in wants, and you pick it from the results.',
         ];
       });
       return lines.length > 0 ? lines.join('\n') : null;
