@@ -24,6 +24,8 @@ export interface SearchWake {
   error: string | null;
   /** Words before the card's line: a search ixigo left filters off says so first (answer.ts leftOff). */
   lead?: string;
+  /** Something is left for the model to pick from the results (tools.ts leftToPick): the wake is the model's. */
+  pick?: boolean;
 }
 
 /** How a finished search reads in "why Go woke". Null for desk items it doesn't own. */
@@ -55,7 +57,7 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images'>):
     const item = wake[0];
     if (wake.length !== 1 || item?.kind !== 'search' || !KINDS.includes(item.ref)) return false;
     const w = item.payload as Partial<SearchWake> | null;
-    if (w?.source !== 'travel_search' || w.error || !w.resultsId || !w.count) return false;
+    if (w?.source !== 'travel_search' || w.error || !w.resultsId || !w.count || w.pick === true) return false;
     const set = await d.results.get(tripId, w.resultsId);
     if (!set || set.options.length === 0) return false;
     const kind = item.ref as TravelKind;

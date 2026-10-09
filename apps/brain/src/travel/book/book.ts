@@ -26,6 +26,7 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
   for (const [name, input] of Object.entries(r.inputs)) if (input.value) out.push([`inputs.${name}.value`, input.value]);
   for (const [name, c] of Object.entries(r.conditions ?? {})) out.push([`conditions.${name}`, c]);
   for (const [name, l] of Object.entries(r.let ?? {})) out.push([`let.${name}`, l]);
+  if (r.offers) out.push(['offers.list', r.offers.list]);
   for (const [i, f] of (r.fetch ?? []).entries()) out.push([`fetch.${i}.when`, f.when]);
   if (r.read) {
     out.push(['read.rows.list', r.read.rows.list]);
@@ -69,6 +70,7 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
       if ('name' in s && s.name) templates.push([`fetch.${i}.steps.${j}.name`, s.name]);
     }
   }
+  if (r.offers) templates.push(['offers.for', r.offers.for], ['offers.about', r.offers.about]);
   for (const [end, steps] of Object.entries(r.box?.type ?? {})) {
     for (const [i, s] of steps.entries()) if ('text' in s && s.text) templates.push([`box.type.${end}.${i}`, s.text]);
   }

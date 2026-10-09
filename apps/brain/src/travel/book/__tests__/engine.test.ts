@@ -8,6 +8,7 @@ import { loadLearnedPlaces } from '../../recipes/places-store.js';
 import type { Capture, FetchPlan } from '../../recipes/recipe.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book.js';
+import { createOffers } from '../../recipes/offers.js';
 import { createEngine, isPayments } from '../engine.js';
 
 let db: { pool: Pool; drop: () => Promise<void> };
@@ -68,9 +69,45 @@ describe('a filtered stays read whose caller falls back (backend.ts)', () => {
     await engine.answer('hotels.search', goa, { tripId: 't_pool', conditions: ['pool'], fallsBack: true });
     await engine.answer('hotels.search', goa, { tripId: 't_pool' });
     expect(asked).toEqual([
-      { url: expect.stringContaining('&filters=FL_HF_29'), fallsBack: true, about: { recipe: 'hotels.search', conditions: ['pool'], wide: true } },
-      { url: expect.not.stringContaining('filters='), about: { recipe: 'hotels.search', conditions: [], wide: true } },
+      { url: expect.stringContaining('&filters=FL_HF_29'), fallsBack: true, about: { recipe: 'hotels.search', conditions: ['pool'], site: [], wide: true } },
+      { url: expect.not.stringContaining('filters='), about: { recipe: 'hotels.search', conditions: [], site: [], wide: true } },
     ]);
+  });
+});
+
+describe("the site's own list of what it offers (hotels.search: ixigo's filters and sorts)", () => {
+  const META = 'https://www.ixigo.com/accommodation-search/api/v2/accommodations/search/metadata?locationId=32';
+  it('keeps the list each read brings; an ask by its names then filters and sorts on ixigo itself, and a name not on it is left for the model', async () => {
+    const offers = createOffers({ now: () => new Date('2026-10-07T12:00:00Z') });
+    const reads: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        reads.push(url);
+        return {
+          captures: [
+            capture(SEARCH, 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', fixture('stays-goa-page1.json')),
+            capture('/accommodation-search/api/v2/accommodations/search/metadata$', META, sample('hotels.search_filters.json')),
+          ],
+          finalUrl: url,
+        };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, pool: db.pool, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z'), offers });
+    const goa = { place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' };
+    // No list kept yet: the page as a person opens it, which brings ixigo's list; the name waits for it.
+    const first = await engine.answer('hotels.search', goa, { tripId: 't_site', siteFilters: ['Pet-friendly property'] });
+    expect(reads[0]).not.toContain('filters=');
+    expect(first.as === 'options' && first.site).toMatchObject({ filtered: [], sorted: null, unknown: ['Pet-friendly property'], listed: false });
+    expect(offers.get('hotels.search', '32')?.offers).toContainEqual({ kind: 'filter', group: 'Facilities', name: 'Pet-friendly property', code: 'FL_HF_21' });
+    expect(offers.forTrip('t_site').map((l) => l.about)).toEqual(['stays in Goa']);
+    // Asks nobody wrote a rule for: pets, cheapest first, and a beachfront ixigo has no filter for.
+    const second = await engine.answer('hotels.search', goa, { tripId: 't_site', siteFilters: ['pet friendly property', 'beachfront'], siteSort: 'Price (Low to High)' });
+    expect(reads[1]).toContain('&filters=FL_HF_21');
+    expect(reads[1]).toContain('&sort=SC_P_LH');
+    expect(second.as === 'options' && second.site).toMatchObject({ filtered: ['Pet-friendly property'], sorted: 'Price (Low to High)', unknown: ['beachfront'], listed: true });
+    // The page's own areas and the site's filters go together, as ixigo's page takes them.
+    await engine.answer('hotels.search', { ...goa, place: 'Vagator' }, { tripId: 't_site', siteFilters: ['Star Rating 5'] });
+    expect(reads[2]).toContain(`&filters=${encodeURIComponent('PA_C_78528,SR_5')}`);
   });
 });
 

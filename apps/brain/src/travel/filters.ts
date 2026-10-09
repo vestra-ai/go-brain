@@ -70,6 +70,9 @@ export function asked(kind: TravelKind, q: TravelQuery): string[] {
     non_stop: 'non-stop',
   };
   for (const need of q.mustHave ?? []) out.push(words[need]);
+  // The site's own filters and sort, by their names on its list: ixigo applied them, not Go.
+  for (const f of q.siteFilters ?? []) out.push(`${f} (ixigo's filter)`);
+  if (q.siteSort) out.push(`sorted by ${q.siteSort} on ixigo`);
   return out;
 }
 
@@ -114,8 +117,10 @@ export function closest(kind: TravelKind, q: TravelQuery, options: TravelOption[
   return best;
 }
 
-export function applyConstraints(kind: TravelKind, q: TravelQuery, options: TravelOption[]): TravelOption[] {
-  const kept = options.filter((o) => keeps(kind, q, o));
+/** keepOrder: the site sorted them as the ask asked (its own sort): Go keeps that order. */
+export function applyConstraints(kind: TravelKind, q: TravelQuery, options: TravelOption[], o: { keepOrder?: boolean } = {}): TravelOption[] {
+  const kept = options.filter((option) => keeps(kind, q, option));
+  if (o.keepOrder) return kept;
   if (kind === 'stays') {
     const best = kept.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || a.priceMinor - b.priceMinor);
     return REGION.test((q.area ?? '').trim().toLowerCase()) ? spreadAcrossAreas(best) : best;

@@ -5,7 +5,7 @@ import type { CaptureSpec, FetchPlan } from '../../recipes/recipe.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import type { TravelOption } from '../../travel.js';
 import { BOOK_DIR, loadBook } from '../book.js';
-import { createEngine } from '../engine.js';
+import { createEngine, OFFERS_MAX_BYTES } from '../engine.js';
 
 // The four searches as recipe files, on saved ixigo pages: the address each opens, the fetch, and the options it reads.
 // Trains: the page speed reads the results page's www.ixigo.com call; the fast speed, ixigo's train service on confirmtkt.
@@ -90,8 +90,10 @@ describe('hotels.search', () => {
     // ixigo's popup shows 1 s after the page mounts: closed first, looked for up to 3 s, then again once the results are in.
     const POPUP = { op: 'click', name: 'Close modal', optional: true, within_ms: 3_000 };
     // Bash's whole 20 s: ixigo sent page 1 of all of Goa with a pool at 10.2 s (staging, 8 Oct), so 12 s failed it.
+    // ixigo's own list of what it filters on comes with every read, never waited for (offers).
+    const OFFERED = { match: '/accommodation-search/api/v2/accommodations/search/metadata$', required: false, besides: true, max_bytes: OFFERS_MAX_BYTES };
     const two = {
-      capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }],
+      capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }, OFFERED],
       steps: [POPUP, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 6 }, { op: 'click', name: 'Close modal', optional: true }],
       timeoutMs: 20_000,
       settleMs: 550,
@@ -99,7 +101,7 @@ describe('hotels.search', () => {
     for (const area of ['Goa', 'North Goa', 'South Goa']) expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual(two);
     for (const area of ['Vagator', 'Anjuna', 'Candolim']) {
       expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual({
-        capture: [{ match: SEARCH, required: true }],
+        capture: [{ match: SEARCH, required: true }, OFFERED],
         steps: [POPUP, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
         settleMs: 550,
       });
