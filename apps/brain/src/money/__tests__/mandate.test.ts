@@ -111,6 +111,24 @@ describe('set_mandate', () => {
     expect(await setMandate(k.deps, ctxWith(), { ...mandate, choiceIndex: 1 })).toMatchObject({ refused: 'The group picked Villa Sol. I can only set that.' });
   });
 
+  // 8 Oct run sheet: a card with one stay went to a yes/no vote Go opened itself, and "I'll book it" had nothing to book.
+  // A one-option card's vote is that option or "Keep looking": a choice vote on the offer, so its winner can be booked.
+  it('sets the mandate for a one-option vote the option won, and nothing when "Keep looking" won', async () => {
+    const oneOption = (won: 0 | 1) => {
+      const t = goaTrip('closed');
+      const villa = t.decisions[0]!.options[0]!;
+      t.decisions[0] = { ...t.decisions[0]!, question: 'Go with Villa Sol?', options: [villa, { label: 'Keep looking' }], tally: won === 0 ? [5, 0] : [1, 4], result_index: won };
+      return t;
+    };
+    k.server.trips.set('t_goa', oneOption(0));
+    const r = await setMandate(k.deps, ctxWith(), mandate);
+    if (!('cardId' in r)) throw new Error(r.refused);
+    expect(k.server.writesOf('set_mandate')[0]?.params).toMatchObject({ decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul' });
+    k.server.trips.set('t_goa', oneOption(1));
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toMatchObject({ refused: 'The group picked Keep looking. I can only set that.' });
+    expect(await setMandate(k.deps, ctxWith(), { ...mandate, choiceIndex: 1 })).toMatchObject({ unbookable: true });
+  });
+
   it('refuses a payer who is not in the trip, and an open vote', async () => {
     expect(await setMandate(k.deps, ctxWith(), { ...mandate, payerPersonId: 'p_stranger' })).toMatchObject({ refused: "That person isn't in this trip." });
     k.server.trips.set('t_goa', goaTrip('open'));
