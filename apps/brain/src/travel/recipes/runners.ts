@@ -100,7 +100,11 @@ export interface RecipeRunner {
 
 export interface RunnerDeps {
   v1: Pick<V1Client, 'call'>;
-  computer: { userIdFor(tripId: string): string; ensureUser(tripId: string): Promise<string> };
+  /**
+   * The trip's browser (tasks/browsers.ts): the /v1 user whose Chrome every fetch here runs in, the organizer's own,
+   * shared by all of their trips; again makes it on /v1 once more, when /v1 said it does not know it.
+   */
+  browser: { userFor(tripId: string): Promise<string>; again(tripId: string): Promise<string> };
   now: () => Date;
   sleep?: (ms: number) => Promise<void>;
   log: { warn(obj: object, msg: string): void };
@@ -415,7 +419,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
 
   /** A fetch on the trip's computer, once one of its slots is free; the slot frees when the fetch ends, however it ends. */
   async function inSlot<T>(tripId: string, o: Pick<ReadOptions, 'signal' | 'priority'>, run: () => Promise<T>): Promise<T> {
-    const free = await slot(d.computer.userIdFor(tripId), o.signal, o.priority);
+    const free = await slot(await d.browser.userFor(tripId), o.signal, o.priority);
     try {
       return await run();
     } finally {
@@ -462,7 +466,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       // Under Bash's default name, the one the page calls take: one warm tab a trip, never one more toward Bash's cap.
       ...(o.keepOpen ? { keep_open_ms: WARM_TAB_MS } : {}),
     };
-    let userId = d.computer.userIdFor(tripId);
+    let userId = await d.browser.userFor(tripId);
     let askedAgain = false;
     const pageMs = body.timeout_ms;
     const started = d.now().getTime();
@@ -505,7 +509,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         if (!(err instanceof V1Error)) throw err;
         // Once only: a trip whose user /v1 does not have yet, or a person who just used the browser.
         if (tries === 0 && err.status === 404 && err.code === 'user_not_found') {
-          userId = await d.computer.ensureUser(tripId);
+          userId = await d.browser.again(tripId);
           continue;
         }
         if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
@@ -557,7 +561,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     void sleep(LOOK_AFTER_MS)
       .then(() => inSlot(tripId, {}, async () => {
         const lookStarted = d.now().getTime();
-        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, { body });
+        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
         const frames = (Array.isArray(answer.frames) ? answer.frames.filter(isFrame) : [])
           .filter((f) => f.page_url === pageUrl)
           .map((f) => ({ ...f, at_ms: lookStarted - fetchStarted + f.at_ms }));
@@ -579,8 +583,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'fast', max_bytes: 1_000_000 };
     // Never asked again on browser_busy: a page call is for speed, so a busy one fails at once and the run falls to the
     // page, which waits its turn.
+    const userId = await d.browser.userFor(tripId);
     const ask = (open: boolean) =>
-      d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+      d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, {
         body: { ...(open ? { url: `${IXIGO}/` } : {}), steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS, ...(o.tag ? { tag: o.tag } : {}) },
         ...(o.signal ? { signal: o.signal } : {}),
       });
@@ -614,13 +619,13 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       ...(got ? {} : { failed: { status: 0, why: 'no answer to the page call' } }),
     });
     if (!got || got.status < 200 || got.status >= 300 || got.truncated) throw new TravelError('unreachable', `ixigo's page call answered ${got ? got.status : 'nothing'}.`);
-    warm.add(d.computer.userIdFor(tripId));
+    warm.add(userId);
     return got;
   }
 
   /** COLD_COMPUTER's prime: ixigo's home on the trip's computer, its popup closed, and one call from inside the page. */
   async function prime(tripId: string): Promise<void> {
-    const userId = d.computer.userIdFor(tripId);
+    const userId = await d.browser.userFor(tripId);
     const body = {
       url: `${IXIGO}/`,
       steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'prime', max_bytes: 1_000 }],
@@ -659,7 +664,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     for (let checks = 0; ; checks++) {
       let captures: Capture[];
       try {
-        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, { body });
+        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
         captures = Array.isArray(answer.captures) ? answer.captures : [];
       } catch (err) {
         // Bash keeps a timed-out tab: the page is in front for the person, with what it caught.
@@ -683,7 +688,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   /** A fetch with no url on the hand-off's tab and no keep: one call from inside its page, then the tab closes. */
   async function release(tripId: string, tab: string): Promise<void> {
     try {
-      await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+      await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, {
         body: { tab, steps: [{ op: 'page_fetch', url: '/', method: 'GET', capture_as: 'close', max_bytes: 1 }], timeout_ms: FAST_TIMEOUT_MS },
       });
     } catch (err) {
@@ -697,7 +702,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     // A fetch is its steps and a call: one byte of the home page closes it.
     const done = { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'steps_done', max_bytes: 1 };
     try {
-      await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+      await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, {
         body: { tab, steps: [...steps, done], front: true, keep_open_ms: o.keepOpenMs, timeout_ms: o.timeoutMs },
       });
     } catch (err) {
@@ -709,7 +714,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   async function tabCall(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null> {
     const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'tab_call', max_bytes: 1 };
     try {
-      const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${d.computer.userIdFor(tripId)}/browser/fetch`, {
+      const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, {
         body: { tab, steps: [step], keep_open_ms: keepOpenMs, timeout_ms: FAST_TIMEOUT_MS },
       });
       return (Array.isArray(answer.captures) ? answer.captures : []).find((c) => c.match === 'tab_call') ?? null;
