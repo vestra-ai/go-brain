@@ -11,11 +11,19 @@ Both teams talk to the same Go:
 - **The fake Go**, a small stand-in for Go that speaks the real socket with fixed answers: run it on your machine as in `apps/fake-go/README.md`, "Running it on your machine". You make your own secret there with `openssl rand -hex 32`, and it listens on `http://localhost:8080`.
 - **The guide**, for people: https://vestrago.vercel.app/docs. For a coding agent: https://vestrago.vercel.app/llms-full.txt, the whole guide as one file. Both were built from `docs/guide/` on 5 Oct and got page 11, Contract 1.1, and the 1.1.0 contract files on 9 Oct. Where they differ from `docs/guide/` in this repo, the repo wins. The exact shapes are in `packages/contract` (zod) and its generated `openapi/go.json`, `asyncapi/socket.json` and `socket/methods.json`.
 
-What is live and what is simulated on staging Go today:
+What is live and what is simulated on staging Go today. These are the switches staging Go is running with, read from its own `GET /admin/health.json` on 9 Oct at 13:52Z. A value set on the admin page is stored in Go's `switches` table and wins over the environment (`apps/brain/src/admin/switches.ts`), so the admin page, not Railway's variables, says what is live.
 
-- **Live:** Go itself, with a real model, on the real socket and contract 1.1.0; votes, records, expenses, people and "Forget me".
-- **Simulated by default:** ixigo search. Staging Go's `TRAVEL_MODE` starts as `fake`, so searches use Go's test inventory (`travel/layer.ts`; section 6 has the switch, and a value set on the admin page wins). Phone calls are off (`CALLS_MODE=off`).
-- **Never real:** paying on ixigo. Go never opens ixigo's payment page, and Bash blocks it (section 5).
+| Switch | Staging Go now | What it means |
+|---|---|---|
+| `TRAVEL_MODE` | `ixigo_web` | **Live:** searches read the real ixigo.com in the trip computer's own browser: stays, trains, buses, the ways card, watches and the ixigo login. |
+| `TRAVEL_RUNNER` | `browser_fetch` | **Live:** every ixigo.com read goes through Bash's browser fetch on the trip's computer. |
+| `PAY_RAIL` | `fake` | **Simulated:** a payment is charged on no rail, so no money moves. Go also never opens ixigo's payment page, and Bash blocks it (section 5). |
+| `CALLS_MODE` | `off` | **Off:** Go phones no one. |
+| `REFLEX_LIVE` | `q1,q2,q4,q5,q6,q7,q8,q10` | **Live:** these of Jev's quick-read questions act; the others only watch. |
+| `BROWSER_FETCH_SLOTS` | `4` | Up to 4 ixigo pages open at once on a trip's computer. |
+| `RECIPE_WATCHES` | `on` | **Live:** the group can ask Go to watch ixigo (section 4). |
+
+Go itself is live too: a real model, on the real socket, at contract 1.1.0, with votes, records, expenses, people and "Forget me".
 
 ### The Server team (Nishanth's)
 
