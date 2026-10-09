@@ -9,7 +9,7 @@ import type { Capture, FetchPlan } from '../../recipes/recipe.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book.js';
 import { createOffers } from '../../recipes/offers.js';
-import { createEngine, isPayments } from '../engine.js';
+import { createEngine, isPayments, OFFERS_GRACE_MS, OFFERS_MAX_BYTES } from '../engine.js';
 
 let db: { pool: Pool; drop: () => Promise<void> };
 beforeAll(async () => { db = await withSchema(); });
@@ -80,9 +80,11 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
   it('keeps the list each read brings; an ask by its names then filters and sorts on ixigo itself, and a name not on it is left for the model', async () => {
     const offers = createOffers({ now: () => new Date('2026-10-07T12:00:00Z') });
     const reads: string[] = [];
+    const plans: FetchPlan[] = [];
     const runner = {
-      read: async (_trip: string, url: string) => {
+      read: async (_trip: string, url: string, plan: FetchPlan) => {
         reads.push(url);
+        plans.push(plan);
         return {
           captures: [
             capture(SEARCH, 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', fixture('stays-goa-page1.json')),
@@ -100,11 +102,19 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
     expect(first.as === 'options' && first.site).toMatchObject({ filtered: [], sorted: null, unknown: ['Pet-friendly property'], listed: false });
     expect(offers.get('hotels.search', '32')?.offers).toContainEqual({ kind: 'filter', group: 'Facilities', name: 'Pet-friendly property', code: 'FL_HF_21' });
     expect(offers.forTrip('t_site').map((l) => l.about)).toEqual(['stays in Goa']);
+    // While no list is kept, the read waits for ixigo's list call, a grace at most after the rest (a fresh computer's
+    // first read, 10 Oct: the page made it after Bash had answered).
+    const LIST = '/accommodation-search/api/v2/accommodations/search/metadata$';
+    expect(plans[0]!.capture.at(-1)).toEqual({ match: LIST, required: false, max_bytes: OFFERS_MAX_BYTES });
+    expect(plans[0]!.graceMs).toBe(OFFERS_GRACE_MS);
     // Asks nobody wrote a rule for: pets, cheapest first, and a beachfront ixigo has no filter for.
     const second = await engine.answer('hotels.search', goa, { tripId: 't_site', siteFilters: ['pet friendly property', 'beachfront'], siteSort: 'Price (Low to High)' });
     expect(reads[1]).toContain('&filters=FL_HF_21');
     expect(reads[1]).toContain('&sort=SC_P_LH');
     expect(second.as === 'options' && second.site).toMatchObject({ filtered: ['Pet-friendly property'], sorted: 'Price (Low to High)', unknown: ['beachfront'], listed: true });
+    // Once one is kept, the list is only taken when it comes.
+    expect(plans[1]!.capture.at(-1)).toEqual({ match: LIST, required: false, max_bytes: OFFERS_MAX_BYTES, besides: true });
+    expect(plans[1]).not.toHaveProperty('graceMs');
     // The page's own areas and the site's filters go together, as ixigo's page takes them.
     await engine.answer('hotels.search', { ...goa, place: 'Vagator' }, { tripId: 't_site', siteFilters: ['Star Rating 5'] });
     expect(reads[2]).toContain(`&filters=${encodeURIComponent('PA_C_78528,SR_5')}`);

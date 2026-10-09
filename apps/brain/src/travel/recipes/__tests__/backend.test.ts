@@ -405,7 +405,7 @@ const POOL = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHav
  * without, on the words. hangs: a filtered page catches nothing, as the runner says it (NothingCaughtError for a caller
  * that falls back, else a timeout).
  */
-function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?: Record<string, unknown>; requestOf?: Engine['requestOf']; hangs?: boolean } = {}) {
+function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?: Record<string, unknown>; requestOf?: Engine['requestOf']; hangs?: boolean; said?: boolean } = {}) {
   const head = o.head ?? HEAD;
   const runs: Array<{ conditions: string[]; background: boolean }> = [];
   const asks: RunFor[] = [];
@@ -423,7 +423,11 @@ function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?
     }
     return conditions.length > 0
       ? { as: 'options', options: o.filtered ?? IXIGO_POOL_LIST, page: 'https://www.ixigo.com/hotels/search/result?filters=FL_HF_29', checkedAt: '2026-10-07T12:20:00.000Z', ms: 9_000 }
-      : { as: 'options', options: wide, page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-07T12:00:00.000Z', ms: 9_000 };
+      : {
+          as: 'options', options: wide, page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-07T12:00:00.000Z', ms: 9_000,
+          // said: the engine's word on the site, as a recipe with offers gives it: a plain read applied nothing.
+          ...(o.said ? { site: { filtered: [], sorted: null, unknown: [], listed: false, list: null } } : {}),
+        };
   };
   const cards: string[] = [];
   const b = createIxigoWebBackend({
@@ -653,6 +657,17 @@ describe("a stays ask by ixigo's own filters, by their names on its list (site_f
     // The same ask again joins it; the plain page is another search.
     await s.b.search('stays', PETS, { tripId: 't_goa', turnId: 'turn_2' });
     expect(s.runs).toHaveLength(2);
+  });
+
+  it("never passes off another ask's search as this one's: a search its names couldn't change (no list kept yet) leaves them all to pick", async () => {
+    // The real engine opens the same page when no name is on a kept list: one request, so one search.
+    const s = staysEngine([stay(1, true), stay(2, false)], { requestOf: async () => 'the same page', said: true });
+    const plain = await s.b.search('stays', { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { tripId: 't_goa', turnId: 'turn_0' });
+    expect(plain.site).toMatchObject({ filtered: [], unknown: [] });
+    const found = await s.b.search('stays', PETS, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(s.runs).toHaveLength(1);
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
+    expect(found.site).toMatchObject({ filtered: [], unknown: ['Pet-friendly property', 'beachfront'] });
   });
 
   it('reads the page plain at once when the filtered one catches nothing, the head start first, and says which filters ixigo left off', async () => {

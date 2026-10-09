@@ -73,6 +73,8 @@ export function createOffers(o: { now: () => Date; ttlMs?: number }): Offers {
 }
 
 const plain = (s: string): string => s.toLowerCase().replace(/[^a-z0-9.+₹]+/g, ' ').trim();
+/** Two names for one thing on the site's list, case, spacing and punctuation aside ("Star Rating: 5", "star rating 5"). */
+export const sameName = (a: string, b: string): boolean => plain(a) === plain(b);
 
 /** An offer as the group reads it: its name, or with its heading when the name is a bare number ("Star Rating 5"). */
 export const offerWords = (o: Offer): string => (/^[\d.+]+$/.test(o.name.trim()) ? `${o.group} ${o.name}` : o.name);
