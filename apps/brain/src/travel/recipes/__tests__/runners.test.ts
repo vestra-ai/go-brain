@@ -114,7 +114,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     ];
     expect(w.calls.map((c) => c.opts['body'])).toEqual([
       { url: 'https://www.ixigo.com/', capture: sent, steps: plan.steps, timeout_ms: 12_000, grace_ms: 3_000, frames: { width: FRAME_WIDTH } },
-      { url: 'https://www.ixigo.com/', capture: sent, steps: plan.steps, timeout_ms: 12_000, grace_ms: 3_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login' },
+      { url: 'https://www.ixigo.com/', capture: sent, timeout_ms: 12_000, grace_ms: 3_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login' },
     ]);
   });
 
@@ -212,7 +212,9 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const HOME = 'https://www.ixigo.com/';
     const homeDoc = (status: number) => ({ ...capture('/$', HOME, '<', status), at_ms: 300 });
     const WALLET = capture('/api/v3/ixigo-money/wallet', `${HOME}api/v3/ixigo-money/wallet`, '{', 200);
-    const plan: FetchPlan = { capture: [{ match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 }], timeoutMs: 12_000, graceMs: 3_000 };
+    const plan: FetchPlan = {
+      capture: [{ match: '/api/flights/locations/nearby', required: true, max_bytes: 1 }, { match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 }], timeoutMs: 12_000, graceMs: 3_000,
+    };
     const passes = world((_, n) => {
       if (n < 3) throw new V1Error(504, 'timeout', 'The page did not send every capture.', null, { partial: { captures: [homeDoc(403)] } });
       return fetched([homeDoc(200), WALLET], HOME);
@@ -238,7 +240,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(challenged([at(HOME, 200, 300), at('https://images.ixigo.com/', 403, 900)], HOME)).toBe(false);
     // A hand-off on that page is handed over at once, never loaded again.
     const w = world(() => fetched(stray, HOME));
-    const plan: FetchPlan = { capture: [], timeoutMs: 12_000 };
+    const plan: FetchPlan = { capture: [{ match: '/api/flights/locations/nearby', required: true, max_bytes: 1 }], timeoutMs: 12_000 };
     expect(await createBrowserFetchRunner(w.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [] });
     expect(w.calls).toHaveLength(1);
   });
@@ -395,7 +397,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const slow = world(() => {
       throw new V1Error(504, 'timeout', 'The page did not send every capture within 12000 ms (it stopped at 1 click).', null, { partial: { captures: [] } });
     });
-    expect(await createBrowserFetchRunner(slow.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [] });
+    expect(await createBrowserFetchRunner(slow.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', check: { url: '/api/v2/oauth/userinfo', method: 'POST' } })).toEqual({ captures: [] });
     // Its taps are a convenience: ixigo's Login not found (the page's time ran out at that step), the page is still the
     // person's, in front, with the check it caught.
     const missed = world(() => {
@@ -413,7 +415,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const old = world(() => {
       throw new V1Error(400, 'invalid_request', 'Unrecognized key: "front"');
     });
-    await expect(createBrowserFetchRunner(old.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).rejects.toBeInstanceOf(TravelError);
+    await expect(createBrowserFetchRunner(old.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', check: { url: '/api/v2/oauth/userinfo', method: 'POST' } })).rejects.toBeInstanceOf(TravelError);
   });
 
   it("names each fetch's tab by its run, so Bash's browser watch labels it: on a page and on a page call", async () => {
