@@ -165,6 +165,22 @@ export function answerLine(kind: TravelKind, q: TravelQuery, shown: ReadonlyArra
   return `${noun} ${titleWords(q.from ?? '')} to ${titleWords(q.to ?? '')}${q.date ? ` on ${dayText(q.date)}` : ''}${terms.length ? `, ${listOf(terms)}` : ''}${from}.`;
 }
 
+/** A filter by its name and by what it filters for: "pool", "a pool". */
+const FILTERS: Record<string, [string, string]> = { pool: ['pool', 'a pool'], breakfast: ['breakfast', 'breakfast'], free_cancellation: ['free cancellation', 'free cancellation'] };
+
+/**
+ * Options read without filters ixigo left off (TravelSearch.unapplied), in plain words: "ixigo's pool filter didn't load
+ * in time, so these aren't filtered for a pool". Before the card's line, and in the search's summary.
+ */
+export function leftOff(unapplied: readonly string[]): string {
+  const of = (c: string): [string, string] => FILTERS[c] ?? [c.replace(/_/g, ' '), c.replace(/_/g, ' ')];
+  const names = unapplied.map((c) => of(c)[0]);
+  return `ixigo's ${listOf(names)} filter${names.length > 1 ? 's' : ''} didn't load in time, so these aren't filtered for ${listOf(unapplied.map((c) => of(c)[1]))}`;
+}
+
+/** A line with words before it ("Already on ixigo: "), its own first letter then lower case. */
+export const ledBy = (lead: string | undefined, line: string): string => (lead ? `${lead}${line.charAt(0).toLowerCase()}${line.slice(1)}` : line);
+
 /**
  * The line for a journey ixigo shows only as a link (flights from the box, for now): where they are, who they're set
  * for, and that Go notes a pick but books nothing. "Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 3 from

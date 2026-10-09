@@ -133,6 +133,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     book,
     engine,
     now: brain.now,
+    log: brain.log,
     live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log }, tripId, o),
   });
   // The trip's likely first stays search, before anyone asks: after the warm at setup, when its dates or destination

@@ -53,6 +53,13 @@ export interface ReadOptions {
   keepOpen?: boolean;
   /** With keepOpen, for a live card: one more picture of the kept tab once ixigo has drawn it (LOOK_AFTER_MS, `drawn`). */
   look?: boolean;
+  /**
+   * The caller reads another way when the page catches nothing (a filtered stays search reads its page again unfiltered,
+   * backend.ts): such a page is never asked twice here, and throws NothingCaughtError.
+   */
+  fallsBack?: boolean;
+  /** What the read is, for the log when its time runs out: its recipe, its conditions, its yes-or-no lets. No words, no dates. */
+  about?: Record<string, string | boolean | string[]>;
 }
 
 export interface RecipeRunner {
@@ -228,9 +235,11 @@ function refusedLook(err: V1Error, steps: Step[] | undefined): boolean {
  * COLD_COMPUTER. A computer's Chrome on its first ixigo visit, with none of ixigo's cookies, can draw a page that never
  * makes its search call (staging, 8 Oct: a new trip's first stays search sat 12 s on skeletons under ixigo's popup, with
  * nothing caught). So a new trip's computer visits ixigo once at setup (prime: the home page, its popup closed if it is
- * there, one call from inside the page), and a page that runs out of time with nothing caught, on a computer no fetch of
- * Go's has read ixigo on yet, is asked once more at once: the second visit is warm. How long the prime may take, a
- * computer just made waking included.
+ * there, one call from inside the page), and a page that runs out of time with nothing caught is asked once more at once:
+ * the second visit is warm. A warm computer's too (staging, 9 Oct: a logged-in computer's stays page caught nothing for
+ * 20 s at 14:54, and the same computer read stays in 8 s at 14:55), unless the read's caller has another way (fallsBack:
+ * a filtered stays search, which reads the page again unfiltered, backend.ts). How long the prime may take, a computer
+ * just made waking included.
  */
 export const PRIME_TIMEOUT_MS = 15_000;
 /**
@@ -279,6 +288,15 @@ export const CHALLENGED = "ixigo asked the trip's computer to wait a moment. Try
 export class ChallengedError extends TravelError {
   constructor() {
     super('unreachable', CHALLENGED);
+  }
+}
+/**
+ * A read whose caller falls back (ReadOptions.fallsBack) and whose page ran out of time having caught nothing but its own
+ * document: ixigo never sent its data. Unreachable as any timeout, so a caller with no other way says it as ever.
+ */
+export class NothingCaughtError extends TravelError {
+  constructor() {
+    super('unreachable', 'ixigo took too long to answer. Try again in a moment.');
   }
 }
 /**
@@ -341,14 +359,25 @@ const partialCaptures = (err: V1Error): Capture[] => {
   return Array.isArray(captures) ? captures.filter(isCapture) : [];
 };
 
-/** A failed fetch as Go says it; on a timeout, the captures it did get when every required one is among them. */
-function fetchFailed(err: V1Error, what: { id: string; capture: CaptureSpec[] }, tripId: string, log: RunnerDeps['log']): Capture[] {
+/**
+ * A failed fetch as Go says it; on a timeout, the captures it did get when every required one is among them. A read that
+ * falls back (fallsBack), whose page caught nothing but its document (doc), throws NothingCaughtError.
+ */
+function fetchFailed(
+  err: V1Error, what: { id: string; capture: CaptureSpec[] }, tripId: string, log: RunnerDeps['log'], o: Pick<ReadOptions, 'fallsBack' | 'about'> & { doc: string },
+): Capture[] {
   if (err.status === 504) {
-    const partial = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
-    const got = Array.isArray(partial) ? partial.filter(isCapture).map((c) => ({ ...c, truncated: c.truncated === true })) : [];
+    const partial = (err.detail?.['partial'] as { captures?: unknown; step?: unknown } | undefined) ?? {};
+    const got = Array.isArray(partial.captures) ? partial.captures.filter(isCapture).map((c) => ({ ...c, truncated: c.truncated === true })) : [];
     if (what.capture.every((c) => !c.required || bodiesFor(got, c.match).length > 0)) return got;
-    // Bash says where the page was when the time ran out ("it stopped at 2 type"): the admin log keeps it.
-    log.warn({ tripId, page: what.id, message: err.message.slice(0, 300) }, 'travel: a page ran out of time');
+    // Bash's words ("stopped at 2 wait_for"), where it stopped, what it caught by then (statuses only) and what the read
+    // was: the admin log keeps them. Bash's words go under bash: Railway's log takes a field named message for the line's
+    // own, and lost the step (9 Oct, 14:55).
+    log.warn({
+      tripId, page: what.id, bash: err.message.slice(0, 300), ...(typeof partial.step === 'string' ? { step: partial.step } : {}),
+      caught: got.map((c) => `${c.match === o.doc ? 'document' : 'call'} ${c.status}`), ...(o.about ? { read: o.about } : {}),
+    }, 'travel: a page ran out of time');
+    if (o.fallsBack && caughtNothing(err, o.doc)) throw new NothingCaughtError();
     throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
   }
   if (err.status === 402) throw new TravelError('refused', OUT_OF_CREDIT);
@@ -394,7 +423,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
-  /** The computers a fetch of Go's has read ixigo on (COLD_COMPUTER): their pages are never asked twice. */
+  /** The computers a fetch of Go's has read ixigo on (COLD_COMPUTER), which the log tells from cold ones. */
   const warm = new Set<string>();
   /** Until when a click's within_ms is left out: Bash refused it (LOOK_UNSUPPORTED_MS). */
   let noLookUntil = 0;
@@ -434,7 +463,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       ...(o.keepOpen ? { keep_open_ms: WARM_TAB_MS } : {}),
     };
     let userId = d.computer.userIdFor(tripId);
-    let coldAgain = false;
+    let askedAgain = false;
     const pageMs = body.timeout_ms;
     const started = d.now().getTime();
     let checks = 0;
@@ -497,11 +526,12 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           await againAfterCheck();
           continue;
         }
-        // A cold computer's page that caught nothing (COLD_COMPUTER): once more, now that it has been to ixigo.
-        if (err.status === 504 && !coldAgain && !warm.has(userId) && caughtNothing(err, doc) && !o.signal?.aborted) {
-          coldAgain = true;
+        // A page that caught nothing (COLD_COMPUTER): once more, now that the computer has been to ixigo, cold or warm;
+        // never for a caller with another way (fallsBack), which hears NothingCaughtError at once.
+        if (err.status === 504 && !askedAgain && !o.fallsBack && caughtNothing(err, doc) && !o.signal?.aborted) {
+          askedAgain = true;
           o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
-          d.log.warn({ tripId, page: what.id }, 'travel: a cold computer caught nothing; asking once more');
+          d.log.warn({ tripId, page: what.id, cold: !warm.has(userId) }, 'travel: a page caught nothing; asking once more');
           continue;
         }
         // A timed-out fetch's pictures go to the card as a finished one's do, whatever its captures can answer.
@@ -510,7 +540,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           if (frames.length > 0) o.onProgress?.({ type: 'frames', frames });
         }
         o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
-        return { captures: fetchFailed(err, what, tripId, d.log).filter((c) => c.match !== doc), finalUrl: url };
+        return { captures: fetchFailed(err, what, tripId, d.log, { doc, ...(o.fallsBack ? { fallsBack: true } : {}), ...(o.about ? { about: o.about } : {}) }).filter((c) => c.match !== doc), finalUrl: url };
       }
     }
   }

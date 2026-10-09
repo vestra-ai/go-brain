@@ -54,6 +54,26 @@ describe('a page a person waits on', () => {
   });
 });
 
+describe('a filtered stays read whose caller falls back (backend.ts)', () => {
+  it('asks the runner so, with what the read is for the log: its conditions and its yes-or-no lets, never a word or a date', async () => {
+    const asked: Array<{ url: string; fallsBack?: boolean; about?: unknown }> = [];
+    const runner = {
+      read: async (_trip: string, url: string, _plan: FetchPlan, o: { fallsBack?: boolean; about?: unknown } = {}) => {
+        asked.push({ url, ...(o.fallsBack ? { fallsBack: o.fallsBack } : {}), about: o.about });
+        return { captures: [capture(SEARCH, 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', fixture('stays-goa-page1.json'))], finalUrl: url };
+      },
+    };
+    const engine = engineFor(book, runner);
+    const goa = { place: 'Goa', check_in: '2026-10-12', check_out: '2026-10-14', adults: 5 };
+    await engine.answer('hotels.search', goa, { tripId: 't_pool', conditions: ['pool'], fallsBack: true });
+    await engine.answer('hotels.search', goa, { tripId: 't_pool' });
+    expect(asked).toEqual([
+      { url: expect.stringContaining('&filters=FL_HF_29'), fallsBack: true, about: { recipe: 'hotels.search', conditions: ['pool'], wide: true } },
+      { url: expect.not.stringContaining('filters='), about: { recipe: 'hotels.search', conditions: [], wide: true } },
+    ]);
+  });
+});
+
 describe('a place Go has not searched before', () => {
   it("is asked of ixigo's own suggestion call, opened as the page with nothing typed, picked, kept, and gone straight to the next time, after a restart too", async () => {
     // The 8 Oct drill: typing Manali into the hotels box timed out on the box's browser. The call itself needs no box.

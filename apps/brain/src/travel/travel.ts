@@ -78,6 +78,12 @@ export interface TravelSearch {
   runId?: string;
   /** The results page it read on ixigo.com, where the whole list is (ixigo_web). */
   page?: string;
+  /**
+   * The conditions ixigo was asked to filter on and did not: its filtered page caught nothing in time, so the list is the
+   * same page without them (ixigo_web, backend.ts). The travel layer picks the stays that say them, or, when none does,
+   * shows the list without them and says so; then these are the ones it left off.
+   */
+  unapplied?: string[];
 }
 
 export type StatusQuery =

@@ -112,11 +112,17 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       const base = queryFor(name, parsed);
       const found = name === 'ixigo_web' ? await b.search(kind, base, o) : await kept(`${name}|${kind}|${keyOf(base)}`, () => b.search(kind, base, o));
       const all = found.results;
-      const results = applyConstraints(kind, parsed, all);
+      // Conditions ixigo did not filter on (unapplied): the options that say them fit as ever; when none does, the options
+      // without those conditions, and the search says it left them off.
+      const fit = applyConstraints(kind, parsed, all);
+      const mustHave: readonly string[] = parsed.mustHave ?? [];
+      const off = fit.length === 0 ? (found.unapplied ?? []).filter((c) => mustHave.includes(c)) : [];
+      const loose = off.length > 0 ? applyConstraints(kind, { ...parsed, mustHave: (parsed.mustHave ?? []).filter((c) => !off.includes(c)) }, all) : [];
+      const results = loose.length > 0 ? loose : fit;
       const near = results.length === 0 ? closest(kind, parsed, all) : null;
       return {
         checkedAt: found.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}), ...(found.runId ? { runId: found.runId } : {}),
-        ...(found.page ? { page: found.page } : {}),
+        ...(found.page ? { page: found.page } : {}), ...(loose.length > 0 ? { unapplied: off } : {}),
       };
     },
     async waitMs(kind, q, o) {
