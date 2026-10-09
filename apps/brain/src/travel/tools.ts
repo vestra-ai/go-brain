@@ -10,7 +10,7 @@ import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
 import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
-import { answerLine, answerTitle, directPicks, linkLine, plainAsk } from './answer.js';
+import { answerLine, answerTitle, directPicks, ledBy, leftOff, linkLine, plainAsk } from './answer.js';
 import { stayDetails, trainDetails } from './details.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
@@ -306,7 +306,8 @@ export async function putUpCard(
  * A finished search that answers the turn's plain ask itself: its list saved, its picks on a card (the engine's order:
  * the first three stays, the three cheapest journeys), and a line built from its data. The turn ends on them, with no
  * model round after the search. "See on ixigo" on the card opens each option's own page, as on any card. lead goes
- * before the line ("Already on ixigo: pool stays in…", a watch that is already so).
+ * before the line ("Already on ixigo: pool stays in…", a watch that is already so). Options read without filters ixigo
+ * left off (unapplied) are saved and titled as searched without them, and the line says so first.
  */
 export async function answerItself(
   kind: TravelKind,
@@ -316,17 +317,26 @@ export async function answerItself(
   d: Pick<TravelToolDeps, 'results' | 'images'>,
   lead?: string,
 ): Promise<unknown> {
+  const searched = answeredAs(q, found);
   const options = found.results.slice(0, 10).map(toResultOption);
-  const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
+  const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: searched, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
   noteRun(set.resultsId, ctx.tripId, found.runId);
   const numbers = directPicks(kind, options);
   // The line's "from" is the card's own cheapest, never one of the results the card leaves out.
-  const said = answerLine(kind, q, numbers.map((n) => options[n - 1]!));
-  const line = lead ? `${lead}${said.charAt(0).toLowerCase()}${said.slice(1)}` : said;
-  const { cardId, shown } = await putUpCard(set, numbers, { title: answerTitle(kind, q), line }, ctx, d);
+  const line = ledBy(lead ?? leftOffLead(found), answerLine(kind, searched, numbers.map((n) => options[n - 1]!)));
+  const { cardId, shown } = await putUpCard(set, numbers, { title: answerTitle(kind, searched), line }, ctx, d);
   ctx.answered = true;
-  return { search: searchName(kind, q), results_id: set.resultsId, card_id: cardId, shown, answered: true, note: 'The card and its line are up: this turn has said what it needed to.' };
+  return { search: searchName(kind, searched), results_id: set.resultsId, card_id: cardId, shown, answered: true, note: 'The card and its line are up: this turn has said what it needed to.' };
 }
+
+/** The ask as a search answered it: without the conditions ixigo left off (TravelSearch.unapplied). */
+function answeredAs(q: TravelQuery, found: TravelSearch): TravelQuery {
+  const off = found.unapplied ?? [];
+  return off.length > 0 ? { ...q, mustHave: (q.mustHave ?? []).filter((c) => !off.includes(c)) } : q;
+}
+
+/** What goes before the card's line of a search ixigo left filters off: "ixigo's pool filter didn't load in time, …: ". */
+const leftOffLead = (found: TravelSearch): string | undefined => (found.unapplied?.length ? `${leftOff(found.unapplied)}: ` : undefined);
 
 /** The loop waits this long for a search tool: the search's own wait (TRAVEL_WAIT_MS) and its answer fit inside. */
 const SEARCH_TOOL_MS = TRAVEL_WAIT_MS + 2_000;
@@ -369,7 +379,10 @@ export function handOver(
       async (found) => {
         if (found.runId && shownRuns.has(`${o.tripId}:${found.runId}`)) return;
         const a = await searchAnswer(kind, q, found, o.tripId, d);
-        const payload: SearchWake = { source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null };
+        const lead = leftOffLead(found);
+        const payload: SearchWake = {
+          source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null, ...(lead ? { lead } : {}),
+        };
         await wake(`search:${o.tripId}:${found.runId ?? o.fallbackId}`, payload);
       },
       async (err: unknown) => {
@@ -465,9 +478,12 @@ export interface SearchAnswer {
 
 /**
  * A search's answer: the results saved as a set (so show_options builds its card from them), the summary built in code,
- * and the best ten in short.
+ * and the best ten in short. Options read without filters ixigo left off (unapplied) are the search without them, and
+ * the summary and the note say so.
  */
-export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: TravelSearch, tripId: string, d: { results: Pick<ResultsStore, 'save'>; now: () => Date }): Promise<SearchAnswer> {
+export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: TravelSearch, tripId: string, d: { results: Pick<ResultsStore, 'save'>; now: () => Date }): Promise<SearchAnswer> {
+  const q = answeredAs(ask, found);
+  const left = found.unapplied?.length ? leftOff(found.unapplied) : null;
   const scope = searchScope(kind, q);
   const terms = asked(kind, q);
   const search = searchName(kind, q);
@@ -510,7 +526,8 @@ export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: Trav
         : `${n} ${scopeOf(kind, q, n)}${byClass}`
     }` +
     `${prices ? `: ${prices}` : ''}${areas.length ? `, in ${listOf(areas)}` : ''}.` +
-    `${fit > options.length ? ` The best ${options.length} are below.` : ''}`;
+    `${fit > options.length ? ` The best ${options.length} are below.` : ''}` +
+    `${left ? ` ${left}.` : ''}`;
   return {
     search,
     results_id: set.resultsId,
@@ -523,6 +540,7 @@ export async function searchAnswer(kind: TravelKind, q: TravelQuery, found: Trav
       'To show options, call show_options with this results_id. Quote prices only from these results, and say how long ago they were checked when it is not just now. ' +
       "Each option's area, time and price are as given here: name no other, and say no count the summary does not give. " +
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
+      `${left ? `Say in the line that ${left}. ` : ''}` +
       CARD_LINE,
   };
 }

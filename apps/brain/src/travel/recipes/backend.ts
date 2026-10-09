@@ -32,6 +32,12 @@
  * The filtered search then runs in the background, with no card and no message, and is kept under its own key for the
  * next ask. The posted card is never touched. The head count is the page's, not a condition: "sleeping 5" in a trip of
  * five opens the same page as the trip's own search (keyFor).
+ *
+ * Such an ask's page that catches nothing in its time is read again at once without its page conditions: ixigo's own
+ * filter can be what hangs (staging, 9 Oct: Goa sleeping 5 with a pool caught nothing in 20 s on a logged-in computer,
+ * and the same computer read Goa's stays in 8 s after). A fresh read of that page, kept or running (the head start),
+ * answers instead of a new one. The answer says which conditions ixigo did not filter on (unapplied), and Go's own
+ * filters pick from its stays (layer.ts).
  */
 import { createHash } from 'node:crypto';
 import type { TurnEnd } from '../../composer/context.js';
@@ -41,6 +47,7 @@ import type { LiveSearch } from '../live-search.js';
 import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
 import { RECIPE_TTL_MS, type RecipeOption } from './recipe.js';
+import { NothingCaughtError } from './runners.js';
 
 /** How long a search may hold up the turn, from its start: a train search on a sleeping box took about 8 s on staging. */
 export const TRAVEL_WAIT_MS = 12_000;
@@ -57,6 +64,7 @@ export interface IxigoWebDeps {
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
   /** How long a run goes before its live card shows (CARD_DELAY_MS); 0 shows it at once. */
   cardDelayMs?: number;
+  log?: { warn(obj: object, msg: string): void };
 }
 
 /**
@@ -237,16 +245,27 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     return best;
   }
 
-  /** The search itself, in the background: no card, no hold, kept under its own key for the next ask. */
-  function runQuietly(key: string, page: string, id: string, given: Record<string, unknown>, conditions: string[], tripId: string, ttl: number): void {
+  /** A search with no card of its own, kept under its key for the next ask: its run. */
+  function runKept(key: string, page: string, id: string, given: Record<string, unknown>, o: RunFor, ttl: number): Promise<EngineAnswer> {
     const nowMs = d.now().getTime();
     const runId = `${key}|${nowMs}`;
-    const ran = d.engine.answer(id, given, { tripId, conditions, background: true });
+    const ran = d.engine.answer(id, given, o);
     const search = ran.then((run): TravelSearch => {
       if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
       return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page };
     });
     keep(key, { at: nowMs, ttl, search, ran, page });
+    return ran;
+  }
+
+  /**
+   * The page with no conditions, for a filtered search whose page caught nothing (NothingCaughtError): a fresh read of it
+   * kept or running (the head start), or one run now on the ask's live card, kept under the page's key.
+   */
+  function unfiltered(page: string, id: string, given: Record<string, unknown>, tripId: string, ttl: number, onProgress: RunFor['onProgress']): Promise<EngineAnswer> {
+    const hit = kept.get(page);
+    if (hit && d.now().getTime() - hit.at < hit.ttl) return hit.ran;
+    return runKept(page, page, id, given, { tripId, conditions: [], ...(onProgress ? { onProgress } : {}) }, ttl);
   }
   /** The live cards that have not ended, by trip and search. */
   const cards = new Map<string, OpenCard>();
@@ -321,7 +340,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         // The wait let another search of this key start, or finish: what is kept is read again.
         hit = kept.get(key);
         if (narrowed && !(fresh(hit) && hit.done)) {
-          if (!fresh(hit)) runQuietly(key, page, id, given, conditions, tripId, ttl);
+          if (!fresh(hit)) void runKept(key, page, id, given, { tripId, conditions, background: true }, ttl);
           return narrowed;
         }
       }
@@ -354,14 +373,30 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         card = null;
       }
       const live = card?.live;
-      const ran = d.engine.answer(id, given, { tripId, conditions, ...(live ? { onProgress: live.progress } : {}) });
-      const search = ran.then(
+      // A page condition the stays say (byPage) that ixigo's page catches nothing with: the page again without them.
+      let unapplied: string[] | null = null;
+      const asked = d.engine.answer(id, given, { tripId, conditions, ...(byPage ? { fallsBack: true } : {}), ...(live ? { onProgress: live.progress } : {}) });
+      const read = byPage
+        ? asked.catch((err: unknown) => {
+            if (!(err instanceof NothingCaughtError)) throw err;
+            unapplied = byPage;
+            d.log?.warn({ tripId, recipe: id, conditions: byPage }, 'travel: a filtered stays page caught nothing; reading it without its filters');
+            return unfiltered(page, id, given, tripId, ttl, live?.progress);
+          })
+        : asked;
+      // A search that shares this one (shareStep: a watch's check) reads ixigo's filtered list: from the page read without
+      // the filters, the stays that say them. Handled here, so one nobody shares never goes unhandled; search says it.
+      const ran = byPage
+        ? read.then((run) => (unapplied && run.as === 'options' ? { ...run, options: run.options.filter((o) => byPage.every((c) => o.facts[c] === true)) } : run))
+        : read;
+      ran.catch(() => undefined);
+      const search = read.then(
         async (run): Promise<TravelSearch> => {
           if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
           live?.progress({ type: 'extracted', count: run.options.length });
           // The card is done before the options card posts.
           if (card) await end(cardKey, card, true);
-          return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page };
+          return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}) };
         },
         async (err: unknown): Promise<never> => {
           if (card) {
@@ -423,7 +458,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       const conditions = o.conditions ?? [];
       const hit = kept.get(await keyFor(id, given, conditions, o.tripId));
       const byPage = narrowedBy(id, conditions);
-      const found = hit?.done && d.now().getTime() - hit.at < hit.ttl ? hit.done : byPage ? await fromKept(id, given, byPage, o.tripId) : null;
+      // An answer read without the ask's filters (unapplied) never answers for them: what is kept is narrowed instead.
+      const found = hit?.done && !hit.done.unapplied && d.now().getTime() - hit.at < hit.ttl ? hit.done : byPage ? await fromKept(id, given, byPage, o.tripId) : null;
       return found ? { as: 'options', options: found.results as RecipeOption[], page: found.page ?? '', checkedAt: found.checkedAt, ms: 0 } : null;
     },
     /**

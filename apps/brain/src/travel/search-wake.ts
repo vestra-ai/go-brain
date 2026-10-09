@@ -9,7 +9,7 @@ import type { DirectAnswer } from '../composer/context.js';
 import { inlineData } from '../composer/fence.js';
 import { CARD_LINE } from '../composer/rules.js';
 import type { DeskItem } from '../desk/desk.js';
-import { answerLine, answerTitle, directPicks } from './answer.js';
+import { answerLine, answerTitle, directPicks, ledBy } from './answer.js';
 import { putUpCard, type TravelToolDeps } from './tools.js';
 import type { TravelKind, TravelQuery } from './travel.js';
 
@@ -22,6 +22,8 @@ export interface SearchWake {
   summary: string;
   /** The TravelError code when it failed. */
   error: string | null;
+  /** Words before the card's line: a search ixigo left filters off says so first (answer.ts leftOff). */
+  lead?: string;
 }
 
 /** How a finished search reads in "why Go woke". Null for desk items it doesn't own. */
@@ -59,7 +61,7 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images'>):
     const kind = item.ref as TravelKind;
     const q = set.query as TravelQuery;
     const numbers = directPicks(kind, set.options);
-    const line = answerLine(kind, q, numbers.map((n) => set.options[n - 1]!));
+    const line = ledBy(typeof w.lead === 'string' ? w.lead : undefined, answerLine(kind, q, numbers.map((n) => set.options[n - 1]!)));
     await putUpCard(set, numbers, { title: answerTitle(kind, q), line }, ctx, d);
     ctx.answered = true;
     return true;

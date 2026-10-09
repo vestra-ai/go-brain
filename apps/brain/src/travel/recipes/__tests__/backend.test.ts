@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { loadBook } from '../../book/book.js';
-import { createEngine, type Engine } from '../../book/engine.js';
+import { createEngine, type Engine, type RunFor } from '../../book/engine.js';
 import { TravelError } from '../../mcp-travel.js';
 import { CARD_DELAY_MS, CHOOSING_MS, createIxigoWebBackend, NARROW_MIN, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
+import { NothingCaughtError } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
 const { book } = loadBook();
@@ -400,14 +401,19 @@ const POOL = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHav
 /**
  * hotels.search scripted: with no conditions it lists `wide` (checked at 12:00), and with any it lists ixigo's own filtered
  * stays (checked at 12:20): `filtered`, or IXIGO_POOL_LIST. Each run is recorded with its conditions and whether it ran in
- * the background. With requestOf, searches key on the page they open, as on staging; without, on the words.
+ * the background, and its options as asked (asks). With requestOf, searches key on the page they open, as on staging;
+ * without, on the words. hangs: a filtered page catches nothing, as the runner says it (NothingCaughtError for a caller
+ * that falls back, else a timeout).
  */
-function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?: Record<string, unknown>; requestOf?: Engine['requestOf'] } = {}) {
+function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?: Record<string, unknown>; requestOf?: Engine['requestOf']; hangs?: boolean } = {}) {
   const head = o.head ?? HEAD;
   const runs: Array<{ conditions: string[]; background: boolean }> = [];
+  const asks: RunFor[] = [];
   const answer: Answer = async (_id, _given, ro) => {
     const conditions = ro.conditions ?? [];
     runs.push({ conditions, background: ro.background === true });
+    asks.push(ro);
+    if (o.hangs && conditions.length > 0) throw ro.fallsBack ? new NothingCaughtError() : new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
     return conditions.length > 0
       ? { as: 'options', options: o.filtered ?? IXIGO_POOL_LIST, page: 'https://www.ixigo.com/hotels/search/result?filters=FL_HF_29', checkedAt: '2026-10-07T12:20:00.000Z', ms: 9_000 }
       : { as: 'options', options: wide, page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-07T12:00:00.000Z', ms: 9_000 };
@@ -423,7 +429,7 @@ function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?
     await shared?.answer;
     await tick();
   };
-  return { b, runs, cards, headStart };
+  return { b, runs, asks, cards, headStart };
 }
 
 describe('a stays ask answered from a kept search with no conditions (the head start)', () => {
@@ -566,5 +572,61 @@ describe('a stays ask answered from a kept search with no conditions (the head s
     await s.b.search('stays', { ...POOL, mustHave: ['pay_at_hotel'] }, { tripId: 't_goa', turnId: 'turn_1' });
     expect(s.runs.at(-1)).toEqual({ conditions: ['pay_at_hotel'], background: false });
     expect(s.cards).toEqual(['t_goa', 't_goa']);
+  });
+});
+
+describe("a filtered stays search whose page catches nothing (staging, 9 Oct: Goa sleeping 5 with a pool, 20 s on a logged-in computer)", () => {
+  it('reads the page again at once without its filters, on the same card, and says which ixigo left off', async () => {
+    const s = staysEngine([stay(1, true), stay(2, false), stay(3, true)], { hangs: true });
+    const found = await s.b.search('stays', { ...POOL, guests: 5 }, { tripId: 't_goa', turnId: 'turn_1' });
+    // The filtered page once, asked as one that falls back; then the page without the pool, the head count kept.
+    expect(s.runs).toEqual([{ conditions: ['pool'], background: false }, { conditions: [], background: false }]);
+    expect(s.asks[0]).toMatchObject({ fallsBack: true });
+    expect(s.asks[1]).not.toHaveProperty('fallsBack');
+    // Every stay the page has: Go's own filters pick from them (layer.ts), and the answer says the pool was left off.
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2', 'Stay 3']);
+    expect(found).toMatchObject({ unapplied: ['pool'], checkedAt: '2026-10-07T12:00:00.000Z', page: 'https://www.ixigo.com/hotels/search/result' });
+    expect(s.cards).toEqual(['t_goa']);
+    // A condition that is not the page's (a beach) is Go's own filter's either way: the page is read with none.
+    const near = staysEngine([stay(1, true)], { hangs: true });
+    await near.b.search('stays', { ...POOL, mustHave: ['pool', 'beach'] }, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(near.runs.map((r) => r.conditions)).toEqual([['pool', 'beach'], []]);
+  });
+
+  it("takes a fresh read of the page kept or running (the head start) instead of loading it again", async () => {
+    const s = staysEngine([stay(1, true), stay(2, false)], { hangs: true });
+    await s.headStart();
+    // Fewer than NARROW_MIN kept stays have a pool, so the ask runs ixigo's pool search, which catches nothing.
+    const found = await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(s.runs).toEqual([{ conditions: [], background: false }, { conditions: ['pool'], background: false }]);
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
+    expect(found.unapplied).toEqual(['pool']);
+  });
+
+  it("never answers for the filter from the list read without it: a search sharing it reads the stays that say it, and what is kept is narrowed", async () => {
+    const s = staysEngine([stay(1, true), stay(2, false), stay(3, false)], { hangs: true });
+    await s.b.search('stays', POOL, { tripId: 't_goa', turnId: 'turn_1' });
+    const shared = await s.b.shareStep('hotels.search', HEAD, { tripId: 't_goa', conditions: ['pool'] }, () => {
+      throw new Error('the kept search answers');
+    });
+    expect(shared?.joined).toBe(true);
+    const a = await shared!.answer;
+    expect(a.as === 'options' && a.options.map((o) => o.title)).toEqual(['Stay 1']);
+    await tick();
+    // One stay with a pool is fewer than NARROW_MIN: nothing kept answers a watch's first check.
+    expect(await s.b.keptAnswer('hotels.search', HEAD, { tripId: 't_goa', conditions: ['pool'] })).toBeNull();
+    expect(s.runs).toHaveLength(2);
+  });
+
+  it('fails as ever on anything else, and an ask with no filter the stays say never falls back', async () => {
+    const s = staysEngine([stay(1, true)], { hangs: true });
+    // Paying at the hotel: no stay says it, so its page is asked as ever, and its timeout is the search's.
+    await expect(s.b.search('stays', { ...POOL, mustHave: ['pay_at_hotel'] }, { tripId: 't_goa', turnId: 'turn_1' })).rejects.toMatchObject({ code: 'unreachable' });
+    expect(s.runs).toEqual([{ conditions: ['pay_at_hotel'], background: false }]);
+    expect(s.asks[0]).not.toHaveProperty('fallsBack');
+    // No conditions at all: the page itself, asked once.
+    const plain = await s.b.search('stays', { ...POOL, mustHave: [] }, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(plain).not.toHaveProperty('unapplied');
+    expect(s.asks[1]).not.toHaveProperty('fallsBack');
   });
 });

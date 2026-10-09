@@ -5,7 +5,7 @@ import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
   BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
-  LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
+  LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, NothingCaughtError, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -578,23 +578,50 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       expect(traces.map((t) => t.failed?.why ?? 'ok')).toEqual(['ran out of time at 1 wait_for', 'ok']);
     });
 
-    it('asks only once more, and never again once a fetch has read ixigo on that computer', async () => {
+    it('asks only once more, and on a warm computer too (staging, 9 Oct: a logged-in computer caught nothing at 14:54, and read stays in 8 s at 14:55)', async () => {
       const twice = world(() => {
         throw caughtNothing();
       });
       await fails(createBrowserFetchRunner(twice.deps).read('t1', BUSES, busPlan), 'unreachable', /took too long/);
       expect(twice.calls).toHaveLength(2);
       const w = world((_, n) => {
-        if (n === 1) return fetched([busCapture]);
-        throw caughtNothing();
+        if (n === 2) throw caughtNothing();
+        return fetched([busCapture]);
       });
       const runner = createBrowserFetchRunner(w.deps);
       await runner.read('t1', BUSES, busPlan);
-      await fails(runner.read('t1', BUSES, busPlan), 'unreachable', /took too long/);
-      expect(w.calls).toHaveLength(2);
+      expect((await runner.read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+      expect(w.calls).toHaveLength(3);
+      expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't1', cold: false }), 'travel: a page caught nothing; asking once more');
     });
 
-    it("primes a new trip's computer with one visit to ixigo's home, its popup closed, and a primed computer's page is asked once", async () => {
+    it('never asks again for a caller that falls back: a page that caught nothing but its document throws NothingCaughtError at once', async () => {
+      const w = world(() => {
+        throw onCheck([docAt(200, 300)]);
+      });
+      const err = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan, { fallsBack: true }).then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(NothingCaughtError);
+      expect(err).toMatchObject({ code: 'unreachable', message: expect.stringMatching(/took too long/) });
+      expect(w.calls).toHaveLength(1);
+      // One that caught a call of the page's own (a 500), not just its document, is a timeout as ever.
+      const called = world(() => {
+        throw onCheck([docAt(200, 300), capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', '{}', 500)]);
+      });
+      const plain = await createBrowserFetchRunner(called.deps).read('t1', BUSES, busPlan, { fallsBack: true }).then(() => null, (e: unknown) => e);
+      expect(plain).toBeInstanceOf(TravelError);
+      expect(plain).not.toBeInstanceOf(NothingCaughtError);
+      expect(called.calls).toHaveLength(1);
+      // Without fallsBack, the same page that caught nothing is asked once more, and fails as ever.
+      const asked = world(() => {
+        throw onCheck([docAt(200, 300)]);
+      });
+      const again = await createBrowserFetchRunner(asked.deps).read('t1', BUSES, busPlan).then(() => null, (e: unknown) => e);
+      expect(again).toBeInstanceOf(TravelError);
+      expect(again).not.toBeInstanceOf(NothingCaughtError);
+      expect(asked.calls).toHaveLength(2);
+    });
+
+    it("primes a new trip's computer with one visit to ixigo's home, its popup closed, and a primed computer's page is asked once more too", async () => {
       const w = world((_, n) => {
         if (n === 1) return { ...fetched([capture('prime', 'https://www.ixigo.com/', '<html>')]), final_url: 'https://www.ixigo.com/' };
         throw caughtNothing();
@@ -610,7 +637,7 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
         } },
       });
       await fails(runner.read('t1', BUSES, busPlan), 'unreachable', /took too long/);
-      expect(w.calls).toHaveLength(2);
+      expect(w.calls).toHaveLength(3);
     });
 
     it('a prime ixigo did not answer throws, so setup tries again, and leaves the first search its one more ask', async () => {
@@ -628,15 +655,21 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     });
   });
 
-  it('logs where a page was when its time ran out, as Bash says it, so the next drill shows the step', async () => {
+  it('logs where a page was when its time ran out, as Bash says it, what it caught and what the read was, so the next drill shows the step', async () => {
     const late = world(() => {
-      throw new V1Error(504, 'timeout', 'The page did not send every capture within 20000 ms (it stopped at 2 type). What it sent is in partial.', null, { code: 'timeout', partial: { captures: [] } });
+      throw new V1Error(504, 'timeout', 'The page did not send every capture within 20000 ms, stopped at 2 wait_for. What it sent is in partial.', null, {
+        code: 'timeout', partial: { step: '2 wait_for', captures: [{ ...capture(BUS_DOC, BUSES, '<'), max_bytes: 1 }] },
+      });
     });
-    await fails(createBrowserFetchRunner(late.deps).read('t1', BUSES, busPlan), 'unreachable', /took too long/);
-    expect(late.log.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ tripId: 't1', message: expect.stringContaining('it stopped at 2 type') }),
-      'travel: a page ran out of time',
-    );
+    const about = { recipe: 'hotels.search', conditions: ['pool'], wide: true };
+    await fails(createBrowserFetchRunner(late.deps).read('t1', BUSES, busPlan, { about }), 'unreachable', /took too long/);
+    // Bash's words go under bash, never message: Railway's log takes a field named message for the line's own (9 Oct).
+    const logged = late.log.warn.mock.calls.find((c) => c[1] === 'travel: a page ran out of time')?.[0] as Record<string, unknown>;
+    expect(logged).toEqual({
+      tripId: 't1', page: '/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', bash: expect.stringContaining('stopped at 2 wait_for'), step: '2 wait_for',
+      caught: ['document 200'], read: about,
+    });
+    expect(logged).not.toHaveProperty('message');
   });
 
   it("tells the run strip where each call's time went: the wake, the page, each kept call; and on a timeout, where it stopped", async () => {

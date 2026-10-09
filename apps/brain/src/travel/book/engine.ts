@@ -151,6 +151,11 @@ export interface RunFor {
    * keeps no tab open there (no fast speed), so the computer sleeps again right after the page.
    */
   background?: boolean;
+  /**
+   * The caller reads another way when the page catches nothing (backend.ts: a filtered stays search, read again without
+   * its filters): the page is asked once, and throws NothingCaughtError (runners.ts).
+   */
+  fallsBack?: boolean;
 }
 
 export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
@@ -169,6 +174,13 @@ const fetchFor = (o: RunFor): { signal?: AbortSignal; priority: number } => ({
  * in its search and never counted; a step is a run of its own, side by side with the others.
  */
 const stepOf = (o: RunFor): { step_of?: string; lane?: string } => ({ ...(o.stepOf ? { step_of: o.stepOf } : {}), ...(o.lane ? { lane: o.lane } : {}) });
+
+/** A page read as the log says it when its time runs out: its recipe, the conditions it filters on, its yes-or-no lets ("wide"). */
+const aboutOf = (recipe: RecipeFile, o: RunFor, bindings: Record<string, unknown>): Record<string, string | boolean | string[]> => ({
+  recipe: recipe.id,
+  conditions: Object.keys(recipe.conditions ?? {}).filter((c) => o.conditions?.includes(c)),
+  ...Object.fromEntries(Object.entries(bindings).filter((e): e is [string, boolean] => typeof e[1] === 'boolean')),
+});
 
 /** A choice the model was offered, by its exact name: it resolves without another load, and is kept for the words asked. */
 interface Offered { lookup: string; asked: string; place: Record<string, unknown>; at: number }
@@ -571,6 +583,8 @@ export function createEngine(d: EngineDeps) {
         o.onProgress?.(e);
       },
       onTrace: (t) => pageRun.trace(t),
+      ...(o.fallsBack ? { fallsBack: true } : {}),
+      about: aboutOf(recipe, o, bindings),
     });
     refusePayments(got.finalUrl);
     o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });

@@ -11,7 +11,7 @@ import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import { createIxigoWebBackend } from '../recipes/backend.js';
 import { renderSearchWake, searchWakeAnswer } from '../search-wake.js';
-import { handOver, putUpCard, searchAnswer, travelTools } from '../tools.js';
+import { answerItself, handOver, putUpCard, searchAnswer, travelTools } from '../tools.js';
 import { makeTurnCtx } from '../../composer/tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
 
@@ -143,6 +143,29 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     // One line, the card's, from its own cheapest: never the cheaper stay the card leaves out.
     expect(next.lines).toEqual(['Stays in Anjuna for 6 to 9 Nov, from ₹4,800 a night.']);
     expect(next.answered).toBe(true);
+  });
+
+  it("says first that ixigo's filter was left off: the card is titled and lined as searched without it (staging, 9 Oct: Goa with a pool)", async () => {
+    const results = store();
+    const puts: DeskItem[] = [];
+    const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
+    const now = () => new Date('2026-10-07T12:00:31Z');
+    const query = { area: 'goa', checkIn: '2026-10-12', checkOut: '2026-10-14', guests: 5, mustHave: ['pool' as const] };
+    const left = "ixigo's pool filter didn't load in time, so these aren't filtered for a pool";
+    handOver('stays', query, Promise.resolve({ ...STAYS, runId: 'ixigo.hotels|goa|left', unapplied: ['pool'] }), { tripId: 't_goa', fallbackId: 'turn_w5:stays' }, { desk, now, results });
+    await vi.waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]!.payload).toMatchObject({ lead: `${left}: `, summary: expect.stringContaining(`${left}.`) });
+    const saved = await results.get('t_goa', (puts[0]!.payload as { resultsId: string }).resultsId);
+    expect(saved?.query).toMatchObject({ mustHave: [] });
+    const pack = goaPack();
+    const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w6', link: {} as never, pack, wake: [puts[0]!], signal: new AbortController().signal });
+    expect(await searchWakeAnswer({ results, images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(true);
+    expect(next.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.`]);
+    expect((next.cards[0] as { title: string }).title).toBe('Stays in Goa, 12 to 14 Oct');
+    // The search answering its own turn says it the same way.
+    const own = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w4', link: {} as never, pack, wake: [], signal: new AbortController().signal });
+    await answerItself('stays', query, { ...STAYS, unapplied: ['pool'] }, own, { results, images });
+    expect(own.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.`]);
   });
 
   it('wakes nothing for a run whose options a card in the room already showed, and leaves a failure or nothing found to the model', async () => {
