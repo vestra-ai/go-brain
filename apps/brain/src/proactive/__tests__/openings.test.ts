@@ -43,6 +43,22 @@ describe('chatOpening', () => {
     expect(chatOpening(msg({ text: null, withheld: true }), sureOpening, goaPack(), NOW)).toBeNull();
   });
 
+  it('opens one on what the live reflex is sure of: a need to keep to, something to settle, a search to run (q9 is in shadow)', () => {
+    const notForGo = { forGo: { value: false, sure: true } } as const;
+    // The 9 Oct run sheet: Kabir asks the group to settle dates on a trip that has them, and Go said nothing.
+    const dates = chatOpening(msg({ id: 'm_60', seq: 60, by: 'p_kabir', text: 'guys dates final karo yaar, kal tak' }), unsureRead({ ...notForGo, recordKind: { value: 'open', sure: true } }), goaPack(), NOW);
+    expect(dates).toMatchObject({ dedupeKey: 'chat:m_60', topic: 'chat', useful: ['react', 'record', 'message'] });
+    expect(chatOpening(msg({ id: 'm_61', by: 'p_meher', text: "I'm veg btw, so no seafood shacks only" }), unsureRead({ ...notForGo, fact: { value: true, sure: true } }), goaPack(), NOW)).not.toBeNull();
+    expect(chatOpening(msg({ id: 'm_62', by: 'p_rahul', text: 'teen log Saudades pe haan bol chuke hain' }), unsureRead({ ...notForGo, recordKind: { value: 'agreed', sure: true } }), goaPack(), NOW)).not.toBeNull();
+    expect(chatOpening(msg({ id: 'm_63', by: 'p_arjun', text: 'koi trains dekh lo Mumbai se' }), unsureRead({ ...notForGo, recipe: { value: 'trains', sure: true } }), goaPack(), NOW)).not.toBeNull();
+    // Banter carries nothing the reflex is sure of, or it is sure there is nothing.
+    expect(chatOpening(msg({ by: 'p_arjun', text: 'this vibe pls' }), unsureRead(notForGo), goaPack(), NOW)).toBeNull();
+    const nothing = unsureRead({ ...notForGo, fact: { value: false, sure: true }, recordKind: { value: null, sure: true }, recipe: { value: null, sure: true } });
+    expect(chatOpening(msg({ by: 'p_kabir', text: 'haha same 😂' }), nothing, goaPack(), NOW)).toBeNull();
+    // Unsure whether it is for Go: the composer has it, so no opening as well.
+    expect(chatOpening(msg({ text: "I'm veg" }), unsureRead({ fact: { value: true, sure: true } }), goaPack(), NOW)).toBeNull();
+  });
+
   it('leaves a message to the composer unless the reflex is sure it is not for Go and it does not name Go', () => {
     // Unsure whether it is for Go: P1 may answer it, so no opening as well.
     expect(chatOpening(msg({ text: 'what time is check-in?' }), unsureRead({ opening: { value: true, sure: true } }), goaPack(), NOW)).toBeNull();

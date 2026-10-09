@@ -85,7 +85,15 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
       return `The train ticket${what} ${state}${detail}${checked}.${concerns}`;
     }
     case 'chat':
-      return `Message #${num('seq') ?? '?'} may be a moment to help without being asked: a question to the group Go can answer, a plan clash, or someone asking for help.`;
+      // A friend in the group chiming in, once, when it adds something real (Keshav: "whenever it can intervene it should").
+      return (
+        `Message #${num('seq') ?? '?'} may be a moment to chime in without being asked. Say one short line, in the group's own words and language, ` +
+        'only when it adds something real: a question to the group that the trip already answers (answer it and offer to change it: ' +
+        '"Dates are set: 6 to 9 Nov ✅. Want to change them?"); something someone needs that you will keep to (say so in a few words: ' +
+        '"Veg noted, I\'ll skip seafood shacks"); a choice the group is ready to make (offer a vote: "3 of you said yes to Saudades. Want me to put it to a vote?"); ' +
+        'or a search someone asked the group to run (offer to run it). The examples show the shape only: use what the trip and the chat say. ' +
+        'Banter, a plan a person is already handling, or nothing new to add: call stay_silent.'
+      );
     case 'vote_closed': {
       const winner = str('winner');
       return `The vote ${quote(str('question') || 'on the table')} closed${winner ? `; ${quote(winner)} won` : ' without a clear winner'}. The group may want the next step.`;

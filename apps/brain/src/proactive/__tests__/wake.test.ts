@@ -112,6 +112,16 @@ describe('the wake text', () => {
     expect(renderWake(proItem(stopped, ['message']), goaPack(), NOW)).toContain('could not check ixigo for "12608\'s CC to confirm" 6 times in a row');
   });
 
+  it('tells Go to chime in once, briefly, only when it adds something real, and to stay silent on banter', () => {
+    const text = describeNoticed(chat, goaPack(), 'Asia/Kolkata', NOW);
+    expect(text).toContain('Message #9 may be a moment to chime in without being asked');
+    expect(text).toContain("in the group's own words and language");
+    for (const shape of ['Dates are set: 6 to 9 Nov ✅. Want to change them?', "Veg noted, I'll skip seafood shacks", 'Want me to put it to a vote?']) expect(text).toContain(shape);
+    expect(text).toContain('use what the trip and the chat say');
+    expect(text).toContain('Banter, a plan a person is already handling, or nothing new to add: call stay_silent.');
+    expect(text).not.toContain('—');
+  });
+
   it('says the demo watch is simulated, pinned to Arjun, and not for everyone', () => {
     const text = renderWake(proItem(delay, ['pin'], ['p_arjun']), goaPack(), NOW);
     expect(text).toContain('Simulated for the demo');
