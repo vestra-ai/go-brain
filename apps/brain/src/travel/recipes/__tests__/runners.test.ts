@@ -76,6 +76,25 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(plain.calls[0]!.opts['body']).toEqual({ url: BUSES, capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS, frames: { width: FRAME_WIDTH } });
   });
 
+  it("a plan with a grace tells Bash which captures it needs, on a page read and in a hand-off: the rest get the grace", async () => {
+    const WALLET = '/api/v3/ixigo-money/wallet';
+    const plan: FetchPlan = {
+      capture: [{ match: WALLET, required: false, max_bytes: 1 }, { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 }],
+      steps: [{ op: 'wait_for', match: '/api/flights/locations/nearby' }],
+      timeoutMs: 12_000,
+      graceMs: 3_000,
+    };
+    const w = world(() => fetched([capture(WALLET, `https://www.ixigo.com${WALLET}`, '{', 200)], 'https://www.ixigo.com/'));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.read('t1', 'https://www.ixigo.com/', plan);
+    await runner.handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login' });
+    const sent = [{ match: WALLET, required: false, max_bytes: 1 }, { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 }];
+    expect(w.calls.map((c) => c.opts['body'])).toEqual([
+      { url: 'https://www.ixigo.com/', capture: sent, steps: plan.steps, timeout_ms: 12_000, grace_ms: 3_000, frames: { width: FRAME_WIDTH } },
+      { url: 'https://www.ixigo.com/', capture: sent, steps: plan.steps, timeout_ms: 12_000, grace_ms: 3_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login' },
+    ]);
+  });
+
   // ixigo's hotel popup shows 1 s after the page mounts, so the recipe's first click looks for it up to 3 s (Bash's
   // within_ms). A Bash from before within_ms takes no unknown field in a step: its 400 names the step (param), and Go
   // asks the same fetch again with that click looking once, as it did before, and sends none for a while.
