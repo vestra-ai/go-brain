@@ -10,7 +10,7 @@ import type { TaskBrief } from '../../tasks/tasks.js';
 import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
-import { createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, LOGIN_TAB, LOGIN_URL, RECHECK_MS, renderLoginResume, USERINFO } from '../login.js';
+import { createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, LOGIN_TAB, LOGIN_URL, OWN_USERINFO, RECHECK_MS, renderLoginResume, USERINFO } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
 import { IXIGO, type FetchPlan } from '../recipes/recipe.js';
@@ -35,8 +35,9 @@ let trips = 0;
  * One trip (the Goa five, Rahul organizing), its chat, the trip's browser and the jobs lane, all recorded. The trip says it
  * was made on 5 Oct, as the sim's Goa trip always does: nothing here goes by that. Waits for Go's hello move the clock.
  */
-/** opened: ixigo's userinfo status on the log in page the hand-off opens (403 by default: logged out), 'timeout' for a
- *  page that caught nothing in its time, 'refused' for a hand-off Bash would not open. */
+/** opened: the status of ixigo's own userinfo call on the log in page the hand-off opens (403 by default: logged out),
+ *  'timeout' for a page that caught nothing in its time, 'refused' for a hand-off Bash would not open. statuses: what
+ *  ixigo says after, in turn: to "I'm logged in" (its page loaded again) and to a check in the background. */
 function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout'>; opened?: number | 'timeout' | 'refused'; taps?: 'fail' } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
@@ -50,6 +51,8 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const looks: number[] = [];
   const hooks: { onSleep?: (n: number) => void; onHandOff?: () => void | Promise<void> } = {};
   const statuses = [...(o.statuses ?? [])];
+  /** An "I'm logged in" tap is being answered. */
+  let checking = false;
   const reads: Array<{ url: string; plan: FetchPlan }> = [];
   const runner = {
     read: async (_trip: string, url: string, plan: FetchPlan) => {
@@ -59,22 +62,16 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
       if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
       return { captures: [capture(USERINFO, `${IXIGO}${USERINFO}`, '{', s)], finalUrl: url };
     },
-    handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string; check?: { url: string; method: string } }) => {
+    handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string }) => {
       handOffs.push({ url, plan, o: ho });
       await hooks.onHandOff?.();
-      const s = o.opened ?? 403;
+      // "I'm logged in" loads the log in page again: ixigo's answers to it come in turn, as for any later check.
+      const s = checking ? (statuses.shift() ?? 'timeout') : (o.opened ?? 403);
       if (s === 'refused') throw new TravelError('refused', 'Bash would not open the page.');
-      return { captures: s === 'timeout' ? [] : [capture('check', `${IXIGO}${USERINFO}`, '{', s)] };
+      return { captures: s === 'timeout' ? [] : [capture(USERINFO, `${IXIGO}${USERINFO}`, '{', s)] };
     },
     release: async (_trip: string, tab: string) => {
       releases.push(tab);
-    },
-    // "I'm logged in" asks ixigo from inside the log in page: the same statuses, in turn.
-    tabCall: async (_trip: string, tab: string, call: { url: string; method: string }, keepOpenMs: number) => {
-      tabCalls.push({ tab, call, keepOpenMs });
-      const s = statuses.shift() ?? 'timeout';
-      if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
-      return capture('tab_call', `${IXIGO}${USERINFO}`, '{', s);
     },
     // The taps on the page once it is in front: what the card says then is kept, to see Watch came first.
     tabSteps: async (_trip: string, tab: string, steps: unknown[], to: { keepOpenMs: number; timeoutMs: number }) => {
@@ -87,7 +84,6 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
     const replaced = link.of('replace_card');
     return ((replaced.at(-1)?.card as { actions?: Array<{ action_id: string }> } | undefined)?.actions ?? []).map((a) => a.action_id);
   };
-  const tabCalls: Array<{ tab: string; call: { url: string; method: string }; keepOpenMs: number }> = [];
   const handOffs: Array<{ url: string; plan: FetchPlan; o: { keepOpenMs: number; tab: string } }> = [];
   const releases: string[] = [];
   const sessions: Array<[string, string]> = [];
@@ -134,9 +130,14 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   let tapN = 0;
   const tap = async (action: string, personId: string): Promise<CardTapResult> => {
     tapN += 1;
-    const out = await handlers.get(`notice:${action}`)!({ tap_id: `tap_${tapN}`, trip_id: tripId, card_id: 'c_login', action_id: action, person_id: personId }, {} as C.Card);
-    await login.settled();
-    return out;
+    checking = action === 'ixigo_logged_in';
+    try {
+      const out = await handlers.get(`notice:${action}`)!({ tap_id: `tap_${tapN}`, trip_id: tripId, card_id: 'c_login', action_id: action, person_id: personId }, {} as C.Card);
+      await login.settled();
+      return out;
+    } finally {
+      checking = false;
+    }
   };
   const cards = (): C.Card[] => [...link.of('post_message').flatMap((p) => (p.card ? [p.card as C.Card] : [])), ...link.of('replace_card').map((p) => p.card as C.Card)];
   const last = (): C.Card & { kind: 'notice' } => cards().at(-1) as C.Card & { kind: 'notice' };
@@ -145,7 +146,7 @@ function world(o: { live?: boolean; greeted?: boolean; paused?: string[]; status
   const parked = async (): Promise<unknown> =>
     (await db.pool.query<{ parked: unknown }>('select parked from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.parked ?? null;
   return {
-    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, tabCalls, tabStepCalls, wakes, login, tap, last, state, parked,
+    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, tabStepCalls, wakes, login, tap, last, state, parked,
     greet, looks, hooks, setup: () => login.setupStep.run(tripId),
   };
 }
@@ -294,15 +295,12 @@ describe('logging in', () => {
     // No job: no model clicks its way to the box (87 to 96 s on staging, 8 Oct).
     expect(w.starts).toEqual([]);
     // ixigo's home page in FRONT of Rahul's window (as a phone: Bash's front), the tab kept there for him for Bash's most;
-    // ixigo's userinfo asked from inside the page, one byte, read by its status only. The page and the check alone: Watch
-    // comes as soon as the page is in front.
+    // the userinfo call ixigo's own code makes as the page loads caught, one byte, read by its status only. The page and
+    // that call alone: Watch comes as soon as the page is in front.
     expect(LOGIN_URL).toBe('https://www.ixigo.com/');
     expect(HANDOFF_MS).toBe(600_000);
-    expect(w.handOffs).toEqual([{
-      url: LOGIN_URL,
-      plan: { capture: [], steps: [], timeoutMs: HANDOFF_PAGE_MS },
-      o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, check: { url: USERINFO, method: 'POST' } },
-    }]);
+    expect(OWN_USERINFO).toEqual([{ match: USERINFO, required: true, max_bytes: 1 }]);
+    expect(w.handOffs).toEqual([{ url: LOGIN_URL, plan: { capture: OWN_USERINFO, steps: [], timeoutMs: HANDOFF_PAGE_MS }, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } }]);
     // Then, with Watch on the card, ixigo's own Login and the cursor in its mobile number box, on the page he watches.
     expect(w.tabStepCalls).toEqual([{
       tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }],
@@ -488,7 +486,7 @@ describe('logging in', () => {
     expect(w.releases[0]).toBe(LOGIN_TAB);
   });
 
-  it("I'm logged in: ixigo's own answer decides by its status alone; 401 keeps the log in in front, 200 closes it and says logged in as Rahul", async () => {
+  it("I'm logged in: ixigo's OWN answer decides, by its status alone; 401 keeps the log in in front, 200 closes it and says logged in as Rahul", async () => {
     const w = world({ statuses: [401, 200] });
     await w.setup();
     await w.tap('ixigo_login', 'p_rahul');
@@ -497,18 +495,24 @@ describe('logging in', () => {
     expect(await w.tap('ixigo_logged_in', 'p_rahul')).toEqual({ result: 'done', toast: 'Checking your login' });
     // No job to settle.
     expect(w.handoffs).toEqual([]);
-    // ixigo's userinfo from INSIDE the open log in page, keeping it open for them: nothing opens over it, and the status is
+    // ixigo's log in page loads again in the hand-off's tab, in front and kept for them, and the userinfo call ixigo's own
+    // code makes (with its own token and keys) is what answers: a call of Go's own is 403 even logged in. The status is
     // read (one byte), the account never is.
-    expect(w.tabCalls).toEqual([{ tab: LOGIN_TAB, call: { url: USERINFO, method: 'POST' }, keepOpenMs: HANDOFF_MS }]);
+    expect(w.handOffs).toHaveLength(2);
+    expect(w.handOffs[1]).toEqual({ url: LOGIN_URL, plan: { capture: OWN_USERINFO, steps: [], timeoutMs: HANDOFF_PAGE_MS }, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } });
     expect(w.reads).toHaveLength(reads);
-    // An early tap, still waiting for the code: the window stays in front, untouched.
+    // An early tap, still waiting for the code: the window stays in front, its log in box open again for them.
     expect(await w.state()).toBe('logging_in');
     expect(w.releases).toEqual([]);
+    expect(w.tabStepCalls).toHaveLength(2);
+    expect(w.tabStepCalls[1]).toMatchObject({ tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }] });
     expect(w.last()).toMatchObject({ tone: 'heads_up', body: 'Not logged in yet. Finish on Watch, then tap again.' });
 
+    // ixigo's own call says 200 (Keshav's Google log in, 9 Oct): logged in, the page closes.
     await w.tap('ixigo_logged_in', 'p_rahul');
     expect(await w.state()).toBe('logged_in');
     expect(w.releases).toEqual([LOGIN_TAB]);
+    expect(w.tabStepCalls).toHaveLength(2);
     expect(w.last()).toMatchObject({
       card_id: `c_login_${w.tripId}_0`, title: 'ixigo: logged in as Rahul',
       body: "Since 8 Oct. Searches and bookings for this trip use Rahul's ixigo account; the group never sees its details, and Go never opens the payment page.",
