@@ -50,12 +50,16 @@ const NEARBY = '/api/flights/locations/nearby';
 export const HANDOFF_PAGE_MS = 12_000;
 /**
  * Whether the browser is logged in, from ixigo's own calls as its home page loads, one byte each, by their status only.
- * No one call is waited for (a logged-in page never calls userinfo, a logged-out one calls none of them): the page's
- * NEARBY first, then up to Bash's most (3 s) for the login's calls.
+ * None of the login's calls is waited for (a logged-in page never calls userinfo, a logged-out one calls none of them):
+ * the page's NEARBY is, as the one required capture, then up to Bash's most (3 s) for the login's calls. Bash refuses a
+ * fetch with no required capture and no page_fetch step (400 invalid_request; staging, 9 Oct 13:24, every hand-off).
  */
 export const LOGIN_CALLS: FetchPlan = {
-  capture: [WALLET, IDENTITY, USERINFO].map((match) => ({ match, required: false, max_bytes: 1 })),
-  steps: [{ op: 'wait_for', match: NEARBY }],
+  capture: [
+    { match: NEARBY, required: true, max_bytes: 1 },
+    ...[WALLET, IDENTITY, USERINFO].map((match) => ({ match, required: false, max_bytes: 1 })),
+  ],
+  steps: [],
   timeoutMs: HANDOFF_PAGE_MS,
   graceMs: 3_000,
 };

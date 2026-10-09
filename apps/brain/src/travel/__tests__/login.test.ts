@@ -311,17 +311,18 @@ describe('logging in', () => {
     // No job: no model clicks its way to the box (87 to 96 s on staging, 8 Oct).
     expect(w.starts).toEqual([]);
     // ixigo's home page in FRONT of Rahul's window (as a phone: Bash's front), the tab kept there for him for Bash's most;
-    // the calls ixigo's own code makes as the page loads caught, one byte each, read by their status only. None is waited
-    // for: the page's nearby call (logged in or out), then up to 3 s for the login's own calls.
+    // the calls ixigo's own code makes as the page loads caught, one byte each, read by their status only. Only the page's
+    // nearby call (logged in or out) is waited for, Bash's one required capture, then up to 3 s for the login's own calls.
     expect(LOGIN_URL).toBe('https://www.ixigo.com/');
     expect(HANDOFF_MS).toBe(600_000);
     expect(LOGIN_CALLS).toEqual({
       capture: [
+        { match: '/api/flights/locations/nearby', required: true, max_bytes: 1 },
         { match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 },
         { match: '/api/profile/secure/booking/with-identity', required: false, max_bytes: 1 },
         { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 },
       ],
-      steps: [{ op: 'wait_for', match: '/api/flights/locations/nearby' }],
+      steps: [],
       timeoutMs: HANDOFF_PAGE_MS,
       graceMs: 3_000,
     });
