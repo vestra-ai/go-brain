@@ -52,7 +52,13 @@ export const BARS = {
    * recall 0.94, and a whole Jev call still 134 ms at the middle and 161 ms at p90.
    */
   recipe: { pickMin: 0.9, rivalMax: 0.3 },
-  /** Q11. A starting point, swept on Go's set before it acts: a wrong no leaves a real ask unanswered. */
-  actionable: { yesMin: 0.8, noMax: 0.1 },
+  /**
+   * Q11, a noul. On Go's set (Jev 1.13.0, recorded 2026-10-10, 71 rows: 48 yes, 23 no) Jev's answer tops out at 0.87:
+   * the yes rows read 0.42 to 0.87, the no rows 0.16 to 0.78 ("hotel ka wifi kaisa tha last time?" 0.78, "Priya booked
+   * the last trip, your turn Kabir" 0.70). A wrong no leaves a real ask with no turn, so its bar keeps the wide margin:
+   * 0.3 sits 0.12 under the lowest yes ("Saudades looks perfect to me" 0.42). A wrong yes only frames a turn that still
+   * decides, so 0.8 sits just over the highest no. Recall 0.51 (24 yes and 12 no sure), no wrong answer.
+   */
+  actionable: { yesMin: 0.8, noMax: 0.3 },
 };
 export type Bars = typeof BARS;
