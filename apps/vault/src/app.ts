@@ -6,6 +6,7 @@ import { internalRoutes } from './internal/routes.js';
 import { pageRoutes } from './pages/routes.js';
 import type { Rails } from './rails/rail.js';
 import type { StripeLike } from './stripe-client.js';
+import { CARDS_DOWN, cardsReady, isStripeError } from './stripe-ready.js';
 
 export interface VaultDeps {
   env: VaultEnv;
@@ -25,6 +26,11 @@ export async function buildVault(deps: VaultDeps): Promise<FastifyInstance> {
   // never by its path. Set before any route, so every route uses it.
   app.setErrorHandler((err, req, reply) => {
     // Anything can be thrown, so only these two fields are read, and only when they are what they should be.
+    // Stripe's own errors carry Stripe's status (a 401 for refused keys) and words (a masked key): never passed on.
+    if (isStripeError(err)) {
+      req.log.error({ type: err.type, code: err.code, route: req.routeOptions.url }, 'a Stripe call failed');
+      return reply.status(503).send({ error: { code: 'unavailable', message: CARDS_DOWN }, message: CARDS_DOWN });
+    }
     const e = (err ?? {}) as { statusCode?: unknown; message?: unknown };
     const status = typeof e.statusCode === 'number' && e.statusCode >= 400 && e.statusCode < 600 ? e.statusCode : 500;
     const fields = { err, route: req.routeOptions.url };
@@ -39,6 +45,6 @@ export async function buildVault(deps: VaultDeps): Promise<FastifyInstance> {
   securityHeaders(app);
   app.get('/health', async () => ({ ok: true }));
   await app.register(internalRoutes, { deps });
-  await app.register(pageRoutes, { deps });
+  await app.register(pageRoutes, { deps, cards: cardsReady(deps.env, app.log) });
   return app;
 }
