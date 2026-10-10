@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
@@ -39,9 +40,14 @@ const offer = (over: Partial<StoredOffer> = {}): StoredOffer => ({
   priceMinor: 1589400, totalMinor: 4768200, currency: 'INR', priceNote: 'per night, per room', checkedAt: '2026-10-08T10:00:00Z', sourceUrl: PAGE, ...over,
 });
 
-function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredOffer | null; page?: string | null } = {}) {
+// The stay's own page's rooms call, as ixigo answers it (hotels.rooms's sample): two cottages, each one rate, IXIFIRST on both.
+const ROOMS = readFileSync(new URL('../../../recipes/samples/hotels.rooms.json', import.meta.url), 'utf8');
+const ROOMS_URL = 'https://www.ixigo.com/accommodation-search/api/v1/accommodations/details/54381/rooms';
+
+function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredOffer | null; page?: string | null; booking?: boolean; rooms?: string | null } = {}) {
   const stored = o.stored === undefined ? offer() : o.stored;
-  const reads: Array<{ url: string; plan: FetchPlan }> = [];
+  const reads: Array<{ url: string; plan: FetchPlan; stage?: boolean }> = [];
+  const posted: Array<{ method: string; params: Record<string, unknown> }> = [];
   const ensured: Array<{ tripId: string; what: string; park?: Parked; booking?: boolean }> = [];
   const stays = createWebStays({
     results: {
@@ -52,8 +58,12 @@ function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredO
       },
     },
     runner: () => ({
-      read: async (_trip: string, url: string, plan: FetchPlan) => {
-        reads.push({ url, plan });
+      read: async (_trip: string, url: string, plan: FetchPlan, opts?: { stage?: boolean }) => {
+        reads.push({ url, plan, ...(opts?.stage ? { stage: true } : {}) });
+        if (url === PAGE) {
+          const rooms = o.rooms === undefined ? ROOMS : o.rooms;
+          return { captures: rooms === null ? [] : [capture('/accommodations/details/54381/rooms$', ROOMS_URL, rooms)], finalUrl: url };
+        }
         const body = o.body === undefined ? SAME : o.body;
         if (body === null) throw new TravelError('unreachable', 'ixigo took too long to answer.');
         return { captures: [capture(SEARCH_CALL, SEARCH_URL, body)], finalUrl: url };
@@ -66,8 +76,9 @@ function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredO
       },
     },
     now: () => new Date('2026-10-08T10:30:00Z'),
+    ...(o.booking !== undefined ? { bookingOn: async () => o.booking!, link: { request: async (method: string, params: unknown) => (posted.push({ method, params: params as Record<string, unknown> }), { message_id: 'm_1', seq: 1 }) } as never } : {}),
   });
-  return { stays, reads, ensured };
+  return { stays, reads, ensured, posted };
 }
 
 describe('a stay from ixigo.com', () => {
@@ -164,6 +175,29 @@ describe('the hold and the booking, on the test rail', () => {
   it('holds nothing with the login out, or for an option Go no longer has', async () => {
     await expect(world({ login: 'out' }).stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: [] })).rejects.toMatchObject({ code: 'refused' });
     await expect(world({ stored: null }).stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: [] })).rejects.toMatchObject({ code: 'unknown_offer' });
+  });
+
+  // The lead, 10 Oct: every Book ends in Go doing it, where the room watches.
+  it("with BOOKING on, books it on ixigo's own pages on the stage: the stay's page, the rate chosen, ixigo's coupon, its price the hold's", async () => {
+    const w = world({ booking: true });
+    const h = await w.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: ['p_rahul'] });
+    // The stay's own page, on the stage, its rooms call kept.
+    expect(w.reads).toEqual([{ url: PAGE, plan: { capture: [{ match: '/accommodations/details/54381/rooms$', required: true }], timeoutMs: 20_000 }, stage: true }]);
+    // The cheapest whole stay (the Queen Cottage's rate, 3 nights and 3 rooms), with ixigo's own IXIFIRST on it.
+    expect(h).toMatchObject({ amountMinor: 15_327_900, currency: 'INR', payment: { kind: 'fake' } });
+    expect(h.merchant).toBe(`${SIM_VENDOR}: Saudades Homestays, Queen Cottage with Balcony, IXIFIRST ₹6,174 off`);
+    // The room watches it tick: the group's stay, so the live card is the room's.
+    const live = w.posted.filter((p) => (p.params['card'] as { kind?: string } | undefined)?.kind === 'working');
+    expect(live[0]!.params['visible_to_person_ids']).toBeUndefined();
+    expect(live.at(-1)!.params['card']).toMatchObject({ title: 'Booking Saudades Homestays for the group', state: 'done' });
+  });
+
+  it("with BOOKING on and no rate on the stay's page, holds at the price read as before; with it off, never opens the page", async () => {
+    const none = world({ booking: true, rooms: null });
+    expect(await none.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: [] })).toMatchObject({ amountMinor: 4_768_200, merchant: `${SIM_VENDOR}: Saudades Homestays` });
+    const off = world({ booking: false });
+    await off.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: [] });
+    expect(off.reads.map((r) => r.url)).toEqual([SEARCH_PAGE]);
   });
 
   it("confirms as simulated, with Go's own reference, never one like ixigo's, and the same answer twice", async () => {

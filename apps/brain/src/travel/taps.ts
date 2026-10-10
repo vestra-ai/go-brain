@@ -24,7 +24,7 @@ import { openVoteFromCard } from './votes.js';
 export interface TravelTapDeps {
   results: ResultsStore;
   pool: Brain['pool'];
-  /** Go booking a person's own flight itself (FLIGHT_BOOKING, booking/flight-booking.ts); absent, "Book it" opens ixigo. */
+  /** Go booking a person's own flight itself (BOOKING, booking/flight-booking.ts); absent, "Book it" opens ixigo. */
   booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay'>;
   /** A person's name in the trip, for the room's words about their booking. */
   nameOf?: (tripId: string, personId: string) => Promise<string>;
@@ -107,7 +107,7 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
   taps.on('options', BOOK_MINE, async (tap, card) => {
     const m = await mine(tap, card);
     if ('refused' in m) return { result: 'refused', toast: m.refused };
-    // Go books it itself, on the stage, up to ixigo's pay button (FLIGHT_BOOKING): the tap answers at once, the booking goes on.
+    // Go books it itself, on the stage, up to ixigo's pay button (BOOKING): the tap answers at once, the booking goes on.
     if (d.booking && m.offer.kind === 'flight' && m.offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
       const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
       await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer, choice: 'basic' });

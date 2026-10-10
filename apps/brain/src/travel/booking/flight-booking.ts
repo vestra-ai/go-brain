@@ -1,6 +1,6 @@
 /**
  * Go books a flight on ixigo for one traveller (Keshav, 10 Oct: "Go books tickets end to end up to payment"), behind the
- * FLIGHT_BOOKING switch. From the traveller's own confirm, "Book it" (taps.ts): the fare opens on the stage, where the
+ * BOOKING switch. From the traveller's own confirm, "Book it" (taps.ts): the fare opens on the stage, where the
  * room watches (a search for them alone, then ixigo's review page for that flight), the fare type they asked for is
  * chosen there, and the coupon ixigo applies itself is kept and said. It stops before ixigo's pay button: nothing is
  * submitted and no itinerary is made. Their card says what they would pay; Pay goes through the vault.
@@ -99,9 +99,12 @@ export const numbersOf = (title: string): string[] => title.match(/\b[0-9A-Z]{2}
 
 /**
  * The live card: what the traveller sees while Go books, each step ticking. Posted once, for them alone (1.2
- * visible_to_person_ids, Keshav: a person's booking is theirs), then replaced in place, which keeps it theirs.
+ * visible_to_person_ids, Keshav: a person's booking is theirs), or for the room (only null: the group's stay), then
+ * replaced in place, which keeps who sees it.
  */
-function liveCard(d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: string, cardId: string, title: string, texts: string[], only: string[]) {
+export function bookingLiveCard(
+  d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: string, cardId: string, title: string, texts: string[], only: string[] | null,
+) {
   const steps = texts.map((text) => ({ text: clip(text, 80), state: 'todo' as 'todo' | 'doing' | 'done' | 'failed' }));
   let state: WorkingCard['state'] = 'running';
   let posted = false;
@@ -115,7 +118,7 @@ function liveCard(d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: st
     chain = chain.then(async () => {
       try {
         if (!posted) {
-          await d.link.request('post_message', { request_id: stableId('go_book_live', cardId), trip_id: tripId, card: now, visible_to_person_ids: only });
+          await d.link.request('post_message', { request_id: stableId('go_book_live', cardId), trip_id: tripId, card: now, ...(only ? { visible_to_person_ids: only } : {}) });
           posted = true;
         } else {
           await d.link.request('replace_card', { trip_id: tripId, card: now });
@@ -175,7 +178,7 @@ export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 
 
 export interface FlightBooking {
   /**
-   * Whether Go books this trip's flights itself: Go reads ixigo.com in the trip's browser, and FLIGHT_BOOKING is on, or
+   * Whether Go books this trip's flights itself: Go reads ixigo.com in the trip's browser, and BOOKING is on, or
    * names the trip's Server instance ("instances:drill-p0").
    */
   onFor(tripId: string): Promise<boolean>;
@@ -185,6 +188,21 @@ export interface FlightBooking {
   pay(i: { tripId: string; cardId: string; personId: string; tapId: string }): Promise<PayTap>;
   /** Waits for the bookings started in the background (tests). */
   settled(): Promise<void>;
+}
+
+/**
+ * Whether Go books this trip's flights and stays itself: Go reads ixigo.com in the trip's browser, and BOOKING is on, or
+ * names the trip's Server instance ("instances:drill-p0").
+ */
+export async function bookingOnFor(d: Pick<FlightBookingDeps, 'pool' | 'switches'>, tripId: string): Promise<boolean> {
+  if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web') return false;
+  const value = d.switches.get('BOOKING');
+  if (value === 'on') return true;
+  if (!value.startsWith('instances:')) return false;
+  const names = value.slice('instances:'.length).split(',');
+  const r = await d.pool.query<{ server_instance: string | null }>('select server_instance from trips where trip_id = $1', [tripId]);
+  const instance = r.rows[0]?.server_instance ?? null;
+  return instance !== null && names.includes(instance);
 }
 
 export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
@@ -212,7 +230,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   async function book(ask: BookingAsk, runId: string): Promise<void> {
     const runner = d.runner();
     const title = ask.offer.title;
-    const live = liveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
+    const live = bookingLiveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
       `Opening ${title} on ixigo`, `Choosing ${FARE_TYPES[ask.choice].words}`, "ixigo's coupon", 'Filling travellers privately', `Ready to pay for ${ask.name}`,
     ], [ask.personId]);
     const fail = async (why: string, step: number): Promise<void> => {
@@ -313,16 +331,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   }
 
   return {
-    async onFor(tripId) {
-      if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web') return false;
-      const value = d.switches.get('FLIGHT_BOOKING');
-      if (value === 'on') return true;
-      if (!value.startsWith('instances:')) return false;
-      const names = value.slice('instances:'.length).split(',');
-      const r = await d.pool.query<{ server_instance: string | null }>('select server_instance from trips where trip_id = $1', [tripId]);
-      const instance = r.rows[0]?.server_instance ?? null;
-      return instance !== null && names.includes(instance);
-    },
+    onFor: (tripId) => bookingOnFor(d, tripId),
     async start(ask) {
       const runId = stableId('fb', ask.tapId);
       const fresh = await d.pool.query(
