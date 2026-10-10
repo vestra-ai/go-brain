@@ -380,7 +380,11 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   }
 
   /** One search on ixigo's page: kept, joined or run, its live card from start to end. */
-  async function searchPage(kind: TravelKind, q: TravelQuery, o?: SearchFor): Promise<TravelSearch> {
+  /**
+   * anotherWay: the caller answers a failed read another way (flights' link; stays' earlier read or link), so the card is
+   * left for that answer to end (answered), never "Didn't work" first.
+   */
+  async function searchPage(kind: TravelKind, q: TravelQuery, o?: SearchFor, anotherWay = false): Promise<TravelSearch> {
     const { tripId, id, given, conditions, site, link, ttl, key, page } = await plan(kind, q, o?.tripId);
     // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
     if (link) {
@@ -478,6 +482,9 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
             card.running = false;
             card.choosingSince = d.now().getTime();
             card.live.progress({ type: 'choosing', between: err.choices });
+          } else if (anotherWay && !(err instanceof TravelError && ASKS_THE_PERSON.has(err.code))) {
+            // Answered another way: the caller ends the card with how (answered), calm and done.
+            card.running = false;
           } else if (card.owner?.kind === 'message' && !over.has(`${tripId}|${ownerKey(card.owner)}`)) {
             // A failed early start waits, open, for the composer's search in its turn. Anything else ends failed now,
             // before the search answers: the composer's own search, a job's, or one whose turn is already over.
@@ -494,6 +501,36 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   }
 
   /**
+   * The live card of a search answered another way, ended with how, calm and done (p0's golden run and Keshav's live test,
+   * 10 Oct: "DIDN'T WORK · Searching flights on ixigo" over a link card that answered the group). No card, nothing.
+   */
+  async function answered(kind: TravelKind, q: TravelQuery, o: SearchFor | undefined, how: string): Promise<void> {
+    if (!o?.tripId) return;
+    const { key } = await plan(kind, q, o.tripId);
+    const cardKey = `${o.tripId}|${key}`;
+    const card = cards.get(cardKey);
+    if (!card || card.running) return;
+    cards.delete(cardKey);
+    card.live.progress({ type: 'answered', text: how });
+    await card.live.finish(true);
+  }
+
+  /** The card of a search no other way answered either: it ends failed, as any failed search's does. */
+  async function answeredNot(kind: TravelKind, q: TravelQuery, o: SearchFor | undefined): Promise<void> {
+    if (!o?.tripId) return;
+    const { key } = await plan(kind, q, o.tripId);
+    const cardKey = `${o.tripId}|${key}`;
+    const card = cards.get(cardKey);
+    if (card && !card.running) await end(cardKey, card, false);
+  }
+
+  /** "40 min ago", "2 h ago": how old a read is, as the card says it. */
+  const readAgo = (checkedAt: string): string => {
+    const minutes = Math.max(1, Math.round((d.now().getTime() - Date.parse(checkedAt)) / 60_000));
+    return minutes < 60 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`;
+  };
+
+  /**
    * Stays when ixigo's page won't answer: an earlier read of the same page (EARLIER_READ_MS), dated as read; with none,
    * ixigo's own page set as asked, as a link. `failed`: what to throw when even the link can't be made.
    */
@@ -502,9 +539,15 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const earlier = reads.get(p.page);
     // Go's own checks still pick from it (a pool, the price, the share a head); ixigo's own filters, which the read had
     // none of, are the model's to pick (leftToPick: a search with no site said leaves every asked filter to it).
-    if (earlier && d.now().getTime() - Date.parse(earlier.checkedAt) < EARLIER_READ_MS) return { ...earlier, earlier: true };
+    if (earlier && d.now().getTime() - Date.parse(earlier.checkedAt) < EARLIER_READ_MS) {
+      await answered('stays', q, o, `Showing Go's read of it from ${readAgo(earlier.checkedAt)}`);
+      return { ...earlier, earlier: true };
+    }
     const link = await d.engine.pageOf?.(p.id, p.given, { tripId: p.tripId, conditions: p.conditions, ...siteRun(p.site) });
-    if (link) throw new TravelError('link_only', "ixigo won't show its stays to Go's computer right now.", link);
+    if (link) {
+      await answered('stays', q, o, "Here's ixigo's page, set as you asked");
+      throw new TravelError('link_only', "ixigo won't show its stays to Go's computer right now.", link);
+    }
     throw failed;
   }
 
@@ -516,11 +559,15 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       return staysFallback(q, o, new ChallengedError());
     }
     try {
-      return await searchPage('stays', q, o);
+      return await searchPage('stays', q, o, true);
     } catch (err) {
       if (!(err instanceof TravelError) || ASKS_THE_PERSON.has(err.code)) throw err;
       d.log?.warn({ tripId: o?.tripId, code: err.code }, "travel: ixigo's stays page didn't answer; an earlier read or its link answers instead");
-      return staysFallback(q, o, err);
+      return staysFallback(q, o, err).catch(async (e: unknown) => {
+        // Nothing answered after all: the card ends as it is, failed.
+        await answeredNot('stays', q, o);
+        throw e;
+      });
     }
   }
 
@@ -533,15 +580,22 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       // (flights.results pace). One held back, refused, or with nothing on it is ixigo's own page, set as they asked:
       // never "no flights".
       try {
-        const found = await searchPage(kind, q, o);
+        const found = await searchPage(kind, q, o, true);
         if (found.results.length > 0) return found;
       } catch (err) {
         if (err instanceof TravelError && ASKS_THE_PERSON.has(err.code)) throw err;
         d.log?.warn({ tripId: o?.tripId, kind, code: err instanceof TravelError ? err.code : 'failed' }, "travel: ixigo's page didn't answer; its link answers instead");
       }
       const { tripId, given, conditions } = await plan(kind, q, o?.tripId);
-      const a = await d.engine.answer(linkId, given, { tripId, conditions });
-      if (a.as === 'link') throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
+      const a = await d.engine.answer(linkId, given, { tripId, conditions }).catch(async (e: unknown) => {
+        await answeredNot(kind, q, o);
+        throw e;
+      });
+      if (a.as === 'link') {
+        await answered(kind, q, o, `Here's ixigo's page${a.who ? `, set ${a.who}` : ', set as you asked'}`);
+        throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
+      }
+      await answeredNot(kind, q, o);
       throw new TravelError('refused', `${linkId} gives no link.`);
     },
     async shareStep(id, given, o, run) {

@@ -224,7 +224,7 @@ describe('the ixigo_web backend', () => {
   // shared address under a burst; a page held back, refused, or with nothing on it answers with the link instead.
   describe('flights', () => {
     const FLIGHT: RecipeOption = { ...OPTION, kind: 'flight', title: 'IndiGo 6E357', priceNote: 'per person' };
-    function flightsEngine(o: { results?: 'options' | 'empty' | 'refused' | 'unknown_place' } = {}) {
+    function flightsEngine(o: { results?: 'options' | 'empty' | 'refused' | 'unknown_place'; live?: unknown } = {}) {
       const real = linkEngine(4, []);
       const runs: string[] = [];
       const state = { paced: false, results: o.results ?? 'options' };
@@ -238,8 +238,24 @@ describe('the ixigo_web backend', () => {
         }) as Answer,
         pacedOut: (id: string) => id === 'flights.results' && state.paced,
       };
-      return { backend: createIxigoWebBackend({ book, engine, now }), runs, state };
+      return { backend: createIxigoWebBackend({ book, engine, now, ...(o.live ? { live: o.live as never, cardDelayMs: 0 } : {}) }), runs, state };
     }
+
+    // Keshav's live test, 10 Oct: "DIDN'T WORK · Searching flights on ixigo", then the link card that answered the group.
+    it("ends a refused page's live card calm and done, saying the link answered: never \"Didn't work\" when the group got something", async () => {
+      const seen: string[] = [];
+      const live = () => ({
+        progress: (e: { type: string; text?: string }) => {
+          if (e.type === 'answered' || e.type === 'failed') seen.push(e.type === 'answered' ? `answered: ${e.text}` : 'failed');
+        },
+        finish: async (ok: boolean) => {
+          seen.push(ok ? 'done' : 'failed');
+        },
+      });
+      const f = flightsEngine({ results: 'refused', live });
+      await expect(f.backend.search('flights', FLIGHTS, { tripId: 't_goa', turnId: 'turn_calm' })).rejects.toMatchObject({ code: 'link_only' });
+      expect(seen).toEqual([expect.stringMatching(/^answered: Here's ixigo's page, set /), 'done']);
+    });
 
     it("reads flights from their page, and keeps them: asked again while the page is paced, the kept flights answer", async () => {
       const f = flightsEngine();
