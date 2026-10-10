@@ -1,0 +1,44 @@
+id: buses.points
+title: A city's bus boarding points, as ixigo's bus box ranks them, the busiest first
+asks:
+  - where do buses leave from in bangalore
+  - busiest bus pickup point in mumbai
+  - jaipur mein bus kahan se milegi
+inputs:
+  city: { kind: text, about: the city whose bus boarding points people want }
+auth: none
+changes_state: false
+# ixigo's bus box answers a city with its boarding points, each with a rank (1 the busiest), its own name and the name
+# people use for it ("Majestic" for Bengaluru's), and where it is. The box's own call, opened as the page, as the city
+# lookup does (buses.city_lookup: typing into the box timed out on a box's browser, 8 Oct).
+page: "/wap/abus-autocompleter/api/v1/results?s={city}"
+capture:
+  - { match: /wap/abus-autocompleter/api/v1/results, max_bytes: 200000 }
+read:
+  # The entry that is the city with its boarding points ("(All boarding points)" in the box).
+  rows: { from: /wap/abus-autocompleter/api/v1/results, list: '($type($) = "array" ? $ : [$])[$count(boarding_points) > 0][0]' }
+answer:
+  as: facts
+  title: "Bus boarding points in {city}"
+  max: 1
+  each: |
+    (
+      $points := $sort(boarding_points[$type(name) = "string"], function($a, $b) {
+        ($exists($num($a.boarding_point_rank)) ? $num($a.boarding_point_rank) : 999) > ($exists($num($b.boarding_point_rank)) ? $num($b.boarding_point_rank) : 999)
+      });
+      # A point's own name is its alias ("Majestic"); its name is the city's ("Bengaluru").
+      $said := function($p) { ($type($p.alias) = "string" and $trim($p.alias) != "") ? $trim($p.alias) : $p.name };
+      $count($points) > 0 ? {
+        "city": $type(display_text) = "string" ? display_text : city,
+        "region": $type(display_subtext) = "string" ? display_subtext,
+        "busiest": $said($points[0]),
+        "points": [$points[[0..9]].$said($)],
+        "how_many": $count($points)
+      }
+    )
+ttl_minutes: 720
+samples: { bangalore: buses.city_lookup.bangalore.json }
+measured: { fast_ms: null, page_ms: null, flow_ms: null }
+notes: >-
+  The rank is ixigo's own, by how many people board there. A bus's own points, with its times and landmarks, are on its
+  seat layout (GetSeatLayout), read only.
