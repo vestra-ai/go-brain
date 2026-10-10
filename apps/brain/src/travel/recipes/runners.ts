@@ -219,6 +219,50 @@ export const PAYMENT_PAGE_BLOCKED = "That's the payment page, and Go never opens
  * matters for a sleeping box, where a stays search ran past 13 s on staging.
  */
 export const FETCH_TIMEOUT_MS = 20_000;
+
+/**
+ * How long Bash waits past a plan's required captures for its optional ones (a recipe's `required: false`), when the plan
+ * names no grace of its own. Without a grace Bash takes no `required` and waits for every capture: an optional call the
+ * page never makes held the read to FETCH_TIMEOUT_MS (staging, 10 Oct: hotels.details p50 23.7 s, trains.between and the
+ * plain offers read about 20 s). With it, an optional capture is kept when it comes and never blocks when it doesn't.
+ */
+export const OPTIONAL_GRACE_MS = 1_500;
+
+/** A capture as Bash's browser fetch takes it. */
+export interface BashCapture {
+  match: string;
+  required?: boolean;
+  max_bytes?: number;
+  sse?: 'last';
+  min_count?: number;
+  max_count?: number;
+}
+
+/**
+ * A plan's captures as Bash takes them, and its grace: every field the recipe set, the same on every path (a page read,
+ * the stage, a hand-off). `required` goes only with a grace, or for a capture never waited for (besides); a plan with an
+ * optional capture and a required one takes OPTIONAL_GRACE_MS when it names none. One whose captures are all optional
+ * keeps Bash's wait for every one: Bash refuses a fetch with none required (the recipe lint, book/__tests__, refuses
+ * such a recipe).
+ */
+export function bashCaptures(
+  plan: FetchPlan,
+  size: (c: CaptureSpec) => { max_bytes?: number; sse?: 'last' } = (c) => ({ ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}), ...(c.sse ? { sse: c.sse } : {}) }),
+): { capture: BashCapture[]; grace_ms?: number } {
+  const waited = plan.capture.filter((c) => !c.besides);
+  const optional = waited.some((c) => !c.required) && waited.some((c) => c.required);
+  const grace = plan.graceMs ?? (optional ? OPTIONAL_GRACE_MS : undefined);
+  return {
+    capture: plan.capture.map((c) => ({
+      match: c.match,
+      ...(grace ? { required: c.besides ? false : c.required } : c.besides ? { required: false } : {}),
+      ...size(c),
+      ...(c.min_count ? { min_count: c.min_count } : {}),
+      ...(c.max_count ? { max_count: c.max_count } : {}),
+    })),
+    ...(grace ? { grace_ms: grace } : {}),
+  };
+}
 /** How wide Bash takes a fetch's pictures: the width of its window, so a picture is sharp at its own size, never stretched. */
 export const FRAME_WIDTH = 1280;
 /** Pictures a second Go asks Bash's watch for: its most, since Bash shares them across the open tabs (6 gave about 3 a tab). */
@@ -586,23 +630,15 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     nearRefused(plan.steps);
     const steps = plan.steps && d.now().getTime() < noLookUntil ? withoutLook(plan.steps) : plan.steps;
     const doc = docMatch(url, plan.capture);
+    // required is Go's own: Go decides what a timed-out fetch can still answer. A grace (the plan's, or OPTIONAL_GRACE_MS
+    // for an optional capture) says which are required, so Bash answers once they are in and the rest have had the grace.
+    const asked = bashCaptures(plan, sizeOf);
     let body = {
       url,
-      // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer. A plan
-      // with a grace says which are required, so Bash answers once they are in and the rest have had the grace.
-      capture: [
-        ...plan.capture.map((c) => ({
-          match: c.match,
-          ...(plan.graceMs ? { required: c.required } : c.besides ? { required: false } : {}),
-          ...sizeOf(c),
-          ...(c.min_count ? { min_count: c.min_count } : {}),
-          ...(c.max_count ? { max_count: c.max_count } : {}),
-        })),
-        ...(doc ? [docCapture(doc)] : []),
-      ],
+      capture: [...asked.capture, ...(doc ? [docCapture(doc)] : [])],
       ...(steps ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
-      ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
+      ...(asked.grace_ms ? { grace_ms: asked.grace_ms } : {}),
       // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
       // the recipe says how long that takes. None of a private page, whose tab the browser watch never shows either.
       ...(o.private ? { private: true } : { frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) } }),
@@ -818,15 +854,13 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
     const steps = [...check, ...(plan.steps ?? [])];
     const doc = docMatch(url, plan.capture);
+    const asked = bashCaptures(plan, sizeOf);
     let body = {
       url,
-      capture: [
-        ...plan.capture.map((c) => ({ match: c.match, ...(plan.graceMs ? { required: c.required } : {}), ...sizeOf(c) })),
-        ...(doc ? [docCapture(doc)] : []),
-      ],
+      capture: [...asked.capture, ...(doc ? [docCapture(doc)] : [])],
       ...(steps.length ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
-      ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
+      ...(asked.grace_ms ? { grace_ms: asked.grace_ms } : {}),
       front: true,
       // The site's desktop page (Bash's front_device): a login made on its phone page is its phone client's, which its
       // desktop pages, where every other fetch reads, refused within the hour (ixigo, staging 10 Oct).
@@ -901,20 +935,15 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
 
   async function onStage(tripId: string, plan: FetchPlan, o: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }> {
     nearRefused(plan.steps);
+    const asked = bashCaptures(plan, sizeOf);
     let body = {
       tab: STAGE_TAB,
       stage: true,
       keep_open_ms: STAGE_MS,
-      capture: plan.capture.map((c) => ({
-        match: c.match,
-        ...(plan.graceMs ? { required: c.required } : c.besides ? { required: false } : {}),
-        ...sizeOf(c),
-        ...(c.min_count ? { min_count: c.min_count } : {}),
-        ...(c.max_count ? { max_count: c.max_count } : {}),
-      })),
+      capture: asked.capture,
       steps: plan.steps ?? [],
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
-      ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
+      ...(asked.grace_ms ? { grace_ms: asked.grace_ms } : {}),
       frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
       ...(o.tag ? { tag: o.tag } : {}),
     };

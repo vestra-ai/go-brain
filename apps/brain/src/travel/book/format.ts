@@ -33,6 +33,7 @@ export type Input = z.infer<typeof Input>;
 
 const CaptureObject = z.object({
   match: z.string().min(1),
+  /** false: kept when the page makes the call by a short grace after the required ones (runners.ts OPTIONAL_GRACE_MS), never waited for longer. */
   required: z.boolean().default(true),
   min_count: z.int().positive().optional(),
   max_count: z.int().positive().optional(),
