@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Capture, FetchPlan } from '../../recipes/recipe.js';
-import { capture } from '../../recipes/__tests__/fixtures.js';
+import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { BOOK_DIR, loadBook } from '../book.js';
 import { createEngine } from '../engine.js';
 
@@ -36,10 +36,56 @@ const RESULTS = 'https://www.ixigo.com/trains/search-pwa/from/SBC/to/MAS/22-10-2
 const search = () => [capture(SEARCH, SEARCH_URL, sample('trains.between.page.json'))];
 
 describe('trains.confirm_chance', () => {
-  it("says each class's seats, and for a waitlisted one ixigo's chance, its verdict and the refund the plan would pay", async () => {
-    const got = await facts('trains.confirm_chance', ROUTE, search());
-    expect(got.page).toBe(RESULTS);
-    expect(got.runs[0]!.plan.capture).toEqual([{ match: SEARCH, required: true }]);
+  // The page speed: ixigo's results page, whose own calls (the trains, their seats) always come. The newer page draws a
+  // route its browser already showed from a kept answer, with no confirmtkt call (the atlas, 10 Oct), so it is not read.
+  const DESKTOP = 'https://www.ixigo.com/search/result/train/NDLS/MAO/06112026//1/0/0/0/ALL';
+  const DELHI_GOA = { from: 'Delhi', to: 'Goa', date: '2026-11-06' };
+  const desktop = (seats = fixture('trains-ndls-mao-availability.json')) => [
+    capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/NDLS/MAO?date=2026-11-06&languageCode=en', fixture('trains-ndls-mao-between.json')),
+    capture('/api/v3/trains/availability', 'https://www.ixigo.com/api/v3/trains/availability?originCode=NDLS&destinationCode=MAO&travelDate=06112026', seats),
+  ];
+  const SAMPARK = ['1A: WL 6', '2A: WL 22, 39% chance to confirm', '3A: WL 30', '3E: WL 22, 39% chance to confirm', 'SL: WL 53'];
+
+  it("reads ixigo's results page, never the newer page's confirmtkt call: each class's status and ixigo's chance, with no verdict", async () => {
+    const got = await facts('trains.confirm_chance', { ...DELHI_GOA, train: '12218' }, desktop());
+    expect(got.page).toBe(DESKTOP);
+    expect(got.runs[0]!.plan.capture).toEqual([{ match: '/trains/v1/search/between/', required: true }, { match: '/api/v3/trains/availability', required: true }]);
+    expect(JSON.stringify(got.runs[0]!.plan)).not.toContain('confirmtkt');
+    expect(got.rows).toEqual([{ train: 'Sampark Kranthi 12218', leaves: 'NDLS 13:10', arrives: 'MAO 17:10', classes: SAMPARK }]);
+    const one = await facts('trains.confirm_chance', { ...DELHI_GOA, train: '12218', class: '2A' }, desktop());
+    expect(one.rows[0]!['classes']).toEqual(['2A: WL 22, 39% chance to confirm']);
+  });
+
+  it('says Tatkal (q = TQ) apart on the page speed, and a watch reads only the general lines', async () => {
+    const seats = JSON.parse(fixture('trains-ndls-mao-availability.json')) as { data: { routesData: Array<{ trainCode: string; availabilities: Array<Record<string, unknown>> }> } };
+    seats.data.routesData.find((r) => r.trainCode === '12218')!.availabilities.push(
+      { id: 'tq-3a', c: '3A', q: 'TQ', a: 'AVAILABLE-0004', p: 100, t: 0, f: 1540 },
+      { id: 'tq-sl', c: 'SL', q: 'TQ', a: 'WL 3', p: 41, t: 0, f: 560 },
+    );
+    const got = await facts('trains.confirm_chance', { ...DELHI_GOA, train: '12218' }, desktop(JSON.stringify(seats)));
+    expect(got.rows[0]).toMatchObject({ classes: SAMPARK, tatkal: ['3A: Available 4', 'SL: WL 3, 41% chance to confirm'] });
+    expect((await facts('trains.confirm_chance', { ...DELHI_GOA, train: '12218' }, desktop())).rows[0]).not.toHaveProperty('tatkal');
+  });
+
+  // The fast speed: ixigo's train service's own call (confirmtkt), which also says ixigo's verdict and the plan's refund.
+  async function fastFacts(inputs: Record<string, unknown>, body = sample('trains.between.page.json')) {
+    const runs: Array<{ url: string; plan: FetchPlan }> = [];
+    const runner = {
+      read: async (_trip: string, url: string, plan: FetchPlan) => {
+        runs.push({ url, plan });
+        return { captures: [], finalUrl: url };
+      },
+      pageFetch: async () => capture('fast', SEARCH_URL, body),
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-08T12:00:00Z') });
+    const got = await engine.answer('trains.confirm_chance', inputs, { tripId: 't_goa' });
+    if (got.as !== 'facts') throw new Error('not facts');
+    return { ...got, runs };
+  }
+
+  it("at the fast speed says each class's seats, and for a waitlisted one ixigo's chance, its verdict and the refund the plan would pay", async () => {
+    const got = await fastFacts(ROUTE);
+    expect(got.runs).toEqual([]);
     expect(got.title).toBe('KSR Bengaluru to Chennai Central, 22 Oct');
     expect(got.rows.map((r) => r['train'])).toEqual(['Muzaffarpur EXP 15227', 'Shatabdi EXP 12028', 'Lalbagh SF EXP 12608']);
     expect(got.rows[0]!['classes']).toEqual([
@@ -52,17 +98,36 @@ describe('trains.confirm_chance', () => {
   });
 
   it('narrows to the train and the class people asked about', async () => {
-    const got = await facts('trains.confirm_chance', { ...ROUTE, train: '12608', class: 'CC' }, search());
+    const got = await fastFacts({ ...ROUTE, train: '12608', class: 'CC' });
     expect(got.rows).toEqual([{
       train: 'Lalbagh SF EXP 12608', leaves: 'SBC 06:25', arrives: 'MAS 12:20',
       classes: ['CC: WL 7, 93% chance to confirm, ixigo says Confirm, Alternate Travel Plan refund up to 3x'],
     }]);
+  });
+
+  // The day Tatkal booking opens, ixigo fills each train's Tatkal seats beside the general ones (empty on other days, as in
+  // the sample of 7 Oct): said as a list of their own, never as a general class line a watch could take for a seat.
+  it('says Tatkal apart when ixigo has it, and nothing about Tatkal when it has none', async () => {
+    const page = JSON.parse(sample('trains.between.page.json')) as { data: { trainList: Array<Record<string, unknown>> } };
+    const lalbagh = page.data.trainList.find((t) => t && t['trainNumber'] === '12608')!;
+    lalbagh['availabilityCacheTatkal'] = {
+      CC: { availability: 'AVAILABLE-0012', availabilityDisplayName: 'AVL 12', fare: '735' },
+      '2S': { availability: 'TQWL3/WL3', availabilityDisplayName: 'WL 3', predictionPercentage: 41, prediction: '41% Chance', confirmTktStatus: 'Probable' },
+    };
+    const tatkalDay = JSON.stringify(page);
+    const got = await fastFacts({ ...ROUTE, train: '12608' }, tatkalDay);
+    expect(got.rows[0]!['classes']).toContain('CC: WL 7, 93% chance to confirm, ixigo says Confirm, Alternate Travel Plan refund up to 3x');
+    expect(got.rows[0]!['tatkal']).toEqual(['CC: AVL 12', '2S: WL 3, 41% chance to confirm, ixigo says Probable']);
+    expect((await fastFacts({ ...ROUTE, train: '12608', class: '2S' }, tatkalDay)).rows[0]!['tatkal']).toEqual(['2S: WL 3, 41% chance to confirm, ixigo says Probable']);
+    expect((await fastFacts({ ...ROUTE, train: '12608' })).rows[0]).not.toHaveProperty('tatkal');
   });
 });
 
 describe('trains.alternates', () => {
   it('lists the trains with an alternate for a full class, each alternate with its legs, seats and fare', async () => {
     const got = await facts('trains.alternates', ROUTE, search());
+    // Only the newer page carries ixigo's alternates, so this one still reads it.
+    expect(got.page).toBe(RESULTS);
     expect(got.rows).toEqual([{ train: 'Lalbagh SF EXP 12608', alternates: ['CC (General): Alternate Seat, 23 Oct, 12608 SBC to MAS CC AVL 15 on 23 Oct, ₹575'] }]);
   });
 

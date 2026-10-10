@@ -8,8 +8,9 @@ import { z } from 'zod';
 import { goaTrip, msg, packOf } from './goa.fixture.js';
 import type { JevAnswer } from './jev.js';
 import { codeFacts } from './jev-reflex.js';
-import { buildQuestions, QUESTION_NAMES, QUESTION_VERSIONS, RECIPE_CHOICES, type QuestionName, type ReflexInput } from './questions.js';
-import { readAnswers } from './read.js';
+import { LIVE_RECIPES } from './live-gate.js';
+import { buildQuestions, QUESTION_NAMES, QUESTION_VERSIONS, RECIPE_CHOICES, type QuestionName, type RecipeChoice, type ReflexInput } from './questions.js';
+import { liveRecipe, readAnswers } from './read.js';
 import { BARS, type Bars } from './thresholds.js';
 
 export const TestRow = z.object({
@@ -118,7 +119,15 @@ export const GATES: Record<QuestionName, { minRecall: number; maxWrong: number }
 
 const BY_VALUE: ReadonlySet<QuestionName> = new Set(['reaction', 'recipe']);
 
-export function scoreSet(rows: TestRow[], rec: Recorded | null, bars: Bars = BARS): QuestionScore[] {
+/** A row's question 10 label as the live read can meet it: a choice still in shadow is "none" there. */
+const liveLabel = (v: RecipeChoice | null, live: readonly RecipeChoice[]): RecipeChoice | null => (v !== null && !live.includes(v) ? null : v);
+
+/**
+ * Each question as it acts live. Question 10 is scored on its live read (read.ts liveRecipe): a choice still in shadow is
+ * "none" on both sides, so a sure pick of one on a line that asks for it is right, and on a line that asks for a live
+ * search it is a miss (the search would not start early). scoreChoices scores every choice as Jev read it.
+ */
+export function scoreSet(rows: TestRow[], rec: Recorded | null, bars: Bars = BARS, live: readonly RecipeChoice[] = LIVE_RECIPES): QuestionScore[] {
   return QUESTION_NAMES.map((name) => {
     const s: QuestionScore = {
       name, labelled: 0, sure: 0, right: 0, wrong: [], recall: 0,
@@ -127,13 +136,15 @@ export function scoreSet(rows: TestRow[], rec: Recorded | null, bars: Bars = BAR
       missing: 0,
     };
     for (const row of rows) {
-      const expected = row.expect[name];
-      if (expected === undefined) continue;
+      const label = row.expect[name];
+      if (label === undefined) continue;
+      const expected = name === 'recipe' ? liveLabel(label as RecipeChoice | null, live) : label;
       const input = rowInput(row);
       const answers = rec?.answers[row.id] ?? null;
       if (!answers) s.missing += 1;
       const facts = codeFacts(input.message, input.pack, input.runningTasks);
-      const got = readAnswers(answers, facts, buildQuestions(input).taskKeys, bars).would[FIELD[name]] ?? { value: null, sure: false };
+      const would = readAnswers(answers, facts, buildQuestions(input).taskKeys, bars).would;
+      const got = (name === 'recipe' ? liveRecipe(would.recipe ?? { value: null, sure: false }, live) : would[FIELD[name]]) ?? { value: null, sure: false };
       if (name === 'risky') {
         const raised = got.sure && got.value === true;
         if (expected === true) {
@@ -172,6 +183,62 @@ export function scoreSet(rows: TestRow[], rec: Recorded | null, bars: Bars = BAR
     s.recall = s.labelled ? s.right / s.labelled : 0;
     return s;
   });
+}
+
+/** One choice of question 10 as Jev read it, before the live list: what it would do once it acts. */
+export interface ChoiceScore {
+  choice: RecipeChoice;
+  /** Rows that ask for it. */
+  labelled: number;
+  right: number;
+  unsure: number;
+  /** Rows that ask for it, read sure as another choice or as none. */
+  missed: string[];
+  /** Rows read sure as it that ask for another choice or for none: what would act wrongly once it is live. */
+  wrong: string[];
+  recall: number;
+  /** The recording was made with different question wording, or rows that ask for it have no recorded answers. */
+  stale: boolean;
+  missing: number;
+}
+
+/** What a choice must reach before it joins LIVE_RECIPES: no wrong pick and no miss, and most of its rows read. */
+export const CHOICE_GATE = { minLabelled: 4, minRecall: 0.5 };
+
+export function scoreChoices(rows: TestRow[], rec: Recorded | null, bars: Bars = BARS): ChoiceScore[] {
+  const stale = !rec || rec.versions['recipe'] !== QUESTION_VERSIONS.recipe;
+  const scores = new Map<RecipeChoice, ChoiceScore>(
+    RECIPE_CHOICES.map((choice) => [choice, { choice, labelled: 0, right: 0, unsure: 0, missed: [], wrong: [], recall: 0, stale, missing: 0 }]),
+  );
+  for (const row of rows) {
+    const expected = row.expect.recipe;
+    if (expected === undefined) continue;
+    const input = rowInput(row);
+    const answers = rec?.answers[row.id] ?? null;
+    const facts = codeFacts(input.message, input.pack, input.runningTasks);
+    const got = readAnswers(answers, facts, buildQuestions(input).taskKeys, bars).would.recipe ?? { value: null, sure: false };
+    const own = expected === null ? null : scores.get(expected)!;
+    if (own) {
+      own.labelled += 1;
+      if (!answers) own.missing += 1;
+      if (!got.sure) own.unsure += 1;
+      else if (got.value === expected) own.right += 1;
+      else own.missed.push(row.id);
+    }
+    if (got.sure && got.value !== null && got.value !== expected) scores.get(got.value)!.wrong.push(row.id);
+  }
+  return [...scores.values()].map((c) => ({ ...c, recall: c.labelled ? c.right / c.labelled : 0 }));
+}
+
+export function choicePasses(c: ChoiceScore): boolean {
+  return !c.stale && c.missing === 0 && c.labelled >= CHOICE_GATE.minLabelled && c.wrong.length === 0 && c.missed.length === 0 && c.recall >= CHOICE_GATE.minRecall;
+}
+
+export function formatChoices(choices: ChoiceScore[]): string[] {
+  return choices.map(
+    (c) =>
+      `${choicePasses(c) ? 'PASS' : 'FAIL'} q10 ${c.choice.padEnd(14)} right=${c.right}/${c.labelled} (${c.recall.toFixed(2)}) unsure=${c.unsure} missed=${c.missed.length}${c.missed.length ? ` (${c.missed.join(',')})` : ''} wrong=${c.wrong.length}${c.wrong.length ? ` (${c.wrong.join(',')})` : ''}${c.stale ? ' STALE' : ''}${c.missing ? ` missing=${c.missing}` : ''}${LIVE_RECIPES.includes(c.choice) ? ' live' : ''}`,
+  );
 }
 
 /** Recall on the rows that expect a search (question 10), leaving the none rows out. */

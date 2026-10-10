@@ -12,46 +12,93 @@ inputs:
   class: { kind: choice, optional: true, from_page: true, about: "a class code the page offers, such as SL, 3A, 2A or CC" }
 auth: none
 changes_state: false
-# The same call as trains.between: each train's classes carry ixigo's chance a waitlisted ticket confirms ("93% Chance"),
-# its verdict ("Confirm", "No Chance") and the refund its Alternate Travel Plan would pay (trains.alternate_travel_plan).
-page: /trains/search-pwa/from/{from.code}/to/{to.code}/{date|DD-MM-YYYY}
+# The page speed reads ixigo's results page (as trains.between does), whose own calls always come: the trains
+# (/trains/v1/search/between) and their seats (/api/v3/trains/availability), each class's status and ixigo's chance a
+# waitlisted ticket confirms (p). The newer page (/trains/search-pwa/...) reads ixigo's train service on confirmtkt.com
+# instead, but draws a route and date its browser already showed from its own kept answer, with no call (the atlas,
+# 10 Oct: NDLS to JP shown at 05:01Z drew at 08:40Z with none): a watch, which reads the same route again and again, or
+# any second ask, would wait on a call that never comes. The fast speed is that service's own call, which also says
+# ixigo's verdict ("Confirm", "No Chance") and the refund its Alternate Travel Plan would pay (trains.alternate_travel_plan).
+page: /search/result/train/{from.code}/{to.code}/{date|DDMMYYYY}//1/0/0/0/ALL
 fast:
   url: https://ixigotrainsapi.confirmtkt.com/api/v1/trains/search?sourceStationCode={from.code}&destinationStationCode={to.code}&addAvailabilityCache=true&excludeMultiTicketAlternates=false&excludeBoostAlternates=false&sortBy=DEFAULT&dateOfJourney={date|DD-MM-YYYY}&enableNearby=true&enableTG=true&tGPlan=ITG-A50&showTGPrediction=false&tgColor=DEFAULT&showPredictionGlobal=true&showNewAlternates=true&showNewAltText=true
-capture:
-  - ixigotrainsapi.confirmtkt.com/api/v1/trains/search
-read:
-  rows:
-    from: ixigotrainsapi.confirmtkt.com/api/v1/trains/search
-    list: 'data.trainList[$type($) = "object" and ($inputs.train ? trainNumber = $inputs.train : true)]'
-answer:
-  as: facts
-  title: "{from.name} to {to.name}, {date|D Mon}"
-  max: 12
-  # A class that is available needs no chance; one that is waitlisted says ixigo's figure and verdict. It is ixigo's
-  # prediction, not a promise.
+  list: 'data.trainList[$type($) = "object" and ($inputs.train ? trainNumber = $inputs.train : true)]'
+  # A class that is available needs no chance; one that is waitlisted says ixigo's figure and verdict. Tatkal (on the
+  # day its booking opens, when ixigo fills it) is said apart, so a watch on the general quota's seats never fires on it.
   each: |
     (
       $t := $;
       $classes := $inputs.class ? [$inputs.class] : $keys(availabilityCache);
-      $say := function($c) {(
-        $a := $lookup($t.availabilityCache, $c);
+      $say := function($quota, $c) {(
+        $a := $lookup($quota, $c);
         $pct := $num($a.predictionPercentage);
         $waiting := $contains($string($a.availability), "WL");
         $a ? $c & ": " & ($a.availabilityDisplayName ? $a.availabilityDisplayName : $a.availability)
           & ($waiting and $exists($pct) ? ", " & $string($pct) & "% chance to confirm, ixigo says " & $a.confirmTktStatus : "")
           & ($waiting and $exists($num($a.tgMultiplier)) ? ", Alternate Travel Plan refund up to " & $string($num($a.tgMultiplier)) & "x" : "")
       )};
-      $lines := [$classes.$say($)];
-      $count($lines) > 0 ? {
+      $lines := [$classes.$say($t.availabilityCache, $)];
+      $tatkal := [($inputs.class ? [$inputs.class] : $keys(availabilityCacheTatkal)).$say($t.availabilityCacheTatkal, $)];
+      $count($lines) + $count($tatkal) > 0 ? {
         "train": $titleWords(trainName) & " " & trainNumber,
         "leaves": fromStnCode & " " & departureTime,
         "arrives": toStnCode & " " & arrivalTime,
-        "classes": $lines
+        "classes": $lines,
+        "tatkal": $count($tatkal) > 0 ? $tatkal
+      }
+    )
+capture:
+  - /trains/v1/search/between/
+  - /api/v3/trains/availability
+# What the group watches on the stage, as trains.between: the results come in, and a scroll brings the class tiles on screen.
+fetch:
+  - when: "true"
+    steps:
+      - { op: wait_for, match: /trains/v1/search/between/ }
+      - { op: scroll, times: 1 }
+    settle_ms: 550
+read:
+  rows:
+    from: /trains/v1/search/between/
+    list: |
+      data.trainsBetweenStations[$not(suspended = true) and $not(attributes.bookable = false) and ($inputs.train ? attributes.number = $inputs.train : true)]
+  also:
+    seats: { from: /api/v3/trains/availability, value: "data.routesData" }
+answer:
+  as: facts
+  title: "{from.name} to {to.name}, {date|D Mon}"
+  max: 12
+  # The page's figures: each class's status and, for a waitlist, ixigo's chance (p) without the verdict word or the
+  # Alternate Travel Plan's refund, which only the fast speed's answer carries. Tatkal (q = TQ) is said apart.
+  each: |
+    (
+      $t := $;
+      $mine := $seats[trainCode = $t.attributes.number].availabilities;
+      $status := function($a) {(
+        $s := $trim($a);
+        $avl := $groups($s, "^(?:AVAILABLE|AVL)[-\\s]*0*(\\d+)$", "i");
+        $queue := $groups($s, "^(WL|RAC|GNWL|RLWL|PQWL)\\s*0*(\\d+)$", "i");
+        $avl ? "Available " & $avl[0] : $queue ? $uppercase($queue[0]) & " " & $queue[1] : $substring($s, 0, 30)
+      )};
+      $order := $distinct($append(attributes.fareClasses, $mine.c));
+      $say := function($q, $c) {(
+        $a := $mine[c = $c and q = $q][0];
+        $pct := $num($a.p);
+        $a ? $c & ": " & $status($a.a) & (($contains($string($a.a), "WL") and $pct > 0) ? ", " & $string($floor($pct + 0.5)) & "% chance to confirm" : "")
+      )};
+      $lines := [($inputs.class ? [$inputs.class] : $order).$say("GN", $)];
+      $tatkal := [($inputs.class ? [$inputs.class] : $order).$say("TQ", $)];
+      $count($lines) + $count($tatkal) > 0 ? {
+        "train": $titleWords(attributes.localName) & " " & attributes.number,
+        "leaves": board & " " & $substring(attributes.departTime, 0, 5),
+        "arrives": deboard & " " & $substring(attributes.arrivalTime, 0, 5),
+        "classes": $lines,
+        "tatkal": $count($tatkal) > 0 ? $tatkal
       }
     )
 # "Tell us when 12608's 3A confirms": a class line that is available, confirmed or RAC, not on the waiting list.
 watch:
   confirms: '$count(classes[$contains($lowercase($), /:\s*(available|avl|cnf|rac)\b/)]) > 0'
-samples: { page: trains.between.page.json }
+samples: { fast: trains.between.page.json }
 measured: { fast_ms: 366, page_ms: 1605, flow_ms: null }
 notes: The results tile shows it as "SL ₹315 WL 106 49% Chance". It is ixigo's prediction from past charts, never a promise.

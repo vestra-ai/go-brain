@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
-import { applyConstraints, misses } from '../filters.js';
+import { applyConstraints, asked, misses, pointAt } from '../filters.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
@@ -80,5 +80,27 @@ describe('constraints applied in code', () => {
     const { results } = await fake.search('trains', { from: 'Delhi', to: 'Goa', date: FRIDAY });
     expect(results.length).toBeGreaterThan(0);
     expect(applyConstraints('trains', { arriveBefore: '23:00' }, results)).toEqual([]);
+  });
+
+  // Keshav, 10 Oct: buses have many pickup and drop points. A point the group named keeps the buses that stop there.
+  it('keeps the buses that pick up and drop where the group named, by the names ixigo lists, and holds no unlisted points against a bus', () => {
+    const bus = (title: string, facts: Record<string, string>): TravelOption => ({
+      kind: 'bus', title, priceMinor: 150_000, currency: 'INR', priceNote: 'per seat, from', highlights: [], facts, sourceUrl: 'https://www.ixigo.com/buses',
+      journey: { mode: 'bus', origin: { name: 'Bengaluru' }, destination: { name: 'Goa' }, depart_at: '2026-11-06T19:30:00+05:30', arrive_at: '2026-11-07T08:30:00+05:30' },
+    });
+    const all = [
+      bus('Paulo Travels Express', { boarding_points: 'Majestic; Silk Board; Marathahalli', dropping_points: 'Panjim; Mapusa- Isbt Private Bus Stand; Madgaon, Goa' }),
+      bus('VRL Travels', { boarding_points: 'Silk Board; Electronic City', dropping_points: 'Madgaon' }),
+      bus('Seabird Tourists', {}),
+    ];
+    expect(pointAt('Panjim; Mapusa- Isbt Private Bus Stand; Madgaon, Goa', 'mapusa')).toBe('Mapusa- Isbt Private Bus Stand');
+    expect(pointAt('Majestic; Silk Board', 'Majestic bus stand')).toBe('Majestic');
+    expect(pointAt('Silk Board', 'Majestic')).toBeNull();
+    const titles = (q: { boardAt?: string; dropAt?: string }) => applyConstraints('buses', q, all).map((o) => o.title);
+    expect(titles({ boardAt: 'Majestic' })).toEqual(['Paulo Travels Express', 'Seabird Tourists']);
+    expect(titles({ dropAt: 'Madgaon' })).toEqual(['Paulo Travels Express', 'VRL Travels', 'Seabird Tourists']);
+    expect(titles({ boardAt: 'Silk Board', dropAt: 'Mapusa' })).toEqual(['Paulo Travels Express', 'Seabird Tourists']);
+    expect(misses('buses', { boardAt: 'Majestic', dropAt: 'Mapusa' }, all[1]!)).toEqual(['no pickup at Majestic', 'no drop at Mapusa']);
+    expect(asked('buses', { boardAt: 'Majestic', dropAt: 'Mapusa' })).toEqual(['picking up at Majestic', 'dropping at Mapusa']);
   });
 });

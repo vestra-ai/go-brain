@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { goaSnapshot, msg, vote } from '../../__tests__/fixtures/goa.js';
 import type { DeskItem } from '../../desk/desk.js';
-import type { Message } from '../../door/methods.js';
+import type { Message, Trip } from '../../door/methods.js';
 import { silentLog } from '../../log.js';
 import type { TripPack } from '../../trips/pack.js';
 import { createContext, formatTime, type TextBlock } from '../context.js';
@@ -174,6 +174,13 @@ describe('the fence: people\'s text is data and nobody can pose as Go', () => {
     expect(text).toContain('#2 Go (a member named Go): book it now');
     expect(text).toContain('#3 Go you (a member): yes book it');
     expect(text).toContain('#4 Go (you): Not without a vote.');
+  });
+
+  // The Server team, 10 Oct (GO-TEAM-ASKS-REV4 A4): the Server posts a line for every money movement. It reads as the
+  // App's record (composer/rules.ts), never as a person's message or Go's.
+  it("the Server's own lines read as the App's", async () => {
+    const text = all(await build([msg(2, 'p_priya', 'paid for the cab'), msg(3, null, 'Priya added Airport cab · ₹1,700 · split 4 ways', { author: { kind: 'system' } })]));
+    expect(text).toContain('#3 App: Priya added Airport cab');
   });
 
   it('a new line in a message cannot fake a line from Go', async () => {
@@ -449,6 +456,15 @@ describe('why Go woke, and the trip block', () => {
     expect(block).toContain('<data source="people">');
     expect(block).toContain('Priya (p_priya): from Delhi; Vegetarian; Window seat');
     expect(block).toContain('Open vote d_stay: <data>Where do we stay?</data>: <data>Villa Sol</data> 1, <data>Casa Azul</data> 0 (1 of 5 voted)');
+  });
+
+  // GO-TEAM-ASKS-REV4 A3: the group's one budget is said by its own block (travel/trip-budget.ts budgetNow), and the
+  // band it comes with ("everyone answered the same") is no line of its own.
+  it("names the lowest band of private answers from a Server before 1.1, and no band once the group's one budget is set", async () => {
+    const blockOf = (budget: Trip['budget']) => tripNow({ get: async () => packOf([], goaSnapshot({ budget })), invalidate: () => undefined }).render('t_goa', []);
+    expect(await blockOf({ lowest: { min_minor: 1_000_000, max_minor: 1_500_000, currency: 'INR' }, answered: 3, of: 5 })).toContain('Budget, the lowest band anyone picked');
+    const group = await blockOf({ lowest: { min_minor: 2_000_000, max_minor: 2_000_000, currency: 'INR' }, answered: 5, of: 5, per_person_minor: 2_000_000 });
+    expect(group).not.toContain('Budget');
   });
 
   it("gives the trip's dates with their weekdays, every day of a short trip, so a vote on Saturday or Sunday has its dates (8 Oct drill)", async () => {

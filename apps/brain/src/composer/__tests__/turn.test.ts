@@ -171,6 +171,17 @@ describe('a composer turn', () => {
     expect(r.posts()[0]?.params.reply_to).toBeUndefined();
   });
 
+  // GO-TEAM-ASKS-REV4 A4 (the Server team, 10 Oct): the App's own lines are a record, and Go never replies to one, even
+  // when its words cite it as the proof.
+  it("never replies to one of the App's own lines, even when Go's words cite it", async () => {
+    const line = msg(2, null, 'Priya added Airport cab · ₹1,700 · split 4 ways', { author: { kind: 'system' } });
+    const ask = msg(3, 'p_arjun', '@Go did Priya add the cab?');
+    const r = room({ messages: [line, ask], script: [{ text: 'Yes, Priya added the airport cab. The App says so in #2.' }] });
+    await turn(r, [item(r.tripId, ask, true)]);
+    expect(r.posts()[0]?.params.text).toBe('Yes, Priya added the airport cab. The App says so.');
+    expect(r.posts()[0]?.params.reply_to).toBeUndefined();
+  });
+
   it('the pre-post check: a message that lands while Go writes joins the same turn', async () => {
     const ask = msg(3, 'p_arjun', '@Go flights Friday?');
     const more = msg(5, 'p_kabir', 'also Saturday?');

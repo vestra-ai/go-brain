@@ -36,13 +36,13 @@ describe('the recipe book', () => {
   it('loads every file, with nothing left out', () => {
     expect(problems).toEqual([]);
     expect(book.all().map((r) => r.id).sort()).toEqual([
-      'buses.between', 'buses.city_lookup', 'buses.offers', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.results', 'flights.search',
+      'buses.between', 'buses.city_lookup', 'buses.offers', 'buses.points', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.results', 'flights.search',
       'help.downtime', 'help.faq', 'help.services',
       'hotels.details', 'hotels.offers', 'hotels.place_lookup', 'hotels.reviews', 'hotels.rooms', 'hotels.search', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list',
       'plan.destination', 'plan.explore', 'plan.top_locations',
-      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.between', 'trains.by_name', 'trains.confirm_chance', 'trains.offers',
-      'trains.platform_locator', 'trains.running_status', 'trains.schedule', 'trains.station_lookup', 'trains.station_status',
+      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.between', 'trains.boarding_stations', 'trains.by_name', 'trains.coach_position', 'trains.confirm_chance', 'trains.offers',
+      'trains.platform_locator', 'trains.pnr_status', 'trains.route', 'trains.running_status', 'trains.schedule', 'trains.station_lookup', 'trains.station_status', 'trains.tatkal', 'trains.train_calendar',
       'trip.how_we_get_there',
     ]);
   });
@@ -234,6 +234,19 @@ describe('trains.between', () => {
     expect(bare.as === 'options' && bare.options[0]).toMatchObject({ priceMinor: 311_500, highlights: ['AC 2 Tier', '29 h 10 m'] });
   });
 
+  // ixigo's between call of 10 Oct splits each class's fare (baseFare, serviceCharge, railwayCharges, cateringCharges,
+  // otherCharges) and gives each train's averageRating; the 8 Oct page gave baseFare alone.
+  it("without the seats call, a class's fare is its breakup summed; the train's rating is kept", async () => {
+    const between = JSON.parse(fixture('trains-ndls-mao-between.json')) as { data: { trainsBetweenStations: Array<{ attributes: Record<string, unknown>; fares: Record<string, unknown> }> } };
+    const first = between.data.trainsBetweenStations[0]!;
+    first.fares['2A'] = { baseFare: 3000, serviceCharge: 40, railwayCharges: 60, cateringCharges: 0, otherCharges: 15 };
+    first.attributes['averageRating'] = 4.1;
+    const call = capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/NDLS/MAO?date=2026-11-06&languageCode=en', JSON.stringify(between));
+    const got = await engineWith(() => [call]).engine.answer('trains.between', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
+    if (got.as !== 'options') throw new Error('not options');
+    expect(got.options[0]).toMatchObject({ title: 'NZM ERS SF EXP 22656', priceMinor: 311_500, facts: { class_code: '2A', rating: 4.1 } });
+  });
+
   it('shows Tatkal next to the General quota once it is open, and a train that boards at another station of the city', async () => {
     const { engine } = engineWith(() => page('csmt-mao', 'CSMT', 'MAO', '2026-10-08', '08102026'));
     const got = await engine.answer('trains.between', { from: 'Mumbai', to: 'Goa', date: '2026-10-08' }, { tripId: 't_goa' });
@@ -333,6 +346,51 @@ describe('buses.between', () => {
     });
     expect(got.options[1]!.priceMinor).toBe(300_000);
     expect(Math.min(...got.options.map((o) => o.priceMinor))).toBe(150_000);
+  });
+
+  // Keshav, 10 Oct: buses have many pickup and drop points. The list call names every point with ixigo's rank (field names
+  // as the 10 Oct Bengaluru to Goa read sent them; the names here are Mumbai's and Goa's, the ids and stops set for the test).
+  it('reads each bus\'s pickup and drop points by name, the busiest first, and clicks ixigo\'s chips for the ones the group named', async () => {
+    const body = JSON.parse(fixture('buses-mumbai-goa.json'));
+    body.boardingPointList = [
+      { filterID: 1, filterName: 'Borivali East', filterStatus: false, placeId: '101', lat: '19.2307', long: '72.8567', rank: '1' },
+      { filterID: 2, filterName: 'Andheri East', filterStatus: false, placeId: '102', lat: '19.1136', long: '72.8697', rank: '2' },
+      { filterID: 3, filterName: 'Sion', filterStatus: false, placeId: '103', lat: '', long: '', rank: '0' },
+      { filterID: 4, filterName: ' ', filterStatus: false, placeId: '104', lat: '', long: '', rank: '0' },
+    ];
+    body.droppingPointList = [
+      { filterID: 7, filterName: 'Mapusa- Isbt Private Bus Stand', filterStatus: false, placeId: '201', lat: '', long: '', rank: '0' },
+      { filterID: 8, filterName: 'Panjim', filterStatus: false, placeId: '202', lat: '15.4939', long: '73.8369', rank: '1' },
+      { filterID: 9, filterName: 'Mapusa', filterStatus: false, placeId: '203', lat: '15.589', long: '73.8099', rank: '2' },
+    ];
+    body.services[0].filters = { boardingPoints: [3, 2, 1, 4, 99], droppingPoints: [7, 9, 8], amenities: [] };
+    body.services[1].filters = { boardingPoints: [3], droppingPoints: [], amenities: [] };
+    const { engine, runs } = engineWith(() => [capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', JSON.stringify(body))]);
+    const got = await engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', board_at: 'Andheri', drop_at: 'Mapusa' }, { tripId: 't_goa' });
+    if (got.as !== 'options') throw new Error('not options');
+    // An id the list doesn't name, or a blank name, is left out; a point with no rank comes after the ranked ones.
+    expect(got.options[0]!.facts).toMatchObject({ boarding_points: 'Borivali East; Andheri East; Sion', dropping_points: 'Panjim; Mapusa; Mapusa- Isbt Private Bus Stand' });
+    // The drops ixigo placed, for the nearest one to the group's stay (group-stay.ts): Mapusa's bus stand has no position.
+    expect(got.options[0]!.facts['drop_spots']).toBe('Mapusa (15.589, 73.8099); Panjim (15.4939, 73.8369)');
+    expect(got.options[1]!.facts['boarding_points']).toBe('Sion');
+    expect(got.options[1]!.facts).not.toHaveProperty('dropping_points');
+    expect(got.options[1]!.facts).not.toHaveProperty('drop_spots');
+    expect(got.options[2]!.facts).not.toHaveProperty('boarding_points');
+    // On the stage: the pickup's chip, then the Dropping Points tab and the drop's chip, each skipped when it isn't there.
+    expect(runs[0]!.plan.steps).toEqual([
+      { op: 'wait_for', match: '/buslist/v3/services$' },
+      { op: 'click', role: 'link', text: 'Andheri', optional: true, within_ms: 1500 },
+      { op: 'click', role: 'link', name: 'Dropping Points', optional: true, within_ms: 1500 },
+      { op: 'click', role: 'link', text: 'Mapusa', optional: true, within_ms: 1500 },
+      { op: 'scroll', times: 1 },
+    ]);
+    await engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-07', drop_at: 'Panjim' }, { tripId: 't_goa' });
+    expect(runs[1]!.plan.steps).toEqual([
+      { op: 'wait_for', match: '/buslist/v3/services$' },
+      { op: 'click', role: 'link', name: 'Dropping Points', optional: true, within_ms: 1500 },
+      { op: 'click', role: 'link', text: 'Panjim', optional: true, within_ms: 1500 },
+      { op: 'scroll', times: 1 },
+    ]);
   });
 
   it("reads a bus with null details, and refuses a page that sent only its meta call", async () => {

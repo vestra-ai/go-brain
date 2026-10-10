@@ -229,6 +229,56 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(cold.elapsed()).toBe(0);
   });
 
+  // Staging, 10 Oct 05:02Z: ixigo's flight status page answered 200 and showed Cloudflare's Turnstile; its calls never came.
+  it("reads a timed-out page that showed Cloudflare's Turnstile (its document 200) as the check: opened again, never read", async () => {
+    const turnstile = (captures: unknown[]) => new V1Error(504, 'timeout', 'The page did not send every capture.', null, { code: 'timeout', partial: { captures, challenge: 'turnstile' } });
+    const passes = world((_, n) => {
+      if (n === 1) throw turnstile([docAt(200, 300)]);
+      return fetched([busCapture]);
+    });
+    expect((await createBrowserFetchRunner(passes.deps).read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+    expect(passes.calls).toHaveLength(2);
+    // Still on it when no load fits: the caller hears the check, as for a 403.
+    const stays = world(() => { throw turnstile([docAt(200, 300)]); });
+    await expect(createBrowserFetchRunner(stays.deps).read('t1', BUSES, busPlan)).rejects.toBeInstanceOf(ChallengedError);
+    // A hand-off's page on it: loaded again, never left in front for the person.
+    const HOME = 'https://www.ixigo.com/';
+    const plan: FetchPlan = { capture: [{ match: '/action/content', required: true, max_bytes: 1 }], timeoutMs: 12_000, graceMs: 3_000 };
+    const front = world(() => { throw turnstile([{ ...capture('/$', HOME, '<', 200), at_ms: 300 }]); });
+    expect(await createBrowserFetchRunner(front.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [], challenged: true });
+    // A plain timeout, with no check, is not one.
+    const plain = world(() => { throw new V1Error(504, 'timeout', 'The page did not send every capture.', null, { code: 'timeout', partial: { captures: [docAt(200, 300)] } }); });
+    await expect(createBrowserFetchRunner(plain.deps).read('t1', BUSES, busPlan)).rejects.not.toBeInstanceOf(ChallengedError);
+  });
+
+  // Staging, 10 Oct: a login made on ixigo's phone page (its client iximweb) was gone within the hour of the desktop
+  // pages Go reads (ixiweb). A desktop hand-off asks Bash for the site's desktop page (front_device).
+  it("asks for the site's desktop page on a desktop hand-off; a Bash that refuses front_device gets the phone page, and none asked a while", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const plan: FetchPlan = { capture: [{ match: '/action/content', required: true, max_bytes: 1 }], timeoutMs: 12_000, graceMs: 3_000 };
+    const bodies: Array<Record<string, unknown>> = [];
+    const older = world((c) => {
+      const body = c.opts['body'] as Record<string, unknown>;
+      bodies.push(body);
+      // As an older Bash refuses it: an unknown key at the body's top, so no param at all.
+      if ('front_device' in body) throw new V1Error(400, 'invalid_request', 'Unrecognized key: "front_device"', null, { code: 'invalid_request' });
+      return fetched([], HOME);
+    });
+    const runner = createBrowserFetchRunner(older.deps);
+    expect(await runner.handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop' })).toMatchObject({ device: 'phone' });
+    expect(bodies.map((b) => b['front_device'] ?? 'phone')).toEqual(['desktop', 'phone']);
+    // Remembered: the next hand-off asks for the phone page at once.
+    await runner.handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop' });
+    expect(bodies.slice(2).map((b) => b['front_device'] ?? 'phone')).toEqual(['phone']);
+    // A Bash that takes it: the desktop page, and the answer says so; a hand-off not asking for it never sends it.
+    const current = world(() => fetched([], HOME));
+    const now = createBrowserFetchRunner(current.deps);
+    expect(await now.handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop' })).toMatchObject({ device: 'desktop' });
+    expect((current.calls[0]!.opts['body'] as Record<string, unknown>)['front_device']).toBe('desktop');
+    await now.handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'other' });
+    expect(current.calls[1]!.opts['body']).not.toHaveProperty('front_device');
+  });
+
   it("never hands a page on the check to the person: a hand-off loads it again, and says challenged when it stays", async () => {
     const HOME = 'https://www.ixigo.com/';
     const homeDoc = (status: number) => ({ ...capture('/$', HOME, '<', status), at_ms: 300 });

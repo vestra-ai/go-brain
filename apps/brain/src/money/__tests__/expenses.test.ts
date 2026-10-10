@@ -39,8 +39,9 @@ describe('record_expense', () => {
     const [out] = await run([
       { name: 'record_expense', input: { message_id: '#1', amount_minor: 320000, for_what: 'Cab from the airport', category: 'getting_around' } },
     ]);
-    // 1.1: no vault payment behind it, so it is pending for the people it is split between: no approval_id goes.
-    expect(out).toMatchObject({ recorded: true, pending: true, tell_the_room: expect.stringContaining('Stay quiet') });
+    // No vault payment behind it, so no approval_id goes. It counts at once (GO-TEAM-ASKS-REV4 A2): nothing pending.
+    expect(out).toMatchObject({ recorded: true, tell_the_room: expect.stringContaining('Stay quiet') });
+    expect(out).not.toHaveProperty('pending');
     expect(expenses()[0]).not.toHaveProperty('approval_id');
     expect(expenses()).toEqual([
       expect.objectContaining({
@@ -168,7 +169,9 @@ describe('who_owes_what', () => {
     expect(k.server.writesOf('read_trip')).toHaveLength(1);
   });
 
-  it('says where each expense stands (1.1 B4): pending and who it waits on, disputed by whom and why; never to press anyone', async () => {
+  // GO-TEAM-ASKS-REV4 A2 (the Server team, 10 Oct): expense approval was withdrawn, and every expense counts from when it
+  // is added. An older Server's answers on an expense still read, and Go says nothing of them.
+  it('reads every expense as counted: no status, nobody waited on, no dispute, even when an older Server sends them', async () => {
     const trip = goaTrip('confirmed');
     trip.expenses.push(
       C.Expense.parse({
@@ -195,12 +198,10 @@ describe('who_owes_what', () => {
     const ctx = turnCtx('t_goa', k.server, goaTrip('confirmed'), [say(1, 'p_arjun', 'who owes what now?')]);
     const [out] = (await runToolCalls([readExpensesTool()], ctx, [{ name: 'who_owes_what', input: {} }])) as Array<{ expenses: Array<Record<string, unknown>>; tell_the_room: string }>;
     const byFor = Object.fromEntries(out!.expenses.map((e) => [e['for'], e]));
-    expect(byFor['Airport cab']).toMatchObject({ status: 'disputed', disputed: [{ by: 'Priya', why: '<data>I took the bus</data>' }] });
-    expect(byFor['Airport cab']).not.toHaveProperty('waiting_on');
-    expect(byFor['Dinner']).toMatchObject({ status: 'pending', waiting_on: ['Meher'] });
-    expect(byFor['Villa Sol']).toMatchObject({ status: 'approved' });
-    expect(out!.tell_the_room).toContain('An expense still pending is not final');
-    expect(out!.tell_the_room).toContain('Never press anyone about one they disputed: you may say who disputed it and why');
+    for (const e of Object.values(byFor)) expect(Object.keys(e).sort()).toEqual(['amount', 'for', 'paid_by', 'shared_by']);
+    expect(Object.keys(byFor).sort()).toEqual(['Airport cab', 'Dinner', 'Villa Sol']);
+    expect(out!.tell_the_room).not.toMatch(/pending|disput|approve/i);
+    expect(JSON.stringify(out)).not.toContain('I took the bus');
   });
 
   it('says nothing is recorded yet when there is nothing', async () => {

@@ -50,3 +50,20 @@ describe('buses.offers', () => {
     expect(got.rows[3]).toMatchObject({ code: 'NAVEEN500', until: '2026-10-31', new_users_only: true });
   });
 });
+
+// The ixigo atlas (10 Oct): ixigo's own bus box ranks a city's boarding points by how many people board there.
+describe('buses.points', () => {
+  it("says a city's boarding points the busiest first, by the names people use, from ixigo's bus box", async () => {
+    const BOX = '/wap/abus-autocompleter/api/v1/results';
+    const got = await facts('buses.points', { city: 'bangalore' }, [capture(BOX, `https://www.ixigo.com${BOX}?s=bangalore`, sample('buses.city_lookup.bangalore.json'))]);
+    expect(got.runs[0]!.url).toBe('https://www.ixigo.com/wap/abus-autocompleter/api/v1/results?s=bangalore');
+    expect(got.title).toBe('Bus boarding points in bangalore');
+    expect(got.rows).toEqual([{
+      city: 'Bangalore',
+      region: 'Bengaluru, Karnataka',
+      busiest: 'Majestic',
+      points: ['Majestic', 'Marathahalli', 'Silk Board', 'Madiwala', 'Anand Rao Circle', 'KR Puram', 'Tin Factory', 'Electronic City', 'Yeswanthpur', 'Kalasipalyam'],
+      how_many: 15,
+    }]);
+  });
+});
