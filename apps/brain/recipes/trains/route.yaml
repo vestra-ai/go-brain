@@ -1,0 +1,73 @@
+id: trains.route
+title: Every train between two cities, from all their stations, by ixigo's city-to-city page, with the fastest, the cheapest, the first and the last, and each class's lowest fare
+asks:
+  - trains from mumbai to goa
+  - mumbai se goa kaun kaun si trains hain
+  - cheapest train from delhi to jaipur
+  - fastest train bangalore to chennai
+inputs:
+  from: { kind: text, about: "the city people leave from, as ixigo names it (Mumbai, New Delhi, Bengaluru), no station code" }
+  to: { kind: text, about: "the city people go to, as ixigo names it (Goa, Jaipur, Chennai)" }
+auth: none
+changes_state: false
+# ixigo's city-to-city page ("/by-train-rail/mumbai-to-goa-by-train"), any day, no date: every train between the two
+# cities' stations as TrainTrip ld+json (number, name, each end's station code and time), a table of each class's lowest
+# fare, and tables of the daily and the weekly trains (their days and journey time). Its fastest and cheapest trains are
+# sentences in its Next.js payload, not data: the train they name is said from the ld+json (the sentences give a city
+# code, CSTM, for a train that leaves Panvel), with the journey time and fare the sentences give.
+let:
+  route: '$lowercase($replace($trim(from), /[^A-Za-z0-9]+/, "-")) & "-to-" & $lowercase($replace($trim(to), /[^A-Za-z0-9]+/, "-"))'
+page: /by-train-rail/{$route}-by-train
+capture:
+  - { match: "/by-train-rail/{$route}-by-train$", max_bytes: 2000000 }
+read:
+  rows: { from: "/by-train-rail/{$route}-by-train$", format: html_tables, list: "[ $ ]" }
+  also:
+    said: { from: "/by-train-rail/{$route}-by-train$", format: next_html, value: "$findAll($, '__html').__html" }
+answer:
+  as: facts
+  title: "Trains, {from} to {to}"
+  max: 1
+  each: |
+    (
+      $plain := function($t) { $t ? $trim($replace($replace($t, /<[^>]+>/, ""), /\s+/, " ")) };
+      $says := function($start) { $plain($said[$contains($, $start)][0]) };
+      $prices := $reduce(tables, function($found, $t) { $t[0][0] = "Class" ? $t : $found }, []);
+      $timed := $reduce(tables, function($all, $t) {
+        $t[0][0] = "Train Name (No.)" ? $append($all, $map($t, function($r, $i) { $i > 0 ? { "number": $groups($r[0], "\\(\\s*(\\d+)\\s*\\)")[0], "days": $r[1], "takes": $r[6] } })) : $all
+      }, []);
+      $trips := ld[`@type` = "TrainTrip"];
+      $line := function($t) {(
+        $known := $timed[number = $t.trainNumber][0];
+        $titleWords($t.trainName) & " " & $t.trainNumber & ": leaves " & $t.departureStation.branchCode & " " & $t.departureTime
+          & ", reaches " & $t.arrivalStation.branchCode & " " & $t.arrivalTime
+          & ($known ? ", " & ($known.days = "Daily" ? "daily" : "on " & $known.days) & ", " & $known.takes : "")
+      )};
+      $byTime := $sort($trips, function($a, $b) { $a.departureTime > $b.departureTime });
+      $named := function($sentence) { $sentence ? $trips[trainNumber = $groups($sentence, " is (\\d{4,5})\\b")[0]][0] };
+      $fastestSaid := $says("The fastest train from");
+      $cheapestSaid := $says("The cheapest train from");
+      $fastest := $named($fastestSaid);
+      $cheapest := $named($cheapestSaid);
+      $takes := $groups($fastestSaid, "takes about ([0-9:]+) hours");
+      $costs := $groups($cheapestSaid, "is (\\d+) INR");
+      {
+        "route": $substringBefore(title, " Trains - "),
+        "count": $count($trips),
+        "fastest": $fastest ? $line($fastest) & ($takes ? ", about " & $takes[0] & " hrs" : ""),
+        "cheapest": $cheapest ? $line($cheapest) & ($costs ? ", from ₹" & $costs[0] : ""),
+        "first": $count($trips) > 0 ? $line($byTime[0]),
+        "last": $count($trips) > 0 ? $line($byTime[-1]),
+        "lowest_fare_by_class": [$map($prices, function($r, $i) {(
+          $fare := $num($replace($r[1], /[^0-9]/, ""));
+          $i > 0 ? $r[0] & ($fare ? " from " & $rupees($fare) : ": " & $r[1])
+        )})],
+        "trains": [$byTime.$line($)]
+      }
+    )
+ttl_minutes: 60
+samples: { page: trains.route.html }
+notes: >-
+  Any day's trains, not a date's: for seats and fares on a date, trains.between. The first and last are by the clock,
+  from any of the cities' stations. A city ixigo names otherwise (Delhi is New Delhi) has no page: say the name ixigo
+  uses.

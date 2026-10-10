@@ -81,7 +81,9 @@ export function tripNow(packs: Packs): NowProvider {
       if (trip.stay) lines.push(`Stay wanted: ${inlineData(trip.stay)}`);
       if (trip.vibe.length) lines.push(`Vibe: ${inlineData(trip.vibe.join(', '))}`);
       const low = trip.budget.lowest;
-      if (low) {
+      // 1.1: the group's one budget has its own line, with the chat's (travel/trip-budget.ts budgetNow); a Server before
+      // 1.1 sends the lowest band of private answers.
+      if (low && !trip.budget.per_person_minor) {
         const top = low.max_minor != null ? ` to ${money(low.max_minor, low.currency)}` : ' and up';
         lines.push(
           `Budget, the lowest band anyone picked: ${money(low.min_minor, low.currency)}${top} per person, stay plus food ` +

@@ -37,6 +37,11 @@ export const TravelQuery = z.object({
   maxPriceMinor: z.int().positive().optional(),
   /** Stays: each person's share of the whole stay at most ("under 8k a head"): its total over the head count it was priced for. */
   maxShareMinor: z.int().positive().optional(),
+  /**
+   * Stays: the group's decided budget for the stay, per person, in paise: ixigo's own price bands filter the read by it,
+   * one band over kept (backend.ts). Never a guess: a decided budget, or the ask's own per-person cap.
+   */
+  budgetMinor: z.int().positive().optional(),
   mustHave: z.array(z.enum(MUST_HAVES)).max(5).optional(),
   /** Buses: a pickup or drop point the group named ("Majestic", "Mapusa"): a bus that doesn't stop there doesn't fit. */
   boardAt: z.string().min(2).max(60).optional(),
@@ -99,6 +104,8 @@ export interface TravelSearch {
   page?: string;
   /** ixigo's list came cut short: these are the first it sent (a long flights stream past what Bash keeps), not all of it. */
   cut?: true;
+  /** Buses: the group's stay each bus's nearest drop was measured from, and whose it is ("Casa Anjuna, the stay you voted for"). */
+  nearStay?: string;
   /**
    * The conditions ixigo was asked to filter on and did not: its filtered page caught nothing in time, so the list is the
    * same page without them (ixigo_web, backend.ts). The travel layer picks the stays that say them, or, when none does,
@@ -110,7 +117,7 @@ export interface TravelSearch {
    * the names it didn't apply (not on its list, or its list not known before this read: listed false); and its list as
    * it is now known, in words, for the model.
    */
-  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null };
+  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null; priced?: number | null };
   /** Not read now: ixigo's page didn't answer, and this is Go's earlier read of the same page, checked when it was (stays). */
   earlier?: boolean;
 }

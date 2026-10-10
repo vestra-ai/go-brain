@@ -6,8 +6,8 @@
  * in FAST_ASKS here. A kind whose recipe is not in the book yet (a PNR, a flight's status...) starts nothing: its entry
  * names the inputs that recipe takes.
  *
- * A PNR is read only to start its lookup: it is never logged, never kept in Go's stores, and never shown back to Jev
- * (questions.ts hides ten-digit numbers from it).
+ * A PNR only says its ask is one: its recipe is a link to ixigo's PNR page, which takes no number, so the digits are never
+ * passed on, logged or kept in Go's stores, and never shown back to Jev (questions.ts hides ten-digit numbers from it).
  */
 import type { FastChoice } from '../../reflex/questions.js';
 import { A_WATCH, datesIn, NOT_PLACES, placesIn, readTravelAsk, type AskContext } from './ask.js';
@@ -128,12 +128,8 @@ export const FAST_ASKS: Record<FastChoice, Reader> = {
   // Not in the book yet (p5): where a coach stops, and the stations a train can be boarded at.
   coach_position: byTrain('trains.coach_position', { station: true, coach: true }),
   boarding_stations: byTrain('trains.boarding_stations', { station: true }),
-  // Not in the book yet (p5), so nothing starts. The tool's inputs leave the number out: a turn takes it from the
-  // message, and Go keeps no copy of it past the read.
-  pnr: (text) => {
-    const pnr = pnrIn(text);
-    return pnr ? { recipe: 'trains.pnr_status', given: { pnr }, asked: {} } : null;
-  },
+  // A card to ixigo's PNR page, where the person checks it on their own phone (p5): the number stays in the message.
+  pnr: (text) => (pnrIn(text) ? { recipe: 'trains.pnr_status', given: {}, asked: {} } : null),
   confirm_chance: (text, ctx) => {
     const journey = readTravelAsk(text, { ...ctx, kind: 'trains' });
     if (!journey?.query.from || !journey.query.to || !journey.query.date) return null;

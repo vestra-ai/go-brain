@@ -71,15 +71,20 @@ export const LOGIN_CALLS: FetchPlan = {
 /**
  * ixigo's answer from its page's calls: a login's own call that worked says in; one of them refused (401 or 403) says out,
  * the token the page holds dead (staging, 9 Oct 17:43: the morning box's wallet and with-identity both 401, hours after
- * they were 200); anything else unknown. With the call that said it, and its status, for the log: never what it answered.
+ * they were 200). A page that booted (its content came) and made none of the login's calls holds no login: out, but
+ * quiet (a slow box's calls can miss the grace), so Go acts on it only once a second read agrees (login-keepalive.ts).
+ * Anything else unknown. With the call that said it, and its status, for the log: never what it answered.
  */
-export function loginFrom(captures: Capture[]): { login: 'in' | 'out' | 'unknown'; call: string | null; status: number | null } {
+export function loginFrom(captures: Capture[]): { login: 'in' | 'out' | 'unknown'; call: string | null; status: number | null; quiet?: true } {
   const worked = captures.find((c) => (c.match === WALLET || c.match === IDENTITY) && c.status === 200);
   if (worked) return { login: 'in', call: worked.match, status: worked.status };
   const refused = captures.find((c) => (c.match === WALLET || c.match === IDENTITY || c.match === USERINFO) && (c.status === 401 || c.status === 403));
   if (refused) return { login: 'out', call: refused.match, status: refused.status };
+  const booted = captures.some((c) => c.match === PAGE_CONTENT && c.status >= 200 && c.status < 300);
+  if (booted && !captures.some((c) => c.match === WALLET || c.match === IDENTITY || c.match === USERINFO)) return { login: 'out', call: null, status: null, quiet: true };
   return { login: 'unknown', call: null, status: null };
 }
+
 /** A login is taken as it stands for this long, then checked again the next time a recipe needs it. */
 export const RECHECK_MS = 6 * 3600_000;
 /** A booking stands on a login ixigo confirmed this recently; past it, the booking reads ixigo first. */
@@ -94,10 +99,12 @@ export const LOGIN_TAB = 'ixigo_login';
 /** How long the hand-off's tab stays in front for them: Bash's most. I'm logged in or Not now closes it sooner. */
 export const HANDOFF_MS = 600_000;
 /**
- * ixigo's own Login button on its phone page (the hand-off's page runs as a phone: Bash's front), which opens its log in
- * sheet. ?loginVisible=true opens nothing, on the phone page or the desktop one (staging probe, 8 Oct).
+ * ixigo's own button that opens its log in: "Log in/Sign up" on its desktop page, where the hand-off logs in (its device
+ * desktop: a login made on ixigo's phone page is its phone client's, and its desktop pages, where Go reads, refused it
+ * within the hour; staging, 10 Oct), opening a 440 wide drawer with the mobile box, Continue and Google's button; "Login"
+ * on its phone page, where a Bash without desktop hand-offs opens it. ?loginVisible=true opens nothing (8 Oct).
  */
-const LOGIN_BUTTON = { op: 'click', role: 'button', name: 'Login' } as const;
+const LOGIN_BUTTON = { desktop: { op: 'click', role: 'button', name: 'Log in/Sign up' }, phone: { op: 'click', role: 'button', name: 'Login' } } as const;
 /** The log in sheet's mobile number field ("Enter Mobile Number"), clicked so the cursor waits in it for the person. */
 const MOBILE_BOX = { op: 'click', role: 'textbox', text: 'mobile' } as const;
 /** ixigo's home page, where the log in sheet opens. */
@@ -191,6 +198,13 @@ export interface IxigoLogin {
    * so the next booking asks again.
    */
   status(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'>;
+  /**
+   * The keep-alive's read (login-keepalive.ts): status's, except that a quiet page (it booted, none of the login's calls
+   * came) says quiet, for the keep-alive to read again CONFIRM_OUT_MS on. The read that confirms it (confirming: quiet or
+   * out again), or an out, ends the login and asks its person in the trip, once, with the login card as a first ask
+   * does: Go never waits for a booking to find it gone.
+   */
+  keepAlive(tripId: string, o?: { confirming?: boolean }): Promise<'in' | 'out' | 'unknown' | 'challenged' | 'quiet'>;
   onEvent(ev: C.Event): Promise<void>;
   /**
    * A person gone from their login: they left the trip, or used "Forget me" in it. When the trip's login is theirs, Go
@@ -362,16 +376,17 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
    * ixigo's answer from its page's calls, logged for the stage desk by call and status alone: never the account. In or out
    * is the person's browser's, for every trip of theirs (tasks/browsers.ts).
    */
-  async function said(tripId: string, captures: Capture[], where: string): Promise<'in' | 'out' | 'unknown'> {
-    const { login, call, status: s } = loginFrom(captures);
+  async function said(tripId: string, captures: Capture[], where: string): Promise<'in' | 'out' | 'unknown' | 'quiet'> {
+    const { login, call, status: s, quiet } = loginFrom(captures);
     d.log.info(
-      { tripId, login, call, status: s, calls: captures.map((c) => `${c.match} ${c.status}`), where },
+      { tripId, login, call, status: s, ...(quiet ? { quiet: true } : {}), calls: captures.map((c) => `${c.match} ${c.status}`), where },
       'travel: ixigo said whether the trip computer is logged in',
     );
-    if (login !== 'unknown') {
+    // A quiet read is never kept as the browser's on its own: the read that confirms it says so (ended).
+    if (login !== 'unknown' && !quiet) {
       await d.browser?.()?.setLogin(tripId, login).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the browser's login was not kept"));
     }
-    return login;
+    return quiet ? 'quiet' : login;
   }
 
   /** Where the trip's browser's login stands, as ixigo last said it on any trip of the person's; null when unknown. */
@@ -401,7 +416,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   }
 
   /** ixigo's answer for the trip's browser, read from its home page; nothing changes on the row. */
-  async function look(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
+  async function look(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged' | 'quiet'> {
     const runner = d.runner();
     if (!runner) return 'unknown';
     let captures: Capture[];
@@ -424,16 +439,24 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function status(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
     const s = await look(tripId);
     if (s === 'out') {
-      const row = await get(tripId);
-      if (row?.state === 'logged_in') {
-        const out: LoginRow = { ...row, state: 'logged_out', checkedAt: d.now() };
-        await save(out);
-        d.log.info({ tripId }, "travel: ixigo no longer has the trip computer's login; the next booking asks again");
-        // A trip that took its login from the person's browser never had a card to change: the card is best effort.
-        track('card', tripId, show(out));
-      }
+      await ended(tripId);
+      return 'out';
     }
-    return s;
+    // One quiet read says nothing here: the keep-alive reads again to confirm (keepAlive).
+    return s === 'quiet' ? 'unknown' : s;
+  }
+
+  /** ixigo has no login in the trip's browser: the browser says out on every trip of the person's, and this trip's ends. */
+  async function ended(tripId: string): Promise<LoginRow | null> {
+    await d.browser?.()?.setLogin(tripId, 'out').catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the browser's login was not kept"));
+    const row = await get(tripId);
+    if (row?.state !== 'logged_in') return row;
+    const out: LoginRow = { ...row, state: 'logged_out', checkedAt: d.now() };
+    await save(out);
+    d.log.info({ tripId }, "travel: ixigo no longer has the trip computer's login; the next booking asks again");
+    // A trip that took its login from the person's browser never had a card to change: the card is best effort.
+    track('card', tripId, show(out));
+    return out;
   }
 
   /**
@@ -554,7 +577,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     // The hand-off ends at HANDOFF_MS whatever happens: Bash closes the tab then, and the card goes back to its ask.
     ending.get(row.tripId)?.();
     ending.set(row.tripId, later(HANDOFF_MS, () => track('end', row.tripId, expire(row))));
-    let opened: { captures: Capture[]; challenged?: true };
+    let opened: { captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' };
     try {
       opened = await runner.handOff!(
         row.tripId,
@@ -562,7 +585,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         // The page and ixigo's own calls alone: Watch comes as soon as they have said (its crop is set before the page
         // loads), and the taps run after, while Watch's picture connects (staging, 8 Oct: they were 2 to 3 s of the wait).
         LOGIN_CALLS,
-        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB },
+        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' },
       );
     } catch (err) {
       // Loud, and nothing left open: no second path.
@@ -589,7 +612,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       // The page is in front for them: now the card carries Watch. Then ixigo's Login and the mobile box, tapped on the
       // page they watch (best effort: the page stays theirs if a tap finds nothing), and the page takes the keyboard.
       await show(now);
-      await runner.tabSteps?.(row.tripId, LOGIN_TAB, [LOGIN_BUTTON, MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
+      await runner.tabSteps?.(row.tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
         .catch((err: unknown) => d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's taps did not run"));
     }
   }
@@ -602,9 +625,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function statusInLogin(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
     const runner = d.runner();
     if (!runner?.handOff) return status(tripId);
-    let opened: { captures: Capture[]; challenged?: true };
+    let opened: { captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' };
     try {
-      opened = await runner.handOff(tripId, LOGIN_URL, LOGIN_CALLS, { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB });
+      opened = await runner.handOff(tripId, LOGIN_URL, LOGIN_CALLS, { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' });
     } catch (err) {
       if (!(err instanceof TravelError)) throw err;
       d.log.info({ tripId, status: null, login: 'unknown', why: err.code }, 'travel: ixigo said whether the trip computer is logged in');
@@ -617,10 +640,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     }
     const login = await said(tripId, opened.captures, 'log in page');
     if (login !== 'in') {
-      await runner.tabSteps?.(tripId, LOGIN_TAB, [LOGIN_BUTTON, MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
+      await runner.tabSteps?.(tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
         .catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's taps did not run"));
     }
-    return login;
+    // Quiet on the log in page is "not logged in yet", as it always read.
+    return login === 'quiet' ? 'unknown' : login;
   }
 
   /**
@@ -884,6 +908,24 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     },
 
     status,
+
+    async keepAlive(tripId, o = {}) {
+      const s = await look(tripId);
+      if (s === 'quiet' && !o.confirming) return 'quiet';
+      if (s !== 'out' && s !== 'quiet') return s;
+      const row = await ended(tripId);
+      // Asked once, with a fresh card: the browser now says out, so the keep-alive reads it no more until a login brings
+      // it back. Never hangs on the old card: a trip that took its login from the browser has none (staging, 10 Oct
+      // 08:13, "card ... is not on one of Go's messages"), and its replace goes on its own (ended). A trip with no login
+      // row at all is asked as a first ask is (nudge).
+      if (!row) {
+        this.nudge(tripId);
+      } else if (row.state === 'logged_out') {
+        await ask(tripId, row.personId, row.attempt + 1, GONE_LINE);
+        d.log.info({ tripId, personId: row.personId, attempt: row.attempt + 1 }, "travel: the trip's ixigo login ended; its person asked to log in again");
+      }
+      return 'out';
+    },
 
     async onEvent(ev) {
       if (ev.type === 'person.left') await personGone(ev.trip_id, ev.data.person_id, 'left');

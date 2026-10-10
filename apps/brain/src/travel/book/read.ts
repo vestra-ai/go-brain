@@ -166,7 +166,14 @@ async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<
   const what = recipe.title.toLowerCase();
   const rowsBody = body(captures, read.rows.from, read.rows.format, true, what);
   for (const [name, also] of Object.entries(read.also ?? {})) {
-    const b = body(captures, also.from, also.format, false, name);
+    // What the answer reads besides its rows is extra: one the page sent in a shape Go doesn't read (a train page without
+    // its data input) is left out, and the rows still answer.
+    let b: unknown;
+    try {
+      b = body(captures, also.from, also.format, false, name);
+    } catch {
+      b = undefined;
+    }
     bindings[name] = b === undefined ? undefined : await readPath(also.value, b, bindings);
   }
   const listed = await readPath(read.rows.list, rowsBody, bindings);

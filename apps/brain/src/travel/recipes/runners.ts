@@ -85,9 +85,13 @@ export interface RecipeRunner {
    * the trip's computer (Bash's front), its steps run, and its tab stays there for them, kept under `tab`. A page that ran
    * out of time stays open for them all the same, with what it caught. `check`: one call from inside the page before the
    * steps (one byte, its status, as capture `check`). Throws a TravelError when Bash would not open it. challenged: the
-   * page stayed on Cloudflare's check (CLOUDFLARE), and the caller closes it: it is never the person's.
+   * page stayed on Cloudflare's check (CLOUDFLARE), and the caller closes it: it is never the person's. device: desktop
+   * opens the site's desktop page (Bash's front_device), the one every other fetch on the browser reads; a Bash without
+   * it opens the phone page, and the answer says which ran.
    */
-  handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[]; challenged?: true }>;
+  handOff?(
+    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'desktop' },
+  ): Promise<{ captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' }>;
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
   /**
@@ -505,6 +509,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     const size = { ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}), ...(c.sse ? { sse: c.sse } : {}) };
     return c.sse && d.now().getTime() < noSseUntil ? withoutSse(size) : size;
   };
+  /** Until when a hand-off opens the phone page however asked: Bash refused front_device (LOOK_UNSUPPORTED_MS). */
+  let noDesktopUntil = 0;
 
   /** One browser fetch: the page opened, its steps worked, and the calls the plan names kept. */
   async function fetchPage(
@@ -733,8 +739,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   }
 
   async function handOff(
-    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall },
-  ): Promise<{ captures: Capture[]; challenged?: true }> {
+    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'desktop' },
+  ): Promise<{ captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' }> {
     // The check first, from inside the page as soon as it is there (one byte, its status), then the plan's own steps.
     const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
     const steps = [...check, ...(plan.steps ?? [])];
@@ -749,6 +755,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
       ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
       front: true,
+      // The site's desktop page (Bash's front_device): a login made on its phone page is its phone client's, which its
+      // desktop pages, where every other fetch reads, refused within the hour (ixigo, staging 10 Oct).
+      ...(o.device === 'desktop' && d.now().getTime() >= noDesktopUntil ? { front_device: 'desktop' as const } : {}),
       keep_open_ms: o.keepOpenMs,
       tab: o.tab,
     };
@@ -762,6 +771,18 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
         captures = Array.isArray(answer.captures) ? answer.captures : [];
       } catch (err) {
+        // A Bash that predates front_device refuses it before it opens anything: an unknown key at the body's top has no
+        // param (its path is the body's), so any 400 invalid_request with none, or one at front_device, while it is sent
+        // is taken as that (another refusal comes back again without it, and is thrown then). The phone page, as before,
+        // and none asked for a while.
+        const param = err instanceof V1Error ? String(err.detail?.['param'] ?? '') : '';
+        if (err instanceof V1Error && err.status === 400 && err.code === 'invalid_request' && 'front_device' in body && (param === '' || param.startsWith('front_device'))) {
+          noDesktopUntil = d.now().getTime() + LOOK_UNSUPPORTED_MS;
+          body = Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'front_device')) as typeof body;
+          checks -= 1;
+          d.log.warn({ tripId, tab: o.tab }, "travel: this Bash takes no desktop hand-off yet; the phone page opens");
+          continue;
+        }
         // The person is still typing on Watch (Bash's 4 s window): "I'm logged in" tapped right after the code waits it out.
         if (err instanceof V1Error && err.status === 409 && err.code === 'browser_in_use' && inUse < HANDOFF_IN_USE_TRIES) {
           inUse += 1;
@@ -774,7 +795,10 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         captures = partialCaptures(err);
         turnstile = turnstiled(err);
       }
-      if (!challenged(captures, url) && !turnstile) return { captures: captures.filter((c) => c.match !== doc) };
+      if (!challenged(captures, url) && !turnstile) {
+        // Which page opened, said to a caller that asked for one (a Bash without front_device opens the phone page).
+        return { captures: captures.filter((c) => c.match !== doc), ...(o.device ? { device: 'front_device' in body ? 'desktop' as const : 'phone' as const } : {}) };
+      }
       metCheck(tripId);
       // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
       // it; still on it when no load fits, the caller closes it and says so.

@@ -36,13 +36,13 @@ describe('the recipe book', () => {
   it('loads every file, with nothing left out', () => {
     expect(problems).toEqual([]);
     expect(book.all().map((r) => r.id).sort()).toEqual([
-      'buses.between', 'buses.city_lookup', 'buses.offers', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.results', 'flights.search',
+      'buses.between', 'buses.city_lookup', 'buses.offers', 'buses.points', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.results', 'flights.search',
       'help.downtime', 'help.faq', 'help.services',
       'hotels.details', 'hotels.offers', 'hotels.place_lookup', 'hotels.reviews', 'hotels.rooms', 'hotels.search', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list',
       'plan.destination', 'plan.explore', 'plan.top_locations',
-      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.between', 'trains.by_name', 'trains.confirm_chance', 'trains.offers',
-      'trains.platform_locator', 'trains.running_status', 'trains.schedule', 'trains.station_lookup', 'trains.station_status', 'trains.tatkal',
+      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.between', 'trains.boarding_stations', 'trains.by_name', 'trains.coach_position', 'trains.confirm_chance', 'trains.offers',
+      'trains.platform_locator', 'trains.pnr_status', 'trains.route', 'trains.running_status', 'trains.schedule', 'trains.station_lookup', 'trains.station_status', 'trains.tatkal', 'trains.train_calendar',
       'trip.how_we_get_there',
     ]);
   });
@@ -234,6 +234,19 @@ describe('trains.between', () => {
     expect(bare.as === 'options' && bare.options[0]).toMatchObject({ priceMinor: 311_500, highlights: ['AC 2 Tier', '29 h 10 m'] });
   });
 
+  // ixigo's between call of 10 Oct splits each class's fare (baseFare, serviceCharge, railwayCharges, cateringCharges,
+  // otherCharges) and gives each train's averageRating; the 8 Oct page gave baseFare alone.
+  it("without the seats call, a class's fare is its breakup summed; the train's rating is kept", async () => {
+    const between = JSON.parse(fixture('trains-ndls-mao-between.json')) as { data: { trainsBetweenStations: Array<{ attributes: Record<string, unknown>; fares: Record<string, unknown> }> } };
+    const first = between.data.trainsBetweenStations[0]!;
+    first.fares['2A'] = { baseFare: 3000, serviceCharge: 40, railwayCharges: 60, cateringCharges: 0, otherCharges: 15 };
+    first.attributes['averageRating'] = 4.1;
+    const call = capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/NDLS/MAO?date=2026-11-06&languageCode=en', JSON.stringify(between));
+    const got = await engineWith(() => [call]).engine.answer('trains.between', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
+    if (got.as !== 'options') throw new Error('not options');
+    expect(got.options[0]).toMatchObject({ title: 'NZM ERS SF EXP 22656', priceMinor: 311_500, facts: { class_code: '2A', rating: 4.1 } });
+  });
+
   it('shows Tatkal next to the General quota once it is open, and a train that boards at another station of the city', async () => {
     const { engine } = engineWith(() => page('csmt-mao', 'CSMT', 'MAO', '2026-10-08', '08102026'));
     const got = await engine.answer('trains.between', { from: 'Mumbai', to: 'Goa', date: '2026-10-08' }, { tripId: 't_goa' });
@@ -357,8 +370,11 @@ describe('buses.between', () => {
     if (got.as !== 'options') throw new Error('not options');
     // An id the list doesn't name, or a blank name, is left out; a point with no rank comes after the ranked ones.
     expect(got.options[0]!.facts).toMatchObject({ boarding_points: 'Borivali East; Andheri East; Sion', dropping_points: 'Panjim; Mapusa; Mapusa- Isbt Private Bus Stand' });
+    // The drops ixigo placed, for the nearest one to the group's stay (group-stay.ts): Mapusa's bus stand has no position.
+    expect(got.options[0]!.facts['drop_spots']).toBe('Mapusa (15.589, 73.8099); Panjim (15.4939, 73.8369)');
     expect(got.options[1]!.facts['boarding_points']).toBe('Sion');
     expect(got.options[1]!.facts).not.toHaveProperty('dropping_points');
+    expect(got.options[1]!.facts).not.toHaveProperty('drop_spots');
     expect(got.options[2]!.facts).not.toHaveProperty('boarding_points');
     // On the stage: the pickup's chip, then the Dropping Points tab and the drop's chip, each skipped when it isn't there.
     expect(runs[0]!.plan.steps).toEqual([
