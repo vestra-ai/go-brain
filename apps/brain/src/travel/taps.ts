@@ -1,7 +1,8 @@
 /**
  * Taps on Go's options cards. "Put it to a vote" opens the vote in code (fast and once); "I'll take this" goes on the
  * desk, so the composer answers the person in the room, except on a ticket (a flight, train or bus fare: PERSONAL_KINDS),
- * which is the picker's own: Go posts their own confirm at once, "Book it" or "Change", for them alone, never a vote.
+ * which is the picker's own: Go posts their own confirm at once, "Book it" or "Change", for them alone, never a vote, and
+ * keeps it as their pick (picks.ts), which a flight's heads-up watches.
  * "Book it" opens ixigo's page for the flight set for one traveller, where they book it (Go pays for no ticket yet); "Change"
  * goes on the desk. "See on ixigo" opens the option's own ixigo.com page; "Flights
  * from my city", on the card of each home city's ways there, opens the flights from the tapper's own city; "Add my
@@ -14,12 +15,14 @@ import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
 import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
+import { recordPick, wayOf } from './picks.js';
 import type { ResultsStore } from './results.js';
 import type { StoredOffer } from './travel.js';
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelTapDeps {
   results: ResultsStore;
+  pool: Brain['pool'];
   link: Brain['door']['link'];
   desk: Brain['desk'];
   now: () => Date;
@@ -68,6 +71,11 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     const row = await d.results.card(tap.trip_id, tap.card_id);
     const shown = row?.card.options.find((o) => o.option_id === offer.optionId);
     if (row && shown && PERSONAL_KINDS.has(row.optionKind)) {
+      // Their pick, one per way they travel: a later one the same way replaces it. A failed write never fails the tap.
+      await recordPick(d.pool, {
+        tripId: tap.trip_id, personId: tap.person_id, kind: row.optionKind as 'flight' | 'train' | 'bus', way: wayOf(shown.journey),
+        optionId: offer.optionId, title: shown.title, journey: shown.journey ?? null, pickedAt: d.now(),
+      }).catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, "travel: keeping a person's pick failed"));
       const card = buildConfirmMineCard({ cardId: stableId('c_mine', tap.tap_id), personId: tap.person_id, optionKind: row.optionKind, checkedAt: offer.checkedAt, option: shown });
       // Posted after the answer, as a vote is: a request to the Server must not hold the 3 s tap answer.
       void d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_tap', tap.tap_id, 'mine'), card })

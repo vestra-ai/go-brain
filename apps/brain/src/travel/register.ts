@@ -264,7 +264,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   watchEvery.unref();
   const stopWatchChecks = (): void => clearInterval(watchEvery);
   brain.onStop(stopWatchChecks);
-  registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
+  registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
     warmForTravel: warm,
