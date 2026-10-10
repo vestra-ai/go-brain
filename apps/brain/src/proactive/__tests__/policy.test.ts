@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, isNight, localDay, localHour, nextMorning, tomorrowMorning, zonedTime } from '../clock.js';
 import {
+  AWAKE_REPLY_MS,
   BARS,
   DAILY_POSTS,
   HUSH_RAISE,
@@ -9,6 +10,7 @@ import {
   SMALL_HOLD_MS,
   barRaise,
   decide,
+  repliesToSomeoneAwake,
   decideBatch,
   score,
   type Candidate,
@@ -126,6 +128,21 @@ describe('decide', () => {
 
   it('keeps a chat opening to quiet actions at night', () => {
     expect(decide(chat(), mood(), LATE)).toMatchObject({ kind: 'go', allowed: ['react', 'record'], counted: false });
+  });
+
+  it('lets a chime-in on a line written in the last 2 minutes speak at night: they are awake and talking; nothing else', () => {
+    const fresh = chat({ facts: { message_id: 'm_9', seq: 9, said_at: new Date(LATE.getTime() - 30_000).toISOString() } });
+    expect(decide(fresh, mood(), LATE)).toMatchObject({ kind: 'go', allowed: ['react', 'record', 'message'], counted: true });
+    expect(repliesToSomeoneAwake(fresh, LATE)).toBe(true);
+    // Said longer ago than AWAKE_REPLY_MS: the night raise holds.
+    const stale = chat({ facts: { message_id: 'm_9', seq: 9, said_at: new Date(LATE.getTime() - AWAKE_REPLY_MS - 1).toISOString() } });
+    expect(decide(stale, mood(), LATE)).toMatchObject({ kind: 'go', allowed: ['react', 'record'], counted: false });
+    // What Go starts on its own keeps it, however fresh: a day timer still waits for 8 am.
+    const timer = cand({ source: 'timer', topic: 'travel_day', importance: 0.6, urgency: 0.8, useful: ['message'], personIds: [], facts: { said_at: LATE.toISOString() } });
+    expect(decide(timer, mood(), LATE)).toMatchObject({ kind: 'wait', reason: 'night' });
+    // The rest of the bar still holds at night: never two in a row.
+    const last = mood({ lastGoMessageAt: new Date(LATE.getTime() - 10_000), lastPersonMessageAt: new Date(LATE.getTime() - 60_000) });
+    expect(decide(fresh, last, LATE)).toMatchObject({ kind: 'go', allowed: ['react', 'record'], counted: false });
   });
 
   it('holds a message that would pass by day until 8 am', () => {
