@@ -25,6 +25,8 @@ export async function withTx<T>(pool: Pool, fn: (c: PoolClient) => Promise<T>): 
 
 export type Audience = 'group' | 'go';
 export type FactSource = 'message' | 'join' | 'note';
+/** About the person, so carry-over may show it in their next trips; or about this trip only (memory/pages.ts). */
+export type FactScope = 'person' | 'trip';
 export interface FactRow {
   factId: string;
   personId: string;
@@ -36,7 +38,7 @@ export interface FactRow {
   audience: Audience;
   source: FactSource;
 }
-export type NewFact = Omit<FactRow, 'factId'>;
+export type NewFact = Omit<FactRow, 'factId'> & { scope?: FactScope };
 
 interface FactDbRow {
   fact_id: string;
@@ -125,15 +127,15 @@ export async function saveFact(pool: Pool, f: NewFact): Promise<SaveResult> {
           const at = chain.findIndex((r) => r.said_at.getTime() > f.saidAt.getTime());
           const next = chain[at]!;
           const prev = at > 0 ? chain[at - 1] : undefined;
-          await c.query(`INSERT INTO facts (${COLS}, superseded_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [
-            factId, f.personId, f.tripId, topic, f.text, f.messageId, f.saidAt, f.audience, f.source, next.fact_id,
+          await c.query(`INSERT INTO facts (${COLS}, superseded_by, scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, [
+            factId, f.personId, f.tripId, topic, f.text, f.messageId, f.saidAt, f.audience, f.source, next.fact_id, f.scope ?? 'person',
           ]);
           if (prev) await c.query('UPDATE facts SET superseded_by = $1 WHERE fact_id = $2', [factId, prev.fact_id]);
           return { factId, changed: false };
         }
         if (old) await c.query('UPDATE facts SET superseded_by = $1 WHERE fact_id = $2', [factId, old.fact_id]);
-        await c.query(`INSERT INTO facts (${COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [
-          factId, f.personId, f.tripId, topic, f.text, f.messageId, f.saidAt, f.audience, f.source,
+        await c.query(`INSERT INTO facts (${COLS}, scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [
+          factId, f.personId, f.tripId, topic, f.text, f.messageId, f.saidAt, f.audience, f.source, f.scope ?? 'person',
         ]);
         return { factId, changed: true };
       });

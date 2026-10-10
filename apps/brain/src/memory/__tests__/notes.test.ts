@@ -251,6 +251,9 @@ describe('the notes pass', () => {
     // And the leans people show in passing, which it missed: "ugh 6 am flights again", "sunset at the beach is a must".
     expect(NOTES_RULES).toContain('A lasting lean shows in passing too: a complaint ("ugh 6 am flights again"), a rejection with its reason ("nah too far from the beach"), or a must ("sunset at the beach is a must").');
     expect(NOTES_RULES).toContain("starting Prefers, Dislikes or Wants (\"Dislikes early flights\", \"Prefers stays near the beach\", \"Wants a beach sunset\"), never as a rule.");
+    // Staging, 10 Oct: "can leave Thursday" and "mom might join" carried into the next trip; 😍 and 👍 were never read.
+    expect(NOTES_RULES).toContain('Give "this_trip": true for a fact that only holds for this trip');
+    expect(NOTES_RULES).toContain('A reaction on a line can show the reactor\'s lean (😍 on a beach photo, 👍 on a pool villa): note it for the person who reacted, with that line as the message and "reaction": true');
     const messages = [
       msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov, Diwali weekend 🌴'),
       msg(4, 'p_kabir', 'haha 😂'),

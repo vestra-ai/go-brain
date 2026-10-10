@@ -2,7 +2,7 @@
  * Chat lines for side-model prompts. People's words are data: they are masked, kept on one line, and can
  * never close the fence or start a line that looks like Go's.
  */
-import type { ChatView, Forgotten } from '../composer/fence.js';
+import { forgottenAt, type ChatView, type Forgotten } from '../composer/fence.js';
 import type { Message } from '../door/methods.js';
 import { messageText } from '../reflex/questions.js';
 import { maskSecrets } from '../reflex/secrets.js';
@@ -25,15 +25,25 @@ export function nameLabel(name: string): string {
  * that is part of an ask to Go: "#57 [person Priya | p_priya | to Go]: text".
  */
 export function notesView(pack: TripPack, forgotten: Forgotten, toGo?: (m: Message) => boolean): ChatView<string> {
+  // People's reactions on a line can show their leans (😍 on a beach photo, 👍 on a pool villa): shown with each line, by
+  // name and id, never Go's own and never someone Go was asked to forget.
+  const reactionsOn = (m: Message): string => {
+    const by = m.reactions.flatMap((r) => {
+      if (!r.person_id || forgottenAt(forgotten, r.person_id, m.seq)) return [];
+      const who = pack.trip.people.find((p) => p.person_id === r.person_id)?.name ?? 'Someone';
+      return [`${fenceText(r.emoji)} ${nameLabel(who)} ${r.person_id}`];
+    });
+    return by.length ? ` (reactions: ${by.join(', ')})` : '';
+  };
   return {
     forgotten,
     label(m: Message): string {
       const body = fenceText(maskSecrets(messageText(m)).text);
-      if (m.author.kind === 'go') return `#${m.seq} [Go]: ${body}`;
+      if (m.author.kind === 'go') return `#${m.seq} [Go]: ${body}${reactionsOn(m)}`;
       if (m.author.kind === 'system') return `#${m.seq} [app]: ${body}`;
       const id = m.author.person_id;
       const name = pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone';
-      return `#${m.seq} [person ${nameLabel(name)} | ${id}${toGo?.(m) ? ' | to Go' : ''}]: ${body}`;
+      return `#${m.seq} [person ${nameLabel(name)} | ${id}${toGo?.(m) ? ' | to Go' : ''}]: ${body}${reactionsOn(m)}`;
     },
   };
 }
