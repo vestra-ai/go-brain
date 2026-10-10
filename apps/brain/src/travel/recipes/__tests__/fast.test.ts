@@ -32,7 +32,8 @@ describe('the slots of an ixigo ask beyond the searches', () => {
   it('reads a PNR as the one 10-digit number, and gives the tool no copy of it', () => {
     expect(pnrIn('Go PNR 2318764059 ka status batao')).toBe('2318764059');
     expect(pnrIn('PNRs 2318764059 and 8641290375')).toBeNull();
-    expect(read('pnr', 'Go mera ticket confirm hua kya? PNR 8641290375')).toEqual({ recipe: 'trains.pnr_status', given: { pnr: '8641290375' }, asked: {} });
+    // The PNR's recipe is a link to ixigo's page: it takes no number, so none is passed on.
+    expect(read('pnr', 'Go mera ticket confirm hua kya? PNR 8641290375')).toEqual({ recipe: 'trains.pnr_status', given: {}, asked: {} });
     expect(read('pnr', 'Go hamara PNR confirm hua kya? Rahul ke paas hai number')).toBeNull();
   });
 
