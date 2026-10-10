@@ -151,6 +151,44 @@ describe('the early start', () => {
   });
 });
 
+// The lead, 10 Oct: a stays ask with a budget is one read, Jev's early one and the composer's search alike. The early
+// search takes the budget the search tool will: the ask's own a head, else the group's decided one.
+describe("the early start of a stays search with a budget", () => {
+  it("takes the ask's own budget a head, else the trip's decided one, and asks the trip only for stays", async () => {
+    const searches: TravelQuery[] = [];
+    const travel = { search: async (_k: TravelKind, q: TravelQuery) => { searches.push(q); return { results: [], checkedAt: '2026-10-07T12:00:00.000Z' }; } } as unknown as Travel;
+    const switches = new FakeSwitches();
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    const asked: string[] = [];
+    const early = createEarlyStart({
+      travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date('2026-10-07T12:00:00Z'), log: { warn: vi.fn() },
+      stayBudget: async (tripId) => { asked.push(tripId); return 450_000; },
+    });
+    await early.onRead(msg(70, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack());
+    await early.onRead(msg(71, 'p_priya', '@Go a villa with a pool for our dates, under 8k a head'), UNSURE_READ, goaPack());
+    expect(searches.map((q) => q.budgetMinor)).toEqual([450_000, 800_000]);
+    expect(searches[1]).toMatchObject({ maxShareMinor: 800_000 });
+    // The turn reads the same query back, so its search joins this one.
+    expect(early.searchFor('t_goa', 'm_70')?.query.budgetMinor).toBe(450_000);
+    await early.onRead(msg(72, 'p_rahul', '@Go trains from Mumbai on Thursday'), UNSURE_READ, goaPack());
+    expect(asked).toEqual(['t_goa']);
+    expect(searches[2]).not.toHaveProperty('budgetMinor');
+  });
+
+  it('searches with no budget when the trip has none decided, or its lookup fails', async () => {
+    const searches: TravelQuery[] = [];
+    const travel = { search: async (_k: TravelKind, q: TravelQuery) => { searches.push(q); return { results: [], checkedAt: '2026-10-07T12:00:00.000Z' }; } } as unknown as Travel;
+    const switches = new FakeSwitches();
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    const make = (stayBudget: () => Promise<number | null>) =>
+      createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date('2026-10-07T12:00:00Z'), log: { warn: vi.fn() }, stayBudget });
+    await make(async () => null).onRead(msg(73, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack());
+    await make(async () => { throw new Error('db down'); }).onRead(msg(74, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack());
+    expect(searches).toHaveLength(2);
+    for (const q of searches) expect(q).not.toHaveProperty('budgetMinor');
+  });
+});
+
 describe('the early start of an ixigo read beyond the searches', () => {
   const BOOK = new Set(['trains.running_status', 'trains.schedule', 'plan.destination', 'offers.list', 'hotels.reviews']);
   const runKeys: string[] = [];

@@ -46,6 +46,11 @@ export interface EarlyStartDeps {
   };
   /** The shown option a line points at, on the trip's newest card of its kind (option-on-card.ts). */
   optionFor?: (tripId: string, text: string, kind: 'stay' | 'flight') => Promise<ShownOption | null>;
+  /**
+   * The group's decided budget for the stay, per person, in paise, or null (register.ts, as the search tool takes it): a
+   * stays read early takes ixigo's price bands by it, as the composer's search will, so both are one read.
+   */
+  stayBudget?: (tripId: string) => Promise<number | null>;
 }
 
 /** An ixigo read a message started on intake: a recipe beyond the searches (fast.ts). */
@@ -158,6 +163,11 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       if (web && d.linkOnly?.(ask.kind)) return { dueNow: true };
       // The parser found the ask without a sure kind from Jev: this search is the travel intent.
       if (!kind) d.warmForTravel?.(tripId, ask.kind);
+      // A stays ask takes the budget the search tool will (tools.ts runSearch): its own a head, else the group's decided one.
+      if (ask.kind === 'stays') {
+        const budget = ask.query.maxShareMinor ?? (d.stayBudget ? await d.stayBudget(tripId).catch(() => null) : null);
+        if (budget) ask.query.budgetMinor = budget;
+      }
       // Not awaited: the hooks run one after another, and nothing should wait on the page.
       const search = travel.search(ask.kind, ask.query, { tripId, messageId: msg.message_id });
       search.catch((err: unknown) => {

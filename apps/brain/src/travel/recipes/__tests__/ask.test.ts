@@ -11,9 +11,9 @@ describe('reading a travel ask', () => {
     // c03
     // c03: the trip's Friday, 6 Nov, not this week's.
     expect(read("@Go flights Delhi to Goa Friday evening, Arjun can't leave before 6")).toEqual({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '18:00' } });
-    // c05: no dates of its own, so the trip's.
+    // c05: no dates of its own, so the trip's; "under 8k a head" is each one's share of the whole stay.
     expect(read('Go find us a villa with a private pool in North Goa under 8k a head, close to the beach')).toEqual({
-      kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] },
+      kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'], maxShareMinor: 800_000 },
     });
     // c30: from Mumbai, to the trip's destination.
     // The day before the trip starts: an overnight train.
@@ -99,8 +99,22 @@ describe('reading a travel ask', () => {
     expect(read('@Go flights Delhi to Goa Friday under 30k total')?.query).toEqual(bare);
     expect(read('@Go flights Delhi to Goa after 6 Nov')?.query).toEqual({ from: 'delhi', to: 'goa', date: '2026-11-06' });
     expect(read('Go find us a villa with a private pool in North Goa under 8k a head, close to the beach')?.query).toEqual({
-      area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'],
+      area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'], maxShareMinor: 800_000,
     });
+  });
+
+  // The lead, 10 Oct: ixigo's price bands are picked by a stay's budget a head, so Jev's early read takes it as the search
+  // tool will: "8k a head" is the whole stay's share, "8k a head a night" that times the nights.
+  it("reads a stay's plain budget a head, for the whole stay or a night, and nothing else as one", () => {
+    const share = (text: string) => read(text)?.query.maxShareMinor;
+    expect(share('@Go villa in North Goa under 8k a head')).toBe(800_000);
+    expect(share('@Go villa in North Goa 8k a head a night chalega')).toBe(2_400_000);
+    expect(share('@Go villa in North Goa under 8,000 per person')).toBe(800_000);
+    expect(share('@Go hotels in Anjuna ₹8000/head')).toBe(800_000);
+    expect(share('@Go villa in North Goa 15k each')).toBe(1_500_000);
+    expect(share('@Go North Goa mein villa, 8 hazaar ek bande ka')).toBe(800_000);
+    expect(share('@Go hotels in Anjuna 6 to 9 Nov for 4 people')).toBeUndefined();
+    expect(share('@Go hotels in Anjuna under 8k per night')).toBeUndefined();
   });
 
   it("takes Jev's kind when it is sure, over the kind words", () => {

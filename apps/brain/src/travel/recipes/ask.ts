@@ -7,8 +7,9 @@
  * A journey's clear conditions are read too, so the answer the turn gets already holds them and show_options is the one
  * call: a clock time with am or pm ("after 7 pm", "arriving by 10 am"), "evening" (after 5 pm), "can't leave before 6"
  * (after 6 pm), non-stop, and a price cap per person ("under 6k"). A bare "after 7" is not read: it could be either.
- * A stay's pool, breakfast or free cancellation is read, since ixigo filters on those and the list depends on them; its
- * price ("8k a head") and "near the beach" are left to the model.
+ * A stay's pool, breakfast or free cancellation is read, since ixigo filters on those and the list depends on them, and
+ * a plain budget a head ("under 8k a head" for the whole stay, "8k a head a night" for each night), since ixigo's price
+ * bands are picked by it; "near the beach" is left to the model.
  */
 import type { TravelKind, TravelQuery } from '../travel.js';
 import { addDays } from './recipe.js';
@@ -228,6 +229,23 @@ export function guestsIn(lower: string): number | undefined {
   return n >= 1 && n <= 30 ? n : undefined;
 }
 
+/** A stay's money a head: "8k a head", "8,000 per person", "₹8000 each", "8 hazaar ek bande"; and "a night" after it. */
+const HEAD_MONEY = /(?:₹|rs\.?\s*)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|thousand|hazaar|hajaar)?\s*(?:(?:a|per|\/|ek)\s*)?(?:head|person|pp|bande|banda|each)\b(\s*(?:a|per|\/)\s*(?:night|raat))?/;
+
+/**
+ * A stay's budget a head, in paise, for the whole stay: "under 8k a head" as said, "8k a head a night" times the nights
+ * (tools.ts maps the model's two arguments the same way). Only a plain one: a range or a total for the group is the
+ * model's to read.
+ */
+export function shareIn(lower: string, checkIn: string, checkOut: string): number | undefined {
+  const m = HEAD_MONEY.exec(lower);
+  if (!m) return undefined;
+  const amount = Number(m[1]!.replace(/,/g, '')) * (m[2] ? 1000 : 1);
+  if (!Number.isFinite(amount) || amount < 500 || amount > 10_000_000) return undefined;
+  const nights = Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000);
+  return Math.round(amount * 100) * (m[3] ? Math.max(1, nights) : 1);
+}
+
 /** The ask in a message, or null when it is not one whole search of one kind. */
 export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
   if (NOT_A_SEARCH.test(text) || A_WATCH.test(text)) return null;
@@ -250,7 +268,8 @@ export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
     if (!checkIn && ctx.dates) [checkIn, checkOut] = [ctx.dates.start, ctx.dates.end];
     if (!area || !checkIn || !checkOut || checkOut <= checkIn) return null;
     const needs = STAY_NEEDS.filter(([, re]) => re.test(lower)).map(([need]) => need);
-    return { kind, query: { area, checkIn, checkOut, ...extra, ...(needs.length ? { mustHave: needs } : {}) } };
+    const share = shareIn(lower, checkIn, checkOut);
+    return { kind, query: { area, checkIn, checkOut, ...extra, ...(needs.length ? { mustHave: needs } : {}), ...(share ? { maxShareMinor: share } : {}) } };
   }
 
   const date = dates[0]?.day;
