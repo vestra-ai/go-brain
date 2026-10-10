@@ -159,10 +159,10 @@ export function subtitleFor(o: ResultOption): string | null {
     const area = typeof o.facts.area === 'string' ? o.facts.area : null;
     const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
     const total = o.totalMinor !== undefined && nights ? `${formatInr(o.totalMinor)} for ${nights} night${nights === 1 ? '' : 's'}` : null;
-    // Each person's share, worked out here and never by the model: "₹38,400 for 3 nights, ₹7,680 each" (the demo's ask
-    // was "under 8k a head"). Only with the head count ixigo priced it for.
+    // Each person's share to the nearest ₹100, worked out here and never by the model: "₹38,400 for 3 nights, about ₹7,700
+    // each" (the demo's ask was "under 8k a head"). Only with the head count ixigo priced it for.
     const guests = typeof o.facts.guests === 'number' && o.facts.guests > 1 ? o.facts.guests : null;
-    const each = o.totalMinor !== undefined && nights && guests ? `${formatInr(Math.round(o.totalMinor / guests))} each` : null;
+    const each = o.totalMinor !== undefined && nights && guests ? `about ${formatInr(Math.round(o.totalMinor / guests / 10_000) * 10_000)} each` : null;
     const words = [area, total, each].filter((x): x is string => x !== null).join(', ');
     return words || null;
   }

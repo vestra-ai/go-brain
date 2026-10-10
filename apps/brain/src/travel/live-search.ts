@@ -24,6 +24,8 @@ export interface LiveSearchDeps {
   log: { warn(obj: object, msg: string): void };
   /** The longest finish() holds the options card back for the card's last update. */
   finishWaitMs?: number;
+  /** When each trip's last card said "On it.", shared by every card (register.ts): one ask's second card says nothing. */
+  saidOnIt?: Map<string, number>;
 }
 
 export interface LiveSearch {
@@ -36,6 +38,12 @@ export interface LiveSearch {
 const NOUN: Record<TravelKind, string> = { flights: 'flights', stays: 'hotels', trains: 'trains', buses: 'buses' };
 const MAX_FRAME_BYTES = 2 * 1024 * 1024;
 const FINISH_WAIT_MS = 1_500;
+/**
+ * A card within this of the trip's last "On it." goes up with no words: it is the same ask's next search (staging, 10 Oct:
+ * the early plain read said "On it." at 2 s, and the model's search with ixigo's filters said it again at 12 s).
+ */
+export const ON_IT_QUIET_MS = 60_000;
+const SAID_MAX = 1_000;
 
 /** The planned steps: open ixigo's page, read its results, pick by what the people asked for. */
 export function liveSteps(kind: TravelKind, q: TravelQuery): string[] {
@@ -123,8 +131,16 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: 
     const c: WorkingCard = { ...card, steps: card.steps.map((s) => ({ ...s })), updated_at: d.now().toISOString() };
     try {
       if (!posted) {
-        await d.link.request('post_message', { request_id: `go_live_${id}`, trip_id: tripId, text: 'On it.', card: c });
+        const now = d.now().getTime();
+        const last = d.saidOnIt?.get(tripId);
+        const quiet = last !== undefined && now - last < ON_IT_QUIET_MS;
+        await d.link.request('post_message', { request_id: `go_live_${id}`, trip_id: tripId, ...(quiet ? {} : { text: 'On it.' }), card: c });
         posted = true;
+        if (!quiet && d.saidOnIt) {
+          d.saidOnIt.delete(tripId);
+          d.saidOnIt.set(tripId, now);
+          while (d.saidOnIt.size > SAID_MAX) d.saidOnIt.delete(d.saidOnIt.keys().next().value!);
+        }
       } else {
         await d.link.request('replace_card', { trip_id: tripId, card: c });
       }

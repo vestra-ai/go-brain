@@ -571,7 +571,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
         card: { results_id: set.resultsId, option_numbers: shown.map((_, i) => i + 1), title: suggestTitle(kind, q) },
         note:
           'None fits all of it. Show these nearest with show_options, and say in the line that none fits everything, keeping every condition in it, ' +
-          `and what the nearest miss, as the summary says: never call them a fit. ${CARD_LINE}`,
+          `and what the nearest miss, as the summary says: never call them a fit. ${NO_HOMEWORK} ${CARD_LINE}`,
       };
     }
     const closest = near[0] ? ` Closest: ${optionLine(near[0].option)}, but ${listOf(near[0].misses)}.` : '';
@@ -622,11 +622,12 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
       `${left ? `Say in the line that ${left}. ` : ''}` +
       (pick.length
-        ? `Show only the options whose amenities or details fit ${listOf(pick)}, best first, and say which part ixigo filtered and which you picked; ` +
-          'if none clearly fits, say so and show the closest. ' +
+        ? `Show the options whose amenities or details fit ${listOf(pick)}, the best three when there are three, best first, and say which part ixigo filtered and which you picked; ` +
+          "a want the data can't show (quiet) is no reason to show fewer: pick on what it does show and say plainly what ixigo doesn't tell. " +
+          'If none clearly fits, say so and show the closest. ' +
           (list ? "If one of ixigo's own filters is what was asked, you may search again with it in site_filters. " : '')
         : '') +
-      CARD_LINE,
+      `${NO_HOMEWORK} ${CARD_LINE}`,
   };
 }
 
@@ -658,6 +659,14 @@ export function searchRoundSummary(results: Array<{ content: string; isError: bo
 }
 
 const SEARCH_RULE = 'Put every constraint people gave into the arguments: Go applies them to the results itself.';
+
+/**
+ * The call is Go's, and so is the maths (real model, staging, 10 Oct: "Priya, check the per-head split against your 8k",
+ * "Meher, does this feel quiet enough?").
+ */
+const NO_HOMEWORK =
+  "Never hand the work back to the group: no maths for them to check (each stay's share a head is on the card, worked out by Go) and no " +
+  '"does this work for you?" about whether an option fits: you make that call from the results and say it.';
 
 const ShowArgs = z.object({
   results_id: z.string().min(3).max(64),

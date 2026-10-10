@@ -90,7 +90,8 @@ describe('the options card', () => {
       kind: 'stay', title: 'Lotus & Orchid Villas', priceMinor: 2394400, totalMinor: 7183200, priceNote: 'per night, per room', highlights: [],
       facts: { nights: 3, rooms: 1, guests: 5, area: 'Candolim' },
     };
-    expect(subtitleFor(villa)).toBe('Candolim, ₹71,832 for 3 nights, ₹14,366 each');
+    expect(subtitleFor(villa)).toBe('Candolim, ₹71,832 for 3 nights, about ₹14,400 each');
+    expect(subtitleFor({ ...villa, totalMinor: 3_840_000 })).toBe('Candolim, ₹38,400 for 3 nights, about ₹7,700 each');
     // One person: the share is the total, so it is not said twice.
     expect(subtitleFor({ ...villa, facts: { ...villa.facts, guests: 1 } })).toBe('Candolim, ₹71,832 for 3 nights');
   });
