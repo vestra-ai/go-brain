@@ -215,7 +215,11 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.tools.register(budgetTool({ budgets }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
-  const recipesTool = ixigoTool({ book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
+  const recipesTool = ixigoTool({
+    book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    // Its runs on the stage, with a live card, as a search's are: the room watches every page Go opens.
+    card: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o),
+  });
   if (recipesTool) brain.tools.register(recipesTool);
   // How everyone gets to the trip, asked for: each home city's trains and buses side by side, on one card.
   brain.tools.register(
