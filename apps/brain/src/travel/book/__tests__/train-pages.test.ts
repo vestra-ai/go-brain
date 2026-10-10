@@ -130,8 +130,11 @@ describe('trains.tatkal', () => {
 describe('trains.coach_position', () => {
   const PAGE = 'https://www.ixigo.com/trains/10103';
   const page = (html = sample('trains.coach_position.html')) => [capture('/trains/10103$', PAGE, html)];
-  const MANDOVI = 'Engine, General, General, M3 (3E), M2 (3E), M1 (3E), B4 (3A), B3 (3A), B2 (3A), B1 (3A), A1 (2A), HA1 (1A+2A), '
-    + 'Pantry car, S7 (SL), S6 (SL), S5 (SL), S4 (SL), S3 (SL), S2 (SL), S1 (SL), General, General';
+  // A list, never one long line: a fact longer than 300 characters is cut, and a long rake's line would be.
+  const MANDOVI = [
+    'Engine', 'General', 'General', 'M3 (3E)', 'M2 (3E)', 'M1 (3E)', 'B4 (3A)', 'B3 (3A)', 'B2 (3A)', 'B1 (3A)', 'A1 (2A)', 'HA1 (1A+2A)',
+    'Pantry car', 'S7 (SL)', 'S6 (SL)', 'S5 (SL)', 'S4 (SL)', 'S3 (SL)', 'S2 (SL)', 'S1 (SL)', 'General', 'General',
+  ];
 
   it("says the coaches from the engine end at the train's first station, and its rake", async () => {
     const got = await facts('trains.coach_position', { train: '10103' }, page());
@@ -162,7 +165,7 @@ describe('trains.coach_position', () => {
     const reversed = `<html><body><input type="hidden" id="dataBE" value="${JSON.stringify(data).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></body></html>`;
     const got = await facts('trains.coach_position', { train: '10103', coach: 'S1', station: 'Madgaon' }, page(reversed));
     expect(got.rows[0]).toMatchObject({ at: 'Madgaon (MAO)', coach: 'S1 (SL): position 3 of 0 to 21 from the engine end', order_flips_at: ['Ratnagiri (RN)'] });
-    expect((got.rows[0]!['order_from_engine'] as string).startsWith('Engine, General, General, S1 (SL), S2 (SL)')).toBe(true);
-    expect((await facts('trains.coach_position', { train: '10103' }, page(reversed))).rows[0]!['order_from_engine']).toBe(MANDOVI);
+    expect((got.rows[0]!['order_from_engine'] as string[]).slice(0, 5)).toEqual(['Engine', 'General', 'General', 'S1 (SL)', 'S2 (SL)']);
+    expect((await facts('trains.coach_position', { train: '10103' }, page(reversed))).rows[0]!['order_from_engine']).toEqual(MANDOVI);
   });
 });

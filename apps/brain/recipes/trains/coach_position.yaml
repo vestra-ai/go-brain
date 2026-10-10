@@ -51,7 +51,7 @@ answer:
         "train": info.localName & " " & info.code,
         "at": $stop.destination.localName & " (" & $stop.destination.code & ")",
         "coaches": $count($coaches),
-        "order_from_engine": $join($coaches.name, ", "),
+        "order_from_engine": [$coaches.name],
         "coach": $want ? ($found ? $found.name & ": position " & $found.at & " of 0 to " & ($count($coaches) - 1) & " from the engine end" : $want & " is not one of this train's coaches"),
         "not_a_stop": ($asked and $not($exists($here))) ? $asked & " is not one of its stops: " & $join($stops.destination.code, ", "),
         "order_flips_at": $count($turns) > 0 ? [$turns],
