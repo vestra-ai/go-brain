@@ -669,19 +669,27 @@ export function createEngine(d: EngineDeps) {
   }
 
   /** The fetch a recipe's page speed makes for these inputs: its captures (templates filled), or the first fetch whose
-   *  when holds, with its steps' words filled like a box's ("{area}"). */
+   *  when holds, with its steps' words filled like a box's ("{area}"). An optional click whose words fill to nothing is
+   *  left out: a control for something the person didn't ask (the explorer's theme chip when no theme was asked). */
   async function fetchPlanOf(recipe: RecipeFile, inputs: Record<string, unknown>, bindings: Record<string, unknown>): Promise<FetchPlan> {
     const match = (m: string): Promise<string> => (m.includes('{') ? fill(m, inputs, { url: false, bindings }) : Promise.resolve(m));
     const captures = async (cs: RecipeFile['capture']): Promise<CaptureSpec[]> =>
       Promise.all((cs ?? []).map(async (c) => ({ ...c, match: await match(c.match) }) as CaptureSpec));
-    const filledSteps = async (steps: Step[]): Promise<Step[]> =>
-      Promise.all(
+    const filledSteps = async (steps: Step[]): Promise<Step[]> => {
+      const filled = await Promise.all(
         steps.map(async (s) => ({
           ...s,
           ...('text' in s && s.text ? { text: await fill(s.text, inputs, { url: false, bindings }) } : {}),
           ...('name' in s && s.name ? { name: await fill(s.name, inputs, { url: false, bindings }) } : {}),
         }) as Step),
       );
+      const isAsked = (s: Step, i: number): boolean => {
+        const given = steps[i]!;
+        if (s.op !== 'click' || !s.optional || given.op !== 'click') return true;
+        return !((given.text?.includes('{') && !s.text?.trim()) || (given.name?.includes('{') && !s.name?.trim()));
+      };
+      return filled.filter(isAsked);
+    };
     for (const f of recipe.fetch ?? []) {
       if ((await evaluate(f.when, inputs, { inputs, ...bindings })) !== true) continue;
       return {

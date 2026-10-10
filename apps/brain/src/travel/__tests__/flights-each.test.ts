@@ -18,7 +18,7 @@ beforeAll(async () => {
   db = await withSchema();
   lb = makeLaneBrain({ pool: db.pool });
   results = createResultsStore(db.pool);
-  registerTravelTaps(lb.taps, { results, link: lb.brain.door.link, desk: lb.brain.desk, now: lb.brain.now, log: lb.brain.log });
+  registerTravelTaps(lb.taps, { results, pool: lb.brain.pool, link: lb.brain.door.link, desk: lb.brain.desk, now: lb.brain.now, log: lb.brain.log });
 });
 afterAll(async () => {
   await db.drop();
