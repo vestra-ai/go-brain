@@ -190,8 +190,8 @@ export async function askToPay(
   if (Date.parse(hold.expiresAt) <= now.getTime() + 60_000) return refuse(d, 'hold_failed', words);
 
   const kind: PaymentKind = d.payRail();
-  // The rooms the group picked for the stay so far (REV4 B6): the rooms card closes at payment, so they are read once
-  // here and kept with the payment; none picked is [], one expense across everyone.
+  // The rooms the group picked for the stay (REV4 B6): asking for the payment closes the rooms card, and the pick it
+  // closed with is kept with the payment; none picked is [], one expense across everyone.
   let rooms: Room[] | null = null;
   if (d.rooms) {
     try {

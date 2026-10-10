@@ -1,6 +1,6 @@
 import type { RegisterLane } from '../app.js';
 import { statsRegistry } from '../stats/sources.js';
-import { createRoomsCards } from '../travel/rooms-card.js';
+import { closeRooms, createRoomsCards } from '../travel/rooms-card.js';
 import { askToPay, idsFromTurn, withTurn } from './ask.js';
 import { moneyRoutes } from './callbacks.js';
 import { claimCardOnClose, claimTap } from './claim-taps.js';
@@ -32,7 +32,7 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
     const { VAULT_URL, VAULT_SHARED_SECRET } = env;
     const vault = vaultClient({ baseUrl: VAULT_URL, secret: VAULT_SHARED_SECRET, now: brain.now, ...(o.fetch ? { fetch: o.fetch } : {}) });
     const claims = createClaims(brain.pool, brain.now);
-    const rooms = createRoomsCards(brain.pool);
+    const roomsCards = { store: createRoomsCards(brain.pool), link: brain.door.link, packs: brain.packs, log: brain.log };
     const d: MoneyDeps = {
       pool: brain.pool,
       link: brain.door.link,
@@ -43,8 +43,10 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
       log: brain.log,
       tapVaultMs: 1_500,
       claims,
-      // The rooms the group picked on a stay's rooms card (REV4 B5, travel/rooms-card.ts), for one expense a room (B6).
-      rooms: async (row) => (await rooms.chosenArrangement(row.trip_id, row.option_ref))?.rooms.map((r) => ({ label: r.label, person_ids: r.personIds, price_minor: r.priceMinor })) ?? null,
+      // The rooms the group picked on a stay's rooms card (REV4 B5, travel/rooms-card.ts), for one expense a room (B6):
+      // asking for the payment closes the card (its final state, taps refused) and gives the pick it closed with.
+      rooms: async (row) =>
+        (await closeRooms(roomsCards, row.trip_id, row.option_ref))?.rooms.map((r) => ({ label: r.label, person_ids: r.personIds, price_minor: r.priceMinor })) ?? null,
     };
     const pay = createPay(d);
     brain.pay = pay;
