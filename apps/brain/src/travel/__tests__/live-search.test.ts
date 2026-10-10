@@ -1,6 +1,6 @@
 import * as C from '@go/contract';
 import { describe, expect, it } from 'vitest';
-import { liveSteps, startLiveSearch, type LiveSearchDeps } from '../live-search.js';
+import { liveSteps, ON_IT_QUIET_MS, startLiveSearch, type LiveSearchDeps } from '../live-search.js';
 import type { LiveFrame } from '../recipes/progress.js';
 
 const RESULTS = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
@@ -45,6 +45,24 @@ function room(o: { delayMs?: number; hang?: boolean; failPost?: boolean } = {}) 
 const FLIGHTS = { kind: 'flights' as const, query: { from: 'Delhi', to: 'Goa', date: '2026-11-06', departAfter: '18:00', mustHave: ['non_stop' as const] } };
 
 describe('the live search card', () => {
+  // Staging, 10 Oct: the early plain read said "On it." at 2 s, and the model's search with ixigo's filters said it again at 12 s.
+  it('says "On it." once an ask: a second card in the trip within a minute goes up with no words, and a later ask says it again', async () => {
+    const r = room();
+    let now = Date.parse('2026-10-07T09:00:00Z');
+    const deps: LiveSearchDeps = { ...r.deps, now: () => new Date(now), saidOnIt: new Map() };
+    await startLiveSearch(deps, 't_goa', { runKey: 'a', ...FLIGHTS }).finish(true);
+    now += 10_000;
+    await startLiveSearch(deps, 't_goa', { runKey: 'b', ...FLIGHTS }).finish(true);
+    // Another trip's ask says its own.
+    await startLiveSearch(deps, 't_other', { runKey: 'c', ...FLIGHTS }).finish(true);
+    now += ON_IT_QUIET_MS;
+    await startLiveSearch(deps, 't_goa', { runKey: 'd', ...FLIGHTS }).finish(true);
+    const posts = r.sent.filter((s) => s.method === 'post_message');
+    expect(posts.map((s) => s.params.text ?? null)).toEqual(['On it.', null, 'On it.', 'On it.']);
+    // The quiet one is still a card the contract takes: a message needs text, a card, or both.
+    expect(C.PostMessage.safeParse(posts[1]!.params).success).toBe(true);
+  });
+
   it('posts at once with "On it." and the planned steps, the first one under way', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'ixigo.flights|DEL|GOI|2026-11-06|4@1', ...FLIGHTS });

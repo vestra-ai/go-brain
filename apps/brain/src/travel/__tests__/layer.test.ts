@@ -255,7 +255,8 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     // Go's other conditions still hold: a stay over the price is never shown.
     expect(none.results.map((o) => o.title)).toEqual(['Casa Azul', 'Budget Inn']);
     expect(none).toMatchObject({ unapplied: ['pool'], found: 3 });
-    expect(none).not.toHaveProperty('closest');
+    // Fewer than three fit: the nearest of the rest comes with them, with what it misses.
+    expect(none.nearest).toEqual([{ option: expect.objectContaining({ title: 'Grand Palace' }), misses: ['₹20,000 a night, over ₹10,000', 'no pool'] }]);
   });
 
   it("hands ixigo_web the site's own filters and sort, keeps the site's order when it sorted, and passes on what the site did", async () => {

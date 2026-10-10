@@ -121,7 +121,7 @@ describe('hotels.search', () => {
       place: { name: 'Meritas Auberge Calangute Goa', address: 'Candolim', lat: 15.538268089294434, lng: 73.76802062988281 },
       rating: 4.5,
       highlights: ['2.3 km from Candolim Beach', 'Free cancellation', 'Pool'],
-      facts: { nights: 3, rooms: 2, area: 'Candolim', stars: 4, rating_out_of_10: 9, reviews: 331, pool: true, breakfast: false, free_cancellation: true, beach_minutes: 29 },
+      facts: { nights: 3, rooms: 2, guests: 4, area: 'Candolim', stars: 4, rating_out_of_10: 9, reviews: 331, pool: true, breakfast: false, free_cancellation: true, beach_minutes: 29 },
       sourceUrl: MERITAS,
     });
     expect(options[0]!.imageUrl).toMatch(/^https:\/\/q-xx\.bstatic\.com\//);

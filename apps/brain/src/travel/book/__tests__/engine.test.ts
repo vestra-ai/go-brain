@@ -119,6 +119,41 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
     await engine.answer('hotels.search', { ...goa, place: 'Vagator' }, { tripId: 't_site', siteFilters: ['Star Rating 5'] });
     expect(reads[2]).toContain(`&filters=${encodeURIComponent('PA_C_78528,SR_5')}`);
   });
+
+  // Staging, 10 Oct: ixigo's Entire house and Swimming Pool for five on all of Goa answered 424 with no stay at three rooms
+  // (two to a room), and five pool villas at one room.
+  it('books an entire house whole, one room for the group priced for every head', async () => {
+    const offers = createOffers({ now: () => new Date('2026-10-07T12:00:00Z') });
+    const reads: string[] = [];
+    const plans: FetchPlan[] = [];
+    const runner = {
+      read: async (_trip: string, url: string, plan: FetchPlan) => {
+        reads.push(url);
+        plans.push(plan);
+        return {
+          captures: [
+            capture(SEARCH, 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', fixture('stays-goa-page1.json')),
+            capture('/accommodation-search/api/v2/accommodations/search/metadata$', META, sample('hotels.search_filters.json')),
+          ],
+          finalUrl: url,
+        };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, pool: db.pool, trip: async () => ({ people: 5, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z'), offers });
+    const goa = { place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' };
+    await engine.answer('hotels.search', goa, { tripId: 't_villa' });
+    const villas = await engine.answer('hotels.search', goa, { tripId: 't_villa', siteFilters: ['Entire house', 'Swimming Pool'] });
+    expect(reads[0]).toContain('&adultCount=5&roomCount=3&');
+    expect(reads[1]).toContain('&adultCount=5&roomCount=1&');
+    expect(reads[1]).toContain(`&filters=${encodeURIComponent('AT_EH,FL_HF_29')}`);
+    // All of Goa is read as a careful person would, both pages, filtered or not.
+    expect(plans[0]!.capture[0]).toMatchObject({ min_count: 2 });
+    expect(plans[1]!.capture[0]).toMatchObject({ min_count: 2 });
+    if (villas.as !== 'options') throw new Error('not options');
+    const first = villas.options[0]!;
+    expect(first.facts).toMatchObject({ nights: 3, rooms: 1, guests: 5 });
+    expect(first.totalMinor).toBe(first.priceMinor * 3);
+  });
 });
 
 describe('a place Go has not searched before', () => {

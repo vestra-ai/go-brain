@@ -47,6 +47,8 @@ const ASKED_ELSE = 'If they asked for something else, not this search, answer th
 function answerBlock(seq: number | undefined, a: SearchAnswer, live: boolean): string {
   const which = seq !== undefined ? `#${seq}` : 'the message you woke for';
   const data = dataBlock('search results', [defuse(oneLine(a.summary)), ...(a.results ?? []).map((r) => defuse(JSON.stringify(r)))]);
+  // Nothing fits, but the nearest are saved (stays): the answer's own note says how to show them.
+  if (a.results_id && a.count === 0) return `Already searched for ${which}, checked ${a.checked}: results_id ${a.results_id}. ${a.note} ${ASKED_ELSE}\n${data}`;
   if (!a.results_id || a.count === 0) {
     return `Already searched for ${which}, checked ${a.checked}: nothing to show. Say what the summary says in one line, keeping every condition in it, and suggest loosening one thing. ${ASKED_ELSE}\n${data}`;
   }

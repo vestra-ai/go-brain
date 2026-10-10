@@ -7,6 +7,7 @@ import type { z } from 'zod';
 import type * as C from '@go/contract';
 import { hoursMinutes } from './book/expr.js';
 import { clip, formatInr } from './cards.js';
+import { shareOf } from './filters.js';
 import type { ResultOption } from './results.js';
 import type { TravelQuery } from './travel.js';
 
@@ -40,6 +41,10 @@ function whyStay(o: ResultOption, q: TravelQuery): string[] {
   if (q.maxPriceMinor !== undefined && o.priceMinor !== undefined && o.priceMinor <= q.maxPriceMinor) {
     why.push(`Within ${formatInr(q.maxPriceMinor)} a night`);
   }
+  const share = shareOf(o, q);
+  if (q.maxShareMinor !== undefined && share !== null && share <= q.maxShareMinor) {
+    why.push(`${formatInr(share)} each for the stay, within ${formatInr(q.maxShareMinor)} a head`);
+  }
   if (q.minRating !== undefined && o.rating !== undefined && o.rating >= q.minRating) why.push(`Rated ${o.rating} out of 5`);
   return why.slice(0, 5);
 }
@@ -54,10 +59,12 @@ export function stayDetails(o: ResultOption, q: TravelQuery, people: number, gal
   const rooms = num(o.facts['rooms']);
   const total = o.totalMinor;
   const currency = o.currency ?? 'INR';
-  // The whole stay split between the people it sleeps: a line, and the total it adds up to.
-  const share = total !== undefined && people > 0 ? Math.round(total / people) : null;
+  // The whole stay split between the people it was priced for (ixigo's head count, else the search's): a line, and the
+  // total it adds up to.
+  const heads = num(o.facts['guests']) ?? people;
+  const share = total !== undefined && heads > 0 ? Math.round(total / heads) : null;
   const span = nights !== null ? `${nights} night${nights === 1 ? '' : 's'}` : 'The stay';
-  const costs = share !== null ? [{ label: clip(`${span}, each of ${people}`, 60), emoji: '🛏️', amount_minor: share, currency }] : [];
+  const costs = share !== null ? [{ label: clip(`${span}, each of ${heads}`, 60), emoji: '🛏️', amount_minor: share, currency }] : [];
   const rating = num(o.facts['rating_out_of_10']);
   const reviews = num(o.facts['reviews']);
   const amenities = (o.amenities ?? []).map((a) => clip(a, 40)).filter((a) => a.length > 0).slice(0, 30);
