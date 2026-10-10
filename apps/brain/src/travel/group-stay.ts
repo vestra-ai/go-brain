@@ -27,7 +27,7 @@ type Decision = Trip['decisions'][number];
 const winnerOf = (d: Decision | undefined): string | null =>
   d && d.status === 'closed' && typeof d.result_index === 'number' ? (d.options[d.result_index]?.option_ref ?? null) : null;
 
-const placed = (name: string, p: { lat?: number | null; lng?: number | null } | null | undefined, why: GroupStay['why']): GroupStay | null =>
+const placed = (name: string, p: { lat?: number | null | undefined; lng?: number | null | undefined } | null | undefined, why: GroupStay['why']): GroupStay | null =>
   p && typeof p.lat === 'number' && typeof p.lng === 'number' ? { name, lat: p.lat, lng: p.lng, why } : null;
 
 export function createGroupStay(d: { trip: (tripId: string) => Promise<Trip>; results: Pick<ResultsStore, 'placeOf' | 'topPick'> }) {
