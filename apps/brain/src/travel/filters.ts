@@ -28,6 +28,12 @@ function has(o: TravelOption, need: MustHave): boolean {
 
 const per = (kind: TravelKind): string => (kind === 'stays' ? ' a night' : ' a person');
 
+/** Each person's share of a stay: its whole stay over the head count it was priced for (the search's own), or null. */
+export function shareOf(o: { totalMinor?: number; facts: Record<string, string | number | boolean> }, q: Pick<TravelQuery, 'guests'>): number | null {
+  const guests = typeof o.facts['guests'] === 'number' ? o.facts['guests'] : q.guests;
+  return o.totalMinor !== undefined && guests !== undefined && guests > 0 ? Math.round(o.totalMinor / guests) : null;
+}
+
 const MISSING: Record<MustHave, string> = {
   pool: 'no pool',
   beach: `not within ${BEACH_NEAR_MINUTES} minutes of the beach`,
@@ -47,6 +53,10 @@ export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): strin
     out.push(j ? `arrives at ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at, 'the next day')}, after ${formatClock(q.arriveBefore)}` : 'no arrival time');
   }
   if (q.maxPriceMinor !== undefined && o.priceMinor > q.maxPriceMinor) out.push(`${formatInr(o.priceMinor)}${per(kind)}, over ${formatInr(q.maxPriceMinor)}`);
+  // A share Go cannot work out (no whole stay, no head count) is not held against the stay.
+  const cap = kind === 'stays' ? q.maxShareMinor : undefined;
+  const share = cap !== undefined ? shareOf(o, q) : null;
+  if (cap !== undefined && share !== null && share > cap) out.push(`${formatInr(share)} each for the whole stay, over ${formatInr(cap)} a head`);
   if (q.minRating !== undefined && (o.rating ?? 0) < q.minRating) out.push(o.rating === undefined ? 'no rating' : `rated ${o.rating}, under ${q.minRating}`);
   if (kind === 'stays' && q.guests !== undefined && typeof o.facts.sleeps === 'number' && o.facts.sleeps < q.guests) out.push(`sleeps ${o.facts.sleeps}, fewer than ${q.guests}`);
   for (const need of q.mustHave ?? []) if (!has(o, need)) out.push(MISSING[need]);
@@ -63,6 +73,7 @@ export function asked(kind: TravelKind, q: TravelQuery): string[] {
   // can leave Friday after 6 pm" (staging, 9 Oct: a time nobody in the chat had said read as made up).
   if (q.because && out.length > 0) out[out.length - 1] = `${out[out.length - 1]}, because ${q.because.replace(/^(because|as)\s+/i, '').replace(/[.\s]+$/, '')}`;
   if (q.maxPriceMinor !== undefined) out.push(`at most ${formatInr(q.maxPriceMinor)}${per(kind)}`);
+  if (kind === 'stays' && q.maxShareMinor !== undefined) out.push(`at most ${formatInr(q.maxShareMinor)} a head for the whole stay`);
   if (q.minRating !== undefined) out.push(`rated ${q.minRating} or more`);
   if (kind === 'stays' && q.guests !== undefined) out.push(`sleeping ${q.guests}`);
   const words: Record<MustHave, string> = {
@@ -110,14 +121,16 @@ function spreadAcrossAreas(sorted: TravelOption[]): TravelOption[] {
   return [...up, ...sorted.filter((o) => !taken.has(o))];
 }
 
-/** When nothing fits: the option that misses the fewest constraints (then the cheapest), and what it misses. */
-export function closest(kind: TravelKind, q: TravelQuery, options: TravelOption[]): { option: TravelOption; misses: string[] } | null {
-  let best: { option: TravelOption; misses: string[] } | null = null;
-  for (const option of options) {
-    const m = misses(kind, q, option);
-    if (!best || m.length < best.misses.length || (m.length === best.misses.length && option.priceMinor < best.option.priceMinor)) best = { option, misses: m };
-  }
-  return best;
+/**
+ * When nothing fits: the options that miss the fewest constraints (then the cheapest, a stay by its whole stay), at
+ * most n, each with what it misses, so the group sees how near it gets.
+ */
+export function nearest(kind: TravelKind, q: TravelQuery, options: TravelOption[], n = 3): Array<{ option: TravelOption; misses: string[] }> {
+  const cost = (o: TravelOption): number => o.totalMinor ?? o.priceMinor;
+  return options
+    .map((option) => ({ option, misses: misses(kind, q, option) }))
+    .sort((a, b) => a.misses.length - b.misses.length || cost(a.option) - cost(b.option))
+    .slice(0, n);
 }
 
 /** keepOrder: the site sorted them as the ask asked (its own sort): Go keeps that order. */

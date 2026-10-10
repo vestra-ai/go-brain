@@ -9,6 +9,20 @@ import { answersToGo, inlineData, personName } from './fence.js';
 export const ASK_HOW_MUCH =
   "This says someone paid but not how much: ask them, in one short line, how much it was and who it was for. Don't record anything yet.";
 
+/**
+ * Three rules for Go speaking on the group's chat unasked, read by both ways it does (the quiet note on a line the reflex
+ * was unsure was for Go, and proactive's chime-in on one it was sure was not). From the 10 Oct live proof (trip
+ * t_try_138755ec9655): Go asked about dates the trip already had three times, called Saudades "locked in" when 3 of 5
+ * liked it with no vote, and searched stays on one person's "Saudades looks perfect to me".
+ */
+export const CHIME_RULES =
+  'Answer a question the trip already answers once ("Dates are set: 6 to 9 Nov ✅. Want to change them?"), then never raise ' +
+  'it again, even while the record lists it as open. When part of the group backs an option that is not a vote yet, offer a ' +
+  'vote with the count ("3 of you said yes to Saudades. Want me to put it to a vote?"): never say locked in, confirmed or ' +
+  'decided until a vote closes or the organizer decides, and a "Leaning" line in the record is not a decision. Run a search ' +
+  'only when someone asks for one ("find", "show", "any trains"); one person liking something ("Saudades looks perfect to ' +
+  'me") is never a search.';
+
 export function renderMessageWake(item: DeskItem, pack: TripPack): string {
   const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean };
   const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
@@ -48,8 +62,9 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   return (
     `${which} the group talking. Speak if you can add something real: answer a question you can answer with facts from ` +
     'ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already ' +
-    'answered it; when the group agrees dates on a trip with a place, show stays for them with search_stays; when it ' +
-    'agrees a place, offer the next step in one line; when people disagree, offer a vote. ' +
+    'answered it; when the group agrees dates on a trip with a place, offer stays in one line (search_stays only when ' +
+    'someone asks to see them); when it agrees a place, offer the next step in one line; when people disagree, offer a vote. ' +
+    `${CHIME_RULES} ` +
     "Someone saying what they'd like gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
     "what is the friends' to settle unless the record already says, and the App gives anyone asking what they missed " +
     'their own catch-up. For banter, greetings, a side conversation, something a person already handled, or when your ' +
@@ -62,7 +77,9 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
  * after the newest messages, as the last thing read before the reply. Under "why you woke" it changed nothing (run
  * 37582427795: still three sentences, writing time 1.30 s before and 1.31 s after), read as part of the turn's state
  * while the rules said one to three. A list, a recap or a comparison may be longer, an offer the rules call for (a vote
- * instead of paying) stays, and what someone said keeps its message number, which recall's answers cite.
+ * instead of paying) stays, and what someone said keeps its message number, which recall's answers cite. The reply starts
+ * with the answer: on staging (10 Oct) a recap began "Priya asked for a recap, so a short list is fine. I'll keep each
+ * person's own facts without budgets or names tied to them.", this note's and the rules' permissions said back as working.
  */
 export function askNote(items: DeskItem[], pack: TripPack): string | null {
   const seqs = items.flatMap((item) => {
@@ -76,7 +93,8 @@ export function askNote(items: DeskItem[], pack: TripPack): string | null {
   const which = refs.length === 1 ? refs[0] : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]}`;
   return (
     `Answer ${which} in one or two short sentences: the answer itself, no extra tips and no offer to do more unless your rules call for one. ` +
-    'A list, a recap or a comparison they asked for may be longer. When you cite what someone said, keep its message number.'
+    'A list, a recap or a comparison they asked for may be longer. When you cite what someone said, keep its message number. ' +
+    'Start with the answer: never with what they asked for, why your answer takes the shape it does, or what you will leave out.'
   );
 }
 

@@ -57,6 +57,23 @@ describe('the notes pass', () => {
     expect(await cursor('t_n1')).toBe(133);
   });
 
+  it("shows the model the trip's plan, and never opens a line about the dates the trip already has (the 9 Oct golden run)", async () => {
+    const lines = [msg(122, 'p_kabir', 'guys dates final karo yaar, kal tak'), msg(124, 'p_priya', 'which beach first?')];
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [
+        { kind: 'open', text: 'Trip dates', about: 'dates', person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'], proof: [122] },
+        { kind: 'open', text: 'Which beach first?', about: 'other', person_ids: [], proof: [124] },
+      ],
+    });
+    const { link, side, notes } = setup('t_n_plan', lines, [answer]);
+    const out = await notes.run('t_n_plan');
+    expect(side.prompts[0]!.user).toContain("The trip's plan now: dates 2026-11-06 to 2026-11-09 (set); place");
+    expect(side.prompts[0]!.system).toContain('Never open a line for something the trip\'s plan already has');
+    expect(out.refused).toContain('line: the trip already has its dates: a question about them is not open');
+    expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['Which beach first?']);
+  });
+
   it('writes no doing line for an ask to Go, read after Go answered it, and still writes one for a real promise', async () => {
     const said = [
       msg(190, 'p_rahul', '@Go find flights Friday'),
@@ -251,6 +268,12 @@ describe('the notes pass', () => {
     // And the leans people show in passing, which it missed: "ugh 6 am flights again", "sunset at the beach is a must".
     expect(NOTES_RULES).toContain('A lasting lean shows in passing too: a complaint ("ugh 6 am flights again"), a rejection with its reason ("nah too far from the beach"), or a must ("sunset at the beach is a must").');
     expect(NOTES_RULES).toContain("starting Prefers, Dislikes or Wants (\"Dislikes early flights\", \"Prefers stays near the beach\", \"Wants a beach sunset\"), never as a rule.");
+    // Staging, 10 Oct: "can leave Thursday" and "mom might join" carried into the next trip; 😍 and 👍 were never read.
+    expect(NOTES_RULES).toContain('Give "this_trip": true for a fact that only holds for this trip');
+    // Staging, 10 Oct: Rahul's "@Go … anything you should keep in mind about each of us?" got leaving="Can't leave before
+    // 6 pm Friday", which only Go's answer said.
+    expect(NOTES_RULES).toContain("The fact must be in the words of the line you cite: never put on someone's line, least of all their question to Go, a fact that Go's answer or anyone else gave.");
+    expect(NOTES_RULES).toContain('A reaction on a line can show the reactor\'s lean (😍 on a beach photo, 👍 on a pool villa): note it for the person who reacted, with that line as the message and "reaction": true');
     const messages = [
       msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov, Diwali weekend 🌴'),
       msg(4, 'p_kabir', 'haha 😂'),

@@ -22,11 +22,15 @@ import type { Images } from '../images.js';
 import type { ResultsStore } from '../results.js';
 import { answerItself, handOver, searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
-import { TRAVEL_WAIT_MS } from './backend.js';
 import type { EarlyStart } from './early.js';
 
-/** The longest a turn waits for searches started early, all together. */
-export const EARLY_WAIT_MS = TRAVEL_WAIT_MS;
+/**
+ * The longest a turn's context waits for searches started early, all together: a beat, for one already answering from
+ * what Go keeps, never the search itself. A turn never waits on ixigo to build (staging, 10 Oct: a villa ask waited
+ * 12 s behind a Cloudflare check before the model started): one still running says so, its live card shows it, and its
+ * options go up by themselves when it finishes.
+ */
+export const EARLY_WAIT_MS = 600;
 const ANSWERED_MAX = 200;
 
 export interface EarlySearchNowDeps {
@@ -47,6 +51,8 @@ const ASKED_ELSE = 'If they asked for something else, not this search, answer th
 function answerBlock(seq: number | undefined, a: SearchAnswer, live: boolean): string {
   const which = seq !== undefined ? `#${seq}` : 'the message you woke for';
   const data = dataBlock('search results', [defuse(oneLine(a.summary)), ...(a.results ?? []).map((r) => defuse(JSON.stringify(r)))]);
+  // Nothing fits, but the nearest are saved (stays): the answer's own note says how to show them.
+  if (a.results_id && a.count === 0) return `Already searched for ${which}, checked ${a.checked}: results_id ${a.results_id}. ${a.note} ${ASKED_ELSE}\n${data}`;
   if (!a.results_id || a.count === 0) {
     return `Already searched for ${which}, checked ${a.checked}: nothing to show. Say what the summary says in one line, keeping every condition in it, and suggest loosening one thing. ${ASKED_ELSE}\n${data}`;
   }
@@ -94,7 +100,7 @@ export function earlySearchNow(d: EarlySearchNowDeps): NowProvider {
         const early = p.messageId ? d.early.searchFor(tripId, p.messageId) : null;
         if (!early || !p.messageId) continue;
         const asked = d.travel.waitMs ? await d.travel.waitMs(early.kind, early.query, { tripId }).catch(() => null) : null;
-        const allowed = asked ?? EARLY_WAIT_MS;
+        const allowed = Math.min(asked ?? EARLY_WAIT_MS, EARLY_WAIT_MS);
         const left = Math.max(0, Math.min(allowed, deadline - d.now().getTime()));
         // The race is on the search itself: one already finished is never "still running", however little wait is left.
         const settled = await Promise.race([early.search.then(() => true, () => true), wait(left).then(() => false)]);
@@ -150,11 +156,11 @@ export function earlyAnswer(d: EarlyAnswerDeps): DirectAnswer {
     const messageId = (item.payload as { messageId?: string } | null)?.messageId;
     const early = messageId ? d.early.searchFor(tripId, messageId) : null;
     if (!early) return false;
-    // As long as the block would wait for it: the backend's own wait from the run's start, or the block's.
+    // As long as the block would wait for it, a beat at most: a search still running is handed over, never waited on.
     const allowed = d.travel.waitMs ? await d.travel.waitMs(early.kind, early.query, { tripId }).catch(() => null) : null;
     const found = await Promise.race<TravelSearch | null | typeof RUNNING>([
       early.search.then((f) => f, () => null),
-      wait(Math.max(0, allowed ?? EARLY_WAIT_MS)).then(() => RUNNING),
+      wait(Math.max(0, Math.min(allowed ?? EARLY_WAIT_MS, EARLY_WAIT_MS))).then(() => RUNNING),
     ]);
     if (found === RUNNING) {
       if (!d.desk || !plainAsk(early.kind, early.query, { wake, pack, today: await d.today(tripId) }).ok) return false;

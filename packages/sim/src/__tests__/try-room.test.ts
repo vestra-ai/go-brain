@@ -675,9 +675,17 @@ describe('Go Live', () => {
     expect(html).toContain('<div class="details" id="details" role="dialog" aria-modal="true" aria-label="Details" hidden>');
     expect(html).toContain('<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>');
     expect(html).toContain("} else if (data.type === 'live') {");
-    // A picture is shown at its own size or smaller, never stretched or dimmed.
+    // A picture of Go's screen is shown at its own size or smaller, never cropped, stretched or dimmed (a790232): the mini
+    // browser's and the sheet's. Only an option's photo, a stay's own photo in a fixed tile, may be cropped to fill it.
     expect(html).toContain('.mini-view img { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; pointer-events: none; }');
-    expect(html).not.toContain('object-fit: cover');
+    for (const rule of html.match(/[^{}]*\{[^{}]*object-fit: cover[^{}]*\}/g) ?? []) {
+      expect(rule.trim().split(' {')[0]).toMatch(/^(\.opt-ph img|\.gallery img)$/);
+    }
+    for (const screen of ['.mini-view img', '.sheet-view img']) {
+      const rule = html.match(new RegExp(`\\${screen} \\{[^}]*\\}`))?.[0] ?? '';
+      expect(rule).toContain('width: auto; height: auto;');
+      expect(rule).not.toContain('object-fit');
+    }
     expect(html).not.toContain('grayscale');
     expect(html).toContain("else if (m.type === 'screen' && m.event) { live.state = 'on'; screenEvent(m.event); }");
     // A group of steps (how we all get there) has its own badge in the runs, and each step is named by its city.

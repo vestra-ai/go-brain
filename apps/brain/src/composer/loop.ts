@@ -10,7 +10,8 @@ import { SAY_NOTHING, STAY_SILENT, type QuickTool, type TurnCtx } from './tools.
 export const MAX_ROUNDS = 4;
 /** The stop reason of a turn that ended on its cards: every call in the last reply was a card tool that put its card up. */
 export const CARDS_UP = 'cards_up';
-export const MAX_TOKENS = 1_024;
+/** A round's output cap. Thinking counts toward it, so it leaves room for a short think before a reply. */
+export const MAX_TOKENS = 2_048;
 const ROLLING = { type: 'ephemeral' } as const; // 5 minutes: it only has to last the turn
 
 export interface Usage {
@@ -256,8 +257,11 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   const tools = toolDefs(i.tools);
   const byName = new Map(i.tools.map((t) => [t.name, t]));
   const caps = resolveCapabilities(i.model);
-  // Thinking off: 'between_tools' on Sonnet 5.5 (which cannot omit it); no thinking field on other models.
-  const thinking = caps.id === 'claude-sonnet-5-5' ? { type: 'between_tools' } : undefined;
+  // Thinking on, at low effort, on Sonnet 5.5: the model's working goes to thinking, so its text is only ever words for
+  // the room. With thinking off ('between_tools') it wrote its working as text before every tool call ("Priya asked for
+  // a villa search, so I'll run it", 12 of 12 probe turns, 10 Oct); with it on, none did, and at low it mostly skips
+  // thinking, so turns were no slower. No thinking field on other models.
+  const thinking = caps.id === 'claude-sonnet-5-5' ? { thinking: { type: 'adaptive' }, output_config: { effort: 'low' } } : {};
   const messages = [...i.messages];
   const usage = noUsage();
   const timings: RoundTiming[] = [];
@@ -267,7 +271,11 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   // claims the work of a tool that did nothing (8 Oct: "The record call was refused, so I'll… Noted, …").
   const seen: Array<{ name: string; refused: boolean; quiet: boolean }> = [];
   const clean = (t: string): string => withoutRefused(t, refusalsOf(seen, byName));
-  for (let round = 1; round <= maxRounds; round++) {
+  // One round past the limit closes a turn whose last round still called tools: that round's words were written before
+  // its calls (its working, "The message ID format is…", staging drill 10 Oct), never an answer. The closing round may
+  // call no tool, so it writes the reply from what the tools said.
+  for (let round = 1; round <= maxRounds + 1; round++) {
+    const closing = round > maxRounds;
     // Every round marks its newest block, the first too: a round after it reads the whole prompt so far from the cache.
     let outgoing = withRollingMarker(messages);
     if (countMarkers(i.system, tools, outgoing) > 4) outgoing = messages;
@@ -276,9 +284,9 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
       max_tokens: Math.min(MAX_TOKENS, caps.maxOutputTokens),
       system: i.system,
       tools,
-      tool_choice: { type: 'auto' },
+      tool_choice: { type: closing ? 'none' : 'auto' },
       messages: outgoing,
-      ...(thinking ? { thinking } : {}),
+      ...thinking,
     };
     // The budget holds this round's upper-bound cost before the call; over today's cap there is no call, and the
     // turn keeps what it has.
@@ -289,7 +297,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     const asked = Date.now();
     let firstDelta: number | null = null;
     const reply = await underHold(hold, i.model, async (billed) => {
-      // 'between_tools' is not in the SDK's types yet, so the body is cast.
+      // The body's literal fields (tool_choice's type) widen to string, so it is cast.
       const stream = i.client.messages.stream(body as unknown as Anthropic.MessageStreamParams, { signal: i.signal });
       for await (const ev of stream) {
         if (ev.type === 'message_start') billed.usage = ev.message.usage;
@@ -318,6 +326,8 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     const said = toParams(reply.content);
     messages.push({ role: 'assistant', content: said.length || !latestText ? said : [{ type: 'text', text: latestText }] });
     const calls = reply.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+    // The closing round's words are the reply, whatever it ended on: it runs no tool.
+    if (closing) return { text: clean(text), silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: 'max_rounds', timings };
     if (reply.stop_reason !== 'tool_use' || calls.length === 0) {
       return { text: clean(text || latestText), silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason, timings };
     }
@@ -359,5 +369,6 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     // A tool that answered itself (a finished plain search put up its card and line): the turn ends on its card too.
     if (allUp || (i.ctx.answered && lines.length > 0)) return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP, timings };
   }
-  return { text: clean(latestText), silent: i.ctx.outcome.silent, rounds: maxRounds, usage, messages, stopReason: 'max_rounds', timings };
+  // Not reached: the closing round returns.
+  return { text: '', silent: i.ctx.outcome.silent, rounds: maxRounds + 1, usage, messages, stopReason: 'max_rounds', timings };
 }

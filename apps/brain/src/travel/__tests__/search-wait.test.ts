@@ -182,7 +182,7 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     expect(String(out.summary)).toContain("Pet-friendly property (ixigo's filter)");
     expect(String(out.summary)).toContain("Not filtered by ixigo, for you to pick from each option's amenities and details: beachfront and quiet.");
     expect((out.results as Array<Record<string, unknown>>)[0]).toMatchObject({ amenities: ['Beach access', 'Free Wifi'], details: { distance: '1 km from Anjuna Beach' } });
-    expect(String(out.note)).toContain('Show only the options whose amenities or details fit beachfront and quiet');
+    expect(String(out.note)).toContain('Show the options whose amenities or details fit beachfront and quiet');
     // Past its turn: the wake is the model's, to pick, not a card posted with no model call.
     const puts: DeskItem[] = [];
     const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
@@ -315,9 +315,23 @@ describe('the search wake line', () => {
     expect(line).toContain('<data>3 buses: ₹1,500 to ₹5,000</data>');
   });
 
+  it('a search that failed is said in one line and offered again, never handed to a job (staging, 9 Oct: start_task on a blank page)', async () => {
+    const w = setup(async () => { throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment."); }, null);
+    const out = await w.run();
+    expect(out).toMatchObject({ count: 0, error: 'unreachable', tell_the_room: expect.stringContaining('Never start_task for it') });
+    expect(renderSearchWake(item({ source: 'travel_search', search: 'buses', count: 0, resultsId: null, summary: '', error: 'unreachable' }))).toContain('Never start_task');
+  });
+
   it('says plainly when nothing came back or the search failed, and leaves other desk items alone', () => {
     expect(renderSearchWake(item({ source: 'travel_search', search: 'buses', count: 0, resultsId: null, summary: 'Nothing came back.', error: null }))).toContain('nothing to show');
     expect(renderSearchWake(item({ source: 'travel_search', search: 'buses', count: 0, resultsId: null, summary: '', error: 'unreachable' }))).toContain("didn't work (unreachable)");
     expect(renderSearchWake(item({ source: 'something_else' }))).toBeNull();
+  });
+
+  it('shows the nearest stays when none fits all of the ask, never as a fit', () => {
+    const line = renderSearchWake(item({ source: 'travel_search', search: 'stays in North Goa', count: 0, resultsId: 'r_near', summary: 'None of the 5 stays fits. The nearest: 1. Lotus', error: null }))!;
+    expect(line).toContain('nothing fits all of the ask; its nearest are saved (results_id "r_near")');
+    expect(line).toContain('never call them a fit');
+    expect(line).toContain('<data>None of the 5 stays fits. The nearest: 1. Lotus</data>');
   });
 });

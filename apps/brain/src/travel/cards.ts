@@ -27,22 +27,24 @@ export const FLIGHTS_HOME_ACTION = { action_id: 'flights_home', label: 'Flights 
 
 /** On the card that links to flights on ixigo, when Go can't read them itself. */
 export const SEE_FLIGHTS_ACTION = { action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' } as const;
+export const SEE_STAYS_ACTION = { action_id: 'see_on_ixigo', label: 'See stays on ixigo', style: 'primary' } as const;
 
 /**
- * The flights Go couldn't read, as a link: ixigo's results page with what people asked for already set, and who it is
- * set for ("for 3 from Delhi"). It never says there are no flights: ixigo refused Go's computer, and the page has them.
+ * The flights (or stays) Go couldn't read, as a link: ixigo's results page with what people asked for already set, and
+ * who it is set for ("for 3 from Delhi"). It never says there are none: ixigo refused Go's computer, and the page has them.
  */
-export function buildFlightsLinkCard(i: { cardId: string; title: string; url: string; who?: string | null }): NoticeCardT {
+export function buildFlightsLinkCard(i: { cardId: string; title: string; url: string; who?: string | null; kind?: 'flights' | 'stays' }): NoticeCardT {
   const set = i.who ? `set ${i.who}, with what you asked for` : 'with what you asked for already set';
+  const noun = i.kind === 'stays' ? 'stays' : 'flights';
   return C.NoticeCard.parse({
     card_id: i.cardId,
     kind: 'notice',
     fallback_text: clip(`${i.title}${i.who ? `, ${i.who}` : ''}: see them on ixigo`, 300),
     tone: 'info',
     title: clip(i.title, 80),
-    body: `Go can't read ixigo's flights from its computer right now, so here they are on ixigo, ${set}. Book them there.`,
+    body: `Go can't read ixigo's ${noun} from its computer right now, so here they are on ixigo, ${set}. Book them there.`,
     source: { name: 'ixigo', url: i.url },
-    actions: [SEE_FLIGHTS_ACTION],
+    actions: [noun === 'stays' ? SEE_STAYS_ACTION : SEE_FLIGHTS_ACTION],
   });
 }
 
@@ -159,7 +161,11 @@ export function subtitleFor(o: ResultOption): string | null {
     const area = typeof o.facts.area === 'string' ? o.facts.area : null;
     const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
     const total = o.totalMinor !== undefined && nights ? `${formatInr(o.totalMinor)} for ${nights} night${nights === 1 ? '' : 's'}` : null;
-    const words = [area, total].filter((x): x is string => x !== null).join(', ');
+    // Each person's share to the nearest ₹100, worked out here and never by the model: "₹38,400 for 3 nights, about ₹7,700
+    // each" (the demo's ask was "under 8k a head"). Only with the head count ixigo priced it for.
+    const guests = typeof o.facts.guests === 'number' && o.facts.guests > 1 ? o.facts.guests : null;
+    const each = o.totalMinor !== undefined && nights && guests ? `about ${formatInr(Math.round(o.totalMinor / guests / 10_000) * 10_000)} each` : null;
+    const words = [area, total, each].filter((x): x is string => x !== null).join(', ');
     return words || null;
   }
   return o.why ?? null;

@@ -53,24 +53,46 @@ export interface WayThere {
   only: boolean;
   /** ixigo's flights page from the city, set for its people; null when its link didn't come. */
   flights: string | null;
-  /** Whether its flights came back: without them its fastest is only the fastest by train or bus, and says so. */
+  /** Whether its flights came back: without them its fastest is only the quickest by land, and says so. */
   flown: boolean;
   /** The searches that didn't come back for the city. */
   missed: Array<'trains' | 'buses'>;
+  /** Every seat it had arrives after the day after the trip's day (arrivesInTime): none is a way there. */
+  late: boolean;
 }
 
 /** A way's time door to door, in minutes. */
 const minutesOf = (o: ResultOption): number => (o.journey ? (Date.parse(o.journey.arrive_at) - Date.parse(o.journey.depart_at)) / 60_000 : Infinity);
 
-/** A seat people can still buy: not a train class ixigo says is full or gone, not a bus with no seat left. */
+/** Under this chance to confirm, as ixigo predicts it, a waitlisted fare is no seat (p0's golden run, 10 Oct: a WL 73 "cheapest"). */
+const CONFIRM_MIN = 50;
+
+/**
+ * A seat people can still buy: not a train class ixigo says is full or gone, nor a waitlist ixigo gives less than an even
+ * chance, not a bus with no seat left.
+ */
 function bookable(o: ResultOption): boolean {
   if (!o.priceMinor || o.priceMinor <= 0 || !o.journey || !Number.isFinite(minutesOf(o))) return false;
-  if (o.kind === 'train') return !/regret|not available|departed|cancel/i.test(String(o.facts.availability ?? ''));
+  if (o.kind === 'train') {
+    const availability = String(o.facts.availability ?? '');
+    if (/regret|not available|departed|cancel/i.test(availability)) return false;
+    return !(/WL/i.test(availability) && typeof o.facts.chance === 'number' && o.facts.chance < CONFIRM_MIN);
+  }
   return o.facts.seats_left !== 0;
 }
 
+/** The day after a YYYY-MM-DD day. */
+const nextDay = (day: string): string => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * In by the end of the day after the trip's day, where it arrives (a Friday-night bus in on Saturday morning). Two days
+ * in is no way there (p0's golden run, 10 Oct: Delhi's "cheapest" arrived at 2 am on 8 Nov, two days into a 6 to 9 Nov trip).
+ */
+const arrivesInTime = (o: ResultOption, day: string): boolean => !o.journey || o.journey.arrive_at.slice(0, 10) <= nextDay(day);
+
 /** Each home city's cheapest and fastest train, bus or flight, its flights link, and what didn't come back. */
 export function waysOf(got: Compare, people: Array<{ from_city?: string | null | undefined }>): WayThere[] {
+  const day = String(got.inputs['date'] ?? '');
   return got.entries.map(({ entry, steps }) => {
     const options: ResultOption[] = [];
     const missed: WayThere['missed'] = [];
@@ -81,14 +103,15 @@ export function waysOf(got: Compare, people: Array<{ from_city?: string | null |
       else if (s.answer?.as === 'options') options.push(...s.answer.options.map((o) => toResultOption(o)));
       else if (!s.answer && (kind === 'trains' || kind === 'buses')) missed.push(kind);
     }
-    const ok = options.filter(bookable);
+    const seats = options.filter(bookable);
+    const ok = seats.filter((o) => arrivesInTime(o, day));
     const flown = ok.some((o) => o.kind === 'flight');
     const cheapest = [...ok].sort((a, b) => a.priceMinor! - b.priceMinor! || minutesOf(a) - minutesOf(b))[0] ?? null;
     const fastest = [...ok].sort((a, b) => minutesOf(a) - minutesOf(b) || a.priceMinor! - b.priceMinor!)[0] ?? null;
     // A train comes back once a class: one train in three classes is still the one train.
     const journeys = new Set(ok.map((o) => `${o.kind}|${o.journey?.number ?? o.title}|${o.journey?.depart_at}`));
     const n = people.filter((p) => p.from_city && norm(p.from_city) === norm(entry)).length;
-    return { home: entry, people: n, cheapest, fastest, only: journeys.size === 1, flights, flown, missed };
+    return { home: entry, people: n, cheapest, fastest, only: journeys.size === 1, flights, flown, missed, late: seats.length > 0 && ok.length === 0 };
   });
 }
 
@@ -110,9 +133,10 @@ const modeOf = (o: ResultOption): string => (o.kind === 'train' ? 'train' : o.ki
 
 /** A row as the card shows it: its city in its title, and which it is with its time first among its highlights, once. */
 function rowOption(r: Row): ResultOption {
-  // A card's highlight holds 40 characters, the time included: "by land" fits where "by train or bus" cut the time off.
-  const land = r.way.flown ? '' : ' by land';
-  const tag = r.way.only ? `The only ${modeOf(r.option)}` : { cheapest: 'Cheapest', fastest: `Fastest${land}`, both: `Cheapest and fastest${land}` }[r.is];
+  // A card's highlight holds 40 characters, the time included. With no flight beside it, a train or bus is only the
+  // quickest by land: never "fastest" for a 25 h train.
+  const quick = r.way.flown ? 'fastest' : 'quickest by land';
+  const tag = r.way.only ? `The only ${modeOf(r.option)}` : { cheapest: 'Cheapest', fastest: `${quick.charAt(0).toUpperCase()}${quick.slice(1)}`, both: `Cheapest and ${quick}` }[r.is];
   const took = hoursMinutes(minutesOf(r.option));
   return {
     ...r.option,
@@ -128,8 +152,8 @@ function nameOf(o: ResultOption): string {
   const code = typeof o.facts.class_code === 'string' ? o.facts.class_code : null;
   return code ? `the ${o.title} in ${CLASS_WORDS[code] ?? code}` : `the ${o.title}`;
 }
-/** A fastest with no flights beside it (held back, or none came) is only the fastest by train or bus: never a 25 h train as the fastest. */
-const byLand = (w: WayThere): string => (w.flown ? '' : ' by train or bus');
+/** A fastest with no flights beside it (held back, or none came) is only the quickest by land: never a 25 h train as the fastest. */
+const quickest = (w: WayThere): string => (w.flown ? 'the fastest' : 'the quickest by land');
 const priced = (o: ResultOption): string => `${formatInr(o.priceMinor!)} (${hoursMinutes(minutesOf(o))})`;
 const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
 
@@ -140,14 +164,15 @@ const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '')
 export function waysLine(ways: WayThere[], date: string): string {
   const said = ways.flatMap((w): string[] => {
     if (!w.cheapest) {
+      if (w.late) return [`From ${w.home}, all ixigo has on ${dayText(date)} gets in after ${dayText(nextDay(date))}.`];
       const had = (['trains', 'buses'] as const).filter((k) => !w.missed.includes(k));
       return had.length === 0 ? [] : [`From ${w.home}, ixigo has no ${listOf([...had]).replace(' and ', ' or ')} on ${dayText(date)}.`];
     }
     if (w.only) return [`From ${w.home}, the one ${modeOf(w.cheapest)} is ${nameOf(w.cheapest)}, at ${priced(w.cheapest)}.`];
     if (w.fastest && w.fastest !== w.cheapest) {
-      return [`From ${w.home}, the cheapest is ${nameOf(w.cheapest)} at ${priced(w.cheapest)}, the fastest${byLand(w)} ${nameOf(w.fastest)} at ${priced(w.fastest)}.`];
+      return [`From ${w.home}, the cheapest is ${nameOf(w.cheapest)} at ${priced(w.cheapest)}, ${quickest(w)} ${nameOf(w.fastest)} at ${priced(w.fastest)}.`];
     }
-    return [`From ${w.home}, ${nameOf(w.cheapest)} is the cheapest and the fastest${byLand(w)}, at ${priced(w.cheapest)}.`];
+    return [`From ${w.home}, ${nameOf(w.cheapest)} is the cheapest and ${quickest(w)}, at ${priced(w.cheapest)}.`];
   });
   for (const kind of ['trains', 'buses'] as const) {
     const cities = ways.filter((w) => w.missed.includes(kind)).map((w) => w.home);

@@ -305,6 +305,16 @@ function pageInBrowser(html: string, o: { me?: string } = {}) {
     browse(cardId: string) {
       for (const fn of docListeners.click ?? []) fn({ target: { closest: () => ({ dataset: { browse: cardId } }) } });
     },
+    /** A tap on an option's photo or its Details (data-sheet-card, data-sheet-option). */
+    openOption(cardId: string, optionId: string) {
+      for (const fn of docListeners.click ?? []) fn({ target: { closest: () => ({ dataset: { sheetCard: cardId, sheetOption: optionId } }) } });
+    },
+    /** A picture on the page fails to load (an error event, caught on its way down). */
+    imageFails(src: string, className: string) {
+      const img = { tagName: 'IMG', className, hidden: false, getAttribute: (k: string) => (k === 'src' ? src : null) };
+      for (const fn of docListeners.error ?? []) fn({ target: img });
+      return img;
+    },
     /** The page's body, as the sheet leaves it. */
     body: () => document.body,
     /** A frame on the page posts it a message from `origin`: the login frame's own window unless another is named. */
@@ -377,6 +387,86 @@ describe("a card's picture", () => {
       expect(TestImage.made.map((i) => i.src)).toEqual([1, 2, 3, 4, 5].map(shot));
     });
   }
+});
+
+describe("an option's photos", () => {
+  const IMG = (n: number) => `https://brain.go.example/img/stay_${n}.jpg`;
+  /** Go's stays card: two stays with photos (the first with its details sheet), and one with neither. */
+  const stays = (n = 1) => ({
+    message_id: 'm_go_1', seq: 5, updated_seq: 5 + n, author: { kind: 'go' }, text: 'Three that fit.', attachments: [],
+    mentions_go: false, mentions: [], reactions: [], withheld: false, deleted: false, sent_at: '2026-10-08T10:00:00Z',
+    card: {
+      kind: 'options', card_id: 'c_stays', fallback_text: 'Stays in North Goa', option_kind: 'stay', title: 'Villas with a pool in North Goa',
+      checked_at: '2026-10-08T10:00:00Z', actions: [{ action_id: 'pick', label: "I'll take this", style: 'primary', per_option: true }],
+      options: [
+        {
+          option_id: 'o_1', title: 'Casa Azul, Assagao', subtitle: 'Entire villa, private pool', image_url: IMG(1), price_minor: 1_200_000, currency: 'INR', price_note: '3 nights', highlights: ['Pool', '8 min to the beach'],
+          details: {
+            gallery_urls: [IMG(11), IMG(12), IMG(13)], caption: 'The pool at dusk', why: ['Sleeps five', 'Under 8k a head'],
+            costs: [{ label: 'Villa, 3 nights', emoji: '🛏️', amount_minor: 1_100_000, currency: 'INR' }, { label: 'Taxes', amount_minor: 100_000, currency: 'INR' }],
+            total_minor: 1_200_000, amenities: ['Pool', 'Wifi'], facts: [{ label: 'Check-in', value: '2 pm' }], cancellation: 'Free cancellation until 4 Nov',
+            rating: 4.6, review_count: 212, go_note: 'The quietest of the three.',
+          },
+        },
+        { option_id: 'o_2', title: 'Palm Grove, Anjuna', image_url: IMG(2), price_minor: 950_000, currency: 'INR', highlights: [] },
+        { option_id: 'o_3', title: 'Sunset Rooms, Calangute', price_minor: 700_000, currency: 'INR', highlights: [] },
+      ].slice(0, 3),
+    },
+  });
+
+  it('draws each option with its photo, loaded lazily in a fixed shape, and a quiet tile once a photo fails to load', () => {
+    expect(PAGE_HTML).toContain('.opt-ph { flex: none; width: 96px; aspect-ratio: 4 / 3;');
+    const p = pageInBrowser(PAGE_HTML);
+    p.messages([stays()], 1200);
+    const html = p.room();
+    expect(html).toContain(`<button class="opt-ph" type="button" data-sheet-card="c_stays" data-sheet-option="o_1" aria-label="See Casa Azul, Assagao"><img class="opt-photo" alt="" loading="lazy" decoding="async" src="${IMG(1)}"></button>`);
+    expect(html).toContain(`src="${IMG(2)}"`);
+    // An option with no photo has no tile; one with details has its Details button.
+    expect(html.match(/class="opt-ph"/g)).toHaveLength(2);
+    expect(html).toContain('<button class="more" type="button" data-sheet-card="c_stays" data-sheet-option="o_1">Details</button>');
+    expect(html.match(/class="more"/g)).toHaveLength(1);
+    // The first photo can't load: its tile says so, now and on every redraw after.
+    p.imageFails(IMG(1), 'opt-photo');
+    p.messages([stays(2)], 1200);
+    const after = p.room();
+    expect(after).toContain('data-sheet-option="o_1" aria-label="See Casa Azul, Assagao">Photo unavailable</button>');
+    expect(after).not.toContain(`src="${IMG(1)}"`);
+    expect(after).toContain(`src="${IMG(2)}"`);
+  });
+
+  it("opens an option's gallery and what Go knows about it in the sheet, and closes when the option leaves the card", () => {
+    const p = pageInBrowser(PAGE_HTML);
+    p.messages([stays()], 1200);
+    p.openOption('c_stays', 'o_1');
+    expect(p.el('sheet').hidden).toBe(false);
+    expect(p.el('sheet').className).toBe('sheet option');
+    expect(p.el('sheet-option').hidden).toBe(false);
+    expect(p.el('sheet-view').hidden).toBe(true);
+    expect(p.el('sheet-title').textContent).toBe('Casa Azul, Assagao');
+    const sheet = p.el('sheet-option').innerHTML;
+    expect(sheet).toContain(`<div class="gallery"><img class="gal-photo" alt="Casa Azul, Assagao, photo 1" loading="eager" decoding="async" src="${IMG(11)}">`);
+    expect(sheet).toContain(`<img class="gal-photo" alt="Casa Azul, Assagao, photo 3" loading="lazy" decoding="async" src="${IMG(13)}">`);
+    for (const words of ['The pool at dusk', 'Rated 4.6 of 5, 212 reviews', 'The quietest of the three.', '<li>Sleeps five</li>', '🛏️ Villa, 3 nights', '<b>Total</b>', 'Free cancellation until 4 Nov', 'Check-in', '<span class="chip">Wifi</span>']) {
+      expect(sheet).toContain(words);
+    }
+    // A gallery photo that can't load just leaves the row.
+    expect(p.imageFails(IMG(12), 'gal-photo').hidden).toBe(true);
+    // Drawn again only when it changed: a redraw leaves the gallery as it is.
+    const writes = p.el('sheet-option').writes;
+    p.messages([stays()], 1200);
+    expect(p.el('sheet-option').writes).toBe(writes);
+    // An option with a photo and no details: the sheet shows that photo alone.
+    p.openOption('c_stays', 'o_2');
+    expect(p.el('sheet-option').innerHTML).toContain(`<div class="gallery"><img class="gal-photo" alt="Palm Grove, Anjuna, photo 1" loading="eager" decoding="async" src="${IMG(2)}"></div>`);
+    p.click('sheet-close');
+    expect(p.el('sheet').hidden).toBe(true);
+    // Go replaces the card without that option: an open sheet on it closes.
+    p.openOption('c_stays', 'o_1');
+    const fewer = stays(3);
+    (fewer.card as any).options = fewer.card.options.slice(1);
+    p.messages([fewer], 1200);
+    expect(p.el('sheet').hidden).toBe(true);
+  });
 });
 
 describe('the chat stays at the bottom', () => {

@@ -41,7 +41,14 @@ export function renderSearchWake(item: DeskItem): string | null {
   if (w?.source !== 'travel_search') return null;
   const what = inlineData(w.search ?? 'a travel search', 160);
   if (w.link) return `The search ${what} answered with ixigo's own page, not a list. Search again with the same words: its card with that page goes up.`;
-  if (w.error) return `The search ${what} didn't work (${w.error}). Say so in one short line, and offer to try again.`;
+  if (w.error) return `The search ${what} didn't work (${w.error}). Say so in one short line, and offer to try again. Never start_task for it.`;
+  if (w.resultsId && !w.count) {
+    return (
+      `The search ${what} finished and nothing fits all of the ask; its nearest are saved (results_id "${w.resultsId}"). Show them with show_options ` +
+      `and one short line that says plainly none fits everything, keeping every condition in it, and what they miss, as the summary says: never call them a fit. ${CARD_LINE} ` +
+      `Its summary, as data: ${inlineData(w.summary ?? '', 600)}`
+    );
+  }
   if (!w.resultsId || !w.count) {
     return `The search ${what} finished with nothing to show. Say what its summary says in one line, keeping every condition in it, and suggest loosening one thing. Its summary, as data: ${inlineData(w.summary ?? '', 600)}`;
   }
@@ -66,7 +73,7 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images'>):
     if (wake.length !== 1 || item?.kind !== 'search' || !KINDS.includes(item.ref)) return false;
     const w = item.payload as Partial<SearchWake> | null;
     if (w?.source === 'travel_search' && w.link) {
-      ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: w.link.title, url: w.link.url, who: w.link.who }));
+      ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: w.link.title, url: w.link.url, who: w.link.who, ...(item.ref === 'stays' ? { kind: 'stays' as const } : {}) }));
       ctx.lines.push(w.link.line);
       ctx.answered = true;
       return true;

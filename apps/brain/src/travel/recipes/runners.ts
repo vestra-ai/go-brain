@@ -90,6 +90,8 @@ export interface RecipeRunner {
   handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[]; challenged?: true }>;
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
+  /** When a page this trip's computer opened last met Cloudflare's check (CLOUDFLARE), in ms; null when none has. */
+  lastChallenge?(tripId: string): number | null;
   /**
    * One page call from inside the kept tab of that name (Bash's page_fetch on it, no url), keeping the tab keepOpenMs
    * more: one byte of its answer, for its status. Null when no tab is kept under that name.
@@ -203,8 +205,17 @@ export const FETCH_TIMEOUT_MS = 20_000;
 export const FRAME_WIDTH = 1280;
 /** Pictures a second Go asks Bash's watch for: its most, since Bash shares them across the open tabs (6 gave about 3 a tab). */
 export const WATCH_FPS = 10;
-/** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
-export const IN_USE_WAIT_MS = 4_000;
+/** A person used the browser in the last 4 s (Bash's quiet window): Go asks again past it. */
+export const IN_USE_WAIT_MS = 5_000;
+/**
+ * How long a read waits for the browser while a person has it (ixigo's login open on Go's screen, on a Bash from before
+ * reads ran behind it; a person driving it on Watch): as long as a login is held open there. It never fails for it: the
+ * live card says so once, a search outlives its turn (tools.ts handOver) and its card goes up when it lands. Its signal,
+ * when it has one, ends the wait sooner.
+ */
+export const IN_USE_PATIENCE_MS = 10 * 60_000;
+/** A hand-off's own page asks again this many times while the person is still typing on Watch (staging, 9 Oct, 18:52). */
+export const HANDOFF_IN_USE_TRIES = 3;
 /** How long a page call may take before the run falls to the page speed: it answers in about 0.4 s on a warm tab. */
 export const FAST_TIMEOUT_MS = 5_000;
 /**
@@ -284,6 +295,8 @@ const LOOK_STEP = { op: 'page_fetch', url: '/favicon.ico', method: 'GET', captur
  * hotels page at 18:01 and 18:04, the page then making no call for 20 s) is waited out the same way.
  */
 export const CHALLENGE_WAIT_MS = 1_000;
+/** The trips whose last check Go remembers (lastChallenge). */
+const CHECKED_TRIPS_MAX = 1_000;
 export const CHALLENGE_TRIES = 2;
 /** The least a load again may have: a check that passes takes about 5 s, then the page's own calls about 3 s. */
 export const CHALLENGE_LOAD_MS = 8_000;
@@ -412,6 +425,13 @@ function fetchFailed(
 export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   const sleep = d.sleep ?? nap;
   const slot = fetchSlots(d.slots ?? (() => DEFAULT_SLOTS));
+  /** When each trip's computer last met Cloudflare's check, newest last; bounded. */
+  const checkedAt = new Map<string, number>();
+  const metCheck = (tripId: string): void => {
+    checkedAt.delete(tripId);
+    checkedAt.set(tripId, d.now().getTime());
+    while (checkedAt.size > CHECKED_TRIPS_MAX) checkedAt.delete(checkedAt.keys().next().value!);
+  };
 
   /**
    * A Bash call, asked again while Bash says its fetches are all taken (one Go doesn't count, or a cap lowered), inside
@@ -479,6 +499,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     };
     let userId = await d.browser.userFor(tripId);
     let askedAgain = false;
+    let waited = false;
     const pageMs = body.timeout_ms;
     const started = d.now().getTime();
     let checks = 0;
@@ -487,6 +508,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
      * else a read that fails, saying so.
      */
     const againAfterCheck = async (): Promise<void> => {
+      metCheck(tripId);
       const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
       if (next === null || o.signal?.aborted) {
         d.log.warn({ tripId, page: what.id, loads: checks + 1 }, "travel: ixigo's page stayed on Cloudflare's check");
@@ -523,7 +545,11 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           userId = await d.browser.again(tripId);
           continue;
         }
-        if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
+        // A person has the browser: wait for them, never "didn't work" (staging, 9 Oct: a login left open refused every
+        // search on the person's browser for 10 minutes, and Go fell back to a slow job).
+        if (err.status === 409 && err.code === 'browser_in_use' && !o.signal?.aborted && d.now().getTime() - started < IN_USE_PATIENCE_MS) {
+          if (!waited) o.onProgress?.({ type: 'waiting' });
+          waited = true;
           await sleep(IN_USE_WAIT_MS);
           continue;
         }
@@ -678,17 +704,26 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     };
     const pageMs = body.timeout_ms;
     const started = d.now().getTime();
+    let inUse = 0;
     for (let checks = 0; ; checks++) {
       let captures: Capture[];
       try {
         const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
         captures = Array.isArray(answer.captures) ? answer.captures : [];
       } catch (err) {
+        // The person is still typing on Watch (Bash's 4 s window): "I'm logged in" tapped right after the code waits it out.
+        if (err instanceof V1Error && err.status === 409 && err.code === 'browser_in_use' && inUse < HANDOFF_IN_USE_TRIES) {
+          inUse += 1;
+          checks -= 1;
+          await sleep(IN_USE_WAIT_MS);
+          continue;
+        }
         // Bash keeps a timed-out tab: the page is in front for the person, with what it caught.
         if (!(err instanceof V1Error) || err.status !== 504) throw pageCallFailed(err);
         captures = partialCaptures(err);
       }
       if (!challenged(captures, url)) return { captures: captures.filter((c) => c.match !== doc) };
+      metCheck(tripId);
       // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
       // it; still on it when no load fits, the caller closes it and says so.
       const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
@@ -753,6 +788,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),
     tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
     tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),
+    lastChallenge: (tripId) => checkedAt.get(tripId) ?? null,
   };
 }
 

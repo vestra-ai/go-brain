@@ -48,7 +48,7 @@ import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
 import { offersText, sameName } from './offers.js';
 import { RECIPE_TTL_MS, type RecipeOption } from './recipe.js';
-import { NothingCaughtError } from './runners.js';
+import { ChallengedError, NothingCaughtError } from './runners.js';
 
 /** How long a search may hold up the turn, from its start: a train search on a sleeping box took about 8 s on staging. */
 export const TRAVEL_WAIT_MS = 12_000;
@@ -59,8 +59,10 @@ export interface IxigoWebDeps {
    * Runs a recipe: the trip's head count and homes, its places and its page are the engine's. requestOf keys a search on
    * the page it will open, not the words asked; absent in tests whose engine is scripted, which key on the words.
    */
-  engine: Pick<Engine, 'answer'> & Partial<Pick<Engine, 'requestOf' | 'pacedOut'>>;
+  engine: Pick<Engine, 'answer'> & Partial<Pick<Engine, 'requestOf' | 'pacedOut' | 'pageOf'>>;
   now: () => Date;
+  /** When the trip's computer last met Cloudflare's check (runners.ts lastChallenge); absent, never. */
+  challengedAt?: (tripId: string) => number | null;
   /** The live search card for a run; absent in tests that don't look at it. */
   live?: (tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }) => LiveSearch;
   /** How long a run goes before its live card shows (CARD_DELAY_MS); 0 shows it at once. */
@@ -103,6 +105,17 @@ export const SEARCH_RECIPES: Record<TravelKind, string> = { flights: 'flights.re
 export const LINK_FALLBACK: Partial<Record<TravelKind, string>> = { flights: 'flights.search' };
 /** A search's failures that ask the person something (which place, which date, what more): said, never a link. */
 const ASKS_THE_PERSON: ReadonlySet<string> = new Set(['pick_place', 'unknown_place', 'past_date', 'needs_more']);
+/**
+ * A stays read that fails is never a bare "try again" (p0's golden run, 10 Oct: all four hotels loads on Cloudflare's
+ * check, and Go only offered to try again). An earlier read of the same page this recent answers instead, dated as it
+ * was; with none, ixigo's own stays page, set as asked, as flights fall back to theirs.
+ */
+export const EARLIER_READ_MS = 3 * 60 * 60_000;
+/**
+ * A trip's computer that met Cloudflare's check this recently opens no stays page for an ask: the fallback answers at
+ * once (the same run: the head start met the check, and the ask's own read went straight after it, on the check too).
+ */
+export const CHALLENGE_COOL_MS = 2 * 60_000;
 
 /** The kind of search a recipe is, when it is one of the four or the link that answers for one. */
 export const searchKindOf = (recipeId: string): TravelKind | null =>
@@ -235,6 +248,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   /** Searches by request: the run's own answer (ran) and the search made of it, which a step and a search each take. */
   const kept = new Map<string, Kept>();
 
+  /** Each page's last read with stays on it, by its key with no conditions (a plain read: the head start's, an ask's). */
+  const reads = new Map<string, TravelSearch>();
   /** A run kept for its TTL under its key; one that fails is not kept, so the next ask runs it again. */
   function keep(key: string, entry: Kept): void {
     kept.delete(key);
@@ -247,6 +262,11 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     entry.search.then(
       (found) => {
         entry.done = found;
+        if (key === entry.page && found.results.length > 0) {
+          reads.delete(key);
+          reads.set(key, found);
+          while (reads.size > CACHE_MAX) reads.delete(reads.keys().next().value!);
+        }
       },
       () => {
         if (kept.get(key)?.search === entry.search) kept.delete(key);
@@ -473,8 +493,40 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     return search.then((found) => forAsk(found, site));
   }
 
+  /**
+   * Stays when ixigo's page won't answer: an earlier read of the same page (EARLIER_READ_MS), dated as read; with none,
+   * ixigo's own page set as asked, as a link. `failed`: what to throw when even the link can't be made.
+   */
+  async function staysFallback(q: TravelQuery, o: SearchFor | undefined, failed: unknown): Promise<TravelSearch> {
+    const p = await plan('stays', q, o?.tripId);
+    const earlier = reads.get(p.page);
+    // Go's own checks still pick from it (a pool, the price, the share a head); ixigo's own filters, which the read had
+    // none of, are the model's to pick (leftToPick: a search with no site said leaves every asked filter to it).
+    if (earlier && d.now().getTime() - Date.parse(earlier.checkedAt) < EARLIER_READ_MS) return { ...earlier, earlier: true };
+    const link = await d.engine.pageOf?.(p.id, p.given, { tripId: p.tripId, conditions: p.conditions, ...siteRun(p.site) });
+    if (link) throw new TravelError('link_only', "ixigo won't show its stays to Go's computer right now.", link);
+    throw failed;
+  }
+
+  /** Stays: never on a computer that met the check moments ago, and a read that fails falls back (staysFallback). */
+  async function staysSearch(q: TravelQuery, o: SearchFor | undefined): Promise<TravelSearch> {
+    const met = o?.tripId ? (d.challengedAt?.(o.tripId) ?? null) : null;
+    if (met !== null && d.now().getTime() - met < CHALLENGE_COOL_MS) {
+      d.log?.warn({ tripId: o?.tripId }, "travel: the trip's computer met ixigo's check moments ago; no stays page now, the fallback answers");
+      return staysFallback(q, o, new ChallengedError());
+    }
+    try {
+      return await searchPage('stays', q, o);
+    } catch (err) {
+      if (!(err instanceof TravelError) || ASKS_THE_PERSON.has(err.code)) throw err;
+      d.log?.warn({ tripId: o?.tripId, code: err.code }, "travel: ixigo's stays page didn't answer; an earlier read or its link answers instead");
+      return staysFallback(q, o, err);
+    }
+  }
+
   return {
     async search(kind, q, o?: SearchFor) {
+      if (kind === 'stays') return staysSearch(q, o);
       const linkId = LINK_FALLBACK[kind];
       if (!linkId) return searchPage(kind, q, o);
       // Flights: ixigo refuses our boxes' one shared address now and then (403 or 429 under a burst), so its page is paced

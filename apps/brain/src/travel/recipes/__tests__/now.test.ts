@@ -95,6 +95,14 @@ describe('the early search block', () => {
     expect(await done.now.render('t_goa', [wakeFor('m_57', 57)])).toContain('results_id r_early1');
   });
 
+  // Staging, 10 Oct: a villa ask's turn waited 12 s building its context, behind a search stuck on Cloudflare's check.
+  it("never holds a turn's context on ixigo: a beat at most, whatever the backend would allow, then it says the search is running", async () => {
+    expect(EARLY_WAIT_MS).toBeLessThanOrEqual(1_000);
+    const slow = world(new Promise<TravelSearch>(() => undefined), 12_000);
+    expect(await slow.now.render('t_goa', [wakeFor('m_57', 57)])).toContain('still running');
+    expect(slow.waits).toEqual([EARLY_WAIT_MS]);
+  });
+
   it('says nothing for a search that failed, for a message that started none, or for a wake that is not a message', async () => {
     // As the early start keeps it: with its failure already handled (it logs it).
     const rejected = Promise.reject(new Error('ixigo took too long'));

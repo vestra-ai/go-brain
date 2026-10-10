@@ -353,6 +353,8 @@ describe('the room\'s tools', () => {
     const out = await offer.run(offer.input.parse({ replies: [{ label: 'Beach' }, { label: 'Mountains', text: 'Mountains for me' }] }), ctx);
     expect(ctx.quickReplies).toEqual([{ label: 'Beach' }, { label: 'Mountains', text: 'Mountains for me' }]);
     expect(out).toMatchObject({ ok: true, shown: ['Beach', 'Mountains'], tell_the_room: expect.stringContaining('do not list them') });
+    // The whole message comes after the call, a hello included, never the question alone (staging drill, 10 Oct).
+    expect((out as { tell_the_room: string }).tell_the_room).toContain('Now write your whole message, everything you meant to say');
   });
 
   it('no tool can pay, book or touch a card', () => {

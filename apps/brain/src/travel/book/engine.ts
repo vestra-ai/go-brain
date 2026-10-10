@@ -58,6 +58,8 @@ export interface EngineDeps {
   onRun?: OnRun;
   /** Go's searches (the search backend's), which a composite's steps share: absent, every step runs its own page. */
   searches?: ShareSearch;
+  /** Waits ms, or until the signal aborts (a composite's step waiting out a paced page's gap); tests pass their own. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /**
    * The trip's ixigo login (travel/login.ts), for a recipe with auth: login: ok, or the line for the model once the
    * person was asked. Absent, such a recipe never runs.
@@ -76,6 +78,54 @@ export type ShareSearch = (
   o: RunFor,
   run: () => Promise<EngineAnswer>,
 ) => Promise<{ answer: Promise<EngineAnswer>; joined: boolean } | null>;
+
+/** ms, or less once the signal aborts; never rejects. */
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const t = setTimeout(resolve, ms);
+    t.unref?.();
+    signal?.addEventListener('abort', () => {
+      clearTimeout(t);
+      resolve();
+    }, { once: true });
+  });
+}
+
+/**
+ * A paced page held back by Go's own spacing (pace), loading nothing. waitMs: how long until its gap ends; null in its
+ * quiet after a failure, which no wait inside a turn outlasts.
+ */
+export class PacedOutError extends TravelError {
+  constructor(id: string, readonly waitMs: number | null) {
+    super('unreachable', `ixigo is given a moment between ${id.split('.')[0]} pages.`);
+  }
+}
+
+/**
+ * At most this many pages of one recipe at once in a composite: ixigo sees every one of our boxes as one address (p0's
+ * golden run, 10 Oct: three cities' bus pages at once from one address, while it was asking for Cloudflare's check).
+ */
+export const STEP_PAGES_AT_ONCE = 2;
+/** A paced page asked again this long after its gap ends. */
+const PACE_MARGIN_MS = 500;
+
+/** Runs at most n at once; the rest wait their turn, in order. */
+function atMost(n: number): <T>(run: () => Promise<T>) => Promise<T> {
+  let free = n;
+  const waiting: Array<() => void> = [];
+  return async (run) => {
+    if (free > 0) free -= 1;
+    else await new Promise<void>((r) => waiting.push(r));
+    try {
+      return await run();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else free += 1;
+    }
+  };
+}
 
 /** A promise, or the signal's reason once it aborts, whichever comes first. */
 function untilAborted<T>(p: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
@@ -700,7 +750,11 @@ export function createEngine(d: EngineDeps) {
     // one held back fails at once, and its caller has another way (the link to ixigo's own page).
     const pace = recipe.pace;
     if (!pace) return readPage();
-    if (pacedOut(recipe.id)) throw new TravelError('unreachable', `ixigo is given a moment between ${recipe.id.split('.')[0]} pages.`);
+    if (pacedOut(recipe.id)) {
+      const p = paces.get(recipe.id)!;
+      const now = d.now().getTime();
+      throw new PacedOutError(recipe.id, now < p.quietUntil ? null : Math.max(0, p.at + pace.gap_seconds * 1_000 - now));
+    }
     paces.set(recipe.id, { at: d.now().getTime(), quietUntil: 0 });
     try {
       return await readPage();
@@ -747,27 +801,42 @@ export function createEngine(d: EngineDeps) {
       strip = composite;
       o.onSteps?.({ type: 'entries', entries });
       // A step's fetches wait their turn by its place in the file: every city's first step (trains, the slower page)
-      // takes the computer's slots before any city's second.
-      const stepFor = async (entry: string, step: NonNullable<RecipeFile['steps']>['run'][number], priority: number): Promise<StepAnswer> => {
+      // takes the computer's slots before any city's second; and no more than STEP_PAGES_AT_ONCE of one recipe at once.
+      const limits = new Map(steps.run.map((s) => [s.recipe, atMost(STEP_PAGES_AT_ONCE)] as const));
+      const sleep = d.sleep ?? pause;
+      type Step = NonNullable<RecipeFile['steps']>['run'][number];
+      const loadStep = async (entry: string, step: Step, priority: number): Promise<StepAnswer> => {
+        // Its turn came after the composite's time: nothing more loads.
+        if (o.signal?.aborted) return { recipe: step.recipe, why: 'out of time' };
+        const stepGiven: Record<string, unknown> = {};
+        for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
+        const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority, ...(o.conditions ? { conditions: o.conditions } : {}) };
+        const own = (signal?: AbortSignal): Promise<EngineAnswer> => answer(step.recipe, stepGiven, { ...stepRun, ...(signal ? { signal } : {}) });
+        // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load. A
+        // step's own search is kept for the next ask, so the composite's time never cuts it short: it finishes in the
+        // background (Bash's own timeout bounds it), and only the step stops waiting.
+        const shared = d.searches ? await d.searches(step.recipe, stepGiven, stepRun, () => own()) : null;
+        if (!shared) return { recipe: step.recipe, answer: await own(o.signal) };
+        const got = shared.joined ? fromKept(step.recipe, stepGiven, stepRun, shared.answer) : shared.answer;
+        return { recipe: step.recipe, answer: await untilAborted(got, o.signal) };
+      };
+      const stepFor = async (entry: string, step: Step, priority: number, again = true): Promise<StepAnswer> => {
         try {
-          const stepGiven: Record<string, unknown> = {};
-          for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
-          const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority, ...(o.conditions ? { conditions: o.conditions } : {}) };
-          const own = (signal?: AbortSignal): Promise<EngineAnswer> => answer(step.recipe, stepGiven, { ...stepRun, ...(signal ? { signal } : {}) });
-          // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load. A
-          // step's own search is kept for the next ask, so the composite's time never cuts it short: it finishes in the
-          // background (Bash's own timeout bounds it), and only the step stops waiting.
-          const shared = d.searches ? await d.searches(step.recipe, stepGiven, stepRun, () => own()) : null;
-          if (!shared) return { recipe: step.recipe, answer: await own(o.signal) };
-          const got = shared.joined ? fromKept(step.recipe, stepGiven, stepRun, shared.answer) : shared.answer;
-          return { recipe: step.recipe, answer: await untilAborted(got, o.signal) };
+          return await limits.get(step.recipe)!(() => loadStep(entry, step, priority));
         } catch (err) {
           if (o.signal?.aborted) return { recipe: step.recipe, why: 'out of time' };
+          // A paced page held back by Go's own spacing waits out the gap and is asked once more, inside the composite's
+          // time limit (p0's golden run, 10 Oct: the flights page skipped, and flights dropped from the card). With no
+          // limit, nothing waits.
+          if (again && o.signal && err instanceof PacedOutError && err.waitMs !== null) {
+            await sleep(err.waitMs + PACE_MARGIN_MS, o.signal);
+            return o.signal?.aborted ? { recipe: step.recipe, why: 'out of time' } : stepFor(entry, step, priority, false);
+          }
           if (!(err instanceof TravelError)) d.log?.warn({ recipe: step.recipe, err: String(err).slice(0, 200) }, 'book: a step of a composite failed');
           return { recipe: step.recipe, why: whyOf(err) };
         }
       };
-      const told = async (entry: string, step: NonNullable<RecipeFile['steps']>['run'][number], priority: number): Promise<StepAnswer> => {
+      const told = async (entry: string, step: Step, priority: number): Promise<StepAnswer> => {
         const s = await stepFor(entry, step, priority);
         o.onSteps?.({ type: 'step', entry, recipe: s.recipe, ok: !!s.answer });
         return s;
@@ -879,6 +948,22 @@ export function createEngine(d: EngineDeps) {
         return JSON.stringify([page, plan, { half }]);
       } catch {
         // An ask the run itself refuses (a missing date): keyed by its words, and the run says why.
+        return null;
+      }
+    },
+    /**
+     * The ixigo.com page a run of the recipe opens, set as asked (its filters and sort in the address), when every place
+     * is one Go already knows: what the group opens themselves when Go's computer can't. Loads nothing.
+     */
+    async pageOf(id: string, given: Record<string, unknown>, o: RunFor): Promise<string | null> {
+      const recipe = d.book.get(id);
+      if (!recipe?.page || recipe.changes_state) return null;
+      try {
+        const inputs = await inputsOf(recipe, given, o, null);
+        if (!inputs) return null;
+        const bindings = await bindingsOf(recipe, inputs, o, await siteOf(recipe, inputs, o));
+        return `${IXIGO}${await fill(recipe.page, inputs, { url: true, bindings })}`;
+      } catch {
         return null;
       }
     },
