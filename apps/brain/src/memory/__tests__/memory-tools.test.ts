@@ -147,6 +147,23 @@ describe('right now blocks', () => {
     expect(renderRecord([], pack)).toBeNull();
   });
 
+  it('shows a choice part of the group backs, without the organizer, as leaning and not decided (the 10 Oct live proof)', () => {
+    const lines = [
+      rl({ line_id: 'r_saudades', kind: 'agreed', text: 'Saudades villa for 6 to 9 Nov', person_ids: ['p_priya', 'p_kabir'] }),
+      rl({ line_id: 'r_goa', kind: 'agreed', text: 'North Goa', person_ids: ['p_rahul', 'p_priya'] }),
+    ];
+    const text = renderRecord(lines, pack)!;
+    const people = pack.trip.people.length;
+    expect(text).toContain(`Leaning (2 of ${people}: Priya, Kabir; not decided): <data>Saudades villa for 6 to 9 Nov</data>`);
+    // The organizer is among them: agreed.
+    expect(text).toContain('Agreed: <data>North Goa</data>');
+    // Everyone backs it: agreed. Everyone but the organizer: still leaning.
+    const everyone = rl({ line_id: 'r_all', kind: 'agreed', text: 'Scooters', person_ids: pack.trip.people.map((p) => p.person_id) });
+    expect(renderRecord([everyone], pack)).toBe('The trip record:\nAgreed: <data>Scooters</data>');
+    const allButOrganizer = rl({ ...everyone, person_ids: everyone.person_ids.filter((id) => id !== pack.trip.organizer_person_id) });
+    expect(renderRecord([allButOrganizer], pack)).toContain(`Leaning (${people - 1} of ${people}: `);
+  });
+
   it('record block reads the mirror', async () => {
     const block = await recordNow({ pool: db.pool, packs }).render('t_goa', []);
     expect(block).toContain('Open: <data>Scuba on Saturday?</data>');
