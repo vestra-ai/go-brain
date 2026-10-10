@@ -43,7 +43,7 @@ describe('the recipe book', () => {
       'plan.destination', 'plan.explore', 'plan.top_locations',
       'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.between', 'trains.boarding_stations', 'trains.by_name', 'trains.coach_position', 'trains.confirm_chance', 'trains.offers',
       'trains.platform_locator', 'trains.pnr_status', 'trains.route', 'trains.running_status', 'trains.schedule', 'trains.station_lookup', 'trains.station_status', 'trains.tatkal', 'trains.train_calendar',
-      'trip.flights_each', 'trip.how_we_get_there',
+      'trip.flights_each', 'trip.how_we_get_there', 'trip.upcoming',
     ]);
   });
 });
