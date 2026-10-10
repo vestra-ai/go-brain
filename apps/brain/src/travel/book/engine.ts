@@ -13,7 +13,7 @@ import { keepPlace } from '../recipes/places-store.js';
 import type { OnProgress } from '../recipes/progress.js';
 import { asOffers, bandsFor, offerWords, pickOffers, type Offer, type OfferList, type Offers } from '../recipes/offers.js';
 import { IXIGO, matches, type Capture, type CaptureSpec, type FetchPlan, type RecipeOption } from '../recipes/recipe.js';
-import type { ReadOptions, RecipeRunner } from '../recipes/runners.js';
+import { NearUnsupportedError, type ReadOptions, type RecipeRunner } from '../recipes/runners.js';
 import type { TravelKind } from '../travel.js';
 import type { Book } from './book.js';
 import { evaluate } from './expr.js';
@@ -259,6 +259,12 @@ export interface RunFor {
    * page by its address instead (Keshav, 10 Oct: the group watches Go act on ixigo).
    */
   clickFrom?: string;
+  /**
+   * The stage already shows the recipe's page (a search's results the room just watched): its own steps run there from
+   * their first click, with no page opened, since the calls before it came already (a bus card's "Select Seats" on the
+   * results). Steps that bring nothing open the page by its address instead.
+   */
+  staged?: boolean;
 }
 
 /** A step's event carries its answer, for a caller that shows each entry's as it lands (travel/flights-each.ts). */
@@ -657,6 +663,28 @@ export function createEngine(d: EngineDeps) {
     return null;
   }
 
+  /**
+   * The recipe's own steps on the page the stage shows (RunFor.staged), from their first click. Null when they didn't
+   * bring the calls: the page opens by its address. A Bash that can't click one card's own button yet is never asked
+   * again by address (NearUnsupportedError): it would refuse that too.
+   */
+  async function staged(
+    tripId: string, runner: Pick<RecipeRunner, 'onStage'>, plan: FetchPlan, o: ReadOptions,
+  ): Promise<{ captures: Capture[]; finalUrl: string } | null> {
+    const from = (plan.steps ?? []).findIndex((s) => s.op === 'click');
+    const required = plan.capture.filter((c) => c.required !== false && !c.besides);
+    if (!runner.onStage || from < 0 || required.length === 0) return null;
+    try {
+      const got = await runner.onStage(tripId, { ...plan, steps: plan.steps!.slice(from) }, o);
+      if (required.every((c) => got.captures.some((x) => x.match === c.match && x.status >= 200 && x.status < 300))) return got;
+      d.log?.warn({ tripId, caught: got.captures.length }, "book: the steps on the stage's page brought nothing; it opens by its address");
+    } catch (err) {
+      if (err instanceof NearUnsupportedError) throw err;
+      d.log?.warn({ tripId, err: String(err).slice(0, 200) }, "book: the steps on the stage's page didn't run; it opens by its address");
+    }
+    return null;
+  }
+
   /** $conditions, the site's own filters and sort ($site, $site_sort) and the recipe's let, worked out once. */
   async function bindingsOf(recipe: RecipeFile, inputs: Record<string, unknown>, o: RunFor, site: Site): Promise<Record<string, unknown>> {
     const conditions: unknown[] = [];
@@ -681,6 +709,9 @@ export function createEngine(d: EngineDeps) {
           ...s,
           ...('text' in s && s.text ? { text: await fill(s.text, inputs, { url: false, bindings }) } : {}),
           ...('name' in s && s.name ? { name: await fill(s.name, inputs, { url: false, bindings }) } : {}),
+          ...('near_text' in s && s.near_text
+            ? { near_text: typeof s.near_text === 'string' ? await fill(s.near_text, inputs, { url: false, bindings }) : await Promise.all(s.near_text.map((t) => fill(t, inputs, { url: false, bindings }))) }
+            : {}),
         }) as Step),
       );
       const isAsked = (s: Step, i: number): boolean => {
@@ -831,7 +862,7 @@ export function createEngine(d: EngineDeps) {
       const started = d.now().getTime();
       const pageRun = strip.line;
       o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
-      pageRun.step(o.clickFrom ? `clicked "${clip(o.clickFrom, 40)}"` : `opened ${pathOf(page)}`);
+      pageRun.step(o.clickFrom ? `clicked "${clip(o.clickFrom, 40)}"` : o.staged ? `its steps on the stage's ${pathOf(page)}` : `opened ${pathOf(page)}`);
       const readFor: ReadOptions = {
         ...fetchFor(o),
         tag: pageRun.id,
@@ -849,7 +880,8 @@ export function createEngine(d: EngineDeps) {
         ...(o.fallsBack ? { fallsBack: true } : {}),
         about: aboutOf(recipe, o, bindings),
       };
-      const got = (o.clickFrom ? await clicked(o.tripId, runner, plan, o.clickFrom, readFor) : null) ?? (await runner.read(o.tripId, page, plan, readFor));
+      const onStage = o.clickFrom ? await clicked(o.tripId, runner, plan, o.clickFrom, readFor) : o.staged ? await staged(o.tripId, runner, plan, readFor) : null;
+      const got = onStage ?? (await runner.read(o.tripId, page, plan, readFor));
       refusePayments(got.finalUrl);
       o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
       await keepOffers(recipe, site, inputs, got.captures, o.tripId);

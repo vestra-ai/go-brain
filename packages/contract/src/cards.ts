@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AmountMinor, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place } from './common.js';
+import { AmountMinor, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Photo, Place } from './common.js';
 
 /**
  * Cards are the rich things Go posts in the room. The same JSON travels from Go through
@@ -107,6 +107,20 @@ export const OptionDetails = z
   })
   .meta({ id: 'OptionDetails' });
 
+/** 10 Oct B4: one kind of room at a stay, priced for the whole stay. */
+export const RoomType = z
+  .object({
+    room_type_id: Id,
+    label: z.string().min(1).max(60),
+    /** How many it sleeps. */
+    sleeps: z.int().min(1).max(30),
+    /** Per room, for the whole stay, in the option's currency. */
+    price_minor: AmountMinor,
+    photos: z.array(Photo).max(12).nullish(),
+  })
+  .meta({ id: 'RoomType' });
+export type RoomType = z.infer<typeof RoomType>;
+
 export const Option = z
   .object({
     /** Go's id for this option, sent back when someone taps a per-option button. */
@@ -132,6 +146,13 @@ export const Option = z
     /** 1.1: the price one way and for the round trip, when the App offers both (a tap says which: card_tap payload.trip). */
     price_oneway_minor: AmountMinor.nullish(),
     price_round_minor: AmountMinor.nullish(),
+    /** 10 Oct B3: more photos, labelled, first one first. image_url stays the cover; this replaces details.gallery_urls. */
+    photos: z.array(Photo).max(12).nullish(),
+    /** 10 Oct B4: a stay's price per person for the whole stay, from the cheapest way to take its rooms to the dearest. */
+    price_min_minor: AmountMinor.nullish(),
+    price_max_minor: AmountMinor.nullish(),
+    /** 10 Oct B4: a stay's kinds of room, each priced per room for the whole stay. */
+    room_types: z.array(RoomType).max(10).nullish(),
   })
   .meta({ id: 'Option' });
 
@@ -148,6 +169,41 @@ export const OptionsCard = z
     actions,
   })
   .meta({ id: 'OptionsCard', description: 'Options Go found (stays, flights, places...), with prices and when they were checked.' });
+
+/** 10 Oct B5: one way the group can take a stay's rooms: the rooms, who is in each, and what each person pays. */
+export const RoomArrangement = z
+  .object({
+    /** Go's id for it: a tap on it comes back as card_tap's option_id. */
+    arrangement_id: Id,
+    /** The rooms in words, e.g. "2 Deluxe". */
+    label: z.string().min(1).max(80),
+    rooms: z
+      .array(
+        z
+          .object({ room_type_id: Id, label: z.string().min(1).max(60), person_ids: z.array(Id).min(1).max(30), price_minor: AmountMinor })
+          .meta({ id: 'ArrangedRoom' }),
+      )
+      .min(1)
+      .max(15),
+    total_minor: AmountMinor,
+    per_person: z.array(z.object({ person_id: Id, amount_minor: AmountMinor }).meta({ id: 'PersonAmount' })).min(1).max(30),
+  })
+  .meta({ id: 'RoomArrangement' });
+
+export const RoomsCard = z
+  .object({
+    ...base,
+    kind: z.literal('rooms'),
+    title: z.string().min(1).max(80),
+    /** The picked stay: its option_id on the card it came from. */
+    option_id: Id,
+    arrangements: z.array(RoomArrangement).min(1).max(10),
+    actions,
+  })
+  .meta({
+    id: 'RoomsCard',
+    description: "10 Oct B5: after a stay is picked, the ways the group can take its rooms and who shares with whom. A tap is card_tap with option_id = the arrangement's id.",
+  });
 
 export const WorkingCard = z
   .object({
@@ -279,6 +335,7 @@ export const Card = z
     PayCard,
     NoticeCard,
     ChecklistCard,
+    RoomsCard,
   ])
   .meta({ id: 'Card', discriminator: { propertyName: 'kind' } });
 export type Card = z.infer<typeof Card>;

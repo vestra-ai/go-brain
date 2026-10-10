@@ -118,6 +118,14 @@ describe("a stay's own page", () => {
       cancellation: 'Free Cancellation till 05 Nov 11:59 PM (Room With Free Cancellation)',
       free_cancellation_until: '2026-11-05T23:59:00',
     });
+    // REV4 B3, B4: its photos with their labels, and each kind of room with its beds and its cheapest rate a night with
+    // taxes (₹2,775 + ₹375; ₹5,447 + ₹736), for the option's photos, room types and price range.
+    expect((stay['photo_list'] as unknown[])[0]).toEqual({ url: expect.stringMatching(/^https:\/\/q-xx\.bstatic\.com\//), label: 'Exterior view' });
+    expect(stay['photo_list']).toHaveLength(4);
+    expect(stay['room_types']).toEqual([
+      { room_type_id: 'rt_1422089395', label: 'Family Room', sleeps: 2, night_minor: 315_000 },
+      { room_type_id: 'rt_1422089396', label: 'Executive Suite', sleeps: 2, night_minor: 618_300 },
+    ]);
   });
 
   it("hotels.details answers without the cancellation when the page's rooms call hasn't come", async () => {
@@ -159,6 +167,17 @@ describe("a stay's own page", () => {
     await expect(facts('hotels.rooms', { hotel: MOJIGAO }, [
       capture('/rooms$', `${HOTEL_API}/accommodations/details/4395492/rooms`, sample('hotels.rooms.pay-at-hotel.json')),
     ])).rejects.toThrow(/did not send/);
+  });
+
+  // Phase 2, 10 Oct: logged in, a rate's offer carries ixigo's hotel cash as a picture, and its burnInfo the person's own.
+  it("hotels.rooms reads a logged-in rate's offer as words, and never its hotel cash", async () => {
+    const body = JSON.parse(sample('hotels.rooms.json'));
+    const rate = (body.data ?? body[0].data).rooms[0].roomOptions[0];
+    rate.fareDetail.offerMessage = '₹686 discount + <img src="https://images.ixigo.com/image/upload/accommodations/hotel-cash/cash.png"> ₹120';
+    rate.fareDetail.burnInfo = [{ key: 'HOTEL_CASH', burnAmount: 120, totalAmount: 120, title: 'Hotel Cash', description: 'Use your hotel cash', summaryText: '₹120 hotel cash' }];
+    const got = await facts('hotels.rooms', { hotel: MOJIGAO }, [capture('/rooms$', `${HOTEL_API}/accommodations/details/37957/rooms`, JSON.stringify(body))]);
+    expect(got.rows[0]).toMatchObject({ coupon: '₹686 discount' });
+    expect(JSON.stringify(got.rows)).not.toMatch(/<img|hotel-cash|hotel_cash|burnAmount|₹120/);
   });
 
   it("hotels.reviews answers the latest reviews, each guest's rating, kind of trip and words, never a name", async () => {
