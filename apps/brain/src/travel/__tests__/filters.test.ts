@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
-import { applyConstraints, asked, misses, pointAt } from '../filters.js';
+import { applyConstraints, asked, misses, missedByAll, pointAt } from '../filters.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
@@ -66,6 +66,35 @@ describe('constraints applied in code', () => {
       journey: { mode: 'flight', origin: { name: 'Delhi' }, destination: { name: 'Goa' }, depart_at: '2026-11-06T22:50:00+05:30', arrive_at: '2026-11-07T01:25:00+05:30' },
     };
     expect(applyConstraints('flights', { arriveBefore: '23:00' }, [overnight])).toEqual([]);
+  });
+
+  // The exam, 10 Oct (#6, #7): "any AC sleeper on the 5th night that reaches by morning" held 10 am against the night's
+  // own date, so every overnight bus missed it (46 of the 54 Bengaluru to Goa buses were AC sleepers).
+  it('reads an arrival time as the first one after it leaves: the morning after a night bus, the same day for a morning one', () => {
+    const bus = (depart: string, arrive: string): TravelOption => ({
+      kind: 'bus', title: `${depart} bus`, priceMinor: 200_000, currency: 'INR', priceNote: 'per seat, from', highlights: [], facts: { ac: true, sleeper: true },
+      journey: { mode: 'bus', origin: { name: 'Bengaluru' }, destination: { name: 'Goa' }, depart_at: `2026-11-05T${depart}:00+05:30`, arrive_at: arrive },
+    });
+    const byMorning = { departAfter: '18:00', arriveBefore: '10:00' };
+    expect(misses('buses', byMorning, bus('18:00', '2026-11-06T07:00:00+05:30'))).toEqual([]);
+    expect(misses('buses', byMorning, bus('20:15', '2026-11-06T10:30:00+05:30'))).toEqual(['arrives at 10:30 am the next day, after 10:00 am']);
+    expect(misses('buses', { arriveBefore: '10:00' }, bus('06:00', '2026-11-05T09:30:00+05:30'))).toEqual([]);
+    expect(misses('buses', { arriveBefore: '10:00' }, bus('06:00', '2026-11-06T09:30:00+05:30'))).toEqual(['arrives at 9:30 am the next day, after 10:00 am']);
+    // A bus that leaves late and arrives before midnight is in long before the next morning.
+    expect(misses('buses', byMorning, bus('19:00', '2026-11-05T23:30:00+05:30'))).toEqual([]);
+  });
+
+  it('names the limit that alone leaves out every option when nothing fits, never one some of them meet', () => {
+    const bus = (depart: string, arrive: string, boarding: string): TravelOption => ({
+      kind: 'bus', title: `${depart} bus`, priceMinor: 200_000, currency: 'INR', priceNote: 'per seat, from', highlights: [], facts: { boarding_points: boarding },
+      journey: { mode: 'bus', origin: { name: 'Bengaluru' }, destination: { name: 'Goa' }, depart_at: `2026-11-05T${depart}:00+05:30`, arrive_at: arrive },
+    });
+    const buses = [bus('18:00', '2026-11-06T07:00:00+05:30', 'Majestic; Silk Board'), bus('21:00', '2026-11-06T09:15:00+05:30', 'Majestic')];
+    // Arriving by 6 am cuts both; picking up at Silk Board only one; leaving after 6 pm none.
+    expect(missedByAll('buses', { departAfter: '18:00', arriveBefore: '06:00', boardAt: 'Silk Board' }, buses)).toEqual(['arriving by 6:00 am']);
+    expect(missedByAll('buses', { arriveBefore: '06:00', maxPriceMinor: 100_000 }, buses)).toEqual(['arriving by 6:00 am', 'at most ₹1,000 a person']);
+    expect(missedByAll('buses', { departAfter: '18:00', boardAt: 'Silk Board' }, buses)).toEqual([]);
+    expect(missedByAll('buses', { arriveBefore: '06:00' }, [])).toEqual([]);
   });
 
   it('says the day a train arrives when it is two days later, not "the next day"', () => {

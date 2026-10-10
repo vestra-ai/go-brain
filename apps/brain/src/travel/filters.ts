@@ -57,6 +57,17 @@ export function pointAt(points: string, words: string): string | null {
   }) ?? null;
 }
 
+/**
+ * Whether a journey arrives by a clock time: the first one after it leaves, as people mean "reaches by morning" of a
+ * night bus. A bus at 8 pm must arrive by 10 am the next day, one at 6 am by 10 am that day; a 27-hour train misses both
+ * (the exam, 10 Oct: "reaches by 10 am" held against the next day dropped every overnight bus, Bengaluru to Goa).
+ */
+function arrivesBy(j: NonNullable<TravelOption['journey']>, hhmm: string): boolean {
+  const day = localClock(j.depart_at) < hhmm ? 0 : 1;
+  const later = daysLater(j.depart_at, j.arrive_at);
+  return later < day || (later === day && localClock(j.arrive_at) <= hhmm);
+}
+
 /** Each constraint this option does not meet, in plain words ("no pool", "₹12,200 a night, over ₹10,000"); none means it fits. */
 export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): string[] {
   const out: string[] = [];
@@ -64,7 +75,7 @@ export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): strin
   const leaves = j ? formatClock(localClock(j.depart_at)) : null;
   if (q.departAfter && (!j || localClock(j.depart_at) < q.departAfter)) out.push(leaves ? `leaves at ${leaves}, before ${formatClock(q.departAfter)}` : 'no departure time');
   if (q.departBefore && (!j || localClock(j.depart_at) > q.departBefore)) out.push(leaves ? `leaves at ${leaves}, after ${formatClock(q.departBefore)}` : 'no departure time');
-  if (q.arriveBefore && (!j || daysLater(j.depart_at, j.arrive_at) > 0 || localClock(j.arrive_at) > q.arriveBefore)) {
+  if (q.arriveBefore && (!j || !arrivesBy(j, q.arriveBefore))) {
     out.push(j ? `arrives at ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at, 'the next day')}, after ${formatClock(q.arriveBefore)}` : 'no arrival time');
   }
   if (q.maxPriceMinor !== undefined && o.priceMinor > q.maxPriceMinor) out.push(`${formatInr(o.priceMinor)}${per(kind)}, over ${formatInr(q.maxPriceMinor)}`);
@@ -111,6 +122,27 @@ export function asked(kind: TravelKind, q: TravelQuery): string[] {
 }
 
 const keeps = (kind: TravelKind, q: TravelQuery, o: TravelOption): boolean => misses(kind, q, o).length === 0;
+
+/** The limits Go checks itself (misses), each one alone for missedByAll. */
+const LIMITS = ['departAfter', 'departBefore', 'arriveBefore', 'maxPriceMinor', 'maxShareMinor', 'minRating', 'guests', 'boardAt', 'dropAt'] as const;
+
+/**
+ * The limits that, each on its own, leave out every option, in asked()'s words ("arriving by 10:00 am"): when nothing
+ * fits, the room hears which limit cut them all, never a guess (the exam, 10 Oct: "no AC sleeper" on Bengaluru to Goa,
+ * where 46 of 54 buses were AC sleepers and the arrival time had cut every one).
+ */
+export function missedByAll(kind: TravelKind, q: TravelQuery, options: TravelOption[]): string[] {
+  if (options.length === 0) return [];
+  const bare: TravelQuery = { ...q };
+  for (const k of LIMITS) delete bare[k];
+  delete bare.mustHave;
+  const alone: TravelQuery[] = [
+    ...LIMITS.filter((k) => q[k] !== undefined).map((k) => ({ ...bare, [k]: q[k] }) as TravelQuery),
+    ...(q.mustHave ?? []).map((need) => ({ ...bare, mustHave: [need] })),
+  ];
+  const said = new Set(asked(kind, bare));
+  return alone.filter((p) => options.every((o) => !keeps(kind, p, o))).flatMap((p) => asked(kind, p).filter((t) => !said.has(t)));
+}
 
 /** A region, not one area: the best stays should come from across it. */
 const REGION = /^(north |south )?goa$/;

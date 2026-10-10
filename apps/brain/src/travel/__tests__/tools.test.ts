@@ -77,7 +77,9 @@ describe('search tools', () => {
     const missing = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_night: 5000 }, lb.ctx())) as any;
     expect(missing.count).toBe(0);
     // The fake gives 7 that sleep 5; none is under ₹5,000 a night.
-    expect(missing.summary).toMatch(/^None of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹5,000 a night, sleeping 5, with a pool and within 10 minutes of the beach\. The nearest: 1\. /);
+    expect(missing.summary).toMatch(
+      /^None of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹5,000 a night, sleeping 5, with a pool and within 10 minutes of the beach\. At most ₹5,000 a night alone leaves out every one\. The nearest: 1\. /,
+    );
     expect(missing.note).toContain('keeping every condition in it');
   });
 
@@ -152,6 +154,18 @@ describe('search tools', () => {
     expect(late.count).toBe(0);
     const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_b1' }))) as any;
     expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
+  });
+
+  // The exam, 10 Oct (#6): "any AC sleeper on the 5th night that reaches by morning" got "no AC sleeper fits", where the
+  // arrival had been held against the night's own date and cut every bus.
+  it('search_buses reads "by 10 am" as the morning after a night bus, and says the limit that alone leaves every bus out, with the nearest on a card', async () => {
+    const night = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', depart_after: '18:00', arrive_before: '10:00' }, lb.ctx({ turnId: 'turn_nb1' }))) as any;
+    expect(night.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
+    const dawn = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', depart_after: '18:00', arrive_before: '06:00' }, lb.ctx({ turnId: 'turn_nb2' }))) as any;
+    expect(dawn.count).toBe(0);
+    expect(dawn.summary).toContain('fits leaving after 6:00 pm and arriving by 6:00 am. Arriving by 6:00 am alone leaves out every one. The nearest: 1. ');
+    expect(dawn.card).toEqual({ results_id: dawn.results_id, option_numbers: [1, 2, 3], title: expect.any(String) });
+    expect(dawn.note).toContain('the limit that alone left every one out');
   });
 
   // Keshav, 10 Oct: buses have many pickup and drop points; a named one reaches the search, and Go's own filter keeps the
