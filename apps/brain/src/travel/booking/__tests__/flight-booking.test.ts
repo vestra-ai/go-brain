@@ -93,7 +93,7 @@ const OFFER: StoredOffer = {
 };
 
 function booking(runner: RecipeRunner, on = true, ticketPay: TicketPay | null = null): FlightBooking {
-  void lb.switches.set('FLIGHT_BOOKING', on ? 'on' : 'off');
+  void lb.switches.set('BOOKING', on ? 'on' : 'off');
   void lb.switches.set('TRAVEL_MODE', 'ixigo_web');
   return createFlightBooking({
     pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, pay: () => ticketPay ?? undefined,
@@ -263,12 +263,12 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
   });
 
   it("is off unless the switch is on, or names the trip's Server instance, and Go reads ixigo.com itself", async () => {
-    expect(['off', 'on', 'instances:drill-p0', 'instances:drill-p0,drill-p2'].every(SWITCH_RULES.FLIGHT_BOOKING.valid)).toBe(true);
-    expect(['instances:', 'yes', 'instances:a b'].some(SWITCH_RULES.FLIGHT_BOOKING.valid)).toBe(false);
+    expect(['off', 'on', 'instances:drill-p0', 'instances:drill-p0,drill-p2'].every(SWITCH_RULES.BOOKING.valid)).toBe(true);
+    expect(['instances:', 'yes', 'instances:a b'].some(SWITCH_RULES.BOOKING.valid)).toBe(false);
     await db.pool.query(`insert into trips (trip_id, server_instance) values ('t_drill_p0', 'drill-p0'), ('t_his', 'go-live-keshav') on conflict (trip_id) do nothing`);
     const b = booking(fakeRunner().runner, false);
     expect(await b.onFor('t_drill_p0')).toBe(false);
-    await lb.switches.set('FLIGHT_BOOKING', 'instances:drill-p0,drill-p2');
+    await lb.switches.set('BOOKING', 'instances:drill-p0,drill-p2');
     expect([await b.onFor('t_drill_p0'), await b.onFor('t_his'), await b.onFor('t_no_row')]).toEqual([true, false, false]);
     await lb.switches.set('TRAVEL_MODE', 'fake');
     expect(await b.onFor('t_drill_p0')).toBe(false);
