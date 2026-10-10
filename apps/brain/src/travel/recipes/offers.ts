@@ -137,6 +137,7 @@ export function asOffers(rows: unknown): Offer[] {
       kind: o.kind, group: unescaped(o.group), name: unescaped(o.name), code: o.code,
       ...(o.kind === 'price' ? { min: o.min!, max: o.max! } : {}),
     }));
+}
 
 /**
  * The price bands for a cap a night and a room (rupees): every band at or under it, and the one band over it, so a stay
@@ -147,5 +148,4 @@ export function bandsFor(offers: Offer[], cap: number): Offer[] {
   const under = bands.filter((b) => b.max! <= cap);
   const over = bands.find((b) => b.max! > cap);
   return over ? [...under, over] : under;
-}
 }
