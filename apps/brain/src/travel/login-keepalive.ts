@@ -21,6 +21,8 @@ export const KEEPALIVE_AFTER_MS = 2 * 3600_000;
 export const KEEPALIVE_JITTER_MS = 20 * 60_000;
 /** A quiet read (the page booted, none of the login's calls came) is read again this much later before it counts as out. */
 export const CONFIRM_OUT_MS = 5 * 60_000;
+/** The first pass after Go starts: a deploy never puts off a due read by a whole KEEPALIVE_EVERY_MS. */
+export const KEEPALIVE_FIRST_MS = 60_000;
 /** A read that said nothing (ixigo's check, a page that timed out) is tried again no sooner than this. */
 export const KEEPALIVE_TRY_AGAIN_MS = 60 * 60_000;
 
@@ -106,10 +108,12 @@ export function createLoginKeepAlive(d: LoginKeepAliveDeps): LoginKeepAlive {
     tick,
     start(everyMs = KEEPALIVE_EVERY_MS) {
       if (timer) return;
-      timer = setInterval(() => {
+      const pass = (): void => {
         void tick().catch((err: unknown) => d.log.warn({ err }, "travel: the ixigo login's keep-alive pass failed"));
-      }, everyMs);
+      };
+      timer = setInterval(pass, everyMs);
       timer.unref?.();
+      setTimeout(pass, Math.min(KEEPALIVE_FIRST_MS, everyMs)).unref?.();
     },
     stop() {
       if (timer) clearInterval(timer);

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  CONFIRM_OUT_MS, createLoginKeepAlive, KEEPALIVE_AFTER_MS, KEEPALIVE_JITTER_MS, KEEPALIVE_TRY_AGAIN_MS, keepAliveJitter,
+  CONFIRM_OUT_MS, createLoginKeepAlive, KEEPALIVE_AFTER_MS, KEEPALIVE_EVERY_MS, KEEPALIVE_FIRST_MS, KEEPALIVE_JITTER_MS, KEEPALIVE_TRY_AGAIN_MS, keepAliveJitter,
 } from '../login-keepalive.js';
 
 // The person's ixigo login kept alive in their browser: one read every few hours while it is logged in, light on the
@@ -119,5 +119,22 @@ describe("the person's ixigo login, kept alive", () => {
     await keep.tick();
     expect(asked).toHaveLength(4);
     keep.stop();
+  });
+
+  // 10 Oct: Go deploys often, and a pass only on the 20-minute beat put a due read off by up to 20 minutes after each.
+  it('makes its first pass a minute after it starts, then one every KEEPALIVE_EVERY_MS', async () => {
+    vi.useFakeTimers();
+    try {
+      const w = world([{ userId: 'gobrowser-due', tripId: 't_due', at: T0 - KEEPALIVE_AFTER_MS - KEEPALIVE_JITTER_MS }]);
+      w.keep.start();
+      await vi.advanceTimersByTimeAsync(KEEPALIVE_FIRST_MS - 1);
+      expect(w.reads).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(w.reads).toEqual(['t_due']);
+      expect(KEEPALIVE_FIRST_MS).toBeLessThan(KEEPALIVE_EVERY_MS);
+      w.keep.stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
