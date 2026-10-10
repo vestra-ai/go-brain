@@ -54,6 +54,11 @@ export interface ReadOptions {
   /** With keepOpen, for a live card: one more picture of the kept tab once ixigo has drawn it (LOOK_AFTER_MS, `drawn`). */
   look?: boolean;
   /**
+   * A person watches: the page opens on the browser's stage (Bash's stage), in front, in the one tab every watched read
+   * uses (STAGE_TAB), its steps done where the room's live view sees them, and the page left on screen STAGE_MS after.
+   */
+  stage?: boolean;
+  /**
    * The caller reads another way when the page catches nothing (a filtered stays search reads its page again unfiltered,
    * backend.ts): such a page is never asked twice here, and throws NothingCaughtError.
    */
@@ -207,6 +212,10 @@ export const FAST_TIMEOUT_MS = 5_000;
  * within it needs no page load, and the live view sees the page drawn.
  */
 export const WARM_TAB_MS = 120_000;
+/** The stage's tab (ReadOptions.stage): one for the trip's browser, every watched read opening its page in it. */
+export const STAGE_TAB = 'stage';
+/** How long the stage stays on its last page after a read, on screen for the room, until the next one takes it. */
+export const STAGE_MS = 300_000;
 /**
  * How long Go stops trying page calls after Bash refused one as a request it doesn't take (a 400: a Bash with no
  * page_fetch yet), or answered with no page call in it. Once Bash has page_fetch, they resume within this, with no deploy
@@ -466,7 +475,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
       ...(o.tag ? { tag: o.tag } : {}),
       // Under Bash's default name, the one the page calls take: one warm tab a trip, never one more toward Bash's cap.
-      ...(o.keepOpen ? { keep_open_ms: WARM_TAB_MS } : {}),
+      ...(o.stage ? { stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS } : o.keepOpen ? { keep_open_ms: WARM_TAB_MS } : {}),
     };
     let userId = await d.browser.userFor(tripId);
     let askedAgain = false;
@@ -505,7 +514,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
         o.onTrace?.({ started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null, calls });
         const finalUrl = typeof answer.final_url === 'string' ? answer.final_url : url;
-        if (o.keepOpen && o.look && o.onProgress) look(tripId, finalUrl, startedAt, o.onProgress, o.tag);
+        if ((o.keepOpen || o.stage) && o.look && o.onProgress) look(tripId, finalUrl, startedAt, o.onProgress, o.tag, o.stage === true);
         return { captures, finalUrl };
       } catch (err) {
         if (!(err instanceof V1Error)) throw err;
@@ -558,8 +567,12 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
    * Only a picture of the same page is told, timed from the page's fetch; a look that fails, or finds the tab taken or on
    * another page (a later search kept its own), tells nothing, and the card keeps the picture it has. Never awaited.
    */
-  function look(tripId: string, pageUrl: string, fetchStarted: number, onProgress: OnProgress, tag: string | undefined): void {
-    const body = { steps: [LOOK_STEP], keep_open_ms: WARM_TAB_MS, timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH, settle_ms: LOOK_SETTLE_MS }, ...(tag ? { tag } : {}) };
+  function look(tripId: string, pageUrl: string, fetchStarted: number, onProgress: OnProgress, tag: string | undefined, stage = false): void {
+    const body = {
+      steps: [LOOK_STEP], timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH, settle_ms: LOOK_SETTLE_MS }, ...(tag ? { tag } : {}),
+      // The stage's page, looked at where it is, and left there.
+      ...(stage ? { stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS } : { keep_open_ms: WARM_TAB_MS }),
+    };
     void sleep(LOOK_AFTER_MS)
       .then(() => inSlot(tripId, {}, async () => {
         const lookStarted = d.now().getTime();

@@ -231,6 +231,33 @@ describe('the fast speed', () => {
     expect(engine.stats().map((s) => [s.recipe, s.speed, s.runs, s.failed])).toEqual([['plan.destination', 'fast', 1, 0]]);
   });
 
+  // Staging, 10 Oct: a watched trains search ran as a page call, and the room saw ixigo's home page, not the search.
+  it('never takes the fast speed for a run a person watches (its live card): it opens the page on the stage', async () => {
+    const calls: unknown[] = [];
+    const reads: Array<{ url: string; stage?: boolean }> = [];
+    const runner = {
+      read: async (_t: string, url: string, _plan: unknown, o?: { stage?: boolean }) => {
+        reads.push({ url, ...(o?.stage ? { stage: true } : {}) });
+        return { captures: [capture('/plan/goa$', url, PAGE)], finalUrl: url };
+      },
+      pageFetch: async (_t: string, call: unknown) => {
+        calls.push(call);
+        return { ...capture('fast', '/plan/goa', RSC), content_type: 'text/x-component' };
+      },
+    };
+    // A fresh engine each time: a guide's facts are kept, and a kept answer runs nothing.
+    const engine = () => createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
+    await engine().answer('plan.destination', { place: 'Goa' }, { tripId: 't_watch', onProgress: () => undefined });
+    expect(calls).toEqual([]);
+    expect(reads).toEqual([{ url: expect.stringContaining('/plan/goa'), stage: true }]);
+    // Off the stage: a check nobody waits on reads its page behind, as before, and a composite's step (many at once)
+    // still takes the fast speed.
+    await engine().answer('plan.destination', { place: 'Goa' }, { tripId: 't_watch', background: true, onProgress: () => undefined });
+    await engine().answer('plan.destination', { place: 'Goa' }, { tripId: 't_watch', stepOf: 'r_ways', onProgress: () => undefined });
+    expect(calls).toHaveLength(1);
+    expect(reads).toEqual([{ url: expect.stringContaining('/plan/goa'), stage: true }, { url: expect.stringContaining('/plan/goa') }]);
+  });
+
   it("reads the guide's own photo of the destination: its hero's first, else the first place to visit's (8 Oct)", async () => {
     const photo = async (rsc: string): Promise<unknown> => {
       const runner = {
