@@ -260,7 +260,8 @@ export interface RunFor {
   clickFrom?: string;
 }
 
-export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
+/** A step's event carries its answer, for a caller that shows each entry's as it lands (travel/flights-each.ts). */
+export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean; answer?: EngineAnswer };
 
 /** The most of the site's list of what it offers that a read keeps (ixigo's stays metadata: about 23 KB). */
 export const OFFERS_MAX_BYTES = 300_000;
@@ -966,7 +967,7 @@ export function createEngine(d: EngineDeps) {
       };
       const told = async (entry: string, step: Step, priority: number): Promise<StepAnswer> => {
         const s = await stepFor(entry, step, priority);
-        o.onSteps?.({ type: 'step', entry, recipe: s.recipe, ok: !!s.answer });
+        o.onSteps?.({ type: 'step', entry, recipe: s.recipe, ok: !!s.answer, ...(s.answer ? { answer: s.answer } : {}) });
         return s;
       };
       const done = await Promise.all(entries.map(async (entry) => ({ entry, steps: await Promise.all(steps.run.map((step, i) => told(entry, step, i))) })));

@@ -185,11 +185,17 @@ export function waysLine(ways: WayThere[], date: string): string {
 }
 
 /**
- * The live card while a comparison runs: "Checking 3 cities", a step per city that ticks done when its trains and buses
- * are in (failed when neither came back). Shown only once show() is called, so a comparison that answers at once from
- * kept searches never posts it; updates go out one at a time, in order.
+ * The live card while a comparison runs: "Checking 3 cities", a step per city that ticks done when its searches (what:
+ * its trains and buses, or each person's flights' only flights) are in, failed when none came back. Shown only once
+ * show() is called, so a comparison that answers at once from kept searches never posts it; updates go out one at a
+ * time, in order.
  */
-function waysLiveCard(d: { link: Pick<ServerLink, 'request'>; now: () => Date; log?: { warn(obj: object, msg: string): void } }, tripId: string, cardId: string) {
+export function waysLiveCard(
+  d: { link: Pick<ServerLink, 'request'>; now: () => Date; log?: { warn(obj: object, msg: string): void } },
+  tripId: string,
+  cardId: string,
+  what: { kinds: readonly string[]; fallback: string } = { kinds: ['trains', 'buses'], fallback: 'Go is checking trains and buses on ixigo from each home city.' },
+) {
   const cities: Array<{ home: string; going: Set<string>; answered: boolean; state: 'doing' | 'done' | 'failed' }> = [];
   let state: WorkingCard['state'] = 'running';
   let shown = false;
@@ -198,11 +204,11 @@ function waysLiveCard(d: { link: Pick<ServerLink, 'request'>; now: () => Date; l
   const card = (): WorkingCard => ({
     card_id: cardId,
     kind: 'working',
-    fallback_text: 'Go is checking trains and buses on ixigo from each home city.',
+    fallback_text: what.fallback,
     task_id: `ways_${cardId}`,
     title: cities.length > 0 ? `Checking ${cities.length} ${cities.length === 1 ? 'city' : 'cities'}` : 'Checking the home cities',
     state,
-    steps: cities.map((c) => ({ text: clip(`${c.home}: trains · buses`, 80), state: c.state })),
+    steps: cities.map((c) => ({ text: clip(`${c.home}: ${what.kinds.join(' · ')}`, 80), state: c.state })),
     screenshot_url: null,
     page_url: null,
     updated_at: d.now().toISOString(),
@@ -230,10 +236,10 @@ function waysLiveCard(d: { link: Pick<ServerLink, 'request'>; now: () => Date; l
       send();
     },
     cities(entries: string[]): void {
-      for (const home of entries) cities.push({ home, going: new Set(['trains', 'buses']), answered: false, state: 'doing' });
+      for (const home of entries) cities.push({ home, going: new Set(what.kinds), answered: false, state: 'doing' });
       send();
     },
-    step(home: string, kind: 'trains' | 'buses', ok: boolean): void {
+    step(home: string, kind: string, ok: boolean): void {
       const c = cities.find((x) => x.home === home);
       if (!c || !c.going.delete(kind)) return;
       c.answered ||= ok;
