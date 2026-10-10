@@ -143,7 +143,7 @@ event = models.Event.model_validate(frame["params"]).root  # in a send_event req
 
 ## Changing the contract
 
-The contract is version `1.1.0` (what 1.1 added is in [Contract 1.1](11-contract-1-1.md)). Within version 1, changes only add things: a new optional field, a new event type, a new card kind, a new method. Nothing is renamed or removed, so code written today keeps working. Both sides ignore fields they do not know, and skip event types and card kinds they do not know. A side that receives a request for a method it does not know answers with the error code `-32601`, and the sender skips what it wanted to do. That is how a new method can ship on one side before the other side supports it.
+The contract is version `1.2.0` (what 1.1 added is in [Contract 1.1](11-contract-1-1.md); 1.2 adds a traveller's own ticket approval, `not_in_trip` and `already_booked` ([Money](08-money-and-the-vault.md)), and `visible_to_person_ids` ([Go's requests](04-gos-requests.md))). Within version 1, changes only add things: a new optional field, a new event type, a new card kind, a new method. Nothing is renamed or removed, so code written today keeps working. Both sides ignore fields they do not know, and skip event types and card kinds they do not know. A side that receives a request for a method it does not know answers with the error code `-32601`, and the sender skips what it wanted to do. That is how a new method can ship on one side before the other side supports it.
 
 To change it:
 
