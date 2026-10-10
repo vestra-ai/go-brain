@@ -218,6 +218,13 @@ describe("Go's rules", () => {
     );
   });
 
+  // Exam, 10 Oct (#20): "the ICICI offer" was answered with no code, no minimum and no check of its days.
+  it("say an offer's code, its minimum and most off, and its days checked against the trip's", () => {
+    expect(GO_RULES).toContain(
+      "- An offer from ixigo: say its code (or that it needs none), the least the booking must come to and the most it takes off, when ixigo gives them, and the days and dates it works, checked against the trip's dates or the days asked",
+    );
+  });
+
   it('use no em dashes or en dashes, as they ask of Go', () => {
     expect(GO_RULES).not.toMatch(/[—–]/);
   });

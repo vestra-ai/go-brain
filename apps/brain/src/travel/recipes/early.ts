@@ -24,7 +24,7 @@ import type { TripPack } from '../../trips/pack.js';
 import type { EngineAnswer } from '../book/engine.js';
 import type { Travel, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
 import { agreedDates, readTravelAsk } from './ask.js';
-import { OPTION_KINDS, readFastAsk, type ShownOption } from './fast.js';
+import { bankIn, OPTION_KINDS, readFastAsk, type ShownOption } from './fast.js';
 import { RECIPE_TTL_MS } from './recipe.js';
 
 export interface EarlyStartDeps {
@@ -43,6 +43,8 @@ export interface EarlyStartDeps {
     has(id: string): boolean;
     /** Runs one on the stage, with its live card keyed by runKey. */
     run(id: string, given: Record<string, unknown>, o: { tripId: string; runKey: string }): Promise<EngineAnswer>;
+    /** Reads one off the stage, with no card: its fastest speed (an offer's terms beside the list the room watched). */
+    read?(id: string, given: Record<string, unknown>, o: { tripId: string }): Promise<EngineAnswer>;
   };
   /** The shown option a line points at, on the trip's newest card of its kind (option-on-card.ts). */
   optionFor?: (tripId: string, text: string, kind: 'stay' | 'flight') => Promise<ShownOption | null>;
@@ -85,6 +87,8 @@ export interface EarlyStart {
    * the tool's call joins it, and updates its card instead of posting a second. Null for any other call.
    */
   joinKey(tripId: string, messageIds: string[], recipe: string, inputs: Record<string, string | number>): string | null;
+  /** That read itself, for the tool's call that can take its answer (book/tool.ts: what the call adds only narrows it). */
+  joined(tripId: string, messageIds: string[], recipe: string, inputs: Record<string, string | number>): EarlyRead | null;
   /**
    * The message asks for stays: Jev is sure of it, or its stays search began here. Its own search is the trip's one load
    * for it, whatever its place, so the stays head start (warm.ts) loads nothing beside it.
@@ -93,6 +97,42 @@ export interface EarlyStart {
 }
 
 const KEPT_MAX = 200;
+
+/** An offer's own terms page: its code, the least the booking must come to, the most it takes off, the days it works. */
+export const OFFER_TERMS = 'offers.details';
+/** How many of the offers an ask names a bank for get their terms read. */
+export const TERMS_MAX = 3;
+
+/** What an offer's terms add to its line on the list: none of its long text, which the ixigo tool gives in full. */
+const TERMS_FIELDS = ['code', 'min_booking', 'max_off', 'valid_on', 'from', 'until', 'table', 'slabs'] as const;
+
+/**
+ * The list with the terms of the offers that fit the bank the ask names (exam, 10 Oct: "the ICICI offer" was answered
+ * with no code, no minimum and no days, as the list has none of them): at most TERMS_MAX, each from its own terms page
+ * (offers.list's "details", hotels.offers' "terms" link), read together. A page that doesn't load leaves its line as it was.
+ */
+export async function withTerms(list: EngineAnswer, bank: string, read: (offer: string) => Promise<EngineAnswer>): Promise<EngineAnswer> {
+  if (list.as !== 'facts') return list;
+  const key = bank.toLowerCase().replace(/\b(bank|credit cards?|debit cards?|cards?)\b/g, '').trim();
+  const pageOf = (row: Record<string, unknown>): string | null => {
+    const page = row['details'] ?? row['terms'];
+    return typeof page === 'string' && page.trim() ? page : null;
+  };
+  const fits = (row: Record<string, unknown>): boolean =>
+    key !== '' && `${String(row['bank'] ?? '')} ${String(row['offer'] ?? '')}`.toLowerCase().includes(key);
+  const picked = list.rows.filter((row) => pageOf(row) && fits(row)).slice(0, TERMS_MAX);
+  if (picked.length === 0) return list;
+  const terms = new Map(
+    await Promise.all(
+      picked.map(async (row) => {
+        const got = await read(pageOf(row)!).catch(() => null);
+        const t = got?.as === 'facts' ? got.rows[0] : undefined;
+        return [row, t ? Object.fromEntries(TERMS_FIELDS.flatMap((f): Array<[string, unknown]> => (t[f] !== undefined && t[f] !== null ? [[f, t[f]]] : []))) : null] as const;
+      }),
+    ),
+  );
+  return { ...list, rows: list.rows.map((row) => (terms.get(row) ? { ...row, ...terms.get(row)! } : row)) };
+}
 
 /** Whether an ask names all its search needs: the places and the date, or the stay's place and its two dates. */
 const complete = (kind: TravelKind, q: TravelQuery): boolean =>
@@ -123,13 +163,31 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
     const ask = readFastAsk(choice, msg.text, { today, destination: pack.trip.destination?.name ?? null, dates, option });
     if (!ask || !d.recipes.has(ask.recipe)) return undefined;
     const runKey = `early:${msg.message_id}|${ask.recipe}`;
-    const answer = d.recipes.run(ask.recipe, ask.given, { tripId, runKey });
+    const listed = d.recipes.run(ask.recipe, ask.given, { tripId, runKey });
+    // An offers ask that names a bank: the fitting offers' terms too, read off the stage once the list is in.
+    const bank = choice === 'offers' ? bankIn(msg.text) : null;
+    const read = d.recipes.read;
+    const answer = bank && read && d.recipes.has(OFFER_TERMS) ? listed.then((l) => withTerms(l, bank, (offer) => read(OFFER_TERMS, { offer }, { tripId }))) : listed;
     answer.catch((err: unknown) => {
       // A PNR's read never logs its error: the message could carry the number.
       d.log.warn({ ...(choice === 'pnr' ? {} : { err }), tripId, recipe: ask.recipe }, 'travel: an early ixigo read failed; the composer reads again');
     });
     keep(reads, `${tripId}:${msg.message_id}`, { choice, recipe: ask.recipe, asked: ask.asked, answer, runKey, at: d.now().getTime() });
     return { dueNow: true };
+  }
+
+  /**
+   * The read one of these messages started that a call of this recipe with these inputs is: each input the read was
+   * given, the same as words ("12051" and 12051, "Thivim" and "thivim"). A read whose inputs the tool never sees (a PNR's)
+   * is joined by its recipe alone.
+   */
+  function joined(tripId: string, messageIds: string[], recipe: string, inputs: Record<string, string | number>): EarlyRead | null {
+    const word = (v: unknown): string => String(v ?? '').trim().toLowerCase();
+    for (const id of messageIds) {
+      const r = readFor(tripId, id);
+      if (r?.recipe === recipe && Object.entries(r.asked).every(([k, v]) => word(inputs[k]) === word(v))) return r;
+    }
+    return null;
   }
 
   function readFor(tripId: string, messageId: string): EarlyRead | null {
@@ -193,15 +251,9 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
     },
     readFor,
     joinKey(tripId, messageIds, recipe, inputs) {
-      // The same inputs, as words: "12051" and 12051, "Thivim" and "thivim". A read whose inputs the tool never sees
-      // (a PNR's) is joined by its recipe alone.
-      const word = (v: unknown): string => String(v ?? '').trim().toLowerCase();
-      for (const id of messageIds) {
-        const r = readFor(tripId, id);
-        if (r?.recipe === recipe && Object.entries(r.asked).every(([k, v]) => word(inputs[k]) === word(v))) return r.runKey;
-      }
-      return null;
+      return joined(tripId, messageIds, recipe, inputs)?.runKey ?? null;
     },
+    joined,
     asksStays: (tripId, messageId) => staysAsks.has(`${tripId}:${messageId}`),
   };
 }

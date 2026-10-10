@@ -28,6 +28,11 @@ export const Input = z.strictObject({
   from_page: z.boolean().optional(),
   /** What the input is, for the model that fills it. */
   about: z.string().optional(),
+  /**
+   * A filter on the same list (offers.list's bank, product and journey): a read without it holds every row an ask with it
+   * keeps. The ixigo tool takes the read the early start began for the message, without it, instead of reading again.
+   */
+  narrows: z.boolean().optional(),
 });
 export type Input = z.infer<typeof Input>;
 

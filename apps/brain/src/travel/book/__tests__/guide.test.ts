@@ -207,24 +207,72 @@ describe('the ixigo tool', () => {
     expect(JSON.stringify([out, ctx.cards])).not.toContain('4512873690');
   });
 
-  it("joins a read the early start began for this turn's message on that read's own card, and keys its own card otherwise", async () => {
+  it("takes the read the early start began for this turn's message, and keys a read of its own otherwise", async () => {
     const keys: string[] = [];
     const card = (_trip: string, o: { runKey: string; recipe: string }) => {
       keys.push(o.runKey);
       return { progress: () => undefined, finish: async () => undefined };
     };
-    const engine = { answer: async () => ({ as: 'facts' as const, title: 'Goa', rows: [], page: 'https://www.ixigo.com/plan/goa', checkedAt: '2026-10-10T05:00:00.000Z', ms: 900 }) };
-    const asked: Array<{ recipe: string; inputs: Record<string, string | number> }> = [];
-    const joinKey = (_ctx: TurnCtx, recipe: string, inputs: Record<string, string | number>) => {
-      asked.push({ recipe, inputs });
-      return inputs['place'] === 'Goa' ? 'early:m_7|plan.destination' : null;
+    const facts = (title: string) => ({ as: 'facts' as const, title, rows: [], page: 'https://www.ixigo.com/plan/goa', checkedAt: '2026-10-10T05:00:00.000Z', ms: 900 });
+    const runs: string[] = [];
+    const engine = {
+      answer: async (_id: string, given: Record<string, unknown>) => {
+        runs.push(String(given['place']));
+        return facts(String(given['place']));
+      },
     };
-    const tool = ixigoTool({ book, engine: engine as never, live: () => true, card: card as never, cardDelayMs: 0, joinKey })!;
-    await tool.run({ recipe: 'plan.destination', inputs: { place: 'Goa' } }, turn);
+    const asked: Array<{ recipe: string; inputs: Record<string, string | number> }> = [];
+    const joined = (_ctx: TurnCtx, recipe: string, inputs: Record<string, string | number>) => {
+      asked.push({ recipe, inputs });
+      return inputs['place'] === 'Goa' ? { runKey: 'early:m_7|plan.destination', asked: { place: 'Goa' }, answer: Promise.resolve(facts('Goa, read early')) } : null;
+    };
+    const tool = ixigoTool({ book, engine: engine as never, live: () => true, card: card as never, cardDelayMs: 0, joined })!;
+    expect(await tool.run({ recipe: 'plan.destination', inputs: { place: 'Goa' } }, turn)).toMatchObject({ title: 'Goa, read early' });
     await tool.run({ recipe: 'plan.destination', inputs: { place: 'Gokarna' } }, turn);
     expect(asked).toEqual([{ recipe: 'plan.destination', inputs: { place: 'Goa' } }, { recipe: 'plan.destination', inputs: { place: 'Gokarna' } }]);
-    expect(keys[0]).toBe('early:m_7|plan.destination');
-    expect(keys[1]).toBe(`${turn.turnId ?? ''}|plan.destination|${JSON.stringify({ place: 'Gokarna' })}`);
+    // The early read's answer, with no second read and no second card; Gokarna is a read of its own, on its own card.
+    expect(runs).toEqual(['Gokarna']);
+    expect(keys).toEqual([`${turn.turnId ?? ''}|plan.destination|${JSON.stringify({ place: 'Gokarna' })}`]);
+  });
+
+  // Exam, 10 Oct (#4, #20): the early read had the bank, the call added the product, and the page was read twice.
+  describe('a call that only narrows the early read', () => {
+    // offers.list's filters narrow one list (p4 marks them in the recipe): set here, on the real recipe.
+    const narrowed = { all: () => book.all().map((r) => (r.id === 'offers.list' ? { ...r, inputs: Object.fromEntries(Object.entries(r.inputs).map(([k, v]) => [k, { ...v, narrows: true }])) } : r)) };
+    const list = { as: 'facts' as const, title: 'Offers on ixigo now', rows: [{ offer: 'Flat 12% off', bank: 'ICICI Bank', for: 'flights' }], page: 'https://www.ixigo.com/offers', checkedAt: '2026-10-10T13:01:55.000Z', ms: 2038 };
+    const early = { runKey: 'early:m_20|offers.list', asked: { bank: 'ICICI Bank' }, answer: Promise.resolve(list) };
+
+    it('takes its answer, and says what to keep', async () => {
+      const runs: unknown[] = [];
+      const engine = {
+        answer: async (...a: unknown[]) => {
+          runs.push(a);
+          return list;
+        },
+      };
+      const tool = ixigoTool({ book: narrowed, engine: engine as never, live: () => true, joined: () => early })!;
+      const out = await tool.run({ recipe: 'offers.list', inputs: { bank: 'ICICI Bank', product: 'flights' } }, turn);
+      expect(runs).toEqual([]);
+      expect(out).toMatchObject({ facts: list.rows, note: 'Read for {"bank":"ICICI Bank"}: keep only what fits product flights.' });
+    });
+
+    it('reads again when the early read failed, or when what the call adds is not a filter', async () => {
+      const runs: Array<Record<string, unknown>> = [];
+      const engine = {
+        answer: async (_id: string, given: Record<string, unknown>) => {
+          runs.push(given);
+          return list;
+        },
+      };
+      const failed = { ...early, answer: Promise.reject(new TravelError('unreachable', 'the page did not load')) };
+      failed.answer.catch(() => undefined);
+      const tool = ixigoTool({ book: narrowed, engine: engine as never, live: () => true, joined: () => failed })!;
+      expect(await tool.run({ recipe: 'offers.list', inputs: { bank: 'ICICI Bank' } }, turn)).not.toHaveProperty('note');
+      // Unmarked, as in the book today: the call's own read.
+      const plain = ixigoTool({ book, engine: engine as never, live: () => true, joined: () => early })!;
+      await plain.run({ recipe: 'offers.list', inputs: { bank: 'ICICI Bank', product: 'flights' } }, turn);
+      expect(runs).toEqual([{ bank: 'ICICI Bank' }, { bank: 'ICICI Bank', product: 'flights' }]);
+    });
   });
 
   it('describes the book in one short line a recipe, the same bytes on every turn, so it stays cheap as the book grows', () => {

@@ -5,7 +5,7 @@ import { FakeSwitches } from '../../../tasks/testing/lane-brain.js';
 import { goaPack } from '../../../tasks/testing/goa.js';
 import { TravelError } from '../../mcp-travel.js';
 import type { Travel, TravelKind, TravelQuery } from '../../travel.js';
-import { createEarlyStart } from '../early.js';
+import { createEarlyStart, TERMS_MAX } from '../early.js';
 
 function world(mode = 'ixigo_web', fail = false) {
   const searches: Array<{ kind: TravelKind; q: TravelQuery; tripId: string | undefined }> = [];
@@ -315,5 +315,81 @@ describe('the early start of an ixigo read beyond the searches', () => {
     expect(status).toMatchObject({ tripId: 't_goa', recipe: 'trains.running_status', err: expect.any(TravelError) });
     expect(pnr).toEqual({ tripId: 't_goa', recipe: 'trains.pnr_status' });
     expect(w.early.readFor('t_goa', 'm_71')!.asked).toEqual({});
+  });
+});
+
+// Exam, 10 Oct (#4, #20): the early read of an offers ask had no bank, the turn's call with one read the page again, and
+// "the ICICI offer" came back with no code, no minimum and no days.
+describe('the early start of an offers ask', () => {
+  const offer = (n: number, bank: string) => ({ offer: `Offer ${n}`, code: `CODE${n}`, bank, for: 'flights', until: '31 Dec 2026', details: `offer_${n}` });
+  const list = {
+    as: 'facts' as const, title: 'Offers on ixigo now', page: 'https://www.ixigo.com/offers/tag/flight-offers', checkedAt: '2026-10-10T13:01:55.000Z', ms: 2038,
+    rows: [{ offers_on_ixigo: 71 }, offer(1, 'ICICI Bank'), offer(2, 'HDFC Bank'), offer(3, 'ICICI Bank'), offer(4, 'ICICI Bank'), offer(5, 'ICICI Bank')],
+  };
+  const terms = (slug: string) => ({
+    as: 'facts' as const, title: slug, page: `https://www.ixigo.com/offers/${slug}`, checkedAt: '2026-10-10T13:01:56.000Z', ms: 200,
+    rows: [{ offer: slug, code: slug.toUpperCase(), min_booking: '₹5,000', max_off: '₹2,000', valid_on: 'Friday, Saturday, Sunday', terms: ['a long line'], about: ['more'] }],
+  });
+  function world(o: { failTerms?: string } = {}) {
+    const switches = new FakeSwitches();
+    void switches.set('TRAVEL_MODE', 'ixigo_web');
+    const runs: Array<{ id: string; given: Record<string, unknown> }> = [];
+    const reads: string[] = [];
+    const early = createEarlyStart({
+      travel: () => ({ search: vi.fn() }) as unknown as Travel, switches, today: async () => '2026-10-10', now: () => new Date('2026-10-10T13:01:51Z'), log: { warn: vi.fn() },
+      recipes: {
+        has: (id) => ['offers.list', 'offers.details', 'trains.offers'].includes(id),
+        run: async (id, given) => {
+          runs.push({ id, given });
+          return list;
+        },
+        read: async (id, given) => {
+          const slug = String(given['offer']);
+          reads.push(`${id} ${slug}`);
+          if (slug === o.failTerms) throw new TravelError('unreachable', 'the page did not load');
+          return terms(slug);
+        },
+      },
+    });
+    return { early, runs, reads };
+  }
+  const offers: ReflexRead = { ...UNSURE_READ, forGo: { value: true, sure: true }, recipe: { value: 'offers' as never, sure: true } };
+
+  it("reads the bank and the product from the words, so the turn's call is this read", async () => {
+    const w = world();
+    await w.early.onRead(msg(20, 'p_rahul', '@Go any ICICI offer on flights for this trip?'), offers, goaPack());
+    expect(w.runs).toEqual([{ id: 'offers.list', given: { product: 'flights', bank: 'ICICI Bank' } }]);
+    const read = w.early.joined('t_goa', ['m_20'], 'offers.list', { bank: 'icici bank', product: 'flights', journey: 'domestic' });
+    expect(read?.runKey).toBe('early:m_20|offers.list');
+    // The call without the bank is a wider ask: not this read.
+    expect(w.early.joined('t_goa', ['m_20'], 'offers.list', { product: 'flights' })).toBeNull();
+  });
+
+  it("reads the terms of the offers that fit the bank, at most a few, and puts their code, minimum, most off and days on each", async () => {
+    const w = world();
+    await w.early.onRead(msg(20, 'p_rahul', '@Go any ICICI offer on flights for this trip?'), offers, goaPack());
+    const got = await w.early.readFor('t_goa', 'm_20')!.answer;
+    expect(w.reads).toEqual(['offers.details offer_1', 'offers.details offer_3', 'offers.details offer_4']);
+    expect(TERMS_MAX).toBe(3);
+    if (got.as !== 'facts') throw new Error('facts');
+    expect(got.rows[1]).toEqual({ ...offer(1, 'ICICI Bank'), code: 'OFFER_1', min_booking: '₹5,000', max_off: '₹2,000', valid_on: 'Friday, Saturday, Sunday' });
+    // Never the terms' long text, and the HDFC offer and those past the few stay as listed.
+    expect(got.rows[1]).not.toHaveProperty('terms');
+    expect(got.rows[2]).toEqual(offer(2, 'HDFC Bank'));
+    expect(got.rows[5]).toEqual(offer(5, 'ICICI Bank'));
+  });
+
+  it('keeps an offer as listed when its terms page does not load, and reads no terms when no bank is named', async () => {
+    const failing = world({ failTerms: 'offer_3' });
+    await failing.early.onRead(msg(21, 'p_rahul', '@Go ICICI card offers?'), offers, goaPack());
+    const got = await failing.early.readFor('t_goa', 'm_21')!.answer;
+    if (got.as !== 'facts') throw new Error('facts');
+    expect(got.rows[3]).toEqual(offer(3, 'ICICI Bank'));
+    expect(got.rows[1]).toMatchObject({ min_booking: '₹5,000' });
+    const plain = world();
+    await plain.early.onRead(msg(22, 'p_rahul', '@Go any offers this weekend?'), offers, goaPack());
+    expect(plain.runs).toEqual([{ id: 'offers.list', given: {} }]);
+    await plain.early.readFor('t_goa', 'm_22')!.answer;
+    expect(plain.reads).toEqual([]);
   });
 });
