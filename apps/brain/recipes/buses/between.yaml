@@ -15,6 +15,14 @@ page: /buses/bus_search/{from.name}/{from.id}/{to.name}/{to.id}/{date|DD-MM-YYYY
 # which Bash's browser fetch gives each fetch.
 capture:
   - /buslist/v3/services$
+# What the group watches on the stage: the buses come in, a scroll brings their cards (operator, bus type, times, fare,
+# seats left) on screen, and the last picture waits for them to be drawn.
+fetch:
+  - when: "true"
+    steps:
+      - { op: wait_for, match: /buslist/v3/services$ }
+      - { op: scroll, times: 1 }
+    settle_ms: 550
 read:
   rows: { from: /buslist/v3/services$, list: services }
 answer:
