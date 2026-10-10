@@ -44,7 +44,7 @@ let:
 # link that stands in for this one when ixigo refuses our boxes' shared address (403 or 429 under a burst, 9 Oct).
 page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children=0&infants=0&class=e&source=Search%20Form&{$params|raw}
 capture:
-  - { match: /flights/v2/search/stream, max_bytes: 1000000 }
+  - { match: /flights/v2/search/stream, max_bytes: 1048576 }
 read:
   rows: { from: /flights/v2/search/stream, format: sse, list: data.flightJourneys.flightFare, unique: flightKeys }
   also:

@@ -375,12 +375,27 @@ describe('flights.results', () => {
     expect(JSON.stringify(said)).not.toContain('flightJourneys');
   });
 
+  it('reads a stream whose one event comes split over several data lines, as the stream format allows', async () => {
+    const body = fixture('flights-del-goi-2026-11-13.sse');
+    // The same event, its value written over many lines, each a data line of its own.
+    const value: unknown = JSON.parse(body.trim().slice('data:'.length));
+    const split = `${JSON.stringify(value, null, 1).split('\n').map((l) => `data:${l}`).join('\n')}\n\n`;
+    const { engine } = engineWith(() => [capture(STREAM, STREAM_URL, split)]);
+    const got = await engine.answer('flights.results', GIVEN, { tripId: 't_split' });
+    expect(got.as === 'options' && got.options.map((o) => o.title)).toEqual(['Air-India Express IX1196', 'IndiGo 6E328 + 6E5106', 'Air-India Express IX1108', 'IndiGo 6E5341']);
+    // And two events, each one value on its own line, read as two.
+    const { engine: two } = engineWith(() => [capture(STREAM, STREAM_URL, `${body.trim()}\n\n${body.trim()}\n\n`)]);
+    const both = await two.answer('flights.results', GIVEN, { tripId: 't_two' });
+    expect(both.as === 'options' && both.options).toHaveLength(4);
+  });
+
   it("reads the flights from ixigo's stream: each one's airline and numbers, its fare per person, its times and stops", async () => {
     const { engine, runs } = engineWith(() => [capture(STREAM, STREAM_URL, fixture('flights-del-goi-2026-11-13.sse'))]);
     const got = await engine.answer('flights.results', GIVEN, { tripId: 't_goa' });
     if (got.as !== 'options') throw new Error(got.as);
     expect(runs[0]!.url).toContain('/search/result/flight?from=DEL&to=GOI&date=13112026&');
-    expect(runs[0]!.plan.capture).toEqual([{ match: STREAM, required: true, max_bytes: 1_000_000 }]);
+    // Bash's most a capture keeps (1 MB): a long route's stream is never cut short of it.
+    expect(runs[0]!.plan.capture).toEqual([{ match: STREAM, required: true, max_bytes: 1_048_576 }]);
     expect(got.options.map((o) => o.title)).toEqual(['Air-India Express IX1196', 'IndiGo 6E328 + 6E5106', 'Air-India Express IX1108', 'IndiGo 6E5341']);
     expect(got.options[0]).toMatchObject({
       kind: 'flight', priceMinor: 863_000, currency: 'INR', priceNote: 'per person',
