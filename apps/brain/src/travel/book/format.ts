@@ -44,12 +44,16 @@ export const Capture = z.union([z.string().min(1).transform((match) => CaptureOb
 /**
  * optional: a control that may not be there (a popup shown once a day), skipped instead of failing. within_ms: an optional
  * click looks that long for one that shows a moment after the page (Bash's browser fetch; a Bash that predates it looks
- * once, runners.ts).
+ * once, runners.ts). nth: which match, from 1, in the page's order. near_text: the first match after a text, or after up
+ * to four texts found in turn within one card (a bus's "Select Seats" after its operator and its time). Both need bash
+ * #4637: a Bash before it refuses the fetch, and Go never sends them as a plain click (runners.ts NearUnsupportedError).
  */
 const Step = z.union([
   z.object({
     op: z.literal('click'), role: z.string().optional(), name: z.string().optional(), text: z.string().optional(), optional: z.boolean().optional(),
     within_ms: z.int().min(1).max(10_000).optional(),
+    nth: z.int().min(1).max(50).optional(),
+    near_text: z.union([z.string().min(1), z.array(z.string().min(1)).min(1).max(4)]).optional(),
   }),
   /** Into the box with that role and name, or, with neither, into the box that has the focus (ixigo's flight From box). */
   z.object({ op: z.literal('type'), role: z.string().optional(), name: z.string().optional(), text: z.string().min(1), submit: z.boolean().optional(), optional: z.boolean().optional() }),
