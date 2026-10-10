@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { FAST_CHOICES } from '../../../reflex/questions.js';
+import { LIVE_RECIPES } from '../../../reflex/live-gate.js';
+import { FAST_CHOICES, isSearchChoice, type FastChoice } from '../../../reflex/questions.js';
+import { loadBook } from '../../book/book.js';
+import { toolRecipes } from '../../book/tool.js';
 import { classIn, coachIn, FAST_ASKS, flightIn, pnrIn, readFastAsk, trainNumberIn, type FastContext } from '../fast.js';
 import { pickOption } from '../option-on-card.js';
 
@@ -87,6 +90,28 @@ describe('the slots of an ixigo ask beyond the searches', () => {
     expect(read('coach_position', 'Go how many coaches does 10103 have?')?.given).toEqual({ train: '10103' });
     expect(read('boarding_stations', 'Go 12779 mein Thivim se chadh sakte hain kya?')?.given).toEqual({ train: '12779', station: 'thivim' });
     expect(read('boarding_stations', 'Go what are the boarding stations for the Konkan Kanya Express?')).toBeNull();
+  });
+
+  it("runs only recipes the ixigo tool offers, for every choice that acts live", () => {
+    const offered = new Set(toolRecipes(loadBook().book).map((r) => r.id));
+    const option = { ref: 'r_ab12#2', page: 'https://www.ixigo.com/hotels/palm-grove/details?x=1' };
+    // Each live choice's asks, every recipe each can run.
+    const asks: Partial<Record<FastChoice, Array<[string, Partial<FastContext>?]>>> = {
+      train_status: [['Go 12051 abhi kahan chal rahi hai?']],
+      schedule: [['Go 10103 kaun kaun se station pe rukti hai?']],
+      confirm_chance: [['Go Mumbai se Madgaon 5 Nov, 3A ka WL 18 hai, confirm hoga kya?']],
+      guide: [['Go yahan kya kya dekhne layak hai?']],
+      offers: [['Go train booking pe offer hai kya?'], ['Go bus pe offer?'], ['Go hotels pe card offer?'], ['Go koi offer hai kya?']],
+      hotel_rooms: [['Go does the second one have free cancellation?', { option }]],
+      hotel_reviews: [['Go Palm Grove ke reviews kaise hain?', { option }]],
+    };
+    for (const choice of LIVE_RECIPES.filter((c): c is FastChoice => !isSearchChoice(c))) {
+      expect(asks[choice], choice).toBeDefined();
+      for (const [text, more] of asks[choice]!) {
+        const ask = read(choice, text, more ?? {});
+        expect(ask && offered.has(ask.recipe), `${choice}: ${ask?.recipe}`).toBe(true);
+      }
+    }
   });
 
   it('never reads a watch the group asks for as a read now', () => {
