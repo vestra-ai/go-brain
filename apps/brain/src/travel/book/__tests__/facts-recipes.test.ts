@@ -205,6 +205,20 @@ describe("a stay's own page", () => {
   });
 });
 
+describe("a recipe's id called as a tool", () => {
+  it('is pointed at the ixigo tool with the recipe and its inputs (10 Oct drill: hotels.rooms_placeholder)', () => {
+    const { engine } = engineWith(() => []);
+    const results = { get: async () => null } as unknown as Pick<ResultsStore, 'get'>;
+    const tool = ixigoTool({ book, engine, results, live: () => true })!;
+    expect(tool.description).toContain("Each id is a value of this tool's recipe field, never a tool of its own");
+    for (const name of ['hotels.rooms_placeholder', 'hotels.rooms', 'hotels_rooms']) {
+      expect(tool.misnamed?.(name), name).toContain('hotels.rooms is a recipe of the ixigo tool. Call ixigo with {"recipe": "hotels.rooms", "inputs": {"hotel":');
+    }
+    expect(tool.misnamed?.('search_stays')).toBeUndefined();
+    expect(tool.misnamed?.('hotels')).toBeUndefined();
+  });
+});
+
 describe('a stay from search results', () => {
   it("takes the stay as an option of the trip's results: the tool opens that option's own page", async () => {
     const { engine, runs } = engineWith(() => [capture('/x', `${HOTEL_API}/accommodations/reviews/aiReviews/37957`, sample('hotels.reviews.json'))]);
