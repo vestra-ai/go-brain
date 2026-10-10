@@ -72,7 +72,7 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
     `offer a vote. ${CHIME_RULES} ` +
     "Someone saying what they'd like for the trip (a place, food, a vibe) gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
     "what is the friends' to settle unless the record already says, and the App gives anyone asking what they missed " +
-    'their own catch-up. Call stay_silent only for pure banter or an acknowledgement ("haha", "ok", "see you"), a side ' +
+    'their own catch-up. Call stay_silent only for pure banter, a greeting or an acknowledgement ("haha", "good morning", "ok", "see you"), a side ' +
     'conversation not about the trip, something a person already answered, or when your last message has had no reply ' +
     'from a person since: never two messages in a row.'
   );
