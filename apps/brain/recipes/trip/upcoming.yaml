@@ -6,21 +6,42 @@ asks:
   - is our goa train booked yet
   - flight book ho gayi kya
 inputs:
-  product: { kind: choice, optional: true, about: "train, flight, hotel, bus or cab: only those bookings; all of them when not given" }
+  product: { kind: choice, optional: true, about: "train, flight, hotel, bus or cab: only those bookings; all of the trip's when not given" }
+  # The trip's own days (or its place, before it has days), so only this trip's bookings are said in its room, never the
+  # account's other trips.
+  place: { kind: text, optional: true, value: $trip.destination }
+  first_day: { kind: date, optional: true, value: $trip.start }
+  last_day: { kind: date, optional: true, value: $trip.end }
+  today: { kind: date, optional: true, value: $trip.today }
 auth: login
 changes_state: false
 # ixigo's My Trips (/account/trips) on the trip's logged-in account: its Upcoming tab's call, as the page makes it
 # (the atlas, 10 Oct, from the page's own code: the account had no upcoming booking that day, so the live answer is still
 # to be proven on a real one). Only what the group needs is read: the product, the trip's title, its start as ixigo
 # writes it, the next city, how many travel, the status and ixigo's own flags. Never the PNR, a booking or order id, or
-# a traveller's name: they are not read, so never kept, logged or said.
+# a traveller's name: they are not read, so never kept, logged or said. Only this trip's bookings: those starting from
+# two days before its first day to three after its last; before it has days, those naming its place (the trip's title
+# or the next city) from today on; none for a trip with neither. The account's other trips never reach this room.
 page: /account/trips
 capture:
   - /api/profile/secure/booking/grouped
 read:
   rows:
     from: /api/profile/secure/booking/grouped
-    list: 'data.userBookings[$inputs.product ? $lowercase(product) = $lowercase($inputs.product) : true]'
+    list: |
+      (
+        $day := 86400000;
+        $ms := function($v) { $type($v) = "number" ? ($v < 100000000000 ? $v * 1000 : $v) : ($type($v) = "string" and $contains($v, /^\d{4}-\d{2}-\d{2}/) ? $toMillis($substring($v, 0, 10))) };
+        $place := $inputs.place ? $lowercase($trim($inputs.place)) : "";
+        $dated := $inputs.first_day ? true : false;
+        $from := $dated ? $toMillis($inputs.first_day) - 2 * $day : ($inputs.today ? $toMillis($inputs.today) - $day);
+        $until := $dated ? ($inputs.last_day ? $toMillis($inputs.last_day) : $toMillis($inputs.first_day)) + 4 * $day;
+        $names := function($b) { [$b.metadata.trip_title, $b.metadata.next_city][$type($) = "string" and $length($trim($)) > 2].$lowercase($trim($)) };
+        $here := function($b) { $place != "" and $count($names($b)[$contains($, $place) or $contains($place, $)]) > 0 };
+        $onDays := function($b) {( $w := $ms($b.activityStartTime); $type($w) = "number" and $type($from) = "number" and $w >= $from and ($not($exists($until)) or $w <= $until) )};
+        $asked := function($b) { $inputs.product ? $lowercase($b.product) = $lowercase($inputs.product) : true };
+        [data.userBookings[$onDays($) and ($dated or $here($)) and $asked($)]]
+      )
 answer:
   as: facts
   title: Upcoming bookings
