@@ -96,7 +96,7 @@ function booking(runner: RecipeRunner, on = true, ticketPay: TicketPay | null = 
   void lb.switches.set('FLIGHT_BOOKING', on ? 'on' : 'off');
   void lb.switches.set('TRAVEL_MODE', 'ixigo_web');
   return createFlightBooking({
-    pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, ticketPay: () => ticketPay,
+    pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, pay: () => ticketPay ?? undefined,
     nameOf: async (_trip, personId) => ({ p_rahul: 'Rahul' } as Record<string, string>)[personId] ?? 'Someone',
   });
 }

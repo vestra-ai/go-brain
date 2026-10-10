@@ -7,7 +7,7 @@ import type { RegisterLane } from '../app.js';
 import { loadBook } from './book/book.js';
 import { createEngine } from './book/engine.js';
 import { ixigoTool, runOnStage, toolRecipes } from './book/tool.js';
-import { createFlightBooking, type TicketPay } from './booking/flight-booking.js';
+import { createFlightBooking } from './booking/flight-booking.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
@@ -290,8 +290,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     (await brain.packs.get(tripId)).trip.people.find((p) => p.person_id === personId)?.name ?? 'you';
   const booking = createFlightBooking({
     pool: brain.pool, nameOf, runner: () => brain.recipeRunners?.browserFetch ?? null, link: brain.door.link, switches: brain.switches, now: brain.now, log: brain.log,
-    // Money registers after travel; its ticket payment (requestTicketApproval) is read when Pay is tapped.
-    ticketPay: () => (brain.pay && 'requestTicketApproval' in brain.pay ? (brain.pay as unknown as TicketPay) : null),
+    // Money registers after travel: its Pay is read when Pay is tapped.
+    pay: () => brain.pay,
   });
   registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf });
   // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
