@@ -45,6 +45,20 @@ function room(o: { delayMs?: number; hang?: boolean; failPost?: boolean } = {}) 
 const FLIGHTS = { kind: 'flights' as const, query: { from: 'Delhi', to: 'Goa', date: '2026-11-06', departAfter: '18:00', mustHave: ['non_stop' as const] } };
 
 describe('the live search card', () => {
+  // Keshav's live test, 10 Oct: "DIDN'T WORK · Searching flights on ixigo" over the link card that answered the group.
+  it('ends calm and done when the search answered another way, saying how: never "Didn\'t work"', async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_answered', ...FLIGHTS });
+    live.progress({ type: 'answered', text: "Here's ixigo's page, set for 3 from Delhi" });
+    await live.finish(true);
+    expect(r.cards().at(-1)).toMatchObject({
+      state: 'done',
+      steps: [{ text: 'Opened ixigo flights', state: 'done' }, { text: "Here's ixigo's page, set for 3 from Delhi", state: 'done' }],
+      fallback_text: "Here's ixigo's page, set for 3 from Delhi.",
+    });
+    expect(r.cards().some((c) => c.state === 'failed')).toBe(false);
+  });
+
   // Staging, 10 Oct: the early plain read said "On it." at 2 s, and the model's search with ixigo's filters said it again at 12 s.
   it('says "On it." once an ask: a second card in the trip within a minute goes up with no words, and a later ask says it again', async () => {
     const r = room();

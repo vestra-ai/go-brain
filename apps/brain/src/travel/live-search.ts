@@ -243,6 +243,17 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: 
       case 'failed':
         settle(false);
         return;
+      case 'answered': {
+        // Answered another way: calm and done, the page opened and how the group got its answer, never "Didn't work"
+        // (Keshav's live test, 10 Oct: "DIDN'T WORK · Searching flights on ixigo" over the link card that answered).
+        const before = card.steps.slice(0, Math.max(0, card.steps.length - 3)).map((st) => ({ ...st, state: 'done' as const }));
+        card.steps = [...before, { text: `Opened ixigo ${noun}`, state: 'done' }, { text: clip(e.text, 80), state: 'done' }];
+        card.state = 'done';
+        card.fallback_text = clip(`${e.text}.`, 200);
+        ended = true;
+        push();
+        return;
+      }
     }
   }
 

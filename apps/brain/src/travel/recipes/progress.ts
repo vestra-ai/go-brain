@@ -28,6 +28,11 @@ export type RecipeProgress =
   /** A person has the trip's browser (ixigo's login open on Go's screen): the read waits, and runs once it is free. */
   | { type: 'waiting' }
   /** The run failed with this TravelError code. */
-  | { type: 'failed'; code: string };
+  | { type: 'failed'; code: string }
+  /**
+   * The read didn't answer, and the search answered another way (ixigo's own page, Go's earlier read): the card ends done,
+   * saying how ("Here's ixigo's page, set for 3 from Delhi").
+   */
+  | { type: 'answered'; text: string };
 
 export type OnProgress = (e: RecipeProgress) => void;
