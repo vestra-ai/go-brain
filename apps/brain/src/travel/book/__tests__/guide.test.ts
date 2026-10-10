@@ -240,8 +240,15 @@ describe('the ixigo tool', () => {
 
   // Exam, 10 Oct (#4, #20): the early read had the bank, the call added the product, and the page was read twice.
   describe('a call that only narrows the early read', () => {
-    // offers.list's filters narrow one list (p4 marks them in the recipe): set here, on the real recipe.
-    const narrowed = { all: () => book.all().map((r) => (r.id === 'offers.list' ? { ...r, inputs: Object.fromEntries(Object.entries(r.inputs).map(([k, v]) => [k, { ...v, narrows: true }])) } : r)) };
+    // offers.list's filters narrow one list, as the recipe marks them; unmarked, the call's own read (a filter the page
+    // doesn't keep on one list).
+    const marked = (narrows: boolean) => ({ all: () => book.all().map((r) => (r.id === 'offers.list' ? { ...r, inputs: Object.fromEntries(Object.entries(r.inputs).map(([k, v]) => [k, { ...v, narrows }])) } : r)) });
+    const narrowed = marked(true);
+
+    it('is how the recipe marks its bank, product and journey', () => {
+      const inputs = book.all().find((r) => r.id === 'offers.list')!.inputs;
+      expect(['bank', 'product', 'journey'].map((k) => inputs[k]?.narrows)).toEqual([true, true, true]);
+    });
     const list = { as: 'facts' as const, title: 'Offers on ixigo now', rows: [{ offer: 'Flat 12% off', bank: 'ICICI Bank', for: 'flights' }], page: 'https://www.ixigo.com/offers', checkedAt: '2026-10-10T13:01:55.000Z', ms: 2038 };
     const early = { runKey: 'early:m_20|offers.list', asked: { bank: 'ICICI Bank' }, answer: Promise.resolve(list) };
 
@@ -271,8 +278,8 @@ describe('the ixigo tool', () => {
       failed.answer.catch(() => undefined);
       const tool = ixigoTool({ book: narrowed, engine: engine as never, live: () => true, joined: () => failed })!;
       expect(await tool.run({ recipe: 'offers.list', inputs: { bank: 'ICICI Bank' } }, turn)).not.toHaveProperty('note');
-      // Unmarked, as in the book today: the call's own read.
-      const plain = ixigoTool({ book, engine: engine as never, live: () => true, joined: () => early })!;
+      // Unmarked: the call's own read.
+      const plain = ixigoTool({ book: marked(false), engine: engine as never, live: () => true, joined: () => early })!;
       await plain.run({ recipe: 'offers.list', inputs: { bank: 'ICICI Bank', product: 'flights' } }, turn);
       expect(runs).toEqual([{ bank: 'ICICI Bank' }, { bank: 'ICICI Bank', product: 'flights' }]);
     });

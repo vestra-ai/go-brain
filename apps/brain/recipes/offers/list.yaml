@@ -7,10 +7,12 @@ asks:
   - any hotel offers for an international trip
   - koi offer chal raha hai kya
   - HDFC card pe flight ka koi offer hai kya
+# Each one filters the same list on the page (narrows): a read without them holds the answer, and the ixigo tool takes
+# an early read of the same message instead of a new run (p5's #407).
 inputs:
-  product: { kind: choice, optional: true, about: "flights, hotels or trains: the offers page's own tabs (bus offers are buses.offers)" }
-  journey: { kind: choice, optional: true, about: "domestic or international: the page's own Journey Type buttons" }
-  bank: { kind: text, optional: true, about: "a bank, card or way to pay someone has, as the page's bank list names it, such as HDFC Bank, AU Bank, ICICI Bank, UPI or CRED" }
+  product: { kind: choice, optional: true, narrows: true, about: "flights, hotels or trains: the offers page's own tabs (bus offers are buses.offers)" }
+  journey: { kind: choice, optional: true, narrows: true, about: "domestic or international: the page's own Journey Type buttons" }
+  bank: { kind: text, optional: true, narrows: true, about: "a bank, card or way to pay someone has, as the page's bank list names it, such as HDFC Bank, AU Bank, ICICI Bank, UPI or CRED" }
 auth: none
 changes_state: false
 # The offers page has a tab a product (Flights, Trains, Hotels), Journey Type buttons ("Domestic 50 Offers",
