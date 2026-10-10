@@ -18,6 +18,8 @@ let door: DoorImpl;
 let link: ServerLinkImpl;
 let base: string;
 const events: unknown[] = [];
+/** The meta each get_person was handed, by the person asked about. */
+const metas = new Map<string, unknown>();
 // A lane's own socket (P6's media stream works the same way): it answers each frame and records the path it was opened on.
 // It answers rather than greeting, because a greeting sent at once can arrive before the test's listener is attached.
 const laneWss = new WebSocketServer({ noServer: true });
@@ -41,7 +43,8 @@ beforeAll(async () => {
     events.push(ev);
     return { accepted: true, duplicate: false };
   });
-  door.handle('get_person', async (p) => {
+  door.handle('get_person', async (p, meta) => {
+    metas.set(p.person_id, meta);
     if (p.person_id === 'p_slow') await new Promise((r) => setTimeout(r, 2_500));
     return { person_id: p.person_id, carry_over: false, facts: [] };
   });
@@ -113,6 +116,18 @@ describe('the door', () => {
 
   it('checks the exact path and query that were signed', async () => {
     expect(await tryOpen(`${base}/v1/socket?instance=other`, signedHeaders('/v1/socket', SECRET))).toMatchObject({ status: 401 });
+  });
+
+  // ?instance= names the replica; ?server=, the same on every replica of one Server, keys a person's browser.
+  it("hands each request the socket's instance, and the Server's own name when the socket gives one", async () => {
+    const named = await rawServer(`${base}/v1/socket?instance=named-${++n}&server=vestra-staging`, SECRET);
+    await named.call('get_person', { person_id: 'p_meta_named' });
+    expect(metas.get('p_meta_named')).toEqual({ instance: `named-${n}`, server: 'vestra-staging', frameId: expect.any(String) });
+    await named.close();
+    const plain = await connect();
+    await plain.call('get_person', { person_id: 'p_meta_plain' });
+    expect(metas.get('p_meta_plain')).toEqual({ instance: `test-${n}`, frameId: expect.any(String) });
+    await plain.close();
   });
 
   it('closes a socket that stays silent for the idle time', async () => {

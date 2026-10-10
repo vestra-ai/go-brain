@@ -22,7 +22,7 @@ afterAll(() => db.drop());
 const sure = <T>(value: T) => ({ value, sure: true as const });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers; failFirstPut?: boolean; dueNow?: (text: string | null | undefined) => boolean } = {}) {
+function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers; failFirstPut?: boolean; dueNow?: (text: string | null | undefined) => boolean; away?: (tripId: string) => Promise<boolean> } = {}) {
   const now = () => new Date();
   const order: string[] = [];
   const f = fakeLink({
@@ -72,7 +72,7 @@ function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswer
   const reflex: Reflex = o.reflex?.(order) ?? { read: async () => { order.push('reflex'); return UNSURE_READ; } };
   const intake = createIntake({
     pool: db.pool, log: silentLog, now, tripLog, packs, setup, desk: flakyDesk, speak, hooks,
-    reflex: () => reflex, runningTasks: async () => [], waitMs: 2_000,
+    reflex: () => reflex, runningTasks: async () => [], waitMs: 2_000, ...(o.away ? { away: o.away } : {}),
   });
   const send = (e: TripEvent) => intake.sendEvent(e, { instance: 'test', frameId: `gs_${e.event_id}` });
   return { intake, send, f, order, emitted, packs };
@@ -97,8 +97,14 @@ describe('intake', () => {
     await h.send(created('t_in_inst'));
     await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'see you all there') }, 't_in_inst'), { instance: 'another', frameId: 'gs_other' });
     await h.intake.idle();
-    const { rows } = await db.pool.query<{ server_instance: string }>('select server_instance from trips where trip_id = $1', ['t_in_inst']);
-    expect(rows[0]?.server_instance).toBe('test');
+    const { rows } = await db.pool.query<{ server_instance: string; server_name: string | null }>('select server_instance, server_name from trips where trip_id = $1', ['t_in_inst']);
+    expect(rows[0]).toEqual({ server_instance: 'test', server_name: null });
+    // A Server that gives its own name (?server=) has it kept with the instance, from the trip's first event only.
+    await h.intake.sendEvent(created('t_in_named'), { instance: 'server-1', server: 'vestra-staging', frameId: 'gs_named' });
+    await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'hi') }, 't_in_named'), { instance: 'server-2', server: 'another', frameId: 'gs_named_2' });
+    await h.intake.idle();
+    const named = await db.pool.query('select server_instance, server_name from trips where trip_id = $1', ['t_in_named']);
+    expect(named.rows[0]).toEqual({ server_instance: 'server-1', server_name: 'vestra-staging' });
   });
 
   it('trip.created: the pack comes from the event, setup runs, and Go is due to say hello', async () => {
@@ -528,6 +534,20 @@ describe('intake', () => {
     await h.intake.refreshActive();
     await h.intake.idle();
     expect((await open(T)).some((r) => r.ref === 'm_9' && r.payload.namesGo === true)).toBe(true);
+  });
+
+  it("the minute refresh reads nothing for a trip whose Server has been away for minutes (a closed drill), and reads the rest", async () => {
+    const [away, here] = ['t_in_away', 't_in_here'];
+    const h = harness({ away: async (tripId) => tripId === away });
+    await h.send(created(away));
+    await h.send(created(here));
+    await h.intake.idle();
+    const reads = (tripId: string) => h.f.calls.filter((c) => c.params.trip_id === tripId && (c.method === 'read_trip' || c.method === 'read_messages')).length;
+    const before = [reads(away), reads(here)];
+    await h.intake.refreshActive();
+    await h.intake.idle();
+    expect(reads(away)).toBe(before[0]);
+    expect(reads(here)).toBeGreaterThan(before[1]!);
   });
 
   it('one refresh waits per trip, and a refresh that waited reads nothing for a trip marked gone meanwhile', async () => {

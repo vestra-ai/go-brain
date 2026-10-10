@@ -98,7 +98,7 @@ Each team can build and test its part before the other part is ready, against a 
 ## What done means
 
 **Server (Nishanth's team)**
-- Opens one socket to Go with a fresh signature on every connect (each instance with its own `?instance=` name), keeps it open, and reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds.
+- Opens one socket to Go with a fresh signature on every connect (each instance with its own `instance` name and the deployment's one `server` name, such as `?instance=server-1&server=vestra-staging`), keeps it open, and reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds.
 - Sends an event for every change to a trip with `send_event`, from an outbox, in change-number order per trip, waiting for each answer, with the retry schedule in [Basics](01-basics.md#time-limits-and-retries).
 - Answers all of Go's requests in [Go's requests](04-gos-requests.md) within 2 seconds, checks their params, does each write once per `request_id`, answers `-32601` for a method it does not handle, and shows or hides "Go is typing..." for the `typing` notification. Sends `read_messages` pages under the 1 MB frame limit, with `has_more: true` when it sent fewer.
 - Sends an unanswered request again after reconnecting, with the same JSON-RPC `id`.

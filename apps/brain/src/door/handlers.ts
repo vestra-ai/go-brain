@@ -3,10 +3,19 @@ import type { Duplex } from 'node:stream';
 import type { ToGoMethod, ToGoParams, ToGoResult } from './methods.js';
 import type { ServerLink } from './server-link.js';
 
+/**
+ * The socket a request came on: instance is the replica's own name (?instance=, 'default' when none), server the name
+ * every replica of one Server shares (?server=), absent when the Server names none.
+ */
+export interface SocketFrom {
+  instance: string;
+  server?: string;
+}
+
 /** How a lane answers one of the Server's requests. */
 export type ToGoHandler<M extends ToGoMethod> = (
   params: ToGoParams<M>,
-  meta: { instance: string; frameId: string },
+  meta: SocketFrom & { frameId: string },
 ) => Promise<ToGoResult<M>>;
 
 /** Takes over one WebSocket upgrade on Go's port: the handler checks its own auth and finishes (or refuses) the upgrade. */
