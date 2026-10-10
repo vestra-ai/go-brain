@@ -146,13 +146,28 @@ describe('the composer loop', () => {
     expect(ctx.outcome).toMatchObject({ silent: true, reactions: 1 });
   });
 
-  it('stops after 4 rounds, and no request ever carries more than 4 markers', async () => {
+  it('stops after 4 rounds of tools, and no request ever carries more than 4 markers', async () => {
     const { bodies, run } = setup(() => ({ tools: [echoCall('again')] }));
     const r = await run();
-    expect(bodies).toHaveLength(MAX_ROUNDS);
-    expect(r).toMatchObject({ rounds: 4, stopReason: 'max_rounds' });
+    // 4 rounds that may call tools, then the closing round, which may not.
+    expect(bodies).toHaveLength(MAX_ROUNDS + 1);
+    expect(bodies.slice(0, MAX_ROUNDS).every((b) => (b as { tool_choice: { type: string } }).tool_choice.type === 'auto')).toBe(true);
+    expect((bodies[MAX_ROUNDS] as { tool_choice: { type: string } }).tool_choice).toEqual({ type: 'none' });
+    expect(r).toMatchObject({ rounds: MAX_ROUNDS + 1, stopReason: 'max_rounds' });
     for (const b of bodies) expect(markersIn(b)).toBeLessThanOrEqual(4);
     expect(markersIn(bodies[3])).toBe(3);
+  });
+
+  // Staging drill, 10 Oct: a turn that ran out of rounds posted its last round's working ("The message ID format is "",
+  // so I'll use that as the proof."), written before its tool calls. The closing round writes the reply instead.
+  it("never posts the working a tool round wrote: out of rounds, the closing round's words are the reply", async () => {
+    let n = 0;
+    const { run } = setup(() => {
+      n += 1;
+      return n <= MAX_ROUNDS ? { text: 'The message ID format is "", so I\'ll use that as the proof.', tools: [echoCall('again')] } : { text: 'Locked in: about 26k each.' };
+    });
+    const r = await run();
+    expect(r).toMatchObject({ text: 'Locked in: about 26k each.', stopReason: 'max_rounds' });
   });
 
   it('gives bad arguments back to the model to fix', async () => {

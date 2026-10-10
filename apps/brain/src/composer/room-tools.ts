@@ -193,7 +193,15 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     input: OfferRepliesInput,
     async run(a, ctx) {
       ctx.quickReplies = a.replies.map((r) => ({ label: clip(r.label, 40), ...(r.text ? { text: clip(r.text, 200) } : {}) }));
-      return { ok: true, shown: ctx.quickReplies.map((r) => r.label), tell_the_room: 'Ask the question in one short line. The choices show under it as buttons: do not list them.' };
+      // Write the whole message now: words before this call are never shown, and a hello that asked "Which one should I
+      // start with?" alone lost its hello (staging drill, 10 Oct).
+      return {
+        ok: true,
+        shown: ctx.quickReplies.map((r) => r.label),
+        tell_the_room:
+          'Now write your whole message, everything you meant to say (what you wrote before this call is never shown), ' +
+          'ending with the question in one short line. The choices show under it as buttons: do not list them.',
+      };
     },
   };
 
