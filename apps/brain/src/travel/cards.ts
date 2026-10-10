@@ -225,10 +225,13 @@ export function subtitleFor(o: ResultOption): string | null {
 /** photos: the Server team's 10 Oct B3, Go's re-hosted copies, labelled when the source says what each shows (photos.ts). */
 export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null; details?: OptionDetailsT; photos?: C.Photo[] }
 
+/** A stay as its whole price is said: its total, and the nights, rooms and head count ixigo priced it for. */
+type StayPrice = { totalMinor?: number; facts?: ResultOption['facts'] };
+
 /** What a stay's whole price covers: "for 3 nights", "for 3 nights, 2 rooms", or the whole stay when its nights are not known. */
-function stayNote(o: ResultOption): string {
-  const nights = typeof o.facts.nights === 'number' && o.facts.nights > 0 ? o.facts.nights : null;
-  const rooms = typeof o.facts.rooms === 'number' && o.facts.rooms > 1 ? o.facts.rooms : null;
+function stayNote(o: StayPrice): string {
+  const nights = typeof o.facts?.nights === 'number' && o.facts.nights > 0 ? o.facts.nights : null;
+  const rooms = typeof o.facts?.rooms === 'number' && o.facts.rooms > 1 ? o.facts.rooms : null;
   return nights ? `for ${nights} night${nights === 1 ? '' : 's'}${rooms ? `, ${rooms} rooms` : ''}` : 'for the whole stay';
 }
 
@@ -236,18 +239,19 @@ function stayNote(o: ResultOption): string {
  * Each person's share of a stay's whole price to the nearest ₹100, worked out here and never by the model ("about ₹7,700
  * each": the demo's ask was "under 8k a head"). Only with the nights and the head count ixigo priced it for, more than one.
  */
-function shareWords(o: ResultOption): string | null {
-  const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
-  const guests = typeof o.facts.guests === 'number' && o.facts.guests > 1 ? o.facts.guests : null;
+function shareWords(o: StayPrice): string | null {
+  const nights = typeof o.facts?.nights === 'number' ? o.facts.nights : null;
+  const guests = typeof o.facts?.guests === 'number' && o.facts.guests > 1 ? o.facts.guests : null;
   return o.totalMinor !== undefined && nights && guests ? `about ${formatInr(Math.round(o.totalMinor / guests / 10_000) * 10_000)} each` : null;
 }
 
 /**
- * A stays card's "from": its cheapest whole stay, what that covers and each person's share ("from ₹11,178 for 3 nights,
- * 2 rooms, about ₹2,200 each"), never a night's (the exam, 10 Oct: "from ₹621 per night, per room" for five people).
+ * Stays' "from": the cheapest whole stay, what that covers and each person's share ("from ₹11,178 for 3 nights, 2 rooms,
+ * about ₹2,200 each"), never a night's (the exam, 10 Oct: "from ₹621 per night, per room" for five people); nothing when
+ * none has a total. A stays card's fallback and the line Go posts with it (answer.ts answerLine) both say it.
  */
-function stayFrom(picks: CardPick[]): string {
-  const cheapest = picks.map((p) => p.option).filter((o) => o.totalMinor !== undefined).sort((a, b) => (a.totalMinor ?? 0) - (b.totalMinor ?? 0))[0];
+export function stayFrom(stays: ReadonlyArray<StayPrice>): string {
+  const cheapest = stays.filter((o) => o.totalMinor !== undefined).sort((a, b) => (a.totalMinor ?? 0) - (b.totalMinor ?? 0))[0];
   const total = cheapest?.totalMinor;
   if (!cheapest || total === undefined) return '';
   const each = shareWords(cheapest);
@@ -306,7 +310,7 @@ export function buildOptionsCard(i: {
     card_id: i.cardId,
     kind: 'options',
     // A stays card's from is its whole stay and each share; a night's only when none of its stays has a total.
-    fallback_text: clip(`${i.picks.length} ${i.picks.length === 1 ? one : many}: ${i.title}${(i.optionKind === 'stay' ? stayFrom(i.picks) : '') || from}`, 300),
+    fallback_text: clip(`${i.picks.length} ${i.picks.length === 1 ? one : many}: ${i.title}${(i.optionKind === 'stay' ? stayFrom(i.picks.map((p) => p.option)) : '') || from}`, 300),
     title: clip(i.title, 80),
     option_kind: i.optionKind,
     checked_at: i.checkedAt,
