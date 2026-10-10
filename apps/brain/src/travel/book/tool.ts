@@ -11,7 +11,7 @@ import type { QuickTool, TurnCtx } from '../../composer/tools.js';
 import { buildIxigoLinkCard, clip } from '../cards.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveSearch } from '../live-search.js';
-import { CARD_DELAY_MS, SEARCH_RECIPES, shownAfter } from '../recipes/backend.js';
+import { CARD_DELAY_MS, LINK_FALLBACK, SEARCH_RECIPES, shownAfter } from '../recipes/backend.js';
 import type { Book } from './book.js';
 import type { Engine, EngineAnswer } from './engine.js';
 import type { ResultsStore } from '../results.js';
@@ -37,9 +37,9 @@ export interface IxigoToolDeps {
   joinKey?: (ctx: TurnCtx, recipe: string, inputs: Record<string, string | number>) => string | null;
 }
 
-/** The recipes the tool offers: facts or a link, open to anyone, changing nothing; never a search or a lookup. */
+/** The recipes the tool offers: facts or a link, open to anyone, changing nothing; never a search, its link or a lookup. */
 export function toolRecipes(book: Pick<Book, 'all'>): RecipeFile[] {
-  const searches = new Set(Object.values(SEARCH_RECIPES));
+  const searches = new Set([...Object.values(SEARCH_RECIPES), ...Object.values(LINK_FALLBACK)]);
   return book
     .all()
     .filter((r) => !searches.has(r.id) && (r.answer.as === 'facts' || r.answer.as === 'link') && !r.changes_state && r.auth === 'none')
