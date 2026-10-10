@@ -74,6 +74,21 @@ describe('catch_up', () => {
     expect(jev.asked).toHaveLength(0);
   });
 
+  it("never lists a person's own question as Go asking them: it is \"You asked\", whoever the line names (Server team, 10 Oct)", async () => {
+    // The line names its asker as the one asked, and its proof says who wrote it only through the message.
+    const own = [rl({ line_id: 'r_bakery', kind: 'open', text: 'A good bakery near Anjuna?', person_ids: ['p_arjun'], proof: [{ message_id: 'm_0172', person_id: null }], updated_at: '2026-10-05T12:30:00Z' })];
+    const pack = packOf([...messages, msg(172, 'p_arjun', 'is there a good bakery near Anjuna?')], trip('t_c6', own));
+    const handler = catchUpHandler({ pool: db.pool, packs: fakePacks({ t_c6: pack }), jev: jevAnswering({}), log: silentLog });
+    const arjun = await handler({ trip_id: 't_c6', person_id: 'p_arjun', since: '2026-10-05T05:00:00Z' }, meta);
+    expect(arjun.items.filter((i) => i.kind === 'needs_you').map((i) => i.text)).toEqual(['Vote: Beach day on Sunday?']);
+    expect(arjun.items).toContainEqual({ kind: 'open', text: 'You asked: Scuba on Saturday?', message_id: 'm_0149' });
+    expect(arjun.items).toContainEqual({ kind: 'open', text: 'You asked: A good bakery near Anjuna?', message_id: 'm_0172' });
+    expect(arjun.summary).toBe('While you were away, 1 booking went through. 1 thing needs you.');
+    // Asked of someone else, it still needs them: Meher sees Arjun's scuba question as hers to answer.
+    const meher = await handler({ trip_id: 't_c6', person_id: 'p_meher', since: '2026-10-05T05:00:00Z' }, meta);
+    expect(meher.items).toContainEqual({ kind: 'needs_you', text: 'Go is asking you: Scuba on Saturday?', message_id: 'm_0149' });
+  });
+
   it('asks Jev to rank the rest when there is more than fits, and keeps people\'s words out of the questions', async () => {
     const extra = [
       rl({ line_id: 'r_dinner', kind: 'agreed', text: 'Dinner at Thalassa on Saturday', updated_at: '2026-10-05T11:00:00Z' }),
