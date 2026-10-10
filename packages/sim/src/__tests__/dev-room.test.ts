@@ -865,6 +865,8 @@ describe('the login card and its sheet', () => {
     expect(p.room()).not.toContain('data-browse');
     p.tapCard(CARD, 'ixigo_login');
     expect(p.sent()).toEqual([LOGIN_TAP]);
+    // A Go without one tap answers Log in with a toast (one tap answers with the screen: below), and Watch is the card's.
+    p.receive({ type: 'tap_result', cardId: CARD, actionId: 'ixigo_login', personId: 'p_rahul', result: { result: 'done', toast: "Opening ixigo's log in on Go's screen" } });
     // Go turns the card at once; Watch comes once the login page is in front.
     p.messages([loginCard('opening')], 1000);
     const opening = p.room();
