@@ -60,6 +60,12 @@ read:
         $d := $body.props ? $body.props.pageProps.data : $body.data;
         $all := [$d.offers, $more.data.offers];
         $until := function($t) { $t ? $fromMillis($toMillis($t), '[D] [MNn,*-3] [Y]', '+0530') };
+        /* The days an offer works on, as seven 0s and 1s from Sunday ("1000111": Sunday, Thursday, Friday, Saturday). */
+        $validOn := function($r) {
+          $type($r) = "string" and $contains($r, /^[01]{7}$/)
+            ? ($on := [$filter([0..6], function($i) { $substring($r, $i, 1) = "1" })]; $count($on) < 7 and $count($on) > 0 ? $join($map($on, function($i) { ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][$i] }), ", "))
+            : ($type($r) = "array" ? $join($r.$string($), ", ") : $r)
+        };
         /* A bank as both sides write it, "HDFC" or "HDFC Bank", "IDFC FIRST Bank " or "idfc": its own words only. */
         $norm := function($s) { $trim($replace($replace($lowercase($s), /\b(bank|credit cards?|debit cards?|cards?)\b/, ''), /\s+/, ' ')) };
         $want := $bank_words ? $norm($bank_words);
@@ -93,7 +99,7 @@ read:
               "for": product ? $lowercase(product),
               "bank": paymentType ? $trim(paymentType),
               "journey": $lowercase(journeyType),
-              "valid_on": $type(recurringDay) = "array" ? $join(recurringDay.$string($), ", ") : recurringDay,
+              "valid_on": $validOn(recurringDay),
               "until": $until(endDate),
               "details": slug
             }

@@ -116,10 +116,10 @@ describe('the ixigo tool', () => {
 
   it("offers the book's facts recipes, never a search, a lookup or one that changes something", () => {
     expect(toolRecipes(book).map((r) => r.id)).toEqual([
-      'buses.offers', 'flights.fare_calendar', 'help.downtime', 'help.faq', 'help.services',
+      'buses.offers', 'buses.points', 'flights.fare_calendar', 'help.downtime', 'help.faq', 'help.services',
       'hotels.details', 'hotels.offers', 'hotels.reviews', 'hotels.rooms', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list', 'plan.destination', 'plan.explore', 'plan.top_locations',
-      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.by_name', 'trains.coach_position', 'trains.confirm_chance', 'trains.offers',
+      'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.boarding_stations', 'trains.by_name', 'trains.coach_position', 'trains.confirm_chance', 'trains.offers',
       'trains.platform_locator', 'trains.running_status', 'trains.schedule', 'trains.station_status', 'trains.tatkal',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;

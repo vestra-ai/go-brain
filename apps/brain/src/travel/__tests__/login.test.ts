@@ -45,14 +45,18 @@ let trips = 0;
  *  on Cloudflare's check through the runner's tries. statuses: how it loads after, in turn: for "I'm logged in" (its page
  *  loaded again) and for a check in the background. */
 function world(o: {
-  live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged' | 'dead'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
+  /** A Bash that predates desktop hand-offs (front_device): its hand-off opens the phone page however asked. */
+  phoneOnly?: boolean;
+  /** The Server refusing a call of Go's (fakeLink's fail): the old login card's replace, say. */
+  linkFail?: (method: string) => Error | null;
+  live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged' | 'dead' | 'quiet'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
   /** The person's browser (tasks/browsers.ts), shared by every world given the same one: one login for all their trips. */
   browser?: FakeBrowser;
 } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
   const clock = { now: NOW };
-  const link = fakeLink();
+  const link = fakeLink(o.linkFail ? { fail: o.linkFail } : {});
   const base = goaTrip({ trip_id: tripId });
   const trip = goaTrip({ trip_id: tripId, people: base.people.map((p) => ({ ...p, go_paused: o.paused?.includes(p.person_id) ?? false })) });
   const hello = msg({ by: 'go', text: 'Hey all, I am Go.' });
@@ -73,14 +77,15 @@ function world(o: {
       if (s === 'challenged') throw new ChallengedError();
       return { captures: load(s), finalUrl: url };
     },
-    handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string }) => {
+    handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string; device?: 'desktop' }) => {
       handOffs.push({ url, plan, o: ho });
       await hooks.onHandOff?.();
       // "I'm logged in" loads the log in page again: ixigo's answers to it come in turn, as for any later check.
       const s = checking ? (statuses.shift() ?? 'timeout') : (o.opened ?? 403);
       if (s === 'refused') throw new TravelError('refused', 'Bash would not open the page.');
       if (s === 'challenged') return { captures: [], challenged: true as const };
-      return { captures: s === 'timeout' ? [] : load(s) };
+      const device = ho.device === 'desktop' && !o.phoneOnly ? ('desktop' as const) : ('phone' as const);
+      return { captures: s === 'timeout' ? [] : load(s), device };
     },
     release: async (_trip: string, tab: string) => {
       releases.push(tab);
@@ -187,9 +192,11 @@ const greetWake: DeskItem = { id: 'setup:greet', tripId: 't', kind: 'setup', ref
  * answer 200 and it never calls userinfo (08:40); a login it holds that is gone (401, 403), its userinfo call is refused.
  */
 const call = (match: string, status: number): Capture => capture(match, `${IXIGO}${match}`, '{', status);
-function load(s: number | 'dead'): Capture[] {
+function load(s: number | 'dead' | 'quiet'): Capture[] {
   // dead: a token ixigo refuses (the morning box, 9 Oct 17:43): its wallet and with-identity calls both 401.
   if (s === 'dead') return [call(WALLET, 401), call(IDENTITY, 401)];
+  // quiet: the page booted (its content came) and made none of the login's calls (staging, 10 Oct 05:54: logged out).
+  if (s === 'quiet') return [call('/action/content', 200)];
   return s === 200 ? [call(WALLET, 200), call(IDENTITY, 200)] : [call(USERINFO, s)];
 }
 
@@ -351,10 +358,11 @@ describe('logging in', () => {
       timeoutMs: HANDOFF_PAGE_MS,
       graceMs: 3_000,
     });
-    expect(w.handOffs).toEqual([{ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } }]);
+    // ixigo's DESKTOP page (10 Oct): a login made on its phone page is its phone client's, which its desktop pages refuse.
+    expect(w.handOffs).toEqual([{ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' } }]);
     // Then, with Watch on the card, ixigo's own Login and the cursor in its mobile number box, on the page he watches.
     expect(w.tabStepCalls).toEqual([{
-      tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }],
+      tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Log in/Sign up' }, { op: 'click', role: 'textbox', text: 'mobile' }],
       o: { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS }, cardActions: ['ixigo_watch', 'ixigo_logged_in', 'ixigo_not_now'],
     }]);
     expect(await w.state()).toBe('logging_in');
@@ -550,13 +558,13 @@ describe('logging in', () => {
     // makes (with its own token and keys) are what answer: a call of Go's own is 403 even logged in. Their status is read
     // (one byte), the account never is.
     expect(w.handOffs).toHaveLength(2);
-    expect(w.handOffs[1]).toEqual({ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } });
+    expect(w.handOffs[1]).toEqual({ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' } });
     expect(w.reads).toHaveLength(reads);
     // An early tap, still waiting for the code: the window stays in front, its log in box open again for them.
     expect(await w.state()).toBe('logging_in');
     expect(w.releases).toEqual([]);
     expect(w.tabStepCalls).toHaveLength(2);
-    expect(w.tabStepCalls[1]).toMatchObject({ tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }] });
+    expect(w.tabStepCalls[1]).toMatchObject({ tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Log in/Sign up' }, { op: 'click', role: 'textbox', text: 'mobile' }] });
     expect(w.last()).toMatchObject({ tone: 'heads_up', body: 'Not logged in yet. Finish on Watch, then tap again.' });
 
     // ixigo's own calls work (Keshav's Google log in, 9 Oct): logged in, the page closes.
@@ -1121,5 +1129,92 @@ describe('a login someone asks for in the chat', () => {
     expect(asked).toEqual(['p_meher']);
     expect(out).toMatchObject({ note: expect.stringContaining('Go put the login card up for Rahul') });
     expect(ctx.answered).toBe(true);
+  });
+});
+
+// Staging, 10 Oct: his login ended within the hour and Go never heard: a logged-out page read "unknown", and nobody was
+// asked. Now a quiet page counts once a second read agrees, and Go asks its person, once.
+describe("ixigo's login, watched: when it ends, Go asks again", () => {
+  /** A trip logged in on the person's browser, with these answers to ixigo's reads after the login's own. */
+  async function linked(after: Array<number | 'quiet'>) {
+    const browser = fakeBrowser();
+    const w = world({ statuses: [200, ...after], browser });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    return { w, browser, posts: w.link.of('post_message').length };
+  }
+
+  it('reads a page that booted with none of the login calls as quiet: out, but only when a second read agrees', () => {
+    expect(loginFrom([call('/action/content', 200)])).toEqual({ login: 'out', call: null, status: null, quiet: true });
+    // A login call that came, whatever it said, is not quiet; a page that never booted says nothing.
+    expect(loginFrom([call('/action/content', 200), call(WALLET, 500)]).login).toBe('unknown');
+    expect(loginFrom([]).login).toBe('unknown');
+  });
+
+  it("asks nothing on the keep-alive's quiet read; its confirming read ends the login, and its person is asked once", async () => {
+    const { w, browser, posts } = await linked(['quiet', 'quiet']);
+    expect(await w.login.keepAlive(w.tripId)).toBe('quiet');
+    // One quiet read flips nothing: the browser and the trip stand.
+    expect(browser.state?.login).toBe('in');
+    expect(await w.state()).toBe('logged_in');
+    expect(await w.login.keepAlive(w.tripId, { confirming: true })).toBe('out');
+    await w.login.settled();
+    expect(browser.state?.login).toBe('out');
+    expect(await w.state()).toBe('asked');
+    const asked = w.link.of('post_message').slice(posts);
+    expect(asked).toHaveLength(1);
+    expect(String(asked[0]!.text)).toContain("ixigo logged Go's computer out");
+  });
+
+  // Staging, 10 Oct 08:13: the trip took its login from the person's browser, so it had no card; the old card's replace
+  // failed ("card ... is not on one of Go's messages"). The ask must post all the same, with a fresh card.
+  it('asks with a fresh card when the trip never had one (its login came from the browser), and when the old card\'s replace fails', async () => {
+    for (const linkFail of [undefined, (m: string) => (m === 'replace_card' ? new Error('card c_login_t_0 is not on one of Go\'s messages in this trip') : null)]) {
+      const browser = fakeBrowser({ login: 'in', at: NOW, loggedInAt: NOW });
+      const w = world({ statuses: [200, 'quiet', 'quiet'], browser, ...(linkFail ? { linkFail } : {}) });
+      // The trip starts logged in from the browser: no card of its own, its row confirmed at setup.
+      await w.setup();
+      expect(await w.state()).toBe('logged_in');
+      const posts = w.link.of('post_message').length;
+      expect(await w.login.keepAlive(w.tripId)).toBe('quiet');
+      expect(await w.login.keepAlive(w.tripId, { confirming: true })).toBe('out');
+      await w.login.settled();
+      const asked = w.link.of('post_message').slice(posts);
+      expect(asked).toHaveLength(1);
+      expect(String(asked[0]!.text)).toContain("ixigo logged Go's computer out");
+      expect((asked[0]!.card as { actions?: Array<{ action_id: string }> }).actions?.map((x) => x.action_id)).toContain('ixigo_login');
+      expect(await w.state()).toBe('asked');
+      expect(w.said).toContainEqual(expect.objectContaining({ tripId: w.tripId, attempt: 1 }));
+    }
+  });
+
+  it('a quiet read that a second one finds in does nothing', async () => {
+    const { w, browser, posts } = await linked(['quiet', 200]);
+    expect(await w.login.keepAlive(w.tripId)).toBe('quiet');
+    expect(await w.login.keepAlive(w.tripId, { confirming: true })).toBe('in');
+    await w.login.settled();
+    expect(browser.state?.login).toBe('in');
+    expect(await w.state()).toBe('logged_in');
+    expect(w.link.of('post_message').slice(posts)).toEqual([]);
+  });
+});
+
+// Staging, 10 Oct: his login, made on ixigo's phone page in the hand-off (its client iximweb), was gone within the hour of
+// Go reading ixigo's desktop pages (client ixiweb). The hand-off now logs in on the desktop page; an older Bash, the phone.
+describe("the ixigo login's hand-off, on ixigo's desktop page", () => {
+  it("asks for the desktop page and taps its Log in/Sign up; a Bash without it opens the phone page, and its Login is tapped", async () => {
+    const desk = world({ statuses: [] });
+    await desk.setup();
+    await desk.tap('ixigo_login', 'p_rahul');
+    expect(desk.handOffs[0]!.o).toMatchObject({ device: 'desktop' });
+    expect(desk.tabStepCalls[0]!.steps[0]).toEqual({ op: 'click', role: 'button', name: 'Log in/Sign up' });
+    const phone = world({ statuses: [], phoneOnly: true });
+    await phone.setup();
+    await phone.tap('ixigo_login', 'p_rahul');
+    expect(phone.tabStepCalls[0]!.steps[0]).toEqual({ op: 'click', role: 'button', name: 'Login' });
+    // The mobile box is the same words on both pages.
+    expect(desk.tabStepCalls[0]!.steps[1]).toEqual({ op: 'click', role: 'textbox', text: 'mobile' });
   });
 });
