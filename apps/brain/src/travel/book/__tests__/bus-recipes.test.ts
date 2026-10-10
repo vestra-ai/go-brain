@@ -96,6 +96,12 @@ describe('buses.stops', () => {
     expect((bus['pickups'] as string[])[4]).toBe('Majestic- Amar Hotel Near Bhagya Vinayaka Temple, 07:30 PM');
     expect(bus['drops']).toContain('Mapusa - Gandhi Circle New Bus Stand, 10:30 AM');
     expect(bus['drops']).toContain('Madgaon - Inside KTC Bus Stand (Margao), 08:30 AM');
+    // Each drop's short name and time, the earliest first, for the card's line; ixigo's list arrival is its first stop.
+    expect(bus['drop_times']).toEqual([
+      { name: 'Cuncolim', at: '07:50' }, { name: 'Madgaon', at: '08:30' }, { name: 'Verna', at: '08:50' }, { name: 'Panjim', at: '09:20' },
+      { name: 'Porvorim Mall De Goa', at: '09:40' }, { name: 'Canacona Opp Ktc Bus Stand', at: '10:00' }, { name: 'Mapusa', at: '10:30' },
+    ]);
+    expect(bus['arrival_note']).toBe("The card's arrival is ixigo's first stop: each drop has its own time.");
     expect(bus['cancellation']).toEqual([
       'Before 30-Oct 20:00: 100% refund (Rs. 2500)',
       'Between 30-Oct 20:00 & 3-Nov 20:00: 90% refund (Rs. 2250)',
