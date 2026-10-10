@@ -1,6 +1,6 @@
 /**
  * Go books a flight on ixigo for one traveller (Keshav, 10 Oct: "Go books tickets end to end up to payment"), behind the
- * FLIGHT_BOOKING switch. From the traveller's own confirm, "Book it" (taps.ts): the fare opens on the stage, where the
+ * BOOKING switch. From the traveller's own confirm, "Book it" (taps.ts): the fare opens on the stage, where the
  * room watches (a search for them alone, then ixigo's review page for that flight), the fare type they asked for is
  * chosen there, and the coupon ixigo applies itself is kept and said. It stops before ixigo's pay button: nothing is
  * submitted and no itinerary is made. Their card says what they would pay; Pay goes through the vault.
@@ -99,9 +99,12 @@ export const numbersOf = (title: string): string[] => title.match(/\b[0-9A-Z]{2}
 
 /**
  * The live card: what the traveller sees while Go books, each step ticking. Posted once, for them alone (1.2
- * visible_to_person_ids, Keshav: a person's booking is theirs), then replaced in place, which keeps it theirs.
+ * visible_to_person_ids, Keshav: a person's booking is theirs), or for the room (only null: the group's stay), then
+ * replaced in place, which keeps who sees it.
  */
-function liveCard(d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: string, cardId: string, title: string, texts: string[], only: string[]) {
+export function bookingLiveCard(
+  d: Pick<FlightBookingDeps, 'link' | 'now'> & { log: Pick<Log, 'warn'> }, tripId: string, cardId: string, title: string, texts: string[], only: string[] | null,
+) {
   const steps = texts.map((text) => ({ text: clip(text, 80), state: 'todo' as 'todo' | 'doing' | 'done' | 'failed' }));
   let state: WorkingCard['state'] = 'running';
   let posted = false;
@@ -115,7 +118,7 @@ function liveCard(d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: st
     chain = chain.then(async () => {
       try {
         if (!posted) {
-          await d.link.request('post_message', { request_id: stableId('go_book_live', cardId), trip_id: tripId, card: now, visible_to_person_ids: only });
+          await d.link.request('post_message', { request_id: stableId('go_book_live', cardId), trip_id: tripId, card: now, ...(only ? { visible_to_person_ids: only } : {}) });
           posted = true;
         } else {
           await d.link.request('replace_card', { trip_id: tripId, card: now });
@@ -162,11 +165,15 @@ export function readyCard(i: {
  * The card for a traveller ixigo's account doesn't have once: their own, saying whose ixigo to add them on. It names
  * nobody but the trip's own people, and none of the account's saved travellers.
  */
-export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name'>, owner: string | null, why: 'none' | 'several'): NoticeCard {
+export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name'>, owner: string | null, why: 'none' | 'several' | 'login'): NoticeCard {
   const on = owner ? `${owner}'s ixigo` : "the trip's ixigo";
+  // No login (the drill, 10 Oct 15:43Z: the booking stopped at its travellers, and the traveller heard nothing why): the
+  // login card is the person's who was asked, so the traveller is told whose it is.
   const body = why === 'none'
     ? `${ask.name} isn't a saved traveller on ${on} yet; add ${ask.name} there once, then tap Book it again.`
-    : `${on.charAt(0).toUpperCase()}${on.slice(1)} has more than one saved traveller named ${ask.name}; keep one there, then tap Book it again.`;
+    : why === 'several'
+      ? `${on.charAt(0).toUpperCase()}${on.slice(1)} has more than one saved traveller named ${ask.name}; keep one there, then tap Book it again.`
+      : `Your traveller details come from the trip's ixigo login, which isn't linked yet${owner ? `: ${owner} has the Log in to ixigo card` : ''}. Once it's in, tap Book it again.`;
   return {
     card_id: cardId, kind: 'notice', tone: 'heads_up', for_person_ids: [ask.personId],
     title: clip(`${ask.name}, one step on ixigo first`, 80), body: clip(body, 500), fallback_text: clip(body, 300),
@@ -175,7 +182,7 @@ export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 
 
 export interface FlightBooking {
   /**
-   * Whether Go books this trip's flights itself: Go reads ixigo.com in the trip's browser, and FLIGHT_BOOKING is on, or
+   * Whether Go books this trip's flights itself: Go reads ixigo.com in the trip's browser, and BOOKING is on, or
    * names the trip's Server instance ("instances:drill-p0").
    */
   onFor(tripId: string): Promise<boolean>;
@@ -185,6 +192,21 @@ export interface FlightBooking {
   pay(i: { tripId: string; cardId: string; personId: string; tapId: string }): Promise<PayTap>;
   /** Waits for the bookings started in the background (tests). */
   settled(): Promise<void>;
+}
+
+/**
+ * Whether Go books this trip's flights and stays itself: Go reads ixigo.com in the trip's browser, and BOOKING is on, or
+ * names the trip's Server instance ("instances:drill-p0").
+ */
+export async function bookingOnFor(d: Pick<FlightBookingDeps, 'pool' | 'switches'>, tripId: string): Promise<boolean> {
+  if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web') return false;
+  const value = d.switches.get('BOOKING');
+  if (value === 'on') return true;
+  if (!value.startsWith('instances:')) return false;
+  const names = value.slice('instances:'.length).split(',');
+  const r = await d.pool.query<{ server_instance: string | null }>('select server_instance from trips where trip_id = $1', [tripId]);
+  const instance = r.rows[0]?.server_instance ?? null;
+  return instance !== null && names.includes(instance);
 }
 
 export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
@@ -212,7 +234,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   async function book(ask: BookingAsk, runId: string): Promise<void> {
     const runner = d.runner();
     const title = ask.offer.title;
-    const live = liveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
+    const live = bookingLiveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
       `Opening ${title} on ixigo`, `Choosing ${FARE_TYPES[ask.choice].words}`, "ixigo's coupon", 'Filling travellers privately', `Ready to pay for ${ask.name}`,
     ], [ask.personId]);
     const fail = async (why: string, step: number): Promise<void> => {
@@ -267,7 +289,16 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     // picture). The list and their name live in this run's memory only. Nothing is submitted.
     await live.step(3, 'doing');
     const login = d.login ? await d.login.ensure(ask.tripId, `Booking ${title} for ${ask.name}`, { booking: true }).catch(() => null) : { ok: true as const };
-    if (!login?.ok) return fail('login_needed', 3);
+    const ownerName = async (): Promise<string | null> => {
+      const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
+      return holder ? await d.nameOf(ask.tripId, holder).catch(() => null) : null;
+    };
+    if (!login?.ok) {
+      await d.link.request('post_message', {
+        request_id: stableId('go_book_login', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_login', runId), ask, await ownerName(), 'login'), visible_to_person_ids: [ask.personId],
+      });
+      return fail('login_needed', 3);
+    }
     const day = results.searchParams.get('date') ?? '';
     const ms = dayMs(day);
     const saved = runner.pageFetch && ms !== null
@@ -279,10 +310,8 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       : [];
     if (!match) return fail('travellers_not_read', 3);
     if (match.status !== 'matched') {
-      const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
-      const owner = holder ? await d.nameOf(ask.tripId, holder).catch(() => null) : null;
       await d.link.request('post_message', {
-        request_id: stableId('go_book_who', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_who', runId), ask, owner, match.status), visible_to_person_ids: [ask.personId],
+        request_id: stableId('go_book_who', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_who', runId), ask, await ownerName(), match.status), visible_to_person_ids: [ask.personId],
       });
       return fail(match.status === 'none' ? 'no_saved_traveller' : 'several_saved_travellers', 3);
     }
@@ -313,16 +342,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   }
 
   return {
-    async onFor(tripId) {
-      if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web') return false;
-      const value = d.switches.get('FLIGHT_BOOKING');
-      if (value === 'on') return true;
-      if (!value.startsWith('instances:')) return false;
-      const names = value.slice('instances:'.length).split(',');
-      const r = await d.pool.query<{ server_instance: string | null }>('select server_instance from trips where trip_id = $1', [tripId]);
-      const instance = r.rows[0]?.server_instance ?? null;
-      return instance !== null && names.includes(instance);
-    },
+    onFor: (tripId) => bookingOnFor(d, tripId),
     async start(ask) {
       const runId = stableId('fb', ask.tapId);
       const fresh = await d.pool.query(

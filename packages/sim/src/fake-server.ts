@@ -1,12 +1,12 @@
 // FakeServer: the simulated Server. It opens the socket to Go like the real Server (GoSocket, signed, with
-// ?instance=), keeps trips in memory, answers all 18 of Go's methods with the contract's rules, and sends each
+// ?instance=), keeps trips in memory, answers all 19 of Go's methods with the contract's rules, and sends each
 // trip's events to Go one at a time, in change-number order, waiting for each answer. Its helpers play the
 // people in the room: say, react, edit, delete, tap, vote, a vote closing on time, and the payer's yes or no.
 import { randomBytes } from 'node:crypto';
 import { CardActionResult, EventAccepted, ForgetResult, SOCKET_PATH, type Event, type Message, type TripSnapshot } from '@go/contract';
 import type { z } from 'zod';
 import { GoSocket, SocketCallError, SocketTimeoutError, type Handler } from './server-socket.js';
-import { closeVote, closeVoteByTime, confirmMandate, declineMandate, openVote, setMandate, vote } from './state/decisions.js';
+import { addVoteOptions, closeVote, closeVoteByTime, confirmMandate, declineMandate, openVote, setMandate, vote } from './state/decisions.js';
 import { addBooking, addExpense, cancelSpendApproval, requestSpendApproval, updateBooking } from './state/money.js';
 import { addRecordLine, updateRecordLine } from './state/records.js';
 import { TripState, fail, type Change, type NeedsItem, type SayOptions } from './state/trip-state.js';
@@ -14,7 +14,7 @@ import { TEST_SPEND_PRIVATE_KEY_PEM } from './test-spend-key.js';
 
 type Write = (s: TripState, p: any, raw: Record<string, unknown>, spendKey: string) => Change<unknown>;
 
-/** Go's 14 writes. Each carries a request_id and is done once per request_id. */
+/** Go's 15 writes. Each carries a request_id and is done once per request_id. */
 const WRITES: Record<string, Write> = {
   post_message: (s, p, raw) => s.postMessage(p, raw),
   add_reaction: (s, p) => s.addReaction(p),
@@ -22,6 +22,7 @@ const WRITES: Record<string, Write> = {
   update_trip: (s, p) => s.updateTrip(p),
   open_vote: (s, p) => openVote(s, p),
   close_vote: (s, p) => closeVote(s, p),
+  add_vote_options: (s, p) => addVoteOptions(s, p),
   set_mandate: (s, p) => setMandate(s, p),
   add_record_line: (s, p) => addRecordLine(s, p),
   update_record_line: (s, p) => updateRecordLine(s, p),

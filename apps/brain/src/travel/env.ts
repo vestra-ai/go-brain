@@ -13,8 +13,8 @@ export const TravelEnv = z.object({
   BROWSER_FETCH_SLOTS: z.enum(['1', '2', '3', '4']).optional(),
   /** Whether Go keeps the watches a group asks for on ixigo. Off unless set; staging sets on. The RECIPE_WATCHES switch can change it. */
   RECIPE_WATCHES: z.enum(['off', 'on']).optional(),
-  /** Whether Go books a traveller's own flight on ixigo up to its pay button. Off unless set. The FLIGHT_BOOKING switch can change it. */
-  FLIGHT_BOOKING: z.enum(['off', 'on']).optional(),
+  /** Whether Go books flights and stays on ixigo's own pages up to their pay button. Off unless set. The BOOKING switch can change it. */
+  BOOKING: z.enum(['off', 'on']).optional(),
   IXIGO_MCP_URL: z.url().optional(),
   IXIGO_MCP_TOKEN: z.string().min(1).optional(),
 });

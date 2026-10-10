@@ -7,7 +7,7 @@ import type { RegisterLane } from '../app.js';
 import { loadBook } from './book/book.js';
 import { createEngine } from './book/engine.js';
 import { ixigoTool, runOnStage, toolRecipes } from './book/tool.js';
-import { createFlightBooking } from './booking/flight-booking.js';
+import { bookingOnFor, createFlightBooking } from './booking/flight-booking.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
@@ -235,7 +235,11 @@ export const registerTravel: RegisterLane = async (brain) => {
     today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
     // A stay from ixigo.com books on Go's test rail, after the trip's ixigo login and at ixigo's price now.
-    webStays: createWebStays({ results, runner: () => brain.recipeRunners?.browserFetch ?? null, login, now: brain.now }),
+    webStays: createWebStays({
+      results, runner: () => brain.recipeRunners?.browserFetch ?? null, login, now: brain.now, link: brain.door.link, log: brain.log,
+      // BOOKING: the group's voted stay on ixigo's own pages, on the stage, up to Pay.
+      bookingOn: (tripId) => bookingOnFor({ pool: brain.pool, switches: brain.switches }, tripId),
+    }),
     // A destination Go sets carries ixigo's place: its id, where it is, its time zone and its guide photo.
     placeFor: createPlaceFor({ pool: brain.pool, engine, images, log: brain.log }),
   });
@@ -320,7 +324,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   watchEvery.unref();
   const stopWatchChecks = (): void => clearInterval(watchEvery);
   brain.onStop(stopWatchChecks);
-  // "Book it" on a person's own flight: Go books it on the stage up to ixigo's pay button when FLIGHT_BOOKING is on.
+  // "Book it" on a person's own flight: Go books it on the stage up to ixigo's pay button when BOOKING is on.
   const nameOf = async (tripId: string, personId: string): Promise<string> =>
     (await brain.packs.get(tripId)).trip.people.find((p) => p.person_id === personId)?.name ?? 'you';
   const booking = createFlightBooking({

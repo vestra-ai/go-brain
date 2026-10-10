@@ -93,7 +93,7 @@ const OFFER: StoredOffer = {
 };
 
 function booking(runner: RecipeRunner, on = true, ticketPay: TicketPay | null = null): FlightBooking {
-  void lb.switches.set('FLIGHT_BOOKING', on ? 'on' : 'off');
+  void lb.switches.set('BOOKING', on ? 'on' : 'off');
   void lb.switches.set('TRAVEL_MODE', 'ixigo_web');
   return createFlightBooking({
     pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, pay: () => ticketPay ?? undefined,
@@ -191,6 +191,12 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     await b.start({ tapId: 'tap_l1', tripId: 't_goa', personId: 'p_meher5', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b.settled();
     expect(asked).toEqual(['Booking IndiGo 6E2150 for Meher']);
+    // She is told why, on a card for her alone: whose login card it is (the trip's login row's person, named here by this
+    // booking's nameOf), then Book it again.
+    const told = lb.link.requests.filter((r) => (r.params['card'] as { card_id?: string } | undefined)?.card_id?.startsWith('c_book_login'));
+    expect(told.map((r) => [r.params['visible_to_person_ids'], (r.params['card'] as { body: string }).body])).toEqual([
+      [['p_meher5'], "Your traveller details come from the trip's ixigo login, which isn't linked yet: Someone has the Log in to ixigo card. Once it's in, tap Book it again."],
+    ]);
     expect(calls).toEqual([]);
     expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher5'`)).rows[0]).toEqual({ state: 'failed', why: 'login_needed' });
   });
@@ -257,12 +263,12 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
   });
 
   it("is off unless the switch is on, or names the trip's Server instance, and Go reads ixigo.com itself", async () => {
-    expect(['off', 'on', 'instances:drill-p0', 'instances:drill-p0,drill-p2'].every(SWITCH_RULES.FLIGHT_BOOKING.valid)).toBe(true);
-    expect(['instances:', 'yes', 'instances:a b'].some(SWITCH_RULES.FLIGHT_BOOKING.valid)).toBe(false);
+    expect(['off', 'on', 'instances:drill-p0', 'instances:drill-p0,drill-p2'].every(SWITCH_RULES.BOOKING.valid)).toBe(true);
+    expect(['instances:', 'yes', 'instances:a b'].some(SWITCH_RULES.BOOKING.valid)).toBe(false);
     await db.pool.query(`insert into trips (trip_id, server_instance) values ('t_drill_p0', 'drill-p0'), ('t_his', 'go-live-keshav') on conflict (trip_id) do nothing`);
     const b = booking(fakeRunner().runner, false);
     expect(await b.onFor('t_drill_p0')).toBe(false);
-    await lb.switches.set('FLIGHT_BOOKING', 'instances:drill-p0,drill-p2');
+    await lb.switches.set('BOOKING', 'instances:drill-p0,drill-p2');
     expect([await b.onFor('t_drill_p0'), await b.onFor('t_his'), await b.onFor('t_no_row')]).toEqual([true, false, false]);
     await lb.switches.set('TRAVEL_MODE', 'fake');
     expect(await b.onFor('t_drill_p0')).toBe(false);
