@@ -94,10 +94,12 @@ export const LOGIN_TAB = 'ixigo_login';
 /** How long the hand-off's tab stays in front for them: Bash's most. I'm logged in or Not now closes it sooner. */
 export const HANDOFF_MS = 600_000;
 /**
- * ixigo's own Login button on its phone page (the hand-off's page runs as a phone: Bash's front), which opens its log in
- * sheet. ?loginVisible=true opens nothing, on the phone page or the desktop one (staging probe, 8 Oct).
+ * ixigo's own button that opens its log in: "Log in/Sign up" on its desktop page, where the hand-off logs in (its device
+ * desktop: a login made on ixigo's phone page is its phone client's, and its desktop pages, where Go reads, refused it
+ * within the hour; staging, 10 Oct), opening a 440 wide drawer with the mobile box, Continue and Google's button; "Login"
+ * on its phone page, where a Bash without desktop hand-offs opens it. ?loginVisible=true opens nothing (8 Oct).
  */
-const LOGIN_BUTTON = { op: 'click', role: 'button', name: 'Login' } as const;
+const LOGIN_BUTTON = { desktop: { op: 'click', role: 'button', name: 'Log in/Sign up' }, phone: { op: 'click', role: 'button', name: 'Login' } } as const;
 /** The log in sheet's mobile number field ("Enter Mobile Number"), clicked so the cursor waits in it for the person. */
 const MOBILE_BOX = { op: 'click', role: 'textbox', text: 'mobile' } as const;
 /** ixigo's home page, where the log in sheet opens. */
@@ -554,7 +556,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     // The hand-off ends at HANDOFF_MS whatever happens: Bash closes the tab then, and the card goes back to its ask.
     ending.get(row.tripId)?.();
     ending.set(row.tripId, later(HANDOFF_MS, () => track('end', row.tripId, expire(row))));
-    let opened: { captures: Capture[]; challenged?: true };
+    let opened: { captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' };
     try {
       opened = await runner.handOff!(
         row.tripId,
@@ -562,7 +564,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         // The page and ixigo's own calls alone: Watch comes as soon as they have said (its crop is set before the page
         // loads), and the taps run after, while Watch's picture connects (staging, 8 Oct: they were 2 to 3 s of the wait).
         LOGIN_CALLS,
-        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB },
+        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' },
       );
     } catch (err) {
       // Loud, and nothing left open: no second path.
@@ -589,7 +591,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       // The page is in front for them: now the card carries Watch. Then ixigo's Login and the mobile box, tapped on the
       // page they watch (best effort: the page stays theirs if a tap finds nothing), and the page takes the keyboard.
       await show(now);
-      await runner.tabSteps?.(row.tripId, LOGIN_TAB, [LOGIN_BUTTON, MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
+      await runner.tabSteps?.(row.tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
         .catch((err: unknown) => d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's taps did not run"));
     }
   }
@@ -602,9 +604,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function statusInLogin(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
     const runner = d.runner();
     if (!runner?.handOff) return status(tripId);
-    let opened: { captures: Capture[]; challenged?: true };
+    let opened: { captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' };
     try {
-      opened = await runner.handOff(tripId, LOGIN_URL, LOGIN_CALLS, { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB });
+      opened = await runner.handOff(tripId, LOGIN_URL, LOGIN_CALLS, { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' });
     } catch (err) {
       if (!(err instanceof TravelError)) throw err;
       d.log.info({ tripId, status: null, login: 'unknown', why: err.code }, 'travel: ixigo said whether the trip computer is logged in');
@@ -617,7 +619,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     }
     const login = await said(tripId, opened.captures, 'log in page');
     if (login !== 'in') {
-      await runner.tabSteps?.(tripId, LOGIN_TAB, [LOGIN_BUTTON, MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
+      await runner.tabSteps?.(tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
         .catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's taps did not run"));
     }
     return login;
