@@ -6,12 +6,16 @@
  * model's to pick on from the results.
  */
 export interface Offer {
-  kind: 'filter' | 'sort';
+  /** price: one of the site's price bands, kept with its prices (min, max), never named to the model (offersText). */
+  kind: 'filter' | 'sort' | 'price';
   /** The site's own heading for it ("Facilities", "Star Rating", "Sort"). */
   group: string;
   name: string;
-  /** The site's own code for it, as its page takes it (FL_HF_29, SC_P_LH). */
+  /** The site's own code for it, as its page takes it (FL_HF_29, SC_P_LH, DP_2000_2500). */
   code: string;
+  /** A price band's prices, in rupees, a night and a room as ixigo prices a stay. */
+  min?: number;
+  max?: number;
 }
 
 export interface OfferList {
@@ -19,6 +23,8 @@ export interface OfferList {
   /** What the list is for, in words ("stays in Goa"). */
   about: string;
   offers: Offer[];
+  /** The site's price bands for the place (kind price), apart from the list: Go's alone, never the model's. */
+  bands: Offer[];
   at: number;
 }
 
@@ -29,7 +35,7 @@ const TRIPS_MAX = 2_000;
 
 export interface Offers {
   /** The list a page read brought, for the recipe and its place (key), and the trip whose read it was. */
-  keep(recipeId: string, key: string, about: string, offers: Offer[], tripId: string): void;
+  keep(recipeId: string, key: string, about: string, offers: Offer[], tripId: string, bands?: Offer[]): void;
   /** The list kept for the recipe and place, inside its time; null when there is none. */
   get(recipeId: string, key: string): OfferList | null;
   /** The lists the trip's own reads brought, inside their time, newest first. */
@@ -49,11 +55,11 @@ export function createOffers(o: { now: () => Date; ttlMs?: number }): Offers {
     }
   };
   return {
-    keep(recipeId, key, about, offers, tripId) {
+    keep(recipeId, key, about, offers, tripId, bands = []) {
       if (offers.length === 0) return;
       const k = `${recipeId}|${key}`;
       lists.delete(k);
-      lists.set(k, { recipeId, about, offers, at: o.now().getTime() });
+      lists.set(k, { recipeId, about, offers, bands, at: o.now().getTime() });
       bound(lists, KEPT_MAX);
       const mine = trips.get(tripId) ?? new Set<string>();
       mine.delete(k);
@@ -102,6 +108,8 @@ export const NAMES_PER_GROUP = 40;
 export function offersText(l: OfferList): string {
   const groups = new Map<string, string[]>();
   for (const o of l.offers) {
+    // Price bands are Go's to pick from a decided budget, never a name for the model.
+    if (o.kind === 'price') continue;
     const g = o.kind === 'sort' ? 'Sort' : o.group;
     groups.set(g, [...(groups.get(g) ?? []), o.name]);
   }
@@ -122,9 +130,24 @@ export function asOffers(rows: unknown): Offer[] {
     .filter((r): r is Offer => {
       const o = r as Partial<Offer> | null;
       return (
-        !!o && (o.kind === 'filter' || o.kind === 'sort') && typeof o.group === 'string' && typeof o.name === 'string' && o.name.trim() !== '' &&
-        typeof o.code === 'string' && /^[A-Za-z0-9_.:-]{1,60}$/.test(o.code)
+        !!o && (o.kind === 'filter' || o.kind === 'sort' || o.kind === 'price') && typeof o.group === 'string' && typeof o.name === 'string' &&
+        o.name.trim() !== '' && typeof o.code === 'string' && /^[A-Za-z0-9_.:-]{1,60}$/.test(o.code) &&
+        (o.kind !== 'price' || (typeof o.min === 'number' && typeof o.max === 'number' && o.min < o.max))
       );
     })
-    .map((o) => ({ kind: o.kind, group: unescaped(o.group), name: unescaped(o.name), code: o.code }));
+    .map((o) => ({
+      kind: o.kind, group: unescaped(o.group), name: unescaped(o.name), code: o.code,
+      ...(o.kind === 'price' ? { min: o.min!, max: o.max! } : {}),
+    }));
+}
+
+/**
+ * The price bands for a cap a night and a room (rupees): every band at or under it, and the one band over it, so a stay
+ * just past the budget stays in sight (the lead, 10 Oct: "widen one band"). None when the list has no bands.
+ */
+export function bandsFor(offers: Offer[], cap: number): Offer[] {
+  const bands = offers.filter((o) => o.kind === 'price').sort((a, b) => a.min! - b.min!);
+  const under = bands.filter((b) => b.max! <= cap);
+  const over = bands.find((b) => b.max! > cap);
+  return over ? [...under, over] : under;
 }

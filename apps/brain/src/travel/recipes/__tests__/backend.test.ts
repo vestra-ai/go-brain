@@ -789,3 +789,18 @@ describe("a stays ask by ixigo's own filters, by their names on its list (site_f
     expect(found.unapplied).toEqual(['Pet-friendly property', 'beachfront']);
   });
 });
+
+// The lead, 10 Oct: a decided budget picks ixigo's own price bands; a band that holds no stay falls back to the plain list.
+describe("a stays search by the group's decided budget", () => {
+  it("asks ixigo's price bands by the budget, apart from the search without it, and reads without them when they hold no stay", async () => {
+    const runs: RunFor[] = [];
+    const answer: Answer = async (_id, _given, ro) => {
+      runs.push(ro);
+      return { as: 'options', options: ro.budgetMinor ? [] : [stay(1, true), stay(2, false)], page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-10T05:00:00.000Z', ms: 900 };
+    };
+    const b = createIxigoWebBackend({ book, engine: { answer }, now });
+    const found = await b.search('stays', { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', budgetMinor: 450_000 }, { tripId: 't_band' });
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
+    expect(runs.map((r) => r.budgetMinor)).toEqual([450_000, undefined]);
+  });
+});
