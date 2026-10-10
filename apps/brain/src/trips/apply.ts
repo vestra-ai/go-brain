@@ -1,6 +1,7 @@
 import type * as C from '@go/contract';
 import type { Message, TripEvent } from '../door/methods.js';
 import type { TripPack } from './pack.js';
+import { isPrivate } from './screen.js';
 
 type Reaction = Message['reactions'][number];
 const sameReaction = (a: Reaction, b: Reaction): boolean => a.emoji === b.emoji && (a.person_id ?? null) === (b.person_id ?? null);
@@ -11,10 +12,10 @@ function upsertBy<T>(list: T[], same: (x: T) => boolean, item: T): void {
   else list.push(item);
 }
 
-/** Puts a message in the pack in seq order; a deleted message leaves it. */
+/** Puts a message in the pack in seq order; a deleted message leaves it, and one only some people see is never in it. */
 export function upsertMessage(pack: TripPack, m: Message): void {
   const i = pack.messages.findIndex((x) => x.message_id === m.message_id);
-  if (m.deleted) {
+  if (m.deleted || isPrivate(m)) {
     if (i >= 0) pack.messages.splice(i, 1);
     return;
   }

@@ -1,7 +1,7 @@
 import type pg from 'pg';
 
 /** Demo fallbacks that flip at runtime with no redeploy. P7 adds the admin page. */
-export type SwitchName = 'TRAVEL_MODE' | 'TRAVEL_RUNNER' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE' | 'BROWSER_FETCH_SLOTS' | 'RECIPE_WATCHES';
+export type SwitchName = 'TRAVEL_MODE' | 'TRAVEL_RUNNER' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE' | 'BROWSER_FETCH_SLOTS' | 'RECIPE_WATCHES' | 'FLIGHT_BOOKING';
 
 export interface Switches {
   /** The stored value, else the environment's, else the safe default. Read on every use, cached 2 s. */
@@ -25,6 +25,9 @@ export const SWITCH_RULES: Record<SwitchName, { valid: (v: string) => boolean; f
   BROWSER_FETCH_SLOTS: { valid: oneOf('1', '2', '3', '4'), fallback: '2' },
   // Watches the group asks Go to keep on ixigo (travel/recipe-watches.ts): off unless a deployment says on (staging does).
   RECIPE_WATCHES: { valid: oneOf('off', 'on'), fallback: 'off' },
+  // Go books a traveller's own flight on ixigo up to its pay button (travel/booking/): off until it is proven on a drill,
+  // and on for some Server instances only ("instances:drill-p0,drill-p2") so a drill never reaches anyone's own room.
+  FLIGHT_BOOKING: { valid: (v) => /^(off|on|instances:[\w.:@-]+(,[\w.:@-]+)*)$/.test(v), fallback: 'off' },
 };
 
 export function createSwitches(o: {
