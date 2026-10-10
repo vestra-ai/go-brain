@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createLoginKeepAlive, KEEPALIVE_AFTER_MS, KEEPALIVE_JITTER_MS, KEEPALIVE_TRY_AGAIN_MS, keepAliveJitter,
+  CONFIRM_OUT_MS, createLoginKeepAlive, KEEPALIVE_AFTER_MS, KEEPALIVE_JITTER_MS, KEEPALIVE_TRY_AGAIN_MS, keepAliveJitter,
 } from '../login-keepalive.js';
 
 // The person's ixigo login kept alive in their browser: one read every few hours while it is logged in, light on the
@@ -33,7 +33,7 @@ function world(browsers: Array<{ userId: string; tripId: string; at: number }>, 
 }
 
 describe("the person's ixigo login, kept alive", () => {
-  it('reads each logged-in browser once its login is older than 4 h plus its own jitter, one at a time, and not again until the next', async () => {
+  it('reads each logged-in browser once its login is older than 2 h plus its own jitter, one at a time, and not again until the next', async () => {
     const a = { userId: 'gobrowser-a', tripId: 't_a', at: T0 - KEEPALIVE_AFTER_MS - KEEPALIVE_JITTER_MS };
     const b = { userId: 'gobrowser-b', tripId: 't_b', at: T0 - KEEPALIVE_AFTER_MS - KEEPALIVE_JITTER_MS };
     // Confirmed just now (a hand-off, a booking's check): not due.
@@ -42,7 +42,7 @@ describe("the person's ixigo login, kept alive", () => {
     await w.keep.tick();
     expect(w.reads).toEqual(['t_a', 't_b']);
     expect(w.most()).toBe(1);
-    // Read now: not due again for another 4 h and its jitter.
+    // Read now: not due again for another 2 h and its jitter.
     w.advance(KEEPALIVE_AFTER_MS);
     await w.keep.tick();
     expect(w.reads).toEqual(['t_a', 't_b']);
@@ -51,7 +51,7 @@ describe("the person's ixigo login, kept alive", () => {
     expect(w.reads).toEqual(['t_a', 't_b', 't_a', 't_b', 't_c']);
   });
 
-  it("waits its own jitter past the 4 h, so browsers logged in at once are never read at once", async () => {
+  it("waits its own jitter past the 2 h, so browsers logged in at once are never read at once", async () => {
     const id = 'gobrowser-jitter';
     expect(keepAliveJitter(id)).toBeGreaterThanOrEqual(0);
     expect(keepAliveJitter(id)).toBeLessThan(KEEPALIVE_JITTER_MS);
@@ -84,5 +84,40 @@ describe("the person's ixigo login, kept alive", () => {
     const off = world([stuck], { live: false });
     await off.keep.tick();
     expect(off.reads).toEqual([]);
+  });
+
+  // 10 Oct: a logged-out page boots with none of the login's calls, and that reads quiet; a slow box's calls can miss the
+  // grace too. So a quiet read is read again CONFIRM_OUT_MS on, confirming: only then does the login end and Go ask.
+  it('reads a quiet browser again after CONFIRM_OUT_MS, confirming; one quiet read then in does nothing more', async () => {
+    let nowMs = T0;
+    const asked: Array<{ tripId: string; confirming: boolean }> = [];
+    const answers: Record<string, string[]> = { t_gone: ['quiet', 'out'], t_slow: ['quiet', 'in'] };
+    const keep = createLoginKeepAlive({
+      loggedInSince: async () => [
+        { userId: 'gobrowser-gone', tripId: 't_gone', at: new Date(T0 - KEEPALIVE_AFTER_MS - KEEPALIVE_JITTER_MS) },
+        { userId: 'gobrowser-slow', tripId: 't_slow', at: new Date(T0 - KEEPALIVE_AFTER_MS - KEEPALIVE_JITTER_MS) },
+      ],
+      status: async (tripId, o) => {
+        asked.push({ tripId, confirming: o?.confirming === true });
+        return answers[tripId]!.shift();
+      },
+      live: () => true,
+      now: () => new Date(nowMs),
+      log: { info: () => undefined, warn: () => undefined },
+    });
+    await keep.tick();
+    expect(asked).toEqual([{ tripId: 't_gone', confirming: false }, { tripId: 't_slow', confirming: false }]);
+    // Not yet: the second read waits its CONFIRM_OUT_MS, and a quiet browser is never read as a due one meanwhile.
+    nowMs += CONFIRM_OUT_MS - 1;
+    await keep.tick();
+    expect(asked).toHaveLength(2);
+    nowMs += 1;
+    await keep.tick();
+    expect(asked.slice(2)).toEqual([{ tripId: 't_gone', confirming: true }, { tripId: 't_slow', confirming: true }]);
+    // Each is read again once only: the confirming read decides (login.keepAlive ends a confirmed one and asks).
+    nowMs += CONFIRM_OUT_MS;
+    await keep.tick();
+    expect(asked).toHaveLength(4);
+    keep.stop();
   });
 });

@@ -11,7 +11,7 @@ import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
 import {
-  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, LOGIN_CALLS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume, USERINFO, WALLET,
+  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, LOGIN_CALLS, LOGIN_LIFE_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume, USERINFO, WALLET,
 } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
@@ -44,7 +44,7 @@ let trips = 0;
  *  on Cloudflare's check through the runner's tries. statuses: how it loads after, in turn: for "I'm logged in" (its page
  *  loaded again) and for a check in the background. */
 function world(o: {
-  live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged' | 'dead'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
+  live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged' | 'dead' | 'quiet'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
   /** The person's browser (tasks/browsers.ts), shared by every world given the same one: one login for all their trips. */
   browser?: FakeBrowser;
 } = {}) {
@@ -186,9 +186,11 @@ const greetWake: DeskItem = { id: 'setup:greet', tripId: 't', kind: 'setup', ref
  * answer 200 and it never calls userinfo (08:40); a login it holds that is gone (401, 403), its userinfo call is refused.
  */
 const call = (match: string, status: number): Capture => capture(match, `${IXIGO}${match}`, '{', status);
-function load(s: number | 'dead'): Capture[] {
+function load(s: number | 'dead' | 'quiet'): Capture[] {
   // dead: a token ixigo refuses (the morning box, 9 Oct 17:43): its wallet and with-identity calls both 401.
   if (s === 'dead') return [call(WALLET, 401), call(IDENTITY, 401)];
+  // quiet: the page booted (its content came) and made none of the login's calls (staging, 10 Oct 05:54: logged out).
+  if (s === 'quiet') return [call('/action/content', 200)];
   return s === 200 ? [call(WALLET, 200), call(IDENTITY, 200)] : [call(USERINFO, s)];
 }
 
@@ -1056,5 +1058,68 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
     expect(await w.parked()).toBeNull();
     // No booking waits, and the login Go already had wakes nothing more.
     expect(w.wakes).toHaveLength(linked);
+  });
+});
+
+// Staging, 10 Oct: ixigo's server refuses the token about 9 h after the login and its page deletes it; nothing renews it.
+// Go never heard: a logged-out page read "unknown", and nobody was asked. Now a quiet page counts once a second read
+// agrees, or once the login is past its life, and Go asks its person, once.
+describe("ixigo's login, watched: it ends about 9 h after the login, and Go asks again", () => {
+  /** A trip logged in on the person's browser, with these answers to ixigo's reads after the login's own. */
+  async function linked(after: Array<number | 'quiet'>) {
+    const browser = fakeBrowser();
+    const w = world({ statuses: [200, ...after], browser });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    await w.tap('ixigo_logged_in', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    return { w, browser, posts: w.link.of('post_message').length };
+  }
+
+  it('reads a page that booted with none of the login calls as quiet: out, but only when a second read agrees', () => {
+    expect(loginFrom([call('/action/content', 200)])).toEqual({ login: 'out', call: null, status: null, quiet: true });
+    // A login call that came, whatever it said, is not quiet; a page that never booted says nothing.
+    expect(loginFrom([call('/action/content', 200), call(WALLET, 500)]).login).toBe('unknown');
+    expect(loginFrom([]).login).toBe('unknown');
+  });
+
+  it("asks nothing on the keep-alive's quiet read; its confirming read ends the login, and its person is asked once", async () => {
+    const { w, browser, posts } = await linked(['quiet', 'quiet']);
+    expect(await w.login.keepAlive(w.tripId)).toBe('quiet');
+    // One quiet read flips nothing: the browser and the trip stand.
+    expect(browser.state?.login).toBe('in');
+    expect(await w.state()).toBe('logged_in');
+    expect(await w.login.keepAlive(w.tripId, { confirming: true })).toBe('out');
+    await w.login.settled();
+    expect(browser.state?.login).toBe('out');
+    expect(await w.state()).toBe('asked');
+    const asked = w.link.of('post_message').slice(posts);
+    expect(asked).toHaveLength(1);
+    expect(String(asked[0]!.text)).toContain("ixigo logged Go's computer out");
+  });
+
+  it('a quiet read that a second one finds in does nothing', async () => {
+    const { w, browser, posts } = await linked(['quiet', 200]);
+    expect(await w.login.keepAlive(w.tripId)).toBe('quiet');
+    expect(await w.login.keepAlive(w.tripId, { confirming: true })).toBe('in');
+    await w.login.settled();
+    expect(browser.state?.login).toBe('in');
+    expect(await w.state()).toBe('logged_in');
+    expect(w.link.of('post_message').slice(posts)).toEqual([]);
+  });
+
+  it('past the login\'s life, a read that said in stands 10 minutes only, and a quiet read is out at once', async () => {
+    const { w } = await linked([200, 'quiet']);
+    w.clock.now = new Date(w.clock.now.getTime() + LOGIN_LIFE_MS);
+    // Checked at the login, hours ago: read again now, and in.
+    expect(await w.login.ensure(w.tripId, 'The stay')).toEqual({ ok: true });
+    const reads = w.reads.length;
+    expect(await w.login.ensure(w.tripId, 'The stay')).toEqual({ ok: true });
+    expect(w.reads).toHaveLength(reads);
+    // Ten minutes on, read again: quiet past its life is out, and the person is asked, with no second read to wait for.
+    w.clock.now = new Date(w.clock.now.getTime() + 10 * 60_000);
+    expect(await w.login.ensure(w.tripId, 'The stay')).toMatchObject({ ok: false });
+    expect(w.reads).toHaveLength(reads + 1);
+    expect(await w.state()).toBe('asked');
   });
 });
