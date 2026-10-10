@@ -101,8 +101,8 @@ const inputsOf = (r: RecipeFile | undefined): Record<string, string> =>
  */
 export const KEPT = 'option.facts';
 const KEPT_LINE =
-  `- ${KEPT} (option#): What ixigo showed for one option on a card or in search results when Go read it: its fare, ` +
-  'Lock Price, refundability, seats left, times and details, with when. It opens no page.';
+  `- ${KEPT} (option#): Can we lock its price, is it refundable, how many seats are left: what ixigo showed for one option ` +
+  'on a card or in search results when Go read it (Lock Price, refundability, fare, seats, times), with when. It opens no page.';
 
 /** What the room is told with an option's kept facts: ixigo's, as of when Go read them. */
 export const KEPT_FACTS_SAY =

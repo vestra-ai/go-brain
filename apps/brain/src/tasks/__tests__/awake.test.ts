@@ -63,6 +63,21 @@ describe("the trip's computer stays awake while its group talks", () => {
     s.awake.stop();
   });
 
+  // 10 Oct drill: the trains ask was the trip's first line, so its read waited 6.3 s for the box to wake. A trip made, or
+  // a person joining it, is its people about to talk: the box is held from then.
+  it('holds the box from a new trip and from a person joining, before anyone posts', async () => {
+    const s = setup();
+    s.awake.onEvent({ type: 'trip.created', trip_id: 't_new', data: {} } as unknown as TripEvent);
+    s.awake.onEvent({ type: 'person.joined', trip_id: 't_join', data: {} } as unknown as TripEvent);
+    await vi.advanceTimersByTimeAsync(0);
+    expect([s.of('t_new'), s.of('t_join')]).toEqual([1, 1]);
+    expect(s.holds[0]).toMatchObject({ keepMs: AWAKE_KEEP_MS });
+    // Any other trip change holds nothing.
+    s.awake.onEvent({ type: 'trip.updated', trip_id: 't_other', data: {} } as unknown as TripEvent);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.of('t_other')).toBe(0);
+  });
+
   it("never counts Go's own lines: they neither start the beat nor keep it going", async () => {
     const s = setup();
     s.awake.onEvent(line('t_goa', 'go'));

@@ -106,6 +106,15 @@ describe("the card's line, built from the options the card shows", () => {
     expect(answerLine('stays', { area: 'goa', checkIn: '2026-11-30', checkOut: '2026-12-02' }, stays)).toBe('Stays in Goa for 30 Nov to 2 Dec, from ₹4,334 a night.');
   });
 
+  // The exam, 10 Oct (#5): a line for five said "from ₹621 per night, per room". With the stays' totals, it says the
+  // cheapest whole stay and each share, as the card's price does; a night's stays only for stays with no total (above).
+  it("says stays' from as the cheapest whole stay and each person's share when the stays have totals", () => {
+    const whole = (title: string, night: number, rooms: number) => priced('stay', title, night, { totalMinor: night * 3 * rooms, facts: { nights: 3, rooms, guests: 5 } });
+    // The cheapest night (₹500 a room, five rooms: ₹7,500) is not the cheapest stay: three rooms at ₹621 are (₹5,589).
+    expect(answerLine('stays', VILLAS, [whole('Dorm by the Sea', 50_000, 5), whole('Sea Breeze Rooms', 62_100, 3)]))
+      .toBe('Pool stays in North Goa for 6 to 9 Nov, from ₹5,589 for 3 nights, 3 rooms, about ₹1,100 each.');
+  });
+
   it("for a link, says where they are, who they're set for, and that Go notes a pick but books nothing", () => {
     expect(linkLine('flights', FLIGHTS, 'for 3 from Delhi')).toBe(
       'Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 3 from Delhi, leaving after 7:00 pm: book there, and tell me which one so I can note it for the group.',

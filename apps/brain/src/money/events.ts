@@ -20,7 +20,10 @@ export async function tripEvent(t: TapDeps, ev: TripEvent): Promise<void> {
       const m = decision?.mandate;
       const chosen = m ? decision?.options[m.choice_index] : undefined;
       if (!decision || !chosen?.option_ref) return;
-      const purpose = chosen.note ? `${chosen.label}, ${chosen.note}` : chosen.label;
+      // A stay's payment names what it covers and its night, the amount being on the pay card already ("Villa Sol, Anjuna:
+      // 3 nights (₹12,800 a night)", the lead, 10 Oct); anything else, the vote option's own note.
+      const stay = await t.d.travel()?.payWords?.(chosen.option_ref).catch(() => null);
+      const purpose = stay ? `${chosen.label}, ${stay}` : chosen.note ? `${chosen.label}, ${chosen.note}` : chosen.label;
       // Ids from the event: a redelivered event finds the same payment and does nothing twice.
       // The winner's option_ref goes in as is; askToPay turns it into the travel offer.
       const r = await t.ask(ev.trip_id, { decisionId: decision.decision_id, optionRef: chosen.option_ref, purpose }, ev.event_id);

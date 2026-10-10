@@ -5,7 +5,7 @@ import type { AnthropicLike } from './anthropic.js';
 import { computeAnthropicCostUsd, estimateCostUsd, normalizeAnthropicUsage, resolveCapabilities, type AnthropicUsage } from './anthropic-helpers.js';
 import type { TextBlock } from './context.js';
 import { withoutRefused, type Refusals } from './sanitize.js';
-import { NEXT_STEP_NOTE, promisesNextStep } from './next-step.js';
+import { undoneNote } from './next-step.js';
 import { SAY_NOTHING, STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
 
 export const MAX_ROUNDS = 4;
@@ -282,7 +282,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   // Every call this turn and whether it was refused, quietly or not: the reply never narrates a quiet refusal, and never
   // claims the work of a tool that did nothing (8 Oct: "The record call was refused, so I'll… Noted, …").
   const seen: Array<{ name: string; refused: boolean; quiet: boolean }> = [];
-  // The one extra round a promised next step gets (promisesNextStep).
+  // The one extra round a promised next step or an undone check gets (next-step.ts undoneNote).
   let nudged = false;
   const clean = (t: string): string => withoutRefused(t, refusalsOf(seen, byName));
   // One round past the limit closes a turn whose last round still called tools: that round's words were written before
@@ -344,10 +344,12 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     if (closing) return { text: clean(text), silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: 'max_rounds', timings };
     if (reply.stop_reason !== 'tool_use' || calls.length === 0) {
       const out = clean(text || latestText);
-      // A next step promised and not taken (EXAM #18): one more round, once, to take it or ask instead.
-      if (!nudged && reply.stop_reason === 'end_turn' && promisesNextStep(out)) {
+      // A next step promised and not taken (EXAM #18), or a check left undone (the re-run's #11, #20): one more round,
+      // once, to take it or ask instead.
+      const undone = !nudged && reply.stop_reason === 'end_turn' ? undoneNote(out) : null;
+      if (undone) {
         nudged = true;
-        addNote(messages, NEXT_STEP_NOTE);
+        addNote(messages, undone);
         continue;
       }
       return { text: out, silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason, timings };
@@ -396,9 +398,10 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     if (allUp || (i.ctx.answered && lines.length > 0)) {
       // A card's line that promises a next step not taken (EXAM #18, "I'll search the Mon 9 Nov return next"): the card
       // stays up, and one more round takes the step or asks instead.
-      if (!nudged && promisesNextStep(words)) {
+      const undone = nudged ? null : undoneNote(words);
+      if (undone) {
         nudged = true;
-        addNote(messages, NEXT_STEP_NOTE);
+        addNote(messages, undone);
         continue;
       }
       return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP, timings };

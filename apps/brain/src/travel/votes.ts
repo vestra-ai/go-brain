@@ -7,8 +7,8 @@
  */
 import type * as C from '@go/contract';
 import type { ServerLink } from '../door/server-link.js';
-import { clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, type OptionsCardT } from './cards.js';
-import type { OptionFields, OptionKind, ResultsStore } from './results.js';
+import { clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, stayLine, type OptionsCardT } from './cards.js';
+import type { OptionFields, OptionKind, ResultOption, ResultsStore } from './results.js';
 import type { StoredOffer } from './travel.js';
 
 export type VoteCard = Extract<C.Card, { kind: 'vote' }>;
@@ -40,11 +40,14 @@ export const KEEP_LOOKING = 'Keep looking';
 
 /**
  * Each option as the options card shows it: its photos and its rooms too, the top pick's from its own page once read
- * (pick-photos.ts, the Server team's 10 Oct B3 and B4).
+ * (pick-photos.ts, the Server team's 10 Oct B3 and B4). kept: each stay as its search saved it, for its note.
  */
-function voteOptions(offers: StoredOffer[], shown: Map<string, OptionsCardT['options'][number]>): VoteOption[] {
+function voteOptions(offers: StoredOffer[], shown: Map<string, OptionsCardT['options'][number]>, kept: Map<string, ResultOption> = new Map()): VoteOption[] {
   return offers.slice(0, 10).map((of) => {
     const c = shown.get(of.optionId);
+    // A stay's note says its whole stay first and its night in brackets (stayLine), as the pay card then says it.
+    const stay = of.kind === 'stay' ? kept.get(of.optionId) : undefined;
+    const note = stay ? stayLine(stay) : (c?.subtitle ?? null);
     // A stay's is its whole stay, as on its card, or none: never a night's (the Server team's 10 Oct §6c).
     const price = of.kind === 'stay' ? of.totalMinor : (of.totalMinor ?? of.priceMinor);
     return {
@@ -52,13 +55,25 @@ function voteOptions(offers: StoredOffer[], shown: Map<string, OptionsCardT['opt
       ...(c?.image_url ? { image_url: c.image_url } : {}),
       ...(price !== null ? { price_minor: price, currency: of.currency ?? 'INR' } : {}),
       option_ref: of.optionId,
-      ...(c?.subtitle ? { note: clip(c.subtitle, 120) } : {}),
+      ...(note ? { note: clip(note, 120) } : {}),
       ...(c?.photos?.length ? { photos: c.photos } : {}),
       ...(c?.room_types?.length ? { room_types: c.room_types } : {}),
       ...(typeof c?.price_min_minor === 'number' ? { price_min_minor: c.price_min_minor } : {}),
       ...(typeof c?.price_max_minor === 'number' ? { price_max_minor: c.price_max_minor } : {}),
     };
   });
+}
+
+/** Each stay on a card as its search saved it (its facts, its night and its whole stay), by its option id. */
+async function keptStays(results: Pick<ResultsStore, 'get'>, tripId: string, offers: StoredOffer[]): Promise<Map<string, ResultOption>> {
+  const sets = new Map<string, Awaited<ReturnType<ResultsStore['get']>>>();
+  const kept = new Map<string, ResultOption>();
+  for (const offer of offers) {
+    if (!sets.has(offer.resultsId)) sets.set(offer.resultsId, await results.get(tripId, offer.resultsId));
+    const option = sets.get(offer.resultsId)?.options[offer.n - 1];
+    if (option) kept.set(offer.optionId, option);
+  }
+  return kept;
 }
 
 function voteCardFor(id: string, decisionId: string, question: string, options: VoteOption[]): VoteCard {
@@ -76,11 +91,12 @@ export async function openVoteFromCard(
   if (PERSONAL_KINDS.has(row.optionKind)) return { ok: false, reason: 'personal' };
   const offers = await d.results.offersOnCard(o.cardId);
   const shown = new Map(row.card.options.map((op) => [op.option_id, op]));
+  const kept = row.optionKind === 'stay' ? await keptStays(d.results, o.tripId, offers) : new Map<string, ResultOption>();
   // A card with one option is put to the group as that option or keep looking: still a choice vote on the offer
   // itself, so its winner can be booked (8 Oct run sheet: a one-option card's vote failed here, Go opened a yes/no vote
   // of its own, and "I'll book it" then had nothing to book).
   const one = offers.length === 1;
-  const options = one ? [...voteOptions(offers, shown), { label: KEEP_LOOKING }] : voteOptions(offers, shown);
+  const options = one ? [...voteOptions(offers, shown, kept), { label: KEEP_LOOKING }] : voteOptions(offers, shown, kept);
   const question = clip(one ? (o.question ?? `Go with ${clip(offers[0]!.title, 120)}?`) : stayQuestion(o.question ?? QUESTIONS[row.optionKind], offers), 200);
   if (row.decisionId && !row.decisionId.startsWith('pending:')) {
     // The same key again is a rerun of the turn that opened it: show the same vote, open nothing new.

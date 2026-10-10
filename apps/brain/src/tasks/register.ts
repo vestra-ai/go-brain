@@ -126,6 +126,9 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     recent: (since) => recentTalk(brain.pool, since),
   });
   brain.tripLog.onEvent((ev) => awake.onEvent(ev));
+  // A person opening the room after a while (catch_up) or tapping a card counts as their line: the box is up before their
+  // first ask, which never waits for it to wake (10 Oct drill: 6.3 s of a 15 s trains read).
+  if (brain.recipeRunners) brain.recipeRunners.roomActive = (tripId) => awake.heard(tripId, brain.now());
   void awake.catchUp().catch((err: unknown) => brain.log.warn({ err: String(err) }, 'tasks: the keepalive could not read which trips are talking'));
   // When Go stops (built.stop()): no new sweep or hold, every stream and wait aborted, the last card updates sent.
   brain.onStop(async () => {
