@@ -160,8 +160,14 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
         waiters.delete(wake);
         reject(new SocketCallError(503, 'no socket from the Server is open', 'unavailable'));
       }, waitForSocketMs);
-      // The trip's instance did not dial back in its few seconds: another open socket takes the request.
-      const late = instance === null ? undefined : setTimeout(wake, Math.max(0, backBy(instance) - Date.now()));
+      // The trip's instance did not dial back in its few seconds: another open socket takes the request. A timer can fire
+      // a millisecond before Date.now() reaches its end, and pick still waits then, so it waits out the rest; without
+      // that the request sat out the whole wait for a socket.
+      const lateWake = (): void => {
+        wake();
+        if (instance !== null && waiters.has(wake) && Date.now() < backBy(instance)) late = setTimeout(lateWake, backBy(instance) - Date.now());
+      };
+      let late = instance === null ? undefined : setTimeout(lateWake, Math.max(0, backBy(instance) - Date.now()));
       waiters.add(wake);
     });
   }
