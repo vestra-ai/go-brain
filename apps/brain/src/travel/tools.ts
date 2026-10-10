@@ -852,7 +852,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       'Opens a vote on the options of an options card Go showed (card_id), even a card with one option (that option or keep looking). ' +
       'Only this vote can be booked: never open_vote for options on a card. To show options and put them to a vote at once, ' +
       'call show_options and then this with no card_id, in the same reply. The vote card goes out with the line you give it. ' +
-      `${CARD_LINE} Use it when the group should decide together. ` +
+      `${CARD_LINE} Use it when the group should decide together on a shared thing (a stay, a cab, an activity), never on a ticket: a flight, train or bus is each traveller's own pick. ` +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: VoteArgs,
     endsTurn: true,
@@ -881,6 +881,12 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
           ...(a.anonymous ? { anonymous: true } : {}),
         },
       );
+      if (r.ok === false && r.reason === 'personal') {
+        return {
+          error: 'personal',
+          note: "A ticket (a flight, train or bus) is its traveller's own, never a group vote: each person taps \"I'll take this\" on it, and Go posts their own confirm. Say that in one line if anyone asked for a vote.",
+        };
+      }
       if (!r.ok) return { error: r.reason, ...(r.decisionId ? { decision_id: r.decisionId } : {}) };
       ctx.cards.push(r.voteCard);
       ctx.lines.push(a.line);
