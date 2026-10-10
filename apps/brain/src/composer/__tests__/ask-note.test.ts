@@ -19,7 +19,10 @@ const ASKS: Array<[string, string]> = [
 const packOf = (lines: Array<[string, string]>): TripPack => ({ trip: goaSnapshot(), messages: lines.map(([who, text], k) => msg(k + 2, who, text)), seq: 99 });
 const ORDER =
   'in one or two short sentences: the answer itself, no extra tips and no offer to do more unless your rules call for one. ' +
-  'A list, a recap or a comparison they asked for may be longer. When you cite what someone said, keep its message number.';
+  'A list, a recap or a comparison they asked for may be longer. When you cite what someone said, keep its message number. ' +
+  // Staging, 10 Oct: "Priya asked for a recap, so a short list is fine. I'll keep each person's own facts without
+  // budgets or names tied to them." opened a recap: this note's permission and a rule, said back as working.
+  'Start with the answer: never with what they asked for, why your answer takes the shape it does, or what you will leave out.';
 
 const woke = (seq: number, namesGo: boolean, over: Partial<DeskItem> = {}): DeskItem => ({
   id: `w${seq}`, tripId: 't_goa', kind: 'message', ref: `m_${seq}`, dueAt: new Date(), payload: { messageId: `m_${seq}`, namesGo }, ...over,

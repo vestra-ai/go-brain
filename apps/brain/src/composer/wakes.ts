@@ -77,7 +77,9 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
  * after the newest messages, as the last thing read before the reply. Under "why you woke" it changed nothing (run
  * 37582427795: still three sentences, writing time 1.30 s before and 1.31 s after), read as part of the turn's state
  * while the rules said one to three. A list, a recap or a comparison may be longer, an offer the rules call for (a vote
- * instead of paying) stays, and what someone said keeps its message number, which recall's answers cite.
+ * instead of paying) stays, and what someone said keeps its message number, which recall's answers cite. The reply starts
+ * with the answer: on staging (10 Oct) a recap began "Priya asked for a recap, so a short list is fine. I'll keep each
+ * person's own facts without budgets or names tied to them.", this note's and the rules' permissions said back as working.
  */
 export function askNote(items: DeskItem[], pack: TripPack): string | null {
   const seqs = items.flatMap((item) => {
@@ -91,7 +93,8 @@ export function askNote(items: DeskItem[], pack: TripPack): string | null {
   const which = refs.length === 1 ? refs[0] : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]}`;
   return (
     `Answer ${which} in one or two short sentences: the answer itself, no extra tips and no offer to do more unless your rules call for one. ` +
-    'A list, a recap or a comparison they asked for may be longer. When you cite what someone said, keep its message number.'
+    'A list, a recap or a comparison they asked for may be longer. When you cite what someone said, keep its message number. ' +
+    'Start with the answer: never with what they asked for, why your answer takes the shape it does, or what you will leave out.'
   );
 }
 
