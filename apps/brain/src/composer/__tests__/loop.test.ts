@@ -311,7 +311,7 @@ function askedBy(ctx: TurnCtx, text: string, payload: Record<string, unknown> = 
   ctx.pack = { ...ctx.pack, messages: [msg(3, 'p_arjun', text)] };
   ctx.wake = [{ id: `msg:${ctx.tripId}:m_3`, tripId: ctx.tripId, kind: 'message', ref: 'm_3', payload: { messageId: 'm_3', ...payload } } as unknown as DeskItem];
 }
-const silence = { tools: [{ name: 'stay_silent', input: {} }] };
+const silence = { tools: [{ name: 'stay_silent', input: { reason: 'nothing to add' } }] };
 
 describe('never silent on a direct ask (EXAM, 10 Oct: #8, #15, #24 ended in stay_silent)', () => {
   it('refuses stay_silent while the ask that woke the turn has no answer: the turn goes on and answers it', async () => {
