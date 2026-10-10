@@ -141,6 +141,34 @@ describe('the card store', () => {
   });
 });
 
+// For work that changes a card while the turn posting it still goes (the top pick's photos, travel/pick-photos.ts).
+describe("a card's post, waited on", () => {
+  it('is there at once for a card already in the room; else it waits for the post to answer, or a tap to land it', async () => {
+    await cards.observe('post_message', { trip_id: 't_wait', request_id: 'go_w1', card: working('c_live') }, { message_id: 'm_go_1', seq: 1 });
+    expect(await cards.posted('t_wait', 'c_live', 1_000)).toBe(true);
+    // Sent, not answered yet: the wait ends when the answer comes.
+    await cards.sending('post_message', { trip_id: 't_wait', request_id: 'go_w2', card: working('c_soon') });
+    const soon = cards.posted('t_wait', 'c_soon', 5_000);
+    await cards.observe('post_message', { trip_id: 't_wait', request_id: 'go_w2', card: working('c_soon') }, { message_id: 'm_go_2', seq: 2 });
+    expect(await soon).toBe(true);
+    // Or when a tap proves it landed.
+    await cards.sending('post_message', { trip_id: 't_wait', request_id: 'go_w3', card: working('c_tapped') });
+    const tapped = cards.posted('t_wait', 'c_tapped', 5_000);
+    await cards.landed('t_wait', 'c_tapped');
+    expect(await tapped).toBe(true);
+  });
+
+  it('gives up after its time on a card that was never posted, or whose post never answered', async () => {
+    const started = Date.now();
+    expect(await cards.posted('t_wait', 'c_never', 50)).toBe(false);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(40);
+    await cards.sending('post_message', { trip_id: 't_wait', request_id: 'go_w4', card: working('c_pending') });
+    expect(await cards.posted('t_wait', 'c_pending', 50)).toBe(false);
+    // Another trip's card of the same id is not this one.
+    expect(await cards.posted('t_other', 'c_live', 50)).toBe(false);
+  });
+});
+
 describe('a card Go has sent, before the Server answers', () => {
   const posted = (id: string): Record<string, unknown> => ({ request_id: `go_post_${id}`, trip_id: 't_goa', card: working(id) });
   const pendingOf = async (id: string): Promise<boolean | null> =>

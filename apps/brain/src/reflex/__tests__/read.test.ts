@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JevAnswer } from '../jev.js';
 import { looksLikeMoney } from '../money-line.js';
-import { applyLive, codeOnly, liveRecipe, readAnswers, type CodeFacts } from '../read.js';
+import { applyLive, codeOnly, leftToPeople, liveRecipe, readAnswers, type CodeFacts } from '../read.js';
 import type { QuestionName } from '../questions.js';
 
 const n = (p: number): JevAnswer => ({ type: 'noul', noul: p });
@@ -24,6 +24,40 @@ describe('question 1: for Go', () => {
     expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.22) }).forGo).toEqual({ value: false, sure: true });
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.3) }).forGo.sure).toBe(false);
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
+  });
+  // Keshav, 10 Oct: "go can interfere in most of the messages". Only pure banter or an acknowledgement is left alone: a
+  // line no one spoke to Go in that carries a fact or a plan is not banter, so the turn can jump in.
+  it('reads banter only on the chatter bar, or small talk with no answer; never a line naming Go or about money', () => {
+    expect(read({ q1_chatter: n(0.95), q1_addressed: n(0.05) }).banter).toEqual({ value: true, sure: true });
+    expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }).banter).toEqual({ value: null, sure: false });
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.22) }).banter?.sure).toBe(false);
+    expect(read({ q1_chatter: n(0.95), q1_addressed: n(0.05) }, { ...plain, namesGo: true }).banter).toEqual({ value: false, sure: true });
+    expect(read({ q1_chatter: n(0.95), q1_addressed: n(0.05) }, { ...plain, money: true }).banter).toEqual({ value: false, sure: true });
+    expect(read(null, { ...plain, smallTalk: true }).banter).toEqual({ value: true, sure: true });
+    expect(read(null).banter?.sure).toBe(false);
+    // A bare ok or 👍 is banter by code whatever Jev says, unless it comes right after Go's own line (the yes to an offer).
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.3) }, { ...plain, smallTalk: true }).banter).toEqual({ value: true, sure: true });
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.3) }, { ...plain, smallTalk: true, answersGo: true }).banter?.sure).toBe(false);
+  });
+  // Keshav, 10 Oct: "jev decision model should know that many messages even without @go or go can be responded by go or
+  // acted upon by go". Question 11 says so for itself; a wrong no would leave a real ask unanswered.
+  it('reads question 11 above or below its bars; a line naming Go or about money always has something for Go', () => {
+    expect(read({ q11_actionable: n(0.92) }).actionable).toEqual({ value: true, sure: true });
+    expect(read({ q11_actionable: n(0.04) }).actionable).toEqual({ value: false, sure: true });
+    expect(read({ q11_actionable: n(0.5) }).actionable).toEqual({ value: null, sure: false });
+    expect(read({ q11_actionable: n(0.04) }, { ...plain, namesGo: true }).actionable).toEqual({ value: true, sure: true });
+    expect(read({ q11_actionable: n(0.04) }, { ...plain, money: true }).actionable).toEqual({ value: true, sure: true });
+    expect(read(null).actionable?.sure).toBe(false);
+  });
+  it('leaves a line to the people when question 11 is sure there is nothing in it for Go, or question 1 reads banter it is not sure of', () => {
+    const yes = { value: true, sure: true } as const;
+    const no = { value: false, sure: true } as const;
+    const unsure = { value: null, sure: false } as const;
+    expect(leftToPeople({ actionable: no })).toBe(true);
+    expect(leftToPeople({ actionable: yes, banter: yes })).toBe(false);
+    expect(leftToPeople({ actionable: unsure, banter: yes })).toBe(true);
+    expect(leftToPeople({ actionable: unsure, banter: unsure })).toBe(false);
+    expect(leftToPeople({})).toBe(false);
   });
   it("wakes Go for a line no one spoke to it in when question 6 reads a plan question to the group or an agreement: a point Go can move", () => {
     // Jev's own answers in live run 37488230324.

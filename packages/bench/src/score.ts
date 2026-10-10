@@ -5,6 +5,7 @@
  * clock at both ends; the cache uses chat time.
  */
 import { computeAnthropicCostUsd } from '@go/brain/dist/composer/anthropic-helpers.js';
+import { isSmallTalk } from '@go/brain/dist/reflex/small-talk.js';
 import { cacheTurns, summarizeCache, type CacheSummary, type ChatEvent, type TurnCache } from './cache-estimate.js';
 import { addressesGo, chatCounts, type Chat, type RecallProbe, type SayLine, type Speak } from './chat.js';
 import { promptParts, type RecordedRequest } from './requests.js';
@@ -79,7 +80,14 @@ export interface ChatScore {
   composerModel: string;
   reflexSource: ReplayRecord['reflexSource'];
   messages: { people: number; goLinesSkipped: number; edits: number; deletes: number; reactions: number; photos: number };
-  wake: { turns: number; messages: number; rate: number | null };
+  /**
+   * How often the model woke: turns over messages from people, reported (Go jumps in on most lines, Keshav 10 Oct). The
+   * guard is banter: the lines labelled quiet that are bare small talk (an ok, a haha, an emoji, not right after Go's own
+   * line) whose seq a first round's "why you woke" names. Bursts: how many of them more than one first round woke.
+   */
+  wake: { turns: number; messages: number; rate: number | null; banter: { lines: number; woke: number; rate: number | null }; burstsWokeTwice: number };
+  /** The model's cost of one woken turn (its first round, cache as estimated, 150 tokens out), and per 100 people's lines. */
+  cost: { perTurnUsd: number | null; per100LinesUsd: number | null };
   typing: { n: number; p50Ms: number | null; p90Ms: number | null; missing: number; withoutPost: number };
   reply: { n: number; p50Ms: number | null; p90Ms: number | null };
   speak: {
@@ -90,6 +98,8 @@ export interface ChatScore {
     byKind: Record<PostKind, number>;
     unprompted: Array<{ at: number; afterLine: number | null; text: string }>;
     duplicates: Array<{ at: number; text: string }>;
+    /** Posts with no line from a person since Go's last post, a promised follow-up aside: Go talking over itself. */
+    twiceInARow: Array<{ at: number; text: string }>;
   };
   quiet: { reactions: number; wrongReactions: Array<{ line: number; emoji: string }>; recordLines: number };
   cache: CacheSummary;
@@ -184,6 +194,23 @@ function costOf(requests: readonly RecordedRequest[]): number | null {
   return priced > 0 ? cost : null;
 }
 
+/** Tokens a woken turn's answer takes, for the cost of a turn: a short line or a tool call. */
+const TURN_OUTPUT_TOKENS = 150;
+
+/** The model's cost of one woken turn, from its first round's estimated cache split, and per 100 people's lines. */
+function turnCost(turns: readonly TurnCache[], model: string, wakes: number, lines: number): ChatScore['cost'] {
+  const firsts = turns.filter((t) => t.firstRound);
+  if (firsts.length === 0) return { perTurnUsd: null, per100LinesUsd: null };
+  const each = firsts.map((t) => computeAnthropicCostUsd({
+    input_tokens: Math.max(0, t.estimate.totalTokens - t.estimate.readTokens - t.estimate.writeTokens),
+    output_tokens: TURN_OUTPUT_TOKENS,
+    cache_read_input_tokens: t.estimate.readTokens,
+    cache_creation_input_tokens: t.estimate.writeTokens,
+  }, model));
+  const perTurnUsd = each.reduce((s, x) => s + x, 0) / each.length;
+  return { perTurnUsd, per100LinesUsd: lines > 0 ? perTurnUsd * (wakes / lines) * 100 : null };
+}
+
 export function scoreReplay(rec: ReplayRecord): ChatScore {
   const { chat, frames, requests } = rec;
   const counts = chatCounts(chat);
@@ -200,6 +227,7 @@ export function scoreReplay(rec: ReplayRecord): ChatScore {
   const byKind: Record<PostKind, number> = { prompted: 0, follow_up: 0, greeting: 0, duplicate: 0, unprompted: 0 };
   const unprompted: ChatScore['speak']['unprompted'] = [];
   const duplicates: ChatScore['speak']['duplicates'] = [];
+  const twiceInARow: ChatScore['speak']['twiceInARow'] = [];
   let prevAt = Number.NEGATIVE_INFINITY;
   let prevKind: PostKind | null = null;
   let prevText: string | null = null;
@@ -214,6 +242,7 @@ export function scoreReplay(rec: ReplayRecord): ChatScore {
     else kind = 'unprompted';
     byKind[kind]++;
     if (kind === 'duplicate') duplicates.push({ at: p.at, text: p.text });
+    if (window.length === 0 && kind !== 'greeting' && kind !== 'follow_up' && prevKind !== null) twiceInARow.push({ at: p.at, text: p.text });
     if (kind === 'unprompted') {
       const before = people.filter((x) => x.d.realMs <= p.at);
       unprompted.push({ at: p.at, afterLine: before[before.length - 1]?.line.i ?? null, text: p.text });
@@ -279,7 +308,28 @@ export function scoreReplay(rec: ReplayRecord): ChatScore {
   const cache = summarizeCache(turns);
   const firsts = turns.filter((t) => t.firstRound);
   const avg = (pick: (t: TurnCache) => number): number => Math.round(firsts.reduce((s, t) => s + pick(t), 0) / firsts.length);
-  const firstRounds = requests.filter((r) => r.role === 'composer' && r.body.messages.length === 1).length;
+  const firstRequests = requests.filter((r) => r.role === 'composer' && r.body.messages.length === 1);
+  const firstRounds = firstRequests.length;
+
+  // What woke each first round: the seqs its "why you woke" names (message #12 from Kabir).
+  const lineBySeq = new Map(rec.delivered.flatMap((d) => (d.seq !== undefined ? [[d.seq, d.i] as const] : [])));
+  const wokeLines = firstRequests.map((r) => {
+    const text = JSON.stringify(r.body.messages[0]?.content ?? '');
+    const why = text.slice(text.indexOf('Why you woke'));
+    return new Set([...why.matchAll(/message #(\d+) from/g)].flatMap((m) => {
+      const i = lineBySeq.get(Number(m[1]));
+      return i === undefined ? [] : [i];
+    }));
+  });
+  const woken = new Set(wokeLines.flatMap((s) => [...s]));
+  const banterLines = people.filter(({ line }) => {
+    if (line.go_should_speak !== false || addressesGo(line.text) || !isSmallTalk(line.text)) return false;
+    const prev = [...chat.lines.slice(0, line.i)].reverse().find((x) => x.kind === 'say');
+    return !(prev !== undefined && prev.kind === 'say' && prev.person === 'go');
+  });
+  const banterWoke = banterLines.filter(({ line }) => woken.has(line.i)).length;
+  const bursts = groupsOf(chat);
+  const burstsWokeTwice = bursts.filter((g) => wokeLines.filter((s) => g.lines.some((i) => s.has(i))).length > 1).length;
 
   // Recall.
   const foldAt = turns.find((t) => t.result === 'fold')?.realMs ?? null;
@@ -314,10 +364,15 @@ export function scoreReplay(rec: ReplayRecord): ChatScore {
     composerModel: rec.composerModel,
     reflexSource: rec.reflexSource,
     messages: { people: counts.peopleMessages, goLinesSkipped: counts.goLines, edits: counts.edits, deletes: counts.deletes, reactions: counts.reactions, photos: counts.photos },
-    wake: { turns: firstRounds, messages: people.length, rate: people.length > 0 ? firstRounds / people.length : null },
+    wake: {
+      turns: firstRounds, messages: people.length, rate: people.length > 0 ? firstRounds / people.length : null,
+      banter: { lines: banterLines.length, woke: banterWoke, rate: banterLines.length > 0 ? banterWoke / banterLines.length : null },
+      burstsWokeTwice,
+    },
+    cost: turnCost(turns, rec.composerModel, firstRounds, people.length),
     typing: { n: typingMs.length, p50Ms: percentile(typingMs, 50), p90Ms: percentile(typingMs, 90), missing: typingMissing, withoutPost },
     reply: { n: replyMs.length, p50Ms: percentile(replyMs, 50), p90Ms: percentile(replyMs, 90) },
-    speak: { asks: asks.length, answered: asks.length - missed.length, missed, posts: posts.length, byKind, unprompted, duplicates },
+    speak: { asks: asks.length, answered: asks.length - missed.length, missed, posts: posts.length, byKind, unprompted, duplicates, twiceInARow },
     quiet: { reactions: reactions.length, wrongReactions, recordLines: uniqueWrites(frames, 'add_record_line').length },
     cache,
     turns,

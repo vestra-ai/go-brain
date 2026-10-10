@@ -21,6 +21,11 @@ class SystemActor(BaseModel):
     kind: Literal["system"]
 
 
+class Photo(BaseModel):
+    url: Annotated[str, Field(pattern="^https?://")]
+    label: str | None = None
+
+
 class Place(BaseModel):
     name: Annotated[str, Field(max_length=120, min_length=1)]
     place_id: str | None = None
@@ -28,6 +33,7 @@ class Place(BaseModel):
     lat: float | None = None
     lng: float | None = None
     photo_url: str | None = None
+    photos: list[Photo] | None = None
     timezone: str | None = None
 
 
@@ -212,6 +218,14 @@ class OptionDetails(BaseModel):
     go_note: str | None = None
 
 
+class RoomType(BaseModel):
+    room_type_id: Annotated[str, Field(max_length=64, min_length=1)]
+    label: Annotated[str, Field(max_length=60, min_length=1)]
+    sleeps: Annotated[int, Field(ge=1, le=30)]
+    price_minor: Annotated[int, Field(ge=0)]
+    photos: list[Photo] | None = None
+
+
 class Option(BaseModel):
     option_id: Annotated[str, Field(max_length=64, min_length=1)]
     title: Annotated[str, Field(max_length=80, min_length=1)]
@@ -230,6 +244,10 @@ class Option(BaseModel):
     return_journey: Journey | None = None
     price_oneway_minor: int | None = None
     price_round_minor: int | None = None
+    photos: list[Photo] | None = None
+    price_min_minor: int | None = None
+    price_max_minor: int | None = None
+    room_types: list[RoomType] | None = None
 
 
 class OptionsCard(BaseModel):
@@ -247,6 +265,41 @@ class OptionsCard(BaseModel):
     ]
     checked_at: AwareDatetime
     options: Annotated[list[Option], Field(max_length=5, min_length=1)]
+    actions: list[CardAction] | None = None
+
+
+class ArrangedRoom(BaseModel):
+    room_type_id: Annotated[str, Field(max_length=64, min_length=1)]
+    label: Annotated[str, Field(max_length=60, min_length=1)]
+    person_ids: Annotated[list[str], Field(max_length=30, min_length=1)]
+    price_minor: Annotated[int, Field(ge=0)]
+
+
+class PersonAmount(BaseModel):
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    amount_minor: Annotated[int, Field(ge=0)]
+
+
+class RoomArrangement(BaseModel):
+    arrangement_id: Annotated[str, Field(max_length=64, min_length=1)]
+    label: Annotated[str, Field(max_length=80, min_length=1)]
+    rooms: Annotated[list[ArrangedRoom], Field(max_length=15, min_length=1)]
+    total_minor: Annotated[int, Field(ge=0)]
+    per_person: Annotated[list[PersonAmount], Field(max_length=30, min_length=1)]
+
+
+class RoomsCard(BaseModel):
+    """
+    10 Oct B5: after a stay is picked, the ways the group can take its rooms and who shares with whom. A tap is card_tap with option_id = the arrangement's id.
+    """
+
+    card_id: Annotated[str, Field(max_length=64, min_length=1)]
+    fallback_text: Annotated[str, Field(max_length=300, min_length=1)]
+    for_person_ids: list[str] | None = None
+    kind: Literal["rooms"]
+    title: Annotated[str, Field(max_length=80, min_length=1)]
+    option_id: Annotated[str, Field(max_length=64, min_length=1)]
+    arrangements: Annotated[list[RoomArrangement], Field(max_length=10, min_length=1)]
     actions: list[CardAction] | None = None
 
 
@@ -459,6 +512,7 @@ class Message(BaseModel):
         | PayCard
         | NoticeCard
         | ChecklistCard
+        | RoomsCard
         | None
     ) = None
     quick_replies: list[QuickReply] | None = None
@@ -496,6 +550,7 @@ class PostMessage(BaseModel):
         | PayCard
         | NoticeCard
         | ChecklistCard
+        | RoomsCard
         | None
     ) = None
     reply_to: str | None = None
@@ -524,7 +579,8 @@ class ReplaceCard(BaseModel):
         | CallCard
         | PayCard
         | NoticeCard
-        | ChecklistCard,
+        | ChecklistCard
+        | RoomsCard,
         Field(discriminator="kind"),
     ]
 
@@ -546,6 +602,10 @@ class DecisionOption(BaseModel):
     option_ref: str | None = None
     note: str | None = None
     details: OptionDetails | None = None
+    photos: list[Photo] | None = None
+    price_min_minor: int | None = None
+    price_max_minor: int | None = None
+    room_types: list[RoomType] | None = None
 
 
 class Mandate(BaseModel):

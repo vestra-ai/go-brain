@@ -44,7 +44,11 @@ export const TROUBLE = "Sorry, I'm having trouble right now. Give me a minute an
 /** Said once per trip per day, to someone who asks Go once today's model budget is spent. */
 export const OVER_BUDGET = "I've reached today's limit for this demo. I'll be back tomorrow.";
 
-const isForGo = (i: DeskItem): boolean => i.kind === 'message' && (i.payload as { namesGo?: boolean } | null)?.namesGo === true;
+/** A message that names Go, or that the quick read is sure asks Go without its name (trips/intake.ts asksGo). */
+const isForGo = (i: DeskItem): boolean => {
+  const p = i.payload as { namesGo?: boolean; asksGo?: boolean } | null;
+  return i.kind === 'message' && (p?.namesGo === true || p?.asksGo === true);
+};
 const messageIdOf = (i: DeskItem): string => (i.payload as { messageId?: string } | null)?.messageId ?? i.ref;
 
 /** Reply to the one message that named Go when others spoke after it, so the thread stays clear. */

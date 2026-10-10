@@ -32,6 +32,7 @@ export const TestRow = z.object({
     risky: z.boolean().optional(),
     opening: z.boolean().optional(),
     recipe: z.enum(RECIPE_CHOICES).nullable().optional(),
+    actionable: z.boolean().optional(),
   }),
 });
 export type TestRow = z.infer<typeof TestRow>;
@@ -78,7 +79,7 @@ export function rowInput(row: TestRow): ReflexInput {
 
 const FIELD = {
   for_go: 'forGo', complete: 'complete', size: 'size', task: 'taskId', fact: 'fact',
-  record: 'recordKind', reaction: 'reaction', risky: 'risky', opening: 'opening', recipe: 'recipe',
+  record: 'recordKind', reaction: 'reaction', risky: 'risky', opening: 'opening', recipe: 'recipe', actionable: 'actionable',
 } as const satisfies Record<QuestionName, string>;
 
 export interface QuestionScore {
@@ -115,6 +116,7 @@ export const GATES: Record<QuestionName, { minRecall: number; maxWrong: number }
   risky: { minRecall: 0.8, maxWrong: 2 },
   opening: { minRecall: 0.3, maxWrong: 0 },
   recipe: { minRecall: 0.5, maxWrong: 0 },
+  actionable: { minRecall: 0.5, maxWrong: 0 },
 };
 
 const BY_VALUE: ReadonlySet<QuestionName> = new Set(['reaction', 'recipe']);
@@ -269,6 +271,8 @@ export const SWEEPS: Array<{ name: QuestionName; bar: string; values: number[]; 
   { name: 'opening', bar: 'yesMin', values: [0.8, 0.85, 0.9, 0.95], apply: (b, v) => ({ ...b, opening: { ...b.opening, yesMin: v } }) },
   { name: 'recipe', bar: 'pickMin', values: [0.5, 0.6, 0.7, 0.8, 0.9], apply: (b, v) => ({ ...b, recipe: { ...b.recipe, pickMin: v } }) },
   { name: 'recipe', bar: 'rivalMax', values: [0.1, 0.2, 0.3, 0.4], apply: (b, v) => ({ ...b, recipe: { ...b.recipe, rivalMax: v } }) },
+  { name: 'actionable', bar: 'yesMin', values: [0.6, 0.7, 0.8, 0.9], apply: (b, v) => ({ ...b, actionable: { ...b.actionable, yesMin: v } }) },
+  { name: 'actionable', bar: 'noMax', values: [0.05, 0.1, 0.2, 0.3], apply: (b, v) => ({ ...b, actionable: { ...b.actionable, noMax: v } }) },
 ];
 
 /** One line per bar value: how recall and wrong answers move. Pick the value with zero wrong and the best recall. */

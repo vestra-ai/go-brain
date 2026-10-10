@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place, PositiveAmountMinor, Seq } from './common.js';
-import { OptionDetails } from './cards.js';
+import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Photo, Place, PositiveAmountMinor, Seq } from './common.js';
+import { OptionDetails, RoomType } from './cards.js';
 import { BudgetSummary, Person } from './people.js';
 
 /**
@@ -19,6 +19,11 @@ export const DecisionOption = z
     note: z.string().max(120).nullish(),
     /** 1.1: what the App shows when the option is opened, as on an options card's option. */
     details: OptionDetails.nullish(),
+    /** 10 Oct B3, B4: as on an options card's option. */
+    photos: z.array(Photo).max(12).nullish(),
+    price_min_minor: AmountMinor.nullish(),
+    price_max_minor: AmountMinor.nullish(),
+    room_types: z.array(RoomType).max(10).nullish(),
   })
   .meta({ id: 'DecisionOption' });
 

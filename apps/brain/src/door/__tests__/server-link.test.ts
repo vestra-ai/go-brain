@@ -348,6 +348,36 @@ describe('ServerLink', () => {
     expect(rows[0].gone_at).toBeNull();
   });
 
+  it("a timer that fires a millisecond before the clock says the few seconds are up still hands the read on: it never sits out the whole wait for a socket", async () => {
+    await own('t_early', 'room');
+    const { l } = link({ timeoutMs: 5_000, reconnectWaitMs: 50 });
+    const room = socketOf('room-7', 'room');
+    const drill = socketOf('drill-7', 'drill');
+    l.attach(room);
+    l.attach(drill);
+    // A first read learns the trip's instance, so the read under test never waits on the database.
+    const first = l.request('read_messages', { trip_id: 't_early', after_seq: 0 });
+    await vi.waitFor(() => expect(room.sent).toHaveLength(1));
+    answer(l, room.sent[0]!.id!, page);
+    await first;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      l.detach('room-7');
+      const p = l.request('read_messages', { trip_id: 't_early', after_seq: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+      // Date.now() a millisecond behind the timers, as it can be when a timer fires: the room's few seconds look unfinished.
+      vi.setSystemTime(Date.now() - 1);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(drill.sent).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(drill.sent).toHaveLength(1);
+      answer(l, drill.sent[0]!.id!, page);
+      await expect(p).resolves.toEqual(page);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('replicas of one Server share its instance: its trips use any of them, and a closing one hands its request to another at once', async () => {
     await own('t_rep', 'server');
     const { l } = link({ timeoutMs: 5_000 });

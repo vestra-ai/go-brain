@@ -21,6 +21,8 @@ import { guestsIn } from './recipes/ask.js';
 import { TRAVEL_WAIT_MS } from './recipes/backend.js';
 import { airportCity } from './recipes/places.js';
 import { TravelError } from './mcp-travel.js';
+import { photosOf } from './photos.js';
+import type { TopPick } from './pick-photos.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultSet, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
@@ -48,7 +50,7 @@ export interface TravelToolDeps {
    * by its name (its page by its address when the click brings nothing), and what it says kept for the next question about
    * it (Keshav, 10 Oct: the group sees Go act on ixigo). Absent, nothing opens.
    */
-  showPick?: (tripId: string, pick: { page: string; name: string; kind?: 'stay' | 'bus' }) => void;
+  showPick?: (tripId: string, pick: TopPick) => void;
   /** Where the group stays, with its position (group-stay.ts): each bus's nearest drop to it. Absent, none is said. */
   groupStay?: (tripId: string) => Promise<GroupStay | null>;
 }
@@ -371,13 +373,17 @@ export async function putUpCard(
   const picks = await Promise.all(
     numbers.map(async (n, i) => {
       const option = set.options[n - 1]!;
-      const gallery = set.optionKind === 'stay' ? (await Promise.all((option.imageUrls ?? []).map((u) => d.images.rehostUrl(u)))).filter((u): u is string => u !== null) : [];
+      // A stay's photos from the search, with no labels (ixigo's list gives none): the top pick's labelled ones replace
+      // them once its own page is read (pick-photos.ts). The sheet's gallery stays for an App before 10 Oct's B3.
+      const photos = set.optionKind === 'stay' ? await photosOf(option.imageUrls ?? [], d.images) : [];
+      const gallery = photos.map((p) => p.url);
       const details = set.optionKind === 'stay'
         ? stayDetails(option, query, people, gallery)
         : set.optionKind === 'train' ? trainDetails(option) : set.optionKind === 'flight' ? flightDetails(option, people) : null;
       return {
         n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null,
         ...(details ? { details } : {}),
+        ...(photos.length ? { photos } : {}),
       };
     }),
   );
@@ -394,8 +400,11 @@ export async function putUpCard(
   ctx.lines.push(given.line);
   // The top pick on the stage once its card is up, the room watching Go open it: a stay's own page, a bus's seat layout
   // (its stops and cancellation, kept for "where do we board"). A bus's address carries its operator and time after "#".
+  // Its card and option go with it, so a stay's page's photos can replace the search's there (pick-photos.ts).
   const top = set.optionKind === 'stay' || set.optionKind === 'bus' ? ixigoPage(picks[0]?.option.sourceUrl ?? null) : null;
-  if (top && (set.optionKind === 'stay' || top.includes('#'))) d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title, kind: set.optionKind === 'bus' ? 'bus' : 'stay' });
+  if (top && (set.optionKind === 'stay' || top.includes('#'))) {
+    d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title, kind: set.optionKind === 'bus' ? 'bus' : 'stay', cardId, optionId: picks[0]!.optionId });
+  }
   return { cardId, shown: shown.options.length };
 }
 
@@ -703,6 +712,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     `${prices ? `: ${prices}` : ''}${areas.length ? `, in ${listOf(areas)}` : ''}.` +
     `${fit > options.length ? ` The best ${options.length} are below.` : ''}` +
     `${left ? ` ${left}.` : ''}` +
+    `${found.cut ? ` ixigo's list came cut short: these are from the first ${before} it sent, not all of them.` : ''}` +
     `${found.notes?.length ? ` ${found.notes.join(' ')}` : ''}` +
     `${pick.length ? ` Not filtered by ixigo, for you to pick from each option's amenities and details: ${listOf(pick)}.` : ''}` +
     `${list ? ` ixigo's own filters for this place, now known: ${list}.` : ''}` +
@@ -728,6 +738,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       "Each option's area, time and price are as given here: name no other, and say no count the summary does not give. " +
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
       `${left ? `Say in the line that ${left}. ` : ''}` +
+      `${found.cut ? `Say in the line that these are from the first ${before} ixigo sent, and the whole list is on ixigo's page. ` : ''}` +
       `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length
         ? `Show the options whose amenities or details fit ${listOf(pick)}, the best three when there are three, best first, and say which part ixigo filtered and which you picked; ` +

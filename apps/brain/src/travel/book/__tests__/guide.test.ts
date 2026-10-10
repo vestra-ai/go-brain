@@ -86,6 +86,11 @@ describe('plan.destination', () => {
     expect(faq).toHaveLength(12);
     expect(faq[0]).toMatch(/^What is the best time to visit Goa\? The best time to visit Goa is between November and March\./);
     expect(faq.map((f) => f.split('?')[0])).toContain('Is Goa safe for solo female travelers');
+    // 10 Oct B3: up to twelve photos for the destination, the place itself first, then its places to visit by name.
+    const photos = guide['photos'] as Array<{ url: string; label?: string }>;
+    expect(photos).toHaveLength(12);
+    expect(photos[0]).toEqual({ url: 'https://imagedelivery.net/pyX3WeyB0txAwUsxwjq_eg/goa/public', label: 'Goa, India' });
+    expect(photos.slice(1, 4).map((p) => p.label)).toEqual(['Baga Beach', 'Dudhsagar Falls', 'Cape Goa Cliff']);
     expect(JSON.stringify(got)).not.toMatch(CREDENTIALS);
   });
 
@@ -270,6 +275,8 @@ describe('the ixigo tool', () => {
     const out = (await tool.run({ recipe: 'plan.destination', inputs: { place: 'Goa' } }, turn)) as Record<string, unknown>;
     expect(out).toMatchObject({ recipe: 'plan.destination', title: 'Goa', source: 'https://www.ixigo.com/plan/goa', tell_the_room: NAMES_ONLY_FROM_IXIGO });
     expect((out['facts'] as Array<Record<string, unknown>>)[0]!['places_to_eat']).toContain('Cafe de port (4.8)');
+    // The guide's labelled photos are for the trip's destination (place-for.ts), never words: the model never reads them.
+    expect((out['facts'] as Array<Record<string, unknown>>)[0]).not.toHaveProperty('photos');
     expect(NAMES_ONLY_FROM_IXIGO).toContain('never one from memory');
     // Off ixigo_web the recipes don't run.
     const off = ixigoTool({ book, engine, live: () => false })!;

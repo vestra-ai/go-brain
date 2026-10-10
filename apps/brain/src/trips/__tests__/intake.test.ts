@@ -188,10 +188,12 @@ describe('intake', () => {
     expect(items[1]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
   });
 
-  it('a sure-complete read is due at once; sure chatter gets no item unless it names Go', async () => {
+  it('a sure-complete read is due at once; pure banter gets no item unless it names Go, and a line no one spoke to Go in does', async () => {
     const read = (m: { text?: string | null }): ReflexRead => {
-      if (m.text === 'lol') return { ...UNSURE_READ, forGo: sure(false) };
-      if (m.text?.startsWith('@Go')) return { ...UNSURE_READ, forGo: sure(false), complete: sure(true) };
+      if (m.text === 'lol') return { ...UNSURE_READ, forGo: sure(false), banter: sure(true) };
+      if (m.text?.startsWith('@Go')) return { ...UNSURE_READ, forGo: sure(false), banter: sure(true), complete: sure(true) };
+      // Not spoken to Go, but not banter: Go jumps in wherever it can add anything (Keshav, 10 Oct).
+      if (m.text === "I'm veg btw") return { ...UNSURE_READ, forGo: sure(false), complete: sure(true) };
       return { ...UNSURE_READ, complete: sure(true) };
     };
     const h = harness({ reflex: () => ({ read: async (m) => read(m) }) });
@@ -200,11 +202,51 @@ describe('intake', () => {
     await h.send(ev(2, 'message.created', { message: msg(2, 'p_meher', 'lol') }, T));
     await h.send(ev(3, 'message.created', { message: msg(3, 'p_kabir', '@Go is it hot in November?') }, T));
     await h.send(ev(4, 'message.created', { message: msg(4, 'p_priya', 'what time is check-in?') }, T));
+    await h.send(ev(5, 'message.created', { message: msg(5, 'p_meher', "I'm veg btw") }, T));
     const sentAt = Date.now();
     await h.intake.idle();
     const items = (await open(T)).filter((r) => r.kind === 'message');
-    expect(items.map((r) => r.ref)).toEqual(['m_3', 'm_4']);
+    expect(items.map((r) => r.ref)).toEqual(['m_3', 'm_4', 'm_5']);
     for (const r of items) expect(r.due_at.getTime()).toBeLessThanOrEqual(sentAt + 200);
+  });
+
+  // Keshav, 10 Oct: "go only responds to @go? this is not right". A line the quick read is sure asks Go is an ask, its name
+  // or not: typing shows, it is due at once when it ends, and the turn takes it as an ask (asksGo).
+  it('a line the quick read is sure asks Go is an ask without its name; one it is unsure of stays the group\'s', async () => {
+    const read = (m: { text?: string | null }): ReflexRead => (m.text?.startsWith('I want') ? { ...UNSURE_READ, forGo: sure(true) } : UNSURE_READ);
+    const h = harness({ reflex: () => ({ read: async (m) => read(m) }) });
+    const T = 't_in_asks';
+    await h.send(created(T));
+    const sentAt = Date.now();
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_meher', 'I want to login again to Ixigo.') }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_kabir', 'login phir se karna hai shayad') }, T));
+    await h.intake.idle();
+    expect(h.order).toContain(`typing:${T}`);
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => [r.ref, r.payload])).toEqual([
+      ['m_2', { messageId: 'm_2', seq: 2, namesGo: false, asksGo: true }],
+      ['m_3', { messageId: 'm_3', seq: 3, namesGo: false }],
+    ]);
+    // It plainly ends, so it is due at once, as a line naming Go would be.
+    expect(items[0]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
+    expect(items[1]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
+  });
+
+  // Keshav, 10 Oct: "jev decision model should know that many messages even without @go or go can be responded by go".
+  it('question 11 sure of something for Go wakes the turn with the jump-in framing; sure of nothing leaves the line, banter or not', async () => {
+    const read = (m: { text?: string | null }): ReflexRead => {
+      if (m.text === "Arjun can't leave before 6 on Friday") return { ...UNSURE_READ, forGo: sure(false), banter: sure(true), actionable: sure(true) };
+      if (m.text === 'arre yaar office mein aaj bahut kaam hai') return { ...UNSURE_READ, forGo: sure(false), actionable: sure(false) };
+      return UNSURE_READ;
+    };
+    const h = harness({ reflex: () => ({ read: async (m) => read(m) }) });
+    const T = 't_in_actionable';
+    await h.send(created(T));
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_meher', "Arjun can't leave before 6 on Friday") }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_kabir', 'arre yaar office mein aaj bahut kaam hai') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => [r.ref, r.payload])).toEqual([['m_2', { messageId: 'm_2', seq: 2, namesGo: false, actionable: true }]]);
   });
 
   it('Go\'s own messages and withheld ones never wake Go', async () => {

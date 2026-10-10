@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ActionOpen, AddExpense, Booking, Card, CardTap, CONTRACT_VERSION, CreateLink, Decision, Event, Expense, ItineraryItem, Message, Option, Place,
+  ActionOpen, AddExpense, Booking, Card, CardTap, CONTRACT_VERSION, CreateLink, Decision, DecisionOption, Event, Expense, ItineraryItem, Message, Option, Place,
   PostMessage, TripSnapshot, UpdateTrip,
 } from '../index.js';
 
@@ -27,7 +27,7 @@ describe('contract 1.1', () => {
     expect(Option.parse(option).details?.rating).toBe(9.2);
     const card = { card_id: 'c_1', kind: 'options', fallback_text: 'Cabs', title: 'Cabs to Anjuna', option_kind: 'cab', checked_at: at, options: [option] };
     expect(Card.parse(card).kind).toBe('options');
-    expect(Decision.shape.options.element.parse({ label: 'Villa Maya', details }).details?.go_note).toBe('The quietest of the three.');
+    expect(DecisionOption.parse({ label: 'Villa Maya', details }).details?.go_note).toBe('The quietest of the three.');
     expect(CardTap.parse({ tap_id: 'tp_1', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', option_id: 'o_1', payload: { trip: 'round' } }).payload?.trip).toBe('round');
     expect(CardTap.safeParse({ tap_id: 'tp_1', trip_id: 't', card_id: 'c_1', action_id: 'pick', person_id: 'p', payload: { trip: 'both' } }).success).toBe(false);
     // Mobile only: no device in 1.1. A payload is A2's trip, and a device a room still sends is dropped, never refused.
@@ -196,7 +196,8 @@ describe('the 10 Oct revision', () => {
     const destination = { name: 'Goa', place_id: 'goa', photos };
     const trip = snapshot({ answered: 0, of: 4, mood: 'sunny' }, { destination, brand_new: true });
     const read = TripSnapshot.parse(trip);
-    expect(read.destination).toEqual({ name: 'Goa', place_id: 'goa' });
+    // A place's labelled photos are 1.1's own since B3 (10 Oct): kept, not ignored.
+    expect(read.destination).toEqual({ name: 'Goa', place_id: 'goa', photos });
     expect(read).not.toHaveProperty('brand_new');
     expect(Event.parse(event(1, 'trip.created', { trip })).type).toBe('trip.created');
     const booking = {
@@ -205,5 +206,56 @@ describe('the 10 Oct revision', () => {
       room_types: [{ room_type_id: 'rt_1', label: 'Deluxe room', sleeps: 2, price_minor: 2400000 }],
     };
     expect(Event.parse(event(46, 'booking.changed', { booking, change: 'added', by: { kind: 'go' } })).type).toBe('booking.changed');
+  });
+});
+
+// The Server's 10 Oct revision, B3 to B5: labelled photos on a place, an option and a vote's option; a stay's price range
+// a person and its kinds of room; the rooms card after a stay is picked, whose tap is the usual card_tap.
+describe("the 10 Oct revision: a stay's photos, rooms and room card (B3 to B5)", () => {
+  const photos = [{ url: 'https://cdn.example.com/deluxe.jpg', label: 'Deluxe room' }, { url: 'https://cdn.example.com/pool.jpg' }];
+  const roomTypes = [
+    { room_type_id: 'rt_deluxe', label: 'Deluxe room', sleeps: 2, price_minor: 2400000, photos: [photos[0]] },
+    { room_type_id: 'rt_std', label: 'Standard room', sleeps: 2, price_minor: 1800000 },
+  ];
+
+  it('B3 labelled photos on a place, an option and a vote option: up to 12, a label at most 40', () => {
+    expect(Place.parse({ name: 'Goa', photos }).photos).toEqual(photos);
+    expect(Option.parse({ option_id: 'o1', title: 'Villa Sol', highlights: [], photos }).photos).toHaveLength(2);
+    expect(DecisionOption.parse({ label: 'Villa Sol', photos }).photos).toHaveLength(2);
+    expect(Place.safeParse({ name: 'Goa', photos: Array.from({ length: 13 }, () => photos[1]) }).success).toBe(false);
+    expect(Place.safeParse({ name: 'Goa', photos: [{ url: 'https://cdn.example.com/a.jpg', label: 'x'.repeat(41) }] }).success).toBe(false);
+    expect(Place.safeParse({ name: 'Goa', photos: [{ url: 'ftp://cdn.example.com/a.jpg' }] }).success).toBe(false);
+  });
+
+  it('B4 a stay option and a vote option carry a price range a person and up to 10 kinds of room', () => {
+    const stay = { option_id: 'o1', title: 'Villa Sol', highlights: [], price_min_minor: 900000, price_max_minor: 1500000, room_types: roomTypes };
+    expect(Option.parse(stay)).toMatchObject({ price_min_minor: 900000, price_max_minor: 1500000, room_types: roomTypes });
+    expect(DecisionOption.parse({ label: 'Villa Sol', price_min_minor: 900000, room_types: roomTypes }).room_types).toHaveLength(2);
+    expect(Option.safeParse({ ...stay, room_types: Array.from({ length: 11 }, () => roomTypes[1]) }).success).toBe(false);
+    expect(Option.safeParse({ ...stay, room_types: [{ ...roomTypes[1], sleeps: 0 }] }).success).toBe(false);
+  });
+
+  it('B5 a rooms card: 1 to 10 arrangements of 1 to 15 rooms, each with its people and amounts; its tap names the arrangement', () => {
+    const arrangement = {
+      arrangement_id: 'ar_1', label: '2 Deluxe',
+      rooms: [
+        { room_type_id: 'rt_deluxe', label: 'Deluxe room', person_ids: ['p_rahul', 'p_priya'], price_minor: 2400000 },
+        { room_type_id: 'rt_deluxe', label: 'Deluxe room', person_ids: ['p_aarav', 'p_kabir'], price_minor: 2400000 },
+      ],
+      total_minor: 4800000,
+      per_person: ['p_rahul', 'p_priya', 'p_aarav', 'p_kabir'].map((person_id) => ({ person_id, amount_minor: 1200000 })),
+    };
+    const card = {
+      card_id: 'c_rooms_1', kind: 'rooms', fallback_text: 'Pick how you split the rooms at Villa Sol', title: 'Rooms at Villa Sol',
+      option_id: 'opt_stay_2', for_person_ids: ['p_rahul'], arrangements: [arrangement],
+      actions: [{ action_id: 'pick', label: 'Choose', style: 'primary', per_option: true }],
+    };
+    expect(Card.parse(card).kind).toBe('rooms');
+    expect(Card.safeParse({ ...card, arrangements: [] }).success).toBe(false);
+    expect(Card.safeParse({ ...card, arrangements: Array.from({ length: 11 }, () => arrangement) }).success).toBe(false);
+    expect(Card.safeParse({ ...card, arrangements: [{ ...arrangement, rooms: [] }] }).success).toBe(false);
+    expect(Card.safeParse({ ...card, arrangements: [{ ...arrangement, rooms: [{ ...arrangement.rooms[0], person_ids: [] }] }] }).success).toBe(false);
+    // The tap is the usual one: option_id carries the arrangement's id.
+    expect(CardTap.parse({ tap_id: 'tp_1', trip_id: 't_goa', card_id: 'c_rooms_1', action_id: 'pick', person_id: 'p_rahul', option_id: 'ar_1' }).option_id).toBe('ar_1');
   });
 });

@@ -1,6 +1,6 @@
 # Contract 1.1
 
-Contract 1.1 adds what the Server team proposed for the App's richer screens: option details, round trips, quick replies, flexible votes, locations, booking documents, checklists, call recordings, expense answers and paybacks. Every addition is optional: a new field, a new value, a new event type or a new card kind. Nothing is renamed or removed, so a Server or App built for 1.0 keeps working, and `GET /v1/health` now answers `"contract": "1.1.0"`.
+Contract 1.1 adds what the Server team proposed for the App's richer screens: option details, round trips, quick replies, flexible votes, locations, booking documents, checklists, call recordings, expense answers, paybacks, labelled photos, a stay's rooms and the rooms card. Every addition is optional: a new field, a new value, a new event type or a new card kind. Nothing is renamed or removed, so a Server or App built for 1.0 keeps working, and `GET /v1/health` now answers `"contract": "1.1.0"`.
 
 The zod schemas in `packages/contract` (and the generated `openapi/go.json`, `asyncapi/socket.json`, `socket/methods.json` and the Python models) are the exact shapes. This page says what each addition means and who sends it.
 
@@ -29,6 +29,7 @@ Good to know:
 | B3a | A call's recording and length | Go | `CallCard.recording_url`, `duration_s` |
 | B4 | The vault payment an expense was paid with; a fixed split (`updated`). Whether people agreed to an expense was withdrawn on 10 Oct | The Server; Go | `add_expense.approval_id`; `expense.changed` `updated`; withdrawn: `Expense.status`, `confirmations`, `expense.changed` `approved`, `disputed`, `by_person_id` |
 | 10 Oct A3, B1 | The group's one budget per person, in place of private budget answers | The Server; Go | `BudgetSummary.per_person_minor`; `update_trip.budget_per_person_minor` |
+| 10 Oct B3, B4, B5 | Labelled photos; a stay's price range a person and its kinds of room; the rooms card after a stay is picked | Go | `Place.photos`, `Option.photos`, `DecisionOption.photos`; `price_min_minor`, `price_max_minor`, `room_types` on `Option` and `DecisionOption`; the `rooms` card |
 
 Not in 1.1: listening to a call live (B3b), `request_task` (B3c), and the check-in methods (Group C). They come after the hackathon.
 
@@ -214,6 +215,63 @@ When the group settles one in the chat (the organizer says it, or two people agr
 <!-- schema: UpdateTrip -->
 ```json
 { "request_id": "go_budget_01J9XG", "trip_id": "t_goa", "budget_per_person_minor": 2000000 }
+```
+
+## A stay's photos, rooms and room card (10 Oct: B3, B4, B5)
+
+A place, an option and a vote's option can carry up to 12 labelled `photos`, each a `url` and an optional `label` of at most 40 characters ("Deluxe room", "Pool"). `photo_url` and `image_url` stay the single cover. On an option, `photos` replaces `details.gallery_urls`; when both come, the App shows `photos`. Go sends several for a destination (`update_trip.destination.photos`) and for each stay.
+
+A stay option, and a vote's option, can say what one person pays for the whole stay, from the cheapest way the group can take its rooms to the dearest (`price_min_minor`, `price_max_minor`). It can also list up to 10 `room_types`, each priced per room for the whole stay, with how many it sleeps:
+
+<!-- schema: Option -->
+```json
+{
+  "option_id": "opt_stay_2",
+  "title": "Villa Sol",
+  "highlights": ["Pool"],
+  "price_minor": 1800000,
+  "currency": "INR",
+  "price_note": "per night, per room",
+  "photos": [{ "url": "https://cdn.example.com/villa-sol.jpg", "label": "Pool" }],
+  "price_min_minor": 900000,
+  "price_max_minor": 1500000,
+  "room_types": [
+    { "room_type_id": "rt_deluxe", "label": "Deluxe room", "sleeps": 2, "price_minor": 2400000, "photos": [{ "url": "https://cdn.example.com/deluxe.jpg", "label": "Deluxe room" }] },
+    { "room_type_id": "rt_std", "label": "Standard room", "sleeps": 2, "price_minor": 1800000 }
+  ]
+}
+```
+
+After a vote picks a stay, Go posts a `rooms` card with the ways the group can take its rooms: 1 to 10 arrangements of 1 to 15 rooms. Each arrangement has who is in each room, what each room costs, and what each person pays. The buttons are Go's: a tap is the usual `card_tap`, with `option_id` carrying the `arrangement_id`, and Go updates the card in place with `replace_card`. When people take rooms priced differently, Go adds one expense per room, split among the people in it.
+
+<!-- schema: RoomsCard -->
+```json
+{
+  "card_id": "c_rooms_1",
+  "kind": "rooms",
+  "fallback_text": "Pick how you split the rooms at Villa Sol",
+  "title": "Rooms at Villa Sol",
+  "option_id": "opt_stay_2",
+  "for_person_ids": ["p_rahul"],
+  "arrangements": [
+    {
+      "arrangement_id": "ar_1",
+      "label": "2 Deluxe",
+      "rooms": [
+        { "room_type_id": "rt_deluxe", "label": "Deluxe room", "person_ids": ["p_rahul", "p_priya"], "price_minor": 2400000 },
+        { "room_type_id": "rt_deluxe", "label": "Deluxe room", "person_ids": ["p_aarav", "p_kabir"], "price_minor": 2400000 }
+      ],
+      "total_minor": 4800000,
+      "per_person": [
+        { "person_id": "p_rahul", "amount_minor": 1200000 },
+        { "person_id": "p_priya", "amount_minor": 1200000 },
+        { "person_id": "p_aarav", "amount_minor": 1200000 },
+        { "person_id": "p_kabir", "amount_minor": 1200000 }
+      ]
+    }
+  ],
+  "actions": [{ "action_id": "pick", "label": "Choose", "style": "primary", "per_option": true }]
+}
 ```
 
 ## What Go tolerates

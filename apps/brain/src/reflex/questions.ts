@@ -1,5 +1,5 @@
 /**
- * The ten questions Go asks Jev about every person's message, in one call.
+ * The eleven questions Go asks Jev about every person's message, in one call.
  * Question texts are product constants: a reworded question is a different question and needs its
  * test set recorded again (QUESTION_VERSIONS). People's words never sit inside a question; they ride
  * in the state, with the message last.
@@ -10,10 +10,10 @@ import type { TripPack } from '../trips/pack.js';
 import type { JevQuestion } from './jev.js';
 import { maskSecrets } from './secrets.js';
 
-export const QUESTION_NAMES = ['for_go', 'complete', 'size', 'task', 'fact', 'record', 'reaction', 'risky', 'opening', 'recipe'] as const;
+export const QUESTION_NAMES = ['for_go', 'complete', 'size', 'task', 'fact', 'record', 'reaction', 'risky', 'opening', 'recipe', 'actionable'] as const;
 export type QuestionName = (typeof QUESTION_NAMES)[number];
 export const QUESTION_NUMBER: Record<QuestionName, number> = {
-  for_go: 1, complete: 2, size: 3, task: 4, fact: 5, record: 6, reaction: 7, risky: 8, opening: 9, recipe: 10,
+  for_go: 1, complete: 2, size: 3, task: 4, fact: 5, record: 6, reaction: 7, risky: 8, opening: 9, recipe: 10, actionable: 11,
 };
 
 export const FENCE =
@@ -44,10 +44,19 @@ function noul(instructions: string, yes: string, no: string): JevQuestion {
 }
 
 const STATIC: Record<Exclude<QuestionName, 'task'>, Record<string, JevQuestion>> = {
+  // Keshav, 10 Oct: "jev decision model should know that many messages even without @go or go can be responded by go or
+  // acted upon by go". Question 1 asks who a line is spoken to; this one asks whether Go has anything to do with it.
+  actionable: {
+    q11_actionable: noul(
+      "Go, the AI member of this group, can do something useful with the last message, whether or not it names Go: answer it, act on it, note it for the trip, or offer something for it. That covers asks made without Go's name, facts and needs about the trip, plans, budgets, limits on someone's time, and questions to the group about the trip.",
+      'For example: mujhe ixigo pe dobara login karna hai; Kabir is allergic to peanuts; Goa chalein December mein?; budget 10k ke andar rakhte hain; Meher can only leave after 7 on Friday; what time is check-out?; koi achha cafe hai Panjim mein?',
+      'Pure banter, greetings, acknowledgements and side chat that is not about the trip: hahaha; good night all; ok done; thik hai; nice pic bhai; congrats on the new job!; see you tomorrow.',
+    ),
+  },
   for_go: {
     q1_addressed: noul(
-      'The last message speaks to Go, the AI member of this group: it names Go, asks Go to do or find something, or asks the group a question that Go could answer or look up.',
-      'For example: Go, train dekh lo Saturday ki; can someone check if it rains in Goa in November?; koi villa dhundho na; what time do we check in?; Go bhai total kitna hoga?',
+      'The last message speaks to Go, the AI member of this group: it names Go, asks Go to do or find something, asks for something Go does for the group even without naming Go (logging in to ixigo, a search, a booking, a vote, a reminder, checking something), or asks the group a question that Go could answer or look up.',
+      'For example: Go, train dekh lo Saturday ki; can someone check if it rains in Goa in November?; koi villa dhundho na; what time do we check in?; Go bhai total kitna hoga?; mujhe ixigo pe dobara login karna hai; can we look at hotels near Vagator?; someone set a reminder for the cab.',
       'Friends talking to each other: jokes, plans between them, teasing, greetings, reactions, photos, haha, lol, chal theek hai, bas aa raha hoon.',
     ),
     q1_chatter: noul(
