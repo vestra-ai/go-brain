@@ -180,7 +180,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     async offer(optionId): Promise<OfferRef | null> {
       const o = await d.results.offer(optionId);
       if (!o) return null;
-      // A vote and a payment use the whole stay; the card shows the nightly price.
+      // A stay's price is its whole stay here, as on its card and its vote, or none: never a night's (the Server team's 10 Oct §6c).
       // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is the option's own page on
       // ixigo.com (ixigo_web), where the group can book it, and null otherwise: a page a job found elsewhere is not handed out.
       // A stay from ixigo.com has no offer of its own: it gets Go's web-stay offer, booked on the test rail after the login.
@@ -189,7 +189,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       const day = (o.offerId ? (await d.results.searchedFor?.(o.offerId))?.day : null) ?? checkInOf(o.sourceUrl);
       const past = day !== null && day !== undefined && day < (await today(o.tripId));
       return {
-        offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl),
+        offerId, title: o.title, priceMinor: o.kind === 'stay' ? o.totalMinor : (o.totalMinor ?? o.priceMinor), currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl),
         ...(day ? { day } : {}), ...(past ? { past: true as const } : {}),
       };
     },
