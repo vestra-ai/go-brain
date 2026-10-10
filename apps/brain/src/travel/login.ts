@@ -72,9 +72,8 @@ export const LOGIN_CALLS: FetchPlan = {
  * ixigo's answer from its page's calls: a login's own call that worked says in; one of them refused (401 or 403) says out,
  * the token the page holds dead (staging, 9 Oct 17:43: the morning box's wallet and with-identity both 401, hours after
  * they were 200). A page that booted (its content came) and made none of the login's calls holds no login: out, but
- * quiet (a slow box's calls can miss the grace), so Go acts on it only once a second read agrees (login-keepalive.ts) or
- * the login is past LOGIN_LIFE_MS. Anything else unknown. With the call that said it, and its status, for the log: never
- * what it answered.
+ * quiet (a slow box's calls can miss the grace), so Go acts on it only once a second read agrees (login-keepalive.ts).
+ * Anything else unknown. With the call that said it, and its status, for the log: never what it answered.
  */
 export function loginFrom(captures: Capture[]): { login: 'in' | 'out' | 'unknown'; call: string | null; status: number | null; quiet?: true } {
   const worked = captures.find((c) => (c.match === WALLET || c.match === IDENTITY) && c.status === 200);
@@ -85,14 +84,7 @@ export function loginFrom(captures: Capture[]): { login: 'in' | 'out' | 'unknown
   if (booted && !captures.some((c) => c.match === WALLET || c.match === IDENTITY || c.match === USERINFO)) return { login: 'out', call: null, status: null, quiet: true };
   return { login: 'unknown', call: null, status: null };
 }
-/**
- * How long ixigo's web login lasts: its server refuses the token about 9 h after the login, and its page then deletes it
- * (staging, 10 Oct: in at 03:39 on an 18:52 login, gone by 04:31, with no restart, no load and no log out between). Nothing
- * in ixigo's web app renews it: its scripts set the "at" cookie for 20 years and have no refresh call, so a visit can't.
- */
-export const LOGIN_LIFE_MS = 9 * 3600_000;
-/** Past LOGIN_LIFE_MS, a read that said in stands this long only: ixigo is read again before the next recipe past it. */
-const AGED_TRUST_MS = 10 * 60_000;
+
 /** A login is taken as it stands for this long, then checked again the next time a recipe needs it. */
 export const RECHECK_MS = 6 * 3600_000;
 /** A booking stands on a login ixigo confirmed this recently; past it, the booking reads ixigo first. */
@@ -207,8 +199,8 @@ export interface IxigoLogin {
   /**
    * The keep-alive's read (login-keepalive.ts): status's, except that a quiet page (it booted, none of the login's calls
    * came) says quiet, for the keep-alive to read again CONFIRM_OUT_MS on. The read that confirms it (confirming: quiet or
-   * out again), an out, or a quiet read past the login's life ends the login and asks its person in the trip, once, with
-   * the login card as a first ask does: Go never waits for a booking to find it gone.
+   * out again), or an out, ends the login and asks its person in the trip, once, with the login card as a first ask
+   * does: Go never waits for a booking to find it gone.
    */
   keepAlive(tripId: string, o?: { confirming?: boolean }): Promise<'in' | 'out' | 'unknown' | 'challenged' | 'quiet'>;
   onEvent(ev: C.Event): Promise<void>;
@@ -395,12 +387,6 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     return quiet ? 'quiet' : login;
   }
 
-  /** Whether the trip's login is past ixigo's own life for it (LOGIN_LIFE_MS), by when the browser, or the trip, logged in. */
-  async function pastLife(tripId: string, row?: LoginRow | null): Promise<boolean> {
-    const since = (await browserLogin(tripId))?.loggedInAt ?? (row === undefined ? await get(tripId) : row)?.loggedInAt ?? null;
-    return since !== null && d.now().getTime() - since.getTime() >= LOGIN_LIFE_MS;
-  }
-
   /** Where the trip's browser's login stands, as ixigo last said it on any trip of the person's; null when unknown. */
   async function browserLogin(tripId: string): Promise<BrowserLogin | null> {
     try {
@@ -450,12 +436,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
    */
   async function status(tripId: string): Promise<'in' | 'out' | 'unknown' | 'challenged'> {
     const s = await look(tripId);
-    // Quiet past the login's life is out: ixigo's server has refused the token by then. Before it, one quiet read says
-    // nothing (the keep-alive reads again to confirm).
-    if (s === 'out' || (s === 'quiet' && (await pastLife(tripId)))) {
+    if (s === 'out') {
       await ended(tripId);
       return 'out';
     }
+    // One quiet read says nothing here: the keep-alive reads again to confirm (keepAlive).
     return s === 'quiet' ? 'unknown' : s;
   }
 
@@ -847,10 +832,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       const park = o.park ?? null;
       let row = await get(tripId);
       const now = d.now().getTime();
-      // How long a login ixigo confirmed is taken as it stands: a booking reads ixigo again past a minute, and past the
-      // login's own life (LOGIN_LIFE_MS) nothing stands longer than AGED_TRUST_MS without ixigo read again.
-      const aged = await pastLife(tripId, row);
-      const trust = Math.min(o.booking ? BOOKING_RECHECK_MS : RECHECK_MS, aged ? AGED_TRUST_MS : Infinity);
+      // How long a login ixigo confirmed is taken as it stands: a booking reads ixigo again past a minute.
+      const trust = o.booking ? BOOKING_RECHECK_MS : RECHECK_MS;
       // The person's browser, as ixigo last said on any trip of theirs: in within that is this trip's login too; out
       // since this trip last checked ends this trip's login, and the ask below asks again.
       const b = await browserLogin(tripId);
@@ -926,7 +909,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
 
     async keepAlive(tripId, o = {}) {
       const s = await look(tripId);
-      if (s === 'quiet' && !o.confirming && !(await pastLife(tripId))) return 'quiet';
+      if (s === 'quiet' && !o.confirming) return 'quiet';
       if (s !== 'out' && s !== 'quiet') return s;
       const row = await ended(tripId);
       // Asked once: the browser now says out, so the keep-alive reads it no more until a login brings it back.

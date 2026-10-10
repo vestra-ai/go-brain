@@ -1,11 +1,10 @@
 /**
- * The person's ixigo login, watched so Go asks again the moment it ends. ixigo's web login can't be kept alive: its
- * server refuses the token about 9 h after the login (LOGIN_LIFE_MS; staging, 10 Oct), its page then deletes it, and
- * nothing in ixigo's web app renews it (its own scripts: no refresh call, the "at" cookie set for 20 years). So while a
- * person's browser is logged in (tasks/browsers.ts), Go loads ixigo's home page there every couple of hours
- * (login.keepAlive: LOGIN_CALLS, one page load) and reads whether it still holds. A page that booted with none of the
- * login's calls is read again CONFIRM_OUT_MS later before it counts (a slow box's calls can miss the grace); out, the
- * login ends on every trip of the person's and Go asks its person, once, in the trip (login.ts).
+ * The person's ixigo login, watched so Go asks again the moment it ends. Nothing in ixigo's web app renews a login (its
+ * own scripts: no refresh call; the "at" cookie set for 20 years, cleared when its server refuses the token), so a visit
+ * can't keep one alive. While a person's browser is logged in (tasks/browsers.ts), Go loads ixigo's home page there every
+ * couple of hours (login.keepAlive: LOGIN_CALLS, one page load) and reads whether it still holds. A page that booted
+ * with none of the login's calls is read again CONFIRM_OUT_MS later before it counts (a slow box's calls can miss the
+ * grace); out, the login ends on every trip of the person's and Go asks its person, once, in the trip (login.ts).
  *
  * Light on ixigo by design: our boxes share one address, which ixigo rate limits (429) when it sees too many loads at
  * once (9 Oct). One read per logged-in browser in AFTER_MS plus a fixed jitter of up to JITTER_MS (its own, from its id),

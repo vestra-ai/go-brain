@@ -11,7 +11,7 @@ import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
 import {
-  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, LOGIN_CALLS, LOGIN_LIFE_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume, USERINFO, WALLET,
+  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, LOGIN_CALLS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume, USERINFO, WALLET,
 } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
@@ -1061,10 +1061,9 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
   });
 });
 
-// Staging, 10 Oct: ixigo's server refuses the token about 9 h after the login and its page deletes it; nothing renews it.
-// Go never heard: a logged-out page read "unknown", and nobody was asked. Now a quiet page counts once a second read
-// agrees, or once the login is past its life, and Go asks its person, once.
-describe("ixigo's login, watched: it ends about 9 h after the login, and Go asks again", () => {
+// Staging, 10 Oct: his login ended within the hour and Go never heard: a logged-out page read "unknown", and nobody was
+// asked. Now a quiet page counts once a second read agrees, and Go asks its person, once.
+describe("ixigo's login, watched: when it ends, Go asks again", () => {
   /** A trip logged in on the person's browser, with these answers to ixigo's reads after the login's own. */
   async function linked(after: Array<number | 'quiet'>) {
     const browser = fakeBrowser();
@@ -1106,20 +1105,5 @@ describe("ixigo's login, watched: it ends about 9 h after the login, and Go asks
     expect(browser.state?.login).toBe('in');
     expect(await w.state()).toBe('logged_in');
     expect(w.link.of('post_message').slice(posts)).toEqual([]);
-  });
-
-  it('past the login\'s life, a read that said in stands 10 minutes only, and a quiet read is out at once', async () => {
-    const { w } = await linked([200, 'quiet']);
-    w.clock.now = new Date(w.clock.now.getTime() + LOGIN_LIFE_MS);
-    // Checked at the login, hours ago: read again now, and in.
-    expect(await w.login.ensure(w.tripId, 'The stay')).toEqual({ ok: true });
-    const reads = w.reads.length;
-    expect(await w.login.ensure(w.tripId, 'The stay')).toEqual({ ok: true });
-    expect(w.reads).toHaveLength(reads);
-    // Ten minutes on, read again: quiet past its life is out, and the person is asked, with no second read to wait for.
-    w.clock.now = new Date(w.clock.now.getTime() + 10 * 60_000);
-    expect(await w.login.ensure(w.tripId, 'The stay')).toMatchObject({ ok: false });
-    expect(w.reads).toHaveLength(reads + 1);
-    expect(await w.state()).toBe('asked');
   });
 });
