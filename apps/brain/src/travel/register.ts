@@ -35,6 +35,7 @@ import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
+import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
@@ -215,13 +216,18 @@ export const registerTravel: RegisterLane = async (brain) => {
   // details are kept by the engine for "tell me about this villa". Only where Go reads ixigo.com itself.
   // A bus's top pick: its own "Select Seats" clicked on the results the stage shows, by its operator and time, read only,
   // its stops and cancellation kept for "where do we board and when". Never on a Bash that can't click one card's own
-  // button (before bash #4637): no other card's is clicked instead.
-  const showPick = (tripId: string, pick: { page: string; name: string; kind?: 'stay' | 'bus' }): void => {
+  // button (before bash #4637): no other card's is clicked instead. A stay's: its page's own photos, labelled, then
+  // replace the search's on its card (pick-photos.ts, 10 Oct B3).
+  const showPick = (tripId: string, pick: TopPick): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
     if (pick.kind === 'bus' && brain.recipeRunners?.browserFetch?.canPickOne?.() === false) return;
     const run = pick.kind === 'bus'
       ? engine.answer('buses.stops', { bus: pick.page }, { tripId, onProgress: () => undefined, staged: true })
-      : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name });
+      : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).then((got) =>
+          showPickPhotos({ results, images, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got).catch((err: unknown) => {
+            brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's photos didn't reach its card");
+          }),
+        );
     void run.catch((err: unknown) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
