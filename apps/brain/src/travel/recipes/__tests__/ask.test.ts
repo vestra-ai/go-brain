@@ -115,6 +115,10 @@ describe('reading a travel ask', () => {
     expect(share('@Go North Goa mein villa, 8 hazaar ek bande ka')).toBe(800_000);
     expect(share('@Go hotels in Anjuna 6 to 9 Nov for 4 people')).toBeUndefined();
     expect(share('@Go hotels in Anjuna under 8k per night')).toBeUndefined();
+    // p1-a's review: "each night" and "each room" are a room's price, and a lakh is written 1,20,000.
+    expect(share('@Go villa in North Goa under 8k each night')).toBeUndefined();
+    expect(share('@Go villa in North Goa 8k each room')).toBeUndefined();
+    expect(share('@Go villa in North Goa 1,20,000 per head')).toBe(12_000_000);
   });
 
   it("takes Jev's kind when it is sure, over the kind words", () => {

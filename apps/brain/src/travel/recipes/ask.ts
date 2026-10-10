@@ -229,8 +229,11 @@ export function guestsIn(lower: string): number | undefined {
   return n >= 1 && n <= 30 ? n : undefined;
 }
 
-/** A stay's money a head: "8k a head", "8,000 per person", "₹8000 each", "8 hazaar ek bande"; and "a night" after it. */
-const HEAD_MONEY = /(?:₹|rs\.?\s*)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|thousand|hazaar|hajaar)?\s*(?:(?:a|per|\/|ek)\s*)?(?:head|person|pp|bande|banda|each)\b(\s*(?:a|per|\/)\s*(?:night|raat))?/;
+/**
+ * A stay's money a head: "8k a head", "8,000 per person", "1,20,000 per head", "₹8000 each" (never "8k each night", a
+ * room's price), "8 hazaar ek bande"; and "a night" after it.
+ */
+const HEAD_MONEY = /(?:₹|rs\.?\s*)?(\d{1,2}(?:,\d{2})*,\d{3}|\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|thousand|hazaar|hajaar)?\s*(?:(?:a|per|\/|ek)\s*)?(?:head|person|pp|bande|banda|each(?!\s+(?:night|day|raat|room)\b))\b(\s*(?:a|per|\/)\s*(?:night|raat))?/;
 
 /**
  * A stay's budget a head, in paise, for the whole stay: "under 8k a head" as said, "8k a head a night" times the nights
