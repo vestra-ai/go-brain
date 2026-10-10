@@ -42,6 +42,8 @@ answer:
   max: 1
   # A point's name often carries its landmark and a phone number: the number is left out, and the landmark said when the
   # name doesn't already hold it. A policy line is ixigo's own: its window, the share refunded and the amount.
+  # drop_times: each drop's short name and time, the earliest first, for the card's line (bus-drops.ts). ixigo's list gives
+  # a bus one arrival, its first stop's (10 Oct drill: the list said 7:20 am, the drops ran 9:40 to 10:30 am).
   each: |
     (
       $said := function($p) {
@@ -56,6 +58,11 @@ answer:
         "bus_type": busTypeName,
         "pickups": [boardingPoints[$type(placeName) = "string"].$said($)],
         "drops": [droppingPoints[$type(placeName) = "string"].$said($)],
+        "drop_times": [$sort(droppingPoints[$type(placeName) = "string" and $type(placeTimeTwfFormat) = "string"], function($a, $b) { $a.placeTimeTwfFormat > $b.placeTimeTwfFormat }).{
+          "name": $substring($trim($substringBefore($replace(placeName, /[\s-]*\+?\d[\d\s-]{7,}\d/, ""), " - ")), 0, 30),
+          "at": placeTimeTwfFormat
+        }],
+        "arrival_note": "The card's arrival is ixigo's first stop: each drop has its own time.",
         "cancellation": [cancellationsPolicy[$type(con) = "string"].($trim(con) & ": " & $trim(rp) & " refund (" & $trim(cc) & ")")]
       }
     )

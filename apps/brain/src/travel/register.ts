@@ -36,6 +36,7 @@ import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
+import { showBusDrops } from './bus-drops.js';
 import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
@@ -223,7 +224,12 @@ export const registerTravel: RegisterLane = async (brain) => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
     if (pick.kind === 'bus' && brain.recipeRunners?.browserFetch?.canPickOne?.() === false) return;
     const run = pick.kind === 'bus'
-      ? engine.answer('buses.stops', { bus: pick.page }, { tripId, onProgress: () => undefined, staged: true })
+      ? engine.answer('buses.stops', { bus: pick.page }, { tripId, onProgress: () => undefined, staged: true }).then((got) =>
+          // Its line says its own drops, the times the answer will give (bus-drops.ts).
+          showBusDrops({ results, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got).catch((err: unknown) => {
+            brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top bus's drops didn't reach its card");
+          }),
+        )
       : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).then(async (got) => {
           // The rooms' prices for the trip's people, for the stay's nights (REV4 B4).
           const stay = stayOf(pick.page);
