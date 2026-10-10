@@ -1,0 +1,85 @@
+id: visa.requirements
+title: What an Indian passport holder needs to visit a country, from ixigo's visa guide, as last verified and with its source
+asks:
+  - do we need a visa for thailand
+  - visa for bali for indians
+  - what documents for a dubai visa
+  - is vietnam visa free for us
+  - thailand jaane ke liye visa chahiye kya
+inputs:
+  country: { kind: text, about: "the country, never a city or an island: Indonesia for Bali, United Arab Emirates for Dubai, Thailand for Phuket" }
+  purpose: { kind: choice, optional: true, about: "leisure (the default), business or transit" }
+auth: none
+changes_state: false
+# ixigo's visa guide, /visa-for-indians, "Visa requirements for Indian passport holders, updated daily from official
+# sources" (10 Oct 2026): 200 countries as cards, and a "Search country..." box. Go does as a person would: types the
+# country, opens its card (a panel), then the panel's "Full page" link, the country's own page
+# (/visa-for-indians/thailand-th), which holds every purpose's requirements in its Next.js flight payload. Only that page
+# is read: the guide's own address, and its card's server action, end without the slash.
+page: /visa-for-indians
+capture:
+  - { match: /visa-for-indians/, max_bytes: 1000000 }
+let:
+  purpose_code: "($p := $lowercase($trim(purpose)); $p in ['business', 'work'] ? 'business' : $p = 'transit' ? 'transit' : 'leisure')"
+  purpose_button: "$purpose_code = 'business' ? 'Business' : $purpose_code = 'transit' ? 'Transit'"
+# The panel and the country's page come a moment after each click: each next click looks for its control that long.
+fetch:
+  - when: "$exists($purpose_button)"
+    timeout_ms: 20000
+    steps:
+      - { op: type, role: textbox, name: "Search country...", text: "{country}" }
+      - { op: click, role: button, text: "{country}" }
+      - { op: click, role: link, name: Full page, optional: true, within_ms: 8000 }
+      - { op: click, role: button, name: "{$purpose_button}", optional: true, within_ms: 8000 }
+  - when: "true"
+    timeout_ms: 20000
+    steps:
+      - { op: type, role: textbox, name: "Search country...", text: "{country}" }
+      - { op: click, role: button, text: "{country}" }
+      - { op: click, role: link, name: Full page, optional: true, within_ms: 8000 }
+read:
+  rows:
+    from: /visa-for-indians/
+    format: next_html
+    # The country and its requirements, one a purpose; the purpose asked, or every one when the page has none for it.
+    list: |
+      (
+        $c := $find($, 'visaRequirements');
+        $all := [$c.visaRequirements.$merge([$, { "country": $c.name, "region": $c.region }])];
+        $asked := [$all[travelPurpose = $purpose_code]];
+        $count($asked) > 0 ? $asked : $all
+      )
+answer:
+  as: facts
+  title: "Visa for {country}"
+  max: 3
+  # The verified date is said with the answer: a rule changes (Thailand's stay went from 60 to 30 days on 15 Sep 2026).
+  each: |
+    (
+      $kinds := { "visa_free": "visa free", "visa_on_arrival": "visa on arrival", "evisa": "e-Visa", "e_visa": "e-Visa", "eta": "e-Visa (ETA)", "visa_required": "visa required" };
+      $day := function($t) { $type($t) = "string" ? $fromMillis($toMillis($replace($t, /^\$D/, '')), '[D] [MNn,*-3] [Y]', '+0530') };
+      $type(visaType) = "string" ? {
+        "country": country,
+        "purpose": travelPurpose,
+        "visa": $lookup($kinds, visaType) ? $lookup($kinds, visaType) : $replace(visaType, '_', ' '),
+        "summary": summary,
+        "details": conditionsText ? conditionsText : details,
+        "max_stay_days": maxStayDays,
+        "valid_for_days": validityDays,
+        "processing": processingTime,
+        "appointment_wait_days": appointmentWaitDays,
+        "fee": feesLocal ? feesLocal : ($type(feesUsd) = "number" ? "US$" & $string(feesUsd)),
+        "documents": documentsRequired,
+        "notes": importantNotes,
+        "register_before_travel": preRegistrationUrl,
+        "apply_at": officialUrl,
+        "source": sourceUrl,
+        "last_verified": $day(lastVerifiedAt)
+      }
+    )
+ttl_minutes: 60
+samples: { page: visa.requirements.html }
+measured: { fast_ms: null, page_ms: null, flow_ms: null }
+notes: >-
+  ixigo's guide says it is general information from public sources, updated regularly: Go says when it was last verified
+  and offers the source and the official page; it never applies for a visa. A city or island is asked as its country.

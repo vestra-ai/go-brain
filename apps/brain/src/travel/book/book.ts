@@ -32,6 +32,7 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
   if (r.read) {
     out.push(['read.rows.list', r.read.rows.list]);
     if (r.read.rows.unique) out.push(['read.rows.unique', r.read.rows.unique]);
+    if (r.read.rows.where) out.push(['read.rows.where', r.read.rows.where]);
     for (const [name, a] of Object.entries(r.read.also ?? {})) out.push([`read.also.${name}`, a.value]);
   }
   const a = r.answer;

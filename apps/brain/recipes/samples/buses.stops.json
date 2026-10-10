@@ -1,0 +1,173 @@
+{
+ "status": "success",
+ "message": "",
+ "travelerAgentName": "Paulo Travels Express",
+ "busTypeName": "VE AC Sleeper (2 + 1)",
+ "JourneyDate": "06-11-2026",
+ "boardingPoints": [
+  {
+   "placeName": "Marathahalli Opp Innovative Multiplex main Road",
+   "placeTime": "05:35 PM",
+   "placeId": "9000",
+   "landMark": "Marathahalli",
+   "placeTimeTwfFormat": "17:35",
+   "dt": "2026-11-06",
+   "latlong": ""
+  },
+  {
+   "placeName": "Bellandur-Near Skywalk Bellandur- Eco Space",
+   "placeTime": "05:45 PM",
+   "placeId": "9001",
+   "landMark": "Bellandur-Near Skywalk Bellandur- Eco Space",
+   "placeTimeTwfFormat": "17:45",
+   "dt": "2026-11-06",
+   "latlong": ""
+  },
+  {
+   "placeName": "Silk Board- Nr Jamia Masjid Bus Stop Opp Traffic Police Stn",
+   "placeTime": "06:00 PM",
+   "placeId": "9002",
+   "landMark": "National Highway 7, Hosur Rd, Madiwala, 1st Stage, BTM 1st Stage, Bengaluru, Karnataka",
+   "placeTimeTwfFormat": "18:00",
+   "dt": "2026-11-06",
+   "latlong": ""
+  },
+  {
+   "placeName": "Madiwala Main Rd-Jamia Masjid Near BMTC Bus Stop",
+   "placeTime": "06:15 PM",
+   "placeId": "9003",
+   "landMark": "Madiwala",
+   "placeTimeTwfFormat": "18:15",
+   "dt": "2026-11-06",
+   "latlong": ""
+  },
+  {
+   "placeName": "Majestic- Amar Hotel Near Bhagya Vinayaka Temple-0000000000",
+   "placeTime": "07:30 PM",
+   "placeId": "9004",
+   "landMark": "Majestic",
+   "placeTimeTwfFormat": "19:30",
+   "dt": "2026-11-06",
+   "latlong": ""
+  },
+  {
+   "placeName": "Race Course Road Congress Bhavan",
+   "placeTime": "07:50 PM",
+   "placeId": "9005",
+   "landMark": "No 2, 1, Race Course Rd, opp. Congress Bhavan, Madhava Nagar, Gandhi Nagar, Bengaluru",
+   "placeTimeTwfFormat": "19:50",
+   "dt": "2026-11-06",
+   "latlong": ""
+  },
+  {
+   "placeName": "Yeshwanthpur-Govardhan Theater",
+   "placeTime": "08:30 PM",
+   "placeId": "9006",
+   "landMark": "Yeshwanthpur",
+   "placeTimeTwfFormat": "20:30",
+   "dt": "2026-11-06",
+   "latlong": ""
+  },
+  {
+   "placeName": "Nelamangala Toll Indian Oil Pump",
+   "placeTime": "09:05 PM",
+   "placeId": "9007",
+   "landMark": "Nelamangala",
+   "placeTimeTwfFormat": "21:05",
+   "dt": "2026-11-06",
+   "latlong": ""
+  }
+ ],
+ "droppingPoints": [
+  {
+   "placeName": "Cuncolim",
+   "placeTime": "07:50 AM",
+   "placeId": "9100",
+   "placeTimeTwfFormat": "07:50",
+   "dt": "2026-11-07",
+   "landMark": "Cuncolim",
+   "latlong": null
+  },
+  {
+   "placeName": "Madgaon - Inside KTC Bus Stand",
+   "placeTime": "08:30 AM",
+   "placeId": "9101",
+   "placeTimeTwfFormat": "08:30",
+   "dt": "2026-11-07",
+   "landMark": "Margao",
+   "latlong": null
+  },
+  {
+   "placeName": "Verna - Opp Antique Mardol Restaurant",
+   "placeTime": "08:50 AM",
+   "placeId": "9102",
+   "placeTimeTwfFormat": "08:50",
+   "dt": "2026-11-07",
+   "landMark": "Verna",
+   "latlong": null
+  },
+  {
+   "placeName": "Panjim - Paulo Bus Terminal Near Heera Petrol Pump",
+   "placeTime": "09:20 AM",
+   "placeId": "9103",
+   "placeTimeTwfFormat": "09:20",
+   "dt": "2026-11-07",
+   "landMark": "Panjim Paulo Bus Terminal",
+   "latlong": null
+  },
+  {
+   "placeName": "Porvorim Mall De Goa",
+   "placeTime": "09:40 AM",
+   "placeId": "9104",
+   "placeTimeTwfFormat": "09:40",
+   "dt": "2026-11-07",
+   "landMark": "Porvorim Mall De Goa",
+   "latlong": null
+  },
+  {
+   "placeName": "Mapusa - Gandhi Circle New Bus Stand",
+   "placeTime": "10:30 AM",
+   "placeId": "9105",
+   "placeTimeTwfFormat": "10:30",
+   "dt": "2026-11-07",
+   "landMark": "Mapusa",
+   "latlong": null
+  },
+  {
+   "placeName": "Canacona Opp Ktc Bus Stand",
+   "placeTime": "10:00 AM",
+   "placeId": "9106",
+   "placeTimeTwfFormat": "10:00",
+   "dt": "2026-11-07",
+   "landMark": "Canacona Opp Ktc Bus Stand",
+   "latlong": null
+  }
+ ],
+ "cancellationsPolicy": [
+  {
+   "cc": "Rs. 2500",
+   "rp": "100%",
+   "tl": "Rs 2500 /- @ 100% refund",
+   "con": "Before 30-Oct 20:00"
+  },
+  {
+   "cc": "Rs. 2250",
+   "rp": "90%",
+   "tl": "Rs 2250 /- @ 90% refund",
+   "con": "Between 30-Oct 20:00 & 3-Nov 20:00"
+  },
+  {
+   "cc": "Rs. 1250",
+   "rp": "50%",
+   "tl": "Rs 1250 /- @ 50% refund",
+   "con": "Between 3-Nov 20:00 & 5-Nov 20:00"
+  },
+  {
+   "cc": "Rs. 0",
+   "rp": "0%",
+   "tl": "Rs 0 /- @ 0% refund",
+   "con": "Between 5-Nov 20:00 & 6-Nov 17:00"
+  }
+ ],
+ "enableFreeCancellation": "0"
+}
