@@ -390,11 +390,12 @@ describe('logging in', () => {
       graceMs: 3_000,
     });
     // ixigo's DESKTOP page (10 Oct): a login made on its phone page is its phone client's, which its desktop pages refuse.
-    expect(w.handOffs).toEqual([{ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' } }]);
+    // The person's screen shows its log in drawer alone (Bash's front_crop): a phone sees it at about 1:1 (the App team, 10 Oct).
+    expect(w.handOffs).toEqual([{ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop', crop: { role: 'dialog' } } }]);
     // Then, the card saying the page is in front, ixigo's own Login and the cursor in its mobile number box, on the page he watches.
     expect(w.tabStepCalls).toEqual([{
       tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Log in/Sign up' }, { op: 'click', role: 'textbox', text: 'mobile' }],
-      o: { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS }, cardActions: ['ixigo_login', 'ixigo_logged_in', 'ixigo_not_now'],
+      o: { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS, crop: { role: 'dialog' } }, cardActions: ['ixigo_login', 'ixigo_logged_in', 'ixigo_not_now'],
     }]);
     expect(await w.state()).toBe('logging_in');
     // At once, before the page: the card flips to logging in. Then, the page in front, it says so. One button opens Go's
@@ -586,7 +587,7 @@ describe('logging in', () => {
     // makes (with its own token and keys) are what answer: a call of Go's own is 403 even logged in. Their status is read
     // (one byte), the account never is.
     expect(w.handOffs).toHaveLength(2);
-    expect(w.handOffs[1]).toEqual({ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' } });
+    expect(w.handOffs[1]).toEqual({ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop', crop: { role: 'dialog' } } });
     expect(w.reads).toHaveLength(reads);
     // An early tap, still waiting for the code: the window stays in front, its log in box open again for them.
     expect(await w.state()).toBe('logging_in');
@@ -1238,12 +1239,16 @@ describe("the ixigo login's hand-off, on ixigo's desktop page", () => {
     const desk = world({ statuses: [] });
     await desk.setup();
     await desk.tap('ixigo_login', 'p_rahul');
-    expect(desk.handOffs[0]!.o).toMatchObject({ device: 'desktop' });
+    expect(desk.handOffs[0]!.o).toMatchObject({ device: 'desktop', crop: { role: 'dialog' } });
     expect(desk.tabStepCalls[0]!.steps[0]).toEqual({ op: 'click', role: 'button', name: 'Log in/Sign up' });
+    // The drawer its Log in/Sign up opens is what the person's screen shows.
+    expect(desk.tabStepCalls[0]!.o).toMatchObject({ crop: { role: 'dialog' } });
     const phone = world({ statuses: [], phoneOnly: true });
     await phone.setup();
     await phone.tap('ixigo_login', 'p_rahul');
     expect(phone.tabStepCalls[0]!.steps[0]).toEqual({ op: 'click', role: 'button', name: 'Login' });
+    // The phone page is a phone's already: its whole page shows.
+    expect(phone.tabStepCalls[0]!.o).not.toHaveProperty('crop');
     // The mobile box is the same words on both pages.
     expect(desk.tabStepCalls[0]!.steps[1]).toEqual({ op: 'click', role: 'textbox', text: 'mobile' });
   });

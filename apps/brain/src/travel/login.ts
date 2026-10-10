@@ -38,7 +38,7 @@ import type { Packs, TripPack } from '../trips/pack.js';
 import type { Tasks } from '../tasks/tasks.js';
 import { TravelError } from './mcp-travel.js';
 import { IXIGO, type Capture, type FetchPlan } from './recipes/recipe.js';
-import { ChallengedError, type RecipeRunner } from './recipes/runners.js';
+import { ChallengedError, type CropTo, type RecipeRunner } from './recipes/runners.js';
 import type { BrowserLogin, Browsers } from '../tasks/browsers.js';
 
 /**
@@ -125,6 +125,12 @@ export const HANDOFF_MS = 600_000;
  * on its phone page, where a Bash without desktop hand-offs opens it. ?loginVisible=true opens nothing (8 Oct).
  */
 const LOGIN_BUTTON = { desktop: { op: 'click', role: 'button', name: 'Log in/Sign up' }, phone: { op: 'click', role: 'button', name: 'Login' } } as const;
+/**
+ * ixigo's desktop log in drawer (a 440 wide dialog, the page's height): the person's screen shows it alone (Bash's
+ * front_crop), so a phone sees the drawer at about 1:1, never the whole desktop page (the App team, 10 Oct: "the login
+ * showed a laptop view of the browser instead of the mobile view").
+ */
+const LOGIN_DRAWER: CropTo = { role: 'dialog' };
 /** The log in sheet's mobile number field ("Enter Mobile Number"), clicked so the cursor waits in it for the person. */
 const MOBILE_BOX = { op: 'click', role: 'textbox', text: 'mobile' } as const;
 /** ixigo's home page, where the log in sheet opens. */
@@ -266,6 +272,9 @@ export interface IxigoLogin {
 }
 
 const cardId = (tripId: string, attempt: number): string => `c_login_${tripId}_${attempt}`;
+/** The taps on the page in front: the desktop page's drawer is what the person's screen shows once they open it. */
+const tapsOf = (device: 'phone' | 'desktop' | undefined): { keepOpenMs: number; timeoutMs: number; crop?: CropTo } =>
+  ({ keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS, ...(device === 'desktop' ? { crop: LOGIN_DRAWER } : {}) });
 
 /**
  * How a login that just landed reads in "why Go woke": a booking that waited on it carries on (resume), or, with nothing
@@ -655,7 +664,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         // The page and ixigo's own calls alone: Watch comes as soon as they have said (its crop is set before the page
         // loads), and the taps run after, while Watch's picture connects (staging, 8 Oct: they were 2 to 3 s of the wait).
         LOGIN_CALLS,
-        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' },
+        { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop', crop: LOGIN_DRAWER },
       );
     } catch (err) {
       // Loud, and nothing left open: no second path.
@@ -682,7 +691,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       // The page is in front for them: the card says so. Then ixigo's Login and the mobile box, tapped on the page they
       // watch (best effort: the page stays theirs if a tap finds nothing), and the page takes the keyboard.
       await show(now);
-      await runner.tabSteps?.(row.tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
+      await runner.tabSteps?.(row.tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], tapsOf(opened.device))
         .catch((err: unknown) => d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's taps did not run"));
     }
   }
@@ -697,7 +706,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     if (!runner?.handOff) return status(tripId);
     let opened: { captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' };
     try {
-      opened = await runner.handOff(tripId, LOGIN_URL, LOGIN_CALLS, { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' });
+      opened = await runner.handOff(tripId, LOGIN_URL, LOGIN_CALLS, { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop', crop: LOGIN_DRAWER });
     } catch (err) {
       if (!(err instanceof TravelError)) throw err;
       d.log.info({ tripId, status: null, login: 'unknown', why: err.code }, 'travel: ixigo said whether the trip computer is logged in');
@@ -710,7 +719,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     }
     const login = await said(tripId, opened.captures, 'log in page');
     if (login !== 'in') {
-      await runner.tabSteps?.(tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
+      await runner.tabSteps?.(tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], tapsOf(opened.device))
         .catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's taps did not run"));
     }
     // Quiet on the log in page is "not logged in yet", as it always read.

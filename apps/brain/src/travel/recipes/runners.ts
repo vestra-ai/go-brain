@@ -98,7 +98,7 @@ export interface RecipeRunner {
    * it opens the phone page, and the answer says which ran.
    */
   handOff?(
-    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'desktop' },
+    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'desktop'; crop?: CropTo },
   ): Promise<{ captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' }>;
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
@@ -127,7 +127,17 @@ export interface RecipeRunner {
    * two on a page the person already watches. Best effort: a step not found (Bash's time runs out with the tab kept) or a
    * tab already gone is nothing; anything else Bash refuses is a TravelError.
    */
-  tabSteps?(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number }): Promise<void>;
+  tabSteps?(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number; crop?: CropTo }): Promise<void>;
+}
+
+/**
+ * The one element of a desktop hand-off's page a person's screen shows (Bash's front_crop, bash #4654), such as a site's
+ * sign-in dialog: a phone sees it at about 1:1, never the whole desktop page (the App team, 10 Oct: "a laptop view").
+ */
+export interface CropTo {
+  role?: string;
+  name?: string;
+  text?: string;
 }
 
 export interface RunnerDeps {
@@ -615,6 +625,22 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   };
   /** Until when a hand-off opens the phone page however asked: Bash refused front_device (LOOK_UNSUPPORTED_MS). */
   let noDesktopUntil = 0;
+  /** Until when a hand-off's screen shows its whole page however asked: Bash refused front_crop (LOOK_UNSUPPORTED_MS). */
+  let noCropUntil = 0;
+  /** front_crop for a desktop hand-off's body, unless a Bash refused it lately. */
+  const cropOf = (crop: CropTo | undefined): { front_crop?: CropTo } => (crop && d.now().getTime() >= noCropUntil ? { front_crop: crop } : {});
+  /**
+   * A Bash that predates front_crop refuses it before it opens anything. An unknown key at the body's top has no param
+   * (its path is the body's): a 400 invalid_request with none, or one at front_crop, while it is sent is taken as that,
+   * before any older field (front_crop is the newest). None asked for a while; the caller sends the body again without.
+   */
+  const refusedCrop = (err: unknown, body: object, tripId: string): boolean => {
+    const param = err instanceof V1Error ? String(err.detail?.['param'] ?? '') : '';
+    if (!(err instanceof V1Error && err.status === 400 && err.code === 'invalid_request' && 'front_crop' in body && (param === '' || param.startsWith('front_crop')))) return false;
+    noCropUntil = d.now().getTime() + LOOK_UNSUPPORTED_MS;
+    d.log.warn({ tripId }, "travel: this Bash can't show one element of a hand-off yet (bash #4654); its screen shows the page");
+    return true;
+  };
   /** Until when a fetch with a click that picks one match is not sent: Bash refused one (NEAR_UNSUPPORTED_MS). */
   let noNearUntil = 0;
   /** A fetch whose click picks one match, while this Bash is known not to take it: refused before anything is sent. */
@@ -857,7 +883,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   }
 
   async function handOff(
-    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'desktop' },
+    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'desktop'; crop?: CropTo },
   ): Promise<{ captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' }> {
     // The check first, from inside the page as soon as it is there (one byte, its status), then the plan's own steps.
     const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
@@ -873,7 +899,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       front: true,
       // The site's desktop page (Bash's front_device): a login made on its phone page is its phone client's, which its
       // desktop pages, where every other fetch reads, refused within the hour (ixigo, staging 10 Oct).
-      ...(o.device === 'desktop' && d.now().getTime() >= noDesktopUntil ? { front_device: 'desktop' as const } : {}),
+      ...(o.device === 'desktop' && d.now().getTime() >= noDesktopUntil ? { front_device: 'desktop' as const, ...cropOf(o.crop) } : {}),
       keep_open_ms: o.keepOpenMs,
       tab: o.tab,
     };
@@ -887,6 +913,11 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
         captures = Array.isArray(answer.captures) ? answer.captures : [];
       } catch (err) {
+        if (refusedCrop(err, body, tripId)) {
+          body = Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'front_crop')) as typeof body;
+          checks -= 1;
+          continue;
+        }
         // A Bash that predates front_device refuses it before it opens anything: an unknown key at the body's top has no
         // param (its path is the body's), so any 400 invalid_request with none, or one at front_device, while it is sent
         // is taken as that (another refusal comes back again without it, and is thrown then). The phone page, as before,
@@ -894,7 +925,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         const param = err instanceof V1Error ? String(err.detail?.['param'] ?? '') : '';
         if (err instanceof V1Error && err.status === 400 && err.code === 'invalid_request' && 'front_device' in body && (param === '' || param.startsWith('front_device'))) {
           noDesktopUntil = d.now().getTime() + LOOK_UNSUPPORTED_MS;
-          body = Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'front_device')) as typeof body;
+          body = Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'front_device' && k !== 'front_crop')) as typeof body;
           checks -= 1;
           d.log.warn({ tripId, tab: o.tab }, "travel: this Bash takes no desktop hand-off yet; the phone page opens");
           continue;
@@ -976,16 +1007,22 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
-  async function tabSteps(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number }): Promise<void> {
+  async function tabSteps(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number; crop?: CropTo }): Promise<void> {
     // A fetch is its steps and a call: one byte of the home page closes it.
     const done = { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'steps_done', max_bytes: 1 };
-    try {
-      await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, {
-        body: { tab, steps: [...steps, done], front: true, keep_open_ms: o.keepOpenMs, timeout_ms: o.timeoutMs },
-      });
-    } catch (err) {
-      if (err instanceof V1Error && (err.status === 504 || (err.status === 409 && err.code === 'no_open_tab'))) return;
-      throw pageCallFailed(err);
+    let body: Record<string, unknown> = { tab, steps: [...steps, done], front: true, keep_open_ms: o.keepOpenMs, timeout_ms: o.timeoutMs, ...cropOf(o.crop) };
+    for (;;) {
+      try {
+        await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
+        return;
+      } catch (err) {
+        if (refusedCrop(err, body, tripId)) {
+          body = Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'front_crop'));
+          continue;
+        }
+        if (err instanceof V1Error && (err.status === 504 || (err.status === 409 && err.code === 'no_open_tab'))) return;
+        throw pageCallFailed(err);
+      }
     }
   }
 
