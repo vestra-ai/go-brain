@@ -89,7 +89,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The browsers are the tasks lane's, which registers after this one: read when a pass runs, none without them.
   const keepAlive = createLoginKeepAlive({
     loggedInSince: async (before) => (await brain.recipeRunners?.login?.loggedInSince(before)) ?? [],
-    status: (tripId) => login.status(tripId),
+    status: (tripId, o) => login.keepAlive(tripId, o),
     live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
     now: brain.now,
     log: brain.log,
