@@ -4,7 +4,7 @@ import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
 import { applyEvent, upsertMessage } from './apply.js';
 import { TripGoneError } from './gone.js';
-import { screenMessage } from './screen.js';
+import { isPrivate, screenMessage } from './screen.js';
 
 /** An active trip's working set, kept fresh from events. */
 export interface TripPack {
@@ -110,7 +110,8 @@ export function createPacks(o: { pool: pg.Pool; link: ServerLink; log: Log; now:
       'select payload from messages where trip_id = $1 and deleted_at is null order by seq',
       [tripId],
     );
-    const pack: TripPack = { trip, messages: rows.map((r) => r.payload), seq: trip.seq };
+    // A message only some people see is never in the pack (screen.ts): no turn reads it.
+    const pack: TripPack = { trip, messages: rows.map((r) => r.payload).filter((m) => !isPrivate(m)), seq: trip.seq };
     // History read at load is stored only, never handed to intake, so it never wakes Go.
     await pull(tripId, await loadFrom(tripId), pack);
     packs.set(tripId, pack);

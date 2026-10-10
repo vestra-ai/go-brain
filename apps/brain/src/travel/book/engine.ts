@@ -112,6 +112,8 @@ export const STEP_PAGES_AT_ONCE = 2;
 export const CLICK_MS = 10_000;
 /** A paced page asked again this long after its gap ends. */
 const PACE_MARGIN_MS = 500;
+/** The most a waitOutPace step waits out the pacer: twelve gaps, four minutes of flights pages across every trip. */
+export const PACE_WAITS_MAX = 12;
 
 /** Runs at most n at once; the rest wait their turn, in order. */
 function atMost(n: number): <T>(run: () => Promise<T>) => Promise<T> {
@@ -238,6 +240,12 @@ export interface RunFor {
   /** A composite's steps as they go: its entries once it knows them, then each step as it ends (ok: it answered). */
   onSteps?: (e: StepsEvent) => void;
   /**
+   * A composite's paced page held back by Go's own spacing (one flights page a gap across every trip) waits its turn as
+   * often as it takes, within o.signal, instead of once (the exam, 10 Oct: four cities' flights, three fell back to links
+   * in 2 to 21 ms). For a caller that shows each entry as it lands (search_flights_each): never a link for a wait alone.
+   */
+  waitOutPace?: boolean;
+  /**
    * A check nobody is waiting on (a watch the group asked for): it never holds the trip's computer awake (no warm) and
    * keeps no tab open there (no fast speed), so the computer sleeps again right after the page.
    */
@@ -269,7 +277,8 @@ export interface RunFor {
   staged?: boolean;
 }
 
-export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
+/** A step's event carries its answer, for a caller that shows each entry's as it lands (travel/flights-each.ts). */
+export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean; answer?: EngineAnswer };
 
 /** The most of the site's list of what it offers that a read keeps (ixigo's stays metadata: about 23 KB). */
 export const OFFERS_MAX_BYTES = 300_000;
@@ -1018,17 +1027,18 @@ export function createEngine(d: EngineDeps) {
         const got = shared.joined ? fromKept(step.recipe, stepGiven, stepRun, shared.answer) : shared.answer;
         return { recipe: step.recipe, answer: await untilAborted(got, o.signal) };
       };
-      const stepFor = async (entry: string, step: Step, priority: number, again = true): Promise<StepAnswer> => {
+      const stepFor = async (entry: string, step: Step, priority: number, waits = o.waitOutPace ? PACE_WAITS_MAX : 1): Promise<StepAnswer> => {
         try {
           return await limits.get(step.recipe)!(() => loadStep(entry, step, priority));
         } catch (err) {
           if (o.signal?.aborted) return { recipe: step.recipe, why: 'out of time' };
-          // A paced page held back by Go's own spacing waits out the gap and is asked once more, inside the composite's
-          // time limit (p0's golden run, 10 Oct: the flights page skipped, and flights dropped from the card). With no
-          // limit, nothing waits.
-          if (again && o.signal && err instanceof PacedOutError && err.waitMs !== null) {
+          // A paced page held back by Go's own spacing waits out the gap and is asked again, inside the composite's time
+          // limit (p0's golden run, 10 Oct: the flights page skipped, and flights dropped from the card): once, or as often
+          // as it takes for a caller that waits it out (waitOutPace). With no limit, nothing waits. ixigo's own refusal
+          // (its quiet, no waitMs) is never waited out: its caller has the link.
+          if (waits > 0 && o.signal && err instanceof PacedOutError && err.waitMs !== null) {
             await sleep(err.waitMs + PACE_MARGIN_MS, o.signal);
-            return o.signal?.aborted ? { recipe: step.recipe, why: 'out of time' } : stepFor(entry, step, priority, false);
+            return o.signal?.aborted ? { recipe: step.recipe, why: 'out of time' } : stepFor(entry, step, priority, waits - 1);
           }
           if (!(err instanceof TravelError)) d.log?.warn({ recipe: step.recipe, err: String(err).slice(0, 200) }, 'book: a step of a composite failed');
           return { recipe: step.recipe, why: whyOf(err) };
@@ -1036,7 +1046,7 @@ export function createEngine(d: EngineDeps) {
       };
       const told = async (entry: string, step: Step, priority: number): Promise<StepAnswer> => {
         const s = await stepFor(entry, step, priority);
-        o.onSteps?.({ type: 'step', entry, recipe: s.recipe, ok: !!s.answer });
+        o.onSteps?.({ type: 'step', entry, recipe: s.recipe, ok: !!s.answer, ...(s.answer ? { answer: s.answer } : {}) });
         return s;
       };
       const done = await Promise.all(entries.map(async (entry) => ({ entry, steps: await Promise.all(steps.run.map((step, i) => told(entry, step, i))) })));

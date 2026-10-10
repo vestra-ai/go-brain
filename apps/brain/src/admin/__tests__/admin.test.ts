@@ -186,7 +186,7 @@ describe('the admin page', () => {
     const chosen = (await http.inject({ method: 'GET', url: '/admin/health.json?trip=t_old', headers: AUTH })).json();
     expect(chosen.trip_id).toBe('t_old');
     expect(chosen.server_socket_open).toBe(false);
-    expect(chosen.switches).toEqual({ TRAVEL_MODE: 'fake', TRAVEL_RUNNER: 'agent_job', PAY_RAIL: 'fake', CALLS_MODE: 'allowlist', REFLEX_LIVE: 'q1,q2,q3', BROWSER_FETCH_SLOTS: '2', RECIPE_WATCHES: 'off' });
+    expect(chosen.switches).toEqual({ TRAVEL_MODE: 'fake', TRAVEL_RUNNER: 'agent_job', PAY_RAIL: 'fake', CALLS_MODE: 'allowlist', REFLEX_LIVE: 'q1,q2,q3', BROWSER_FETCH_SLOTS: '2', RECIPE_WATCHES: 'off', FLIGHT_BOOKING: 'off' });
     // The watches groups asked for, per trip (none here): how many and the next check, never a watch id.
     expect(chosen.watches).toEqual([]);
     expect(chosen.calls).toEqual({ mode: 'allowlist', allowlist: ['Villa Sol'], allowlist_count: 1 });
