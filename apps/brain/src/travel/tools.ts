@@ -699,6 +699,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     `${prices ? `: ${prices}` : ''}${areas.length ? `, in ${listOf(areas)}` : ''}.` +
     `${fit > options.length ? ` The best ${options.length} are below.` : ''}` +
     `${left ? ` ${left}.` : ''}` +
+    `${found.notes?.length ? ` ${found.notes.join(' ')}` : ''}` +
     `${pick.length ? ` Not filtered by ixigo, for you to pick from each option's amenities and details: ${listOf(pick)}.` : ''}` +
     `${list ? ` ixigo's own filters for this place, now known: ${list}.` : ''}` +
     `${found.site?.priced ? ` ixigo filtered them by price for the group's budget: up to ${formatInr(found.site.priced * 100)} a night a room, and one band over.` : ''}` +
@@ -723,6 +724,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       "Each option's area, time and price are as given here: name no other, and say no count the summary does not give. " +
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
       `${left ? `Say in the line that ${left}. ` : ''}` +
+      `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length
         ? `Show the options whose amenities or details fit ${listOf(pick)}, the best three when there are three, best first, and say which part ixigo filtered and which you picked; ` +
           "a want the data can't show (quiet) is no reason to show fewer: pick on what it does show and say plainly what ixigo doesn't tell. " +
@@ -850,7 +852,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       'Opens a vote on the options of an options card Go showed (card_id), even a card with one option (that option or keep looking). ' +
       'Only this vote can be booked: never open_vote for options on a card. To show options and put them to a vote at once, ' +
       'call show_options and then this with no card_id, in the same reply. The vote card goes out with the line you give it. ' +
-      `${CARD_LINE} Use it when the group should decide together. ` +
+      `${CARD_LINE} Use it when the group should decide together on a shared thing (a stay, a cab, an activity), never on a ticket: a flight, train or bus is each traveller's own pick. ` +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: VoteArgs,
     endsTurn: true,
@@ -879,6 +881,12 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
           ...(a.anonymous ? { anonymous: true } : {}),
         },
       );
+      if (r.ok === false && r.reason === 'personal') {
+        return {
+          error: 'personal',
+          note: "A ticket (a flight, train or bus) is its traveller's own, never a group vote: each person taps \"I'll take this\" on it, and Go posts their own confirm. Say that in one line if anyone asked for a vote.",
+        };
+      }
       if (!r.ok) return { error: r.reason, ...(r.decisionId ? { decision_id: r.decisionId } : {}) };
       ctx.cards.push(r.voteCard);
       ctx.lines.push(a.line);

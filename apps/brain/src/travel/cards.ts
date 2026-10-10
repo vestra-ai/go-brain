@@ -22,6 +22,42 @@ export const ADD_BUDGET_ACTION = { action_id: 'add_budget', label: 'Add my budge
 /** The App's budget sheet for a trip, from the App team's route table (docs/guide/11-contract-1-1.md). */
 export const budgetSheet = (tripId: string): string => `go://trips/${encodeURIComponent(tripId)}/sheet/budget`;
 
+/**
+ * A ticket is its traveller's own (Keshav, 10 Oct: "why would we need everyone to vote for my ticket lol"): a flight,
+ * train or bus fare is confirmed by the person it is for, alone, never put to the group. Shared things (a stay, a cab, an
+ * activity) still go to a vote. Its cards have no "Put it to a vote", and a pick on one posts that person's own confirm.
+ */
+export const PERSONAL_KINDS: ReadonlySet<OptionKind> = new Set<OptionKind>(['flight', 'train', 'bus']);
+
+/** On a person's own confirm: "Book it" and "Change", for them alone. */
+export const BOOK_MINE = 'book_mine';
+export const CHANGE_MINE = 'change';
+
+/**
+ * One person's own confirm of the ticket they picked: the option itself, "Book IndiGo 6E2150 for you, ₹11,571?", with
+ * "Book it" and "Change" that only they see. The room sees the card; it names them (for_person_ids), so it is pinned for
+ * them until settled.
+ */
+export function buildConfirmMineCard(i: { cardId: string; personId: string; optionKind: OptionKind; checkedAt: string; option: CardOption }): OptionsCardT {
+  const price = typeof i.option.price_minor === 'number' ? `, ${formatInr(i.option.price_minor)}` : '';
+  const ask = `Book ${i.option.title} for you${price}?`;
+  const only = [i.personId];
+  return C.OptionsCard.parse({
+    card_id: i.cardId,
+    kind: 'options',
+    fallback_text: clip(ask, 300),
+    title: clip(ask, 80),
+    option_kind: i.optionKind,
+    checked_at: i.checkedAt,
+    options: [i.option],
+    for_person_ids: only,
+    actions: [
+      { action_id: BOOK_MINE, label: 'Book it', style: 'primary', per_option: true, only_for_person_ids: only },
+      { action_id: CHANGE_MINE, label: 'Change', style: 'secondary', per_option: true, only_for_person_ids: only },
+    ],
+  });
+}
+
 /** On the card of each home city's ways to the trip: ixigo's flights from the tapper's own home city. */
 export const FLIGHTS_HOME_ACTION = { action_id: 'flights_home', label: 'Flights from my city', style: 'secondary' } as const;
 
@@ -239,8 +275,9 @@ export function buildOptionsCard(i: { cardId: string; title: string; optionKind:
   });
 }
 
-function optionsActions(i: { picks: CardPick[]; seeAll?: boolean; askBudget?: boolean }) {
-  const group = [PICK_ACTION, ...(i.picks.length >= 2 ? [VOTE_ACTION] : [])];
+function optionsActions(i: { optionKind: OptionKind; picks: CardPick[]; seeAll?: boolean; askBudget?: boolean }) {
+  // A ticket is its traveller's own: picked, never voted (PERSONAL_KINDS).
+  const group = [PICK_ACTION, ...(i.picks.length >= 2 && !PERSONAL_KINDS.has(i.optionKind) ? [VOTE_ACTION] : [])];
   const open = i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [];
   if (i.askBudget) return [...group, ADD_BUDGET_ACTION, ...open].slice(0, 3);
   return [...group, ...(i.seeAll ? [SEE_ALL_ACTION] : open)];

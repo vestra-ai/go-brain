@@ -124,13 +124,14 @@ describe('flights.fare_calendar', () => {
 describe('the ixigo tool', () => {
   const turn = { tripId: 't_goa', turnId: 'turn_1', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
 
-  it("offers the book's facts and link recipes, never a search, a lookup or one that changes something", () => {
+  it("offers the book's facts and link recipes, the login's too, never a search, a lookup or one that changes something", () => {
     expect(toolRecipes(book).map((r) => r.id)).toEqual([
       'buses.offers', 'buses.points', 'flights.fare_calendar', 'help.downtime', 'help.faq', 'help.services',
       'hotels.details', 'hotels.offers', 'hotels.reviews', 'hotels.rooms', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list', 'plan.destination', 'plan.explore', 'plan.top_locations',
       'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.boarding_stations', 'trains.by_name', 'trains.coach_position', 'trains.confirm_chance', 'trains.offers',
-      'trains.platform_locator', 'trains.pnr_status', 'trains.route', 'trains.running_status', 'trains.schedule', 'trains.station_status', 'trains.tatkal', 'trains.train_calendar', 'visa.requirements',
+      'trains.platform_locator', 'trains.pnr_status', 'trains.route', 'trains.running_status', 'trains.schedule', 'trains.station_status', 'trains.tatkal', 'trains.train_calendar',
+      'trip.upcoming', 'visa.requirements',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
     expect(tool.description).toContain("- plan.destination (place): A destination's guide on ixigo.");
