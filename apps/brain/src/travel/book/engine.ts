@@ -13,7 +13,7 @@ import { keepPlace } from '../recipes/places-store.js';
 import type { OnProgress } from '../recipes/progress.js';
 import { asOffers, bandsFor, offerWords, pickOffers, type Offer, type OfferList, type Offers } from '../recipes/offers.js';
 import { IXIGO, matches, type Capture, type CaptureSpec, type FetchPlan, type RecipeOption } from '../recipes/recipe.js';
-import type { RecipeRunner } from '../recipes/runners.js';
+import type { ReadOptions, RecipeRunner } from '../recipes/runners.js';
 import type { TravelKind } from '../travel.js';
 import type { Book } from './book.js';
 import { evaluate } from './expr.js';
@@ -42,7 +42,7 @@ function refusePayments(where: string): void {
 export interface EngineDeps {
   book: Book;
   /** The trip's browser fetch; null while the trip's computer is not set up here. */
-  runner: (tripId: string) => Pick<RecipeRunner, 'read' | 'pageFetch' | 'canPageFetch'> | null;
+  runner: (tripId: string) => Pick<RecipeRunner, 'read' | 'pageFetch' | 'canPageFetch' | 'onStage'> | null;
   /** Keeps a place ixigo resolved; absent in tests that keep nothing. */
   pool?: Pool;
   /** The lists of what each recipe's page offers, per place (offers.ts); absent, no run filters on the site's own list. */
@@ -222,6 +222,11 @@ export interface RunFor {
   onProgress?: OnProgress;
   /** A step of a composite: the composite's run, and the entry the step runs for (its lane on the strip). */
   stepOf?: string;
+  /**
+   * Read on the stage though a composite's step (the ways comparison's first city's first step): the room's live view
+   * shows a real page while the comparison runs; the rest of its steps run behind (many at once would fight over it).
+   */
+  stage?: boolean;
   lane?: string;
   /** Its fetches' place among those waiting for the computer's slots: lower first (runners.ts). */
   priority?: number;
@@ -245,6 +250,12 @@ export interface RunFor {
    * share of it a night, and one band over, filter the read (offers.ts bandsFor). Only a decided budget, never a guess.
    */
   budgetMinor?: number;
+  /**
+   * The page opened as a person opens it from the one the stage already holds: this text clicked there (a stay's card on
+   * the results, by its name), its calls caught as the page it lands on makes them. A click that brings nothing opens the
+   * page by its address instead (Keshav, 10 Oct: the group watches Go act on ixigo).
+   */
+  clickFrom?: string;
 }
 
 export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
@@ -264,7 +275,7 @@ export const BACKGROUND_PRIORITY = 9;
  * as a hidden page call (staging, 10 Oct: a trains search ran as a call in a tab left on ixigo's home page, and the live
  * view showed the home page for 2.6 s, then nothing).
  */
-const watched = (o: RunFor): boolean => !o.background && o.onProgress !== undefined && o.stepOf === undefined;
+const watched = (o: RunFor): boolean => !o.background && (o.stage === true || (o.onProgress !== undefined && o.stepOf === undefined));
 
 const fetchFor = (o: RunFor): { signal?: AbortSignal; priority: number } => ({
   ...(o.signal ? { signal: o.signal } : {}),
@@ -618,6 +629,26 @@ export function createEngine(d: EngineDeps) {
     }, "book: a page answered, and its answer didn't read");
   }
 
+  /**
+   * A page opened by a click on the one the stage holds (RunFor.clickFrom): the text clicked, then a wait for the first
+   * call the page must make, its captures as a read's. Null when the click or that call didn't come: the caller opens the
+   * page by its address.
+   */
+  async function clicked(
+    tripId: string, runner: Pick<RecipeRunner, 'onStage'>, plan: FetchPlan, text: string, o: ReadOptions,
+  ): Promise<{ captures: Capture[]; finalUrl: string } | null> {
+    const required = plan.capture.filter((c) => c.required !== false && !c.besides);
+    if (!runner.onStage || required.length === 0) return null;
+    try {
+      const got = await runner.onStage(tripId, { ...plan, steps: [{ op: 'click', text }, { op: 'wait_for', match: required[0]!.match }, ...(plan.steps ?? [])] }, o);
+      if (required.every((c) => got.captures.some((x) => x.match === c.match && x.status >= 200 && x.status < 300))) return got;
+      d.log?.warn({ tripId, caught: got.captures.length }, "book: a click on the stage brought the page, not its calls; it opens by its address");
+    } catch (err) {
+      d.log?.warn({ tripId, err: String(err).slice(0, 200) }, "book: a click on the stage didn't open the page; it opens by its address");
+    }
+    return null;
+  }
+
   /** $conditions, the site's own filters and sort ($site, $site_sort) and the recipe's let, worked out once. */
   async function bindingsOf(recipe: RecipeFile, inputs: Record<string, unknown>, o: RunFor, site: Site): Promise<Record<string, unknown>> {
     const conditions: unknown[] = [];
@@ -776,8 +807,8 @@ export function createEngine(d: EngineDeps) {
       const started = d.now().getTime();
       const pageRun = strip.line;
       o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
-      pageRun.step(`opened ${pathOf(page)}`);
-      const got = await runner.read(o.tripId, page, plan, {
+      pageRun.step(o.clickFrom ? `clicked "${clip(o.clickFrom, 40)}"` : `opened ${pathOf(page)}`);
+      const readFor: ReadOptions = {
         ...fetchFor(o),
         tag: pageRun.id,
         // The page stays open as the warm tab, so the live view sees ixigo draw it; never for a check nobody waits on. A
@@ -793,7 +824,8 @@ export function createEngine(d: EngineDeps) {
         onTrace: (t) => pageRun.trace(t),
         ...(o.fallsBack ? { fallsBack: true } : {}),
         about: aboutOf(recipe, o, bindings),
-      });
+      };
+      const got = (o.clickFrom ? await clicked(o.tripId, runner, plan, o.clickFrom, readFor) : null) ?? (await runner.read(o.tripId, page, plan, readFor));
       refusePayments(got.finalUrl);
       o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
       await keepOffers(recipe, site, inputs, got.captures, o.tripId);
@@ -870,7 +902,8 @@ export function createEngine(d: EngineDeps) {
         if (o.signal?.aborted) return { recipe: step.recipe, why: 'out of time' };
         const stepGiven: Record<string, unknown> = {};
         for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
-        const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority, ...(o.conditions ? { conditions: o.conditions } : {}) };
+        const onStage = entry === entries[0] && priority === 0;
+        const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority, ...(onStage ? { stage: true } : {}), ...(o.conditions ? { conditions: o.conditions } : {}) };
         const own = (signal?: AbortSignal): Promise<EngineAnswer> => answer(step.recipe, stepGiven, { ...stepRun, ...(signal ? { signal } : {}) });
         // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load. A
         // step's own search is kept for the next ask, so the composite's time never cuts it short: it finishes in the

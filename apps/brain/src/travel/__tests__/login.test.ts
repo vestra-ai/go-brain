@@ -335,12 +335,13 @@ describe('logging in', () => {
     expect(w.starts).toEqual([]);
     // ixigo's home page in FRONT of Rahul's window (as a phone: Bash's front), the tab kept there for him for Bash's most;
     // the calls ixigo's own code makes as the page loads caught, one byte each, read by their status only. Only the page's
-    // nearby call (logged in or out) is waited for, Bash's one required capture, then up to 3 s for the login's own calls.
+    // content (logged in or out) is waited for, Bash's one required capture, then up to 3 s for the login's own calls. Not
+    // the nearby flights call: ixigo's home stopped making it (10 Oct), and every read timed out on it.
     expect(LOGIN_URL).toBe('https://www.ixigo.com/');
     expect(HANDOFF_MS).toBe(600_000);
     expect(LOGIN_CALLS).toEqual({
       capture: [
-        { match: '/api/flights/locations/nearby', required: true, max_bytes: 1 },
+        { match: '/action/content', required: true, max_bytes: 1 },
         { match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 },
         { match: '/api/profile/secure/booking/with-identity', required: false, max_bytes: 1 },
         { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 },
@@ -928,8 +929,8 @@ describe('logging out', () => {
     expect(await w.tap('ixigo_logout', 'p_rahul')).toEqual({ result: 'done', toast: 'Logging out of ixigo' });
     expect(w.reads.at(-2)).toEqual({
       url: 'https://www.ixigo.com/',
-      // Bash takes no fetch without a required capture or a page_fetch step: the home page's nearby call is it.
-      plan: { capture: [{ match: '/api/flights/locations/nearby', required: true, max_bytes: 1 }], steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }], timeoutMs: 15_000 },
+      // Bash takes no fetch without a required capture or a page_fetch step: the home page's content is it.
+      plan: { capture: [{ match: '/action/content', required: true, max_bytes: 1 }], steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }], timeoutMs: 15_000 },
     });
     expect(w.reads.at(-1)).toEqual({ url: 'https://www.ixigo.com/', plan: LOGIN_CALLS });
     expect(await w.state()).toBe('logged_out');

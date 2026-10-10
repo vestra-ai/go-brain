@@ -7,6 +7,7 @@ import { readBodyAs } from '../bodies.js';
 import { BOOK_DIR, checkRecipe, loadBook } from '../book.js';
 import type { ResultsStore } from '../../results.js';
 import { createEngine } from '../engine.js';
+import { TravelError } from '../../mcp-travel.js';
 import { ixigoTool } from '../tool.js';
 
 // The facts recipes for a stay's own page, its place's filters and offers, ixigo's trip explorer, its help centre and its
@@ -55,6 +56,36 @@ const MOJIGAO = stayPage(37957, 116466, 'Mojigao - Eco Resort');
 const HOTEL_API = `${IXIGO}/accommodation-search/api/v1`;
 
 describe("a stay's own page", () => {
+  // Keshav, 10 Oct: the group watches Go act on ixigo. The top pick opens as a person opens it, its card clicked on the
+  // results the stage holds; its address only when the click brings nothing.
+  it("opens a stay by a click on its name on the stage's results, and by its address when the click brings nothing", async () => {
+    const DETAILS = '/accommodation-search/api/v1/accommodations/details$';
+    const answered = () => [capture(DETAILS, `${HOTEL_API}/accommodations/details`, sample('hotels.details.json'))];
+    const reads: string[] = [];
+    const clicks: unknown[] = [];
+    let clickBrings = true;
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        reads.push(url);
+        return { captures: answered(), finalUrl: url };
+      },
+      onStage: async (_trip: string, plan: FetchPlan) => {
+        clicks.push(plan.steps);
+        if (!clickBrings) throw new TravelError('unreachable', 'The stage has no page open.');
+        return { captures: answered(), finalUrl: HIGH_FIVE };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 2, homes: [] }), now: () => new Date('2026-10-10T05:00:00Z') });
+    const got = await engine.answer('hotels.details', { hotel: HIGH_FIVE }, { tripId: 't_click', onProgress: () => undefined, clickFrom: 'High Five Hotels Phase 2' });
+    expect(got.as === 'facts' && got.rows).toHaveLength(1);
+    expect(clicks).toEqual([[{ op: 'click', text: 'High Five Hotels Phase 2' }, { op: 'wait_for', match: DETAILS }]]);
+    expect(reads).toEqual([]);
+    clickBrings = false;
+    const other = await engine.answer('hotels.details', { hotel: MOJIGAO }, { tripId: 't_click', onProgress: () => undefined, clickFrom: 'Mojigao - Eco Resort' });
+    expect(other.as === 'facts' && other.rows).toHaveLength(1);
+    expect(reads).toEqual([MOJIGAO]);
+  });
+
   it("hotels.details opens the stay's page as it was linked, and answers its rules, amenities, what is nearby, the map and the photos", async () => {
     const got = await facts('hotels.details', { hotel: HIGH_FIVE }, [
       capture('/accommodation-search/api/v1/accommodations/details$', `${HOTEL_API}/accommodations/details`, sample('hotels.details.json')),
