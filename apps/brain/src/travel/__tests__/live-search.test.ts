@@ -152,6 +152,22 @@ describe('the live search card', () => {
     for (const c of r.cards()) expect([null, RESULTS]).toContain(c.page_url ?? null);
   });
 
+  // The stage's last picture is the card's (the look at the drawn page, after the card is done): never of a log in, a
+  // payment, a sign-in service's or a traveller page, whatever the stage was left on.
+  it("never takes the stage's last picture of a log in, payment, sign-in or traveller page as the card's", async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k3s', ...FLIGHTS });
+    live.progress({ type: 'frames', frames: [frame(1700, RESULTS)] });
+    await live.finish(true);
+    const kept = r.cards().at(-1)!.screenshot_url;
+    for (const page of ['https://www.ixigo.com/login', 'https://www.ixigo.com/payments/abc', 'https://accounts.google.com/o/oauth2/auth', 'https://www.ixigo.com/flight/traveller-details?x=1', `${RESULTS}&loginVisible=true`]) {
+      live.progress({ type: 'drawn', frames: [frame(6000, page, jpeg(77))] });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(r.stored).toEqual([Buffer.from(jpeg(1700 % 250), 'base64')]);
+    expect(r.cards().at(-1)!.screenshot_url).toBe(kept);
+  });
+
   it('shows nothing when every frame is a page Go may not show, or not a JPEG, or too big', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k4', ...FLIGHTS });

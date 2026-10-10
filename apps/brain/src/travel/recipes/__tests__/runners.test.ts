@@ -4,7 +4,7 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
+  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS, STAGE_MS, STAGE_TAB,
   LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, NothingCaughtError, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -479,6 +479,21 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const kept = w.calls.map((c) => (c.opts['body'] as { keep_open_ms?: number; tab?: string }));
     // Under Bash's default name, the warm tab the page calls take: no tab of its own toward Bash's cap.
     expect(kept.map((b) => [b.keep_open_ms, b.tab])).toEqual([[WARM_TAB_MS, undefined], [undefined, undefined]]);
+  });
+
+  // Staging, 10 Oct: the live view showed ixigo's home page for 2.6 s while a search ran as a call inside it.
+  it('opens a page a person watches on the stage: in front, in the one stage tab, left on screen after; its look stays there too', async () => {
+    const w = world((c) => ((c.opts['body'] as { url?: string }).url
+      ? { ...fetched([busCapture]), frames: [{ label: 'done', at_ms: 120, page_url: BUSES, jpeg_base64: '/9j/S' }] }
+      : { ...fetched([capture('look', 'https://www.ixigo.com/favicon.ico', '')]), frames: [{ label: 'done', at_ms: 120, page_url: BUSES, jpeg_base64: '/9j/D' }] }));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.read('t1', BUSES, busPlan, { keepOpen: true, stage: true, look: true, onProgress: () => undefined });
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    const [page, look] = w.calls.map((c) => c.opts['body'] as Record<string, unknown>);
+    expect(page).toMatchObject({ url: BUSES, stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS });
+    expect(look).toMatchObject({ stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS });
+    expect(look!['url']).toBeUndefined();
+    expect(STAGE_MS).toBeGreaterThan(WARM_TAB_MS);
   });
 
   it("looks at a kept page once ixigo has drawn it, for a live card: one tiny call in the tab, its pictures of the same page", async () => {

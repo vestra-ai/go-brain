@@ -246,6 +246,14 @@ export const OFFERS_GRACE_MS = 3_000;
 export const BACKGROUND_PRIORITY = 9;
 
 /** What a run's fetches carry to the runner: when to stop, and their place in the computer's queue. */
+/**
+ * A run a person watches: a search with its live card, never a check nobody waits on and never a composite's step (many
+ * at once). It acts on the browser's stage, where the room sees it (Bash's stage: one front tab), page by page, and never
+ * as a hidden page call (staging, 10 Oct: a trains search ran as a call in a tab left on ixigo's home page, and the live
+ * view showed the home page for 2.6 s, then nothing).
+ */
+const watched = (o: RunFor): boolean => !o.background && o.onProgress !== undefined && o.stepOf === undefined;
+
 const fetchFor = (o: RunFor): { signal?: AbortSignal; priority: number } => ({
   ...(o.signal ? { signal: o.signal } : {}),
   priority: o.priority ?? (o.background ? BACKGROUND_PRIORITY : 0),
@@ -671,7 +679,7 @@ export function createEngine(d: EngineDeps) {
       return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
-    if (recipe.fast && fastOn(runner) && runner.pageFetch && !o.background) {
+    if (recipe.fast && fastOn(runner) && runner.pageFetch && !o.background && !watched(o)) {
       const started = d.now().getTime();
       try {
         const url = await fill(recipe.fast.url, inputs, { url: true, bindings });
@@ -718,6 +726,8 @@ export function createEngine(d: EngineDeps) {
         // The page stays open as the warm tab, so the live view sees ixigo draw it; never for a check nobody waits on. A
         // live card takes one more picture of it once ixigo has drawn it (the runner's look).
         ...(o.background ? {} : { keepOpen: true, ...(o.onProgress ? { look: true } : {}) }),
+        // A run a person watches acts on the stage, the one front tab the room's live view follows.
+        ...(watched(o) ? { stage: true } : {}),
         // The pictures go to the live card as before, and to the run strip's browser pane, the drawn page's too.
         onProgress: (e) => {
           if (e.type === 'frames' || e.type === 'drawn') pageRun.frames(e.frames, started);
