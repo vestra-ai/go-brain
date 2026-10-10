@@ -6,11 +6,16 @@
 
 export type FareChoice = 'basic' | 'assured' | 'flex';
 
-/** ixigo's names for its fare types, and the radio each is on the review page (its accessible name holds these words). */
-export const FARE_TYPES: Record<FareChoice, { type: string; words: string; radio: string }> = {
-  basic: { type: 'BASIC_FARE', words: 'no free cancellation', radio: "I don't want Free Cancellation" },
-  assured: { type: 'IXIGO_ASSURED', words: 'Assured (free cancellation)', radio: 'Assured' },
-  flex: { type: 'ASSURED_FLEX', words: 'Assured Flex (free cancellation and rescheduling)', radio: 'Assured Flex' },
+/**
+ * ixigo's names for its fare types, and the click on each one's radio on the review page (E1, the drill browser, 10 Oct
+ * 11:19Z): "I don't want Free Cancellation" is a named radio; Assured's and Assured Flex's radios have no name, each the
+ * first radio after its own words ("Add Free Cancellation to your trip" heads Assured's, Flex's says "Free Cancellation +
+ * Rescheduling").
+ */
+export const FARE_TYPES: Record<FareChoice, { type: string; words: string; click: { op: 'click'; role: 'radio'; text?: string; near_text?: string } }> = {
+  basic: { type: 'BASIC_FARE', words: 'no free cancellation', click: { op: 'click', role: 'radio', text: "I don't want Free Cancellation" } },
+  assured: { type: 'IXIGO_ASSURED', words: 'Assured (free cancellation)', click: { op: 'click', role: 'radio', near_text: 'Add Free Cancellation to your trip' } },
+  flex: { type: 'ASSURED_FLEX', words: 'Assured Flex (free cancellation and rescheduling)', click: { op: 'click', role: 'radio', near_text: 'Free Cancellation + Rescheduling' } },
 };
 
 export interface ReviewFare {

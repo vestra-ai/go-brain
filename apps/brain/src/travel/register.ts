@@ -286,13 +286,12 @@ export const registerTravel: RegisterLane = async (brain) => {
   const stopWatchChecks = (): void => clearInterval(watchEvery);
   brain.onStop(stopWatchChecks);
   // "Book it" on a person's own flight: Go books it on the stage up to ixigo's pay button when FLIGHT_BOOKING is on.
+  const nameOf = async (tripId: string, personId: string): Promise<string> =>
+    (await brain.packs.get(tripId)).trip.people.find((p) => p.person_id === personId)?.name ?? 'you';
   const booking = createFlightBooking({
-    pool: brain.pool, runner: () => brain.recipeRunners?.browserFetch ?? null, link: brain.door.link, switches: brain.switches, now: brain.now, log: brain.log,
+    pool: brain.pool, nameOf, runner: () => brain.recipeRunners?.browserFetch ?? null, link: brain.door.link, switches: brain.switches, now: brain.now, log: brain.log,
   });
-  registerTravelTaps(brain.taps, {
-    results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking,
-    nameOf: async (tripId, personId) => (await brain.packs.get(tripId)).trip.people.find((p) => p.person_id === personId)?.name ?? 'you',
-  });
+  registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf });
   // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
   // on the turn that says so; a tap keeps the way picked, for the expense per room (B6, chosenArrangement).
   const roomsCards = createRoomsCards(brain.pool);

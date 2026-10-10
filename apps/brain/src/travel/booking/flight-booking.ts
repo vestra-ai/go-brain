@@ -19,10 +19,15 @@ import { bodiesFor } from '../recipes/recipe.js';
 import type { StoredOffer } from '../travel.js';
 import { fareFor, reviewAddress } from './review-address.js';
 import { FARE_TYPES, ixigoCoupon, reviewFare, type FareChoice } from './review-read.js';
+import { matchTravellers, savedTravellers } from './travellers.js';
 
 export const FLIGHT_STREAM = '/flights/v2/search/stream';
 export const FLIGHT_FARE = '/flight-booking/flight-fare';
 export const GRAPH = '/graph';
+/** The account's saved travellers (E2, his browser, 10 Oct 11:21Z: the traveller step's own call, `date` the day flown). */
+export const SAVED_TRAVELLERS = '/api/v2/users/traveller';
+/** The traveller step's fields, its own first call once the review step's Continue is pressed (E2). */
+export const TRAVELLER_FIELDS = '/flight-booking/v1/traveller/display-fields';
 /** ixigo's own flights stream, as flights.results reads it: the last whole event, up to Bash's most. */
 const STREAM_BYTES = 4_194_304;
 /** The pay card's action, on the traveller's ready card. */
@@ -32,7 +37,7 @@ type WorkingCard = Extract<C.Card, { kind: 'working' }>;
 type NoticeCard = Extract<C.Card, { kind: 'notice' }>;
 type Log = { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
 
-export type BookingState = 'fare' | 'fare_type' | 'coupon' | 'ready_to_pay' | 'failed';
+export type BookingState = 'fare' | 'fare_type' | 'coupon' | 'travellers' | 'ready_to_pay' | 'failed';
 
 export interface BookingAsk {
   /** The tap that asked, which names the booking: a repeat of it is the same booking. */
@@ -47,11 +52,19 @@ export interface BookingAsk {
 
 export interface FlightBookingDeps {
   pool: pg.Pool;
+  /** A person's name in the trip: whose ixigo the saved travellers are on, for the room's words. */
+  nameOf: (tripId: string, personId: string) => Promise<string>;
   runner: () => RecipeRunner | null;
   link: Pick<ServerLink, 'request'>;
   switches: Pick<Switches, 'get'>;
   now: () => Date;
   log: Log;
+}
+
+/** A day (DDMMYYYY, as ixigo's results address writes it) as ixigo's traveller list takes it: its midnight in India, in ms. */
+export function dayMs(ddmmyyyy: string): number | null {
+  const m = /^(\d{2})(\d{2})(\d{4})$/.exec(ddmmyyyy);
+  return m ? Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])) - 330 * 60_000 : null;
 }
 
 /** The flight numbers a card's title names ("IndiGo 6E328 + 6E5106"), as ixigo's flight keys hold them. */
@@ -115,6 +128,21 @@ export function readyCard(i: {
   };
 }
 
+/**
+ * The card for a traveller ixigo's account doesn't have once: their own, saying whose ixigo to add them on. It names
+ * nobody but the trip's own people, and none of the account's saved travellers.
+ */
+export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name'>, owner: string | null, why: 'none' | 'several'): NoticeCard {
+  const on = owner ? `${owner}'s ixigo` : "the trip's ixigo";
+  const body = why === 'none'
+    ? `${ask.name} isn't a saved traveller on ${on} yet; add ${ask.name} there once, then tap Book it again.`
+    : `${on.charAt(0).toUpperCase()}${on.slice(1)} has more than one saved traveller named ${ask.name}; keep one there, then tap Book it again.`;
+  return {
+    card_id: cardId, kind: 'notice', tone: 'heads_up', for_person_ids: [ask.personId],
+    title: clip(`${ask.name}, one step on ixigo first`, 80), body: clip(body, 500), fallback_text: clip(body, 300),
+  };
+}
+
 export interface FlightBooking {
   /** Whether Go books flights itself now: the switch is on and Go reads ixigo.com in the trip's browser. */
   on(): boolean;
@@ -140,7 +168,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     const runner = d.runner();
     const title = ask.offer.title;
     const live = liveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
-      `Opening ${title} on ixigo`, `Choosing ${FARE_TYPES[ask.choice].words}`, "ixigo's coupon", `Ready to pay for ${ask.name}`,
+      `Opening ${title} on ixigo`, `Choosing ${FARE_TYPES[ask.choice].words}`, "ixigo's coupon", 'Filling travellers privately', `Ready to pay for ${ask.name}`,
     ]);
     const fail = async (why: string, step: number): Promise<void> => {
       d.log.info({ runId, tripId: ask.tripId, why }, 'travel: a flight booking stopped');
@@ -173,7 +201,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
         ask.tripId, review,
         {
           capture: [{ match: FLIGHT_FARE, required: true }, { match: GRAPH, required: false, max_count: 4 }],
-          steps: [{ op: 'click', role: 'radio', text: FARE_TYPES[ask.choice].radio }],
+          steps: [FARE_TYPES[ask.choice].click],
           graceMs: 3_000,
         },
         { stage: true, tag: runId },
@@ -186,11 +214,47 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     const coupon = bodiesFor(opened.captures, GRAPH).map(parsed).map(ixigoCoupon).find((c) => c !== null) ?? null;
     const typed = priced.types.find((t) => t.choice === ask.choice)?.totalMinor ?? priced.totalMinor;
     const amountMinor = Math.max(1, typed - (coupon?.savingMinor ?? 0));
-    await save(runId, { state: 'coupon', total_minor: amountMinor, coupon_code: coupon?.code ?? null, coupon_minor: coupon?.savingMinor ?? null });
+    await save(runId, { state: 'travellers', total_minor: amountMinor, coupon_code: coupon?.code ?? null, coupon_minor: coupon?.savingMinor ?? null });
     await live.step(2, 'done');
 
-    // 4. Ready: their card, for them alone. Nothing on ixigo is submitted.
+    // 4. Their saved traveller, privately (the lead, 10 Oct: never stream the account's saved travellers): the list read
+    // inside the logged-in page, matched by first name, then ticked on ixigo's traveller step in a private tab (no
+    // picture). The list and their name live in this run's memory only. Nothing is submitted.
+    await live.step(3, 'doing');
+    const day = results.searchParams.get('date') ?? '';
+    const ms = dayMs(day);
+    const saved = runner.pageFetch && ms !== null
+      ? await runner.pageFetch(ask.tripId, { url: `${SAVED_TRAVELLERS}?date=${ms}`, method: 'GET' }, { tag: runId }).catch(() => null)
+      : null;
+    const iso = ms !== null ? new Date(ms + 330 * 60_000).toISOString().slice(0, 10) : '';
+    const [match] = saved && saved.status >= 200 && saved.status < 300
+      ? matchTravellers([{ personId: ask.personId, name: ask.name, kind: 'adult' }], savedTravellers(parsed(saved.body), iso))
+      : [];
+    if (!match) return fail('travellers_not_read', 3);
+    if (match.status !== 'matched') {
+      const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
+      const owner = holder ? await d.nameOf(ask.tripId, holder).catch(() => null) : null;
+      await d.link.request('post_message', { request_id: stableId('go_book_who', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_who', runId), ask, owner, match.status) });
+      return fail(match.status === 'none' ? 'no_saved_traveller' : 'several_saved_travellers', 3);
+    }
+    // The tick is the last step: a fetch that ran out of time before it (their name not on the list) answers with what
+    // it caught all the same, so it is its trace that says it failed.
+    let ranOut = false;
+    const ticked = await runner
+      .read(
+        ask.tripId, review,
+        {
+          capture: [{ match: TRAVELLER_FIELDS, required: true }],
+          steps: [FARE_TYPES[ask.choice].click, { op: 'click', role: 'button', name: 'Continue' }, { op: 'click', text: match.shown }],
+        },
+        { private: true, tag: runId, onTrace: (t) => { if (t.failed) ranOut = true; } },
+      )
+      .then(() => !ranOut, () => false);
+    if (!ticked) return fail('traveller_not_ticked', 3);
     await live.step(3, 'done');
+
+    // 5. Ready: their card, for them alone. Nothing on ixigo is submitted.
+    await live.step(4, 'done');
     const cardId = stableId('c_ready', runId);
     const card = readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: null, choice: ask.choice, amountMinor, coupon });
     await d.link.request('post_message', { request_id: stableId('go_book_ready', runId), trip_id: ask.tripId, card });

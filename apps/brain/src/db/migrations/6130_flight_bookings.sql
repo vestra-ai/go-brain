@@ -7,7 +7,7 @@ create table if not exists flight_bookings (
   option_id text not null,
   title text not null,
   choice text not null check (choice in ('basic', 'assured', 'flex')),
-  state text not null check (state in ('fare', 'fare_type', 'coupon', 'ready_to_pay', 'failed')),
+  state text not null check (state in ('fare', 'fare_type', 'coupon', 'travellers', 'ready_to_pay', 'failed')),
   total_minor bigint,
   coupon_code text,
   coupon_minor bigint,

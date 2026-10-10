@@ -47,12 +47,12 @@ describe("the account's saved travellers, matched to whom the booking is for", (
 
   it('reads each one as a match needs it: an id, a first name and the kind of fare on the day', () => {
     expect(saved).toEqual([
-      { id: '11', firstName: 'meher', kind: 'adult' },
-      { id: '12', firstName: 'kabir', kind: 'child' },
-      { id: '13', firstName: 'ria', kind: 'infant' },
-      { id: '14', firstName: 'arjun', kind: 'adult' },
-      { id: '15', firstName: 'arjun', kind: 'adult' },
-      { id: '16', firstName: 'priya', kind: null },
+      { id: '11', firstName: 'meher', kind: 'adult', shown: 'Meher X' },
+      { id: '12', firstName: 'kabir', kind: 'child', shown: 'Kabir' },
+      { id: '13', firstName: 'ria', kind: 'infant', shown: 'Ria' },
+      { id: '14', firstName: 'arjun', kind: 'adult', shown: 'Arjun' },
+      { id: '15', firstName: 'arjun', kind: 'adult', shown: 'arjun' },
+      { id: '16', firstName: 'priya', kind: null, shown: 'Priya' },
     ]);
     expect(kindOn({ dob: '2014-11-06' }, DAY)).toBe('adult');
     expect(kindOn({ dob: '2014-11-07' }, DAY)).toBe('child');
@@ -68,11 +68,11 @@ describe("the account's saved travellers, matched to whom the booking is for", (
     ];
     const got = matchTravellers(wanted, saved);
     expect(got).toEqual([
-      { personId: 'p_meher', name: 'Meher', status: 'matched', travellerId: '11' },
+      { personId: 'p_meher', name: 'Meher', status: 'matched', travellerId: '11', shown: 'Meher X' },
       // The saved Kabir flies as a child that day, so he is not this adult Kabir.
       { personId: 'p_kabir', name: 'Kabir', status: 'none' },
       { personId: 'p_arjun', name: 'Arjun Rao', status: 'several', travellerIds: ['14', '15'] },
-      { personId: 'p_priya', name: 'priya', status: 'matched', travellerId: '16' },
+      { personId: 'p_priya', name: 'priya', status: 'matched', travellerId: '16', shown: 'Priya' },
     ]);
     // What the model hears: the trip's own names and the outcome, never a saved name or birthday.
     expect(got.map(matchSaid)).toEqual([

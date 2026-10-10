@@ -11,6 +11,8 @@ export interface SavedTraveller {
   id: string;
   firstName: string;
   kind: TravellerKind | null;
+  /** Their name as ixigo's traveller step lists it, for the one click that ticks them: this run's memory only. */
+  shown: string;
 }
 
 /** Someone the booking is for: their name in the trip and the kind of fare they fly on. */
@@ -21,7 +23,7 @@ export interface Wanted {
 }
 
 export type TravellerMatch =
-  | { personId: string; name: string; status: 'matched'; travellerId: string }
+  | { personId: string; name: string; status: 'matched'; travellerId: string; shown: string }
   /** More than one saved traveller has their first name and kind: they say which, never Go. */
   | { personId: string; name: string; status: 'several'; travellerIds: string[] }
   | { personId: string; name: string; status: 'none' };
@@ -57,7 +59,8 @@ export function savedTravellers(body: unknown, day: string): SavedTraveller[] {
     if (!isObject(t)) return [];
     const id = typeof t['id'] === 'string' || typeof t['id'] === 'number' ? String(t['id']) : null;
     const first = typeof t['firstName'] === 'string' ? firstNameOf(t['firstName']) : '';
-    return id && first ? [{ id, firstName: first, kind: kindOn(t, day) }] : [];
+    const shown = [t['firstName'], t['lastName']].filter((x): x is string => typeof x === 'string' && x.trim() !== '').map((x) => x.trim()).join(' ');
+    return id && first ? [{ id, firstName: first, kind: kindOn(t, day), shown }] : [];
   });
 }
 
@@ -72,7 +75,7 @@ export function matchTravellers(wanted: Wanted[], saved: SavedTraveller[]): Trav
     const same = saved.filter((t) => !used.has(t.id) && first !== '' && t.firstName === first && (t.kind === null || t.kind === w.kind));
     if (same.length === 1) {
       used.add(same[0]!.id);
-      return { personId: w.personId, name: w.name, status: 'matched', travellerId: same[0]!.id };
+      return { personId: w.personId, name: w.name, status: 'matched', travellerId: same[0]!.id, shown: same[0]!.shown };
     }
     if (same.length > 1) return { personId: w.personId, name: w.name, status: 'several', travellerIds: same.map((t) => t.id) };
     return { personId: w.personId, name: w.name, status: 'none' };
