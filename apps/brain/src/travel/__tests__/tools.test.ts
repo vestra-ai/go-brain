@@ -449,7 +449,7 @@ describe('put_to_vote', () => {
     const reply = lb.ctx({ turnId: 'turn_r2' });
     await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, reply);
     const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, reply)) as any;
-    expect(out.decision_id).toBeDefined();
+    expect(out).toMatchObject({ decision_id: expect.any(String) });
     const card = C.OptionsCard.parse(reply.cards[0]);
     const vote = lb.link.sent('open_vote').at(-1)!;
     expect((vote.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
