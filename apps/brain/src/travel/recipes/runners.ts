@@ -272,14 +272,14 @@ export const BASH_MAX_BYTES = 1_048_576;
 export const SSE_UNSUPPORTED_MS = 10 * 60_000;
 
 /** A capture as a Bash with no sse "last" takes it: no sse, and no more than Bash's most. */
-const withoutSse = <C extends { sse?: 'last'; max_bytes?: number }>(c: C): C => {
+const withoutSse = <C extends { match: string; sse?: 'last'; max_bytes?: number }>(c: C): C => {
   if (c.sse === undefined) return c;
   const { sse: _sse, ...rest } = c;
   return { ...rest, ...(c.max_bytes !== undefined && c.max_bytes > BASH_MAX_BYTES ? { max_bytes: BASH_MAX_BYTES } : {}) } as C;
 };
 
 /** Bash refused the fetch for a capture's sse: its 400 names that capture (param "capture.0"), never by its message. */
-function refusedSse(err: V1Error, capture: Array<{ sse?: 'last' }>): boolean {
+function refusedSse(err: V1Error, capture: ReadonlyArray<{ match: string; sse?: 'last' }>): boolean {
   if (err.status !== 400 || err.code !== 'invalid_request') return false;
   const param = err.detail?.['param'];
   const at = typeof param === 'string' ? /^capture\.(\d+)(?:\.|$)/.exec(param) : null;
