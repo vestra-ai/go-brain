@@ -170,6 +170,7 @@ export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<
       site: NO_SITE,
     };
   }
+  if (kind === 'buses') return { given: { from: q.from, to: q.to, date: q.date, board_at: q.boardAt, drop_at: q.dropAt }, conditions, site: NO_SITE };
   return { given: { from: q.from, to: q.to, date: q.date }, conditions, site: NO_SITE };
 }
 

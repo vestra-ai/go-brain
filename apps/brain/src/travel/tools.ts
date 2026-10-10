@@ -11,7 +11,7 @@ import { dateAs } from './book/expr.js';
 import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, ledBy, leftOff, linkLine, plainAsk } from './answer.js';
-import { stayDetails, trainDetails } from './details.js';
+import { flightDetails, stayDetails, trainDetails } from './details.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
@@ -143,6 +143,17 @@ function askedTravellers(q: TravelQuery, ctx: TurnCtx): TravelQuery {
   const rest = { ...q };
   delete rest.guests;
   return rest;
+}
+
+export const BusesArgs = JourneyArgs.extend({
+  board_at: z.string().min(2).max(60).optional()
+    .describe('A pickup point the group named, as its place name ("Majestic", "Silk Board"): only buses that stop there fit, and ixigo\'s own chip for it is clicked'),
+  drop_at: z.string().min(2).max(60).optional()
+    .describe('A drop point the group named, as its place name ("Mapusa", "Panjim"): only buses that stop there fit, and ixigo\'s own chip for it is clicked'),
+});
+
+export function busesQuery(a: z.infer<typeof BusesArgs>): TravelQuery {
+  return { ...journeyQuery(a), ...(a.board_at ? { boardAt: a.board_at } : {}), ...(a.drop_at ? { dropAt: a.drop_at } : {}) };
 }
 
 export function journeyQuery(a: z.infer<typeof JourneyArgs>): TravelQuery {
@@ -353,7 +364,9 @@ export async function putUpCard(
     numbers.map(async (n, i) => {
       const option = set.options[n - 1]!;
       const gallery = set.optionKind === 'stay' ? (await Promise.all((option.imageUrls ?? []).map((u) => d.images.rehostUrl(u)))).filter((u): u is string => u !== null) : [];
-      const details = set.optionKind === 'stay' ? stayDetails(option, query, people, gallery) : set.optionKind === 'train' ? trainDetails(option) : null;
+      const details = set.optionKind === 'stay'
+        ? stayDetails(option, query, people, gallery)
+        : set.optionKind === 'train' ? trainDetails(option) : set.optionKind === 'flight' ? flightDetails(option, people) : null;
       return {
         n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null,
         ...(details ? { details } : {}),
@@ -786,11 +799,11 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     summarizeRound: searchRoundSummary,
     timeoutMs: SEARCH_TOOL_MS,
   };
-  const searchBuses: QuickTool<z.infer<typeof JourneyArgs>> = {
+  const searchBuses: QuickTool<z.infer<typeof BusesArgs>> = {
     name: 'search_buses',
-    description: `Searches buses on one date. ${SEARCH_RULE}`,
-    input: JourneyArgs,
-    run: (a, ctx) => runSearch('buses', journeyQuery(a), ctx, d),
+    description: `Searches buses on one date. ${SEARCH_RULE} A pickup or drop point the group named goes in board_at or drop_at.`,
+    input: BusesArgs,
+    run: (a, ctx) => runSearch('buses', busesQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,
     timeoutMs: SEARCH_TOOL_MS,
   };

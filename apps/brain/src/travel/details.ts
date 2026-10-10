@@ -101,6 +101,40 @@ export function stayDetails(o: ResultOption, q: TravelQuery, people: number, gal
   return Object.keys(details).length > 0 ? details : null;
 }
 
+/**
+ * A flight's sheet, from what ixigo's list said of its fare: the bags it takes (and what a check-in bag costs on a
+ * handbag-only fare), seats left, a free meal, each change of plane, the code's saving, and Lock Price for the group: its fee
+ * a person and for everyone, how long it holds the fare, and the most ixigo covers if the fare rises. people: the head count
+ * the search was for. Its fare is the card's.
+ */
+export function flightDetails(o: ResultOption, people: number): OptionDetailsT | null {
+  const withBag = num(o.facts['with_checkin_bag_minor']);
+  const seats = num(o.facts['seats_left']);
+  const fee = num(o.facts['lock_fee_minor']);
+  const hours = num(o.facts['lock_hours']);
+  const cover = num(o.facts['lock_cover_minor']);
+  const group = fee !== null && people > 1 ? `, ${formatInr(fee * people)} for ${people}` : '';
+  const checkin = text(o.facts['checkin_bag']);
+  const facts = [
+    ...fact('Fare', text(o.facts['fare_type'])),
+    ...fact('Cabin bag', text(o.facts['cabin_bag'])),
+    ...fact('Check-in bag', checkin === 'none' ? 'None on this fare' : checkin),
+    ...fact('With a check-in bag', withBag !== null ? `${formatInr(withBag)} a person on this flight` : null),
+    ...fact('Seats left', seats !== null && seats > 0 && seats <= 9 ? `${seats}` : null),
+    ...fact('Meal', o.facts['free_meal'] === true ? 'Free meal' : null),
+    ...fact('Change of plane', text(o.facts['layover'])),
+    ...fact('Offer', text(o.facts['offer'])),
+    ...fact('Lock Price', fee !== null && hours !== null ? `${formatInr(fee)} a person${group}, holds this fare ${hours} h` : null),
+    ...fact('If the fare rises', fee !== null && cover !== null ? `ixigo covers up to ${formatInr(cover)}` : null),
+    ...fact('Lock options', text(o.facts['lock_options'])),
+  ];
+  // ixigo's own words for the fare's refund (its filter's "Non Refundable", "Partially Refundable").
+  const refund = REFUND_WORDS[text(o.facts['refundable']) ?? ''];
+  const details: OptionDetailsT = { ...(facts.length > 0 ? { facts } : {}), ...(refund ? { cancellation: refund } : {}) };
+  return Object.keys(details).length > 0 ? details : null;
+}
+const REFUND_WORDS: Record<string, string> = { REFUNDABLE: 'Refundable', PARTIALLY_REFUNDABLE: 'Partially refundable', NON_REFUNDABLE: 'Non-refundable' };
+
 /** Indian Railways' classes in words, as the trains recipe names them on the card. */
 const CLASS_WORDS: Record<string, string> = {
   '1A': 'AC First Class', '2A': 'AC 2 Tier', '3A': 'AC 3 Tier', '3E': 'AC 3 Economy', SL: 'Sleeper', CC: 'AC Chair Car',
