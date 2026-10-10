@@ -72,6 +72,8 @@ export const Message = z
     card: Card.nullish(),
     /** 1.1: only on Go's messages, as Go posted them. */
     quick_replies: z.array(QuickReply).max(6).nullish(),
+    /** 1.2: only on Go's messages that only some people can see, as Go posted them. Absent: everyone sees it. */
+    visible_to_person_ids: z.array(Id).min(1).max(30).nullish(),
     /** True when the author paused Go: the text and attachments are left out on purpose. */
     withheld: z.boolean(),
     deleted: z.boolean(),
@@ -98,6 +100,11 @@ export const PostMessage = z
     mentions: z.array(Id).max(30).nullish(),
     /** 1.1: up to six replies the App offers under the message. The Server keeps them on the Message. */
     quick_replies: z.array(QuickReply).max(6).nullish(),
+    /**
+     * 1.2: only these people (1 to 30, all in the trip) see the message: in the room, in their "needs you" list and on the
+     * cards screen. To everyone else it doesn't exist. Absent: everyone, as before. Fixed when posted: replace_card keeps it.
+     */
+    visible_to_person_ids: z.array(Id).min(1).max(30).nullish(),
   })
   .refine((m) => m.text != null || m.card != null, { message: 'a message needs text, a card, or both' })
   .meta({ id: 'PostMessage', description: 'Needs text, a card, or both.' });

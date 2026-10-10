@@ -33,7 +33,7 @@ function stateToast(row: PaymentRow): string {
   }
 }
 
-function payLinkInput(row: PaymentRow): PayLinkInput | null {
+export function payLinkInput(row: PaymentRow): PayLinkInput | null {
   if (!row.approval_token || !row.approval_id || !row.hold_id || row.amount_minor === null || !row.currency || !row.merchant || !row.hold_expires_at) return null;
   return {
     approval: row.approval_token,
@@ -57,10 +57,13 @@ function payLinkInput(row: PaymentRow): PayLinkInput | null {
  * A fresh ask runs the Server's spend check again and needs Face ID again.
  */
 function startAgain(t: TapDeps, row: PaymentRow, tapId: string): void {
+  // A traveller's ticket has no pay card, so no Approve can start one again: its own card asks afresh.
+  const decisionId = row.decision_id;
+  if (decisionId === null) return;
   t.later.run(t.d.log, 'start a payment again', async () => {
     await t.reconcile(row.payment_id);
     // The vote's option_ref again: the fresh ask resolves it to the travel offer and holds it anew.
-    const r = await t.ask(row.trip_id, { decisionId: row.decision_id, optionRef: row.option_ref, purpose: row.purpose }, tapId);
+    const r = await t.ask(row.trip_id, { decisionId, optionRef: row.option_ref, purpose: row.purpose }, tapId);
     if ('refused' in r && r.say) await postLine(t.d, row.trip_id, r.refused, rid('go_said', tapId), payerOf(row));
   });
 }

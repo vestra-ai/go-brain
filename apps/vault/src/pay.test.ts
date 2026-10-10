@@ -176,6 +176,27 @@ describe('step 6: the payer is the person who unlocked', () => {
   });
 });
 
+// Contract 1.2: a traveller's own ticket is never voted on. The Server's approval names the traveller (for_person_id),
+// who is its payer; the vault still takes both keys, and only that traveller's Face ID pays it.
+describe("step 6 for a ticket: only its traveller pays it", () => {
+  it("pays a ticket with the traveller's own passkey, with both keys in the log", async () => {
+    const { token, jti } = await f.payLinkFor({ ticketFor: 'p_priya' });
+    expect(await f.approve(token, priya)).toEqual({ state: 'paid', railRef: `fake_${jti}` });
+    expect(f.rail.charges.at(-1)).toMatchObject({ personId: 'p_priya', idempotencyKey: jti });
+    expect(await logFor(jti)).toEqual([
+      { kind: 'pay_attempt', passkey_ok: true, approval_ok: true, reason: null },
+      { kind: 'pay_ok', passkey_ok: true, approval_ok: true, reason: null },
+    ]);
+  });
+
+  it("refuses anyone else's passkey, even on a link moved to them", async () => {
+    const { token, jti } = await f.payLinkFor({ ticketFor: 'p_priya' });
+    await f.pool.query("update links set person_id = 'p_rahul' where approval_id = $1", [jti]);
+    expect(await f.approve(token, rahul)).toEqual({ state: 'refused', reason: 'not_the_payer' });
+    expect(charges(jti)).toBe(0);
+  });
+});
+
 describe('step 7: within the approval', () => {
   it('refuses an amount above the approval', async () => {
     const { token, jti } = await f.payLinkFor();

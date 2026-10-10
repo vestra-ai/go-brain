@@ -192,6 +192,22 @@ describe('POST /internal/pay-links', () => {
     expect(await reasonOf(payBody({ payer_person_id: 'p_priya' }))).toBe('wrong_payer');
   });
 
+  // Contract 1.2: a traveller's own ticket names them (for_person_id) in place of a vote, and they are its payer.
+  it("opens a ticket's pay link for its traveller alone", async () => {
+    const ticket = { jti: 'ap_ticket_ok_1', decision_id: null, for_person_id: 'p_priya', kind: 'ticket' as const, payer_person_id: 'p_priya' };
+    const approval = signTestApproval(ticket);
+    expect(await reasonOf(payBody({ approval, approval_id: ticket.jti, payer_person_id: 'p_rahul' }))).toBe('wrong_payer');
+    expect((await payLink(payBody({ approval, approval_id: ticket.jti, payer_person_id: 'p_priya' }))).statusCode).toBe(200);
+  });
+
+  it('refuses a ticket whose payer is not its traveller, or one that names a vote too', async () => {
+    const claims = Object.fromEntries(Object.entries(spendVector().claims).filter(([k]) => k !== 'decision_id'));
+    const notTheirs = signRawApproval({ ...claims, jti: 'ap_ticket_bad_1', for_person_id: 'p_priya', kind: 'ticket', payer_person_id: 'p_rahul' });
+    expect(await reasonOf(payBody({ approval: notTheirs, approval_id: 'ap_ticket_bad_1' }))).toBe('bad_approval');
+    const both = signRawApproval({ ...spendVector().claims, jti: 'ap_ticket_bad_2', for_person_id: 'p_rahul', kind: 'ticket' });
+    expect(await reasonOf(payBody({ approval: both, approval_id: 'ap_ticket_bad_2' }))).toBe('bad_approval');
+  });
+
   it('refuses another currency', async () => {
     expect(await reasonOf(payBody({ hold: { ...hold, currency: 'USD' } }))).toBe('currency_mismatch');
   });

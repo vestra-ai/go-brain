@@ -172,20 +172,35 @@ export const AddExpense = z
   .meta({ id: 'AddExpense' });
 export const AddExpenseResult = z.object({ expense_id: Id, seq: Seq }).meta({ id: 'AddExpenseResult' });
 
-/** Go asks the Server whether a payment may happen. The Server runs the spend check. */
+const spendAsk = {
+  request_id,
+  trip_id,
+  /** The most this payment may be. The vault refuses a checkout above it. */
+  amount_minor: PositiveAmountMinor,
+  currency: Currency,
+  merchant: z.string().min(1).max(120),
+  purpose: z.string().min(1).max(200),
+  /** When free cancellation ends. Required when the mandate is refundable only. */
+  refundable_until: IsoDateTime.nullish(),
+};
+
+/** The group's payment: a closed vote whose payer tapped "Yes, book it". */
+export const RequestGroupSpendApproval = z.object({ ...spendAsk, decision_id: Id }).meta({ id: 'RequestGroupSpendApproval' });
+
+/**
+ * 1.2: a traveller's own ticket, which is never voted on (B7). No `decision_id`: the person it is for is the payer. The
+ * Server grants it when that person is in the trip, signing `for_person_id` in place of `decision_id`.
+ */
+export const RequestTicketSpendApproval = z
+  .object({ ...spendAsk, kind: z.literal('ticket'), for_person_id: Id })
+  .meta({ id: 'RequestTicketSpendApproval' });
+
+/**
+ * Go asks the Server whether a payment may happen. The Server runs the spend check. The group's form names its vote;
+ * 1.2's ticket form (`kind: "ticket"`) names the traveller instead.
+ */
 export const RequestSpendApproval = z
-  .object({
-    request_id,
-    trip_id,
-    decision_id: Id,
-    /** The most this payment may be. The vault refuses a checkout above it. */
-    amount_minor: PositiveAmountMinor,
-    currency: Currency,
-    merchant: z.string().min(1).max(120),
-    purpose: z.string().min(1).max(200),
-    /** When free cancellation ends. Required when the mandate is refundable only. */
-    refundable_until: IsoDateTime.nullish(),
-  })
+  .union([RequestTicketSpendApproval, RequestGroupSpendApproval])
   .meta({ id: 'RequestSpendApproval' });
 
 /** Go releases an approval it will not use, so the next one is not refused as outstanding. */
@@ -209,6 +224,10 @@ export const SpendDenialReason = z
     'currency_mismatch',
     'not_refundable',
     'approval_outstanding',
+    /** 1.2, the ticket form: the person it is for is not in the trip. */
+    'not_in_trip',
+    /** 1.2: the vote is booked already (a confirmed booking exists), so a second payment would charge twice. */
+    'already_booked',
   ])
   .meta({ id: 'SpendDenialReason' });
 
