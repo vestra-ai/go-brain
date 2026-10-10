@@ -98,9 +98,9 @@ answer:
   # and the rooms booked, and guests is the head count ixigo priced it for (a share per head divides the whole stay by
   # it). The coupon ixigo applies on its own is already in the price ("Discount of ₹844 included. Coupon code IXIFIRST
   # applied", 10 Oct), and the price says so. Logged in, ixigo writes it with its hotel cash as a picture ("₹383
-  # discount + <img …hotel-cash…>", 10 Oct): the words before it are the offer, and its hotel cash (fareDetail.burnInfo,
-  # the logged-in person's) is said only as applying, never its amount. What ixigo filtered on, every stay it gave has;
-  # the rest is what it lists.
+  # discount + <img …hotel-cash…>", 10 Oct): the words before it are the offer. Its hotel cash (fareDetail.burnInfo) is
+  # the logged-in person's own wallet, and a room's card is never private: it is never read. What ixigo filtered on, every
+  # stay it gave has; the rest is what it lists.
   # Every detail but the id, the name and the fare may be missing or null (O Hotel Goa came with a null image). The list
   # gives up to seven photos a stay (Agoda's and Booking.com's, 1024x768) and a few amenities in ixigo's words; a
   # cancellation date, the rest of the photos and the landmarks are only on the hotel's own page (8 Oct).
@@ -130,7 +130,6 @@ answer:
       $coupon := ($type(fareDetail.couponCode) = "string" and $trim(fareDetail.couponCode) != "") ? $trim(fareDetail.couponCode);
       $plainOffer := function($m) { ($type($m) = "string" and $trim($substringBefore($m, "<")) != "") ? $substring($trim($replace($substringBefore($m, "<"), /[\s+]+$/, "")), 0, 80) };
       $offer := $plainOffer(fareDetail.offerMessage);
-      $hotelCash := $count(fareDetail.burnInfo) > 0 ? true;
       $payAtHotel := $said(/pay at hotel/i, "PT_PAY_AT_HOTEL") or fareDetail.paymentType = "PAY_AT_HOTEL";
       $zeroNow := $said(/book with (₹|rs\.?\s*)?0|zero payment/i, "PT_BOOK_WITH_ZERO_PAYMENT") or fareDetail.paymentType = "BOOK_WITH_ZERO_PAYMENT";
       $left := $num(roomsCountLeft);
@@ -170,7 +169,6 @@ answer:
           "beach_minutes": $beach,
           "coupon": $coupon,
           "offer": $offer,
-          "hotel_cash_applies": $hotelCash,
           "pay_at_hotel": $payAtHotel,
           "book_with_zero": $zeroNow,
           "rooms_left": $left > 0 ? $left,
