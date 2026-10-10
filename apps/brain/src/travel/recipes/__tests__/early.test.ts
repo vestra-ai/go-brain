@@ -153,6 +153,7 @@ describe('the early start', () => {
 
 describe('the early start of an ixigo read beyond the searches', () => {
   const BOOK = new Set(['trains.running_status', 'trains.schedule', 'plan.destination', 'offers.list', 'hotels.reviews']);
+  const runKeys: string[] = [];
   function readWorld(mode = 'ixigo_web', o: { fail?: boolean; option?: { ref: string; page: string } | null; book?: Set<string> } = {}) {
     const runs: Array<{ id: string; given: Record<string, unknown>; tripId: string }> = [];
     const switches = new FakeSwitches();
@@ -167,6 +168,7 @@ describe('the early start of an ixigo read beyond the searches', () => {
         has: (id) => (o.book ?? BOOK).has(id),
         run: async (id, given, r) => {
           runs.push({ id, given, tripId: r.tripId });
+          runKeys.push(r.runKey);
           if (o.fail) throw new TravelError('unreachable', 'PNR 4512873690 did not load');
           return facts;
         },
@@ -183,8 +185,22 @@ describe('the early start of an ixigo read beyond the searches', () => {
     expect(w.runs).toEqual([{ id: 'trains.running_status', given: { train: '12051' }, tripId: 't_goa' }]);
     expect(w.warmed).toEqual(['t_goa:null']);
     const read = w.early.readFor('t_goa', 'm_60')!;
-    expect(read).toMatchObject({ choice: 'train_status', recipe: 'trains.running_status', asked: { train: '12051' } });
+    expect(read).toMatchObject({ choice: 'train_status', recipe: 'trains.running_status', asked: { train: '12051' }, runKey: 'early:m_60|trains.running_status' });
+    expect(runKeys.at(-1)).toBe('early:m_60|trains.running_status');
     await expect(read.answer).resolves.toBe(w.facts);
+  });
+
+  it("gives the tool's call that is the same read the read's card, so one read shows one card", async () => {
+    const w = readWorld();
+    await w.early.onRead(msg(72, 'p_arjun', 'Go 12051 abhi kahan chal rahi hai?'), picked('train_status'), goaPack());
+    // The model's call: the same recipe and train, as a number or as words.
+    expect(w.early.joinKey('t_goa', ['m_72'], 'trains.running_status', { train: 12051 })).toBe('early:m_72|trains.running_status');
+    expect(w.early.joinKey('t_goa', ['m_71', 'm_72'], 'trains.running_status', { train: ' 12051' })).toBe('early:m_72|trains.running_status');
+    // Another train, another recipe, another message, another trip: a read of its own, with its own card.
+    expect(w.early.joinKey('t_goa', ['m_72'], 'trains.running_status', { train: '16346' })).toBeNull();
+    expect(w.early.joinKey('t_goa', ['m_72'], 'trains.schedule', { train: '12051' })).toBeNull();
+    expect(w.early.joinKey('t_goa', ['m_73'], 'trains.running_status', { train: '12051' })).toBeNull();
+    expect(w.early.joinKey('t_other', ['m_72'], 'trains.running_status', { train: '12051' })).toBeNull();
   });
 
   it("reads a guide for the trip's own place, and a shown stay's reviews by its option", async () => {

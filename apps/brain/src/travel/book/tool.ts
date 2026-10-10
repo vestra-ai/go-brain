@@ -13,7 +13,7 @@ import { TravelError } from '../mcp-travel.js';
 import type { LiveSearch } from '../live-search.js';
 import { CARD_DELAY_MS, SEARCH_RECIPES, shownAfter } from '../recipes/backend.js';
 import type { Book } from './book.js';
-import type { Engine } from './engine.js';
+import type { Engine, EngineAnswer } from './engine.js';
 import type { ResultsStore } from '../results.js';
 import type { RecipeFile } from './format.js';
 
@@ -30,6 +30,11 @@ export interface IxigoToolDeps {
    */
   card?: (tripId: string, o: { runKey: string; recipe: string }) => LiveSearch;
   cardDelayMs?: number;
+  /**
+   * The card key of a read the early start began for a message this turn woke for, when this call is that read (its
+   * recipe and inputs): the call joins the read, so it updates that read's card instead of posting a second.
+   */
+  joinKey?: (ctx: TurnCtx, recipe: string, inputs: Record<string, string | number>) => string | null;
 }
 
 /** The recipes the tool offers: facts, open to anyone, changing nothing; never a search or a lookup. */
@@ -89,6 +94,32 @@ export const NAMES_ONLY_FROM_IXIGO =
 export const NOTHING_ON_IXIGO =
   "ixigo has nothing for this. Answer from what you know, as a well-travelled friend would, with no word about ixigo: well-known places (beaches, forts, falls, markets) by name with a short reason; a cafe, restaurant, bar, beach shack, club or shop never from memory, so for those talk about the area.";
 
+/**
+ * A facts recipe run as a person watches it: on the stage, with its live card once it outlasts the card delay (a kept
+ * answer posts none). The ixigo tool's runs and the early start's (travel/recipes/early.ts) both come here.
+ */
+export async function runOnStage(
+  d: Pick<IxigoToolDeps, 'engine' | 'card' | 'cardDelayMs'>,
+  tripId: string,
+  runKey: string,
+  recipe: Pick<RecipeFile, 'id' | 'title'>,
+  given: Record<string, unknown>,
+): Promise<EngineAnswer> {
+  const make = d.card;
+  const live = make ? shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey, recipe: recipe.title })) : null;
+  try {
+    const answer = await d.engine.answer(recipe.id, given, { tripId, ...(live ? { onProgress: live.progress } : {}) });
+    if (live) {
+      live.progress({ type: 'extracted', count: answer.as === 'facts' ? answer.rows.length : 0 });
+      await live.finish(answer.as === 'facts');
+    }
+    return answer;
+  } catch (err) {
+    if (live) await live.finish(false);
+    throw err;
+  }
+}
+
 const Value = z.union([z.string().min(1).max(120), z.number()]);
 
 export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs: Record<string, string | number> }> | null {
@@ -123,23 +154,15 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
         if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n, from a search.`, inputs: inputsOf(recipe) };
         given[name] = page;
       }
-      const make = d.card;
-      const live = make && recipe
-        ? shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(ctx.tripId, { runKey: `${ctx.turnId ?? ''}|${a.recipe}|${JSON.stringify(given)}`, recipe: recipe.title }))
-        : null;
+      const runKey = d.joinKey?.(ctx, a.recipe, a.inputs) ?? `${ctx.turnId ?? ''}|${a.recipe}|${JSON.stringify(given)}`;
       try {
-        const answer = await d.engine.answer(a.recipe, given, { tripId: ctx.tripId, ...(live ? { onProgress: live.progress } : {}) });
-        if (live) {
-          live.progress({ type: 'extracted', count: answer.as === 'facts' ? answer.rows.length : 0 });
-          await live.finish(answer.as === 'facts');
-        }
+        const answer = recipe ? await runOnStage(d, ctx.tripId, runKey, recipe, given) : await d.engine.answer(a.recipe, given, { tripId: ctx.tripId });
         if (answer.as !== 'facts') return { recipe: a.recipe, error: 'refused', note: 'This recipe answers with options: use the search tools.' };
         if (answer.rows.length === 0) {
           return { recipe: a.recipe, title: answer.title, facts: [], note: NOTHING_ON_IXIGO };
         }
         return { recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows, tell_the_room: NAMES_ONLY_FROM_IXIGO };
       } catch (err) {
-        if (live) await live.finish(false);
         if (!(err instanceof TravelError)) throw err;
         if (err.code === 'pick_place') return { recipe: a.recipe, choose: err.message };
         // The description says each input's name only: an answer that went wrong says them in full, to call again with.

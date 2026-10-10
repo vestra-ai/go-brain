@@ -10,7 +10,8 @@
  *
  * The other ixigo asks Jev picks (a train's running status, its timetable, a waitlist's chance, a place's guide, the
  * offers, a shown stay's rooms or reviews, and more: fast.ts) start the same way where Go searches ixigo.com itself: their recipe
- * runs at once, and the turn's right-now part hands over its facts (now.ts earlyReadNow). Each acts only once its choice
+ * runs at once on the stage with its live card (book/tool.ts runOnStage), and the turn's right-now part hands over its facts
+ * (now.ts earlyReadNow). The ixigo tool's call for the same read joins it and updates the same card (joinKey). Each acts only once its choice
  * is live (reflex/live-gate.ts LIVE_RECIPES); until then Jev's pick of one acts as none.
  */
 import type { Switches } from '../../admin/switches.js';
@@ -40,7 +41,8 @@ export interface EarlyStartDeps {
   /** The book's recipes, for the asks beyond the searches (fast.ts). Absent, none of those start early. */
   recipes?: {
     has(id: string): boolean;
-    run(id: string, given: Record<string, unknown>, o: { tripId: string }): Promise<EngineAnswer>;
+    /** Runs one on the stage, with its live card keyed by runKey. */
+    run(id: string, given: Record<string, unknown>, o: { tripId: string; runKey: string }): Promise<EngineAnswer>;
   };
   /** The shown option a line points at, on the trip's newest card of its kind (option-on-card.ts). */
   optionFor?: (tripId: string, text: string, kind: 'stay' | 'flight') => Promise<ShownOption | null>;
@@ -53,6 +55,8 @@ export interface EarlyRead {
   /** Its inputs as the ixigo tool takes them, for a turn that calls the tool while it still runs (it joins the read). */
   asked: Record<string, string>;
   answer: Promise<EngineAnswer>;
+  /** Its live card's key: the tool's call that joins the read updates this card. */
+  runKey: string;
 }
 
 /** A search a message started on intake. */
@@ -71,6 +75,11 @@ export interface EarlyStart {
   searchFor(tripId: string, messageId: string): EarlySearch | null;
   /** The ixigo read this message started, while it is fresh; null when it started none. */
   readFor(tripId: string, messageId: string): EarlyRead | null;
+  /**
+   * The card key of a read one of these messages started, when a call of this recipe with these inputs is that read:
+   * the tool's call joins it, and updates its card instead of posting a second. Null for any other call.
+   */
+  joinKey(tripId: string, messageIds: string[], recipe: string, inputs: Record<string, string | number>): string | null;
 }
 
 const KEPT_MAX = 200;
@@ -102,13 +111,20 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
     const dates = pack.trip.dates ?? agreedDates(pack.trip.record, today);
     const ask = readFastAsk(choice, msg.text, { today, destination: pack.trip.destination?.name ?? null, dates, option });
     if (!ask || !d.recipes.has(ask.recipe)) return undefined;
-    const answer = d.recipes.run(ask.recipe, ask.given, { tripId });
+    const runKey = `early:${msg.message_id}|${ask.recipe}`;
+    const answer = d.recipes.run(ask.recipe, ask.given, { tripId, runKey });
     answer.catch((err: unknown) => {
       // A PNR's read never logs its error: the message could carry the number.
       d.log.warn({ ...(choice === 'pnr' ? {} : { err }), tripId, recipe: ask.recipe }, 'travel: an early ixigo read failed; the composer reads again');
     });
-    keep(reads, `${tripId}:${msg.message_id}`, { choice, recipe: ask.recipe, asked: ask.asked, answer, at: d.now().getTime() });
+    keep(reads, `${tripId}:${msg.message_id}`, { choice, recipe: ask.recipe, asked: ask.asked, answer, runKey, at: d.now().getTime() });
     return { dueNow: true };
+  }
+
+  function readFor(tripId: string, messageId: string): EarlyRead | null {
+    const r = reads.get(`${tripId}:${messageId}`);
+    if (!r || d.now().getTime() - r.at >= RECIPE_TTL_MS) return null;
+    return { choice: r.choice, recipe: r.recipe, asked: r.asked, answer: r.answer, runKey: r.runKey };
   }
 
   return {
@@ -155,10 +171,16 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       if (!s || d.now().getTime() - s.at >= RECIPE_TTL_MS) return null;
       return { kind: s.kind, query: s.query, search: s.search, live: s.live };
     },
-    readFor(tripId, messageId) {
-      const r = reads.get(`${tripId}:${messageId}`);
-      if (!r || d.now().getTime() - r.at >= RECIPE_TTL_MS) return null;
-      return { choice: r.choice, recipe: r.recipe, asked: r.asked, answer: r.answer };
+    readFor,
+    joinKey(tripId, messageIds, recipe, inputs) {
+      // The same inputs, as words: "12051" and 12051, "Thivim" and "thivim". A read whose inputs the tool never sees
+      // (a PNR's) is joined by its recipe alone.
+      const word = (v: unknown): string => String(v ?? '').trim().toLowerCase();
+      for (const id of messageIds) {
+        const r = readFor(tripId, id);
+        if (r?.recipe === recipe && Object.entries(r.asked).every(([k, v]) => word(inputs[k]) === word(v))) return r.runKey;
+      }
+      return null;
     },
   };
 }

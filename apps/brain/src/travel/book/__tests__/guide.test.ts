@@ -156,6 +156,26 @@ describe('the ixigo tool', () => {
     expect(seen.at(-1)!.onProgress).toBeUndefined();
   });
 
+  it("joins a read the early start began for this turn's message on that read's own card, and keys its own card otherwise", async () => {
+    const keys: string[] = [];
+    const card = (_trip: string, o: { runKey: string; recipe: string }) => {
+      keys.push(o.runKey);
+      return { progress: () => undefined, finish: async () => undefined };
+    };
+    const engine = { answer: async () => ({ as: 'facts' as const, title: 'Goa', rows: [], page: 'https://www.ixigo.com/plan/goa', checkedAt: '2026-10-10T05:00:00.000Z', ms: 900 }) };
+    const asked: Array<{ recipe: string; inputs: Record<string, string | number> }> = [];
+    const joinKey = (_ctx: TurnCtx, recipe: string, inputs: Record<string, string | number>) => {
+      asked.push({ recipe, inputs });
+      return inputs['place'] === 'Goa' ? 'early:m_7|plan.destination' : null;
+    };
+    const tool = ixigoTool({ book, engine: engine as never, live: () => true, card: card as never, cardDelayMs: 0, joinKey })!;
+    await tool.run({ recipe: 'plan.destination', inputs: { place: 'Goa' } }, turn);
+    await tool.run({ recipe: 'plan.destination', inputs: { place: 'Gokarna' } }, turn);
+    expect(asked).toEqual([{ recipe: 'plan.destination', inputs: { place: 'Goa' } }, { recipe: 'plan.destination', inputs: { place: 'Gokarna' } }]);
+    expect(keys[0]).toBe('early:m_7|plan.destination');
+    expect(keys[1]).toBe(`${turn.turnId ?? ''}|plan.destination|${JSON.stringify({ place: 'Gokarna' })}`);
+  });
+
   it('describes the book in one short line a recipe, the same bytes on every turn, so it stays cheap as the book grows', () => {
     const unused = { answer: async () => { throw new Error('unused'); } };
     const tool = ixigoTool({ book, engine: unused, live: () => true })!;

@@ -383,7 +383,7 @@ describe('the early ixigo read block', () => {
   };
   function readWorld(answer: Promise<EngineAnswer>, choice: EarlyRead['choice'] = 'train_status', asked: Record<string, string> = { train: '12051' }) {
     const waits: number[] = [];
-    const early = { readFor: (tripId: string, messageId: string): EarlyRead | null => (tripId === 't_goa' && messageId === 'm_57' ? { choice, recipe: 'trains.running_status', asked, answer } : null) };
+    const early = { readFor: (tripId: string, messageId: string): EarlyRead | null => (tripId === 't_goa' && messageId === 'm_57' ? { choice, recipe: 'trains.running_status', asked, answer, runKey: 'early:m_57|trains.running_status' } : null) };
     const block = earlyReadNow({ early, now: () => new Date('2026-10-07T12:00:00Z'), wait: async (ms) => { waits.push(ms); await new Promise((r) => setTimeout(r, 5)); } });
     return { block, waits };
   }
