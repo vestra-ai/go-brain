@@ -125,9 +125,9 @@ describe("the top pick's own photos", () => {
 
   // REV4 B4: the same page's kinds of room, priced for the stay's nights, and what one person pays, ride with the photos.
   it("put the top pick's rooms and price range on its option with its photos, and on their own when it listed no photos", async () => {
-    await cardOnTrip('t_rooms', 'c_rooms');
+    await cardOnTrip('t_toprooms', 'c_toprooms');
     const link = new FakeLink();
-    await link.request('post_message', { request_id: 'go_post_rooms', trip_id: 't_rooms', card: (await results.card('t_rooms', 'c_rooms'))!.card });
+    await link.request('post_message', { request_id: 'go_post_toprooms', trip_id: 't_toprooms', card: (await results.card('t_toprooms', 'c_toprooms'))!.card });
     const roomTypes = [
       { room_type_id: 'rt_family', label: 'Family Room', sleeps: 2, night_minor: 315_000 },
       { room_type_id: 'rt_suite', label: 'Executive Suite', sleeps: 2, night_minor: 618_300 },
@@ -137,8 +137,8 @@ describe("the top pick's own photos", () => {
       return { ...read, rows: [{ ...read.rows[0], room_types: roomTypes }] };
     };
     const group = { personIds: ['p_rahul', 'p_priya', 'p_arjun', 'p_kabir'], nights: 3 };
-    const pick = { cardId: 'c_rooms', optionId: 'opt_c_rooms_1' };
-    expect(await showPickPhotos({ results, images, link }, 't_rooms', pick, page([{ url: 'https://cdn.example.com/pool.jpg', label: 'Pool' }]), group)).toBe(true);
+    const pick = { cardId: 'c_toprooms', optionId: 'opt_c_toprooms_1' };
+    expect(await showPickPhotos({ results, images, link }, 't_toprooms', pick, page([{ url: 'https://cdn.example.com/pool.jpg', label: 'Pool' }]), group)).toBe(true);
     const replaced = C.OptionsCard.parse(link.sent('replace_card').at(-1)!['card']);
     expect(replaced.options[0]).toMatchObject({
       photos: [{ url: 'https://go.test/img/pool.jpg', label: 'Pool' }],
@@ -152,10 +152,10 @@ describe("the top pick's own photos", () => {
     // The other option is as it was.
     expect(replaced.options[1]).not.toHaveProperty('room_types');
     // A page with rooms and no photos still gives the option its rooms; with no group, photos only.
-    await cardOnTrip('t_rooms2', 'c_rooms2');
+    await cardOnTrip('t_toprooms2', 'c_toprooms2');
     const quiet = new FakeLink();
-    expect(await showPickPhotos({ results, images, link: quiet }, 't_rooms2', { cardId: 'c_rooms2', optionId: 'opt_c_rooms2_1' }, page(undefined), group)).toBe(true);
-    expect((await results.card('t_rooms2', 'c_rooms2'))!.card.options[0]).toMatchObject({ room_types: [{ room_type_id: 'rt_family' }, { room_type_id: 'rt_suite' }], price_min_minor: 472_500 });
-    expect(await showPickPhotos({ results, images, link: quiet }, 't_rooms2', { cardId: 'c_rooms2', optionId: 'opt_c_rooms2_2' }, page(undefined))).toBe(false);
+    expect(await showPickPhotos({ results, images, link: quiet }, 't_toprooms2', { cardId: 'c_toprooms2', optionId: 'opt_c_toprooms2_1' }, page(undefined), group)).toBe(true);
+    expect((await results.card('t_toprooms2', 'c_toprooms2'))!.card.options[0]).toMatchObject({ room_types: [{ room_type_id: 'rt_family' }, { room_type_id: 'rt_suite' }], price_min_minor: 472_500 });
+    expect(await showPickPhotos({ results, images, link: quiet }, 't_toprooms2', { cardId: 'c_toprooms2', optionId: 'opt_c_toprooms2_2' }, page(undefined))).toBe(false);
   });
 });
