@@ -145,14 +145,15 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
   it('prices the fare type they asked for, and a repeat of the tap starts nothing', async () => {
     const { runner, reads } = fakeRunner();
     const b = booking(runner);
-    const ask = { tapId: 'tap_b2', tripId: 't_goa', personId: 'p_kabir', name: 'Kabir', offer: OFFER, choice: 'flex' as const };
+    // A traveller the account has saved (Meher), so the booking runs to its end: three reads, the stage's two and the private one.
+    const ask = { tapId: 'tap_b2', tripId: 't_goa', personId: 'p_meher6', name: 'Meher', offer: OFFER, choice: 'flex' as const };
     await b.start(ask);
     await b.start(ask);
     await b.settled();
     expect(reads).toHaveLength(3);
     expect(reads[1]!.plan.steps).toEqual([{ op: 'click', role: 'radio', near_text: 'Free Cancellation + Rescheduling' }]);
-    const row = (await db.pool.query(`select total_minor from flight_bookings where person_id = 'p_kabir'`)).rows[0];
-    expect(row.total_minor).toBe(String(940_500 - 36_000));
+    const row = (await db.pool.query(`select state, total_minor from flight_bookings where person_id = 'p_meher6'`)).rows[0];
+    expect(row).toEqual({ state: 'ready_to_pay', total_minor: String(940_500 - 36_000) });
   });
 
   it("asks a traveller the account doesn't have once to add themselves on its owner's ixigo, naming none of its saved travellers", async () => {
@@ -232,8 +233,9 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
   });
 
   it("Pay says it opens soon with no ticket payment yet, says ixigo's refusal, and answers inside the tap when the Server is slow", async () => {
+    // A saved traveller's booking (Meher's name on the account), so it ends on its ready card and Pay finds it.
     const b0 = booking(fakeRunner().runner);
-    await b0.start({ tapId: 'tap_q1', tripId: 't_goa', personId: 'p_q', name: 'Q', offer: OFFER, choice: 'basic' });
+    await b0.start({ tapId: 'tap_q1', tripId: 't_goa', personId: 'p_q', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b0.settled();
     const cardId = (await db.pool.query(`select card_id from flight_bookings where person_id = 'p_q'`)).rows[0].card_id as string;
     expect(await b0.pay({ tripId: 't_goa', cardId, personId: 'p_q', tapId: 'tap_q2' })).toEqual({ result: 'refused', toast: 'Paying for a ticket through Go opens soon' });
