@@ -20,6 +20,7 @@ const DETAIL: Record<DenialReason, string> = {
   not_refundable: 'the mandate is refundable only, and refundable_until is missing or past',
   approval_outstanding: 'another approval for this vote is still waiting',
   not_in_trip: 'the person the ticket is for is not in this trip',
+  already_booked: 'this vote is already booked: a second payment would charge twice (cancel the booking first)',
 };
 
 /** Copies the fields that are set, so a missing field stays missing (never undefined). */
@@ -185,6 +186,7 @@ export function spendCheck(s: TripState, p: GroupAsk): DenialReason | null {
   if (p.amount_minor > m.cap_minor) return 'over_cap';
   const now = s.now().getTime();
   if (m.refundable_only && !(p.refundable_until != null && Date.parse(p.refundable_until) > now)) return 'not_refundable';
+  if (s.trip.bookings.some((b) => b.decision_id === d.decision_id && b.status === 'confirmed')) return 'already_booked';
   for (const a of s.approvals.values()) {
     if (a.decision_id === d.decision_id && !a.used && !a.cancelled && a.expires_at.getTime() > now) return 'approval_outstanding';
   }

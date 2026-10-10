@@ -516,6 +516,7 @@ class Message(BaseModel):
         | None
     ) = None
     quick_replies: list[QuickReply] | None = None
+    visible_to_person_ids: list[str] | None = None
     withheld: bool
     deleted: bool
     edited_at: AwareDatetime | None = None
@@ -556,6 +557,7 @@ class PostMessage(BaseModel):
     reply_to: str | None = None
     mentions: list[str] | None = None
     quick_replies: list[QuickReply] | None = None
+    visible_to_person_ids: list[str] | None = None
 
 
 class PostMessageResult(BaseModel):
@@ -1539,6 +1541,7 @@ class SpendDenied(BaseModel):
         "not_refundable",
         "approval_outstanding",
         "not_in_trip",
+        "already_booked",
     ]
     detail: str | None = None
 

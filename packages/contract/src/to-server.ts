@@ -226,6 +226,8 @@ export const SpendDenialReason = z
     'approval_outstanding',
     /** 1.2, the ticket form: the person it is for is not in the trip. */
     'not_in_trip',
+    /** 1.2: the vote is booked already (a confirmed booking exists), so a second payment would charge twice. */
+    'already_booked',
   ])
   .meta({ id: 'SpendDenialReason' });
 

@@ -280,6 +280,7 @@ export class FakeServerLink implements ServerLink {
     if (p.currency !== m.currency) return deny('currency_mismatch');
     if (Number(p.amount_minor) > m.cap_minor) return deny('over_cap');
     if (m.refundable_only && !(typeof p.refundable_until === 'string' && Date.parse(p.refundable_until) > now.getTime())) return deny('not_refundable');
+    if (trip.bookings.some((b) => b.decision_id === decision.decision_id && b.status === 'confirmed')) return deny('already_booked');
     if (outstanding) return deny('approval_outstanding');
     const iat = Math.floor(now.getTime() / 1000);
     const exp = iat + C.MAX_APPROVAL_TTL_SECONDS;

@@ -91,6 +91,9 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
       return yes(`I can't find free cancellation on ${c.what} now. Want me to look for a refundable rate?`);
     case 'approval_outstanding':
       return yes(`${c.payer}, the payment for ${c.what} is already waiting on the card above.`);
+    case 'already_booked':
+      // Never "wait": nothing is pending. A second payment would charge twice.
+      return yes(`${c.what} is booked already. To book it again, cancel that booking first.`);
     case 'not_in_trip':
       return yes(`${c.payer} isn't in this trip any more, so I can't take a payment for their ticket. Nothing was charged.`);
     case 'wrong_offer':

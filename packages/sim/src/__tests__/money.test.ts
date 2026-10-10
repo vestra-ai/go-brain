@@ -168,6 +168,14 @@ describe("a traveller's own ticket", () => {
   });
 });
 
+describe('a vote that is booked already', () => {
+  it('is denied already_booked, never approval_outstanding: a second payment would charge twice', () => {
+    const { s, id } = readyToPay();
+    addBooking(s, booking(id, undefined));
+    expect(spendCheck(s, ask(id))).toBe('already_booked');
+  });
+});
+
 describe('bookings', () => {
   it('records a paid booking, marks the approval used, and turns the decided line into the booked line', () => {
     const { s, id } = readyToPay();

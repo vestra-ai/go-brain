@@ -185,6 +185,8 @@ export class TripState {
 
   postMessage(p: Params<typeof C.PostMessage>, raw: Record<string, unknown>): Change<{ message_id: string; seq: number }> {
     this.people(p.mentions ?? [], 'mentions');
+    // 1.2: a message only these people see. Fixed when posted; replace_card keeps it.
+    this.people(p.visible_to_person_ids ?? [], 'visible_to_person_ids');
     if (p.reply_to != null) this.messageIn(p.reply_to, 'reply_to');
     const card = p.card ?? undefined;
     if (card) {
@@ -208,6 +210,7 @@ export class TripState {
       reactions: [],
       // The card exactly as Go sent it, so a field this copy of the contract does not know still reaches the room.
       ...(raw.card != null ? { card: raw.card as Card } : {}),
+      ...(p.visible_to_person_ids != null ? { visible_to_person_ids: [...p.visible_to_person_ids] } : {}),
       withheld: false,
       deleted: false,
       sent_at: this.now().toISOString(),

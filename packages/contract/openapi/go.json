@@ -2844,6 +2844,23 @@
               }
             ]
           },
+          "visible_to_person_ids": {
+            "anyOf": [
+              {
+                "minItems": 1,
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "withheld": {
             "type": "boolean"
           },
@@ -2969,6 +2986,23 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/QuickReply"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visible_to_person_ids": {
+            "anyOf": [
+              {
+                "minItems": 1,
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
                 }
               },
               {
@@ -7041,7 +7075,8 @@
           "currency_mismatch",
           "not_refundable",
           "approval_outstanding",
-          "not_in_trip"
+          "not_in_trip",
+          "already_booked"
         ]
       },
       "SpendApproved": {

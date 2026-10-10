@@ -144,6 +144,7 @@ The server checks these rules in this order. The first rule that fails gives the
 | The request's currency is the mandate's currency | `currency_mismatch` |
 | The amount is at most the mandate's cap | `over_cap` |
 | When the mandate is refundable only: `refundable_until` is given and still in the future | `not_refundable` |
+| No confirmed booking exists for this vote (contract 1.2): a second payment would charge twice | `already_booked` |
 | No other spend approval for this vote is still unused, not cancelled and unexpired | `approval_outstanding` |
 
 A denial is a normal result, not an error:
@@ -192,7 +193,9 @@ Each `SpendDenialReason` value means something different for the group, so Go ha
 | `currency_mismatch` | The price is in a different currency from the mandate. | Checks the offer again. If the merchant charges only in another currency, Go tells the group and asks before going on. |
 | `over_cap` | The price went above the cap. | Tells the group the new price and asks whether to raise the cap or pick another option. |
 | `not_refundable` | The group asked for refundable only, and this rate is not refundable or its free cancellation has ended. | Looks for a refundable rate. If there is none, it tells the group and asks. |
+| `already_booked` | The vote is booked already: a booking for it stands (contract 1.2). | Says it is booked already, and that to book it again someone cancels that booking first, such as "Villa Sol is booked already. To book it again, cancel that booking first." Never asks anyone to wait. |
 | `approval_outstanding` | An earlier spend approval for this vote is still waiting. | Points the payer at the pay card that is already waiting, and does not post a second one. |
+| `not_in_trip` | A ticket's traveller is not in the trip (contract 1.2). | Tells the room it can't take a payment for their ticket. Nothing was charged. |
 
 ### A traveller's own ticket (contract 1.2)
 
