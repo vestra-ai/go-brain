@@ -16,7 +16,7 @@
  */
 import type { Switches } from '../../admin/switches.js';
 import type { Message } from '../../door/methods.js';
-import { isSearchChoice, type FastChoice } from '../../reflex/questions.js';
+import { isSearchChoice, type FastChoice, type RecipeChoice } from '../../reflex/questions.js';
 import type { ReflexRead } from '../../reflex/reflex.js';
 import type { HookAnswer } from '../../trips/hooks.js';
 import { plainlyNamesGo } from '../../trips/names-go.js';
@@ -90,6 +90,8 @@ export interface EarlyStart {
    * for it, whatever its place, so the stays head start (warm.ts) loads nothing beside it.
    */
   asksStays(tripId: string, messageId: string): boolean;
+  /** Jev's sure pick for the message (question 10, live choices only), whether or not anything started: null for none. */
+  pickFor(tripId: string, messageId: string): RecipeChoice | null;
 }
 
 const KEPT_MAX = 200;
@@ -112,6 +114,7 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
   const started = new Map<string, EarlySearch & { at: number }>();
   const reads = new Map<string, EarlyRead & { at: number }>();
   const staysAsks = new Map<string, true>();
+  const picks = new Map<string, RecipeChoice>();
 
   /** An ixigo ask beyond the searches: its recipe runs now, where Go searches ixigo.com itself and the words give its slots. */
   async function startRead(choice: FastChoice, msg: Message & { text: string }, pack: TripPack, today: string): Promise<HookAnswer | undefined> {
@@ -149,6 +152,8 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       const fast = pick?.sure && pick.value && !isSearchChoice(pick.value) ? pick.value : null;
       if (kind || fast) d.warmForTravel?.(tripId, kind);
       if (kind === 'stays') keep(staysAsks, `${tripId}:${msg.message_id}`, true);
+      const choice = kind ?? fast;
+      if (choice) keep(picks, `${tripId}:${msg.message_id}`, choice);
       if (!msg.text) return undefined;
       const today = await d.today(tripId);
       // To Go: named plainly, or the quick read is sure it is for Go.
@@ -203,5 +208,6 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       return null;
     },
     asksStays: (tripId, messageId) => staysAsks.has(`${tripId}:${messageId}`),
+    pickFor: (tripId, messageId) => picks.get(`${tripId}:${messageId}`) ?? null,
   };
 }

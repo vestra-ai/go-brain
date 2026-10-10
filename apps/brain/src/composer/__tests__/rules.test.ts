@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { GO_RULES } from '../rules.js';
 
 describe("Go's rules", () => {
+  it("read a travel fact ixigo shows from ixigo, never from memory, and say when an answer is general advice (EXAM, 10 Oct)", () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'));
+    expect(section).toContain('- A fact of a train, bus, flight or stay that ixigo shows is read from ixigo in this turn, never from memory:');
+    expect(section).toContain('tatkal times and charges');
+    expect(section).toContain('Only general advice comes from what you know, and then say it is ("usually", "from what I know").');
+  });
+
   it('send "forget me" to the App: Go cannot forget from the chat and never says it did', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nForget me\n'), GO_RULES.indexOf('\nVotes and the trip\n'));
     expect(section).toContain("You cannot forget anyone from the chat. If someone asks you in the chat to forget them or what you know about them, say you can't do that from here");
