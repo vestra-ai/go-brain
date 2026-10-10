@@ -493,4 +493,22 @@ describe("a stays search with the group's decided budget", () => {
     await none.find((t) => t.name === 'search_stays')!.run({ area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' }, lb.ctx({ turnId: 'turn_budget3' }));
     expect(seen[2]).not.toHaveProperty('budgetMinor');
   });
+
+  // The lead, 10 Oct: "8k a head" (the whole stay) and "8k a head a night" both map right; a night's budget is never
+  // divided by the nights again.
+  it('takes "8k a head" as the whole stay and "8k a head a night" as each night, and the band cap divides by the nights once', async () => {
+    const seen: Array<{ budgetMinor?: number; maxShareMinor?: number }> = [];
+    const stub = {
+      search: async (_kind: string, q: { budgetMinor?: number; maxShareMinor?: number }) => {
+        seen.push(q);
+        return { results: [], checkedAt: '2026-10-07T12:00:00.000Z', found: 0 };
+      },
+    } as unknown as Travel;
+    const stays = travelTools({ travel: stub, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now: lb.clock.now }).find((t) => t.name === 'search_stays')!;
+    const NIGHTS_3 = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' };
+    await stays.run({ ...NIGHTS_3, max_price_per_person: 8000 }, lb.ctx({ turnId: 'turn_head_stay' }));
+    await stays.run({ ...NIGHTS_3, max_price_per_person_per_night: 8000 }, lb.ctx({ turnId: 'turn_head_night' }));
+    // The whole stay's share: ₹8,000, and ₹24,000 for three nights at ₹8,000 a night.
+    expect(seen.map((q) => [q.maxShareMinor, q.budgetMinor])).toEqual([[800_000, 800_000], [2_400_000, 2_400_000]]);
+  });
 });

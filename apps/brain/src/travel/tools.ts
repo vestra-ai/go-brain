@@ -98,7 +98,9 @@ export const StaysArgs = z.object({
   guests: z.int().min(1).max(30).optional(),
   max_price_per_night: Rupees.optional().describe('In rupees a night, as ixigo prices a stay: a room of a hotel, the whole place of an entire house'),
   max_price_per_person: Rupees.optional()
-    .describe("In rupees: each person's share of the whole stay, as in \"under 8k a head\" or \"15k each\". Go divides each stay's total by the people and says the share"),
+    .describe("In rupees: each person's share of the WHOLE stay, as in \"under 8k a head\" or \"15k each\" for the trip. Go divides each stay's total by the people and says the share"),
+  max_price_per_person_per_night: Rupees.optional()
+    .describe("In rupees: each person's share a NIGHT, as in \"8k a head a night\". Go works out the whole stay's share from the nights; never both this and max_price_per_person"),
   must_have: z.array(z.enum(MUST_HAVES)).max(5).optional()
     .describe("pool, beach (10 minutes or less), breakfast, free_cancellation. When ixigo's own filters for the place are in your context, use them in site_filters instead, and must_have only for the beach"),
   min_rating: z.number().min(0).max(5).optional(),
@@ -156,6 +158,10 @@ export function journeyQuery(a: z.infer<typeof JourneyArgs>): TravelQuery {
   };
 }
 
+/** The nights between check-in and check-out (YYYY-MM-DD), at least one. */
+const nightsOf = (checkIn: string, checkOut: string): number =>
+  Math.max(1, Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000));
+
 export function staysQuery(a: z.infer<typeof StaysArgs>): TravelQuery {
   return {
     area: a.area,
@@ -164,6 +170,9 @@ export function staysQuery(a: z.infer<typeof StaysArgs>): TravelQuery {
     ...(a.guests ? { guests: a.guests } : {}),
     ...(a.max_price_per_night ? { maxPriceMinor: toPaise(a.max_price_per_night) } : {}),
     ...(a.max_price_per_person ? { maxShareMinor: toPaise(a.max_price_per_person) } : {}),
+    // A budget a head a night is the whole stay's share over its nights, worked out here, never by the model: the band
+    // cap then divides the whole stay by the nights once (engine siteOf), never a night's budget again.
+    ...(a.max_price_per_person_per_night && !a.max_price_per_person ? { maxShareMinor: toPaise(a.max_price_per_person_per_night) * nightsOf(a.check_in, a.check_out) } : {}),
     ...(a.must_have ? { mustHave: a.must_have } : {}),
     ...(a.min_rating !== undefined ? { minRating: a.min_rating } : {}),
     ...(a.site_filters?.length ? { siteFilters: a.site_filters } : {}),

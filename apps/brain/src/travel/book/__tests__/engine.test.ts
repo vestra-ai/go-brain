@@ -185,6 +185,15 @@ describe("ixigo's price bands for the group's decided budget", () => {
     // With no budget, no band.
     await engine.answer('hotels.search', { ...goa, check_out: '2026-11-08' }, { tripId: 't_budget' });
     expect(reads[2]).not.toContain('DP_');
+    // "8k a head" for the stay: ₹8,000 × 4 ÷ 3 nights ÷ 2 rooms = ₹5,333 a night a room. "8k a head a night" is ₹24,000
+    // a head for the stay (tools.ts): ₹16,000 a night a room, never divided by the nights twice.
+    const head = await engine.answer('hotels.search', goa, { tripId: 't_budget', budgetMinor: 800_000 });
+    expect(head.as === 'options' && head.site?.priced).toBe(5333);
+    expect(reads[3]).toContain(encodeURIComponent('DP_4500_5000,DP_5000_6000'));
+    expect(reads[3]).not.toContain('DP_6000_7000');
+    const night = await engine.answer('hotels.search', goa, { tripId: 't_budget', budgetMinor: 2_400_000 });
+    expect(night.as === 'options' && night.site?.priced).toBe(16000);
+    expect(reads[4]).toContain('DP_8000_9000');
   });
 });
 
