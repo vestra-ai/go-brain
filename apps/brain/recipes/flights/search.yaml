@@ -20,6 +20,11 @@ inputs:
   depart_before: { kind: text, optional: true, about: 24-hour HH:MM }
   arrive_before: { kind: text, optional: true, about: 24-hour HH:MM }
   max_price: { kind: money, optional: true, about: "per person, in paise" }
+  # Children (2 to 11) and infants (under 2, on a lap) fly too, when the ask says so: ixigo's fare is then per adult.
+  children: { kind: count, min: 0, max: 8, value: "0", about: children 2 to 11 }
+  infants: { kind: count, min: 0, max: 4, value: "0", about: infants under 2 }
+  cabin: { kind: choice, optional: true, about: "economy, premium_economy or business" }
+  special_fare: { kind: choice, optional: true, about: "student, senior_citizen, armed_forces or doctor" }
 auth: none
 changes_state: false
 conditions:
@@ -36,10 +41,18 @@ let:
     )
   landing: |
     arrive_before ? $join($windows[from < $$.arrive_before and to > "00:00"].name, ",")
+  # ixigo's cabin letters, its own map (e Economy, w Premium Economy, b Business; it sells no First).
+  class_code: |
+    cabin = "premium_economy" ? "w" : (cabin = "business" ? "b" : "e")
+  # ixigo's special fares (airlineFareType): the page asks its stream for the flights that sell one, and only those.
+  fare_type: |
+    special_fare = "student" ? "STUDENT" : special_fare = "senior_citizen" ? "SENIOR_CITIZEN" : special_fare = "armed_forces" ? "ARMED_FORCES" : special_fare = "doctor" ? "DOCTOR"
+  # One infant to an adult, as airlines seat them on a lap.
+  lap_infants: $min([infants, adults])
   # What people asked for, in ixigo's own params, and the cheapest first (the param ixigo's "Price / Low to High" writes).
   params: |
-    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), "sort_type=cheapest"]), "&")
-page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children=0&infants=0&class=e&source=Search%20Form&{$params|raw}
+    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), $fare_type ? "airlineFareType=" & $fare_type, "sort_type=cheapest"]), "&")
+page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children={children}&infants={$lap_infants}&class={$class_code}&source=Search%20Form&{$params|raw}
 answer:
   # ixigo answers flight pages with a 403 from the boxes' shared egress: the group gets the page, set as they asked.
   as: link

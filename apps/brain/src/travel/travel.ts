@@ -21,6 +21,13 @@ export const TravelQuery = z.object({
   checkIn: z.iso.date().optional(),
   checkOut: z.iso.date().optional(),
   guests: z.int().min(1).max(30).optional(),
+  /** Flights: children (2 to 11) and infants (under 2) besides the adults (guests), when the ask says so. */
+  children: z.int().min(0).max(8).optional(),
+  infants: z.int().min(0).max(4).optional(),
+  /** Flights: the cabin, as ixigo sells it (it has no First). */
+  cabin: z.enum(['economy', 'premium_economy', 'business']).optional(),
+  /** Flights: one of ixigo's special fares; ixigo then lists only the flights that sell it. */
+  specialFare: z.enum(['student', 'senior_citizen', 'armed_forces', 'doctor']).optional(),
   departAfter: Clock.optional(),
   departBefore: Clock.optional(),
   arriveBefore: Clock.optional(),
