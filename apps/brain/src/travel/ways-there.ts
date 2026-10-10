@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { ServerLink } from '../door/server-link.js';
 import { dayText } from './answer.js';
-import type { Engine, EngineAnswer } from './book/engine.js';
+import { PACE_WAITS_MAX, PacedOutError, type Engine, type EngineAnswer } from './book/engine.js';
 import { hoursMinutes } from './book/expr.js';
 import { buildWaysCard, clip, CLASS_WORDS, formatInr, type CardPick, type OptionsCardT } from './cards.js';
 import { stableId } from './ids.js';
@@ -30,6 +30,8 @@ const ROWS_MAX = 5;
 const WAYS_TOOL_MS = TRAVEL_WAIT_MS + 2_000;
 /** The longest the live card's last update holds the comparison's card back. */
 const FINISH_WAIT_MS = 1_500;
+/** Before a city's late flights replace the card: the turn that carries the card has posted it by then. */
+const FILL_SETTLE_MS = 3_000;
 
 type Compare = Extract<EngineAnswer, { as: 'compare' }>;
 type WorkingCard = z.infer<typeof C.WorkingCard>;
@@ -270,6 +272,8 @@ export interface WaysThereDeps {
   /** How long the turn waits for the comparison (TRAVEL_WAIT_MS), and before the live card shows (CARD_DELAY_MS). */
   waitMs?: number;
   cardDelayMs?: number;
+  /** Waits out Go's pacer for a city's late flights (tests pass their own). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const Args = z.object({
@@ -282,7 +286,11 @@ type Comparison = { card: OptionsCardT | null; line: string; facts: unknown[]; r
 
 export function waysThereTool(d: WaysThereDeps): QuickTool<z.infer<typeof Args>> {
   /** The comparison from the composite's answer: each city's ways, saved with the card so its taps work. */
-  async function comparison(got: Compare, ctx: TurnCtx, cardId: string): Promise<Comparison> {
+  /**
+   * The comparison as the card shows it. version: 1 for the card as it first goes up; each city's late flights make the
+   * next, whose rows are new offers (their own ids), and the card is that one, never the first one saved.
+   */
+  async function comparison(got: Compare, ctx: TurnCtx, cardId: string, version = 1): Promise<Comparison> {
     const date = String(got.inputs['date']);
     const to = String(got.inputs['to']);
     const ways = waysOf(got, ctx.pack.trip.people);
@@ -307,13 +315,54 @@ export function waysThereTool(d: WaysThereDeps): QuickTool<z.infer<typeof Args>>
       tripId: ctx.tripId, optionKind: options.every((o) => o.kind === 'bus') ? 'bus' : 'train', source: 'search',
       query: { ways_there: { to, date, flights, home_of: homeOf } }, options, checkedAt: got.checkedAt,
     });
-    const picks: CardPick[] = options.map((option, i) => ({ optionId: stableId('opt', cardId, i + 1), option, imageUrl: null }));
+    const picks: CardPick[] = options.map((option, i) => ({ optionId: version === 1 ? stableId('opt', cardId, i + 1) : stableId('opt', cardId, version, i + 1), option, imageUrl: null }));
     const homes = ways.filter((w) => w.cheapest).map((w) => w.home);
     const card = buildWaysCard({ cardId, title: `Ways to ${to} from ${listOf(homes)}, ${dayText(date)}`, homes, checkedAt: got.checkedAt, picks, flights: Object.keys(flights).length > 0 });
     await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: card.option_kind, card }, picks.map((p, i) => ({ ...p, n: i + 1 })), got.checkedAt);
     // A rerun of the same turn finds this card saved already, and shows that one.
-    const saved = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
+    const saved = version === 1 ? (await d.results.card(ctx.tripId, cardId))?.card ?? card : card;
     return { card: saved, line: waysLine(ways, date), facts, resultsId: set.resultsId };
+  }
+
+  /**
+   * A city's flights page waits its turn on Go's pacer (one flights page a gap across every trip) as often as it takes,
+   * twelve gaps at most: its flights, or null when ixigo itself refused (its quiet) or it never answered.
+   */
+  async function lateFlights(tripId: string, from: string, to: string, date: string): Promise<EngineAnswer | null> {
+    const sleep = d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref?.()));
+    for (let waits = 0; waits <= PACE_WAITS_MAX; waits++) {
+      try {
+        return await d.engine.answer('flights.results', { from, to, date }, { tripId });
+      } catch (err) {
+        if (!(err instanceof PacedOutError) || err.waitMs === null) return null;
+        await sleep(err.waitMs + 500);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The exam, 10 Oct (#23, #25): the card goes up when the trains and buses are in, and a city whose flights page Go's
+   * pacer held back fell to "quickest by land". Now that city's flights are read after, each as the pacer lets it through,
+   * with no turn waiting, and each one that lands puts the card up again in place (replace_card), its rows the fuller
+   * comparison's. Never a city's flights left out for a wait alone.
+   */
+  async function fillFlights(got: Compare, ctx: TurnCtx, cardId: string): Promise<void> {
+    const missing = got.entries.filter((e) => e.steps.some((s) => s.recipe === 'flights.results' && !s.answer));
+    if (missing.length === 0) return;
+    const sleep = d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref?.()));
+    await sleep(FILL_SETTLE_MS);
+    let version = 1;
+    for (const e of missing) {
+      const answer = await lateFlights(ctx.tripId, e.entry, String(got.inputs['to']), String(got.inputs['date']));
+      if (answer?.as !== 'options') continue;
+      const i = e.steps.findIndex((s) => s.recipe === 'flights.results');
+      if (i < 0) continue;
+      e.steps[i] = { recipe: 'flights.results', answer };
+      version += 1;
+      const made = await comparison(got, ctx, cardId, version);
+      if (made.card) await d.link.request('replace_card', { trip_id: ctx.tripId, card: made.card });
+    }
   }
 
   return {
@@ -347,7 +396,7 @@ export function waysThereTool(d: WaysThereDeps): QuickTool<z.infer<typeof Args>>
           if (kind === 'trains' || kind === 'buses') live.step(e.entry, kind, e.ok);
         },
       });
-      const done: Promise<{ made: Comparison } | { err: unknown }> = running
+      const done: Promise<{ made: Comparison; got: Compare } | { err: unknown }> = running
         .then(async (got) => {
           if (got.as !== 'compare') throw new Error(`${WAYS_THERE} answered ${got.as}`);
           const made = await comparison(got, ctx, cardId);
@@ -359,7 +408,7 @@ export function waysThereTool(d: WaysThereDeps): QuickTool<z.infer<typeof Args>>
             }
           }
           await live.finish(made.card !== null);
-          return { made };
+          return { made, got };
         })
         .catch(async (err: unknown) => {
           await live.finish(false);
@@ -383,6 +432,7 @@ export function waysThereTool(d: WaysThereDeps): QuickTool<z.infer<typeof Args>>
           await d.link.request('post_message', {
             request_id: stableId('go_ways', cardId), trip_id: ctx.tripId, text: out.made.line, ...(out.made.card ? { card: out.made.card } : {}),
           });
+          if (out.made.card) await fillFlights(out.got, ctx, cardId);
         }).catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, 'travel: a comparison could not be posted'));
         return {
           running: true,
@@ -395,8 +445,12 @@ export function waysThereTool(d: WaysThereDeps): QuickTool<z.infer<typeof Args>>
         const err = first.err;
         return { error: err.code, note: err.code === 'needs_more' ? `${clip(err.message, 200)} Ask the group for it in one line.` : clip(err.message, 200) };
       }
-      const { made } = first;
-      if (made.card) ctx.cards.push(made.card);
+      const { made, got } = first;
+      if (made.card) {
+        ctx.cards.push(made.card);
+        // A city whose flights the pacer held back: read after, and the card put up again as each lands.
+        void fillFlights(got, ctx, cardId).catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a city's late flights could not fill the card"));
+      }
       ctx.lines.push(made.line);
       ctx.answered = true;
       return { ways: made.facts, results_id: made.resultsId, card_id: made.card ? cardId : null, answered: true, note: 'The comparison and its line are up: this turn has said what it needed to.' };
