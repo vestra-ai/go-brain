@@ -366,7 +366,9 @@ describe('why Go woke, and the trip block', () => {
       expect(note).toContain(CHIME_RULES);
       expect(note).toContain('when people disagree, offer a vote');
       expect(note).toContain("Someone saying what they'd like for the trip (a place, food, a vibe) gets a ✅ and at most one short offer, never a search");
-      expect(note).toContain("Who brings, pays or does what is the friends' to settle unless the record already says");
+      expect(note).toContain("Who brings, pays or does what is the friends' to settle unless the record already says: never assign it, though you may offer your part (a lookup, a booking, a split).");
+      // The lead, 10 Oct: plan-talk gets a line by default, never silence.
+      expect(note).toContain('Plan-talk is never banter: a plan or a question to the group about the trip gets its line');
       expect(note).toContain('their own catch-up');
       expect(note).toContain('Call stay_silent only for pure banter, a greeting or an acknowledgement ("haha", "good morning", "ok", "see you"), a side conversation not about the trip, something a person already answered, or when your last message has had no reply from a person since: never two messages in a row.');
       expect(note).not.toMatch(/\u2014|\u2013/);
