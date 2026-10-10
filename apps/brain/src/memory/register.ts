@@ -27,6 +27,7 @@ import { createFold } from './fold.js';
 import { syncJoinFacts } from './join-facts.js';
 import { createNotes } from './notes.js';
 import { peopleNow, recordNow } from './now.js';
+import { forgotElsewhereNow } from './forget-elsewhere.js';
 import { peopleHandlers } from './people.js';
 import { reactOnce } from './reactions.js';
 import { mirrorLine, mirrorSnapshot } from './record.js';
@@ -77,6 +78,7 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   for (const t of memoryTools({ pool: brain.pool, memory })) brain.tools.register(t);
   brain.context.addNow(recordNow({ pool: brain.pool, packs: brain.packs }));
   brain.context.addNow(peopleNow({ memory, packs: brain.packs }));
+  brain.context.addNow(forgotElsewhereNow({ pool: brain.pool, packs: brain.packs }));
   // P1's Context.setStory (master §6.3) puts the story before the chat chunks and starts the chat at
   // chatFromSeq. The check only guards a context built without it (a lane-only test double).
   if (typeof brain.context.setStory === 'function') brain.context.setStory(fold);

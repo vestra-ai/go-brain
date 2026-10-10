@@ -244,7 +244,13 @@ describe('the notes pass', () => {
     // The rule the side model reads: the checker already takes the organizer alone as enough.
     expect(NOTES_RULES).toContain('The organizer\'s own line that states a plan point as settled ("Goa trip is happening!! 6 to 9 Nov", "We\'re doing North Goa") is agreed on its own, with that line as proof');
     expect(NOTES_RULES).toContain('one from the organizer that proposes or asks ("6 to 9 Nov?", "how about North Goa?") is open');
-    expect(NOTES_RULES).toContain("The trip's own plan (its dates, its place), said as the plan, is not a fact about whoever said it: it goes in the record.");
+    expect(NOTES_RULES).toContain("The trip's own plan (its dates, its place), said as the plan, is not a fact about whoever said it: it goes in the record");
+    // Staging, 10 Oct: "@Go we are thinking a trek to Dudhsagar falls on Sunday, a good plan for all of us?" became
+    // Arjun's "Interested in trek to Dudhsagar falls on Sunday", and carried into his next trip.
+    expect(NOTES_RULES).toContain('a plan the group is weighing ("@Go we are thinking a trek on Sunday, good for all of us?") is never a fact either, not even an interest');
+    // And the leans people show in passing, which it missed: "ugh 6 am flights again", "sunset at the beach is a must".
+    expect(NOTES_RULES).toContain('A lasting lean shows in passing too: a complaint ("ugh 6 am flights again"), a rejection with its reason ("nah too far from the beach"), or a must ("sunset at the beach is a must").');
+    expect(NOTES_RULES).toContain("starting Prefers, Dislikes or Wants (\"Dislikes early flights\", \"Prefers stays near the beach\", \"Wants a beach sunset\"), never as a rule.");
     // Staging, 10 Oct: "can leave Thursday" and "mom might join" carried into the next trip; 😍 and 👍 were never read.
     expect(NOTES_RULES).toContain('Give "this_trip": true for a fact that only holds for this trip');
     expect(NOTES_RULES).toContain('A reaction on a line can show the reactor\'s lean (😍 on a beach photo, 👍 on a pool villa): note it for the person who reacted, with that line as the message and "reaction": true');

@@ -2,14 +2,15 @@
  * What a page sent, as a recipe reads it. A body is JSON, a Next.js flight payload (the page's own "RSC: 1" answer:
  * one JSON value a line), a Next.js page whose flight payload sits in its scripts, an older Next.js page whose props
  * sit in its __NEXT_DATA__ script (ixigo's offers pages), or a plain server-rendered page with no data call at all,
- * read as its tables (html_tables: a train's schedule, running status, coach position, a station's or platform's page).
+ * read as its tables (html_tables: a train's schedule, running status, coach position, a station's or platform's page),
+ * or a stream of server-sent events, read as the JSON on its data lines (sse: ixigo's flights search, one data line).
  * Whatever its form, the page's own credentials in it (its apikey, deviceId, uuid, any token or cookie) are dropped
  * before anything reads the body, so no recipe, log or store ever holds them.
  */
 import { DomUtils, ElementType, parseDocument } from 'htmlparser2';
 import { TravelError } from '../mcp-travel.js';
 
-export const BODY_FORMATS = ['json', 'rsc', 'next_html', 'next_data', 'html_tables'] as const;
+export const BODY_FORMATS = ['json', 'rsc', 'next_html', 'next_data', 'html_tables', 'sse'] as const;
 export type BodyFormat = (typeof BODY_FORMATS)[number];
 
 /** Keys that hold the page's own credentials: dropped wherever they are. */
@@ -145,8 +146,27 @@ export function htmlTablesOf(html: string): HtmlTables {
   return { title: title ? textOf(title) || null : null, canonical: canonical?.attribs['href'] ?? null, tables, ld };
 }
 
+/** The JSON values a server-sent event stream carries on its data lines, in order; a line that is not JSON is left out. */
+export function eventValues(text: string): unknown[] {
+  const values: unknown[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    try {
+      values.push(JSON.parse(line.slice(5).trim()));
+    } catch {
+      // a data line that is not JSON
+    }
+  }
+  return values;
+}
+
 /** A body as a recipe reads it, its credentials gone. */
 export function readBodyAs(text: string, format: BodyFormat, what: string): unknown {
+  if (format === 'sse') {
+    const values = eventValues(text);
+    if (values.length === 0) throw new TravelError('refused', `ixigo answered ${what} in a shape Go does not read.`);
+    return withoutCredentials(values);
+  }
   if (format === 'html_tables') {
     const page = htmlTablesOf(text);
     if (page.tables.length === 0 && page.ld.length === 0) throw new TravelError('refused', `ixigo answered ${what} in a shape Go does not read.`);

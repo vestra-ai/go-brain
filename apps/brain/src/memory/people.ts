@@ -15,6 +15,7 @@ import {
   countFacts, currentFacts, deleteFactChain, forgetFacts, getCarryOver, lockPerson, markForgotten, setCarryOver, withTx, type Db, type FactRow,
 } from './facts.js';
 import type { Fold } from './fold.js';
+import { markForgotElsewhere } from './forget-elsewhere.js';
 
 /**
  * catch_up before the real one (Task 13, a stretch built after G2) lands: a valid answer with nothing in it, at once.
@@ -142,6 +143,8 @@ export function peopleHandlers(d: PeopleDeps): {
       const deleted = await withTx(d.pool, async (c) => {
         // The same lock saveFact takes: a notes pass that is saving for this person waits, then sees the forget.
         await lockPerson(c, person_id);
+        // Carry-over fed this trip's facts to their other trips, where Go may have said them: those trips are told too.
+        if (tripId && (await getCarryOver(c, person_id))) await markForgotElsewhere(c, person_id, await tripsOf(c, person_id), tripId, d.now());
         const n = await forgetFacts(c, person_id, tripId);
         for (const t of trips) await markForgotten(c, person_id, t, await lastSeq(c, t), d.now());
         await d.fold.redactPerson(c, person_id, trips, names);

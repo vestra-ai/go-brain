@@ -119,7 +119,7 @@ describe('wireMemory', () => {
     expect(w.brain.memory).toBeDefined();
     expect([...w.handlers.keys()].sort()).toEqual(['catch_up', 'delete_fact', 'forget_person', 'get_person', 'update_person']);
     expect(w.tools.map((x) => x.name)).toEqual(['trip', 'person', 'recall', 'record']);
-    expect(w.nows.map((n) => [n.name, n.order])).toEqual([['record', 20], ['people', 22]]);
+    expect(w.nows.map((n) => [n.name, n.order])).toEqual([['record', 20], ['people', 22], ['forgot elsewhere', 23]]);
     expect(w.warnings).toEqual([]);
     // The provider P1's Context.setStory got answers in the shape master §6.3 fixes.
     expect(await w.story()!.get('t_r1')).toEqual({ story: null, chatFromSeq: 1, foldedToSeq: 0, tokens: 0 });
