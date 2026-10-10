@@ -43,6 +43,12 @@ export const Actor = z
   .meta({ id: 'Actor', discriminator: { propertyName: 'kind' }, description: 'Who did it: a person, Go, or the Server itself (system).' });
 export type Actor = z.infer<typeof Actor>;
 
+/** 10 Oct B3: a photo and what it shows ("Deluxe room", "Pool"), when the source says. */
+export const Photo = z
+  .object({ url: HttpUrl, label: z.string().min(1).max(40).nullish() })
+  .meta({ id: 'Photo' });
+export type Photo = z.infer<typeof Photo>;
+
 /** A place, as Go found it. `place_id` is a Google Places id when Go has one. */
 export const Place = z
   .object({
@@ -52,6 +58,8 @@ export const Place = z
     lat: z.number().min(-90).max(90).nullish(),
     lng: z.number().min(-180).max(180).nullish(),
     photo_url: HttpUrl.nullish(),
+    /** 10 Oct B3: more photos, labelled, first one first. photo_url stays the cover. */
+    photos: z.array(Photo).max(12).nullish(),
     /** 1.1: the place's IANA time zone, e.g. "Asia/Kolkata", so times there read in local time. */
     timezone: z.string().min(1).max(64).regex(/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/, 'an IANA time zone, e.g. Asia/Kolkata').nullish(),
   })
