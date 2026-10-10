@@ -153,6 +153,8 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
     const first = villas.options[0]!;
     expect(first.facts).toMatchObject({ nights: 3, rooms: 1, guests: 5 });
     expect(first.totalMinor).toBe(first.priceMinor * 3);
+    // Its one room is the whole place: priced per night, never "per room".
+    expect(first.priceNote).toBe('per night');
   });
 });
 

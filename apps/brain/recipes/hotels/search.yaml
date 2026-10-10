@@ -87,12 +87,13 @@ read:
 answer:
   as: options
   kind: stay
-  # A price is the room's nightly fare plus taxes and fees, per night and per room, as ixigo shows it; the whole stay is
-  # that times the nights and the rooms booked, and guests is the head count ixigo priced it for (a share per head divides
-  # the whole stay by it). What ixigo filtered on, every stay it gave has; the rest is what it lists. Every detail but the
-  # id, the name and the fare may be missing or null (O Hotel Goa came with a null image). The list gives up to seven
-  # photos a stay (Agoda's and Booking.com's, 1024x768) and a few amenities in ixigo's words; a cancellation date, the
-  # rest of the photos and the landmarks are only on the hotel's own page (8 Oct).
+  # A price is the room's nightly fare plus taxes and fees, per night and per room, as ixigo shows it; a stay booked as
+  # one room (an entire house: its room is the whole place) is just per night. The whole stay is that times the nights
+  # and the rooms booked, and guests is the head count ixigo priced it for (a share per head divides the whole stay by
+  # it). What ixigo filtered on, every stay it gave has; the rest is what it lists. Every detail but the id, the name and
+  # the fare may be missing or null (O Hotel Goa came with a null image). The list gives up to seven photos a stay
+  # (Agoda's and Booking.com's, 1024x768) and a few amenities in ixigo's words; a cancellation date, the rest of the
+  # photos and the landmarks are only on the hotel's own page (8 Oct).
   each: |
     (
       $nights := $nights($inputs.check_in, $inputs.check_out);
@@ -120,7 +121,7 @@ answer:
         "priceMinor": $nightly,
         "totalMinor": $nightly * $nights * $rooms,
         "currency": "INR",
-        "priceNote": "per night, per room",
+        "priceNote": $rooms = 1 ? "per night" : "per night, per room",
         "place": {
           "name": $substring($name, 0, 120),
           "address": $address ? $substring($address, 0, 200),

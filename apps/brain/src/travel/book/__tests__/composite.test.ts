@@ -124,6 +124,53 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     expect(told.filter((t) => t.includes('flights.results')).map((t) => t.endsWith('true')).sort()).toEqual([false, true]);
   });
 
+  // p0's golden run, 10 Oct: the flights page skipped by Go's own spacing, and flights dropped from the card.
+  it("waits out a flights page held back by Go's spacing, inside the composite's time, and asks once more", async () => {
+    let nowMs = Date.parse('2026-10-08T12:00:00Z');
+    const opened: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string, _plan: FetchPlan) => {
+        opened.push(url);
+        return { captures: pageFor(url) ?? [], finalUrl: url };
+      },
+    };
+    const waits: number[] = [];
+    const engine = createEngine({
+      book, runner: () => runner, trip: async () => trip, now: () => new Date(nowMs),
+      sleep: async (ms) => {
+        waits.push(ms);
+        nowMs += ms;
+      },
+    });
+    const got = await engine.answer(WAYS, {}, { tripId: 't_goa', signal: new AbortController().signal });
+    // Both cities' flights come back: the second after the 20 s gap, asked once more.
+    expect(flightsOf(got)).toEqual(['options', 'options']);
+    expect(opened.filter((u) => u.includes('/search/result/flight?'))).toHaveLength(2);
+    expect(waits).toEqual([20_500]);
+  });
+
+  // The same run: three cities' bus pages at once from one address, while ixigo was asking for Cloudflare's check.
+  it('opens at most two pages of one recipe at once, the rest waiting their turn', async () => {
+    let open = 0;
+    let most = 0;
+    const trains: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string, _plan: FetchPlan) => {
+        if (!url.includes('/search/result/train/')) return { captures: pageFor(url) ?? [], finalUrl: url };
+        trains.push(url);
+        open += 1;
+        most = Math.max(most, open);
+        await new Promise((r) => setTimeout(r, 20));
+        open -= 1;
+        return { captures: pageFor(url) ?? [], finalUrl: url };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ ...trip, homes: ['Delhi', 'Mumbai', 'Bangalore'] }), now: () => new Date('2026-10-08T12:00:00Z') });
+    await engine.answer(WAYS, {}, { tripId: 't_goa' });
+    expect(trains).toHaveLength(3);
+    expect(most).toBe(2);
+  });
+
   it('puts a check nobody waits on (a watch) behind every search a person is waiting on, even one that came after it', async () => {
     const asked: string[] = [];
     const ends: Array<() => void> = [];

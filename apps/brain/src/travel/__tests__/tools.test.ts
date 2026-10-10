@@ -183,6 +183,20 @@ describe('a train list', () => {
   });
 });
 
+// p0's golden run, 10 Oct: ixigo's hotels page stayed on Cloudflare's check, and Go only said "Want me to try again?".
+describe("stays when ixigo's page didn't answer", () => {
+  const results = { save: async () => ({ resultsId: 'r_e' }) } as unknown as ResultsStore;
+  const stay = (title: string) => ({ kind: 'stay' as const, title, priceMinor: 900_000, currency: 'INR', priceNote: 'per night', highlights: [], facts: { area: 'Anjuna' } });
+
+  it("says first that it is Go's earlier read, dated, and tells the model never to call it fresh", async () => {
+    const found = { results: [stay('Villa Sol'), stay('Casa Azul'), stay('The Palms')], checkedAt: '2026-10-07T11:20:00.000Z', found: 3, earlier: true };
+    const out = await searchAnswer('stays', { area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09' }, found, 't_goa', { results, now: () => new Date('2026-10-07T12:00:00Z') });
+    expect(out.summary).toMatch(/^ixigo's page didn't answer just now, so this is Go's earlier read of it, checked 40 min ago\. 3 stays in Anjuna/);
+    expect(out.note).toContain("Say plainly that ixigo didn't answer just now and these are from Go's read 40 min ago, never as fresh");
+    expect(out.checked).toBe('40 min ago');
+  });
+});
+
 describe('a count in a summary', () => {
   const results = { save: async () => ({ resultsId: 'r_c' }) } as unknown as ResultsStore;
   const now = () => new Date('2026-10-07T12:00:00Z');

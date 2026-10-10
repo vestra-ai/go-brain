@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadBook } from '../../book/book.js';
 import { createEngine, type Engine, type RunFor } from '../../book/engine.js';
 import { TravelError } from '../../mcp-travel.js';
-import { CARD_DELAY_MS, CHOOSING_MS, createIxigoWebBackend, NARROW_MIN, TRAVEL_WAIT_MS } from '../backend.js';
+import { CARD_DELAY_MS, CHALLENGE_COOL_MS, CHOOSING_MS, createIxigoWebBackend, NARROW_MIN, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
 import { NothingCaughtError } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -455,7 +455,10 @@ const POOL = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHav
  * without, on the words. hangs: a filtered page catches nothing, as the runner says it (NothingCaughtError for a caller
  * that falls back, else a timeout).
  */
-function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?: Record<string, unknown>; requestOf?: Engine['requestOf']; hangs?: boolean; said?: boolean } = {}) {
+function staysEngine(
+  wide: RecipeOption[],
+  o: { filtered?: RecipeOption[]; head?: Record<string, unknown>; requestOf?: Engine['requestOf']; hangs?: boolean; said?: boolean; pageOf?: Engine['pageOf']; challengedAt?: (tripId: string) => number | null } = {},
+) {
   const head = o.head ?? HEAD;
   const runs: Array<{ conditions: string[]; background: boolean }> = [];
   const asks: RunFor[] = [];
@@ -481,7 +484,8 @@ function staysEngine(wide: RecipeOption[], o: { filtered?: RecipeOption[]; head?
   };
   const cards: string[] = [];
   const b = createIxigoWebBackend({
-    book, engine: { answer, ...(o.requestOf ? { requestOf: o.requestOf } : {}) }, now, cardDelayMs: 0,
+    book, engine: { answer, ...(o.requestOf ? { requestOf: o.requestOf } : {}), ...(o.pageOf ? { pageOf: o.pageOf } : {}) }, now, cardDelayMs: 0,
+    ...(o.challengedAt ? { challengedAt: o.challengedAt } : {}),
     live: ((tripId: string) => { cards.push(tripId); return { progress: () => undefined, finish: async () => undefined }; }) as never,
   });
   /** The head start: hotels.search for the trip's place and dates, through Go's searches, kept once it finishes. */
@@ -689,6 +693,41 @@ describe("a filtered stays search whose page catches nothing (staging, 9 Oct: Go
     const plain = await s.b.search('stays', { ...POOL, mustHave: [] }, { tripId: 't_goa', turnId: 'turn_2' });
     expect(plain).not.toHaveProperty('unapplied');
     expect(s.asks[1]).not.toHaveProperty('fallsBack');
+  });
+});
+
+// p0's golden run, 10 Oct: all four hotels loads on Cloudflare's check, and Go only said "Want me to try again?".
+describe("a stays read that fails is never a bare \"try again\"", () => {
+  const PAY = { ...POOL, mustHave: ['pay_at_hotel'] };
+  const PAGE = 'https://www.ixigo.com/hotels/search/result?locationId=32&roomCount=3&filters=PT_PAY_AT_HOTEL';
+
+  it("answers with Go's earlier read of the same page, dated as it was read, and loads nothing more", async () => {
+    const s = staysEngine([stay(1, true), stay(2, false)], { hangs: true });
+    await s.headStart();
+    const found = await s.b.search('stays', PAY, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(found).toMatchObject({ earlier: true, checkedAt: '2026-10-07T12:00:00.000Z' });
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
+    expect(s.runs).toEqual([{ conditions: [], background: false }, { conditions: ['pay_at_hotel'], background: false }]);
+  });
+
+  it("with no earlier read, gives ixigo's own stays page set as asked, as a link, as flights do", async () => {
+    const s = staysEngine([stay(1, true)], { hangs: true, pageOf: async () => PAGE });
+    await expect(s.b.search('stays', PAY, { tripId: 't_goa', turnId: 'turn_1' })).rejects.toMatchObject({ code: 'link_only', link: PAGE });
+  });
+
+  it("opens no stays page on a computer that met Cloudflare's check moments ago: the fallback answers at once", async () => {
+    let met: number | null = null;
+    const s = staysEngine([stay(1, true), stay(2, false)], { challengedAt: () => met, pageOf: async () => PAGE });
+    await s.headStart();
+    met = now().getTime() - 30_000;
+    const found = await s.b.search('stays', PAY, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(found).toMatchObject({ earlier: true });
+    // The head start's read only: the ask loaded nothing.
+    expect(s.runs).toEqual([{ conditions: [], background: false }]);
+    // Two minutes on, the ask's own page is read again.
+    met = now().getTime() - CHALLENGE_COOL_MS;
+    await s.b.search('stays', PAY, { tripId: 't_goa', turnId: 'turn_2' });
+    expect(s.runs).toHaveLength(2);
   });
 });
 

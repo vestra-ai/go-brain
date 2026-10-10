@@ -99,6 +99,8 @@ export interface TravelSearch {
    * it is now known, in words, for the model.
    */
   site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null };
+  /** Not read now: ixigo's page didn't answer, and this is Go's earlier read of the same page, checked when it was (stays). */
+  earlier?: boolean;
 }
 
 export type StatusQuery =

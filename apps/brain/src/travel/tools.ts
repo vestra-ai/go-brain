@@ -302,7 +302,7 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
   }
   // The turn's one plain ask, found: the search answers it, card and line, and no model round follows. Never with
   // something left to pick: the model picks it from the results.
-  if (found.results.length > 0 && leftToPick(q, found).length === 0 && plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok) {
+  if (found.results.length > 0 && !found.earlier && leftToPick(q, found).length === 0 && plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok) {
     return answerItself(kind, q, found, ctx, d);
   }
   return searchAnswer(kind, q, found, ctx.tripId, d);
@@ -452,7 +452,7 @@ export function handOver(
         const lead = leftOffLead(found);
         // Something left to pick goes to the model, which picks it; so do stays with the nearest saved after too few fits,
         // which the model says plainly. The rest posts its card with no model call.
-        const pick = leftToPick(q, found).length > 0 || (kind === 'stays' && (found.nearest?.length ?? 0) > 0);
+        const pick = leftToPick(q, found).length > 0 || (kind === 'stays' && ((found.nearest?.length ?? 0) > 0 || !!found.earlier));
         const payload: SearchWake = {
           source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null,
           ...(lead ? { lead } : {}), ...(pick ? { pick } : {}),
@@ -505,7 +505,7 @@ function linkOf(kind: TravelKind, q: TravelQuery, url: string): NonNullable<Sear
 function linkAnswer(kind: TravelKind, q: TravelQuery, url: string, ctx: TurnCtx, plain = false): unknown {
   const link = linkOf(kind, q, url);
   const who = link.who;
-  ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: link.title, url, who }));
+  ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: link.title, url, who, ...(kind === 'stays' ? { kind: 'stays' as const } : {}) }));
   // The turn's one plain ask: the card's line is built here too, and the turn ends on it.
   if (plain) {
     ctx.lines.push(link.line);
@@ -516,12 +516,22 @@ function linkAnswer(kind: TravelKind, q: TravelQuery, url: string, ctx: TurnCtx,
     count: 0,
     link: url,
     ...(who ? { set_for: who } : {}),
-    note: "ixigo won't show its flights to Go's computer right now. The card with the link to them on ixigo, with these conditions set, goes out with your message.",
-    tell_the_room:
-      `Say in one short line that the flights are on the card${who ? `, set ${who}` : ''}, to book on ixigo, ` +
-      `${q.wants?.length ? `that the link can't set ${listOf(q.wants)}, so they pick for that on ixigo's page, ` : ''}and that if they tell you ` +
-      "which one, you'll note it for the group. You can't book flights: never offer to book one or to take it from there. " +
-      'Never say there are no flights, and quote no prices or times.',
+    ...(kind === 'stays'
+      ? {
+          note: "ixigo won't show its stays to Go's computer right now, and Go has no read of them from the last few hours. The card with the link to them on ixigo, with these conditions and ixigo's filters set, goes out with your message.",
+          tell_the_room:
+            "Say in one short line that ixigo wouldn't load its stays for Go just now, so the card opens them on ixigo with what they asked already set, " +
+            `${q.wants?.length ? `that they pick for ${listOf(q.wants)} on ixigo's page, ` : ''}and that if they tell you which one, you'll note it for the group. ` +
+            'Never say there are no stays, never ask them to try again later, and quote no prices.',
+        }
+      : {
+          note: "ixigo won't show its flights to Go's computer right now. The card with the link to them on ixigo, with these conditions set, goes out with your message.",
+          tell_the_room:
+            `Say in one short line that the flights are on the card${who ? `, set ${who}` : ''}, to book on ixigo, ` +
+            `${q.wants?.length ? `that the link can't set ${listOf(q.wants)}, so they pick for that on ixigo's page, ` : ''}and that if they tell you ` +
+            "which one, you'll note it for the group. You can't book flights: never offer to book one or to take it from there. " +
+            'Never say there are no flights, and quote no prices or times.',
+        }),
   };
 }
 
@@ -579,9 +589,15 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
   const search = searchName(kind, q);
   const before = found.found ?? found.results.length;
   const options = found.results.slice(0, 10).map(toResultOption);
+  // Not read now (stays): ixigo's page didn't answer, and this is Go's earlier read of it, said first and dated.
+  const age = ageText(found.checkedAt, d.now());
+  const was = found.earlier ? `ixigo's page didn't answer just now, so this is Go's earlier read of it, checked ${age}. ` : '';
+  const wasNote = found.earlier
+    ? `Say plainly that ixigo didn't answer just now and these are from Go's read ${age}, never as fresh, and that they can see the latest on ixigo from the card. `
+    : '';
   if (options.length === 0) {
     const near = found.nearest ?? [];
-    const none = before === 1 ? `The one ${scopeOf(kind, q, 1)} doesn't fit ${listOf(terms)}.` : `None of the ${before} ${scope} fits ${listOf(terms)}.`;
+    const none = `${was}${before === 1 ? `The one ${scopeOf(kind, q, 1)} doesn't fit ${listOf(terms)}.` : `None of the ${before} ${scope} fits ${listOf(terms)}.`}`;
     // Stays: the nearest go on a card, each saying what it misses, so the group sees how near ixigo gets ("if fewer than
     // three fit, say so and show the nearest", the demo's villa).
     if (kind === 'stays' && near.length > 0) {
@@ -597,6 +613,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
         results: shown.map((o, i) => compactOption(i + 1, o, true)),
         card: { results_id: set.resultsId, option_numbers: shown.map((_, i) => i + 1), title: suggestTitle(kind, q) },
         note:
+          wasNote +
           'None fits all of it. Show these nearest with show_options, and say in the line that none fits everything, keeping every condition in it, ' +
           `and what the nearest miss, as the summary says: never call them a fit. ${NO_HOMEWORK} ${CARD_LINE}`,
       };
@@ -626,6 +643,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
   const areas = kind === 'stays' ? [...new Set(options.map(areaOf))] : [];
   const fits = n === 1 ? 'fits' : 'fit';
   const summary =
+    was +
     `${
       terms.length
         ? trainList
@@ -648,6 +666,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     results: options.map((o, i) => compactOption(i + 1, o, pick.length > 0)),
     card: { results_id: set.resultsId, option_numbers: saved.slice(0, 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
     note:
+      wasNote +
       (besides.length
         ? `Only ${counted(options.length, 'stay fits', 'stays fit')}: show ${options.length === 1 ? 'it' : 'them'} first and the nearest after on the same card, and say plainly which fit and what the others miss, as the summary says. `
         : '') +
