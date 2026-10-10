@@ -757,7 +757,10 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         captures = partialCaptures(err);
         turnstile = turnstiled(err);
       }
-      if (!challenged(captures, url) && !turnstile) return { captures: captures.filter((c) => c.match !== doc), device: 'front_device' in body ? 'desktop' : 'phone' };
+      if (!challenged(captures, url) && !turnstile) {
+        // Which page opened, said to a caller that asked for one (a Bash without front_device opens the phone page).
+        return { captures: captures.filter((c) => c.match !== doc), ...(o.device ? { device: 'front_device' in body ? 'desktop' as const : 'phone' as const } : {}) };
+      }
       metCheck(tripId);
       // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
       // it; still on it when no load fits, the caller closes it and says so.
