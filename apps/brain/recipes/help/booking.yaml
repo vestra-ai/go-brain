@@ -111,13 +111,13 @@ answer:
         "refundable": $type(refundable) = "boolean" ? refundable,
         "cabin_bag": $flight and $first.baggage.handLuggage ? $first.baggage.handLuggage,
         "check_in_bag": $flight and $first.baggage.checkinLuggage ? $first.baggage.checkinLuggage,
-        "web_check_in": $flight and $type($first.checkinUrl) = "string" and $contains($first.checkinUrl, /^https:\/\//) ? $substringBefore($first.checkinUrl & "?", "?")
+        "web_check_in": $flight and $type($first.checkinUrl) = "string" ? $match($first.checkinUrl, /^https:\/\/[^\/?#]+/).match
       }
     )
 ttl_minutes: 10
 samples: { page: help.booking.json }
 notes: >-
   After booking: is it confirmed, can it still be cancelled or moved, free cancellation, the bags, the terminals, the
-  airline's own web check-in page, for this trip's bookings only (trip.upcoming lists what is booked; this answers about
+  airline's own site for web check-in (its address only: a deep link can carry the PNR or a name, in its path too), for this trip's bookings only (trip.upcoming lists what is booked; this answers about
   each). Never a traveller's name, an email, a phone, a PNR or an id: they are not read. A booking's own help flow
   (/support/booking/{id}) is the person's step on ixigo.

@@ -31,7 +31,7 @@
           "airlineCode": "6E", "airlineName": "IndiGo", "flightNumber": "2134", "origin": "Mumbai", "destination": "Goa",
           "departAirportCode": "BOM", "arriveAirportCode": "GOX", "scheduledDeparture": 1793929200000, "scheduledArrival": 1793933700000,
           "departureTerminal": "2", "arrivalTerminal": "1", "flightStatusCode": "SCHEDULED",
-          "checkinUrl": "https://www.goindigo.in/web-check-in.html?pnr=NEVERREAD&lastName=NEVER-READ",
+          "checkinUrl": "https://www.goindigo.in/checkin/NEVERREAD/NEVER-READ?pnr=NEVERREAD",
           "baggage": { "checkinLuggage": "15 Kg", "handLuggage": "7 Kg" }
         },
         {

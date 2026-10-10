@@ -104,6 +104,9 @@ export const LINK_ON_IXIGO =
 export const FROM_THE_ACCOUNT =
   "Answer from these facts only, as the person asked: a line or two. Never a traveller's name, an email, a phone number, a PNR or a booking id, and never a booking that isn't in these facts.";
 
+/** The live card's words for a run on the trip's ixigo account: "Checking ixigo: the trip's bookings". */
+export const ACCOUNT_CARD = "The trip's bookings";
+
 /** What the model is told when the trip's ixigo account has no booking for an account recipe's ask: never one from what it knows. */
 export const NOTHING_ON_THE_ACCOUNT = "The trip's ixigo account has no booking for this. Say so in one short line, and never guess one.";
 
@@ -119,11 +122,13 @@ export async function runOnStage(
   d: Pick<IxigoToolDeps, 'engine' | 'card' | 'cardDelayMs'>,
   tripId: string,
   runKey: string,
-  recipe: Pick<RecipeFile, 'id' | 'title'>,
+  recipe: Pick<RecipeFile, 'id' | 'title'> & { auth?: RecipeFile['auth'] },
   given: Record<string, unknown>,
 ): Promise<EngineAnswer> {
   const make = d.card;
-  const live = make ? shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey, recipe: recipe.title })) : null;
+  // The trip account's own page never shows on the stage (engine.ts): its card says what Go checked, and no more.
+  const label = recipe.auth === 'login' ? ACCOUNT_CARD : recipe.title;
+  const live = make ? shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey, recipe: label })) : null;
   try {
     const answer = await d.engine.answer(recipe.id, given, { tripId, ...(live ? { onProgress: live.progress } : {}) });
     if (live) {

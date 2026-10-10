@@ -813,17 +813,24 @@ export function createEngine(d: EngineDeps) {
       const pageRun = strip.line;
       o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
       pageRun.step(o.clickFrom ? `clicked "${clip(o.clickFrom, 40)}"` : `opened ${pathOf(page)}`);
+      // The trip account's own pages (auth: login: My Trips, the help centre) list the person's other trips too, which are
+      // their business: such a page never reaches the stage, stays open or has its picture taken, and the live card says
+      // only what Go did (the lead, 10 Oct: privacy beats acting visibly, for account pages only).
+      const account = recipe.auth === 'login';
       const readFor: ReadOptions = {
         ...fetchFor(o),
         tag: pageRun.id,
         // The page stays open as the warm tab, so the live view sees ixigo draw it; never for a check nobody waits on. A
         // live card takes one more picture of it once ixigo has drawn it (the runner's look).
-        ...(o.background ? {} : { keepOpen: true, ...(o.onProgress ? { look: true } : {}) }),
+        ...(o.background || account ? {} : { keepOpen: true, ...(o.onProgress ? { look: true } : {}) }),
         // A run a person watches acts on the stage, the one front tab the room's live view follows.
-        ...(watched(o) ? { stage: true } : {}),
+        ...(watched(o) && !account ? { stage: true } : {}),
         // The pictures go to the live card as before, and to the run strip's browser pane, the drawn page's too.
         onProgress: (e) => {
-          if (e.type === 'frames' || e.type === 'drawn') pageRun.frames(e.frames, started);
+          if (e.type === 'frames' || e.type === 'drawn') {
+            if (account) return;
+            pageRun.frames(e.frames, started);
+          }
           o.onProgress?.(e);
         },
         onTrace: (t) => pageRun.trace(t),
