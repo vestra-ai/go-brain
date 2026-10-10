@@ -138,6 +138,17 @@ function askedTravellers(q: TravelQuery, ctx: TurnCtx): TravelQuery {
   return rest;
 }
 
+export const BusesArgs = JourneyArgs.extend({
+  board_at: z.string().min(2).max(60).optional()
+    .describe('A pickup point the group named, as its place name ("Majestic", "Silk Board"): only buses that stop there fit, and ixigo\'s own chip for it is clicked'),
+  drop_at: z.string().min(2).max(60).optional()
+    .describe('A drop point the group named, as its place name ("Mapusa", "Panjim"): only buses that stop there fit, and ixigo\'s own chip for it is clicked'),
+});
+
+export function busesQuery(a: z.infer<typeof BusesArgs>): TravelQuery {
+  return { ...journeyQuery(a), ...(a.board_at ? { boardAt: a.board_at } : {}), ...(a.drop_at ? { dropAt: a.drop_at } : {}) };
+}
+
 export function journeyQuery(a: z.infer<typeof JourneyArgs>): TravelQuery {
   return {
     from: a.from,
@@ -767,11 +778,11 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     summarizeRound: searchRoundSummary,
     timeoutMs: SEARCH_TOOL_MS,
   };
-  const searchBuses: QuickTool<z.infer<typeof JourneyArgs>> = {
+  const searchBuses: QuickTool<z.infer<typeof BusesArgs>> = {
     name: 'search_buses',
-    description: `Searches buses on one date. ${SEARCH_RULE}`,
-    input: JourneyArgs,
-    run: (a, ctx) => runSearch('buses', journeyQuery(a), ctx, d),
+    description: `Searches buses on one date. ${SEARCH_RULE} A pickup or drop point the group named goes in board_at or drop_at.`,
+    input: BusesArgs,
+    run: (a, ctx) => runSearch('buses', busesQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,
     timeoutMs: SEARCH_TOOL_MS,
   };

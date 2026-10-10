@@ -335,6 +335,48 @@ describe('buses.between', () => {
     expect(Math.min(...got.options.map((o) => o.priceMinor))).toBe(150_000);
   });
 
+  // Keshav, 10 Oct: buses have many pickup and drop points. The list call names every point with ixigo's rank (field names
+  // as the 10 Oct Bengaluru to Goa read sent them; the names here are Mumbai's and Goa's, the ids and stops set for the test).
+  it('reads each bus\'s pickup and drop points by name, the busiest first, and clicks ixigo\'s chips for the ones the group named', async () => {
+    const body = JSON.parse(fixture('buses-mumbai-goa.json'));
+    body.boardingPointList = [
+      { filterID: 1, filterName: 'Borivali East', filterStatus: false, placeId: '101', lat: '19.2307', long: '72.8567', rank: '1' },
+      { filterID: 2, filterName: 'Andheri East', filterStatus: false, placeId: '102', lat: '19.1136', long: '72.8697', rank: '2' },
+      { filterID: 3, filterName: 'Sion', filterStatus: false, placeId: '103', lat: '', long: '', rank: '0' },
+      { filterID: 4, filterName: ' ', filterStatus: false, placeId: '104', lat: '', long: '', rank: '0' },
+    ];
+    body.droppingPointList = [
+      { filterID: 7, filterName: 'Mapusa- Isbt Private Bus Stand', filterStatus: false, placeId: '201', lat: '', long: '', rank: '0' },
+      { filterID: 8, filterName: 'Panjim', filterStatus: false, placeId: '202', lat: '15.4939', long: '73.8369', rank: '1' },
+      { filterID: 9, filterName: 'Mapusa', filterStatus: false, placeId: '203', lat: '15.589', long: '73.8099', rank: '2' },
+    ];
+    body.services[0].filters = { boardingPoints: [3, 2, 1, 4, 99], droppingPoints: [7, 9, 8], amenities: [] };
+    body.services[1].filters = { boardingPoints: [3], droppingPoints: [], amenities: [] };
+    const { engine, runs } = engineWith(() => [capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', JSON.stringify(body))]);
+    const got = await engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', board_at: 'Andheri', drop_at: 'Mapusa' }, { tripId: 't_goa' });
+    if (got.as !== 'options') throw new Error('not options');
+    // An id the list doesn't name, or a blank name, is left out; a point with no rank comes after the ranked ones.
+    expect(got.options[0]!.facts).toMatchObject({ boarding_points: 'Borivali East; Andheri East; Sion', dropping_points: 'Panjim; Mapusa; Mapusa- Isbt Private Bus Stand' });
+    expect(got.options[1]!.facts['boarding_points']).toBe('Sion');
+    expect(got.options[1]!.facts).not.toHaveProperty('dropping_points');
+    expect(got.options[2]!.facts).not.toHaveProperty('boarding_points');
+    // On the stage: the pickup's chip, then the Dropping Points tab and the drop's chip, each skipped when it isn't there.
+    expect(runs[0]!.plan.steps).toEqual([
+      { op: 'wait_for', match: '/buslist/v3/services$' },
+      { op: 'click', role: 'link', text: 'Andheri', optional: true, within_ms: 1500 },
+      { op: 'click', role: 'link', name: 'Dropping Points', optional: true, within_ms: 1500 },
+      { op: 'click', role: 'link', text: 'Mapusa', optional: true, within_ms: 1500 },
+      { op: 'scroll', times: 1 },
+    ]);
+    await engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-07', drop_at: 'Panjim' }, { tripId: 't_goa' });
+    expect(runs[1]!.plan.steps).toEqual([
+      { op: 'wait_for', match: '/buslist/v3/services$' },
+      { op: 'click', role: 'link', name: 'Dropping Points', optional: true, within_ms: 1500 },
+      { op: 'click', role: 'link', text: 'Panjim', optional: true, within_ms: 1500 },
+      { op: 'scroll', times: 1 },
+    ]);
+  });
+
   it("reads a bus with null details, and refuses a page that sent only its meta call", async () => {
     const body = JSON.parse(fixture('buses-mumbai-goa.json'));
     Object.assign(body.services[0], { busTypeName: null, rating: null, noOfRatings: null, seatStats: { availableSeats: null } });

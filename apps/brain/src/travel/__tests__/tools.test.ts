@@ -11,7 +11,7 @@ import { createImages } from '../images.js';
 import { createTravelLayer } from '../layer.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import { createResultsStore, type ResultsStore } from '../results.js';
-import { compactOption, searchAnswer, searchRoundSummary, travelTools } from '../tools.js';
+import { busesQuery, compactOption, searchAnswer, searchRoundSummary, travelTools } from '../tools.js';
 import type { Travel } from '../travel.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -151,6 +151,17 @@ describe('search tools', () => {
     const late = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06', arrive_before: '09:00' }, lb.ctx())) as any;
     expect(late.count).toBe(0);
     const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_b1' }))) as any;
+    expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
+  });
+
+  // Keshav, 10 Oct: buses have many pickup and drop points; a named one reaches the search, and Go's own filter keeps the
+  // buses that stop there. A bus whose points nobody listed (the fake's) is never dropped for them.
+  it('search_buses takes a named pickup and drop point to the search, and drops no bus whose points are not listed', async () => {
+    expect(busesQuery({ from: 'Bengaluru', to: 'Goa', date: '2026-11-06', board_at: 'Majestic', drop_at: 'Mapusa' })).toEqual({
+      from: 'Bengaluru', to: 'Goa', date: '2026-11-06', boardAt: 'Majestic', dropAt: 'Mapusa',
+    });
+    expect(busesQuery({ from: 'Bengaluru', to: 'Goa', date: '2026-11-06' })).not.toHaveProperty('boardAt');
+    const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', board_at: 'Borivali', drop_at: 'Mapusa' }, lb.ctx({ turnId: 'turn_b4' }))) as any;
     expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
   });
 
