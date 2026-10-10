@@ -1,0 +1,231 @@
+/**
+ * Go books a flight on ixigo for one traveller (Keshav, 10 Oct: "Go books tickets end to end up to payment"), behind the
+ * FLIGHT_BOOKING switch. From the traveller's own confirm, "Book it" (taps.ts): the fare opens on the stage, where the
+ * room watches (a search for them alone, then ixigo's review page for that flight), the fare type they asked for is
+ * chosen there, and the coupon ixigo applies itself is kept and said. It stops before ixigo's pay button: nothing is
+ * submitted and no itinerary is made. Their card says what they would pay; Pay goes through the vault.
+ *
+ * A booking is a row (flight_bookings) a tap starts once, whatever its repeats, and a live card in the room that ticks
+ * its steps. No traveller's details are kept, logged or said: the room hears the trip's own name and the outcome.
+ */
+import type * as C from '@go/contract';
+import type pg from 'pg';
+import type { Switches } from '../../admin/switches.js';
+import type { ServerLink } from '../../door/server-link.js';
+import { clip, formatInr } from '../cards.js';
+import { stableId } from '../ids.js';
+import type { RecipeRunner } from '../recipes/runners.js';
+import { bodiesFor } from '../recipes/recipe.js';
+import type { StoredOffer } from '../travel.js';
+import { fareFor, reviewAddress } from './review-address.js';
+import { FARE_TYPES, ixigoCoupon, reviewFare, type FareChoice } from './review-read.js';
+
+export const FLIGHT_STREAM = '/flights/v2/search/stream';
+export const FLIGHT_FARE = '/flight-booking/flight-fare';
+export const GRAPH = '/graph';
+/** ixigo's own flights stream, as flights.results reads it: the last whole event, up to Bash's most. */
+const STREAM_BYTES = 4_194_304;
+/** The pay card's action, on the traveller's ready card. */
+export const PAY_FLIGHT = 'pay_flight';
+
+type WorkingCard = Extract<C.Card, { kind: 'working' }>;
+type NoticeCard = Extract<C.Card, { kind: 'notice' }>;
+type Log = { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
+
+export type BookingState = 'fare' | 'fare_type' | 'coupon' | 'ready_to_pay' | 'failed';
+
+export interface BookingAsk {
+  /** The tap that asked, which names the booking: a repeat of it is the same booking. */
+  tapId: string;
+  tripId: string;
+  personId: string;
+  /** Their name in the trip, for the room's words. */
+  name: string;
+  offer: StoredOffer;
+  choice: FareChoice;
+}
+
+export interface FlightBookingDeps {
+  pool: pg.Pool;
+  runner: () => RecipeRunner | null;
+  link: Pick<ServerLink, 'request'>;
+  switches: Pick<Switches, 'get'>;
+  now: () => Date;
+  log: Log;
+}
+
+/** The flight numbers a card's title names ("IndiGo 6E328 + 6E5106"), as ixigo's flight keys hold them. */
+export const numbersOf = (title: string): string[] => title.match(/\b[0-9A-Z]{2}\d{1,4}\b/g) ?? [];
+
+/** The live card: what the room sees while Go books, each step ticking. Posted once, then replaced in place. */
+function liveCard(d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: string, cardId: string, title: string, texts: string[]) {
+  const steps = texts.map((text) => ({ text: clip(text, 80), state: 'todo' as 'todo' | 'doing' | 'done' | 'failed' }));
+  let state: WorkingCard['state'] = 'running';
+  let posted = false;
+  let chain: Promise<void> = Promise.resolve();
+  const card = (): WorkingCard => ({
+    card_id: cardId, kind: 'working', fallback_text: clip(title, 300), task_id: `book_${cardId}`, title: clip(title, 80), state, steps,
+    screenshot_url: null, page_url: null, updated_at: d.now().toISOString(), actions: [],
+  });
+  const send = (): Promise<void> => {
+    const now = card();
+    chain = chain.then(async () => {
+      try {
+        if (!posted) {
+          await d.link.request('post_message', { request_id: stableId('go_book_live', cardId), trip_id: tripId, card: now });
+          posted = true;
+        } else {
+          await d.link.request('replace_card', { trip_id: tripId, card: now });
+        }
+      } catch (err) {
+        d.log.warn({ err: String(err).slice(0, 200), cardId }, 'travel: a booking live card update failed');
+      }
+    });
+    return chain;
+  };
+  return {
+    step(i: number, s: 'doing' | 'done' | 'failed'): Promise<void> {
+      if (steps[i]) steps[i]!.state = s;
+      return send();
+    },
+    finish(ok: boolean): Promise<void> {
+      for (const s of steps) if (s.state === 'doing') s.state = ok ? 'done' : 'failed';
+      state = ok ? 'done' : 'failed';
+      return send();
+    },
+  };
+}
+
+/** The traveller's ready card: what they would pay, for what, with ixigo's coupon, and Pay for them alone. */
+export function readyCard(i: {
+  cardId: string; personId: string; name: string; title: string; when: string | null; choice: FareChoice; amountMinor: number;
+  coupon: { code: string; savingMinor: number } | null;
+}): NoticeCard {
+  const only = [i.personId];
+  const coupon = i.coupon ? ` ixigo's ${i.coupon.code} coupon: ${formatInr(i.coupon.savingMinor)} off.` : '';
+  return {
+    card_id: i.cardId,
+    kind: 'notice',
+    tone: 'info',
+    for_person_ids: only,
+    title: clip(`Ready to pay ${formatInr(i.amountMinor)} for ${i.name}`, 80),
+    body: clip(`${i.title}${i.when ? `, ${i.when}` : ''}, ${FARE_TYPES[i.choice].words}.${coupon}`, 500),
+    fallback_text: clip(`Ready to pay ${formatInr(i.amountMinor)} for ${i.name}: ${i.title}`, 300),
+    actions: [{ action_id: PAY_FLIGHT, label: 'Pay', style: 'primary', only_for_person_ids: only }],
+  };
+}
+
+export interface FlightBooking {
+  /** Whether Go books flights itself now: the switch is on and Go reads ixigo.com in the trip's browser. */
+  on(): boolean;
+  /** Starts the booking a tap asked for, once; its work goes on after the tap is answered. */
+  start(ask: BookingAsk): Promise<void>;
+  /** Waits for the bookings started in the background (tests). */
+  settled(): Promise<void>;
+}
+
+export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
+  const running = new Set<Promise<void>>();
+
+  const save = async (runId: string, patch: { state: BookingState; total_minor?: number; coupon_code?: string | null; coupon_minor?: number | null; review_url?: string; card_id?: string; why?: string }): Promise<void> => {
+    await d.pool.query(
+      `update flight_bookings set state = $2, total_minor = coalesce($3, total_minor), coupon_code = coalesce($4, coupon_code),
+         coupon_minor = coalesce($5, coupon_minor), review_url = coalesce($6, review_url), card_id = coalesce($7, card_id), why = coalesce($8, why),
+         updated_at = $9 where run_id = $1`,
+      [runId, patch.state, patch.total_minor ?? null, patch.coupon_code ?? null, patch.coupon_minor ?? null, patch.review_url ?? null, patch.card_id ?? null, patch.why ?? null, d.now()],
+    );
+  };
+
+  async function book(ask: BookingAsk, runId: string): Promise<void> {
+    const runner = d.runner();
+    const title = ask.offer.title;
+    const live = liveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
+      `Opening ${title} on ixigo`, `Choosing ${FARE_TYPES[ask.choice].words}`, "ixigo's coupon", `Ready to pay for ${ask.name}`,
+    ]);
+    const fail = async (why: string, step: number): Promise<void> => {
+      d.log.info({ runId, tripId: ask.tripId, why }, 'travel: a flight booking stopped');
+      await save(runId, { state: 'failed', why });
+      await live.step(step, 'failed');
+      await live.finish(false);
+    };
+    if (!runner || !ask.offer.sourceUrl) return fail('no_runner', 0);
+
+    // 1. The fare, on the stage: ixigo's results for the traveller alone, then that flight's review page.
+    await live.step(0, 'doing');
+    const results = new URL(ask.offer.sourceUrl);
+    results.searchParams.set('adults', '1');
+    results.searchParams.set('children', '0');
+    results.searchParams.set('infants', '0');
+    const listed = await runner
+      .read(ask.tripId, results.toString(), { capture: [{ match: FLIGHT_STREAM, required: true, max_bytes: STREAM_BYTES, sse: 'last' }] }, { stage: true, tag: runId })
+      .catch(() => null);
+    const stream = listed ? bodiesFor(listed.captures, FLIGHT_STREAM, true).at(-1) : undefined;
+    const fare = stream ? fareFor(stream, numbersOf(title)) : null;
+    if (!fare) return fail('fare_not_found', 0);
+    const review = reviewAddress(fare);
+    await save(runId, { state: 'fare_type', review_url: review });
+    await live.step(0, 'done');
+
+    // 2. The fare type they asked for, chosen on ixigo's own radio; 3. the coupon ixigo applied itself, kept.
+    await live.step(1, 'doing');
+    const opened = await runner
+      .read(
+        ask.tripId, review,
+        {
+          capture: [{ match: FLIGHT_FARE, required: true }, { match: GRAPH, required: false, max_count: 4 }],
+          steps: [{ op: 'click', role: 'radio', text: FARE_TYPES[ask.choice].radio }],
+          graceMs: 3_000,
+        },
+        { stage: true, tag: runId },
+      )
+      .catch(() => null);
+    const priced = opened ? bodiesFor(opened.captures, FLIGHT_FARE).map(parsed).map(reviewFare).find((f) => f !== null) ?? null : null;
+    if (!opened || !priced) return fail('review_not_read', 1);
+    await live.step(1, 'done');
+    await live.step(2, 'doing');
+    const coupon = bodiesFor(opened.captures, GRAPH).map(parsed).map(ixigoCoupon).find((c) => c !== null) ?? null;
+    const typed = priced.types.find((t) => t.choice === ask.choice)?.totalMinor ?? priced.totalMinor;
+    const amountMinor = Math.max(1, typed - (coupon?.savingMinor ?? 0));
+    await save(runId, { state: 'coupon', total_minor: amountMinor, coupon_code: coupon?.code ?? null, coupon_minor: coupon?.savingMinor ?? null });
+    await live.step(2, 'done');
+
+    // 4. Ready: their card, for them alone. Nothing on ixigo is submitted.
+    await live.step(3, 'done');
+    const cardId = stableId('c_ready', runId);
+    const card = readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: null, choice: ask.choice, amountMinor, coupon });
+    await d.link.request('post_message', { request_id: stableId('go_book_ready', runId), trip_id: ask.tripId, card });
+    await save(runId, { state: 'ready_to_pay', card_id: cardId });
+    await live.finish(true);
+  }
+
+  return {
+    on: () => d.switches.get('FLIGHT_BOOKING') === 'on' && d.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    async start(ask) {
+      const runId = stableId('fb', ask.tapId);
+      const fresh = await d.pool.query(
+        `insert into flight_bookings (run_id, trip_id, person_id, option_id, title, choice, state, created_at, updated_at)
+         values ($1, $2, $3, $4, $5, $6, 'fare', $7, $7) on conflict (run_id) do nothing`,
+        [runId, ask.tripId, ask.personId, ask.offer.optionId, clip(ask.offer.title, 120), ask.choice, d.now()],
+      );
+      // A repeat of the tap: the booking it started goes on, and nothing starts twice.
+      if (fresh.rowCount === 0) return;
+      const run = book(ask, runId).catch(async (err: unknown) => {
+        d.log.warn({ runId, err: String(err).slice(0, 200) }, 'travel: a flight booking failed');
+        await save(runId, { state: 'failed', why: 'error' }).catch(() => undefined);
+      });
+      running.add(run);
+      void run.finally(() => running.delete(run));
+    },
+    async settled() {
+      await Promise.all([...running]);
+    },
+  };
+}
+
+const parsed = (body: string): unknown => {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+};

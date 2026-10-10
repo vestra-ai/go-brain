@@ -47,3 +47,23 @@ export function reviewAddress(f: StreamFare): string {
   const q = new URLSearchParams({ fareKey: f.fareKey, providers: f.providerId, hbo: 'false', ftk: f.fareToken, source: 'Search Form' });
   return `https://www.ixigo.com/flight/booking/${encodeURIComponent(f.providerId)}/${encodeURIComponent(f.searchToken)}?${q.toString().replace(/\+/g, '%20')}`;
 }
+
+/** A flight key's numbers, leg by leg: "DEL-BOM-6E328*BOM-GOI-6E5106-06112026" is 6E328 then 6E5106. */
+const numbersIn = (key: string): string[] => key.split('*').map((leg) => leg.split('-')[2] ?? '');
+
+/** The fare of the flight with these numbers, leg by leg ("6E328", "6E5106", as a card's title names them): as fareOf. */
+export function fareFor(stream: string, numbers: string[], fareType?: string): StreamFare | null {
+  if (numbers.length === 0) return null;
+  for (const value of eventValues(stream).reverse()) {
+    const data = isObject(value) && isObject(value['data']) ? value['data'] : null;
+    const journeys = Array.isArray(data?.['flightJourneys']) ? data['flightJourneys'] : [];
+    for (const journey of journeys) {
+      const fares = isObject(journey) && Array.isArray(journey['flightFare']) ? journey['flightFare'] : [];
+      for (const f of fares) {
+        const key = isObject(f) && typeof f['flightKeys'] === 'string' ? f['flightKeys'] : null;
+        if (key && numbersIn(key).join(' ') === numbers.join(' ')) return fareOf(stream, key, fareType);
+      }
+    }
+  }
+  return null;
+}

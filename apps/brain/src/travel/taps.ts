@@ -13,6 +13,7 @@ import type { Brain } from '../app.js';
 import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
+import { PAY_FLIGHT, type FlightBooking } from './booking/flight-booking.js';
 import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
 import { recordPick, wayOf } from './picks.js';
@@ -23,6 +24,10 @@ import { openVoteFromCard } from './votes.js';
 export interface TravelTapDeps {
   results: ResultsStore;
   pool: Brain['pool'];
+  /** Go booking a person's own flight itself (FLIGHT_BOOKING, booking/flight-booking.ts); absent, "Book it" opens ixigo. */
+  booking?: Pick<FlightBooking, 'on' | 'start'>;
+  /** A person's name in the trip, for the room's words about their booking. */
+  nameOf?: (tripId: string, personId: string) => Promise<string>;
   link: Brain['door']['link'];
   desk: Brain['desk'];
   now: () => Date;
@@ -102,6 +107,12 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
   taps.on('options', BOOK_MINE, async (tap, card) => {
     const m = await mine(tap, card);
     if ('refused' in m) return { result: 'refused', toast: m.refused };
+    // Go books it itself, on the stage, up to ixigo's pay button (FLIGHT_BOOKING): the tap answers at once, the booking goes on.
+    if (d.booking?.on() && m.offer.kind === 'flight' && m.offer.sourceUrl) {
+      const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
+      await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer, choice: 'basic' });
+      return { result: 'done', toast: "Go is booking it on the trip's computer" };
+    }
     const url = ixigoPage(forOne(m.offer.sourceUrl));
     if (!url) return { result: 'refused', toast: 'This option has no ixigo page' };
     return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
@@ -117,6 +128,12 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     return { result: 'done', toast: 'Go will find you another' };
   });
 
+  // Pay on a flight Go booked up to ixigo's pay button (booking/flight-booking.ts): for its traveller alone. The vault's
+  // pay flow for a person's own ticket waits on the Server's approval without a vote, so it says so for now.
+  taps.on('notice', PAY_FLIGHT, async (tap, card) => {
+    if (!('for_person_ids' in card ? (card.for_person_ids ?? []) : []).includes(tap.person_id)) return { result: 'refused', toast: 'This one is for someone else to pay' };
+    return { result: 'refused', toast: 'Paying for a ticket through Go opens soon' };
+  });
   // The flights link card: its own ixigo page, from the card itself.
   taps.on('notice', 'see_on_ixigo', async (_tap, card) => {
     const url = card.kind === 'notice' ? ixigoPage(card.source?.url) : null;
