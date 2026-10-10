@@ -38,9 +38,10 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
 }
 
 /**
- * Said once under "why you woke" when a person's message woke Go without naming it: the reflex wasn't sure it was for
- * the group, so the turn decides. Here, after the cache point, not in GO_RULES: the rules' cached bytes never change.
- * A line saying someone paid or owes keeps its own instruction (record_expense from the rules, or ASK_HOW_MUCH); a
+ * Said once under "why you woke" when a person's message woke Go without naming it: the turn decides, and its default is
+ * to jump in wherever it can add anything (Keshav, 10 Oct: "go can interfere in most of the messages"), silent only on
+ * pure banter, an acknowledgement, or when it spoke last and nobody answered (never two messages in a row). Here, after
+ * the cache point, not in GO_RULES: the rules' cached bytes never change. A line saying someone paid or owes keeps its own instruction (record_expense from the rules, or ASK_HOW_MUCH); a
  * price or a budget ("villa under 8k a head") gets the note like any other line. A line by someone who named Go in
  * the same turn goes on with what they asked ("@Go one thing" ... "is there a good bakery near Anjuna?"), and so does a
  * line by someone answering a question Go asked them (answersToGo): it is a reply to Go, not the group talking.
@@ -61,17 +62,19 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const one = refs.length === 1;
   const which = one ? `${refs[0]} doesn't name you, so it is` : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]} don't name you, so they are`;
   return (
-    `${which} the group talking, unless it asks for something you do: logging in to ixigo, a search, a booking, a vote, a ` +
-    "reminder, someone checking something. That is an ask even without your name: do it, or answer it in one line. " +
-    'Otherwise speak if you can add something real: answer a question you can answer with facts from ' +
-    'ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already ' +
-    'answered it; when the group agrees dates on a trip with a place, offer stays in one line (search_stays only when ' +
-    'someone asks to see them); when it agrees a place, offer the next step in one line; when people disagree, offer a vote. ' +
-    `${CHIME_RULES} ` +
+    `${which} the group talking, unless it asks for something you do (logging in to ixigo, a search, a booking, a vote, a ` +
+    'reminder, someone checking something): that is an ask even without your name, so do it, or answer it in one line. ' +
+    'Either way, jump in whenever you can add anything: answer a question with facts from ixigo or the trip (weather, ' +
+    'distances, timings, prices, the record, votes, money, places) unless a person already answered it; offer the lookup ' +
+    'or the next step in one line; flag a clash with the plan or the record; note a need or a preference with a ✅ and use ' +
+    'it; a quick useful fact. When the group agrees dates on a trip with a place, offer stays in one line (search_stays ' +
+    'only when someone asks to see them); when it agrees a place, offer the next step in one line; when people disagree, ' +
+    `offer a vote. ${CHIME_RULES} ` +
     "Someone saying what they'd like for the trip (a place, food, a vibe) gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
     "what is the friends' to settle unless the record already says, and the App gives anyone asking what they missed " +
-    'their own catch-up. For banter, greetings, a side conversation, something a person already handled, or when your ' +
-    'last message has had no reply from a person since, call stay_silent.'
+    'their own catch-up. Call stay_silent only for pure banter or an acknowledgement ("haha", "ok", "see you"), a side ' +
+    'conversation not about the trip, something a person already answered, or when your last message has had no reply ' +
+    'from a person since: never two messages in a row.'
   );
 }
 

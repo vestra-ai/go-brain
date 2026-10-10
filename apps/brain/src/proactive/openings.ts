@@ -44,13 +44,14 @@ export function isMoment(read: ReflexRead): boolean {
 }
 
 /**
- * A message that names Go is the composer's to answer (P1 wakes it). An opening is only for a message the reflex is
- * sure is not for Go, so the same message never gets both an answer and an unprompted post.
+ * A message the composer wakes for is its to answer or not (P1 wakes it for every line but pure banter: trips/intake.ts
+ * wakesComposer). An opening is only for a line it doesn't wake for, so the same message never gets both a turn and an
+ * unprompted post.
  */
 export function chatOpening(msg: Message, read: ReflexRead, pack: TripPack, now: Date): Candidate | null {
   if (msg.author.kind !== 'person' || msg.withheld || msg.deleted || msg.mentions_go) return null;
   if (!isMoment(read)) return null;
-  if (!(read.forGo.sure && read.forGo.value === false) || plainlyNamesGo(msg, pack)) return null;
+  if (!(read.banter?.sure && read.banter.value === true) || plainlyNamesGo(msg, pack)) return null;
   const tripId = pack.trip.trip_id;
   return {
     tripId,

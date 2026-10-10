@@ -31,12 +31,15 @@ export interface IntakeDeps {
 }
 
 /**
- * Whether a person's message wakes the composer. One that names Go always does. Sure chatter never does, and neither
- * does asking the group what you missed: the App gives each person their own catch-up (the Server's catch_up).
+ * Whether a person's message wakes the composer. One that names Go always does. Pure banter or an acknowledgement
+ * ("haha", "ok", "see you": the reflex's chatter) never does, and neither does asking the group what you missed: the App
+ * gives each person their own catch-up (the Server's catch_up). Everything else does, a line no one spoke to Go in
+ * too: Go jumps in on most lines, wherever it can add anything (Keshav, 10 Oct: "go can interfere in most of the
+ * messages"), and the turn decides whether it can.
  */
-export function wakesComposer(namesGo: boolean, read: Pick<ReflexRead, 'forGo'>, text: string | null | undefined): boolean {
+export function wakesComposer(namesGo: boolean, read: Pick<ReflexRead, 'banter'>, text: string | null | undefined): boolean {
   if (namesGo) return true;
-  return !((read.forGo.sure && read.forGo.value === false) || asksWhatTheyMissed(text));
+  return !((read.banter?.sure && read.banter.value === true) || asksWhatTheyMissed(text));
 }
 
 /**

@@ -188,10 +188,12 @@ describe('intake', () => {
     expect(items[1]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
   });
 
-  it('a sure-complete read is due at once; sure chatter gets no item unless it names Go', async () => {
+  it('a sure-complete read is due at once; pure banter gets no item unless it names Go, and a line no one spoke to Go in does', async () => {
     const read = (m: { text?: string | null }): ReflexRead => {
-      if (m.text === 'lol') return { ...UNSURE_READ, forGo: sure(false) };
-      if (m.text?.startsWith('@Go')) return { ...UNSURE_READ, forGo: sure(false), complete: sure(true) };
+      if (m.text === 'lol') return { ...UNSURE_READ, forGo: sure(false), banter: sure(true) };
+      if (m.text?.startsWith('@Go')) return { ...UNSURE_READ, forGo: sure(false), banter: sure(true), complete: sure(true) };
+      // Not spoken to Go, but not banter: Go jumps in wherever it can add anything (Keshav, 10 Oct).
+      if (m.text === "I'm veg btw") return { ...UNSURE_READ, forGo: sure(false), complete: sure(true) };
       return { ...UNSURE_READ, complete: sure(true) };
     };
     const h = harness({ reflex: () => ({ read: async (m) => read(m) }) });
@@ -200,10 +202,11 @@ describe('intake', () => {
     await h.send(ev(2, 'message.created', { message: msg(2, 'p_meher', 'lol') }, T));
     await h.send(ev(3, 'message.created', { message: msg(3, 'p_kabir', '@Go is it hot in November?') }, T));
     await h.send(ev(4, 'message.created', { message: msg(4, 'p_priya', 'what time is check-in?') }, T));
+    await h.send(ev(5, 'message.created', { message: msg(5, 'p_meher', "I'm veg btw") }, T));
     const sentAt = Date.now();
     await h.intake.idle();
     const items = (await open(T)).filter((r) => r.kind === 'message');
-    expect(items.map((r) => r.ref)).toEqual(['m_3', 'm_4']);
+    expect(items.map((r) => r.ref)).toEqual(['m_3', 'm_4', 'm_5']);
     for (const r of items) expect(r.due_at.getTime()).toBeLessThanOrEqual(sentAt + 200);
   });
 

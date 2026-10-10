@@ -129,6 +129,16 @@ function readReaction(a: Answers, b: Bars): Sure<string | null> {
   return top.o === 'none' ? sure(null) : sure(REACTIONS[top.o]);
 }
 
+/** Pure banter or an acknowledgement: question 1's chatter bar, or small talk when Jev has no answer. Never a money line. */
+function readBanter(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
+  if (f.namesGo || f.money) return sure(false);
+  const addressed = noulP(a, 'q1_addressed');
+  const chatter = noulP(a, 'q1_chatter');
+  if (atLeast(chatter, b.for_go.chatterMin) && atMost(addressed, b.for_go.addressedMaxForChatter)) return sure(true);
+  if (!Number.isFinite(addressed) && !Number.isFinite(chatter) && f.smallTalk) return sure(true);
+  return unsure();
+}
+
 /** One clear winner: at least the pick bar, and no other option up to the rival bar. */
 function readRecipe(a: Answers, b: Bars): Sure<RecipeChoice | null> {
   const ranked = [...RECIPE_CHOICES, 'none' as const]
@@ -182,6 +192,7 @@ export function readAnswers(
   const opening = [noulP(a, 'q9_group_question'), noulP(a, 'q9_circles'), noulP(a, 'q9_someone_look')];
   const would: ReflexRead = {
     forGo: readForGo(a, facts, bars),
+    banter: readBanter(a, facts, bars),
     complete: readComplete(a, facts, bars),
     size: readSize(a, bars),
     taskId: readTask(a, facts, taskKeys, bars),
@@ -200,6 +211,7 @@ export function readAnswers(
 export function codeOnly(facts: CodeFacts): ReflexRead {
   return {
     forGo: facts.namesGo ? sure(true) : unsure(),
+    banter: facts.namesGo ? sure(false) : unsure(),
     complete: unsure(),
     size: unsure(),
     taskId: facts.hasTasks ? unsure() : sure(null),
@@ -218,6 +230,7 @@ export function applyLive(would: ReflexRead, live: ReadonlySet<QuestionName>, fa
   const base = codeOnly(facts);
   return {
     forGo: live.has('for_go') ? would.forGo : base.forGo,
+    banter: (live.has('for_go') ? would.banter : base.banter) ?? unsure(),
     complete: live.has('complete') ? would.complete : base.complete,
     size: live.has('size') ? would.size : base.size,
     taskId: live.has('task') ? would.taskId : base.taskId,

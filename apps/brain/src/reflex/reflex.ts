@@ -15,6 +15,12 @@ export interface ReflexRead {
   reaction: Sure<string | null>;
   risky: Sure<boolean>;
   opening: Sure<boolean>;
+  /**
+   * Question 1's chatter alone: pure banter or an acknowledgement ("haha", "ok", "see you"), the only line Go leaves to the
+   * people (trips/intake.ts wakesComposer). A line no one spoke to Go in but that carries something (a fact, a plan) is
+   * not banter: Go jumps in when it can add anything. Absent reads unsure.
+   */
+  banter?: Sure<boolean>;
   /** Question 10: the ixigo search the message asks for (travel/recipes starts it early). Absent reads unsure. */
   recipe?: Sure<RecipeChoice | null>;
   /** Why question 8 raised caution. Set by P2's reflex. */
