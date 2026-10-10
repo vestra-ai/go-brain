@@ -175,7 +175,10 @@ describe('the door', () => {
     const before = events.length;
     const known = await s.call('send_event', { ...base, event_id: 'ev_x_ok', seq: 8, data: { expense, change: 'disputed', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' } });
     expect(known.result).toEqual({ accepted: true, duplicate: false });
-    expect(events.length).toBe(before + 1);
+    // GO-TEAM-ASKS-REV4 B2: a fixed split. On 8 Oct Go answered it 422, so the Server sent nothing for one.
+    const fixed = await s.call('send_event', { ...base, event_id: 'ev_x_fixed', seq: 9, data: { expense, change: 'updated', by: { kind: 'person', person_id: 'p_priya' } } });
+    expect(fixed.result).toEqual({ accepted: true, duplicate: false });
+    expect(events.length).toBe(before + 2);
     await s.close();
   });
 

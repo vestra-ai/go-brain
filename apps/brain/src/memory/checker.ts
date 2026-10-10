@@ -118,7 +118,7 @@ export function checkFact(p: FactProposal, env: CheckEnv): Checked<CheckedFact> 
   const text = cleanText(p.text, 200);
   if (!text) return no('the fact text is empty or too long');
   if (hasSecret(text) || MASKED.test(text)) return no('the fact holds a secret');
-  // A budget is private to its trip (the App asks it, and Go only knows the lowest band): never a fact that carries
+  // A budget belongs to its trip (the group's, set for that trip): never a fact that carries
   // across trips, whether its topic says budget or its text names an amount ("Pool stay under ₹3,000 per night").
   if (normTopic(p.topic) === 'budget' || looksLikeMoney(text)) return no("a person's budget or money stays private to the trip");
   return {

@@ -107,14 +107,14 @@ describe("a logged-in browser's answers read as the logged-out ones do", () => {
   });
 
   it("trains.confirm_chance: each class's seats and ixigo's chance a waitlisted ticket confirms", async () => {
-    const SEARCH = 'ixigotrainsapi.confirmtkt.com/api/v1/trains/search';
-    const URL = `https://${SEARCH}?sourceStationCode=SBC&destinationStationCode=MAS&dateOfJourney=22-10-2026`;
-    const p: Personalised = { strings: ['predictionPercentage', 'tgMultiplier'], rows: 'trainNumber' };
-    await same(
-      'trains.confirm_chance', { from: 'Bangalore', to: 'Chennai', date: '2026-10-22' },
-      () => [capture(SEARCH, URL, sample('trains.between.page.json'))],
-      () => [capture(SEARCH, URL, loggedIn(sample('trains.between.page.json'), p))],
-    );
+    const BETWEEN = 'https://www.ixigo.com/trains/v1/search/between/NDLS/MAO?date=2026-11-06&languageCode=en';
+    const SEATS = 'https://www.ixigo.com/api/v3/trains/availability';
+    const p: Personalised = { strings: ['f', 'p'], rows: 'attributes' };
+    const page = (f: (s: string) => string) => () => [
+      capture('/trains/v1/search/between/', BETWEEN, f(fixture('trains-ndls-mao-between.json'))),
+      capture('/api/v3/trains/availability', SEATS, f(fixture('trains-ndls-mao-availability.json'))),
+    ];
+    await same('trains.confirm_chance', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, page((s) => s), page((s) => loggedIn(s, p)));
   });
 
   it("trains.station_lookup: a city's stations from ixigo's box", async () => {

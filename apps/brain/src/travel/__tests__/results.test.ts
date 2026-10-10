@@ -112,3 +112,26 @@ describe('result sets', () => {
     expect(await store.card('t_goa', 'c_opt_v')).toMatchObject({ decisionId: 'd_villa', voteKey: 'tap_2' });
   });
 });
+
+// The lead, 10 Oct: "the group's stay" is the booked one, else the vote's winner, else the top pick on the latest stays
+// card, with the position ixigo's search gave it.
+describe("a stay's position", () => {
+  it("gives a card's option with its position, and the top pick on the trip's latest card of a kind", async () => {
+    const store = createResultsStore(db.pool);
+    const placed = (title: string, lat: number, lng: number): ResultOption => ({ ...villa(title, 900_000), place: { name: title, address: null, lat, lng } });
+    const save = async (cardId: string, options: ResultOption[]) => {
+      const set = await store.save({ tripId: 't_where', optionKind: 'stay', source: 'search', query: {}, options, checkedAt: CHECKED });
+      const picks = options.map((option, i) => ({ optionId: `${cardId}_${i + 1}`, n: i + 1, option, imageUrl: null }));
+      const card = buildOptionsCard({ cardId, title: 'Stays in North Goa', optionKind: 'stay', checkedAt: CHECKED, picks });
+      await store.saveCard({ cardId, tripId: 't_where', resultsId: set.resultsId, title: card.title, optionKind: 'stay', card }, picks, CHECKED);
+    };
+    expect(await store.topPick('t_where', 'stay')).toBeNull();
+    await save('c_where_1', [placed('Villa Sol', 15.5733, 73.74), placed('The Palms Villa', 15.55, 73.75)]);
+    await save('c_where_2', [placed('Casa Anjuna', 15.58, 73.741), villa('Casa Sem Lugar', 800_000)]);
+    expect(await store.topPick('t_where', 'stay')).toMatchObject({ title: 'Casa Anjuna', place: { name: 'Casa Anjuna', lat: 15.58, lng: 73.741 } });
+    expect(await store.topPick('t_where', 'flight')).toBeNull();
+    expect(await store.placeOf('c_where_1_2')).toMatchObject({ kind: 'stay', title: 'The Palms Villa', place: { lat: 15.55, lng: 73.75 }, area: 'Anjuna' });
+    // No position from the search: none is made up.
+    expect((await store.placeOf('c_where_2_2'))?.place).toBeNull();
+  });
+});
