@@ -80,8 +80,10 @@ export const FlightsArgs = z.object({
   max_price_per_person: Rupees.optional().describe('In rupees'),
   non_stop: z.boolean().optional(),
   travellers: z.int().min(1).max(9).optional().describe('Only when the ask says how many fly ("for 3 of us"). Leave it out otherwise: Go counts who lives near the origin.'),
+  site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
+    .describe("ixigo's own flight filters the ask means, by their names on ixigo's list for the route (in your context once a search of it ran): an airline, an airport (Mopa for North Goa), a layover city, bags, a free meal, hiding non-refundable fares. Go applies them to the flights and ixigo's page shows them ticked"),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
-    .describe("Anything else the group asked for that no argument here covers, in their words (an airline, a seat): ixigo's page is linked, and the line says to pick it there"),
+    .describe("Anything else the group asked for that no argument here covers, in their words (a seat): ixigo's page is linked, and the line says to pick it there"),
 });
 export const JourneyArgs = z.object({
   from: Where.describe('City or station, e.g. "Jaipur"; for trains, a station with its Indian Railways code works too, e.g. "Udaipur City (UDZ)"'),
@@ -127,6 +129,7 @@ export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
     ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
     ...(a.non_stop ? { mustHave: ['non_stop' as const] } : {}),
     ...(a.travellers ? { guests: a.travellers } : {}),
+    ...(a.site_filters?.length ? { siteFilters: a.site_filters } : {}),
     ...(a.wants?.length ? { wants: a.wants } : {}),
   };
 }
@@ -795,7 +798,9 @@ const VoteArgs = z.object({
 export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   const searchFlights: QuickTool<z.infer<typeof FlightsArgs>> = {
     name: 'search_flights',
-    description: `Searches flights on one date. ${SEARCH_RULE} For example depart_after "18:00" when someone cannot leave before 6 pm.`,
+    description:
+      `Searches flights on one date. ${SEARCH_RULE} For example depart_after "18:00" when someone cannot leave before 6 pm. ` +
+      "ixigo's own flight filters for the route, once a search of it has run, are in your context: the ones the ask means go in site_filters, by their names there.",
     input: FlightsArgs,
     run: (a, ctx) => runSearch('flights', askedTravellers(flightsQuery(a), ctx), ctx, d),
     summarizeRound: searchRoundSummary,

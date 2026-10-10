@@ -20,6 +20,7 @@ import { evaluate } from './expr.js';
 import type { RecipeFile, Step } from './format.js';
 import { clip } from '../cards.js';
 import { boxFetches, pickSuggestion, readSuggestions, type End, type Suggestion } from './lookup.js';
+import { readBodyAs } from './bodies.js';
 import { readFacts, readOptions, shapeOf, unreadBecause, unwrapped } from './read.js';
 import { labelOf, pathOf, runLine, whyOf, type OnRun, type RunLine } from './run-event.js';
 import { fill } from './template.js';
@@ -602,7 +603,8 @@ export function createEngine(d: EngineDeps) {
     const call = offers ? captures.find((c) => matches(offers.from, c.url) && c.status >= 200 && c.status < 300 && !c.truncated) : undefined;
     if (!offers || !call || site.key === null) return;
     try {
-      const body: unknown = JSON.parse(call.body);
+      // An event stream's list is read from its events (the list expression takes them in order), anything else as JSON.
+      const body: unknown = offers.format === 'sse' ? readBodyAs(call.body, 'sse', 'its list') : JSON.parse(call.body);
       // As it is first; then without what a logged-in answer may wrap it in (read.ts unwrapped).
       let list: Offer[] = [];
       let bands: Offer[] = [];
@@ -697,6 +699,9 @@ export function createEngine(d: EngineDeps) {
    */
   function withOffers(plan: FetchPlan, recipe: RecipeFile, site: Site): FetchPlan {
     if (!recipe.offers || !d.offers || site.key === null) return plan;
+    // A list in the very call the rows come from (flights' stream): kept with the rows, never a second copy of it.
+    const from = recipe.offers.from;
+    if (plan.capture.some((c) => c.match === from)) return plan;
     const call: CaptureSpec = { match: recipe.offers.from, required: false, max_bytes: OFFERS_MAX_BYTES };
     return site.listed
       ? { ...plan, capture: [...plan.capture, { ...call, besides: true }] }
