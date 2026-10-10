@@ -4,6 +4,7 @@ import { withSchema } from '../../db/test-db.js';
 import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { goaPack } from '../../tasks/testing/goa.js';
 import { buildFlightsLinkCard, buildOptionsCard } from '../cards.js';
+import { stableId } from '../ids.js';
 import { picksOf } from '../picks.js';
 import { registerTravel } from '../register.js';
 import { createResultsStore, type ResultOption } from '../results.js';
@@ -110,8 +111,9 @@ describe('registerTravel', () => {
     expect(await lb.taps.tap('options', 'pick', at({ tap_id: 'tap_f1' }), flights)).toEqual({ result: 'done', toast: "It's yours to confirm" });
     // Kept as her pick, one per way she travels (picks.ts), which her flight's heads-up watches.
     expect(await picksOf(db.pool, 't_goa')).toContainEqual(expect.objectContaining({ personId: 'p_meher', kind: 'flight', optionId: 'opt_fl1', title: 'IndiGo 6E2150' }));
-    await eventually(() => lb.link.sent('post_message').some((p) => (p.card as { card_id?: string })?.card_id === 'c_mine_tap_f1'));
-    const mine = C.OptionsCard.parse(lb.link.sent('post_message').find((p) => (p.card as { card_id?: string })?.card_id === 'c_mine_tap_f1')!.card);
+    const MINE = stableId('c_mine', 'tap_f1');
+    await eventually(() => lb.link.sent('post_message').some((p) => (p.card as { card_id?: string })?.card_id === MINE));
+    const mine = C.OptionsCard.parse(lb.link.sent('post_message').find((p) => (p.card as { card_id?: string })?.card_id === MINE)!.card);
     expect(mine).toMatchObject({ title: 'Book IndiGo 6E2150 for you, ₹11,571?', for_person_ids: ['p_meher'], options: [{ option_id: 'opt_fl1', title: 'IndiGo 6E2150' }] });
     expect(mine.actions).toEqual([
       { action_id: 'book_mine', label: 'Book it', style: 'primary', per_option: true, only_for_person_ids: ['p_meher'] },
