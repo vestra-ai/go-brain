@@ -114,6 +114,8 @@ const COOKIE_SITE = 'ixigo.com';
 export const LOGIN_POLL_MS = 2_000;
 /** A one-tap login shows "I'm logged in" only when Go has seen nothing land this long (Bash's read gone quiet, say). */
 export const SELF_CHECK_MS = 60_000;
+/** How often Go looks over the one-tap logins (sweep): a restart of Go loses at most this much of a person's wait. */
+export const LOGIN_SWEEP_MS = 60_000;
 /** How long the hand-off's tab stays in front for them: Bash's most. I'm logged in or Not now closes it sooner. */
 export const HANDOFF_MS = 600_000;
 /**
@@ -147,6 +149,19 @@ export interface Parked {
   resume: Record<string, unknown>;
 }
 
+/** The browser's `at` cookie as Go last read it: its expiry (null for one that lasts while the browser runs), or null with none. */
+export type LoginCookie = { expiresAt: number | null } | null;
+
+/**
+ * A one-tap login Go watches land by itself, kept on its row so a restart of Go picks it up where it was: when Log in was
+ * tapped (ms), and the `at` cookie as last read, once a read has answered (known).
+ */
+export interface OneTap {
+  tappedAt: number;
+  known: boolean;
+  cookie: LoginCookie;
+}
+
 export interface LoginRow {
   tripId: string;
   personId: string;
@@ -157,6 +172,8 @@ export interface LoginRow {
   loggedInAt: Date | null;
   checkedAt: Date | null;
   parked: Parked | null;
+  /** Null unless Go watches this login land by itself (one tap). Written only by its own steps, never by save. */
+  oneTap?: OneTap | null;
 }
 
 export interface LoginDeps {
@@ -239,6 +256,11 @@ export interface IxigoLogin {
    * memory lane's forget_person calls it through brain.ixigoLogin.
    */
   personGone(tripId: string, personId: string, why: 'left' | 'forgot'): Promise<void>;
+  /**
+   * The minute's look at one-tap logins (level-triggered: what the rows say, whatever this process remembers): one still
+   * in its time with no wait running here (Go restarted) is watched again; one past its time ends as a hand-off does.
+   */
+  sweep(): Promise<void>;
   /** Waits for the work taps started in the background (tests). */
   settled(): Promise<void>;
 }
@@ -353,10 +375,8 @@ export function loginCard(
 
 export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   const inFlight = new Set<Promise<void>>();
-  /** Each trip's Watch sessions opened for its login, ended when the login ends (release), so the person's view closes. */
-  const watches = new Map<string, string[]>();
-  /** The trips (and their login's attempt) whose one-tap login Go watches land by itself: their card has no I'm logged in. */
-  const selfCheck = new Map<string, number>();
+  /** The trips whose one-tap login this process is watching now (from the tap until the wait ends). */
+  const waiting = new Set<string>();
   const track = (what: string, tripId: string, p: Promise<void>): void => {
     const q = p.catch((err: unknown) => d.log.warn({ err, tripId }, `travel: the ixigo login's ${what} failed`));
     inFlight.add(q);
@@ -366,11 +386,14 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function get(tripId: string): Promise<LoginRow | null> {
     const { rows } = await d.pool.query<{
       person_id: string; state: LoginState; attempt: number; task_id: string | null; asked_at: Date; logged_in_at: Date | null; checked_at: Date | null;
-      parked: Parked | null;
-    }>('select person_id, state, attempt, task_id, asked_at, logged_in_at, checked_at, parked from ixigo_logins where trip_id = $1', [tripId]);
+      parked: Parked | null; one_tap: OneTap | null;
+    }>('select person_id, state, attempt, task_id, asked_at, logged_in_at, checked_at, parked, one_tap from ixigo_logins where trip_id = $1', [tripId]);
     const r = rows[0];
     return r
-      ? { tripId, personId: r.person_id, state: r.state, attempt: r.attempt, taskId: r.task_id, askedAt: r.asked_at, loggedInAt: r.logged_in_at, checkedAt: r.checked_at, parked: r.parked }
+      ? {
+        tripId, personId: r.person_id, state: r.state, attempt: r.attempt, taskId: r.task_id, askedAt: r.asked_at, loggedInAt: r.logged_in_at, checkedAt: r.checked_at,
+        parked: r.parked, oneTap: r.one_tap,
+      }
       : null;
   }
 
@@ -381,11 +404,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function claim(row: LoginRow): Promise<LoginRow | null> {
     const now = d.now();
     const r = await d.pool.query(
-      `update ixigo_logins set state = 'logging_in', task_id = null, updated_at = $2
+      `update ixigo_logins set state = 'logging_in', task_id = null, one_tap = null, updated_at = $2
        where trip_id = $1 and (state <> 'logging_in' or updated_at < $3)`,
       [row.tripId, now, new Date(now.getTime() - HANDOFF_MS)],
     );
-    return r.rowCount ? { ...row, state: 'logging_in', taskId: null } : null;
+    return r.rowCount ? { ...row, state: 'logging_in', taskId: null, oneTap: null } : null;
   }
 
   async function save(row: LoginRow): Promise<void> {
@@ -405,7 +428,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   }
 
   async function show(row: LoginRow, note?: Note): Promise<void> {
-    const card = loginCard(row, await nameOf(row.tripId, row.personId), note, { selfCheck: selfCheck.get(row.tripId) === row.attempt });
+    const card = loginCard(row, await nameOf(row.tripId, row.personId), note, { selfCheck: selfChecking(row) });
     await d.link.request('replace_card', { trip_id: row.tripId, card });
   }
 
@@ -697,65 +720,97 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   /**
    * The hand-off's tab closes, so the person's own window is on top again; one already gone is nothing to close. Every end
    * of a login closes it: logged in, Not now, a hand-off that failed or ran its time, the person gone. Its Watch sessions
-   * end with it: Bash's Watch page then closes itself, and its control ends.
+   * end with it (Bash's Watch page then closes itself, and its control ends), and its one-tap wait with them.
    */
   async function release(tripId: string): Promise<void> {
     ending.get(tripId)?.();
     ending.delete(tripId);
-    selfCheck.delete(tripId);
-    const sessions = watches.get(tripId) ?? [];
-    watches.delete(tripId);
+    const { rows } = await d.pool.query<{ sessions: string[] }>(
+      `with was as (select watch_sessions from ixigo_logins where trip_id = $1)
+       update ixigo_logins set watch_sessions = '{}', one_tap = null where trip_id = $1 returning (select watch_sessions from was) as sessions`,
+      [tripId],
+    );
     const end = d.endScreen?.();
     await Promise.all([
       d.runner()?.release?.(tripId, LOGIN_TAB).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's tab did not close")),
-      ...sessions.map((id) => end?.(id).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's Watch did not end"))),
+      ...(rows[0]?.sessions ?? []).map((id) => end?.(id).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's Watch did not end"))),
     ]);
   }
 
-  /** A Watch session on the trip's screen, in control, for the person logging in; kept so the login's end ends it. */
+  /** A Watch session on the trip's screen, in control, for the person logging in; kept on the row so the login's end ends it. */
   async function openWatch(tripId: string): Promise<{ url: string; expires_at: string }> {
     const screen = d.screen();
     if (!screen) throw new Error("no trip computer for the ixigo login's Watch");
     const s = await screen(tripId, 'control');
-    if (s.id) watches.set(tripId, [...(watches.get(tripId) ?? []), s.id]);
+    if (s.id) await d.pool.query('update ixigo_logins set watch_sessions = array_append(watch_sessions, $2) where trip_id = $1', [tripId, s.id]);
     return { url: s.url, expires_at: s.expires_at };
   }
 
-  /** The browser's `at` cookie: its expiry when it has one (null for one that lasts while the browser runs), null with none, undefined when Bash can't say. */
-  async function loginCookie(tripId: string): Promise<{ expiresAt: number | null } | null | undefined> {
+  /** A one-tap login hides I'm logged in for its first SELF_CHECK_MS: Go is watching the login land itself. */
+  function selfChecking(row: LoginRow): boolean {
+    return row.state === 'logging_in' && !!row.oneTap && d.now().getTime() - row.oneTap.tappedAt < SELF_CHECK_MS;
+  }
+
+  /** The browser's `at` cookie: its expiry when it has one, null with none, undefined when Bash can't say. */
+  async function loginCookie(tripId: string): Promise<LoginCookie | undefined> {
     const cookies = await d.runner()?.cookies?.(tripId, COOKIE_SITE, [LOGIN_COOKIE]);
     if (!cookies) return undefined;
     const at = cookies.find((c) => c.name === LOGIN_COOKIE);
     return at ? { expiresAt: at.expiresAt } : null;
   }
 
+  /** The `at` as last read, on the row, while this attempt is still logging in. */
+  async function keepCookie(row: LoginRow, cookie: LoginCookie): Promise<void> {
+    await d.pool.query(
+      `update ixigo_logins set one_tap = one_tap || jsonb_build_object('known', true, 'cookie', $3::jsonb)
+       where trip_id = $1 and attempt = $2 and state = 'logging_in' and one_tap is not null`,
+      [row.tripId, row.attempt, JSON.stringify(cookie)],
+    );
+  }
+
   /**
    * A one-tap login, once its page is in front: Go reads the browser's `at` every LOGIN_POLL_MS. A login landed when `at`
    * is there and was not at the read before, or its expiry moved (ixigo fixes it from the login's moment): on a first-ever
    * login there was none, so its coming is enough. Until a read has answered there is nothing to compare with. Past
-   * SELF_CHECK_MS from the tap with nothing seen, the card gets I'm logged in. It ends with the login (any end) or at
-   * HANDOFF_MS.
+   * SELF_CHECK_MS from the tap with nothing seen, the card gets I'm logged in. It ends with the login (any end); at
+   * HANDOFF_MS the hand-off ends as its timer would end it (expire), so a restart of Go never leaves one open.
+   * What it compares with is kept on the row, so the wait picks up after a restart where it was (sweep).
    */
-  async function waitForLogin(row: LoginRow, before: Promise<{ expiresAt: number | null } | null | undefined>, tappedAt: number): Promise<void> {
-    let last = await before;
+  async function waitForLogin(row: LoginRow): Promise<void> {
+    let fellBack = false;
     for (;;) {
       await sleep(LOGIN_POLL_MS);
       const now = await get(row.tripId);
-      const waited = d.now().getTime() - tappedAt;
-      if (now?.state !== 'logging_in' || now.attempt !== row.attempt || waited >= HANDOFF_MS) return;
+      if (now?.state !== 'logging_in' || now.attempt !== row.attempt || !now.oneTap) return;
+      const waited = d.now().getTime() - now.oneTap.tappedAt;
+      if (waited >= HANDOFF_MS) {
+        await expire(now);
+        return;
+      }
       const at = await loginCookie(row.tripId);
       if (at !== undefined) {
-        if (last !== undefined && at && (!last || at.expiresAt !== last.expiresAt)) {
+        const last = now.oneTap;
+        if (last.known && at && (!last.cookie || at.expiresAt !== last.cookie.expiresAt)) {
           await landed(now);
           return;
         }
-        last = at;
+        if (!last.known || JSON.stringify(at) !== JSON.stringify(last.cookie)) await keepCookie(now, at);
       }
-      if (waited >= SELF_CHECK_MS && selfCheck.get(row.tripId) === row.attempt) {
-        selfCheck.delete(row.tripId);
+      if (waited >= SELF_CHECK_MS && !fellBack) {
+        fellBack = true;
         await show(now);
       }
     }
+  }
+
+  /** The wait for a one-tap login, run once per trip in this process; it ends with the login. */
+  function watchLogin(row: LoginRow, before?: Promise<void>): void {
+    if (waiting.has(row.tripId)) return;
+    waiting.add(row.tripId);
+    track('sign-in wait', row.tripId, (async () => {
+      await before;
+      await waitForLogin(row);
+    })().finally(() => waiting.delete(row.tripId)));
   }
 
   /**
@@ -903,15 +958,21 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
             d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's Watch did not open; Watch comes on the card");
           }
         }
-        const tappedAt = d.now().getTime();
-        const before = watch ? loginCookie(row.tripId).catch(() => undefined) : null;
-        if (watch) selfCheck.set(row.tripId, next.attempt);
+        let shown = next;
+        if (watch) {
+          const oneTap: OneTap = { tappedAt: d.now().getTime(), known: false, cookie: null };
+          await d.pool.query("update ixigo_logins set one_tap = $3 where trip_id = $1 and attempt = $2 and state = 'logging_in'", [row.tripId, next.attempt, JSON.stringify(oneTap)]);
+          shown = { ...next, oneTap };
+        }
+        const before = watch ? loginCookie(row.tripId).then((at) => (at === undefined ? undefined : keepCookie(shown, at))).catch(() => undefined) : null;
         // The card first (opening, no Watch yet), then the page: whatever the hand-off finds is said after it, never under it.
-        track('hand-off', row.tripId, (async () => {
-          await show(next, 'opening');
-          await handOff(next, runner);
-          if (before) await waitForLogin(next, before, tappedAt);
-        })());
+        const page = (async () => {
+          await show(shown, 'opening');
+          await handOff(shown, runner);
+        })();
+        track('hand-off', row.tripId, page);
+        // The wait starts once the page is in front (a hand-off that ended the login ends it at once).
+        if (before) watchLogin(shown, Promise.all([page.catch(() => undefined), before]).then(() => undefined));
         return watch ? { result: 'open', url: watch.url, expires_at: watch.expires_at } : { result: 'done', toast: "Opening ixigo's log in on Go's screen" };
       }));
 
@@ -921,6 +982,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         if (row.state !== 'logging_in' || !d.screen()) return { result: 'refused', toast: "ixigo's log in isn't open on Go's screen now" };
         try {
           const s = await openWatch(row.tripId);
+          // A one-tap login with no wait running here (Go restarted since the tap) is watched again.
+          if (row.oneTap && d.runner()?.cookies) watchLogin(row);
           return { result: 'open', url: s.url, expires_at: s.expires_at };
         } catch (err) {
           d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's Watch did not open");
@@ -1100,6 +1163,18 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     },
 
     personGone,
+
+    async sweep() {
+      if (!d.live() || !d.runner()?.cookies) return;
+      const { rows } = await d.pool.query<{ trip_id: string }>("select trip_id from ixigo_logins where state = 'logging_in' and one_tap is not null");
+      for (const r of rows) {
+        if (waiting.has(r.trip_id)) continue;
+        const row = await get(r.trip_id);
+        if (row?.state !== 'logging_in' || !row.oneTap) continue;
+        if (d.now().getTime() - row.oneTap.tappedAt >= HANDOFF_MS) track('end', row.tripId, expire(row));
+        else watchLogin(row);
+      }
+    },
 
     async settled() {
       while (inFlight.size) await Promise.all([...inFlight]);

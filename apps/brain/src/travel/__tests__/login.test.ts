@@ -141,7 +141,7 @@ function world(o: {
   const wakes: DeskItem[] = [];
   const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { wakes.push({ id: item.id ?? '', ...item }); } };
   const said: object[] = [];
-  const login = createIxigoLogin({
+  const deps: Parameters<typeof createIxigoLogin>[0] = {
     pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, screen: () => screen, endScreen: () => endScreen, desk, live: () => o.live !== false, now: () => clock.now,
     ...(o.browser ? { browser: () => o.browser! } : {}),
     log: { warn: () => undefined, info: (obj) => said.push(obj) },
@@ -157,15 +157,25 @@ function world(o: {
         t.cancelled = true;
       };
     },
-  });
+  };
   const handlers = new Map<string, (tap: CardTapParams, card: C.Card) => Promise<CardTapResult>>();
-  login.registerTaps({ on: (kind, action, h) => handlers.set(`${kind}:${action}`, h) });
+  const wire = (l: ReturnType<typeof createIxigoLogin>) => {
+    l.registerTaps({ on: (kind, action, h) => handlers.set(`${kind}:${action}`, h) });
+    return l;
+  };
+  let login = wire(createIxigoLogin(deps));
+  /** Go restarted: a fresh login on the same database and Bash, remembering nothing; the taps are its now. */
+  const restart = () => (login = wire(createIxigoLogin(deps)));
   let tapN = 0;
-  const tap = async (action: string, personId: string): Promise<CardTapResult> => {
+  /** A tap that is not waited on (one made while a background wait is running): its work joins settled(). */
+  const fire = (action: string, personId: string): Promise<CardTapResult> => {
     tapN += 1;
+    return handlers.get(`notice:${action}`)!({ tap_id: `tap_${tapN}`, trip_id: tripId, card_id: 'c_login', action_id: action, person_id: personId }, {} as C.Card);
+  };
+  const tap = async (action: string, personId: string): Promise<CardTapResult> => {
     checking = action === 'ixigo_logged_in';
     try {
-      const out = await handlers.get(`notice:${action}`)!({ tap_id: `tap_${tapN}`, trip_id: tripId, card_id: 'c_login', action_id: action, person_id: personId }, {} as C.Card);
+      const out = await fire(action, personId);
       await login.settled();
       return out;
     } finally {
@@ -179,8 +189,11 @@ function world(o: {
   const parked = async (): Promise<unknown> =>
     (await db.pool.query<{ parked: unknown }>('select parked from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.parked ?? null;
   return {
-    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, ended, cookieReads, timers, tabStepCalls, wakes, login, tap, last, cards,
+    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, ended, cookieReads, timers, tabStepCalls, wakes, tap, fire, restart, last, cards,
     state, parked, greet, looks, hooks, said, setup: () => login.setupStep.run(tripId),
+    get login() {
+      return login;
+    },
   };
 }
 
@@ -1318,24 +1331,89 @@ describe('one tap: Watch opens with the log in, and Go sees the login land by it
   it(`with nothing seen for ${SELF_CHECK_MS / 1000} s the card gets I'm logged in; Not now ends every Watch it opened`, async () => {
     const w = world({ cookies: () => [] });
     await w.setup();
+    const at60 = SELF_CHECK_MS / LOGIN_POLL_MS;
     const seen: Record<number, string[]> = {};
     w.hooks.onSleep = (n) => {
       seen[n] = ids(w.last());
+      // While Go waits: Watch opened again from the card, then Not now.
+      if (n === at60 + 2) void w.fire('ixigo_watch', 'p_rahul');
+      if (n === at60 + 6) void w.fire('ixigo_not_now', 'p_rahul');
     };
     await w.tap('ixigo_login', 'p_rahul');
+    await w.login.settled();
     // Each look is one 2 s wait: up to 60 s from the tap the card has no I'm logged in, and the next look shows it.
-    const at60 = SELF_CHECK_MS / LOGIN_POLL_MS;
     expect(seen[at60]).toEqual(['ixigo_watch', 'ixigo_not_now']);
     expect(seen[at60 + 1]).toEqual(['ixigo_watch', 'ixigo_logged_in', 'ixigo_not_now']);
     expect(w.cards().filter((c) => ids(c).includes('ixigo_logged_in'))).toHaveLength(1);
-    // Go stops reading with the hand-off's own time.
-    expect(w.cookieReads.at(-1)!.at - w.cookieReads[0]!.at).toBeLessThan(HANDOFF_MS);
-    expect(await w.state()).toBe('logging_in');
-    // Watch opened again from the card, then Not now: both sessions end, so every view of the log in closes.
-    await w.tap('ixigo_watch', 'p_rahul');
-    await w.tap('ixigo_not_now', 'p_rahul');
+    // Not now: both Watch sessions end, so every view of the log in closes, and Go stops reading.
+    expect(await w.state()).toBe('skipped');
+    expect(w.sessions).toHaveLength(2);
     expect(w.ended).toEqual(['ses_1', 'ses_2']);
     expect(w.releases).toEqual([LOGIN_TAB]);
+    expect(w.looks.length).toBeLessThan(at60 + 10);
+  });
+
+  it(`a one-tap log in still open at ${HANDOFF_MS / 60_000} minutes ends as the hand-off's own time would end it`, async () => {
+    const w = world({ cookies: () => [] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(w.cookieReads.at(-1)!.at - w.cookieReads[0]!.at).toBeLessThan(HANDOFF_MS);
+    expect(await w.state()).toBe('asked');
+    expect(w.ended).toEqual(['ses_1']);
+    expect(w.last()).toMatchObject({ body: "ixigo's log in closed on Go's screen after 10 minutes. Tap Log in to ixigo to open it again." });
+  });
+
+  // The lead, 10 Oct: state survives a restart (level-triggered): the minute's sweep, or a Watch tap, picks the wait up.
+  it("a restart of Go mid-login loses nothing: the minute's sweep picks the wait up from the row and ends the same Watch", async () => {
+    const w = world({ cookies: (n) => (n < 3 ? [] : at(AT)), statuses: [200] });
+    await w.setup();
+    // The process goes away at its first look.
+    w.hooks.onSleep = (n) => {
+      if (n === 1) throw new Error('Go restarted');
+    };
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.state()).toBe('logging_in');
+    w.hooks.onSleep = undefined;
+    const after = w.restart();
+    await after.sweep();
+    await after.settled();
+    // The `at` kept from the tap (none) is what the next reads compare with: its coming is the login.
+    expect(await w.state()).toBe('logged_in');
+    expect(w.ended).toEqual(['ses_1']);
+    expect(w.releases).toEqual([LOGIN_TAB]);
+    // A second sweep finds nothing to do.
+    await after.sweep();
+    await after.settled();
+    expect(w.cookieReads).toHaveLength(4);
+  });
+
+  it('after a restart, Watch from the card picks the wait up too; a sweep after the hand-off time ends the log in', async () => {
+    const w = world({ cookies: (n) => (n < 2 ? [] : at(AT)), statuses: [200] });
+    await w.setup();
+    w.hooks.onSleep = (n) => {
+      if (n === 1) throw new Error('Go restarted');
+    };
+    await w.tap('ixigo_login', 'p_rahul');
+    w.hooks.onSleep = undefined;
+    w.restart();
+    expect(await w.tap('ixigo_watch', 'p_rahul')).toMatchObject({ result: 'open' });
+    expect(await w.state()).toBe('logged_in');
+    expect(w.ended).toEqual(['ses_1', 'ses_2']);
+
+    const late = world({ cookies: () => [] });
+    await late.setup();
+    late.hooks.onSleep = (n) => {
+      if (n === 1) throw new Error('Go restarted');
+    };
+    await late.tap('ixigo_login', 'p_rahul');
+    late.hooks.onSleep = undefined;
+    late.clock.now = new Date(late.clock.now.getTime() + HANDOFF_MS);
+    const after = late.restart();
+    await after.sweep();
+    await after.settled();
+    expect(await late.state()).toBe('asked');
+    expect(late.ended).toEqual(['ses_1']);
+    expect(late.cookieReads).toHaveLength(1);
   });
 
   it('a Bash without the cookie read keeps the two steps: Log in answers with a toast and Watch comes on the card', async () => {

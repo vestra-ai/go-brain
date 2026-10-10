@@ -14,7 +14,7 @@ import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { flightsEachTool } from './flights-each.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
-import { createIxigoLogin, ixigoLoginTool, renderLoginResume } from './login.js';
+import { createIxigoLogin, ixigoLoginTool, LOGIN_SWEEP_MS, renderLoginResume } from './login.js';
 import { createLoginKeepAlive } from './login-keepalive.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
@@ -104,6 +104,14 @@ export const registerTravel: RegisterLane = async (brain) => {
   keepAlive.start();
   brain.onStop(function stopLoginKeepAlive() {
     keepAlive.stop();
+  });
+  // One-tap logins, looked over every minute from their rows: a wait a restart of Go lost is picked up, one past its time ends.
+  const loginSweep = setInterval(() => {
+    login.sweep().catch((err: unknown) => brain.log.warn({ err }, 'travel: the one-tap login sweep failed'));
+  }, LOGIN_SWEEP_MS);
+  loginSweep.unref();
+  brain.onStop(function stopLoginSweep() {
+    clearInterval(loginSweep);
   });
   // Go's hello carries the login card and its line: one message to open a new trip, never two in a row.
   brain.context.addTurnCard((i) => login.helloCard(i));
