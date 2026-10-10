@@ -219,3 +219,31 @@ describe('trains.coach_position', () => {
     expect((await facts('trains.coach_position', { train: '10103' }, page(reversed))).rows[0]!['order_from_engine']).toEqual(MANDOVI);
   });
 });
+
+// A train's seat availability page as it was sent on 10 Oct 2026, logged out (the atlas harness's --save-body, scrubbed
+// in the box), trimmed to its title, canonical address and hidden inputs, the data cut to the train, its run, quota,
+// fares and its two months of seats.
+describe('trains.train_calendar', () => {
+  const PAGE = 'https://www.ixigo.com/trains/10103/seat-availability';
+  const page = () => [capture('/trains/10103/seat-availability$', PAGE, sample('trains.train_calendar.html'))];
+
+  it("says each day's seats, class by class, in date order, for the train's whole run", async () => {
+    const got = await facts('trains.train_calendar', { train: '10103' }, page());
+    expect(got.page).toBe(PAGE);
+    expect(got.runs[0]!.plan.capture).toEqual([{ match: '/trains/10103/seat-availability$', required: true, max_bytes: 1_000_000 }]);
+    expect(got.title).toBe('Train 10103 seats by day');
+    // 61 days on the page, at most 50 said.
+    expect(got.rows).toHaveLength(50);
+    expect(got.rows[0]).toEqual({ day: '10 Oct', run: 'CSMT to MAO', seats: ['1A: current booking, AVL 7', '2A: Train Departed', '3A: Train Departed', 'SL: Train Departed', '3E: Not Available'] });
+    // ixigo's chance is said for a waitlist when it gives one (p above 0), never for seats.
+    expect(got.rows[1]!['seats']).toEqual(['1A: WL 1', '2A: WL 7', '3A: RAC 29', 'SL: WL 51, 29% chance to confirm', '3E: WL 3']);
+    expect(got.rows[49]!['day']).toBe('28 Nov');
+  });
+
+  it('narrows to the class people asked about, from the day they could go', async () => {
+    const got = await facts('trains.train_calendar', { train: '10103', class: '3a', date: '2026-11-20' }, page());
+    expect(got.rows).toHaveLength(20);
+    expect(got.rows[0]).toEqual({ day: '20 Nov', run: 'CSMT to MAO', seats: ['3A: RAC 15'] });
+    expect(got.rows[19]).toEqual({ day: '9 Dec', run: 'CSMT to MAO', seats: ['3A: AVL 118'] });
+  });
+});
