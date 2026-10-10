@@ -160,8 +160,10 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       if (pick?.sure && pick.value === null) return undefined;
       // The trip's dates; before they are set, the ones the group agreed in its record ("6 to 9 Nov").
       const dates = pack.trip.dates ?? agreedDates(pack.trip.record, today);
+      // Jev sure of the kind, where Go searches ixigo.com itself: places as written, which ixigo's own box resolves (the
+      // engine's lookup, kept answers first), so an ask from any city starts early (10 Oct: "from Bangalore" never did).
       const ask = readTravelAsk(msg.text, {
-        today, destination: pack.trip.destination?.name ?? null, dates, ...(kind ? { kind } : {}),
+        today, destination: pack.trip.destination?.name ?? null, dates, ...(kind ? { kind, ...(web ? { asWritten: true } : {}) } : {}),
       });
       if (!ask) return undefined;
       // An ask missing a place or a date: the composer asks, as usual.

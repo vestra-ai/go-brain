@@ -63,6 +63,20 @@ describe('the early start', () => {
     expect(w.searches).toEqual([{ kind: 'stays', q: expect.objectContaining({ area: 'North Goa', mustHave: ['pool'] }), tripId: 't_goa' }]);
   });
 
+  it("starts a search from any city when Jev is sure of its kind: the places as written, for ixigo's box to resolve (10 Oct: Bangalore)", async () => {
+    const line = '@Go buses from Bangalore to Goa on Friday night, AC sleeper';
+    const buses: ReflexRead = { ...UNSURE_READ, recipe: { value: 'buses', sure: true } };
+    const w = world();
+    expect(await w.hook(msg(60, 'p_arjun', line), buses, goaPack())).toEqual({ dueNow: true });
+    expect(w.searches).toEqual([{ kind: 'buses', q: expect.objectContaining({ from: 'bangalore', to: 'goa', date: '2026-11-06' }), tripId: 't_goa' }]);
+    // Jev unsure: only the places the tables know, so nothing starts and the composer searches.
+    expect(await w.hook(msg(61, 'p_arjun', line), UNSURE_READ, goaPack())).toBeUndefined();
+    // Off ixigo.com, no box resolves a city as written: nothing starts.
+    const fake = world('fake');
+    expect(await fake.hook(msg(62, 'p_arjun', line), buses, goaPack())).toBeUndefined();
+    expect([w.searches.length, fake.searches.length]).toEqual([1, 0]);
+  });
+
   it('starts the search in every travel mode, so a search ask is one model call wherever the list comes from', async () => {
     for (const mode of ['fake', 'ixigo']) {
       const w = world(mode);
