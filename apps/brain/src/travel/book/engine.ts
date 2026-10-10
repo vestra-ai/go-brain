@@ -667,8 +667,11 @@ export function createEngine(d: EngineDeps) {
     if (!runner.onStage || required.length === 0 || !stageShowsResults(tripId, runner)) return null;
     try {
       // A card on the drawn results opens its page in a few seconds; past CLICK_MS the page opens by its address.
-      const steps = [{ op: 'click', text }, { op: 'wait_for', match: required[0]!.match }, ...(plan.steps ?? [])];
-      const got = await runner.onStage(tripId, { ...plan, steps, timeoutMs: Math.min(plan.timeoutMs ?? FETCH_TIMEOUT_MS, CLICK_MS) }, o);
+      const got = await runner.onStage(
+        tripId,
+        { ...plan, steps: [{ op: 'click', text }, { op: 'wait_for', match: required[0]!.match }, ...(plan.steps ?? [])], timeoutMs: Math.min(plan.timeoutMs ?? FETCH_TIMEOUT_MS, CLICK_MS) },
+        o,
+      );
       if (required.every((c) => got.captures.some((x) => x.match === c.match && x.status >= 200 && x.status < 300))) return got;
       d.log?.warn({ tripId, caught: got.captures.length }, "book: a click on the stage brought the page, not its calls; it opens by its address");
     } catch (err) {
