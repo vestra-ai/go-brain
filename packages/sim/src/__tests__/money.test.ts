@@ -129,6 +129,45 @@ describe('the spend check', () => {
   });
 });
 
+// Contract 1.2: a traveller's own ticket is never voted on. The FakeServer grants it when that person is in the trip, the
+// payer is that person, and the amount is what Go asked; it signs for_person_id in place of decision_id.
+describe("a traveller's own ticket", () => {
+  const ticketAsk = (for_person_id: string) => ({
+    request_id: 'rq_t', trip_id: 't_goa', kind: 'ticket', for_person_id, amount_minor: 753600, currency: 'INR', merchant: 'ixigo',
+    purpose: 'IndiGo 6E2150, Fri 6 Nov, for Meher',
+  }) as never;
+
+  it('is granted for a person in the trip with no vote, signed for them as its payer, and the vault can read it', () => {
+    const { s } = setUp();
+    const r = requestSpendApproval(s, ticketAsk('p_meher'), TEST_SPEND_PRIVATE_KEY_PEM).result;
+    if (r.status !== 'approved') throw new Error(`denied: ${r.reason}`);
+    const read = verifySpendApproval(r.approval, TEST_SPEND_PUBLIC_KEY_PEM, Math.floor(start / 1000) + 1);
+    if (!read.ok) throw new Error(read.reason);
+    expect(read.claims).toMatchObject({ for_person_id: 'p_meher', kind: 'ticket', payer_person_id: 'p_meher', amount_minor: 753600 });
+    expect(read.claims.decision_id ?? null).toBeNull();
+    expect(s.approvals.get(r.approval_id)).toMatchObject({ decision_id: null, for_person_id: 'p_meher', payer_person_id: 'p_meher' });
+  });
+
+  it('is denied for someone not in the trip', () => {
+    const { s } = setUp();
+    expect(requestSpendApproval(s, ticketAsk('p_stranger'), TEST_SPEND_PRIVATE_KEY_PEM).result).toMatchObject({ status: 'denied', reason: 'not_in_trip' });
+  });
+
+  it("books with no vote, paid by its traveller; never by another payer or as a vote's", () => {
+    const { s } = setUp();
+    const r = requestSpendApproval(s, ticketAsk('p_meher'), TEST_SPEND_PRIVATE_KEY_PEM).result;
+    if (r.status !== 'approved') throw new Error(`denied: ${r.reason}`);
+    const flight = (extra: Record<string, unknown>) => booking(undefined as never, r.approval_id, {
+      kind: 'flight', title: 'IndiGo 6E2150', amount_minor: 753600, payer_person_id: 'p_meher', for_person_ids: ['p_meher'], decision_id: undefined, ...extra,
+    });
+    expect(err(() => addBooking(s, flight({ payer_person_id: 'p_rahul' }))).code).toBe(409);
+    expect(err(() => addBooking(s, flight({ decision_id: closedVote(s) }))).code).toBe(409);
+    expect(s.approvals.get(r.approval_id)!.used).toBe(false);
+    addBooking(s, flight({}));
+    expect(s.approvals.get(r.approval_id)!.used).toBe(true);
+  });
+});
+
 describe('bookings', () => {
   it('records a paid booking, marks the approval used, and turns the decided line into the booked line', () => {
     const { s, id } = readyToPay();

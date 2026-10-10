@@ -25,9 +25,15 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
 
       for (const r of rows) {
         const amount = r.amount_minor !== null && r.currency ? money(r.amount_minor, r.currency) : '';
+        // A traveller's own ticket (contract 1.2) has no pay card: their ticket's own card opened the vault's page.
+        const ticket = r.kind === 'ticket';
         if (r.state === 'waiting') {
           const until = r.approval_expires_at ? `; the approval runs out at ${clock(r.approval_expires_at)}` : '';
-          lines.push(`- Waiting on ${r.payer_name} to approve ${amount} for ${r.label} on pay card ${r.card_id ?? ''}${until}.`);
+          lines.push(
+            ticket
+              ? `- Waiting on ${r.payer_name} to pay ${amount} for their own ticket, ${r.label}, on the vault page their Pay opened${until}.`
+              : `- Waiting on ${r.payer_name} to approve ${amount} for ${r.label} on pay card ${r.card_id ?? ''}${until}.`,
+          );
           continue;
         }
         if (r.state === 'confirming') {
@@ -39,10 +45,21 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
           continue;
         }
         if (r.created_at.getTime() < since) continue;
-        if (r.state === 'paid') lines.push(r.ticket_posted_at ? `- Paid and booked: ${r.label}, ${amount} by ${r.payer_name}.` : `- Paid: ${r.label}. The booking is being finished.`);
+        if (r.state === 'paid' && ticket) {
+          const test = r.payment_kind !== 'ixigo' ? ' A test payment: nothing was booked on ixigo.' : '';
+          lines.push(`- Paid: ${r.label}, ${amount} by ${r.payer_name}, their own ticket.${test}`);
+        } else if (r.state === 'paid') {
+          lines.push(r.ticket_posted_at ? `- Paid and booked: ${r.label}, ${amount} by ${r.payer_name}.` : `- Paid: ${r.label}. The booking is being finished.`);
+        }
         if (r.state === 'failed') lines.push(`- Didn't go through: ${r.label} (${failReasonWords(r.fail_reason)}). Nothing was charged.`);
         if (r.state === 'declined') lines.push(`- ${r.payer_name} declined paying for ${r.label}. Don't ask again unless someone asks.`);
-        if (r.state === 'expired') lines.push(`- The pay card for ${r.label} timed out. ${r.payer_name} can tap Start again on it.`);
+        if (r.state === 'expired') {
+          lines.push(
+            ticket
+              ? `- ${r.payer_name}'s payment page for ${r.label} timed out. Pay on their ticket's card starts a fresh one.`
+              : `- The pay card for ${r.label} timed out. ${r.payer_name} can tap Start again on it.`,
+          );
+        }
       }
 
       for (const dec of pack.trip.decisions) {

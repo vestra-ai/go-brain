@@ -214,8 +214,9 @@ export async function approvePayment(
   const used = await d.pool.query('select 1 from used_approvals where jti = $1', [c.jti]);
   if ((used.rowCount ?? 0) > 0) return refuse('used', who, { passkey: true, approval: false });
 
-  // 6. The payer the Server approved is the person who unlocked.
+  // 6. The payer the Server approved is the person who unlocked. A ticket (1.2) is its traveller's own: only they pay it.
   if (c.payer_person_id !== who) return refuse('not_the_payer', who, { passkey: true, approval: false });
+  if (c.for_person_id != null && c.for_person_id !== who) return refuse('not_the_payer', who, { passkey: true, approval: false });
 
   // 7. The charge is within the approval, in the same currency, while the hold still stands.
   if (pr.currency !== c.currency) return refuse('currency_mismatch', who, { passkey: true, approval: false });

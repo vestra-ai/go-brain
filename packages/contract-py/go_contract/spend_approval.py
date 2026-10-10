@@ -49,6 +49,20 @@ def _compact(value: Any) -> bytes:
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
+def spend_form_problem(claims: dict[str, Any]) -> str | None:
+    """Which payment the claims are for: a group's vote (decision_id), or 1.2's ticket (for_person_id, whose traveller
+    is the payer). None when they say exactly one; else what is wrong."""
+    vote = claims.get("decision_id") is not None
+    ticket = claims.get("for_person_id") is not None
+    if vote == ticket:
+        return "exactly one of decision_id and for_person_id"
+    if ticket and claims.get("payer_person_id") != claims.get("for_person_id"):
+        return "a ticket's payer is the person it is for"
+    if vote and claims.get("kind") is not None:
+        return "a group approval has no kind"
+    return None
+
+
 def _claims_problem(claims: dict[str, Any]) -> str | None:
     try:
         SpendApprovalClaims.model_validate(claims)
@@ -58,7 +72,7 @@ def _claims_problem(claims: dict[str, Any]) -> str | None:
         return "amount_minor must be more than zero"
     if not (claims["exp"] > claims["iat"] and claims["exp"] - claims["iat"] <= MAX_APPROVAL_TTL_SECONDS):
         return f"exp must be after iat and at most {MAX_APPROVAL_TTL_SECONDS} seconds later"
-    return None
+    return spend_form_problem(claims)
 
 
 def sign_spend_approval(claims: dict[str, Any], private_key_pem: str) -> str:

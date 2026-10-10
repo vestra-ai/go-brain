@@ -22,7 +22,9 @@ export type Params<S extends z.ZodType> = z.infer<S>;
 
 export interface Approval {
   approval_id: string;
-  decision_id: string;
+  /** The vote; null for 1.2's ticket, which names its traveller (for_person_id) instead. */
+  decision_id: string | null;
+  for_person_id: string | null;
   payer_person_id: string;
   amount_minor: number;
   currency: string;

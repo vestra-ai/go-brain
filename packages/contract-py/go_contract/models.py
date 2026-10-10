@@ -1481,15 +1481,33 @@ class AddExpenseResult(BaseModel):
     seq: Annotated[int, Field(gt=0)]
 
 
-class RequestSpendApproval(BaseModel):
+class RequestGroupSpendApproval(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
-    decision_id: Annotated[str, Field(max_length=64, min_length=1)]
     amount_minor: Annotated[int, Field(gt=0)]
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
     merchant: Annotated[str, Field(max_length=120, min_length=1)]
     purpose: Annotated[str, Field(max_length=200, min_length=1)]
     refundable_until: AwareDatetime | None = None
+    decision_id: Annotated[str, Field(max_length=64, min_length=1)]
+
+
+class RequestTicketSpendApproval(BaseModel):
+    request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    amount_minor: Annotated[int, Field(gt=0)]
+    currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]
+    merchant: Annotated[str, Field(max_length=120, min_length=1)]
+    purpose: Annotated[str, Field(max_length=200, min_length=1)]
+    refundable_until: AwareDatetime | None = None
+    kind: Literal["ticket"]
+    for_person_id: Annotated[str, Field(max_length=64, min_length=1)]
+
+
+class RequestSpendApproval(
+    RootModel[RequestTicketSpendApproval | RequestGroupSpendApproval]
+):
+    root: RequestTicketSpendApproval | RequestGroupSpendApproval
 
 
 class CancelSpendApproval(BaseModel):
@@ -1520,6 +1538,7 @@ class SpendDenied(BaseModel):
         "currency_mismatch",
         "not_refundable",
         "approval_outstanding",
+        "not_in_trip",
     ]
     detail: str | None = None
 
@@ -1749,14 +1768,16 @@ class SocketError(BaseModel):
 
 class SpendApprovalClaims(BaseModel):
     """
-    What the Server signs. exp is at most 600 seconds after iat.
+    What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.2's ticket approval carries for_person_id (and kind "ticket") instead, and its payer is that person.
     """
 
     iss: Literal["server"]
     aud: Literal["go-vault"]
     jti: Annotated[str, Field(max_length=64, min_length=8)]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]
-    decision_id: Annotated[str, Field(max_length=64, min_length=1)]
+    decision_id: str | None = None
+    for_person_id: str | None = None
+    kind: Literal["ticket"] | None = None
     payer_person_id: Annotated[str, Field(max_length=64, min_length=1)]
     amount_minor: Annotated[int, Field(gt=0)]
     currency: Annotated[str, Field(pattern="^[A-Z]{3}$")]

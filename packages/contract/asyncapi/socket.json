@@ -8866,7 +8866,7 @@
           "seq"
         ]
       },
-      "RequestSpendApproval": {
+      "RequestGroupSpendApproval": {
         "type": "object",
         "properties": {
           "request_id": {
@@ -8875,11 +8875,6 @@
             "maxLength": 64
           },
           "trip_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "decision_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -8913,16 +8908,95 @@
                 "type": "null"
               }
             ]
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
           }
         },
         "required": [
           "request_id",
           "trip_id",
-          "decision_id",
           "amount_minor",
           "currency",
           "merchant",
-          "purpose"
+          "purpose",
+          "decision_id"
+        ]
+      },
+      "RequestTicketSpendApproval": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "merchant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "refundable_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "ticket"
+          },
+          "for_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "amount_minor",
+          "currency",
+          "merchant",
+          "purpose",
+          "kind",
+          "for_person_id"
+        ]
+      },
+      "RequestSpendApproval": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RequestTicketSpendApproval"
+          },
+          {
+            "$ref": "#/components/schemas/RequestGroupSpendApproval"
+          }
         ]
       },
       "CancelSpendApproval": {
@@ -8972,7 +9046,8 @@
           "over_cap",
           "currency_mismatch",
           "not_refundable",
-          "approval_outstanding"
+          "approval_outstanding",
+          "not_in_trip"
         ]
       },
       "SpendApproved": {
@@ -9871,9 +9946,39 @@
             "maxLength": 64
           },
           "decision_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "for_person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "ticket"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "payer_person_id": {
             "type": "string",
@@ -9926,7 +10031,6 @@
           "aud",
           "jti",
           "trip_id",
-          "decision_id",
           "payer_person_id",
           "amount_minor",
           "currency",
@@ -9935,7 +10039,7 @@
           "iat",
           "exp"
         ],
-        "description": "What the Server signs. exp is at most 600 seconds after iat."
+        "description": "What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.2's ticket approval carries for_person_id (and kind \"ticket\") instead, and its payer is that person."
       }
     }
   }
