@@ -1,0 +1,90 @@
+id: flights.results
+title: Flights between two airports on a date, with their fares and times
+asks:
+  - flights from delhi to goa on friday
+  - cheapest non stop london to delhi on 20 oct
+  - kal subah mumbai se bangalore flight
+inputs:
+  from: { kind: place, lookup: flights.airport_lookup, about: 'the city or airport people fly from; abroad, with its airport code, like "London (LHR)"' }
+  to: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly to }
+  date: { kind: date }
+  # The members who live by another airport are not on this flight (Arjun, in Bangalore, is not on a flight from Delhi);
+  # one with no home, or a home Go has no airport for, may fly from here.
+  adults:
+    kind: count
+    min: 1
+    max: 9
+    value: |
+      ($n := $trip.people - $count($trip.homes[$known("flights.airport_lookup", $).code != $inputs.from.code]); $n > 0 ? $n : $trip.people)
+  depart_after: { kind: text, optional: true, about: 24-hour HH:MM }
+  depart_before: { kind: text, optional: true, about: 24-hour HH:MM }
+  arrive_before: { kind: text, optional: true, about: 24-hour HH:MM }
+  max_price: { kind: money, optional: true, about: "per person, in paise" }
+auth: none
+changes_state: false
+conditions:
+  non_stop: "'stops=0'"
+let:
+  # ixigo's departure and arrival windows, as the page's own filter shows them (p1-b's flights map).
+  windows: |
+    [{"name": "EARLY_MORNING", "from": "00:00", "to": "06:00"}, {"name": "MORNING", "from": "06:00", "to": "12:00"},
+     {"name": "AFTERNOON", "from": "12:00", "to": "18:00"}, {"name": "NIGHT", "from": "18:00", "to": "24:00"}]
+  take_off: |
+    (depart_after or depart_before) ? (
+      $a := depart_after ? depart_after : "00:00"; $b := depart_before ? depart_before : "24:00";
+      $join($windows[from < $b and to > $a].name, ",")
+    )
+  landing: |
+    arrive_before ? $join($windows[from < $$.arrive_before and to > "00:00"].name, ",")
+  # What people asked for, in ixigo's own params, and the cheapest first (the param ixigo's "Price / Low to High" writes).
+  params: |
+    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), "sort_type=cheapest"]), "&")
+# ixigo's results page; its own call, /flights/v2/search/stream, is a stream of server-sent events whose one data line holds
+# every fare (staging, 9 Oct: 145 for Delhi to Goa, 313 KB). Its inputs, conditions and page are flights.search's, the
+# link that stands in for this one when ixigo refuses our boxes' shared address (403 or 429 under a burst, 9 Oct).
+page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children=0&infants=0&class=e&source=Search%20Form&{$params|raw}
+capture:
+  - { match: /flights/v2/search/stream, max_bytes: 1000000 }
+read:
+  rows: { from: /flights/v2/search/stream, format: sse, list: data.flightJourneys.flightFare, unique: flightKeys }
+  also:
+    airports: { from: /flights/v2/search/stream, format: sse, value: data.airportDetails }
+# One flights page across every trip at most every 20 s, and none for 10 minutes after one ixigo refused: flights.search's
+# link answers in its place (recipes/backend.ts).
+pace: { gap_seconds: 20, quiet_minutes: 10 }
+answer:
+  as: options
+  kind: flight
+  # One option a flight, its first leg's airline and every leg's number ("IndiGo 6E328 + 6E5106" with a stop). The fare is
+  # ixigo's shown one, per person. The times are the first leg's departure and the whole journey's length.
+  each: |
+    (
+      $leg := flightDetails[0];
+      $numbers := $map($split(flightKeys, "*"), function($k) { $split($k, "-")[2] });
+      $fare := fares[0].fareDetails.displayFare;
+      $minutes := $leg.duration.time;
+      $departAt := $leg.departureTime ? $istAt($inputs.date, $leg.departureTime);
+      $place := function($code) { { "name": $lookup($airports, $code).city ? $lookup($airports, $code).city : $code, "code": $code } };
+      ($fare > 0 and $exists($departAt) and $minutes > 0) ? {
+        "title": $substring($leg.headerTextWeb & " " & $join($numbers, " + "), 0, 80),
+        "priceMinor": $paise($fare),
+        "currency": "INR",
+        "priceNote": "per person",
+        "journey": {
+          "mode": "flight",
+          "origin": $place($leg.origin),
+          "destination": $place(flightDetails[-1].destination),
+          "depart_at": $departAt,
+          "arrive_at": $istPlus($departAt, $minutes),
+          "carrier_name": $substring($leg.headerTextWeb, 0, 60),
+          "carrier_code": $substring($leg.airlineCode, 0, 3),
+          "number": $numbers[0],
+          "stops": $leg.stop
+        },
+        "highlights": $highlights($leg.stopText, $hoursMinutes($minutes), refundableType = "NON_REFUNDABLE" ? "Non-refundable"),
+        "facts": { "stops": $leg.stop, "duration_min": $minutes, "flights": $join($numbers, " + "), "refundable": refundableType },
+        "sourceUrl": $page
+      }
+    )
+measured: { fast_ms: null, page_ms: 4100, flow_ms: null }
+notes: The stream's fares are ixigo's shown ones; the fare a person pays is ixigo's at Book, Review and Traveller Details.

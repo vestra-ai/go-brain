@@ -47,6 +47,13 @@ export const OPTION_KIND: Record<TravelKind, OptionKind> = { flights: 'flight', 
 const Where = z.string().min(2).max(60);
 const Rupees = z.number().positive().max(10_000_000);
 const toPaise = (rupees: number): number => Math.round(rupees * 100);
+/** A time nobody in this ask said, taken from the trip (a member's own answer): said with the time, so it never reads as made up. */
+const Because = z
+  .string()
+  .min(3)
+  .max(80)
+  .optional()
+  .describe('Only when a time above comes from the trip, not from this ask: who it is for and why, in plain words, e.g. "Rahul can leave Friday after 6 pm".');
 
 export const FlightsArgs = z.object({
   from: Where.describe('City or airport code, e.g. "Delhi" or "DEL"; a city abroad with its airport code, e.g. "London (LHR)"'),
@@ -55,6 +62,7 @@ export const FlightsArgs = z.object({
   depart_after: Clock.optional().describe('24-hour HH:MM. Someone who can only leave after 6 pm is "18:00".'),
   depart_before: Clock.optional(),
   arrive_before: Clock.optional(),
+  because: Because,
   max_price_per_person: Rupees.optional().describe('In rupees'),
   non_stop: z.boolean().optional(),
   travellers: z.int().min(1).max(9).optional().describe('Only when the ask says how many fly ("for 3 of us"). Leave it out otherwise: Go counts who lives near the origin.'),
@@ -68,6 +76,7 @@ export const JourneyArgs = z.object({
   depart_after: Clock.optional().describe('24-hour HH:MM'),
   depart_before: Clock.optional(),
   arrive_before: Clock.optional(),
+  because: Because,
   max_price_per_person: Rupees.optional().describe('In rupees'),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
     .describe("Anything else the group asked for that no argument here covers, in their words (a class, AC, sleeper, an operator): you pick it from the results' details"),
@@ -95,6 +104,7 @@ export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
     ...(a.depart_after ? { departAfter: a.depart_after } : {}),
     ...(a.depart_before ? { departBefore: a.depart_before } : {}),
     ...(a.arrive_before ? { arriveBefore: a.arrive_before } : {}),
+    ...(a.because && (a.depart_after || a.depart_before || a.arrive_before) ? { because: a.because } : {}),
     ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
     ...(a.non_stop ? { mustHave: ['non_stop' as const] } : {}),
     ...(a.travellers ? { guests: a.travellers } : {}),
@@ -127,6 +137,7 @@ export function journeyQuery(a: z.infer<typeof JourneyArgs>): TravelQuery {
     ...(a.depart_after ? { departAfter: a.depart_after } : {}),
     ...(a.depart_before ? { departBefore: a.depart_before } : {}),
     ...(a.arrive_before ? { arriveBefore: a.arrive_before } : {}),
+    ...(a.because && (a.depart_after || a.depart_before || a.arrive_before) ? { because: a.because } : {}),
     ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
     ...(a.wants?.length ? { wants: a.wants } : {}),
   };
@@ -445,7 +456,11 @@ export function handOver(
       },
       async (err: unknown) => {
         const code = err instanceof TravelError ? err.code : 'failed';
-        await wake(`search:${o.tripId}:${o.fallbackId}:failed`, { source: 'travel_search', search: searchName(kind, q), count: 0, resultsId: null, summary: '', error: code });
+        // ixigo's own page instead of a list (flights held back or refused): the wake puts its link card up.
+        const link = err instanceof TravelError && err.code === 'link_only' && err.link ? linkOf(kind, q, err.link) : null;
+        await wake(`search:${o.tripId}:${o.fallbackId}:failed`, {
+          source: 'travel_search', search: searchName(kind, q), count: 0, resultsId: null, summary: '', error: code, ...(link ? { link } : {}),
+        });
       },
     )
     .catch((err: unknown) => d.log?.warn({ err, tripId: o.tripId, kind }, 'travel: a search that outlived its turn could not wake Go'));
@@ -471,17 +486,24 @@ export function flyingFor(url: string): string | null {
   return adults > 0 && city ? `for ${adults} from ${city}` : null;
 }
 
+/** A link card's title, who it is set for, and its line: the same in the search's own turn and in a late search's wake. */
+function linkOf(kind: TravelKind, q: TravelQuery, url: string): NonNullable<SearchWake['link']> {
+  const who = kind === 'flights' ? flyingFor(url) : null;
+  return { url, title: suggestTitle(kind, q), who, line: linkLine(kind, q, who) };
+}
+
 /**
  * ixigo won't show Go's computer these results: the card links the group to them on ixigo, with their conditions set
  * (the recipe's own link: ixigo's results page with what people asked for already on it).
  * Go books no flights, so the line it adds sends people to ixigo to book, and offers only to note their pick.
  */
 function linkAnswer(kind: TravelKind, q: TravelQuery, url: string, ctx: TurnCtx, plain = false): unknown {
-  const who = kind === 'flights' ? flyingFor(url) : null;
-  ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: suggestTitle(kind, q), url, who }));
+  const link = linkOf(kind, q, url);
+  const who = link.who;
+  ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: link.title, url, who }));
   // The turn's one plain ask: the card's line is built here too, and the turn ends on it.
   if (plain) {
-    ctx.lines.push(linkLine(kind, q, who));
+    ctx.lines.push(link.line);
     ctx.answered = true;
   }
   return {
