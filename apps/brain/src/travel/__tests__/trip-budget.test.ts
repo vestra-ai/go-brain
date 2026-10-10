@@ -126,9 +126,14 @@ describe('the decided budget, kept and read', () => {
   });
 });
 
-describe('set_budget: the group\'s word only', () => {
-  const msg = (id: string, personId: string, reactions: Array<{ person_id: string; emoji: string }> = []) => ({
-    message_id: id, author: { kind: 'person', person_id: personId }, reactions, deleted: false, text: 'x',
+describe('set_budget: the group\'s yes only', () => {
+  const msg = (id: string, personId: string, reactions: Array<{ person_id: string; emoji: string }> = [], text = 'x') => ({
+    message_id: id, author: { kind: 'person', person_id: personId }, reactions, deleted: false, text,
+  });
+  /** Go's offer to keep a figure as the trip's budget, with Yes and No under it. */
+  const offer = (id: string, reactions: Array<{ person_id: string; emoji: string }> = []) => ({
+    message_id: id, author: { kind: 'go' }, reactions, deleted: false, text: "Set ₹20,000 a head as the trip's budget?",
+    quick_replies: [{ label: 'Yes' }, { label: 'No' }],
   });
   let link = new FakeLink();
   /** A turn on the trip t_set (or another): the App holds `group` as its budget, or none. */
@@ -144,7 +149,7 @@ describe('set_budget: the group\'s word only', () => {
           people: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher'].map((person_id) => ({ person_id })),
           budget: { answered: 0, of: 4, ...(o.group ? { per_person_minor: o.group } : {}) },
         },
-        messages,
+        messages: (messages as object[]).map((m, i) => ({ seq: i + 1, ...m })),
       },
     }) as unknown as TurnCtx;
   const tool = () => budgetTool({ budgets, pool: db.pool, now: lb.clock.now, log: silentLog });
@@ -153,17 +158,40 @@ describe('set_budget: the group\'s word only', () => {
     link.failNext = { method: 'update_trip', error: new Error('422 invalid: unknown field budget_per_person_minor') };
   };
 
-  it("keeps the organizer's word, or two people's (a 👍 counts); one person's alone is their wish", async () => {
+  // The exam, 10 Oct: "@Go villa with a pool in North Goa for all 5 of us, 6 to 9 Nov, under 8k a head" (the organizer's)
+  // is a search, not the trip's budget. One person's figure, the organizer's too, is offered first.
+  it("one person's figure, the organizer's too, is offered, never kept: the offer's words come back", async () => {
     link = new FakeLink();
-    const one = await tool().run({ amount_rupees: 20_000, proof_message_ids: ['m_1'] }, ctxWith([msg('m_1', 'p_priya')]));
-    expect(one).toMatchObject({ refused: "one person's wish, not the group's" });
-    expect((one as { tell_the_room: string }).tell_the_room).toContain("Don't say it is set.");
+    const offerWords =
+      'Use it for what was asked. If you haven\'t offered it yet, offer it once in one short line, "Set ₹20,000 a head as the trip\'s budget?", ' +
+      "with Yes and No as offer_replies: it is kept on the organizer's yes or a second person's. " +
+      'Never offer a person\'s own limit ("I can only do 5k"), and don\'t ask again after a no. Don\'t say it is set.';
+    for (const who of ['p_priya', 'p_rahul']) {
+      const one = await tool().run({ amount_rupees: 20_000, proof_message_ids: ['m_1'] }, ctxWith([msg('m_1', who)]));
+      expect(one).toEqual({ refused: "one person's figure, not the group's yes", tell_the_room: offerWords });
+    }
+    // A figure for the whole group is offered per head.
+    const group = await tool().run({ amount_rupees: 80_000, per: 'group', proof_message_ids: ['m_1'] }, ctxWith([msg('m_1', 'p_rahul')]));
+    expect((group as { tell_the_room: string }).tell_the_room).toContain('"Set ₹20,000 a head as the trip\'s budget?"');
+    // The one who named it saying yes to Go's offer is still one person.
+    const own = await tool().run({ amount_rupees: 20_000, proof_message_ids: ['m_1', 'm_yes'] }, ctxWith([msg('m_1', 'p_priya'), offer('m_go'), msg('m_yes', 'p_priya', [], 'Yes')]));
+    expect(own).toMatchObject({ refused: "one person's figure, not the group's yes" });
+    // The organizer answering a question of Go's that offered no budget is no yes to one.
+    const where = { message_id: 'm_where', author: { kind: 'go' }, reactions: [], deleted: false, text: 'North or South Goa?' };
+    const other = await tool().run({ amount_rupees: 20_000, proof_message_ids: ['m_2'] }, ctxWith([where, msg('m_2', 'p_rahul', [], 'North, under 20k a head')]));
+    expect(other).toMatchObject({ refused: "one person's figure, not the group's yes" });
     expect(await budgets.get('t_set', NO_APP_BAND)).toBeNull();
     // Never one Go made up: nothing goes to the App, and no ✅.
     expect(link.requests).toEqual([]);
+  });
 
+  it("keeps it on the organizer's yes to Go's offer (said next, tapped later, or a 👍 on it), or two people's (a 👍 counts)", async () => {
+    link = new FakeLink();
     olderServer();
-    const organizer = await tool().run({ amount_rupees: 20_000, covers: 'whole_trip', proof_message_ids: ['m_2'] }, ctxWith([msg('m_2', 'p_rahul')]));
+    const organizer = await tool().run(
+      { amount_rupees: 20_000, covers: 'whole_trip', proof_message_ids: ['m_1', 'm_2'] },
+      ctxWith([msg('m_1', 'p_rahul', [], 'villa under 20k a head'), offer('m_go'), msg('m_2', 'p_rahul', [], 'yes')]),
+    );
     expect(organizer).toMatchObject({ saved: 'up to ₹20,000 per person for the whole trip', tell_the_room: "Say in one short line that it's the trip's budget now." });
     const two = await tool().run({ amount_rupees: 15_000, covers: 'stay', proof_message_ids: ['m_3'] }, ctxWith([msg('m_3', 'p_priya', [{ person_id: 'p_arjun', emoji: '👍' }])]));
     expect(two).toMatchObject({ saved: 'up to ₹15,000 per person for the stay' });
@@ -172,13 +200,24 @@ describe('set_budget: the group\'s word only', () => {
     expect(link.sent('update_trip').map((p) => p.budget_per_person_minor)).toEqual([2_000_000]);
     // A ✅ on the message that settled it, each time.
     expect(link.sent('add_reaction').map((p) => [p.message_id, p.emoji])).toEqual([['m_2', '✅'], ['m_3', '✅']]);
+
+    // A tap on the offer's Yes after someone else spoke, and the organizer's 👍 on the offer itself, are yeses too.
+    olderServer();
+    const tapped = await tool().run(
+      { amount_rupees: 20_000, proof_message_ids: ['m_4', 'm_5'] },
+      ctxWith([msg('m_4', 'p_rahul'), offer('m_go'), msg('m_x', 'p_priya', [], 'ooh'), msg('m_5', 'p_rahul', [], 'Yes')]),
+    );
+    expect(tapped).toMatchObject({ saved: 'up to ₹20,000 per person for the whole trip' });
+    olderServer();
+    const thumbs = await tool().run({ amount_rupees: 20_000, proof_message_ids: ['m_6', 'm_go'] }, ctxWith([msg('m_6', 'p_rahul'), offer('m_go', [{ person_id: 'p_rahul', emoji: '👍' }])]));
+    expect(thumbs).toMatchObject({ saved: 'up to ₹20,000 per person for the whole trip' });
   });
 
   // GO-TEAM-ASKS-REV4 B1: the App holds the trip's budget once its Server takes update_trip.budget_per_person_minor.
   it('sends a whole-trip budget to the App, which then holds it: Go keeps no copy, and a person clears it there', async () => {
     link = new FakeLink();
     await budgets.set('t_app', { perPersonMinor: 900_000, covers: 'stay', messageId: 'm_1' });
-    const saved = await tool().run({ amount_rupees: 80_000, per: 'group', proof_message_ids: ['m_8'] }, ctxWith([msg('m_8', 'p_rahul')], { tripId: 't_app' }));
+    const saved = await tool().run({ amount_rupees: 80_000, per: 'group', proof_message_ids: ['m_7', 'm_8'] }, ctxWith([msg('m_7', 'p_rahul'), offer('m_go'), msg('m_8', 'p_rahul', [], 'Yes')], { tripId: 't_app' }));
     expect(saved).toMatchObject({ saved: 'up to ₹20,000 per person for the whole trip' });
     expect(link.sent('update_trip')).toEqual([{ request_id: 'go_budget_turn_1', trip_id: 't_app', budget_per_person_minor: 2_000_000 }]);
     // The new budget replaces the stay's, and the App's is the one read from now on.
@@ -193,14 +232,14 @@ describe('set_budget: the group\'s word only', () => {
   it('a budget for the whole group is split per person; whole_trip by default; dropped on clear', async () => {
     link = new FakeLink();
     olderServer();
-    await tool().run({ amount_rupees: 80_000, per: 'group', proof_message_ids: ['m_4'] }, ctxWith([msg('m_4', 'p_rahul')]));
+    await tool().run({ amount_rupees: 80_000, per: 'group', proof_message_ids: ['m_4'] }, ctxWith([msg('m_4', 'p_rahul', [{ person_id: 'p_priya', emoji: '👍' }])]));
     expect(await budgets.get('t_set', NO_APP_BAND)).toMatchObject({ perPersonMinor: 2_000_000, covers: 'whole_trip' });
     expect(await tool().run({ clear: true, proof_message_ids: ['m_5'] }, ctxWith([msg('m_5', 'p_rahul')]))).toMatchObject({ cleared: true });
     expect(await budgets.get('t_set', NO_APP_BAND)).toBeNull();
     // Proof must hold a person's message in the trip.
     expect(await tool().run({ amount_rupees: 1_000, proof_message_ids: ['m_missing'] }, ctxWith([]))).toMatchObject({ tell_the_room: SAY_NOTHING });
     // Go's own estimate cited beside the organizer's yes is passed over, not a refusal (staging drill, 10 Oct).
-    const goMsg = { message_id: 'm_go', author: { kind: 'go' }, reactions: [], deleted: false, text: 'about 18k to 26k each' };
+    const goMsg = { message_id: 'm_go', author: { kind: 'go' }, reactions: [], deleted: false, text: "About 18k to 26k each. Want me to make it the trip's budget?" };
     olderServer();
     const withGo = await tool().run({ amount_rupees: 26_000, proof_message_ids: ['m_go', 'm_6'] }, ctxWith([goMsg, msg('m_6', 'p_rahul')]));
     expect(withGo).toMatchObject({ saved: 'up to ₹26,000 per person for the whole trip' });

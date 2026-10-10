@@ -144,6 +144,7 @@ The server checks these rules in this order. The first rule that fails gives the
 | The request's currency is the mandate's currency | `currency_mismatch` |
 | The amount is at most the mandate's cap | `over_cap` |
 | When the mandate is refundable only: `refundable_until` is given and still in the future | `not_refundable` |
+| No confirmed booking exists for this vote (contract 1.2): a second payment would charge twice | `already_booked` |
 | No other spend approval for this vote is still unused, not cancelled and unexpired | `approval_outstanding` |
 
 A denial is a normal result, not an error:
@@ -192,7 +193,54 @@ Each `SpendDenialReason` value means something different for the group, so Go ha
 | `currency_mismatch` | The price is in a different currency from the mandate. | Checks the offer again. If the merchant charges only in another currency, Go tells the group and asks before going on. |
 | `over_cap` | The price went above the cap. | Tells the group the new price and asks whether to raise the cap or pick another option. |
 | `not_refundable` | The group asked for refundable only, and this rate is not refundable or its free cancellation has ended. | Looks for a refundable rate. If there is none, it tells the group and asks. |
+| `already_booked` | The vote is booked already: a booking for it stands (contract 1.2). | Says it is booked already, and that to book it again someone cancels that booking first, such as "Villa Sol is booked already. To book it again, cancel that booking first." Never asks anyone to wait. |
 | `approval_outstanding` | An earlier spend approval for this vote is still waiting. | Points the payer at the pay card that is already waiting, and does not post a second one. |
+| `not_in_trip` | A ticket's traveller is not in the trip (contract 1.2). | Tells the room it can't take a payment for their ticket. Nothing was charged. |
+
+### A traveller's own ticket (contract 1.2)
+
+A flight, train or bus ticket belongs to its traveller, and the group never votes on it. So Go asks for it with no vote, naming the traveller instead (`kind: "ticket"`):
+
+<!-- schema: RequestSpendApproval -->
+```json
+{
+  "request_id": "rq_spend_ticket_meher_1",
+  "trip_id": "t_goa",
+  "kind": "ticket",
+  "for_person_id": "p_meher",
+  "amount_minor": 753600,
+  "currency": "INR",
+  "merchant": "ixigo",
+  "purpose": "IndiGo 6E 2134, Fri 6 Nov, for Meher"
+}
+```
+
+The server grants it when that person is in the trip. If they are not, it answers `denied` with `not_in_trip`. There is no vote, mandate or cap: the traveller pays for their own ticket and approves it with their own Face ID in the vault. The server signs the same claims as for a vote, with `for_person_id` and `kind: "ticket"` in place of `decision_id`. The payer is always that person, and the amount is what Go asked:
+
+<!-- schema: SpendApprovalClaims -->
+```json
+{
+  "iss": "server",
+  "aud": "go-vault",
+  "jti": "ap_01JA7T1CKT",
+  "trip_id": "t_goa",
+  "for_person_id": "p_meher",
+  "kind": "ticket",
+  "payer_person_id": "p_meher",
+  "amount_minor": 753600,
+  "currency": "INR",
+  "merchant": "ixigo",
+  "purpose": "IndiGo 6E 2134, Fri 6 Nov, for Meher",
+  "iat": 1791190800,
+  "exp": 1791191400
+}
+```
+
+Good to know:
+- A ticket request never has a `decision_id`, and claims carry exactly one of `decision_id` and `for_person_id`. The helpers refuse to sign or accept any other mix.
+- Go cannot name a different payer: the vault pays a ticket only when the person who unlocks it with Face ID is `for_person_id`.
+- Store the approval row with `for_person_id` where a vote's row has `decision_id`. A booking Go records with this `approval_id` has no `decision_id`, so check that the booking's payer is the approval's `for_person_id` instead of comparing votes.
+- The vault, the two keys and the rest of the flow are the same as for a vote.
 
 ## Signing the spend approval
 
@@ -200,7 +248,7 @@ When the spend check passes, the server makes an approval id, signs the claims w
 
 The server's handler for `request_spend_approval` does five things:
 
-1. Check the params against the contract, with `parseParams('request_spend_approval', params)` in TypeScript or `METHODS["request_spend_approval"].params.model_validate(params)` in Python. If they do not match, answer a `422 invalid` error. The `GoSocket` client in [The socket](02-the-socket.md) does this before it calls your handler.
+1. Check the params against the contract, with `parseParams('request_spend_approval', params)` in TypeScript or `METHODS["request_spend_approval"].params.model_validate(params)` in Python. If they do not match, answer a `422 invalid` error. The `GoSocket` client in [The socket](02-the-socket.md) does this before it calls your handler. A request with `kind: "ticket"` is a traveller's own ticket ([above](#a-travellers-own-ticket-contract-12)); every other request names a vote, as in the examples below. In Python the parsed request is the model's `.root`.
 2. If this trip already has an approval with this `request_id`, answer with that same approval again. A repeated request must never be denied as `approval_outstanding` because of its own first copy.
 3. Open a database transaction and lock the vote's row (`select ... for update`), so two requests for the same vote at the same moment cannot both pass the last rule.
 4. Run the spend check. If a rule fails, answer `denied` with its reason.
@@ -214,8 +262,8 @@ These are the claims the server signs:
 | `aud` | Always `"go-vault"` |
 | `jti` | The new approval id: unique, 8 to 64 characters |
 | `trip_id` | This trip |
-| `decision_id` | The vote |
-| `payer_person_id` | The mandate's payer, never anything from the request |
+| `decision_id` | The vote. A ticket has `for_person_id` and `kind: "ticket"` instead (contract 1.2) |
+| `payer_person_id` | The mandate's payer, never anything from the request. For a ticket, its `for_person_id` |
 | `amount_minor`, `currency`, `merchant`, `purpose`, `refundable_until` | From Go's request, once it passed the check |
 | `iat` | Now, in Unix seconds |
 | `exp` | At most `iat` + 600 (10 minutes) |
@@ -229,12 +277,13 @@ import {
   MAX_APPROVAL_TTL_SECONDS,
   signSpendApproval,
   type Decision,
-  type RequestSpendApproval,
+  type RequestGroupSpendApproval,
   type SpendApprovalResult,
   type SpendDenialReason,
 } from '@go/contract';
 
-type SpendRequest = z.infer<typeof RequestSpendApproval>;
+// A vote's request. A ticket's (kind: "ticket") has its own check: see "A traveller's own ticket".
+type SpendRequest = z.infer<typeof RequestGroupSpendApproval>;
 
 /** The spend check: the first rule that fails, or null when the payment may go ahead. */
 export function spendCheck(
@@ -322,7 +371,7 @@ SPEND_KEY = os.environ["GO_SPEND_PRIVATE_KEY"]
 
 def spend_check(
     decision: models.Decision | None,  # looked up by trip_id and decision_id, so another trip's vote is not found
-    req: models.RequestSpendApproval,
+    req: models.RequestGroupSpendApproval,  # a vote's request; a ticket (kind "ticket") has its own check
     has_outstanding: bool,  # another unused, uncancelled, unexpired approval exists for this vote
 ) -> str | None:
     """The spend check: the first rule that fails, or None when the payment may go ahead."""
@@ -348,7 +397,7 @@ def spend_check(
     return None
 
 
-def issue_approval(trip_id: str, decision: models.Decision, req: models.RequestSpendApproval) -> tuple[dict, dict]:
+def issue_approval(trip_id: str, decision: models.Decision, req: models.RequestGroupSpendApproval) -> tuple[dict, dict]:
     """Signs a spend approval for a request that passed the check. Store the row, then send the answer."""
     payer = decision.mandate.payer_person_id  # always the mandate's payer
     iat = int(time.time())

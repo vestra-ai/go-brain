@@ -165,6 +165,38 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     expect(waits).toEqual([20_500]);
   });
 
+  // The exam, 10 Oct (#23, #25): four cities' flights, one page a 20 s gap across every trip; three fell back to links in
+  // 2 to 21 ms. Each person's flights (trip.flights_each) wait their turn as often as it takes, so every city's come back.
+  it("waits its turn as often as it takes for each person's flights: four cities, four flights pages, each after the gap", async () => {
+    let nowMs = Date.parse('2026-10-08T12:00:00Z');
+    const opened: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string, _plan: FetchPlan) => {
+        opened.push(url);
+        const flights = /\/search\/result\/flight\?from=(DEL|BOM|BLR|PNQ)&to=GOI&date=06112026&/.test(url);
+        return { captures: flights ? [capture('/flights/v2/search/stream', 'https://www.ixigo.com/flights/v2/search/stream', fixture('flights-del-goi-2026-11-13.sse'))] : [], finalUrl: url };
+      },
+    };
+    const waits: number[] = [];
+    const engine = createEngine({
+      book, runner: () => runner, now: () => new Date(nowMs),
+      trip: async () => ({ people: 4, homes: ['Delhi', 'Mumbai', 'Bengaluru', 'Pune'], destination: 'Goa', start: '2026-11-06' }),
+      sleep: async (ms) => {
+        waits.push(ms);
+        nowMs += ms;
+      },
+    });
+    const got = await engine.answer('trip.flights_each', {}, { tripId: 't_goa', signal: new AbortController().signal, waitOutPace: true });
+    if (got.as !== 'compare') throw new Error(got.as);
+    expect(got.entries.map((e) => [e.entry, e.steps[0]!.answer?.as ?? e.steps[0]!.why])).toEqual([
+      ['Delhi', 'options'], ['Mumbai', 'options'], ['Bengaluru', 'options'], ['Pune', 'options'],
+    ]);
+    expect(opened.filter((u) => u.includes('/search/result/flight?'))).toHaveLength(4);
+    // Each wait is the pacer's own gap: a city that missed its turn to another waits again rather than giving up.
+    expect(waits.length).toBeGreaterThanOrEqual(1);
+    expect(waits.every((w) => w >= 20_000)).toBe(true);
+  });
+
   // The same run: three cities' bus pages at once from one address, while ixigo was asking for Cloudflare's check.
   it('opens at most two pages of one recipe at once, the rest waiting their turn', async () => {
     let open = 0;

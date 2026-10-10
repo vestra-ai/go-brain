@@ -22,7 +22,9 @@ export type Params<S extends z.ZodType> = z.infer<S>;
 
 export interface Approval {
   approval_id: string;
-  decision_id: string;
+  /** The vote; null for 1.2's ticket, which names its traveller (for_person_id) instead. */
+  decision_id: string | null;
+  for_person_id: string | null;
   payer_person_id: string;
   amount_minor: number;
   currency: string;
@@ -183,6 +185,8 @@ export class TripState {
 
   postMessage(p: Params<typeof C.PostMessage>, raw: Record<string, unknown>): Change<{ message_id: string; seq: number }> {
     this.people(p.mentions ?? [], 'mentions');
+    // 1.2: a message only these people see. Fixed when posted; replace_card keeps it.
+    this.people(p.visible_to_person_ids ?? [], 'visible_to_person_ids');
     if (p.reply_to != null) this.messageIn(p.reply_to, 'reply_to');
     const card = p.card ?? undefined;
     if (card) {
@@ -206,6 +210,7 @@ export class TripState {
       reactions: [],
       // The card exactly as Go sent it, so a field this copy of the contract does not know still reaches the room.
       ...(raw.card != null ? { card: raw.card as Card } : {}),
+      ...(p.visible_to_person_ids != null ? { visible_to_person_ids: [...p.visible_to_person_ids] } : {}),
       withheld: false,
       deleted: false,
       sent_at: this.now().toISOString(),

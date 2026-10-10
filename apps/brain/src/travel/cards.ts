@@ -257,8 +257,14 @@ const KIND_WORDS: Record<OptionKind, [string, string]> = {
 };
 
 /** The options card, checked against the contract: a bug here throws instead of posting a card the App cannot draw. */
-/** seeAll: the card's last button opens the whole list on ixigo.com instead of each option's page (stays, three shown). */
-export function buildOptionsCard(i: { cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean }): OptionsCardT {
+/**
+ * seeAll: the card's last button opens the whole list on ixigo.com instead of each option's page (stays, three shown).
+ * forPersonIds: a card for those people alone (each person's own flights, flights-each.ts): the room sees it, and only
+ * they act on it, each tap their own.
+ */
+export function buildOptionsCard(i: {
+  cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean; forPersonIds?: string[];
+}): OptionsCardT {
   const priced = i.picks.filter((p) => p.option.priceMinor !== undefined);
   const cheapest = [...priced].sort((a, b) => (a.option.priceMinor ?? 0) - (b.option.priceMinor ?? 0))[0];
   const from = cheapest ? `, from ${formatInr(cheapest.option.priceMinor ?? 0)}${cheapest.option.priceNote ? ` ${cheapest.option.priceNote}` : ''}` : '';
@@ -271,7 +277,8 @@ export function buildOptionsCard(i: { cardId: string; title: string; optionKind:
     option_kind: i.optionKind,
     checked_at: i.checkedAt,
     options: i.picks.map(cardOption),
-    actions: optionsActions(i),
+    actions: i.forPersonIds ? optionsActions(i).map((a) => ({ ...a, only_for_person_ids: i.forPersonIds })) : optionsActions(i),
+    ...(i.forPersonIds ? { for_person_ids: i.forPersonIds } : {}),
   });
 }
 

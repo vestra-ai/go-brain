@@ -14,6 +14,9 @@ import type { PacksImpl, TripPack } from './pack.js';
 import { screenEvent } from './screen.js';
 import type { SetupImpl } from './setup.js';
 
+/** send_event answers within 2 s (the contract); an answer slower than this is logged, with the event's type. */
+export const SLOW_ANSWER_MS = 1_000;
+
 export interface IntakeDeps {
   pool: pg.Pool;
   log: Log;
@@ -192,19 +195,16 @@ export function createIntake(d: IntakeDeps) {
   }
 
   const sendEvent: ToGoHandler<'send_event'> = async (raw, meta) => {
+    const started = Date.now();
     // People's text is screened before it is written anywhere: from here on, every copy holds the masked text.
     const ev = screenEvent(raw);
-    const r = await d.tripLog.append(ev);
-    // The Server instance (and the Server's own name, if it gives one) that brought the trip, the first time: half of the
-    // key of the person's browser (tasks/browsers.ts).
-    if (r === 'new') {
-      await d.pool.query(
-        'update trips set server_instance = $2, server_name = $3 where trip_id = $1 and server_instance is null',
-        [ev.trip_id, meta.instance, meta.server ?? null],
-      );
-    }
+    // The one write before the answer: the event, with the Server instance (and the Server's own name) that brought the
+    // trip the first time, half of the key of the person's browser (tasks/browsers.ts).
+    const r = await d.tripLog.append(ev, { instance: meta.instance, server: meta.server ?? null });
     // Answered as soon as the event is written; the work happens after, in seq order per trip.
     if (r === 'new') void enqueue(ev.trip_id, () => processEvent(ev));
+    const ms = Date.now() - started;
+    if (ms > SLOW_ANSWER_MS) d.log.warn({ trip: ev.trip_id, type: ev.type, ms }, 'send_event was slow to answer: the event write waited');
     return { accepted: true, duplicate: r === 'duplicate' };
   };
 

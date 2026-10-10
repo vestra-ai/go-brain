@@ -7,10 +7,15 @@ export type PaymentState = 'asking' | 'waiting' | 'confirming' | 'paid' | 'decli
 export type ReleaseReason = 'payment_failed' | 'payer_declined' | 'price_changed' | 'expired' | 'other';
 type Db = pg.Pool | pg.PoolClient;
 
+/** 'ticket': a traveller's own ticket (contract 1.2), paid with no vote; its traveller is the payer. */
+export type AskKind = 'group' | 'ticket';
+
 export interface PaymentRow {
   payment_id: string;
   trip_id: string;
-  decision_id: string;
+  kind: AskKind;
+  /** The vote; null for a ticket. */
+  decision_id: string | null;
   option_ref: string;
   purpose: string;
   label: string;
@@ -55,7 +60,9 @@ export interface PaymentRow {
 export interface NewPayment {
   payment_id: string;
   trip_id: string;
-  decision_id: string;
+  /** Absent: 'group'. */
+  kind?: AskKind;
+  decision_id: string | null;
   option_ref: string;
   purpose: string;
   label: string;
@@ -97,12 +104,12 @@ export async function insertAsking(db: Db, p: NewPayment, now: Date): Promise<'o
   try {
     await db.query(
       `insert into payments (payment_id, trip_id, decision_id, option_ref, purpose, label, payer_person_id, payer_name, for_person_ids, state,
-         hold_id, amount_minor, currency, merchant, payment_kind, hold_expires_at, refundable_until, rooms, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'asking', $10, $11, $12, $13, $14, $15, $16, $18, $17, $17)`,
+         hold_id, amount_minor, currency, merchant, payment_kind, hold_expires_at, refundable_until, rooms, kind, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'asking', $10, $11, $12, $13, $14, $15, $16, $18, $19, $17, $17)`,
       [
         p.payment_id, p.trip_id, p.decision_id, p.option_ref, p.purpose, p.label, p.payer_person_id, p.payer_name, p.for_person_ids,
         p.hold_id, p.amount_minor, p.currency, p.merchant, p.payment_kind, p.hold_expires_at, p.refundable_until, now,
-        p.rooms ? JSON.stringify(p.rooms) : null,
+        p.rooms ? JSON.stringify(p.rooms) : null, p.kind ?? 'group',
       ],
     );
     return 'ok';
@@ -135,6 +142,9 @@ async function one(db: Db, where: string, values: unknown[]): Promise<PaymentRow
 export const getPayment = (db: Db, id: string) => one(db, 'payment_id = $1', [id]);
 export const byApproval = (db: Db, tripId: string, approvalId: string) => one(db, 'trip_id = $1 and approval_id = $2', [tripId, approvalId]);
 export const byCard = (db: Db, tripId: string, cardId: string) => one(db, 'trip_id = $1 and card_id = $2', [tripId, cardId]);
+/** The open ask for a traveller's ticket, by what it pays for (its key, kept as option_ref). */
+export const openTicket = (db: Db, tripId: string, key: string) =>
+  one(db, "trip_id = $1 and kind = 'ticket' and option_ref = $2 and state in ('asking', 'waiting', 'confirming')", [tripId, key]);
 export const openForDecision = (db: Db, tripId: string, decisionId: string) =>
   one(db, "trip_id = $1 and decision_id = $2 and state in ('asking', 'waiting', 'confirming')", [tripId, decisionId]);
 export const paidForDecision = (db: Db, tripId: string, decisionId: string) =>
@@ -180,11 +190,14 @@ export async function unsettled(db: Db, now: Date, limit = 50): Promise<string[]
   return r.rows.map((x) => x.payment_id);
 }
 
-/** Paid payments, and those of them not booked yet: money moved, the room does not show it. Rows paid in the last 2 minutes are still being finished. */
+/**
+ * Paid payments, and those of them not booked yet: money moved, the room does not show it. Rows paid in the last 2 minutes
+ * are still being finished. A ticket is booked by its own flow (the flight booking that asked for it), not here.
+ */
 export async function paidButNotBooked(db: Db, before: Date): Promise<{ missing: number; paid: number }> {
   const r = await db.query<{ missing: number; paid: number }>(
     `select count(*) filter (where booking_id is null and updated_at < $1)::int as missing, count(*)::int as paid
-     from payments where state = 'paid'`,
+     from payments where state = 'paid' and kind = 'group'`,
     [new Date(before.getTime() - 120_000)],
   );
   return r.rows[0] ?? { missing: 0, paid: 0 };

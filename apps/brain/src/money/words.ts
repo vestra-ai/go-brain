@@ -91,6 +91,11 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
       return yes(`I can't find free cancellation on ${c.what} now. Want me to look for a refundable rate?`);
     case 'approval_outstanding':
       return yes(`${c.payer}, the payment for ${c.what} is already waiting on the card above.`);
+    case 'already_booked':
+      // Never "wait": nothing is pending. A second payment would charge twice.
+      return yes(`${c.what} is booked already. To book it again, cancel that booking first.`);
+    case 'not_in_trip':
+      return yes(`${c.payer} isn't in this trip any more, so I can't take a payment for their ticket. Nothing was charged.`);
     case 'wrong_offer':
       return yes(`That isn't what the group voted for. I can only pay for ${c.what}.`);
     case 'not_bookable':
@@ -145,6 +150,12 @@ export function bookedLine(o: { title: string; simulated?: boolean }): string {
   // A booking on Go's test rail only (a stay from ixigo.com) says so: nothing was booked on ixigo, nothing real was paid.
   if (o.simulated) return `Booked (simulated): ${o.title}. A test payment only; nothing was booked on ixigo.`;
   return `Booked ${o.title}!`;
+}
+
+/** A traveller's own ticket, paid through the vault (contract 1.2). On Go's test rails nothing real was paid or booked. */
+export function ticketPaidLine(o: { what: string; payer: string; amount: string; simulated: boolean }): string {
+  if (o.simulated) return `Paid (simulated): ${o.what}. ${o.payer}'s test payment of ${o.amount}; nothing was booked on ixigo.`;
+  return `${o.payer} paid ${o.amount} for ${o.what}.`;
 }
 
 export function failedLine(o: { payer: string; what: string; reason: string | null }): string {

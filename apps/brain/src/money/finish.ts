@@ -18,7 +18,7 @@ import {
   type PaymentState,
   type ReleaseReason,
 } from './store.js';
-import { bookedLine, categoryFor, clip, declinedLine, failedLine } from './words.js';
+import { bookedLine, categoryFor, clip, declinedLine, failedLine, money, ticketPaidLine } from './words.js';
 
 export type VaultFailReason = 'card_declined' | 'needs_authentication' | 'rail_error' | 'rail_not_ready';
 
@@ -94,6 +94,7 @@ export async function reconcile(d: MoneyDeps, paymentId: string): Promise<void> 
 }
 
 async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
+  if (row.kind === 'ticket') return finishTicketPaid(d, row);
   const approvalId = row.approval_id;
   if (!approvalId || !row.hold_id || !row.rail_ref || row.amount_minor === null || !row.currency) {
     throw new Error('a paid payment is missing its approval, hold or rail reference');
@@ -197,6 +198,20 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
     });
     await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
   }
+}
+
+/**
+ * A traveller's ticket, paid: one line in Go's voice, naming the traveller. Its booking is its own flow's (the flight
+ * booking that asked for it hears onPaid); on Go's test rails nothing real was paid, and the line says so.
+ */
+async function finishTicketPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
+  if (row.ticket_posted_at) return;
+  if (!row.approval_id || row.amount_minor === null || !row.currency) throw new Error('a paid ticket is missing its approval or amount');
+  const text = ticketPaidLine({
+    what: row.label, payer: row.payer_name, amount: money(row.amount_minor, row.currency), simulated: row.payment_kind !== 'ixigo',
+  });
+  await postLine(d, row.trip_id, text, rid('go_paid', row.approval_id, 'ticket'), payerOf(row));
+  await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
 }
 
 /**
