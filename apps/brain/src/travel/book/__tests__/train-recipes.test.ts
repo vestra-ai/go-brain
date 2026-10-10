@@ -58,6 +58,23 @@ describe('trains.confirm_chance', () => {
       classes: ['CC: WL 7, 93% chance to confirm, ixigo says Confirm, Alternate Travel Plan refund up to 3x'],
     }]);
   });
+
+  // The day Tatkal booking opens, ixigo fills each train's Tatkal seats beside the general ones (empty on other days, as in
+  // the sample of 7 Oct): said as a list of their own, never as a general class line a watch could take for a seat.
+  it('says Tatkal apart when ixigo has it, and nothing about Tatkal when it has none', async () => {
+    const page = JSON.parse(sample('trains.between.page.json')) as { data: { trainList: Array<Record<string, unknown>> } };
+    const lalbagh = page.data.trainList.find((t) => t && t['trainNumber'] === '12608')!;
+    lalbagh['availabilityCacheTatkal'] = {
+      CC: { availability: 'AVAILABLE-0012', availabilityDisplayName: 'AVL 12', fare: '735' },
+      '2S': { availability: 'TQWL3/WL3', availabilityDisplayName: 'WL 3', predictionPercentage: 41, prediction: '41% Chance', confirmTktStatus: 'Probable' },
+    };
+    const tatkalDay = () => [capture(SEARCH, SEARCH_URL, JSON.stringify(page))];
+    const got = await facts('trains.confirm_chance', { ...ROUTE, train: '12608' }, tatkalDay());
+    expect(got.rows[0]!['classes']).toContain('CC: WL 7, 93% chance to confirm, ixigo says Confirm, Alternate Travel Plan refund up to 3x');
+    expect(got.rows[0]!['tatkal']).toEqual(['CC: AVL 12', '2S: WL 3, 41% chance to confirm, ixigo says Probable']);
+    expect((await facts('trains.confirm_chance', { ...ROUTE, train: '12608', class: '2S' }, tatkalDay())).rows[0]!['tatkal']).toEqual(['2S: WL 3, 41% chance to confirm, ixigo says Probable']);
+    expect((await facts('trains.confirm_chance', { ...ROUTE, train: '12608' }, search())).rows[0]).not.toHaveProperty('tatkal');
+  });
 });
 
 describe('trains.alternates', () => {

@@ -118,6 +118,10 @@ answer:
   kind: flight
   # One option a flight, its first leg's airline and every leg's number ("IndiGo 6E328 + 6E5106" with a stop). The fare is
   # ixigo's shown one, per person. The times are the first leg's departure and the whole journey's length.
+  # What ixigo's card and filters say, from the same row (the ixigo atlas, 10 Oct): the fare's bags (a handbag-only fare,
+  # and what the same flight costs with a check-in bag), seats left, a free meal, each change of plane, the code's saving
+  # the card shows ("Extra ₹740 Off"; the stream's text comes mis-decoded, so only its amount is read), and Lock Price:
+  # its fee a person, how long it holds the fare, and the most ixigo covers if the fare rises, from the fare's own fields.
   each: |
     (
       $leg := flightDetails[0];
@@ -127,6 +131,19 @@ answer:
       $stops := $num($leg.stop);
       $departAt := $leg.departureTime ? $istAt($inputs.date, $leg.departureTime);
       $place := function($code) { { "name": $lookup($airports, $code).city ? $lookup($airports, $code).city : $code, "code": $code } };
+      $f := fares[0];
+      $meta := $f.fareMetadata[0];
+      $bags := $meta.baggageDetails;
+      $handbag := $f.fareType = "HAND_BAGGAGE_ONLY" or $meta.handBaggageOnly = true;
+      $withBag := $handbag ? $min(fares[fareType != "HAND_BAGGAGE_ONLY"].fareDetails.displayFare);
+      $seats := $num($meta.seatRemaining);
+      $off := $type($f.offerText) = "string" ? $groups($f.offerText, "([0-9][0-9,]*)\\s*Off", "i");
+      $offAmount := $off ? $number($replace($off[0], ",", ""));
+      $lock := $num($f.priceLockPremium);
+      $hold := $num($f.lockWindow);
+      $cover := $num($f.priceLockMaxAbsorption);
+      $lockOptions := $f.allPriceLockPremiums[$num(amount) > 0 and $num(expiry) > 0];
+      $layovers := flightDetails.layover[$type(location) = "string" and $num(durationInMinutes) > 0];
       ($fare > 0 and $exists($departAt) and $minutes > 0) ? {
         "title": $substring($leg.headerTextWeb & " " & $join($numbers, " + "), 0, 80),
         "priceMinor": $paise($fare),
@@ -143,8 +160,29 @@ answer:
           "number": $numbers[0],
           "stops": $stops
         },
-        "highlights": $highlights($leg.stopText, $hoursMinutes($minutes), refundableType = "NON_REFUNDABLE" ? "Non-refundable"),
-        "facts": { "stops": $stops, "duration_min": $minutes, "flights": $join($numbers, " + "), "refundable": refundableType },
+        "highlights": $highlights(
+          $leg.stopText, $hoursMinutes($minutes),
+          ($seats > 0 and $seats <= 5) ? $string($seats) & " seat" & ($seats = 1 ? "" : "s") & " left",
+          $handbag ? "Cabin bag only",
+          refundableType = "NON_REFUNDABLE" ? "Non-refundable"
+        ),
+        "facts": {
+          "stops": $stops, "duration_min": $minutes, "flights": $join($numbers, " + "), "refundable": refundableType,
+          "fare_type": $f.fareDisplayText,
+          "cabin_bag": $bags.handBaggageText ? $bags.handBaggageText : $bags.handBaggage,
+          "checkin_bag": $handbag ? "none" : ($bags.checkInBaggageText ? $bags.checkInBaggageText : $bags.checkInBaggage),
+          "with_checkin_bag_minor": $withBag > 0 ? $paise($withBag),
+          "seats_left": $seats > 0 ? $seats,
+          "free_meal": isFreeMealAvailable = true ? true,
+          "layover": $count($layovers) > 0 ? $join($layovers.(location & " " & $hoursMinutes($num(durationInMinutes))), ", "),
+          "offer": $offAmount > 0 ? "Extra " & $rupees($offAmount) & " off with a code",
+          "offer_minor": $offAmount > 0 ? $paise($offAmount),
+          "lock": ($lock > 0 and $hold > 0) ? "Lock Price " & $rupees($lock) & " a person, holds " & $string($hold) & " h",
+          "lock_fee_minor": $lock > 0 ? $paise($lock),
+          "lock_hours": ($lock > 0 and $hold > 0) ? $hold,
+          "lock_cover_minor": ($lock > 0 and $cover > 0) ? $paise($cover),
+          "lock_options": $count($lockOptions) > 0 ? $join($lockOptions.($rupees($num(amount)) & " for " & $string($num(expiry)) & " h"), ", ")
+        },
         "sourceUrl": $page
       }
     )

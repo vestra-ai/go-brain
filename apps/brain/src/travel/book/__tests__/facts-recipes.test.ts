@@ -90,11 +90,13 @@ describe("a stay's own page", () => {
     const got = await facts('hotels.details', { hotel: HIGH_FIVE }, [
       capture('/accommodation-search/api/v1/accommodations/details$', `${HOTEL_API}/accommodations/details`, sample('hotels.details.json')),
       capture('/accommodation-search/api/v1/maps/location$', `${HOTEL_API}/maps/location`, sample('hotels.details.map.json')),
+      capture('/rooms$', `${HOTEL_API}/accommodations/details/4395492/rooms`, sample('hotels.rooms.pay-at-hotel.json')),
     ]);
     expect(got.page).toBe(HIGH_FIVE);
     expect(got.runs[0]!.plan.capture).toEqual([
       { match: '/accommodation-search/api/v1/accommodations/details$', required: true },
       { match: '/accommodation-search/api/v1/maps/location$', required: false },
+      { match: '/accommodations/details/4395492/rooms$', required: false },
     ]);
     expect(got.title).toBe('High Five Hotels Phase 2');
     expect(got.rows).toHaveLength(1);
@@ -110,6 +112,21 @@ describe("a stay's own page", () => {
     expect((stay['nearby'] as string[]).slice(0, 2)).toEqual(['Shubadra, 0.1 km', 'Sub Centre, assagao, 0.7 km']);
     expect(stay['map']).toMatch(/^https:\/\/images\.ixigo\.com\/hotels\/images\/mapImages\/location_map_2701789_H_/);
     expect((stay['photos'] as string[])[1]).toMatch(/^Swimming pool: https:\/\/q-xx\.bstatic\.com\//);
+    // The 10 Oct atlas: the list's cards have no free cancellation date; the page's own rooms call has it, for the rate
+    // ixigo recommends.
+    expect(stay).toMatchObject({
+      cancellation: 'Free Cancellation till 05 Nov 11:59 PM (Room With Free Cancellation)',
+      free_cancellation_until: '2026-11-05T23:59:00',
+    });
+  });
+
+  it("hotels.details answers without the cancellation when the page's rooms call hasn't come", async () => {
+    const got = await facts('hotels.details', { hotel: HIGH_FIVE }, [
+      capture('/accommodation-search/api/v1/accommodations/details$', `${HOTEL_API}/accommodations/details`, sample('hotels.details.json')),
+    ]);
+    expect(got.rows[0]).toMatchObject({ name: 'High Five Hotels Phase 2' });
+    expect(got.rows[0]).not.toHaveProperty('cancellation');
+    expect(got.rows[0]).not.toHaveProperty('free_cancellation_until');
   });
 
   it('hotels.rooms answers each rate a night with its taxes, cancellation, meals and how it is paid, read from the call for that stay only', async () => {

@@ -91,3 +91,35 @@ describe('trains.platform_locator', () => {
     expect(got.rows[0]!['platforms']).toEqual(['JOB - Asalpur Jobner: platform 3, arrives 14:37, departs 14:39, day 1']);
   });
 });
+
+// ixigo's Tatkal page as it was sent on 10 Oct 2026, logged out, trimmed to its title, canonical address, its WebPage and
+// FAQPage ld+json and its tables.
+describe('trains.tatkal', () => {
+  it("reads when Tatkal opens for each class, each class's charge, Tatkal beside Premium Tatkal, and the page's questions", async () => {
+    const PAGE = 'https://www.ixigo.com/trains/tatkal-railway-reservation';
+    const got = await facts('trains.tatkal', {}, [capture('/trains/tatkal-railway-reservation$', PAGE, sample('trains.tatkal.html'))]);
+    expect(got.page).toBe(PAGE);
+    expect(got.runs[0]!.plan.capture).toEqual([{ match: '/trains/tatkal-railway-reservation$', required: true, max_bytes: 1_000_000 }]);
+    expect(got.title).toBe('Tatkal');
+    const tatkal = got.rows[0]!;
+    expect(tatkal['opens']).toEqual([
+      'AC 1 Tier (1A), AC 2 Tier (2A), AC 3 Tier (3A), Chair Car Coach(CC), Executive Chair (EC), AC-3 Economy (3E): 10:00 to 10:30 AM',
+      'Sleeper (SL), First Class (FC), Second Seating (2S): 11:00 to 11:30 AM',
+    ]);
+    expect(tatkal['charges']).toEqual([
+      'Reserve Second sitting (2S): ₹10 to ₹15', 'Sleeper: ₹100 to ₹200', 'AC Chair Car: ₹125 to ₹225',
+      'AC 3 Tier: ₹300 to ₹400', 'AC 2 Tier: ₹400 to ₹500', 'Executive: ₹400 to ₹500',
+    ]);
+    // The page draws this table twice: it is read once.
+    const versus = tatkal['tatkal_vs_premium_tatkal'] as string[];
+    expect(versus).toHaveLength(7);
+    expect(versus[0]).toBe('Tatkal: IRCTC Tatkal booking charges are fixed; Premium Tatkal: Premium Tatkal tickets have dynamic fare pricing for classes');
+    expect(versus).toContain('Tatkal: Tickets can be cancelled; Premium Tatkal: Tickets cannot be cancelled');
+    // Seven of its eight questions: the one whose answer is a table is the table above.
+    const questions = tatkal['questions'] as string[];
+    expect(questions).toHaveLength(7);
+    expect(questions[2]).toMatch(/^How do I cancel Tatkal tickets\? Confirmed tickets do not get a refund upon cancellation\./);
+    expect(questions[5]).toMatch(/^Is the senior citizen quota available for Tatkal\? No\./);
+    expect(JSON.stringify(tatkal)).not.toMatch(/<[a-z]|&amp;/i);
+  });
+});

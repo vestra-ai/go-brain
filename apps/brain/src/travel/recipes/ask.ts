@@ -39,7 +39,7 @@ const KINDS: Array<[TravelKind, RegExp]> = [
 const NOT_A_SEARCH = /\b(vote|votes|voting|poll|book|booked|booking|pay|paid|payment|cancel|remind|offers?|deals?|discounts?|coupons?|promos?|cashback)\b/i;
 /** A watch the group asks Go to keep ("let us know if a pool stay goes under 3k", "tell us when it confirms"): the
  *  composer's watch_ixigo, never a search started early (8 Oct drill: one ran, failed, and cost a load and 12 s). */
-const A_WATCH = /\b(let (us|me) know (if|when)|tell (us|me) (if|when)|notify|alert (us|me)|keep an eye|watch(ing)?|bata(na|dena) (jab|agar))\b/i;
+export const A_WATCH = /\b(let (us|me) know (if|when)|tell (us|me) (if|when)|notify|alert (us|me)|keep an eye|watch(ing)?|bata(na|dena) (jab|agar))\b/i;
 
 const WEEKDAYS: Record<string, number> = {
   sunday: 0, monday: 1, tuesday: 2, tues: 2, wednesday: 3, weds: 3, thursday: 4, thurs: 4, friday: 5, fri: 5, saturday: 6,
@@ -50,7 +50,7 @@ const DAY = '(\\d{1,2})(?:st|nd|rd|th)?';
 
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-interface Found { at: number; end: number }
+export interface Found { at: number; end: number }
 
 /** "6 Nov" near today as YYYY-MM-DD: this year if that is not past, else next year. Null for no such day. */
 function dayOf(day: number, month: number, today: string): string | null {
@@ -74,7 +74,7 @@ function tripsWeekday(weekday: number, today: string, trip: AskContext['dates'])
 }
 
 /** Every date the text names, in the order it names them. */
-function datesIn(lower: string, today: string, trip: AskContext['dates'] = null): Array<Found & { day: string }> {
+export function datesIn(lower: string, today: string, trip: AskContext['dates'] = null): Array<Found & { day: string }> {
   const out: Array<Found & { day: string }> = [];
   const add = (at: number, end: number, day: string | null): void => {
     if (day && !out.some((d) => at < d.end && end > d.at)) out.push({ at, end, day });
@@ -125,7 +125,7 @@ export function agreedDates(record: ReadonlyArray<{ kind: string; status: string
 }
 
 /** The places of this kind the text names, in order, by their names in the tables (and airport or station codes in capitals). */
-function placesIn(text: string, kind: TravelKind): Array<Found & { name: string }> {
+export function placesIn(text: string, kind: TravelKind): Array<Found & { name: string }> {
   const lower = text.toLowerCase();
   const out: Array<Found & { name: string }> = [];
   for (const word of placeWords(kind)) {
@@ -193,7 +193,7 @@ function conditionsIn(lower: string, kind: TravelKind): Partial<TravelQuery> {
 }
 
 /** Words after "in", "at", "near", "around" or "to" that never name a place: "in our budget", "near the beach", "in Dec". */
-const NOT_PLACES = new Set([
+export const NOT_PLACES = new Set([
   'our', 'the', 'this', 'that', 'these', 'those', 'my', 'your', 'their', 'his', 'her', 'its', 'some', 'any', 'all', 'one',
   'budget', 'total', 'cash', 'advance', 'time', 'each', 'there', 'here', 'town', 'city', 'centre', 'center', 'see', 'stay',
   'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',

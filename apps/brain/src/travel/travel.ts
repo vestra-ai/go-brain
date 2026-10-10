@@ -31,6 +31,9 @@ export const TravelQuery = z.object({
   /** Stays: each person's share of the whole stay at most ("under 8k a head"): its total over the head count it was priced for. */
   maxShareMinor: z.int().positive().optional(),
   mustHave: z.array(z.enum(MUST_HAVES)).max(5).optional(),
+  /** Buses: a pickup or drop point the group named ("Majestic", "Mapusa"): a bus that doesn't stop there doesn't fit. */
+  boardAt: z.string().min(2).max(60).optional(),
+  dropAt: z.string().min(2).max(60).optional(),
   minRating: z.number().min(0).max(5).optional(),
   /** The site's own filters and sort for the ask, by their names on the site's own list (recipes/offers.ts). */
   siteFilters: z.array(z.string().min(1).max(80)).max(8).optional(),

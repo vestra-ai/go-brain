@@ -269,6 +269,28 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(cold.elapsed()).toBe(0);
   });
 
+  // Staging, 10 Oct 05:02Z: ixigo's flight status page answered 200 and showed Cloudflare's Turnstile; its calls never came.
+  it("reads a timed-out page that showed Cloudflare's Turnstile (its document 200) as the check: opened again, never read", async () => {
+    const turnstile = (captures: unknown[]) => new V1Error(504, 'timeout', 'The page did not send every capture.', null, { code: 'timeout', partial: { captures, challenge: 'turnstile' } });
+    const passes = world((_, n) => {
+      if (n === 1) throw turnstile([docAt(200, 300)]);
+      return fetched([busCapture]);
+    });
+    expect((await createBrowserFetchRunner(passes.deps).read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+    expect(passes.calls).toHaveLength(2);
+    // Still on it when no load fits: the caller hears the check, as for a 403.
+    const stays = world(() => { throw turnstile([docAt(200, 300)]); });
+    await expect(createBrowserFetchRunner(stays.deps).read('t1', BUSES, busPlan)).rejects.toBeInstanceOf(ChallengedError);
+    // A hand-off's page on it: loaded again, never left in front for the person.
+    const HOME = 'https://www.ixigo.com/';
+    const plan: FetchPlan = { capture: [{ match: '/action/content', required: true, max_bytes: 1 }], timeoutMs: 12_000, graceMs: 3_000 };
+    const front = world(() => { throw turnstile([{ ...capture('/$', HOME, '<', 200), at_ms: 300 }]); });
+    expect(await createBrowserFetchRunner(front.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [], challenged: true });
+    // A plain timeout, with no check, is not one.
+    const plain = world(() => { throw new V1Error(504, 'timeout', 'The page did not send every capture.', null, { code: 'timeout', partial: { captures: [docAt(200, 300)] } }); });
+    await expect(createBrowserFetchRunner(plain.deps).read('t1', BUSES, busPlan)).rejects.not.toBeInstanceOf(ChallengedError);
+  });
+
   it("never hands a page on the check to the person: a hand-off loads it again, and says challenged when it stays", async () => {
     const HOME = 'https://www.ixigo.com/';
     const homeDoc = (status: number) => ({ ...capture('/$', HOME, '<', status), at_ms: 300 });
