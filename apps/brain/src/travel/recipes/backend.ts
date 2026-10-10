@@ -101,6 +101,8 @@ export function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch 
 
 /** Each kind of search's recipe in the book. */
 export const SEARCH_RECIPES: Record<TravelKind, string> = { flights: 'flights.results', trains: 'trains.between', buses: 'buses.between', stays: 'hotels.search' };
+/** A flights search with a day back: both ways on one ixigo page, as pairs priced there and back. */
+export const ROUND_TRIP_RECIPE = 'flights.round_trip';
 /** The link that answers in a search's place when ixigo won't show Go its page (flights: refused, paced, or empty). */
 export const LINK_FALLBACK: Partial<Record<TravelKind, string>> = { flights: 'flights.search' };
 /** A search's failures that ask the person something (which place, which date, what more): said, never a link. */
@@ -119,6 +121,7 @@ export const CHALLENGE_COOL_MS = 2 * 60_000;
 
 /** The kind of search a recipe is, when it is one of the four or the link that answers for one. */
 export const searchKindOf = (recipeId: string): TravelKind | null =>
+  (recipeId === ROUND_TRIP_RECIPE ? 'flights' : null) ??
   (Object.entries(SEARCH_RECIPES) as Array<[TravelKind, string]>).find(([, id]) => id === recipeId)?.[0] ??
   (Object.entries(LINK_FALLBACK) as Array<[TravelKind, string]>).find(([, id]) => id === recipeId)?.[0] ??
   null;
@@ -162,7 +165,7 @@ export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<
       given: {
         from: q.from, to: q.to, date: q.date, adults: q.guests,
         depart_after: q.departAfter, depart_before: q.departBefore, arrive_before: q.arriveBefore, max_price: q.maxPriceMinor,
-        children: q.children, infants: q.infants, cabin: q.cabin, special_fare: q.specialFare,
+        children: q.children, infants: q.infants, cabin: q.cabin, special_fare: q.specialFare, return_date: q.returnDate,
       },
       conditions,
       // ixigo's own flight filters, by their names on its list for the route: Go applies them to the stream's flights.
@@ -360,7 +363,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   /** The recipe, its inputs and the search's key, or a plain refusal before anything runs. */
   async function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
     if (!tripId) throw new TravelError('refused', "An ixigo.com search runs on a trip's computer, so it needs the trip.");
-    const id = SEARCH_RECIPES[kind];
+    const id = kind === 'flights' && q.returnDate ? ROUND_TRIP_RECIPE : SEARCH_RECIPES[kind];
     const recipe = d.book.get(id);
     if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
     const { given, conditions, site } = recipeInputs(kind, q);

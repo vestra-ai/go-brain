@@ -1,0 +1,148 @@
+id: flights.round_trip
+title: Flights there and back on two dates, as pairs priced there and back
+asks:
+  - delhi to goa on 6 nov and back on 9 nov
+  - 6 ko jaana 9 ko wapas, aana-jaana kitna padega
+  - round trip mumbai goa friday to monday
+inputs:
+  from: { kind: place, lookup: flights.airport_lookup, about: 'the city or airport people fly from; abroad, with its airport code, like "London (LHR)"' }
+  to: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly to }
+  date: { kind: date, about: the day there }
+  return_date: { kind: date, about: the day back }
+  # As flights.results: the members who live by another airport are not on this flight.
+  adults:
+    kind: count
+    min: 1
+    max: 9
+    value: |
+      ($n := $trip.people - $count($trip.homes[$known("flights.airport_lookup", $).code != $inputs.from.code]); $n > 0 ? $n : $trip.people)
+  depart_after: { kind: text, optional: true, about: "24-hour HH:MM, the way there" }
+  depart_before: { kind: text, optional: true, about: "24-hour HH:MM, the way there" }
+  arrive_before: { kind: text, optional: true, about: "24-hour HH:MM, the way there" }
+  max_price: { kind: money, optional: true, about: "per person there and back, in paise" }
+  children: { kind: count, min: 0, max: 8, value: "0", about: children 2 to 11 }
+  infants: { kind: count, min: 0, max: 4, value: "0", about: infants under 2 }
+  cabin: { kind: choice, optional: true, about: "economy, premium_economy or business" }
+  special_fare: { kind: choice, optional: true, about: "student, senior_citizen, armed_forces or doctor" }
+auth: none
+changes_state: false
+conditions:
+  non_stop: "'stops=0'"
+let:
+  # As flights.results: ixigo's windows, its cabin letters (e, w, b), its special fares, one infant to an adult.
+  windows: |
+    [{"name": "EARLY_MORNING", "from": "00:00", "to": "06:00"}, {"name": "MORNING", "from": "06:00", "to": "12:00"},
+     {"name": "AFTERNOON", "from": "12:00", "to": "18:00"}, {"name": "NIGHT", "from": "18:00", "to": "24:00"}]
+  take_off: |
+    (depart_after or depart_before) ? (
+      $a := depart_after ? depart_after : "00:00"; $b := depart_before ? depart_before : "24:00";
+      $join($windows[from < $b and to > $a].name, ",")
+    )
+  landing: |
+    arrive_before ? $join($windows[from < $$.arrive_before and to > "00:00"].name, ",")
+  class_code: |
+    cabin = "premium_economy" ? "w" : (cabin = "business" ? "b" : "e")
+  fare_type: |
+    special_fare = "student" ? "STUDENT" : special_fare = "senior_citizen" ? "SENIOR_CITIZEN" : special_fare = "armed_forces" ? "ARMED_FORCES" : special_fare = "doctor" ? "DOCTOR"
+  lap_infants: $min([infants, adults])
+  # The way there's times and stops in ixigo's own params (its return leg takes returnTakeOff and the like).
+  params: |
+    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, $fare_type ? "airlineFareType=" & $fare_type, "sort_type=cheapest"]), "&")
+# ixigo's results page with a return date (the 10 Oct atlas): its one stream holds both ways, flightJourneys[0] there and
+# [1] back (Delhi to Goa, 6 to 9 Nov: 79 and 70 fares), each event the whole list so far, so Bash keeps the last (sse: last).
+# The page picks a pair itself and asks ixigo's price for it, POST /flights/v2/search/discount, twice as it settles
+# (data.flightFares["{there}+{back}"]: displayFare, offerText, priceLockAttributes): ixigo's own price for that pair, a
+# little under the two fares added up (₹15,739 against ₹7,800 + ₹7,958).
+page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate={return_date|DDMMYYYY}&adults={adults}&children={children}&infants={$lap_infants}&class={$class_code}&source=Search%20Form&{$params|raw}
+capture:
+  - { match: /flights/v2/search/stream, max_bytes: 4194304, sse: last }
+  - { match: /flights/v2/search/discount, required: false, max_count: 2, max_bytes: 200000 }
+read:
+  rows:
+    from: /flights/v2/search/stream
+    format: sse
+    # The pairs a group would book: the six cheapest each way, crossed, the ten cheapest pairs there and back first.
+    list: |
+      (
+        $e := ($type($) = "array" ? $[-1] : $).data;
+        $fare := function($f) { $number($f.fares[0].fareDetails.displayFare) };
+        $cheap := function($list) { $sort($list[$fare($) > 0], function($a, $b) { $fare($a) > $fare($b) })[[0..5]] };
+        $out := $cheap($e.flightJourneys[0].flightFare);
+        $back := $cheap($e.flightJourneys[1].flightFare);
+        $pairs := [$out.($o := $; $back.{ "key": $o.flightKeys & "+" & flightKeys, "out": $o, "back": $, "sum": $fare($o) + $fare($) })];
+        $sort($pairs, function($a, $b) { $a.sum > $b.sum })[[0..9]]
+      )
+    unique: key
+  also:
+    airports: { from: /flights/v2/search/stream, format: sse, value: $merge(data.airportDetails) }
+    # ixigo's own price for the pair its page picked, by the pair's key.
+    pairs: { from: /flights/v2/search/discount, value: '$merge(($type($) = "array" ? $ : [$]).data.flightFares)' }
+pace: { gap_seconds: 20, quiet_minutes: 10 }
+answer:
+  as: options
+  kind: flight
+  # One option a pair: the way there as the card's journey, the way back in its highlights and facts. Its price is ixigo's
+  # own for the pair when its page asked for this one, else the two fares added up, per person (per adult with children).
+  each: |
+    (
+      $o := out;
+      $b := back;
+      $leg := $o.flightDetails[0];
+      $bleg := $b.flightDetails[0];
+      $nums := function($keys) { $map($split($keys, "*"), function($k) { $split($k, "-")[2] }) };
+      $there := $nums($o.flightKeys);
+      $home := $nums($b.flightKeys);
+      $outFare := $number($o.fares[0].fareDetails.displayFare);
+      $backFare := $number($b.fares[0].fareDetails.displayFare);
+      $pair := $pairs ? $lookup($pairs, key);
+      $pairFare := $number($pair.displayFare);
+      $price := $pairFare > 0 ? $pairFare : $outFare + $backFare;
+      $minutes := $number($leg.duration.time);
+      $backMinutes := $number($bleg.duration.time);
+      $departAt := $leg.departureTime ? $istAt($inputs.date, $leg.departureTime);
+      $backAt := $bleg.departureTime ? $istAt($inputs.return_date, $bleg.departureTime);
+      $place := function($code) { { "name": $lookup($airports, $code).city ? $lookup($airports, $code).city : $code, "code": $code } };
+      $people := $inputs.adults + $inputs.children;
+      $lock := $number($pair.priceLockAttributes.priceLockPremium);
+      $hold := $number($pair.priceLockAttributes.lockWindow);
+      ($price > 0 and $exists($departAt) and $exists($backAt) and $minutes > 0 and $backMinutes > 0) ? {
+        "title": $substring($leg.headerTextWeb & " " & $join($there, " + ") & ", back " & $bleg.headerTextWeb & " " & $join($home, " + "), 0, 80),
+        "priceMinor": $paise($price),
+        "currency": "INR",
+        "priceNote": ($inputs.children > 0 or $inputs.infants > 0 ? "per adult" : "per person") & " there and back"
+          & ($class_code = "w" ? ", premium economy" : ($class_code = "b" ? ", business" : "")),
+        "journey": {
+          "mode": "flight",
+          "origin": $place($leg.origin),
+          "destination": $place($o.flightDetails[-1].destination),
+          "depart_at": $departAt,
+          "arrive_at": $istPlus($departAt, $minutes),
+          "carrier_name": $substring($leg.headerTextWeb, 0, 60),
+          "carrier_code": $substring($leg.airlineCode, 0, 3),
+          "number": $there[0],
+          "stops": $number($leg.stop)
+        },
+        "highlights": $highlights(
+          $leg.stopText,
+          "Back " & $bleg.departureTime & ", " & $lowercase($bleg.stopText),
+          $pairFare > 0 ? "ixigo's pair price"
+        ),
+        "facts": {
+          "stops": $number($leg.stop), "duration_min": $minutes, "flights": $join($there, " + "), "refundable": $o.refundableType,
+          "back_flights": $join($home, " + "), "back_carrier": $bleg.headerTextWeb, "back_stops": $number($bleg.stop),
+          "back_depart_at": $backAt, "back_arrive_at": $istPlus($backAt, $backMinutes), "back_duration_min": $backMinutes,
+          "back_refundable": $b.refundableType,
+          "there_fare_minor": $paise($outFare), "back_fare_minor": $paise($backFare),
+          "pair_price": $pairFare > 0 ? "ixigo's own price for this pair",
+          "total_for_group": ($inputs.children = 0 and $inputs.infants = 0 and $people > 1) ? $rupees($price * $people) & " for " & $string($people),
+          "lock": ($lock > 0 and $hold > 0) ? "Lock Price " & $rupees($lock) & " a person for the pair, holds " & $string($hold) & " h",
+          "lock_fee_minor": $lock > 0 ? $paise($lock),
+          "lock_hours": ($lock > 0 and $hold > 0) ? $hold
+        },
+        "sourceUrl": $page
+      }
+    )
+measured: { fast_ms: null, page_ms: null, flow_ms: null }
+notes: >-
+  The way back takes no times of its own yet (ixigo's returnTakeOff and returnLanding); a pair's lock is ixigo's for the
+  pair its page picked. Several legs (multi-city) are one flights.results each: ixigo's web search has no multi-city.
