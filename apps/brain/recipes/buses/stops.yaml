@@ -12,8 +12,8 @@ changes_state: false
 # ixigo has no page per bus: its "Select Seats" opens the bus's seat layout on the results (POST /wap/GetSeatLayout:
 # every pickup and drop with its time and landmark, and the cancellation policy). The bus's address is the results page
 # with its operator and departure after "#" (buses.between), and the click is that card's own button: the first
-# "Select Seats" after its operator's name and its time (bash #4637). Read only: the seat map is never touched. A layout
-# that is another bus's (a Bash before #4637 clicks the first card's) is never read as this one's.
+# "Select Seats" after its operator's name and its time (bash #4637; a Bash before it refuses the fetch, before opening
+# anything). Read only: the seat map is never touched. A layout that is another bus's is never read as this one's.
 let:
   route: '$substringBefore($substringAfter(bus, "/buses/bus_search/"), "#")'
   operator: '$contains(bus, "#") ? $decodeUrlComponent($substringBefore($substringAfter(bus, "#"), "@")) : ""'

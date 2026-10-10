@@ -45,8 +45,8 @@ export const Capture = z.union([z.string().min(1).transform((match) => CaptureOb
  * optional: a control that may not be there (a popup shown once a day), skipped instead of failing. within_ms: an optional
  * click looks that long for one that shows a moment after the page (Bash's browser fetch; a Bash that predates it looks
  * once, runners.ts). nth: which match, from 1, in the page's order. near_text: the first match after a text, or after up
- * to four texts found in turn within one card (a bus's "Select Seats" after its operator and its time; bash #4637: a
- * Bash before it takes the first match).
+ * to four texts found in turn within one card (a bus's "Select Seats" after its operator and its time). Both need bash
+ * #4637: a Bash before it refuses the fetch, and Go never sends them as a plain click (runners.ts NearUnsupportedError).
  */
 const Step = z.union([
   z.object({
