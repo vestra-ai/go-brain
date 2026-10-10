@@ -37,7 +37,10 @@ let:
   landing: |
     arrive_before ? $join($windows[from < $$.arrive_before and to > "00:00"].name, ",")
   # ixigo's own filters the ask named ($site, "param:value" codes from offers below), as the page's own params
-  # ("airlines=6E,AI&refundable=true"), so the stage shows them ticked on ixigo's page.
+  # ("airlines=6E,AI&refundable=true"), so the stage shows them ticked on ixigo's page. The page opens with exactly its
+  # address's filters, whatever it kept from before (his browser, 10 Oct 05:49Z: airlines=IX showed one chip, Air-India
+  # Express, and its 15 flights). So Go sets filters by the address and never clicks one: a click on the page's
+  # "Recommended Filters" row ticked all four of ixigo's recommendations at once (stops, two airlines, a free meal).
   site_params: |
     $site ? $join($distinct($site.$substringBefore($, ":")).(
       $k := $; $k & "=" & $join($site[$substringBefore($, ":") = $k].$substringAfter($, ":"), ",")
