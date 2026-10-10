@@ -116,9 +116,13 @@ describe('the wake text', () => {
     const text = describeNoticed(chat, goaPack(), 'Asia/Kolkata', NOW);
     expect(text).toContain('Message #9 may be a moment to chime in without being asked');
     expect(text).toContain("in the group's own words and language");
-    for (const shape of ['Dates are set: 6 to 9 Nov ✅. Want to change them?', "Veg noted, I'll skip seafood shacks", 'Want me to put it to a vote?']) expect(text).toContain(shape);
+    for (const shape of ['Dates are set: 6 to 9 Nov ✅. Want to change them?', "Veg noted, I'll skip seafood shacks", '3 of you said yes to Saudades. Want me to put it to a vote?']) expect(text).toContain(shape);
     expect(text).toContain('use what the trip and the chat say');
-    expect(text).toContain('Banter, a plan a person is already handling, or nothing new to add: call stay_silent.');
+    // The 10 Oct live proof's three misses: answer once, never "locked in" without a vote, no search on one opinion.
+    expect(text).toContain('then never raise it again');
+    expect(text).toContain('never say locked in, confirmed or decided until a vote closes or the organizer decides');
+    expect(text).toContain('is never a search');
+    expect(text).toContain('Banter, a plan a person is already handling, or something you already said: call stay_silent.');
     expect(text).not.toContain('—');
   });
 

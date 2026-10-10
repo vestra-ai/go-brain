@@ -8,7 +8,7 @@ import { createContext, formatTime, type TextBlock } from '../context.js';
 import { answersToGo } from '../fence.js';
 import { GO_RULES } from '../rules.js';
 import { datesLine, tripNow } from '../trip-now.js';
-import { ASK_HOW_MUCH, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
+import { ASK_HOW_MUCH, CHIME_RULES, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
 const PEOPLE = ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'];
 /** n messages, seq 2 to n + 1, round the five friends. */
@@ -358,7 +358,9 @@ describe('why Go woke, and the trip block', () => {
       const note = quietNote(items, pack);
       expect(note, text).toContain("#2 doesn't name you, so it is the group talking. Speak if you can add something real");
       expect(note).toContain('answer a question you can answer with facts from ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already answered it');
-      expect(note).toContain('when the group agrees dates on a trip with a place, show stays for them with search_stays; when it agrees a place, offer the next step in one line');
+      expect(note).toContain('when the group agrees dates on a trip with a place, offer stays in one line (search_stays only when someone asks to see them); when it agrees a place, offer the next step in one line');
+      // The three chime rules (10 Oct live proof): answer once, offer the vote with the count, search only on a real ask.
+      expect(note).toContain(CHIME_RULES);
       expect(note).toContain('when people disagree, offer a vote');
       expect(note).toContain("Someone saying what they'd like gets a ✅ and at most one short offer, never a search");
       expect(note).toContain("Who brings, pays or does what is the friends' to settle unless the record already says");
