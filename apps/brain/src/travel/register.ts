@@ -144,6 +144,8 @@ export const registerTravel: RegisterLane = async (brain) => {
         homes: people.flatMap((p) => (p.from_city ? [p.from_city] : [])),
         destination: destination?.name ?? null,
         start: dates?.start ?? null,
+        end: dates?.end ?? null,
+        today: await tripToday(brain.pool, brain.now)(tripId),
       };
     },
     // A run that opens a page warms for its kind of search; any other recipe's page, for no kind.

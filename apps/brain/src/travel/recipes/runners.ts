@@ -59,6 +59,12 @@ export interface ReadOptions {
    */
   stage?: boolean;
   /**
+   * The trip account's own page (an auth: login recipe's: My Trips, the help centre's bookings): a tab the browser watch
+   * never shows, stage or not (Bash's private), and no picture of it taken. A Bash that predates private refuses it, and
+   * the read fails: never read where the room could see it (the lead, 10 Oct).
+   */
+  private?: boolean;
+  /**
    * The caller reads another way when the page catches nothing (a filtered stays search reads its page again unfiltered,
    * backend.ts): such a page is never asked twice here, and throws NothingCaughtError.
    */
@@ -581,8 +587,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
       ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
       // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
-      // the recipe says how long that takes.
-      frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
+      // the recipe says how long that takes. None of a private page, whose tab the browser watch never shows either.
+      ...(o.private ? { private: true } : { frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) } }),
       ...(o.tag ? { tag: o.tag } : {}),
       // Under Bash's default name, the one the page calls take: one warm tab a trip, never one more toward Bash's cap.
       ...(o.stage ? { stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS } : o.keepOpen ? { keep_open_ms: WARM_TAB_MS } : {}),
@@ -630,6 +636,12 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         return { captures, finalUrl };
       } catch (err) {
         if (!(err instanceof V1Error)) throw err;
+        // A Bash that predates private refuses it before it opens anything (an unknown key at the body's top: no param, or
+        // one at private). The account's page is then not read at all, never where the room could see it.
+        const param = String(err.detail?.['param'] ?? '');
+        if (o.private && err.status === 400 && err.code === 'invalid_request' && (param === '' || param.startsWith('private'))) {
+          throw new TravelError('refused', "The trip's ixigo account is read only where nobody else can see it, and Go's computer can't do that yet.");
+        }
         // Once only: a trip whose user /v1 does not have yet, or a person who just used the browser.
         if (tries === 0 && err.status === 404 && err.code === 'user_not_found') {
           userId = await d.browser.again(tripId);
