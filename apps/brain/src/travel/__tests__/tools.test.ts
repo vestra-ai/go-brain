@@ -46,6 +46,14 @@ describe('search tools', () => {
     expect(saved?.options.every((o) => (o.journey?.depart_at.slice(11, 16) ?? '') >= '18:00')).toBe(true);
   });
 
+  it("says why a time the trip gave applies (because), with the time; with no time it says nothing of it", async () => {
+    const why = 'Arjun can leave Friday after 6 pm';
+    const out = (await lb.tools.run('search_flights', { ...FLIGHTS, because: why }, lb.ctx({ turnId: 'turn_b1' }))) as any;
+    expect(out.search).toBe('flights from Delhi to Goa on 2026-11-06, leaving after 6:00 pm, because Arjun can leave Friday after 6 pm');
+    const none = (await lb.tools.run('search_flights', { from: 'Delhi', to: 'Goa', date: '2026-11-06', because: why }, lb.ctx({ turnId: 'turn_b2' }))) as any;
+    expect(none.search).toBe('flights from Delhi to Goa on 2026-11-06');
+  });
+
   it("refuses a check-in before today without a word to the room, naming this year's date, and that date goes through", async () => {
     const past = (await lb.tools.run('search_stays', { ...STAYS, check_in: '2025-11-06', check_out: '2025-11-09' }, lb.ctx({ turnId: 'turn_past1' }))) as any;
     expect(past).toMatchObject({ count: 0, tell_the_room: SAY_NOTHING });

@@ -69,6 +69,9 @@ export function asked(kind: TravelKind, q: TravelQuery): string[] {
   if (q.departAfter) out.push(`leaving after ${formatClock(q.departAfter)}`);
   if (q.departBefore) out.push(`leaving before ${formatClock(q.departBefore)}`);
   if (q.arriveBefore) out.push(`arriving by ${formatClock(q.arriveBefore)}`);
+  // A time the trip gave, not this ask (a member's own answer), says why with it: "leaving after 6:00 pm, because Rahul
+  // can leave Friday after 6 pm" (staging, 9 Oct: a time nobody in the chat had said read as made up).
+  if (q.because && out.length > 0) out[out.length - 1] = `${out[out.length - 1]}, because ${q.because.replace(/^(because|as)\s+/i, '').replace(/[.\s]+$/, '')}`;
   if (q.maxPriceMinor !== undefined) out.push(`at most ${formatInr(q.maxPriceMinor)}${per(kind)}`);
   if (kind === 'stays' && q.maxShareMinor !== undefined) out.push(`at most ${formatInr(q.maxShareMinor)} a head for the whole stay`);
   if (q.minRating !== undefined) out.push(`rated ${q.minRating} or more`);

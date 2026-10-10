@@ -20,7 +20,10 @@ const WAYS = 'trip.how_we_get_there';
 const HOMES = ['Delhi', 'Delhi', 'Mumbai', 'delhi ', 'Goa'];
 const trip = { people: 5, homes: HOMES, destination: 'Goa', start: '2026-11-06' };
 
-/** The results pages as a box's browser keeps their calls: Goa's trains from Delhi and Mumbai, Goa's buses from Mumbai. */
+/**
+ * The results pages as a box's browser keeps their calls: Goa's trains from Delhi and Mumbai, Goa's buses from Mumbai, and
+ * flights from either (ixigo's stream, read on staging 9 Oct).
+ */
 function pageFor(url: string): Capture[] | null {
   const trains = (name: string, from: string) => [
     capture('/trains/v1/search/between/', `https://www.ixigo.com/trains/v1/search/between/${from}/MAO?date=2026-11-06&languageCode=en`, fixture(`trains-${name}-between.json`)),
@@ -28,8 +31,14 @@ function pageFor(url: string): Capture[] | null {
   if (url.includes('/search/result/train/NDLS/MAO/06112026')) return trains('ndls-mao', 'NDLS');
   if (url.includes('/search/result/train/CSMT/MAO/06112026')) return trains('csmt-mao', 'CSMT');
   if (url.includes('/buses/bus_search/Mumbai/4/Goa/102/06-11-2026')) return [capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', fixture('buses-mumbai-goa.json'))];
+  if (/\/search\/result\/flight\?from=(DEL|BOM)&to=GOI&date=06112026&/.test(url)) {
+    return [capture('/flights/v2/search/stream', 'https://www.ixigo.com/flights/v2/search/stream', fixture('flights-del-goi-2026-11-13.sse'))];
+  }
   return null;
 }
+
+/** Each city's flights page: its answer, or why it has none. */
+const flightsOf = (got: EngineAnswer): string[] => (got.as === 'compare' ? got.entries.map((e) => e.steps[2]!.answer?.as ?? e.steps[2]!.why ?? '') : []);
 
 const stepsOf = (got: EngineAnswer) => {
   if (got.as !== 'compare') throw new Error(`answered ${got.as}`);
@@ -37,9 +46,9 @@ const stepsOf = (got: EngineAnswer) => {
 };
 
 describe('a composite: the same recipes for each entry of a list, at once', () => {
-  it('is in the book: trip.how_we_get_there runs trains, buses and flights for each home city', () => {
+  it("is in the book: trip.how_we_get_there runs trains, buses, flights and flights' link for each home city", () => {
     expect(problems).toEqual([]);
-    expect(book.get(WAYS)?.steps?.run.map((s) => s.recipe)).toEqual(['trains.between', 'buses.between', 'flights.search']);
+    expect(book.get(WAYS)?.steps?.run.map((s) => s.recipe)).toEqual(['trains.between', 'buses.between', 'flights.results', 'flights.search']);
   });
 
   it("runs each home city once, the most people's first and the trip's own place left out, and answers each step's answer or why", async () => {
@@ -57,14 +66,18 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     const engine = createEngine({ book, runner: () => runner, trip: async () => trip, now: () => new Date('2026-10-08T12:00:00Z'), onRun: (_t, e) => events.push(e) });
     const got = await engine.answer(WAYS, {}, { tripId: 't_goa' });
     expect(stepsOf(got)).toEqual([
-      { entry: 'Delhi', steps: [['trains.between', 'options'], ['buses.between', expect.stringMatching(/^unreachable/)], ['flights.search', 'link']] },
-      { entry: 'Mumbai', steps: [['trains.between', 'options'], ['buses.between', 'options'], ['flights.search', 'link']] },
+      { entry: 'Delhi', steps: [['trains.between', 'options'], ['buses.between', expect.stringMatching(/^unreachable/)], ['flights.results', expect.any(String)], ['flights.search', 'link']] },
+      { entry: 'Mumbai', steps: [['trains.between', 'options'], ['buses.between', 'options'], ['flights.results', expect.any(String)], ['flights.search', 'link']] },
     ]);
+    // One flights page across every trip in 20 s: one city's flights come back, the other's are held back (its link stands).
+    expect(flightsOf(got).filter((a) => a === 'options')).toHaveLength(1);
+    expect(flightsOf(got).find((a) => a !== 'options')).toMatch(/^unreachable: ixigo is given a moment between flights/);
+    expect(opened.filter((u) => u.includes('/search/result/flight?'))).toHaveLength(1);
     if (got.as !== 'compare') return;
     expect(got.inputs).toEqual({ to: 'Goa', date: '2026-11-06' });
-    // Flights are a link, set for the people from that city: three from Delhi, one from Mumbai.
+    // Flights' link is set for the people from that city: three from Delhi, one from Mumbai.
     const link = (i: number) => {
-      const a = got.entries[i]!.steps[2]!.answer;
+      const a = got.entries[i]!.steps[3]!.answer;
       return a?.as === 'link' ? a.link : '';
     };
     expect(link(0)).toContain('from=DEL&to=GOI&date=06112026&returnDate=&adults=3&');
@@ -75,7 +88,8 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     expect(composite).toMatchObject({ recipe_id: WAYS, speed: 'steps', label: 'Delhi, Mumbai · 6 Nov' });
     const steps = starts.filter((e) => e.step_of === composite.run_id);
     expect(steps.map((e) => `${e.lane} ${e.recipe_id}`)).toEqual([
-      'Delhi trains.between', 'Delhi buses.between', 'Delhi flights.search', 'Mumbai trains.between', 'Mumbai buses.between', 'Mumbai flights.search',
+      'Delhi trains.between', 'Delhi buses.between', 'Delhi flights.results', 'Delhi flights.search',
+      'Mumbai trains.between', 'Mumbai buses.between', 'Mumbai flights.results', 'Mumbai flights.search',
     ]);
     const lastStart = Math.max(...steps.map((s) => events.indexOf(s)));
     const firstEnd = events.findIndex((e) => e.type === 'run_end');
@@ -84,7 +98,7 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     const delhiBuses = steps.find((e) => e.lane === 'Delhi' && e.recipe_id === 'buses.between')!;
     expect(starts.find((e) => e.recipe_id === 'buses.city_lookup')).toMatchObject({ parent: delhiBuses.run_id });
     // The composite ends last, with the steps that answered.
-    expect(events.at(-1)).toMatchObject({ type: 'run_end', run_id: composite.run_id, ok: true, rows: 5 });
+    expect(events.at(-1)).toMatchObject({ type: 'run_end', run_id: composite.run_id, ok: true, rows: 6 });
   });
 
   it("puts every city's trains ahead of its buses in the computer's queue, and tells each step as it ends", async () => {
@@ -92,19 +106,22 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     const said: StepsEvent[] = [];
     const runner = {
       read: async (_trip: string, url: string, _plan: FetchPlan, o?: { priority?: number }) => {
-        asked.add(`${url.includes('/train/') ? 'train page' : url.includes('/bus_search/') ? 'bus page' : 'bus box'} ${o?.priority}`);
+        asked.add(`${url.includes('/train/') ? 'train page' : url.includes('/bus_search/') ? 'bus page' : url.includes('/flight?') ? 'flight page' : 'bus box'} ${o?.priority}`);
         return { captures: pageFor(url) ?? [], finalUrl: url };
       },
     };
     const engine = createEngine({ book, runner: () => runner, trip: async () => trip, now: () => new Date('2026-10-08T12:00:00Z') });
     await engine.answer(WAYS, {}, { tripId: 't_goa', onSteps: (e) => said.push(e) });
-    // Trains are the file's first step: priority 0. A city's buses, their page and ixigo's box alike, come after.
-    expect([...asked].sort()).toEqual(['bus box 1', 'bus page 1', 'train page 0']);
+    // Trains are the file's first step: priority 0. A city's buses, their page and ixigo's box alike, come after; flights after them.
+    expect([...asked].sort()).toEqual(['bus box 1', 'bus page 1', 'flight page 2', 'train page 0']);
     expect(said[0]).toEqual({ type: 'entries', entries: ['Delhi', 'Mumbai'] });
-    expect(said.slice(1).map((e) => (e.type === 'step' ? `${e.entry} ${e.recipe} ${e.ok}` : e.type)).sort()).toEqual([
+    const told = said.slice(1).map((e) => (e.type === 'step' ? `${e.entry} ${e.recipe} ${e.ok}` : e.type));
+    expect(told.filter((t) => !t.includes('flights.results')).sort()).toEqual([
       'Delhi buses.between false', 'Delhi flights.search true', 'Delhi trains.between true',
       'Mumbai buses.between true', 'Mumbai flights.search true', 'Mumbai trains.between true',
     ]);
+    // One city's flights page loads; the other's is held back.
+    expect(told.filter((t) => t.includes('flights.results')).map((t) => t.endsWith('true')).sort()).toEqual([false, true]);
   });
 
   it('puts a check nobody waits on (a watch) behind every search a person is waiting on, even one that came after it', async () => {
@@ -159,7 +176,7 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
       await engine.answer(WAYS, {}, { tripId: 't_goa' });
       return top;
     };
-    // Four pages: each city's trains, Mumbai's buses, and Delhi's bus box. Flights load nothing.
+    // Five pages: each city's trains, Mumbai's buses, Delhi's bus box, and one city's flights (one flights page in 20 s).
     expect(await most(2)).toBe(2);
     expect(await most(4)).toBe(4);
   });
@@ -193,7 +210,7 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     const going = engine.answer(WAYS, {}, { tripId: 't_goa', signal: stop.signal });
     await new Promise((r) => setImmediate(r));
     stop.abort();
-    expect(stepsOf(await going)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'options'], ['buses.between', 'out of time'], ['flights.search', 'link']] }]);
+    expect(stepsOf(await going)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'options'], ['buses.between', 'out of time'], ['flights.results', 'out of time'], ['flights.search', 'link']] }]);
   });
 });
 
@@ -229,7 +246,7 @@ describe("a composite's steps share Go's searches, keyed by the request they mak
     const alone = await w.backend.search('buses', BUSES, { tripId: 't_goa' });
     expect(alone.results.length).toBeGreaterThan(0);
     const got = await w.engine.answer(WAYS, {}, { tripId: 't_goa' });
-    expect(stepsOf(got)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'options'], ['buses.between', 'options'], ['flights.search', 'link']] }]);
+    expect(stepsOf(got)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'options'], ['buses.between', 'options'], ['flights.results', 'options'], ['flights.search', 'link']] }]);
     expect(pages(w.opened, 'bus_search')).toHaveLength(1);
     // The same options, and on the strip the step is a kept run in its lane.
     if (got.as === 'compare') expect(got.entries[0]!.steps[1]!.answer).toMatchObject({ as: 'options', options: alone.results });
@@ -250,7 +267,7 @@ describe("a composite's steps share Go's searches, keyed by the request they mak
     const composite = w.engine.answer(WAYS, {}, { tripId: 't_goa', signal: stop.signal });
     await settle();
     stop.abort();
-    expect(stepsOf(await composite)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'out of time'], ['buses.between', 'out of time'], ['flights.search', 'link']] }]);
+    expect(stepsOf(await composite)).toEqual([{ entry: 'Mumbai', steps: [['trains.between', 'out of time'], ['buses.between', 'out of time'], ['flights.results', 'out of time'], ['flights.search', 'link']] }]);
     w.release();
     await settle();
     await w.backend.search('buses', BUSES, { tripId: 't_goa' });

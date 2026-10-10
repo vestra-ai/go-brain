@@ -116,6 +116,18 @@ describe("the card's line, built from the options the card shows", () => {
         'book there, and tell me which one so I can note it for the group.',
     );
   });
+
+  // Staging, 9 Oct: "leaving after 6:00 pm" on a fresh trip, a time nobody in the chat had said, read as made up.
+  it('says why a time the trip gave applies, with the time, on the card line and the link line alike', () => {
+    const fromTrip: TravelQuery = { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '18:00', because: 'because Rahul can leave Friday after 6 pm.' };
+    const flights = [priced('flight', 'Air-India Express IX1196', 863_000)];
+    expect(answerLine('flights', fromTrip, flights)).toBe('Flights Delhi to Goa on Fri 6 Nov, leaving after 6:00 pm, because Rahul can leave Friday after 6 pm, from ₹8,630 per person.');
+    expect(linkLine('flights', fromTrip, null)).toBe(
+      'Flights Delhi to Goa on Fri 6 Nov are on ixigo, leaving after 6:00 pm, because Rahul can leave Friday after 6 pm: book there, and tell me which one so I can note it for the group.',
+    );
+    // With no time, there is nothing to explain.
+    expect(answerLine('flights', { from: 'delhi', to: 'goa', date: '2026-11-06', because: 'Rahul can leave Friday after 6 pm' }, flights)).toBe('Flights Delhi to Goa on Fri 6 Nov, from ₹8,630 per person.');
+  });
 });
 
 describe("the card's title, built from the search as the model's titles read", () => {

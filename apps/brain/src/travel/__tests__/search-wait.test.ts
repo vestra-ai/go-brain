@@ -240,6 +240,30 @@ describe('a search ixigo will only show as a link', () => {
   });
 });
 
+describe('a flights search that outlives its turn and gets ixigo\'s own page', () => {
+  // Flights read their page now (flights.results), so a cold box can outlast the turn's wait; ixigo refusing it, or its
+  // page held back, then answers with the link. The wake puts that card up: never "it didn't work".
+  it('puts its link card and line up when it wakes Go, with no model call', async () => {
+    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
+    const puts: DeskItem[] = [];
+    const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
+    const now = () => new Date('2026-10-07T12:00:31Z');
+    const refused = Promise.reject(new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", page));
+    handOver('flights', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, refused, { tripId: 't_goa', fallbackId: 'turn_l1:flights' }, { desk, now, results: {} as ResultsStore });
+    await vi.waitFor(() => expect(puts).toHaveLength(1));
+    const line = 'Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 4 from Delhi: book there, and tell me which one so I can note it for the group.';
+    expect(puts[0]!.payload).toMatchObject({ error: 'link_only', link: { url: page, title: 'Flights, Delhi to Goa', who: 'for 4 from Delhi', line } });
+    // Woken with other things too, the model is told to search again: the card goes up from that search.
+    expect(renderSearchWake(puts[0]!)).toContain('Search again with the same words');
+    const pack = goaPack();
+    const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_l2', link: {} as never, pack, wake: [puts[0]!], signal: new AbortController().signal });
+    expect(await searchWakeAnswer({ results: {} as ResultsStore, images: {} as Images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(true);
+    expect(next.cards).toEqual([expect.objectContaining({ kind: 'notice', title: 'Flights, Delhi to Goa', source: { name: 'ixigo', url: page } })]);
+    expect(next.lines).toEqual([line]);
+    expect(next.answered).toBe(true);
+  });
+});
+
 describe("a flight's travellers", () => {
   // The Goa trip: Rahul, Priya and Kabir live in Delhi, Arjun in Bangalore, Meher in Mumbai.
   const pack = goaPack();

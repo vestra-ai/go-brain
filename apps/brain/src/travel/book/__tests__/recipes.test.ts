@@ -36,7 +36,7 @@ describe('the recipe book', () => {
   it('loads every file, with nothing left out', () => {
     expect(problems).toEqual([]);
     expect(book.all().map((r) => r.id).sort()).toEqual([
-      'buses.between', 'buses.city_lookup', 'buses.offers', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.search',
+      'buses.between', 'buses.city_lookup', 'buses.offers', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.results', 'flights.search',
       'help.downtime', 'help.faq', 'help.services',
       'hotels.details', 'hotels.offers', 'hotels.place_lookup', 'hotels.reviews', 'hotels.rooms', 'hotels.search', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list',
@@ -338,6 +338,72 @@ describe('buses.between', () => {
     expect(got.options[0]).not.toHaveProperty('rating');
     const meta = engineWith(() => caps().slice(0, 1));
     await expect(meta.engine.answer('buses.between', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' })).rejects.toThrow(/did not send/);
+  });
+});
+
+// ixigo's flights page from a staging box, 9 Oct 18:24Z (Delhi to Goa, 13 Nov, for 2): its own call is a stream of
+// server-sent events whose one data line holds every fare (145; four kept here, booking tokens left out).
+describe('flights.results', () => {
+  const STREAM = '/flights/v2/search/stream';
+  const STREAM_URL = 'https://www.ixigo.com/flights/v2/search/stream';
+  const GIVEN = { from: 'Delhi', to: 'Goa', date: '2026-11-13' };
+
+  it("reads the flights from ixigo's stream: each one's airline and numbers, its fare per person, its times and stops", async () => {
+    const { engine, runs } = engineWith(() => [capture(STREAM, STREAM_URL, fixture('flights-del-goi-2026-11-13.sse'))]);
+    const got = await engine.answer('flights.results', GIVEN, { tripId: 't_goa' });
+    if (got.as !== 'options') throw new Error(got.as);
+    expect(runs[0]!.url).toContain('/search/result/flight?from=DEL&to=GOI&date=13112026&');
+    expect(runs[0]!.plan.capture).toEqual([{ match: STREAM, required: true, max_bytes: 1_000_000 }]);
+    expect(got.options.map((o) => o.title)).toEqual(['Air-India Express IX1196', 'IndiGo 6E328 + 6E5106', 'Air-India Express IX1108', 'IndiGo 6E5341']);
+    expect(got.options[0]).toMatchObject({
+      kind: 'flight', priceMinor: 863_000, currency: 'INR', priceNote: 'per person',
+      journey: {
+        mode: 'flight', origin: { name: 'New Delhi', code: 'DEL' }, destination: { name: 'Goa', code: 'GOI' },
+        depart_at: '2026-11-13T18:35:00+05:30', arrive_at: '2026-11-13T21:15:00+05:30',
+        carrier_name: 'Air-India Express', carrier_code: 'IX', number: 'IX1196', stops: 0,
+      },
+      highlights: ['Non-stop', '2 h 40 m'],
+      facts: { stops: 0, duration_min: 160, flights: 'IX1196' },
+    });
+    // A flight with a stop lands the next day: the arrival is the departure and the whole journey's length.
+    expect(got.options[1]).toMatchObject({
+      priceMinor: 942_200, journey: { depart_at: '2026-11-13T17:45:00+05:30', arrive_at: '2026-11-14T00:40:00+05:30', stops: 1, number: '6E328' }, highlights: ['1 stop', '6 h 55 m'],
+    });
+    // Goa's other airport is said as Goa, with its own code.
+    expect(got.options[2]!.journey!.destination).toEqual({ name: 'Goa', code: 'GOX' });
+  });
+
+  it('loads one flights page across every trip in 20 s, and none for 10 minutes after ixigo refused one: held back, it fails at once, loading nothing', async () => {
+    let nowMs = Date.parse('2026-10-09T18:00:00Z');
+    let refuse = false;
+    const runs: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        runs.push(url);
+        return { captures: [capture(STREAM, STREAM_URL, refuse ? '{"message":"Forbidden"}' : fixture('flights-del-goi-2026-11-13.sse'), refuse ? 403 : 200)], finalUrl: url };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: HOMES }), now: () => new Date(nowMs) });
+    expect((await engine.answer('flights.results', GIVEN, { tripId: 't_a' })).as).toBe('options');
+    // Another trip 5 s later: held back (one flights page across every trip in 20 s), nothing loaded.
+    nowMs += 5_000;
+    expect(engine.pacedOut('flights.results')).toBe(true);
+    await expect(engine.answer('flights.results', { ...GIVEN, date: '2026-11-14' }, { tripId: 't_b' })).rejects.toMatchObject({ code: 'unreachable' });
+    expect(runs).toHaveLength(1);
+    // 20 s on, the page loads; ixigo refuses it (403): ten quiet minutes follow.
+    nowMs += 20_000;
+    refuse = true;
+    await expect(engine.answer('flights.results', { ...GIVEN, date: '2026-11-15' }, { tripId: 't_b' })).rejects.toMatchObject({ code: 'refused' });
+    expect(runs).toHaveLength(2);
+    nowMs += 9 * 60_000;
+    expect(engine.pacedOut('flights.results')).toBe(true);
+    refuse = false;
+    nowMs += 61_000;
+    expect(engine.pacedOut('flights.results')).toBe(false);
+    expect((await engine.answer('flights.results', { ...GIVEN, date: '2026-11-16' }, { tripId: 't_b' })).as).toBe('options');
+    expect(runs).toHaveLength(3);
+    // Every other recipe is never paced.
+    expect(engine.pacedOut('trains.between')).toBe(false);
   });
 });
 
