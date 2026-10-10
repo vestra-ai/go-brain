@@ -2,6 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { GO_RULES } from '../rules.js';
 
 describe("Go's rules", () => {
+  it("read an option's Lock Price and refundability with option.facts, and apply refundable only now (the exam re-run, #17)", () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'));
+    expect(section).toContain("An option already on a card (its Lock Price, refundability, fare rules) is read with the ixigo tool's option.facts and its card_id#n.");
+    expect(section).toContain('- Asked for only refundable fares or free cancellation, apply it now: search again with ixigo\'s own filter for it');
+    expect(section).toContain('Never only promise it for later ("I\'ll allow only refundable rates when we book").');
+  });
+
+  it('answer the line Go woke for, and never ask an earlier open question again in a reply about something else (the re-run, #17)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
+    expect(section).toContain(
+      '- Answer the line you woke for. A question of yours still open from earlier ("drop the pool, or raise the budget?") is never asked again in a reply about something else, unless this line can\'t be answered without it.',
+    );
+  });
+
+  it('run a check a tool can run now, never offer to: confirm chance and offer terms (the re-run, #11 and #20)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'));
+    expect(section).toContain("- When a tool can answer the ask now, run it in this turn and answer from it: a waitlist's chance to confirm is the ixigo tool's trains.confirm_chance, an offer's full terms its offers.details.");
+    expect(section).toContain('Never answer that you haven\'t checked, and never offer to check what they asked ("I can pull up the full terms if you want").');
+  });
+
   it("read a travel fact ixigo shows from ixigo, never from memory, and say when an answer is general advice (EXAM, 10 Oct)", () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'));
     expect(section).toContain('- A fact of a train, bus, flight or stay that ixigo shows is read from ixigo in this turn, never from memory:');

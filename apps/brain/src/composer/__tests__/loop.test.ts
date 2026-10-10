@@ -7,7 +7,7 @@ import { withSchema } from '../../db/test-db.js';
 import type { TextBlock, TurnLimits } from '../context.js';
 import type { DeskItem } from '../../desk/desk.js';
 import { countMarkers, MAX_ROUNDS, runLoop, type LoopInput } from '../loop.js';
-import { promisesNextStep } from '../next-step.js';
+import { defersACheck, promisesNextStep } from '../next-step.js';
 import { roomTools } from '../room-tools.js';
 import { makeTurnCtx, SAY_NOTHING, type QuickTool, type TurnCtx } from '../tools.js';
 
@@ -435,5 +435,27 @@ describe('a next step a reply promises is taken or asked, never left (EXAM, 10 O
     expect(promisesNextStep("Only refundable is easy: I'll set it that way when the vote closes.")).toBe(false);
     expect(promisesNextStep('Chaho to main Friday ke Jaipur to Goa flights check kar deta hoon.')).toBe(false);
     expect(promisesNextStep('Want me to search the return next?')).toBe(false);
+  });
+});
+
+describe('a check a reply left undone is run in the same turn (the exam re-run, 10 Oct: #11, #20)', () => {
+  it("gives a reply that says it hasn't run a check, or offers to, one more round, once", async () => {
+    for (const said of [
+      "Not looking likely: the 3A is at WL 54. These are today's waitlists, and I haven't run a confirmation-chance check on any of them.",
+      'Yes, Flat 12% off with an ICICI credit card EMI, till 31 Dec. I can pull up the full terms if you want them.',
+    ]) {
+      const { bodies, run } = setup([{ text: said }, { text: 'Checked just now: a 41% chance it confirms.' }]);
+      const r = await run();
+      expect(r.text).toBe('Checked just now: a 41% chance it confirms.');
+      expect(JSON.stringify(bodies[1].messages.at(-1))).toContain("trains.confirm_chance; an offer's terms: offers.details");
+    }
+  });
+
+  it('reads only a check the reply itself left undone, never an offer of something else', () => {
+    expect(defersACheck("I haven't run a confirmation-chance check on any of them.")).toBe(true);
+    expect(defersACheck('I can pull up the full terms if you want them.')).toBe(true);
+    expect(defersACheck('I checked the terms: no code needed.')).toBe(false);
+    expect(defersACheck('Want me to look at the Mon 9 Nov return too?')).toBe(false);
+    expect(defersACheck('I can book it once Rahul taps Yes.')).toBe(false);
   });
 });
