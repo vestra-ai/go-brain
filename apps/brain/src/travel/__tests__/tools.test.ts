@@ -408,6 +408,9 @@ describe('put_to_vote', () => {
     // One meaning on the card and its vote: the whole stay, 3 nights at ₹16,900 (the Server team's 10 Oct §6c).
     expect((vote.options as Array<{ price_minor: number }>).map((o) => o.price_minor)).toEqual(card.options.map((o) => o.price_minor));
     expect((vote.options as Array<{ price_minor: number }>)[0]!.price_minor).toBe(5_070_000);
+    // Its note says the whole stay first with what it covers and the night in brackets, as the pay card then does (the
+    // lead, 10 Oct: "Paid ₹38,400 … ₹12,800 per night" read as a night's).
+    expect((vote.options as Array<{ note?: string }>)[0]!.note).toBe('Morjim, ₹50,700 for 3 nights (₹16,900 a night)');
     expect(ctx.cards).toEqual([expect.objectContaining({ kind: 'vote', card_id: 'c_vote_turn_v3_1', decision_id: out.decision_id })]);
     expect(ctx.lines).toEqual(['Vote is up.']);
     expect((ctx.cards[0] as { fallback_text: string }).fallback_text).toMatch(/^Vote: Where do we stay\?/);

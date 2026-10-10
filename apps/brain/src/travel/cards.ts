@@ -258,6 +258,19 @@ export function stayFrom(stays: ReadonlyArray<StayPrice>): string {
   return `, from ${formatInr(total)} ${stayNote(cheapest)}${each ? `, ${each}` : ''}`;
 }
 
+/**
+ * A stay as its vote and its payment say it: the whole stay first with what it covers, the night only in brackets
+ * ("Anjuna, ₹38,400 for 3 nights (₹12,800 a night), about ₹7,700 each"), so the pay card's "Paid ₹38,400 for Villa Sol,
+ * …" never reads as a night's (the lead, 10 Oct). A stay with no total says what its card does.
+ */
+export function stayLine(o: ResultOption): string | null {
+  if (o.totalMinor === undefined) return subtitleFor(o);
+  const area = typeof o.facts.area === 'string' ? o.facts.area : null;
+  const rooms = typeof o.facts.rooms === 'number' && o.facts.rooms > 1;
+  const night = o.priceMinor !== undefined ? ` (${formatInr(o.priceMinor)} ${rooms ? 'a room a night' : 'a night'})` : '';
+  return [area, `${formatInr(o.totalMinor)} ${stayNote(o)}${night}`, shareWords(o)].filter((x): x is string => x !== null).join(', ');
+}
+
 function cardOption(p: CardPick): CardOption {
   const o = p.option;
   const subtitle = subtitleFor(o);
