@@ -18,8 +18,10 @@ export interface CodeFacts {
   hasTasks: boolean;
   /** A line about money (money-line.ts): it always reaches the model, whatever Jev says. */
   money: boolean;
-  /** Only emoji, a laugh, an ok, or a greeting or sign-off (small-talk.ts): read only when Jev has no answer. */
+  /** Only emoji, a laugh, an ok, or a greeting or sign-off (small-talk.ts): banter by code alone, unless it answers Go. */
   smallTalk?: boolean;
+  /** Go's line is the one just before it: a bare "ok" or 👍 may be the yes to Go's offer, so it is never banter by code. */
+  answersGo?: boolean;
 }
 export type RiskWhy = 'spend' | 'steer' | 'secret';
 type Answers = Record<string, JevAnswer> | null;
@@ -132,10 +134,12 @@ function readReaction(a: Answers, b: Bars): Sure<string | null> {
 /** Pure banter or an acknowledgement: question 1's chatter bar, or small talk when Jev has no answer. Never a money line. */
 function readBanter(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
   if (f.namesGo || f.money) return sure(false);
+  // A bare ok, haha, gn or emoji carries nothing, whatever Jev's chatter answer: Go jumps in on most lines, never these
+  // (the bench's guard, 10 Oct). Right after Go's own line it may be the yes to an offer, so Jev and the turn decide.
+  if (f.smallTalk && !f.answersGo) return sure(true);
   const addressed = noulP(a, 'q1_addressed');
   const chatter = noulP(a, 'q1_chatter');
   if (atLeast(chatter, b.for_go.chatterMin) && atMost(addressed, b.for_go.addressedMaxForChatter)) return sure(true);
-  if (!Number.isFinite(addressed) && !Number.isFinite(chatter) && f.smallTalk) return sure(true);
   return unsure();
 }
 

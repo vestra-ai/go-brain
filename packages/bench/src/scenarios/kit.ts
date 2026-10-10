@@ -61,15 +61,19 @@ const UNSURE = { value: null, sure: false } as const;
 
 /**
  * The reflex for the demo: a line that calls Go is for Go and complete (its turn is due at once); every other line is
- * sure chatter, so it never wakes the model. A line that holds a fact (DEMO_FACT_LINES) is read as Jev's Q5 and Q7
+ * sure chatter with nothing in it for Go (banter, and question 11 sure no), so it never wakes the model: the run sheet's
+ * chatter beat is quiet. A line that holds a fact (DEMO_FACT_LINES) is read as Jev's Q5 and Q7
  * would on stage: sure of a fact and sure of a ✅, so P2's instant ✅ and its notes pass run for real. Jev itself is off
  * (REFLEX_LIVE=off).
  */
 export const cueReflex: Brain['reflex'] = {
   async read(msg) {
     const holdsFact = DEMO_FACT_LINES.some((l) => l.text === msg.text);
+    const toGo = addressesGo(msg.text ?? '');
     const read: ReflexRead = {
-      forGo: { value: addressesGo(msg.text ?? ''), sure: true },
+      forGo: { value: toGo, sure: true },
+      banter: { value: !toGo, sure: true },
+      actionable: { value: toGo, sure: true },
       complete: { value: true, sure: true },
       fact: holdsFact ? { value: true, sure: true } : UNSURE,
       reaction: holdsFact ? { value: '✅', sure: true } : UNSURE,

@@ -35,6 +35,9 @@ describe('question 1: for Go', () => {
     expect(read({ q1_chatter: n(0.95), q1_addressed: n(0.05) }, { ...plain, money: true }).banter).toEqual({ value: false, sure: true });
     expect(read(null, { ...plain, smallTalk: true }).banter).toEqual({ value: true, sure: true });
     expect(read(null).banter?.sure).toBe(false);
+    // A bare ok or 👍 is banter by code whatever Jev says, unless it comes right after Go's own line (the yes to an offer).
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.3) }, { ...plain, smallTalk: true }).banter).toEqual({ value: true, sure: true });
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.3) }, { ...plain, smallTalk: true, answersGo: true }).banter?.sure).toBe(false);
   });
   // Keshav, 10 Oct: "jev decision model should know that many messages even without @go or go can be responded by go or
   // acted upon by go". Question 11 says so for itself; a wrong no would leave a real ask unanswered.
