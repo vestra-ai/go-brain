@@ -312,7 +312,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const ran = d.engine.answer(id, given, o);
     const search = ran.then((run): TravelSearch => {
       if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
-      return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page };
+      return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(run.cut ? { cut: true } : {}) };
     });
     keep(key, { at: nowMs, ttl, search, ran, page });
     return ran;
@@ -471,7 +471,10 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         const said = run.site
           ? { filtered: run.site.filtered, sorted: run.site.sorted, unknown: run.site.unknown, listed: run.site.listed, offers: run.site.list ? offersText(run.site.list) : null }
           : null;
-        return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}), ...(said ? { site: said } : {}) };
+        return {
+          results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}), ...(said ? { site: said } : {}),
+          ...(run.cut ? { cut: true } : {}),
+        };
       },
       async (err: unknown): Promise<never> => {
         if (card) {

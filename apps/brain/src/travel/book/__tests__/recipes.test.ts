@@ -432,7 +432,7 @@ describe('flights.results', () => {
     const read = async (c: ReturnType<typeof capture>) => {
       const got = await engineWith(() => [c]).engine.answer('flights.results', GIVEN, { tripId: 't_dxb' });
       if (got.as !== 'options') throw new Error(got.as);
-      return { count: got.options.length, first: got.options.find((o) => o.title === 'Air-India Express IX1000')?.priceMinor };
+      return { count: got.options.length, first: got.options.find((o) => o.title === 'Air-India Express IX1000')?.priceMinor, ...(got.cut ? { cut: true } : {}) };
     };
     // Bash with sse "last": the last event alone.
     expect(await read(capture(STREAM, STREAM_URL, snapshot(613, 7_000)))).toEqual({ count: 613, first: 700_000 });
@@ -441,7 +441,8 @@ describe('flights.results', () => {
     expect(await read(capture(STREAM, STREAM_URL, stream))).toEqual({ count: 613, first: 700_000 });
     // An older Bash cutting it at 1 MB, partway through the third event: the first two events' 272 flights.
     const cut = stream.slice(0, snapshot(57).length + snapshot(272).length + 500);
-    expect(await read({ ...capture(STREAM, STREAM_URL, cut), truncated: true })).toEqual({ count: 272, first: 863_000 });
+    // The answer says it was cut, so the group hears these are the first ixigo sent.
+    expect(await read({ ...capture(STREAM, STREAM_URL, cut), truncated: true })).toEqual({ count: 272, first: 863_000, cut: true });
   }, 30_000);
 
   it("reads the flights from ixigo's stream: each one's airline and numbers, its fare per person, its times and stops", async () => {

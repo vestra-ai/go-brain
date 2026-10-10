@@ -87,6 +87,8 @@ export interface TravelSearch {
   runId?: string;
   /** The results page it read on ixigo.com, where the whole list is (ixigo_web). */
   page?: string;
+  /** ixigo's list came cut short: these are the first it sent (a long flights stream past what Bash keeps), not all of it. */
+  cut?: true;
   /**
    * The conditions ixigo was asked to filter on and did not: its filtered page caught nothing in time, so the list is the
    * same page without them (ixigo_web, backend.ts). The travel layer picks the stays that say them, or, when none does,
