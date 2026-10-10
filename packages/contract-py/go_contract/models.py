@@ -226,6 +226,49 @@ class RoomType(BaseModel):
     photos: list[Photo] | None = None
 
 
+class MapPoint(BaseModel):
+    lat: Annotated[float, Field(ge=-90.0, le=90.0)]
+    lng: Annotated[float, Field(ge=-180.0, le=180.0)]
+
+
+class OptionReview(BaseModel):
+    rating: float | None = None
+    text: Annotated[str, Field(max_length=1000, min_length=1)]
+    date: date_aliased | None = None
+    source: str | None = None
+
+
+class NearbyPlace(BaseModel):
+    name: Annotated[str, Field(max_length=120, min_length=1)]
+    distance_m: int | None = None
+
+
+class OptionFullDetails(BaseModel):
+    gallery_urls: list[GalleryUrl] | None = None
+    caption: str | None = None
+    why: list[str] | None = None
+    costs: list[OptionCost] | None = None
+    total_minor: int | None = None
+    amenities: list[str] | None = None
+    activities: list[str] | None = None
+    facts: list[OptionFact] | None = None
+    cancellation: str | None = None
+    rating: float | None = None
+    review_count: int | None = None
+    go_note: str | None = None
+    address: str | None = None
+    map: MapPoint | None = None
+    check_in: str | None = None
+    check_out: str | None = None
+    property_type: str | None = None
+    stars: float | None = None
+    rooms: list[RoomType] | None = None
+    policies: list[str] | None = None
+    reviews: list[OptionReview] | None = None
+    nearby: list[NearbyPlace] | None = None
+    url: str | None = None
+
+
 class Option(BaseModel):
     option_id: Annotated[str, Field(max_length=64, min_length=1)]
     title: Annotated[str, Field(max_length=80, min_length=1)]
@@ -248,6 +291,7 @@ class Option(BaseModel):
     price_min_minor: int | None = None
     price_max_minor: int | None = None
     room_types: list[RoomType] | None = None
+    url: str | None = None
 
 
 class OptionsCard(BaseModel):
@@ -264,7 +308,8 @@ class OptionsCard(BaseModel):
         "stay", "flight", "train", "bus", "place", "food", "activity", "cab"
     ]
     checked_at: AwareDatetime
-    options: Annotated[list[Option], Field(max_length=5, min_length=1)]
+    options: Annotated[list[Option], Field(max_length=10, min_length=1)]
+    decision_id: str | None = None
     actions: list[CardAction] | None = None
 
 
@@ -323,6 +368,7 @@ class WorkingCard(BaseModel):
     steps: Annotated[list[Step], Field(max_length=8)]
     screenshot_url: str | None = None
     page_url: str | None = None
+    live_url: str | None = None
     updated_at: AwareDatetime
     actions: list[CardAction] | None = None
 
@@ -633,11 +679,11 @@ class Decision(BaseModel):
     anonymous: bool
     status: Literal["open", "closed", "cancelled"]
     opened_by_person_id: str | None = None
-    options: Annotated[list[DecisionOption], Field(max_length=10, min_length=2)]
+    options: Annotated[list[DecisionOption], Field(max_length=20, min_length=2)]
     closes_at: AwareDatetime | None = None
     voted: Annotated[int, Field(ge=0)]
     of: Annotated[int, Field(ge=0)]
-    tally: Annotated[list[int], Field(max_length=10)]
+    tally: Annotated[list[int], Field(max_length=20)]
     flexible_count: int | None = None
     votes: list[Vote] | None = None
     result_index: int | None = None
@@ -1057,7 +1103,7 @@ class DecisionVotedData(BaseModel):
     option_index: int | None = None
     voted: Annotated[int, Field(ge=0)]
     of: Annotated[int, Field(ge=0)]
-    tally: Annotated[list[int], Field(max_length=10)]
+    tally: Annotated[list[int], Field(max_length=20)]
     flexible: Literal[True] | None = None
     retracted: Literal[True] | None = None
 
@@ -1091,6 +1137,28 @@ class DecisionClosed(BaseModel):
     occurred_at: AwareDatetime
     type: Literal["decision.closed"]
     data: DecisionClosedData
+
+
+class DecisionOptionsAddedData(BaseModel):
+    decision_id: Annotated[str, Field(max_length=64, min_length=1)]
+    options: Annotated[list[DecisionOption], Field(max_length=10, min_length=1)]
+    by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
+    """
+    Who did it: a person, Go, or the Server itself (system).
+    """
+
+
+class DecisionOptionsAdded(BaseModel):
+    """
+    1.3 (rev 5 R5): options were added to an open vote ("see more", add_vote_options). Their indexes continue from the last option; votes already cast stay.
+    """
+
+    event_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    seq: Annotated[int, Field(gt=0)]
+    occurred_at: AwareDatetime
+    type: Literal["decision.options_added"]
+    data: DecisionOptionsAddedData
 
 
 class DecisionCancelledData(BaseModel):
@@ -1272,6 +1340,7 @@ class Event(
         | DecisionVoted
         | DecisionClosed
         | DecisionCancelled
+        | DecisionOptionsAdded
         | MandateSet
         | MandateConfirmed
         | MandateDeclined
@@ -1296,6 +1365,7 @@ class Event(
         | DecisionVoted
         | DecisionClosed
         | DecisionCancelled
+        | DecisionOptionsAdded
         | MandateSet
         | MandateConfirmed
         | MandateDeclined
@@ -1353,6 +1423,17 @@ class OpenDecision(BaseModel):
     anonymous: bool
     options: Annotated[list[DecisionOption], Field(max_length=10, min_length=2)]
     closes_at: AwareDatetime | None = None
+
+
+class AddVoteOptions(BaseModel):
+    """
+    1.3: adds options to an open vote, for the options a "See more" tap brought.
+    """
+
+    request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    decision_id: Annotated[str, Field(max_length=64, min_length=1)]
+    options: Annotated[list[DecisionOption], Field(max_length=10, min_length=1)]
 
 
 class OpenDecisionResult(BaseModel):
@@ -1680,6 +1761,7 @@ class CreateLink(BaseModel):
     person_id: Annotated[str, Field(max_length=64, min_length=1)]
     start: Literal["home", "add_card", "add_login", "add_documents"] | None = None
     context: LinkContext | None = None
+    display: Literal["sheet", "embedded"] | None = None
 
 
 class Link(BaseModel):
@@ -1690,6 +1772,30 @@ class Link(BaseModel):
 class Health(BaseModel):
     ok: Literal[True]
     contract: str
+
+
+class PlaceInfoRequest(BaseModel):
+    name: Annotated[str, Field(max_length=120, min_length=1)]
+    from_city: str | None = None
+
+
+class PlaceTravel(BaseModel):
+    mode: Literal["flight", "train", "bus", "cab", "drive"]
+    duration_minutes: Annotated[int, Field(gt=0)]
+
+
+class PlaceInfo(BaseModel):
+    place: Place
+    tag: str | None = None
+    travel: PlaceTravel | None = None
+    best_months: list[int] | None = None
+
+
+class GetOptionDetails(BaseModel):
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    card_id: Annotated[str, Field(max_length=64, min_length=1)]
+    option_id: Annotated[str, Field(max_length=64, min_length=1)]
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
 
 
 class Error(BaseModel):

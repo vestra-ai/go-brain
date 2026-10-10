@@ -98,6 +98,7 @@ These are the buttons Go usually puts on its cards:
 |---|---|---|---|---|
 | `options` | `pick` (with `per_option`) | "I'll take this" | Everyone | Picks that option. Go follows up in the room. |
 | `options` | `vote` | "Put it to a vote" | Everyone | Go opens a vote on these options. |
+| `options` | `more_options` (1.3) | "See more" | Everyone | Go posts a new message with up to 10 options not shown before, in the same vote. |
 | `working` | `watch` | "Watch" | Everyone | Opens a page where the person watches Go work. |
 | `working` | `stop` | "Stop" | Everyone | Stops the job. |
 | `call` | `stop` | "Stop the call" | Everyone | Ends the call. |
@@ -343,7 +344,7 @@ These five kinds carry everything they show, and their buttons are in `actions`.
 
 ### Options
 
-An options card shows up to five options Go found, such as stays, flights or places, with their prices and when Go checked them. Go posts one when someone asks it to find something.
+An options card shows up to ten options Go found (five before 1.3), such as stays, flights or places, with their prices and when Go checked them. Go posts one when someone asks it to find something. Show the first few and a "show more" control.
 
 Draw it like this:
 - The title, and "checked 3 min ago" from `checked_at`. Prices change, so always show when Go checked them. Go checks the price again before it books.
@@ -431,6 +432,35 @@ Draw it like this:
 }
 ```
 
+**1.3: a vote on the card.** For the group's stays or places, Go opens the vote first and posts the card with its `decision_id`. Draw a Vote button on each option and the tally on the card: votes go through the server as for any vote (`decision.voted`), and the result follows `decision.closed` as today. Such a card has no `pick` or `vote` buttons. Each option's `url` (1.3, https) is its page on ixigo: show it as a small "View on ixigo" link in the option's details, not as a button. The standard "See more" action, `more_options`, brings a new message with a new card of options not shown before, with the same `decision_id`, so both messages show Vote buttons for one vote. When Go has nothing new, the tap gets a toast. Travel options (flights, trains, buses) are each traveller's own: never in a vote.
+
+<!-- schema: OptionsCard -->
+```json
+{
+  "card_id": "c_opts_3",
+  "kind": "options",
+  "fallback_text": "Stays in Anjuna for 6 to 9 Nov, in a vote: open the app to vote.",
+  "title": "Stays in Anjuna, 6 to 9 Nov",
+  "option_kind": "stay",
+  "checked_at": "2026-10-06T11:30:00Z",
+  "decision_id": "d_12",
+  "options": [
+    {
+      "option_id": "opt_1",
+      "title": "Villa Sol",
+      "subtitle": "Anjuna, ₹18,066 per night",
+      "image_url": "https://brain.go.example/img/villa-sol.jpg",
+      "price_minor": 5420000,
+      "currency": "INR",
+      "price_note": "for 3 nights",
+      "highlights": ["Pool", "Sleeps 5"],
+      "url": "https://www.ixigo.com/hotels/4395492/details"
+    }
+  ],
+  "actions": [{ "action_id": "more_options", "label": "See more", "style": "secondary" }]
+}
+```
+
 ### Working
 
 A working card shows Go doing a longer job, such as comparing many stays or booking on a website, step by step. Go posts it when the job starts and updates it in place as the steps finish.
@@ -443,6 +473,8 @@ Draw it like this:
 - "Updated 20 s ago", from `updated_at`.
 
 When the job needs someone (for example, a one-time code), Go sets `needs_you` and names that person in `for_person_ids`, which pins the card in their strip.
+
+**1.3: the live view.** `live_url` is a page Go hosts that shows, live and view-only, the browser Go is driving. It is signed and works for at most 15 minutes. Open it in a panel inside the app while the card is `running` or `needs_you`: it allows framing by the app's origins. Go sends it when the job starts and replaces the card only when a step changes, never for every frame. When the screen shows a person's own account (their ixigo login, their bookings), the message is visible to that person alone (`visible_to_person_ids`). `screenshot_url` stays as the last picture once the job ends.
 
 **Buttons.** "Watch" opens a page where the person watches Go work, from the `open` answer. "Stop" stops the job.
 
@@ -463,6 +495,7 @@ When the job needs someone (for example, a one-time code), Go sets `needs_you` a
   ],
   "screenshot_url": "https://brain.go.example/img/task-villas-1-0007.jpg",
   "page_url": "https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&locationType=S&masterLocationId=48569&countryId=1&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&childCount=0",
+  "live_url": "https://brain.go.example/live/task_villas_1?sig=lv_7Hc2Qm",
   "updated_at": "2026-10-05T07:12:40Z",
   "actions": [
     { "action_id": "watch", "label": "Watch", "style": "primary" },

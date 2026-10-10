@@ -53,6 +53,14 @@ export const OpenDecision = z
     closes_at: IsoDateTime.nullish(),
   })
   .meta({ id: 'OpenDecision', description: 'Opens a vote. Go then posts a message with a vote card to show it in the room.' });
+
+/**
+ * 1.3 (rev 5 R5): "see more" adds options to the same open vote. Only an open vote, at most 20 options in all; votes
+ * already cast stay. The Server answers with the change's seq and sends decision.options_added.
+ */
+export const AddVoteOptions = z
+  .object({ request_id, trip_id, decision_id: Id, options: z.array(DecisionOption).min(1).max(10) })
+  .meta({ id: 'AddVoteOptions', description: '1.3: adds options to an open vote, for the options a "See more" tap brought.' });
 export const OpenDecisionResult = z.object({ decision_id: Id, seq: Seq }).meta({ id: 'OpenDecisionResult' });
 
 export const CloseDecision = z.object({ request_id, trip_id, decision_id: Id }).meta({ id: 'CloseDecision' });

@@ -8,6 +8,7 @@ import type { z } from 'zod';
 import type { Log } from '../log.js';
 import type { Door, SocketFrom, ToGoHandler, UpgradeHandler } from './handlers.js';
 import { KNOWN_EVENT_TYPES, TO_GO_SCHEMAS, type ToGoMethod } from './methods.js';
+import { NOT_YET, notYet } from './not-yet.js';
 import type { ReplayGuard } from './replay-guard.js';
 import { errorFrame, readFrame, resultFrame, SocketCallError, type RequestFrame } from './rpc.js';
 import type { ServerLinkImpl, SocketHandle } from './server-link.js';
@@ -189,7 +190,8 @@ export function createDoor(o: DoorOptions): DoorImpl {
   async function compute(f: RequestFrame, from: SocketFrom): Promise<string> {
     const def = C.methodByName(f.method);
     if (!def || def.direction !== 'to_go') return errorFrame(f.id, C.SOCKET_ERROR_CODES.unknown_method, `unknown method ${f.method}`);
-    const handler = handlers.get(f.method);
+    // A 1.3 method no lane answers yet is "not available yet" (not-yet.ts), never "unknown".
+    const handler = handlers.get(f.method) ?? (NOT_YET.has(f.method) ? (notYet(f.method as ToGoMethod) as unknown as ToGoHandler<ToGoMethod>) : undefined);
     if (!handler) return errorFrame(f.id, C.SOCKET_ERROR_CODES.unknown_method, `Go does not handle ${f.method} yet`);
     // An event type Go does not know yet is accepted before any check, so the Server can add types within version 1.
     if (f.method === 'send_event') {

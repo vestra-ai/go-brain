@@ -43,6 +43,20 @@ export function openVote(s: TripState, p: Params<typeof C.OpenDecision>): Change
   return { result: { decision_id: decision.decision_id, seq: ev.seq }, events: [ev] };
 }
 
+/**
+ * 1.3 (rev 5 R5): "see more" adds options to an open vote, at most 20 in all. The new options take the next indexes and
+ * votes already cast stay; decision.options_added tells Go.
+ */
+export function addVoteOptions(s: TripState, p: Params<typeof C.AddVoteOptions>): Change<{ seq: number }> {
+  const d = openDecision(s, p.decision_id);
+  if (d.options.length + p.options.length > 20) throw fail('invalid', `options: a vote has at most 20 options, and this one has ${d.options.length}`);
+  p.options.forEach((o, i) => s.currency(o.currency, `options[${i}].currency`));
+  d.options.push(...p.options);
+  d.tally.push(...p.options.map(() => 0));
+  const ev = s.bump('decision.options_added', { decision_id: d.decision_id, options: structuredClone(p.options), by: { kind: 'go' } });
+  return { result: { seq: ev.seq }, events: [ev] };
+}
+
 export function closeVote(s: TripState, p: Params<typeof C.CloseDecision>): Change<{ decision: Decision; seq: number }> {
   const d = s.decision(p.decision_id);
   if (!d) throw fail('not_found', `decision ${p.decision_id} is not in this trip`);

@@ -77,7 +77,7 @@ const connect = () => rawServer(`${base}${target()}`, SECRET);
 describe('the door', () => {
   it('GET /v1/health answers without a signature', async () => {
     const r = await http.inject({ method: 'GET', url: '/v1/health' });
-    expect(r.json()).toEqual({ ok: true, contract: '1.2.0' });
+    expect(r.json()).toEqual({ ok: true, contract: '1.3.0' });
   });
 
   it('a good signature opens the socket, and Go pings', async () => {
@@ -151,6 +151,20 @@ describe('the door', () => {
     expect((await s.call('do_magic', {})).error).toEqual({ code: -32601, message: 'unknown method do_magic' });
     expect((await s.call('read_trip', { trip_id: 't_goa' })).error.code).toBe(-32601);
     expect((await s.call('catch_up', { trip_id: 't_goa', person_id: 'p_priya', since: '2026-10-05T10:00:00Z' })).error.code).toBe(-32601);
+    await s.close();
+  });
+
+  it('answers 409 conflict "not available yet" for a 1.3 method no lane answers yet (place_info, get_option_details)', async () => {
+    const s = await connect();
+    expect((await s.call('place_info', { name: 'Ladakh', from_city: 'Delhi' })).error).toMatchObject({
+      code: 409,
+      message: 'place_info is not available yet.',
+      data: { code: 'conflict' },
+    });
+    const details = { trip_id: 't_goa', card_id: 'c_opts_3', option_id: 'opt_2', person_id: 'p_priya' };
+    expect((await s.call('get_option_details', details)).error).toMatchObject({ code: 409, data: { code: 'conflict' } });
+    // Its params are still checked first, as for any method.
+    expect((await s.call('place_info', { from_city: 'Delhi' })).error.code).toBe(422);
     await s.close();
   });
 

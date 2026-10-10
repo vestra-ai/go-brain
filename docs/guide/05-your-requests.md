@@ -16,6 +16,8 @@ The server sends all 8 of these requests with `go.request(method, params)` on th
 | `delete_fact` | `DeleteFact` | `Ok` | 2 seconds | Someone removes one thing Go knows about them |
 | `forget_person` | `ForgetPerson` | `ForgetResult` | 2 seconds | Someone taps "Forget me" |
 | `vault_link` | `CreateLink` | `Link` | 2 seconds | Someone opens their cards and logins from the You screen |
+| `place_info` (1.3) | `PlaceInfoRequest` | `PlaceInfo` | 3 seconds | The server refreshes an idea on the home screen, at most once a day per idea |
+| `get_option_details` (1.3) | `GetOptionDetails` | `OptionFullDetails` | 3 seconds | Someone opens an option's Details |
 
 Your monitoring can also call `GET /v1/health` over HTTP. It is not signed. See [Health](#health-get-v1health).
 
@@ -401,6 +403,80 @@ The link expires 5 minutes after Go makes it. Ask for it only when the person ta
 
 If Go fails or takes longer than 2 seconds, show "Couldn't open your cards. Try again."
 
+1.3 adds `display`: `sheet` (the default) opens the link in the system browser sheet, as above. `embedded` asks for a page the app shows inside itself: it allows framing only by the app's origins, and when it is done it posts `{ "type": "go-vault", "status": "saved" | "cancelled" | "failed" }` to its parent window. Until Go has that page it answers `display: "embedded"` with a 409 `conflict` error, "not available yet": open the sheet instead.
+
+<!-- schema: CreateLink -->
+```json
+{ "kind": "vault", "person_id": "p_rahul", "start": "add_card", "display": "embedded" }
+```
+
+## Place ideas: `place_info` (1.3)
+
+The home screen's ideas are the server's own, picked for each starting city. To show each with real photos, the server asks Go what the place is like. It asks at most once a day per idea, keeps the answer, and never asks while a person waits.
+
+<!-- schema: PlaceInfoRequest -->
+```json
+{ "name": "Ladakh", "from_city": "Delhi" }
+```
+
+Go answers with the place and 6 to 12 photos when it has them, a one-line tag, the usual way there from that city, and the best months (1 to 12):
+
+<!-- schema: PlaceInfo -->
+```json
+{
+  "place": {
+    "name": "Ladakh",
+    "lat": 34.1526,
+    "lng": 77.5771,
+    "photos": [
+      { "url": "https://brain.go.example/img/ladakh-pangong.jpg", "label": "Pangong Lake" },
+      { "url": "https://brain.go.example/img/ladakh-khardung.jpg", "label": "Khardung La" }
+    ]
+  },
+  "tag": "High-altitude road trip",
+  "travel": { "mode": "flight", "duration_minutes": 85 },
+  "best_months": [6, 7, 8, 9]
+}
+```
+
+Until Go answers it, `place_info` gets a 409 `conflict` error, "not available yet": keep the idea's own image.
+
+## An option's Details: `get_option_details` (1.3)
+
+An options card carries what fits on a card. When someone opens an option's Details, the server asks Go for the rest:
+
+<!-- schema: GetOptionDetails -->
+```json
+{ "trip_id": "t_goa", "card_id": "c_opts_3", "option_id": "opt_2", "person_id": "p_priya" }
+```
+
+Go answers with everything an option's `details` can hold, and more. Every field is optional: show what is there.
+
+<!-- schema: OptionFullDetails -->
+```json
+{
+  "caption": "A quiet villa a short walk from Anjuna beach",
+  "rating": 4.6,
+  "review_count": 212,
+  "cancellation": "Free cancellation until 4 Nov",
+  "address": "Grande Vaddo, Anjuna, Goa 403509",
+  "map": { "lat": 15.5794, "lng": 73.7426 },
+  "check_in": "14:00",
+  "check_out": "11:00",
+  "property_type": "villa",
+  "stars": 4,
+  "rooms": [
+    { "room_type_id": "rt_deluxe", "label": "Deluxe room", "sleeps": 2, "price_minor": 2400000, "photos": [{ "url": "https://brain.go.example/img/sol-deluxe.jpg", "label": "Deluxe room" }] }
+  ],
+  "policies": ["No pets", "Quiet hours 22:00 to 07:00"],
+  "reviews": [{ "rating": 4.5, "text": "Lovely pool and very helpful staff.", "date": "2026-09-12", "source": "ixigo" }],
+  "nearby": [{ "name": "Anjuna beach", "distance_m": 600 }],
+  "url": "https://www.ixigo.com/hotels/4395492/details"
+}
+```
+
+The server keeps the answer an hour per option. Until Go answers it, `get_option_details` gets a 409 `conflict` error, "not available yet": show the option's own `details`.
+
 ## Health: `GET /v1/health`
 
 `GET /v1/health` says whether Go is up and which contract version it speaks. It is a plain HTTP request, not a socket request, and it is not signed, so any monitoring tool can call it:
@@ -411,7 +487,7 @@ curl https://brain.go.example/v1/health
 
 <!-- schema: Health -->
 ```json
-{ "ok": true, "contract": "1.2.0" }
+{ "ok": true, "contract": "1.3.0" }
 ```
 
 Check that `contract` starts with `1.`. Within version 1, the contract only adds things, so a Go that speaks any `1.x` works with a server built for `1.0.0`.

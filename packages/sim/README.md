@@ -1,13 +1,13 @@
 # packages/sim: the simulator
 
-The simulator plays the Server and the people in a trip room, so Go can be built, tested and shown without the real Server or App. It opens the signed socket to Go exactly as the Server does, holds trips in memory with the Server's rules from [`docs/guide`](../../docs/guide), answers all 18 of Go's methods, and sends each trip's events to Go one at a time, in change-number order. The dev room is a one-page App in the browser on top of it.
+The simulator plays the Server and the people in a trip room, so Go can be built, tested and shown without the real Server or App. It opens the signed socket to Go exactly as the Server does, holds trips in memory with the Server's rules from [`docs/guide`](../../docs/guide), answers all 19 of Go's methods, and sends each trip's events to Go one at a time, in change-number order. The dev room is a one-page App in the browser on top of it.
 
 ## Main parts (under `src/`)
 
 | Part | What it does |
 |---|---|
 | `server-socket.ts` | `GoSocket`, the Server's end of the socket: signs every connect fresh, reconnects with backoff, closes after 40 s of silence, sends unanswered requests again with the same id after a reconnect, and answers Go's requests through a table of handlers with the contract's errors. The Server team can copy this file. |
-| `fake-server.ts` | `FakeServer`: trips in memory, Go's 14 writes each done once per `request_id`, and helpers that play people: say, react, edit, delete, tap a card, vote, close a vote on time, and the payer's "Yes, book it" or "Not now". |
+| `fake-server.ts` | `FakeServer`: trips in memory, Go's 15 writes each done once per `request_id`, and helpers that play people: say, react, edit, delete, tap a card, vote, close a vote on time, and the payer's "Yes, book it" or "Not now". |
 | `state/` | The rules behind it: change numbers and events (`trip-state.ts`), votes and mandates (`decisions.ts`), the trip record (`records.ts`), and the spend check, signed spend approvals, bookings, expenses and who owes whom (`money.ts`). A refused write leaves the trip as it was. |
 | `dev-room/` | The dev room: a page served with a live WebSocket. It shows the room and every card kind, and sends what people do on the page to the `FakeServer`. It is laid out for a phone. |
 | `goa.ts` | The Goa trip from the guide (Rahul, Priya, Arjun, Meher and Kabir), fresh or mid-planning, and a short seed chat. |

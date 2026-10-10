@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppUrl, HttpUrl, Id, IsoDateTime } from './common.js';
+import { AppUrl, HttpUrl, Id, IsoDateTime, Place } from './common.js';
 
 /**
  * Your requests: what the Server asks Go over the socket. Events tell Go what happened;
@@ -112,8 +112,39 @@ export const CreateLink = z
     start: z.enum(['home', 'add_card', 'add_login', 'add_documents']).nullish(),
     /** 1.1: what the link is for: the trip, and what the documents are for. */
     context: z.object({ trip_id: Id, purpose: z.enum(['visa']).nullish() }).meta({ id: 'LinkContext' }).nullish(),
+    /**
+     * 1.3 (rev 5 R8): where the App opens it. sheet (the default): the system browser sheet. embedded: inside the App, where
+     * the page allows framing only by the App's origins and posts { type: "go-vault", status: "saved" | "cancelled" |
+     * "failed" } to its parent when done. Go answers 409 conflict "not available yet" while it has no embedded page.
+     */
+    display: z.enum(['sheet', 'embedded']).nullish(),
   })
   .meta({ id: 'CreateLink' });
 export const Link = z.object({ url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'Link' });
 
 export const Health = z.object({ ok: z.literal(true), contract: z.string() }).meta({ id: 'Health' });
+
+/** 1.3 (rev 5 R6): what a place is like, for the ideas on the home screen. The Server asks at most once a day per idea. */
+export const PlaceInfoRequest = z
+  .object({ name: z.string().min(1).max(120), from_city: z.string().min(1).max(120).nullish() })
+  .meta({ id: 'PlaceInfoRequest' });
+export const PlaceInfo = z
+  .object({
+    /** The place with its photos (6 to 12 when Go has them) and where it is. */
+    place: Place,
+    /** One short line, e.g. "High-altitude road trip". */
+    tag: z.string().min(1).max(80).nullish(),
+    /** The usual way there from from_city, and how long it takes. */
+    travel: z
+      .object({ mode: z.enum(['flight', 'train', 'bus', 'cab', 'drive']), duration_minutes: z.int().positive() })
+      .meta({ id: 'PlaceTravel' })
+      .nullish(),
+    /** The best months to go, 1 to 12. */
+    best_months: z.array(z.int().min(1).max(12)).max(12).nullish(),
+  })
+  .meta({ id: 'PlaceInfo' });
+
+/** 1.3 (rev 5 R9): asked when a person opens an option's Details. The Server keeps the answer an hour per option. */
+export const GetOptionDetails = z
+  .object({ trip_id: Id, card_id: Id, option_id: Id, person_id: Id })
+  .meta({ id: 'GetOptionDetails' });

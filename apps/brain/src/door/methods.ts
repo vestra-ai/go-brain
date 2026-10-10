@@ -2,7 +2,7 @@ import * as C from '@go/contract';
 import type { z } from 'zod';
 
 /**
- * The 26 socket methods with their zod schemas, typed. @go/contract exports schemas, not a typed map
+ * The 29 socket methods with their zod schemas, typed. @go/contract exports schemas, not a typed map
  * per method, so every lane reads params and results through this table. methods.test.ts checks that
  * it names exactly the contract's SOCKET_METHODS with the very same schemas.
  */
@@ -17,6 +17,7 @@ export const TO_SERVER_SCHEMAS = {
   update_trip: [C.UpdateTrip, C.WriteResult],
   open_vote: [C.OpenDecision, C.OpenDecisionResult],
   close_vote: [C.CloseDecision, C.CloseDecisionResult],
+  add_vote_options: [C.AddVoteOptions, C.WriteResult],
   set_mandate: [C.SetMandate, C.WriteResult],
   add_record_line: [C.AddRecordLine, C.AddRecordLineResult],
   update_record_line: [C.UpdateRecordLine, C.WriteResult],
@@ -36,6 +37,8 @@ export const TO_GO_SCHEMAS = {
   delete_fact: [C.DeleteFact, C.Ok],
   forget_person: [C.ForgetPerson, C.ForgetResult],
   vault_link: [C.CreateLink, C.Link],
+  place_info: [C.PlaceInfoRequest, C.PlaceInfo],
+  get_option_details: [C.GetOptionDetails, C.OptionFullDetails],
 } as const;
 
 export type ToServerMethod = keyof typeof TO_SERVER_SCHEMAS;
@@ -57,7 +60,7 @@ export type CardTapParams = z.infer<typeof C.CardTap>;
 export type CardTapResult = z.input<typeof C.CardActionResult>;
 
 /**
- * The 21 event types the contract knows (1.1 added settlement.recorded). The contract's Event schema rejects any other type, so the
+ * The 22 event types the contract knows (1.1 added settlement.recorded, 1.3 decision.options_added). The contract's Event schema rejects any other type, so the
  * door checks `type` against this list first and accepts an unknown type without validating it.
  */
 export const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set<C.EventType>([
@@ -68,4 +71,6 @@ export const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set<C.EventType>([
   'record.changed', 'booking.changed', 'expense.changed',
   // 1.1
   'settlement.recorded',
+  // 1.3
+  'decision.options_added',
 ]);

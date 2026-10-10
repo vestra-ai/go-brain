@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AmountMinor, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Photo, Place } from './common.js';
+import { AmountMinor, Currency, HttpsUrl, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Photo, Place } from './common.js';
 
 /**
  * Cards are the rich things Go posts in the room. The same JSON travels from Go through
@@ -121,6 +121,34 @@ export const RoomType = z
   .meta({ id: 'RoomType' });
 export type RoomType = z.infer<typeof RoomType>;
 
+/**
+ * 1.3 (rev 5 R9): everything about one option, for its Details page: what OptionDetails has, and more. get_option_details
+ * answers it when a person opens Details, so a card of 10 options stays light. Every field is optional.
+ */
+export const OptionFullDetails = OptionDetails.extend({
+  address: z.string().min(1).max(300).nullish(),
+  map: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).meta({ id: 'MapPoint' }).nullish(),
+  /** Times of day, as "14:00". */
+  check_in: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullish(),
+  check_out: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullish(),
+  /** As the source says it, e.g. "villa", "hotel", "homestay". */
+  property_type: z.string().min(1).max(40).nullish(),
+  stars: z.number().min(0).max(7).nullish(),
+  rooms: z.array(RoomType).max(10).nullish(),
+  policies: z.array(z.string().min(1).max(200)).max(20).nullish(),
+  reviews: z
+    .array(
+      z
+        .object({ rating: z.number().min(0).max(10).nullish(), text: z.string().min(1).max(1000), date: IsoDate.nullish(), source: z.string().min(1).max(40).nullish() })
+        .meta({ id: 'OptionReview' }),
+    )
+    .max(10)
+    .nullish(),
+  nearby: z.array(z.object({ name: z.string().min(1).max(120), distance_m: z.int().nonnegative().nullish() }).meta({ id: 'NearbyPlace' })).max(20).nullish(),
+  /** The option's own page on ixigo. */
+  url: HttpsUrl.nullish(),
+}).meta({ id: 'OptionFullDetails' });
+
 export const Option = z
   .object({
     /** Go's id for this option, sent back when someone taps a per-option button. */
@@ -153,6 +181,8 @@ export const Option = z
     price_max_minor: AmountMinor.nullish(),
     /** 10 Oct B4: a stay's kinds of room, each priced per room for the whole stay. */
     room_types: z.array(RoomType).max(10).nullish(),
+    /** 1.3 (rev 5 R5): the option's own page on ixigo. The App shows it as a small "View on ixigo" link in the details. */
+    url: HttpsUrl.nullish(),
   })
   .meta({ id: 'Option' });
 
@@ -165,10 +195,25 @@ export const OptionsCard = z
     option_kind: z.enum(['stay', 'flight', 'train', 'bus', 'place', 'food', 'activity', 'cab']),
     /** When Go checked the prices. The App shows "checked 3 min ago". */
     checked_at: IsoDateTime,
-    options: z.array(Option).min(1).max(5),
+    /** 1.3 (rev 5 R3): up to 10. The App shows the first few and "show more". */
+    options: z.array(Option).min(1).max(10),
+    /**
+     * 1.3 (rev 5 R5): the vote these options are in. Go opens it first (open_vote, one DecisionOption a card option, its
+     * option_ref the card's option_id), then posts the card with its id: the App draws a Vote button on each option and the
+     * tally on the card. Cards from "see more" carry the same id. Never on travel options (a ticket is its traveller's own).
+     */
+    decision_id: Id.nullish(),
     actions,
   })
   .meta({ id: 'OptionsCard', description: 'Options Go found (stays, flights, places...), with prices and when they were checked.' });
+
+/**
+ * 1.3 (rev 5 R4): the standard "See more" action on an options card. A tap reaches Go as card_tap with action_id
+ * "more_options": Go answers done at once, then posts a new message with a new options card of up to 10 options not shown
+ * before for the same search, in the same vote (decision_id, add_vote_options). With nothing new left, Go answers the tap
+ * with a toast.
+ */
+export const MORE_OPTIONS = { action_id: 'more_options', label: 'See more', style: 'secondary' } as const satisfies z.input<typeof CardAction>;
 
 /** 10 Oct B5: one way the group can take a stay's rooms: the rooms, who is in each, and what each person pays. */
 export const RoomArrangement = z
@@ -217,6 +262,13 @@ export const WorkingCard = z
     screenshot_url: HttpUrl.nullish(),
     /** The address of the page in that picture, for the App's address bar. Only ever a search, results or details page. */
     page_url: HttpUrl.nullish(),
+    /**
+     * 1.3 (rev 5 R7): a view-only page of the browser Go is driving, hosted by Go, signed and short-lived (at most 15
+     * minutes). The App opens it in a panel while the state is running or needs_you; it allows framing by the App's origins.
+     * Sent when the task starts; replace_card only at step changes. A screen with a person's own account goes in a message
+     * visible to that person alone.
+     */
+    live_url: HttpsUrl.nullish(),
     updated_at: IsoDateTime,
     actions,
   })

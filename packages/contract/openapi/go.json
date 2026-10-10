@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "The Go brain API",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "Go is the AI member of every trip group. The Server opens one WebSocket to it and keeps it open; everything travels on that socket as JSON-RPC 2.0. This file has the two HTTP routes and every schema. The socket methods are in asyncapi/socket.json and socket/methods.json. Guide: docs/guide in vestra-ai/go-brain."
   },
   "paths": {
@@ -1208,6 +1208,403 @@
           "price_minor"
         ]
       },
+      "MapPoint": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
+      "OptionReview": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "NearbyPlace": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "distance_m": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "OptionFullDetails": {
+        "type": "object",
+        "properties": {
+          "gallery_urls": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "why": {
+            "anyOf": [
+              {
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 140
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costs": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionCost"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amenities": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activities": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "facts": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionFact"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cancellation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "go_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "map": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MapPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "check_in": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "check_out": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "property_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stars": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 7
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rooms": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoomType"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policies": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviews": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionReview"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nearby": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NearbyPlace"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "Option": {
         "type": "object",
         "properties": {
@@ -1435,6 +1832,17 @@
                 "type": "null"
               }
             ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1500,11 +1908,23 @@
           },
           "options": {
             "minItems": 1,
-            "maxItems": 5,
+            "maxItems": 10,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Option"
             }
+          },
+          "decision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "actions": {
             "anyOf": [
@@ -1797,6 +2217,17 @@
             ]
           },
           "page_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "live_url": {
             "anyOf": [
               {
                 "type": "string",
@@ -3320,7 +3751,7 @@
           },
           "options": {
             "minItems": 2,
-            "maxItems": 10,
+            "maxItems": 20,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DecisionOption"
@@ -3348,7 +3779,7 @@
             "maximum": 9007199254740991
           },
           "tally": {
-            "maxItems": 10,
+            "maxItems": 20,
             "type": "array",
             "items": {
               "type": "integer",
@@ -5242,7 +5673,7 @@
             "maximum": 9007199254740991
           },
           "tally": {
-            "maxItems": 10,
+            "maxItems": 20,
             "type": "array",
             "items": {
               "type": "integer",
@@ -5380,6 +5811,72 @@
           "data"
         ],
         "description": "A vote closed, with the result."
+      },
+      "DecisionOptionsAddedData": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "options": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionOption"
+            }
+          },
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          }
+        },
+        "required": [
+          "decision_id",
+          "options",
+          "by"
+        ]
+      },
+      "DecisionOptionsAdded": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "decision.options_added"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DecisionOptionsAddedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "1.3 (rev 5 R5): options were added to an open vote (\"see more\", add_vote_options). Their indexes continue from the last option; votes already cast stay."
       },
       "DecisionCancelledData": {
         "type": "object",
@@ -5920,6 +6417,9 @@
             "$ref": "#/components/schemas/DecisionCancelled"
           },
           {
+            "$ref": "#/components/schemas/DecisionOptionsAdded"
+          },
+          {
             "$ref": "#/components/schemas/MandateSet"
           },
           {
@@ -6179,6 +6679,41 @@
           "options"
         ],
         "description": "Opens a vote. Go then posts a message with a vote card to show it in the room."
+      },
+      "AddVoteOptions": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "options": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionOption"
+            }
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "decision_id",
+          "options"
+        ],
+        "description": "1.3: adds options to an open vote, for the options a \"See more\" tap brought."
       },
       "OpenDecisionResult": {
         "type": "object",
@@ -7715,6 +8250,20 @@
                 "type": "null"
               }
             ]
+          },
+          "display": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "sheet",
+                  "embedded"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -7753,6 +8302,135 @@
         "required": [
           "ok",
           "contract"
+        ]
+      },
+      "PlaceInfoRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "from_city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "PlaceTravel": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "flight",
+              "train",
+              "bus",
+              "cab",
+              "drive"
+            ]
+          },
+          "duration_minutes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "mode",
+          "duration_minutes"
+        ]
+      },
+      "PlaceInfo": {
+        "type": "object",
+        "properties": {
+          "place": {
+            "$ref": "#/components/schemas/Place"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "travel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaceTravel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "best_months": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 12
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "place"
+        ]
+      },
+      "GetOptionDetails": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "option_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "trip_id",
+          "card_id",
+          "option_id",
+          "person_id"
         ]
       },
       "ErrorCode": {

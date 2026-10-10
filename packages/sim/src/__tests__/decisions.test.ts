@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Event } from '@go/contract';
 import { goaFreshTrip } from '../goa.js';
 import { SocketCallError } from '../server-socket.js';
-import { closeVote, closeVoteByTime, confirmMandate, declineMandate, openVote, setMandate, vote, winner } from '../state/decisions.js';
+import { addVoteOptions, closeVote, closeVoteByTime, confirmMandate, declineMandate, openVote, setMandate, vote, winner } from '../state/decisions.js';
 import { TripState } from '../state/trip-state.js';
 
 const everyone = ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'];
@@ -36,6 +36,34 @@ function err(fn: () => unknown): SocketCallError {
 }
 
 const types = (events: Event[]) => events.map((e) => e.type);
+
+describe('add_vote_options (1.3, "see more")', () => {
+  it('adds options to an open vote after the last one, keeps the votes cast, and tells Go with decision.options_added', () => {
+    const { s } = setUp();
+    const id = open(s).result.decision_id;
+    vote(s, id, 'p_priya', 1);
+    const more = [{ label: 'Casa Lua', option_ref: 'opt_14', price_minor: 4500000, currency: 'INR' }];
+    const { result, events } = addVoteOptions(s, { request_id: 'rq_more', trip_id: 't_goa', decision_id: id, options: more } as never);
+    expect(types(events)).toEqual(['decision.options_added']);
+    expect(Event.parse(events[0]).data).toMatchObject({ decision_id: id, options: [{ label: 'Casa Lua', option_ref: 'opt_14' }], by: { kind: 'go' } });
+    expect(result.seq).toBe(events[0]!.seq);
+    const d = s.decision(id)!;
+    expect(d.options.map((o) => o.label)).toEqual(['Villa Sol', 'Casa Azul', 'The Palms', 'Casa Lua']);
+    expect(d.tally).toEqual([0, 1, 0, 0]);
+    vote(s, id, 'p_rahul', 3);
+    expect(d.tally).toEqual([0, 1, 0, 1]);
+  });
+
+  it('refuses a closed vote, and more than 20 options in all', () => {
+    const { s } = setUp();
+    const id = open(s).result.decision_id;
+    const many = Array.from({ length: 10 }, (_, i) => ({ label: `Stay ${i}`, price_minor: 100000, currency: 'INR' }));
+    addVoteOptions(s, { request_id: 'rq_1', trip_id: 't_goa', decision_id: id, options: many } as never);
+    expect(err(() => addVoteOptions(s, { request_id: 'rq_2', trip_id: 't_goa', decision_id: id, options: many } as never))).toMatchObject({ dataCode: 'invalid' });
+    closeVote(s, { request_id: 'rq_close', trip_id: 't_goa', decision_id: id } as never);
+    expect(err(() => addVoteOptions(s, { request_id: 'rq_3', trip_id: 't_goa', decision_id: id, options: many.slice(0, 1) } as never))).toMatchObject({ dataCode: 'conflict' });
+  });
+});
 
 describe('open_vote', () => {
   it('opens a vote by Go, for everyone in the trip, with a tally of zeros', () => {
