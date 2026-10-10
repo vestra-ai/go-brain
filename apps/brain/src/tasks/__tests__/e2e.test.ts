@@ -161,8 +161,8 @@ describe('G3: Go does real work', () => {
     expect(shown.text).toBe('Three villas that fit. Want a vote?');
     const card = shown.card as Extract<C.Card, { kind: 'options' }>;
     expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    // The trip has no budget band yet, so a stays card also asks for one (contract 1.1 A4).
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote', 'add_budget']);
+    // No budget asked for, even with none set (rev 4: one group budget, nobody gives a private one).
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
     // Bookable end to end: each option is the offer the job picked, at the whole-stay price a vote and a payment use.
     const offers = await Promise.all(card.options.map((o) => built.brain.travel!.offer(o.option_id)));
     expect(offers.map((o) => [o?.offerId, o?.priceMinor])).toEqual(VILLAS.options.map((v) => [v.offer_id, v.total_paise]));
@@ -271,8 +271,8 @@ describe('G3: Go does real work', () => {
     const shown = await server.waitFor(() => (options().length > optionsBefore ? options().at(-1)! : null), 20_000);
     const card = shown.card as Extract<C.Card, { kind: 'options' }>;
     expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    // The trip has no budget band yet, so a stays card also asks for one (contract 1.1 A4).
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote', 'add_budget']);
+    // No budget asked for, even with none set (rev 4: one group budget, nobody gives a private one).
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
     await server.waitFor(() => (cardOf(cardId)?.state === 'done' ? true : null), 10_000);
     expect(cardOf(cardId).steps.map((st: { state: string }) => st.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
     // The token goes at the real end, and only one options card came.

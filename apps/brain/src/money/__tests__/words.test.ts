@@ -55,13 +55,11 @@ describe('money words', () => {
     expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'Volvo sleeper', kind: 'bus' }).text).toBe("I can't book buses for the whole group yet.");
   });
 
-  it('says what happened after a payment in one short line', () => {
-    expect(bookedLine({ title: 'Villa Sol, 3 nights', payer: 'Rahul', amount: '₹54,200', people: 5 })).toBe(
-      'Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.',
-    );
+  it('says what happened after a payment in one short line, never the money, which the Server posts itself', () => {
+    expect(bookedLine({ title: 'Villa Sol, 3 nights' })).toBe('Booked Villa Sol, 3 nights!');
     // A stay from ixigo.com, booked on Go's test rail only: the receipt says so, and never claims an ixigo booking.
-    expect(bookedLine({ title: 'Saudades Homestays, 3 nights', payer: 'Rahul', amount: '₹47,682', people: 5, simulated: true })).toBe(
-      "Booked (simulated): Saudades Homestays, 3 nights. Rahul's test payment of ₹47,682, split between all 5; nothing was booked on ixigo.",
+    expect(bookedLine({ title: 'Saudades Homestays, 3 nights', simulated: true })).toBe(
+      'Booked (simulated): Saudades Homestays, 3 nights. A test payment only; nothing was booked on ixigo.',
     );
     expect(failedLine({ payer: 'Rahul', what: 'Villa Sol', reason: 'card_declined' })).toBe(
       "Rahul, the payment for Villa Sol didn't go through (the bank declined the card). Nothing was charged. Want to try again?",

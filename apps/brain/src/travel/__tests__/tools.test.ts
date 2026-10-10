@@ -323,12 +323,12 @@ describe('show_options', () => {
     expect(await results.offer(card.options[0]!.option_id)).toMatchObject({ n: 1, totalMinor: 3840000, priceMinor: 1280000 });
   });
 
-  it('a stays card asks for a budget while nobody in the trip has a band, and not once someone has one', async () => {
+  it('a stays card never asks for a budget, with the group\'s budget set or not (rev 4: nobody gives a private one)', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_b1' }))) as any;
     const pack = goaPack();
     const noBand = lb.ctx({ turnId: 'turn_b2', pack: { ...pack, trip: { ...pack.trip, budget: { answered: 0, of: 5 } } } });
     await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [1, 2, 3], title: 'Villas with a pool' }, noBand);
-    expect(C.OptionsCard.parse(noBand.cards[0]).actions?.map((a) => a.action_id)).toEqual(['pick', 'vote', 'add_budget']);
+    expect(C.OptionsCard.parse(noBand.cards[0]).actions?.map((a) => a.action_id)).not.toContain('add_budget');
     const withBand = lb.ctx({ turnId: 'turn_b3' });
     await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [1, 2, 3], title: 'Villas with a pool' }, withBand);
     expect(C.OptionsCard.parse(withBand.cards[0]).actions?.map((a) => a.action_id)).not.toContain('add_budget');

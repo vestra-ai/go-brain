@@ -402,9 +402,7 @@ export async function putUpCard(
   const title = stayCardTitle(given.title, set.query, picks.map((p) => p.option));
   // Stays from ixigo.com: the card shows a few, so its button opens the whole list the search read (the lead's call).
   const seeAll = set.optionKind === 'stay' && ixigoPage(set.page ?? null) !== null;
-  // Nobody in the trip has a budget band yet: the stays card asks for one, in the App's own budget sheet.
-  const askBudget = set.optionKind === 'stay' && !ctx.pack.trip.budget?.lowest;
-  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks, seeAll, askBudget });
+  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks, seeAll });
   await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
   // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
   const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;

@@ -118,14 +118,16 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
     const d = pack.trip.decisions.find((x) => x.decision_id === p.decisionId);
     if (!d) return 'a vote closed';
     const won = d.result_index != null ? d.options[d.result_index] : undefined;
-    // The counts from the Server's own tally, so the result line never gets a number wrong.
+    // The counts from the Server's own tally, for the model to read: the App posts the result line itself ("Villa Sol won ·
+    // 3 votes"), so Go never says it again (the Server team's GO-TEAM-FINAL §8).
     const flexible = flexibleOf(d);
     const tally = `${d.options.map((op, k) => `${inlineData(op.label)} ${d.tally[k] ?? 0}`).join(', ')}; ${d.voted} of ${d.of} voted${flexible ? `, ${flexible} flexible` : ''}`;
     // An option is only a label (DecisionOption has no dates or place fields), so the model reads the winner and saves it.
     return won
       ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${tally}). ` +
           "If it settled the trip's dates, save them with update_trip first (days without a year are the next ones from today). If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. " +
-          'Then say the result in one line, using exactly these numbers, and the next step.'
+          'The App already posted the result in the room: never say who won or the counts again. ' +
+          'Then say only the next step, in one short line (booking it, the next thing to settle), or call stay_silent when there is none.'
       : `the vote ${inlineData(d.question)} closed with no clear winner (${tally}). Ask the group how to settle it.`;
   }
   return `the trip changed (${p.type ?? item.ref})`;
