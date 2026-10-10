@@ -4,9 +4,9 @@ import type { RecipeChoice } from './questions.js';
  * The questions whose test set passed on recorded Jev answers. The scorer test (Task 5) re-checks
  * every number here in CI. A question acts live only when REFLEX_LIVE names it and it is listed here.
  */
-// Recorded 2026-10-07 (jev-1.13.0), question 10 again on 2026-10-10 with its new choices. Questions 3 and 9 stay in
-// shadow: Jev was too rarely sure on them to reach their gate.
-export const PASSED_SETS: readonly number[] = [1, 2, 4, 5, 6, 7, 8, 10];
+// Recorded 2026-10-07 (jev-1.13.0), questions 1 and 10 again on 2026-10-10 and question 11 new that day. Questions 3
+// and 9 stay in shadow: Jev was too rarely sure on them to reach their gate.
+export const PASSED_SETS: readonly number[] = [1, 2, 4, 5, 6, 7, 8, 10, 11];
 
 /**
  * Question 10's choices that act live. The rest are read in shadow: a sure pick of one acts as "none" (not one of these),

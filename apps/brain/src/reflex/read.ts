@@ -18,8 +18,10 @@ export interface CodeFacts {
   hasTasks: boolean;
   /** A line about money (money-line.ts): it always reaches the model, whatever Jev says. */
   money: boolean;
-  /** Only emoji, a laugh, an ok, or a greeting or sign-off (small-talk.ts): read only when Jev has no answer. */
+  /** Only emoji, a laugh, an ok, or a greeting or sign-off (small-talk.ts): banter by code alone, unless it answers Go. */
   smallTalk?: boolean;
+  /** Go's line is the one just before it: a bare "ok" or 👍 may be the yes to Go's offer, so it is never banter by code. */
+  answersGo?: boolean;
 }
 export type RiskWhy = 'spend' | 'steer' | 'secret';
 type Answers = Record<string, JevAnswer> | null;
@@ -129,6 +131,36 @@ function readReaction(a: Answers, b: Bars): Sure<string | null> {
   return top.o === 'none' ? sure(null) : sure(REACTIONS[top.o]);
 }
 
+/** Pure banter or an acknowledgement: question 1's chatter bar, or small talk when Jev has no answer. Never a money line. */
+function readBanter(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
+  if (f.namesGo || f.money) return sure(false);
+  // A bare ok, haha, gn or emoji carries nothing, whatever Jev's chatter answer: Go jumps in on most lines, never these
+  // (the bench's guard, 10 Oct). Right after Go's own line it may be the yes to an offer, so Jev and the turn decide.
+  if (f.smallTalk && !f.answersGo) return sure(true);
+  const addressed = noulP(a, 'q1_addressed');
+  const chatter = noulP(a, 'q1_chatter');
+  if (atLeast(chatter, b.for_go.chatterMin) && atMost(addressed, b.for_go.addressedMaxForChatter)) return sure(true);
+  return unsure();
+}
+
+/** Something Go can do with the line: a line naming Go or about money always is; otherwise question 11 above or below its bars. */
+function readActionable(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
+  if (f.namesGo || f.money) return sure(true);
+  const p = noulP(a, 'q11_actionable');
+  if (atLeast(p, b.actionable.yesMin)) return sure(true);
+  if (atMost(p, b.actionable.noMax)) return sure(false);
+  return unsure();
+}
+
+/**
+ * A line Go leaves to the people, with no turn: question 11 sure there is nothing in it for Go, or question 1 sure it is
+ * banter while question 11 isn't sure there is something (trips/intake.ts wakesComposer, proactive/openings.ts).
+ */
+export function leftToPeople(read: Pick<ReflexRead, 'banter' | 'actionable'>): boolean {
+  if (read.actionable?.sure) return read.actionable.value === false;
+  return read.banter?.sure === true && read.banter.value === true;
+}
+
 /** One clear winner: at least the pick bar, and no other option up to the rival bar. */
 function readRecipe(a: Answers, b: Bars): Sure<RecipeChoice | null> {
   const ranked = [...RECIPE_CHOICES, 'none' as const]
@@ -182,6 +214,7 @@ export function readAnswers(
   const opening = [noulP(a, 'q9_group_question'), noulP(a, 'q9_circles'), noulP(a, 'q9_someone_look')];
   const would: ReflexRead = {
     forGo: readForGo(a, facts, bars),
+    banter: readBanter(a, facts, bars),
     complete: readComplete(a, facts, bars),
     size: readSize(a, bars),
     taskId: readTask(a, facts, taskKeys, bars),
@@ -191,6 +224,7 @@ export function readAnswers(
     risky: risk.risky,
     opening: anyAtLeast(opening, bars.opening.yesMin) ? sure(true) : allAtMost(opening, bars.opening.noMax) ? sure(false) : unsure(),
     recipe: readRecipe(a, bars),
+    actionable: readActionable(a, facts, bars),
     riskWhy: risk.why,
   };
   return { would, p: flatten(a) };
@@ -200,6 +234,7 @@ export function readAnswers(
 export function codeOnly(facts: CodeFacts): ReflexRead {
   return {
     forGo: facts.namesGo ? sure(true) : unsure(),
+    banter: facts.namesGo ? sure(false) : unsure(),
     complete: unsure(),
     size: unsure(),
     taskId: facts.hasTasks ? unsure() : sure(null),
@@ -209,6 +244,7 @@ export function codeOnly(facts: CodeFacts): ReflexRead {
     risky: facts.secretKinds.length ? sure(true) : unsure(),
     opening: unsure(),
     recipe: unsure(),
+    actionable: facts.namesGo || facts.money ? sure(true) : unsure(),
     riskWhy: facts.secretKinds.length ? ['secret'] : [],
   };
 }
@@ -218,6 +254,7 @@ export function applyLive(would: ReflexRead, live: ReadonlySet<QuestionName>, fa
   const base = codeOnly(facts);
   return {
     forGo: live.has('for_go') ? would.forGo : base.forGo,
+    banter: (live.has('for_go') ? would.banter : base.banter) ?? unsure(),
     complete: live.has('complete') ? would.complete : base.complete,
     size: live.has('size') ? would.size : base.size,
     taskId: live.has('task') ? would.taskId : base.taskId,
@@ -227,6 +264,7 @@ export function applyLive(would: ReflexRead, live: ReadonlySet<QuestionName>, fa
     risky: live.has('risky') ? would.risky : base.risky,
     opening: live.has('opening') ? would.opening : base.opening,
     recipe: (live.has('recipe') ? liveRecipe(would.recipe ?? unsure()) : base.recipe) ?? unsure(),
+    actionable: (live.has('actionable') ? would.actionable : base.actionable) ?? unsure(),
     riskWhy: live.has('risky') ? (would.riskWhy ?? []) : (base.riskWhy ?? []),
   };
 }

@@ -96,10 +96,12 @@ describe('the options card', () => {
     const images = { rehostUrl: async (u: string) => `https://go.test/img/${u.endsWith('s=1024x768') ? (u.includes('/b.jpg') ? 'b' : 'a') : 'card'}.jpg` } as never;
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d1', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
     const set = { resultsId: 'r_d1', tripId: 't_goa', optionKind: 'stay' as const, source: 'search' as const, query: ASK, options: [RIVA], checkedAt: '2026-10-08T12:00:00.000Z' };
-    const opened: Array<{ page: string; name: string }> = [];
+    const opened: Array<{ page: string; name: string; kind?: string; cardId: string; optionId: string }> = [];
     await putUpCard(set, [1], { title: 'Pool stays in North Goa', line: 'x' }, ctx, { results, images, showPick: (_trip, pick) => opened.push(pick) });
     // The top pick opens on the stage once its card is up, its card clicked by its name, for the room to watch (10 Oct).
-    expect(opened).toEqual([{ page: 'https://www.ixigo.com/hotels/4599837/details', name: 'Riva Beach Resort', kind: 'stay' }]);
+    // Its card and option go with it, so the photos its page lists can replace the search's there (pick-photos.ts).
+    const cardId = (ctx.cards[0] as OptionsCardT).card_id;
+    expect(opened).toEqual([{ page: 'https://www.ixigo.com/hotels/4599837/details', name: 'Riva Beach Resort', kind: 'stay', cardId, optionId: (ctx.cards[0] as OptionsCardT).options[0]!.option_id }]);
     // A stay from anywhere but ixigo.com opens nothing.
     const elsewhere = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d2', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
     await putUpCard({ ...set, resultsId: 'r_d2', options: [{ ...RIVA, sourceUrl: 'https://example.com/villa' }] }, [1], { title: 'x', line: 'x' }, elsewhere, { results, images, showPick: (_trip, pick) => opened.push(pick) });
@@ -114,13 +116,15 @@ describe('the options card', () => {
     const buses = { ...set, resultsId: 'r_d3', optionKind: 'bus' as const, query: { from: 'Bengaluru', to: 'Goa', date: '2026-11-06' } };
     const onBus = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d3', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
     await putUpCard({ ...buses, options: [bus(`${RESULTS}#VRL%20Travels@19:30`)] }, [1], { title: 'Buses', line: 'x' }, onBus, { results, images, showPick: (_trip, pick) => opened.push(pick) });
-    expect(opened[1]).toEqual({ page: `${RESULTS}#VRL%20Travels@19:30`, name: 'VRL Travels', kind: 'bus' });
+    expect(opened[1]).toMatchObject({ page: `${RESULTS}#VRL%20Travels@19:30`, name: 'VRL Travels', kind: 'bus', cardId: (onBus.cards[0] as OptionsCardT).card_id });
     const older = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d4', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
     await putUpCard({ ...buses, resultsId: 'r_d4', options: [bus(RESULTS)] }, [1], { title: 'Buses', line: 'x' }, older, { results, images, showPick: (_trip, pick) => opened.push(pick) });
     expect(opened).toHaveLength(2);
     const option = (ctx.cards[0] as OptionsCardT).options[0]!;
     expect(option.image_url).toBe('https://go.test/img/card.jpg');
     expect(option.details?.gallery_urls).toEqual(['https://go.test/img/a.jpg', 'https://go.test/img/b.jpg']);
+    // 10 Oct B3: the same photos as the option's own, with no labels (ixigo's list gives none).
+    expect(option.photos).toEqual([{ url: 'https://go.test/img/a.jpg' }, { url: 'https://go.test/img/b.jpg' }]);
     // The Goa five: the stay split five ways.
     expect(option.details?.costs).toEqual([{ label: '3 nights, each of 5', emoji: '🛏️', amount_minor: 1_188_480, currency: 'INR' }]);
     expect(option.place).toMatchObject({ name: 'Riva Beach Resort', timezone: 'Asia/Kolkata' });

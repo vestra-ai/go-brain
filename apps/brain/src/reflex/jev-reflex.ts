@@ -39,8 +39,10 @@ export type JevReflex = Reflex & { settled(): Promise<void> };
  */
 export function codeFacts(msg: Message, pack: TripPack, runningTasks: Array<{ id: string }>): CodeFacts {
   const text = messageText(msg);
+  const before = pack.messages.filter((m) => m.seq < msg.seq && !m.deleted && !m.withheld).at(-1);
   return {
     namesGo: plainlyNamesGo(msg, pack), secretKinds: secretKinds(text), hasTasks: runningTasks.length > 0, money: looksLikeMoney(text), smallTalk: isSmallTalk(text),
+    answersGo: before?.author.kind === 'go',
   };
 }
 

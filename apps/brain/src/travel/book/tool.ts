@@ -12,6 +12,7 @@ import { buildIxigoLinkCard, clip } from '../cards.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveSearch } from '../live-search.js';
 import { CARD_DELAY_MS, LINK_FALLBACK, SEARCH_RECIPES, shownAfter } from '../recipes/backend.js';
+import { withoutPhotos } from '../photos.js';
 import type { Book } from './book.js';
 import type { Engine, EngineAnswer } from './engine.js';
 import type { ResultsStore } from '../results.js';
@@ -175,7 +176,7 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
         if (answer.rows.length === 0) {
           return { recipe: a.recipe, title: answer.title, facts: [], note: NOTHING_ON_IXIGO };
         }
-        return { recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows, tell_the_room: NAMES_ONLY_FROM_IXIGO };
+        return { recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows.map(withoutPhotos), tell_the_room: NAMES_ONLY_FROM_IXIGO };
       } catch (err) {
         if (!(err instanceof TravelError)) throw err;
         if (err.code === 'pick_place') return { recipe: a.recipe, choose: err.message };

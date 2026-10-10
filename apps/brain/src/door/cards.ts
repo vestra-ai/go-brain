@@ -23,6 +23,12 @@ export interface CardStore {
    * such card. One statement, so a tap and a failed post's delete never both win.
    */
   landed(tripId: string, cardId: string): Promise<C.Card | null>;
+  /**
+   * True once the card is in the room: Go's post of it answered (live, or kept from before), or a tap proved it landed.
+   * Waits at most withinMs for that, then false. For work that changes a card read in the background while the turn that
+   * posts it is still going (the top pick's own photos: travel/pick-photos.ts), so a replace never goes before its post.
+   */
+  posted(tripId: string, cardId: string, withinMs: number): Promise<boolean>;
 }
 
 /** The trip and card of a post_message that carries a card; null for anything else. */
@@ -34,6 +40,12 @@ function postedCard(method: ToServerMethod, params: Record<string, unknown>): { 
 }
 
 export function createCardStore(o: { pool: pg.Pool; now: () => Date }): CardStore {
+  // Who waits on a card's post (posted), by trip and card: woken in this process when its post answers or a tap lands it.
+  const waiting = new Map<string, Set<() => void>>();
+  const keyOf = (tripId: string, cardId: string): string => `${tripId}\u0000${cardId}`;
+  const wake = (tripId: string, cardId: string): void => {
+    for (const w of waiting.get(keyOf(tripId, cardId)) ?? []) w();
+  };
   async function record(tripId: string, card: C.Card, messageId: string | null): Promise<void> {
     await o.pool.query(
       `insert into cards (trip_id, card_id, kind, message_id, card, updated_at) values ($1, $2, $3, $4, $5::jsonb, $6)
@@ -71,9 +83,11 @@ export function createCardStore(o: { pool: pg.Pool; now: () => Date }): CardStor
           'update cards set pending = false, message_id = coalesce(message_id, $3) where trip_id = $1 and card_id = $2 and pending',
           [tripId, card.card_id, typeof messageId === 'string' ? messageId : null],
         );
+        wake(tripId, card.card_id);
         return;
       }
       await record(tripId, card, typeof messageId === 'string' ? messageId : null);
+      if (method === 'post_message') wake(tripId, card.card_id);
     },
     async failed(method, params) {
       const posted = postedCard(method, params);
@@ -86,7 +100,29 @@ export function createCardStore(o: { pool: pg.Pool; now: () => Date }): CardStor
         'update cards set pending = false where trip_id = $1 and card_id = $2 returning card',
         [tripId, cardId],
       );
+      if (rows[0]) wake(tripId, cardId);
       return rows[0]?.card ?? null;
+    },
+    async posted(tripId, cardId, withinMs) {
+      const key = keyOf(tripId, cardId);
+      let timer: NodeJS.Timeout | undefined;
+      let done!: (live: boolean) => void;
+      const answer = new Promise<boolean>((r) => { done = r; });
+      const woken = (): void => done(true);
+      // Waiting before the look: a post that answers in between still wakes it.
+      waiting.set(key, (waiting.get(key) ?? new Set()).add(woken));
+      try {
+        const { rowCount } = await o.pool.query('select 1 from cards where trip_id = $1 and card_id = $2 and not pending', [tripId, cardId]);
+        if ((rowCount ?? 0) > 0) return true;
+        timer = setTimeout(() => done(false), withinMs);
+        timer.unref?.();
+        return await answer;
+      } finally {
+        clearTimeout(timer);
+        const left = waiting.get(key);
+        left?.delete(woken);
+        if (left?.size === 0) waiting.delete(key);
+      }
     },
   };
 }
