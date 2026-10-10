@@ -25,6 +25,9 @@ fetch:
     settle_ms: 550
 read:
   rows: { from: /buslist/v3/services$, list: services }
+  also:
+    # Each operator by its id: whether it is a state transport's (RTC).
+    operators: { from: /buslist/v3/services$, value: operators }
 answer:
   as: options
   kind: bus
@@ -38,6 +41,12 @@ answer:
       $arrive := $exists($mins) ? $istPlus(timings.startTimeDateFormat, $mins) : (timings.arriveTimestamp ? $istFromWallSeconds(timings.arriveTimestamp));
       $operator := $trim(travelerAgentName);
       $seats := $num(seatStats.availableSeats);
+      $kind := $lowercase(($type(busTypeName) = "string" ? busTypeName : "") & " " & ($type(busType) = "string" ? busType : ""));
+      $ac := $contains($kind, /non[\s-]?a\.?\/?c/) ? false : ($contains($kind, /\ba\.?\/?c\b/) ? true);
+      $flags := flags;
+      $flag := function($f) { $num($lookup($flags, $f)) = 1 ? true };
+      $op := $operators ? $lookup($operators, $string(operatorId));
+      $fc := $flag("isFcOperator");
       $offer := $num(fares.offerPrice);
       $rating := $num(rating);
       $ratings := $num(noOfRatings);
@@ -55,8 +64,26 @@ answer:
           "carrier_name": $substring($operator, 0, 60)
         },
         "rating": ($exists($rating) and ($exists($ratings) ? $ratings : 1) > 0) ? $rating,
-        "highlights": $highlights(busTypeName, $exists($mins) ? $hoursMinutes($mins), ($exists($seats) and $seats <= 5) ? $string($seats) & " seat" & ($seats = 1 ? "" : "s") & " left"),
-        "facts": { "bus_type": busTypeName, "seats_left": $seats, "duration_min": $mins, "reviews": $ratings },
+        "highlights": $highlights(busTypeName, $exists($mins) ? $hoursMinutes($mins), ($exists($seats) and $seats <= 5) ? $string($seats) & " seat" & ($seats = 1 ? "" : "s") & " left", $fc ? "Free cancellation"),
+        "facts": {
+          "bus_type": busTypeName, "seats_left": $seats, "duration_min": $mins, "reviews": $ratings,
+          "ac": $ac,
+          "sleeper": $contains($kind, /sleeper/) ? true,
+          "seater": $contains($kind, /seater/) ? true,
+          "volvo": ($flag("isVolvo") or $flag("isVolvo9600")) ? true,
+          "electric": $flag("isElectric"),
+          "luxury": $flag("isLuxury"),
+          "women_safe_boarding": $flag("isWomenSafeBoarding"),
+          "female_seats_left": $num(seatStats.femaleAvailableCount),
+          "single_berths": $num(seatStats.singleBerthsCount),
+          "window_seats": $num(seatStats.windowSeatCount),
+          "free_cancellation": $fc,
+          "assured": $flag("isAssuredOperator"),
+          "live_tracking": $flag("isTrackAvail"),
+          "state_transport": ($op.isGovtOperator = "1" or $num($op.isRTC) = 1) ? true,
+          "via": ($type(viaPlaces) = "string" and $trim(viaPlaces) != "") ? $substring($trim(viaPlaces), 0, 80),
+          "tags": $join($texts(3, tags.title), ", ") ? $substring($join($texts(3, tags.title), ", "), 0, 80)
+        },
         "sourceUrl": $page
       }
     )
