@@ -12,6 +12,7 @@ import type * as C from '@go/contract';
 import type pg from 'pg';
 import type { Switches } from '../../admin/switches.js';
 import type { ServerLink } from '../../door/server-link.js';
+import { dayText } from '../answer.js';
 import { clip, formatInr } from '../cards.js';
 import { stableId } from '../ids.js';
 import type { RecipeRunner } from '../recipes/runners.js';
@@ -37,7 +38,24 @@ type WorkingCard = Extract<C.Card, { kind: 'working' }>;
 type NoticeCard = Extract<C.Card, { kind: 'notice' }>;
 type Log = { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
 
-export type BookingState = 'fare' | 'fare_type' | 'coupon' | 'travellers' | 'ready_to_pay' | 'failed';
+export type BookingState = 'fare' | 'fare_type' | 'coupon' | 'travellers' | 'ready_to_pay' | 'paid' | 'failed';
+
+/** How long Pay waits on the payment's approval inside the tap's 2.5 s; past it, the next Pay finds it ready. */
+export const PAY_WAIT_MS = 2_200;
+
+/**
+ * The ticket's payment (money/pay.ts, p1-b's): the Server's approval for a person's own ticket, no vote, and the vault's
+ * pay page for that person alone. The vault still needs the Server's signature and their Face ID. Refused, it says why.
+ */
+export interface TicketPay {
+  requestTicketApproval(
+    tripId: string,
+    o: { personId: string; amountMinor: number; currency: string; purpose: string; key: string; trigger: string },
+  ): Promise<{ url: string; expiresAt: string; approvalId: string; paymentId: string } | { refused: string; code: string }>;
+  onPaid(fn: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>): void;
+}
+
+export type PayTap = { result: 'open'; url: string; expires_at: string } | { result: 'refused'; toast: string } | { result: 'done'; toast: string };
 
 export interface BookingAsk {
   /** The tap that asked, which names the booking: a repeat of it is the same booking. */
@@ -54,6 +72,8 @@ export interface FlightBookingDeps {
   pool: pg.Pool;
   /** A person's name in the trip: whose ixigo the saved travellers are on, for the room's words. */
   nameOf: (tripId: string, personId: string) => Promise<string>;
+  /** The ticket's payment, once money has it (it registers after travel); none, Pay says it opens soon. */
+  ticketPay?: () => TicketPay | null;
   runner: () => RecipeRunner | null;
   link: Pick<ServerLink, 'request'>;
   switches: Pick<Switches, 'get'>;
@@ -144,16 +164,31 @@ export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 
 }
 
 export interface FlightBooking {
-  /** Whether Go books flights itself now: the switch is on and Go reads ixigo.com in the trip's browser. */
-  on(): boolean;
+  /**
+   * Whether Go books this trip's flights itself: Go reads ixigo.com in the trip's browser, and FLIGHT_BOOKING is on, or
+   * names the trip's Server instance ("instances:drill-p0").
+   */
+  onFor(tripId: string): Promise<boolean>;
   /** Starts the booking a tap asked for, once; its work goes on after the tap is answered. */
   start(ask: BookingAsk): Promise<void>;
+  /** Pay on a traveller's ready card: the vault's pay page for them alone, or why not. Inside the tap's 2.5 s. */
+  pay(i: { tripId: string; cardId: string; personId: string; tapId: string }): Promise<PayTap>;
   /** Waits for the bookings started in the background (tests). */
   settled(): Promise<void>;
 }
 
 export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   const running = new Set<Promise<void>>();
+  // Paid, the vault's word through money: the booking that asked for that approval is paid. Hooked on the first Pay, since
+  // money registers after travel.
+  let hooked = false;
+  const hookPaid = (pay: TicketPay): void => {
+    if (hooked) return;
+    hooked = true;
+    pay.onPaid(async ({ tripId, approvalId }) => {
+      await d.pool.query(`update flight_bookings set state = 'paid', updated_at = $3 where trip_id = $1 and approval_id = $2`, [tripId, approvalId, d.now()]);
+    });
+  };
 
   const save = async (runId: string, patch: { state: BookingState; total_minor?: number; coupon_code?: string | null; coupon_minor?: number | null; review_url?: string; card_id?: string; why?: string }): Promise<void> => {
     await d.pool.query(
@@ -256,20 +291,30 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     // 5. Ready: their card, for them alone. Nothing on ixigo is submitted.
     await live.step(4, 'done');
     const cardId = stableId('c_ready', runId);
-    const card = readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: null, choice: ask.choice, amountMinor, coupon });
+    const flies = dayOf(ask.offer.sourceUrl);
+    const card = readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: flies ? dayText(flies) : null, choice: ask.choice, amountMinor, coupon });
     await d.link.request('post_message', { request_id: stableId('go_book_ready', runId), trip_id: ask.tripId, card });
     await save(runId, { state: 'ready_to_pay', card_id: cardId });
     await live.finish(true);
   }
 
   return {
-    on: () => d.switches.get('FLIGHT_BOOKING') === 'on' && d.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    async onFor(tripId) {
+      if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web') return false;
+      const value = d.switches.get('FLIGHT_BOOKING');
+      if (value === 'on') return true;
+      if (!value.startsWith('instances:')) return false;
+      const names = value.slice('instances:'.length).split(',');
+      const r = await d.pool.query<{ server_instance: string | null }>('select server_instance from trips where trip_id = $1', [tripId]);
+      const instance = r.rows[0]?.server_instance ?? null;
+      return instance !== null && names.includes(instance);
+    },
     async start(ask) {
       const runId = stableId('fb', ask.tapId);
       const fresh = await d.pool.query(
-        `insert into flight_bookings (run_id, trip_id, person_id, option_id, title, choice, state, created_at, updated_at)
-         values ($1, $2, $3, $4, $5, $6, 'fare', $7, $7) on conflict (run_id) do nothing`,
-        [runId, ask.tripId, ask.personId, ask.offer.optionId, clip(ask.offer.title, 120), ask.choice, d.now()],
+        `insert into flight_bookings (run_id, trip_id, person_id, option_id, title, day, choice, state, created_at, updated_at)
+         values ($1, $2, $3, $4, $5, $6, $7, 'fare', $8, $8) on conflict (run_id) do nothing`,
+        [runId, ask.tripId, ask.personId, ask.offer.optionId, clip(ask.offer.title, 120), dayOf(ask.offer.sourceUrl), ask.choice, d.now()],
       );
       // A repeat of the tap: the booking it started goes on, and nothing starts twice.
       if (fresh.rowCount === 0) return;
@@ -280,10 +325,46 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       running.add(run);
       void run.finally(() => running.delete(run));
     },
+    async pay(i) {
+      const r = await d.pool.query<{ run_id: string; person_id: string; title: string; day: string | null; total_minor: string | null; state: BookingState }>(
+        'select run_id, person_id, title, day, total_minor, state from flight_bookings where trip_id = $1 and card_id = $2',
+        [i.tripId, i.cardId],
+      );
+      const row = r.rows[0];
+      if (!row || row.person_id !== i.personId) return { result: 'refused', toast: 'This one is for someone else to pay' };
+      if (row.state === 'paid') return { result: 'refused', toast: 'Already paid' };
+      const pay = d.ticketPay?.() ?? null;
+      if (!pay || row.total_minor === null) return { result: 'refused', toast: 'Paying for a ticket through Go opens soon' };
+      hookPaid(pay);
+      const name = await d.nameOf(i.tripId, i.personId).catch(() => 'them');
+      const purpose = clip(`${row.title}${row.day ? `, ${dayText(row.day)}` : ''}, for ${name}`, 200);
+      const asked = pay
+        .requestTicketApproval(i.tripId, { personId: i.personId, amountMinor: Number(row.total_minor), currency: 'INR', purpose, key: row.run_id, trigger: i.tapId })
+        .then(async (got) => {
+          if ('approvalId' in got) await d.pool.query('update flight_bookings set approval_id = $2, updated_at = $3 where run_id = $1', [row.run_id, got.approvalId, d.now()]);
+          return got;
+        });
+      // The Server may take its time: past the tap's own, the next Pay finds the payment ready (the helper asks once).
+      const late = Symbol('late');
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const got = await Promise.race([asked, new Promise<typeof late>((res) => (timer = setTimeout(() => res(late), PAY_WAIT_MS)))]).finally(() => clearTimeout(timer));
+      if (got === late) {
+        void asked.catch((err: unknown) => d.log.warn({ runId: row.run_id, err: String(err).slice(0, 200) }, 'travel: a ticket payment could not start'));
+        return { result: 'done', toast: 'Getting your payment ready, tap Pay again in a moment' };
+      }
+      if ('refused' in got) return { result: 'refused', toast: clip(got.refused, 120) };
+      return { result: 'open', url: got.url, expires_at: got.expiresAt };
+    },
     async settled() {
       await Promise.all([...running]);
     },
   };
+}
+
+/** The day a results page asks for (its date, DDMMYYYY), as YYYY-MM-DD. */
+export function dayOf(url: string | null): string | null {
+  const m = url ? /[?&]date=(\d{2})(\d{2})(\d{4})/.exec(url) : null;
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
 }
 
 const parsed = (body: string): unknown => {

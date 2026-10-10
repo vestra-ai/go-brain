@@ -25,8 +25,9 @@ export const SWITCH_RULES: Record<SwitchName, { valid: (v: string) => boolean; f
   BROWSER_FETCH_SLOTS: { valid: oneOf('1', '2', '3', '4'), fallback: '2' },
   // Watches the group asks Go to keep on ixigo (travel/recipe-watches.ts): off unless a deployment says on (staging does).
   RECIPE_WATCHES: { valid: oneOf('off', 'on'), fallback: 'off' },
-  // Go books a traveller's own flight on ixigo up to its pay button (travel/booking/): off until it is proven on a drill.
-  FLIGHT_BOOKING: { valid: oneOf('off', 'on'), fallback: 'off' },
+  // Go books a traveller's own flight on ixigo up to its pay button (travel/booking/): off until it is proven on a drill,
+  // and on for some Server instances only ("instances:drill-p0,drill-p2") so a drill never reaches anyone's own room.
+  FLIGHT_BOOKING: { valid: (v) => /^(off|on|instances:[\w.:@-]+(,[\w.:@-]+)*)$/.test(v), fallback: 'off' },
 };
 
 export function createSwitches(o: {

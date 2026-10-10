@@ -6,7 +6,8 @@ import { capture } from '../../recipes/__tests__/fixtures.js';
 import type { FetchPlan } from '../../recipes/recipe.js';
 import type { ReadOptions, RecipeRunner } from '../../recipes/runners.js';
 import type { StoredOffer } from '../../travel.js';
-import { createFlightBooking, dayMs, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, numbersOf, readyCard, SAVED_TRAVELLERS, TRAVELLER_FIELDS, type FlightBooking } from '../flight-booking.js';
+import { SWITCH_RULES } from '../../../admin/switches.js';
+import { createFlightBooking, dayMs, dayOf, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, numbersOf, readyCard, SAVED_TRAVELLERS, TRAVELLER_FIELDS, type FlightBooking, type TicketPay } from '../flight-booking.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -91,11 +92,11 @@ const OFFER: StoredOffer = {
   sourceUrl: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form',
 };
 
-function booking(runner: RecipeRunner, on = true): FlightBooking {
+function booking(runner: RecipeRunner, on = true, ticketPay: TicketPay | null = null): FlightBooking {
   void lb.switches.set('FLIGHT_BOOKING', on ? 'on' : 'off');
   void lb.switches.set('TRAVEL_MODE', 'ixigo_web');
   return createFlightBooking({
-    pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log,
+    pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, ticketPay: () => ticketPay,
     nameOf: async (_trip, personId) => ({ p_rahul: 'Rahul' } as Record<string, string>)[personId] ?? 'Someone',
   });
 }
@@ -104,7 +105,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
   it('opens the fare on the stage for them alone, picks the fare type, keeps ixigo\'s coupon, and posts their ready card', async () => {
     const { runner, reads, calls } = fakeRunner();
     const b = booking(runner);
-    expect(b.on()).toBe(true);
+    expect(await b.onFor('t_goa')).toBe(true);
     const from = lb.link.requests.length;
     await b.start({ tapId: 'tap_b1', tripId: 't_goa', personId: 'p_meher', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b.settled();
@@ -131,7 +132,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     const ready = C.NoticeCard.parse(sent.find((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'notice')!.params['card']);
     expect(ready).toMatchObject({
       title: 'Ready to pay ₹7,536 for Meher', for_person_ids: ['p_meher'],
-      body: "IndiGo 6E2150, no free cancellation. ixigo's SALE coupon: ₹360 off.",
+      body: "IndiGo 6E2150, Fri 6 Nov, no free cancellation. ixigo's SALE coupon: ₹360 off.",
       actions: [{ action_id: 'pay_flight', label: 'Pay', only_for_person_ids: ['p_meher'] }],
     });
     // Nothing of the account's wallet or of its saved travellers reaches the room.
@@ -192,14 +193,62 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect(rows).toEqual([{ person_id: 'p_arjun', state: 'failed', why: 'fare_not_found' }, { person_id: 'p_priya', state: 'failed', why: 'review_not_read' }]);
   });
 
-  it('is off unless the switch is on and Go reads ixigo.com itself', () => {
-    expect(booking(fakeRunner().runner, false).on()).toBe(false);
+  it("Pay opens the vault's page for the traveller alone, through the Server's approval for their own ticket, and paid marks it", async () => {
+    const asked: Array<Record<string, unknown>> = [];
+    const hook: { paid?: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void> } = {};
+    const pay: TicketPay = {
+      async requestTicketApproval(_trip, o) {
+        asked.push(o);
+        return { url: 'https://vault.example/pay/x', expiresAt: '2026-10-10T12:00:00.000Z', approvalId: 'appr_1', paymentId: 'pay_1' };
+      },
+      onPaid(fn) {
+        hook.paid = fn;
+      },
+    };
+    const b = booking(fakeRunner().runner, true, pay);
+    await b.start({ tapId: 'tap_p1', tripId: 't_goa', personId: 'p_meher4', name: 'Meher', offer: OFFER, choice: 'basic' });
+    await b.settled();
+    const cardId = (await db.pool.query(`select card_id from flight_bookings where person_id = 'p_meher4'`)).rows[0].card_id as string;
+    expect(await b.pay({ tripId: 't_goa', cardId, personId: 'p_kabir', tapId: 'tap_p2' })).toEqual({ result: 'refused', toast: 'This one is for someone else to pay' });
+    expect(await b.pay({ tripId: 't_goa', cardId, personId: 'p_meher4', tapId: 'tap_p3' })).toEqual({ result: 'open', url: 'https://vault.example/pay/x', expires_at: '2026-10-10T12:00:00.000Z' });
+    expect(asked).toEqual([{ personId: 'p_meher4', amountMinor: 753_600, currency: 'INR', purpose: 'IndiGo 6E2150, Fri 6 Nov, for Someone', key: expect.stringMatching(/^fb_/), trigger: 'tap_p3' }]);
+    await hook.paid!({ tripId: 't_goa', approvalId: 'appr_1', railRef: 'fake_1' });
+    expect((await db.pool.query(`select state, approval_id from flight_bookings where person_id = 'p_meher4'`)).rows[0]).toEqual({ state: 'paid', approval_id: 'appr_1' });
+    expect(await b.pay({ tripId: 't_goa', cardId, personId: 'p_meher4', tapId: 'tap_p4' })).toEqual({ result: 'refused', toast: 'Already paid' });
+  });
+
+  it("Pay says it opens soon with no ticket payment yet, says ixigo's refusal, and answers inside the tap when the Server is slow", async () => {
+    const b0 = booking(fakeRunner().runner);
+    await b0.start({ tapId: 'tap_q1', tripId: 't_goa', personId: 'p_q', name: 'Q', offer: OFFER, choice: 'basic' });
+    await b0.settled();
+    const cardId = (await db.pool.query(`select card_id from flight_bookings where person_id = 'p_q'`)).rows[0].card_id as string;
+    expect(await b0.pay({ tripId: 't_goa', cardId, personId: 'p_q', tapId: 'tap_q2' })).toEqual({ result: 'refused', toast: 'Paying for a ticket through Go opens soon' });
+    const refusing = booking(fakeRunner().runner, true, { requestTicketApproval: async () => ({ refused: "Q isn't in this trip", code: 'not_in_trip' }), onPaid: () => undefined });
+    expect(await refusing.pay({ tripId: 't_goa', cardId, personId: 'p_q', tapId: 'tap_q3' })).toEqual({ result: 'refused', toast: "Q isn't in this trip" });
+    const slow = booking(fakeRunner().runner, true, {
+      requestTicketApproval: () => new Promise((r) => setTimeout(() => r({ url: 'https://vault.example/pay/y', expiresAt: 'x', approvalId: 'appr_2', paymentId: 'pay_2' }), 3_000)),
+      onPaid: () => undefined,
+    });
+    expect(await slow.pay({ tripId: 't_goa', cardId, personId: 'p_q', tapId: 'tap_q4' })).toEqual({ result: 'done', toast: 'Getting your payment ready, tap Pay again in a moment' });
+  });
+
+  it("is off unless the switch is on, or names the trip's Server instance, and Go reads ixigo.com itself", async () => {
+    expect(['off', 'on', 'instances:drill-p0', 'instances:drill-p0,drill-p2'].every(SWITCH_RULES.FLIGHT_BOOKING.valid)).toBe(true);
+    expect(['instances:', 'yes', 'instances:a b'].some(SWITCH_RULES.FLIGHT_BOOKING.valid)).toBe(false);
+    await db.pool.query(`insert into trips (trip_id, server_instance) values ('t_drill_p0', 'drill-p0'), ('t_his', 'go-live-keshav') on conflict (trip_id) do nothing`);
+    const b = booking(fakeRunner().runner, false);
+    expect(await b.onFor('t_drill_p0')).toBe(false);
+    await lb.switches.set('FLIGHT_BOOKING', 'instances:drill-p0,drill-p2');
+    expect([await b.onFor('t_drill_p0'), await b.onFor('t_his'), await b.onFor('t_no_row')]).toEqual([true, false, false]);
+    await lb.switches.set('TRAVEL_MODE', 'fake');
+    expect(await b.onFor('t_drill_p0')).toBe(false);
   });
 
   it("reads a card title's flight numbers leg by leg, and says a ready card's coupon only when ixigo applied one", () => {
     expect(['IndiGo 6E2150', 'IndiGo 6E328 + 6E5106', 'Air India Express IX1196', 'Akasa QP1100'].map(numbersOf)).toEqual([['6E2150'], ['6E328', '6E5106'], ['IX1196'], ['QP1100']]);
-    // ixigo's own day for 6 Nov 2026 (its flight-fare's departDate, 7 Oct capture).
+    // ixigo's own day for 6 Nov 2026 (its flight-fare's departDate, 7 Oct capture), and the day a results page asks for.
     expect(dayMs('06112026')).toBe(1_793_903_400_000);
+    expect([dayOf(OFFER.sourceUrl), dayOf(null), dayOf('https://www.ixigo.com/x')]).toEqual(['2026-11-06', null, null]);
     const card = readyCard({ cardId: 'c_r', personId: 'p_meher', name: 'Meher', title: 'IndiGo 6E2150', when: 'Fri 6 Nov, 18:15', choice: 'assured', amountMinor: 910_500, coupon: null });
     expect(card.body).toBe('IndiGo 6E2150, Fri 6 Nov, 18:15, Assured (free cancellation).');
   });

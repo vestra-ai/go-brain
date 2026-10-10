@@ -6,13 +6,17 @@ create table if not exists flight_bookings (
   person_id text not null,
   option_id text not null,
   title text not null,
+  -- The day it flies (YYYY-MM-DD), for the card and the payment's purpose.
+  day text,
   choice text not null check (choice in ('basic', 'assured', 'flex')),
-  state text not null check (state in ('fare', 'fare_type', 'coupon', 'travellers', 'ready_to_pay', 'failed')),
+  state text not null check (state in ('fare', 'fare_type', 'coupon', 'travellers', 'ready_to_pay', 'paid', 'failed')),
   total_minor bigint,
   coupon_code text,
   coupon_minor bigint,
   review_url text,
   card_id text,
+  -- The Server's approval the traveller's Pay asked for (money's ticket approval), matched when the vault says paid.
+  approval_id text,
   why text,
   created_at timestamptz not null,
   updated_at timestamptz not null
