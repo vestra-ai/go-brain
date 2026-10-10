@@ -198,8 +198,17 @@ export const FETCH_TIMEOUT_MS = 20_000;
 export const FRAME_WIDTH = 1280;
 /** Pictures a second Go asks Bash's watch for: its most, since Bash shares them across the open tabs (6 gave about 3 a tab). */
 export const WATCH_FPS = 10;
-/** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
-export const IN_USE_WAIT_MS = 4_000;
+/** A person used the browser in the last 4 s (Bash's quiet window): Go asks again past it. */
+export const IN_USE_WAIT_MS = 5_000;
+/**
+ * How long a read waits for the browser while a person has it (ixigo's login open on Go's screen, on a Bash from before
+ * reads ran behind it; a person driving it on Watch): as long as a login is held open there. It never fails for it: the
+ * live card says so once, a search outlives its turn (tools.ts handOver) and its card goes up when it lands. Its signal,
+ * when it has one, ends the wait sooner.
+ */
+export const IN_USE_PATIENCE_MS = 10 * 60_000;
+/** A hand-off's own page asks again this many times while the person is still typing on Watch (staging, 9 Oct, 18:52). */
+export const HANDOFF_IN_USE_TRIES = 3;
 /** How long a page call may take before the run falls to the page speed: it answers in about 0.4 s on a warm tab. */
 export const FAST_TIMEOUT_MS = 5_000;
 /**
@@ -470,6 +479,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     };
     let userId = await d.browser.userFor(tripId);
     let askedAgain = false;
+    let waited = false;
     const pageMs = body.timeout_ms;
     const started = d.now().getTime();
     let checks = 0;
@@ -514,7 +524,11 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           userId = await d.browser.again(tripId);
           continue;
         }
-        if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
+        // A person has the browser: wait for them, never "didn't work" (staging, 9 Oct: a login left open refused every
+        // search on the person's browser for 10 minutes, and Go fell back to a slow job).
+        if (err.status === 409 && err.code === 'browser_in_use' && !o.signal?.aborted && d.now().getTime() - started < IN_USE_PATIENCE_MS) {
+          if (!waited) o.onProgress?.({ type: 'waiting' });
+          waited = true;
           await sleep(IN_USE_WAIT_MS);
           continue;
         }
@@ -665,12 +679,20 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     };
     const pageMs = body.timeout_ms;
     const started = d.now().getTime();
+    let inUse = 0;
     for (let checks = 0; ; checks++) {
       let captures: Capture[];
       try {
         const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
         captures = Array.isArray(answer.captures) ? answer.captures : [];
       } catch (err) {
+        // The person is still typing on Watch (Bash's 4 s window): "I'm logged in" tapped right after the code waits it out.
+        if (err instanceof V1Error && err.status === 409 && err.code === 'browser_in_use' && inUse < HANDOFF_IN_USE_TRIES) {
+          inUse += 1;
+          checks -= 1;
+          await sleep(IN_USE_WAIT_MS);
+          continue;
+        }
         // Bash keeps a timed-out tab: the page is in front for the person, with what it caught.
         if (!(err instanceof V1Error) || err.status !== 504) throw pageCallFailed(err);
         captures = partialCaptures(err);

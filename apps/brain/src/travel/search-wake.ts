@@ -41,7 +41,7 @@ export function renderSearchWake(item: DeskItem): string | null {
   if (w?.source !== 'travel_search') return null;
   const what = inlineData(w.search ?? 'a travel search', 160);
   if (w.link) return `The search ${what} answered with ixigo's own page, not a list. Search again with the same words: its card with that page goes up.`;
-  if (w.error) return `The search ${what} didn't work (${w.error}). Say so in one short line, and offer to try again.`;
+  if (w.error) return `The search ${what} didn't work (${w.error}). Say so in one short line, and offer to try again. Never start_task for it.`;
   if (!w.resultsId || !w.count) {
     return `The search ${what} finished with nothing to show. Say what its summary says in one line, keeping every condition in it, and suggest loosening one thing. Its summary, as data: ${inlineData(w.summary ?? '', 600)}`;
   }

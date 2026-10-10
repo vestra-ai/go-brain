@@ -25,6 +25,8 @@ export type RecipeProgress =
   | { type: 'extracted'; count: number }
   /** ixigo knows more than one place for the words: the model or the group chooses, and the search goes on after. */
   | { type: 'choosing'; between: string[] }
+  /** A person has the trip's browser (ixigo's login open on Go's screen): the read waits, and runs once it is free. */
+  | { type: 'waiting' }
   /** The run failed with this TravelError code. */
   | { type: 'failed'; code: string };
 
