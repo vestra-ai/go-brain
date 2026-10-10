@@ -165,11 +165,15 @@ export function readyCard(i: {
  * The card for a traveller ixigo's account doesn't have once: their own, saying whose ixigo to add them on. It names
  * nobody but the trip's own people, and none of the account's saved travellers.
  */
-export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name'>, owner: string | null, why: 'none' | 'several'): NoticeCard {
+export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name'>, owner: string | null, why: 'none' | 'several' | 'login'): NoticeCard {
   const on = owner ? `${owner}'s ixigo` : "the trip's ixigo";
+  // No login (the drill, 10 Oct 15:43Z: the booking stopped at its travellers, and the traveller heard nothing why): the
+  // login card is the person's who was asked, so the traveller is told whose it is.
   const body = why === 'none'
     ? `${ask.name} isn't a saved traveller on ${on} yet; add ${ask.name} there once, then tap Book it again.`
-    : `${on.charAt(0).toUpperCase()}${on.slice(1)} has more than one saved traveller named ${ask.name}; keep one there, then tap Book it again.`;
+    : why === 'several'
+      ? `${on.charAt(0).toUpperCase()}${on.slice(1)} has more than one saved traveller named ${ask.name}; keep one there, then tap Book it again.`
+      : `Your traveller details come from the trip's ixigo login, which isn't linked yet${owner ? `: ${owner} has the Log in to ixigo card` : ''}. Once it's in, tap Book it again.`;
   return {
     card_id: cardId, kind: 'notice', tone: 'heads_up', for_person_ids: [ask.personId],
     title: clip(`${ask.name}, one step on ixigo first`, 80), body: clip(body, 500), fallback_text: clip(body, 300),
@@ -285,7 +289,16 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     // picture). The list and their name live in this run's memory only. Nothing is submitted.
     await live.step(3, 'doing');
     const login = d.login ? await d.login.ensure(ask.tripId, `Booking ${title} for ${ask.name}`, { booking: true }).catch(() => null) : { ok: true as const };
-    if (!login?.ok) return fail('login_needed', 3);
+    const ownerName = async (): Promise<string | null> => {
+      const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
+      return holder ? await d.nameOf(ask.tripId, holder).catch(() => null) : null;
+    };
+    if (!login?.ok) {
+      await d.link.request('post_message', {
+        request_id: stableId('go_book_login', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_login', runId), ask, await ownerName(), 'login'), visible_to_person_ids: [ask.personId],
+      });
+      return fail('login_needed', 3);
+    }
     const day = results.searchParams.get('date') ?? '';
     const ms = dayMs(day);
     const saved = runner.pageFetch && ms !== null
@@ -297,10 +310,8 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       : [];
     if (!match) return fail('travellers_not_read', 3);
     if (match.status !== 'matched') {
-      const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
-      const owner = holder ? await d.nameOf(ask.tripId, holder).catch(() => null) : null;
       await d.link.request('post_message', {
-        request_id: stableId('go_book_who', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_who', runId), ask, owner, match.status), visible_to_person_ids: [ask.personId],
+        request_id: stableId('go_book_who', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_who', runId), ask, await ownerName(), match.status), visible_to_person_ids: [ask.personId],
       });
       return fail(match.status === 'none' ? 'no_saved_traveller' : 'several_saved_travellers', 3);
     }

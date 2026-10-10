@@ -191,6 +191,12 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     await b.start({ tapId: 'tap_l1', tripId: 't_goa', personId: 'p_meher5', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b.settled();
     expect(asked).toEqual(['Booking IndiGo 6E2150 for Meher']);
+    // She is told why, on a card for her alone: whose login card it is (the trip's login row's person, named here by this
+    // booking's nameOf), then Book it again.
+    const told = lb.link.requests.filter((r) => (r.params['card'] as { card_id?: string } | undefined)?.card_id?.startsWith('c_book_login'));
+    expect(told.map((r) => [r.params['visible_to_person_ids'], (r.params['card'] as { body: string }).body])).toEqual([
+      [['p_meher5'], "Your traveller details come from the trip's ixigo login, which isn't linked yet: Someone has the Log in to ixigo card. Once it's in, tap Book it again."],
+    ]);
     expect(calls).toEqual([]);
     expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher5'`)).rows[0]).toEqual({ state: 'failed', why: 'login_needed' });
   });
