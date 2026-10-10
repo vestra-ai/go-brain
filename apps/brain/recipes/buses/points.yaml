@@ -21,12 +21,12 @@ answer:
   as: facts
   title: "Bus boarding points in {city}"
   max: 1
+  # A point's own name is its alias ("Majestic"); its name is the city's ("Bengaluru").
   each: |
     (
       $points := $sort(boarding_points[$type(name) = "string"], function($a, $b) {
         ($exists($num($a.boarding_point_rank)) ? $num($a.boarding_point_rank) : 999) > ($exists($num($b.boarding_point_rank)) ? $num($b.boarding_point_rank) : 999)
       });
-      # A point's own name is its alias ("Majestic"); its name is the city's ("Bengaluru").
       $said := function($p) { ($type($p.alias) = "string" and $trim($p.alias) != "") ? $trim($p.alias) : $p.name };
       $count($points) > 0 ? {
         "city": $type(display_text) = "string" ? display_text : city,
