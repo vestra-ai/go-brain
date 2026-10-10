@@ -272,7 +272,7 @@ export const BASH_MAX_BYTES = 1_048_576;
 export const SSE_UNSUPPORTED_MS = 10 * 60_000;
 
 /** A capture as a Bash with no sse "last" takes it: no sse, and no more than Bash's most. */
-const withoutSse = <C extends { match: string; sse?: 'last'; max_bytes?: number }>(c: C): C => {
+const withoutSse = <C extends { sse?: 'last'; max_bytes?: number }>(c: C): C => {
   if (c.sse === undefined) return c;
   const { sse: _sse, ...rest } = c;
   return { ...rest, ...(c.max_bytes !== undefined && c.max_bytes > BASH_MAX_BYTES ? { max_bytes: BASH_MAX_BYTES } : {}) } as C;
