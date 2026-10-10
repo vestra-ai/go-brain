@@ -4,6 +4,7 @@ import type { Capture, FetchPlan } from '../../recipes/recipe.js';
 import { capture } from '../../recipes/__tests__/fixtures.js';
 import { BOOK_DIR, loadBook } from '../book.js';
 import { createEngine } from '../engine.js';
+import { NearUnsupportedError } from '../../recipes/runners.js';
 
 // p4's buses recipes beyond the search, each read from its own sample: ixigo's own pages, recorded logged out on 8 Oct
 // 2026 and trimmed to a few of their parts. No person's details are in any of them.
@@ -107,5 +108,58 @@ describe('buses.stops', () => {
     expect((await facts('buses.stops', { bus: PAULO }, [layout({ travelerAgentName: 'VRL Travels' })])).rows).toEqual([]);
     expect((await facts('buses.stops', { bus: PAULO }, [layout({ startTimeDateFormat: '2026-11-06 19:30:00' })])).rows).toEqual([]);
     expect((await facts('buses.stops', { bus: PAULO }, [layout({ startTimeDateFormat: '2026-11-06 17:30:00' })])).rows).toHaveLength(1);
+  });
+});
+
+// The lead, 10 Oct: once a buses card is up, its top pick's seat layout opens on the stage, from the results the stage
+// already shows: its own "Select Seats" clicked there, no page opened. Steps that bring nothing open the page by its
+// address; a Bash that can't click one card's own button is never asked by address either.
+describe('buses.stops on the stage', () => {
+  const RESULTS = 'https://www.ixigo.com/buses/bus_search/Bengaluru/7/Goa/102/06-11-2026/O';
+  const PAULO = `${RESULTS}#Paulo%20Travels%20Express@17:30`;
+  const LAYOUT = '/wap/GetSeatLayout$';
+  const layout = () => capture(LAYOUT, 'https://www.ixigo.com/wap/GetSeatLayout', sample('buses.stops.json'));
+
+  function stage(onStage: (plan: FetchPlan) => Capture[] | Error) {
+    const staged: FetchPlan[] = [];
+    const opened: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        opened.push(url);
+        return { captures: [layout()], finalUrl: url };
+      },
+      onStage: async (_trip: string, plan: FetchPlan) => {
+        staged.push(plan);
+        const got = onStage(plan);
+        if (got instanceof Error) throw got;
+        return { captures: got, finalUrl: RESULTS };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-10T06:00:00Z') });
+    return { engine, staged, opened };
+  }
+
+  it("clicks the bus's own Select Seats on the results the stage shows, with no page opened, and keeps its stops", async () => {
+    const s = stage(() => [layout()]);
+    const got = await s.engine.answer('buses.stops', { bus: PAULO }, { tripId: 't_goa', onProgress: () => undefined, staged: true });
+    expect(s.staged.map((p) => p.steps)).toEqual([[
+      { op: 'click', role: 'button', name: 'Select Seats', near_text: ['Paulo Travels Express', '17:30'] },
+      { op: 'wait_for', match: LAYOUT },
+    ]]);
+    expect(s.opened).toEqual([]);
+    expect(got.as === 'facts' && got.rows[0]!['drops']).toContain('Mapusa - Gandhi Circle New Bus Stand, 10:30 AM');
+    // Kept: "where do we board and when" answers from it, with nothing run again.
+    await s.engine.answer('buses.stops', { bus: PAULO }, { tripId: 't_goa' });
+    expect(s.staged).toHaveLength(1);
+    expect(s.opened).toEqual([]);
+  });
+
+  it('opens the results by their address when the stage brings nothing, and never when the Bash cannot click one card', async () => {
+    const empty = stage(() => []);
+    await empty.engine.answer('buses.stops', { bus: PAULO }, { tripId: 't_goa', onProgress: () => undefined, staged: true });
+    expect(empty.opened).toEqual([RESULTS]);
+    const older = stage(() => new NearUnsupportedError());
+    await expect(older.engine.answer('buses.stops', { bus: PAULO }, { tripId: 't_goa', onProgress: () => undefined, staged: true })).rejects.toBeInstanceOf(NearUnsupportedError);
+    expect(older.opened).toEqual([]);
   });
 });
