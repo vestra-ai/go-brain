@@ -43,7 +43,8 @@ export type { Step } from '../book/format.js';
  * What the browser fetch keeps and does, how long it may take when that is less than Bash's most, and how long Bash
  * waits after the data is in before its last picture (settleMs; none when the page is not drawn by then, as buses).
  * graceMs (Bash's most is 3000): Bash answers once the required captures are in, waiting at most this long more for
- * the others, for a page whose calls depend on what it finds (ixigo's login calls). Without it Bash waits for every
+ * the others, for a page whose calls depend on what it finds (ixigo's login calls). A plan with an optional capture and
+ * none of its own takes OPTIONAL_GRACE_MS (runners.ts bashCaptures); one with nothing optional, none: Bash waits for every
  * capture.
  */
 export interface FetchPlan { capture: CaptureSpec[]; steps?: Step[]; timeoutMs?: number; settleMs?: number; graceMs?: number }
