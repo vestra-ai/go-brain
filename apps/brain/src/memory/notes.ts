@@ -10,6 +10,7 @@ import type { Message } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
 import { maskSecrets } from '../reflex/secrets.js';
+import { isSmallTalk } from '../reflex/small-talk.js';
 import { partOfAskToGo } from '../trips/names-go.js';
 import type { Travel } from '../travel/travel.js';
 import type { Packs, TripPack } from '../trips/pack.js';
@@ -180,7 +181,9 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
     const cursor = only ? 0 : await readCursor(tripId);
     const waiting = only ? visible.filter((m) => only.includes(m.message_id)) : visible.filter((m) => m.seq > cursor);
     const fresh = waiting.slice(0, BATCH);
-    if (!fresh.some((m) => m.author.kind === 'person')) {
+    // A bare 👍, ok, haha or gn says nothing to note: a reaction alone is never a plan or a decision (eval, 10 Oct: a 👍
+    // after Go's word on Dudhsagar became "agreed: Dudhsagar falls trip on Sunday 8 Nov").
+    if (!fresh.some((m) => m.author.kind === 'person' && !isSmallTalk(m.text))) {
       if (!only && fresh.length) await advance(tripId, fresh[fresh.length - 1]!.seq);
       return { ...empty(), skipped: 'nothing_new' };
     }

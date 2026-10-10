@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { Confirmed } from '../travel/travel.js';
+import type { Room } from './rooms.js';
 
 /** 'confirming': the vault took the payer's yes but the bank has not said whether the charge went through. It never expires. */
 export type PaymentState = 'asking' | 'waiting' | 'confirming' | 'paid' | 'declined' | 'expired' | 'failed' | 'refused';
@@ -36,6 +37,8 @@ export interface PaymentRow {
   rail_ref: string | null;
   fail_reason: string | null;
   confirmed: Confirmed | null;
+  /** The rooms the stay's expenses split by, kept when the payment was asked (REV4 B6); [] for none picked. */
+  rooms: Room[] | null;
   booking_id: string | null;
   expense_id: string | null;
   released_at: Date | null;
@@ -66,11 +69,13 @@ export interface NewPayment {
   payment_kind: string;
   hold_expires_at: Date;
   refundable_until: string | null;
+  /** The rooms picked for the stay when the payment is asked; [] for none, null when nothing reads them. */
+  rooms?: Room[] | null;
 }
 
 const PATCHABLE = [
   'refused_reason', 'release_reason', 'approval_id', 'approval_token', 'approval_expires_at', 'card_id', 'card_state',
-  'pay_link_url', 'pay_link_expires_at', 'rail_ref', 'fail_reason', 'confirmed', 'booking_id', 'expense_id',
+  'pay_link_url', 'pay_link_expires_at', 'rail_ref', 'fail_reason', 'confirmed', 'rooms', 'booking_id', 'expense_id',
   'released_at', 'ticket_posted_at', 'said_at', 'last_error', 'checking_at',
 ] as const;
 export type PaymentPatch = Partial<Pick<PaymentRow, (typeof PATCHABLE)[number]>>;
@@ -83,7 +88,7 @@ function setClause(patch: PaymentPatch, first: number): { sql: string[]; values:
     if (!(key in patch)) continue;
     const value = patch[key];
     sql.push(`${key} = $${first + values.length}`);
-    values.push(key === 'confirmed' && value !== null && value !== undefined ? JSON.stringify(value) : value);
+    values.push((key === 'confirmed' || key === 'rooms') && value !== null && value !== undefined ? JSON.stringify(value) : value);
   }
   return { sql, values };
 }
@@ -92,11 +97,12 @@ export async function insertAsking(db: Db, p: NewPayment, now: Date): Promise<'o
   try {
     await db.query(
       `insert into payments (payment_id, trip_id, decision_id, option_ref, purpose, label, payer_person_id, payer_name, for_person_ids, state,
-         hold_id, amount_minor, currency, merchant, payment_kind, hold_expires_at, refundable_until, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'asking', $10, $11, $12, $13, $14, $15, $16, $17, $17)`,
+         hold_id, amount_minor, currency, merchant, payment_kind, hold_expires_at, refundable_until, rooms, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'asking', $10, $11, $12, $13, $14, $15, $16, $18, $17, $17)`,
       [
         p.payment_id, p.trip_id, p.decision_id, p.option_ref, p.purpose, p.label, p.payer_person_id, p.payer_name, p.for_person_ids,
         p.hold_id, p.amount_minor, p.currency, p.merchant, p.payment_kind, p.hold_expires_at, p.refundable_until, now,
+        p.rooms ? JSON.stringify(p.rooms) : null,
       ],
     );
     return 'ok';

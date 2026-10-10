@@ -1,14 +1,15 @@
 /**
  * A place by the words for it, as Go tells the Server about it (contract 1.1 Place): the trip's destination when Go sets
  * it (trips/save-trip.ts, through brain.travel.placeFor). ixigo's hotel box names it: its id, its type, where it is and
- * what it lies within. Its country gives its time zone, and ixigo's guide gives a destination its photo, through Go's
- * image cache. Kept for good by the words (place_details): one box lookup a place and one guide load a destination,
+ * what it lies within. Its country gives its time zone, and ixigo's guide gives a destination its photo and up to twelve
+ * labelled ones (the Server team's 10 Oct B3: the guide's own, its places to visit by name), through Go's image cache. Kept for good by the words (place_details): one box lookup a place and one guide load a destination,
  * ever. Nothing is made up: what ixigo doesn't say is left out (a country with more than one time zone has none).
  */
-import type { Place } from '@go/contract';
+import type { Photo, Place } from '@go/contract';
 import type pg from 'pg';
 import type { Engine } from './book/engine.js';
 import type { Images } from './images.js';
+import { photosOf, type SourcePhoto } from './photos.js';
 import { norm } from './recipes/places.js';
 import type { ResolvedPlace } from './travel.js';
 
@@ -45,18 +46,24 @@ const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFi
 const PHOTO_TRIES = 2;
 
 export function createPlaceFor(d: PlaceForDeps): PlaceFor {
-  /** ixigo's guide photo for the first of these that has one, through Go's image cache; null when none has. */
-  const photoOf = async (names: string[], tripId: string): Promise<string | null> => {
+  /**
+   * ixigo's guide photo for the first of these that has one, and that guide's labelled photos, through Go's image cache;
+   * none when no guide has a photo.
+   */
+  const photoOf = async (names: string[], tripId: string): Promise<{ photo: string | null; photos: Photo[] }> => {
     for (const name of names.slice(0, PHOTO_TRIES)) {
       try {
         const guide = await d.engine.answer('plan.destination', { place: name }, { tripId });
-        const photo = guide.as === 'facts' ? guide.rows[0]?.['photo'] : undefined;
-        if (typeof photo === 'string') return await d.images.rehostUrl(photo);
+        const row = guide.as === 'facts' ? guide.rows[0] : undefined;
+        const photo = row?.['photo'];
+        if (typeof photo !== 'string') continue;
+        const list = row?.['photos'];
+        return { photo: await d.images.rehostUrl(photo), photos: Array.isArray(list) ? await photosOf(list as SourcePhoto[], d.images) : [] };
       } catch (err) {
         d.log?.warn({ err: String(err), tripId, place: name }, "travel: ixigo's guide gave no photo for a place");
       }
     }
-    return null;
+    return { photo: null, photos: [] };
   };
 
   return async (words, o) => {
@@ -72,13 +79,14 @@ export function createPlaceFor(d: PlaceForDeps): PlaceFor {
     const within = s.line.split(',').map((x) => x.trim()).filter((x) => x.length > 0 && norm(x) !== norm(s.name));
     const [lat, lng] = [num(p['lat']), num(p['lng'])];
     const timezone = timezoneOf(s.country);
-    const photo = await photoOf([s.name, ...within], o.tripId);
+    const { photo, photos } = await photoOf([s.name, ...within], o.tripId);
     const place: Place = {
       name: s.name.slice(0, 120),
       ...(p['locationId'] !== undefined ? { place_id: `ixigo:${String(p['locationId'])}` } : {}),
       ...(lat !== null && lng !== null ? { lat, lng } : {}),
       ...(timezone ? { timezone } : {}),
       ...(photo ? { photo_url: photo } : {}),
+      ...(photos.length ? { photos } : {}),
     };
     const resolved: ResolvedPlace = { place, kind, within };
     await d.pool

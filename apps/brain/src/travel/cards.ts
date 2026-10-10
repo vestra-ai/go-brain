@@ -225,7 +225,8 @@ export function subtitleFor(o: ResultOption): string | null {
 }
 
 /** details: the option's sheet (contract 1.1), when Go has one for it. */
-export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null; details?: OptionDetailsT }
+/** photos: the Server team's 10 Oct B3, Go's re-hosted copies, labelled when the source says what each shows (photos.ts). */
+export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null; details?: OptionDetailsT; photos?: C.Photo[] }
 
 function cardOption(p: CardPick): CardOption {
   const o = p.option;
@@ -243,6 +244,7 @@ function cardOption(p: CardPick): CardOption {
     ...(o.rating !== undefined ? { rating: Math.min(5, Math.max(0, o.rating)) } : {}),
     ...(o.refundableUntil ? { refundable_until: o.refundableUntil } : {}),
     ...(p.details ? { details: p.details } : {}),
+    ...(p.photos?.length ? { photos: p.photos } : {}),
   };
 }
 

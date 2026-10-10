@@ -4,6 +4,7 @@ import type { Desk } from '../desk/desk.js';
 import type { ToGoHandler } from '../door/handlers.js';
 import type { Message, TripEvent } from '../door/methods.js';
 import type { Log } from '../log.js';
+import { leftToPeople } from '../reflex/read.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../reflex/reflex.js';
 import type { HooksImpl } from './hooks.js';
 import type { TripLogImpl } from './log.js';
@@ -31,12 +32,15 @@ export interface IntakeDeps {
 }
 
 /**
- * Whether a person's message wakes the composer. One that names Go always does. Sure chatter never does, and neither
- * does asking the group what you missed: the App gives each person their own catch-up (the Server's catch_up).
+ * Whether a person's message wakes the composer. One that names Go always does. A line the reflex leaves to the people
+ * (question 11 sure there is nothing in it for Go, or question 1 sure it is banter: reflex/read.ts leftToPeople) never
+ * does, and neither does asking the group what you missed: the App gives each person their own catch-up (the Server's
+ * catch_up). Everything else does, a line no one spoke to Go in too: Go jumps in on most lines, wherever it can add
+ * anything (Keshav, 10 Oct: "go can interfere in most of the messages"), and the turn decides whether it can.
  */
-export function wakesComposer(namesGo: boolean, read: Pick<ReflexRead, 'forGo'>, text: string | null | undefined): boolean {
+export function wakesComposer(namesGo: boolean, read: Pick<ReflexRead, 'banter' | 'actionable'>, text: string | null | undefined): boolean {
   if (namesGo) return true;
-  return !((read.forGo.sure && read.forGo.value === false) || asksWhatTheyMissed(text));
+  return !(leftToPeople(read) || asksWhatTheyMissed(text));
 }
 
 /**
@@ -110,16 +114,24 @@ export function createIntake(d: IntakeDeps) {
       read = UNSURE_READ;
     }
     const said = await d.hooks.run(m, read, pack);
+    // Asked without Go's name ("I want to login again to ixigo", "koi flights dekh lo"): the quick read is sure the line
+    // is for Go, so the turn takes it as an ask, as if it named Go (Keshav, 10 Oct: "go only responds to @go? this is not
+    // right"). Banter stays the group's: the read is sure only above its bar.
+    const asksGo = !namesGo && read.forGo.sure && read.forGo.value === true;
+    // Not an ask, but the quick read is sure Go has something to do with it ("I'm veg", "let's do Goa in Nov?"): the turn
+    // is told so, and jumps in.
+    const actionable = !namesGo && !asksGo && read.actionable?.sure === true && read.actionable.value === true;
+    if (asksGo) d.speak.typingOn(tripId);
     if (wakesComposer(namesGo, read, m.text)) {
       const now = d.now();
-      const complete = dueAtOnce(m, pack, read, namesGo, said.dueNow === true);
+      const complete = dueAtOnce(m, pack, read, namesGo || asksGo, said.dueNow === true);
       await d.desk.put({
         id: `msg:${tripId}:${m.message_id}`,
         tripId,
         kind: 'message',
         ref: m.message_id,
         dueAt: complete ? now : new Date(now.getTime() + waitMs),
-        payload: { messageId: m.message_id, seq: m.seq, namesGo },
+        payload: { messageId: m.message_id, seq: m.seq, namesGo, ...(asksGo ? { asksGo } : {}), ...(actionable ? { actionable } : {}) },
       });
     }
     // Remembered only once read and on the desk: if anything above failed, the next gap check or a restart handles it again.

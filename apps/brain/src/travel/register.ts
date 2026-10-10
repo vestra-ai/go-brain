@@ -13,7 +13,7 @@ import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { flightsEachTool } from './flights-each.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
-import { createIxigoLogin, renderLoginResume } from './login.js';
+import { createIxigoLogin, ixigoLoginTool, renderLoginResume } from './login.js';
 import { createLoginKeepAlive } from './login-keepalive.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
@@ -30,12 +30,14 @@ import { optionOnCard } from './recipes/option-on-card.js';
 import { createPlaceFor } from './place-for.js';
 import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
+import { createRoomsCards, ROOMS_PICK, roomsCardOnClose, roomsTap } from './rooms-card.js';
 import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
 import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
+import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
@@ -216,13 +218,18 @@ export const registerTravel: RegisterLane = async (brain) => {
   // details are kept by the engine for "tell me about this villa". Only where Go reads ixigo.com itself.
   // A bus's top pick: its own "Select Seats" clicked on the results the stage shows, by its operator and time, read only,
   // its stops and cancellation kept for "where do we board and when". Never on a Bash that can't click one card's own
-  // button (before bash #4637): no other card's is clicked instead.
-  const showPick = (tripId: string, pick: { page: string; name: string; kind?: 'stay' | 'bus' }): void => {
+  // button (before bash #4637): no other card's is clicked instead. A stay's: its page's own photos, labelled, then
+  // replace the search's on its card (pick-photos.ts, 10 Oct B3).
+  const showPick = (tripId: string, pick: TopPick): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
     if (pick.kind === 'bus' && brain.recipeRunners?.browserFetch?.canPickOne?.() === false) return;
     const run = pick.kind === 'bus'
       ? engine.answer('buses.stops', { bus: pick.page }, { tripId, onProgress: () => undefined, staged: true })
-      : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name });
+      : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).then((got) =>
+          showPickPhotos({ results, images, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got).catch((err: unknown) => {
+            brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's photos didn't reach its card");
+          }),
+        );
     void run.catch((err: unknown) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
@@ -248,6 +255,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     joinKey: (ctx, recipe, inputs) => early.joinKey(ctx.tripId, messageIdsOf(ctx.wake), recipe, inputs),
   });
   if (recipesTool) brain.tools.register(recipesTool);
+  // Someone asks to log in to ixigo (again): the card goes up for whoever logs in for the trip, with a line saying whose.
+  brain.tools.register(ixigoLoginTool(login));
   // How everyone gets to the trip, asked for: each home city's trains and buses side by side, on one card.
   brain.tools.register(
     waysThereTool({
@@ -277,6 +286,12 @@ export const registerTravel: RegisterLane = async (brain) => {
   const stopWatchChecks = (): void => clearInterval(watchEvery);
   brain.onStop(stopWatchChecks);
   registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
+  // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
+  // on the turn that says so; a tap keeps the way picked, for the expense per room (B6, chosenArrangement).
+  const roomsCards = createRoomsCards(brain.pool);
+  const rooms = { engine, results, store: roomsCards, link: brain.door.link, packs: brain.packs, log: brain.log };
+  brain.context.addTurnCard(roomsCardOnClose(rooms));
+  brain.taps.on('rooms', ROOMS_PICK, roomsTap(rooms));
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
     warmForTravel: warm,

@@ -66,6 +66,11 @@ export interface Brain {
   switches: Switches;
   /** P1 sets an all-unsure stub; P2 replaces it. */
   reflex: Reflex;
+  /**
+   * True once Go's post of a card has answered (door/cards.ts posted), waiting at most withinMs: for a card a lane changes
+   * from work that runs while the turn posting it still goes (the top pick's photos). Set by P1.
+   */
+  cardPosted?: (tripId: string, cardId: string, withinMs: number) => Promise<boolean>;
   /** Set by P2. */
   memory?: Memory;
   /** Set by P4. */
@@ -227,6 +232,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   };
   const brain: Brain = {
     env, pool, log, now, http, anthropic, onStop, door, taps, tripLog, packs, setup, desk, tools, context, hooks, switches, reflex: unsureReflex, budget,
+    cardPosted: cards.posted,
   };
 
   const composer = createComposer({
