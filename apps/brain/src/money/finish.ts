@@ -4,6 +4,7 @@ import { ticketCard } from './cards.js';
 import { mentionsIn } from '../composer/speak.js';
 import { payerOf, postLine, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
+import { roomParts } from './rooms.js';
 import {
   byApproval,
   bumpAttempt,
@@ -138,22 +139,45 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
     await patchPayment(d.pool, row.payment_id, { booking_id: bookingId }, d.now());
   }
 
-  // 3. The expense: the payer paid, split across the trip's people.
+  // 3. The expense: the payer paid, split across the trip's people. A stay whose rooms the group shared (REV4 B6) is one
+  //    expense a room, split between that room's people, each its part of what was paid, by the rooms kept when the payment
+  //    was asked; each has its own request id, so a finish run again adds none of them twice. The row keeps the first
+  //    room's id: the expenses are done.
+  const rooms = confirmed.kind === 'stay' && row.rooms?.length ? roomParts(amountMinor, row.rooms) : null;
   if (!row.expense_id) {
-    const r = await d.link.request('add_expense', {
-      request_id: id('expense'),
+    const expense = {
       trip_id: row.trip_id,
       paid_by_person_id: row.payer_person_id,
-      amount_minor: amountMinor,
       currency: row.currency,
-      note: clip(confirmed.title, 120),
       category: categoryFor(confirmed.kind),
-      split_person_ids: row.for_person_ids,
       booking_id: bookingId,
       // 1.1: the vault payment it was paid with.
       approval_id: approvalId,
-    });
-    await patchPayment(d.pool, row.payment_id, { expense_id: r.expense_id }, d.now());
+    };
+    let first: string | null = null;
+    if (rooms) {
+      for (const [i, part] of rooms.entries()) {
+        if (part.amount_minor <= 0) continue;
+        const r = await d.link.request('add_expense', {
+          ...expense,
+          request_id: id(`expense_room${i + 1}`),
+          amount_minor: part.amount_minor,
+          note: clip(`${confirmed.title}, ${part.room.label}`, 120),
+          split_person_ids: part.room.person_ids,
+        });
+        first ??= r.expense_id;
+      }
+    } else {
+      const r = await d.link.request('add_expense', {
+        ...expense,
+        request_id: id('expense'),
+        amount_minor: amountMinor,
+        note: clip(confirmed.title, 120),
+        split_person_ids: row.for_person_ids,
+      });
+      first = r.expense_id;
+    }
+    await patchPayment(d.pool, row.payment_id, { expense_id: first }, d.now());
   }
 
   // 4. The pay card shows paid, with no buttons and no pin.
@@ -165,7 +189,10 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
 
   // 5. The ticket, with one line in Go's voice. The payer it names gets a push.
   if (!row.ticket_posted_at) {
-    const text = bookedLine({ title: confirmed.title, payer: row.payer_name, amount: money(amountMinor, row.currency), people: row.for_person_ids.length, simulated: confirmed.simulated === true });
+    const text = bookedLine({
+      title: confirmed.title, payer: row.payer_name, amount: money(amountMinor, row.currency), people: row.for_person_ids.length,
+      ...(rooms && rooms.length > 1 ? { rooms: rooms.length } : {}), simulated: confirmed.simulated === true,
+    });
     const mentions = mentionsIn(text, payerOf(row));
     await d.link.request('post_message', {
       request_id: id('ticket'),

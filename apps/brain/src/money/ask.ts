@@ -5,6 +5,7 @@ import type { Hold, Travel } from '../travel/travel.js';
 import { payCard, type PayCard, type PayCardLook } from './cards.js';
 import type { MoneyDeps } from './deps.js';
 import { paymentIdFor, rid } from './ids.js';
+import type { Room } from './rooms.js';
 import { getPayment, insertAsking, openForDecision, paidForDecision, patchPayment, transition, type PaymentRow } from './store.js';
 import type { PaymentKind } from './vault-client.js';
 import { clip, money, plain, refusalWords, type RefusalCode } from './words.js';
@@ -189,6 +190,17 @@ export async function askToPay(
   if (Date.parse(hold.expiresAt) <= now.getTime() + 60_000) return refuse(d, 'hold_failed', words);
 
   const kind: PaymentKind = d.payRail();
+  // The rooms the group picked for the stay (REV4 B6): asking for the payment closes the rooms card, and the pick it
+  // closed with is kept with the payment; none picked is [], one expense across everyone.
+  let rooms: Room[] | null = null;
+  if (d.rooms) {
+    try {
+      rooms = (await d.rooms({ trip_id: tripId, decision_id: o.decisionId, option_ref: optionRef, payment_id: paymentId })) ?? [];
+    } catch (e) {
+      // The rooms never stop a payment: unread, it is one expense across everyone.
+      d.log.warn({ payment_id: paymentId, err: e instanceof Error ? e.message : String(e) }, "the stay's picked rooms didn't read; its expense is one across everyone");
+    }
+  }
   const inserted = await insertAsking(
     d.pool,
     {
@@ -208,6 +220,7 @@ export async function askToPay(
       payment_kind: kind,
       hold_expires_at: new Date(hold.expiresAt),
       refundable_until: refundableUntil,
+      rooms,
     },
     now,
   );
