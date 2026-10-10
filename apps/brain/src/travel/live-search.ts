@@ -33,6 +33,11 @@ export interface LiveSearch {
   progress: OnProgress;
   /** Every step ticked and done, or failed; waits for that update to reach the Server, at most finishWaitMs. */
   finish(ok: boolean): Promise<void>;
+  /**
+   * Its turn answered (Go's words went out): the card is done now, and stays done. A read that failed, before or after,
+   * shows as its failed step, a gap, never as a failed card beside a good answer (exam #9, 10 Oct).
+   */
+  answered(): void;
 }
 
 const NOUN: Record<TravelKind, string> = { flights: 'flights', stays: 'hotels', trains: 'trains', buses: 'buses' };
@@ -130,6 +135,8 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
   let posted = false;
   let postFailed = false;
   let ended = false;
+  /** Its turn answered: the card is done from then, whatever its read does. */
+  let answeredAt = false;
   let queued = false;
   let chain: Promise<void> = Promise.resolve();
   let frames: Promise<void> = Promise.resolve();
@@ -142,13 +149,23 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
         const now = d.now().getTime();
         const last = d.saidOnIt?.get(tripId);
         const quiet = last !== undefined && now - last < ON_IT_QUIET_MS;
-        await d.link.request('post_message', { request_id: `go_live_${id}`, trip_id: tripId, ...(quiet ? {} : { text: 'On it.' }), card: c });
-        posted = true;
+        // Claimed before the post goes, so a card posting at the same moment (an ask's two reads, exam #9: 5 ms apart)
+        // finds it said and goes up with no words; given back if this post never reached the room.
         if (!quiet && d.saidOnIt) {
           d.saidOnIt.delete(tripId);
           d.saidOnIt.set(tripId, now);
           while (d.saidOnIt.size > SAID_MAX) d.saidOnIt.delete(d.saidOnIt.keys().next().value!);
         }
+        try {
+          await d.link.request('post_message', { request_id: `go_live_${id}`, trip_id: tripId, ...(quiet ? {} : { text: 'On it.' }), card: c });
+        } catch (err) {
+          if (!quiet && d.saidOnIt?.get(tripId) === now) {
+            if (last === undefined) d.saidOnIt.delete(tripId);
+            else d.saidOnIt.set(tripId, last);
+          }
+          throw err;
+        }
+        posted = true;
       } else {
         await d.link.request('replace_card', { trip_id: tripId, card: c });
       }
@@ -181,12 +198,18 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
 
   function settle(ok: boolean): void {
     ended = true;
-    card.state = ok ? 'done' : 'failed';
+    card.state = ok || answeredAt ? 'done' : 'failed';
     card.steps = card.steps.map((s) => ({ ...s, state: ok ? 'done' : s.state === 'doing' ? 'failed' : s.state }));
-    card.fallback_text = recipe
+    card.fallback_text = fallbackOf(ok);
+    push();
+  }
+
+  /** What the card says in words: done, failed, or done with a gap once Go answered without this read. */
+  function fallbackOf(ok: boolean): string {
+    if (!ok && answeredAt) return recipe ? `Go answered; ixigo's page for ${recipe} didn't load.` : `Go answered; ixigo's ${noun} page didn't load.`;
+    return recipe
       ? ok ? `Go checked ${recipe} on ixigo.` : `Go couldn't check ${recipe} on ixigo.`
       : ok ? `Go searched ${noun} on ixigo.` : `Go couldn't search ${noun} on ixigo.`;
-    push();
   }
 
   /** drawn: the page as ixigo drew it after the answer, which replaces the picture even on a card that is done. */
@@ -282,6 +305,61 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
       await within(frames, deadline - Date.now());
       if (!ended) settle(ok);
       await within(chain, deadline - Date.now());
+    },
+    answered() {
+      if (answeredAt) return;
+      answeredAt = true;
+      // A card that already ended failed is done, its failed step the gap; one still running is done now, and its read
+      // ends its steps, done or failed, when it ends.
+      if (card.state === 'failed' || !ended) {
+        card.state = 'done';
+        card.fallback_text = ended ? fallbackOf(false) : recipe ? `Go checked ${recipe} on ixigo.` : `Go searched ${noun} on ixigo.`;
+        push();
+      }
+    },
+  };
+}
+
+/** The recipe cards a process keeps for turns not yet over, and the answered turns it remembers: at most this many each. */
+const OPEN_MAX = 500;
+
+/** A card that never goes up: a run's, after its turn already answered. */
+const NO_CARD: LiveSearch = { progress: () => undefined, finish: async () => undefined, answered: () => undefined };
+
+/**
+ * The recipe runs' live cards whose turn is not over, by trip and run key (book/tool.ts runOnStage): a tool call's key
+ * starts with its turn's id, an early read's with early:<message id>. When the turn ends, its cards are let go; when it
+ * answered, each is told first and ends done, one that failed already or fails later showing its gap, and a run of that
+ * turn that would put a card up only now puts none up (no "On it." after Go's answer).
+ */
+export function openRecipeCards(): {
+  card(tripId: string, runKey: string, create: () => LiveSearch): LiveSearch;
+  turnEnded(t: { tripId: string; turnId: string; messageIds: string[]; answered?: boolean }): void;
+} {
+  const open = new Map<string, { tripId: string; runKey: string; live: LiveSearch }>();
+  const answered = new Set<string>();
+  const ownersOf = (t: { turnId: string; messageIds: string[] }): string[] => [`${t.turnId}|`, ...t.messageIds.map((id) => `early:${id}|`)];
+  return {
+    card(tripId, runKey, create) {
+      for (const a of answered) if (a.startsWith(`${tripId}\u0000`) && runKey.startsWith(a.slice(tripId.length + 1))) return NO_CARD;
+      const live = create();
+      const key = `${tripId}\u0000${runKey}`;
+      open.delete(key);
+      open.set(key, { tripId, runKey, live });
+      while (open.size > OPEN_MAX) open.delete(open.keys().next().value!);
+      return live;
+    },
+    turnEnded(t) {
+      const owners = ownersOf(t);
+      for (const [key, c] of open) {
+        if (c.tripId !== t.tripId || !owners.some((o) => c.runKey.startsWith(o))) continue;
+        if (t.answered) c.live.answered();
+        open.delete(key);
+      }
+      if (t.answered) {
+        for (const o of owners) answered.add(`${t.tripId}\u0000${o}`);
+        while (answered.size > OPEN_MAX) answered.delete(answered.values().next().value!);
+      }
     },
   };
 }

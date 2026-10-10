@@ -39,6 +39,8 @@ export interface TurnEnd {
   tripId: string;
   turnId: string;
   messageIds: string[];
+  /** The turn answered: its words went out. A live card it left open ends done then, never failed beside the answer. */
+  answered?: boolean;
 }
 
 /**

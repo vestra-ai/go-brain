@@ -1,6 +1,7 @@
 import * as C from '@go/contract';
 import { describe, expect, it } from 'vitest';
-import { liveSteps, ON_IT_QUIET_MS, startLiveSearch, type LiveSearchDeps } from '../live-search.js';
+import { liveSteps, ON_IT_QUIET_MS, openRecipeCards, startLiveSearch, type LiveSearch, type LiveSearchDeps } from '../live-search.js';
+import { shownAfter } from '../recipes/backend.js';
 import type { LiveFrame } from '../recipes/progress.js';
 
 const RESULTS = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
@@ -332,6 +333,99 @@ describe('the live search card', () => {
     };
     expect(await idOf('same')).toBe(await idOf('same'));
     expect(await idOf('other')).not.toBe(await idOf('same'));
+  });
+});
+
+// Exam #9, 10 Oct: Go answered "Paulo reaches Mapusa at 10:30 am…", while its two bus-stops cards said "On it." twice
+// (posted 5 ms apart) and were left failed beside the answer when their pages timed out after it.
+describe("an ask's cards and Go's answer", () => {
+  const RECIPE = { recipe: "One bus's every pickup and drop point" };
+
+  it('two cards of one ask posting at the same moment say "On it." once', async () => {
+    const r = room({ delayMs: 20 });
+    const deps: LiveSearchDeps = { ...r.deps, saidOnIt: new Map() };
+    const a = startLiveSearch(deps, 't_goa', { runKey: 'turn_9|buses.stops|a', ...RECIPE });
+    const b = startLiveSearch(deps, 't_goa', { runKey: 'turn_9|buses.stops|b', ...RECIPE });
+    await Promise.all([a.finish(true), b.finish(true)]);
+    expect(r.sent.filter((x) => x.method === 'post_message').map((x) => x.params.text ?? null)).toEqual(['On it.', null]);
+  });
+
+  it('a card whose post never reached the room gives "On it." back, so the next card says it', async () => {
+    const said = new Map<string, number>();
+    const down = room({ failPost: true });
+    await startLiveSearch({ ...down.deps, saidOnIt: said }, 't_goa', { runKey: 'k_down', ...RECIPE }).finish(true);
+    expect(said.has('t_goa')).toBe(false);
+    const up = room();
+    await startLiveSearch({ ...up.deps, saidOnIt: said }, 't_goa', { runKey: 'k_up', ...RECIPE }).finish(true);
+    expect(up.sent[0]!.params.text).toBe('On it.');
+  });
+
+  it('a card that failed before Go answered ends done, its failed step the gap', async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_gap', ...RECIPE });
+    await live.finish(false);
+    expect(r.cards().at(-1)!.state).toBe('failed');
+    live.answered();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const last = r.cards().at(-1)!;
+    expect(last.state).toBe('done');
+    expect(last.steps.map((st) => st.state)).toEqual(['failed', 'todo', 'todo']);
+    expect(last.fallback_text).toBe("Go answered; ixigo's page for one bus's every pickup and drop point didn't load.");
+  });
+
+  it('a card still running when Go answered is done at once; a page that times out later is its gap, never a failed card', async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_late', ...RECIPE });
+    live.answered();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.cards().at(-1)!.state).toBe('done');
+    live.progress({ type: 'failed', code: 'unreachable' });
+    await live.finish(false);
+    const last = r.cards().at(-1)!;
+    expect(r.cards().map((c) => c.state)).not.toContain('failed');
+    expect(last.state).toBe('done');
+    expect(last.steps[0]!.state).toBe('failed');
+    // One that finishes well after the answer is simply done.
+    const ok = room();
+    const fine = startLiveSearch(ok.deps, 't_goa', { runKey: 'k_fine', ...RECIPE });
+    fine.answered();
+    await fine.finish(true);
+    expect(ok.cards().at(-1)).toMatchObject({ state: 'done', fallback_text: "Go checked one bus's every pickup and drop point on ixigo." });
+  });
+
+  it("a turn that answered tells its own cards and its messages' early reads, and a run of it puts no card up after", () => {
+    const told: string[] = [];
+    const fake = (name: string): LiveSearch => ({ progress: () => undefined, finish: async () => undefined, answered: () => void told.push(name) });
+    const cards = openRecipeCards();
+    cards.card('t_goa', 'turn_9|buses.stops|{"bus":"a"}', () => fake('tool'));
+    cards.card('t_goa', 'early:m_9|buses.stops', () => fake('early'));
+    cards.card('t_goa', 'turn_8|buses.stops|{}', () => fake('other turn'));
+    cards.card('t_other', 'turn_9|buses.stops|{}', () => fake('other trip'));
+    cards.turnEnded({ tripId: 't_goa', turnId: 'turn_9', messageIds: ['m_9'], answered: true });
+    expect(told).toEqual(['tool', 'early']);
+    // A run of the answered turn that would show a card only now shows none.
+    let made = 0;
+    cards.card('t_goa', 'turn_9|buses.stops|{"bus":"b"}', () => {
+      made += 1;
+      return fake('late');
+    });
+    expect(made).toBe(0);
+    // A turn that did not answer tells nothing, and lets its cards go.
+    cards.turnEnded({ tripId: 't_goa', turnId: 'turn_8', messageIds: [], answered: false });
+    cards.turnEnded({ tripId: 't_goa', turnId: 'turn_8', messageIds: [], answered: true });
+    expect(told).toEqual(['tool', 'early']);
+  });
+
+  it('a delayed card its turn answered before it showed never shows', async () => {
+    let made = 0;
+    const live = shownAfter(10, () => {
+      made += 1;
+      return { progress: () => undefined, finish: async () => undefined, answered: () => undefined };
+    });
+    live.answered();
+    live.progress({ type: 'opening', recipeId: 'buses.stops', url: 'https://www.ixigo.com/buses' });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(made).toBe(0);
   });
 });
 

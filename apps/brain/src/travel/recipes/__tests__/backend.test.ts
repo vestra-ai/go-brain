@@ -313,6 +313,9 @@ function carded(engine: { answer: Answer }) {
       finish: async (ok: boolean) => {
         events.push(`${n}:finish:${ok ? 'done' : 'failed'}`);
       },
+      answered: () => {
+        events.push(`${n}:answered`);
+      },
     };
   };
   const b = createIxigoWebBackend({ book, engine, now, live: live as never, cardDelayMs: 0 });
@@ -371,6 +374,14 @@ describe("a live card belongs to its search's turn", () => {
     c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
     c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
     expect(c.events).toEqual(['1:failed', '1:finish:failed']);
+  });
+
+  // Exam #9, 10 Oct: Go answered well, and its cards were left failed beside the answer.
+  it('tells the cards of a turn that answered first, so they end done with their gap, never failed beside the answer', async () => {
+    const c = carded(scripted('fail').engine);
+    await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toThrow();
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'], answered: true });
+    expect(c.events).toEqual(['1:answered', '1:failed', '1:finish:failed']);
   });
 
   it("never fails the card on a pick: it says Go is choosing, waits through the turn's end, and the search after the pick goes on in it (8 Oct, D1)", async () => {
