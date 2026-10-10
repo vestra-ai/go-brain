@@ -111,7 +111,8 @@ export function createDoor(o: DoorOptions): DoorImpl {
         return;
       }
       const query = new URL(target, 'http://go.local').searchParams;
-      // instance names this replica; server, the same on every replica of one Server, keys a person's browser (tasks/browsers.ts).
+      // instance names this replica; server, the same on every replica of one Server, keys a person's browser
+      // (tasks/browsers.ts) and lets another replica take a trip's requests (server-link.ts).
       const instance = query.get('instance') ?? 'default';
       const server = query.get('server');
       const from: SocketFrom = server ? { instance, server } : { instance };
@@ -129,7 +130,7 @@ export function createDoor(o: DoorOptions): DoorImpl {
     const heard = (): void => {
       heardAt = Date.now();
     };
-    const handle: SocketHandle = { id, instance, send: (frame) => send(ws, frame) };
+    const handle: SocketHandle = { id, instance, ...(server ? { server } : {}), send: (frame) => send(ws, frame) };
     open.set(id, ws);
     o.link.attach(handle);
     o.log.info({ instance, server, socket: id }, 'the Server connected');

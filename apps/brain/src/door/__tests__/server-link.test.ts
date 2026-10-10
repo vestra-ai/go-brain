@@ -20,13 +20,14 @@ function socket(id: string): SocketHandle & { sent: Sent[] } {
   return { id, instance: id, sent, send: (f: string) => { sent.push(JSON.parse(f) as Sent); } };
 }
 
-/** A socket of one Server instance: the replicas of one Server share its name. */
-function socketOf(id: string, instance: string): SocketHandle & { sent: Sent[] } {
-  return { ...socket(id), instance };
+/** A socket of one Server instance; `server` is the Server's own name (?server=), the same on every replica of it. */
+function socketOf(id: string, instance: string, server?: string): SocketHandle & { sent: Sent[] } {
+  return { ...socket(id), instance, ...(server ? { server } : {}) };
 }
 
-/** The trip's Server instance, as intake records it from the trip's first event. */
-const own = (tripId: string, instance: string) => db.pool.query('insert into trips (trip_id, server_instance) values ($1, $2)', [tripId, instance]);
+/** The trip's Server instance (and the Server's name, when it gives one), as intake records them from its first event. */
+const own = (tripId: string, instance: string, server: string | null = null) =>
+  db.pool.query('insert into trips (trip_id, server_instance, server_name) values ($1, $2, $3)', [tripId, instance, server]);
 
 const page = { messages: [], has_more: false };
 
@@ -322,60 +323,49 @@ describe('ServerLink', () => {
     await expect(p).resolves.toEqual(page);
   });
 
-  it("the trip's instance does not dial back in its few seconds: another Server gets the read, and that one's 404 never marks the trip gone", async () => {
+  // 10 Oct: while a drill's Server was frozen, Go sent Keshav's trip to the drill's socket and the drill's trips to his
+  // room (404s both ways). A trip's requests never go to another Server's socket.
+  it("the trip's instance does not dial back: no other Server ever gets the read, and it gives up with 503", async () => {
     await own('t_away', 'room');
-    const instances: Array<string | null> = [];
-    const gone = createGoneTrips({ pool: db.pool, log: silentLog, now: () => new Date(), dropped: () => {} });
-    const { l } = link({
-      timeoutMs: 5_000,
-      reconnectWaitMs: 50,
-      onFail: async (method, params, err, instance) => {
-        instances.push(instance);
-        await gone.failed(method, params, err, instance);
-      },
-    });
+    const { l } = link({ timeoutMs: 5_000, waitForSocketMs: 200, retryDelaysMs: [] });
     const room = socketOf('room-5', 'room');
     const drill = socketOf('drill-5', 'drill');
     l.attach(room);
     l.attach(drill);
     l.detach('room-5');
-    const p = l.request('read_trip', { trip_id: 't_away' });
-    await vi.waitFor(() => expect(drill.sent).toHaveLength(1));
-    fail(l, drill.sent[0]!.id!, 404, 'trip t_away does not exist', { dataCode: 'not_found' });
-    await expect(p).rejects.toMatchObject({ code: 404, dataCode: 'not_found' });
-    expect(instances).toEqual(['drill']);
-    const { rows } = await db.pool.query('select gone_at from trips where trip_id = $1', ['t_away']);
-    expect(rows[0].gone_at).toBeNull();
+    await expect(l.request('read_trip', { trip_id: 't_away' })).rejects.toMatchObject({ code: 503, dataCode: 'unavailable' });
+    expect(drill.sent).toEqual([]);
   });
 
-  it("a timer that fires a millisecond before the clock says the few seconds are up still hands the read on: it never sits out the whole wait for a socket", async () => {
-    await own('t_early', 'room');
-    const { l } = link({ timeoutMs: 5_000, reconnectWaitMs: 50 });
-    const room = socketOf('room-7', 'room');
+  it("another replica of the trip's own Server takes its read at once, never another Server, and its 404 never marks the trip gone", async () => {
+    await own('t_replica', 'vestra-1', 'vestra');
+    const instances: Array<string | null> = [];
+    const gone = createGoneTrips({ pool: db.pool, log: silentLog, now: () => new Date(), dropped: () => {} });
+    const { l } = link({
+      timeoutMs: 5_000,
+      onFail: async (method, params, err, instance) => {
+        instances.push(instance);
+        await gone.failed(method, params, err, instance);
+      },
+    });
+    const one = socketOf('vestra-1a', 'vestra-1', 'vestra');
+    const two = socketOf('vestra-2a', 'vestra-2', 'vestra');
     const drill = socketOf('drill-7', 'drill');
-    l.attach(room);
+    // Another Server whose replica happens to have the same instance name: it never gets the trip either.
+    const named = socketOf('other-1a', 'vestra-1', 'other');
     l.attach(drill);
-    // A first read learns the trip's instance, so the read under test never waits on the database.
-    const first = l.request('read_messages', { trip_id: 't_early', after_seq: 0 });
-    await vi.waitFor(() => expect(room.sent).toHaveLength(1));
-    answer(l, room.sent[0]!.id!, page);
-    await first;
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-    try {
-      l.detach('room-7');
-      const p = l.request('read_messages', { trip_id: 't_early', after_seq: 1 });
-      await vi.advanceTimersByTimeAsync(0);
-      // Date.now() a millisecond behind the timers, as it can be when a timer fires: the room's few seconds look unfinished.
-      vi.setSystemTime(Date.now() - 1);
-      await vi.advanceTimersByTimeAsync(50);
-      expect(drill.sent).toHaveLength(0);
-      await vi.advanceTimersByTimeAsync(1);
-      expect(drill.sent).toHaveLength(1);
-      answer(l, drill.sent[0]!.id!, page);
-      await expect(p).resolves.toEqual(page);
-    } finally {
-      vi.useRealTimers();
-    }
+    l.attach(named);
+    l.attach(two);
+    l.attach(one);
+    l.detach('vestra-1a');
+    const p = l.request('read_trip', { trip_id: 't_replica' });
+    await vi.waitFor(() => expect(two.sent).toHaveLength(1), { timeout: 1_000 });
+    fail(l, two.sent[0]!.id!, 404, 'trip t_replica does not exist', { dataCode: 'not_found' });
+    await expect(p).rejects.toMatchObject({ code: 404, dataCode: 'not_found' });
+    expect(instances).toEqual(['vestra-2']);
+    expect([...drill.sent, ...named.sent]).toEqual([]);
+    const { rows } = await db.pool.query('select gone_at from trips where trip_id = $1', ['t_replica']);
+    expect(rows[0].gone_at).toBeNull();
   });
 
   it("a trip's Server is away once its instance has had no socket for the away time, and back the moment it dials in again", async () => {
@@ -397,6 +387,11 @@ describe('ServerLink', () => {
       expect(await l.away('t_drill_9')).toBe(false);
       // A trip with no instance is never away: its requests take any socket, as before.
       expect(await l.away('t_no_instance_9')).toBe(false);
+      // A named Server's trip is not away while another replica of it has a socket open.
+      await own('t_named_9', 'named-1', 'named');
+      l.attach(socketOf('named-2a', 'named-2', 'named'));
+      vi.setSystemTime(Date.now() + 700_000);
+      expect(await l.away('t_named_9')).toBe(false);
     } finally {
       vi.useRealTimers();
     }
