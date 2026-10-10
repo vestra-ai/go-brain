@@ -17,7 +17,17 @@ export interface ServerLink {
   /** `typing` is the only notification Go sends. */
   notify(method: 'typing', params: ToServerParams<'typing'>): void;
   isOpen(): boolean;
+  /**
+   * The trip's own Server instance has had no socket open for longer than INSTANCE_AWAY_MS: a closed drill, a Server
+   * gone for good. Background work for the trip (the minute refresh, the proactive sweep) sends nothing then: it would
+   * wait the few seconds and land on another Server, which only answers 404 (10 Oct: closed drills' trips reached
+   * Keshav's room every minute). False for a trip with no instance, or one whose instance has a socket open.
+   */
+  away?(tripId: string): Promise<boolean>;
 }
+
+/** How long a Server instance has no socket open before its trips' background work stops (ServerLink.away). */
+export const INSTANCE_AWAY_MS = 10 * 60_000;
 // Trip affinity: a request for a trip goes on a socket of the trip's own Server instance (trips.server_instance, the
 // instance that first brought its events). Several Servers can share one Go (the try room, a drill, a rehearsal), and
 // one never has another's trips. When every socket drops at once and dials again, the trip's requests wait for its
@@ -49,6 +59,8 @@ export interface LinkOptions {
   waitForSocketMs?: number;
   /** How long after a Server instance's socket closes (or Go starts) its trips' requests wait for it, not another instance. */
   reconnectWaitMs?: number;
+  /** How long an instance has no socket before it is away (INSTANCE_AWAY_MS). */
+  awayAfterMs?: number;
   sleep?: (ms: number) => Promise<void>;
   /**
    * Runs after each successful answer; the card store keeps every card Go posts or replaces. `stored` is true for the
@@ -67,6 +79,7 @@ export interface LinkOptions {
 }
 
 export type ServerLinkImpl = ServerLink & {
+  away(tripId: string): Promise<boolean>;
   attach(s: SocketHandle): void;
   detach(socketId: string): void;
   onAnswer(f: AnswerFrame): void;
@@ -100,6 +113,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const waitForSocketMs = o.waitForSocketMs ?? 15_000;
   const reconnectWaitMs = o.reconnectWaitMs ?? 5_000;
+  const awayAfterMs = o.awayAfterMs ?? INSTANCE_AWAY_MS;
   const sockets = new Map<string, SocketHandle>();
   // Server instance → when a socket of it last closed. Go starting counts as every instance closing.
   const lostAt = new Map<string, number>();
@@ -368,6 +382,11 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
     request,
     notify,
     isOpen: () => sockets.size > 0,
+    async away(tripId) {
+      const instance = await instanceOf(tripId);
+      if (instance === null || [...sockets.values()].some((s) => s.instance === instance)) return false;
+      return Date.now() - (lostAt.get(instance) ?? startedAt) > awayAfterMs;
+    },
     attach(s) {
       sockets.set(s.id, s);
       for (const w of [...waiters]) w();

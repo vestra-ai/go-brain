@@ -73,6 +73,8 @@ export async function startProactive(brain: Brain, opts: StartProactiveOpts = {}
     // A trip the Server no longer has (gone_at) is never re-planned: its timers and watches were retired with it.
     const trips = await brain.pool.query<{ trip_id: string }>(`select trip_id from trips where created_at > $1 and gone_at is null`, [since]);
     for (const { trip_id } of trips.rows) {
+      // Its Server has been away for minutes (a closed drill): its read would wait, then reach another Server's 404.
+      if (await brain.door.link.away?.(trip_id)) continue;
       try {
         await replan(trip_id, await readTrip(trip_id));
       } catch (err) {

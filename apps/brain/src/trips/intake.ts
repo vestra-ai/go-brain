@@ -29,6 +29,8 @@ export interface IntakeDeps {
   runningTasks: (tripId: string) => Promise<Array<{ id: string; brief: string }>>;
   /** The wait after a message for Go, unless it is a whole thought (dueAtOnce). */
   waitMs?: number;
+  /** The trip's own Server has been away for minutes (the link's away): the minute refresh reads nothing for it. */
+  away?: (tripId: string) => Promise<boolean>;
 }
 
 /**
@@ -221,6 +223,8 @@ export function createIntake(d: IntakeDeps) {
           refreshing.delete(tripId);
           // Marked gone while this waited (its pack went with the mark): it is not read again.
           if (!d.packs.peek(tripId)) return;
+          // Its Server has been away for minutes (a closed drill): another Server would only answer 404.
+          if (await d.away?.(tripId)) return;
           try {
             const fresh = await d.packs.refill(tripId);
             for (const m of fresh.sort((a, b) => a.seq - b.seq)) await onMessage(tripId, m);
