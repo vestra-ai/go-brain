@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JevAnswer } from '../jev.js';
 import { looksLikeMoney } from '../money-line.js';
-import { applyLive, codeOnly, readAnswers, type CodeFacts } from '../read.js';
+import { applyLive, codeOnly, liveRecipe, readAnswers, type CodeFacts } from '../read.js';
 import type { QuestionName } from '../questions.js';
 
 const n = (p: number): JevAnswer => ({ type: 'noul', noul: p });
@@ -137,6 +137,11 @@ describe('question 10: which ixigo search', () => {
   it('is sure there is no search when none wins', () => {
     expect(recipe({ flights: 0.05, stays: 0.02, trains: 0.01, buses: 0.0, none: 0.92 })).toEqual({ value: null, sure: true });
   });
+  it('reads the asks beyond the searches the same way', () => {
+    expect(recipe({ train_status: 0.93, schedule: 0.03, trains: 0.02, none: 0.02 })).toEqual({ value: 'train_status', sure: true });
+    // A train's timetable and today's run are close: no clear winner, no pick.
+    expect(recipe({ train_status: 0.6, schedule: 0.35, none: 0.05 }).sure).toBe(false);
+  });
   it('reads a missing or malformed answer as unsure', () => {
     expect(read(null).recipe).toEqual({ value: null, sure: false });
     expect(read({ q10_recipe: n(0.9) }).recipe).toEqual({ value: null, sure: false });
@@ -203,6 +208,14 @@ describe('applyLive', () => {
     expect(would.recipe).toEqual({ value: 'trains', sure: true });
     expect(applyLive(would, new Set<QuestionName>(['for_go']), plain).recipe).toEqual({ value: null, sure: false });
     expect(applyLive(would, new Set<QuestionName>(['recipe']), plain).recipe).toEqual({ value: 'trains', sure: true });
+  });
+  it('acts on a sure pick still in shadow as none, so nothing starts for it and no search is started instead', () => {
+    const { would } = readAnswers({ q10_recipe: ch({ pnr: 0.95, trains: 0.02, none: 0.03 }) }, plain, []);
+    expect(would.recipe).toEqual({ value: 'pnr', sure: true });
+    expect(applyLive(would, new Set<QuestionName>(['recipe']), plain).recipe).toEqual({ value: null, sure: true });
+    // Once its choice is live, it acts as read; unsure stays unsure.
+    expect(liveRecipe({ value: 'pnr', sure: true }, ['trains', 'pnr'])).toEqual({ value: 'pnr', sure: true });
+    expect(liveRecipe({ value: null, sure: false })).toEqual({ value: null, sure: false });
   });
   it('codeOnly has no Jev opinion at all', () => {
     const out = codeOnly(plain);

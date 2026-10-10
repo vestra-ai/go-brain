@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { JevAnswer } from '../jev.js';
-import { PASSED_SETS } from '../live-gate.js';
-import { buildQuestions, QUESTION_NAMES, QUESTION_NUMBER, QUESTION_VERSIONS } from '../questions.js';
+import { LIVE_RECIPES, PASSED_SETS } from '../live-gate.js';
+import { buildQuestions, isSearchChoice, QUESTION_NAMES, QUESTION_NUMBER, QUESTION_VERSIONS, RECIPE_CHOICES } from '../questions.js';
 import { hasSecret } from '../secrets.js';
-import { gatePasses, loadRecorded, loadRows, rowInput, scoreSet, searchRecall, TestRow, type Recorded } from '../testset.js';
+import { choicePasses, gatePasses, loadRecorded, loadRows, rowInput, scoreChoices, scoreSet, searchRecall, TestRow, type Recorded } from '../testset.js';
 
 const rows = loadRows();
 
@@ -110,6 +110,43 @@ describe('question 10 on the set', () => {
     expect(gatePasses(s)).toBe(false);
   });
 
+  it('scores the live read: a pick still in shadow is none on both sides', () => {
+    const rows = [...set, row('p1', 'pnr'), row('p2', 'pnr')];
+    const base = rec({ f1: choice({ flights: 0.95, none: 0.05 }), b1: choice({ buses: 0.95, none: 0.05 }) });
+    const r: Recorded = {
+      ...base,
+      answers: {
+        ...base.answers,
+        p1: { q10_recipe: choice({ pnr: 0.95, trains: 0.02, none: 0.03 }) },
+        // A PNR line read as a trains search would start one: wrong live.
+        p2: { q10_recipe: choice({ pnr: 0.03, trains: 0.94, none: 0.03 }) },
+      },
+    };
+    const live = scoreSet(rows, r).find((x) => x.name === 'recipe')!;
+    expect(live.byValue!.none).toEqual({ labelled: 5, right: 4, wrong: 1, unsure: 0 });
+    expect(live.wrong).toEqual(['p2']);
+    // Choice by choice, as Jev read it.
+    const pnr = scoreChoices(rows, r).find((c) => c.choice === 'pnr')!;
+    expect(pnr).toMatchObject({ labelled: 2, right: 1, missed: ['p2'], wrong: [] });
+    expect(scoreChoices(rows, r).find((c) => c.choice === 'trains')!.wrong).toEqual(['p2']);
+    expect(choicePasses(pnr)).toBe(false);
+  });
+
+  it('passes a choice only with no wrong pick, no miss, enough rows and most of them read', () => {
+    const rows = ['a', 'b', 'c', 'd'].map((x) => row(`g${x}`, 'guide'));
+    const sureGuide = { q10_recipe: choice({ guide: 0.96, none: 0.04 }) };
+    const r = (unsure: number): Recorded => ({
+      ...rec({}),
+      answers: Object.fromEntries(rows.map((x, i) => [x.id, i < unsure ? { q10_recipe: choice({ guide: 0.6, none: 0.4 }) } : sureGuide])),
+    });
+    const guide = (u: number) => scoreChoices(rows, r(u)).find((c) => c.choice === 'guide')!;
+    expect(guide(0)).toMatchObject({ labelled: 4, right: 4, unsure: 0, recall: 1 });
+    expect(choicePasses(guide(0))).toBe(true);
+    expect(choicePasses(guide(2))).toBe(true);
+    expect(choicePasses(guide(3))).toBe(false);
+    expect(choicePasses(scoreChoices(rows.slice(0, 3), r(0)).find((c) => c.choice === 'guide')!)).toBe(false);
+  });
+
   it('fails on one wrong pick', () => {
     const s = recipe(rec({ f1: choice({ flights: 0.93, stays: 0.02, trains: 0.02, buses: 0.02, none: 0.01 }), b1: choice({ flights: 0.01, stays: 0.01, trains: 0.9, buses: 0.07, none: 0.01 }) }));
     expect(s.wrong).toEqual(['b1']);
@@ -119,6 +156,14 @@ describe('question 10 on the set', () => {
 });
 
 describe('the live gate', () => {
+  it('lists only the searches and choices that pass their own gate on the recorded answers as live choices of question 10', () => {
+    expect(LIVE_RECIPES.every((c) => RECIPE_CHOICES.includes(c))).toBe(true);
+    const fast = LIVE_RECIPES.filter((c) => !isSearchChoice(c));
+    if (fast.length === 0) return;
+    const choices = scoreChoices(rows, loadRecorded());
+    for (const c of fast) expect(choicePasses(choices.find((x) => x.choice === c)!), c).toBe(true);
+  });
+
   it('lists only questions whose recorded answers pass their gate', () => {
     if (PASSED_SETS.length === 0) return;
     const rec = loadRecorded();

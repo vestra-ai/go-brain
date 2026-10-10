@@ -18,6 +18,8 @@ import type { Desk } from '../../desk/desk.js';
 import { dataBlock, defuse, oneLine } from '../../composer/fence.js';
 import { CARD_LINE } from '../../composer/rules.js';
 import { plainAsk } from '../answer.js';
+import type { EngineAnswer } from '../book/engine.js';
+import { NAMES_ONLY_FROM_IXIGO, NOTHING_ON_IXIGO } from '../book/tool.js';
 import type { Images } from '../images.js';
 import type { ResultsStore } from '../results.js';
 import { answerItself, handOver, searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
@@ -173,5 +175,71 @@ export function earlyAnswer(d: EarlyAnswerDeps): DirectAnswer {
     if (!plainAsk(early.kind, early.query, { wake, pack, today: await d.today(tripId) }).ok) return false;
     await answerItself(early.kind, early.query, found, ctx, d);
     return true;
+  };
+}
+
+export interface EarlyReadNowDeps {
+  early: Pick<EarlyStart, 'readFor'>;
+  now: () => Date;
+  wait?: (ms: number) => Promise<void>;
+}
+
+/** The most of a read's facts the prompt carries; the ixigo tool gives the rest. */
+const READ_FACTS_MAX = 5_000;
+/** A read's facts as data lines, one a row, up to READ_FACTS_MAX in all: a row cut short, or rows left out, are said. */
+function factLines(rows: Array<Record<string, unknown>>): string[] {
+  const out: string[] = [];
+  let used = 0;
+  for (const row of rows) {
+    const line = JSON.stringify(row);
+    if (used + line.length > READ_FACTS_MAX) {
+      out.push(out.length ? `(${rows.length - out.length} more: the ixigo tool gives them)` : `${line.slice(0, READ_FACTS_MAX)}… (cut short: the ixigo tool gives all of it)`);
+      break;
+    }
+    out.push(line);
+    used += line.length;
+  }
+  return out.map(defuse);
+}
+
+/** For a read started early from a misread: the ask comes first, and the read stays unsaid. */
+const ASKED_ELSE_READ = 'If they asked for something else, not this, answer that instead and say nothing about this read.';
+
+/**
+ * An ixigo read started early (fast.ts: a train's status, a guide, the offers...): its facts in the turn's right-now part,
+ * so the model answers in its first call with no tool call; one still running is joined by the tool's call with the
+ * same inputs (the engine keeps a facts read in flight by recipe and inputs). One that failed says nothing here: the
+ * model calls the tool, which says what went wrong.
+ */
+export function earlyReadNow(d: EarlyReadNowDeps): NowProvider {
+  const wait = d.wait ?? nap;
+  return {
+    name: 'ixigo read',
+    order: 36,
+    async render(tripId, wake) {
+      const deadline = d.now().getTime() + EARLY_WAIT_MS;
+      const blocks: string[] = [];
+      for (const item of wake) {
+        if (item.kind !== 'message') continue;
+        const p = item.payload as { messageId?: string; seq?: number };
+        const early = p.messageId ? d.early.readFor(tripId, p.messageId) : null;
+        if (!early) continue;
+        const which = p.seq !== undefined ? `#${p.seq}` : 'the message you woke for';
+        const left = Math.max(0, deadline - d.now().getTime());
+        const got = await Promise.race<EngineAnswer | null | typeof RUNNING>([early.answer.then((a) => a, () => null), wait(left).then(() => RUNNING)]);
+        if (got === RUNNING) {
+          const inputs = early.choice === 'pnr' ? 'the PNR in their message' : `inputs ${JSON.stringify(early.asked)}`;
+          blocks.push(`Go is already reading ixigo for ${which} (${early.recipe}). If that is what they asked, call the ixigo tool with recipe ${early.recipe} and ${inputs}: it joins the same read. ${ASKED_ELSE_READ}`);
+        } else if (got?.as === 'facts') {
+          blocks.push(
+            got.rows.length === 0
+              ? `Already read ixigo for ${which} (${early.recipe}): ${NOTHING_ON_IXIGO} ${ASKED_ELSE_READ}`
+              : `Already read ixigo for ${which} (${early.recipe}), checked ${got.checkedAt}: no need to call the ixigo tool for it. ${NAMES_ONLY_FROM_IXIGO} ${ASKED_ELSE_READ}\n` +
+                  dataBlock('ixigo facts', [defuse(oneLine(got.title)), ...factLines(got.rows)]),
+          );
+        }
+      }
+      return blocks.length ? blocks.join('\n\n') : null;
+    },
   };
 }
