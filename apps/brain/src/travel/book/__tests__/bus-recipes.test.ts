@@ -51,6 +51,23 @@ describe('buses.offers', () => {
   });
 });
 
+// The ixigo atlas (10 Oct): ixigo's own bus box ranks a city's boarding points by how many people board there.
+describe('buses.points', () => {
+  it("says a city's boarding points the busiest first, by the names people use, from ixigo's bus box", async () => {
+    const BOX = '/wap/abus-autocompleter/api/v1/results';
+    const got = await facts('buses.points', { city: 'bangalore' }, [capture(BOX, `https://www.ixigo.com${BOX}?s=bangalore`, sample('buses.city_lookup.bangalore.json'))]);
+    expect(got.runs[0]!.url).toBe('https://www.ixigo.com/wap/abus-autocompleter/api/v1/results?s=bangalore');
+    expect(got.title).toBe('Bus boarding points in bangalore');
+    expect(got.rows).toEqual([{
+      city: 'Bangalore',
+      region: 'Bengaluru, Karnataka',
+      busiest: 'Majestic',
+      points: ['Majestic', 'Marathahalli', 'Silk Board', 'Madiwala', 'Anand Rao Circle', 'KR Puram', 'Tin Factory', 'Electronic City', 'Yeswanthpur', 'Kalasipalyam'],
+      how_many: 15,
+    }]);
+  });
+});
+
 // Keshav, 10 Oct: buses have many pickup and drop points. A bus's own, with their times and landmarks, and its
 // cancellation policy are on its seat layout, opened by that card's own "Select Seats" (read on 10 Oct, read only).
 describe('buses.stops', () => {
