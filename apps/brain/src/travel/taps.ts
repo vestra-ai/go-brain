@@ -7,12 +7,15 @@
  * from my city", on the card of each home city's ways there, opens the flights from the tapper's own city; "Add my
  * budget" opens the App's own budget sheet.
  */
+import type * as C from '@go/contract';
 import type { Brain } from '../app.js';
+import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
 import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
 import type { ResultsStore } from './results.js';
+import type { StoredOffer } from './travel.js';
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelTapDeps {
@@ -79,8 +82,9 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
   });
 
   // A person's own confirm (a ticket they picked): only they may answer it.
-  const mine = async (tap: { trip_id: string; option_id?: string | null; person_id: string }, card: { for_person_ids?: string[] | null }) => {
-    if (!(card.for_person_ids ?? []).includes(tap.person_id)) return { refused: "This one is for someone else to confirm" };
+  const mine = async (tap: CardTapParams, card: C.Card): Promise<{ refused: string } | { offer: StoredOffer }> => {
+    const forWho = 'for_person_ids' in card ? (card.for_person_ids ?? []) : [];
+    if (!forWho.includes(tap.person_id)) return { refused: 'This one is for someone else to confirm' };
     const offer = tap.option_id ? await d.results.offer(tap.option_id) : null;
     if (!offer || offer.tripId !== tap.trip_id) return { refused: 'That option is no longer available' };
     return { offer };
