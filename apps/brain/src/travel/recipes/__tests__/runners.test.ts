@@ -55,6 +55,30 @@ const fails = async (p: Promise<unknown>, code: TravelError['code'], words: RegE
 };
 
 describe("the browser fetch: how the recipe engine reads a page in the trip's browser", () => {
+  // Staging, 10 Oct 10:14Z: trains.running_status and trains.schedule read nothing (caps []) on every ask. They read
+  // their page's own document, by the very match Go's own document capture takes (pageDoc), and Bash answers every
+  // matching capture under its match: taking Go's own out took the recipe's too. Bash is played as it answers here.
+  it("reads a page whose plan captures the page's own document: never a second capture of it, and the document kept", async () => {
+    const PAGE = 'https://www.ixigo.com/trains/12051/running-status';
+    const DOC = '/trains/12051/running-status$';
+    const html = '<html><head><title>12051 Train Running Status</title></head><body><table><tr><td>MAO</td></tr></table></body></html>';
+    const w = world((c) => {
+      const specs = ((c.opts['body'] as { capture: Array<{ match: string; max_bytes?: number }> }).capture).filter((x) => x.match === DOC);
+      return fetched(specs.map((x) => ({ ...capture(DOC, PAGE, html.slice(0, x.max_bytes ?? html.length)) })), PAGE);
+    });
+    const plan: FetchPlan = { capture: [{ match: DOC, required: true, max_bytes: 1_000_000 }] };
+    const read = await createBrowserFetchRunner(w.deps).read('t1', PAGE, plan);
+    const sent = (w.calls[0]!.opts['body'] as { capture: Array<{ match: string }> }).capture;
+    expect(sent.filter((x) => x.match === DOC)).toHaveLength(1);
+    expect(read.captures).toHaveLength(1);
+    expect(read.captures[0]).toMatchObject({ match: DOC, status: 200, body: html });
+    // A plan of the page's calls still gets Go's own one-byte capture of the document, taken out of what it reads.
+    const calls = world(() => fetched([busCapture, { ...capture('/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O$', BUSES, '<'), max_bytes: 1 }]));
+    const bus = await createBrowserFetchRunner(calls.deps).read('t1', BUSES, busPlan);
+    expect((calls.calls[0]!.opts['body'] as { capture: unknown[] }).capture).toContainEqual(docOf('/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O$'));
+    expect(bus.captures.map((c) => c.match)).toEqual(['/buslist/v3/services$']);
+  });
+
   it("opens the page with the plan's captures, steps and pictures, and answers its calls and where the page ended", async () => {
     const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
     const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';

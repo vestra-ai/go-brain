@@ -396,6 +396,17 @@ export class NothingCaughtError extends TravelError {
 export const pageDoc = (url: string): string => `${new URL(url).pathname}$`;
 const docCapture = (doc: string) => ({ match: doc, required: false, max_bytes: 1, max_count: 4 });
 /**
+ * The match Go's own capture of the page's document takes, or null when the plan already captures that document by the
+ * very same match (a page read as its document: a train's schedule or running status, a station's trains, Tatkal). Then
+ * the plan's capture is the document's, its status read for Cloudflare's check as any, and nothing is added or taken
+ * out: Bash answers each matching capture under its match, so taking Go's own out took the plan's too, and every such
+ * page read nothing (staging, 10 Oct 10:14Z: trains.running_status and trains.schedule, caps []).
+ */
+export const docMatch = (url: string, capture: ReadonlyArray<{ match: string }>): string | null => {
+  const doc = pageDoc(url);
+  return capture.some((c) => c.match === doc) ? null : doc;
+};
+/**
  * Whether the page ended on Cloudflare's check, or ixigo's "too many requests": the last answer at the page's own address
  * (its origin and path exactly, the query aside: the check's own load again adds one) was 403, 429 or 503. Another
  * response its match took is never it.
@@ -431,7 +442,7 @@ const isFrame = (f: unknown): f is LiveFrame =>
 
 /** The pictures a timed-out fetch did take, which Bash sends with its partial captures. */
 /** A timed-out fetch that caught nothing at all but its page's own document. */
-function caughtNothing(err: V1Error, doc: string): boolean {
+function caughtNothing(err: V1Error, doc: string | null): boolean {
   const captures = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
   return !Array.isArray(captures) || captures.every((c) => (c as Capture | null)?.match === doc);
 }
@@ -460,7 +471,7 @@ const turnstiled = (err: V1Error): boolean => (err.detail?.['partial'] as { chal
  * falls back (fallsBack), whose page caught nothing but its document (doc), throws NothingCaughtError.
  */
 function fetchFailed(
-  err: V1Error, what: { id: string; capture: CaptureSpec[] }, tripId: string, log: RunnerDeps['log'], o: Pick<ReadOptions, 'fallsBack' | 'about'> & { doc: string },
+  err: V1Error, what: { id: string; capture: CaptureSpec[] }, tripId: string, log: RunnerDeps['log'], o: Pick<ReadOptions, 'fallsBack' | 'about'> & { doc: string | null },
 ): Capture[] {
   if (err.status === 504) {
     const partial = (err.detail?.['partial'] as { captures?: unknown; step?: unknown } | undefined) ?? {};
@@ -562,7 +573,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   ): Promise<{ captures: Capture[]; finalUrl: string }> {
     nearRefused(plan.steps);
     const steps = plan.steps && d.now().getTime() < noLookUntil ? withoutLook(plan.steps) : plan.steps;
-    const doc = pageDoc(url);
+    const doc = docMatch(url, plan.capture);
     let body = {
       url,
       // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer. A plan
@@ -575,7 +586,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           ...(c.min_count ? { min_count: c.min_count } : {}),
           ...(c.max_count ? { max_count: c.max_count } : {}),
         })),
-        docCapture(doc),
+        ...(doc ? [docCapture(doc)] : []),
       ],
       ...(steps ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
@@ -788,12 +799,12 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     // The check first, from inside the page as soon as it is there (one byte, its status), then the plan's own steps.
     const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
     const steps = [...check, ...(plan.steps ?? [])];
-    const doc = pageDoc(url);
+    const doc = docMatch(url, plan.capture);
     let body = {
       url,
       capture: [
         ...plan.capture.map((c) => ({ match: c.match, ...(plan.graceMs ? { required: c.required } : {}), ...sizeOf(c) })),
-        docCapture(doc),
+        ...(doc ? [docCapture(doc)] : []),
       ],
       ...(steps.length ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
