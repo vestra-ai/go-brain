@@ -97,8 +97,14 @@ describe('intake', () => {
     await h.send(created('t_in_inst'));
     await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'see you all there') }, 't_in_inst'), { instance: 'another', frameId: 'gs_other' });
     await h.intake.idle();
-    const { rows } = await db.pool.query<{ server_instance: string }>('select server_instance from trips where trip_id = $1', ['t_in_inst']);
-    expect(rows[0]?.server_instance).toBe('test');
+    const { rows } = await db.pool.query<{ server_instance: string; server_name: string | null }>('select server_instance, server_name from trips where trip_id = $1', ['t_in_inst']);
+    expect(rows[0]).toEqual({ server_instance: 'test', server_name: null });
+    // A Server that gives its own name (?server=) has it kept with the instance, from the trip's first event only.
+    await h.intake.sendEvent(created('t_in_named'), { instance: 'server-1', server: 'vestra-staging', frameId: 'gs_named' });
+    await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'hi') }, 't_in_named'), { instance: 'server-2', server: 'another', frameId: 'gs_named_2' });
+    await h.intake.idle();
+    const named = await db.pool.query('select server_instance, server_name from trips where trip_id = $1', ['t_in_named']);
+    expect(named.rows[0]).toEqual({ server_instance: 'server-1', server_name: 'vestra-staging' });
   });
 
   it('trip.created: the pack comes from the event, setup runs, and Go is due to say hello', async () => {

@@ -19,10 +19,13 @@ const log = { warn: vi.fn() };
 /** Each trip's organizer, as its pack says it; a test changes one to see the trip's browser stay. */
 const organizers = new Map<string, string>();
 
-/** A trip the Server brought on an instance, organized by someone. */
-async function trip(tripId: string, instance: string | null, organizer: string): Promise<void> {
+/** A trip the Server brought on an instance, organized by someone; server is the Server's own name, when it gives one. */
+async function trip(tripId: string, instance: string | null, organizer: string, server: string | null = null): Promise<void> {
   organizers.set(tripId, organizer);
-  await db.pool.query('insert into trips (trip_id, server_instance) values ($1, $2) on conflict (trip_id) do nothing', [tripId, instance]);
+  await db.pool.query(
+    'insert into trips (trip_id, server_instance, server_name) values ($1, $2, $3) on conflict (trip_id) do nothing',
+    [tripId, instance, server],
+  );
 }
 
 beforeAll(async () => {
@@ -78,8 +81,8 @@ describe("the person's browser", () => {
     await trip('t_b_name_2', 'server-replica-b', 'p_twice');
     await browsers.userFor('t_b_name_2');
     expect(log.warn).toHaveBeenCalledWith(
-      { personId: 'p_twice', instance: 'server-replica-b', others: ['server-replica-a'] },
-      expect.stringContaining('one organizer under two Server instances within a day'),
+      { personId: 'p_twice', name: 'server-replica-b', others: ['server-replica-a'] },
+      expect.stringContaining('one organizer under two Server names within a day'),
     );
     // A day on, the old name is history: nothing said.
     log.warn.mockClear();
@@ -87,6 +90,49 @@ describe("the person's browser", () => {
     await trip('t_b_name_3', 'server-replica-c', 'p_twice');
     await browsers.userFor('t_b_name_3');
     expect(log.warn).not.toHaveBeenCalled();
+    // Two replicas of a Server that gives its name are one name: nothing said.
+    await trip('t_b_name_4', 'server-replica-a', 'p_once', 'one-server');
+    await trip('t_b_name_5', 'server-replica-b', 'p_once', 'one-server');
+    await browsers.userFor('t_b_name_4');
+    await browsers.userFor('t_b_name_5');
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  // A Server with replicas names each one apart (?instance=, so their signatures differ) and gives one name for all of
+  // them (?server=): the person's browser, and their ixigo login, is the same whichever replica brought the trip.
+  it("is one per Server and organizer when the Server gives its name: trips from two of its replicas share it", async () => {
+    await trip('t_b_srv_1', 'vestra-1', 'p_rahul', 'vestra-staging');
+    await trip('t_b_srv_2', 'vestra-2', 'p_rahul', 'vestra-staging');
+    const one = await browsers.userFor('t_b_srv_1');
+    expect(one).toBe(browserUserIdFor('vestra-staging', 'p_rahul'));
+    expect(await browsers.userFor('t_b_srv_2')).toBe(one);
+    // Another Server's Rahul is another person, even on a replica of the same name.
+    await trip('t_b_srv_3', 'vestra-1', 'p_rahul', 'vestra-prod');
+    expect(await browsers.userFor('t_b_srv_3')).toBe(browserUserIdFor('vestra-prod', 'p_rahul'));
+  });
+
+  it("takes over the browser the organizer had under the Server's replicas before it gave its name, the one logged in last: no new login", async () => {
+    await trip('t_b_old_1', 'rep-a', 'p_aarav');
+    await trip('t_b_old_2', 'rep-b', 'p_aarav');
+    const a = await browsers.userFor('t_b_old_1');
+    const b = await browsers.userFor('t_b_old_2');
+    expect(a).not.toBe(b);
+    await browsers.setLogin('t_b_old_1', 'in');
+    clock.advance(60_000);
+    await browsers.setLogin('t_b_old_2', 'in');
+    // The Server now sends ?server=vestra from both replicas: its new trips take b, logged in last, and stay on it.
+    await trip('t_b_named_1', 'rep-a', 'p_aarav', 'vestra');
+    await trip('t_b_named_2', 'rep-b', 'p_aarav', 'vestra');
+    expect(await browsers.userFor('t_b_named_1')).toBe(b);
+    expect(await browsers.userFor('t_b_named_2')).toBe(b);
+    expect(await browsers.login('t_b_named_1')).toMatchObject({ login: 'in' });
+    await trip('t_b_named_3', 'rep-c', 'p_aarav', 'vestra');
+    expect(await browsers.userFor('t_b_named_3')).toBe(b);
+    // A trip already mapped keeps its browser.
+    expect(await browsers.userFor('t_b_old_1')).toBe(a);
+    // Never another person's: another organizer on the named Server gets their own.
+    await trip('t_b_named_4', 'rep-a', 'p_kiara', 'vestra');
+    expect(await browsers.userFor('t_b_named_4')).toBe(browserUserIdFor('vestra', 'p_kiara'));
   });
 
   it('is made on /v1 again when /v1 says it does not know it', async () => {
