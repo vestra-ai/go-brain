@@ -1,0 +1,15 @@
+id: trains.pnr_status
+title: A card that opens ixigo's PNR status page for the person to check their own PNR there
+asks:
+  - check pnr 4512873690
+  - pnr ka status batao
+  - is our ticket confirmed yet, pnr 2318764059
+auth: none
+changes_state: false
+# A PNR is checked on ixigo's page only, by the person, on their own phone: Go never takes the number. The page's enquiry
+# (/trains-info/v1/pnr/enquiry) always sends mode=NEW_ADDITION with the browser's own session and a reCAPTCHA v3 token
+# (the atlas, 10 Oct): in a logged-in browser it would add the PNR to that account's trips, so Go never runs it.
+page: /trains/pnr-status
+answer:
+  as: link
+  title: Check a PNR on ixigo

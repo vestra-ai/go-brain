@@ -71,25 +71,36 @@ export interface IxigoWebDeps {
 }
 
 /**
- * A run that answers within this (a recipe's fast call from the warm tab) posts its options card with no live card
- * first: the "On it." card shows only for a run still going after it, with the steps it missed.
+ * A run that answers within this with no page to open (a kept answer, a recipe's fast call from the warm tab) posts its
+ * options card with no live card first: the "On it." card shows only for a run still going after it, with the steps it
+ * missed. A run that opens a page shows its card at once (shownAfter).
  */
 export const CARD_DELAY_MS = 1_500;
 
-/** A live card that shows only once the run has gone delayMs; until then its steps wait, and a run done by then shows none. */
+/**
+ * A live card that shows once the run opens a page (its "opening": the stage, watched in the live view from its first
+ * picture; 10 Oct, the live view 1.5 s sooner), or once it has gone delayMs; until then its steps wait, and a run done
+ * by then with no page opened (a kept answer) shows none.
+ */
 export function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch {
   if (delayMs <= 0) return make();
   let live: LiveSearch | null = null;
   const waiting: Array<Parameters<LiveSearch['progress']>[0]> = [];
-  const timer = setTimeout(() => {
+  const show = (): void => {
+    if (live) return;
+    clearTimeout(timer);
     live = make();
     for (const e of waiting.splice(0)) live.progress(e);
-  }, delayMs);
+  };
+  const timer = setTimeout(show, delayMs);
   timer.unref?.();
   return {
     progress: (e) => {
       if (live) live.progress(e);
-      else waiting.push(e);
+      else {
+        waiting.push(e);
+        if (e.type === 'opening') show();
+      }
     },
     finish: async (ok) => {
       clearTimeout(timer);
@@ -127,6 +138,8 @@ export const searchKindOf = (recipeId: string): TravelKind | null =>
 export interface SiteAsk {
   filters: string[];
   sort?: string;
+  /** A decided budget for the stay, per person, in paise: ixigo's own price bands by it (RunFor.budgetMinor). */
+  budget?: number;
 }
 const NO_SITE: SiteAsk = { filters: [] };
 /**
@@ -142,9 +155,10 @@ function forAsk(found: TravelSearch, site: SiteAsk): TravelSearch {
 }
 
 /** A run's site filters and sort, as the engine takes them. */
-const siteRun = (site: SiteAsk): Pick<RunFor, 'siteFilters' | 'siteSort'> => ({
+const siteRun = (site: SiteAsk): Pick<RunFor, 'siteFilters' | 'siteSort' | 'budgetMinor'> => ({
   ...(site.filters.length > 0 ? { siteFilters: site.filters } : {}),
   ...(site.sort ? { siteSort: site.sort } : {}),
+  ...(site.budget !== undefined ? { budgetMinor: site.budget } : {}),
 });
 
 /**
@@ -154,7 +168,7 @@ const siteRun = (site: SiteAsk): Pick<RunFor, 'siteFilters' | 'siteSort'> => ({
 export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; conditions: string[]; site: SiteAsk } {
   const conditions = [...(q.mustHave ?? [])];
   if (kind === 'stays') {
-    const site = { filters: [...(q.siteFilters ?? [])], ...(q.siteSort ? { sort: q.siteSort } : {}) };
+    const site = { filters: [...(q.siteFilters ?? [])], ...(q.siteSort ? { sort: q.siteSort } : {}), ...(q.budgetMinor !== undefined ? { budget: q.budgetMinor } : {}) };
     return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, conditions, site };
   }
   if (kind === 'flights') {
@@ -167,6 +181,7 @@ export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<
       site: NO_SITE,
     };
   }
+  if (kind === 'buses') return { given: { from: q.from, to: q.to, date: q.date, board_at: q.boardAt, drop_at: q.dropAt }, conditions, site: NO_SITE };
   return { given: { from: q.from, to: q.to, date: q.date }, conditions, site: NO_SITE };
 }
 
@@ -179,6 +194,7 @@ const keyOf = (given: Record<string, unknown>, conditions: string[], site: SiteA
       .map(([k, v]) => [k, typeof v === 'string' ? v.trim().toLowerCase().replace(/\s+/g, ' ') : v]),
     [...conditions].sort(),
     ...(site.filters.length > 0 || site.sort ? [[...site.filters].map((f) => f.trim().toLowerCase()).sort(), site.sort?.trim().toLowerCase() ?? null] : []),
+    ...(site.budget !== undefined ? [{ budget: site.budget }] : []),
   ]);
 
 /** A search's answer from what is kept, loading nothing; null when nothing kept answers it. */
@@ -364,7 +380,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const link = recipe.answer.as === 'link';
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
     const key = link ? `${id}|${keyOf(given, conditions, site)}` : await keyFor(id, given, conditions, tripId, site);
-    const plain = conditions.length === 0 && site.filters.length === 0 && !site.sort;
+    const plain = conditions.length === 0 && site.filters.length === 0 && !site.sort && site.budget === undefined;
     return { tripId, id, given, conditions, site, link, ttl, key, page: !plain && !link ? await keyFor(id, given, [], tripId) : key };
   }
 
@@ -372,11 +388,15 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
    * A search's key. The page is ixigo's public results, the same in any trip's browser: the trip runs it, and the request
    * it makes keys it (the page and its fetch), so two asks that open the same page are one search whatever their words
    * (8 Oct: an early "with a pool" and the composer's "sleeping 4, with a pool" ran twice). A place that still needs
-   * ixigo's box has no request until it loads: the words key that one.
+   * ixigo's box has no request until it loads: the words key that one. A decided budget keys by its amount, not by the
+   * bands it picks: those depend on whether the place's list is known yet, so Jev's early read (often the place's first)
+   * and the composer's search of the same budget would open two pages for one ask.
    */
   async function keyFor(id: string, given: Record<string, unknown>, conditions: string[], tripId: string, site: SiteAsk = NO_SITE): Promise<string> {
-    const request = (await d.engine.requestOf?.(id, given, { tripId, conditions, ...siteRun(site) })) ?? null;
-    return request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions, site)}`;
+    const { budget, ...unbudgeted } = site;
+    const request = (await d.engine.requestOf?.(id, given, { tripId, conditions, ...siteRun(unbudgeted) })) ?? null;
+    const key = request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions, unbudgeted)}`;
+    return budget !== undefined ? `${key}|budget:${budget}` : key;
   }
 
   /** One search on ixigo's page: kept, joined or run, its live card from start to end. */
@@ -401,7 +421,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     // that can be narrowed waits here, so every other search reads what is kept and keeps its own with no wait between.
     const byPage = narrowedBy(id, conditions);
     // Never for an ask that names the site's own filters or sort: ixigo's own read applies them.
-    if (byPage && site.filters.length === 0 && !site.sort && !(fresh(hit) && hit.done)) {
+    if (byPage && site.filters.length === 0 && !site.sort && site.budget === undefined && !(fresh(hit) && hit.done)) {
       const narrowed = await fromKept(id, given, byPage, tripId);
       // The wait let another search of this key start, or finish: what is kept is read again.
       hit = kept.get(key);
@@ -469,7 +489,10 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         // The card is done before the options card posts.
         if (card) await end(cardKey, card, true);
         const said = run.site
-          ? { filtered: run.site.filtered, sorted: run.site.sorted, unknown: run.site.unknown, listed: run.site.listed, offers: run.site.list ? offersText(run.site.list) : null }
+          ? {
+              filtered: run.site.filtered, sorted: run.site.sorted, unknown: run.site.unknown, listed: run.site.listed, offers: run.site.list ? offersText(run.site.list) : null,
+              ...(run.site.priced ? { priced: run.site.priced } : {}),
+            }
           : null;
         return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}), ...(said ? { site: said } : {}) };
       },
@@ -559,7 +582,15 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       return staysFallback(q, o, new ChallengedError());
     }
     try {
-      return await searchPage('stays', q, o, true);
+      const found = await searchPage('stays', q, o, true);
+      // ixigo's price bands for the group's budget held no stay: the search without them, so the group still sees what
+      // there is (the lead, 10 Oct: "fall back to plain search if the band is empty").
+      if (found.results.length === 0 && q.budgetMinor !== undefined) {
+        const without: TravelQuery = { ...q };
+        delete without.budgetMinor;
+        return await searchPage('stays', without, o, true);
+      }
+      return found;
     } catch (err) {
       if (!(err instanceof TravelError) || ASKS_THE_PERSON.has(err.code)) throw err;
       d.log?.warn({ tripId: o?.tripId, code: err.code }, "travel: ixigo's stays page didn't answer; an earlier read or its link answers instead");
