@@ -260,9 +260,11 @@ describe("ixigo's trip explorer", () => {
     ]);
     expect(got.rows[1]).toEqual({
       place: 'Agra, Uttar Pradesh, India', getting_there: 'Prices starting from ₹170', stay_a_night: 'about ₹2,000', trip_estimate: 'about ₹9,000 for 3 nights',
-      weather: '15 to 24 C', good_for: ['family', 'friends', 'solo'], guide: 'agra',
+      weather: '15 to 24 C', good_for: ['family', 'friends', 'solo'], weather_tags: ['Warmer', 'No Snow', 'No Rain', 'Pollution free'],
+      kind: ['historical sites', 'architecture', 'cultural', 'food drink', 'photography', 'romantic', 'shopping', 'luxury', 'festivals events', 'scenic outdoors', 'weekend destination'],
+      guide: 'agra',
     });
-    expect(got.rows[0]).toMatchObject({ visa_on_arrival: true });
+    expect(got.rows[0]).toMatchObject({ visa_on_arrival: true, tag: 'Visa on Arrival', kind: expect.arrayContaining(['beaches']) });
   });
 
   it("plan.explore clicks a theme's chip and reads the explorer's call it makes", async () => {
@@ -270,9 +272,10 @@ describe("ixigo's trip explorer", () => {
       capture('/x', `${IXIGO}/plan?origin=New%20Delhi&travelMonth=october`, sample('plan.explore.html')),
       capture('/x', `${IXIGO}/itinerary-planner/api/explore?origin=new-delhi&offset=0&limit=15&travelMonth=OCT&category=BEACHES`, sample('plan.explore.beaches.json')),
     ]);
+    // Only the theme was asked: the scope's and the weather's buttons are left out, not pressed.
     expect(got.runs[0]!.plan).toMatchObject({
       capture: [{ match: '/plan?origin=', required: true, max_bytes: 1_000_000 }, { match: '/itinerary-planner/api/explore?', required: true }],
-      steps: [{ op: 'click', text: 'Beaches' }, { op: 'wait_for', match: '/itinerary-planner/api/explore?' }],
+      steps: [{ op: 'click', text: 'Beaches', optional: true }, { op: 'wait_for', match: '/itinerary-planner/api/explore?' }],
     });
     expect(got.title).toBe('Where to go from New Delhi in October, beaches');
     expect(got.rows.map((r) => r['place'])).toEqual(['Denpasar, Bali, Indonesia', 'Devgad, Maharashtra, India', 'Chandpur, Chittagong, Bangladesh', 'Tajpur, West Bengal, India']);
@@ -281,6 +284,33 @@ describe("ixigo's trip explorer", () => {
     const snow = await facts('plan.explore', { origin: 'Delhi', month: '2026-12-12', theme: 'snow' }, [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))]);
     expect(snow.runs[0]!.plan).not.toHaveProperty('steps');
     expect(snow.title).toBe('Where to go from Delhi in December');
+  });
+
+  // p2's atlas, 10 Oct: the page has 18 theme chips (no "Wildlife", "Romance" not "Romantic": two of the recipe's six
+  // themes clicked nothing that is there), scope and weather buttons, and a budget slider the recipe never used.
+  it('plan.explore presses the chip, the scope and the weather asked, as the page names them, and keeps places within a budget', async () => {
+    const themed = await facts('plan.explore', { origin: 'Mumbai', month: '2026-12-05', theme: 'romantic', scope: 'visa free', weather: 'no rain' }, [
+      capture('/x', `${IXIGO}/plan?origin=Mumbai&travelMonth=december`, sample('plan.explore.html')),
+      capture('/x', `${IXIGO}/itinerary-planner/api/explore?origin=mumbai&offset=0&limit=15&travelMonth=DEC&category=ROMANTIC`, sample('plan.explore.beaches.json')),
+    ]);
+    expect(themed.runs[0]!.plan.steps).toEqual([
+      { op: 'click', text: 'Romance', optional: true },
+      { op: 'click', role: 'button', name: 'Visa-free', optional: true },
+      { op: 'click', role: 'button', name: 'No Rain', optional: true },
+      { op: 'wait_for', match: '/itinerary-planner/api/explore?' },
+    ]);
+    expect(themed.title).toBe('Where to go from Mumbai in December, romance, visa-free, no rain');
+    // The page's own chips by their words: wildlife is Nature, night skies NightSkies.
+    const chip = async (theme: string) =>
+      (await facts('plan.explore', { origin: 'Delhi', month: '2026-12-12', theme }, [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))])).runs[0]!.plan.steps?.[0];
+    expect(await chip('wildlife')).toEqual({ op: 'click', text: 'Nature', optional: true });
+    expect(await chip('night skies')).toEqual({ op: 'click', text: 'NightSkies', optional: true });
+    // A budget is Go's own pick from ixigo's estimate for the trip, getting there and the stays: ₹10,000 a person.
+    const cheap = await facts('plan.explore', { origin: 'Delhi', month: '2026-12-12', max_budget: 1_000_000 }, [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))]);
+    expect(cheap.runs[0]!.plan).not.toHaveProperty('steps');
+    expect(cheap.rows.map((r) => [r['place'], r['trip_estimate']])).toEqual([
+      ['Agra, Uttar Pradesh, India', 'about ₹9,000 for 3 nights'], ['Chandpur, Chittagong, Bangladesh', 'about ₹9,500 for 3 nights'],
+    ]);
   });
 
   it("plan.top_locations answers the planner's popular places", async () => {
@@ -459,6 +489,47 @@ describe("ixigo's offers pages", () => {
     const got = await facts('offers.campaign', { campaign: 'grandtravelfest' }, [capture('/x', `${IXIGO}/offers/campaigns/grandtravelfest`, sample('offers.campaign.html'))]);
     expect(got.page).toBe(`${IXIGO}/offers/campaigns/grandtravelfest`);
     expect(got.rows.map((r) => `${r['code']} ${r['bank']} ${r['until']}`)).toEqual(['AUSFD AU Bank 10 Oct 2026', 'RBLD RBL Bank 10 Oct 2026', 'AUSFN AU Bank 10 Oct 2026', 'RBLN RBL Bank 10 Oct 2026']);
+  });
+});
+
+// p2's atlas, 10 Oct: ixigo's visa guide for Indian passport holders, "updated daily from official sources". The sample is
+// the Thailand page as his logged-out browser drew it (the harness's --html), with nothing of anyone's in it.
+describe("ixigo's visa guide", () => {
+  const THAILAND = `${IXIGO}/visa-for-indians/thailand-th?purpose=leisure`;
+  const page = () => [capture('/x', THAILAND, sample('visa.requirements.html'))];
+
+  it("opens the country as a person would, from the guide's search box, its card and its Full page link", async () => {
+    const got = await facts('visa.requirements', { country: 'Thailand' }, page());
+    expect(got.page).toBe(`${IXIGO}/visa-for-indians`);
+    expect(got.runs[0]!.plan).toEqual({
+      capture: [{ match: '/visa-for-indians/', required: true, max_bytes: 1_000_000 }],
+      steps: [
+        { op: 'type', role: 'textbox', name: 'Search country...', text: 'Thailand' },
+        { op: 'click', role: 'button', text: 'Thailand' },
+        { op: 'click', role: 'link', name: 'Full page', optional: true, within_ms: 8000 },
+      ],
+      timeoutMs: 20000,
+    });
+    // Only the country's own page reads: the guide's address and its card's server action end without the slash.
+    expect(matches('/visa-for-indians/', `${IXIGO}/visa-for-indians`)).toBe(false);
+  });
+
+  it("answers the purpose asked, leisure by default, with what it takes, as last verified and with its source", async () => {
+    const got = await facts('visa.requirements', { country: 'Thailand' }, page());
+    expect(got.rows).toHaveLength(1);
+    expect(got.rows[0]).toMatchObject({
+      country: 'Thailand', purpose: 'leisure', visa: 'visa free', summary: 'No visa required for up to 30 days', max_stay_days: 30,
+      fee: 'Free (visa-free entry)', register_before_travel: 'https://tdac.immigration.go.th',
+      source: 'https://newdelhi.thaiembassy.org/en/page/visa', last_verified: '10 Oct 2026',
+    });
+    expect(got.rows[0]!['details']).toContain('reduced to 30 days from 60 days effective 15 Sep 2026');
+    expect(got.rows[0]!['documents']).toContain('Return/onward flight ticket');
+    const transit = await facts('visa.requirements', { country: 'Thailand', purpose: 'transit' }, page());
+    expect(transit.rows.map((r) => [r['purpose'], r['summary']])).toEqual([['transit', 'No transit visa required (airside TWOV)']]);
+    // A purpose other than leisure is also pressed on the country's page, so the group sees it.
+    const business = await facts('visa.requirements', { country: 'Thailand', purpose: 'business' }, page());
+    expect(business.runs[0]!.plan.steps!.at(-1)).toEqual({ op: 'click', role: 'button', name: 'Business', optional: true, within_ms: 8000 });
+    expect(business.rows[0]!['documents']).toContain('Income Tax Returns for last 2 years');
   });
 });
 
