@@ -108,6 +108,13 @@ export interface RecipeRunner {
    * page in the same tab. What Bash answers, as read() gives it; a stage with no page open is a TravelError.
    */
   onStage?(tripId: string, plan: FetchPlan, o?: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }>;
+  /**
+   * Whether the stage shows the page its last read opened, read in full: false once that read failed or ran out of time
+   * (the stage holds a page that never drew its results), once steps on the stage moved it on, or past STAGE_MS. Steps
+   * that click on what the room watches (a top pick's card) are worth sending only then (exam, 10 Oct: a click on a pick
+   * the stage didn't show looked for it for the fetch's whole 20 s).
+   */
+  stageReady?(tripId: string): boolean;
   /** When a page this trip's computer opened last met Cloudflare's check (CLOUDFLARE), in ms; null when none has. */
   lastChallenge?(tripId: string): number | null;
   /**
@@ -964,10 +971,22 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
+  // trip → when a stage read last answered in full; gone once one fails or steps on the stage move it on (stageReady).
+  const stageRead = new Map<string, number>();
+
   return {
     name: 'browser_fetch',
     async read(tripId, url, plan, o = {}) {
-      return inSlot(tripId, o, () => fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o));
+      return inSlot(tripId, o, async () => {
+        try {
+          const got = await fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o);
+          if (o.stage) stageRead.set(tripId, d.now().getTime());
+          return got;
+        } catch (err) {
+          if (o.stage) stageRead.delete(tripId);
+          throw err;
+        }
+      });
     },
     pageFetch: (tripId, call, o = {}) => inSlot(tripId, o, () => pageFetch(tripId, call, o)),
     canPageFetch: () => d.now().getTime() >= unsupportedUntil,
@@ -978,7 +997,15 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
     tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),
     lastChallenge: (tripId) => checkedAt.get(tripId) ?? null,
-    onStage: (tripId, plan, o = {}) => inSlot(tripId, o, () => onStage(tripId, plan, o)),
+    onStage: (tripId, plan, o = {}) =>
+      inSlot(tripId, o, () => onStage(tripId, plan, o)).finally(() => {
+        // Its steps moved the stage on (a pick's own page), or left it who knows where: no more clicks on the results.
+        stageRead.delete(tripId);
+      }),
+    stageReady: (tripId) => {
+      const at = stageRead.get(tripId);
+      return at !== undefined && d.now().getTime() - at < STAGE_MS;
+    },
   };
 }
 

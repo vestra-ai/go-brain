@@ -13,7 +13,7 @@ import { keepPlace } from '../recipes/places-store.js';
 import type { OnProgress } from '../recipes/progress.js';
 import { asOffers, bandsFor, offerWords, pickOffers, type Offer, type OfferList, type Offers } from '../recipes/offers.js';
 import { IXIGO, matches, type Capture, type CaptureSpec, type FetchPlan, type RecipeOption } from '../recipes/recipe.js';
-import { NearUnsupportedError, type ReadOptions, type RecipeRunner } from '../recipes/runners.js';
+import { FETCH_TIMEOUT_MS, NearUnsupportedError, type ReadOptions, type RecipeRunner } from '../recipes/runners.js';
 import type { TravelKind } from '../travel.js';
 import type { Book } from './book.js';
 import { evaluate } from './expr.js';
@@ -108,6 +108,8 @@ export class PacedOutError extends TravelError {
  * golden run, 10 Oct: three cities' bus pages at once from one address, while it was asking for Cloudflare's check).
  */
 export const STEP_PAGES_AT_ONCE = 2;
+/** The longest a click on the stage's results (a top pick's card) gets before its page opens by its address instead. */
+export const CLICK_MS = 10_000;
 /** A paced page asked again this long after its gap ends. */
 const PACE_MARGIN_MS = 500;
 
@@ -643,17 +645,30 @@ export function createEngine(d: EngineDeps) {
   }
 
   /**
+   * Whether the stage shows the results a click there should find: a runner that can't say is trusted. When it doesn't
+   * (its last read ran out of time, or steps moved it on), the page opens by its address at once, never after a click that
+   * looks for what isn't there for the fetch's whole time (exam, 10 Oct: the top pick's click 504 after 20 s).
+   */
+  function stageShowsResults(tripId: string, runner: Pick<RecipeRunner, 'stageReady'>): boolean {
+    if (!runner.stageReady || runner.stageReady(tripId)) return true;
+    d.log?.warn({ tripId }, "book: the stage doesn't show the results to click on; the page opens by its address");
+    return false;
+  }
+
+  /**
    * A page opened by a click on the one the stage holds (RunFor.clickFrom): the text clicked, then a wait for the first
    * call the page must make, its captures as a read's. Null when the click or that call didn't come: the caller opens the
    * page by its address.
    */
   async function clicked(
-    tripId: string, runner: Pick<RecipeRunner, 'onStage'>, plan: FetchPlan, text: string, o: ReadOptions,
+    tripId: string, runner: Pick<RecipeRunner, 'onStage' | 'stageReady'>, plan: FetchPlan, text: string, o: ReadOptions,
   ): Promise<{ captures: Capture[]; finalUrl: string } | null> {
     const required = plan.capture.filter((c) => c.required !== false && !c.besides);
-    if (!runner.onStage || required.length === 0) return null;
+    if (!runner.onStage || required.length === 0 || !stageShowsResults(tripId, runner)) return null;
     try {
-      const got = await runner.onStage(tripId, { ...plan, steps: [{ op: 'click', text }, { op: 'wait_for', match: required[0]!.match }, ...(plan.steps ?? [])] }, o);
+      // A card on the drawn results opens its page in a few seconds; past CLICK_MS the page opens by its address.
+      const steps = [{ op: 'click', text }, { op: 'wait_for', match: required[0]!.match }, ...(plan.steps ?? [])];
+      const got = await runner.onStage(tripId, { ...plan, steps, timeoutMs: Math.min(plan.timeoutMs ?? FETCH_TIMEOUT_MS, CLICK_MS) }, o);
       if (required.every((c) => got.captures.some((x) => x.match === c.match && x.status >= 200 && x.status < 300))) return got;
       d.log?.warn({ tripId, caught: got.captures.length }, "book: a click on the stage brought the page, not its calls; it opens by its address");
     } catch (err) {
@@ -668,11 +683,11 @@ export function createEngine(d: EngineDeps) {
    * again by address (NearUnsupportedError): it would refuse that too.
    */
   async function staged(
-    tripId: string, runner: Pick<RecipeRunner, 'onStage'>, plan: FetchPlan, o: ReadOptions,
+    tripId: string, runner: Pick<RecipeRunner, 'onStage' | 'stageReady'>, plan: FetchPlan, o: ReadOptions,
   ): Promise<{ captures: Capture[]; finalUrl: string } | null> {
     const from = (plan.steps ?? []).findIndex((s) => s.op === 'click');
     const required = plan.capture.filter((c) => c.required !== false && !c.besides);
-    if (!runner.onStage || from < 0 || required.length === 0) return null;
+    if (!runner.onStage || from < 0 || required.length === 0 || !stageShowsResults(tripId, runner)) return null;
     try {
       const got = await runner.onStage(tripId, { ...plan, steps: plan.steps!.slice(from) }, o);
       if (required.every((c) => got.captures.some((x) => x.match === c.match && x.status >= 200 && x.status < 300))) return got;

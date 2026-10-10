@@ -164,6 +164,35 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(older.calls).toHaveLength(1);
   });
 
+  // Exam, 10 Oct: the top pick's click looked for its card on a stage whose last read had run out of time, for the
+  // fetch's whole 20 s (504), before its page opened by its address.
+  it('says the stage shows its results only after a stage read that answered, until steps move it on, a read fails, or STAGE_MS', async () => {
+    let broken = false;
+    const w = world(() => {
+      if (broken) throw new Error('the box went away');
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner(w.deps);
+    expect(runner.stageReady!('t1')).toBe(false);
+    await runner.read('t1', BUSES, busPlan, { stage: true });
+    expect(runner.stageReady!('t1')).toBe(true);
+    // A read off the stage changes nothing; another trip's stage is its own.
+    await runner.read('t1', BUSES, busPlan);
+    expect(runner.stageReady!('t1')).toBe(true);
+    expect(runner.stageReady!('t2')).toBe(false);
+    // Steps on the stage move it on.
+    await runner.onStage!('t1', { ...busPlan, steps: [{ op: 'click', text: 'VRL Travels' }] });
+    expect(runner.stageReady!('t1')).toBe(false);
+    await runner.read('t1', BUSES, busPlan, { stage: true });
+    broken = true;
+    await runner.read('t1', BUSES, busPlan, { stage: true }).catch(() => undefined);
+    expect(runner.stageReady!('t1')).toBe(false);
+    broken = false;
+    await runner.read('t1', BUSES, busPlan, { stage: true });
+    await w.deps.sleep(STAGE_MS);
+    expect(runner.stageReady!('t1')).toBe(false);
+  });
+
   // A bus card's own "Select Seats" (buses.stops) is clicked by its operator and time (near_text, bash #4637). A Bash
   // before it refuses the fetch before opening anything; Go never sends it as a plain click (the first card's), says so
   // (NearUnsupportedError), and sends none for a while, on a page or on the stage.
