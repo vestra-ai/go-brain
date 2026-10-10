@@ -1,0 +1,52 @@
+{
+  "data": [
+    {
+      "groupingKey": "Nov 2026",
+      "userBookings": [
+        {
+          "bookingId": "BOOKING-ID-NEVER-READ-1",
+          "product": "TRAIN",
+          "status": "CONFIRMED",
+          "activityStartTime": 1793760600000,
+          "activityStartTimeWithDay": "Fri, 06 Nov, 07:10",
+          "activityEndTime": 1793813700000,
+          "metadata": {
+            "trip_title": "Mumbai to Madgaon",
+            "pnr_number": "0000000000",
+            "next_city": "Madgaon",
+            "pax_count": 4,
+            "fare_type": "",
+            "is_price_lock": false,
+            "is_smart_lock": false,
+            "is_smart_book": false,
+            "order_id": "ORDER-ID-NEVER-READ-1",
+            "parent_booking_id": "",
+            "traveller_name": "NAME-NEVER-READ"
+          }
+        },
+        {
+          "bookingId": "BOOKING-ID-NEVER-READ-2",
+          "product": "HOTEL",
+          "status": "PAYMENT_PENDING",
+          "activityStartTime": 1793789400000,
+          "activityStartTimeWithDay": "Fri, 06 Nov",
+          "metadata": { "trip_title": "Villa in Anjuna", "next_city": "Goa", "pax_count": 4, "number_of_nights": 3, "room_count": 2, "is_price_lock": false }
+        }
+      ]
+    },
+    {
+      "groupingKey": "Dec 2026",
+      "userBookings": [
+        {
+          "bookingId": "BOOKING-ID-NEVER-READ-3",
+          "product": "FLIGHT",
+          "status": "CONFIRMED",
+          "activityStartTime": 1796688000000,
+          "activityStartTimeWithDay": "Wed, 09 Dec",
+          "metadata": { "trip_title": "Goa to New Delhi", "pnr_number": "PNRNEVERREAD", "next_city": "New Delhi", "pax_count": 2, "is_price_lock": false, "is_smart_lock": true }
+        }
+      ]
+    }
+  ],
+  "metadata": { "limitReached": false, "total": 3 }
+}
