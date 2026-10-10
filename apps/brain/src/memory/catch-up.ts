@@ -52,6 +52,13 @@ export function candidates(pack: TripPack, lines: C.RecordLine[], personId: stri
   const out: CatchItem[] = [];
   const nameOf = (id: string) => pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone';
   const cardMsg = (pred: (c: C.Card) => boolean) => pack.messages.find((m) => m.card != null && pred(m.card))?.message_id;
+  /** Who wrote a proof message: its own person_id, else its author in the pack; null for Go's, or one not here. */
+  const authorOf = (p: C.RecordLine['proof'][number] | undefined): string | null => {
+    if (!p) return null;
+    if (p.person_id) return p.person_id;
+    const m = pack.messages.find((x) => x.message_id === p.message_id);
+    return m?.author.kind === 'person' ? m.author.person_id : null;
+  };
 
   for (const l of lines) {
     const at = Date.parse(l.updated_at);
@@ -66,7 +73,10 @@ export function candidates(pack: TripPack, lines: C.RecordLine[], personId: stri
       const ticket = l.booking_id ? cardMsg((c) => c.kind === 'ticket' && c.booking_id === l.booking_id) : undefined;
       out.push(item('booked', `Booked: ${l.text}`, at, false, ticket ?? proof, booking?.image_url ?? null));
     } else if (l.kind === 'open' && l.status === 'active') {
-      out.push(mine ? item('needs_you', `Go is asking you: ${l.text}`, at, true, proof) : item('open', `Still open: ${l.text}`, at, false, proof));
+      // The person's own question is never Go asking them, whoever the line names (the Server team, 10 Oct: catch-up
+      // listed people's own asks under "Go is asking you"). Only what Go or others asked them needs them.
+      if (authorOf(l.proof[0]) === personId) out.push(item('open', `You asked: ${l.text}`, at, false, proof));
+      else out.push(mine ? item('needs_you', `Go is asking you: ${l.text}`, at, true, proof) : item('open', `Still open: ${l.text}`, at, false, proof));
     } else if (l.kind === 'doing') {
       if (l.status === 'done') out.push(item('news', `Done: ${l.text}`, at, false, proof));
       else out.push(mine ? item('needs_you', `You said you would sort: ${l.text}`, at, true, proof) : item('news', l.text, at, false, proof));
