@@ -164,6 +164,11 @@ function body(captures: Capture[], match: string, format: BodyFormat, required: 
 async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<string, unknown>): Promise<unknown[]> {
   const read = recipe.read!;
   const what = recipe.title.toLowerCase();
+  // The site saying it has no rows (read.rows.empty: ixigo's stays answer 424 past the end of the list) is an empty list.
+  const sent = captures.filter((c) => matches(read.rows.from, c.url));
+  if (read.rows.empty && sent.length > 0 && bodiesFor(sent, read.rows.from, read.rows.format === 'sse').length === 0 && sent.some((c) => read.rows.empty!.includes(c.status))) {
+    return [];
+  }
   const rowsBody = body(captures, read.rows.from, read.rows.format, true, what);
   for (const [name, also] of Object.entries(read.also ?? {})) {
     // What the answer reads besides its rows is extra: one the page sent in a shape Go doesn't read (a train page without

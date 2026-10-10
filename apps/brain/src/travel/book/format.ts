@@ -188,7 +188,12 @@ export const RecipeFile = z
          *  JSON in its hidden inputs (html_inputs), or a stream of server-sent events (sse). */
         /** where: the rows kept, true for each; for a site that filters in the page, not in its call (ixigo's flights, whose
          *  stream holds every fare whatever the page's filters), its filters applied here, from $site. */
-        rows: z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional(), where: Expr.optional() }),
+        /** empty: the statuses the rows' call answers with when the site has no rows (ixigo's stays: 424 past the end of
+         *  its list), read as an empty list, never as a page that did not send. */
+        rows: z.object({
+          from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional(), where: Expr.optional(),
+          empty: z.array(z.int().min(400).max(599)).max(4).optional(),
+        }),
         also: z
           .record(z.string().regex(/^[a-z][a-z_]*$/), z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), value: Expr }))
           .optional(),
