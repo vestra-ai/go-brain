@@ -260,7 +260,8 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const older = world((c) => {
       const body = c.opts['body'] as Record<string, unknown>;
       bodies.push(body);
-      if ('front_device' in body) throw new V1Error(400, 'invalid_request', 'Unrecognized key: "front_device"', null, { code: 'invalid_request', param: 'front_device' });
+      // As an older Bash refuses it: an unknown key at the body's top, so no param at all.
+      if ('front_device' in body) throw new V1Error(400, 'invalid_request', 'Unrecognized key: "front_device"', null, { code: 'invalid_request' });
       return fetched([], HOME);
     });
     const runner = createBrowserFetchRunner(older.deps);

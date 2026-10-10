@@ -733,9 +733,12 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
         captures = Array.isArray(answer.captures) ? answer.captures : [];
       } catch (err) {
-        // A Bash that predates front_device refuses it before it opens anything: the phone page, as before, and none
-        // asked for a while.
-        if (err instanceof V1Error && err.status === 400 && err.code === 'invalid_request' && 'front_device' in body && String(err.detail?.['param'] ?? '').startsWith('front_device')) {
+        // A Bash that predates front_device refuses it before it opens anything: an unknown key at the body's top has no
+        // param (its path is the body's), so any 400 invalid_request with none, or one at front_device, while it is sent
+        // is taken as that (another refusal comes back again without it, and is thrown then). The phone page, as before,
+        // and none asked for a while.
+        const param = err instanceof V1Error ? String(err.detail?.['param'] ?? '') : '';
+        if (err instanceof V1Error && err.status === 400 && err.code === 'invalid_request' && 'front_device' in body && (param === '' || param.startsWith('front_device'))) {
           noDesktopUntil = d.now().getTime() + LOOK_UNSUPPORTED_MS;
           body = Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'front_device')) as typeof body;
           checks -= 1;
