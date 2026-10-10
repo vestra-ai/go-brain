@@ -219,7 +219,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     });
   };
   // The budget the group decided: the group's in the App, or one kept with set_budget, and in "Right now" for every turn,
-  // as strong context. It also picks ixigo's own price bands for a stays search (one band over kept), never Go dropping a stay.
+  // as strong context. The App's, or a stay budget, also picks ixigo's own price bands for a stays search (one band over
+  // kept), never Go dropping a stay.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
   const stayBudget = async (tripId: string): Promise<number | null> => stayCap(await budgets.get(tripId, (await brain.packs.get(tripId)).trip));
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget })) brain.tools.register(t);

@@ -28,7 +28,7 @@ Good to know:
 | B2 | A checklist card; a vault link to add documents | Go; the Server asks | the `checklist` card; `vault_link` `start: "add_documents"` and `context` |
 | B3a | A call's recording and length | Go | `CallCard.recording_url`, `duration_s` |
 | B4 | The vault payment an expense was paid with; a fixed split (`updated`). Whether people agreed to an expense was withdrawn on 10 Oct | The Server; Go | `add_expense.approval_id`; `expense.changed` `updated`; withdrawn: `Expense.status`, `confirmations`, `expense.changed` `approved`, `disputed`, `by_person_id` |
-| B5 | The group's one budget per person (10 Oct), in place of private budget answers | The Server; Go | `BudgetSummary.per_person_minor`; `update_trip.budget_per_person_minor` |
+| 10 Oct A3, B1 | The group's one budget per person, in place of private budget answers | The Server; Go | `BudgetSummary.per_person_minor`; `update_trip.budget_per_person_minor` |
 
 Not in 1.1: listening to a call live (B3b), `request_task` (B3c), and the check-in methods (Group C). They come after the hackathon.
 
@@ -193,7 +193,7 @@ A person can fix an expense's split. The Server then sends `expense.changed` wit
 }
 ```
 
-## The group's budget (B5, 10 Oct)
+## The group's budget (10 Oct: A3, B1)
 
 People no longer answer a private budget question. A trip has one optional budget per person, the same for everyone, set in the App or by Go. `read_trip`'s `budget` then carries it as `per_person_minor`, and the rest of it reads as everyone answering that one amount, so a reader that does not know the field still sees the right band. With none set, `budget` is `{ "answered": 0, "of": 4 }`. A change comes as `trip.updated` with `changed: ["budget"]`, by the person who set it, or by Go. This replaces what chapters 3 and 4 say about budget answers being private and changes coming by `system`.
 

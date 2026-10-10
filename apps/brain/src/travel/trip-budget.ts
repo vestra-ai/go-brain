@@ -84,11 +84,12 @@ export function budgetWords(b: TripBudget): string {
 }
 
 /**
- * A stays search's budget a head: a stay never costs more than the budget it is part of, so any budget but one for getting
- * there and back caps it (ixigo's own price bands, recipes/backend.ts).
+ * The budget a head that picks ixigo's own price bands for a stays search (recipes/backend.ts): one the chat set for the
+ * stay, or the App's (the group's one budget, or before 1.1 its lowest band), as before 1.1. A whole-trip or travel
+ * budget from the chat picks none: Go itself never drops a stay for a budget.
  */
 export function stayCap(b: TripBudget | null): number | null {
-  return b && b.covers !== 'travel' ? b.perPersonMinor : null;
+  return b && (b.covers === 'stay' || b.source !== 'chat') ? b.perPersonMinor : null;
 }
 
 /** "Right now": the decided budget, and that it holds. The App's lowest band before 1.1 has its own line (composer/trip-now.ts). */

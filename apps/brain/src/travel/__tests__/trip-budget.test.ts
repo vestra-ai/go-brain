@@ -85,11 +85,15 @@ describe('the decided budget, kept and read', () => {
     await budgets.clear('t_group');
   });
 
-  it('caps a stays search with any budget but one for getting there', () => {
-    const b = (covers: 'stay' | 'travel' | 'whole_trip') => ({ perPersonMinor: 2_000_000, covers, source: 'group' as const, messageId: null });
-    expect(stayCap(b('stay'))).toBe(2_000_000);
-    expect(stayCap(b('whole_trip'))).toBe(2_000_000);
-    expect(stayCap(b('travel'))).toBeNull();
+  // As before 1.1 (#332): a stay budget from the chat, or the App's, picks ixigo's price bands for a stays search; a
+  // whole-trip or travel one from the chat picks none. The budget is context, never Go's filter (Keshav, 9 Oct).
+  it("picks ixigo's price bands with the App's budget or a stay budget from the chat, never a whole-trip or travel one from the chat", () => {
+    const chat = (covers: 'stay' | 'travel' | 'whole_trip') => ({ perPersonMinor: 900_000, covers, source: 'chat' as const, messageId: 'm_1' });
+    expect(stayCap(chat('stay'))).toBe(900_000);
+    expect(stayCap(chat('whole_trip'))).toBeNull();
+    expect(stayCap(chat('travel'))).toBeNull();
+    expect(stayCap({ perPersonMinor: 2_000_000, covers: 'whole_trip', source: 'group', messageId: null })).toBe(2_000_000);
+    expect(stayCap({ perPersonMinor: 1_500_000, covers: 'stay', source: 'app', messageId: null })).toBe(1_500_000);
     expect(stayCap(null)).toBeNull();
   });
 
