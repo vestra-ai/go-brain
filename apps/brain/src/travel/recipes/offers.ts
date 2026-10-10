@@ -23,6 +23,8 @@ export interface OfferList {
   /** What the list is for, in words ("stays in Goa"). */
   about: string;
   offers: Offer[];
+  /** The site's price bands for the place (kind price), apart from the list: Go's alone, never the model's. */
+  bands: Offer[];
   at: number;
 }
 
@@ -33,7 +35,7 @@ const TRIPS_MAX = 2_000;
 
 export interface Offers {
   /** The list a page read brought, for the recipe and its place (key), and the trip whose read it was. */
-  keep(recipeId: string, key: string, about: string, offers: Offer[], tripId: string): void;
+  keep(recipeId: string, key: string, about: string, offers: Offer[], tripId: string, bands?: Offer[]): void;
   /** The list kept for the recipe and place, inside its time; null when there is none. */
   get(recipeId: string, key: string): OfferList | null;
   /** The lists the trip's own reads brought, inside their time, newest first. */
@@ -53,11 +55,11 @@ export function createOffers(o: { now: () => Date; ttlMs?: number }): Offers {
     }
   };
   return {
-    keep(recipeId, key, about, offers, tripId) {
+    keep(recipeId, key, about, offers, tripId, bands = []) {
       if (offers.length === 0) return;
       const k = `${recipeId}|${key}`;
       lists.delete(k);
-      lists.set(k, { recipeId, about, offers, at: o.now().getTime() });
+      lists.set(k, { recipeId, about, offers, bands, at: o.now().getTime() });
       bound(lists, KEPT_MAX);
       const mine = trips.get(tripId) ?? new Set<string>();
       mine.delete(k);

@@ -163,9 +163,11 @@ export const RecipeFile = z
      * What the page offers to narrow and order its results, as the site itself lists them, read at run time from a call
      * the page makes (from) and never written here: list turns that call into rows of { kind: filter | sort, group, name,
      * code }; for names what the list is kept for (a place), about says it in words. A run's site filters and sort, by
-     * their names on the list, are bound as $site (their codes) and $site_sort (recipes/offers.ts).
+     * their names on the list, are bound as $site (their codes) and $site_sort (recipes/offers.ts). bands turns the same
+     * call into the site's nameless price bands, rows of { kind: price, group, name, code, min, max }: kept apart from the
+     * list for Go alone, picked by a decided budget (offers.ts bandsFor), never named to the model.
      */
-    offers: z.object({ from: z.string().min(1), list: Expr, for: z.string().min(1), about: z.string().min(1) }).optional(),
+    offers: z.object({ from: z.string().min(1), list: Expr, bands: Expr.optional(), for: z.string().min(1), about: z.string().min(1) }).optional(),
     /** What the answer reads: the rows, from one captured call; other calls by name. */
     read: z
       .object({

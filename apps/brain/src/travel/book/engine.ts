@@ -591,7 +591,7 @@ export function createEngine(d: EngineDeps) {
       : null;
     if (!rooms || !adults || !nights || nights < 1) return site;
     const cap = Math.floor((o.budgetMinor * adults) / nights / rooms / 100);
-    const price = bandsFor(list.offers, cap);
+    const price = bandsFor(list.bands, cap);
     return price.length > 0 ? { ...site, price, cap } : site;
   }
 
@@ -604,11 +604,14 @@ export function createEngine(d: EngineDeps) {
       const body: unknown = JSON.parse(call.body);
       // As it is first; then without what a logged-in answer may wrap it in (read.ts unwrapped).
       let list: Offer[] = [];
+      let bands: Offer[] = [];
       for (const inner of [body, ...unwrapped(body)]) {
         list = asOffers(await evaluate(offers.list, inner, {}).catch(() => undefined));
-        if (list.length > 0) break;
+        if (list.length === 0) continue;
+        if (offers.bands) bands = asOffers(await evaluate(offers.bands, inner, {}).catch(() => undefined)).filter((b) => b.kind === 'price');
+        break;
       }
-      d.offers?.keep(recipe.id, site.key, await fill(offers.about, inputs, { url: false }), list, tripId);
+      d.offers?.keep(recipe.id, site.key, await fill(offers.about, inputs, { url: false }), list, tripId, bands);
     } catch (err) {
       d.log?.warn({ recipe: recipe.id, err: String(err).slice(0, 200) }, "book: the site's list of what it offers did not read");
     }

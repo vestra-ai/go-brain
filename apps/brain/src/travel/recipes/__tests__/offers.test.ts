@@ -22,6 +22,20 @@ describe("a site's own list of what it offers (hotels.search: ixigo's metadata c
     expect(list.some((o) => o.code.startsWith('DP_'))).toBe(false);
   });
 
+  it('reads the nameless price bands apart from the list, with their prices, for Go alone', async () => {
+    const bands = asOffers(await evaluate(book.get('hotels.search')!.offers!.bands!, METADATA, {}));
+    expect(bands.length).toBeGreaterThan(3);
+    expect(bands.every((b) => b.kind === 'price' && b.code.startsWith('DP_') && b.min! < b.max!)).toBe(true);
+    expect(bands).toContainEqual(expect.objectContaining({ code: 'DP_2000_2500', min: 2000, max: 2500 }));
+    // Kept with the list, never in it: the model's text of a kept list has no band.
+    const offers = createOffers({ now: () => new Date('2026-10-10T05:00:00Z') });
+    offers.keep('hotels.search', '32', 'stays in Goa', await listed(), 't_goa', bands);
+    const kept = offers.get('hotels.search', '32')!;
+    expect(kept.bands).toEqual(bands);
+    expect(kept.offers.some((o) => o.kind === 'price')).toBe(false);
+    expect(offersText(kept)).not.toContain('DP_');
+  });
+
   it("matches the names the model gives by the site's own words, whatever their case or punctuation; a name it doesn't list is not the site's", async () => {
     const list = await listed();
     // Asks nobody wrote a rule for: a pet, a whole house, 5 stars, and one ixigo has no filter for.
