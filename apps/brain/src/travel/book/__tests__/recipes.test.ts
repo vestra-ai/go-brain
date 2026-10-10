@@ -86,7 +86,7 @@ describe('hotels.search', () => {
     expect((await stays('Anjuna, Goa', [], pages(), { adults: 5 })).page).toContain('&adultCount=5&roomCount=3&');
   });
 
-  it('takes pages 1 and 2 for all of Goa or a half of it, six scrolls bringing page 2, and page 1 for an area; closes the popup; settles 550 ms', async () => {
+  it('takes pages 1 and 2 for all of Goa or a half of it with nothing filtered, six scrolls bringing page 2, and page 1 for an area or anything filtered; closes the popup; settles 550 ms', async () => {
     // ixigo's popup shows 1 s after the page mounts: closed first, looked for up to 3 s, then again once the results are in.
     const POPUP = { op: 'click', name: 'Close modal', optional: true, within_ms: 3_000 };
     // Bash's whole 20 s: ixigo sent page 1 of all of Goa with a pool at 10.2 s (staging, 8 Oct), so 12 s failed it.
@@ -96,14 +96,25 @@ describe('hotels.search', () => {
       timeoutMs: 20_000,
       settleMs: 550,
     };
-    for (const area of ['Goa', 'North Goa', 'South Goa']) expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual(two);
-    for (const area of ['Vagator', 'Anjuna', 'Candolim']) {
-      expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual({
-        capture: [{ match: SEARCH, required: true }],
-        steps: [POPUP, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
-        settleMs: 550,
-      });
-    }
+    const one = {
+      capture: [{ match: SEARCH, required: true }],
+      steps: [POPUP, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
+      settleMs: 550,
+    };
+    for (const area of ['Goa', 'North Goa', 'South Goa']) expect((await stays(area)).runs[0]!.plan, area).toEqual(two);
+    // Filtered, page 1 holds ixigo's best matches, and a filter that leaves nothing answers at once: six scrolls on an
+    // empty page waited for room to Bash's 20 s (the exam, 10 Oct).
+    for (const area of ['Goa', 'North Goa', 'South Goa']) expect((await stays(area, ['pool'])).runs[0]!.plan, `${area} with a pool`).toEqual(one);
+    for (const area of ['Vagator', 'Anjuna', 'Candolim']) expect((await stays(area, ['pool'])).runs[0]!.plan, area).toEqual(one);
+  });
+
+  // The exam, 10 Oct: Entire house and 25 price bands left no stay, and ixigo's search answered 424 (past the end of its
+  // list, page 1 too). That is an empty list, so the caller's own fallbacks run (backend.ts: the band dropped).
+  it('reads a search ixigo answered 424 as no stays, never as a page that did not send', async () => {
+    const none = [capture(SEARCH, `${SEARCH_URL}/static-metadata`, '{"data":{"filters":[]}}'), capture(SEARCH, SEARCH_URL, '{"errors":[{"message":"no data"}]}', 424)];
+    expect((await stays('Goa', ['pool'], none)).options).toEqual([]);
+    // Any other refusal is still a page that did not send its stays.
+    await expect(stays('Goa', ['pool'], [capture(SEARCH, SEARCH_URL, 'oops', 500)])).rejects.toThrow(/did not send/);
   });
 
   it('reads both pages of hotels, priced per night and per room with taxes, the whole stay for every room', async () => {

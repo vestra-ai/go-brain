@@ -517,7 +517,10 @@ export function handOver(
   pending
     .then(
       async (found) => {
-        if (found.runId && shownRuns.has(`${o.tripId}:${found.runId}`)) return;
+        // A run a card already showed for this ask (its own turn, or the head start it shared) wakes nothing. An earlier
+        // read standing in for a page that failed answers a new ask, however often it was shown: it always wakes (the exam,
+        // 10 Oct: the second stays ask got the first one's read back, already shown, and the room stayed on "On it.").
+        if (found.runId && !found.earlier && shownRuns.has(`${o.tripId}:${found.runId}`)) return;
         const a = await searchAnswer(kind, q, found, o.tripId, d);
         const lead = leftOffLead(found);
         // Something left to pick goes to the model, which picks it; so do stays with the nearest saved after too few fits,
