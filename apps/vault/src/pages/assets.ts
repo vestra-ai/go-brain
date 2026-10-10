@@ -21,6 +21,8 @@ button.big{min-height:58px;font-size:18px;margin-top:8px}
 button:disabled{opacity:.5;cursor:default}
 label{display:block;font-size:14px;color:var(--muted);margin:12px 0 6px}
 input,.field{display:block;width:100%;margin-top:6px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff;font:inherit;color:var(--ink)}
+.tick-row{display:flex;gap:10px;align-items:center;color:var(--ink);margin:16px 0}
+.tick-row input{display:inline-block;width:auto;margin:0;padding:0}
 form button{margin-top:14px}
 .list{list-style:none;padding:0;margin:0 0 6px}
 .list li{padding:10px 0;border-bottom:1px solid var(--line)}
@@ -75,7 +77,36 @@ export const VAULT_JS = `(() => {
       cardField = stripe.elements().create('card', { hidePostalCode: true });
       cardField.mount('#card-element');
     }
+    const t = r.data.travel;
+    $('t-first').value = t ? t.first_name : '';
+    $('t-last').value = t ? t.last_name : '';
+    $('t-gender').value = t ? t.gender : '';
+    $('t-dob').value = t ? t.dob : '';
+    $('t-allow').checked = !!t;
+    show('travel-delete', !!t);
+    say('travel-used', t && t.last_used ? t.last_used : '');
+    show('travel-used', !!(t && t.last_used));
     if (r.data.start === 'add_card') $('card-form').scrollIntoView();
+    if (r.data.start === 'add_travel') $('travel').scrollIntoView();
+  }
+
+  async function saveTravel(ev) {
+    ev.preventDefault();
+    const allow = $('t-allow').checked;
+    say('travel-msg', allow ? 'Saving' : 'Deleting');
+    const r = await api('/travel', {
+      first_name: $('t-first').value, last_name: $('t-last').value, gender: $('t-gender').value, dob: $('t-dob').value, allow,
+    });
+    if (!r.ok) { say('travel-msg', r.data.message || 'Not saved. Try again.', 'bad'); return; }
+    say('travel-msg', r.data.saved ? 'Saved.' : 'Deleted. Tick the box to save them.', 'good');
+    await home();
+  }
+
+  async function deleteTravel() {
+    const r = await api('/travel/delete', {});
+    if (!r.ok) { say('travel-msg', r.data.message || 'Not deleted. Try again.', 'bad'); return; }
+    say('travel-msg', 'Deleted.', 'good');
+    await home();
   }
 
   async function ceremony(kind, msgId) {
@@ -145,6 +176,8 @@ export const VAULT_JS = `(() => {
   if (document.body.dataset.page === 'home') {
     $('register-btn').addEventListener('click', () => ceremony('register', 'register-msg'));
     $('unlock-btn').addEventListener('click', () => ceremony('unlock', 'unlock-msg'));
+    $('travel-form').addEventListener('submit', saveTravel);
+    $('travel-delete').addEventListener('click', deleteTravel);
     $('card-form').addEventListener('submit', saveCard);
     home();
   } else {

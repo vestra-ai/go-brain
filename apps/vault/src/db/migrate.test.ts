@@ -21,7 +21,7 @@ describe('vault migrations', () => {
       [schema],
     );
     expect(r.rows.map((x) => x.table_name)).toEqual([
-      'cards', 'challenges', 'internal_seen', 'links', 'passkeys', 'pay_requests',
+      'cards', 'challenges', 'internal_seen', 'links', 'passkeys', 'pay_requests', 'travel_details',
       'unlock_log', 'used_approvals', 'vault_migrations', 'vault_people', 'voided_approvals',
     ]);
   });
@@ -37,6 +37,8 @@ describe('vault migrations', () => {
     );
     const names = r.rows.map((x) => x.column_name);
     expect(names.filter((n) => /pan|card_number|number|cvv|cvc|password|secret/.test(n))).toEqual([]);
+    // A person's travel details are sealed whole (0008): no column holds a name, a gender or a date of birth.
+    expect(names.filter((n) => /first_name|last_name|gender|dob|birth/.test(n))).toEqual([]);
   });
 
   it('keeps last4 to four digits, so a full number cannot be stored there', async () => {

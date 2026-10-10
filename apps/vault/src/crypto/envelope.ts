@@ -10,8 +10,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 const VERSION = 1;
 const MIN_LENGTH = 1 + 12 + 16 + 32 + 12 + 16;
 
-/** Cards only this week (vault logins are cut, master §9). */
-export type ItemKind = 'card';
+/** Cards, and a person's travel details (vault logins are cut, master §9). */
+export type ItemKind = 'card' | 'travel';
 
 export function itemAad(personId: string, kind: ItemKind, itemId: string): Buffer {
   return Buffer.from(`go-vault|v1|${personId}|${kind}|${itemId}`, 'utf8');
