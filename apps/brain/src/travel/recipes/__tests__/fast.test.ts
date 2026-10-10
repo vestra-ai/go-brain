@@ -12,6 +12,10 @@ const read = (choice: Parameters<typeof readFastAsk>[0], text: string, more: Par
 describe('the slots of an ixigo ask beyond the searches', () => {
   it('has a reader for every choice Jev can pick', () => {
     expect(Object.keys(FAST_ASKS).sort()).toEqual([...FAST_CHOICES].sort());
+    // Each kind names the recipe its read runs: the turn's hint names it when the words don't give its slots.
+    expect(FAST_ASKS.boarding_stations.recipe).toBe('trains.boarding_stations');
+    expect(FAST_ASKS.hotel_rooms.recipe).toBe('hotels.rooms');
+    expect(read('train_status', 'Go 12051 abhi kahan chal rahi hai?')?.recipe).toBe(FAST_ASKS.train_status.recipe);
   });
 
   it("reads a train by its 5-digit number, for today's run or its timetable", () => {

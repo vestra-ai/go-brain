@@ -25,7 +25,9 @@ import { withoutPhotos } from '../photos.js';
 import type { ResultsStore } from '../results.js';
 import { answerItself, handOver, searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
+import { isSearchChoice, type SearchChoice } from '../../reflex/questions.js';
 import type { EarlyStart } from './early.js';
+import { FAST_ASKS } from './fast.js';
 
 /**
  * The longest a turn's context waits for searches started early, all together: a beat, for one already answering from
@@ -241,6 +243,51 @@ export function earlyReadNow(d: EarlyReadNowDeps): NowProvider {
         }
       }
       return blocks.length ? blocks.join('\n\n') : null;
+    },
+  };
+}
+
+export interface JevPickNowDeps {
+  early: Pick<EarlyStart, 'pickFor' | 'readFor' | 'searchFor'>;
+  /** The ixigo tool reads this recipe here: it is in the book, and Go searches ixigo.com itself. */
+  canRead: (recipe: string) => boolean;
+}
+
+/** The tool that searches each search kind. */
+const SEARCH_TOOL: Record<SearchChoice, string> = { flights: 'search_flights', stays: 'search_stays', trains: 'search_trains', buses: 'search_buses' };
+
+/**
+ * Jev's sure pick for a line the turn woke for, when nothing started early for it (its slots weren't in the words, or it
+ * wasn't said to Go): the tool that reads it on ixigo, so the answer comes from ixigo, never from memory. EXAM, 10 Oct:
+ * boarding points, stops, tatkal and an offer's terms were answered from memory, and Jev had read #14 as trains at 1.00.
+ * A kind no recipe reads yet is said to be general advice.
+ */
+export function jevPickNow(d: JevPickNowDeps): NowProvider {
+  return {
+    name: 'ixigo can read',
+    order: 37,
+    async render(tripId, wake) {
+      const lines: string[] = [];
+      for (const item of wake) {
+        if (item.kind !== 'message') continue;
+        const p = item.payload as { messageId?: string; seq?: number };
+        if (!p.messageId) continue;
+        const pick = d.early.pickFor(tripId, p.messageId);
+        // A read or a search that started early has its own block (earlyReadNow, earlySearchNow).
+        if (!pick || d.early.readFor(tripId, p.messageId) || d.early.searchFor(tripId, p.messageId)) continue;
+        const which = p.seq !== undefined ? `#${p.seq}` : 'the message you woke for';
+        if (isSearchChoice(pick)) {
+          lines.push(`ixigo can read ${which}: ${SEARCH_TOOL[pick]} searches it. Search there, asking first for the one thing missing if one is; never answer it from memory.`);
+          continue;
+        }
+        const recipe = FAST_ASKS[pick].recipe;
+        lines.push(
+          d.canRead(recipe)
+            ? `ixigo can read ${which}: the ixigo tool's recipe ${recipe}. Read it there, asking first for the one thing missing if one is (which train, which stay); never answer it from memory.`
+            : `No ixigo recipe reads ${which} yet: what you say about it is from what you know, so say it is ("usually", "from what I know").`,
+        );
+      }
+      return lines.length ? lines.join('\n') : null;
     },
   };
 }

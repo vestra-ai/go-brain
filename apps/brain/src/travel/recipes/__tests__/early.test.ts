@@ -171,6 +171,16 @@ describe('the early start', () => {
     expect(w.early.asksStays('t_other', 'm_70')).toBe(false);
   });
 
+  it("keeps Jev's sure pick for each message, whether or not anything started, for the turn's hint (now.ts jevPickNow)", async () => {
+    const w = world();
+    // Not said to Go, so nothing starts; the pick is kept all the same.
+    await w.hook(msg(80, 'p_kabir', 'Jaipur se Goa koi direct train hai?'), { ...UNSURE_READ, recipe: { value: 'trains', sure: true } }, goaPack());
+    await w.hook(msg(81, 'p_arjun', '@Go can Arjun board at Nizamuddin?'), { ...UNSURE_READ, recipe: { value: 'boarding_stations', sure: true } }, goaPack());
+    await w.hook(msg(82, 'p_meher', 'haha'), UNSURE_READ, goaPack());
+    expect(['m_80', 'm_81', 'm_82'].map((id) => w.early.pickFor('t_goa', id))).toEqual(['trains', 'boarding_stations', null]);
+    expect(w.searches).toEqual([]);
+  });
+
   it('never fails the message: a search that fails is logged, and the composer searches again', async () => {
     const w = world('ixigo_web', true);
     expect(await w.hook(msg(47, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack())).toEqual({ dueNow: true });
