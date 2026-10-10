@@ -58,6 +58,8 @@ describe('registerTravel', () => {
     expect([...lb.taps.handlers.keys()].sort()).toEqual([
       'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/see_on_ixigo',
       'options/add_budget', 'options/book_mine', 'options/change', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
+      // The rooms card's pick (REV4 B5, rooms-card.ts).
+      'rooms/pick',
     ]);
     expect(lb.context.wakes.has('tap')).toBe(true);
     // A search that outlived its turn wakes Go with its options.
