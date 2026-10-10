@@ -79,7 +79,7 @@ describe('startProactive', () => {
     expect(reg.turnRules[0]!([item])?.tools).not.toContain('call_business');
     const wakeText = reg.wakes.get('watch')!(item, goaPack());
     expect(wakeText).toContain('Simulated for the demo');
-    expect(wakeText).toContain('running 120 minutes late');
+    expect(wakeText).toContain('running 2 hours late');
 
     const post = reg.tools.find((t) => t.name === 'post_notice')!;
     const ctx = turnCtx({ link, pack: goaPack(), wake: [item] });

@@ -7,6 +7,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Brain, RegisterLane } from '../app.js';
 import { newUlid } from '../door/ulid.js';
+import { DEFAULT_TZ, isValidTz, zonedTime } from '../proactive/clock.js';
 import type { RecipeStat } from '../travel/book/engine.js';
 import type { TripWatches } from '../travel/recipe-watches.js';
 import { checkAll, checkComputer, defaultProbes, type Probe, type ProbeResult } from './health.js';
@@ -56,7 +57,18 @@ export const FireForm = z.object({
   label: z.string().min(1).max(80).default('IndiGo 6E 2134'),
   delay_minutes: z.coerce.number().int().min(0).max(1440).default(120),
   note: z.string().min(1).max(200).optional(),
+  /** When the flight now lands, in the trip's own time (the form's date and time), so the notice can say it. */
+  lands_at: z.string().regex(/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/, 'a date and time, like 2026-11-06T22:45').optional(),
 });
+
+/** The form's "now lands at", a wall-clock time in the trip's zone, as the instant the watch carries (arrive_at). */
+async function landsAtInstant(brain: Pick<Brain, 'pool'>, tripId: string, local: string): Promise<string> {
+  const { rows } = await brain.pool.query<{ tz: string | null }>('select tz from trips where trip_id = $1', [tripId]);
+  const tz = rows[0]?.tz && isValidTz(rows[0].tz) ? rows[0].tz : DEFAULT_TZ;
+  const [day, time] = local.split('T') as [string, string];
+  const [hour, minute] = time.split(':').map(Number) as [number, number];
+  return zonedTime(day, hour, minute, tz).toISOString();
+}
 const TripForm = z.object({ trip_id: z.string().min(1).max(64) });
 
 type Query = { trip?: string; note?: string };
@@ -189,6 +201,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
           const message = `Watches are ${NOT_DEPLOYED}.`;
           return answer(req, reply, 404, err('not_found', message), message, f.trip_id);
         }
+        const arriveAt = f.lands_at ? await landsAtInstant(brain, f.trip_id, f.lands_at) : null;
         // P6's route, in process, with the demo's body: the same bar as any watch, and its card says "Simulated for the demo".
         const res = await brain.http.inject({
           method: 'POST',
@@ -196,7 +209,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
           headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
           payload: {
             trip_id: f.trip_id, label: f.label, person_ids: [f.person_id], delay_minutes: f.delay_minutes,
-            ...(f.note ? { note: f.note } : {}), importance: 1, urgency: 1, reset_budget: true, force: true,
+            ...(f.note ? { note: f.note } : {}), ...(arriveAt ? { arrive_at: arriveAt } : {}), importance: 1, urgency: 1, reset_budget: true, force: true,
           },
         });
         let out: unknown;

@@ -245,6 +245,21 @@ describe('the admin page', () => {
     expect(fired).toHaveLength(1);
   });
 
+  it('passes "now lands at", in the trip\'s own time, as the watch\'s arrive_at; an empty field passes none', async () => {
+    fired.length = 0;
+    const res = await built.brain.http.inject({
+      method: 'POST', url: '/admin/fire-watch', headers: FORM,
+      payload: 'trip_id=t_goa&person_id=p_arjun&label=IndiGo+6E+2134&delay_minutes=120&lands_at=2026-11-06T22%3A45&note=Cab+at+9+pm',
+    });
+    expect(res.statusCode).toBe(303);
+    // 10:45 pm in Goa (the trip's zone, India) is 17:15 UTC.
+    expect((fired[0]?.body as { arrive_at?: string }).arrive_at).toBe('2026-11-06T17:15:00.000Z');
+    await built.brain.http.inject({ method: 'POST', url: '/admin/fire-watch', headers: FORM, payload: 'trip_id=t_goa&person_id=p_arjun&lands_at=' });
+    expect(fired[1]?.body).not.toHaveProperty('arrive_at');
+    const bad = await built.brain.http.inject({ method: 'POST', url: '/admin/fire-watch', headers: AUTH, payload: { trip_id: 't_goa', person_id: 'p_arjun', lands_at: '10:45 pm' } });
+    expect(bad.statusCode).toBe(422);
+  });
+
   it('stops every running job for the trip through brain.tasks', async () => {
     const res = await built.brain.http.inject({ method: 'POST', url: '/admin/stop-jobs', headers: AUTH, payload: { trip_id: 't_goa' } });
     expect(res.json()).toEqual({ ok: true, stopped: ['gt_villa', 'gt_cab'] });
