@@ -219,7 +219,9 @@ describe('forget_person (master §10 item 5)', () => {
     await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_manali', topic: 'flights', text: 'Dislikes early flights', messageId: null, source: 'join' }));
     expect(await plain.forget_person({ person_id: 'p_meher', trip_id: 't_goa' }, meta)).toMatchObject({ remaining_facts: 0 });
     expect(await forgotElsewhere(db.pool, 't_manali')).toEqual([]);
-    // Carry-over on: the other trip is marked, and its turns hear it under "right now", naming nobody's facts.
+    // Carry-over on: the other trip is marked, and its turns hear it under "right now", naming nobody's facts. (An
+    // earlier test deleted her Manali food fact; a Manali seat answer is hers to keep.)
+    await saveFact(db.pool, fact({ personId: 'p_priya', tripId: 't_manali', topic: 'seats', text: 'Aisle seat', messageId: null, source: 'join' }));
     await plain.update_person({ person_id: 'p_priya', carry_over: true }, meta);
     expect(await plain.forget_person({ person_id: 'p_priya', trip_id: 't_goa' }, meta)).toMatchObject({ remaining_facts: 0 });
     expect(await forgotElsewhere(db.pool, 't_manali')).toEqual(['p_priya']);
