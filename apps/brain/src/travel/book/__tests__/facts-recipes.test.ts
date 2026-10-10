@@ -118,6 +118,14 @@ describe("a stay's own page", () => {
       cancellation: 'Free Cancellation till 05 Nov 11:59 PM (Room With Free Cancellation)',
       free_cancellation_until: '2026-11-05T23:59:00',
     });
+    // REV4 B3, B4: its photos with their labels, and each kind of room with its beds and its cheapest rate a night with
+    // taxes (₹2,775 + ₹375; ₹5,447 + ₹736), for the option's photos, room types and price range.
+    expect((stay['photo_list'] as unknown[])[0]).toEqual({ url: expect.stringMatching(/^https:\/\/q-xx\.bstatic\.com\//), label: 'Exterior view' });
+    expect(stay['photo_list']).toHaveLength(4);
+    expect(stay['room_types']).toEqual([
+      { room_type_id: 'rt_1422089395', label: 'Family Room', sleeps: 2, night_minor: 315_000 },
+      { room_type_id: 'rt_1422089396', label: 'Executive Suite', sleeps: 2, night_minor: 618_300 },
+    ]);
   });
 
   it("hotels.details answers without the cancellation when the page's rooms call hasn't come", async () => {

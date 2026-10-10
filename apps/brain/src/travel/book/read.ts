@@ -199,12 +199,15 @@ async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<
   return rows;
 }
 
-/** A row of facts as Go may say it: plain values, short text, short lists, nothing else. */
+/**
+ * A row of facts as Go may say it: plain values, short text, short lists, nothing else. A list's entries may be small
+ * objects of plain values (a photo's url and label, 10 Oct B3), never anything deeper.
+ */
 function plainFacts(v: unknown, depth = 0): unknown {
   if (typeof v === 'string') return v.length > 300 ? `${v.slice(0, 300)}…` : v;
   if (typeof v === 'number' || typeof v === 'boolean') return v;
   if (Array.isArray(v) && depth < 2) return v.slice(0, 40).map((x) => plainFacts(x, depth + 1)).filter((x) => x !== undefined);
-  if (v && typeof v === 'object' && depth < 2) {
+  if (v && typeof v === 'object' && depth < 3) {
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plainFacts(x, depth + 1)]).filter(([, x]) => x !== undefined));
   }
   return undefined;
