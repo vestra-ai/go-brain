@@ -179,7 +179,8 @@ const Value = z.union([z.string().min(1).max(120), z.number()]);
 export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs: Record<string, string | number> }> | null {
   const recipes = toolRecipes(d.book);
   if (recipes.length === 0) return null;
-  const ids = [...recipes.map((r) => r.id), KEPT] as [string, ...string[]];
+  // The tool's own option.facts first, then the book's: a tuple with one at least, as z.enum takes it.
+  const ids: [string, ...string[]] = [KEPT, ...recipes.map((r) => r.id)];
   /**
    * "r_ab12#2": option 2 of that saved search, in this trip; "c_opt_ab12#1": option 1 on that options card, as the room
    * sees it numbered (the chat shows each card's options by number). Its own ixigo page, or null.
