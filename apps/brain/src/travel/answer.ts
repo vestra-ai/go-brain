@@ -227,7 +227,9 @@ export function linkLine(kind: TravelKind, q: TravelQuery, who: string | null): 
   const noun = { flights: 'Flights', trains: 'Trains', buses: 'Buses', stays: 'Stays' }[kind];
   const where = kind === 'stays' ? ` in ${titleWords(q.area ?? q.to ?? '')}` : ` ${titleWords(q.from ?? '')} to ${titleWords(q.to ?? '')}`;
   const set = [...(who ? [`set ${who}`] : []), ...asked(kind, q)];
-  return `${noun}${where}${q.date ? ` on ${dayText(q.date)}` : ''} are on ixigo${set.length ? `, ${set.join(', ')}` : ''}: book there, and tell me which one so I can note it for the group.`;
+  // What the link can't set (wants): the group picks it on ixigo's page.
+  const pick = q.wants?.length ? ` (for ${listOf(q.wants)}, pick on the page)` : '';
+  return `${noun}${where}${q.date ? ` on ${dayText(q.date)}` : ''} are on ixigo${set.length ? `, ${set.join(', ')}` : ''}${pick}: book there, and tell me which one so I can note it for the group.`;
 }
 
 /**
