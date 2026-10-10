@@ -36,9 +36,15 @@ let:
     )
   landing: |
     arrive_before ? $join($windows[from < $$.arrive_before and to > "00:00"].name, ",")
+  # ixigo's own filters the ask named ($site, "param:value" codes from offers below), as the page's own params
+  # ("airlines=6E,AI&refundable=true"), so the stage shows them ticked on ixigo's page.
+  site_params: |
+    $site ? $join($distinct($site.$substringBefore($, ":")).(
+      $k := $; $k & "=" & $join($site[$substringBefore($, ":") = $k].$substringAfter($, ":"), ",")
+    ), "&")
   # What people asked for, in ixigo's own params, and the cheapest first (the param ixigo's "Price / Low to High" writes).
   params: |
-    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), "sort_type=cheapest"]), "&")
+    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), $site_params, "sort_type=cheapest"]), "&")
 # ixigo's results page; its own call, /flights/v2/search/stream, is a stream of server-sent events whose one data line holds
 # every fare (staging, 9 Oct: 145 for Delhi to Goa, 313 KB). Its inputs, conditions and page are flights.search's, the
 # link that stands in for this one when ixigo refuses our boxes' shared address (403 or 429 under a burst, 9 Oct).
@@ -46,13 +52,61 @@ page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&r
 capture:
   - { match: /flights/v2/search/stream, max_bytes: 1048576 }
 read:
-  rows: { from: /flights/v2/search/stream, format: sse, list: data.flightJourneys.flightFare, unique: flightKeys }
+  rows:
+    from: /flights/v2/search/stream
+    format: sse
+    list: data.flightJourneys.flightFare
+    unique: flightKeys
+    # ixigo's own filters the ask named ($site): ixigo applies them in its page, never in its stream, which holds every
+    # fare whatever the page shows, so Go applies them to the rows. Any value of one param will do (ixigo's "6E,AI"), and
+    # every param named must hold.
+    where: |
+      (
+        $by := function($key) { $site[$substringBefore($, ":") = $key].$substringAfter($, ":") };
+        $any := function($key, $have) { $count($by($key)) = 0 or $count($by($key)[$ in $have]) > 0 };
+        $stops := $number(flightDetails[0].stop);
+        $any("stops", $string($stops >= 2 ? 2 : $stops))
+          and $any("airlines", flightFilter[0].airline)
+          and $any("departureAirports", flightDetails[0].origin)
+          and $any("arrivalAirports", flightDetails[-1].destination)
+          and $any("layoverAirports", flightFilter[0].layoverAirports)
+          and $any("baggage", fares.fareType)
+          and ($count($by("freeMeal")) = 0 or isFreeMealAvailable = true)
+          and ($count($by("refundable")) = 0 or refundableType != "NON_REFUNDABLE")
+      )
   also:
     # Every event's airports as one (a stream may send its flights over several events).
     airports: { from: /flights/v2/search/stream, format: sse, value: $merge(data.airportDetails) }
 # One flights page across every trip at most every 20 s, and none for 10 minutes after one ixigo refused: flights.search's
 # link answers in its place (recipes/backend.ts).
 pace: { gap_seconds: 20, quiet_minutes: 10 }
+# What ixigo's results page offers to narrow its flights, from its own stream's last event (the 10 Oct atlas): stops,
+# airlines, the airports each end may use, the cities a change of plane may be in (abroad), bags, a free meal and hiding
+# non-refundable fares, each as the page's own param and value ("airlines:6E"). Kept per route for the model, which maps
+# the ask onto it by name (site_filters); applied above (read.rows.where, params).
+offers:
+  from: /flights/v2/search/stream
+  format: sse
+  list: |
+    (
+      $e := ($type($) = "array" ? $[-1] : $).data;
+      $t := $e.tripFilter;
+      $j := $e.flightJourneys[0].journeyFilter[0];
+      $place := function($code) { $lookup($e.airportDetails, $code) };
+      $stop := {"Non-Stop": "0", "1 Stop": "1", "2+ Stops": "2"};
+      [
+        [$t.stopsFilter[count > 0 and $lookup($stop, stopText)].{ "kind": "filter", "group": "Stops", "name": stopText, "code": "stops:" & $lookup($stop, stopText) }],
+        [$each($t.airlineMap, function($v, $k) { { "kind": "filter", "group": "Airlines", "name": $v.name, "code": "airlines:" & $k } })],
+        [$j.departureAirports.{ "kind": "filter", "group": "Departure airport", "name": airportCode & " " & $place(airportCode).airportName, "code": "departureAirports:" & airportCode }],
+        [$j.arrivalAirports.{ "kind": "filter", "group": "Arrival airport", "name": airportCode & " " & $place(airportCode).airportName, "code": "arrivalAirports:" & airportCode }],
+        [$j.layoverAirports.{ "kind": "filter", "group": "Layover city", "name": ($place(airportCode).city ? $place(airportCode).city : airportCode) & " (" & airportCode & ")", "code": "layoverAirports:" & airportCode }],
+        [$t.baggageFilter[available = true].{ "kind": "filter", "group": "Baggage", "name": text, "code": "baggage:" & value }],
+        $t.freeMealsFilter.available = true ? { "kind": "filter", "group": "Meal", "name": $t.freeMealsFilter.text, "code": "freeMeal:true" },
+        $t.nonRefundableFilter.available = true ? { "kind": "filter", "group": "Refund", "name": $t.nonRefundableFilter.text, "code": "refundable:true" }
+      ]
+    )
+  for: "{from.code}-{to.code}"
+  about: "flights {from.code} to {to.code}"
 answer:
   as: options
   kind: flight

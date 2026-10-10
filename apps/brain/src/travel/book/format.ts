@@ -163,16 +163,21 @@ export const RecipeFile = z
      * What the page offers to narrow and order its results, as the site itself lists them, read at run time from a call
      * the page makes (from) and never written here: list turns that call into rows of { kind: filter | sort, group, name,
      * code }; for names what the list is kept for (a place), about says it in words. A run's site filters and sort, by
-     * their names on the list, are bound as $site (their codes) and $site_sort (recipes/offers.ts).
+     * their names on the list, are bound as $site (their codes) and $site_sort (recipes/offers.ts). format: the call's, as
+     * read.rows takes it (an event stream's list is read from its events, flights').
      */
-    offers: z.object({ from: z.string().min(1), list: Expr, for: z.string().min(1), about: z.string().min(1) }).optional(),
+    offers: z
+      .object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, for: z.string().min(1), about: z.string().min(1) })
+      .optional(),
     /** What the answer reads: the rows, from one captured call; other calls by name. */
     read: z
       .object({
         /** unique: a row's key, when a call came back more than once (pages 1 and 2) and a row may repeat. */
         /** format: json, or a Next.js flight payload (rsc), a Next.js page with one in its scripts (next_html), or an older
          *  Next.js page with its props in its __NEXT_DATA__ script (next_data). */
-        rows: z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional() }),
+        /** where: the rows kept, true for each; for a site that filters in the page, not in its call (ixigo's flights, whose
+         *  stream holds every fare whatever the page's filters), its filters applied here, from $site. */
+        rows: z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional(), where: Expr.optional() }),
         also: z
           .record(z.string().regex(/^[a-z][a-z_]*$/), z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), value: Expr }))
           .optional(),

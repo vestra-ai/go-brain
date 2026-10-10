@@ -164,7 +164,8 @@ export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<
         depart_after: q.departAfter, depart_before: q.departBefore, arrive_before: q.arriveBefore, max_price: q.maxPriceMinor,
       },
       conditions,
-      site: NO_SITE,
+      // ixigo's own flight filters, by their names on its list for the route: Go applies them to the stream's flights.
+      site: { filters: [...(q.siteFilters ?? [])] },
     };
   }
   return { given: { from: q.from, to: q.to, date: q.date }, conditions, site: NO_SITE };
