@@ -10,7 +10,7 @@
  */
 import type { Switches } from '../admin/switches.js';
 import { localDay } from '../proactive/clock.js';
-import { ixigoPage } from './cards.js';
+import { ixigoPage, stayPayWords } from './cards.js';
 import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
 import { applyConstraints, missedByAll, nearest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
@@ -29,7 +29,7 @@ export interface TravelLayerDeps {
   ixigo: TravelBackend | null;
   /** ixigo.com through the recipes (TRAVEL_MODE ixigo_web). */
   ixigoWeb?: TravelBackend | null;
-  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor' | 'placeOf'>>;
+  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor' | 'placeOf' | 'get'>>;
   /** Today (YYYY-MM-DD) in the trip's time zone. Default: India's. */
   today?: (tripId: string | null) => Promise<string>;
   simulate?: NonNullable<Travel['simulate']>;
@@ -195,6 +195,12 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
         offerId, title: o.title, priceMinor: o.kind === 'stay' ? o.totalMinor : (o.totalMinor ?? o.priceMinor), currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl),
         ...(day ? { day } : {}), ...(past ? { past: true as const } : {}),
       };
+    },
+    async payWords(optionId) {
+      const o = await d.results.offer(optionId);
+      if (!o || o.kind !== 'stay' || !d.results.get) return null;
+      const stay = (await d.results.get(o.tripId, o.resultsId))?.options[o.n - 1];
+      return stay ? stayPayWords(stay) : null;
     },
     ...(d.webStays ? { prepare: d.webStays.prepare } : {}),
     ...(d.simulate ? { simulate: d.simulate } : {}),

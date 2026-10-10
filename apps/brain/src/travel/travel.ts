@@ -242,6 +242,11 @@ export interface Travel {
     /** The check-in or departure day (YYYY-MM-DD) when Go knows it, and past when that day is before today in the trip's time zone. */
     day?: string | null; past?: true;
   } | null>;
+  /**
+   * A stay as its payment names it beside the amount ("Anjuna: 3 nights (₹12,800 a night)", cards.ts stayPayWords), from
+   * the stay as its search saved it; null for anything else, or an option Go never showed.
+   */
+  payWords?(optionId: string): Promise<string | null>;
   /** The option's own name, place and area, for saving a stay or place a vote picked (composer/room-tools.ts). */
   placeOf?(optionId: string): Promise<OptionPlace | null>;
   /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
-import { arrivalWords, buildFlightsLinkCard, buildOptionsCard, clip, daysLater, formatClock, formatInr, ixigoPage, localClock, plain, subtitleFor } from '../cards.js';
+import { arrivalWords, buildFlightsLinkCard, buildOptionsCard, clip, daysLater, formatClock, formatInr, ixigoPage, localClock, plain, stayLine, stayPayWords, subtitleFor } from '../cards.js';
 import type { ResultOption } from '../results.js';
 
 const flight = (title: string, dep: string, arr: string, price: number): ResultOption => ({
@@ -109,6 +109,31 @@ describe('the options card', () => {
     // A flight keeps its own price and note.
     expect(buildOptionsCard({ cardId: 'c_f2', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: [picks[0]!] }).fallback_text).toBe('1 flight: Flights, from ₹5,920 per person');
     expect(buildOptionsCard({ cardId: 'c_f', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: [picks[0]!] }).options[0]).toMatchObject({ price_minor: 592000, price_note: 'per person' });
+  });
+
+  // The lead, 10 Oct: the pay card's "Paid ₹38,400 … ₹12,800 per night" read as if ₹38,400 were a night's.
+  it('says a stay for its vote and payment as the whole stay first, the night in brackets', () => {
+    const villa: ResultOption = {
+      kind: 'stay', title: 'Lotus Villas', priceMinor: 1_197_200, totalMinor: 7_183_200, currency: 'INR', priceNote: 'per night, per room', highlights: [],
+      facts: { nights: 3, rooms: 2, guests: 5, area: 'Candolim' },
+    };
+    expect(stayLine(villa)).toBe('Candolim, ₹71,832 for 3 nights, 2 rooms (₹11,972 a room a night), about ₹14,400 each');
+    expect(stayLine({ ...villa, priceMinor: 1_280_000, totalMinor: 3_840_000, facts: { nights: 3, area: 'Anjuna' } })).toBe('Anjuna, ₹38,400 for 3 nights (₹12,800 a night)');
+    // No whole stay: what its card says.
+    expect(stayLine({ kind: 'stay', title: 'Casa Lua', priceMinor: 1_500_000, priceNote: 'per night', highlights: [], facts: { area: 'Assagao' } })).toBe('Assagao, ₹15,000 per night');
+  });
+
+  // The lead, 10 Oct: "Paid ₹38,400 … ₹38,400 for 3 nights" said the amount twice. The pay card says the amount; its words
+  // say what it covers and the night.
+  it('names a stay for its payment by what it covers and its night, never the amount the pay card already says', () => {
+    const villa: ResultOption = {
+      kind: 'stay', title: 'Lotus Villas', priceMinor: 1_197_200, totalMinor: 7_183_200, currency: 'INR', priceNote: 'per night, per room', highlights: [],
+      facts: { nights: 3, rooms: 2, guests: 5, area: 'Candolim' },
+    };
+    expect(stayPayWords(villa)).toBe('Candolim: 3 nights, 2 rooms (₹11,972 a room a night)');
+    expect(stayPayWords({ ...villa, priceMinor: 1_280_000, totalMinor: 3_840_000, facts: { nights: 3, area: 'Anjuna' } })).toBe('Anjuna: 3 nights (₹12,800 a night)');
+    expect(stayPayWords({ ...villa, facts: { area: 'Assagao' } })).toBe('Assagao: ₹11,972 a night');
+    expect(stayPayWords({ kind: 'stay', title: 'Somewhere', highlights: [], facts: {} })).toBeNull();
   });
 
   // The exam, 10 Oct (#5): a stays card for five said "from ₹621 per night, per room, IXIFIRST applied".
