@@ -34,6 +34,11 @@ export const UpdateTrip = z
     stay: z.string().max(60).nullish(),
     /** Replaces the whole itinerary. */
     itinerary: z.array(Day).max(30).nullish(),
+    /**
+     * 1.1: the group's budget per person, in the trip's currency, when the group settled one in the chat. Go cannot
+     * clear it: a person clears it in the App.
+     */
+    budget_per_person_minor: PositiveAmountMinor.nullish(),
   })
   .meta({ id: 'UpdateTrip', description: 'Only the fields sent change.' });
 

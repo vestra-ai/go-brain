@@ -77,6 +77,7 @@ class BudgetSummary(BaseModel):
     lowest: BudgetBand | None = None
     answered: Annotated[int, Field(ge=0)]
     of: Annotated[int, Field(ge=0)]
+    per_person_minor: int | None = None
 
 
 class CardAction(BaseModel):
@@ -1151,7 +1152,7 @@ class BookingChanged(BaseModel):
 
 class ExpenseChangedData(BaseModel):
     expense: Expense
-    change: Literal["added", "removed", "approved", "disputed"]
+    change: Literal["added", "removed", "updated", "approved", "disputed"]
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
     """
     Who did it: a person, Go, or the Server itself (system).
@@ -1161,7 +1162,7 @@ class ExpenseChangedData(BaseModel):
 
 class ExpenseChanged(BaseModel):
     """
-    An expense was added or removed, or (1.1) someone it is split between approved or disputed it.
+    An expense was added, removed, or (1.1) changed.
     """
 
     event_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -1182,7 +1183,7 @@ class SettlementRecordedData(BaseModel):
 
 class SettlementRecorded(BaseModel):
     """
-    1.1: someone paid someone back, and the one paid confirmed it. Only confirmed settlements are sent.
+    1.1: someone recorded paying someone back. It counts at once, so its status is always confirmed.
     """
 
     event_id: Annotated[str, Field(max_length=64, min_length=1)]
@@ -1275,6 +1276,7 @@ class UpdateTrip(BaseModel):
     vibe: list[str] | None = None
     stay: str | None = None
     itinerary: list[Day] | None = None
+    budget_per_person_minor: int | None = None
 
 
 class OpenDecision(BaseModel):

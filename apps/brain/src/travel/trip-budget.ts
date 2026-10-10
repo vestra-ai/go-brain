@@ -1,7 +1,9 @@
 /**
  * The trip's budget, once the group decides one (Keshav, 9 Oct: "if users decide the budget it should stick to that").
- * Decided in the chat ("let's keep it under 20k each", kept with set_budget on the group's word); the App's budget answers
- * reach the turn on their own line (composer/trip-now.ts). It holds until the group changes it.
+ * Since 10 Oct (the Server team's GO-TEAM-ASKS-REV4, A3 and B1) a trip has one budget per person, the group's, which the
+ * App holds: set there by a person, or by Go when the group settles one in the chat (set_budget writes it with
+ * update_trip). Go keeps a chat budget itself only when the App can't hold it: one for the stay or getting there only, or
+ * any on a Server before 1.1. It holds until the group changes it.
  *
  * Strong context, never a filter (Keshav, 9 Oct: "no enforcement, rather it should be naturally decided"): "Right now"
  * carries it every turn, and Go searches and picks with it in mind (composer/rules.ts), mostly within it, a standout a
@@ -13,6 +15,9 @@ import { z } from 'zod';
 import type * as C from '@go/contract';
 import type { NowProvider } from '../composer/context.js';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
+import type { Log } from '../log.js';
+import { reactOnce } from '../memory/reactions.js';
+import { saveTrip } from '../trips/save-trip.js';
 
 /** What a budget is for: the stay, getting there and back, or everything. */
 export type BudgetCovers = 'stay' | 'travel' | 'whole_trip';
@@ -21,14 +26,17 @@ export interface TripBudget {
   /** Per person, in paise. */
   perPersonMinor: number;
   covers: BudgetCovers;
-  /** chat: the group said it; app: the lowest band of the App's budget answers. */
-  source: 'chat' | 'app';
+  /**
+   * chat: the group said it and Go keeps it; group: the group's budget the App holds (1.1, for the whole trip); app: the
+   * lowest band of the App's budget answers (a Server before 1.1).
+   */
+  source: 'chat' | 'group' | 'app';
   /** The message the group decided it in (chat only). */
   messageId: string | null;
 }
 
 export interface TripBudgets {
-  /** The decided budget: the chat's, else the App's lowest band (its top), else null. */
+  /** The decided budget: the chat's Go keeps, else the group's in the App, else the App's lowest band (its top), else null. */
   get(tripId: string, trip: Pick<C.TripSnapshot, 'budget'>): Promise<TripBudget | null>;
   set(tripId: string, b: { perPersonMinor: number; covers: BudgetCovers; messageId: string }): Promise<void>;
   clear(tripId: string): Promise<void>;
@@ -42,8 +50,13 @@ export function createTripBudgets(d: { pool: Pool; now: () => Date }): TripBudge
         [tripId],
       );
       const row = r.rows[0];
-      if (row) return { perPersonMinor: Number(row.per_person_minor), covers: row.covers, source: 'chat', messageId: row.message_id };
-      // The App's answers: per person, stay plus food, flights separate. An open top band ("25k+") caps nothing.
+      const group = trip.budget.per_person_minor;
+      // A whole-trip budget Go kept itself yields to the App's: the App holds the trip's budget once its Server can (1.1).
+      if (row && !(group && row.covers === 'whole_trip')) {
+        return { perPersonMinor: Number(row.per_person_minor), covers: row.covers, source: 'chat', messageId: row.message_id };
+      }
+      if (group) return { perPersonMinor: group, covers: 'whole_trip', source: 'group', messageId: null };
+      // A Server before 1.1, the App's answers: per person, stay plus food, flights separate. An open top band ("25k+") caps nothing.
       const top = trip.budget.lowest?.max_minor;
       return top ? { perPersonMinor: top, covers: 'stay', source: 'app', messageId: null } : null;
     },
@@ -70,17 +83,30 @@ export function budgetWords(b: TripBudget): string {
   return `up to ${rupees(b.perPersonMinor)} per person for ${what}`;
 }
 
-/** "Right now": the decided budget, and that it holds. */
+/**
+ * The budget a head that picks ixigo's own price bands for a stays search (recipes/backend.ts): one the chat set for the
+ * stay, or the App's (the group's one budget, or before 1.1 its lowest band), as before 1.1. A whole-trip or travel
+ * budget from the chat picks none: Go itself never drops a stay for a budget.
+ */
+export function stayCap(b: TripBudget | null): number | null {
+  return b && (b.covers === 'stay' || b.source !== 'chat') ? b.perPersonMinor : null;
+}
+
+/** "Right now": the decided budget, and that it holds. The App's lowest band before 1.1 has its own line (composer/trip-now.ts). */
 export function budgetNow(d: { budgets: TripBudgets; trip: (tripId: string) => Promise<Pick<C.TripSnapshot, 'budget'>> }): NowProvider {
   return {
     name: 'trip_budget',
     order: 12,
     async render(tripId) {
-      const b = await d.budgets.get(tripId, await d.trip(tripId));
-      if (!b || b.source !== 'chat') return null;
+      const trip = await d.trip(tripId);
+      const b = await d.budgets.get(tripId, trip);
+      if (!b || b.source === 'app') return null;
+      const group = trip.budget.per_person_minor;
+      // One for the stay or travel kept from the chat, beside the group's in the App: both hold.
+      const also = b.source === 'chat' && group ? ` The group's budget in the App is ${budgetWords({ perPersonMinor: group, covers: 'whole_trip', source: 'group', messageId: null })}.` : '';
       return (
-        `The trip's budget, decided in the chat: ${budgetWords(b)}. Search and pick with it in mind, mostly within it; ` +
-        'anything you show over it, say so plainly. It holds until the group changes it.'
+        `The trip's budget, ${b.source === 'chat' ? 'decided in the chat' : "the group's in the App"}: ${budgetWords(b)}. Search and pick with it in mind, mostly within it; ` +
+        `anything you show over it, say so plainly. It holds until the group changes it.${also}`
       );
     },
   };
@@ -101,8 +127,10 @@ const THUMBS_UP = /👍/;
 /**
  * set_budget: the group's decided budget, kept for the trip, or dropped. The group's word only: the organizer's, or two
  * people's (a 👍 on the message counts). One person's wish stays their preference (a ✅), never the trip's budget.
+ * A budget for the whole trip goes to the App (update_trip, 1.1 B1), which then holds it; Go keeps it itself only when
+ * the App didn't take it (a Server before 1.1), and keeps any other.
  */
-export function budgetTool(d: { budgets: TripBudgets }): QuickTool<z.infer<typeof SetBudgetArgs>> {
+export function budgetTool(d: { budgets: TripBudgets; pool: Pool; now: () => Date; log: Log }): QuickTool<z.infer<typeof SetBudgetArgs>> {
   return {
     name: 'set_budget',
     description:
@@ -133,16 +161,35 @@ export function budgetTool(d: { budgets: TripBudgets }): QuickTool<z.infer<typeo
       }
       if (a.clear) {
         await d.budgets.clear(ctx.tripId);
+        // Go cannot clear the App's: a person does, in the App.
+        if (ctx.pack.trip.budget.per_person_minor) {
+          return { cleared: false, tell_the_room: "Say in one short line that the budget stays in the App until someone clears it there." };
+        }
         return { cleared: true, tell_the_room: 'Say in a few words that you will stop keeping to a budget.' };
       }
       if (!a.amount_rupees) return { error: 'no_amount', note: 'Give amount_rupees, or clear.' };
       const perPerson = a.per === 'group' ? a.amount_rupees / Math.max(1, people.length) : a.amount_rupees;
-      const b = { perPersonMinor: Math.round(perPerson * 100), covers: a.covers ?? 'whole_trip', messageId: proof.at(-1)!.message_id };
-      await d.budgets.set(ctx.tripId, b);
+      const said = proof.at(-1)!;
+      const b = { perPersonMinor: Math.round(perPerson * 100), covers: a.covers ?? 'whole_trip', messageId: said.message_id };
+      if (b.covers === 'whole_trip' && (await toApp(d, ctx, b.perPersonMinor))) await d.budgets.clear(ctx.tripId);
+      else await d.budgets.set(ctx.tripId, b);
+      (ctx.outcome.noted ??= []).push(said.message_id);
+      if ((await reactOnce(d.pool, ctx.link, ctx.tripId, said, '✅')) === 'sent') ctx.outcome.reactions += 1;
       return {
         saved: budgetWords({ ...b, source: 'chat' }),
-        tell_the_room: 'Say in a few words that you will keep it in mind.',
+        tell_the_room: "Say in one short line that it's the trip's budget now.",
       };
     },
   };
+}
+
+/** The trip's budget written to the App (update_trip, 1.1 B1); false when the Server didn't take it (one before 1.1). */
+async function toApp(d: { pool: Pool; now: () => Date; log: Log }, ctx: TurnCtx, perPersonMinor: number): Promise<boolean> {
+  try {
+    const r = await saveTrip(d, { link: ctx.link, tripId: ctx.tripId, pack: ctx.pack, requestId: () => ctx.stableId('go_budget') }, { budgetPerPersonMinor: perPersonMinor });
+    return r.ok;
+  } catch (err) {
+    d.log.warn({ tripId: ctx.tripId, err: String(err).slice(0, 200) }, "budget: the App didn't take the trip's budget; Go keeps it");
+    return false;
+  }
 }
