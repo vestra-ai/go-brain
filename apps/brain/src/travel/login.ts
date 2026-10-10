@@ -363,7 +363,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     await save(row);
     const name = await nameOf(tripId, personId);
     await d.link.request('post_message', {
-      request_id: `go_login_${tripId}_${attempt}`, trip_id: tripId, text: line.replace('{name}', name), mentions: [personId], card: loginCard(row, name),
+      request_id: `go_login_${tripId}_${attempt}`, trip_id: tripId, text: line.replaceAll('{name}', name), mentions: [personId], card: loginCard(row, name),
     });
   }
 
