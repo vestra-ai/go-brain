@@ -8,6 +8,7 @@ import type { Capture, CaptureSpec, Step } from '../recipes/recipe.js';
 import { readBodyAs } from './bodies.js';
 import { evaluate } from './expr.js';
 import type { RecipeFile } from './format.js';
+import { unwrapped } from './read.js';
 import { fill } from './template.js';
 
 /** One suggestion under ixigo's box: what it shows, and the place it stands for. */
@@ -97,7 +98,22 @@ export async function readSuggestions(r: RecipeFile, captures: Capture[], words:
   } catch {
     return [];
   }
-  const listed = await evaluate(s.list, body);
+  // The body as it is first; then without what a logged-in answer may wrap it in (read.ts unwrapped), the first that gives
+  // a suggestion.
+  for (const inner of [body, ...unwrapped(body)]) {
+    const out = await suggestionsIn(s, inner);
+    if (out.length > 0) return out;
+  }
+  return [];
+}
+
+async function suggestionsIn(s: ReturnType<typeof suggestionsOf>, body: unknown): Promise<Suggestion[]> {
+  let listed: unknown;
+  try {
+    listed = await evaluate(s.list, body);
+  } catch {
+    return [];
+  }
   const out: Suggestion[] = [];
   for (const entry of Array.isArray(listed) ? listed : listed === undefined ? [] : [listed]) {
     try {

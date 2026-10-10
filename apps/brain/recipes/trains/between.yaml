@@ -36,7 +36,8 @@ fast:
         )};
         $train := $;
         $departAt := $istAt($inputs.date, departureTime);
-        $arriveAt := $istPlus($departAt, duration);
+        $duration := $num(duration);
+        $arriveAt := $istPlus($departAt, $duration);
         $name := $titleWords(trainName);
         $tatkal := availabilityCacheTatkal;
         $keys(availabilityCache).(
@@ -44,7 +45,7 @@ fast:
           $gn := $lookup($train.availabilityCache, $c);
           $tq := $lookup($tatkal, $c);
           $fare := $num($gn.fare);
-          $chance := $contains($gn.prediction, "%") ? $gn.predictionPercentage;
+          $chance := $contains($gn.prediction, "%") ? $num($gn.predictionPercentage);
           ($fare > 0) ? {
             "title": $name & " " & $train.trainNumber,
             "priceMinor": $paise($fare),
@@ -63,7 +64,7 @@ fast:
               $lookup($classWords, $c) ? $lookup($classWords, $c) : $c,
               $status($gn),
               $chance ? $string($chance) & "% chance to confirm",
-              $tq.fare ? "Tatkal: " & $status($tq) & ", " & $rupees($num($tq.fare)) : ($train.duration > 0 ? $hoursMinutes($train.duration))
+              $tq.fare ? "Tatkal: " & $status($tq) & ", " & $rupees($num($tq.fare)) : ($duration > 0 ? $hoursMinutes($duration))
             ),
             "facts": {
               "class_code": $c,
@@ -71,8 +72,8 @@ fast:
               "chance": $chance,
               "tatkal_availability": $tq.fare ? $status($tq),
               "tatkal_fare_minor": $num($tq.fare) ? $paise($num($tq.fare)),
-              "duration_min": $train.duration,
-              "rating": $train.trainRating
+              "duration_min": $duration,
+              "rating": $num($train.trainRating)
             },
             "sourceUrl": "https://www.ixigo.com/trains/" & $train.trainNumber & "?orgn=" & $train.fromStnCode & "&dstn=" & $train.toStnCode & "&departDate=" & $inputs.date & "&quota=GN"
           }
@@ -115,8 +116,8 @@ answer:
         $c := $;
         $gn := $mine[c = $c and q = "GN"][0];
         $tq := $mine[c = $c and q = "TQ"][0];
-        $fare := $gn.f ? $gn.f : $lookup($train.fares, $c).baseFare;
-        $chance := $gn.p ? $floor($gn.p + 0.5);
+        $fare := $num($gn.f) ? $num($gn.f) : $num($lookup($train.fares, $c).baseFare);
+        $chance := $num($gn.p) ? $floor($num($gn.p) + 0.5);
         $fare ? {
           "title": $name & " " & $train.attributes.number,
           "priceMinor": $paise($fare),
@@ -135,14 +136,14 @@ answer:
             $lookup($classWords, $c) ? $lookup($classWords, $c) : $c,
             $gn ? $status($gn.a),
             $chance ? $string($chance) & "% chance to confirm",
-            $tq ? "Tatkal: " & $status($tq.a) & ($tq.f ? ", " & $rupees($tq.f) : "") : ($minutes > 0 ? $hoursMinutes($minutes))
+            $tq ? "Tatkal: " & $status($tq.a) & ($num($tq.f) ? ", " & $rupees($num($tq.f)) : "") : ($minutes > 0 ? $hoursMinutes($minutes))
           ),
           "facts": {
             "class_code": $c,
             "availability": $gn ? $status($gn.a),
             "chance": $chance,
             "tatkal_availability": $tq ? $status($tq.a),
-            "tatkal_fare_minor": ($tq and $tq.f) ? $paise($tq.f),
+            "tatkal_fare_minor": ($tq and $num($tq.f)) ? $paise($num($tq.f)),
             "duration_min": $minutes > 0 ? $minutes
           },
           "sourceUrl": "https://www.ixigo.com/trains/" & $train.attributes.number & "?orgn=" & $train.board & "&dstn=" & $train.deboard & "&departDate=" & $train.departDate & "&quota=GN"

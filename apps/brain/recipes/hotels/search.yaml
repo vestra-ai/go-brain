@@ -99,7 +99,8 @@ answer:
       $nights := $nights($inputs.check_in, $inputs.check_out);
       $rooms := $booked_rooms;
       $name := $trim(name);
-      $nightly := $paise(fareDetail.displayedBaseFare + fareDetail.taxesAndFees);
+      $taxes := $num(fareDetail.taxesAndFees);
+      $nightly := $paise($num(fareDetail.displayedBaseFare) + ($taxes ? $taxes : 0));
       $offerings := $append(topOfferings[$type($) = "string"], amenities.name[$type($) = "string"]);
       $said := function($re, $code) { $code in $filters or $count($offerings[$contains($, $re)]) > 0 };
       $pool := $said(/pool/i, "FL_HF_29");
@@ -116,7 +117,7 @@ answer:
       $image := ($medium != null) ? $medium : imageInfoList[0].url;
       $photos := $texts(7, imageInfoList.(urlHigh ? urlHigh : (url ? url : urlMedium)));
       $amenities := $texts(10, topOfferings[$type($) = "string" and $not($contains($, /cancel|breakfast|pay at|book with|zero payment/i))], amenities.name);
-      ($type(hotelId) = "number" and $type($name) = "string") ? {
+      ($num(hotelId) and $type($name) = "string") ? {
         "title": $name,
         "priceMinor": $nightly,
         "totalMinor": $nightly * $nights * $rooms,
@@ -140,18 +141,18 @@ answer:
           "guests": $inputs.adults,
           "area": $area,
           "distance": $distance,
-          "stars": starRating ? starRating,
+          "stars": $num(starRating) ? $num(starRating),
           "type": $type(accommodationType) = "string" ? accommodationType,
           "rating_out_of_10": $rating10,
           "rating_word": userRatingCategory ? userRatingCategory,
-          "reviews": userRatingCount,
+          "reviews": $num(userRatingCount),
           "pool": $pool,
           "breakfast": $breakfast,
           "free_cancellation": $freeCancellation,
           "beach_minutes": $beach
         },
         "sourceUrl": "https://www.ixigo.com/hotels/" & $string(hotelId) & "/details?" & $query({
-          "locationId": $type(locationId) = "number" ? locationId : $inputs.place.location.locationId,
+          "locationId": $num(locationId) ? $num(locationId) : $inputs.place.location.locationId,
           "locationName": $inputs.place.location.locationName,
           "locationType": $inputs.place.location.locationType,
           "masterLocationId": $inputs.place.location.masterLocationId,

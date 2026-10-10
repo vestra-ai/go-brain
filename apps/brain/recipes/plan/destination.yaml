@@ -39,8 +39,8 @@ answer:
         "photo": $type($hero) = "string" ? $hero : ($type($visit) = "string" ? $visit),
         "best_time": $guide.bestTime,
         "weather_by_month": [$guide.weatherHistory.(month & ": " & $string(weatherAqi.min) & " to " & $string(weatherAqi.max) & " C. " & summary)],
-        "places_to_visit": [$widget("Places To Visit").data.(name & ($type(rating) = "number" ? " (" & $string(rating) & ")" : "") & (description ? ": " & description : ""))],
-        "places_to_eat": [$widget("Places To Eat").data.(name & ($type(rating) = "number" ? " (" & $string(rating) & ")" : ""))],
+        "places_to_visit": [$widget("Places To Visit").data.(name & ($exists($num(rating)) ? " (" & $string($num(rating)) & ")" : "") & (description ? ": " & description : ""))],
+        "places_to_eat": [$widget("Places To Eat").data.(name & ($exists($num(rating)) ? " (" & $string($num(rating)) & ")" : ""))],
         "ideas": [$widget("Ideas To Plan Your Trip").data.name]
       }
     )
