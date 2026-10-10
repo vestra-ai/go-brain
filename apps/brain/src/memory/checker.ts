@@ -10,14 +10,14 @@
  *  - a person Go was asked to forget is never proof for anything said before the forget.
  */
 import * as C from '@go/contract';
-import { isForgotten } from '../composer/fence.js';
+import { forgottenAt, isForgotten } from '../composer/fence.js';
 import type { Message } from '../door/methods.js';
 import { looksLikeMoney, saysMoneyMoved } from '../reflex/money-line.js';
 import { messageText } from '../reflex/questions.js';
 import { hasSecret } from '../reflex/secrets.js';
 import { partOfAskToGo, plainlyNamesGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
-import { normTopic, type Audience } from './facts.js';
+import { normTopic, type Audience, type FactScope } from './facts.js';
 
 export interface FactProposal {
   person_id: string;
@@ -25,6 +25,10 @@ export interface FactProposal {
   text: string;
   message_id: string;
   audience?: Audience;
+  /** Only about this trip: never carried into the person's next trips. */
+  this_trip?: boolean;
+  /** Read off the person's reaction on someone's line: a lean, never a rule. */
+  reaction?: boolean;
 }
 export interface LineProposal {
   kind: 'agreed' | 'open' | 'doing';
@@ -46,6 +50,7 @@ export interface CheckedFact {
   messageId: string;
   saidAt: Date;
   audience: Audience;
+  scope: FactScope;
 }
 export interface CheckedLine {
   kind: 'agreed' | 'open' | 'doing';
@@ -90,12 +95,23 @@ function holdsSecret(m: Message): boolean {
   return hasSecret(t) || MASKED.test(t);
 }
 
+/** What a fact read off a reaction may say: the reactor's lean, never a rule (staging, 10 Oct: 😍 and 👍 were missed). */
+const LEAN = /^(?:prefers|likes|dislikes|wants)\b/i;
+
 export function checkFact(p: FactProposal, env: CheckEnv): Checked<CheckedFact> {
   const m = env.pack.messages.find((x) => x.message_id === p.message_id);
-  if (!m || m.deleted || m.withheld || !m.text) return no('the proof is not a message in this trip');
-  if (m.author.kind !== 'person' || m.author.person_id !== p.person_id) return no('the proof is not a message by that person');
+  if (p.reaction) {
+    // The proof is the line they reacted to, and their reaction on it: a lean of theirs, never someone else's words.
+    if (!m || m.deleted || m.withheld || m.author.kind === 'system') return no('the proof is not a message in this trip');
+    if (!m.reactions.some((r) => r.person_id === p.person_id)) return no('that person did not react to that line');
+    if (!LEAN.test(p.text.trim())) return no('a reaction only shows a lean: Prefers, Likes, Dislikes or Wants');
+    if (forgottenAt(env.forgotten, p.person_id, m.seq)) return no('that person asked Go to forget this');
+  } else {
+    if (!m || m.deleted || m.withheld || !m.text) return no('the proof is not a message in this trip');
+    if (m.author.kind !== 'person' || m.author.person_id !== p.person_id) return no('the proof is not a message by that person');
+    if (isForgotten(m, env.forgotten)) return no('that person asked Go to forget this');
+  }
   if (!env.pack.trip.people.some((x) => x.person_id === p.person_id)) return no('that person is not in the trip');
-  if (isForgotten(m, env.forgotten)) return no('that person asked Go to forget this');
   if (holdsSecret(m)) return no('the message holds a secret');
   const text = cleanText(p.text, 200);
   if (!text) return no('the fact text is empty or too long');
@@ -113,6 +129,7 @@ export function checkFact(p: FactProposal, env: CheckEnv): Checked<CheckedFact> 
       messageId: m.message_id,
       saidAt: new Date(m.sent_at),
       audience: p.audience ?? 'group',
+      scope: p.this_trip ? 'trip' : 'person',
     },
   };
 }

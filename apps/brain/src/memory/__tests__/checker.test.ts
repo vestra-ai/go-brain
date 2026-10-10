@@ -33,7 +33,7 @@ describe('checkFact', () => {
     const r = checkFact({ person_id: 'p_meher', topic: 'Food', text: 'Allergic to peanuts', message_id: 'm_0130' }, env());
     expect(r).toEqual({
       ok: true,
-      value: { personId: 'p_meher', tripId: 't_goa', topic: 'food', text: 'Allergic to peanuts', messageId: 'm_0130', saidAt: new Date(messages[2]!.sent_at), audience: 'group' },
+      value: { personId: 'p_meher', tripId: 't_goa', topic: 'food', text: 'Allergic to peanuts', messageId: 'm_0130', saidAt: new Date(messages[2]!.sent_at), audience: 'group', scope: 'person' },
     });
   });
   it('refuses proof written by someone else', () => {
@@ -64,6 +64,32 @@ describe('checkFact', () => {
     expect(checkFact({ person_id: 'p_meher', topic: 'Budget', text: 'Tight this time', message_id: 'm_0201' }, e)).toEqual(refused);
     // A time is not money: a lasting fact with a number still saves.
     expect(checkFact({ person_id: 'p_meher', topic: 'leaving', text: "Can't leave before 6 pm Friday", message_id: 'm_0202' }, e).ok).toBe(true);
+  });
+
+  it('a fact about this trip alone is kept as such: never carried into the next trip', () => {
+    const said = msg(210, 'p_arjun', 'actually I can do Thursday now');
+    const e = env({ pack: packOf([...messages, said], goaTrip()) });
+    expect(checkFact({ person_id: 'p_arjun', topic: 'leaving', text: 'Can leave Thursday', message_id: 'm_0210', this_trip: true }, e)).toMatchObject({ ok: true, value: { scope: 'trip' } });
+  });
+
+  it("reads a reactor's lean off their reaction, never a rule, and never for someone who did not react (staging, 10 Oct)", () => {
+    const villa = msg(220, 'p_rahul', 'Villa Sol, ₹12k a night, private pool', { reactions: [{ emoji: '👍', person_id: 'p_meher' }, { emoji: '👍', person_id: null }] });
+    const photo = msg(221, 'p_priya', 'this vibe 😍', { reactions: [{ emoji: '😍', person_id: 'p_kabir' }] });
+    const e = env({ pack: packOf([...messages, villa, photo], goaTrip()) });
+    // Meher's 👍 on Rahul's line: her lean, with his line as the proof. The line's price is his words, not her fact.
+    expect(checkFact({ person_id: 'p_meher', topic: 'stays', text: 'Likes villas with a private pool', message_id: 'm_0220', reaction: true }, e))
+      .toMatchObject({ ok: true, value: { personId: 'p_meher', messageId: 'm_0220', text: 'Likes villas with a private pool' } });
+    expect(checkFact({ person_id: 'p_kabir', topic: 'stays', text: 'Prefers beachy places', message_id: 'm_0221', reaction: true }, e)).toMatchObject({ ok: true });
+    // Never for someone who did not react, never as a rule, never from Go's reaction.
+    expect(checkFact({ person_id: 'p_arjun', topic: 'stays', text: 'Likes pool villas', message_id: 'm_0220', reaction: true }, e))
+      .toEqual({ ok: false, reason: 'that person did not react to that line' });
+    expect(checkFact({ person_id: 'p_meher', topic: 'stays', text: 'Only pool villas', message_id: 'm_0220', reaction: true }, e))
+      .toEqual({ ok: false, reason: 'a reaction only shows a lean: Prefers, Likes, Dislikes or Wants' });
+    // Someone Go was asked to forget: no lean from their reactions either.
+    expect(checkFact({ person_id: 'p_meher', topic: 'stays', text: 'Likes pool villas', message_id: 'm_0220', reaction: true }, env({ pack: packOf([...messages, villa], goaTrip()), forgotten: new Map([['p_meher', 230]]) })))
+      .toEqual({ ok: false, reason: 'that person asked Go to forget this' });
+    // Without "reaction", Meher's fact on Rahul's line is still someone else's words.
+    expect(checkFact({ person_id: 'p_meher', topic: 'stays', text: 'Likes pool villas', message_id: 'm_0220' }, e)).toEqual({ ok: false, reason: 'the proof is not a message by that person' });
   });
 
   it('takes em dashes out of what it saves', () => {
