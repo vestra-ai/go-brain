@@ -5,7 +5,8 @@
  *
  * Strong context, never a filter (Keshav, 9 Oct: "no enforcement, rather it should be naturally decided"): "Right now"
  * carries it every turn, and Go searches and picks with it in mind (composer/rules.ts), mostly within it, a standout a
- * little over shown and said to be over. Nothing here caps a search or drops a result.
+ * little over shown and said to be over. Go never drops a result for it. A stays budget does pick ixigo's own price
+ * bands for a stays read, one band over kept, and the read without them when they hold nothing (recipes/backend.ts).
  */
 import type { Pool } from 'pg';
 import { z } from 'zod';
