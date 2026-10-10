@@ -11,9 +11,16 @@ inputs:
   train: { kind: text, optional: true, about: "the train's 5-digit number, when people asked about one train" }
 auth: none
 changes_state: false
-# The same call as trains.between. A full class may carry ixigo's alternates for it: a seat on a nearby date, from a
-# nearby station, or in two legs, each leg with its class, seats and date.
-page: /trains/search-pwa/from/{from.code}/to/{to.code}/{date|DD-MM-YYYY}
+# ixigo's train service's search (confirmtkt.com), which the newer results page makes. A full class may carry ixigo's
+# alternates for it: a seat on a nearby date, from a nearby station, or in two legs, each leg with its class, seats and
+# date. That page draws a route and date its browser already showed from its own kept answer, with no search: it skips
+# the call only when its kept source and destination codes and date equal the address's (the atlas, 10 Oct, from its
+# own code; no age limit). The codes ixigo keeps are capitals, so the address names the stations in small letters,
+# which the search takes as well: every load searches (two loads in a row on one browser, 10 Oct, both searched).
+let:
+  src: $lowercase(from.code)
+  dst: $lowercase(to.code)
+page: /trains/search-pwa/from/{$src}/to/{$dst}/{date|DD-MM-YYYY}
 fast:
   url: https://ixigotrainsapi.confirmtkt.com/api/v1/trains/search?sourceStationCode={from.code}&destinationStationCode={to.code}&addAvailabilityCache=true&excludeMultiTicketAlternates=false&excludeBoostAlternates=false&sortBy=DEFAULT&dateOfJourney={date|DD-MM-YYYY}&enableNearby=true&enableTG=true&tGPlan=ITG-A50&showTGPrediction=false&tgColor=DEFAULT&showPredictionGlobal=true&showNewAlternates=true&showNewAltText=true
 capture:
