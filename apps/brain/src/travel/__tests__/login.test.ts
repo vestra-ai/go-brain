@@ -46,6 +46,8 @@ let trips = 0;
 function world(o: {
   /** A Bash that predates desktop hand-offs (front_device): its hand-off opens the phone page however asked. */
   phoneOnly?: boolean;
+  /** The Server refusing a call of Go's (fakeLink's fail): the old login card's replace, say. */
+  linkFail?: (method: string) => Error | null;
   live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged' | 'dead' | 'quiet'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
   /** The person's browser (tasks/browsers.ts), shared by every world given the same one: one login for all their trips. */
   browser?: FakeBrowser;
@@ -53,7 +55,7 @@ function world(o: {
   trips += 1;
   const tripId = `t_login_${trips}`;
   const clock = { now: NOW };
-  const link = fakeLink();
+  const link = fakeLink(o.linkFail ? { fail: o.linkFail } : {});
   const base = goaTrip({ trip_id: tripId });
   const trip = goaTrip({ trip_id: tripId, people: base.people.map((p) => ({ ...p, go_paused: o.paused?.includes(p.person_id) ?? false })) });
   const hello = msg({ by: 'go', text: 'Hey all, I am Go.' });
@@ -1099,6 +1101,28 @@ describe("ixigo's login, watched: when it ends, Go asks again", () => {
     const asked = w.link.of('post_message').slice(posts);
     expect(asked).toHaveLength(1);
     expect(String(asked[0]!.text)).toContain("ixigo logged Go's computer out");
+  });
+
+  // Staging, 10 Oct 08:13: the trip took its login from the person's browser, so it had no card; the old card's replace
+  // failed ("card ... is not on one of Go's messages"). The ask must post all the same, with a fresh card.
+  it('asks with a fresh card when the trip never had one (its login came from the browser), and when the old card\'s replace fails', async () => {
+    for (const linkFail of [undefined, (m: string) => (m === 'replace_card' ? new Error('card c_login_t_0 is not on one of Go\'s messages in this trip') : null)]) {
+      const browser = fakeBrowser({ login: 'in', at: NOW, loggedInAt: NOW });
+      const w = world({ statuses: [200, 'quiet', 'quiet'], browser, ...(linkFail ? { linkFail } : {}) });
+      // The trip starts logged in from the browser: no card of its own, its row confirmed at setup.
+      await w.setup();
+      expect(await w.state()).toBe('logged_in');
+      const posts = w.link.of('post_message').length;
+      expect(await w.login.keepAlive(w.tripId)).toBe('quiet');
+      expect(await w.login.keepAlive(w.tripId, { confirming: true })).toBe('out');
+      await w.login.settled();
+      const asked = w.link.of('post_message').slice(posts);
+      expect(asked).toHaveLength(1);
+      expect(String(asked[0]!.text)).toContain("ixigo logged Go's computer out");
+      expect((asked[0]!.card as { actions?: Array<{ action_id: string }> }).actions?.map((x) => x.action_id)).toContain('ixigo_login');
+      expect(await w.state()).toBe('asked');
+      expect(w.said).toContainEqual(expect.objectContaining({ tripId: w.tripId, attempt: 1 }));
+    }
   });
 
   it('a quiet read that a second one finds in does nothing', async () => {

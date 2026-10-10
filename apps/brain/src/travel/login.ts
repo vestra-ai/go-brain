@@ -914,8 +914,16 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       if (s === 'quiet' && !o.confirming) return 'quiet';
       if (s !== 'out' && s !== 'quiet') return s;
       const row = await ended(tripId);
-      // Asked once: the browser now says out, so the keep-alive reads it no more until a login brings it back.
-      if (row && row.state === 'logged_out') await ask(tripId, row.personId, row.attempt + 1, GONE_LINE);
+      // Asked once, with a fresh card: the browser now says out, so the keep-alive reads it no more until a login brings
+      // it back. Never hangs on the old card: a trip that took its login from the browser has none (staging, 10 Oct
+      // 08:13, "card ... is not on one of Go's messages"), and its replace goes on its own (ended). A trip with no login
+      // row at all is asked as a first ask is (nudge).
+      if (!row) {
+        this.nudge(tripId);
+      } else if (row.state === 'logged_out') {
+        await ask(tripId, row.personId, row.attempt + 1, GONE_LINE);
+        d.log.info({ tripId, personId: row.personId, attempt: row.attempt + 1 }, "travel: the trip's ixigo login ended; its person asked to log in again");
+      }
       return 'out';
     },
 
