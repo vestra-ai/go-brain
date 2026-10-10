@@ -78,6 +78,8 @@ export interface RecipeRunner {
   pageFetch?(tripId: string, call: PageCall, o?: Omit<ReadOptions, 'onProgress'>): Promise<Capture>;
   /** Whether page calls are worth trying now: false for a while after a Bash without page_fetch refused one. */
   canPageFetch?(): boolean;
+  /** Whether a click that picks one card's button (near_text, nth) is worth sending: false for a while after a Bash refused one. */
+  canPickOne?(): boolean;
   /** A new trip's computer's first ixigo visit, before anyone asks (COLD_COMPUTER below). Throws when ixigo did not answer. */
   prime?(tripId: string): Promise<void>;
   /**
@@ -256,6 +258,32 @@ export const withoutLook = (steps: Step[]): Step[] =>
     const { within_ms: _within, ...once } = s;
     return once;
   });
+
+/**
+ * How long Go sends no click that picks one match among many (near_text, nth) after a Bash refused one: a Bash before
+ * bash #4637, whose click step takes no unknown key, refuses the whole fetch before it opens anything. Such a click is
+ * never sent as a plain one, which would take the page's first match: another bus's card.
+ */
+export const NEAR_UNSUPPORTED_MS = 10 * 60_000;
+
+/** A click that picks one match among many: a bus card's own "Select Seats". */
+const picksOne = (s: Step): boolean => s.op === 'click' && (s.near_text !== undefined || s.nth !== undefined);
+
+/** Bash refused the fetch for a click's near_text or nth: its 400 names that step (param "steps.2", "steps.2.near_text"). */
+function refusedNear(err: V1Error, steps: Step[] | undefined): boolean {
+  if (err.status !== 400 || err.code !== 'invalid_request' || !steps) return false;
+  const param = err.detail?.['param'];
+  const at = typeof param === 'string' ? /^steps\.(\d+)(?:\.|$)/.exec(param) : null;
+  const step = at ? steps[Number(at[1])] : undefined;
+  return step !== undefined && picksOne(step);
+}
+
+/** A fetch whose click must pick one card's button, on a Bash that can't yet (NEAR_UNSUPPORTED_MS): never run. */
+export class NearUnsupportedError extends TravelError {
+  constructor() {
+    super('refused', "The trip's browser can't click one card's own button yet.");
+  }
+}
 
 /** Bash refused the fetch for a click's within_ms: its 400 names that step (param "steps.0"), never by its message. */
 function refusedLook(err: V1Error, steps: Step[] | undefined): boolean {
@@ -480,6 +508,18 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   let noLookUntil = 0;
   /** Until when a hand-off opens the phone page however asked: Bash refused front_device (LOOK_UNSUPPORTED_MS). */
   let noDesktopUntil = 0;
+  /** Until when a fetch with a click that picks one match is not sent: Bash refused one (NEAR_UNSUPPORTED_MS). */
+  let noNearUntil = 0;
+  /** A fetch whose click picks one match, while this Bash is known not to take it: refused before anything is sent. */
+  const nearRefused = (steps: Step[] | undefined): void => {
+    if (steps?.some(picksOne) && d.now().getTime() < noNearUntil) throw new NearUnsupportedError();
+  };
+  /** Bash refused such a click: none sent for a while, and this fetch refused. */
+  const nearUnsupported = (tripId: string): never => {
+    noNearUntil = d.now().getTime() + NEAR_UNSUPPORTED_MS;
+    d.log.warn({ tripId }, "travel: this Bash can't click one card's own button yet (bash #4637); none is sent for a while");
+    throw new NearUnsupportedError();
+  };
 
   /** One browser fetch: the page opened, its steps worked, and the calls the plan names kept. */
   async function fetchPage(
@@ -489,6 +529,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     what: { id: string; capture: CaptureSpec[] },
     o: ReadOptions,
   ): Promise<{ captures: Capture[]; finalUrl: string }> {
+    nearRefused(plan.steps);
     const steps = plan.steps && d.now().getTime() < noLookUntil ? withoutLook(plan.steps) : plan.steps;
     const doc = pageDoc(url);
     let body = {
@@ -571,6 +612,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           await sleep(IN_USE_WAIT_MS);
           continue;
         }
+        // A Bash before bash #4637 refuses a click that picks one card's button, before it opens anything: never sent as a
+        // plain click (another card's), and none sent for a while.
+        if (body.steps && refusedNear(err, body.steps)) nearUnsupported(tripId);
         // A Bash that predates within_ms refuses the whole fetch before it opens anything: the same fetch again with its
         // optional clicks looking once, as before, and none sent for a while.
         if (body.steps && refusedLook(err, body.steps)) {
@@ -789,6 +833,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   }
 
   async function onStage(tripId: string, plan: FetchPlan, o: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }> {
+    nearRefused(plan.steps);
     const body = {
       tab: STAGE_TAB,
       stage: true,
@@ -813,6 +858,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       return { captures: answer.captures, finalUrl: typeof answer.final_url === 'string' ? answer.final_url : '' };
     } catch (err) {
       if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') throw new TravelError('unreachable', 'The stage has no page open.');
+      if (err instanceof V1Error && refusedNear(err, body.steps)) nearUnsupported(tripId);
       throw err instanceof V1Error ? new TravelError('unreachable', `The stage's step did not answer (${err.status}).`) : err;
     }
   }
@@ -850,6 +896,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     },
     pageFetch: (tripId, call, o = {}) => inSlot(tripId, o, () => pageFetch(tripId, call, o)),
     canPageFetch: () => d.now().getTime() >= unsupportedUntil,
+    canPickOne: () => d.now().getTime() >= noNearUntil,
     prime: (tripId) => inSlot(tripId, {}, () => prime(tripId)),
     handOff: (tripId, url, plan, o) => inSlot(tripId, {}, () => handOff(tripId, url, plan, o)),
     release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),

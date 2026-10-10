@@ -189,6 +189,13 @@ async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<
     }
     rows = kept;
   }
+  if (read.rows.where) {
+    // The site's filters applied by Go, for a site whose call holds every row whatever the page's filters (flights).
+    const where = read.rows.where;
+    const keep: unknown[] = [];
+    for (const row of rows) if ((await evaluate(where, row, bindings)) === true) keep.push(row);
+    rows = keep;
+  }
   return rows;
 }
 

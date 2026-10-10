@@ -213,9 +213,16 @@ export const registerTravel: RegisterLane = async (brain) => {
   // A stays card's top pick opened on the stage, as a person opens it: its card clicked on the results by its name, its
   // page by its address if the click brings nothing (a watched read: a progress to follow puts it on the stage). Its
   // details are kept by the engine for "tell me about this villa". Only where Go reads ixigo.com itself.
-  const showPick = (tripId: string, pick: { page: string; name: string }): void => {
+  // A bus's top pick: its own "Select Seats" clicked on the results the stage shows, by its operator and time, read only,
+  // its stops and cancellation kept for "where do we board and when". Never on a Bash that can't click one card's own
+  // button (before bash #4637): no other card's is clicked instead.
+  const showPick = (tripId: string, pick: { page: string; name: string; kind?: 'stay' | 'bus' }): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
-    void engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).catch((err: unknown) => {
+    if (pick.kind === 'bus' && brain.recipeRunners?.browserFetch?.canPickOne?.() === false) return;
+    const run = pick.kind === 'bus'
+      ? engine.answer('buses.stops', { bus: pick.page }, { tripId, onProgress: () => undefined, staged: true })
+      : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name });
+    void run.catch((err: unknown) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
   };
@@ -264,7 +271,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   watchEvery.unref();
   const stopWatchChecks = (): void => clearInterval(watchEvery);
   brain.onStop(stopWatchChecks);
-  registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
+  registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
     warmForTravel: warm,

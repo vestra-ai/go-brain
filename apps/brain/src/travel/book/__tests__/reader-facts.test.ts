@@ -36,6 +36,25 @@ describe("a stay's offer, how it is paid and how scarce it is, from ixigo's own 
     expect(details.facts).toContainEqual({ label: 'Offer', value: 'Discount of ₹604 included. Coupon code IXIFIRST applied!' });
   });
 
+  // Phase 2, 10 Oct: on Keshav's logged-in browser, ixigo writes the offer with its hotel cash as a picture ("₹383
+  // discount + <img …hotel-cash…>") and adds fareDetail.burnInfo, the person's own hotel cash: the offer reads as its
+  // words, and the hotel cash never at all (the person's own wallet; a room's card is never private). (The shape is the
+  // logged-in read's; the values here are the test's own.)
+  it("reads a logged-in stay's offer as words, and never its hotel cash", async () => {
+    const body = JSON.parse(fixture('stays-anjuna-full.json'));
+    const riva = body.data.result.inventoryInfoList.find((h: { name: string }) => h.name === 'Riva Beach Resort');
+    riva.fareDetail.offerMessage = '₹604 discount + <img src="https://images.ixigo.com/image/upload/accommodations/hotel-cash/cash.png"> ₹150';
+    riva.fareDetail.burnInfo = [{ key: 'HOTEL_CASH', burnAmount: 150, totalAmount: 150, title: 'Hotel Cash', description: 'Use your hotel cash', summaryText: '₹150 hotel cash' }];
+    const options = await read('hotels.search', { place: 'Anjuna', check_in: '2026-11-06', check_out: '2026-11-09' }, [capture(SEARCH, URL, JSON.stringify(body))]);
+    const got = options.find((o) => o.title === 'Riva Beach Resort')!;
+    expect(got.facts).toMatchObject({ coupon: 'IXIFIRST', offer: '₹604 discount' });
+    expect(JSON.stringify(got)).not.toMatch(/<img|hotel-cash|hotel_cash|burnAmount|₹150/);
+    expect(stayDetails(toResultOption(got as never), {}, 4, [])!.facts).toContainEqual({ label: 'Offer', value: '₹604 discount' });
+    // Logged out, as ever: ixigo's own sentence, and no hotel cash.
+    const out = (await anjuna()).find((o) => o.title === 'Riva Beach Resort')!;
+    expect(out.facts['offer']).toBe('Discount of ₹604 included. Coupon code IXIFIRST applied!');
+  });
+
   it('says which stays can be held with ₹0 now, and how few rooms are left', async () => {
     const options = await anjuna();
     const storii = options.find((o) => o.title.startsWith('Storii'))!;
