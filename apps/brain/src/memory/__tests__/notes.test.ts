@@ -57,6 +57,23 @@ describe('the notes pass', () => {
     expect(await cursor('t_n1')).toBe(133);
   });
 
+  it("shows the model the trip's plan, and never opens a line about the dates the trip already has (the 9 Oct golden run)", async () => {
+    const lines = [msg(122, 'p_kabir', 'guys dates final karo yaar, kal tak'), msg(124, 'p_priya', 'which beach first?')];
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [
+        { kind: 'open', text: 'Trip dates', about: 'dates', person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'], proof: [122] },
+        { kind: 'open', text: 'Which beach first?', about: 'other', person_ids: [], proof: [124] },
+      ],
+    });
+    const { link, side, notes } = setup('t_n_plan', lines, [answer]);
+    const out = await notes.run('t_n_plan');
+    expect(side.prompts[0]!.user).toContain("The trip's plan now: dates 2026-11-06 to 2026-11-09 (set); place");
+    expect(side.prompts[0]!.system).toContain('Never open a line for something the trip\'s plan already has');
+    expect(out.refused).toContain('line: the trip already has its dates: a question about them is not open');
+    expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['Which beach first?']);
+  });
+
   it('writes no doing line for an ask to Go, read after Go answered it, and still writes one for a real promise', async () => {
     const said = [
       msg(190, 'p_rahul', '@Go find flights Friday'),

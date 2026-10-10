@@ -40,6 +40,8 @@ export interface LineProposal {
   /** Set to change one of Go's own lines (an open question that got settled, a job that is done). */
   line_id?: string;
   status?: 'done';
+  /** What part of the plan the line is about (the notes pass says): dates, place, or anything else. */
+  about?: 'dates' | 'place' | 'other';
 }
 export type Checked<T> = { ok: true; value: T } | { ok: false; reason: string };
 export interface CheckedFact {
@@ -136,6 +138,10 @@ export function checkFact(p: FactProposal, env: CheckEnv): Checked<CheckedFact> 
 
 export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> {
   const { pack } = env;
+  // The plan already has it: a question about set dates or a set place is answered by the plan, never an open line (the
+  // 9 Oct golden run: "Trip dates" opened for all five on a trip set for 6 to 9 Nov, and Go kept asking about it).
+  if (p.kind === 'open' && !p.line_id && p.about === 'dates' && pack.trip.dates) return no('the trip already has its dates: a question about them is not open');
+  if (p.kind === 'open' && !p.line_id && p.about === 'place' && pack.trip.destination) return no('the trip already has its place: a question about it is not open');
   const inTrip = new Set(pack.trip.people.map((x) => x.person_id));
   const text = cleanText(p.text, 200);
   if (!text) return no('the line text is empty or too long');

@@ -27,6 +27,7 @@ export const NOTES_RULES = [
   'You keep notes for Go, the AI member of a trip group chat. You read the new lines of the chat and propose two kinds of notes.',
   '1. facts: lasting things a person says about themselves that matter for planning the trip: food, drinks, when they can or cannot travel, seats, health, what they will not do. Never a budget, a price limit or any amount of money: budgets stay private to the trip, and the App asks them. Only from that person\'s own line, and never from a question or a request: "@Go is it hot in Goa in November?" or "how far is Thalassa from Anjuna" says nothing lasting about whoever asks it, not even an interest in the places it names. The fact must be in the words of the line you cite: never put on someone\'s line, least of all their question to Go, a fact that Go\'s answer or anyone else gave. topic is one or two lowercase words such as food, drinks, leaving, arriving, seats, flights, boats, health, sleep, activities. text is short plain words without the name, such as "Vegetarian" or "Can\'t leave before 6 pm Friday". The trip\'s own plan (its dates, its place), said as the plan, is not a fact about whoever said it: it goes in the record, and a plan the group is weighing ("@Go we are thinking a trek on Sunday, good for all of us?") is never a fact either, not even an interest. A lasting lean shows in passing too: a complaint ("ugh 6 am flights again"), a rejection with its reason ("nah too far from the beach"), or a must ("sunset at the beach is a must"). Note it as the speaker\'s lean, starting Prefers, Dislikes or Wants ("Dislikes early flights", "Prefers stays near the beach", "Wants a beach sunset"), never as a rule. Give "this_trip": true for a fact that only holds for this trip (when they can leave or land this time, who comes along, this trip\'s stay area); a fact about the person (food, drinks, health, seats, a lasting lean) has none. A reaction on a line can show the reactor\'s lean (😍 on a beach photo, 👍 on a pool villa): note it for the person who reacted, with that line as the message and "reaction": true, as a lean starting Prefers, Likes, Dislikes or Wants ("Likes pool villas"). Never a rule, and never from Go\'s reactions.',
   '2. lines for the trip record: "agreed" when people agreed in the chat (proof: the proposal and the yes lines; put any line that disagrees in objections). The organizer\'s own line that states a plan point as settled ("Goa trip is happening!! 6 to 9 Nov", "We\'re doing North Goa") is agreed on its own, with that line as proof; one from the organizer that proposes or asks ("6 to 9 Nov?", "how about North Goa?") is open. "open" when a question about the plan is still unsettled among the group (person_ids: who is asked); a question put to Go is Go\'s to answer and is never open. "doing" when someone says they will sort something (person_ids: who said it); a request to Go is never a doing line, Go does it, and a payment someone made or a debt ("I paid 2400 for the cab", "Kabir owes me 500") is a money record Go keeps with record_expense, never a doing line. To change one of Go\'s own record lines, give its line_id; for a job that is finished add "status": "done". When an agreed or doing line settles one of Go\'s open questions in the record (the group agreed it, or someone took it on), give that open line\'s line_id in "settles": Go closes the question.',
+  'Give "about": "dates" for a line about the trip\'s dates and "about": "place" for one about where the trip goes. Never open a line for something the trip\'s plan already has: with its dates set, "guys dates final karo" or "are we sure about the dates?" is answered by the plan, not an open question; with its place set, the same for the place. Only people agreeing to change them makes a line (agreed, with "trip").',
   'An agreed line that fixes the trip\'s dates or its place also gives them as "trip": {"dates": {"start": "2026-11-06", "end": "2026-11-09"}} or {"destination": "Kerala"}, or both, with full dates: days said without a year are the next ones after today. Only an agreed line gives "trip". The trip\'s place is where it goes, a city or region: an area inside it ("North Goa, not South", "Candolim", "Anjuna") is where to stay there, an agreed line in the record and never "trip".',
   'A line marked "to Go" is part of an ask to Go: Go answers it, so it is never an open line, and only a fact the person states in it is noted.',
   'Cite lines by their number (#142 is 142). Propose facts only from the new lines. Never propose anything from a [hidden] line. Never copy card numbers, codes or passwords. Do not repeat what the record already says.',
@@ -58,6 +59,8 @@ export const NotesOutput = z.object({
         due_at: z.string().optional(),
         line_id: z.string().optional(),
         status: z.literal('done').optional(),
+        /** What part of the plan the line is about: an open line about dates or a place the trip already has is refused. */
+        about: z.enum(['dates', 'place', 'other']).optional().catch(undefined),
         /** Go's open questions in the record this line settles: Go marks each done (decision-lines.ts closeSettled). */
         settles: z.array(z.string()).max(5).optional().catch(undefined),
         /** An agreed line's dates or place, for the trip itself; one that doesn't read is dropped, never the whole answer. */
@@ -124,6 +127,9 @@ function promptFor(
     '<chat_data>',
     'People in the trip:',
     peopleLegend(pack),
+    // The plan itself, so a question it already answers is never opened (the 9 Oct golden run: "Trip dates" opened for
+    // all five on a trip set for 6 to 9 Nov).
+    `The trip's plan now: dates ${pack.trip.dates ? `${pack.trip.dates.start} to ${pack.trip.dates.end} (set)` : 'not set'}; place ${pack.trip.destination ? `${fenceText(pack.trip.destination.name)} (set)` : 'not set'}.`,
     'The trip record now:',
     recordText,
     ...(context.length ? ['Earlier lines, for context only:', ...context.map(line)] : []),
@@ -257,6 +263,7 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
           ...(l.due_at ? { due_at: l.due_at } : {}),
           ...(l.line_id ? { line_id: l.line_id } : {}),
           ...(l.status ? { status: l.status } : {}),
+          ...(l.about ? { about: l.about } : {}),
         },
         env,
       );
