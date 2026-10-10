@@ -34,7 +34,8 @@ const Ceremony = z.object({
 });
 const CardBody = z.object({ setup_intent_id: z.string().regex(/^seti_[A-Za-z0-9_]{1,200}$/) });
 /** The travel section's save: the details, and the tick that lets Go use them (unticked, they are deleted). */
-const TravelBody = TravelDetails.extend({ allow: z.boolean() });
+const TravelBody = TravelDetails.extend({ allow: z.literal(true) });
+const Untick = z.object({ allow: z.literal(false) });
 
 type WithToken = { Params: { token: string } };
 type TokenRequest = FastifyRequest<WithToken>;
@@ -178,14 +179,14 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (app, {
   app.post<WithToken>('/l/:token/travel', async (req, reply) => {
     const link = await unlocked(req, reply);
     if (!link) return reply;
-    const body = TravelBody.safeParse(req.body);
-    if (!body.success || !realBirthday(body.data.dob, deps.now())) return reply.code(400).send({ message: 'Check your details: your name as on your ID, and a real date of birth.' });
-    const { allow, ...details } = body.data;
-    if (!allow) {
+    // Unticked, the row goes whatever the fields hold.
+    if (Untick.safeParse(req.body).success) {
       if (await deleteTravel(db, link.person_id)) await logUnlock(db, deps.now(), { personId: link.person_id, kind: 'travel_deleted' });
       return { saved: false };
     }
-    await saveTravel(db, master, deps.now(), link.person_id, details);
+    const body = TravelBody.safeParse(req.body);
+    if (!body.success || !realBirthday(body.data.dob, deps.now())) return reply.code(400).send({ message: 'Check your details: your name as on your ID, and a real date of birth.' });
+    await saveTravel(db, master, deps.now(), link.person_id, body.data);
     await logUnlock(db, deps.now(), { personId: link.person_id, kind: 'travel_saved' });
     return { saved: true };
   });

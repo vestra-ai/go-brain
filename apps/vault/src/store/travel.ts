@@ -29,8 +29,9 @@ export function realBirthday(dob: string, now: Date): boolean {
 
 const aad = (personId: string) => itemAad(personId, 'travel', personId);
 
-/** Keeps a person's details, sealed, replacing any before. */
-export async function saveTravel(db: Db, master: Buffer, now: Date, personId: string, details: TravelDetails): Promise<void> {
+/** Keeps a person's details, sealed, replacing any before. Only the four fields are sealed, whatever else `d` carries. */
+export async function saveTravel(db: Db, master: Buffer, now: Date, personId: string, d: TravelDetails): Promise<void> {
+  const details: TravelDetails = { first_name: d.first_name, last_name: d.last_name, gender: d.gender, dob: d.dob };
   await db.query(
     `insert into travel_details (person_id, sealed, created_at, updated_at) values ($1, $2, $3, $3)
      on conflict (person_id) do update set sealed = excluded.sealed, updated_at = excluded.updated_at`,

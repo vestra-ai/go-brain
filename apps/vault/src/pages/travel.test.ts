@@ -73,7 +73,8 @@ describe('travel details on the vault page', () => {
 
   it('are gone, the row itself, when the tick is taken off or they are deleted', async () => {
     const { path, cookie } = await unlocked('p_meher', meher);
-    expect((await v.app.inject({ method: 'POST', url: `${path}/travel`, headers: { cookie }, payload: { ...MEHER, allow: false } })).json()).toEqual({ saved: false });
+    // Unticked with a field emptied still deletes: the tick is the consent, not the fields.
+    expect((await v.app.inject({ method: 'POST', url: `${path}/travel`, headers: { cookie }, payload: { ...MEHER, last_name: '', allow: false } })).json()).toEqual({ saved: false });
     expect((await v.pool.query("select count(*)::int as n from travel_details where person_id = 'p_meher'")).rows[0]).toEqual({ n: 0 });
     expect((await read('p_meher')).statusCode).toBe(404);
     await v.app.inject({ method: 'POST', url: `${path}/travel`, headers: { cookie }, payload: { ...MEHER, allow: true } });
