@@ -7,6 +7,7 @@ asks:
   - goa ke famous jagah kaun si hain
 inputs:
   place: { kind: text, about: "the destination as people said it, such as Goa" }
+  kind: { kind: choice, optional: true, from_page: true, about: "the kind of place to visit, as the guide's own chips: beach, nature, scenic, market, historical, religious or museum" }
 auth: none
 changes_state: false
 # ixigo's guide page, /plan/{slug}: server-rendered, its props in the Next.js flight payload the page carries in its
@@ -30,6 +31,8 @@ answer:
   # photo is the page's own: the first of its hero's photos (imagedelivery.net, 8 Oct), else the first place to visit's.
   each: |
     (
+      /* A kind asked, as the guide's own chip ("Beach", "Historical"), keeps those places only. */
+      $kind := ($k := $lowercase($trim($inputs.kind)); $k in ['beach', 'beaches'] ? 'beach' : $k in ['nature', 'scenic', 'market', 'historical', 'religious', 'museum'] ? $k : $k in ['markets', 'shopping'] ? 'market' : $k in ['history', 'heritage', 'forts', 'fort'] ? 'historical' : $k in ['temples', 'temple', 'churches', 'church'] ? 'religious' : $k in ['museums'] ? 'museum' : $k in ['viewpoints', 'viewpoint', 'views'] ? 'scenic' : $k in ['waterfalls', 'wildlife', 'parks'] ? 'nature');
       $guide := $find(page, 'bestTime');
       $widget := function($t) { $findAll(page, 'widget').widget[title = $t] };
       $hero := $find(page, 'photos').photos[0];
@@ -43,9 +46,14 @@ answer:
         "photos": $append($append($count($heroes) > 0 ? [{ "url": $heroes[0], "label": $find(page, 'destination').destination }] : [], $spots), [$heroes[[1..11]].{ "url": $ }])[[0..11]],
         "best_time": $guide.bestTime,
         "weather_by_month": [$guide.weatherHistory.(month & ": " & $string(weatherAqi.min) & " to " & $string(weatherAqi.max) & " C. " & summary)],
-        "places_to_visit": [$widget("Places To Visit").data.(name & ($exists($num(rating)) ? " (" & $string($num(rating)) & ")" : "") & (description ? ": " & description : ""))],
+        "places_to_visit": [$widget("Places To Visit").data[$not($exists($kind)) or $lowercase(type) = $kind].(
+          name & " (" & $join([$exists($num(rating)) ? $string($num(rating)), type ? $lowercase(type)], ", ") & ")" & (description ? ": " & description : "")
+        )],
         "places_to_eat": [$widget("Places To Eat").data.(name & ($exists($num(rating)) ? " (" & $string($num(rating)) & ")" : ""))],
-        "ideas": [$widget("Ideas To Plan Your Trip").data.name]
+        "ideas": [$widget("Ideas To Plan Your Trip").data.name],
+        "faq": [$findAll(page, 'heading')[$type(content) = "string"].(
+          heading & " " & $trim($replace($replace($replace(content, /<[^>]+>/, " "), /&nbsp;|&amp;/, " "), /\s+/, " "))
+        )]
       }
     )
 ttl_minutes: 60

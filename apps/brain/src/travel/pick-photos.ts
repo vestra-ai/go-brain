@@ -10,10 +10,11 @@ import type { Images } from './images.js';
 import { photosOf, type SourcePhoto } from './photos.js';
 import type { ResultsStore } from './results.js';
 
-/** The top pick as its card put it up: its page on ixigo, its name to click on the results, and its card and option. */
+/** The top pick as its card put it up: its page on ixigo, its name to click on the results, its kind, and its card and option. */
 export interface TopPick {
   page: string;
   name: string;
+  kind?: 'stay' | 'bus';
   cardId: string;
   optionId: string;
 }
