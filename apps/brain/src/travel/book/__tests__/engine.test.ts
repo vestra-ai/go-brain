@@ -122,7 +122,7 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
 
   // Staging, 10 Oct: ixigo's Entire house and Swimming Pool for five on all of Goa answered 424 with no stay at three rooms
   // (two to a room), and five pool villas at one room.
-  it('books an entire house whole, one room for the group priced for every head, and reads its one page', async () => {
+  it('books an entire house whole, one room for the group priced for every head', async () => {
     const offers = createOffers({ now: () => new Date('2026-10-07T12:00:00Z') });
     const reads: string[] = [];
     const plans: FetchPlan[] = [];
@@ -146,9 +146,9 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
     expect(reads[0]).toContain('&adultCount=5&roomCount=3&');
     expect(reads[1]).toContain('&adultCount=5&roomCount=1&');
     expect(reads[1]).toContain(`&filters=${encodeURIComponent('AT_EH,FL_HF_29')}`);
-    // ixigo's own filters make a short list: its one page, never a wait for a second that does not come.
+    // All of Goa is read as a careful person would, both pages, filtered or not.
     expect(plans[0]!.capture[0]).toMatchObject({ min_count: 2 });
-    expect(plans[1]!.capture[0]).not.toHaveProperty('min_count');
+    expect(plans[1]!.capture[0]).toMatchObject({ min_count: 2 });
     if (villas.as !== 'options') throw new Error('not options');
     const first = villas.options[0]!;
     expect(first.facts).toMatchObject({ nights: 3, rooms: 1, guests: 5 });

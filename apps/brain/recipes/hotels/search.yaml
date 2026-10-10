@@ -27,9 +27,7 @@ let:
   # The place's areas, the conditions above, and the ixigo filters the model picked from ixigo's own list ($site).
   filters: "$sort($distinct($append($append(place.areas, $conditions), $site)))"
   # A whole state (all of Goa) with no area: hundreds of stays, so the fetch takes two pages, not the top strip of one.
-  # Not when ixigo filters on its own named filters: that list is short and page 2 never comes, so waiting for it would take
-  # the whole 20 s (all of Goa's pool villas for five were five stays, one page, staging, 10 Oct).
-  wide: "place.location.locationType = 'S' and $count(place.areas) = 0 and $count($site) = 0"
+  wide: "place.location.locationType = 'S' and $count(place.areas) = 0"
   # An entire house (ixigo's stay type "Entire house") is booked whole: one room for the group, as a person books a villa
   # on ixigo. Two to a room asked for three rooms for five, and ixigo answered 424 with no villa at all, where one room
   # gave five pool villas (staging, 10 Oct, all of Goa, 6 to 9 Nov).
