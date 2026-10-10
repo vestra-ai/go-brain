@@ -9,8 +9,9 @@ import {
 const at = '2026-10-08T07:00:00Z';
 
 describe('contract 1.1', () => {
-  it('is version 1.1.0', () => {
-    expect(CONTRACT_VERSION).toBe('1.1.0');
+  // 1.2 only adds to 1.1 (a traveller's own ticket approval, not_in_trip, already_booked, visible_to_person_ids).
+  it('is version 1.2.0', () => {
+    expect(CONTRACT_VERSION).toBe('1.2.0');
   });
 
   it('A1 an option, and a vote option, can carry details; A2 a return leg, both prices, and cab', () => {

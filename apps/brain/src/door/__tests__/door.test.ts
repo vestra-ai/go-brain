@@ -77,7 +77,7 @@ const connect = () => rawServer(`${base}${target()}`, SECRET);
 describe('the door', () => {
   it('GET /v1/health answers without a signature', async () => {
     const r = await http.inject({ method: 'GET', url: '/v1/health' });
-    expect(r.json()).toEqual({ ok: true, contract: '1.1.0' });
+    expect(r.json()).toEqual({ ok: true, contract: '1.2.0' });
   });
 
   it('a good signature opens the socket, and Go pings', async () => {
