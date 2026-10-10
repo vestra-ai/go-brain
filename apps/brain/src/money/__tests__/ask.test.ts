@@ -266,6 +266,18 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     ]);
   });
 
+  // The Server's already_booked (1.2): a booking someone added for the vote stands, so a second payment would charge twice.
+  it('when the Server says the vote is booked already: says so and to cancel first, never to wait', async () => {
+    await k.server.request('add_booking', {
+      request_id: 'rq_by_hand', trip_id: 't_goa', kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'IXG-HAND', amount_minor: 5420000,
+      currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: ['p_rahul'], decision_id: 'd_villa',
+    });
+    const r = await k.ask();
+    expect(r).toMatchObject({ code: 'already_booked', refused: 'Villa Sol is booked already. To book it again, cancel that booking first.' });
+    expect('refused' in r && r.refused).not.toMatch(/wait/i);
+    expect(payCards()).toEqual([]);
+  });
+
   it('once the vote is already paid for', async () => {
     const first = await k.ask(VILLA, 'first');
     if (!('cardId' in first)) throw new Error('first ask refused');

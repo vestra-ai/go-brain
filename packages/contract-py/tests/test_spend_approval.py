@@ -44,3 +44,26 @@ def test_will_not_sign_for_longer_than_ten_minutes(v):
 
 def test_refuses_garbage(v):
     assert verify_spend_approval("not.a.token!", v["public_key_pem"]).reason == "malformed"
+
+
+# Contract 1.2: a traveller's own ticket. The Server signs for_person_id in place of decision_id; the traveller pays.
+def _ticket(v, **over):
+    claims = {k: x for k, x in v["claims"].items() if k != "decision_id"}
+    claims.update({"for_person_id": "p_meher", "kind": "ticket", "payer_person_id": "p_meher"})
+    claims.update(over)
+    return claims
+
+
+def test_signs_and_verifies_a_ticket(v):
+    token = sign_spend_approval(_ticket(v), v["private_key_pem"])
+    r = verify_spend_approval(token, v["public_key_pem"], now=v["verify_at"])
+    assert r.ok and r.claims["for_person_id"] == "p_meher" and r.claims["payer_person_id"] == "p_meher"
+
+
+def test_will_not_sign_a_ticket_another_pays_or_one_naming_a_vote_too(v):
+    with pytest.raises(ValueError):
+        sign_spend_approval(_ticket(v, payer_person_id="p_rahul"), v["private_key_pem"])
+    with pytest.raises(ValueError):
+        sign_spend_approval(_ticket(v, decision_id="d_villa"), v["private_key_pem"])
+    with pytest.raises(ValueError):
+        sign_spend_approval({k: x for k, x in v["claims"].items() if k != "decision_id"}, v["private_key_pem"])
