@@ -69,7 +69,8 @@ answer:
   # A price is the lowest seat fare after the offer ixigo applies on its own ("₹3000, From ₹2700" is 2,700).
   # Every detail but the operator, the fare and the start may be missing or null. arriveTimestamp is India's clock written
   # as if it were UTC, so the arrival is the departure plus the journey time,
-  # and that clock only when the journey time is missing. ixigo has no page per bus: "Select Seats" opens on the results.
+  # and that clock only when the journey time is missing. ixigo has no page per bus: "Select Seats" opens on the results,
+  # so a bus's own address is the results page with its operator and departure after "#" (buses.stops opens it by them).
   # A bus's pickup and drop points are said by name, the busiest first ("; " between them: a name may hold a comma):
   # Go's own filter keeps the buses that stop where the group named (filters.ts), whatever read it has.
   each: |
@@ -128,7 +129,7 @@ answer:
           "boarding_points": $count($boards) > 0 ? $join($boards, "; "),
           "dropping_points": $count($drops) > 0 ? $join($drops, "; ")
         },
-        "sourceUrl": $page
+        "sourceUrl": $page & "#" & $encodeUrlComponent($operator) & "@" & $substring(timings.startTimeDateFormat, 11, 5)
       }
     )
 measured: { fast_ms: null, page_ms: 2600, flow_ms: null }

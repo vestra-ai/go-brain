@@ -36,7 +36,7 @@ describe('the recipe book', () => {
   it('loads every file, with nothing left out', () => {
     expect(problems).toEqual([]);
     expect(book.all().map((r) => r.id).sort()).toEqual([
-      'buses.between', 'buses.city_lookup', 'buses.offers', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.results', 'flights.search',
+      'buses.between', 'buses.city_lookup', 'buses.offers', 'buses.stops', 'flights.airport_lookup', 'flights.fare_calendar', 'flights.results', 'flights.search',
       'help.downtime', 'help.faq', 'help.services',
       'hotels.details', 'hotels.offers', 'hotels.place_lookup', 'hotels.reviews', 'hotels.rooms', 'hotels.search', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list',
@@ -329,7 +329,8 @@ describe('buses.between', () => {
       highlights: ['VE AC Sleeper (2 + 1)', '16 h 25 m'],
       // What the page's own filters read (AC, sleeper), from the bus type: Go's wants pick on them.
       facts: { bus_type: 'VE AC Sleeper (2 + 1)', seats_left: 31, duration_min: 985, reviews: 15, ac: true, sleeper: true },
-      sourceUrl: RESULTS,
+      // ixigo has no page per bus: its own address is the results with its operator and departure, for buses.stops.
+      sourceUrl: `${RESULTS}#Paulo%20Travels%20Express@18:20`,
     });
     expect(got.options[1]!.priceMinor).toBe(300_000);
     expect(Math.min(...got.options.map((o) => o.priceMinor))).toBe(150_000);

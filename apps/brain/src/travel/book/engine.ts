@@ -647,6 +647,9 @@ export function createEngine(d: EngineDeps) {
           ...s,
           ...('text' in s && s.text ? { text: await fill(s.text, inputs, { url: false, bindings }) } : {}),
           ...('name' in s && s.name ? { name: await fill(s.name, inputs, { url: false, bindings }) } : {}),
+          ...('near_text' in s && s.near_text
+            ? { near_text: typeof s.near_text === 'string' ? await fill(s.near_text, inputs, { url: false, bindings }) : await Promise.all(s.near_text.map((t) => fill(t, inputs, { url: false, bindings }))) }
+            : {}),
         }) as Step),
       );
     for (const f of recipe.fetch ?? []) {
