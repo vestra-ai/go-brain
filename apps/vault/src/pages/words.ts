@@ -73,5 +73,16 @@ export function unlockLine(row: UnlockRow): string {
       return `A payment of ${amount}${to} didn't go through`;
     case 'pay_refused':
       return `Refused a payment of ${amount}${to}`;
+    case 'travel_saved':
+      return 'Saved your travel details';
+    case 'travel_read':
+      return `Go used your travel details${row.reason ? ` for ${row.reason}` : ''}`;
+    case 'travel_deleted':
+      return 'Deleted your travel details';
   }
+}
+
+/** "Last used: Flight to Goa, Sat, 6 Nov, 9:10 am": when Go last read the details for a booking, and what for. */
+export function lastUsedLabel(used: { at: Date; purpose: string | null }): string {
+  return `Last used: ${used.purpose ? `${used.purpose}, ` : ''}${whenLabel(used.at)}`;
 }

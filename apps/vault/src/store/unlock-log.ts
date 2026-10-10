@@ -7,7 +7,10 @@ export type UnlockKind =
   | 'pay_refused'
   | 'pay_attempt'
   | 'pay_ok'
-  | 'pay_failed';
+  | 'pay_failed'
+  | 'travel_saved'
+  | 'travel_read'
+  | 'travel_deleted';
 
 export interface UnlockEntry {
   personId: string;
@@ -46,6 +49,16 @@ export async function logUnlock(db: Db, at: Date, e: UnlockEntry): Promise<void>
       e.rail ?? null, e.railRef ?? null, e.reason ?? null,
     ],
   );
+}
+
+/** When Go last read a person's travel details for a booking, and what for: their page shows it. */
+export async function lastTravelRead(db: Db, personId: string): Promise<{ at: Date; purpose: string | null } | null> {
+  const r = await db.query<{ at: Date; reason: string | null }>(
+    "select at, reason from unlock_log where person_id = $1 and kind = 'travel_read' order by at desc, id desc limit 1",
+    [personId],
+  );
+  const row = r.rows[0];
+  return row ? { at: row.at, purpose: row.reason } : null;
 }
 
 export async function readUnlockLog(db: Db, personId: string, limit = 20): Promise<UnlockRow[]> {

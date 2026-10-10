@@ -13,10 +13,11 @@ import { authenticationOptions, finishRegistration, hasPasskey, passkeyConfig, r
 import { approvePayment, payInfo, payOptions, type PayDeps } from '../pay.js';
 import { listCards, saveCardFromSetup, startCardSetup } from '../store/cards.js';
 import { personName } from '../store/people.js';
-import { logUnlock, readUnlockLog } from '../store/unlock-log.js';
+import { TravelDetails, deleteTravel, readOwnTravel, realBirthday, saveTravel } from '../store/travel.js';
+import { lastTravelRead, logUnlock, readUnlockLog } from '../store/unlock-log.js';
 import { VAULT_CSS, VAULT_JS } from './assets.js';
 import { homePage, payPage } from './html.js';
-import { PAY_MESSAGES, brandLabel, moneyLabel, unlockLine, whenLabel } from './words.js';
+import { PAY_MESSAGES, brandLabel, lastUsedLabel, moneyLabel, unlockLine, whenLabel } from './words.js';
 
 const require = createRequire(import.meta.url);
 const WEBAUTHN_JS = readFileSync(
@@ -32,6 +33,8 @@ const Ceremony = z.object({
   response: z.custom<Record<string, unknown>>((v) => typeof v === 'object' && v !== null && !Array.isArray(v)),
 });
 const CardBody = z.object({ setup_intent_id: z.string().regex(/^seti_[A-Za-z0-9_]{1,200}$/) });
+/** The travel section's save: the details, and the tick that lets Go use them (unticked, they are deleted). */
+const TravelBody = TravelDetails.extend({ allow: z.boolean() });
 
 type WithToken = { Params: { token: string } };
 type TokenRequest = FastifyRequest<WithToken>;
@@ -85,12 +88,16 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (app, {
     const link = await homeLink(req);
     if (!link) return { state: 'expired' };
     if (!hasSession(req, link)) return { state: (await hasPasskey(db, link.person_id)) ? 'unlock' : 'register' };
-    const [cards, log] = await Promise.all([listCards(db, link.person_id), readUnlockLog(db, link.person_id)]);
+    const [cards, log, travel, used] = await Promise.all([
+      listCards(db, link.person_id), readUnlockLog(db, link.person_id), readOwnTravel(db, master, link.person_id), lastTravelRead(db, link.person_id),
+    ]);
     return {
       state: 'open',
       start: link.start,
       publishable_key: deps.env.STRIPE_PUBLISHABLE_KEY,
       cards: cards.map((c) => ({ brand_label: brandLabel(c.brand), last4: c.last4, expires: `${String(c.exp_month).padStart(2, '0')}/${String(c.exp_year).slice(-2)}` })),
+      // The person's own details, to them alone once unlocked, and when Go last used them, for what.
+      travel: travel ? { ...travel, last_used: used ? lastUsedLabel(used) : null } : null,
       log: log.map((row) => ({ when: whenLabel(row.at), text: unlockLine(row) })),
     };
   });
@@ -164,6 +171,30 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (app, {
     const saved = await saveCardFromSetup(db, deps.stripe, master, deps.now(), { personId: link.person_id, setupIntentId: body.data.setup_intent_id });
     if (!saved.ok) return reply.code(409).send({ message: 'The card was not saved. Try again.' });
     return { brand_label: brandLabel(saved.card.brand), last4: saved.card.last4 };
+  });
+
+  // Travel details, behind the unlock as cards are. Saved only with the tick that lets Go use them for the person's own
+  // tickets; unticked, or deleted, the row itself goes.
+  app.post<WithToken>('/l/:token/travel', async (req, reply) => {
+    const link = await unlocked(req, reply);
+    if (!link) return reply;
+    const body = TravelBody.safeParse(req.body);
+    if (!body.success || !realBirthday(body.data.dob, deps.now())) return reply.code(400).send({ message: 'Check your details: your name as on your ID, and a real date of birth.' });
+    const { allow, ...details } = body.data;
+    if (!allow) {
+      if (await deleteTravel(db, link.person_id)) await logUnlock(db, deps.now(), { personId: link.person_id, kind: 'travel_deleted' });
+      return { saved: false };
+    }
+    await saveTravel(db, master, deps.now(), link.person_id, details);
+    await logUnlock(db, deps.now(), { personId: link.person_id, kind: 'travel_saved' });
+    return { saved: true };
+  });
+
+  app.post<WithToken>('/l/:token/travel/delete', async (req, reply) => {
+    const link = await unlocked(req, reply);
+    if (!link) return reply;
+    if (await deleteTravel(db, link.person_id)) await logUnlock(db, deps.now(), { personId: link.person_id, kind: 'travel_deleted' });
+    return { saved: false };
   });
 
   // ── pay ──

@@ -137,3 +137,31 @@ describe('checkVaultCall', () => {
     expect(await checkVaultCall(pool, secret, req(signRequest({ method: 'POST', target: '/internal/vault/paid', body }, secret, t - 400)), body, now)).toBe(false);
   });
 });
+
+// The vault's travel details (apps/vault store/travel.ts): read for a ticket of the person's own, signed, and the answer
+// never in an error.
+describe("a person's travel details", () => {
+  const ask = { tripId: 't_goa', personId: 'p_meher', booking: { ref: 'fb_01JA7Q3V8Z', travellerPersonId: 'p_meher', purpose: 'Flight to Goa, 6 Nov' } };
+
+  it("asks the vault, signed, for the booking's traveller, and gives Go's shape of the answer", async () => {
+    calls.length = 0;
+    answer = { status: 200, body: { first_name: 'Meher', last_name: 'Kapoor', gender: 'female', dob: '1996-03-14' } };
+    expect(await client.travelDetails(ask)).toEqual({ firstName: 'Meher', lastName: 'Kapoor', gender: 'female', dob: '1996-03-14' });
+    expect(calls[0]!.url).toBe('https://vault.test/internal/travel-details');
+    expect(JSON.parse(calls[0]!.body)).toMatchObject({
+      trip_id: 't_goa', person_id: 'p_meher', booking: { ref: 'fb_01JA7Q3V8Z', traveller_person_id: 'p_meher', purpose: 'Flight to Goa, 6 Nov' },
+    });
+    expect(calls[0]!.signature).not.toBe('null');
+  });
+
+  it('is none when none are kept, a refusal for anyone but the traveller, and never the values in an error', async () => {
+    answer = { status: 404, body: { error: { code: 'none' } } };
+    expect(await client.travelDetails(ask)).toBeNull();
+    answer = { status: 403, body: { error: { code: 'not_the_traveller' } } };
+    await expect(client.travelDetails(ask)).rejects.toThrow(/only for a ticket of their own/);
+    answer = { status: 200, body: { first_name: 'Meher', last_name: 'Kapoor', gender: 'x', dob: '1996-03-14' } };
+    const err = await client.travelDetails(ask).then(() => null, (e: unknown) => e as Error);
+    expect(err?.message).toMatch(/shape Go does not read/);
+    expect(err?.message).not.toMatch(/Meher|Kapoor|1996/);
+  });
+});

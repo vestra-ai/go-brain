@@ -21,6 +21,17 @@ export function homePage(): string {
 <form id="card-form"><label for="card-element">Add a card</label><div id="card-element" class="field"></div>
 <button class="primary" type="submit">Save card</button><p id="card-msg" class="msg" role="status"></p>
 <p class="fine">Test cards only for now. Your card goes straight to the payment processor; the vault keeps only a token.</p></form></section>
+<section id="travel" class="card"><h2>Your travel details</h2>
+<p class="muted">For a ticket Go books for you when the trip's ixigo account has none of yours. Only Go's booking reads them, never the chat.</p>
+<p id="travel-used" class="fine" hidden></p>
+<form id="travel-form">
+<label for="t-first">First name as on your ID</label><input id="t-first" class="field" autocomplete="given-name" maxlength="40" required>
+<label for="t-last">Last name as on your ID</label><input id="t-last" class="field" autocomplete="family-name" maxlength="40" required>
+<label for="t-gender">Gender</label><select id="t-gender" class="field" required><option value="">Choose</option><option value="male">Male</option><option value="female">Female</option></select>
+<label for="t-dob">Date of birth</label><input id="t-dob" class="field" type="date" autocomplete="bday" required>
+<label class="tick-row"><input id="t-allow" type="checkbox"> Go can use these to book tickets for me</label>
+<button class="primary" type="submit">Save</button> <button id="travel-delete" type="button" hidden>Delete</button>
+<p id="travel-msg" class="msg" role="status"></p></form></section>
 <section class="card"><h2>Who opened your vault</h2><ul id="log" class="list small"></ul></section>
 </div>
 </main><script src="/static/webauthn.js"></script><script src="https://js.stripe.com/v3/"></script><script src="/static/vault.js"></script></body></html>`;
