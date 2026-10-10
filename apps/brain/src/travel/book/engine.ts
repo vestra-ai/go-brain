@@ -623,7 +623,8 @@ export function createEngine(d: EngineDeps) {
     if (!recipe.page) throw new TravelError('refused', `${recipe.title} has no page to open.`);
     await loggedIn(recipe, o.tripId);
     const runner = d.runner(o.tripId);
-    const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && fastOn(runner) && !o.background ? 'fast' : 'page';
+    // A watched run never takes the fast speed (it reads its page on the stage): its strip says page from the start.
+    const speed: Speed = recipe.answer.as === 'link' ? 'link' : recipe.fast && fastOn(runner) && !o.background && !watched(o) ? 'fast' : 'page';
     const strip = { line: line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed, ...stepOf(o) }) };
     try {
       const answer = await runRecipe(recipe, recipe.page, given, o, runner, strip, took);

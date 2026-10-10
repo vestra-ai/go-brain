@@ -284,8 +284,12 @@ describe('the fast speed', () => {
     };
     // A fresh engine each time: a guide's facts are kept, and a kept answer runs nothing.
     const engine = () => createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z') });
-    await engine().answer('plan.destination', { place: 'Goa' }, { tripId: 't_watch', onProgress: () => undefined });
+    const events: Array<{ type: string; speed?: string }> = [];
+    const watchedEngine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-07T12:00:00Z'), onRun: (_t, e) => events.push(e) });
+    await watchedEngine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_watch', onProgress: () => undefined });
     expect(calls).toEqual([]);
+    // Its strip says page from the start, never fast (staging, 10 Oct: "speed=fast" on a run that read the stage).
+    expect(events.find((e) => e.type === 'run_start')).toMatchObject({ speed: 'page' });
     expect(reads).toEqual([{ url: expect.stringContaining('/plan/goa'), stage: true }]);
     // Off the stage: a check nobody waits on reads its page behind, as before, and a composite's step (many at once)
     // still takes the fast speed.
