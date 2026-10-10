@@ -1,0 +1,44 @@
+id: trains.boarding_stations
+title: Where else people on a booking could board a train, the stops from the booked station up to its last, by the train's timetable
+asks:
+  - can arjun board 10103 at thane instead of csmt
+  - mandovi express mumbai to madgaon, where else can we board
+  - 12015 delhi se jaipur, boarding station kahan se ho sakta hai
+inputs:
+  train: { kind: text, about: "the train's 5-digit number (trains.by_name finds it from a name)" }
+  from: { kind: text, about: "the station the booking starts at, by its code (CSMT) or name" }
+  to: { kind: text, about: "the station the booking ends at, by its code (MAO) or name" }
+auth: none
+changes_state: false
+# ixigo shows a booking's boarding points only on its booking step, which Go never opens. The train page's timetable (the
+# same page and table as trains.schedule) gives the stops a booking could board at: the booked station and every stop
+# after it, before the one it ends at, each with its departure and day.
+page: /trains/{train}
+capture:
+  - { match: "/trains/{train}$", max_bytes: 1000000 }
+read:
+  rows: { from: "/trains/{train}$", format: html_tables, list: "[ $ ]" }
+answer:
+  as: facts
+  title: "Train {train} boarding points"
+  max: 1
+  each: |
+    (
+      $stops := $reduce(tables, function($found, $t) { $t[0][0] = "Stn Code" ? $t : $found }, []);
+      $at := function($s) { $map($stops, function($r, $i) { ($i > 0 and ($uppercase($r[0]) = $uppercase($trim($s)) or $lowercase($r[1]) = $lowercase($trim($s)))) ? $i })[0] };
+      $a := $at($inputs.from);
+      $b := $at($inputs.to);
+      $missing := [$inputs.from, $inputs.to][$not($exists($at($)))];
+      {
+        "train": $substringBefore(title, " Train Route"),
+        "booking": $inputs.from & " to " & $inputs.to,
+        "boarding_points": ($exists($a) and $exists($b) and $a < $b) ? [$map($stops, function($r, $i) { ($i >= $a and $i < $b) ? $r[1] & " (" & $r[0] & "): departs " & $r[3] & ", day " & $r[8] })],
+        "not_a_stop": $count($missing) > 0 ? $join($missing, ", ") & ": not among its stops",
+        "wrong_way": ($exists($a) and $exists($b) and $a >= $b) ? "It reaches " & $inputs.to & " before " & $inputs.from
+      }
+    )
+ttl_minutes: 60
+samples: { page: trains.schedule.html }
+notes: >-
+  The train's timetable, not the booking's own list: IRCTC's list on the booking decides where it may board. Day 2 is
+  the next day.

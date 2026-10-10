@@ -101,7 +101,8 @@ answer:
   as: options
   kind: train
   # One option per train and class, General quota: the seat status, ixigo's chance a waitlisted ticket confirms, and
-  # Tatkal when it is open. Fares are per person, IRCTC taxes and fees in.
+  # Tatkal when it is open. Fares are per person, IRCTC taxes and fees in: the seats call's fare, or without it the
+  # class's fare breakup summed (its base fare and charges).
   each: |
     (
       $classWords := {
@@ -124,7 +125,7 @@ answer:
         $c := $;
         $gn := $mine[c = $c and q = "GN"][0];
         $tq := $mine[c = $c and q = "TQ"][0];
-        $fare := $num($gn.f) ? $num($gn.f) : $num($lookup($train.fares, $c).baseFare);
+        $fare := $num($gn.f) ? $num($gn.f) : $sum($each($lookup($train.fares, $c), function($v) { $num($v) }));
         $chance := $num($gn.p) ? $floor($num($gn.p) + 0.5);
         $fare ? {
           "title": $name & " " & $train.attributes.number,
@@ -152,7 +153,8 @@ answer:
             "chance": $chance,
             "tatkal_availability": $tq ? $status($tq.a),
             "tatkal_fare_minor": ($tq and $num($tq.f)) ? $paise($num($tq.f)),
-            "duration_min": $minutes > 0 ? $minutes
+            "duration_min": $minutes > 0 ? $minutes,
+            "rating": $num($train.attributes.averageRating)
           },
           "sourceUrl": "https://www.ixigo.com/trains/" & $train.attributes.number & "?orgn=" & $train.board & "&dstn=" & $train.deboard & "&departDate=" & $train.departDate & "&quota=GN"
         }

@@ -30,6 +30,11 @@ export const TravelQuery = z.object({
   maxPriceMinor: z.int().positive().optional(),
   /** Stays: each person's share of the whole stay at most ("under 8k a head"): its total over the head count it was priced for. */
   maxShareMinor: z.int().positive().optional(),
+  /**
+   * Stays: the group's decided budget for the stay, per person, in paise: ixigo's own price bands filter the read by it,
+   * one band over kept (backend.ts). Never a guess: a decided budget, or the ask's own per-person cap.
+   */
+  budgetMinor: z.int().positive().optional(),
   mustHave: z.array(z.enum(MUST_HAVES)).max(5).optional(),
   /** Buses: a pickup or drop point the group named ("Majestic", "Mapusa"): a bus that doesn't stop there doesn't fit. */
   boardAt: z.string().min(2).max(60).optional(),
@@ -103,7 +108,7 @@ export interface TravelSearch {
    * the names it didn't apply (not on its list, or its list not known before this read: listed false); and its list as
    * it is now known, in words, for the model.
    */
-  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null };
+  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null; priced?: number | null };
   /** Not read now: ixigo's page didn't answer, and this is Go's earlier read of the same page, checked when it was (stays). */
   earlier?: boolean;
 }
