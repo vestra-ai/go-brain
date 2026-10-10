@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ActionOpen, AddExpense, Booking, Card, CardTap, CONTRACT_VERSION, CreateLink, Decision, Event, Expense, ItineraryItem, Message, Option, Place,
-  PostMessage, TripSnapshot,
+  PostMessage, TripSnapshot, UpdateTrip,
 } from '../index.js';
 
 // Contract 1.1: the Server team's additive proposal (A1 to A11, B1, B2, B3a, B4). Every addition is optional, so what
@@ -135,5 +135,75 @@ describe('contract 1.1', () => {
     expect(Expense.safeParse({ expense_id: 'x', paid_by_person_id: 'p', amount_minor: 1, currency: 'INR', note: 'n', category: 'food', split_person_ids: ['p'], created_at: at }).success).toBe(true);
     expect(CardTap.safeParse({ tap_id: 'tp', trip_id: 't', card_id: 'c', action_id: 'pick', person_id: 'p' }).success).toBe(true);
     expect(CreateLink.safeParse({ kind: 'vault', person_id: 'p', start: 'add_card' }).success).toBe(true);
+  });
+});
+
+// The Server team's revision of 10 Oct (GO-TEAM-ASKS-REV4): no private budgets, no expense answers, no payback
+// confirmation. Nothing is renamed or removed: what an older Server sends still reads.
+describe('the 10 Oct revision', () => {
+  const person = (person_id: string, name: string) => ({ person_id, name, role: 'member', joined_at: at, know: [], has_upi: false, go_paused: false });
+  const snapshot = (budget: unknown, more: Record<string, unknown> = {}) => ({
+    trip_id: 't_goa', seq: 40, title: 'Goa', status: 'planning', created_at: at, organizer_person_id: 'p_rahul', invite_url: 'https://go.example.com/i/abc',
+    destination: { name: 'Goa', place_id: 'goa' }, vibe: [], budget, people: [person('p_rahul', 'Rahul'), person('p_priya', 'Priya')],
+    decisions: [], bookings: [], expenses: [], money: { currency: 'INR', spent_minor: 0, by_category: [], transfers: [] }, itinerary: [], record: [], ...more,
+  });
+  const expense = {
+    expense_id: 'x_cab', paid_by_person_id: 'p_priya', amount_minor: 170000, currency: 'INR', note: 'Airport cab', category: 'getting_around',
+    split_person_ids: ['p_priya', 'p_rahul', 'p_aarav'], created_at: at,
+  };
+  const event = (seq: number, type: string, data: unknown) => ({ event_id: `ev_${seq}`, trip_id: 't_goa', seq, occurred_at: at, type, data });
+
+  it("A3 the trip's one budget per person reads, set or not; it is a whole number above 0", () => {
+    expect(TripSnapshot.parse(snapshot({ answered: 0, of: 4 })).budget.per_person_minor).toBeUndefined();
+    const set = { lowest: { min_minor: 2000000, max_minor: 2000000, currency: 'INR' }, answered: 4, of: 4, per_person_minor: 2000000 };
+    expect(TripSnapshot.parse(snapshot(set)).budget).toEqual(set);
+    expect(TripSnapshot.safeParse(snapshot({ ...set, per_person_minor: 0 })).success).toBe(false);
+    expect(TripSnapshot.safeParse(snapshot({ ...set, per_person_minor: 20000.5 })).success).toBe(false);
+    // The budget change comes by the person who set it, or by Go.
+    for (const by of [{ kind: 'person', person_id: 'p_rahul' }, { kind: 'go' }]) {
+      expect(Event.parse(event(41, 'trip.updated', { by, changed: ['budget'] })).type).toBe('trip.updated');
+    }
+  });
+
+  it('B1 update_trip can set the budget per person (a whole number of at least 1); missing or null leaves it', () => {
+    const base = { request_id: 'r_1', trip_id: 't_goa' };
+    expect(UpdateTrip.parse({ ...base, budget_per_person_minor: 2000000 }).budget_per_person_minor).toBe(2000000);
+    expect(UpdateTrip.parse({ ...base, budget_per_person_minor: null, title: 'Goa' }).budget_per_person_minor).toBeNull();
+    expect(UpdateTrip.safeParse({ ...base, budget_per_person_minor: 0 }).success).toBe(false);
+    expect(UpdateTrip.safeParse({ ...base, budget_per_person_minor: 1.5 }).success).toBe(false);
+  });
+
+  it('A2 and B2 an expense has no answers, a fixed split is "updated", and an older Server\'s answers still read', () => {
+    expect(Expense.parse(expense)).not.toHaveProperty('status');
+    expect(Event.parse(event(42, 'expense.changed', { expense, change: 'updated', by: { kind: 'person', person_id: 'p_priya' } })).type).toBe('expense.changed');
+    expect(Event.safeParse(event(43, 'expense.changed', { expense, change: 'reopened', by: { kind: 'person', person_id: 'p_priya' } })).success).toBe(false);
+    const answered = { ...expense, status: 'approved', confirmations: [{ person_id: 'p_rahul', state: 'approved', at }] };
+    expect(Event.parse(event(44, 'expense.changed', { expense: answered, change: 'approved', by: { kind: 'system' }, by_person_id: 'p_rahul' })).type).toBe('expense.changed');
+  });
+
+  it('A1 a payback counts once recorded: confirmed, with confirmed_at the time it was recorded', () => {
+    const settlement = {
+      settlement_id: 'st_9', from_person_id: 'p_aarav', to_person_id: 'p_rahul', amount_minor: 580000, currency: 'INR', method: 'upi',
+      status: 'confirmed', recorded_at: at, confirmed_at: at,
+    };
+    expect(Event.parse(event(45, 'settlement.recorded', { settlement, by: { kind: 'person', person_id: 'p_aarav' } })).type).toBe('settlement.recorded');
+  });
+
+  // C2: the Server asked whether unknown optional fields still reach a Go running 1.0 safely. They are ignored, wherever
+  // they are: labelled photos (B3) on a destination or place a person entered, in read_trip, trip.created and booking.changed.
+  it('C2 unknown optional fields are ignored, in read_trip, trip.created and booking.changed', () => {
+    const photos = [{ url: 'https://cdn.example.com/goa.jpg', label: 'Baga beach' }];
+    const destination = { name: 'Goa', place_id: 'goa', photos };
+    const trip = snapshot({ answered: 0, of: 4, mood: 'sunny' }, { destination, brand_new: true });
+    const read = TripSnapshot.parse(trip);
+    expect(read.destination).toEqual({ name: 'Goa', place_id: 'goa' });
+    expect(read).not.toHaveProperty('brand_new');
+    expect(Event.parse(event(1, 'trip.created', { trip })).type).toBe('trip.created');
+    const booking = {
+      booking_id: 'b_1', kind: 'stay', status: 'confirmed', title: 'Villa Sol', vendor: 'ixigo', ref: 'IX123', amount_minor: 5420000, currency: 'INR',
+      payer_person_id: 'p_rahul', for_person_ids: ['p_rahul', 'p_priya'], place: { name: 'Villa Sol', photos }, created_at: at,
+      room_types: [{ room_type_id: 'rt_1', label: 'Deluxe room', sleeps: 2, price_minor: 2400000 }],
+    };
+    expect(Event.parse(event(46, 'booking.changed', { booking, change: 'added', by: { kind: 'go' } })).type).toBe('booking.changed');
   });
 });
