@@ -88,7 +88,9 @@ const Suggestions = z.object({
 
 export const Answer = z.discriminatedUnion('as', [
   /** Options for the options card: each row becomes one or more options of this kind. */
-  z.object({ as: z.literal('options'), kind: z.enum(['stay', 'flight', 'train', 'bus']), each: Expr, keep: Expr.optional() }),
+  /** notes: lines for the model about the whole list, from the page (ixigo's Smart Lock for a route); each one that reads
+   *  as text is said, none that doesn't. */
+  z.object({ as: z.literal('options'), kind: z.enum(['stay', 'flight', 'train', 'bus']), each: Expr, keep: Expr.optional(), notes: z.array(Expr).max(4).optional() }),
   /** A card that opens the page, with what was asked set on it. */
   z.object({ as: z.literal('link'), title: z.string().min(1), who: Expr.optional() }),
   /** Facts Go says in its own words: each row as a plain object, at most max of them. */
