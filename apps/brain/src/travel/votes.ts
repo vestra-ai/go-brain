@@ -45,7 +45,8 @@ export const KEEP_LOOKING = 'Keep looking';
 function voteOptions(offers: StoredOffer[], shown: Map<string, OptionsCardT['options'][number]>): VoteOption[] {
   return offers.slice(0, 10).map((of) => {
     const c = shown.get(of.optionId);
-    const price = of.totalMinor ?? of.priceMinor;
+    // A stay's is its whole stay, as on its card, or none: never a night's (the Server team's 10 Oct §6c).
+    const price = of.kind === 'stay' ? of.totalMinor : (of.totalMinor ?? of.priceMinor);
     return {
       label: clip(of.title, 120),
       ...(c?.image_url ? { image_url: c.image_url } : {}),

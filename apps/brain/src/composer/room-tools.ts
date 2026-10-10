@@ -31,7 +31,9 @@ const VoteOption = z.object({
   option_ref: C.DecisionOption.shape.option_ref.describe(
     'The option_id of a search result this option came from, so the winner can be booked. Leave it out when no search found it.',
   ),
-  price_minor: C.DecisionOption.shape.price_minor.describe('The price in paise (minor units), only from a check made in this turn.'),
+  price_minor: C.DecisionOption.shape.price_minor.describe(
+    "The price in paise (minor units), only from a check made in this turn. For a stay, the whole stay's price, never one night's.",
+  ),
   note: C.DecisionOption.shape.note.describe('One short line under the label, like "3 nights, pool".'),
 });
 

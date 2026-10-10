@@ -314,7 +314,8 @@ describe('show_options', () => {
     const card = C.OptionsCard.parse(ctx.cards[0]);
     expect(card.card_id).toBe(shown.card_id);
     expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    expect(card.options[0]).toMatchObject({ price_minor: 1280000, price_note: 'per night', subtitle: 'Anjuna, ₹38,400 for 3 nights' });
+    // The whole stay, as its vote and its payment carry it (the Server team's §6c); the night in the subtitle.
+    expect(card.options[0]).toMatchObject({ price_minor: 3840000, price_note: 'for 3 nights', subtitle: 'Anjuna, ₹12,800 per night' });
     expect(card.options[0]!.image_url).toMatch(/^https:\/\/go\.test\/img\/u[0-9a-f]{32}\.jpg$/);
     expect(lb.link.sent('post_message')).toHaveLength(posts);
     // The day it is for (its search's check-in), so a vote that outlives it is refused, never booked (#264).
@@ -404,7 +405,9 @@ describe('put_to_vote', () => {
     const vote = lb.link.sent('open_vote').at(-1)!;
     expect(vote).toMatchObject({ request_id: 'go_vote_turn_v3_1', question: 'Where do we stay?', kind: 'choice', anonymous: false, closes_at: '2026-10-07T14:00:00.000Z' });
     expect((vote.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
-    expect((vote.options as Array<{ price_minor: number }>)[0]!.price_minor).toBe(card.options[0]!.price_minor! * 3);
+    // One meaning on the card and its vote: the whole stay, 3 nights at ₹16,900 (the Server team's 10 Oct §6c).
+    expect((vote.options as Array<{ price_minor: number }>).map((o) => o.price_minor)).toEqual(card.options.map((o) => o.price_minor));
+    expect((vote.options as Array<{ price_minor: number }>)[0]!.price_minor).toBe(5_070_000);
     expect(ctx.cards).toEqual([expect.objectContaining({ kind: 'vote', card_id: 'c_vote_turn_v3_1', decision_id: out.decision_id })]);
     expect(ctx.lines).toEqual(['Vote is up.']);
     expect((ctx.cards[0] as { fallback_text: string }).fallback_text).toMatch(/^Vote: Where do we stay\?/);

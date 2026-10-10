@@ -149,7 +149,9 @@ describe('applying /v1 events', () => {
       { offerId: BREEZE.offerId, title: 'Ocean Breeze Villa', priceMinor: 3930000, currency: 'INR', kind: 'stay', link: null },
       { offerId: null, title: 'Casa Lua', priceMinor: 4500000, currency: 'INR', kind: 'stay', link: null },
     ]);
-    expect(card.options[0]).toMatchObject({ price_minor: 1280000, price_note: 'per night', subtitle: 'Anjuna, ₹38,400 for 3 nights' });
+    expect(card.options[0]).toMatchObject({ price_minor: 3840000, price_note: 'for 3 nights', subtitle: 'Anjuna, ₹12,800 per night' });
+    // The web's pick, its total with no nights known: the whole stay all the same.
+    expect(card.options[3]).toMatchObject({ price_minor: 4500000, price_note: 'for the whole stay' });
     expect(card.options[3]?.highlights[0]).toBe('Found on the web');
   });
 
