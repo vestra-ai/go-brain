@@ -1,0 +1,123 @@
+id: help.booking
+title: "This trip's own bookings and what to know about each after booking (confirmed or not, free cancellation, bags, terminals, web check-in), from the trip's ixigo account as its help centre lists them"
+asks:
+  - can we still cancel the goa flight for free
+  - what's the baggage on our flight
+  - which terminal do we fly from
+  - is our hotel booking confirmed
+  - web check-in link for our flight
+  - hamari flight free mein cancel ho sakti hai kya
+  - flight ka baggage kitna hai
+inputs:
+  product: { kind: choice, optional: true, about: "flight, train, hotel or cab: only those bookings; all of the trip's when not given" }
+  # The trip's own place and days, so only this trip's bookings are read, never another trip's.
+  place: { kind: text, optional: true, value: $trip.destination }
+  first_day: { kind: date, optional: true, value: $trip.start }
+  last_day: { kind: date, optional: true, value: $trip.end }
+  today: { kind: date, optional: true, value: $trip.today }
+auth: login
+changes_state: false
+# ixigo's help centre (/support) on the trip's logged-in account lists the account's bookings as it opens ("Select your
+# booking"), from one call (the atlas, 10 Oct: the call's fields, and the help centre's own code for where each product
+# keeps its route and its day). That call also carries the travellers' names, email, phone, PNRs, booking and ticket
+# ids and invoice links: none of them is read, so none is kept, logged or said. Only bookings to or from the trip's
+# place, on its days (two before to three after), or from today when it has none; none at all for a trip with no place.
+page: /support
+capture:
+  - /support/helpcenter/api/v1/booking$
+read:
+  rows:
+    from: /support/helpcenter/api/v1/booking$
+    list: |
+      (
+        $day := 86400000;
+        $place := $inputs.place ? $lowercase($trim($inputs.place)) : "";
+        $ms := function($v) { $type($v) = "number" ? ($v < 100000000000 ? $v * 1000 : $v) : ($type($v) = "string" and $contains($v, /^\d{4}-\d{2}-\d{2}/) ? $toMillis($substring($v, 0, 10))) };
+        $from := $inputs.first_day ? $toMillis($inputs.first_day) - 2 * $day : ($inputs.today ? $toMillis($inputs.today) - $day);
+        $until := $inputs.last_day ? $toMillis($inputs.last_day) + 4 * $day;
+        $kind := function($b) { $lowercase($b.productType) };
+        $when := function($b) {(
+          $k := $kind($b);
+          $ms($k = "flight" or $k = "flight_price_lock" ? $b.segments[0].scheduledDeparture
+            : $k = "hotel" ? $b.checkinDate
+            : $k = "train" ? $b.bookingInfo.scheduledBoardTime
+            : $b.travelDate)
+        )};
+        $places := function($b) {
+          $append($append([$b.bookingInfo.destination.name, $b.bookingInfo.source.name, $b.cityName, $b.destination, $b.origin, $b.pickupLocation, $b.dropoffLocation],
+            $b.segments.destination), $b.segments.origin)[$type($) = "string" and $length($trim($)) > 2].$lowercase($trim($))
+        };
+        $here := function($b) { $place != "" and $count($places($b)[$contains($, $place) or $contains($place, $)]) > 0 };
+        $onDays := function($b) {( $w := $when($b); $type($w) = "number" and $type($from) = "number" ? ($w >= $from and ($not($exists($until)) or $w <= $until)) : false )};
+        $asked := function($b) { $inputs.product ? $contains($kind($b), $lowercase($inputs.product)) : true };
+        $isTrips := function($b) { $type($b.productType) = "string" and $here($b) and $onDays($b) and $asked($b) };
+        [data[$isTrips($)]]
+      )
+answer:
+  as: facts
+  title: This trip's bookings
+  max: 10
+  each: |
+    (
+      $k := $lowercase(productType);
+      $flight := $k = "flight" or $k = "flight_price_lock";
+      $at := function($v) {(
+        $m := $type($v) = "number" ? ($v < 100000000000 ? $v * 1000 : $v);
+        $m ? $fromMillis($m, "[FNn,*-3] [D1] [MNn,*-3], [H01]:[m01]", "+0530") : ($type($v) = "string" ? $v)
+      )};
+      $on := function($v) {(
+        $m := $type($v) = "number" ? ($v < 100000000000 ? $v * 1000 : $v) : ($type($v) = "string" and $contains($v, /^\d{4}-\d{2}-\d{2}/) ? $toMillis($substring($v, 0, 10)) + 19800000);
+        $m ? $fromMillis($m, "[FNn,*-3] [D1] [MNn,*-3]", "+0530")
+      )};
+      $word := function($s) {(
+        $c := $type($s) = "string" ? $uppercase($s) : ($type($s.code) = "string" ? $uppercase($s.code) : "");
+        $c in ["CONFIRMED", "BOOKED", "BOOKING_COMPLETE", "BOOKING_SUCCESS", "BOOKING_SUCCESSFUL", "AB_BOOKING_SUCCESS", "COMPLETED"] ? "confirmed"
+          : $contains($c, "REFUND") ? "cancelled, refund " & ($contains($c, "PENDING") or $contains($c, "INITIATED") ? "on its way" : "done")
+          : $contains($c, "PARTIAL") and $contains($c, "CANCEL") ? "partly cancelled"
+          : $contains($c, "CANCEL") ? "cancelled"
+          : $contains($c, "FAIL") ? "not booked (it failed)"
+          : $c = "NOT CONFIRMED" ? "not confirmed yet"
+          : $contains($c, "PENDING") or $contains($c, "INITIATED") ? "being confirmed"
+          : $c != "" ? $lowercase($replace($c, "_", " "))
+      )};
+      $segs := segments;
+      $back := $flight and $type(firstReturnSegmentIndex) = "number" and firstReturnSegmentIndex > 0 ? firstReturnSegmentIndex;
+      $out := $back ? $segs[$back - 1] : $segs[-1];
+      $first := $segs[0];
+      {
+        "what": $flight ? "flight" : ($k = "ctkt_train" ? "train" : $k),
+        "price_locked": $k = "flight_price_lock" ? true,
+        "route": $flight ? $first.origin & " to " & $out.destination
+          : $k = "train" ? bookingInfo.source.name & " to " & bookingInfo.destination.name
+          : $k = "ctkt_train" ? origin & " to " & destination,
+        "stay": $k = "hotel" ? hotelName & ", " & cityName,
+        "round_trip": $back ? true,
+        "train": $k = "train" or $k = "ctkt_train" ? $trim(($exists(trainCode) ? trainCode : "") & " " & ($exists(trainName) ? trainName : "")),
+        "flights": $flight ? [$segs.($trim(airlineName & " " & airlineCode & flightNumber))],
+        "departs": $flight ? $at($first.scheduledDeparture) : $k = "train" ? $at(bookingInfo.scheduledBoardTime) : $k != "hotel" ? $at(travelDate),
+        "from_terminal": $flight and $first.departureTerminal ? $first.departAirportCode & " terminal " & $first.departureTerminal,
+        "lands": $flight ? $at($out.scheduledArrival),
+        "to_terminal": $flight and $out.arrivalTerminal ? $out.arriveAirportCode & " terminal " & $out.arrivalTerminal,
+        "returns": $back ? $at($segs[$back].scheduledDeparture),
+        "return_from_terminal": $back and $segs[$back].departureTerminal ? $segs[$back].departAirportCode & " terminal " & $segs[$back].departureTerminal,
+        "flight_status": $flight and $first.flightStatusCode ? $lowercase($first.flightStatusCode),
+        "check_in": $k = "hotel" ? $on(checkinDate),
+        "check_out": $k = "hotel" ? $on(checkoutDate),
+        "pay_later": $k = "hotel" and paymentType = "BOOK_WITH_ZERO_PAYMENT" ? true,
+        "status": cancelled = true ? "cancelled" : $word($flight ? tripStatus : ($k = "hotel" ? bookingStatus : status)),
+        "can_cancel": $type(allowCancellation) = "boolean" ? allowCancellation,
+        "can_change_date": $type(allowReschedule) = "boolean" ? allowReschedule,
+        "free_cancellation": $type(availingFreeCancellation) = "boolean" ? availingFreeCancellation,
+        "refundable": $type(refundable) = "boolean" ? refundable,
+        "cabin_bag": $flight and $first.baggage.handLuggage ? $first.baggage.handLuggage,
+        "check_in_bag": $flight and $first.baggage.checkinLuggage ? $first.baggage.checkinLuggage,
+        "web_check_in": $flight and $type($first.checkinUrl) = "string" and $contains($first.checkinUrl, /^https:\/\//) ? $substringBefore($first.checkinUrl & "?", "?")
+      }
+    )
+ttl_minutes: 10
+samples: { page: help.booking.json }
+notes: >-
+  After booking: is it confirmed, can it still be cancelled or moved, free cancellation, the bags, the terminals, the
+  airline's own web check-in page, for this trip's bookings only (trip.upcoming lists what is booked; this answers about
+  each). Never a traveller's name, an email, a phone, a PNR or an id: they are not read. A booking's own help flow
+  (/support/booking/{id}) is the person's step on ixigo.

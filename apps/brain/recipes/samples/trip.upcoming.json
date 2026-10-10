@@ -7,9 +7,9 @@
           "bookingId": "BOOKING-ID-NEVER-READ-1",
           "product": "TRAIN",
           "status": "CONFIRMED",
-          "activityStartTime": 1793760600000,
+          "activityStartTime": 1793929200000,
           "activityStartTimeWithDay": "Fri, 06 Nov, 07:10",
-          "activityEndTime": 1793813700000,
+          "activityEndTime": 1793982300000,
           "metadata": {
             "trip_title": "Mumbai to Madgaon",
             "pnr_number": "0000000000",
@@ -28,9 +28,36 @@
           "bookingId": "BOOKING-ID-NEVER-READ-2",
           "product": "HOTEL",
           "status": "PAYMENT_PENDING",
-          "activityStartTime": 1793789400000,
+          "activityStartTime": 1793953800000,
           "activityStartTimeWithDay": "Fri, 06 Nov",
-          "metadata": { "trip_title": "Villa in Anjuna", "next_city": "Goa", "pax_count": 4, "number_of_nights": 3, "room_count": 2, "is_price_lock": false }
+          "metadata": {
+            "trip_title": "Villa in Anjuna",
+            "next_city": "Goa",
+            "pax_count": 4,
+            "number_of_nights": 3,
+            "room_count": 2,
+            "is_price_lock": false
+          }
+        }
+      ]
+    },
+    {
+      "groupingKey": "Nov 2026",
+      "userBookings": [
+        {
+          "bookingId": "BOOKING-ID-NEVER-READ-3",
+          "product": "FLIGHT",
+          "status": "CONFIRMED",
+          "activityStartTime": 1794229200000,
+          "activityStartTimeWithDay": "Mon, 09 Nov, 18:30",
+          "metadata": {
+            "trip_title": "Goa to New Delhi",
+            "pnr_number": "PNRNEVERREAD",
+            "next_city": "New Delhi",
+            "pax_count": 2,
+            "is_price_lock": false,
+            "is_smart_lock": true
+          }
         }
       ]
     },
@@ -38,15 +65,24 @@
       "groupingKey": "Dec 2026",
       "userBookings": [
         {
-          "bookingId": "BOOKING-ID-NEVER-READ-3",
+          "bookingId": "BOOKING-ID-NEVER-READ-4",
           "product": "FLIGHT",
           "status": "CONFIRMED",
-          "activityStartTime": 1796688000000,
-          "activityStartTimeWithDay": "Wed, 09 Dec",
-          "metadata": { "trip_title": "Goa to New Delhi", "pnr_number": "PNRNEVERREAD", "next_city": "New Delhi", "pax_count": 2, "is_price_lock": false, "is_smart_lock": true }
+          "activityStartTime": 1797726600000,
+          "activityStartTimeWithDay": "Sun, 20 Dec, 06:00",
+          "metadata": {
+            "trip_title": "Mumbai to Bengaluru",
+            "pnr_number": "PNRNEVERREAD",
+            "next_city": "Bengaluru",
+            "pax_count": 1,
+            "is_price_lock": false
+          }
         }
       ]
     }
   ],
-  "metadata": { "limitReached": false, "total": 3 }
+  "metadata": {
+    "limitReached": false,
+    "total": 4
+  }
 }
