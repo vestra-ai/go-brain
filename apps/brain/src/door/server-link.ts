@@ -8,7 +8,7 @@ import { notificationFrame, requestFrame, SocketCallError, type AnswerFrame, typ
 import { newUlid } from './ulid.js';
 
 export interface ServerLink {
-  /** Sends one request on any open socket; resends after a reconnect with the same id; rejects with SocketCallError. */
+  /** Sends one request on a socket of the trip's own Server; resends after a reconnect with the same id; rejects with SocketCallError. */
   request<M extends ToServerMethod>(
     method: M,
     params: ToServerParams<M>,
@@ -18,10 +18,10 @@ export interface ServerLink {
   notify(method: 'typing', params: ToServerParams<'typing'>): void;
   isOpen(): boolean;
   /**
-   * The trip's own Server instance has had no socket open for longer than INSTANCE_AWAY_MS: a closed drill, a Server
-   * gone for good. Background work for the trip (the minute refresh, the proactive sweep) sends nothing then: it would
-   * wait the few seconds and land on another Server, which only answers 404 (10 Oct: closed drills' trips reached
-   * Keshav's room every minute). False for a trip with no instance, or one whose instance has a socket open.
+   * The trip's own Server (its instance, or another replica of the same Server) has had no socket open for longer than
+   * INSTANCE_AWAY_MS: a closed drill, a Server gone for good. Background work for the trip (the minute refresh, the
+   * proactive sweep) sends nothing then: it would only wait for a socket that is not coming. False for a trip with no
+   * instance, or one whose Server has a socket open.
    */
   away?(tripId: string): Promise<boolean>;
 }
@@ -29,11 +29,12 @@ export interface ServerLink {
 /** How long a Server instance has no socket open before its trips' background work stops (ServerLink.away). */
 export const INSTANCE_AWAY_MS = 10 * 60_000;
 // Trip affinity: a request for a trip goes on a socket of the trip's own Server instance (trips.server_instance, the
-// instance that first brought its events). Several Servers can share one Go (the try room, a drill, a rehearsal), and
-// one never has another's trips. When every socket drops at once and dials again, the trip's requests wait for its
-// instance to come back, for a few seconds after the drop, instead of asking another Server. After that, and for a
-// trip with no instance yet, any open socket: the instances of one Server each answer any trip from their shared
-// database, and a 404 from another instance never marks a trip gone (trips/gone.ts).
+// instance that first brought its events), and when that instance has none open, on another replica of the same
+// Server (trips.server_name, the socket's ?server=), which answers any of its trips from their shared database. Never
+// on another Server's socket: several Servers share one Go (the try room, Keshav's room, drills, rehearsals), and one
+// never has another's trips (10 Oct: while a drill's Server was frozen, Keshav's trip went to the drill's socket and
+// the drill's trips to his room, 404s both ways). A trip whose Server gives no name has only its instance: its
+// requests wait for that instance to dial back. A trip with no instance yet takes any open socket.
 
 /** "go_" + ULID. Mint one per new write; a retry reuses it. */
 export function newRequestId(): string {
@@ -44,7 +45,15 @@ export function newRequestId(): string {
 export interface SocketHandle {
   id: string;
   instance: string;
+  /** The Server's own name (?server=), the same on every replica of it; absent when the Server gives none. */
+  server?: string;
   send(frame: string): void;
+}
+
+/** Where a trip's requests go: its Server instance, and the Server's own name when it gives one. */
+interface Home {
+  instance: string;
+  server: string | null;
 }
 
 export interface LinkOptions {
@@ -55,10 +64,8 @@ export interface LinkOptions {
   timeoutMs?: number;
   /** The waits before the three retries after a timeout, a 500 or a 503. */
   retryDelaysMs?: readonly number[];
-  /** How long one attempt waits for an open socket. Go cannot dial the Server, so it can only wait. */
+  /** How long one attempt waits for an open socket of the trip's own Server. Go cannot dial the Server, so it can only wait. */
   waitForSocketMs?: number;
-  /** How long after a Server instance's socket closes (or Go starts) its trips' requests wait for it, not another instance. */
-  reconnectWaitMs?: number;
   /** How long an instance has no socket before it is away (INSTANCE_AWAY_MS). */
   awayAfterMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -97,8 +104,8 @@ const MAX_LOSSES = 5;
 interface Pending {
   id: string;
   frame: string;
-  /** The Server instance of the trip the request names; null for a trip with none yet, or a request that names no trip. */
-  instance: string | null;
+  /** Where the trip the request names is at home; null for a trip with no instance yet, or a request that names no trip. */
+  home: Home | null;
   socketId: string | null;
   /** The instance of the socket the frame last went on. */
   sentTo: string | null;
@@ -112,76 +119,73 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
   const delays = o.retryDelaysMs ?? [500, 2_000, 5_000];
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const waitForSocketMs = o.waitForSocketMs ?? 15_000;
-  const reconnectWaitMs = o.reconnectWaitMs ?? 5_000;
   const awayAfterMs = o.awayAfterMs ?? INSTANCE_AWAY_MS;
   const sockets = new Map<string, SocketHandle>();
   // Server instance → when a socket of it last closed. Go starting counts as every instance closing.
   const lostAt = new Map<string, number>();
   const startedAt = Date.now();
-  // trip_id → its Server instance, as trips.server_instance says. The column never changes once set, so this copy is
+  // trip_id → its home, as trips.server_instance and trips.server_name say. Both are set once, together, so this copy is
   // never wrong; typing, which goes out at once and in order, reads it here and not from the database.
-  const instances = new Map<string, string>();
+  const homes = new Map<string, Home>();
   const pending = new Map<string, Pending>();
   const byRequestId = new Map<string, Promise<unknown>>();
   const waiters = new Set<() => void>();
   let rr = 0;
   let closed = false;
 
-  /** Until when an instance with no socket open is waited for: a few seconds after its last socket closed. */
-  const backBy = (instance: string): number => (lostAt.get(instance) ?? startedAt) + reconnectWaitMs;
-
   /**
-   * A socket of the trip's own instance, taken in turn; none while that instance is dialling back. Any open socket for a
-   * trip with no instance, or once its instance is past its few seconds.
+   * The sockets a trip's requests may take: its own instance's (of its own Server, when the Server gives a name: two
+   * Servers can both call an instance "default"), else that Server's other replicas'; any for a trip with no home.
    */
-  function pick(instance: string | null): SocketHandle | null {
+  function socketsFor(home: Home | null): SocketHandle[] {
     const all = [...sockets.values()];
-    const own = all.filter((s) => s.instance === instance);
-    if (own.length === 0 && instance !== null && Date.now() < backBy(instance)) return null;
-    const from = own.length > 0 ? own : all;
+    if (home === null) return all;
+    const ours = home.server === null ? all : all.filter((s) => s.server === home.server);
+    const own = ours.filter((s) => s.instance === home.instance);
+    return own.length > 0 || home.server === null ? own : ours;
+  }
+
+  /** One of them, taken in turn; null while none is open (the trip's own Server is dialling back). */
+  function pick(home: Home | null): SocketHandle | null {
+    const from = socketsFor(home);
     if (from.length === 0) return null;
     rr = (rr + 1) % from.length;
     return from[rr] ?? null;
   }
 
-  /** The trip's Server instance as Go recorded it at intake; null for a request that names no trip, or a trip with none. */
-  async function instanceOf(tripId: string | null): Promise<string | null> {
+  /** The trip's home as Go recorded it at intake; null for a request that names no trip, or a trip with no instance yet. */
+  async function homeOf(tripId: string | null): Promise<Home | null> {
     if (!tripId) return null;
-    const known = instances.get(tripId);
+    const known = homes.get(tripId);
     if (known) return known;
-    const { rows } = await o.pool.query<{ server_instance: string | null }>('select server_instance from trips where trip_id = $1', [tripId]);
+    const { rows } = await o.pool.query<{ server_instance: string | null; server_name: string | null }>(
+      'select server_instance, server_name from trips where trip_id = $1',
+      [tripId],
+    );
     const instance = rows[0]?.server_instance ?? null;
-    if (instance) instances.set(tripId, instance);
-    return instance;
+    if (!instance) return null;
+    const home = { instance, server: rows[0]?.server_name ?? null };
+    homes.set(tripId, home);
+    return home;
   }
 
-  function waitForSocket(instance: string | null): Promise<SocketHandle> {
-    const s = pick(instance);
+  function waitForSocket(home: Home | null): Promise<SocketHandle> {
+    const s = pick(home);
     if (s) return Promise.resolve(s);
     if (closed) return Promise.reject(new SocketCallError(503, 'Go is shutting down', 'unavailable'));
     return new Promise<SocketHandle>((resolve, reject) => {
       const wake = (): void => {
-        const next = closed ? null : pick(instance);
+        const next = closed ? null : pick(home);
         if (!next && !closed) return;
         clearTimeout(timer);
-        clearTimeout(late);
         waiters.delete(wake);
         if (next) resolve(next);
         else reject(new SocketCallError(503, 'Go is shutting down', 'unavailable'));
       };
       const timer = setTimeout(() => {
-        clearTimeout(late);
         waiters.delete(wake);
         reject(new SocketCallError(503, 'no socket from the Server is open', 'unavailable'));
       }, waitForSocketMs);
-      // The trip's instance did not dial back in its few seconds: another open socket takes the request. A timer can fire
-      // a millisecond before Date.now() reaches its end, and pick still waits then, so it waits out the rest; without
-      // that the request sat out the whole wait for a socket.
-      const lateWake = (): void => {
-        wake();
-        if (instance !== null && waiters.has(wake) && Date.now() < backBy(instance)) late = setTimeout(lateWake, backBy(instance) - Date.now());
-      };
-      let late = instance === null ? undefined : setTimeout(lateWake, Math.max(0, backBy(instance) - Date.now()));
       waiters.add(wake);
     });
   }
@@ -189,7 +193,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
   async function attempt(p: Pending, timeoutMs: number): Promise<AnswerFrame> {
     let s: SocketHandle;
     try {
-      s = await waitForSocket(p.instance);
+      s = await waitForSocket(p.home);
     } catch (e) {
       return { kind: 'error', id: p.id, error: { code: 503, message: e instanceof Error ? e.message : String(e), dataCode: 'unavailable' } };
     }
@@ -238,7 +242,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
     const frame = requestFrame(rpcId, method, body);
     if (Buffer.byteLength(frame) > MAX_FRAME_BYTES) throw new SocketCallError(422, `${method} is over the 1 MB frame limit`, 'invalid');
     const tripId = typeof body.trip_id === 'string' && body.trip_id !== '' ? body.trip_id : null;
-    const p: Pending = { id: rpcId, frame, instance: null, socketId: null, sentTo: null, settle: null, sent: sentBefore };
+    const p: Pending = { id: rpcId, frame, home: null, socketId: null, sentTo: null, settle: null, sent: sentBefore };
     pending.set(rpcId, p);
     // Before the frame can reach the Server: a card in it is kept from now, so a tap that beats the answer finds it.
     await listen(() => o.onSend?.(method, body), method, 'a send listener failed');
@@ -247,7 +251,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
     // socket) are all retryable, so a final one that is not retryable came from the Server.
     let refused = false;
     try {
-      p.instance = await instanceOf(tripId);
+      p.home = await homeOf(tripId);
       let retries = 0;
       let losses = 0;
       for (;;) {
@@ -274,7 +278,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
         const code = f.error.code;
         if (code === LOST && losses < MAX_LOSSES) {
           losses += 1;
-          continue; // the socket closed under it: send again, same id, once the trip's instance is back (or on any open socket)
+          continue; // the socket closed under it: send again, same id, once the trip's Server is back (another replica of it, or the same)
         }
         const retryable = code === TIMEOUT || code === LOST || code === 500 || code === 503 || code === 429;
         if (!retryable || retries >= delays.length) {
@@ -374,8 +378,8 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
       return;
     }
     // Sent at once, so typing on and off reach the Server in the order Go said them. A trip none of Go's requests named
-    // yet in this run has no known instance: any open socket, as for a trip with none.
-    pick(instances.get(r.data.trip_id) ?? null)?.send(notificationFrame(method, r.data));
+    // yet in this run has no known home: any open socket, as for a trip with none.
+    pick(homes.get(r.data.trip_id) ?? null)?.send(notificationFrame(method, r.data));
   }
 
   return {
@@ -383,9 +387,9 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
     notify,
     isOpen: () => sockets.size > 0,
     async away(tripId) {
-      const instance = await instanceOf(tripId);
-      if (instance === null || [...sockets.values()].some((s) => s.instance === instance)) return false;
-      return Date.now() - (lostAt.get(instance) ?? startedAt) > awayAfterMs;
+      const home = await homeOf(tripId);
+      if (home === null || socketsFor(home).length > 0) return false;
+      return Date.now() - (lostAt.get(home.instance) ?? startedAt) > awayAfterMs;
     },
     attach(s) {
       sockets.set(s.id, s);
@@ -394,7 +398,7 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
     detach(socketId) {
       const s = sockets.get(socketId);
       sockets.delete(socketId);
-      // Its trips wait a few seconds for a socket of the same instance before they take another one.
+      // When its instance went away (ServerLink.away).
       if (s) lostAt.set(s.instance, Date.now());
       for (const p of pending.values()) {
         if (p.socketId === socketId && p.settle) p.settle({ kind: 'error', id: p.id, error: { code: LOST, message: 'the socket closed' } });
