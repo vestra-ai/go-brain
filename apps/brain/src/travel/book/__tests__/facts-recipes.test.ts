@@ -6,7 +6,7 @@ import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { readBodyAs } from '../bodies.js';
 import { BOOK_DIR, checkRecipe, loadBook } from '../book.js';
 import type { ResultsStore } from '../../results.js';
-import { createEngine } from '../engine.js';
+import { CLICK_MS, createEngine } from '../engine.js';
 import { TravelError } from '../../mcp-travel.js';
 import { ixigoTool } from '../tool.js';
 
@@ -83,6 +83,36 @@ describe("a stay's own page", () => {
     clickBrings = false;
     const other = await engine.answer('hotels.details', { hotel: MOJIGAO }, { tripId: 't_click', onProgress: () => undefined, clickFrom: 'Mojigao - Eco Resort' });
     expect(other.as === 'facts' && other.rows).toHaveLength(1);
+    expect(reads).toEqual([MOJIGAO]);
+  });
+
+  // Exam, 10 Oct: the top pick's click looked for its card on a stage whose last read had run out of time, for the
+  // fetch's whole 20 s (504), before its page opened by its address.
+  it("never clicks on a stage that doesn't show the results, and gives a click at most CLICK_MS", async () => {
+    const DETAILS = '/accommodation-search/api/v1/accommodations/details$';
+    const answered = () => [capture(DETAILS, `${HOTEL_API}/accommodations/details`, sample('hotels.details.json'))];
+    const reads: string[] = [];
+    const clicks: FetchPlan[] = [];
+    let ready = false;
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        reads.push(url);
+        return { captures: answered(), finalUrl: url };
+      },
+      onStage: async (_trip: string, plan: FetchPlan) => {
+        clicks.push(plan);
+        return { captures: answered(), finalUrl: HIGH_FIVE };
+      },
+      stageReady: () => ready,
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 2, homes: [] }), now: () => new Date('2026-10-10T05:00:00Z') });
+    const ask = (hotel: string, name: string) => engine.answer('hotels.details', { hotel }, { tripId: 't_ready', onProgress: () => undefined, clickFrom: name });
+    expect(await ask(MOJIGAO, 'Mojigao - Eco Resort')).toMatchObject({ as: 'facts' });
+    expect(clicks).toEqual([]);
+    expect(reads).toEqual([MOJIGAO]);
+    ready = true;
+    expect(await ask(HIGH_FIVE, 'High Five Hotels Phase 2')).toMatchObject({ as: 'facts' });
+    expect(clicks.map((p) => p.timeoutMs)).toEqual([CLICK_MS]);
     expect(reads).toEqual([MOJIGAO]);
   });
 
