@@ -1,7 +1,7 @@
 import * as C from '@go/contract';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { markConfirming, markFailed, markPaid, reconcile, sweepPayments } from '../finish.js';
-import { getPayment, transition, unsettled } from '../store.js';
+import { getPayment, patchPayment, transition, unsettled } from '../store.js';
 import { FakeCallError, moneyKit, type MoneyKit } from './kit.js';
 
 let k: MoneyKit;
@@ -25,6 +25,54 @@ const paid = async () => {
   const row = await markPaid(k.deps, { tripId: 't_goa', approvalId, railRef: `fake_${approvalId}` });
   if (row) await reconcile(k.deps, row.payment_id);
 };
+
+describe("the rooms a stay's expenses split by (REV4 B6)", () => {
+  const PICKED = [
+    { label: 'Deluxe room', person_ids: ['p_rahul', 'p_priya', 'p_arjun'], price_minor: 3_600_000 },
+    { label: 'Standard room', person_ids: ['p_meher', 'p_kabir'], price_minor: 1_800_000 },
+  ];
+
+  it('are the ones picked when the payment was asked: the rooms card closes at payment, and a later pick changes nothing', async () => {
+    const r2 = await moneyKit();
+    try {
+      let picked: typeof PICKED | null = PICKED;
+      r2.deps.rooms = async (row) => (row.decision_id === 'd_villa' && row.option_ref ? picked : null);
+      const asked = await r2.ask();
+      if (!('cardId' in asked)) throw new Error(asked.refused);
+      expect((await getPayment(r2.pool, asked.paymentId))?.rooms).toEqual(PICKED);
+      // A tap on the card after the payment was asked: never what the finish reads.
+      picked = [{ label: 'Villa', person_ids: ['p_rahul'], price_minor: 1 }];
+      const approval = [...r2.server.approvals.keys()][0] as string;
+      const row = await markPaid(r2.deps, { tripId: 't_goa', approvalId: approval, railRef: `fake_${approval}` });
+      await reconcile(r2.deps, row!.payment_id);
+      expect(r2.server.writesOf('add_expense').map((w) => [w.params.split_person_ids, w.params.amount_minor])).toEqual([
+        [['p_rahul', 'p_priya', 'p_arjun'], 3_613_333],
+        [['p_meher', 'p_kabir'], 1_806_667],
+      ]);
+    } finally {
+      await r2.drop();
+    }
+  });
+
+  it('are none when nobody picked, or the pick did not read: the payment is asked all the same, one expense across everyone', async () => {
+    for (const [rooms, kept] of [
+      [async () => null, []],
+      [async () => {
+        throw new Error('the rooms cards table is busy');
+      }, null],
+    ] as const) {
+      const r2 = await moneyKit();
+      try {
+        r2.deps.rooms = rooms;
+        const asked = await r2.ask();
+        if (!('cardId' in asked)) throw new Error(asked.refused);
+        expect((await getPayment(r2.pool, asked.paymentId))?.rooms).toEqual(kept);
+      } finally {
+        await r2.drop();
+      }
+    }
+  });
+});
 
 describe('a paid payment', () => {
   it('confirms the hold, records the booking and the expense, updates the pay card and posts the ticket', async () => {
@@ -99,7 +147,8 @@ describe('a paid payment', () => {
   ];
 
   it('adds one expense a room when the group shared the rooms, each its part of what was paid, split between its people', async () => {
-    k.deps.rooms = async (row) => (row.decision_id === 'd_villa' ? ROOMS : null);
+    // The rooms the payment kept when it was asked.
+    await patchPayment(k.pool, paymentId, { rooms: ROOMS }, k.now());
     await paid();
     const expenses = k.server.writesOf('add_expense').map((w) => w.params);
     expect(expenses).toHaveLength(3);
@@ -116,7 +165,7 @@ describe('a paid payment', () => {
   });
 
   it("adds each room's expense once, whether the vault calls back twice or a room's expense fails halfway", async () => {
-    k.deps.rooms = async () => ROOMS;
+    await patchPayment(k.pool, paymentId, { rooms: ROOMS }, k.now());
     // The second room's expense fails once: the first is in, the rest are not.
     const request = k.deps.link.request.bind(k.deps.link);
     let calls = 0;
@@ -137,7 +186,7 @@ describe('a paid payment', () => {
   });
 
   it('adds one expense across everyone when no rooms were picked, or the rooms cannot split it', async () => {
-    k.deps.rooms = async () => null;
+    await patchPayment(k.pool, paymentId, { rooms: [] }, k.now());
     await paid();
     expect(k.server.writesOf('add_expense').map((w) => w.params)).toEqual([
       expect.objectContaining({ request_id: `go_paid_${approvalId}_expense`, amount_minor: 5_420_000, split_person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'] }),

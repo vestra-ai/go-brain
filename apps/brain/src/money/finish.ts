@@ -140,10 +140,10 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
   }
 
   // 3. The expense: the payer paid, split across the trip's people. A stay whose rooms the group shared (REV4 B6) is one
-  //    expense a room, split between that room's people, each its part of what was paid; each has its own request id, so
-  //    a finish run again adds none of them twice. The row keeps the first room's id: the expenses are done.
-  const pending = !row.expense_id || !row.ticket_posted_at;
-  const rooms = pending && confirmed.kind === 'stay' && d.rooms ? roomParts(amountMinor, (await d.rooms(row)) ?? []) : null;
+  //    expense a room, split between that room's people, each its part of what was paid, by the rooms kept when the payment
+  //    was asked; each has its own request id, so a finish run again adds none of them twice. The row keeps the first
+  //    room's id: the expenses are done.
+  const rooms = confirmed.kind === 'stay' && row.rooms?.length ? roomParts(amountMinor, row.rooms) : null;
   if (!row.expense_id) {
     const expense = {
       trip_id: row.trip_id,

@@ -25,8 +25,9 @@ export interface MoneyDeps {
   /** Who books a stay for the group (claims.ts): the payer is whoever claimed it, never Go's pick. Absent: no claims. */
   claims?: Claims;
   /**
-   * The rooms the group shared a paid stay in (REV4 B5's arrangement, picked on the rooms card), for one expense a room
-   * (B6); null when none was picked. Absent: every payment is one expense.
+   * The rooms the group picked for a stay (REV4 B5's arrangement, on its rooms card), for one expense a room (B6): read
+   * once when the payment is asked (the card closes at payment) and kept with it; null when none was picked. Absent:
+   * every payment is one expense.
    */
   rooms?: (row: Pick<PaymentRow, 'trip_id' | 'decision_id' | 'option_ref' | 'payment_id'>) => Promise<Room[] | null>;
 }
