@@ -363,6 +363,47 @@ describe("ixigo's offers pages", () => {
   });
 });
 
+// p2's atlas, 10 Oct: ixigo's visa guide for Indian passport holders, "updated daily from official sources". The sample is
+// the Thailand page as his logged-out browser drew it (the harness's --html), with nothing of anyone's in it.
+describe("ixigo's visa guide", () => {
+  const THAILAND = `${IXIGO}/visa-for-indians/thailand-th?purpose=leisure`;
+  const page = () => [capture('/x', THAILAND, sample('visa.requirements.html'))];
+
+  it("opens the country as a person would, from the guide's search box, its card and its Full page link", async () => {
+    const got = await facts('visa.requirements', { country: 'Thailand' }, page());
+    expect(got.page).toBe(`${IXIGO}/visa-for-indians`);
+    expect(got.runs[0]!.plan).toEqual({
+      capture: [{ match: '/visa-for-indians/', required: true, max_bytes: 1_000_000 }],
+      steps: [
+        { op: 'type', role: 'textbox', name: 'Search country...', text: 'Thailand' },
+        { op: 'click', role: 'button', text: 'Thailand' },
+        { op: 'click', role: 'link', name: 'Full page', optional: true, within_ms: 8000 },
+      ],
+      timeoutMs: 20000,
+    });
+    // Only the country's own page reads: the guide's address and its card's server action end without the slash.
+    expect(matches('/visa-for-indians/', `${IXIGO}/visa-for-indians`)).toBe(false);
+  });
+
+  it("answers the purpose asked, leisure by default, with what it takes, as last verified and with its source", async () => {
+    const got = await facts('visa.requirements', { country: 'Thailand' }, page());
+    expect(got.rows).toHaveLength(1);
+    expect(got.rows[0]).toMatchObject({
+      country: 'Thailand', purpose: 'leisure', visa: 'visa free', summary: 'No visa required for up to 30 days', max_stay_days: 30,
+      fee: 'Free (visa-free entry)', register_before_travel: 'https://tdac.immigration.go.th',
+      source: 'https://newdelhi.thaiembassy.org/en/page/visa', last_verified: '10 Oct 2026',
+    });
+    expect(got.rows[0]!['details']).toContain('reduced to 30 days from 60 days effective 15 Sep 2026');
+    expect(got.rows[0]!['documents']).toContain('Return/onward flight ticket');
+    const transit = await facts('visa.requirements', { country: 'Thailand', purpose: 'transit' }, page());
+    expect(transit.rows.map((r) => [r['purpose'], r['summary']])).toEqual([['transit', 'No transit visa required (airside TWOV)']]);
+    // A purpose other than leisure is also pressed on the country's page, so the group sees it.
+    const business = await facts('visa.requirements', { country: 'Thailand', purpose: 'business' }, page());
+    expect(business.runs[0]!.plan.steps!.at(-1)).toEqual({ op: 'click', role: 'button', name: 'Business', optional: true, within_ms: 8000 });
+    expect(business.rows[0]!['documents']).toContain('Income Tax Returns for last 2 years');
+  });
+});
+
 describe('the fast speed', () => {
   it("asks for the page's own call with ixigo's two client headers only, and each recipe's read takes that call", () => {
     const fast = (id: string) => book.get(id)!.fast;

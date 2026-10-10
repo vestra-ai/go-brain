@@ -26,27 +26,50 @@ export function withoutCredentials(v: unknown): unknown {
 }
 
 /**
- * The JSON values in a flight payload: each line is "<id>:<value>", the value JSON, or a tag letter ("I", "HL") before
- * JSON; a text chunk is "<id>:T<length>,<text>". A string "$<id>" in a value stands for that line's value or text, and
- * reads as it. A line that is neither (hints) is left out.
+ * The JSON values in a flight payload: each row is "<id>:<value>", the value JSON, or a tag letter ("I", "HL") before
+ * JSON, ending at a new line; a text chunk is "<id>:T<length>,<text>", its length in UTF-8 bytes and hex, and the next
+ * row may follow it on the same line (ixigo's visa page: a country's ld+json text, then its requirements, 10 Oct). A
+ * string "$<id>" in a value stands for that row's value or text, and reads as it. A line that is neither (hints) is left
+ * out.
  */
 export function flightValues(text: string): unknown[] {
   const lines = new Map<string, unknown>();
   const order: string[] = [];
-  for (const line of text.split('\n')) {
-    const m = /^([0-9a-f]+):([A-Z]{0,2})(.*)$/.exec(line);
-    if (!m) continue;
+  const ROW = /^([0-9a-f]+):([A-Z]{0,2})/;
+  const rowAt = (at: number): boolean => at >= text.length || text[at] === '\n' || ROW.test(text.slice(at, at + 24));
+  let i = 0;
+  while (i < text.length) {
+    const nl = text.indexOf('\n', i);
+    const lineEnd = nl < 0 ? text.length : nl;
+    const m = ROW.exec(text.slice(i, Math.min(lineEnd, i + 24)));
+    if (!m) {
+      i = lineEnd + 1;
+      continue;
+    }
+    const id = m[1]!;
+    const start = i + m[0].length;
     if (m[2] === 'T') {
-      const comma = m[3]!.indexOf(',');
-      if (comma >= 0) lines.set(m[1]!, m[3]!.slice(comma + 1));
+      const comma = text.indexOf(',', start);
+      if (comma < 0 || comma > lineEnd) {
+        i = lineEnd + 1;
+        continue;
+      }
+      // The text by its length when the next row starts right after it, else up to the end of its line.
+      const length = parseInt(text.slice(start, comma), 16);
+      const byBytes = afterBytes(text, comma + 1, length);
+      const byChars = comma + 1 + length;
+      const end = byBytes >= 0 && rowAt(byBytes) ? byBytes : byChars <= text.length && rowAt(byChars) ? byChars : lineEnd;
+      lines.set(id, text.slice(comma + 1, end));
+      i = end < text.length && text[end] === '\n' ? end + 1 : end;
       continue;
     }
     try {
-      lines.set(m[1]!, JSON.parse(m[3]!));
-      order.push(m[1]!);
+      lines.set(id, JSON.parse(text.slice(start, lineEnd)));
+      order.push(id);
     } catch {
       // not a JSON line
     }
+    i = lineEnd + 1;
   }
   const resolved = (v: unknown, depth: number): unknown => {
     if (typeof v === 'string') {
@@ -58,6 +81,19 @@ export function flightValues(text: string): unknown[] {
     return v;
   };
   return order.map((id) => resolved(lines.get(id), 0));
+}
+
+/** Where a text of that many UTF-8 bytes, starting at from, ends (a flight payload counts a text chunk in bytes); -1
+ *  when the payload ends first. */
+function afterBytes(text: string, from: number, bytes: number): number {
+  let at = from;
+  let left = Number.isFinite(bytes) ? bytes : -1;
+  while (left > 0 && at < text.length) {
+    const code = text.codePointAt(at)!;
+    left -= code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+    at += code >= 0x10000 ? 2 : 1;
+  }
+  return left === 0 ? at : -1;
 }
 
 /** The flight payload a Next.js page carries in its scripts: self.__next_f.push([1,"…"]) chunks, joined. */

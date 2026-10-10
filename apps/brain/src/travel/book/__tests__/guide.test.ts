@@ -28,6 +28,16 @@ describe("a page's body", () => {
     expect(flightOfPage(sample('plan.destination.html'))).toBe(sample('plan.destination.rsc.txt'));
     expect(() => readBodyAs('<html>no payload</html>', 'next_html', 'the guide')).toThrow(/shape Go does not read/);
   });
+
+  // ixigo's visa page, 10 Oct: a country's ld+json text chunk, then on the same line the row with its requirements. Read
+  // line by line, the requirements were part of the text and never read.
+  it('reads a text chunk by its length in UTF-8 bytes, so a row that follows it on the same line is read too', () => {
+    expect(flightValues('0:{"a":1}\n1:T6,héllo2:{"b":"$1"}\n3:T3,₹4:["x"]\n')).toEqual([{ a: 1 }, { b: 'héllo' }, ['x']]);
+    // A length that doesn't land on a row still reads to the end of its line, as before.
+    expect(flightValues('2:{"faq":"$2c"}\n2c:T40,<p>By air.</p>\n')).toEqual([{ faq: '<p>By air.</p>' }]);
+    const visa = JSON.stringify(readBodyAs(sample('visa.requirements.html'), 'next_html', 'the visa page'));
+    expect(visa).toContain('"visaRequirements"');
+  });
 });
 
 describe('plan.destination', () => {
@@ -120,7 +130,7 @@ describe('the ixigo tool', () => {
       'hotels.details', 'hotels.offers', 'hotels.reviews', 'hotels.rooms', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list', 'plan.destination', 'plan.explore', 'plan.top_locations',
       'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.by_name', 'trains.confirm_chance', 'trains.offers',
-      'trains.platform_locator', 'trains.running_status', 'trains.schedule', 'trains.station_status',
+      'trains.platform_locator', 'trains.running_status', 'trains.schedule', 'trains.station_status', 'visa.requirements',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
     expect(tool.description).toContain("- plan.destination (place): A destination's guide on ixigo.");
