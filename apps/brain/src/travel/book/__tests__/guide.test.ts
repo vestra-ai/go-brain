@@ -150,7 +150,7 @@ describe('the ixigo tool', () => {
       'trains.platform_locator', 'trains.pnr_status', 'trains.route', 'trains.running_status', 'trains.schedule', 'trains.station_status', 'trains.tatkal', 'trains.train_calendar', 'visa.requirements',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
-    expect(tool.description).toContain("- plan.destination (place): A destination's guide on ixigo.");
+    expect(tool.description).toContain("- plan.destination (place, kind?): A destination's guide on ixigo.");
   });
 
   // Keshav, 10 Oct: "I want users to see how the agent is acting on the ixigo site". A guide, a running status, a PNR the
@@ -254,7 +254,11 @@ describe('the ixigo tool', () => {
     expect(out['inputs']).toEqual({
       origin: 'the city the group would start from, such as Delhi or Bengaluru',
       month: 'any day in the month they would travel',
-      theme: "optional; one of ixigo's themes: beaches, festivals, mountains, wildlife, cultural or romantic",
+      theme:
+        'optional; a theme chip on the page: religious, cultural, nature, food, festivals, historical, shopping, beaches, mountains, outdoors, nightlife, luxury, wellness, romance, night skies, sports or offbeat',
+      scope: "optional; domestic, international or visa-free: the page's own buttons",
+      weather: "optional; rain, no rain, snow, pollution free, colder or warmer: the page's Weather & AQI buttons",
+      max_budget: 'optional; the most a person would spend on the trip, getting there and stays included, in paise',
     });
   });
 
