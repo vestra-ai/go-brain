@@ -401,6 +401,8 @@ export class NothingCaughtError extends TravelError {
  */
 export const pageDoc = (url: string): string => `${new URL(url).pathname}$`;
 const docCapture = (doc: string) => ({ match: doc, required: false, max_bytes: 1, max_count: 4 });
+/** The page's own document as nothing: for a plan that captures it itself, so none of its captures is ever taken for it. */
+const NO_DOC = '\u0000';
 /**
  * Whether the page ended on Cloudflare's check, or ixigo's "too many requests": the last answer at the page's own address
  * (its origin and path exactly, the query aside: the check's own load again adds one) was 403, 429 or 503. Another
@@ -568,7 +570,12 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   ): Promise<{ captures: Capture[]; finalUrl: string }> {
     nearRefused(plan.steps);
     const steps = plan.steps && d.now().getTime() < noLookUntil ? withoutLook(plan.steps) : plan.steps;
-    const doc = pageDoc(url);
+    // A plan that captures its page's own document itself (a page read from its HTML: the offers, a guide, a train's page)
+    // keeps it whole: no one-byte copy of it beside, and nothing of it dropped (10 Oct: offers.list caught its document
+    // under the same match as the one-byte copy, and both were dropped, so every such page answered "did not send").
+    // Cloudflare's check still reads the document: it looks at every answer at the page's address (challenged).
+    const ownDoc = plan.capture.some((c) => c.match === pageDoc(url));
+    const doc = ownDoc ? NO_DOC : pageDoc(url);
     let body = {
       url,
       // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer. A plan
@@ -581,7 +588,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           ...(c.min_count ? { min_count: c.min_count } : {}),
           ...(c.max_count ? { max_count: c.max_count } : {}),
         })),
-        docCapture(doc),
+        ...(ownDoc ? [] : [docCapture(doc)]),
       ],
       ...(steps ? { steps } : {}),
       timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,

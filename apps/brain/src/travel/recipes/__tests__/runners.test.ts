@@ -94,6 +94,25 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     });
   });
 
+  // 10 Oct (Go trip t_try_2c13f0bbfc4a): offers.list caught its own document under "/offers$", the same match as the one-byte
+  // copy every fetch keeps for Cloudflare's check, and both were dropped: every page read from its own HTML said "ixigo's
+  // page did not send" (the offers, a guide, a train's page).
+  it('keeps a page its plan captures itself: no one-byte copy beside it, and its document answers whole', async () => {
+    const OFFERS = 'https://www.ixigo.com/offers';
+    const LIST = '/upahaar-inventory/api/offers/v2/list';
+    const plan: FetchPlan = { capture: [{ match: '/offers$', required: true, max_bytes: 1_000_000 }, { match: LIST, required: false, max_bytes: 1_000_000 }] };
+    const w = world(() => fetched([capture('/offers$', OFFERS, '<html>offers</html>'), capture(LIST, `https://www.ixigo.com${LIST}?page=2`, '{"data":{}}')], OFFERS));
+    const read = await createBrowserFetchRunner(w.deps).read('t1', OFFERS, plan);
+    expect((w.calls[0]!.opts['body'] as { capture: unknown[] }).capture).toEqual([{ match: '/offers$', max_bytes: 1_000_000 }, { match: LIST, max_bytes: 1_000_000 }]);
+    expect(read.captures.map((c) => c.match)).toEqual(['/offers$', LIST]);
+    expect(read.captures[0]!.body).toBe('<html>offers</html>');
+    // Cloudflare's check still reads that document: a 403 there is the check, and the page is opened again.
+    const checked = world((_, n) => (n === 1 ? fetched([capture('/offers$', OFFERS, '<', 403)], OFFERS) : fetched([capture('/offers$', OFFERS, '<html>offers</html>')], OFFERS)));
+    const again = await createBrowserFetchRunner(checked.deps).read('t1', OFFERS, plan);
+    expect(checked.calls).toHaveLength(2);
+    expect(again.captures[0]!.body).toBe('<html>offers</html>');
+  });
+
   it("a plan with a grace tells Bash which captures it needs, on a page read and in a hand-off: the rest get the grace", async () => {
     const WALLET = '/api/v3/ixigo-money/wallet';
     const plan: FetchPlan = {
