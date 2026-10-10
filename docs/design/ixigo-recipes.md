@@ -370,3 +370,5 @@ airport codes come from ixigo's suggestion when it can be reached, or from the m
 - The details page has "Reserve 1 Room" per room type ("Select your room": Queen Room, Royal Suite, Deluxe…), "View All Rooms", reviews, the map, and "About"/"Popular Facilities".
 - "Reserve 1 Room" opens /hotels/<id>/review?…&blockId=…&roomId=…&rOption=Room Only.
 - On 7 Oct that review page showed "Oops! An error has occurred" (Retry didn't help) for two different hotels (providers 2022 and 3001) in this browser, so the hotel review step is not mapped yet. Retry once on the trip's box before building `hotels.book_review`; until then Go stops at the details page and hands over the room link.
+
+What every recipe must do, in plain words, is in [recipe-contract.md](recipe-contract.md).
