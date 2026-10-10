@@ -346,9 +346,9 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
       o.log.warn({ method }, 'dropped a notification outside the contract');
       return;
     }
-    const params = r.data;
-    void instanceOf(params.trip_id).then(
-      (instance) => pick(instance)?.send(notificationFrame(method, params)),
+    const typing = r.data;
+    void instanceOf(typing.trip_id).then(
+      (instance) => pick(instance)?.send(notificationFrame(method, typing)),
       (e: unknown) => o.log.warn({ err: e, method }, 'dropped a notification: could not read the trip instance'),
     );
   }
