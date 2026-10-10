@@ -41,6 +41,12 @@ answer:
       $table := metaData.customOfferFields[$type(fieldName) = "string"];
       $dayLine := $lines[$contains($, /\b(valid|applicable|available)\b[^.]*\b((mon|tues|wednes|thurs|fri|satur|sun)days?|weekends?|weekdays?)\b/i)][0];
       $minLine := $lines[$contains($, /\bminimum\b[^.]*₹/i)][0];
+      /* The most it takes off: the table's when it has one, else the amount right after "up to" or "maximum (discount)
+         of" in its first line that says one ("Flat 50% Off up to ₹500", "upto Rs.300"), never another amount in that
+         line (a minimum). */
+      $maxField := $table[$contains(fieldName, /^max(imum)?\.?\s*(discount|cashback|off|savings?)/i)][0].fieldValue;
+      $upTo := /\b(?:up\s?to|maximum(?:\s+(?:discount|cashback|off|savings?))?(?:\s+of)?|max\.?\s+(?:discount|cashback|off|savings?)(?:\s+of)?)\s*(?:₹|rs\.?|inr)\s?(\d[\d,]*)/i;
+      $maxLine := $lines[$contains($, $upTo)][0];
       $type(title) = "string" ? {
         "offer": title,
         "code": offerCode,
@@ -51,6 +57,7 @@ answer:
         "journey": journeyType ? $lowercase(journeyType),
         "valid_on": $days ? $days : $dayLine,
         "min_booking": $table[fieldName = "Min. Booking"].fieldValue ? $table[fieldName = "Min. Booking"].fieldValue : ($minLine ? $match($minLine, /₹\s?[\d,]+/)[0].match),
+        "max_off": $maxField ? $maxField : ($maxLine ? "₹" & $match($maxLine, $upTo)[0].groups[0]),
         "table": $count($table) > 0 ? [$table.(fieldName & ": " & fieldValue)],
         "about": [$items(about)],
         "how_to_use": [$items(howToAvail)],
