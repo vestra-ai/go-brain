@@ -8,6 +8,8 @@ inputs:
   from: { kind: place, lookup: flights.airport_lookup, about: 'the city or airport people fly from; abroad, with its airport code, like "London (LHR)"' }
   to: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly to }
   date: { kind: date }
+  # A round trip's day back, so the link stands in for flights.round_trip too.
+  return_date: { kind: date, optional: true, about: the day back }
   # The members who live by another airport are not on this flight (Arjun, in Bangalore, is not on a flight from Delhi);
   # one with no home, or a home Go has no airport for, may fly from here.
   adults:
@@ -58,7 +60,7 @@ let:
   # What people asked for, in ixigo's own params, and the cheapest first (the param ixigo's "Price / Low to High" writes).
   params: |
     $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), $site_params, $fare_type ? "airlineFareType=" & $fare_type, "sort_type=cheapest"]), "&")
-page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children={children}&infants={$lap_infants}&class={$class_code}&source=Search%20Form&{$params|raw}
+page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate={return_date|DDMMYYYY}&adults={adults}&children={children}&infants={$lap_infants}&class={$class_code}&source=Search%20Form&{$params|raw}
 answer:
   # ixigo answers flight pages with a 403 from the boxes' shared egress: the group gets the page, set as they asked.
   as: link

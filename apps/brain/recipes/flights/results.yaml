@@ -8,6 +8,8 @@ inputs:
   from: { kind: place, lookup: flights.airport_lookup, about: 'the city or airport people fly from; abroad, with its airport code, like "London (LHR)"' }
   to: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly to }
   date: { kind: date }
+  # A round trip's day back, as the link takes it: a search with one runs flights.round_trip, which reads both ways.
+  return_date: { kind: date, optional: true, about: the day back }
   # The members who live by another airport are not on this flight (Arjun, in Bangalore, is not on a flight from Delhi);
   # one with no home, or a home Go has no airport for, may fly from here.
   adults:
@@ -67,7 +69,7 @@ let:
 # that predates it sends the stream whole, cut at 1 MB, and the reader takes every whole event in it, a flight's last copy
 # winning. Its inputs, conditions and page are flights.search's, the link that stands in for this one when ixigo refuses
 # our boxes' shared address (403 or 429 under a burst, 9 Oct).
-page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children={children}&infants={$lap_infants}&class={$class_code}&source=Search%20Form&{$params|raw}
+page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate={return_date|DDMMYYYY}&adults={adults}&children={children}&infants={$lap_infants}&class={$class_code}&source=Search%20Form&{$params|raw}
 capture:
   - { match: /flights/v2/search/stream, max_bytes: 4194304, sse: last }
 read:

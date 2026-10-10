@@ -17,6 +17,8 @@ export const TravelQuery = z.object({
   from: z.string().min(2).max(60).optional(),
   to: z.string().min(2).max(60).optional(),
   date: z.iso.date().optional(),
+  /** Flights: the day back, for a round trip (both ways on one ixigo page, as pairs). */
+  returnDate: z.iso.date().optional(),
   area: z.string().min(2).max(60).optional(),
   checkIn: z.iso.date().optional(),
   checkOut: z.iso.date().optional(),
