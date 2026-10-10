@@ -9,7 +9,7 @@ import { checkFact } from '../checker.js';
 import { countFacts, forgottenUpTo, saveFact, type NewFact } from '../facts.js';
 import { createFold } from '../fold.js';
 import { drawPage } from '../pages.js';
-import { forgotElsewhere, forgotElsewhereNote, forgotElsewhereNow } from '../forget-elsewhere.js';
+import { forgotElsewhere, forgotElsewhereNote, forgotElsewhereNow, forgotElsewhereUpTo } from '../forget-elsewhere.js';
 import { emptyCatchUp, peopleHandlers } from '../people.js';
 import { recall } from '../recall.js';
 import { scriptedSide, seedMessages } from './test-kit.js';
@@ -213,7 +213,7 @@ describe('forget_person (master §10 item 5)', () => {
     expect(await countFacts(db.pool, 'p_arjun', 't_goa')).toBe(1);
   });
 
-  it("reaches the person's other trips when their facts carried there: Go is told never to repeat its own words about them (staging, 10 Oct)", async () => {
+  it("reaches the person's other trips when their facts carried there: Go's own words about them there are hidden (staging, 10 Oct)", async () => {
     const plain = peopleHandlers({ pool: db.pool, packs, fold: { redactPerson: async () => 0, storyMentions: async () => 0 }, now: () => new Date('2026-10-10T01:14:00Z'), log: silentLog });
     // Carry-over off: the trip's facts never showed in another trip, so nothing else is marked.
     await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_manali', topic: 'flights', text: 'Dislikes early flights', messageId: null, source: 'join' }));
@@ -226,11 +226,13 @@ describe('forget_person (master §10 item 5)', () => {
     expect(await plain.forget_person({ person_id: 'p_priya', trip_id: 't_goa' }, meta)).toMatchObject({ remaining_facts: 0 });
     expect(await forgotElsewhere(db.pool, 't_manali')).toEqual(['p_priya']);
     expect(await forgotElsewhere(db.pool, 't_goa')).toEqual([]);
+    // Up to Manali's newest message (#21) when she forgot: Go's messages there that name her, up to it, are hidden.
+    expect(await forgotElsewhereUpTo(db.pool, 't_manali')).toEqual(new Map([['p_priya', 21]]));
+    expect(await forgotElsewhereUpTo(db.pool, 't_goa')).toEqual(new Map());
     const note = await forgotElsewhereNow({ pool: db.pool, packs }).render('t_manali', []);
     expect(note).toBe(
-      'Priya had Go forget what it learned about them in another trip, and your own earlier messages here may repeat it. ' +
-        'Never repeat anything about Priya from your own earlier messages in this chat: use only what they or the group say in this trip, ' +
-        'and what "right now" shows. Never mention the forget.',
+      'Priya had Go forget what it learned about them in another trip, so your earlier messages here that named Priya are hidden. ' +
+        'About Priya, use only what they or the group say in this trip and what "right now" shows. Never mention the forget or the hidden messages.',
     );
     expect(await forgotElsewhereNow({ pool: db.pool, packs }).render('t_goa', [])).toBeNull();
     // Her Manali facts are hers to keep: only the Goa trip was forgotten.

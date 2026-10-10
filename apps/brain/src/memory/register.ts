@@ -27,7 +27,7 @@ import { createFold } from './fold.js';
 import { syncJoinFacts } from './join-facts.js';
 import { createNotes } from './notes.js';
 import { peopleNow, recordNow } from './now.js';
-import { forgotElsewhereNow } from './forget-elsewhere.js';
+import { forgotElsewhereNow, forgotElsewhereUpTo } from './forget-elsewhere.js';
 import { peopleHandlers } from './people.js';
 import { reactOnce } from './reactions.js';
 import { mirrorLine, mirrorSnapshot } from './record.js';
@@ -84,7 +84,10 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   if (typeof brain.context.setStory === 'function') brain.context.setStory(fold);
   else brain.log.warn({}, 'context has no setStory: long trips are not folded in the prompt');
   // Forget me reaches the composer's chat: a forgotten person's earlier lines are hidden and "right now" names them.
-  brain.context.setForgotten({ get: (tripId) => forgottenUpTo(brain.pool, tripId) });
+  brain.context.setForgotten({
+    get: (tripId) => forgottenUpTo(brain.pool, tripId),
+    elsewhere: (tripId) => forgotElsewhereUpTo(brain.pool, tripId),
+  });
 
   const people = peopleHandlers({
     pool: brain.pool, packs: brain.packs, fold, now: brain.now, log: brain.log,

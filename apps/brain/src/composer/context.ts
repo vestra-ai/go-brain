@@ -30,6 +30,8 @@ export interface StoryProvider {
 /** P2's forget: who Go was asked to forget in a trip, read each turn. */
 export interface ForgottenProvider {
   get(tripId: string): Promise<Forgotten>;
+  /** Who had Go forget them in another trip, with the change number up to which Go's own messages naming them are hidden. */
+  elsewhere?(tripId: string): Promise<Forgotten>;
 }
 
 /** A turn that is over (it ran, or gave up after its last attempt), with the messages it handled. */
@@ -270,7 +272,8 @@ export function createContext(log: Log): ContextImpl {
     async build(i) {
       // Never guessed: a turn that cannot read who was forgotten fails and runs again, rather than show their words.
       const forgotten: Forgotten = forgottenFrom ? await forgottenFrom.get(i.tripId) : new Map();
-      const room = roomView(i.pack, forgotten);
+      const elsewhere: Forgotten = forgottenFrom?.elsewhere ? await forgottenFrom.elsewhere(i.tripId) : new Map();
+      const room = roomView(i.pack, forgotten, elsewhere);
       // After a fold, "the story so far" stands for every message before chatFromSeq.
       const view = await storyOf(i.tripId);
       const fromSeq = view?.chatFromSeq ?? 0;
