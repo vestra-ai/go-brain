@@ -204,7 +204,10 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   const guard = createReplayGuard({ pool, now });
   const door = createDoor({ http, secret: env.GO_SIGNING_SECRET, guard, link, log, now, pingMs: t.pingMs, idleMs: t.idleMs });
   const taps = createTapRouter({ pool, cards, log });
-  const tripLog = createTripLog({ pool, log, now });
+  // send_event's answer waits on one write only, on connections of its own: never behind the work of earlier events on
+  // the main pool (GO-TEAM-FINAL §6, 10 Oct: mandate.set took 2,142 ms, the promise is 2 s).
+  const appendPool = o.pool ? undefined : createPool(env.DATABASE_URL, { max: 2 });
+  const tripLog = createTripLog({ pool, log, now, ...(appendPool ? { appendPool } : {}) });
   const packs = createPacks({ pool, link, log, now });
   const hooks = createMessageHooks(log);
   const setup = createSetup({ pool, log, now });
@@ -301,6 +304,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
       if (listening) await http.close();
       await intake.idle();
       if (!o.pool) await pool.end();
+      await appendPool?.end();
     },
   };
 }
