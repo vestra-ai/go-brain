@@ -104,6 +104,9 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
   // Server instance → when a socket of it last closed. Go starting counts as every instance closing.
   const lostAt = new Map<string, number>();
   const startedAt = Date.now();
+  // trip_id → its Server instance, as trips.server_instance says. The column never changes once set, so this copy is
+  // never wrong; typing, which goes out at once and in order, reads it here and not from the database.
+  const instances = new Map<string, string>();
   const pending = new Map<string, Pending>();
   const byRequestId = new Map<string, Promise<unknown>>();
   const waiters = new Set<() => void>();
@@ -130,8 +133,12 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
   /** The trip's Server instance as Go recorded it at intake; null for a request that names no trip, or a trip with none. */
   async function instanceOf(tripId: string | null): Promise<string | null> {
     if (!tripId) return null;
+    const known = instances.get(tripId);
+    if (known) return known;
     const { rows } = await o.pool.query<{ server_instance: string | null }>('select server_instance from trips where trip_id = $1', [tripId]);
-    return rows[0]?.server_instance ?? null;
+    const instance = rows[0]?.server_instance ?? null;
+    if (instance) instances.set(tripId, instance);
+    return instance;
   }
 
   function waitForSocket(instance: string | null): Promise<SocketHandle> {
@@ -346,11 +353,9 @@ export function createServerLink(o: LinkOptions): ServerLinkImpl {
       o.log.warn({ method }, 'dropped a notification outside the contract');
       return;
     }
-    const typing = r.data;
-    void instanceOf(typing.trip_id).then(
-      (instance) => pick(instance)?.send(notificationFrame(method, typing)),
-      (e: unknown) => o.log.warn({ err: e, method }, 'dropped a notification: could not read the trip instance'),
-    );
+    // Sent at once, so typing on and off reach the Server in the order Go said them. A trip none of Go's requests named
+    // yet in this run has no known instance: any open socket, as for a trip with none.
+    pick(instances.get(r.data.trip_id) ?? null)?.send(notificationFrame(method, r.data));
   }
 
   return {

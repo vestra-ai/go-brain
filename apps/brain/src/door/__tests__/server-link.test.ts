@@ -270,8 +270,13 @@ describe('ServerLink', () => {
     await vi.waitFor(() => expect(room.sent.length + drill.sent.length).toBe(4));
     expect(room.sent.map((f) => f.params.trip_id)).toEqual(['t_a', 't_a']);
     expect(drill.sent.map((f) => f.params.trip_id)).toEqual(['t_b', 't_b']);
+    // Typing goes out at once, in the order Go says it, so on never lands after off.
     l.notify('typing', { trip_id: 't_b', on: true });
-    await vi.waitFor(() => expect(drill.sent.at(-1)).toEqual({ jsonrpc: '2.0', method: 'typing', params: { trip_id: 't_b', on: true } }));
+    l.notify('typing', { trip_id: 't_b', on: false });
+    expect(drill.sent.slice(-2)).toEqual([
+      { jsonrpc: '2.0', method: 'typing', params: { trip_id: 't_b', on: true } },
+      { jsonrpc: '2.0', method: 'typing', params: { trip_id: 't_b', on: false } },
+    ]);
     expect(room.sent).toHaveLength(2);
     for (const f of [...room.sent, ...drill.sent]) if (f.id) answer(l, f.id, page);
     await expect(Promise.all(asks)).resolves.toEqual([page, page, page, page]);
@@ -381,14 +386,13 @@ describe('ServerLink', () => {
     await expect(p).resolves.toEqual(page);
   });
 
-  it('typing is a notification: dropped with no socket, sent with no id otherwise', async () => {
+  it('typing is a notification: dropped with no socket, sent with no id otherwise', () => {
     const { l } = link();
     expect(() => l.notify('typing', { trip_id: 't_goa', on: true })).not.toThrow();
-    await new Promise((r) => setTimeout(r, 50));
     const a = socket('a');
     l.attach(a);
     l.notify('typing', { trip_id: 't_goa', on: true });
-    await vi.waitFor(() => expect(a.sent).toEqual([{ jsonrpc: '2.0', method: 'typing', params: { trip_id: 't_goa', on: true } }]));
+    expect(a.sent).toEqual([{ jsonrpc: '2.0', method: 'typing', params: { trip_id: 't_goa', on: true } }]);
     expect(l.isOpen()).toBe(true);
   });
 
