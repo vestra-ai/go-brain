@@ -240,6 +240,35 @@ describe('intake', () => {
     expect(pack.messages.filter((m) => m.author.kind === 'system').map((m) => m.message_id)).toEqual(['m_2', 'm_3']);
   });
 
+  // The Server team, 10 Oct (GO-TEAM-ASKS-REV4 A4): a line for every money movement, the expenses Go adds too, with no
+  // event of its own, so Go reads them back at the next gap. They are the trip's record: no turn, no chime-in (the reflex
+  // and the lanes' hooks, where chime-ins start, never see them), no typing. On 8 Oct Go commented on one.
+  it("the App's money lines, read back with no event of their own, wake no turn and no chime-in", async () => {
+    const T = 't_in_money_lines';
+    const lines = [
+      'Priya added Airport cab · ₹1,700 · split 4 ways',
+      'Go added Villa Sol · ₹54,200 · paid by Rahul · split 4 ways',
+      'Priya changed the split of Airport cab · ₹1,700 · 3 ways',
+      'Priya removed Airport cab · ₹1,700',
+      'Aarav paid Rahul ₹5,800',
+    ];
+    const system = (seq: number, text: string) => msg(seq, null, text, { author: { kind: 'system' } });
+    const h = harness({
+      reflex: (order) => ({ read: async (m) => { order.push(`reflex:${m.message_id}`); return UNSURE_READ; } }),
+      answers: {
+        read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 6 }),
+        read_messages: () => ({ messages: lines.map((t, i) => system(i + 2, t)), has_more: false }),
+      },
+    });
+    await h.send(created(T));
+    await h.send(ev(7, 'message.created', { message: msg(7, 'p_arjun', 'ok') }, T));
+    await h.intake.idle();
+    expect((await open(T)).filter((r) => r.kind === 'message').map((r) => r.ref)).toEqual(['m_7']);
+    expect(h.order).toEqual(['reflex:m_7', 'hook:m_7']);
+    const pack = await h.packs.get(T);
+    expect(pack.messages.filter((m) => m.author.kind === 'system').map((m) => m.text)).toEqual(lines);
+  });
+
   // Contract 1.1 tolerance (2): replace_card changes no change number by the contract, but a Server that bumps a
   // message's updated_seq when Go replaces its card hands it back from read_messages. It wakes nobody, and a person's
   // message read back again (a reaction moved its updated_seq) is not handled twice.
@@ -305,6 +334,32 @@ describe('intake', () => {
     await h.send(ev(5, 'message.created', { message: msg(5, 'p_arjun', '@Go who owes what now?') }, T));
     await h.intake.idle();
     expect((await open(T)).filter((r) => r.kind === 'message').map((r) => r.ref)).toEqual(['m_5']);
+  });
+
+  // GO-TEAM-ASKS-REV4 B2 and A1 (the Server team, 10 Oct): a fixed split comes as change "updated" with the whole expense
+  // (no answers on it any more), and a payback counts once recorded. Each reads the trip again, like any money change.
+  it('takes a fixed split (updated) and a payback that counts once recorded: each reads the trip again', async () => {
+    const T = 't_in_money_rev4';
+    const h = harness({ answers: { read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 3 }) } });
+    await h.send(created(T));
+    await h.intake.idle();
+    const expense = {
+      expense_id: 'x_2', paid_by_person_id: 'p_priya', amount_minor: 170000, currency: 'INR', note: 'Airport cab', category: 'getting_around' as const,
+      split_person_ids: ['p_priya', 'p_rahul', 'p_arjun'], created_at: '2026-10-10T08:00:00Z',
+    };
+    const reads = () => h.f.calls.filter((c) => c.method === 'read_trip').length;
+    const first = reads();
+    expect(await h.send(ev(2, 'expense.changed', { expense, change: 'updated', by: { kind: 'person', person_id: 'p_priya' } }, T))).toEqual({ accepted: true, duplicate: false });
+    await h.intake.idle();
+    const afterSplit = reads();
+    expect(afterSplit).toBeGreaterThan(first);
+    const at = '2026-10-10T09:02:00Z';
+    await h.send(ev(3, 'settlement.recorded', {
+      settlement: { settlement_id: 'st_2', from_person_id: 'p_arjun', to_person_id: 'p_priya', amount_minor: 56700, currency: 'INR', method: 'cash', status: 'confirmed', recorded_at: at, confirmed_at: at },
+      by: { kind: 'person', person_id: 'p_arjun' },
+    }, T));
+    await h.intake.idle();
+    expect(reads()).toBeGreaterThan(afterSplit);
   });
 
   it('handles a trip\'s events one at a time in seq order, even when the reflex is slow', async () => {

@@ -33,7 +33,7 @@ import { createScreenFeed } from './screen-feed.js';
 import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
-import { budgetNow, budgetTool, createTripBudgets } from './trip-budget.js';
+import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
@@ -218,15 +218,12 @@ export const registerTravel: RegisterLane = async (brain) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
   };
-  // The budget the group decided: kept with set_budget, and in "Right now" for every turn, as strong context. A stays
-  // budget also picks ixigo's own price bands for a stays search (one band over kept), never Go dropping a stay.
+  // The budget the group decided: the group's in the App, or one kept with set_budget, and in "Right now" for every turn,
+  // as strong context. It also picks ixigo's own price bands for a stays search (one band over kept), never Go dropping a stay.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
-  const stayBudget = async (tripId: string): Promise<number | null> => {
-    const b = await budgets.get(tripId, (await brain.packs.get(tripId)).trip);
-    return b && b.covers === 'stay' ? b.perPersonMinor : null;
-  };
+  const stayBudget = async (tripId: string): Promise<number | null> => stayCap(await budgets.get(tripId, (await brain.packs.get(tripId)).trip));
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget })) brain.tools.register(t);
-  brain.tools.register(budgetTool({ budgets }));
+  brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens.
   const recipeCard = (tripId: string, o: { runKey: string; recipe: string }) =>

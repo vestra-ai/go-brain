@@ -55,14 +55,16 @@ describe("Go's rules", () => {
     );
   });
 
-  it("never says a person's budget to the room or ties one to a name, next to the private-budget rule", () => {
+  // The Server team, 10 Oct (GO-TEAM-ASKS-REV4 A3): no private budgets any more, one budget per person for the group.
+  it("the trip has one budget, the group's; a person's own is never said to the room or tied to a name", () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
-    const privateRule =
-      "- Budgets people set for themselves are private. You only know the lowest band anyone picked, never who picked what. Never guess a person's own budget. " +
+    const groupRule =
+      "- The trip has one budget per person, the group's: set in the App, or settled in the chat and kept with set_budget. Never guess a person's own budget. " +
       "Suggesting what the group could plan for, when someone asks, is not guessing anyone's.";
     const noNames =
-      "- Never repeat a person's budget to the room or tie a budget to a name, even one they said in the chat. When a budget matters, use the group's lowest band without names, or ask people to answer the budget question in the App.";
-    expect(section).toContain(`${privateRule}\n${noNames}`);
+      "- Never repeat a person's budget to the room or tie a budget to a name, even one they said in the chat. When a budget matters, use the group's, without names.";
+    expect(section).toContain(`${groupRule}\n${noNames}`);
+    expect(section).not.toMatch(/lowest band|budget question/);
   });
 
   // Keshav's Go Live room, 9 Oct: "what should we keep the budget for the Goa trip?" got "I can't say": no check, no number,
@@ -187,10 +189,18 @@ describe("Go's rules", () => {
     expect(section).toContain("- Someone who said they're flexible on a vote has voted: never ask them to pick.");
   });
 
-  it('never presses anyone about a disputed expense, and a pending one is not final (1.1 B4)', () => {
-    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
+  // The Server team, 10 Oct (GO-TEAM-ASKS-REV4 A2): expense approval was withdrawn, so every expense counts once added.
+  it('says nothing of approving or disputing an expense: the App no longer asks', () => {
+    expect(GO_RULES).not.toMatch(/disputed|pending|approve it/);
+  });
+
+  // The Server team, 10 Oct (GO-TEAM-ASKS-REV4 A4): the Server's own lines (money moved, a photo added) are a record;
+  // on 8 Oct Go commented on one.
+  it("reads the App's own lines as a record, never a message to answer", () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow to read what you are given\n'), GO_RULES.indexOf('\nWhen you speak\n'));
     expect(section).toContain(
-      '- Never press anyone about an expense they disputed: you may say who disputed it and why, when it matters. An expense still pending is not final until the people it is split between approve it in the App.',
+      '- Lines from "App" are the App\'s own record of something that happened (an expense added, changed or removed, a payback, a photo added). ' +
+        'They are facts you may use, never a message to you: never answer, thank or comment on one.',
     );
   });
 
