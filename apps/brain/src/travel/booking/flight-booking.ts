@@ -130,8 +130,12 @@ export function bookingLiveCard(
     return chain;
   };
   return {
-    step(i: number, s: 'doing' | 'done' | 'failed'): Promise<void> {
-      if (steps[i]) steps[i]!.state = s;
+    /** A step's state, and what it found when it says so ("1 Bedroom Apartment: ₹5,475.66 for the stay"). */
+    step(i: number, s: 'doing' | 'done' | 'failed', found?: string): Promise<void> {
+      if (steps[i]) {
+        steps[i]!.state = s;
+        if (found) steps[i]!.text = clip(found, 80);
+      }
       return send();
     },
     finish(ok: boolean): Promise<void> {

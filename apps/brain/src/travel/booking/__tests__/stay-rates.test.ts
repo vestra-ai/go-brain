@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fixture } from '../../recipes/__tests__/fixtures.js';
-import { chooseRate, stayRates, type StayRate } from '../stay-rates.js';
+import { chooseRate, sameRoom, stayRates, stayReview, type StayRate } from '../stay-rates.js';
 
 // Saudades Homestays' own page's rooms call, 20 to 22 Nov, 2 adults, 1 room, as the logged-out drill browser got it
 // (H1, 10 Oct; its per-search block ids and tokens blanked): five rooms, one rate each, ixigo's IXIFIRST on each.
@@ -39,5 +39,26 @@ describe("a stay's rates, and the one Go books for the group", () => {
     expect(chooseRate([rate('Deluxe Room', 9_000), rate('Standard Room', 7_000)])?.room).toBe('Standard Room');
     expect(chooseRate([rate('Deluxe Room', 7_000), rate('Standard Room', 7_000, true)])?.room).toBe('Standard Room');
     expect(chooseRate([])).toBeNull();
+  });
+
+  it("reads ixigo's review for its room and what it charges for the whole stay, by the same rule as a rate", () => {
+    // The shape H2 mapped (keys only, from his browser), with the drill's public numbers; what else it carries is never read.
+    const body = { data: { bookingDetail: {
+      travelDetails: { roomType: '1 Bedroom Apartment' },
+      fareDetail: { totalBookingAmount: 5586.66, totalPGAmount: 1, couponCode: 'IXIFIRST', discountMap: { 'Coupon Discount': 111 } },
+    } } };
+    expect(stayReview(body)).toEqual({ room: '1 Bedroom Apartment', totalMinor: 547_566, coupon: { code: 'IXIFIRST', savingMinor: 11_100 } });
+    expect(stayReview({ data: { bookingDetail: { fareDetail: { totalBookingAmount: 5586.66 } } } })).toEqual({ room: null, totalMinor: 558_666, coupon: null });
+    expect(stayReview({ data: { bookingDetail: {} } })).toBeNull();
+    expect(stayReview(null)).toBeNull();
+  });
+
+  it("checks the review reserved the chosen rate's room, ixigo's names with case and punctuation aside", () => {
+    const at = (room: string | null) => ({ room, totalMinor: 1, coupon: null });
+    expect(sameRoom(at('1 Bedroom Apartment'), { room: '1 Bedroom Apartment' })).toBe(true);
+    expect(sameRoom(at('1 BEDROOM APARTMENT (Free Cancellation)'), { room: '1 Bedroom Apartment' })).toBe(true);
+    expect(sameRoom(at('Queen Cottage with Balcony'), { room: 'Queen Cottage with Balcony - Happy Hours 1+1' })).toBe(true);
+    expect(sameRoom(at('4 bedroom Villa'), { room: '1 Bedroom Apartment' })).toBe(false);
+    expect(sameRoom(at(null), { room: '1 Bedroom Apartment' })).toBe(true);
   });
 });
