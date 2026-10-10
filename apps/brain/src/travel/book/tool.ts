@@ -8,7 +8,7 @@
  */
 import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../../composer/tools.js';
-import { clip } from '../cards.js';
+import { buildIxigoLinkCard, clip } from '../cards.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveSearch } from '../live-search.js';
 import { CARD_DELAY_MS, SEARCH_RECIPES, shownAfter } from '../recipes/backend.js';
@@ -37,12 +37,12 @@ export interface IxigoToolDeps {
   joinKey?: (ctx: TurnCtx, recipe: string, inputs: Record<string, string | number>) => string | null;
 }
 
-/** The recipes the tool offers: facts, open to anyone, changing nothing; never a search or a lookup. */
+/** The recipes the tool offers: facts or a link, open to anyone, changing nothing; never a search or a lookup. */
 export function toolRecipes(book: Pick<Book, 'all'>): RecipeFile[] {
   const searches = new Set(Object.values(SEARCH_RECIPES));
   return book
     .all()
-    .filter((r) => !searches.has(r.id) && r.answer.as === 'facts' && !r.changes_state && r.auth === 'none')
+    .filter((r) => !searches.has(r.id) && (r.answer.as === 'facts' || r.answer.as === 'link') && !r.changes_state && r.auth === 'none')
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -89,6 +89,10 @@ const inputsOf = (r: RecipeFile | undefined): Record<string, string> =>
 /** Go names a venue only from ixigo's own data (a well-known place also from what it knows): what the room is told about the facts it gets. */
 export const NAMES_ONLY_FROM_IXIGO =
   "Answer in your own words, from these facts, as the person asked: a line or two, or a short list if they asked for some. Name a cafe, restaurant, bar, beach shack, club or shop only if it is in these facts or someone in the group named it, never one from memory, and never say why you can or can't name one. Well-known places (beaches, forts, falls, markets) you may name from what you know too. When these facts don't match the ask exactly (another area, another kind of place), offer the nearest ones in them, with no word about what ixigo doesn't have.";
+
+/** What the room is told with a link recipe's card (a PNR's: the person checks it on ixigo's page themselves). */
+export const LINK_ON_IXIGO =
+  "Say in one short line that the card opens ixigo's page, to check it there on their own phone. Never write a number they gave (a PNR), and never guess what the page will say.";
 
 /** What the model is told when ixigo has nothing for a recipe's ask. */
 export const NOTHING_ON_IXIGO =
@@ -147,7 +151,9 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
     async run(a, ctx: TurnCtx) {
       if (!d.live()) return { recipe: a.recipe, error: 'not_here', note: "Go's ixigo recipes run only when Go searches ixigo.com itself." };
       const recipe = recipes.find((r) => r.id === a.recipe);
-      const given: Record<string, unknown> = { ...a.inputs };
+      // A link takes its own inputs only: a PNR the model passes anyway never reaches the engine, the card or a log.
+      const link = recipe?.answer.as === 'link';
+      const given: Record<string, unknown> = recipe && link ? Object.fromEntries(Object.entries(a.inputs).filter(([k]) => k in recipe.inputs)) : { ...a.inputs };
       for (const [name, input] of Object.entries(recipe?.inputs ?? {})) {
         if (input.kind !== 'option' || given[name] === undefined) continue;
         const page = await optionPage(String(given[name]), ctx.tripId);
@@ -156,7 +162,12 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
       }
       const runKey = d.joinKey?.(ctx, a.recipe, a.inputs) ?? `${ctx.turnId ?? ''}|${a.recipe}|${JSON.stringify(given)}`;
       try {
-        const answer = recipe ? await runOnStage(d, ctx.tripId, runKey, recipe, given) : await d.engine.answer(a.recipe, given, { tripId: ctx.tripId });
+        // A link opens no page on the stage: it is a card.
+        const answer = recipe && !link ? await runOnStage(d, ctx.tripId, runKey, recipe, given) : await d.engine.answer(a.recipe, given, { tripId: ctx.tripId });
+        if (answer.as === 'link') {
+          ctx.cards.push(buildIxigoLinkCard({ cardId: ctx.stableId('c_link'), title: answer.title, url: answer.link }));
+          return { recipe: a.recipe, link: answer.link, note: 'The card with the link goes out with your message.', tell_the_room: LINK_ON_IXIGO };
+        }
         if (answer.as !== 'facts') return { recipe: a.recipe, error: 'refused', note: 'This recipe answers with options: use the search tools.' };
         if (answer.rows.length === 0) {
           return { recipe: a.recipe, title: answer.title, facts: [], note: NOTHING_ON_IXIGO };
