@@ -103,17 +103,25 @@ function within(p: Promise<unknown>, ms: number): Promise<void> {
  * Starts the card for one recipe run. `runKey` names the run (its cache key and when it started), so a prefetch and the
  * search tool that share one run share one card, and a rerun of the post doesn't post it twice.
  */
-export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: string; kind: TravelKind; query: TravelQuery }): LiveSearch {
+/**
+ * A live card for a search (its kind and query), or for one of the book's other recipes the ixigo tool runs (its title:
+ * a train's running status, a guide), so the room watches every page Go opens on the stage (10 Oct: Keshav, "I want users
+ * to see how the agent is acting on the ixigo site").
+ */
+export type LiveFor = { runKey: string } & ({ kind: TravelKind; query: TravelQuery } | { recipe: string });
+
+export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): LiveSearch {
   const id = createHash('sha256').update(`${tripId}|${o.runKey}`).digest('hex').slice(0, 24);
-  const noun = NOUN[o.kind];
+  const recipe = 'recipe' in o ? clip(o.recipe.charAt(0).toLowerCase() + o.recipe.slice(1), 60) : null;
+  const noun = 'kind' in o ? NOUN[o.kind] : '';
   const card: WorkingCard = {
     card_id: `c_live_${id}`,
     kind: 'working',
-    fallback_text: `Go is searching ${noun} on ixigo.`,
+    fallback_text: recipe ? `Go is checking ${recipe} on ixigo.` : `Go is searching ${noun} on ixigo.`,
     task_id: `search_${id}`,
-    title: `Searching ${noun} on ixigo`,
+    title: recipe ? clip(`Checking ixigo: ${recipe}`, 80) : `Searching ${noun} on ixigo`,
     state: 'running',
-    steps: liveSteps(o.kind, o.query).map((text, i) => ({ text, state: i === 0 ? 'doing' : 'todo' })),
+    steps: ('kind' in o ? liveSteps(o.kind, o.query) : ['Opening ixigo', 'Reading the page', 'Answering']).map((text, i) => ({ text, state: i === 0 ? 'doing' : 'todo' })),
     screenshot_url: null,
     page_url: null,
     updated_at: d.now().toISOString(),
@@ -175,7 +183,9 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: 
     ended = true;
     card.state = ok ? 'done' : 'failed';
     card.steps = card.steps.map((s) => ({ ...s, state: ok ? 'done' : s.state === 'doing' ? 'failed' : s.state }));
-    card.fallback_text = ok ? `Go searched ${noun} on ixigo.` : `Go couldn't search ${noun} on ixigo.`;
+    card.fallback_text = recipe
+      ? ok ? `Go checked ${recipe} on ixigo.` : `Go couldn't check ${recipe} on ixigo.`
+      : ok ? `Go searched ${noun} on ixigo.` : `Go couldn't search ${noun} on ixigo.`;
     push();
   }
 
@@ -247,7 +257,7 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: 
         // Answered another way: calm and done, the page opened and how the group got its answer, never "Didn't work"
         // (Keshav's live test, 10 Oct: "DIDN'T WORK · Searching flights on ixigo" over the link card that answered).
         const before = card.steps.slice(0, Math.max(0, card.steps.length - 3)).map((st) => ({ ...st, state: 'done' as const }));
-        card.steps = [...before, { text: `Opened ixigo ${noun}`, state: 'done' }, { text: clip(e.text, 80), state: 'done' }];
+        card.steps = [...before, { text: recipe ? 'Opened ixigo' : `Opened ixigo ${noun}`, state: 'done' }, { text: clip(e.text, 80), state: 'done' }];
         card.state = 'done';
         card.fallback_text = clip(`${e.text}.`, 200);
         ended = true;

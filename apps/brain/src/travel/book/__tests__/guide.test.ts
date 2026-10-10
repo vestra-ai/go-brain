@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { TurnCtx } from '../../../composer/tools.js';
+import { TravelError } from '../../mcp-travel.js';
 import { capture } from '../../recipes/__tests__/fixtures.js';
 import { flightOfPage, flightValues, readBodyAs, withoutCredentials } from '../bodies.js';
 import { BOOK_DIR, loadBook } from '../book.js';
@@ -123,6 +124,36 @@ describe('the ixigo tool', () => {
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
     expect(tool.description).toContain("- plan.destination (place): A destination's guide on ixigo.");
+  });
+
+  // Keshav, 10 Oct: "I want users to see how the agent is acting on the ixigo site". A guide, a running status, a PNR the
+  // tool runs is watched as a search is: its page opens on the stage, and the room's live card shows it.
+  it("runs a recipe on the stage with a live card (its progress is the run's), done when it answers, failed when it doesn't", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const cards: Array<{ recipe: string; events: string[]; finished: boolean | null }> = [];
+    const card = (_trip: string, o: { runKey: string; recipe: string }) => {
+      const c = { recipe: o.recipe, events: [] as string[], finished: null as boolean | null };
+      cards.push(c);
+      return { progress: (e: { type: string }) => c.events.push(e.type), finish: async (ok: boolean) => { c.finished = ok; } };
+    };
+    const engine = {
+      answer: async (id: string, _given: Record<string, unknown>, o: Record<string, unknown> & { onProgress?: (e: { type: string }) => void }) => {
+        seen.push(o);
+        o.onProgress?.({ type: 'opening' });
+        if (id === 'plan.explore') throw new TravelError('unreachable', 'ixigo took too long to answer.');
+        return { as: 'facts' as const, title: 'Goa', rows: [{ a: 1 }], page: 'https://www.ixigo.com/plan/goa', checkedAt: '2026-10-10T05:00:00.000Z', ms: 3_000 };
+      },
+    };
+    const tool = ixigoTool({ book, engine: engine as never, live: () => true, card: card as never, cardDelayMs: 0 })!;
+    await tool.run({ recipe: 'plan.destination', inputs: { place: 'Goa' } }, turn);
+    // Watched: the run has the card's progress, so the engine puts its page on the stage.
+    expect(typeof seen[0]!.onProgress).toBe('function');
+    expect(cards[0]).toEqual({ recipe: book.all().find((r) => r.id === 'plan.destination')!.title, events: ['opening', 'extracted'], finished: true });
+    await tool.run({ recipe: 'plan.explore', inputs: { month: '2026-12-01' } }, turn);
+    expect(cards[1]!.finished).toBe(false);
+    // With no live card here (a test, another mode), the run is as before: no progress, so off the stage.
+    await ixigoTool({ book, engine: engine as never, live: () => true })!.run({ recipe: 'plan.destination', inputs: { place: 'Goa' } }, turn);
+    expect(seen.at(-1)!.onProgress).toBeUndefined();
   });
 
   it('describes the book in one short line a recipe, the same bytes on every turn, so it stays cheap as the book grows', () => {

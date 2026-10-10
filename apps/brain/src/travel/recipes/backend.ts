@@ -77,7 +77,7 @@ export interface IxigoWebDeps {
 export const CARD_DELAY_MS = 1_500;
 
 /** A live card that shows only once the run has gone delayMs; until then its steps wait, and a run done by then shows none. */
-function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch {
+export function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch {
   if (delayMs <= 0) return make();
   let live: LiveSearch | null = null;
   const waiting: Array<Parameters<LiveSearch['progress']>[0]> = [];
