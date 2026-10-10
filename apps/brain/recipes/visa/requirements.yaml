@@ -11,7 +11,7 @@ inputs:
   purpose: { kind: choice, optional: true, about: "leisure (the default), business or transit" }
 auth: none
 changes_state: false
-# ixigo's visa guide, /visa-for-indians, "Visa requirements for Indian passport holders — updated daily from official
+# ixigo's visa guide, /visa-for-indians, "Visa requirements for Indian passport holders, updated daily from official
 # sources" (10 Oct 2026): 200 countries as cards, and a "Search country..." box. Go does as a person would: types the
 # country, opens its card (a panel), then the panel's "Full page" link, the country's own page
 # (/visa-for-indians/thailand-th), which holds every purpose's requirements in its Next.js flight payload. Only that page
