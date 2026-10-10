@@ -215,6 +215,11 @@ export interface RunFor {
   onProgress?: OnProgress;
   /** A step of a composite: the composite's run, and the entry the step runs for (its lane on the strip). */
   stepOf?: string;
+  /**
+   * Read on the stage though a composite's step (the ways comparison's first city's first step): the room's live view
+   * shows a real page while the comparison runs; the rest of its steps run behind (many at once would fight over it).
+   */
+  stage?: boolean;
   lane?: string;
   /** Its fetches' place among those waiting for the computer's slots: lower first (runners.ts). */
   priority?: number;
@@ -252,7 +257,7 @@ export const BACKGROUND_PRIORITY = 9;
  * as a hidden page call (staging, 10 Oct: a trains search ran as a call in a tab left on ixigo's home page, and the live
  * view showed the home page for 2.6 s, then nothing).
  */
-const watched = (o: RunFor): boolean => !o.background && o.onProgress !== undefined && o.stepOf === undefined;
+const watched = (o: RunFor): boolean => !o.background && (o.stage === true || (o.onProgress !== undefined && o.stepOf === undefined));
 
 const fetchFor = (o: RunFor): { signal?: AbortSignal; priority: number } => ({
   ...(o.signal ? { signal: o.signal } : {}),
@@ -845,7 +850,8 @@ export function createEngine(d: EngineDeps) {
         if (o.signal?.aborted) return { recipe: step.recipe, why: 'out of time' };
         const stepGiven: Record<string, unknown> = {};
         for (const [name, source] of Object.entries(step.given)) stepGiven[name] = await evaluate(source, inputs, { inputs, trip, [steps.as]: entry });
-        const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority, ...(o.conditions ? { conditions: o.conditions } : {}) };
+        const onStage = entry === entries[0] && priority === 0;
+        const stepRun: RunFor = { tripId: o.tripId, stepOf: composite.id, lane: entry, priority, ...(onStage ? { stage: true } : {}), ...(o.conditions ? { conditions: o.conditions } : {}) };
         const own = (signal?: AbortSignal): Promise<EngineAnswer> => answer(step.recipe, stepGiven, { ...stepRun, ...(signal ? { signal } : {}) });
         // A search asked a minute ago, or running now (an early start, another lane's), answers the step with no load. A
         // step's own search is kept for the next ask, so the composite's time never cuts it short: it finishes in the
