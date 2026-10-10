@@ -230,7 +230,15 @@ export const registerTravel: RegisterLane = async (brain) => {
   // its stops and cancellation kept for "where do we board and when". Never on a Bash that can't click one card's own
   // button (before bash #4637): no other card's is clicked instead. A stay's: its page's own photos, labelled, then
   // replace the search's on its card (pick-photos.ts, 10 Oct B3).
-  const showPick = (tripId: string, pick: TopPick): void => {
+  /** A stay's own page read, its labelled photos and its rooms for the trip's people onto its card option (pick-photos.ts). */
+  const stayPage = (tripId: string, pick: TopPick, o: { onProgress?: () => undefined; clickFrom?: string; background?: true }): Promise<void> =>
+    engine.answer('hotels.details', { hotel: pick.page }, { tripId, ...o }).then(async (got) => {
+      // The rooms' prices for the trip's people, for the stay's nights (REV4 B4).
+      const stay = stayOf(pick.page);
+      const personIds = (await brain.packs.get(tripId)).trip.people.map((p) => p.person_id);
+      await showPickPhotos({ results, images, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got, stay ? { personIds, nights: stay.nights } : undefined);
+    });
+  const showPick = (tripId: string, pick: TopPick, more: TopPick[] = []): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
     if (pick.kind === 'bus' && brain.recipeRunners?.browserFetch?.canPickOne?.() === false) return;
     const run = pick.kind === 'bus'
@@ -240,17 +248,20 @@ export const registerTravel: RegisterLane = async (brain) => {
             brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top bus's drops didn't reach its card");
           }),
         )
-      : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).then(async (got) => {
-          // The rooms' prices for the trip's people, for the stay's nights (REV4 B4).
-          const stay = stayOf(pick.page);
-          const personIds = (await brain.packs.get(tripId)).trip.people.map((p) => p.person_id);
-          await showPickPhotos({ results, images, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got, stay ? { personIds, nights: stay.nights } : undefined).catch((err: unknown) => {
-            brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's photos and rooms didn't reach its card");
+      : stayPage(tripId, pick, { onProgress: () => undefined, clickFrom: pick.name });
+    void run
+      .catch((err: unknown) => {
+        brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage, or its photos didn't reach its card");
+      })
+      .then(async () => {
+        // The card's next stays, after the top pick's and one at a time, in the background: queued behind any page a person
+        // waits on (the computer's slots take a background read last), never on the stage (rev 5 R1).
+        for (const next of more) {
+          await stayPage(tripId, next, { background: true }).catch((err: unknown) => {
+            brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: a stay's own page didn't reach its card");
           });
-        });
-    void run.catch((err: unknown) => {
-      brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
-    });
+        }
+      });
   };
   // Where the group stays (booked, else the vote's winner, else the latest stays card's top pick): each bus's nearest drop.
   const groupStay = createGroupStay({ trip: async (tripId) => (await brain.packs.get(tripId)).trip, results });

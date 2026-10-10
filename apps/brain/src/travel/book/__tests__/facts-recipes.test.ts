@@ -526,6 +526,17 @@ describe("ixigo's offers pages", () => {
   // /offers/IXRBLD, recorded logged out on 10 Oct (scrubbed in the box): "Offer Validity: Every Sunday, Thursday, Friday &
   // Saturday" is recurringDay "1000111" (seven days from Sunday), and "Min. Booking ₹5,000" is one of its own table's
   // fields. They decide whether a code works for the group's dates and spend.
+  // The Server team's rev 5 (R9): get_option_details answers in 3 s from what is kept, loading nothing.
+  it('peeks a facts answer kept for the words asked, loading nothing: none before it is read, none for a search', async () => {
+    const { engine, runs } = engineWith(() => [capture('/x', `${IXIGO}/offers/IXRBLD`, sample('offers.details.ixrbld.html'))]);
+    expect(engine.peek('offers.details', { offer: 'IXRBLD' })).toBeNull();
+    const got = await engine.answer('offers.details', { offer: 'IXRBLD' }, { tripId: 't_goa' });
+    expect(await engine.peek('offers.details', { offer: ' ixrbld ' })).toMatchObject({ as: 'facts', rows: got.as === 'facts' ? got.rows : [] });
+    expect(runs).toHaveLength(1);
+    expect(engine.peek('offers.details', { offer: 'IXHDFC' })).toBeNull();
+    expect(engine.peek('hotels.search', { place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' })).toBeNull();
+  });
+
   it('offers.details says the days an offer works on and the least the booking must come to, from the page itself', async () => {
     const got = await facts('offers.details', { offer: 'IXRBLD' }, [capture('/x', `${IXIGO}/offers/IXRBLD`, sample('offers.details.ixrbld.html'))]);
     expect(got.rows[0]).toMatchObject({

@@ -50,7 +50,11 @@ export interface TravelToolDeps {
    * by its name (its page by its address when the click brings nothing), and what it says kept for the next question about
    * it (Keshav, 10 Oct: the group sees Go act on ixigo). Absent, nothing opens.
    */
-  showPick?: (tripId: string, pick: TopPick) => void;
+  /**
+   * more: a stays card's next options (2 and 3), whose own pages are read after the top pick's, in the background and one
+   * at a time, so each has its labelled photos and rooms too (the Server team's rev 5, R1).
+   */
+  showPick?: (tripId: string, pick: TopPick, more?: TopPick[]) => void;
   /** Where the group stays, with its position (group-stay.ts): each bus's nearest drop to it. Absent, none is said. */
   groupStay?: (tripId: string) => Promise<GroupStay | null>;
 }
@@ -414,7 +418,13 @@ export async function putUpCard(
   // Its card and option go with it, so a stay's page's photos can replace the search's there (pick-photos.ts).
   const top = set.optionKind === 'stay' || set.optionKind === 'bus' ? ixigoPage(picks[0]?.option.sourceUrl ?? null) : null;
   if (top && (set.optionKind === 'stay' || top.includes('#'))) {
-    d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title, kind: set.optionKind === 'bus' ? 'bus' : 'stay', cardId, optionId: picks[0]!.optionId });
+    const more = set.optionKind === 'stay'
+      ? picks.slice(1, 3).flatMap((p) => {
+          const page = ixigoPage(p.option.sourceUrl ?? null);
+          return page ? [{ page, name: p.option.title, kind: 'stay' as const, cardId, optionId: p.optionId }] : [];
+        })
+      : [];
+    d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title, kind: set.optionKind === 'bus' ? 'bus' : 'stay', cardId, optionId: picks[0]!.optionId }, more);
   }
   return { cardId, shown: shown.options.length };
 }
