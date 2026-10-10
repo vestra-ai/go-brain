@@ -12,7 +12,7 @@ import type { Switches } from '../admin/switches.js';
 import { localDay } from '../proactive/clock.js';
 import { ixigoPage } from './cards.js';
 import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
-import { applyConstraints, nearest } from './filters.js';
+import { applyConstraints, missedByAll, nearest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
 import type { PlaceFor } from './place-for.js';
 import type { ResultsStore } from './results.js';
@@ -140,8 +140,11 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       // When none fits, or fewer than three stays: the nearest of the rest, so a card can show how near ixigo gets.
       const short = results.length === 0 || (kind === 'stays' && results.length < 3);
       const near = short ? nearest(kind, parsed, all.filter((o) => !results.includes(o)), 3 - results.length) : [];
+      // None fits: which limit, on its own, left every one out, so the line says it rather than guessing.
+      const cutAll = results.length === 0 ? missedByAll(kind, parsed, all) : [];
       return {
-        checkedAt: found.checkedAt, results, found: all.length, ...(near.length > 0 ? { nearest: near } : {}), ...(found.runId ? { runId: found.runId } : {}),
+        checkedAt: found.checkedAt, results, found: all.length, ...(near.length > 0 ? { nearest: near } : {}), ...(cutAll.length > 0 ? { missedByAll: cutAll } : {}),
+        ...(found.runId ? { runId: found.runId } : {}),
         ...(found.page ? { page: found.page } : {}), ...(unapplied.length > 0 ? { unapplied } : {}), ...(found.site ? { site: found.site } : {}),
         ...(found.earlier ? { earlier: true } : {}), ...(found.cut ? { cut: true } : {}), ...(found.notes ? { notes: found.notes } : {}),
       };

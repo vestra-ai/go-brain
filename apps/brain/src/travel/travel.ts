@@ -100,6 +100,8 @@ export interface TravelSearch {
   found?: number;
   /** When nothing fits: the options that miss the fewest constraints (at most three), and what each misses, in plain words. */
   nearest?: Array<{ option: TravelOption; misses: string[] }>;
+  /** When nothing fits: the limits that, each alone, leave out every option, in plain words (filters.ts missedByAll). */
+  missedByAll?: string[];
   /** The run that read it, when a backend runs one per search (ixigo_web): searches that shared a run share its id. */
   runId?: string;
   /** The results page it read on ixigo.com, where the whole list is (ixigo_web). */
