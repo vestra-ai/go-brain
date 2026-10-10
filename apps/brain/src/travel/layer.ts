@@ -12,7 +12,7 @@ import type { Switches } from '../admin/switches.js';
 import { localDay } from '../proactive/clock.js';
 import { ixigoPage } from './cards.js';
 import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
-import { applyConstraints, closest } from './filters.js';
+import { applyConstraints, nearest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
 import type { PlaceFor } from './place-for.js';
 import type { ResultsStore } from './results.js';
@@ -133,9 +133,9 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       const loose = off.length > 0 ? applyConstraints(kind, { ...parsed, mustHave: (parsed.mustHave ?? []).filter((c) => !off.includes(c)) }, all, order) : [];
       const results = loose.length > 0 ? loose : fit;
       const unapplied = [...(loose.length > 0 ? off : []), ...(found.unapplied ?? []).filter((c) => !mustHave.includes(c))];
-      const near = results.length === 0 ? closest(kind, parsed, all) : null;
+      const near = results.length === 0 ? nearest(kind, parsed, all) : [];
       return {
-        checkedAt: found.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}), ...(found.runId ? { runId: found.runId } : {}),
+        checkedAt: found.checkedAt, results, found: all.length, ...(near.length > 0 ? { nearest: near } : {}), ...(found.runId ? { runId: found.runId } : {}),
         ...(found.page ? { page: found.page } : {}), ...(unapplied.length > 0 ? { unapplied } : {}), ...(found.site ? { site: found.site } : {}),
       };
     },

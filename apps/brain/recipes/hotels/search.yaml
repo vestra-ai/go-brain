@@ -27,9 +27,15 @@ let:
   # The place's areas, the conditions above, and the ixigo filters the model picked from ixigo's own list ($site).
   filters: "$sort($distinct($append($append(place.areas, $conditions), $site)))"
   # A whole state (all of Goa) with no area: hundreds of stays, so the fetch takes two pages, not the top strip of one.
-  wide: "place.location.locationType = 'S' and $count(place.areas) = 0"
+  # Not when ixigo filters on its own named filters: that list is short and page 2 never comes, so waiting for it would take
+  # the whole 20 s (all of Goa's pool villas for five were five stays, one page, staging, 10 Oct).
+  wide: "place.location.locationType = 'S' and $count(place.areas) = 0 and $count($site) = 0"
+  # An entire house (ixigo's stay type "Entire house") is booked whole: one room for the group, as a person books a villa
+  # on ixigo. Two to a room asked for three rooms for five, and ixigo answered 424 with no villa at all, where one room
+  # gave five pool villas (staging, 10 Oct, all of Goa, 6 to 9 Nov).
+  booked_rooms: "'AT_EH' in $site ? 1 : rooms"
 page: >-
-  /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={rooms}&childCount=0{$count($filters) > 0 ? '&filters=' & $encodeUrlComponent($join($filters, ','))|raw}{$site_sort ? '&sort=' & $site_sort : (sort in ['SC_P', 'SC_P_LH', 'SC_P_HL', 'SC_UR'] ? '&sort=' & sort)|raw}
+  /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={$booked_rooms}&childCount=0{$count($filters) > 0 ? '&filters=' & $encodeUrlComponent($join($filters, ','))|raw}{$site_sort ? '&sort=' & $site_sort : (sort in ['SC_P', 'SC_P_LH', 'SC_P_HL', 'SC_UR'] ? '&sort=' & sort)|raw}
 # What ixigo offers to narrow and order a place's stays, as its results page loads it for itself (its metadata call):
 # every filter group with its options and codes, and the sorts. Read on every search, kept per place, and shown to the
 # model, which maps the group's ask onto it ($site, $site_sort). Price bands have no names: Go checks a price itself.
@@ -84,14 +90,15 @@ answer:
   as: options
   kind: stay
   # A price is the room's nightly fare plus taxes and fees, per night and per room, as ixigo shows it; the whole stay is
-  # that times the nights and the rooms. What ixigo filtered on, every stay it gave has; the rest is what it lists. Every
-  # detail but the id, the name and the fare may be missing or null (O Hotel Goa came with a null image). The list gives
-  # up to seven photos a stay (Agoda's and Booking.com's, 1024x768) and a few amenities in ixigo's words; a cancellation
-  # date, the rest of the photos and the landmarks are only on the hotel's own page (8 Oct).
+  # that times the nights and the rooms booked, and guests is the head count ixigo priced it for (a share per head divides
+  # the whole stay by it). What ixigo filtered on, every stay it gave has; the rest is what it lists. Every detail but the
+  # id, the name and the fare may be missing or null (O Hotel Goa came with a null image). The list gives up to seven
+  # photos a stay (Agoda's and Booking.com's, 1024x768) and a few amenities in ixigo's words; a cancellation date, the
+  # rest of the photos and the landmarks are only on the hotel's own page (8 Oct).
   each: |
     (
       $nights := $nights($inputs.check_in, $inputs.check_out);
-      $rooms := $inputs.rooms;
+      $rooms := $booked_rooms;
       $name := $trim(name);
       $nightly := $paise(fareDetail.displayedBaseFare + fareDetail.taxesAndFees);
       $offerings := $append(topOfferings[$type($) = "string"], amenities.name[$type($) = "string"]);
@@ -131,6 +138,7 @@ answer:
         "facts": {
           "nights": $nights,
           "rooms": $rooms,
+          "guests": $inputs.adults,
           "area": $area,
           "distance": $distance,
           "stars": starRating ? starRating,

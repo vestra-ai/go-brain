@@ -77,8 +77,11 @@ export const StaysArgs = z.object({
   check_in: z.iso.date(),
   check_out: z.iso.date(),
   guests: z.int().min(1).max(30).optional(),
-  max_price_per_night: Rupees.optional().describe('In rupees, for the whole place per night'),
-  must_have: z.array(z.enum(MUST_HAVES)).max(5).optional().describe('pool, beach (10 minutes or less), breakfast, free_cancellation'),
+  max_price_per_night: Rupees.optional().describe('In rupees a night, as ixigo prices a stay: a room of a hotel, the whole place of an entire house'),
+  max_price_per_person: Rupees.optional()
+    .describe("In rupees: each person's share of the whole stay, as in \"under 8k a head\" or \"15k each\". Go divides each stay's total by the people and says the share"),
+  must_have: z.array(z.enum(MUST_HAVES)).max(5).optional()
+    .describe("pool, beach (10 minutes or less), breakfast, free_cancellation. When ixigo's own filters for the place are in your context, use them in site_filters instead, and must_have only for the beach"),
   min_rating: z.number().min(0).max(5).optional(),
   site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
     .describe("ixigo's own filters the ask means, by their names on ixigo's list for the place (in your context), the nearest one for what they said: ixigo filters the stays itself"),
@@ -139,6 +142,7 @@ export function staysQuery(a: z.infer<typeof StaysArgs>): TravelQuery {
     checkOut: a.check_out,
     ...(a.guests ? { guests: a.guests } : {}),
     ...(a.max_price_per_night ? { maxPriceMinor: toPaise(a.max_price_per_night) } : {}),
+    ...(a.max_price_per_person ? { maxShareMinor: toPaise(a.max_price_per_person) } : {}),
     ...(a.must_have ? { mustHave: a.must_have } : {}),
     ...(a.min_rating !== undefined ? { minRating: a.min_rating } : {}),
     ...(a.site_filters?.length ? { siteFilters: a.site_filters } : {}),
@@ -253,8 +257,8 @@ const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '')
 
 /**
  * Every search answers with a summary built in code: how many it found and how many fit, the conditions people gave, the
- * prices and the stays' areas. When nothing fits it names the conditions and the closest miss, so a line about it can
- * never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
+ * prices and the stays' areas. When nothing fits it names the conditions and the nearest misses (stays: on a card), so a
+ * line about it can never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
  */
 async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
   // A search starting is travel intent: the trip's computer stays awake for the follow-ups too.
@@ -549,14 +553,29 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
   const before = found.found ?? found.results.length;
   const options = found.results.slice(0, 10).map(toResultOption);
   if (options.length === 0) {
-    const near = found.closest;
-    const closest = near ? ` Closest: ${optionLine(near.option)}, but ${listOf(near.misses)}.` : '';
-    const summary =
-      before === 0
-        ? `Nothing came back: there are no ${scope} at all.`
-        : before === 1
-          ? `The one ${scopeOf(kind, q, 1)} doesn't fit ${listOf(terms)}.${closest}`
-          : `None of the ${before} ${scope} fits ${listOf(terms)}.${closest}`;
+    const near = found.nearest ?? [];
+    const none = before === 1 ? `The one ${scopeOf(kind, q, 1)} doesn't fit ${listOf(terms)}.` : `None of the ${before} ${scope} fits ${listOf(terms)}.`;
+    // Stays: the nearest go on a card, each saying what it misses, so the group sees how near ixigo gets ("if fewer than
+    // three fit, say so and show the nearest", the demo's villa).
+    if (kind === 'stays' && near.length > 0) {
+      const shown = near.map((n) => toResultOption(n.option));
+      const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options: shown, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
+      noteRun(set.resultsId, tripId, found.runId);
+      return {
+        search,
+        results_id: set.resultsId,
+        checked: ageText(found.checkedAt, d.now()),
+        count: 0,
+        summary: `${none} The nearest: ${near.map((n, i) => `${i + 1}. ${optionLine(n.option)}, but ${listOf(n.misses)}`).join('; ')}.`,
+        results: shown.map((o, i) => compactOption(i + 1, o, true)),
+        card: { results_id: set.resultsId, option_numbers: shown.map((_, i) => i + 1), title: suggestTitle(kind, q) },
+        note:
+          'None fits all of it. Show these nearest with show_options, and say in the line that none fits everything, keeping every condition in it, ' +
+          `and what the nearest miss, as the summary says: never call them a fit. ${CARD_LINE}`,
+      };
+    }
+    const closest = near[0] ? ` Closest: ${optionLine(near[0].option)}, but ${listOf(near[0].misses)}.` : '';
+    const summary = before === 0 ? `Nothing came back: there are no ${scope} at all.` : `${none}${closest}`;
     return {
       search,
       count: 0,
@@ -688,8 +707,10 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   const searchStays: QuickTool<z.infer<typeof StaysArgs>> = {
     name: 'search_stays',
     description:
-      `Searches villas and hotels for check-in and check-out dates. ${SEARCH_RULE} ` +
+      `Searches ixigo's stays for check-in and check-out dates: every kind (hotels, resorts, homestays, villas), unless the ask names one. ${SEARCH_RULE} ` +
       "ixigo's own filters for the place, once Go has read them, are in your context: the ones the ask means go in site_filters, and the rest of the ask in wants, which you pick from the results. " +
+      "Every part of the ask lands somewhere: a kind of stay they named goes in site_filters as ixigo's nearest stay type (a villa is an Entire house on ixigo), with their own word in wants; " +
+      'a budget per person goes in max_price_per_person, never worked out by you. ' +
       'For a deep comparison (reviews, many sites), use start_task instead.',
     input: StaysArgs,
     run: (a, ctx) => runSearch('stays', staysQuery(a), ctx, d),

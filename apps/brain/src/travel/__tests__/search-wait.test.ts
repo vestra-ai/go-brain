@@ -296,4 +296,11 @@ describe('the search wake line', () => {
     expect(renderSearchWake(item({ source: 'travel_search', search: 'buses', count: 0, resultsId: null, summary: '', error: 'unreachable' }))).toContain("didn't work (unreachable)");
     expect(renderSearchWake(item({ source: 'something_else' }))).toBeNull();
   });
+
+  it('shows the nearest stays when none fits all of the ask, never as a fit', () => {
+    const line = renderSearchWake(item({ source: 'travel_search', search: 'stays in North Goa', count: 0, resultsId: 'r_near', summary: 'None of the 5 stays fits. The nearest: 1. Lotus', error: null }))!;
+    expect(line).toContain('nothing fits all of the ask; its nearest are saved (results_id "r_near")');
+    expect(line).toContain('never call them a fit');
+    expect(line).toContain('<data>None of the 5 stays fits. The nearest: 1. Lotus</data>');
+  });
 });

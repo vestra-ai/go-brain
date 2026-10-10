@@ -24,8 +24,10 @@ export const TravelQuery = z.object({
   departAfter: Clock.optional(),
   departBefore: Clock.optional(),
   arriveBefore: Clock.optional(),
-  /** Per person for journeys, per night for stays. */
+  /** Per person for journeys, per night for stays (as ixigo prices them: a room, or a whole house). */
   maxPriceMinor: z.int().positive().optional(),
+  /** Stays: each person's share of the whole stay at most ("under 8k a head"): its total over the head count it was priced for. */
+  maxShareMinor: z.int().positive().optional(),
   mustHave: z.array(z.enum(MUST_HAVES)).max(5).optional(),
   minRating: z.number().min(0).max(5).optional(),
   /** The site's own filters and sort for the ask, by their names on the site's own list (recipes/offers.ts). */
@@ -77,8 +79,8 @@ export interface TravelSearch {
   checkedAt: string;
   /** How many the backend found before the constraints were applied (set by the travel layer). */
   found?: number;
-  /** When nothing fits: the option that misses the fewest constraints, and what it misses, in plain words. */
-  closest?: { option: TravelOption; misses: string[] };
+  /** When nothing fits: the options that miss the fewest constraints (at most three), and what each misses, in plain words. */
+  nearest?: Array<{ option: TravelOption; misses: string[] }>;
   /** The run that read it, when a backend runs one per search (ixigo_web): searches that shared a run share its id. */
   runId?: string;
   /** The results page it read on ixigo.com, where the whole list is (ixigo_web). */

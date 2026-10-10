@@ -255,7 +255,7 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     // Go's other conditions still hold: a stay over the price is never shown.
     expect(none.results.map((o) => o.title)).toEqual(['Casa Azul', 'Budget Inn']);
     expect(none).toMatchObject({ unapplied: ['pool'], found: 3 });
-    expect(none).not.toHaveProperty('closest');
+    expect(none).not.toHaveProperty('nearest');
   });
 
   it("hands ixigo_web the site's own filters and sort, keeps the site's order when it sorted, and passes on what the site did", async () => {

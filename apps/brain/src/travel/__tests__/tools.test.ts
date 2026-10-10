@@ -69,11 +69,11 @@ describe('search tools', () => {
     const missing = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_night: 5000 }, lb.ctx())) as any;
     expect(missing.count).toBe(0);
     // The fake gives 7 that sleep 5; none is under ₹5,000 a night.
-    expect(missing.summary).toMatch(/^None of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹5,000 a night, sleeping 5, with a pool and within 10 minutes of the beach\. Closest: /);
+    expect(missing.summary).toMatch(/^None of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹5,000 a night, sleeping 5, with a pool and within 10 minutes of the beach\. The nearest: 1\. /);
     expect(missing.note).toContain('keeping every condition in it');
   });
 
-  it('nothing fits a pool villa under ₹10,000 a night: the summary keeps the pool and names the closest miss and why', async () => {
+  it('nothing fits a pool villa under ₹10,000 a night: the summary keeps the pool, and the nearest three go on a card, each with what it misses', async () => {
     const none = (await lb.tools.run(
       'search_stays',
       { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', must_have: ['pool'], max_price_per_night: 10000 },
@@ -82,9 +82,23 @@ describe('search tools', () => {
     expect(none).toMatchObject({ count: 0, search: 'stays in North Goa, 2026-11-06 to 2026-11-09, at most ₹10,000 a night, with a pool' });
     // The ₹9,800 villa the next search can show is named here, with the pool it lacks, so "nothing at ₹8 to 10k" cannot be said.
     expect(none.summary).toBe(
-      'None of the 8 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹10,000 a night and with a pool. Closest: Saudade Villa (Parra), ₹9,800 per night, but no pool.',
+      'None of the 8 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹10,000 a night and with a pool. The nearest: ' +
+      '1. Saudade Villa (Parra), ₹9,800 per night, but no pool; 2. Villa Coco (Arpora), ₹10,400 per night, but ₹10,400 a night, over ₹10,000; ' +
+      '3. Villa Verde (Siolim), ₹11,500 per night, but ₹11,500 a night, over ₹10,000.',
     );
-    expect(none.results_id).toBeUndefined();
+    // "If fewer than three fit, say so and show the nearest": they are saved for a card, never called a fit.
+    expect(none.card).toEqual({ results_id: none.results_id, option_numbers: [1, 2, 3], title: 'Stays in North Goa' });
+    expect(none.results.map((r: { title: string }) => r.title)).toEqual(['Saudade Villa', 'Villa Coco', 'Villa Verde']);
+    expect(none.note).toContain('never call them a fit');
+  });
+
+  it('a budget per head is each person\'s share of the whole stay, worked out in code: "under 8k a head" for five keeps the villas at ₹40,000 or less', async () => {
+    const out = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_person: 8000 }, lb.ctx({ turnId: 'turn_head1' }))) as any;
+    // Casa Mareia is ₹50,700 for the stay, ₹10,140 each: over. Villa Sol is ₹38,400, ₹7,680 each.
+    expect(out.results.map((r: { title: string }) => r.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
+    expect(out.search).toContain('at most ₹8,000 a head for the whole stay');
+    const over = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_person: 5000 }, lb.ctx({ turnId: 'turn_head2' }))) as any;
+    expect(over.summary).toContain('The nearest: 1. The Palms Villa (Vagator), ₹12,200 per night, but ₹7,320 each for the whole stay, over ₹5,000 a head;');
   });
 
   it('an area with no stays at all says nothing came back, not that nothing fit', async () => {

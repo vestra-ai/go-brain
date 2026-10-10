@@ -84,6 +84,16 @@ describe('the options card', () => {
     const stay: ResultOption = { kind: 'stay', title: 'Villa Sol', priceMinor: 1280000, totalMinor: 3840000, priceNote: 'per night', highlights: [], facts: { nights: 3, area: 'Anjuna' } };
     expect(subtitleFor(stay)).toBe('Anjuna, ₹38,400 for 3 nights');
   });
+
+  it("adds each person's share, worked out in code, when ixigo priced it for a head count: the demo's \"under 8k a head\" for five", () => {
+    const villa: ResultOption = {
+      kind: 'stay', title: 'Lotus & Orchid Villas', priceMinor: 2394400, totalMinor: 7183200, priceNote: 'per night, per room', highlights: [],
+      facts: { nights: 3, rooms: 1, guests: 5, area: 'Candolim' },
+    };
+    expect(subtitleFor(villa)).toBe('Candolim, ₹71,832 for 3 nights, ₹14,366 each');
+    // One person: the share is the total, so it is not said twice.
+    expect(subtitleFor({ ...villa, facts: { ...villa.facts, guests: 1 } })).toBe('Candolim, ₹71,832 for 3 nights');
+  });
 });
 
 describe('when a journey arrives, on its card', () => {
