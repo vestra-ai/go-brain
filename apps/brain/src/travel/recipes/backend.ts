@@ -47,8 +47,8 @@ import type { LiveSearch } from '../live-search.js';
 import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
 import { offersText, sameName } from './offers.js';
-import { RECIPE_TTL_MS, type RecipeOption } from './recipe.js';
-import { NothingCaughtError } from './runners.js';
+import { IXIGO, RECIPE_TTL_MS, type RecipeOption } from './recipe.js';
+import { ChallengedError, NothingCaughtError } from './runners.js';
 
 /** How long a search may hold up the turn, from its start: a train search on a sleeping box took about 8 s on staging. */
 export const TRAVEL_WAIT_MS = 12_000;
@@ -66,6 +66,11 @@ export interface IxigoWebDeps {
   /** How long a run goes before its live card shows (CARD_DELAY_MS); 0 shows it at once. */
   cardDelayMs?: number;
   log?: { warn(obj: object, msg: string): void };
+  /**
+   * Cloudflare's check through Go's reloads, on a search a person waits on: handed to the browser's person to tick on Go's
+   * screen (check-handoff.ts), true once ixigo lets the browser through; absent where nobody can be asked.
+   */
+  check?: { ask(tripId: string, page: string): Promise<boolean> };
 }
 
 /**
@@ -359,6 +364,26 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     return request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions, site)}`;
   }
 
+  /** A search: ixigo's page, or for a kind with a link (flights) the link when the page won't answer. */
+  async function searchOrLink(kind: TravelKind, q: TravelQuery, o?: SearchFor): Promise<TravelSearch> {
+    const linkId = LINK_FALLBACK[kind];
+    if (!linkId) return searchPage(kind, q, o);
+    // Flights: ixigo refuses our boxes' one shared address now and then (403 or 429 under a burst), so its page is paced
+    // (flights.results pace). One held back, refused, or with nothing on it is ixigo's own page, set as they asked:
+    // never "no flights".
+    try {
+      const found = await searchPage(kind, q, o);
+      if (found.results.length > 0) return found;
+    } catch (err) {
+      if (err instanceof TravelError && ASKS_THE_PERSON.has(err.code)) throw err;
+      d.log?.warn({ tripId: o?.tripId, kind, code: err instanceof TravelError ? err.code : 'failed' }, "travel: ixigo's page didn't answer; its link answers instead");
+    }
+    const { tripId, given, conditions } = await plan(kind, q, o?.tripId);
+    const a = await d.engine.answer(linkId, given, { tripId, conditions });
+    if (a.as === 'link') throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
+    throw new TravelError('refused', `${linkId} gives no link.`);
+  }
+
   /** One search on ixigo's page: kept, joined or run, its live card from start to end. */
   async function searchPage(kind: TravelKind, q: TravelQuery, o?: SearchFor): Promise<TravelSearch> {
     const { tripId, id, given, conditions, site, link, ttl, key, page } = await plan(kind, q, o?.tripId);
@@ -475,22 +500,16 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
 
   return {
     async search(kind, q, o?: SearchFor) {
-      const linkId = LINK_FALLBACK[kind];
-      if (!linkId) return searchPage(kind, q, o);
-      // Flights: ixigo refuses our boxes' one shared address now and then (403 or 429 under a burst), so its page is paced
-      // (flights.results pace). One held back, refused, or with nothing on it is ixigo's own page, set as they asked:
-      // never "no flights".
       try {
-        const found = await searchPage(kind, q, o);
-        if (found.results.length > 0) return found;
+        return await searchOrLink(kind, q, o);
       } catch (err) {
-        if (err instanceof TravelError && ASKS_THE_PERSON.has(err.code)) throw err;
-        d.log?.warn({ tripId: o?.tripId, kind, code: err instanceof TravelError ? err.code : 'failed' }, "travel: ixigo's page didn't answer; its link answers instead");
+        // Cloudflare's check, on a search a person waits on (its turn's, or its message's early start): a person ticks it
+        // on Go's screen, and the search runs again at once. Go never ticks it itself.
+        const waiting = o?.turnId !== undefined || o?.messageId !== undefined;
+        if (!(err instanceof ChallengedError) || !waiting || !o?.tripId || !d.check) throw err;
+        if (!(await d.check.ask(o.tripId, err.page ?? `${IXIGO}/`))) throw err;
+        return searchOrLink(kind, q, o);
       }
-      const { tripId, given, conditions } = await plan(kind, q, o?.tripId);
-      const a = await d.engine.answer(linkId, given, { tripId, conditions });
-      if (a.as === 'link') throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
-      throw new TravelError('refused', `${linkId} gives no link.`);
     },
     async shareStep(id, given, o, run) {
       const kind = searchKindOf(id);

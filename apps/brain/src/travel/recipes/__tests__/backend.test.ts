@@ -4,7 +4,7 @@ import { createEngine, type Engine, type RunFor } from '../../book/engine.js';
 import { TravelError } from '../../mcp-travel.js';
 import { CARD_DELAY_MS, CHOOSING_MS, createIxigoWebBackend, NARROW_MIN, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
-import { NothingCaughtError } from '../runners.js';
+import { ChallengedError, NothingCaughtError } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
 const { book } = loadBook();
@@ -274,6 +274,31 @@ describe('the ixigo_web backend', () => {
     const b = createIxigoWebBackend({ book, engine: linkEngine(6, ['Delhi', 'Delhi', 'Bangalore', 'Mumbai', 'Delhi']), now });
     const err = (await b.search('flights', FLIGHTS, { tripId: 't_goa' }).catch((e: unknown) => e)) as TravelError;
     expect(err.link).toContain('&adults=4&');
+  });
+
+  // Keshav, 10 Oct: "even if cloudflare blocks it asks for captcha right, we fill it?" A person ticks it; Go never does.
+  it("hands Cloudflare's check on a search a person waits on to the organizer, and runs the search again once it clears", async () => {
+    const PAGE = 'https://www.ixigo.com/trains/search?x=1';
+    const make = (cleared: boolean) => {
+      let n = 0;
+      const answer: Answer = async () => {
+        n += 1;
+        if (n === 1) throw new ChallengedError(PAGE);
+        return { as: 'options', options: [OPTION], page: 'https://www.ixigo.com/x', checkedAt: '2026-10-07T12:00:03.000Z', ms: 2_100 };
+      };
+      const check = { ask: vi.fn(async () => cleared) };
+      return { backend: createIxigoWebBackend({ book, engine: { answer }, now, check }), check };
+    };
+    const ok = make(true);
+    expect((await ok.backend.search('trains', TRAINS, { tripId: 't_goa', turnId: 'turn_cf' })).results).toEqual([OPTION]);
+    expect(ok.check.ask).toHaveBeenCalledWith('t_goa', PAGE);
+    // Nobody ticked it: the search fails as it did, saying ixigo asked Go's computer to wait.
+    const no = make(false);
+    await expect(no.backend.search('trains', TRAINS, { tripId: 't_goa', turnId: 'turn_cf2' })).rejects.toBeInstanceOf(ChallengedError);
+    // A search nobody waits on (no turn, no message: a check, a head start) never asks a person.
+    const quiet = make(true);
+    await expect(quiet.backend.search('trains', TRAINS, { tripId: 't_goa' })).rejects.toBeInstanceOf(ChallengedError);
+    expect(quiet.check.ask).not.toHaveBeenCalled();
   });
 
   it('never holds, confirms or reads a status: the group books on ixigo, from the link', async () => {

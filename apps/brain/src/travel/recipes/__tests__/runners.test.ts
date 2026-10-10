@@ -246,6 +246,11 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const stays = world(() => fetched([homeDoc(403)], HOME));
     expect(await createBrowserFetchRunner(stays.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [], challenged: true });
     expect(stays.calls).toHaveLength(1 + CHALLENGE_TRIES);
+    // A check handed to a person (check-handoff.ts): the check itself stays in front for them, never opened again.
+    const kept = world(() => fetched([homeDoc(403)], HOME));
+    expect(await createBrowserFetchRunner(kept.deps).handOff!('t1', HOME, plan, { keepOpenMs: 180_000, tab: 'ixigo_check', keepChallenge: true })).toEqual({ captures: [], challenged: true });
+    expect(kept.calls).toHaveLength(1);
+    expect(kept.elapsed()).toBe(0);
   });
 
   // Staging, 9 Oct 18:52:23: "I'm logged in", tapped right after the code was typed on Watch, met Bash's 4 s window for
