@@ -71,25 +71,36 @@ export interface IxigoWebDeps {
 }
 
 /**
- * A run that answers within this (a recipe's fast call from the warm tab) posts its options card with no live card
- * first: the "On it." card shows only for a run still going after it, with the steps it missed.
+ * A run that answers within this with no page to open (a kept answer, a recipe's fast call from the warm tab) posts its
+ * options card with no live card first: the "On it." card shows only for a run still going after it, with the steps it
+ * missed. A run that opens a page shows its card at once (shownAfter).
  */
 export const CARD_DELAY_MS = 1_500;
 
-/** A live card that shows only once the run has gone delayMs; until then its steps wait, and a run done by then shows none. */
+/**
+ * A live card that shows once the run opens a page (its "opening": the stage, watched in the live view from its first
+ * picture; 10 Oct, the live view 1.5 s sooner), or once it has gone delayMs; until then its steps wait, and a run done
+ * by then with no page opened (a kept answer) shows none.
+ */
 export function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch {
   if (delayMs <= 0) return make();
   let live: LiveSearch | null = null;
   const waiting: Array<Parameters<LiveSearch['progress']>[0]> = [];
-  const timer = setTimeout(() => {
+  const show = (): void => {
+    if (live) return;
+    clearTimeout(timer);
     live = make();
     for (const e of waiting.splice(0)) live.progress(e);
-  }, delayMs);
+  };
+  const timer = setTimeout(show, delayMs);
   timer.unref?.();
   return {
     progress: (e) => {
       if (live) live.progress(e);
-      else waiting.push(e);
+      else {
+        waiting.push(e);
+        if (e.type === 'opening') show();
+      }
     },
     finish: async (ok) => {
       clearTimeout(timer);
