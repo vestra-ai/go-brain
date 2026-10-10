@@ -105,6 +105,14 @@ describe('search tools', () => {
     // Casa Mareia is ₹50,700 for the stay, ₹10,140 each: over. Villa Sol is ₹38,400, ₹7,680 each.
     expect(out.results.map((r: { title: string }) => r.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
     expect(out.search).toContain('at most ₹8,000 a head for the whole stay');
+    // Keshav's other cue, "under 15k a head" as the live villas were (10 Oct: one of five under it): fewer than three fit, so the
+    // nearest of the rest are saved after the fits for the same card, each with what it misses, and said plainly.
+    const two = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_person: 7700 }, lb.ctx({ turnId: 'turn_head3' }))) as any;
+    expect(two.results.map((r: { title: string }) => r.title)).toEqual(['Villa Sol', 'The Palms Villa']);
+    expect(two.summary).toContain('The nearest of the rest, saved after them: 3. Villa Verde (Siolim), ₹11,500 per night, but not within 10 minutes of the beach.');
+    expect(two.card.option_numbers).toEqual([1, 2, 3]);
+    expect(two.note).toContain('Only 2 stays fit: show them first and the nearest after on the same card');
+    expect((await results.get('t_goa', two.results_id))?.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Villa Verde']);
     const over = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_person: 5000 }, lb.ctx({ turnId: 'turn_head2' }))) as any;
     expect(over.summary).toContain('The nearest: 1. The Palms Villa (Vagator), ₹12,200 per night, but ₹7,320 each for the whole stay, over ₹5,000 a head;');
   });

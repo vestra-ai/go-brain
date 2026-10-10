@@ -446,8 +446,9 @@ export function handOver(
         if (found.runId && shownRuns.has(`${o.tripId}:${found.runId}`)) return;
         const a = await searchAnswer(kind, q, found, o.tripId, d);
         const lead = leftOffLead(found);
-        // Something left to pick goes to the model, which picks it; the rest posts its card with no model call.
-        const pick = leftToPick(q, found).length > 0;
+        // Something left to pick goes to the model, which picks it; so do stays with the nearest saved after too few fits,
+        // which the model says plainly. The rest posts its card with no model call.
+        const pick = leftToPick(q, found).length > 0 || (kind === 'stays' && (found.nearest?.length ?? 0) > 0);
         const payload: SearchWake = {
           source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null,
           ...(lead ? { lead } : {}), ...(pick ? { pick } : {}),
@@ -606,7 +607,10 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       note: 'Nothing to show. Say what the summary says in one line, keeping every condition in it, and suggest loosening one thing.',
     };
   }
-  const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
+  // Fewer than three stays fit: the nearest of the rest are saved after them, numbered on, for the same card.
+  const besides = kind === 'stays' ? (found.nearest ?? []) : [];
+  const saved = [...options, ...besides.map((b) => toResultOption(b.option))];
+  const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options: saved, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
   noteRun(set.resultsId, tripId, found.runId);
   const fit = found.results.length;
   // A train comes back once a class: the summary counts trains, and says how many fares by class they hold. The list
@@ -629,7 +633,8 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     `${fit > options.length ? ` The best ${options.length} are below.` : ''}` +
     `${left ? ` ${left}.` : ''}` +
     `${pick.length ? ` Not filtered by ixigo, for you to pick from each option's amenities and details: ${listOf(pick)}.` : ''}` +
-    `${list ? ` ixigo's own filters for this place, now known: ${list}.` : ''}`;
+    `${list ? ` ixigo's own filters for this place, now known: ${list}.` : ''}` +
+    `${besides.length ? ` The nearest of the rest, saved after them: ${besides.map((b, i) => `${options.length + i + 1}. ${optionLine(b.option)}, but ${listOf(b.misses)}`).join('; ')}.` : ''}`;
   return {
     search,
     results_id: set.resultsId,
@@ -637,8 +642,11 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     count: options.length,
     summary,
     results: options.map((o, i) => compactOption(i + 1, o, pick.length > 0)),
-    card: { results_id: set.resultsId, option_numbers: options.slice(0, 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
+    card: { results_id: set.resultsId, option_numbers: saved.slice(0, 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
     note:
+      (besides.length
+        ? `Only ${counted(options.length, 'stay fits', 'stays fit')}: show ${options.length === 1 ? 'it' : 'them'} first and the nearest after on the same card, and say plainly which fit and what the others miss, as the summary says. `
+        : '') +
       'To show options, call show_options with this results_id. Quote prices only from these results, and say how long ago they were checked when it is not just now. ' +
       "Each option's area, time and price are as given here: name no other, and say no count the summary does not give. " +
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
