@@ -40,7 +40,7 @@ import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
-import { createWebStays } from './web-stays.js';
+import { createWebStays, stayOf } from './web-stays.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
 import { ProactiveStore } from '../proactive/store.js';
@@ -228,11 +228,14 @@ export const registerTravel: RegisterLane = async (brain) => {
     if (pick.kind === 'bus' && brain.recipeRunners?.browserFetch?.canPickOne?.() === false) return;
     const run = pick.kind === 'bus'
       ? engine.answer('buses.stops', { bus: pick.page }, { tripId, onProgress: () => undefined, staged: true })
-      : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).then((got) =>
-          showPickPhotos({ results, images, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got).catch((err: unknown) => {
-            brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's photos didn't reach its card");
-          }),
-        );
+      : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).then(async (got) => {
+          // The rooms' prices for the trip's people, for the stay's nights (REV4 B4).
+          const stay = stayOf(pick.page);
+          const personIds = (await brain.packs.get(tripId)).trip.people.map((p) => p.person_id);
+          await showPickPhotos({ results, images, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got, stay ? { personIds, nights: stay.nights } : undefined).catch((err: unknown) => {
+            brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's photos and rooms didn't reach its card");
+          });
+        });
     void run.catch((err: unknown) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
