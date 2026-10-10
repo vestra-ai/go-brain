@@ -103,7 +103,7 @@ export const numbersOf = (title: string): string[] => title.match(/\b[0-9A-Z]{2}
  * replaced in place, which keeps who sees it.
  */
 export function bookingLiveCard(
-  d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: string, cardId: string, title: string, texts: string[], only: string[] | null,
+  d: Pick<FlightBookingDeps, 'link' | 'now'> & { log: Pick<Log, 'warn'> }, tripId: string, cardId: string, title: string, texts: string[], only: string[] | null,
 ) {
   const steps = texts.map((text) => ({ text: clip(text, 80), state: 'todo' as 'todo' | 'doing' | 'done' | 'failed' }));
   let state: WorkingCard['state'] = 'running';
