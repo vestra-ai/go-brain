@@ -14,7 +14,7 @@
  */
 import type { TravelKind, TravelQuery } from '../travel.js';
 import { addDays } from './recipe.js';
-import { airportOf, placeWords, stationOf } from './places.js';
+import { airportOf, isLearned, placeWords, stationOf } from './places.js';
 
 export interface TravelAsk { kind: TravelKind; query: TravelQuery }
 
@@ -180,7 +180,8 @@ function writtenEnds(lower: string): Array<Found & { name: string }> {
 
 /**
  * The places of this kind the text names, in order, by their names in the tables (and airport or station codes in
- * capitals); asWritten, the ends of a journey as written too, where no table's name is (AskContext.asWritten).
+ * capitals), and the ends of a journey as written whose words ixigo resolved before (a cache: nothing is looked up);
+ * asWritten, every end as written, where no table's name is (AskContext.asWritten).
  */
 export function placesIn(text: string, kind: TravelKind, asWritten = false): Array<Found & { name: string }> {
   const lower = text.toLowerCase();
@@ -204,8 +205,10 @@ export function placesIn(text: string, kind: TravelKind, asWritten = false): Arr
       }
     }
   }
-  if (asWritten && kind !== 'stays') {
-    for (const p of writtenEnds(lower)) if (!out.some((q) => p.at < q.end && p.end > q.at)) out.push(p);
+  if (kind !== 'stays') {
+    for (const p of writtenEnds(lower)) {
+      if ((asWritten || isLearned(kind, p.name)) && !out.some((q) => p.at < q.end && p.end > q.at)) out.push(p);
+    }
   }
   return out.sort((a, b) => a.at - b.at);
 }
