@@ -165,6 +165,30 @@ describe('search tools', () => {
     expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
   });
 
+  // The lead, 10 Oct: each bus's nearest drop to the group's stay, in a straight line, and whose stay it is.
+  it("search_buses says each bus's nearest drop to the group's stay first, and tells the model whose stay it is", async () => {
+    const paulo = {
+      kind: 'bus' as const, title: 'Paulo Travels Express', priceMinor: 150_000, currency: 'INR', priceNote: 'per seat, from', highlights: ['AC Sleeper (2+1)'],
+      facts: { dropping_points: 'Panjim; Mapusa', drop_spots: 'Panjim (15.4939, 73.8369); Mapusa (15.589, 73.8099)' },
+      journey: { mode: 'bus' as const, origin: { name: 'Bengaluru' }, destination: { name: 'Goa' }, depart_at: '2026-11-06T19:30:00+05:30', arrive_at: '2026-11-07T08:30:00+05:30' },
+    };
+    const stub = { search: async () => ({ results: [paulo], checkedAt: '2026-10-10T06:00:00.000Z', found: 1 }) } as unknown as Travel;
+    const tools = travelTools({
+      travel: stub, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now: lb.clock.now,
+      groupStay: async () => ({ name: 'Casa Anjuna', lat: 15.5733, lng: 73.74, why: 'voted' }),
+    });
+    const buses = tools.find((t) => t.name === 'search_buses')!;
+    const out = (await buses.run({ from: 'Bengaluru', to: 'Goa', date: '2026-11-06', wants: ['AC sleeper'] }, lb.ctx({ turnId: 'turn_b5' }))) as any;
+    expect(out.results[0].highlights[0]).toBe('Get off at Mapusa, about 8 km from Casa Anjuna');
+    expect(out.note).toContain("Each bus's first highlight is its nearest drop to Casa Anjuna, the stay you voted for, in a straight line");
+    // Trains and stays never ask where the group stays.
+    let asked = 0;
+    const empty = { search: async () => ({ results: [], checkedAt: '2026-10-10T06:00:00.000Z', found: 0 }) } as unknown as Travel;
+    const counting = travelTools({ travel: empty, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now: lb.clock.now, groupStay: async () => { asked += 1; return null; } });
+    await counting.find((t) => t.name === 'search_trains')!.run({ from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_t9' }));
+    expect(asked).toBe(0);
+  });
+
   it("takes what no argument covers as wants, which the model picks from each option's details (asks nobody listed: an AC sleeper, a 3A berth)", async () => {
     const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', wants: ['AC sleeper'] }, lb.ctx({ turnId: 'turn_b2' }))) as any;
     expect(buses.summary).toContain("Not filtered by ixigo, for you to pick from each option's amenities and details: AC sleeper.");
