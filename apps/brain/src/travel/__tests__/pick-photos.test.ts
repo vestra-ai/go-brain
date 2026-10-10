@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
 import { withSchema } from '../../db/test-db.js';
+import { SocketCallError } from '../../door/rpc.js';
 import { FakeLink } from '../../tasks/testing/lane-brain.js';
 import type { EngineAnswer } from '../book/engine.js';
 import { buildOptionsCard, type CardPick, type OptionsCardT } from '../cards.js';
-import { showPickPhotos } from '../pick-photos.js';
+import { REPLACE_TRIES, REPLACE_WAIT_MS, showPickPhotos } from '../pick-photos.js';
 import { createResultsStore, type ResultOption, type ResultsStore } from '../results.js';
 import { openVoteFromCard } from '../votes.js';
 
@@ -43,6 +44,8 @@ describe("the top pick's own photos", () => {
   it('replace the search\'s on its option, labelled, with nothing else on the card changed', async () => {
     const card = await cardOnTrip('t_pick', 'c_pick');
     const link = new FakeLink();
+    // The card is in the room, as the turn posted it.
+    await link.request('post_message', { request_id: 'go_post_pick', trip_id: 't_pick', card });
     const listed = [
       { url: 'https://cdn.example.com/exterior.jpg', label: 'Exterior view' },
       { url: 'https://cdn.example.com/pool.jpg', label: 'Swimming pool' },
@@ -86,6 +89,28 @@ describe("the top pick's own photos", () => {
     expect(options[1]).toMatchObject({ room_types, price_min_minor: 1_200_000, price_max_minor: 1_500_000 });
     expect(options[0]).not.toHaveProperty('room_types');
     for (const o of options) expect(C.DecisionOption.safeParse(o).success).toBe(true);
+  });
+
+  // The card goes out with the turn's reply, which can come after the pick's page is read.
+  it("wait for a card the Server doesn't have yet, a few times, then give up", async () => {
+    await cardOnTrip('t_late', 'c_late');
+    const tries: number[] = [];
+    const slept: number[] = [];
+    const late = (posted: number) => ({
+      request: async () => {
+        tries.push(tries.length + 1);
+        if (tries.length < posted) throw new SocketCallError(404, 'card c_late is not on one of Go\'s messages', 'not_found');
+        return { message_id: 'm_go_1' };
+      },
+    }) as never;
+    const sleep = async (ms: number) => { slept.push(ms); };
+    const pick = { cardId: 'c_late', optionId: 'opt_c_late_1' };
+    expect(await showPickPhotos({ results, images, link: late(2), sleep }, 't_late', pick, details(['https://cdn.example.com/a.jpg']))).toBe(true);
+    expect(tries).toEqual([1, 2]);
+    expect(slept).toEqual([REPLACE_WAIT_MS]);
+    tries.length = 0;
+    await expect(showPickPhotos({ results, images, link: late(99), sleep }, 't_late', pick, details(['https://cdn.example.com/b.jpg']))).rejects.toThrow(/not on one of Go's messages/);
+    expect(tries).toHaveLength(REPLACE_TRIES);
   });
 
   it('change nothing when the page listed none, or the card or the option is not kept', async () => {
