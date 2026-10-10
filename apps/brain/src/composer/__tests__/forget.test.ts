@@ -5,7 +5,7 @@ import * as memoryFence from '../../memory/fence.js';
 import { notesView } from '../../memory/fence.js';
 import type { TripPack } from '../../trips/pack.js';
 import { createContext, forgottenNote } from '../context.js';
-import { chatLine, HIDDEN, isForgotten, roomView, type Forgotten } from '../fence.js';
+import { chatLine, HIDDEN, HIDDEN_GO, isForgotten, roomView, type Forgotten } from '../fence.js';
 import { renderMessageWake } from '../wakes.js';
 
 // The drill on staging (trip t_p1b_2c72baaa): Kabir's forget went through (4 facts deleted, 0 left), and the next three
@@ -132,5 +132,48 @@ describe('one chat-line renderer for every prompt', () => {
     expect(isForgotten(msg(8, 'p_kabir', 'x'), FORGOT)).toBe(false);
     expect(isForgotten(msg(3, 'p_meher', 'x'), FORGOT)).toBe(false);
     expect(isForgotten(msg(6, null, 'Kabir is p_kabir'), FORGOT)).toBe(false);
+  });
+});
+
+describe('Forget me in another trip (staging, 10 Oct)', () => {
+  // Kabir forgot his first trip with carry-over on. Here, in his second, Go's own recap before the forget had said his
+  // knee, and Go said it again: "a poor fit for Kabir's knee. I can't say that from this trip's chat alone".
+  const SECOND = [
+    msg(2, null, 'Hi all, I am Go. Rahul, first link ixigo once so I can search for everyone.'),
+    msg(3, 'p_priya', '@Go anything to keep in mind about each of us?'),
+    msg(4, null, "Priya is vegetarian, and Kabir doesn't drink and has a bad knee, so go easy on long walks."),
+    msg(5, null, 'Your 6E 2134 card is up.', { mentions: ['p_kabir'] }),
+    msg(6, 'p_kabir', 'my knee is fine for short walks'),
+    msg(7, 'p_arjun', '@Go a trek to Dudhsagar falls on Sunday, good for all of us?'),
+    msg(8, null, 'Kabir, want a cab from the airport?'),
+  ];
+  const ELSEWHERE: Forgotten = new Map([['p_kabir', 6]]);
+  const pack: TripPack = { trip: goaSnapshot(), messages: SECOND, seq: 8 };
+
+  it("hides Go's own messages up to the forget that name them, by name or @mention, and nothing else", () => {
+    const room = roomView(pack, new Map(), ELSEWHERE);
+    expect(chatLine(SECOND[2]!, room)).toBe(`#4 Go (you): ${HIDDEN_GO}`);
+    expect(chatLine(SECOND[3]!, room)).toBe(`#5 Go (you): ${HIDDEN_GO}`);
+    // Go's hello names someone else; Kabir's own words were not forgotten here; Go's message after the forget is new.
+    expect(chatLine(SECOND[0]!, room)).toBe('#2 Go (you): Hi all, I am Go. Rahul, first link ixigo once so I can search for everyone.');
+    expect(chatLine(SECOND[4]!, room)).toBe('#6 Kabir: my knee is fine for short walks');
+    expect(chatLine(SECOND[6]!, room)).toBe('#8 Go (you): Kabir, want a cab from the airport?');
+    // With no one forgotten elsewhere, the room is as it was.
+    expect(chatLine(SECOND[2]!, roomView(pack, new Map()))).toContain('has a bad knee');
+  });
+
+  it("keeps the knee out of the composer's prompt: Go's line is hidden, Kabir's own line here stays", async () => {
+    const c = createContext(silentLog);
+    c.addWake('message', renderMessageWake);
+    c.setForgotten({ get: async () => new Map(), elsewhere: async () => ELSEWHERE });
+    const ask = SECOND[5]!;
+    const p = await c.build({
+      tripId: 't_goa', pack, seenSeq: 6, now: new Date('2026-10-10T02:39:00Z'), tz: 'Asia/Kolkata',
+      wake: [{ id: 'w7', tripId: 't_goa', kind: 'message', ref: ask.message_id, dueAt: new Date(), payload: { messageId: ask.message_id, namesGo: true } }],
+    });
+    const text = userText(p);
+    expect(text).not.toContain('bad knee');
+    expect(text).toContain(`#4 Go (you): ${HIDDEN_GO}`);
+    expect(text).toContain('#6 Kabir: my knee is fine for short walks');
   });
 });

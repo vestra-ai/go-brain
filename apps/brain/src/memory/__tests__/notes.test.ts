@@ -274,6 +274,10 @@ describe('the notes pass', () => {
     // 6 pm Friday", which only Go's answer said.
     expect(NOTES_RULES).toContain("The fact must be in the words of the line you cite: never put on someone's line, least of all their question to Go, a fact that Go's answer or anyone else gave.");
     expect(NOTES_RULES).toContain('A reaction on a line can show the reactor\'s lean (😍 on a beach photo, 👍 on a pool villa): note it for the person who reacted, with that line as the message and "reaction": true');
+    // Staging, 10 Oct: Arjun's 👍 on the cheap villa with no pool became "Prefers villas without pool", and Kabir's 😍 on
+    // "this vibe" became "Likes this vibe".
+    expect(NOTES_RULES).toContain('It backs what the line offers, never what it lacks: 👍 on "Casa Azul, ₹5k a night, no pool" is never "Prefers villas without a pool"');
+    expect(NOTES_RULES).toContain('The lean must make sense without the line: "Likes this vibe" says nothing, so note nothing.');
     const messages = [
       msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov, Diwali weekend 🌴'),
       msg(4, 'p_kabir', 'haha 😂'),

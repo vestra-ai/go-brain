@@ -111,14 +111,36 @@ export function answersToGo(pack: TripPack): Map<string, number> {
   return out;
 }
 
-/** The composer's view of a trip's chat: "#57 Priya: text", names and message numbers as the trip has them now. */
-export function roomView(pack: TripPack, forgotten: Forgotten): ChatView {
+/** How one of Go's own earlier messages reads when it named someone who later had Go forget them in another trip. */
+export const HIDDEN_GO = '[hidden: it named someone who asked Go to forget them]';
+
+/**
+ * The composer's view of a trip's chat: "#57 Priya: text", names and message numbers as the trip has them now.
+ * `forgotElsewhere`: people who had Go forget them in another trip, each with the change number up to which Go's own
+ * messages here that name them are hidden. Those messages may repeat what carry-over fed Go about them, and Go cannot
+ * repeat what it cannot see (memory/forget-elsewhere.ts).
+ */
+export function roomView(pack: TripPack, forgotten: Forgotten, forgotElsewhere: Forgotten = new Map()): ChatView {
   const names = new Map(pack.trip.people.map((p) => [p.person_id, personName(p.name)]));
   const seqs = new Map(pack.messages.map((m) => [m.message_id, m.seq]));
   const answers = answersToGo(pack);
+  // Paused people are named too: a name in Go's words is a name, whoever still hears from Go.
+  const everyone = pack.trip.people.map((p) => ({ ...p, go_paused: false }));
+  const namesForgotten = (m: Message): boolean => {
+    if (m.author.kind !== 'go' || forgotElsewhere.size === 0) return false;
+    const said = mentionsIn([m.text ?? '', m.card?.fallback_text ?? ''].join('\n'), everyone);
+    return [...forgotElsewhere].some(
+      ([id, upTo]) => m.seq <= upTo && (said.includes(id) || m.mentions.includes(id) || (m.card?.for_person_ids ?? []).includes(id)),
+    );
+  };
   return {
     forgotten,
-    label: (m) => roomLabel(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id), (id) => answers.get(id)),
+    label: (m) =>
+      m.deleted || m.withheld
+        ? null
+        : namesForgotten(m)
+          ? `#${m.seq} Go (you): ${HIDDEN_GO}`
+          : roomLabel(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id), (id) => answers.get(id)),
   };
 }
 
