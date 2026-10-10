@@ -81,8 +81,10 @@ describe("Go's rules", () => {
     expect(rule).toContain('with a place and dates, call search_stays first and use its prices, saying how old they are');
     expect(rule).toContain("getting there from each person's city, food a day and things to do");
     expect(rule).toContain('Say your assumptions');
-    // Private bands stay private, and a yes goes into the plan through the record tool.
-    expect(rule).toContain('never whose band it is');
+    // The group's budget is said as the group's, never whose it was (GO-TEAM-ASKS-REV4 A3: no private bands any more),
+    // and a yes goes into the plan through the record tool.
+    expect(rule).toContain('When the group\'s budget is in "Right now", say whether the plan fits it.');
+    expect(section).toContain("- Never repeat a person's budget to the room or tie a budget to a name, even one they said in the chat.");
     expect(rule).toContain('keep it with set_budget (the top of your range) and save it with record as one agreed line');
     expect(rule).toContain('with their yes as the proof (their own message, never yours).');
     // The rules it sits beside no longer forbid it: live prices only, and a person's own budget only.
