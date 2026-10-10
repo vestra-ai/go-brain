@@ -37,6 +37,8 @@ const CaptureObject = z.object({
   min_count: z.int().positive().optional(),
   max_count: z.int().positive().optional(),
   max_bytes: z.int().positive().optional(),
+  /** "last": an event stream whose every event is the whole answer so far, kept as its last complete event (Bash's sse). */
+  sse: z.literal('last').optional(),
 });
 /** A call the page makes that the fetch keeps: its match alone, or with its counts and size. */
 export const Capture = z.union([z.string().min(1).transform((match) => CaptureObject.parse({ match })), CaptureObject]);

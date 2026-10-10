@@ -189,7 +189,8 @@ interface Site {
 }
 
 export type EngineAnswer =
-  | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid }
+  /** cut: the call the rows came from was cut short (Bash kept an earlier part of it), so these are the first it sent. */
+  | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid; cut?: true }
   | { as: 'facts'; title: string; rows: Array<Record<string, unknown>>; page: string; checkedAt: string; ms: number }
   | { as: 'link'; link: string; title: string; who: string | null }
   /** A composite's: its inputs as filled, and each entry (a home city) with each step's answer, or why it has none. */
@@ -741,7 +742,11 @@ export function createEngine(d: EngineDeps) {
       }
       const options = await readOptions(recipeRead, caps, inputs, page, bindings);
       const at = d.now();
-      return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started };
+      // A stream cut short (an earlier snapshot of ixigo's flights, or a Bash that cut the whole stream at 1 MB): its whole
+      // events read, and the answer says these are the first the page sent.
+      const from = recipeRead.read?.rows.from;
+      const cut = from !== undefined && caps.some((c) => c.truncated && c.status >= 200 && c.status < 300 && matches(from, c.url));
+      return { as: 'options', options, page, checkedAt: at.toISOString(), ms: at.getTime() - started, ...(cut ? { cut: true as const } : {}) };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
     if (recipe.fast && fastOn(runner) && runner.pageFetch && !o.background && !watched(o)) {
