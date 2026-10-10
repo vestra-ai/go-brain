@@ -146,6 +146,8 @@ export function peopleHandlers(d: PeopleDeps): {
         // Carry-over fed this trip's facts to their other trips, where Go may have said them: those trips are told too.
         if (tripId && (await getCarryOver(c, person_id))) await markForgotElsewhere(c, person_id, await tripsOf(c, person_id), tripId, d.now());
         const n = await forgetFacts(c, person_id, tripId);
+        // Their ticket picks go too (travel/picks.ts), and with them their flights' watches, at the next sweep.
+        await c.query('DELETE FROM picks WHERE person_id = $1 AND ($2::text IS NULL OR trip_id = $2)', [person_id, tripId]);
         for (const t of trips) await markForgotten(c, person_id, t, await lastSeq(c, t), d.now());
         await d.fold.redactPerson(c, person_id, trips, names);
         // Checked by query inside the transaction: anything left rolls everything back.

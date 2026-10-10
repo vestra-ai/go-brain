@@ -47,7 +47,7 @@ answer:
         "includes": otherBenefits,
         "pay": $pay,
         "rooms_left": fomoTag,
-        "coupon": $fare.offerMessage,
+        "coupon": ($type($fare.offerMessage) = "string" and $trim($substringBefore($fare.offerMessage, "<")) != "") ? $trim($replace($substringBefore($fare.offerMessage, "<"), /[\s+]+$/, "")),
         "recommended": isRecommended = true ? true
       }
     )

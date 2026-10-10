@@ -12,6 +12,7 @@ import { drawPage } from '../pages.js';
 import { forgotElsewhere, forgotElsewhereNote, forgotElsewhereNow, forgotElsewhereUpTo } from '../forget-elsewhere.js';
 import { emptyCatchUp, peopleHandlers } from '../people.js';
 import { recall } from '../recall.js';
+import { picksOf, recordPick } from '../../travel/picks.js';
 import { scriptedSide, seedMessages } from './test-kit.js';
 
 let db: { pool: Pool; drop: () => Promise<void> };
@@ -155,6 +156,18 @@ describe('forget_person (master §10 item 5)', () => {
     expect(await h.forget_person({ person_id: 'p_kabir' }, meta)).toEqual({ deleted_facts: 1, remaining_facts: 0 });
     expect(await countFacts(db.pool, 'p_kabir', null)).toBe(0);
     expect((await db.pool.query("SELECT count(*)::int AS n FROM story_lines WHERE trip_id = 't_manali'")).rows[0].n).toBe(0);
+  });
+
+  it("lets go of the person's ticket picks: the trip's with the trip, every one without a trip id", async () => {
+    const pick = (tripId: string) =>
+      recordPick(db.pool, { tripId, personId: 'p_arjun', kind: 'flight', way: 'BOM-GOX', optionId: `opt_${tripId}`, title: 'IndiGo 6E 5310', journey: null, pickedAt: new Date('2026-10-10T08:00:00Z') });
+    await pick('t_goa');
+    await pick('t_manali');
+    await h.forget_person({ person_id: 'p_arjun', trip_id: 't_goa' }, meta);
+    expect((await picksOf(db.pool, 't_goa')).filter((p) => p.personId === 'p_arjun')).toEqual([]);
+    expect((await picksOf(db.pool, 't_manali')).map((p) => p.personId)).toEqual(['p_arjun']);
+    await h.forget_person({ person_id: 'p_arjun' }, meta);
+    expect((await picksOf(db.pool, 't_manali')).filter((p) => p.personId === 'p_arjun')).toEqual([]);
   });
 
   it('tells only the person, on a notice pinned to them that names nobody, in each trip it forgets; a card that fails never fails the forget', async () => {

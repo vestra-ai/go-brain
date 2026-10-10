@@ -4,7 +4,7 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS, STAGE_MS, STAGE_TAB,
+  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS, NEAR_UNSUPPORTED_MS, NearUnsupportedError, STAGE_MS, STAGE_TAB,
   LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, NothingCaughtError, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -138,6 +138,44 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     });
     await fails(createBrowserFetchRunner(older.deps).read('t1', page, { capture: [{ match: BOOKINGS, required: true }] }, { private: true }), 'refused', /nobody else can see it/);
     expect(older.calls).toHaveLength(1);
+  });
+
+  // A bus card's own "Select Seats" (buses.stops) is clicked by its operator and time (near_text, bash #4637). A Bash
+  // before it refuses the fetch before opening anything; Go never sends it as a plain click (the first card's), says so
+  // (NearUnsupportedError), and sends none for a while, on a page or on the stage.
+  it("never sends a click that picks one card's button as a plain one: a Bash that refuses it is asked again only after a while", async () => {
+    const LAYOUT = '/wap/GetSeatLayout$';
+    const page = 'https://www.ixigo.com/buses/bus_search/Bengaluru/7/Goa/102/06-11-2026/O';
+    const plan: FetchPlan = {
+      capture: [{ match: LAYOUT, required: true }],
+      steps: [{ op: 'wait_for', match: '/buslist/v3/services$' }, { op: 'click', role: 'button', name: 'Select Seats', near_text: ['VRL Travels', '19:30'] }, { op: 'wait_for', match: LAYOUT }],
+    };
+    const older = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'steps.1.near_text' });
+    });
+    const runner = createBrowserFetchRunner(older.deps);
+    expect(runner.canPickOne!()).toBe(true);
+    await expect(runner.read('t1', page, plan)).rejects.toBeInstanceOf(NearUnsupportedError);
+    expect(older.calls).toHaveLength(1);
+    expect(runner.canPickOne!()).toBe(false);
+    // For a while: refused before anything is sent, on a page or on the stage.
+    await expect(runner.read('t1', page, plan)).rejects.toBeInstanceOf(NearUnsupportedError);
+    await expect(runner.onStage!('t1', { ...plan, steps: plan.steps!.slice(1) })).rejects.toBeInstanceOf(NearUnsupportedError);
+    expect(older.calls).toHaveLength(1);
+    // A fetch with no such click still goes.
+    await runner.read('t1', page, { capture: plan.capture, steps: [] }).catch(() => undefined);
+    expect(older.calls).toHaveLength(2);
+    // Past NEAR_UNSUPPORTED_MS it is asked again, in case Bash has it now.
+    await older.deps.sleep(NEAR_UNSUPPORTED_MS);
+    expect(runner.canPickOne!()).toBe(true);
+    await runner.read('t1', page, plan).catch(() => undefined);
+    expect(older.calls).toHaveLength(3);
+    // On the stage, the same refusal says the same.
+    const stage = createBrowserFetchRunner(world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'steps.0' });
+    }).deps);
+    await expect(stage.onStage!('t1', { ...plan, steps: plan.steps!.slice(1) })).rejects.toBeInstanceOf(NearUnsupportedError);
+    expect(stage.canPickOne!()).toBe(false);
   });
 
   // ixigo's hotel popup shows 1 s after the page mounts, so the recipe's first click looks for it up to 3 s (Bash's
