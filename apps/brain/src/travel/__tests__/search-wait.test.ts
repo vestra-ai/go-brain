@@ -166,6 +166,11 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     const own = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w4', link: {} as never, pack, wake: [], signal: new AbortController().signal });
     await answerItself('stays', query, { ...STAYS, unapplied: ['pool'] }, own, { results, images });
     expect(own.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.`]);
+    // ixigo's own filter left off because with it there was no stay (the exam's re-run, 10 Oct: Private Pool): said first,
+    // these the nearest without it, never a fit for it.
+    const near = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_drop1', link: {} as never, pack, wake: [], signal: new AbortController().signal });
+    await answerItself('stays', query, { ...STAYS, dropped: ['Private Pool'] }, near, { results, images });
+    expect(near.lines).toEqual(['Private Pool alone leaves out every stay, so these leave it out: pool stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.']);
   });
 
   it("leaves what ixigo didn't filter to the model, which picks it from each stay's amenities: never a card of the engine's first three", async () => {

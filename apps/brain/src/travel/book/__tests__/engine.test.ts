@@ -101,7 +101,7 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
     const first = await engine.answer('hotels.search', goa, { tripId: 't_site', siteFilters: ['Pet-friendly property'] });
     expect(reads[0]).not.toContain('filters=');
     expect(first.as === 'options' && first.site).toMatchObject({ filtered: [], sorted: null, unknown: ['Pet-friendly property'], listed: false });
-    expect(offers.get('hotels.search', '32')?.offers).toContainEqual({ kind: 'filter', group: 'Facilities', name: 'Pet-friendly property', code: 'FL_HF_21' });
+    expect(offers.get('hotels.search', '32')?.offers).toContainEqual({ kind: 'filter', group: 'Facilities', name: 'Pet-friendly property', code: 'FL_HF_21', count: 7 });
     expect(offers.forTrip('t_site').map((l) => l.about)).toEqual(['stays in Goa']);
     // While no list is kept, the read waits for ixigo's list call, a grace at most after the rest (a fresh computer's
     // first read, 10 Oct: the page made it after Bash had answered).

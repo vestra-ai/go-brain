@@ -46,7 +46,7 @@ import type { Engine, EngineAnswer, RunFor, ShareSearch } from '../book/engine.j
 import type { LiveSearch } from '../live-search.js';
 import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
-import { offersText, sameName } from './offers.js';
+import { offersText, sameName, strictestOf } from './offers.js';
 import { RECIPE_TTL_MS, type RecipeOption } from './recipe.js';
 import { ChallengedError, NothingCaughtError } from './runners.js';
 
@@ -521,10 +521,14 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         live?.progress({ type: 'extracted', count: run.options.length });
         // The card is done before the options card posts.
         if (card) await end(cardKey, card, true);
+        // A filtered read with no stay: of the site's filters asked, the one its list says holds the fewest stays, which
+        // staysSearch drops first.
+        const strict = run.options.length === 0 && run.site?.list && run.site.filtered.length > 0 && q.siteFilters?.length ? strictestOf(run.site.list, q.siteFilters) : null;
         const said = run.site
           ? {
               filtered: run.site.filtered, sorted: run.site.sorted, unknown: run.site.unknown, listed: run.site.listed, offers: run.site.list ? offersText(run.site.list) : null,
               ...(run.site.priced ? { priced: run.site.priced } : {}),
+              ...(strict ? { strictest: strict } : {}),
             }
           : null;
         return {
@@ -612,22 +616,38 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   }
 
   /** Stays: never on a computer that met the check moments ago, and a read that fails falls back (staysFallback). */
-  async function staysSearch(q: TravelQuery, o: SearchFor | undefined): Promise<TravelSearch> {
+  async function staysSearch(ask: TravelQuery, o: SearchFor | undefined): Promise<TravelSearch> {
+    let q = ask;
     const met = o?.tripId ? (d.challengedAt?.(o.tripId) ?? null) : null;
     if (met !== null && d.now().getTime() - met < CHALLENGE_COOL_MS) {
       d.log?.warn({ tripId: o?.tripId }, "travel: the trip's computer met ixigo's check moments ago; no stays page now, the fallback answers");
       return staysFallback(q, o, new ChallengedError());
     }
     try {
-      const found = await searchPage('stays', q, o, true);
+      let found = await searchPage('stays', q, o, true);
       // ixigo's price bands for the group's budget held no stay: the search without them, so the group still sees what
       // there is (the lead, 10 Oct: "fall back to plain search if the band is empty").
       if (found.results.length === 0 && q.budgetMinor !== undefined) {
         const without: TravelQuery = { ...q };
         delete without.budgetMinor;
-        return await searchPage('stays', without, o, true);
+        q = without;
+        found = await searchPage('stays', q, o, true);
       }
-      return found;
+      // ixigo's own filters that together left no stay: the strictest dropped and read again, then the rest, so the group
+      // sees the nearest and what they leave out, never nothing (the exam's re-run, 10 Oct: "a pool" as Private Pool with
+      // Entire house, three empty reads, "nothing came back"). At most two more pages.
+      const dropped: string[] = [];
+      for (let round = 0; round < 2 && found.results.length === 0 && (q.siteFilters?.length ?? 0) > 0; round++) {
+        const filters = q.siteFilters ?? [];
+        const drop = round === 0 && found.site?.strictest && filters.includes(found.site.strictest) ? [found.site.strictest] : filters;
+        dropped.push(...drop);
+        const rest = filters.filter((f) => !drop.includes(f));
+        const next: TravelQuery = { ...q };
+        delete next.siteFilters;
+        q = rest.length > 0 ? { ...next, siteFilters: rest } : next;
+        found = await searchPage('stays', q, o, true);
+      }
+      return dropped.length > 0 ? { ...found, dropped } : found;
     } catch (err) {
       if (!(err instanceof TravelError) || ASKS_THE_PERSON.has(err.code)) throw err;
       d.log?.warn({ tripId: o?.tripId, code: err.code }, "travel: ixigo's stays page didn't answer; an earlier read or its link answers instead");

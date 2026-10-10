@@ -123,7 +123,12 @@ export interface TravelSearch {
    * the names it didn't apply (not on its list, or its list not known before this read: listed false); and its list as
    * it is now known, in words, for the model.
    */
-  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null; priced?: number | null };
+  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null; priced?: number | null; strictest?: string };
+  /**
+   * ixigo's own filters left off because together they left no stay (stays: the strictest first, then the rest): these
+   * options are the nearest without them, and the line says so (tools.ts leftOffLead).
+   */
+  dropped?: string[];
   /** Not read now: ixigo's page didn't answer, and this is Go's earlier read of the same page, checked when it was (stays). */
   earlier?: boolean;
 }

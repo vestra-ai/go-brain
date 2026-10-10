@@ -835,6 +835,41 @@ describe("a stays search by the group's decided budget", () => {
     expect(runs.map((r) => r.budgetMinor)).toEqual([450_000, undefined]);
   });
 
+  // The exam's re-run, 10 Oct: "a pool" as Private Pool with Entire house left no stay, three empty reads, and Go said
+  // "nothing came back". The strictest of ixigo's own filters (the fewest stays on its list) goes first, then the rest.
+  it("drops the strictest of ixigo's own filters when together they leave no stay, then the rest, and says which", async () => {
+    const offers = [
+      { kind: 'filter' as const, group: 'Accommodation Type', name: 'Entire house', code: 'AT_EH', count: 1 },
+      { kind: 'filter' as const, group: 'Facilities', name: 'Private Pool', code: 'FL_HF_23', count: 4 },
+    ];
+    const list = { recipeId: 'hotels.search', about: 'stays in Goa', offers, bands: [], at: 0 };
+    const backend = (fits: (asked: string[]) => boolean) => {
+      const runs: RunFor[] = [];
+      const answer: Answer = async (_id, _given, ro) => {
+        runs.push(ro);
+        const asked = ro.siteFilters ?? [];
+        return {
+          as: 'options', options: fits(asked) ? [stay(1, true)] : [], page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-10T15:45:00.000Z', ms: 900,
+          site: { filtered: asked, sorted: null, unknown: [], listed: true, list },
+        };
+      };
+      return { runs, b: createIxigoWebBackend({ book, engine: { answer }, now }) };
+    };
+    const ask = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Private Pool', 'Entire house'] };
+    // Entire house holds 1 stay on ixigo's list for the place, Private Pool 4: Entire house goes first.
+    const one = backend((asked) => asked.length < 2);
+    const found = await one.b.search('stays', ask, { tripId: 't_drop' });
+    expect(one.runs.map((r) => r.siteFilters)).toEqual([['Private Pool', 'Entire house'], ['Private Pool']]);
+    expect(found).toMatchObject({ dropped: ['Entire house'] });
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1']);
+    // Still none: the rest go too, and the page is read without them.
+    const all = backend((asked) => asked.length === 0);
+    const plain = await all.b.search('stays', ask, { tripId: 't_drop2' });
+    expect(all.runs.map((r) => r.siteFilters)).toEqual([['Private Pool', 'Entire house'], ['Private Pool'], undefined]);
+    expect(plain).toMatchObject({ dropped: ['Entire house', 'Private Pool'] });
+    expect(plain.results).toHaveLength(1);
+  });
+
   // Jev's early read of a place is often its first, before ixigo's list (and so its bands) is known; the composer's
   // search of the same budget comes after it is. Keyed by the bands, they were two pages for one ask.
   it('keys a budgeted search by its amount, not the bands it picks: the early read and the composer\'s search are one', async () => {
