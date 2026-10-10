@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { PAGE_CSP } from '../http/security.js';
-import { CARDS_DOWN, CARDS_NOT_READY, isStripeError, stripeKeysSet } from '../stripe-ready.js';
+import { CARDS_DOWN, CARDS_NOT_READY, isStripeError, placeholderKeys, stripeKeysSet } from '../stripe-ready.js';
 import { signedInject } from '../testing/vault-test-env.js';
 import { startTestVault, type TestVault } from '../testing/start-test-vault.js';
 import type { TestAuthenticator } from '../testing/test-authenticator.js';
@@ -44,7 +44,8 @@ describe("adding a card when the vault's Stripe keys can't add one", () => {
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ message: CARDS_NOT_READY });
     expect(v.stripe.customers).toEqual([]);
-    expect((await v.app.inject({ method: 'GET', url: page.path })).body).toContain('id="cards-not-ready"');
+    expect((await v.app.inject({ method: 'GET', url: page.path })).body).toContain("Cards can't be added yet on this vault.");
+    expect((await v.app.inject({ method: 'GET', url: '/health' })).json()).toEqual({ ok: true, cards: 'not_configured' });
   });
 
   it("when Stripe refuses the keys: plain words, never Stripe's, and cards are off from then on", async () => {
@@ -57,6 +58,7 @@ describe("adding a card when the vault's Stripe keys can't add one", () => {
     expect(res.json()).toEqual({ message: CARDS_NOT_READY });
     expect(res.body).not.toMatch(/API Key|shav|sk_test/);
     expect(await state(v, page)).toMatchObject({ cards_ready: false });
+    expect((await v.app.inject({ method: 'GET', url: '/health' })).json()).toEqual({ ok: true, cards: 'refused_by_stripe' });
     // Off: the next try never reaches Stripe.
     v.stripe.setupThrows = null;
     const customers = v.stripe.customers.length;
@@ -78,6 +80,8 @@ describe("adding a card when the vault's Stripe keys can't add one", () => {
 describe("the vault's Stripe settings", () => {
   it('takes a key that says it is a placeholder for no key; test and real keys are keys', () => {
     expect(stripeKeysSet(PLACEHOLDERS)).toBe(false);
+    // The setting is named, never its value.
+    expect(placeholderKeys({ STRIPE_SECRET_KEY: 'sk_test_51NxAbC', STRIPE_PUBLISHABLE_KEY: 'pk_test_pending_from_keshav' })).toEqual(['STRIPE_PUBLISHABLE_KEY']);
     expect(stripeKeysSet({ STRIPE_SECRET_KEY: 'sk_test_fake', STRIPE_PUBLISHABLE_KEY: 'pk_test_fake' })).toBe(true);
     expect(stripeKeysSet({ STRIPE_SECRET_KEY: 'sk_test_51NxAbC', STRIPE_PUBLISHABLE_KEY: 'pk_test_placeholder' })).toBe(false);
     expect(isStripeError(Object.assign(new Error('x'), { type: 'StripeCardError' }))).toBe(true);

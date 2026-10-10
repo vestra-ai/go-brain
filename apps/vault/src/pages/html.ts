@@ -21,7 +21,7 @@ export function homePage(): string {
 <form id="card-form"><label for="card-element">Add a card</label><div id="card-element" class="field"></div>
 <button class="primary" type="submit">Save card</button><p id="card-msg" class="msg" role="status"></p>
 <p class="fine">Test cards only for now. Your card goes straight to the payment processor; the vault keeps only a token.</p></form>
-<p id="cards-not-ready" class="msg" data-tone="bad" hidden>Adding a card isn't ready yet. Try again later.</p></section>
+<p id="cards-not-ready" class="msg" data-tone="bad" hidden>Cards can't be added yet on this vault.</p></section>
 <section id="travel" class="card"><h2>Your travel details</h2>
 <p class="muted">For a ticket Go books for you when the trip's ixigo account has none of yours. Only Go's booking reads them, never the chat.</p>
 <p id="travel-used" class="fine" hidden></p>

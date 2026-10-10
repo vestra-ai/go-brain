@@ -43,8 +43,10 @@ export async function buildVault(deps: VaultDeps): Promise<FastifyInstance> {
   });
   keepRawJson(app);
   securityHeaders(app);
-  app.get('/health', async () => ({ ok: true }));
+  // Whether adding a card works: a placeholder Stripe key, or one Stripe refused, says so here too.
+  const cards = cardsReady(deps.env, app.log);
+  app.get('/health', async () => ({ ok: true, cards: cards.health() }));
   await app.register(internalRoutes, { deps });
-  await app.register(pageRoutes, { deps, cards: cardsReady(deps.env, app.log) });
+  await app.register(pageRoutes, { deps, cards });
   return app;
 }

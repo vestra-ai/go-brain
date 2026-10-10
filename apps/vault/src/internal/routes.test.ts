@@ -72,7 +72,7 @@ afterAll(async () => {
 describe('headers', () => {
   it('never lets a page be framed, and sends no referrer', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
-    expect(res.json()).toEqual({ ok: true });
+    expect(res.json()).toEqual({ ok: true, cards: 'ready' });
     expect(res.headers['x-frame-options']).toBe('DENY');
     expect(String(res.headers['content-security-policy'])).toContain("frame-ancestors 'none'");
     expect(res.headers['referrer-policy']).toBe('no-referrer');
