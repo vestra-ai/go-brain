@@ -53,6 +53,17 @@ describe('plan.destination', () => {
     return { engine, reads: () => reads };
   }
 
+  it("keeps the places of the kind asked, as the guide's own chips name them: forts are its Historical", async () => {
+    const w = world();
+    const got = await w.engine.answer('plan.destination', { place: 'Goa', kind: 'forts' }, { tripId: 't_goa' });
+    if (got.as !== 'facts') throw new Error('not facts');
+    expect(got.rows[0]!['places_to_visit']).toEqual([
+      'Chapora Fort (4.2, historical): Scenic views of the coastline', 'Reis Magos Fort (4.4, historical): Picturesque riverside fort',
+      'Aguada Fort (4.2, historical): 17th-century Portuguese fort', 'Fontainhas Latin Quarter (4.3, historical): Colorful Portuguese colonial houses',
+      'Cabo de Rama Fort (4.4, historical): Scenic fort with sea views',
+    ]);
+  });
+
   it("answers from ixigo's guide: the best time, the weather by month, and the places to visit and to eat, with ratings", async () => {
     const w = world();
     const got = await w.engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_goa' });
@@ -65,10 +76,16 @@ describe('plan.destination', () => {
     expect(guide['weather_by_month']).toHaveLength(12);
     expect(guide['weather_by_month']).toContain('JAN: 16 to 34 C. January in Goa is characterized by mild temperatures with clear skies and good air quality.');
     expect(guide['places_to_visit']).toHaveLength(36);
-    expect((guide['places_to_visit'] as string[]).slice(0, 3)).toEqual(['Baga Beach (4.5): Water sports and nightlife', 'Dudhsagar Falls (4.6): Spectacular waterfall in the jungle', 'Cape Goa Cliff (4.6): Great place for influencers']);
+    // Each place says its kind, as the guide's own chips: Beach, Nature, Scenic, Market, Historical, Religious, Museum.
+    expect((guide['places_to_visit'] as string[]).slice(0, 3)).toEqual(['Baga Beach (4.5, beach): Water sports and nightlife', 'Dudhsagar Falls (4.6, nature): Spectacular waterfall in the jungle', 'Cape Goa Cliff (4.6, scenic): Great place for influencers']);
     expect(guide['places_to_eat']).toHaveLength(20);
     expect((guide['places_to_eat'] as string[]).slice(0, 3)).toEqual(['The Bodhi Tree Cafe and Bar (4.8)', 'THE SINGH FAMILY RESTAURANT & BAR PALOLEM GOA (4.7)', 'Cafe de port (4.8)']);
     expect(guide['ideas']).toEqual(['Beachfront Meditation Retreat', 'Goan Culinary Adventure', 'Wildlife Safari Excursion', 'Water Sports Extravaganza', 'Heritage Village Exploration']);
+    // The guide's own questions and answers, read now that a row after a text chunk reads (p2's atlas, 10 Oct).
+    const faq = guide['faq'] as string[];
+    expect(faq).toHaveLength(12);
+    expect(faq[0]).toMatch(/^What is the best time to visit Goa\? The best time to visit Goa is between November and March\./);
+    expect(faq.map((f) => f.split('?')[0])).toContain('Is Goa safe for solo female travelers');
     expect(JSON.stringify(got)).not.toMatch(CREDENTIALS);
   });
 
@@ -176,7 +193,12 @@ describe('the ixigo tool', () => {
     expect(tool.description).toContain("- trains.schedule (train): A train's route and timetable.\n");
     expect(tool.description).toContain('\n\n- trains.alternate_dates (from, to, date): ');
     // A choice's values are said, since the model can't guess them; nothing else about an input.
-    expect(tool.description).toContain("- plan.explore (origin, month, theme?): Where to go from a city in a month. theme: one of ixigo's themes: beaches, festivals, mountains, wildlife, cultural or romantic.");
+    expect(tool.description).toContain(
+      '- plan.explore (origin, month, theme?, scope?, weather?, max_budget?): Where to go from a city in a month. theme: a theme chip on the page: religious, ' +
+        'cultural, nature, food, festivals, historical, shopping, beaches, mountains, outdoors, nightlife, luxury, wellness, romance, night skies, sports or ' +
+        "offbeat. scope: domestic, international or visa-free: the page's own buttons. weather: rain, no rain, snow, pollution free, colder or warmer: the " +
+        "page's Weather & AQI buttons.",
+    );
     // How people ask is for Jev and the tests, never the prompt.
     for (const r of recipes) for (const ask of r.asks) expect(tool.description, r.id).not.toContain(ask);
     // Short: at most 140 characters a recipe besides a choice's values (27 recipes: about 2,700, from 8,300).
