@@ -139,6 +139,8 @@ export interface StaysHeadStartDeps {
   onChangedKept?(tripId: string, ask: HeadStartAsk, startedAt: Date): void;
   /** A stays search of this place and dates is kept or running, with any conditions (the backend's pageKept). */
   staysKept?(tripId: string, ask: HeadStartAsk): Promise<boolean>;
+  /** The line asks for stays itself (the early start's asksStays), read before the trip log hears of it. */
+  asksStays?(tripId: string, messageId: string): boolean;
 }
 
 const DAY_MS = 86_400_000;
@@ -147,7 +149,8 @@ const DAY_MS = 86_400_000;
  * The stays head start, under ixigo_web: the trip's likely first stays search (its destination, its dates, its head
  * count, no conditions) run before anyone asks, so "stays for our dates" answers from the kept search in under a second.
  * It runs after the ixigo warm at setup, when the trip's dates or destination change (settled HEAD_START_SETTLE_MS), and
- * on a person's first line after the last one ran out of its time (at most once in HEAD_START_ON_MESSAGE_MS). It goes
+ * on a person's first line after the last one ran out of its time (at most once in HEAD_START_ON_MESSAGE_MS), unless that
+ * line asks for stays itself: its own search is the load then. It goes
  * through Go's searches, so it posts nothing in the room and an ask of the same page joins it; nothing loads when a
  * search for that page is kept or running already. Never in the other modes or while the trip computer is not set up
  * here, without a destination and both dates, for
@@ -241,6 +244,12 @@ export function createStaysHeadStart(d: StaysHeadStartDeps): {
       if (nowMs - (lastAt.get(ev.trip_id) ?? -Infinity) < d.ttlMs) return;
       if (nowMs - (lastOnMessage.get(ev.trip_id) ?? -Infinity) < HEAD_START_ON_MESSAGE_MS) return;
       lastOnMessage.set(ev.trip_id, nowMs);
+      // A line that asks for stays runs its own search: that is the trip's one load and its one card, whatever its place.
+      // A head start beside it loaded a second page (10 Oct drill: "villas in Anjuna for our dates" loaded Goa's too).
+      if (d.asksStays?.(ev.trip_id, ev.data.message.message_id)) {
+        d.log.info({ tripId: ev.trip_id, why: 'message' }, "travel: the line asks for stays itself: its search is the trip's one load, no head start");
+        return;
+      }
       go(ev.trip_id, 'message');
     },
     stat: () => (runs === 0 ? null : { recipe: STAYS_HEAD_START_STEP, speed: 'page', runs, failed, p50_ms: percentileOf(ms, 50), p90_ms: percentileOf(ms, 90) }),
