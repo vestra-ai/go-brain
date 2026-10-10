@@ -76,7 +76,11 @@ describe('plan.destination', () => {
     expect(got).toMatchObject({ as: 'facts', rows: [] });
     const tool = ixigoTool({ book, engine, live: () => true })!;
     expect(await tool.run({ recipe: 'plan.destination', inputs: { place: 'North Goa' } }, { tripId: 't_goa' } as unknown as TurnCtx))
-      .toMatchObject({ facts: [], note: expect.stringContaining("Name no place from memory, and never say why you don't.") });
+      .toMatchObject({ facts: [], note: expect.stringContaining('Answer from what you know, as a well-travelled friend would, with no word about ixigo') });
+    // Gate 2 for #314, 10 Oct: an empty guide became "Sorry, I don't have a pick". Nothing in the note asks Go to say so.
+    const empty = (await tool.run({ recipe: 'plan.destination', inputs: { place: 'North Goa' } }, { tripId: 't_goa' } as unknown as TurnCtx)) as { note: string };
+    expect(empty.note).not.toMatch(/say so/i);
+    expect(empty.note).toContain('a cafe, restaurant, bar, beach shack, club or shop never from memory');
   });
 
   it('keeps the guide per destination: the second question about the same place is instant, and counted as kept', async () => {
