@@ -156,7 +156,10 @@ describe('the ixigo tool', () => {
       'trip.upcoming', 'visa.requirements',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
-    expect(tool.description).toContain("- plan.destination (place, kind?): A destination's guide on ixigo.");
+    expect(tool.description).toContain('- plan.destination (place, kind?): Places to visit and things to do in a destination.');
+    // The exam, 10 Oct: the model answered "the most common pickup" and Tatkal from memory; each line now says what it answers first.
+    expect(tool.description).toContain("- buses.points (city): A city's busiest bus pickup and boarding points.");
+    expect(tool.description).toContain('- trains.tatkal: When Tatkal booking opens for each class and what it costs extra.');
   });
 
   // Keshav, 10 Oct: "I want users to see how the agent is acting on the ixigo site". A guide, a running status, a PNR the
@@ -279,9 +282,9 @@ describe('the ixigo tool', () => {
     const unused = { answer: async () => { throw new Error('unused'); } };
     const tool = ixigoTool({ book, engine: unused, live: () => true })!;
     const recipes = toolRecipes(book);
-    // One line a recipe, in id order, a blank line between sections.
+    // One line a recipe, in id order, a blank line between sections; the tool's own option.facts last (an option's kept read).
     const lines = tool.description.split('\n').filter((l) => l.startsWith('- '));
-    expect(lines.map((l) => l.slice(2).split(/[ :]/)[0])).toEqual(recipes.map((r) => r.id));
+    expect(lines.map((l) => l.slice(2).split(/[ :]/)[0])).toEqual([...recipes.map((r) => r.id), 'option.facts']);
     expect(tool.description).toContain("- trains.schedule (train): A train's route and timetable.\n");
     expect(tool.description).toContain('\n\n- trains.alternate_dates (from, to, date): ');
     // A choice's values are said, since the model can't guess them; nothing else about an input.
