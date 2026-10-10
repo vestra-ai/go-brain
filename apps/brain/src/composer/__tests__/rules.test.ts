@@ -12,7 +12,7 @@ describe("Go's rules", () => {
   it("one person's preference gets a ✅ and at most one short offer, never a search on it and not a question to the group", () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
     expect(section).toContain(
-      "- One person saying what they'd like (a place, a date, a budget), or correcting something about themselves (\"actually I eat eggs\"), is their preference: note it with a ✅ and make at most one short offer (\"want me to pull up North Goa stays?\"), even if you said the old thing earlier. Never search on it unless someone asks you to, and don't ask the group to confirm it.",
+      "- One person saying what they'd like (a place, a date), or correcting something about themselves (\"actually I eat eggs\"), is their preference: note it with a ✅ and make at most one short offer (\"want me to pull up North Goa stays?\"), even if you said the old thing earlier. Never search on it unless someone asks you to, and don't ask the group to confirm it. A figure for the group's budget has its own rule below.",
     );
     expect(section).not.toContain('stay quiet');
   });
@@ -82,10 +82,12 @@ describe("Go's rules", () => {
     expect(rule).toContain("getting there from each person's city, food a day and things to do");
     expect(rule).toContain('Say your assumptions');
     // The group's budget is said as the group's, never whose it was (GO-TEAM-ASKS-REV4 A3: no private bands any more),
-    // and a yes goes into the plan through the record tool.
+    // and a yes keeps it as the trip's budget, which the App holds (1.1 B1): never a record line (p5's #400 refuses them).
     expect(rule).toContain('When the group\'s budget is in "Right now", say whether the plan fits it.');
     expect(section).toContain("- Never repeat a person's budget to the room or tie a budget to a name, even one they said in the chat.");
-    expect(rule).toContain('keep it with set_budget (the top of your range) and save it with record as one agreed line');
+    expect(rule).toContain("End by offering to make it the trip's budget, the offer above; on the group's yes, keep it with set_budget (the top of your range)");
+    expect(rule).toContain('The App holds it: no record line for it.');
+    expect(rule).not.toContain('record as one agreed line');
     expect(rule).toContain('with their yes as the proof (their own message, never yours).');
     // The rules it sits beside no longer forbid it: live prices only, and a person's own budget only.
     expect(section).toContain('No check, no live number. A budget to plan for is not a live price');
@@ -98,19 +100,26 @@ describe("Go's rules", () => {
   it('a budget the group decided sticks until they change it; with none, Go reads a working band from the group and never asks', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
     const decided = section.split('\n').find((l) => l.startsWith('- A budget the group decided sticks'))!;
-    expect(decided).toContain('keep it with set_budget');
-    expect(decided).toContain('set the new one');
+    expect(decided).toContain('Keep it with set_budget only on the group\'s yes');
+    expect(decided).toContain('offer the new one the same way');
     expect(decided).toContain('when they drop it, clear it');
     // Keshav, 9 Oct: "no enforcement, rather it should be naturally decided": context, never a filter.
     expect(decided).toContain('strong context, never a hard filter');
     expect(decided).toContain('pick mostly within it');
     expect(decided).toContain('a standout a little over, shown and said plainly');
     expect(decided).toContain('when nothing good fits, say so and show the closest');
-    expect(decided).toContain("One person's number alone is their wish");
+    // The exam, 10 Oct: "villa with a pool … under 8k a head" set nothing. One person's figure, the organizer's too, is
+    // offered as the trip's budget, and kept on the group's yes (the organizer's to the offer, or a second person's).
+    expect(decided).toContain('One person naming a figure for the group ("under 8k a head", "keep it under 20k each"), the organizer too, is not the trip\'s budget yet');
+    expect(decided).toContain('offer once in one short line to make it the trip\'s ("Set ₹8,000 a head as the trip\'s budget?"), with Yes and No as offer_replies');
+    expect(decided).toContain("the organizer's yes to your offer, or a second person agreeing (their words or a 👍)");
+    expect(decided).toContain('Two people agreeing on one ("15k a head works") is that yes already: keep it, no offer.');
+    // No stray asks: never a person's own limit, and never again after a no.
+    expect(decided).toContain('Never offer a person\'s own limit ("I can only do 5k"), and after a no, or no answer, don\'t offer again until someone names a new figure.');
     // Staging drill, 10 Oct: "picked to sit inside Rahul's 7.5k a head". The group's budget is never named for who said it.
     expect(decided).toContain('Say it as the group\'s ("your 7.5k a head"), never by who said it ("Rahul\'s 7.5k")');
     const none = section.split('\n').find((l) => l.startsWith('- With no budget decided'))!;
-    expect(none).toContain('never ask the group for one');
+    expect(none).toContain('never ask the group for one (offering to keep a figure someone named, as above, is not asking)');
     expect(none).toContain('the vibe');
     expect(none).toContain('what they liked or picked');
     expect(none).toContain('move it as they react');

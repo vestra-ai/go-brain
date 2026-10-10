@@ -124,42 +124,73 @@ const SetBudgetArgs = z
 
 const THUMBS_UP = /👍/;
 
+/** One of Go's own messages that offers to keep a budget ("Set ₹8,000 a head as the trip's budget?", with Yes and No). */
+const offersBudget = (m: C.Message): boolean =>
+  m.author.kind === 'go' && !m.deleted && /\bbudget\b/i.test(m.text ?? '') && ((m.quick_replies?.length ?? 0) > 0 || (m.text ?? '').includes('?'));
+
 /**
- * set_budget: the group's decided budget, kept for the trip, or dropped. The group's word only: the organizer's, or two
- * people's (a 👍 on the message counts). One person's wish stays their preference (a ✅), never the trip's budget.
- * A budget for the whole trip goes to the App (update_trip, 1.1 B1), which then holds it; Go keeps it itself only when
- * the App didn't take it (a Server before 1.1), and keeps any other.
+ * Whether a person's message answers one of Go's budget offers: made with the reply feature on it, a tap on its quick
+ * reply (a tap comes back as the tapper's own message), or the first thing anyone said after it.
+ */
+function answersBudgetOffer(m: C.Message, messages: readonly C.Message[]): boolean {
+  if (m.reply_to) return messages.some((x) => x.message_id === m.reply_to && offersBudget(x));
+  const before = messages.filter((x) => x.seq < m.seq && !x.deleted && x.author.kind !== 'system');
+  const offer = [...before].reverse().find(offersBudget);
+  if (!offer) return false;
+  const said = (m.text ?? '').trim().toLowerCase();
+  return before.at(-1) === offer || (offer.quick_replies ?? []).some((q) => (q.text ?? q.label).trim().toLowerCase() === said);
+}
+
+/**
+ * set_budget: the group's decided budget, kept for the trip, or dropped. One person naming a figure, the organizer too,
+ * is not the group's yes (the exam, 10 Oct: "villa with a pool … under 8k a head" is a search, not the trip's budget):
+ * Go offers it, and keeps it on the organizer's yes to that offer or a second person's (a 👍 counts). Dropping it takes
+ * the organizer's word or two people's. A budget for the whole trip goes to the App (update_trip, 1.1 B1), which then
+ * holds it; Go keeps it itself only when the App didn't take it (a Server before 1.1), and keeps any other.
  */
 export function budgetTool(d: { budgets: TripBudgets; pool: Pool; now: () => Date; log: Log }): QuickTool<z.infer<typeof SetBudgetArgs>> {
   return {
     name: 'set_budget',
     description:
       "Keeps the budget the group decided for the trip (\"let's keep it under 20k each\", \"let's go cheaper, 15k\"), so every " +
-      'turn has it in mind, or drops it (clear). Only on the group\'s word: the organizer\'s, or two people agreeing.',
+      "turn has it in mind, or drops it (clear). Only on the group's yes: the organizer's yes to your offer, or two people " +
+      "agreeing. One person naming a figure, the organizer too, is not a yes: offer it first. Proof: the figure's message and the yes.",
     input: SetBudgetArgs,
     claims: /\bbudget (?:is )?(?:set|saved|locked|noted|updated)\b/i,
     async run(a, ctx: TurnCtx) {
       const people = ctx.pack.trip.people;
+      const organizer = ctx.pack.trip.organizer_person_id;
+      const cited = a.proof_message_ids
+        .map((id) => ctx.pack.messages.find((m) => m.message_id === id))
+        .filter((m): m is NonNullable<typeof m> => m !== undefined && !m.deleted);
       // The people's messages among the proof: Go's own estimate cited beside their yes is passed over, never a refusal
       // (staging drill, 10 Oct: refused twice for it, the turn ran out of rounds).
-      const proof = a.proof_message_ids
-        .map((id) => ctx.pack.messages.find((m) => m.message_id === id))
-        .filter((m): m is NonNullable<typeof m> => m !== undefined && !m.deleted && m.author.kind === 'person');
+      const proof = cited.filter((m) => m.author.kind === 'person');
       if (proof.length === 0) {
         return { refused: "no person's message in this trip among the proof: give the message ids of the people's own words", tell_the_room: SAY_NOTHING };
       }
+      // Who backs it: the people who said it, and anyone's 👍 on it or on Go's offer. The organizer's yes counts alone
+      // only as an answer to Go's offer.
       const yes = new Set<string>();
-      for (const m of proof) {
-        if (m.author.kind === 'person') yes.add(m.author.person_id);
-        for (const r of m.reactions) if (r.person_id && THUMBS_UP.test(r.emoji)) yes.add(r.person_id);
-      }
-      if (!(yes.has(ctx.pack.trip.organizer_person_id) || yes.size >= 2)) {
-        return {
-          refused: "one person's wish, not the group's",
-          tell_the_room: "Take it as that person's wish (a ✅). It becomes the trip's budget once the organizer or a second person agrees. Don't say it is set.",
-        };
+      let organizerSaidYes = false;
+      for (const m of cited) {
+        if (m.author.kind === 'person') {
+          yes.add(m.author.person_id);
+          if (m.author.person_id === organizer && answersBudgetOffer(m, ctx.pack.messages)) organizerSaidYes = true;
+        }
+        for (const r of m.reactions) {
+          if (!r.person_id || !THUMBS_UP.test(r.emoji)) continue;
+          yes.add(r.person_id);
+          if (r.person_id === organizer && offersBudget(m)) organizerSaidYes = true;
+        }
       }
       if (a.clear) {
+        if (!(yes.has(organizer) || yes.size >= 2)) {
+          return {
+            refused: "one person's wish, not the group's",
+            tell_the_room: "Take it as that person's wish. The budget is dropped on the organizer's word or a second person's. Don't say it is dropped.",
+          };
+        }
         await d.budgets.clear(ctx.tripId);
         // Go cannot clear the App's: a person does, in the App.
         if (ctx.pack.trip.budget.per_person_minor) {
@@ -169,6 +200,15 @@ export function budgetTool(d: { budgets: TripBudgets; pool: Pool; now: () => Dat
       }
       if (!a.amount_rupees) return { error: 'no_amount', note: 'Give amount_rupees, or clear.' };
       const perPerson = a.per === 'group' ? a.amount_rupees / Math.max(1, people.length) : a.amount_rupees;
+      if (!(yes.size >= 2 || organizerSaidYes)) {
+        return {
+          refused: "one person's figure, not the group's yes",
+          tell_the_room:
+            `Use it for what was asked. If you haven't offered it yet, offer it once in one short line, "Set ${rupees(Math.round(perPerson * 100))} a head ` +
+            "as the trip's budget?\", with Yes and No as offer_replies: it is kept on the organizer's yes or a second person's. " +
+            "Never offer a person's own limit (\"I can only do 5k\"), and don't ask again after a no. Don't say it is set.",
+        };
+      }
       const said = proof.at(-1)!;
       const b = { perPersonMinor: Math.round(perPerson * 100), covers: a.covers ?? 'whole_trip', messageId: said.message_id };
       if (b.covers === 'whole_trip' && (await toApp(d, ctx, b.perPersonMinor))) await d.budgets.clear(ctx.tripId);
