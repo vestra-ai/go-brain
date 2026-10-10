@@ -234,6 +234,19 @@ describe('trains.between', () => {
     expect(bare.as === 'options' && bare.options[0]).toMatchObject({ priceMinor: 311_500, highlights: ['AC 2 Tier', '29 h 10 m'] });
   });
 
+  // ixigo's between call of 10 Oct splits each class's fare (baseFare, serviceCharge, railwayCharges, cateringCharges,
+  // otherCharges) and gives each train's averageRating; the 8 Oct page gave baseFare alone.
+  it("without the seats call, a class's fare is its breakup summed; the train's rating is kept", async () => {
+    const between = JSON.parse(fixture('trains-ndls-mao-between.json')) as { data: { trainsBetweenStations: Array<{ attributes: Record<string, unknown>; fares: Record<string, unknown> }> } };
+    const first = between.data.trainsBetweenStations[0]!;
+    first.fares['2A'] = { baseFare: 3000, serviceCharge: 40, railwayCharges: 60, cateringCharges: 0, otherCharges: 15 };
+    first.attributes['averageRating'] = 4.1;
+    const call = capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/NDLS/MAO?date=2026-11-06&languageCode=en', JSON.stringify(between));
+    const got = await engineWith(() => [call]).engine.answer('trains.between', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { tripId: 't_goa' });
+    if (got.as !== 'options') throw new Error('not options');
+    expect(got.options[0]).toMatchObject({ title: 'NZM ERS SF EXP 22656', priceMinor: 311_500, facts: { class_code: '2A', rating: 4.1 } });
+  });
+
   it('shows Tatkal next to the General quota once it is open, and a train that boards at another station of the city', async () => {
     const { engine } = engineWith(() => page('csmt-mao', 'CSMT', 'MAO', '2026-10-08', '08102026'));
     const got = await engine.answer('trains.between', { from: 'Mumbai', to: 'Goa', date: '2026-10-08' }, { tripId: 't_goa' });
