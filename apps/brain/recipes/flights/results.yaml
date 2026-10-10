@@ -48,7 +48,8 @@ capture:
 read:
   rows: { from: /flights/v2/search/stream, format: sse, list: data.flightJourneys.flightFare, unique: flightKeys }
   also:
-    airports: { from: /flights/v2/search/stream, format: sse, value: data.airportDetails }
+    # Every event's airports as one (a stream may send its flights over several events).
+    airports: { from: /flights/v2/search/stream, format: sse, value: $merge(data.airportDetails) }
 # One flights page across every trip at most every 20 s, and none for 10 minutes after one ixigo refused: flights.search's
 # link answers in its place (recipes/backend.ts).
 pace: { gap_seconds: 20, quiet_minutes: 10 }

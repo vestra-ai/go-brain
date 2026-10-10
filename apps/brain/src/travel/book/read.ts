@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { TravelError } from '../mcp-travel.js';
 import { bodiesFor, matches, type Capture, type RecipeOption } from '../recipes/recipe.js';
-import { readBodyAs, type BodyFormat } from './bodies.js';
+import { eventValues, readBodyAs, type BodyFormat } from './bodies.js';
 import { evaluate } from './expr.js';
 import type { RecipeFile } from './format.js';
 
@@ -64,6 +64,39 @@ export function unreadBecause(recipe: RecipeFile, captures: Capture[]): 'not_sen
   const ok = sent.filter((c) => c.status >= 200 && c.status < 300);
   if (ok.length === 0) return 'status';
   return bodiesFor(ok, from).length === 0 ? 'truncated' : 'shape';
+}
+
+/**
+ * For a shape refusal, what the reader made of the body, in counts only: a stream's events with data and the values that
+ * parsed, and the rows its list found. Rows found and none read is a row's fields; no rows is the list's path; no values is
+ * the body's form.
+ */
+export async function shapeOf(recipe: RecipeFile, captures: Capture[], bindings: Record<string, unknown> = {}): Promise<{ events?: number; values: number; rows: number }> {
+  const read = recipe.read;
+  if (!read) return { values: 0, rows: 0 };
+  const raw = bodiesFor(captures, read.rows.from);
+  let events: number | undefined;
+  const values: unknown[] = [];
+  for (const text of raw) {
+    if (read.rows.format === 'sse') {
+      events = (events ?? 0) + text.split(/\r?\n\r?\n/).filter((e) => /^data:/m.test(e)).length;
+      values.push(...eventValues(text));
+    } else {
+      try {
+        values.push(readBodyAs(text, read.rows.format, 'it'));
+      } catch {
+        // a body in no form the reader takes: no value
+      }
+    }
+  }
+  let rows = 0;
+  try {
+    const listed = await evaluate(read.rows.list, read.rows.format === 'sse' ? values : values.length === 1 ? values[0] : values, bindings);
+    rows = Array.isArray(listed) ? listed.length : listed === undefined ? 0 : 1;
+  } catch {
+    rows = 0;
+  }
+  return { ...(events !== undefined ? { events } : {}), values: values.length, rows };
 }
 
 /** One response body a recipe reads, by its capture's match. */

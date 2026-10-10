@@ -370,6 +370,9 @@ describe('flights.results', () => {
     ]);
     expect(said[0]!.obj.caps).toEqual([{ match: STREAM, status: 403, bytes: 23, truncated: false }]);
     expect(said[1]!.obj.caps).toEqual([{ match: STREAM, status: 200, bytes: 900, truncated: true }]);
+    // A shape refusal says what the reader made of it, in counts: one event, one value, one row found, none read.
+    expect(said[2]!.obj.shape).toEqual({ events: 1, values: 1, rows: 1 });
+    expect(said[0]!.obj.shape).toBeUndefined();
     // Never a body: only the match, status, size and cut of each capture.
     expect(JSON.stringify(said)).not.toContain('Forbidden');
     expect(JSON.stringify(said)).not.toContain('flightJourneys');
@@ -387,6 +390,23 @@ describe('flights.results', () => {
     const { engine: two } = engineWith(() => [capture(STREAM, STREAM_URL, `${body.trim()}\n\n${body.trim()}\n\n`)]);
     const both = await two.answer('flights.results', GIVEN, { tripId: 't_two' });
     expect(both.as === 'options' && both.options).toHaveLength(4);
+  });
+
+  // A logged-in browser's stream may differ (10 Oct): more than one event, named event types, comments, fields Go doesn't
+  // read. Every event's value is read, and the flights of each merge, once each.
+  it("merges the flights of every event, whatever its event type, around other events and comments", async () => {
+    const value = JSON.parse(fixture('flights-del-goi-2026-11-13.sse').trim().slice('data:'.length)) as { data: { flightJourneys: Array<{ flightFare: unknown[] }> } };
+    const fares = value.data.flightJourneys[0]!.flightFare;
+    const part = (from: number, to: number) => JSON.stringify({ ...value, data: { ...value.data, extra: { loyalty: true }, flightJourneys: [{ ...value.data.flightJourneys[0], flightFare: fares.slice(from, to) }] } });
+    const stream = [
+      ': ok', '',
+      'event: meta', 'data: {"data":{"type":"META","userTier":"x"}}', '',
+      'event: result', `id: 1`, `data: ${part(0, 3)}`, '',
+      'event: result', `id: 2`, `data: ${part(2, 4)}`, '',
+    ].join('\n');
+    const { engine } = engineWith(() => [capture(STREAM, STREAM_URL, stream)]);
+    const got = await engine.answer('flights.results', GIVEN, { tripId: 't_events' });
+    expect(got.as === 'options' && got.options.map((o) => o.title)).toEqual(['Air-India Express IX1196', 'IndiGo 6E328 + 6E5106', 'Air-India Express IX1108', 'IndiGo 6E5341']);
   });
 
   it("reads the flights from ixigo's stream: each one's airline and numbers, its fare per person, its times and stops", async () => {

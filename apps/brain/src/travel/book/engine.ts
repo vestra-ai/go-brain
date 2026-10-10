@@ -20,7 +20,7 @@ import { evaluate } from './expr.js';
 import type { RecipeFile, Step } from './format.js';
 import { clip } from '../cards.js';
 import { boxFetches, pickSuggestion, readSuggestions, type End, type Suggestion } from './lookup.js';
-import { readFacts, readOptions, unreadBecause } from './read.js';
+import { readFacts, readOptions, shapeOf, unreadBecause } from './read.js';
 import { labelOf, pathOf, runLine, whyOf, type OnRun, type RunLine } from './run-event.js';
 import { fill } from './template.js';
 
@@ -740,12 +740,15 @@ export function createEngine(d: EngineDeps) {
       refusePayments(got.finalUrl);
       o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
       await keepOffers(recipe, site, inputs, got.captures, o.tripId);
-      const answer = await answerFrom(got.captures, filled, started).catch((err: unknown) => {
-        // Why a page that answered still didn't read: which check, and each capture's status, size and cut. Never a body.
+      const answer = await answerFrom(got.captures, filled, started).catch(async (err: unknown) => {
+        // Why a page that answered still didn't read: which check, each capture's status, size and cut, and for a shape
+        // refusal what the reader made of the body, in counts. Never a body.
         if (err instanceof TravelError && err.code === 'refused') {
+          const check = unreadBecause(filled, got.captures);
           d.log?.warn({
-            recipe: recipe.id, check: unreadBecause(filled, got.captures),
+            recipe: recipe.id, check,
             caps: got.captures.map((c) => ({ match: c.match.slice(0, 60), status: c.status, bytes: c.body.length, truncated: c.truncated })),
+            ...(check === 'shape' ? { shape: await shapeOf(filled, got.captures, { inputs, page, ...bindings }).catch(() => null) } : {}),
           }, "book: a page answered, and its answer didn't read");
         }
         throw err;
