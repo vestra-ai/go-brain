@@ -54,7 +54,7 @@ describe('registerTravel', () => {
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'set_budget', 'ixigo', 'compare_ways_there', 'watch_ixigo', 'stop_watch']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual([
       'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/see_on_ixigo',
-      'options/add_budget', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
+      'options/add_budget', 'options/book_mine', 'options/change', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
     ]);
     expect(lb.context.wakes.has('tap')).toBe(true);
     // A search that outlived its turn wakes Go with its options.
@@ -88,6 +88,47 @@ describe('registerTravel', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(lb.link.sent('open_vote')).toHaveLength(1);
     expect(await lb.taps.tap('options', 'vote', tap({ tap_id: 'tap_v3', action_id: 'vote' }), card)).toEqual({ result: 'done', toast: 'Already up for a vote' });
+  });
+
+  // Keshav, 10 Oct: Go opened a group vote, "Book IndiGo 6E2150 for Meher on 12 Nov? 0 of 5 voted", for Meher's own
+  // flight ("why would we need everyone to vote for my ticket lol"). A ticket is its traveller's own.
+  it("a ticket picked is its picker's own: their confirm goes up at once for them alone, never a vote; Book it opens ixigo set for one", async () => {
+    const results = createResultsStore(db.pool);
+    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=12112026&returnDate=&adults=5&children=0&infants=0&class=e&source=Search%20Form';
+    const flight = (title: string): ResultOption => ({ kind: 'flight', title, priceMinor: 1_157_100, currency: 'INR', priceNote: 'per person', highlights: ['Non-stop'], facts: { stops: 0 }, sourceUrl: page });
+    const checkedAt = '2026-10-10T07:00:00.000Z';
+    const set = await results.save({ tripId: 't_goa', optionKind: 'flight', source: 'search', query: {}, options: [flight('IndiGo 6E2150'), flight('Air India AI2981')], checkedAt });
+    const picks = [{ optionId: 'opt_fl1', n: 1, option: flight('IndiGo 6E2150'), imageUrl: null }, { optionId: 'opt_fl2', n: 2, option: flight('Air India AI2981'), imageUrl: null }];
+    const flights = buildOptionsCard({ cardId: 'c_fl', title: 'Flights, Delhi to Goa', optionKind: 'flight', checkedAt, picks });
+    await results.saveCard({ cardId: 'c_fl', tripId: 't_goa', resultsId: set.resultsId, title: flights.title, optionKind: 'flight', card: flights }, picks, checkedAt);
+    // No group vote on a ticket's card.
+    expect(flights.actions?.map((a) => a.action_id)).toEqual(['pick', 'open']);
+    const at = (over: Partial<{ tap_id: string; action_id: string; person_id: string; option_id: string; card_id: string }>) =>
+      ({ tap_id: 'tap_f', trip_id: 't_goa', card_id: 'c_fl', action_id: 'pick', person_id: 'p_meher', option_id: 'opt_fl1', ...over });
+    const before = lb.desk.of('tap').length;
+    expect(await lb.taps.tap('options', 'pick', at({ tap_id: 'tap_f1' }), flights)).toEqual({ result: 'done', toast: "It's yours to confirm" });
+    await eventually(() => lb.link.sent('post_message').some((p) => (p.card as { card_id?: string })?.card_id === 'c_mine_tap_f1'));
+    const mine = C.OptionsCard.parse(lb.link.sent('post_message').find((p) => (p.card as { card_id?: string })?.card_id === 'c_mine_tap_f1')!.card);
+    expect(mine).toMatchObject({ title: 'Book IndiGo 6E2150 for you, ₹11,571?', for_person_ids: ['p_meher'], options: [{ option_id: 'opt_fl1', title: 'IndiGo 6E2150' }] });
+    expect(mine.actions).toEqual([
+      { action_id: 'book_mine', label: 'Book it', style: 'primary', per_option: true, only_for_person_ids: ['p_meher'] },
+      { action_id: 'change', label: 'Change', style: 'secondary', per_option: true, only_for_person_ids: ['p_meher'] },
+    ]);
+    // No model round, no vote: nothing on the desk, no open_vote.
+    expect(lb.desk.of('tap')).toHaveLength(before);
+    expect(lb.link.sent('open_vote').filter((v) => String(v.question).includes('6E2150'))).toEqual([]);
+    // "Book it": ixigo's page for the flight, set for one traveller, for Meher alone.
+    const book = await lb.taps.tap('options', 'book_mine', at({ tap_id: 'tap_f2', action_id: 'book_mine', card_id: mine.card_id }), mine);
+    expect(book).toMatchObject({ result: 'open', url: expect.stringContaining('&adults=1&children=0&infants=0&') });
+    expect(await lb.taps.tap('options', 'book_mine', at({ tap_id: 'tap_f3', action_id: 'book_mine', card_id: mine.card_id, person_id: 'p_kabir' }), mine))
+      .toEqual({ result: 'refused', toast: 'This one is for someone else to confirm' });
+    // "Change": Go finds them another, their own pick.
+    expect(await lb.taps.tap('options', 'change', at({ tap_id: 'tap_f4', action_id: 'change', card_id: mine.card_id }), mine)).toEqual({ result: 'done', toast: 'Go will find you another' });
+    const change = lb.desk.of('tap').at(-1)!;
+    expect(change).toMatchObject({ id: 'travel:change:tap_f4', payload: { action: 'change_mine', optionId: 'opt_fl1', personId: 'p_meher' } });
+    expect(lb.context.wake(change, goaPack())).toMatch(/Meher tapped "Change" on their own flight, "IndiGo 6E2150".*never a vote/);
+    // An older ticket card that still has the vote button: refused, saying why.
+    expect(await lb.taps.tap('options', 'vote', at({ tap_id: 'tap_f5', action_id: 'vote' }), flights)).toEqual({ result: 'refused', toast: "A ticket is each person's own: tap I'll take this" });
   });
 
   it('"See on ixigo" opens the option\'s own ixigo.com page, and refuses an option that has none', async () => {

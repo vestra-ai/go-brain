@@ -468,18 +468,18 @@ describe('put_to_vote', () => {
     expect(two.cards.map((c) => c.kind)).toEqual(['options', 'options']);
   });
 
-  it('puts trains to a vote at their per-person fares, each option answering travel.offer as a train, which is never booked for the group', async () => {
+  it("never puts a ticket to a group vote: a train's card is each traveller's own pick, and the model is told so", async () => {
     const found = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_tr1' }))) as any;
     const showCtx = lb.ctx({ turnId: 'turn_tr2' });
     const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Trains to Goa' }, showCtx)) as any;
     const card = C.OptionsCard.parse(showCtx.cards[0]);
     expect(card.option_kind).toBe('train');
+    const votes = lb.link.sent('open_vote').length;
     const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, lb.ctx({ turnId: 'turn_tr3' }))) as any;
-    expect(out.decision_id).toBeDefined();
-    const vote = lb.link.sent('open_vote').at(-1)!;
-    expect(vote).toMatchObject({ question: 'Which train?' });
-    expect((vote.options as Array<{ price_minor: number }>).map((o) => o.price_minor)).toEqual(card.options.map((o) => o.price_minor));
-    // P5 reads the kind and refuses group journeys: a train is searchable and votable, never paid for here.
+    expect(out).toMatchObject({ error: 'personal', note: expect.stringContaining("its traveller's own, never a group vote") });
+    expect(lb.link.sent('open_vote')).toHaveLength(votes);
+    expect(card.actions?.map((a) => a.action_id)).not.toContain('vote');
+    // The option is still a train the travel layer knows, searchable and picked by each person.
     expect((await travel.offer(card.options[0]!.option_id))?.kind).toBe('train');
   });
 });
