@@ -26,6 +26,7 @@ import { createEarlyStart } from './recipes/early.js';
 import { earlyAnswer, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { createPlaceFor } from './place-for.js';
+import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
 import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
@@ -210,7 +211,9 @@ export const registerTravel: RegisterLane = async (brain) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
   };
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick })) brain.tools.register(t);
+  // Where the group stays (booked, else the vote's winner, else the latest stays card's top pick): each bus's nearest drop.
+  const groupStay = createGroupStay({ trip: async (tripId) => (await brain.packs.get(tripId)).trip, results });
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, groupStay })) brain.tools.register(t);
   // The budget the group decided: kept with set_budget, and in "Right now" for every turn, as strong context, never a filter.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
   brain.tools.register(budgetTool({ budgets }));
