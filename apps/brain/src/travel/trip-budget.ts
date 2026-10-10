@@ -111,12 +111,18 @@ export function budgetTool(d: { budgets: TripBudgets }): QuickTool<z.infer<typeo
     claims: /\bbudget (?:is )?(?:set|saved|locked|noted|updated)\b/i,
     async run(a, ctx: TurnCtx) {
       const people = ctx.pack.trip.people;
-      const proof = a.proof_message_ids.map((id) => ctx.pack.messages.find((m) => m.message_id === id));
-      if (proof.some((m) => !m || m.deleted || m.author.kind !== 'person')) return { refused: 'a proof is not a person\'s message in this trip', tell_the_room: SAY_NOTHING };
+      // The people's messages among the proof: Go's own estimate cited beside their yes is passed over, never a refusal
+      // (staging drill, 10 Oct: refused twice for it, the turn ran out of rounds).
+      const proof = a.proof_message_ids
+        .map((id) => ctx.pack.messages.find((m) => m.message_id === id))
+        .filter((m): m is NonNullable<typeof m> => m !== undefined && !m.deleted && m.author.kind === 'person');
+      if (proof.length === 0) {
+        return { refused: "no person's message in this trip among the proof: give the message ids of the people's own words", tell_the_room: SAY_NOTHING };
+      }
       const yes = new Set<string>();
       for (const m of proof) {
-        if (m!.author.kind === 'person') yes.add(m!.author.person_id);
-        for (const r of m!.reactions) if (r.person_id && THUMBS_UP.test(r.emoji)) yes.add(r.person_id);
+        if (m.author.kind === 'person') yes.add(m.author.person_id);
+        for (const r of m.reactions) if (r.person_id && THUMBS_UP.test(r.emoji)) yes.add(r.person_id);
       }
       if (!(yes.has(ctx.pack.trip.organizer_person_id) || yes.size >= 2)) {
         return {
@@ -130,7 +136,7 @@ export function budgetTool(d: { budgets: TripBudgets }): QuickTool<z.infer<typeo
       }
       if (!a.amount_rupees) return { error: 'no_amount', note: 'Give amount_rupees, or clear.' };
       const perPerson = a.per === 'group' ? a.amount_rupees / Math.max(1, people.length) : a.amount_rupees;
-      const b = { perPersonMinor: Math.round(perPerson * 100), covers: a.covers ?? 'whole_trip', messageId: a.proof_message_ids.at(-1)! };
+      const b = { perPersonMinor: Math.round(perPerson * 100), covers: a.covers ?? 'whole_trip', messageId: proof.at(-1)!.message_id };
       await d.budgets.set(ctx.tripId, b);
       return {
         saved: budgetWords({ ...b, source: 'chat' }),
