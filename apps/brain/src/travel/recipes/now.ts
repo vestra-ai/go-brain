@@ -21,6 +21,7 @@ import { plainAsk } from '../answer.js';
 import type { EngineAnswer } from '../book/engine.js';
 import { NAMES_ONLY_FROM_IXIGO, NOTHING_ON_IXIGO } from '../book/tool.js';
 import type { Images } from '../images.js';
+import { withoutPhotos } from '../photos.js';
 import type { ResultsStore } from '../results.js';
 import { answerItself, handOver, searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
@@ -191,7 +192,7 @@ function factLines(rows: Array<Record<string, unknown>>): string[] {
   const out: string[] = [];
   let used = 0;
   for (const row of rows) {
-    const line = JSON.stringify(row);
+    const line = JSON.stringify(withoutPhotos(row));
     if (used + line.length > READ_FACTS_MAX) {
       out.push(out.length ? `(${rows.length - out.length} more: the ixigo tool gives them)` : `${line.slice(0, READ_FACTS_MAX)}… (cut short: the ixigo tool gives all of it)`);
       break;

@@ -30,7 +30,9 @@ describe('switches', () => {
     const s = createSwitches({ pool: db.pool, env: {}, now: clock().now });
     await expect(s.set('PAY_RAIL', 'card')).rejects.toThrow(/PAY_RAIL/);
     await expect(s.set('CALLS_MODE', 'everyone')).rejects.toThrow(/CALLS_MODE/);
-    await expect(s.set('REFLEX_LIVE', 'q1,q11')).rejects.toThrow(/REFLEX_LIVE/);
+    // Eleven questions: q11 (actionable) is one, q12 is not.
+    await expect(s.set('REFLEX_LIVE', 'q1,q12')).rejects.toThrow(/REFLEX_LIVE/);
+    await s.set('REFLEX_LIVE', 'q1,q11');
     await expect(s.set('REFLEX_LIVE', 'off,q1')).rejects.toThrow(/REFLEX_LIVE/);
     await s.set('REFLEX_LIVE', 'q1,q2,q3');
   });

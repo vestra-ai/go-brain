@@ -70,7 +70,7 @@ describe('buildQuestions', () => {
     const { questions, taskKeys } = buildQuestions({ message: m, pack: packOf([m]), runningTasks: [] });
     expect(taskKeys).toEqual([]);
     expect(Object.keys(questions).sort()).toEqual([
-      'q10_recipe', 'q1_addressed', 'q1_chatter', 'q2_complete', 'q3_big_compare', 'q3_big_steps', 'q3_quick_act', 'q3_quick_answer',
+      'q10_recipe', 'q11_actionable', 'q1_addressed', 'q1_chatter', 'q2_complete', 'q3_big_compare', 'q3_big_steps', 'q3_quick_act', 'q3_quick_answer',
       'q3_quick_search', 'q5_dates', 'q5_food', 'q5_other', 'q5_travel', 'q6_agreed', 'q6_doing', 'q6_open',
       'q7_reaction', 'q8_secret', 'q8_spend', 'q8_steer', 'q9_circles', 'q9_group_question', 'q9_someone_look',
     ]);

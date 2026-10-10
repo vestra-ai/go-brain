@@ -87,7 +87,7 @@ describe('scoring a replay', () => {
   });
 
   it('counts the model waking per person message', () => {
-    expect(scoreReplay(record()).wake).toEqual({ turns: 2, messages: 6, rate: 2 / 6 });
+    expect(scoreReplay(record()).wake).toMatchObject({ turns: 2, messages: 6, rate: 2 / 6 });
   });
 
   it('deleted text in a later prompt is a leak; a prompt already in flight is not', () => {

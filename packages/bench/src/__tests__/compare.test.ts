@@ -7,10 +7,11 @@ const bars = loadBars();
 const base: ChatScore = {
   chat: 'goa-50', mode: 'fast', composerModel: 'claude-sonnet-5-5', reflexSource: 'labels',
   messages: { people: 50, goLinesSkipped: 0, edits: 1, deletes: 1, reactions: 1, photos: 1 },
-  wake: { turns: 10, messages: 50, rate: 0.2 },
+  wake: { turns: 10, messages: 50, rate: 0.2, banter: { lines: 8, woke: 0, rate: 0 }, burstsWokeTwice: 0 },
+  cost: { perTurnUsd: 0.004, per100LinesUsd: 0.08 },
   typing: { n: 6, p50Ms: 20, p90Ms: 40, missing: 0, withoutPost: 1 },
   reply: { n: 6, p50Ms: 300, p90Ms: 900 },
-  speak: { asks: 6, answered: 6, missed: [], posts: 7, byKind: { prompted: 6, follow_up: 0, greeting: 1, duplicate: 0, unprompted: 0 }, unprompted: [], duplicates: [] },
+  speak: { asks: 6, answered: 6, missed: [], posts: 7, byKind: { prompted: 6, follow_up: 0, greeting: 1, duplicate: 0, unprompted: 0 }, unprompted: [], duplicates: [], twiceInARow: [] },
   quiet: { reactions: 7, wrongReactions: [], recordLines: 2 },
   cache: { requests: 10, eligible: 10, hitRate: 0.9, hitRateAll: 0.82, status: 'ok', results: { hit: 9, first: 1, below_minimum: 0, ttl: 0, rules_changed: 0, delete: 0, edit: 0, fold: 0, drift: 0 }, folds: [] },
   turns: [],
@@ -24,8 +25,8 @@ const oneFold = [{ n: 40, beforeChatTokens: 12_400, afterChatTokens: 6_100 }];
 
 describe('the bars and the verdict', () => {
   it('holds the spec\'s numbers', () => {
-    expect(bars.fast).toMatchObject({ typingP90Ms: 500, cacheHitMin: 0.85, wakeRateMax: 0.25, labelledChats: ['goa-50'] });
-    expect(bars.live).toMatchObject({ typingP90Ms: 500, replyP50Ms: 2500, replyP90Ms: 5000, cacheHitMin: 0.85, wakeRateMax: 0.25, unpromptedShareMax: 0.02 });
+    expect(bars.fast).toMatchObject({ typingP90Ms: 500, cacheHitMin: 0.85, banterWakeMax: 0.1, labelledChats: ['goa-50'] });
+    expect(bars.live).toMatchObject({ typingP90Ms: 500, replyP50Ms: 2500, replyP90Ms: 5000, cacheHitMin: 0.85, banterWakeMax: 0.1, unpromptedShareMax: 0.02 });
   });
 
   it('passes a clean score', () => {
@@ -46,9 +47,16 @@ describe('the bars and the verdict', () => {
     expect(c).toMatchObject({ value: 'not cacheable yet', ok: true });
   });
 
-  it('fails a wake rate over the bar and notes a chat with no messages from people', () => {
-    expect(failed([{ ...base, wake: { turns: 14, messages: 50, rate: 0.28 } }])).toEqual(['goa-50: woke the model']);
-    const none = compareFast([{ ...base, wake: { turns: 1, messages: 0, rate: null } }], bars.fast).checks.find((c) => c.name === 'woke the model');
+  // Keshav, 10 Oct: Go jumps in on most lines. Waking the model is reported with its cost; the guards are banter and
+  // talking twice in a row.
+  it('reports how often the model woke, with its cost, and fails banter waking it or Go talking twice in a row', () => {
+    const most = compareFast([{ ...base, wake: { ...base.wake, turns: 45, rate: 0.9 } }], bars.fast).checks.find((c) => c.name === 'woke the model');
+    expect(most).toMatchObject({ ok: true, value: '45 of 50 (90.0%), $0.08 per 100 lines ($0.0040 a turn)' });
+    expect(failed([{ ...base, wake: { ...base.wake, banter: { lines: 8, woke: 1, rate: 0.125 } } }])).toEqual(['goa-50: woke on banter']);
+    expect(failed([{ ...base, speak: { ...base.speak, twiceInARow: [{ at: 1, text: 'Want me to check?' }] } }])).toEqual(['goa-50: Go twice in a row']);
+    // On a generated chat a timed notice may follow Go's own post: listed for review.
+    expect(failed([{ ...base, chat: 'goa-300', speak: { ...base.speak, twiceInARow: [{ at: 1, text: 'Check-in is tomorrow' }] } }])).toEqual([]);
+    const none = compareFast([{ ...base, wake: { ...base.wake, turns: 1, messages: 0, rate: null } }], bars.fast).checks.find((c) => c.name === 'woke the model');
     expect(none).toMatchObject({ ok: true, note: 'no messages from people' });
   });
 
@@ -107,7 +115,7 @@ describe('the live verdict and the model pick', () => {
 
 describe('the summary', () => {
   it('puts failures first and never prints NaN, undefined, Infinity or an em dash', () => {
-    const scores = [base, { ...base, chat: 'goa-2000', cache: { ...base.cache, hitRate: 0.8, folds: oneFold } }, { ...base, chat: 'empty', wake: { turns: 0, messages: 0, rate: null }, typing: { n: 0, p50Ms: null, p90Ms: null, missing: 0, withoutPost: 0 }, prompt: { maxTokens: null, lastTokens: null, average: null }, costUsd: null }];
+    const scores = [base, { ...base, chat: 'goa-2000', cache: { ...base.cache, hitRate: 0.8, folds: oneFold } }, { ...base, chat: 'empty', wake: { ...base.wake, turns: 0, messages: 0, rate: null }, typing: { n: 0, p50Ms: null, p90Ms: null, missing: 0, withoutPost: 0 }, prompt: { maxTokens: null, lastTokens: null, average: null }, costUsd: null }];
     const report: BenchReport = { schema: 'go.bench-report/v1', mode: 'fast', at: '2026-10-06T18:00:00Z', commit: 'abc1234', scores, verdict: compareFast(scores, bars.fast) };
     const md = renderSummary(report);
     expect(md).toContain('1 of');

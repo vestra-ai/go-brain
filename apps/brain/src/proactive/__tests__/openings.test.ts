@@ -9,7 +9,8 @@ import { ProactiveStore } from '../store.js';
 const NOW = new Date('2026-10-06T06:30:00Z');
 const ev = (seq: number, type: string, data: unknown): TripEvent =>
   Event.parse({ event_id: `ev_${seq}`, trip_id: 't_goa', seq, occurred_at: '2026-10-06T06:30:00Z', type, data });
-const sureOpening = unsureRead({ opening: { value: true, sure: true }, forGo: { value: false, sure: true } });
+// A line the composer doesn't wake for (pure banter: trips/intake.ts wakesComposer) that the reflex still reads as a moment.
+const sureOpening = unsureRead({ opening: { value: true, sure: true }, forGo: { value: false, sure: true }, banter: { value: true, sure: true } });
 
 describe('isHush', () => {
   const goLine = msg({ id: 'm_go', by: 'go', text: 'Want me to put it to a vote?' });
@@ -43,20 +44,21 @@ describe('chatOpening', () => {
     expect(chatOpening(msg({ text: null, withheld: true }), sureOpening, goaPack(), NOW)).toBeNull();
   });
 
-  it('opens one on what the live reflex is sure of: a need to keep to, something to settle, a search to run (q9 is in shadow)', () => {
+  // Keshav, 10 Oct: "go can interfere in most of the messages". A line no one spoke to Go in wakes the composer unless it
+  // is pure banter, so its moments are the composer's to answer: an opening as well would post twice.
+  it("leaves the moments of a line that isn't banter to the composer: a need to keep to, something to settle, a search to run", () => {
     const notForGo = { forGo: { value: false, sure: true } } as const;
-    // The 9 Oct run sheet: Kabir asks the group to settle dates on a trip that has them, and Go said nothing.
-    const dates = chatOpening(msg({ id: 'm_60', seq: 60, by: 'p_kabir', text: 'guys dates final karo yaar, kal tak' }), unsureRead({ ...notForGo, recordKind: { value: 'open', sure: true } }), goaPack(), NOW);
-    expect(dates).toMatchObject({ dedupeKey: 'chat:m_60', topic: 'chat', useful: ['react', 'record', 'message'] });
-    expect(chatOpening(msg({ id: 'm_61', by: 'p_meher', text: "I'm veg btw, so no seafood shacks only" }), unsureRead({ ...notForGo, fact: { value: true, sure: true } }), goaPack(), NOW)).not.toBeNull();
-    expect(chatOpening(msg({ id: 'm_62', by: 'p_rahul', text: 'teen log Saudades pe haan bol chuke hain' }), unsureRead({ ...notForGo, recordKind: { value: 'agreed', sure: true } }), goaPack(), NOW)).not.toBeNull();
-    expect(chatOpening(msg({ id: 'm_63', by: 'p_arjun', text: 'koi trains dekh lo Mumbai se' }), unsureRead({ ...notForGo, recipe: { value: 'trains', sure: true } }), goaPack(), NOW)).not.toBeNull();
-    // Banter carries nothing the reflex is sure of, or it is sure there is nothing.
-    expect(chatOpening(msg({ by: 'p_arjun', text: 'this vibe pls' }), unsureRead(notForGo), goaPack(), NOW)).toBeNull();
-    const nothing = unsureRead({ ...notForGo, fact: { value: false, sure: true }, recordKind: { value: null, sure: true }, recipe: { value: null, sure: true } });
+    expect(chatOpening(msg({ id: 'm_60', seq: 60, by: 'p_kabir', text: 'guys dates final karo yaar, kal tak' }), unsureRead({ ...notForGo, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ id: 'm_61', by: 'p_meher', text: "I'm veg btw, so no seafood shacks only" }), unsureRead({ ...notForGo, fact: { value: true, sure: true } }), goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ id: 'm_63', by: 'p_arjun', text: 'koi trains dekh lo Mumbai se' }), unsureRead({ ...notForGo, recipe: { value: 'trains', sure: true } }), goaPack(), NOW)).toBeNull();
+    // Banter the composer leaves alone opens one only when the reflex is sure of a moment in it.
+    const banter = { ...notForGo, banter: { value: true, sure: true } } as const;
+    expect(chatOpening(msg({ id: 'm_64', by: 'p_kabir', text: 'haha dates final karo yaar 😂' }), unsureRead({ ...banter, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).not.toBeNull();
+    // Question 11 decides first: sure of something for Go, the composer has the line (no opening); sure of nothing, it doesn't.
+    expect(chatOpening(msg({ id: 'm_65', by: 'p_kabir', text: 'haha dates final karo yaar 😂' }), unsureRead({ ...banter, actionable: { value: true, sure: true }, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ id: 'm_66', by: 'p_kabir', text: 'dates final karo 😂' }), unsureRead({ ...notForGo, actionable: { value: false, sure: true }, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).not.toBeNull();
+    const nothing = unsureRead({ ...banter, fact: { value: false, sure: true }, recordKind: { value: null, sure: true }, recipe: { value: null, sure: true } });
     expect(chatOpening(msg({ by: 'p_kabir', text: 'haha same 😂' }), nothing, goaPack(), NOW)).toBeNull();
-    // Unsure whether it is for Go: the composer has it, so no opening as well.
-    expect(chatOpening(msg({ text: "I'm veg" }), unsureRead({ fact: { value: true, sure: true } }), goaPack(), NOW)).toBeNull();
   });
 
   it('leaves a message to the composer unless the reflex is sure it is not for Go and it does not name Go', () => {

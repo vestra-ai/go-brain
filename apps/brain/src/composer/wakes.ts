@@ -24,7 +24,7 @@ export const CHIME_RULES =
   'me") is never a search.';
 
 export function renderMessageWake(item: DeskItem, pack: TripPack): string {
-  const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean };
+  const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean; asksGo?: boolean };
   const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
   if (!m) return 'a message that was deleted since';
   const a = m.author;
@@ -33,14 +33,15 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
     const id = a.person_id;
     who = personName(pack.trip.people.find((x) => x.person_id === id)?.name ?? 'Someone who left');
   }
-  const line = `message #${m.seq} from ${who}${p.namesGo ? ', it names you' : ''}`;
+  const line = `message #${m.seq} from ${who}${p.namesGo ? ', it names you' : p.asksGo ? ', it asks you without your name' : ''}`;
   return a.kind === 'person' && m.text && looksLikeMoney(m.text) && amountsIn(m.text).length === 0 ? `${line}. ${ASK_HOW_MUCH}` : line;
 }
 
 /**
- * Said once under "why you woke" when a person's message woke Go without naming it: the reflex wasn't sure it was for
- * the group, so the turn decides. Here, after the cache point, not in GO_RULES: the rules' cached bytes never change.
- * A line saying someone paid or owes keeps its own instruction (record_expense from the rules, or ASK_HOW_MUCH); a
+ * Said once under "why you woke" when a person's message woke Go without naming it: the turn decides, and its default is
+ * to jump in wherever it can add anything (Keshav, 10 Oct: "go can interfere in most of the messages"), silent only on
+ * pure banter, an acknowledgement, or when it spoke last and nobody answered (never two messages in a row). Here, after
+ * the cache point, not in GO_RULES: the rules' cached bytes never change. A line saying someone paid or owes keeps its own instruction (record_expense from the rules, or ASK_HOW_MUCH); a
  * price or a budget ("villa under 8k a head") gets the note like any other line. A line by someone who named Go in
  * the same turn goes on with what they asked ("@Go one thing" ... "is there a good bakery near Anjuna?"), and so does a
  * line by someone answering a question Go asked them (answersToGo): it is a reply to Go, not the group talking.
@@ -48,9 +49,10 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
 export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const messages = items.flatMap((item) => {
     if (item.kind !== 'message') return [];
-    const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean };
+    const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean; asksGo?: boolean; actionable?: boolean };
     const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
-    return m && m.author.kind === 'person' ? [{ m, person: m.author.person_id, namesGo: p.namesGo === true }] : [];
+    // A line the quick read is sure asks Go is an ask (askNote), as one that names Go.
+    return m && m.author.kind === 'person' ? [{ m, person: m.author.person_id, namesGo: p.namesGo === true || p.asksGo === true, actionable: p.actionable === true }] : [];
   });
   const answers = answersToGo(pack);
   const named = new Set(messages.filter((x) => x.namesGo || answers.has(x.m.message_id)).map((x) => x.person));
@@ -59,16 +61,27 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const refs = seqs.map((s) => `#${s}`);
   const one = refs.length === 1;
   const which = one ? `${refs[0]} doesn't name you, so it is` : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]} don't name you, so they are`;
+  // The quick read is sure Go has something to do with these (reflex question 11): said first, plainly.
+  const acts = messages.filter((x) => x.actionable && seqs.includes(x.m.seq)).map((x) => `#${x.m.seq}`);
+  const sure = acts.length
+    ? `${acts.join(' and ')} ${acts.length === 1 ? 'carries' : 'carry'} something you can answer, act on, note or offer, though ${acts.length === 1 ? 'it doesn\'t' : 'they don\'t'} name you: jump in, in one line. `
+    : '';
   return (
-    `${which} the group talking. Speak if you can add something real: answer a question you can answer with facts from ` +
-    'ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already ' +
-    'answered it; when the group agrees dates on a trip with a place, offer stays in one line (search_stays only when ' +
-    'someone asks to see them); when it agrees a place, offer the next step in one line; when people disagree, offer a vote. ' +
-    `${CHIME_RULES} ` +
-    "Someone saying what they'd like gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
-    "what is the friends' to settle unless the record already says, and the App gives anyone asking what they missed " +
-    'their own catch-up. For banter, greetings, a side conversation, something a person already handled, or when your ' +
-    'last message has had no reply from a person since, call stay_silent.'
+    `${sure}${which} the group talking, unless it asks for something you do (logging in to ixigo, a search, a booking, a vote, a ` +
+    'reminder, someone checking something): that is an ask even without your name, so do it, or answer it in one line. ' +
+    'Either way, jump in whenever you can add anything: answer a question with facts from ixigo or the trip (weather, ' +
+    'distances, timings, prices, the record, votes, money, places) unless a person already answered it; offer the lookup ' +
+    'or the next step in one line; flag a clash with the plan or the record; note a need or a preference with a ✅ and use ' +
+    'it; a quick useful fact. Plan-talk is never banter: a plan or a question to the group about the trip gets its line ' +
+    '("let\'s do Goa in Nov?": the weather then, or a stays offer; "budget kitna rakhein?": a suggested band a head from what ' +
+    'you know; "Arjun can\'t leave before 6": noted, and used in what you look up). When the group agrees dates on a trip with a place, offer stays in one line (search_stays ' +
+    'only when someone asks to see them); when it agrees a place, offer the next step in one line; when people disagree, ' +
+    `offer a vote. ${CHIME_RULES} ` +
+    "Someone saying what they'd like for the trip (a place, food, a vibe) gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
+    "what is the friends' to settle unless the record already says: never assign it, though you may offer your part (a lookup, a booking, a split). The App gives anyone asking what they missed " +
+    'their own catch-up. Call stay_silent only for pure banter, a greeting or an acknowledgement ("haha", "good morning", "ok", "see you"), a side ' +
+    'conversation not about the trip, something a person already answered, or when your last message has had no reply ' +
+    'from a person since: never two messages in a row.'
   );
 }
 
@@ -83,7 +96,8 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
  */
 export function askNote(items: DeskItem[], pack: TripPack): string | null {
   const seqs = items.flatMap((item) => {
-    if (item.kind !== 'message' || (item.payload as { namesGo?: boolean } | null)?.namesGo !== true) return [];
+    const asked = item.payload as { namesGo?: boolean; asksGo?: boolean } | null;
+    if (item.kind !== 'message' || (asked?.namesGo !== true && asked?.asksGo !== true)) return [];
     const p = (item.payload ?? {}) as { messageId?: string };
     const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
     return m && m.author.kind === 'person' ? [m.seq] : [];

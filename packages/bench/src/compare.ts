@@ -14,7 +14,8 @@ export const Bars = z.object({
     goTimeP90Ms: z.number().positive(),
     cacheHitMin: share,
     cacheChats: z.array(z.string()),
-    wakeRateMax: share,
+    /** Go jumps in on most lines (Keshav, 10 Oct): the bar is on bare banter waking the model, not on waking at all. */
+    banterWakeMax: share,
     labelledChats: z.array(z.string()),
     recallMissMax: z.int().nonnegative(),
     leakMax: z.int().nonnegative(),
@@ -27,7 +28,7 @@ export const Bars = z.object({
     replyP50Ms: z.number().positive(),
     replyP90Ms: z.number().positive(),
     cacheHitMin: share,
-    wakeRateMax: share,
+    banterWakeMax: share,
     labelledChats: z.array(z.string()),
     unpromptedShareMax: share,
     recallMissMax: z.int().nonnegative(),
@@ -46,6 +47,27 @@ function adder(checks: Check[], chat: string) {
   return (name: string, value: string, bar: string, ok: boolean, note?: string): void => {
     checks.push({ chat, name, value, bar, ok, ...(note !== undefined ? { note } : {}) });
   };
+}
+
+/**
+ * The wake checks. Go jumps in on most lines (Keshav, 10 Oct), so how often the model woke is reported with what it costs,
+ * and the guards are: bare banter rarely wakes it, a burst wakes it once, and Go never talks twice in a row.
+ */
+function wakeChecks(add: ReturnType<typeof adder>, s: ChatScore, banterMax: number, labelled: boolean): void {
+  // A score recorded before these fields (a live run's evidence) has none of them: reported as nothing to measure.
+  const per100 = s.cost?.per100LinesUsd ?? null;
+  const cost = per100 === null ? '' : `, $${per100.toFixed(2)} per 100 lines ($${(s.cost.perTurnUsd ?? 0).toFixed(4)} a turn)`;
+  if (s.wake.rate === null) add('woke the model', 'n/a', 'reported', true, 'no messages from people');
+  else add('woke the model', `${s.wake.turns} of ${s.wake.messages} (${fmtPct(s.wake.rate)})${cost}`, 'reported', true, 'Go jumps in on most lines');
+  const bar = `under ${Math.round(banterMax * 100)}%`;
+  const banter = s.wake.banter ?? { lines: 0, woke: 0, rate: null };
+  if (banter.rate === null) add('woke on banter', 'n/a', bar, true, 'no bare banter in the chat');
+  else add('woke on banter', `${banter.woke} of ${banter.lines} (${fmtPct(banter.rate)})`, bar, banter.rate < banterMax);
+  add('bursts woken twice', String(s.wake.burstsWokeTwice ?? 0), 'reported', true, 'a burst that goes on after Go answered it wakes it again');
+  const twice = s.speak.twiceInARow ?? [];
+  // Gated on the hand-labelled chat; on the generated ones a timed notice may follow Go's own post, so a person reviews it.
+  if (labelled) add('Go twice in a row', String(twice.length), '0', twice.length === 0);
+  else add('Go twice in a row', String(twice.length), 'for review', true, 'generated chat: a timed notice may follow Go');
 }
 
 export function compareFast(scores: readonly ChatScore[], b: Bars['fast']): Verdict {
@@ -69,9 +91,7 @@ export function compareFast(scores: readonly ChatScore[], b: Bars['fast']): Verd
     const broken = s.cache.results.drift + s.cache.results.rules_changed;
     add('cache breaks (drift, rules changed)', String(broken), `at most ${b.brokenCacheMax}`, broken <= b.brokenCacheMax);
 
-    const wakeBar = `under ${Math.round(b.wakeRateMax * 100)}%`;
-    if (s.wake.rate === null) add('woke the model', 'n/a', wakeBar, true, 'no messages from people');
-    else add('woke the model', `${s.wake.turns} of ${s.wake.messages} (${fmtPct(s.wake.rate)})`, wakeBar, s.wake.rate < b.wakeRateMax);
+    wakeChecks(add, s, b.banterWakeMax, b.labelledChats.includes(s.chat));
 
     const wrong = wrongSpeak(s);
     if (b.labelledChats.includes(s.chat)) {
@@ -114,9 +134,7 @@ export function liveChecks(run: LiveRun, b: Bars['live']): Check[] {
   if (s.cache.status === 'not_cacheable_yet') add('cache hit (provider)', 'not cacheable yet', cacheBar, true, 'every prompt is under the model minimum');
   else if (run.provider.cacheHit === null) add('cache hit (provider)', 'n/a', cacheBar, true, 'no usage reported');
   else add('cache hit (provider)', fmtPct(run.provider.cacheHit), cacheBar, run.provider.cacheHit >= b.cacheHitMin);
-  const wakeBar = `under ${Math.round(b.wakeRateMax * 100)}%`;
-  if (s.wake.rate === null) add('woke the model', 'n/a', wakeBar, true, 'no messages from people');
-  else add('woke the model', fmtPct(s.wake.rate), wakeBar, s.wake.rate < b.wakeRateMax);
+  wakeChecks(add, s, b.banterWakeMax, b.labelledChats.includes(run.chat));
   if (b.labelledChats.includes(run.chat)) add('wrong speak', String(wrongSpeak(s)), '0', wrongSpeak(s) === 0);
   else {
     const unpromptedShare = s.speak.posts > 0 ? s.speak.unprompted.length / s.speak.posts : null;

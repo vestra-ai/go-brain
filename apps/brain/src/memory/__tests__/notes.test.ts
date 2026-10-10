@@ -296,6 +296,15 @@ describe('the notes pass', () => {
     expect(adds).toEqual([['agreed', 'Goa trip, 6 to 9 Nov'], ['open', 'Stay in Candolim']]);
   });
 
+  // The 10 Oct jump-in eval: a bare 👍 after Go's word on Dudhsagar became "agreed: Dudhsagar falls trip on Sunday 8 Nov".
+  it('reads nothing into a bare 👍, ok or gn: no model call, no line, and the cursor moves on', async () => {
+    const { link, side, notes } = setup('t_n_ack', [msg(160, 'p_rahul', '👍'), msg(161, 'p_arjun', 'okay'), msg(162, 'p_priya', 'gn all 😴')], []);
+    expect((await notes.run('t_n_ack')).skipped).toBe('nothing_new');
+    expect(side.prompts).toHaveLength(0);
+    expect(await cursor('t_n_ack')).toBe(162);
+    expect(link.calls.filter((c) => c.method === 'add_record_line')).toEqual([]);
+  });
+
   it('does nothing when nothing is new, and never writes the same line twice', async () => {
     const messages = chat();
     const { packs, link, side, notes } = setup('t_n3', messages, [

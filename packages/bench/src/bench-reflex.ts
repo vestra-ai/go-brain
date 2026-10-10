@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { Brain } from '@go/brain/dist/app.js';
+import { isSmallTalk } from '@go/brain/dist/reflex/small-talk.js';
 import { CHATS_DIR, type Chat, type ChatLine, type ReflexLabel, type SayLine } from './chat.js';
 
 export type Reflex = Brain['reflex'];
@@ -22,11 +23,18 @@ export function allUnsure(): ReflexRead {
   };
 }
 
-/** What Jev should say about a line, from its labels. Speak true or false means sure; "either" means unsure. */
+/**
+ * What Jev should say about a line, from its labels. Speak true or false means sure; "either" means unsure. Questions 1's
+ * banter and 11 (actionable): a quiet line that is bare small talk is banter with nothing for Go; a line Go should speak
+ * on is actionable; any other line is unsure, so it wakes the turn, which decides (Go jumps in on most lines).
+ */
 export function labelRead(line: SayLine): ReflexRead {
   const l: ReflexLabel = line.reflex ?? {};
   const speak = line.go_should_speak;
+  const banter = speak === false && isSmallTalk(line.text);
   return {
+    banter: banter ? yes(true) : unsure(),
+    actionable: speak === true ? yes(true) : banter ? yes(false) : unsure(),
     forGo: l.for_go !== undefined ? yes(l.for_go) : speak === 'either' ? unsure() : yes(speak),
     complete: yes(l.complete ?? true),
     size: l.size !== undefined ? yes(l.size) : unsure(),
@@ -61,7 +69,11 @@ export class BenchReflex implements CountingReflex {
     for (const l of lines) {
       if (l.kind !== 'say' || l.person === 'go') continue;
       const key = lineKey(l);
-      if (!this.answers.has(key)) this.answers.set(key, recorded?.get(l.i) ?? labelRead(l));
+      // A read recorded before questions 1's banter and 11 existed takes theirs from the labels.
+      const label = labelRead(l);
+      const r = recorded?.get(l.i);
+      const fromLabel = { ...(label.banter ? { banter: label.banter } : {}), ...(label.actionable ? { actionable: label.actionable } : {}) };
+      if (!this.answers.has(key)) this.answers.set(key, r ? { ...fromLabel, ...r } : label);
     }
   }
 

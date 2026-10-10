@@ -111,6 +111,17 @@ describe('checkLine', () => {
     expect(checkLine(lineP({ proof: ['m_0122'] }), withThumb())).toMatchObject({ ok: true, value: { kind: 'agreed', personIds: ['p_priya', 'p_rahul'] } });
     expect(checkLine(lineP({ text: 'Dinner at Thalassa on Saturday', proof: ['m_0150'] }), env())).toMatchObject({ ok: true, value: { kind: 'agreed' } });
   });
+  // The lead, 10 Oct: a bare 👍 or ok never records a plan or a decision; a reaction alone is never a decision.
+  it('never takes a bare 👍 or ok as a yes: alone it is no proof, and beside a proposal it counts for no one', () => {
+    const thumbs = msg(190, 'p_rahul', '👍');
+    const ok = msg(191, 'p_kabir', 'ok');
+    const plan = msg(192, 'p_priya', 'should we do Dudhsagar falls one day?');
+    const e = env({ pack: packOf([...messages, plan, thumbs, ok], goaTrip()) });
+    expect(checkLine(lineP({ text: 'Dudhsagar falls on Sunday', proof: ['m_0190'] }), e)).toEqual({ ok: false, reason: 'a bare 👍 or ok is never proof: a yes says what it agrees to' });
+    expect(checkLine(lineP({ text: 'Dudhsagar falls on Sunday', proof: ['m_0190', 'm_0191'] }), e)).toMatchObject({ ok: false });
+    // The organizer's bare 👍 beside Priya's question makes no agreement: only her words count, so it is open at most.
+    expect(checkLine(lineP({ text: 'Dudhsagar falls one day', proof: ['m_0192', 'm_0190'] }), e)).toMatchObject({ ok: true, value: { kind: 'open', downgraded: true } });
+  });
   it('writes "open" when someone objected', () => {
     expect(checkLine(lineP({ text: 'Dinner at Thalassa on Saturday', proof: ['m_0150'], objections: ['m_0151'] }), env()))
       .toMatchObject({ ok: true, value: { kind: 'open' } });
