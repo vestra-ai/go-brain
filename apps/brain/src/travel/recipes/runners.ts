@@ -407,6 +407,12 @@ const docCapture = (doc: string) => ({ match: doc, required: false, max_bytes: 1
  * the plan's capture is the document's, its status read for Cloudflare's check as any, and nothing is added or taken
  * out: Bash answers each matching capture under its match, so taking Go's own out took the plan's too, and every such
  * page read nothing (staging, 10 Oct 10:14Z: trains.running_status and trains.schedule, caps []).
+ *
+ * Its cost: such a page's document is a required capture, and Bash answers once each required capture has its first
+ * answer, so when Cloudflare's check passes inside the tab only the check's 403 is kept, and challenged() opens the page
+ * once more (Go's own one-byte copy was not required, and saw the 200 come after). Raising the plan's max_count does not
+ * keep the 200: Bash has answered by then. A grace would (Bash waits it out for every capture's max_count), but every
+ * read of a clean page, whose document comes once, would then wait out the whole grace: a rare reopen costs less.
  */
 export const docMatch = (url: string, capture: ReadonlyArray<{ match: string }>): string | null => {
   const doc = pageDoc(url);
