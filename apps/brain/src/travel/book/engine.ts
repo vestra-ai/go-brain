@@ -48,8 +48,8 @@ export interface EngineDeps {
   /** The lists of what each recipe's page offers, per place (offers.ts); absent, no run filters on the site's own list. */
   offers?: Offers;
   /** The trip as a recipe's inputs read it ($trip): its head count, the members' home cities (one per member who gave
-   *  one), and where and from when it goes, once the trip says. */
-  trip: (tripId: string) => Promise<{ people: number; homes: string[]; destination?: string | null; start?: string | null }>;
+   *  one), where it goes and its first and last day, once the trip says, and today where the trip is. */
+  trip: (tripId: string) => Promise<{ people: number; homes: string[]; destination?: string | null; start?: string | null; end?: string | null; today?: string }>;
   /** Holds the trip's computer awake for the travel the trip is talking: called once a run will open a page there. */
   warm?: (tripId: string, recipeId: string) => void;
   now: () => Date;
