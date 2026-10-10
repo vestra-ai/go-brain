@@ -299,7 +299,8 @@ describe('a search that answers itself', () => {
     const card = C.OptionsCard.parse(ctx.cards[0]);
     expect(card.options.map((o) => o.title)).toEqual(['Casa Mareia', 'Villa Sol', 'The Palms Villa']);
     expect(ctx.lines).toHaveLength(1);
-    expect(ctx.lines[0]).toMatch(/^Pool stays in North Goa for 6 to 9 Nov, .+, from ₹[\d,]+ a night\.$/);
+    // From the card's cheapest whole stay, as its price says it: The Palms, 3 nights at ₹12,200 (the exam's #5 follow-up).
+    expect(ctx.lines[0]).toMatch(/^Pool stays in North Goa for 6 to 9 Nov, .+, from ₹36,600 for 3 nights\.$/);
     // No count of the card's options: price and scope only.
     expect(ctx.lines[0]).not.toMatch(/\b\d+ (pool )?stays\b/i);
     expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
