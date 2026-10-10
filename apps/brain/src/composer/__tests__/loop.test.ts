@@ -101,8 +101,9 @@ describe('the composer loop', () => {
     const r = await run();
     expect(r).toMatchObject({ text: 'Hello!', silent: false, rounds: 1, stopReason: 'end_turn' });
     const body = bodies[0];
-    expect(body.max_tokens).toBe(1024);
-    expect(body.thinking).toEqual({ type: 'between_tools' });
+    expect(body.max_tokens).toBe(2048);
+    expect(body.thinking).toEqual({ type: 'adaptive' });
+    expect(body.output_config).toEqual({ effort: 'low' });
     expect(body.tool_choice).toEqual({ type: 'auto' });
     expect(body.system).toEqual([{ type: 'text', text: 'You are Go.', cache_control: { type: 'ephemeral', ttl: '1h' } }]);
     expect(body.messages).toEqual([{ role: 'user', content: [...USER.slice(0, -1), { ...USER.at(-1), cache_control: { type: 'ephemeral' } }] }]);
@@ -118,7 +119,18 @@ describe('the composer loop', () => {
     const { bodies, run } = setup([{ text: 'Hi' }], { model: 'claude-haiku-4-5' });
     await run();
     expect(bodies[0].thinking).toBeUndefined();
-    expect(bodies[0].max_tokens).toBe(1024);
+    expect(bodies[0].output_config).toBeUndefined();
+    expect(bodies[0].max_tokens).toBe(2048);
+  });
+
+  it("thinking goes back to the model as it came, first in its round, and never into the room's words", async () => {
+    const { bodies, run } = setup([{ thinking: 'sig_1', tools: [echoCall('a')] }, { thinking: 'sig_2', text: 'Done.' }]);
+    const r = await run();
+    expect(r.text).toBe('Done.');
+    const said = bodies[1].messages[1];
+    expect(said.role).toBe('assistant');
+    expect(said.content[0]).toEqual({ type: 'thinking', thinking: '', signature: 'sig_1' });
+    expect(said.content[1]).toMatchObject({ type: 'tool_use', name: 'echo' });
   });
 
   it('a tool round runs the calls together and puts one rolling marker on the newest block', async () => {

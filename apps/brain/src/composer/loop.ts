@@ -10,7 +10,8 @@ import { SAY_NOTHING, STAY_SILENT, type QuickTool, type TurnCtx } from './tools.
 export const MAX_ROUNDS = 4;
 /** The stop reason of a turn that ended on its cards: every call in the last reply was a card tool that put its card up. */
 export const CARDS_UP = 'cards_up';
-export const MAX_TOKENS = 1_024;
+/** A round's output cap. Thinking counts toward it, so it leaves room for a short think before a reply. */
+export const MAX_TOKENS = 2_048;
 const ROLLING = { type: 'ephemeral' } as const; // 5 minutes: it only has to last the turn
 
 export interface Usage {
@@ -256,8 +257,11 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   const tools = toolDefs(i.tools);
   const byName = new Map(i.tools.map((t) => [t.name, t]));
   const caps = resolveCapabilities(i.model);
-  // Thinking off: 'between_tools' on Sonnet 5.5 (which cannot omit it); no thinking field on other models.
-  const thinking = caps.id === 'claude-sonnet-5-5' ? { type: 'between_tools' } : undefined;
+  // Thinking on, at low effort, on Sonnet 5.5: the model's working goes to thinking, so its text is only ever words for
+  // the room. With thinking off ('between_tools') it wrote its working as text before every tool call ("Priya asked for
+  // a villa search, so I'll run it", 12 of 12 probe turns, 10 Oct); with it on, none did, and at low it mostly skips
+  // thinking, so turns were no slower. No thinking field on other models.
+  const thinking = caps.id === 'claude-sonnet-5-5' ? { thinking: { type: 'adaptive' }, output_config: { effort: 'low' } } : {};
   const messages = [...i.messages];
   const usage = noUsage();
   const timings: RoundTiming[] = [];
@@ -282,7 +286,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
       tools,
       tool_choice: { type: closing ? 'none' : 'auto' },
       messages: outgoing,
-      ...(thinking ? { thinking } : {}),
+      ...thinking,
     };
     // The budget holds this round's upper-bound cost before the call; over today's cap there is no call, and the
     // turn keeps what it has.
@@ -293,7 +297,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     const asked = Date.now();
     let firstDelta: number | null = null;
     const reply = await underHold(hold, i.model, async (billed) => {
-      // 'between_tools' is not in the SDK's types yet, so the body is cast.
+      // The body's literal fields (tool_choice's type) widen to string, so it is cast.
       const stream = i.client.messages.stream(body as unknown as Anthropic.MessageStreamParams, { signal: i.signal });
       for await (const ev of stream) {
         if (ev.type === 'message_start') billed.usage = ev.message.usage;
