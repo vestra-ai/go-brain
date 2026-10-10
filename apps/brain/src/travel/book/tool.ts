@@ -37,12 +37,15 @@ export interface IxigoToolDeps {
   joinKey?: (ctx: TurnCtx, recipe: string, inputs: Record<string, string | number>) => string | null;
 }
 
-/** The recipes the tool offers: facts or a link, open to anyone, changing nothing; never a search, its link or a lookup. */
+/**
+ * The recipes the tool offers: facts or a link, changing nothing; never a search, its link or a lookup. One on the trip's
+ * ixigo login (auth: login, the account's own bookings) runs once the trip is logged in: the engine asks first.
+ */
 export function toolRecipes(book: Pick<Book, 'all'>): RecipeFile[] {
   const searches = new Set([...Object.values(SEARCH_RECIPES), ...Object.values(LINK_FALLBACK)]);
   return book
     .all()
-    .filter((r) => !searches.has(r.id) && (r.answer.as === 'facts' || r.answer.as === 'link') && !r.changes_state && r.auth === 'none')
+    .filter((r) => !searches.has(r.id) && (r.answer.as === 'facts' || r.answer.as === 'link') && !r.changes_state)
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 

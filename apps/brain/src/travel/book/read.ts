@@ -237,6 +237,8 @@ export async function readOptions(
   inputs: Record<string, unknown>,
   page: string,
   extra: Record<string, unknown> = {},
+  /** The recipe's notes about the whole list, as they read, go here (answer.notes). */
+  notes?: string[],
 ): Promise<RecipeOption[]> {
   if (!recipe.read || recipe.answer.as !== 'options') throw new Error(`${recipe.id} has no options to read`);
   const what = recipe.title.toLowerCase();
@@ -258,6 +260,10 @@ export async function readOptions(
     }
   }
   if (rows.length > 0 && out.length === 0) throw new TravelError('refused', `ixigo answered ${what} in a shape Go does not read.`);
+  for (const n of notes ? (recipe.answer.notes ?? []) : []) {
+    const said = await evaluate(n, null, bindings).catch(() => undefined);
+    if (typeof said === 'string' && said.trim()) notes!.push(said.trim().slice(0, 400));
+  }
   if (!recipe.answer.keep) return out;
   const kept: RecipeOption[] = [];
   for (const o of out) if ((await evaluate(recipe.answer.keep, o, bindings)) === true) kept.push(o);

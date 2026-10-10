@@ -330,7 +330,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const ran = d.engine.answer(id, given, o);
     const search = ran.then((run): TravelSearch => {
       if (run.as !== 'options') throw new TravelError('refused', `${id} gives no options.`);
-      return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(run.cut ? { cut: true } : {}) };
+      return { results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(run.cut ? { cut: true } : {}), ...(run.notes ? { notes: run.notes } : {}) };
     });
     keep(key, { at: nowMs, ttl, search, ran, page });
     return ran;
@@ -499,6 +499,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         return {
           results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}), ...(said ? { site: said } : {}),
           ...(run.cut ? { cut: true } : {}),
+          ...(run.notes ? { notes: run.notes } : {}),
         };
       },
       async (err: unknown): Promise<never> => {
