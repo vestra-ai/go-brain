@@ -179,6 +179,23 @@ describe('checkLine', () => {
   });
 });
 
+describe('checkLine: the plan already has it', () => {
+  // The 9 Oct golden run: "guys dates final karo yaar, kal tak" opened "Trip dates" for all five on a trip set for 6 to 9 Nov.
+  const dates = msg(180, 'p_kabir', 'guys dates final karo yaar, kal tak');
+  const e = (trip = goaTrip()) => env({ pack: packOf([...messages, dates], trip) });
+
+  it('never opens a line about set dates or a set place, and opens one when the plan does not have it yet', () => {
+    const open = (about: LineProposal['about']) => lineP({ kind: 'open', text: 'Trip dates', proof: [dates.message_id], about });
+    expect(checkLine(open('dates'), e())).toEqual({ ok: false, reason: 'the trip already has its dates: a question about them is not open' });
+    expect(checkLine(lineP({ kind: 'open', text: 'Which part of Goa?', proof: [dates.message_id], about: 'place' }), e())).toEqual({ ok: false, reason: 'the trip already has its place: a question about it is not open' });
+    // Without dates on the trip, the same question is open.
+    expect(checkLine(open('dates'), e({ ...goaTrip(), dates: null }))).toMatchObject({ ok: true, value: { kind: 'open' } });
+    // Anything else stays as before.
+    expect(checkLine(open('other'), e())).toMatchObject({ ok: true });
+    expect(checkLine(open(undefined), e())).toMatchObject({ ok: true });
+  });
+});
+
 describe('checkLine: an ask to Go is answered, never an open line', () => {
   const at = (s: number) => new Date(Date.parse('2026-10-05T10:00:00Z') + s * 1_000).toISOString();
   const said = [
