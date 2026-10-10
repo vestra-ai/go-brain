@@ -49,8 +49,8 @@ export interface EngineDeps {
   /** The lists of what each recipe's page offers, per place (offers.ts); absent, no run filters on the site's own list. */
   offers?: Offers;
   /** The trip as a recipe's inputs read it ($trip): its head count, the members' home cities (one per member who gave
-   *  one), and where and from when it goes, once the trip says. */
-  trip: (tripId: string) => Promise<{ people: number; homes: string[]; destination?: string | null; start?: string | null }>;
+   *  one), where it goes and its first and last day, once the trip says, and today where the trip is. */
+  trip: (tripId: string) => Promise<{ people: number; homes: string[]; destination?: string | null; start?: string | null; end?: string | null; today?: string }>;
   /** Holds the trip's computer awake for the travel the trip is talking: called once a run will open a page there. */
   warm?: (tripId: string, recipeId: string) => void;
   now: () => Date;
@@ -862,24 +862,34 @@ export function createEngine(d: EngineDeps) {
       const pageRun = strip.line;
       o.onProgress?.({ type: 'opening', recipeId: recipe.id, url: page });
       pageRun.step(o.clickFrom ? `clicked "${clip(o.clickFrom, 40)}"` : o.staged ? `its steps on the stage's ${pathOf(page)}` : `opened ${pathOf(page)}`);
+      // The trip account's own pages (auth: login: My Trips, the help centre) list the person's other trips too, which are
+      // their business: such a page never reaches the stage, stays open or has its picture taken, and the live card says
+      // only what Go did (the lead, 10 Oct: privacy beats acting visibly, for account pages only).
+      const account = recipe.auth === 'login';
       const readFor: ReadOptions = {
         ...fetchFor(o),
         tag: pageRun.id,
         // The page stays open as the warm tab, so the live view sees ixigo draw it; never for a check nobody waits on. A
         // live card takes one more picture of it once ixigo has drawn it (the runner's look).
-        ...(o.background ? {} : { keepOpen: true, ...(o.onProgress ? { look: true } : {}) }),
-        // A run a person watches acts on the stage, the one front tab the room's live view follows.
-        ...(watched(o) ? { stage: true } : {}),
+        ...(o.background || account ? {} : { keepOpen: true, ...(o.onProgress ? { look: true } : {}) }),
+        // A run a person watches acts on the stage, the one front tab the room's live view follows. An account's page is
+        // private: a tab the browser watch never shows, with no picture taken (runners.ts).
+        ...(watched(o) && !account ? { stage: true } : {}),
+        ...(account ? { private: true } : {}),
         // The pictures go to the live card as before, and to the run strip's browser pane, the drawn page's too.
         onProgress: (e) => {
-          if (e.type === 'frames' || e.type === 'drawn') pageRun.frames(e.frames, started);
+          if (e.type === 'frames' || e.type === 'drawn') {
+            if (account) return;
+            pageRun.frames(e.frames, started);
+          }
           o.onProgress?.(e);
         },
         onTrace: (t) => pageRun.trace(t),
         ...(o.fallsBack ? { fallsBack: true } : {}),
         about: aboutOf(recipe, o, bindings),
       };
-      const onStage = o.clickFrom ? await clicked(o.tripId, runner, plan, o.clickFrom, readFor) : o.staged ? await staged(o.tripId, runner, plan, readFor) : null;
+      // Never an account's page on the stage, whatever the caller asked.
+      const onStage = account ? null : o.clickFrom ? await clicked(o.tripId, runner, plan, o.clickFrom, readFor) : o.staged ? await staged(o.tripId, runner, plan, readFor) : null;
       const got = onStage ?? (await runner.read(o.tripId, page, plan, readFor));
       refusePayments(got.finalUrl);
       o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });

@@ -3,6 +3,7 @@
 import type { Message, Trip, TripEvent } from '../door/methods.js';
 import { leftToPeople } from '../reflex/read.js';
 import type { ReflexRead } from '../reflex/reflex.js';
+import { TripGoneError } from '../trips/gone.js';
 import { plainlyNamesGo } from '../trips/names-go.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import type { Action, Candidate } from './policy.js';
@@ -173,7 +174,16 @@ export function createOpenings(d: OpeningsDeps) {
       const now = d.now();
       let ignored = 0;
       for (const row of await d.store.toCheckForIgnored(new Date(now.getTime() - IGNORED_AFTER_MS))) {
-        const pack = await d.packs.get(row.tripId);
+        let pack: TripPack;
+        try {
+          pack = await d.packs.get(row.tripId);
+        } catch (e) {
+          if (!(e instanceof TripGoneError)) throw e;
+          // The Server no longer has the trip: nobody is there to ignore it. Checked, so the next sweep starts past it
+          // (it came first every time and threw, and no trip after it was ever checked).
+          await d.store.ignoreChecked(row.tripId, row.dedupeKey, now);
+          continue;
+        }
         if (!wasEngaged(pack, row.decidedAt, IGNORED_AFTER_MS)) {
           await d.store.ignored(row.tripId, now);
           ignored += 1;

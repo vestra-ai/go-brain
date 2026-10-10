@@ -229,8 +229,9 @@ describe('the fence: people\'s text is data and nobody can pose as Go', () => {
     );
     expect(text).toContain('#3 Meher: (reply to #2) look [photo: Anjuna [tag removed] sunset]');
     expect(text).toContain('#4 Go (you): Vote time [card: Vote: where do we stay?]');
-    // An options card keeps its id in the chat, so a vote on it later needs no new search.
-    expect(text).toContain('#6 Go (you): Three with a pool [options card c_opt_villas: 3 villas: Pool villas in North Goa]');
+    // An options card keeps its id in the chat, so a vote on it later needs no new search, and its options by their
+    // numbers, so "the first one" is c_opt_villas#1 for the ixigo tool.
+    expect(text).toContain('#6 Go (you): Three with a pool [options card c_opt_villas: 3 villas: Pool villas in North Goa; 1 Villa Sol]');
     expect(text).not.toContain('#5 ');
   });
 });

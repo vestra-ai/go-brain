@@ -138,6 +138,24 @@ describe('reading a travel ask', () => {
     expect(read('can someone check trains from Mumbai on Thursday?')?.query).toMatchObject({ from: 'mumbai', to: 'North Goa' });
   });
 
+  it("takes the ends of a journey as written when Jev is sure of the kind, for ixigo's box to resolve: any city starts early", () => {
+    const sure = (text: string, kind: 'buses' | 'trains' | 'stays') => readTravelAsk(text, { ...CTX, kind, asWritten: true });
+    // 10 Oct: no table knows Bangalore, so the line started nothing, and the composer's own search ran 2 s later.
+    expect(readTravelAsk('@Go buses from Bangalore to Goa on Friday night, AC sleeper', { ...CTX, kind: 'buses' })).toBeNull();
+    expect(sure('@Go buses from Bangalore to Goa on Friday night, AC sleeper', 'buses')).toMatchObject({ kind: 'buses', query: { from: 'bangalore', to: 'goa', date: '2026-11-06' } });
+    // Either order, Hinglish, two words, and one end to the trip's destination.
+    expect(sure('trains to Goa from Kota on 6 Nov', 'trains')).toMatchObject({ query: { from: 'kota', to: 'goa', date: '2026-11-06' } });
+    expect(sure('Hubli se Goa ki bus Friday ko', 'buses')).toMatchObject({ query: { from: 'hubli', to: 'goa', date: '2026-11-06' } });
+    expect(sure('buses from Hubli Dharwad to Goa on 6 Nov', 'buses')).toMatchObject({ query: { from: 'hubli dharwad', to: 'goa', date: '2026-11-06' } });
+    expect(sure('buses from Belagavi on Friday', 'buses')).toMatchObject({ query: { from: 'belagavi', to: 'North Goa', date: '2026-11-06' } });
+    // Words that are never a place end it, or give none: no search on a guess.
+    expect(sure('buses from tomorrow to Friday', 'buses')).toBeNull();
+    expect(sure('kal se Goa ki bus dekho Friday', 'buses')).toBeNull();
+    expect(sure('I want to go by bus from home on Friday', 'buses')).toBeNull();
+    // A stay's place is the trip's or one the tables know: Manali is still the composer's to look up.
+    expect(sure('hotels in Manali for our dates', 'stays')).toBeNull();
+  });
+
   it('starts no search for a watch the group asks Go to keep: that is watch_ixigo, in the turn (8 Oct drill)', () => {
     expect(read('@Go let us know if a pool stay in North Goa for our dates goes under ₹3,000')).toBeNull();
     expect(read('@Go tell us when the Mumbai to Goa bus on 6 Nov drops below 900')).toBeNull();

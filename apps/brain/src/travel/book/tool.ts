@@ -21,8 +21,8 @@ import type { RecipeFile } from './format.js';
 export interface IxigoToolDeps {
   book: Pick<Book, 'all'>;
   engine: Pick<Engine, 'answer'>;
-  /** Go's saved search results: an option input ("r_ab12#2") is that option's own ixigo page. */
-  results?: Pick<ResultsStore, 'get'>;
+  /** Go's saved search results and cards: an option input ("r_ab12#2", or "c_opt_x#1" off a card) is that option's own ixigo page. */
+  results?: Pick<ResultsStore, 'get'> & Partial<Pick<ResultsStore, 'card' | 'offer'>>;
   /** Whether Go searches ixigo.com itself now (TRAVEL_MODE ixigo_web): the recipes run in the trip's browser. */
   live: () => boolean;
   /**
@@ -86,7 +86,7 @@ const inputsOf = (r: RecipeFile | undefined): Record<string, string> =>
   Object.fromEntries(
     (r ? givenInputs(r) : []).map(([name, i]) => [
       name,
-      `${i.optional ? 'optional; ' : ''}${i.kind === 'option' ? 'an option from search results, written results_id#n, like r_ab12#2' : (i.about ?? i.kind).replace(/\s+/g, ' ').trim()}`,
+      `${i.optional ? 'optional; ' : ''}${i.kind === 'option' ? 'an option from search results, written results_id#n, like r_ab12#2, or an options card\'s id#n for its option n, like c_opt_ab12#1' : (i.about ?? i.kind).replace(/\s+/g, ' ').trim()}`,
     ]),
   );
 
@@ -97,6 +97,19 @@ export const NAMES_ONLY_FROM_IXIGO =
 /** What the room is told with a link recipe's card (a PNR's: the person checks it on ixigo's page themselves). */
 export const LINK_ON_IXIGO =
   "Say in one short line that the card opens ixigo's page, to check it there on their own phone. Never write a number they gave (a PNR), and never guess what the page will say.";
+
+/**
+ * The trip's ixigo account's own bookings (an auth: login recipe): said from its facts alone. They carry no name, PNR or
+ * id (the recipes never read one), and none comes from anywhere else.
+ */
+export const FROM_THE_ACCOUNT =
+  "Answer from these facts only, as the person asked: a line or two. Never a traveller's name, an email, a phone number, a PNR or a booking id, and never a booking that isn't in these facts.";
+
+/** The live card's words for a run on the trip's ixigo account: "Checking ixigo: the trip's bookings". */
+export const ACCOUNT_CARD = "The trip's bookings";
+
+/** What the model is told when the trip's ixigo account has no booking for an account recipe's ask: never one from what it knows. */
+export const NOTHING_ON_THE_ACCOUNT = "The trip's ixigo account has no booking for this. Say so in one short line, and never guess one.";
 
 /** What the model is told when ixigo has nothing for a recipe's ask. */
 export const NOTHING_ON_IXIGO =
@@ -110,11 +123,13 @@ export async function runOnStage(
   d: Pick<IxigoToolDeps, 'engine' | 'card' | 'cardDelayMs'>,
   tripId: string,
   runKey: string,
-  recipe: Pick<RecipeFile, 'id' | 'title'>,
+  recipe: Pick<RecipeFile, 'id' | 'title'> & { auth?: RecipeFile['auth'] },
   given: Record<string, unknown>,
 ): Promise<EngineAnswer> {
   const make = d.card;
-  const live = make ? shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey, recipe: recipe.title })) : null;
+  // The trip account's own page never shows on the stage (engine.ts): its card says what Go checked, and no more.
+  const label = recipe.auth === 'login' ? ACCOUNT_CARD : recipe.title;
+  const live = make ? shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(tripId, { runKey, recipe: label })) : null;
   try {
     const answer = await d.engine.answer(recipe.id, given, { tripId, ...(live ? { onProgress: live.progress } : {}) });
     if (live) {
@@ -134,19 +149,27 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
   const recipes = toolRecipes(d.book);
   if (recipes.length === 0) return null;
   const ids = recipes.map((r) => r.id) as [string, ...string[]];
-  /** "r_ab12#2": option 2 of that saved search, in this trip; its own ixigo page, or null. */
+  /**
+   * "r_ab12#2": option 2 of that saved search, in this trip; "c_opt_ab12#1": option 1 on that options card, as the room
+   * sees it numbered (the chat shows each card's options by number). Its own ixigo page, or null.
+   */
   const optionPage = async (ref: string, tripId: string): Promise<string | null> => {
     const m = /^(\S+)#(\d{1,2})$/.exec(ref.trim());
     if (!m || !d.results) return null;
+    const n = Number(m[2]);
     const set = await d.results.get(tripId, m[1]!);
-    return set?.options[Number(m[2]) - 1]?.sourceUrl ?? null;
+    if (set) return set.options[n - 1]?.sourceUrl ?? null;
+    const card = d.results.card ? await d.results.card(tripId, m[1]!) : null;
+    const optionId = card?.card.options[n - 1]?.option_id;
+    const offer = optionId && d.results.offer ? await d.results.offer(optionId) : null;
+    return offer?.sourceUrl ?? null;
   };
   return {
     name: 'ixigo',
     description:
       "Runs one of Go's ixigo.com recipes in the trip's browser and answers with what ixigo shows, for what the searches " +
       "don't cover. A line a recipe: its id, its inputs (? optional, # an option from this trip's search results, written " +
-      `results_id#n like r_ab12#2) and what it answers.\n${bookLines(recipes)}`,
+      `results_id#n like r_ab12#2, or an options card's id#n as the chat numbers its options, like c_opt_ab12#1) and what it answers.\n${bookLines(recipes)}`,
     input: z.object({
       recipe: z.enum(ids).describe('The recipe id'),
       inputs: z.record(z.string(), Value).describe('The recipe\'s inputs by name, places as the person said them, dates as YYYY-MM-DD'),
@@ -161,7 +184,7 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
       for (const [name, input] of Object.entries(recipe?.inputs ?? {})) {
         if (input.kind !== 'option' || given[name] === undefined) continue;
         const page = await optionPage(String(given[name]), ctx.tripId);
-        if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n, from a search.`, inputs: inputsOf(recipe) };
+        if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n from a search, or card_id#n off an options card in the chat.`, inputs: inputsOf(recipe) };
         given[name] = page;
       }
       const runKey = d.joinKey?.(ctx, a.recipe, a.inputs) ?? `${ctx.turnId ?? ''}|${a.recipe}|${JSON.stringify(given)}`;
@@ -173,10 +196,15 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
           return { recipe: a.recipe, link: answer.link, note: 'The card with the link goes out with your message.', tell_the_room: LINK_ON_IXIGO };
         }
         if (answer.as !== 'facts') return { recipe: a.recipe, error: 'refused', note: 'This recipe answers with options: use the search tools.' };
+        // The account's own bookings are its facts alone: none is ever answered from what the model knows.
+        const account = recipe?.auth === 'login';
         if (answer.rows.length === 0) {
-          return { recipe: a.recipe, title: answer.title, facts: [], note: NOTHING_ON_IXIGO };
+          return { recipe: a.recipe, title: answer.title, facts: [], note: account ? NOTHING_ON_THE_ACCOUNT : NOTHING_ON_IXIGO };
         }
-        return { recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows.map(withoutPhotos), tell_the_room: NAMES_ONLY_FROM_IXIGO };
+        return {
+          recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows.map(withoutPhotos),
+          tell_the_room: account ? FROM_THE_ACCOUNT : NAMES_ONLY_FROM_IXIGO,
+        };
       } catch (err) {
         if (!(err instanceof TravelError)) throw err;
         if (err.code === 'pick_place') return { recipe: a.recipe, choose: err.message };

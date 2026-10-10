@@ -87,9 +87,37 @@ describe('an option input', () => {
     expect(given).toEqual([{ hotel: 'https://www.ixigo.com/hotels/2/details?b=2' }]);
     // Not an option of this trip's results: said plainly, nothing runs.
     expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'r_ab12#9' } }, turn)).toMatchObject({
-      error: 'needs_more', inputs: { hotel: 'an option from search results, written results_id#n, like r_ab12#2' },
+      error: 'needs_more', inputs: { hotel: "an option from search results, written results_id#n, like r_ab12#2, or an options card's id#n for its option n, like c_opt_ab12#1" },
     });
     expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'Villa Sol' } }, turn)).toMatchObject({ error: 'needs_more' });
+    expect(given).toHaveLength(1);
+  });
+
+  // The C3 drill (10 Oct): a follow-up on a card from an earlier turn ("the first bus") had no results_id and searched
+  // again. The chat numbers each options card's options, so card_id#n is that option, as the room sees it.
+  it("is an options card's option too, by its number on the card: card_id#n", async () => {
+    const b = bookWith('example/option_details.yaml', DETAILS);
+    const given: unknown[] = [];
+    const engine = {
+      answer: async (_id: string, g: Record<string, unknown>) => {
+        given.push(g);
+        return { as: 'facts' as const, title: 'Villa Sol', rows: [{ name: 'Villa Sol' }], page: 'https://www.ixigo.com/hotels/7/details', checkedAt: '2026-10-07T12:00:00.000Z', ms: 1 };
+      },
+    };
+    const results = {
+      get: async () => null,
+      card: async (tripId: string, cardId: string) =>
+        tripId === 't_goa' && cardId === 'c_opt_villas' ? { card: { options: [{ option_id: 'opt_villas_1' }, { option_id: 'opt_villas_2' }] } } : null,
+      offer: async (optionId: string) => (optionId === 'opt_villas_2' ? { sourceUrl: 'https://www.ixigo.com/hotels/7/details?c=2' } : null),
+    } as unknown as Pick<ResultsStore, 'get' | 'card' | 'offer'>;
+    const tool = ixigoTool({ book: b, engine, results, live: () => true })!;
+    expect(tool.description).toContain("or an options card's id#n as the chat numbers its options, like c_opt_ab12#1");
+    const turn = { tripId: 't_goa', turnId: 'turn_1', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
+    expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'c_opt_villas#2' } }, turn)).toMatchObject({ facts: [{ name: 'Villa Sol' }] });
+    expect(given).toEqual([{ hotel: 'https://www.ixigo.com/hotels/7/details?c=2' }]);
+    // No such option on the card, or a card of another trip: said plainly, nothing runs.
+    expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'c_opt_villas#3' } }, turn)).toMatchObject({ error: 'needs_more' });
+    expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'c_opt_other#1' } }, turn)).toMatchObject({ error: 'needs_more' });
     expect(given).toHaveLength(1);
   });
 });

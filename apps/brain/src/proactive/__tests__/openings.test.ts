@@ -2,6 +2,7 @@ import { Event } from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import type { Trip, TripEvent } from '../../door/methods.js';
+import { TripGoneError } from '../../trips/gone.js';
 import { candidate, fakePacks, goaPack, goaTrip, msg, seedTrip, unsureRead } from '../fakes.js';
 import { chatOpening, createOpenings, isHush, tripChangeOpenings, wasEngaged } from '../openings.js';
 import { ProactiveStore } from '../store.js';
@@ -158,5 +159,30 @@ describe('createOpenings', () => {
     expect(await make(fakePacks(pack)).checkIgnored()).toBe(1);
     expect((await store.signals('t_goa', '2026-10-06')).ignoredCount).toBe(1);
     expect(await make(fakePacks(pack)).checkIgnored()).toBe(0);
+  });
+
+  it("checks past a trip the Server no longer has: it is marked checked, and the trips after it are still checked", async () => {
+    await seedTrip(db.pool, 't_gone');
+    const posted = new Date(NOW.getTime() - 8 * 3600_000);
+    const gone = candidate({ tripId: 't_gone', dedupeKey: 'ign:gone' });
+    await store.add(gone);
+    await store.promote(gone, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-05' }, posted);
+    const later = candidate({ dedupeKey: 'ign:10' });
+    const laterAt = new Date(posted.getTime() + 3600_000);
+    await store.add(later);
+    await store.promote(later, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-05' }, laterAt);
+    const packs = fakePacks(goaPack({ messages: [msg({ id: 'm_go_78', by: 'go', sentAt: laterAt.toISOString() })] }));
+    const withGone = {
+      ...packs,
+      get: async (tripId: string) => {
+        if (tripId === 't_gone') throw new TripGoneError(tripId);
+        return packs.get(tripId);
+      },
+    };
+    // The gone trip comes first and no longer stops the sweep: the later trip's post counts as ignored.
+    expect(await make(withGone).checkIgnored()).toBe(1);
+    expect(await make(withGone).checkIgnored()).toBe(0);
+    const { rows } = await db.pool.query('select ignore_checked_at from proactive_candidates where trip_id = $1 and dedupe_key = $2', ['t_gone', 'ign:gone']);
+    expect(rows[0].ignore_checked_at).toBeInstanceOf(Date);
   });
 });
