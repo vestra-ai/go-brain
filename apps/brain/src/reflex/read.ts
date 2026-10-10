@@ -4,6 +4,7 @@
  * read "unsure". Question 8 can only raise caution.
  */
 import type { JevAnswer } from './jev.js';
+import { LIVE_RECIPES } from './live-gate.js';
 import { REACTIONS, RECIPE_CHOICES, type QuestionName, type RecipeChoice } from './questions.js';
 import type { ReflexRead, Sure } from './reflex.js';
 import type { SecretKind } from './secrets.js';
@@ -140,6 +141,14 @@ function readRecipe(a: Answers, b: Bars): Sure<RecipeChoice | null> {
   return top.o === 'none' ? sure(null) : sure(top.o);
 }
 
+/**
+ * Question 10 as it acts: a sure pick of a choice still in shadow acts as "none", not one of the live choices, which is
+ * what Jev said for such a line before it had a choice of its own. Unsure and the live choices act as read.
+ */
+export function liveRecipe(r: Sure<RecipeChoice | null>, live: readonly RecipeChoice[] = LIVE_RECIPES): Sure<RecipeChoice | null> {
+  return r.sure && r.value !== null && !live.includes(r.value) ? sure(null) : r;
+}
+
 function readRisky(a: Answers, f: CodeFacts, b: Bars): { risky: Sure<boolean>; why: RiskWhy[] } {
   const why = new Set<RiskWhy>();
   if (f.secretKinds.length) why.add('secret');
@@ -217,7 +226,7 @@ export function applyLive(would: ReflexRead, live: ReadonlySet<QuestionName>, fa
     reaction: live.has('reaction') ? would.reaction : base.reaction,
     risky: live.has('risky') ? would.risky : base.risky,
     opening: live.has('opening') ? would.opening : base.opening,
-    recipe: (live.has('recipe') ? would.recipe : base.recipe) ?? unsure(),
+    recipe: (live.has('recipe') ? liveRecipe(would.recipe ?? unsure()) : base.recipe) ?? unsure(),
     riskWhy: live.has('risky') ? (would.riskWhy ?? []) : (base.riskWhy ?? []),
   };
 }

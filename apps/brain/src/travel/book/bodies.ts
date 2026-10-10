@@ -3,14 +3,15 @@
  * one JSON value a line), a Next.js page whose flight payload sits in its scripts, an older Next.js page whose props
  * sit in its __NEXT_DATA__ script (ixigo's offers pages), or a plain server-rendered page with no data call at all,
  * read as its tables (html_tables: a train's schedule, running status, coach position, a station's or platform's page),
- * or a stream of server-sent events, read as the JSON on its data lines (sse: ixigo's flights search, one data line).
+ * or as the JSON its hidden inputs carry (html_inputs: a train's page, its whole data in <input id="dataBE">), or a stream
+ * of server-sent events, read as the JSON on its data lines (sse: ixigo's flights search, one data line).
  * Whatever its form, the page's own credentials in it (its apikey, deviceId, uuid, any token or cookie) are dropped
  * before anything reads the body, so no recipe, log or store ever holds them.
  */
 import { DomUtils, ElementType, parseDocument } from 'htmlparser2';
 import { TravelError } from '../mcp-travel.js';
 
-export const BODY_FORMATS = ['json', 'rsc', 'next_html', 'next_data', 'html_tables', 'sse'] as const;
+export const BODY_FORMATS = ['json', 'rsc', 'next_html', 'next_data', 'html_tables', 'html_inputs', 'sse'] as const;
 export type BodyFormat = (typeof BODY_FORMATS)[number];
 
 /** Keys that hold the page's own credentials: dropped wherever they are. */
@@ -183,6 +184,34 @@ export function htmlTablesOf(html: string): HtmlTables {
 }
 
 /**
+ * A plain page as html_inputs reads it: its <title> and canonical address, and each hidden <input> whose value is JSON (an
+ * object or a list), by the input's id. ixigo's train page keeps its whole data in one ("dataBE": the train's coach order
+ * a stop at a time, its rake and speeds, each class's fare and Tatkal charge, its stations); the tables draw a part of it.
+ */
+export interface HtmlInputs {
+  title: string | null;
+  canonical: string | null;
+  inputs: Record<string, unknown>;
+}
+
+/** A plain page's title, canonical address and JSON hidden inputs, by the same HTML parser as its tables. */
+export function htmlInputsOf(html: string): HtmlInputs {
+  const doc = parseDocument(html);
+  const title = DomUtils.getElementsByTagName('title', doc, true, 1)[0];
+  const canonical = DomUtils.findOne((el) => el.name === 'link' && /(^|\s)canonical(\s|$)/i.test(el.attribs['rel'] ?? ''), doc.children);
+  const inputs: Record<string, unknown> = {};
+  for (const el of DomUtils.findAll((e) => e.name === 'input' && (e.attribs['type'] ?? '').toLowerCase() === 'hidden' && !!e.attribs['id'], doc.children)) {
+    try {
+      const value: unknown = JSON.parse(el.attribs['value'] ?? '');
+      if (value && typeof value === 'object') inputs[el.attribs['id']!] = value;
+    } catch {
+      // a value that is not JSON (a time, a flag)
+    }
+  }
+  return { title: title ? textOf(title) || null : null, canonical: canonical?.attribs['href'] ?? null, inputs };
+}
+
+/**
  * The JSON values a server-sent event stream carries, one an event, in order. An event ends at a blank line, and its data
  * is its data lines joined by line breaks, as the stream format has it: a long value may come split over several lines
  * (staging, 10 Oct: a logged-in browser's flights read was refused where a logged-out one read). An event whose joined
@@ -219,6 +248,11 @@ export function readBodyAs(text: string, format: BodyFormat, what: string): unkn
   if (format === 'html_tables') {
     const page = htmlTablesOf(text);
     if (page.tables.length === 0 && page.ld.length === 0) throw new TravelError('refused', `ixigo answered ${what} in a shape Go does not read.`);
+    return withoutCredentials(page);
+  }
+  if (format === 'html_inputs') {
+    const page = htmlInputsOf(text);
+    if (Object.keys(page.inputs).length === 0) throw new TravelError('refused', `ixigo answered ${what} in a shape Go does not read.`);
     return withoutCredentials(page);
   }
   if (format === 'json' || format === 'next_data') {

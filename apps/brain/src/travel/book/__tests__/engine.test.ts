@@ -158,6 +158,86 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
   });
 });
 
+describe("ixigo's price bands for the group's decided budget", () => {
+  const META = 'https://www.ixigo.com/accommodation-search/api/v2/accommodations/search/metadata?locationId=32';
+  it("asks the bands at or under each room's share a night of the budget, and one over, and says the cap", async () => {
+    const offers = createOffers({ now: () => new Date('2026-10-10T05:00:00Z') });
+    const reads: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        reads.push(url);
+        return {
+          captures: [
+            capture(SEARCH, 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', fixture('stays-goa-page1.json')),
+            capture('/accommodation-search/api/v2/accommodations/search/metadata$', META, sample('hotels.search_filters.json')),
+          ],
+          finalUrl: url,
+        };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, pool: db.pool, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-10T05:00:00Z'), offers });
+    const goa = { place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' };
+    await engine.answer('hotels.search', goa, { tripId: 't_budget' });
+    // ₹4,500 each for four over three nights in two rooms: ₹3,000 a night a room. The bands to it, and ₹3,000 to ₹3,500.
+    const got = await engine.answer('hotels.search', goa, { tripId: 't_budget', budgetMinor: 450_000 });
+    expect(reads[1]).toContain(`&filters=${encodeURIComponent('DP_1600_1800,DP_1800_2000,DP_2000_2500,DP_2500_3000,DP_3000_3500')}`);
+    expect(got.as === 'options' && got.site).toMatchObject({ priced: 3000, filtered: [] });
+    // With no budget, no band.
+    await engine.answer('hotels.search', { ...goa, check_out: '2026-11-08' }, { tripId: 't_budget' });
+    expect(reads[2]).not.toContain('DP_');
+    // "8k a head" for the stay: ₹8,000 × 4 ÷ 3 nights ÷ 2 rooms = ₹5,333 a night a room. "8k a head a night" is ₹24,000
+    // a head for the stay (tools.ts): ₹16,000 a night a room, never divided by the nights twice.
+    const head = await engine.answer('hotels.search', goa, { tripId: 't_budget', budgetMinor: 800_000 });
+    expect(head.as === 'options' && head.site?.priced).toBe(5333);
+    expect(reads[3]).toContain(encodeURIComponent('DP_4500_5000,DP_5000_6000'));
+    expect(reads[3]).not.toContain('DP_6000_7000');
+    const night = await engine.answer('hotels.search', goa, { tripId: 't_budget', budgetMinor: 2_400_000 });
+    expect(night.as === 'options' && night.site?.priced).toBe(16000);
+    expect(reads[4]).toContain('DP_8000_9000');
+  });
+
+  // p1-a's review of #357: Jev's early read of a place is often its first, before its list (and so its bands) is known.
+  // The same run opens the page again with the bands once the first read brought the list, so the composer's search that
+  // joins it gets the banded list; the first read answers when the banded one holds nothing.
+  it("opens a place's first budgeted read again with its bands, in the same run, and keeps the first when they hold nothing", async () => {
+    const offers = createOffers({ now: () => new Date('2026-10-10T05:00:00Z') });
+    const reads: string[] = [];
+    let bandsEmpty = false;
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        reads.push(url);
+        const empty = bandsEmpty && url.includes('DP_');
+        return {
+          captures: [
+            capture(SEARCH, 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', empty ? '{"data":{}}' : fixture('stays-goa-page1.json')),
+            capture('/accommodation-search/api/v2/accommodations/search/metadata$', META, sample('hotels.search_filters.json')),
+          ],
+          finalUrl: url,
+        };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, pool: db.pool, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-10T05:00:00Z'), offers });
+    const goa = { place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' };
+    const got = await engine.answer('hotels.search', goa, { tripId: 't_first', budgetMinor: 450_000 });
+    expect(reads).toHaveLength(2);
+    expect(reads[0]).not.toContain('DP_');
+    expect(reads[1]).toContain(encodeURIComponent('DP_2500_3000,DP_3000_3500'));
+    expect(got.as === 'options' && got.site).toMatchObject({ priced: 3000, listed: true });
+    expect(got.as === 'options' && got.page).toBe(reads[1]);
+    // Kept now: the next budgeted read of the place opens with its bands at once.
+    await engine.answer('hotels.search', { ...goa, check_out: '2026-11-08' }, { tripId: 't_first', budgetMinor: 450_000 });
+    expect(reads).toHaveLength(3);
+    expect(reads[2]).toContain('DP_');
+    // Bands that hold nothing: the first read answers, unbanded.
+    const fresh = createEngine({ book, runner: () => runner, pool: db.pool, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-10T05:00:00Z'), offers: createOffers({ now: () => new Date('2026-10-10T05:00:00Z') }) });
+    bandsEmpty = true;
+    const plain = await fresh.answer('hotels.search', goa, { tripId: 't_first', budgetMinor: 450_000 });
+    expect(reads).toHaveLength(5);
+    expect(plain.as === 'options' && plain.options.length).toBeGreaterThan(0);
+    expect(plain.as === 'options' && plain.page).toBe(reads[3]);
+  });
+});
+
 describe('a place Go has not searched before', () => {
   it("is asked of ixigo's own suggestion call, opened as the page with nothing typed, picked, kept, and gone straight to the next time, after a restart too", async () => {
     // The 8 Oct drill: typing Manali into the hotels box timed out on the box's browser. The call itself needs no box.

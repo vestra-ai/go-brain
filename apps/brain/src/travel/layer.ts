@@ -62,8 +62,12 @@ const queryFor = (backend: string, q: TravelQuery): TravelQuery =>
     ? {
         ...backendQuery(q),
         ...(q.mustHave ? { mustHave: q.mustHave } : {}),
+        // A bus's named pickup or drop: ixigo's own chip for it is clicked on the stage.
+        ...(q.boardAt ? { boardAt: q.boardAt } : {}),
+        ...(q.dropAt ? { dropAt: q.dropAt } : {}),
         ...(q.siteFilters?.length ? { siteFilters: q.siteFilters } : {}),
         ...(q.siteSort ? { siteSort: q.siteSort } : {}),
+        ...(q.budgetMinor !== undefined ? { budgetMinor: q.budgetMinor } : {}),
       }
     : backendQuery(q);
 
