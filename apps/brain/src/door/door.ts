@@ -166,12 +166,6 @@ export function createDoor(o: DoorOptions): DoorImpl {
       o.link.onAnswer(f);
       return;
     }
-    // Trip affinity: Go's requests for this trip go back on the socket that brings its events. Noted before the
-    // answer, so a gap refill the event starts already goes to the right socket.
-    if (f.method === 'send_event') {
-      const tripId = typeof f.params === 'object' && f.params !== null ? (f.params as { trip_id?: unknown }).trip_id : undefined;
-      if (typeof tripId === 'string' && tripId !== '') o.link.noteTrip(tripId, h.id);
-    }
     send(ws, await answerOnce(f, h.instance));
   }
 

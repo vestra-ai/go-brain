@@ -322,6 +322,8 @@ In practice this means:
 
 Good to know:
 - Name each instance in the query string, such as `/v1/socket?instance=server-1`. Go accepts each signature once, so two instances that connect in the same second need different targets to get different signatures. Sign the full target.
+- Go sends a trip's requests to the instance that first sent that trip's events, while it has a socket open. When that socket closes, Go waits up to 5 seconds for the instance to connect again, then sends them on any open socket.
+- Go marks a trip gone only when the instance that first sent its events answers a read of it with `not_found`. A `not_found` from another instance changes nothing.
 
 ## A complete client for the server
 

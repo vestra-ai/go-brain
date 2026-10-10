@@ -191,9 +191,9 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
       await cards.observe(method, params, result, stored);
       await gone.answered(method, params);
     },
-    onFail: async (method, params, err) => {
+    onFail: async (method, params, err, instance) => {
       await cards.failed(method, params);
-      await gone.failed(method, params, err);
+      await gone.failed(method, params, err, instance);
     },
   });
   const guard = createReplayGuard({ pool, now });

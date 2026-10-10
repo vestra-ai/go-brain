@@ -217,16 +217,15 @@ describe('the door', () => {
     await s.close();
   });
 
-  it("sends Go's requests for a trip back on the socket that brought that trip's events", async () => {
+  it("sends Go's requests for a trip on a socket of the trip's own Server instance, named by ?instance=", async () => {
     const page = { messages: [], has_more: false };
     const answer = (method: string) => (method === 'read_messages' ? page : {});
-    const a = await rawServer(`${base}${target()}`, SECRET, answer);
-    const b = await rawServer(`${base}${target()}`, SECRET, answer);
-    const left = (tripId: string, eventId: string) => ({
-      event_id: eventId, trip_id: tripId, seq: 1, occurred_at: '2026-10-05T10:00:00Z', type: 'person.left', data: { person_id: 'p_kabir' },
-    });
-    expect((await a.call('send_event', left('t_aff_a', 'ev_aff_a'))).result).toEqual({ accepted: true, duplicate: false });
-    expect((await b.call('send_event', left('t_aff_b', 'ev_aff_b'))).result).toEqual({ accepted: true, duplicate: false });
+    const [ta, tb] = [target(), target()];
+    const a = await rawServer(`${base}${ta}`, SECRET, answer);
+    const b = await rawServer(`${base}${tb}`, SECRET, answer);
+    // Each trip's instance, as intake records it from the trip's first event.
+    const instanceOf = (t: string) => new URL(t, 'http://go.local').searchParams.get('instance');
+    await db.pool.query('insert into trips (trip_id, server_instance) values ($1, $2), ($3, $4)', ['t_aff_a', instanceOf(ta), 't_aff_b', instanceOf(tb)]);
     for (let i = 0; i < 3; i++) {
       await expect(link.request('read_messages', { trip_id: 't_aff_a', after_seq: i })).resolves.toEqual(page);
       await expect(link.request('read_messages', { trip_id: 't_aff_b', after_seq: i })).resolves.toEqual(page);
