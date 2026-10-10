@@ -5,6 +5,7 @@ import type { AnthropicLike } from './anthropic.js';
 import { computeAnthropicCostUsd, estimateCostUsd, normalizeAnthropicUsage, resolveCapabilities, type AnthropicUsage } from './anthropic-helpers.js';
 import type { TextBlock } from './context.js';
 import { withoutRefused, type Refusals } from './sanitize.js';
+import { NEXT_STEP_NOTE, promisesNextStep } from './next-step.js';
 import { SAY_NOTHING, STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
 
 export const MAX_ROUNDS = 4;
@@ -210,6 +211,13 @@ function refusalsOf(seen: ReadonlyArray<{ name: string; refused: boolean; quiet:
   };
 }
 
+/** A note to the model after the last message: into the user turn there is (tool results), or as one of its own. */
+function addNote(messages: Anthropic.MessageParam[], text: string): void {
+  const last = messages.at(-1);
+  if (last?.role === 'user' && Array.isArray(last.content)) last.content.push({ type: 'text', text });
+  else messages.push({ role: 'user', content: [{ type: 'text', text }] });
+}
+
 async function runTool(tool: QuickTool<any> | undefined, call: Anthropic.ToolUseBlock, i: LoopInput): Promise<Anthropic.ToolResultBlockParam> {
   const result = (content: string, isError = false): Anthropic.ToolResultBlockParam => ({
     type: 'tool_result',
@@ -270,6 +278,8 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   // Every call this turn and whether it was refused, quietly or not: the reply never narrates a quiet refusal, and never
   // claims the work of a tool that did nothing (8 Oct: "The record call was refused, so I'll… Noted, …").
   const seen: Array<{ name: string; refused: boolean; quiet: boolean }> = [];
+  // The one extra round a promised next step gets (promisesNextStep).
+  let nudged = false;
   const clean = (t: string): string => withoutRefused(t, refusalsOf(seen, byName));
   // One round past the limit closes a turn whose last round still called tools: that round's words were written before
   // its calls (its working, "The message ID format is…", staging drill 10 Oct), never an answer. The closing round may
@@ -329,7 +339,14 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     // The closing round's words are the reply, whatever it ended on: it runs no tool.
     if (closing) return { text: clean(text), silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: 'max_rounds', timings };
     if (reply.stop_reason !== 'tool_use' || calls.length === 0) {
-      return { text: clean(text || latestText), silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason, timings };
+      const out = clean(text || latestText);
+      // A next step promised and not taken (EXAM #18): one more round, once, to take it or ask instead.
+      if (!nudged && reply.stop_reason === 'end_turn' && promisesNextStep(out)) {
+        nudged = true;
+        addNote(messages, NEXT_STEP_NOTE);
+        continue;
+      }
+      return { text: out, silent: i.ctx.outcome.silent, rounds: round, usage, messages, stopReason: reply.stop_reason, timings };
     }
     timing.tools = calls.map((c) => c.name);
     const toolsFrom = Date.now();
@@ -354,10 +371,15 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     calls.forEach((c, k) => {
       const r = results[k];
       if (!r) return;
-      seen.push({ name: c.name, refused: refusedResult(r), quiet: typeof r.content === 'string' && r.content.includes(SAY_NOTHING) });
+      const s = { name: c.name, refused: refusedResult(r), quiet: typeof r.content === 'string' && r.content.includes(SAY_NOTHING) };
+      seen.push(s);
+      // A tool that answers in the room by itself (a live card that posts its own result): the turn may end silent.
+      if (s.quiet && !s.refused) i.ctx.toolAnswers = true;
     });
     messages.push({ role: 'user', content: [...results, ...roundNotes(calls, results, byName)] });
-    if (calls.some((c) => c.name === STAY_SILENT)) {
+    // stay_silent ends the turn, unless it was refused (someone asked Go directly and has no answer yet): the turn goes on.
+    const silenced = calls.findIndex((c) => c.name === STAY_SILENT);
+    if (silenced >= 0 && !results[silenced]?.is_error) {
       i.ctx.outcome.silent = true;
       return { text: '', silent: true, rounds: round, usage, messages, stopReason: STAY_SILENT, timings };
     }
@@ -367,7 +389,16 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     const words = lines.length > 0 ? lines.join('\n') : clean(text);
     if (lines.length > 0) latestText = words;
     // A tool that answered itself (a finished plain search put up its card and line): the turn ends on its card too.
-    if (allUp || (i.ctx.answered && lines.length > 0)) return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP, timings };
+    if (allUp || (i.ctx.answered && lines.length > 0)) {
+      // A card's line that promises a next step not taken (EXAM #18, "I'll search the Mon 9 Nov return next"): the card
+      // stays up, and one more round takes the step or asks instead.
+      if (!nudged && promisesNextStep(words)) {
+        nudged = true;
+        addNote(messages, NEXT_STEP_NOTE);
+        continue;
+      }
+      return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP, timings };
+    }
   }
   // Not reached: the closing round returns.
   return { text: '', silent: i.ctx.outcome.silent, rounds: maxRounds + 1, usage, messages, stopReason: 'max_rounds', timings };

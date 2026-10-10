@@ -6,11 +6,43 @@ import { SocketCallError } from '../door/rpc.js';
 import { reactOnce } from '../memory/reactions.js';
 import type { Travel } from '../travel/travel.js';
 import type { TripPack } from '../trips/pack.js';
+import { isSmallTalk } from '../reflex/small-talk.js';
 import { saveTrip } from '../trips/save-trip.js';
 import { inlineData } from './fence.js';
 import { CARD_LINE } from './rules.js';
 import { clip } from './sanitize.js';
-import { CardLineArg, SAY_NOTHING, STAY_SILENT, type QuickTool } from './tools.js';
+import { CardLineArg, SAY_NOTHING, STAY_SILENT, type QuickTool, type TurnCtx } from './tools.js';
+
+const GO_NAME = /(?:^|\s)@?go\b[\s,!.:]*/gi;
+const THANKS = /^(?:thanks?|thank you|thx|ty|shukriya|dhanyavaad|cheers|great|cool|nice|perfect|awesome|sure|ok|okay)(?: (?:so much|a lot|bro|yaar|man|go))?$/;
+
+/** "@Go thanks 🙏", "ok go 👍": thanks or small talk said to Go, which a reaction or nothing answers. "@Go" alone is not. */
+function onlyThanks(text: string): boolean {
+  const rest = text.replace(GO_NAME, ' ').trim();
+  if (rest === '') return false;
+  return isSmallTalk(rest) || THANKS.test(rest.toLowerCase().replace(/[^\p{L}\s]/gu, ' ').trim().replace(/\s+/g, ' '));
+}
+
+/**
+ * The message that asked Go directly and has no answer yet this turn, or null. It woke the turn naming Go, or the quick
+ * read sure it is for Go, and says more than thanks or small talk; and the turn has no words or card for it yet, did not
+ * note it (✅), and ran no tool that answers in the room by itself. stay_silent is refused once while there is one (EXAM,
+ * 10 Oct: "@Go which bus drops closest to our villa?" and two more direct asks ended in silence).
+ */
+export function unansweredAsk(ctx: TurnCtx): Message | null {
+  // A turn under limits (Go woke for itself) or one that posts no text has nothing to answer with.
+  if (ctx.allowedTools !== undefined || ctx.mayPostText === false) return null;
+  if (ctx.cards.length > 0 || ctx.lines.length > 0 || ctx.answered || ctx.toolAnswers || ctx.outcome.posts.length > 0) return null;
+  for (const w of ctx.wake) {
+    const p = w.payload as { messageId?: string; namesGo?: boolean; asksGo?: boolean } | null;
+    if (w.kind !== 'message' || !(p?.namesGo || p?.asksGo)) continue;
+    const id = p.messageId ?? w.ref;
+    const m = ctx.pack.messages.find((x) => x.message_id === id);
+    if (!m?.text || onlyThanks(m.text) || ctx.outcome.noted?.includes(m.message_id)) continue;
+    return m;
+  }
+  return null;
+}
 
 /** "#57", "57" or a message id. */
 function findMessage(pack: TripPack, ref: string): Message | undefined {
@@ -207,9 +239,22 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
 
   const staySilent: QuickTool<z.infer<typeof StaySilentInput>> = {
     name: STAY_SILENT,
-    description: 'End your turn without a message. Call it when nothing needs words from you, also right after a reaction or an action.',
+    description:
+      'End your turn without a message. Call it when nothing needs words from you, also right after a reaction or an action. ' +
+      'Never when someone asked you something directly: answer them.',
     input: StaySilentInput,
     async run(_args, ctx) {
+      // Refused once: a model that calls it again knows something this check can't (a person already answered).
+      const ask = ctx.silenceRefused ? null : unansweredAsk(ctx);
+      if (ask) {
+        ctx.silenceRefused = true;
+        const author = ask.author;
+        const who = (author.kind === 'person' ? ctx.pack.trip.people.find((p) => p.person_id === author.person_id)?.name : null) ?? 'Someone';
+        throw new Error(
+          `${who} asked you directly (#${ask.seq}): never stay silent on it. Answer in this turn: do it with your tools, or ask the ` +
+            "one thing you need (\"which villa? there's no vote yet\"), or say what you can't do yet and why.",
+        );
+      }
       ctx.outcome.silent = true;
       return { ok: true };
     },
