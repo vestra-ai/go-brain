@@ -117,6 +117,8 @@ describe('registerTravel', () => {
     const MINE = stableId('c_mine', 'tap_f1');
     await eventually(() => lb.link.sent('post_message').some((p) => (p.card as { card_id?: string })?.card_id === MINE));
     const mine = C.OptionsCard.parse(lb.link.sent('post_message').find((p) => (p.card as { card_id?: string })?.card_id === MINE)!.card);
+    // Her confirm is hers alone to see (1.2), as well as to act on.
+    expect(lb.link.sent('post_message').find((p) => (p.card as { card_id?: string })?.card_id === MINE)!['visible_to_person_ids']).toEqual(['p_meher']);
     expect(mine).toMatchObject({ title: 'Book IndiGo 6E2150 for you, ₹11,571?', for_person_ids: ['p_meher'], options: [{ option_id: 'opt_fl1', title: 'IndiGo 6E2150' }] });
     expect(mine.actions).toEqual([
       { action_id: 'book_mine', label: 'Book it', style: 'primary', per_option: true, only_for_person_ids: ['p_meher'] },

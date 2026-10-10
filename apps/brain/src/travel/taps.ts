@@ -83,7 +83,7 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
       }).catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, "travel: keeping a person's pick failed"));
       const card = buildConfirmMineCard({ cardId: stableId('c_mine', tap.tap_id), personId: tap.person_id, optionKind: row.optionKind, checkedAt: offer.checkedAt, option: shown });
       // Posted after the answer, as a vote is: a request to the Server must not hold the 3 s tap answer.
-      void d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_tap', tap.tap_id, 'mine'), card })
+      void d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_tap', tap.tap_id, 'mine'), card, visible_to_person_ids: [tap.person_id] })
         .catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, "travel: posting a person's own confirm failed"));
       return { result: 'done', toast: "It's yours to confirm" };
     }

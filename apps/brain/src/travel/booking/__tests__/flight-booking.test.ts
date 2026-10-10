@@ -124,8 +124,9 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
       capture: [{ match: TRAVELLER_FIELDS, required: true }],
       steps: [{ op: 'click', role: 'radio', text: "I don't want Free Cancellation" }, { op: 'click', role: 'button', name: 'Continue' }, { op: 'click', text: 'Meher Kapoor' }],
     });
-    // The room: a live card ticking each step, then Meher's card, for her alone, with what she would pay.
+    // Her live card ticking each step, then her ready card with what she would pay: each posted for her alone (1.2).
     const sent = lb.link.requests.slice(from);
+    expect(sent.filter((r) => r.method === 'post_message').map((r) => r.params['visible_to_person_ids'])).toEqual([['p_meher'], ['p_meher']]);
     const live = sent.filter((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'working').at(-1)!.params['card'] as C.Card & { steps: Array<{ state: string }> };
     expect(live).toMatchObject({ title: 'Booking IndiGo 6E2150 for Meher', state: 'done' });
     expect(live.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
@@ -164,6 +165,9 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     await b.start({ tapId: 'tap_b6', tripId: 't_goa', personId: 'p_arjun2', name: 'Arjun', offer: OFFER, choice: 'basic' });
     await b.settled();
     const asks = lb.link.requests.slice(from).map((r) => r.params['card'] as C.Card | undefined).filter((c): c is C.Card => c?.kind === 'notice');
+    // Each ask is posted for its traveller alone.
+    const posted = lb.link.requests.slice(from).filter((r) => (r.params['card'] as C.Card | undefined)?.kind === 'notice');
+    expect(posted.map((r) => r.params['visible_to_person_ids'])).toEqual([['p_kabir2'], ['p_arjun2']]);
     expect(asks.map((c) => [c.for_person_ids, (c as { body: string }).body])).toEqual([
       [['p_kabir2'], "Kabir isn't a saved traveller on Rahul's ixigo yet; add Kabir there once, then tap Book it again."],
       [['p_arjun2'], "Rahul's ixigo has more than one saved traveller named Arjun; keep one there, then tap Book it again."],

@@ -97,8 +97,11 @@ export function dayMs(ddmmyyyy: string): number | null {
 /** The flight numbers a card's title names ("IndiGo 6E328 + 6E5106"), as ixigo's flight keys hold them. */
 export const numbersOf = (title: string): string[] => title.match(/\b[0-9A-Z]{2}\d{1,4}\b/g) ?? [];
 
-/** The live card: what the room sees while Go books, each step ticking. Posted once, then replaced in place. */
-function liveCard(d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: string, cardId: string, title: string, texts: string[]) {
+/**
+ * The live card: what the traveller sees while Go books, each step ticking. Posted once, for them alone (1.2
+ * visible_to_person_ids, Keshav: a person's booking is theirs), then replaced in place, which keeps it theirs.
+ */
+function liveCard(d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: string, cardId: string, title: string, texts: string[], only: string[]) {
   const steps = texts.map((text) => ({ text: clip(text, 80), state: 'todo' as 'todo' | 'doing' | 'done' | 'failed' }));
   let state: WorkingCard['state'] = 'running';
   let posted = false;
@@ -112,7 +115,7 @@ function liveCard(d: Pick<FlightBookingDeps, 'link' | 'now' | 'log'>, tripId: st
     chain = chain.then(async () => {
       try {
         if (!posted) {
-          await d.link.request('post_message', { request_id: stableId('go_book_live', cardId), trip_id: tripId, card: now });
+          await d.link.request('post_message', { request_id: stableId('go_book_live', cardId), trip_id: tripId, card: now, visible_to_person_ids: only });
           posted = true;
         } else {
           await d.link.request('replace_card', { trip_id: tripId, card: now });
@@ -211,7 +214,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     const title = ask.offer.title;
     const live = liveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
       `Opening ${title} on ixigo`, `Choosing ${FARE_TYPES[ask.choice].words}`, "ixigo's coupon", 'Filling travellers privately', `Ready to pay for ${ask.name}`,
-    ]);
+    ], [ask.personId]);
     const fail = async (why: string, step: number): Promise<void> => {
       d.log.info({ runId, tripId: ask.tripId, why }, 'travel: a flight booking stopped');
       await save(runId, { state: 'failed', why });
@@ -278,7 +281,9 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     if (match.status !== 'matched') {
       const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
       const owner = holder ? await d.nameOf(ask.tripId, holder).catch(() => null) : null;
-      await d.link.request('post_message', { request_id: stableId('go_book_who', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_who', runId), ask, owner, match.status) });
+      await d.link.request('post_message', {
+        request_id: stableId('go_book_who', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_who', runId), ask, owner, match.status), visible_to_person_ids: [ask.personId],
+      });
       return fail(match.status === 'none' ? 'no_saved_traveller' : 'several_saved_travellers', 3);
     }
     // The tick is the last step: a fetch that ran out of time before it (their name not on the list) answers with what
@@ -302,7 +307,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     const cardId = stableId('c_ready', runId);
     const flies = dayOf(ask.offer.sourceUrl);
     const card = readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: flies ? dayText(flies) : null, choice: ask.choice, amountMinor, coupon });
-    await d.link.request('post_message', { request_id: stableId('go_book_ready', runId), trip_id: ask.tripId, card });
+    await d.link.request('post_message', { request_id: stableId('go_book_ready', runId), trip_id: ask.tripId, card, visible_to_person_ids: [ask.personId] });
     await save(runId, { state: 'ready_to_pay', card_id: cardId });
     await live.finish(true);
   }
