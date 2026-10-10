@@ -42,6 +42,23 @@ read:
             "until": $rate.cancellationBenefits.policy[code = "FULLY_REFUNDABLE"][0].cancellationDate
           }
         )
+    # Each kind of room (REV4 B4): its name before ixigo's offer text, how many it sleeps as ixigo says it (a room with
+    # no number is left out, never guessed), and its cheapest rate a night with taxes, in paise. The whole stay is that
+    # times the nights (travel/rooms.ts).
+    rooms:
+      from: "/accommodations/details/{$hotel_id}/rooms$"
+      value: |
+        [($type($) = "array" ? $[0] : $).data.rooms.(
+          $occupancy := properties[code = "OCCUPANCY"][0].data;
+          $sleeps := $type($occupancy) = "string" ? $number($match($occupancy, /\d+/)[0].match);
+          $rate := $sort(roomOptions[$type(fareDetail.displayedBaseFare) = "number"], function($a, $b) { $a.fareDetail.displayedBaseFare > $b.fareDetail.displayedBaseFare })[0];
+          ($sleeps >= 1 and $rate and $type(name) = "string") ? {
+            "room_type_id": "rt_" & $string(id),
+            "label": $substring($trim($substringBefore(name, " - ")), 0, 60),
+            "sleeps": $sleeps,
+            "night_minor": $round(($rate.fareDetail.displayedBaseFare + ($type($rate.fareDetail.taxesAndFees) = "number" ? $rate.fareDetail.taxesAndFees : 0)) * 100)
+          }
+        )]
 answer:
   as: facts
   title: "{$hotel_name ? $hotel_name : 'The stay'}"
@@ -70,7 +87,9 @@ answer:
         "map": $map,
         "cancellation": $cancel.line ? $cancel.line & ($cancel.rate ? " (" & $trim($cancel.rate) & ")" : ""),
         "free_cancellation_until": $cancel.until,
-        "photos": [imageInfo.propertyImages.imageList[[0..5]].((caption ? caption & ": " : "") & url)]
+        "photos": [imageInfo.propertyImages.imageList[[0..5]].((caption ? caption & ": " : "") & url)],
+        "photo_list": [imageInfo.propertyImages.imageList[$type(url) = "string"][[0..11]].{ "url": url, "label": ($type(caption) = "string" and $trim(caption) != "") ? $substring($trim(caption), 0, 40) }],
+        "room_types": $rooms
       }
     )
 ttl_minutes: 60
