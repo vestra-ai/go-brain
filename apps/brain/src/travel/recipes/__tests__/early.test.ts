@@ -144,6 +144,19 @@ describe('the early start', () => {
     expect(w.early.searchFor('t_goa', 'm_48')).toBeNull();
   });
 
+  it("knows a line that asks for stays, so the stays head start loads nothing beside it: Jev sure of stays, or a stays search it starts", async () => {
+    const w = world();
+    // A stays search it starts, for any place.
+    await w.hook(msg(70, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack());
+    // Jev sure it asks for stays, though nobody named Go: the turn may search, so it is the line's own load too.
+    await w.hook(msg(71, 'p_kabir', 'villas in Anjuna dekhte hain'), { ...UNSURE_READ, recipe: { value: 'stays', sure: true } }, goaPack());
+    // Another kind, and chatter.
+    await w.hook(msg(72, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
+    await w.hook(msg(73, 'p_arjun', 'haha'), UNSURE_READ, goaPack());
+    expect(['m_70', 'm_71', 'm_72', 'm_73'].map((id) => w.early.asksStays('t_goa', id))).toEqual([true, true, false, false]);
+    expect(w.early.asksStays('t_other', 'm_70')).toBe(false);
+  });
+
   it('never fails the message: a search that fails is logged, and the composer searches again', async () => {
     const w = world('ixigo_web', true);
     expect(await w.hook(msg(47, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack())).toEqual({ dueNow: true });
