@@ -21,8 +21,8 @@ import type { RecipeFile } from './format.js';
 export interface IxigoToolDeps {
   book: Pick<Book, 'all'>;
   engine: Pick<Engine, 'answer'>;
-  /** Go's saved search results: an option input ("r_ab12#2") is that option's own ixigo page. */
-  results?: Pick<ResultsStore, 'get'>;
+  /** Go's saved search results and cards: an option input ("r_ab12#2", or "c_opt_x#1" off a card) is that option's own ixigo page. */
+  results?: Pick<ResultsStore, 'get'> & Partial<Pick<ResultsStore, 'card' | 'offer'>>;
   /** Whether Go searches ixigo.com itself now (TRAVEL_MODE ixigo_web): the recipes run in the trip's browser. */
   live: () => boolean;
   /**
@@ -86,7 +86,7 @@ const inputsOf = (r: RecipeFile | undefined): Record<string, string> =>
   Object.fromEntries(
     (r ? givenInputs(r) : []).map(([name, i]) => [
       name,
-      `${i.optional ? 'optional; ' : ''}${i.kind === 'option' ? 'an option from search results, written results_id#n, like r_ab12#2' : (i.about ?? i.kind).replace(/\s+/g, ' ').trim()}`,
+      `${i.optional ? 'optional; ' : ''}${i.kind === 'option' ? 'an option from search results, written results_id#n, like r_ab12#2, or an options card\'s id#n for its option n, like c_opt_ab12#1' : (i.about ?? i.kind).replace(/\s+/g, ' ').trim()}`,
     ]),
   );
 
@@ -134,19 +134,27 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
   const recipes = toolRecipes(d.book);
   if (recipes.length === 0) return null;
   const ids = recipes.map((r) => r.id) as [string, ...string[]];
-  /** "r_ab12#2": option 2 of that saved search, in this trip; its own ixigo page, or null. */
+  /**
+   * "r_ab12#2": option 2 of that saved search, in this trip; "c_opt_ab12#1": option 1 on that options card, as the room
+   * sees it numbered (the chat shows each card's options by number). Its own ixigo page, or null.
+   */
   const optionPage = async (ref: string, tripId: string): Promise<string | null> => {
     const m = /^(\S+)#(\d{1,2})$/.exec(ref.trim());
     if (!m || !d.results) return null;
+    const n = Number(m[2]);
     const set = await d.results.get(tripId, m[1]!);
-    return set?.options[Number(m[2]) - 1]?.sourceUrl ?? null;
+    if (set) return set.options[n - 1]?.sourceUrl ?? null;
+    const card = d.results.card ? await d.results.card(tripId, m[1]!) : null;
+    const optionId = card?.card.options[n - 1]?.option_id;
+    const offer = optionId && d.results.offer ? await d.results.offer(optionId) : null;
+    return offer?.sourceUrl ?? null;
   };
   return {
     name: 'ixigo',
     description:
       "Runs one of Go's ixigo.com recipes in the trip's browser and answers with what ixigo shows, for what the searches " +
       "don't cover. A line a recipe: its id, its inputs (? optional, # an option from this trip's search results, written " +
-      `results_id#n like r_ab12#2) and what it answers.\n${bookLines(recipes)}`,
+      `results_id#n like r_ab12#2, or an options card's id#n as the chat numbers its options, like c_opt_ab12#1) and what it answers.\n${bookLines(recipes)}`,
     input: z.object({
       recipe: z.enum(ids).describe('The recipe id'),
       inputs: z.record(z.string(), Value).describe('The recipe\'s inputs by name, places as the person said them, dates as YYYY-MM-DD'),
@@ -161,7 +169,7 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
       for (const [name, input] of Object.entries(recipe?.inputs ?? {})) {
         if (input.kind !== 'option' || given[name] === undefined) continue;
         const page = await optionPage(String(given[name]), ctx.tripId);
-        if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n, from a search.`, inputs: inputsOf(recipe) };
+        if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n from a search, or card_id#n off an options card in the chat.`, inputs: inputsOf(recipe) };
         given[name] = page;
       }
       const runKey = d.joinKey?.(ctx, a.recipe, a.inputs) ?? `${ctx.turnId ?? ''}|${a.recipe}|${JSON.stringify(given)}`;

@@ -172,8 +172,12 @@ function roomLabel(
     else if (at.kind === 'location') parts.push(`[📍 ${defuse(oneLine(at.name ?? `${at.lat},${at.lng}`)).slice(0, 120)}]`);
     else parts.push(`[file: ${defuse(oneLine(at.name)).slice(0, 80)}]`);
   }
-  // An options card keeps its id, so "put the villas to a vote" names it (put_to_vote card_id) instead of searching again.
-  if (m.card) parts.push(`[${m.card.kind === 'options' ? `options card ${m.card.card_id}` : 'card'}: ${defuse(oneLine(m.card.fallback_text))}]`);
+  // An options card keeps its id, so "put the villas to a vote" names it (put_to_vote card_id) instead of searching again;
+  // and its options by their numbers as the room sees them, so "the first bus" is card_id#1 for the ixigo tool.
+  if (m.card) {
+    const numbered = m.card.kind === 'options' ? `; ${m.card.options.map((o, i) => `${i + 1} ${defuse(oneLine(o.title)).slice(0, 40)}`).join(', ')}` : '';
+    parts.push(`[${m.card.kind === 'options' ? `options card ${m.card.card_id}` : 'card'}: ${defuse(oneLine(m.card.fallback_text))}${numbered}]`);
+  }
   if (parts.length === 0) return null;
   return `#${m.seq} ${who}: ${parts.join(' ')}`.slice(0, LINE_MAX);
 }
