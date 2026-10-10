@@ -85,6 +85,11 @@ export interface EarlyStart {
    * the tool's call joins it, and updates its card instead of posting a second. Null for any other call.
    */
   joinKey(tripId: string, messageIds: string[], recipe: string, inputs: Record<string, string | number>): string | null;
+  /**
+   * The message asks for stays: Jev is sure of it, or its stays search began here. Its own search is the trip's one load
+   * for it, whatever its place, so the stays head start (warm.ts) loads nothing beside it.
+   */
+  asksStays(tripId: string, messageId: string): boolean;
 }
 
 const KEPT_MAX = 200;
@@ -106,6 +111,7 @@ function keep<T>(m: Map<string, T>, key: string, value: T): void {
 export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
   const started = new Map<string, EarlySearch & { at: number }>();
   const reads = new Map<string, EarlyRead & { at: number }>();
+  const staysAsks = new Map<string, true>();
 
   /** An ixigo ask beyond the searches: its recipe runs now, where Go searches ixigo.com itself and the words give its slots. */
   async function startRead(choice: FastChoice, msg: Message & { text: string }, pack: TripPack, today: string): Promise<HookAnswer | undefined> {
@@ -142,6 +148,7 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       const kind = pick?.sure && pick.value && isSearchChoice(pick.value) ? pick.value : null;
       const fast = pick?.sure && pick.value && !isSearchChoice(pick.value) ? pick.value : null;
       if (kind || fast) d.warmForTravel?.(tripId, kind);
+      if (kind === 'stays') keep(staysAsks, `${tripId}:${msg.message_id}`, true);
       if (!msg.text) return undefined;
       const today = await d.today(tripId);
       // To Go: named plainly, or the quick read is sure it is for Go.
@@ -168,6 +175,7 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
         const budget = ask.query.maxShareMinor ?? (d.stayBudget ? await d.stayBudget(tripId).catch(() => null) : null);
         if (budget) ask.query.budgetMinor = budget;
       }
+      if (ask.kind === 'stays') keep(staysAsks, `${tripId}:${msg.message_id}`, true);
       // Not awaited: the hooks run one after another, and nothing should wait on the page.
       const search = travel.search(ask.kind, ask.query, { tripId, messageId: msg.message_id });
       search.catch((err: unknown) => {
@@ -192,5 +200,6 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
       }
       return null;
     },
+    asksStays: (tripId, messageId) => staysAsks.has(`${tripId}:${messageId}`),
   };
 }
