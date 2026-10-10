@@ -6,7 +6,7 @@
  */
 import type { ServerLink } from '../door/server-link.js';
 import type { EngineAnswer } from './book/engine.js';
-import { arrivalWords, clip, formatClock, localClock } from './cards.js';
+import { arrivalWords, busTimes, clip, formatClock, localClock } from './cards.js';
 import { POSTED_WAIT_MS, type TopPick } from './pick-photos.js';
 import type { ResultsStore } from './results.js';
 
@@ -40,8 +40,9 @@ export async function showBusDrops(
   const first = drops[0]!;
   const last = drops[drops.length - 1]!;
   const span = drops.length === 1 ? `drops ${first.name} ${formatClock(first.at)}` : `drops ${first.name} ${formatClock(first.at)} to ${last.name} ${formatClock(last.at)}`;
-  // What the line said after its times (the bus's type) stays.
-  const rest = option.subtitle && option.subtitle.includes(', ') ? option.subtitle.slice(option.subtitle.indexOf(', ')) : '';
+  // What the line said after its times (the bus's type) stays: after busTimes, or, on a card from before it, after the first comma.
+  const times = busTimes(j);
+  const rest = option.subtitle?.startsWith(times) ? option.subtitle.slice(times.length) : option.subtitle?.includes(', ') ? option.subtitle.slice(option.subtitle.indexOf(', ')) : '';
   const subtitle = clip(`${formatClock(localClock(j.depart_at))}, ${span}${arrivalWords(j.depart_at, j.arrive_at)}${rest}`, 120);
   const card = await d.results.setOptionFields(tripId, pick.cardId, pick.optionId, { subtitle });
   if (!card) return false;

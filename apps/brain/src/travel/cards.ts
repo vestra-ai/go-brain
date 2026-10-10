@@ -202,6 +202,16 @@ export function formatClock(hhmm: string): string {
 
 export const CLASS_WORDS: Record<string, string> = { '1A': 'AC First Class', '2A': 'AC 2 Tier', '3A': 'AC 3 Tier', SL: 'Sleeper', CC: 'AC Chair Car', '2S': 'Second Sitting' };
 
+/**
+ * A bus's times as its list gives them: when it leaves, and when it reaches its first stop in the city it goes to, which
+ * is not every drop's ("8:00 pm, first stop in Goa 7:20 am next day"; the exam's re-run, 10 Oct: "reach Goa between 6
+ * and 7:20 am, all dropping at Mapusa" read as Mapusa then, where Paulo reaches Mapusa at 10:30). A drop's own time comes
+ * from the bus's seat layout only (bus-drops.ts).
+ */
+export function busTimes(j: { depart_at: string; arrive_at: string; destination: { name: string } }): string {
+  return `${formatClock(localClock(j.depart_at))}, first stop in ${j.destination.name} ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}`;
+}
+
 export function subtitleFor(o: ResultOption): string | null {
   if (o.subtitle) return o.subtitle;
   if (o.journey) {
@@ -210,6 +220,7 @@ export function subtitleFor(o: ResultOption): string | null {
     if (o.kind === 'flight' && typeof j.stops === 'number') extra = j.stops === 0 ? 'non-stop' : `${j.stops} stop`;
     if (o.kind === 'train' && typeof o.facts.class_code === 'string') extra = CLASS_WORDS[o.facts.class_code] ?? o.facts.class_code;
     if (o.kind === 'bus' && typeof o.facts.bus_type === 'string') extra = o.facts.bus_type;
+    if (o.kind === 'bus') return `${busTimes(j)}${extra ? `, ${extra}` : ''}`;
     return `${formatClock(localClock(j.depart_at))} to ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}${extra ? `, ${extra}` : ''}`;
   }
   if (o.kind === 'stay') {
