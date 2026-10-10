@@ -212,15 +212,10 @@ export function subtitleFor(o: ResultOption): string | null {
   }
   if (o.kind === 'stay') {
     const area = typeof o.facts.area === 'string' ? o.facts.area : null;
-    const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
     // The card's price is the whole stay (cardOption), so the night's goes here, as its source said it: "₹12,800 per
     // night", "₹9,000 per night, per room, IXIFIRST applied".
     const nightly = o.priceMinor !== undefined ? `${formatInr(o.priceMinor)} ${o.priceNote ?? 'a night'}` : null;
-    // Each person's share of the whole stay to the nearest ₹100, worked out here and never by the model: "₹12,800 per night,
-    // about ₹7,700 each" (the demo's ask was "under 8k a head"). Only with the head count ixigo priced it for.
-    const guests = typeof o.facts.guests === 'number' && o.facts.guests > 1 ? o.facts.guests : null;
-    const each = o.totalMinor !== undefined && nights && guests ? `about ${formatInr(Math.round(o.totalMinor / guests / 10_000) * 10_000)} each` : null;
-    const words = [area, nightly, each].filter((x): x is string => x !== null).join(', ');
+    const words = [area, nightly, shareWords(o)].filter((x): x is string => x !== null).join(', ');
     return words || null;
   }
   return o.why ?? null;
@@ -235,6 +230,28 @@ function stayNote(o: ResultOption): string {
   const nights = typeof o.facts.nights === 'number' && o.facts.nights > 0 ? o.facts.nights : null;
   const rooms = typeof o.facts.rooms === 'number' && o.facts.rooms > 1 ? o.facts.rooms : null;
   return nights ? `for ${nights} night${nights === 1 ? '' : 's'}${rooms ? `, ${rooms} rooms` : ''}` : 'for the whole stay';
+}
+
+/**
+ * Each person's share of a stay's whole price to the nearest ₹100, worked out here and never by the model ("about ₹7,700
+ * each": the demo's ask was "under 8k a head"). Only with the nights and the head count ixigo priced it for, more than one.
+ */
+function shareWords(o: ResultOption): string | null {
+  const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
+  const guests = typeof o.facts.guests === 'number' && o.facts.guests > 1 ? o.facts.guests : null;
+  return o.totalMinor !== undefined && nights && guests ? `about ${formatInr(Math.round(o.totalMinor / guests / 10_000) * 10_000)} each` : null;
+}
+
+/**
+ * A stays card's "from": its cheapest whole stay, what that covers and each person's share ("from ₹11,178 for 3 nights,
+ * 2 rooms, about ₹2,200 each"), never a night's (the exam, 10 Oct: "from ₹621 per night, per room" for five people).
+ */
+function stayFrom(picks: CardPick[]): string {
+  const cheapest = picks.map((p) => p.option).filter((o) => o.totalMinor !== undefined).sort((a, b) => (a.totalMinor ?? 0) - (b.totalMinor ?? 0))[0];
+  const total = cheapest?.totalMinor;
+  if (!cheapest || total === undefined) return '';
+  const each = shareWords(cheapest);
+  return `, from ${formatInr(total)} ${stayNote(cheapest)}${each ? `, ${each}` : ''}`;
 }
 
 function cardOption(p: CardPick): CardOption {
@@ -282,7 +299,8 @@ export function buildOptionsCard(i: { cardId: string; title: string; optionKind:
   return C.OptionsCard.parse({
     card_id: i.cardId,
     kind: 'options',
-    fallback_text: clip(`${i.picks.length} ${i.picks.length === 1 ? one : many}: ${i.title}${from}`, 300),
+    // A stays card's from is its whole stay and each share; a night's only when none of its stays has a total.
+    fallback_text: clip(`${i.picks.length} ${i.picks.length === 1 ? one : many}: ${i.title}${(i.optionKind === 'stay' ? stayFrom(i.picks) : '') || from}`, 300),
     title: clip(i.title, 80),
     option_kind: i.optionKind,
     checked_at: i.checkedAt,
