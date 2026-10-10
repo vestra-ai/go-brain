@@ -145,6 +145,8 @@ describe("each person's own flights, from their home city", () => {
     const from = lb.link.requests.length;
     const cities = ['Delhi', 'Pune', 'Bengaluru', 'Mumbai'];
     await toolWith(async (run) => {
+      // Each city's page waits its turn on Go's pacer as often as it takes (the engine's waitOutPace), never a link for a wait.
+      expect(run.waitOutPace).toBe(true);
       run.onSteps?.({ type: 'entries', entries: cities });
       for (const entry of cities) {
         run.onSteps?.({ type: 'step', entry, recipe: 'flights.results', ok: true, answer: options(DELHI) });
@@ -201,7 +203,7 @@ describe("each person's own flights, from their home city", () => {
     expect(await toolWith(async () => COMPARE).run({}, nobody)).toMatchObject({ error: 'needs_more', note: expect.stringContaining('where do you fly from?') });
   });
 
-  it("gives the composite one paced flights page per city: 81 s for three, never past 90 s", () => {
-    expect([eachDeadlineMs(1), eachDeadlineMs(3), eachDeadlineMs(4)]).toEqual([37_000, 81_000, 90_000]);
+  it("gives the composite one paced flights page per city, waiting its turn: two minutes for three, never past four", () => {
+    expect([eachDeadlineMs(1), eachDeadlineMs(3), eachDeadlineMs(4), eachDeadlineMs(9)]).toEqual([60_000, 120_000, 150_000, 240_000]);
   });
 });

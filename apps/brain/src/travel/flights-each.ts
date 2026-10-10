@@ -34,9 +34,12 @@ const CARD_FLIGHTS = 3;
 /** The tool waits a search's own time; past it, each city's cards still post themselves as they land. */
 const EACH_TOOL_MS = TRAVEL_WAIT_MS + 2_000;
 
-/** How long the composite may take: one flights page a city, 20 s apart across every trip, and a page's own time. */
+/**
+ * How long the composite may take: one flights page a city, 20 s apart across every trip (another trip's page may come
+ * first), and a page's own time. No turn waits on it: each card posts itself as its page gets through (waitOutPace).
+ */
 export function eachDeadlineMs(cities: number): number {
-  return Math.min(90_000, 15_000 + cities * 22_000);
+  return Math.min(240_000, 30_000 + cities * 30_000);
 }
 
 type Person = C.Person;
@@ -221,6 +224,8 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       const running = d.engine.answer(FLIGHTS_EACH, { to, date, ...(a.cabin ? { cabin: a.cabin } : {}) }, {
         tripId: ctx.tripId,
         signal: timeUp.signal,
+        // Each city's page waits its turn as often as it takes: a traveller gets their flights, never a link for a wait.
+        waitOutPace: true,
         onSteps: (e) => {
           if (e.type === 'entries') {
             live.cities(e.entries);
