@@ -12,7 +12,7 @@ import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
-import { createIxigoLogin, renderLoginResume } from './login.js';
+import { createIxigoLogin, ixigoLoginTool, renderLoginResume } from './login.js';
 import { createLoginKeepAlive } from './login-keepalive.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
@@ -239,6 +239,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     joinKey: (ctx, recipe, inputs) => early.joinKey(ctx.tripId, messageIdsOf(ctx.wake), recipe, inputs),
   });
   if (recipesTool) brain.tools.register(recipesTool);
+  // Someone asks to log in to ixigo (again): the card goes up for whoever logs in for the trip, with a line saying whose.
+  brain.tools.register(ixigoLoginTool(login));
   // How everyone gets to the trip, asked for: each home city's trains and buses side by side, on one card.
   brain.tools.register(
     waysThereTool({

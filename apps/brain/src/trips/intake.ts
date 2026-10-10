@@ -110,16 +110,21 @@ export function createIntake(d: IntakeDeps) {
       read = UNSURE_READ;
     }
     const said = await d.hooks.run(m, read, pack);
+    // Asked without Go's name ("I want to login again to ixigo", "koi flights dekh lo"): the quick read is sure the line
+    // is for Go, so the turn takes it as an ask, as if it named Go (Keshav, 10 Oct: "go only responds to @go? this is not
+    // right"). Banter stays the group's: the read is sure only above its bar.
+    const asksGo = !namesGo && read.forGo.sure && read.forGo.value === true;
+    if (asksGo) d.speak.typingOn(tripId);
     if (wakesComposer(namesGo, read, m.text)) {
       const now = d.now();
-      const complete = dueAtOnce(m, pack, read, namesGo, said.dueNow === true);
+      const complete = dueAtOnce(m, pack, read, namesGo || asksGo, said.dueNow === true);
       await d.desk.put({
         id: `msg:${tripId}:${m.message_id}`,
         tripId,
         kind: 'message',
         ref: m.message_id,
         dueAt: complete ? now : new Date(now.getTime() + waitMs),
-        payload: { messageId: m.message_id, seq: m.seq, namesGo },
+        payload: { messageId: m.message_id, seq: m.seq, namesGo, ...(asksGo ? { asksGo } : {}) },
       });
     }
     // Remembered only once read and on the desk: if anything above failed, the next gap check or a restart handles it again.

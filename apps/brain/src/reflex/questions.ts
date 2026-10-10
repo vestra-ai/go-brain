@@ -46,8 +46,8 @@ function noul(instructions: string, yes: string, no: string): JevQuestion {
 const STATIC: Record<Exclude<QuestionName, 'task'>, Record<string, JevQuestion>> = {
   for_go: {
     q1_addressed: noul(
-      'The last message speaks to Go, the AI member of this group: it names Go, asks Go to do or find something, or asks the group a question that Go could answer or look up.',
-      'For example: Go, train dekh lo Saturday ki; can someone check if it rains in Goa in November?; koi villa dhundho na; what time do we check in?; Go bhai total kitna hoga?',
+      'The last message speaks to Go, the AI member of this group: it names Go, asks Go to do or find something, asks for something Go does for the group even without naming Go (logging in to ixigo, a search, a booking, a vote, a reminder, checking something), or asks the group a question that Go could answer or look up.',
+      'For example: Go, train dekh lo Saturday ki; can someone check if it rains in Goa in November?; koi villa dhundho na; what time do we check in?; Go bhai total kitna hoga?; mujhe ixigo pe dobara login karna hai; can we look at hotels near Vagator?; someone set a reminder for the cab.',
       'Friends talking to each other: jokes, plans between them, teasing, greetings, reactions, photos, haha, lol, chal theek hai, bas aa raha hoon.',
     ),
     q1_chatter: noul(

@@ -207,6 +207,28 @@ describe('intake', () => {
     for (const r of items) expect(r.due_at.getTime()).toBeLessThanOrEqual(sentAt + 200);
   });
 
+  // Keshav, 10 Oct: "go only responds to @go? this is not right". A line the quick read is sure asks Go is an ask, its name
+  // or not: typing shows, it is due at once when it ends, and the turn takes it as an ask (asksGo).
+  it('a line the quick read is sure asks Go is an ask without its name; one it is unsure of stays the group\'s', async () => {
+    const read = (m: { text?: string | null }): ReflexRead => (m.text?.startsWith('I want') ? { ...UNSURE_READ, forGo: sure(true) } : UNSURE_READ);
+    const h = harness({ reflex: () => ({ read: async (m) => read(m) }) });
+    const T = 't_in_asks';
+    await h.send(created(T));
+    const sentAt = Date.now();
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_meher', 'I want to login again to Ixigo.') }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_kabir', 'login phir se karna hai shayad') }, T));
+    await h.intake.idle();
+    expect(h.order).toContain(`typing:${T}`);
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => [r.ref, r.payload])).toEqual([
+      ['m_2', { messageId: 'm_2', seq: 2, namesGo: false, asksGo: true }],
+      ['m_3', { messageId: 'm_3', seq: 3, namesGo: false }],
+    ]);
+    // It plainly ends, so it is due at once, as a line naming Go would be.
+    expect(items[0]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
+    expect(items[1]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
+  });
+
   it('Go\'s own messages and withheld ones never wake Go', async () => {
     const h = harness();
     const T = 't_in_5';

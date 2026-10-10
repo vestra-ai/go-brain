@@ -215,3 +215,20 @@
 {"id":"k16","lang":"hinglish","speaker":"p_priya","text":"Go pehli flight ka total kitna padega sab milake?","mentions_go":true,"before":[{"speaker":"go","text":"Here are 3 flights Delhi to Goa on 6 Nov: 1. IndiGo 6E 5341, 2. Air India AI 2981, 3. Akasa QP 1427"}],"expect":{"recipe":"fare_review"}}
 {"id":"k17","lang":"en","speaker":"p_meher","text":"my flight got delayed last time too lol","expect":{"recipe":null}}
 {"id":"k18","lang":"hinglish","speaker":"p_kabir","text":"Go IndiGo wali book kar do","mentions_go":true,"before":[{"speaker":"go","text":"Here are 3 flights Delhi to Goa on 6 Nov: 1. IndiGo 6E 5341, 2. Air India AI 2981, 3. Akasa QP 1427"}],"expect":{"recipe":null}}
+{"id":"a01","lang":"en","speaker":"p_meher","text":"I want to login again to Ixigo","expect":{"for_go":true}}
+{"id":"a02","lang":"hinglish","speaker":"p_kabir","text":"koi flights dekh lo Delhi se 6 Nov ki","expect":{"for_go":true}}
+{"id":"a03","lang":"en","speaker":"p_priya","text":"can we check villas in Anjuna for our dates?","expect":{"for_go":true}}
+{"id":"a04","lang":"hinglish","speaker":"p_arjun","text":"ixigo ka login phir se kar do yaar, logout ho gaya","expect":{"for_go":true}}
+{"id":"a05","lang":"en","speaker":"p_rahul","text":"someone remind us to book the cab on Thursday","expect":{"for_go":true}}
+{"id":"a06","lang":"hinglish","speaker":"p_meher","text":"chalo vote laga do, beach ya fort","expect":{"for_go":true}}
+{"id":"a07","lang":"en","speaker":"p_arjun","text":"can someone check if the Mandovi Express is running late?","expect":{"for_go":true}}
+{"id":"a08","lang":"hinglish","speaker":"p_priya","text":"trains bhi dekh lo Mumbai se Madgaon 5 Nov ki","expect":{"for_go":true}}
+{"id":"a09","lang":"en","speaker":"p_kabir","text":"need the ixigo login sorted before we book anything","expect":{"for_go":true}}
+{"id":"a10","lang":"hinglish","speaker":"p_rahul","text":"hotels ke reviews bhi check karo koi","expect":{"for_go":true}}
+{"id":"b01","lang":"en","speaker":"p_priya","text":"lol Kabir you always oversleep","expect":{"for_go":false}}
+{"id":"b02","lang":"hinglish","speaker":"p_arjun","text":"kal milte hain airport pe","expect":{"for_go":false}}
+{"id":"b03","lang":"en","speaker":"p_kabir","text":"I'll carry the speaker, Arjun brings the cards","expect":{"for_go":false}}
+{"id":"b04","lang":"hinglish","speaker":"p_meher","text":"bhai beach wali photo bhej na","expect":{"for_go":false}}
+{"id":"b05","lang":"en","speaker":"p_rahul","text":"I logged in to ixigo on my phone yesterday, it was easy","expect":{"for_go":false}}
+{"id":"b06","lang":"hinglish","speaker":"p_kabir","text":"maine flights dekhi thi, bahut mehngi hai yaar","expect":{"for_go":false}}
+{"id":"b07","lang":"en","speaker":"p_meher","text":"Priya booked the last trip, your turn Kabir","expect":{"for_go":false}}

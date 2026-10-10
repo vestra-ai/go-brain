@@ -11,7 +11,8 @@ import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
 import {
-  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, LOGIN_CALLS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume, USERINFO, WALLET,
+  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume, USERINFO,
+  WALLET,
 } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
@@ -1056,5 +1057,69 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
     expect(await w.parked()).toBeNull();
     // No booking waits, and the login Go already had wakes nothing more.
     expect(w.wakes).toHaveLength(linked);
+  });
+});
+
+// Keshav, 10 Oct: Meher wrote "I want to login again to Ixigo" with no @Go, and Go only reacted. Asked in the chat, Go
+// puts the login card up at once, for whoever logs in for the trip, and says whose login it is.
+describe('a login someone asks for in the chat', () => {
+  it("puts the card up for the organizer at once, even inside the half hour, and tells someone else whose login it is", async () => {
+    const w = world();
+    await w.setup();
+    expect(w.link.of('post_message')).toHaveLength(1);
+    const r = await w.login.askNow(w.tripId, 'p_meher');
+    expect(r).toEqual({
+      posted: true,
+      note: "Go put the login card up for Rahul, with its own line. The trip's ixigo login is on Rahul's browser, so it is Rahul's to do. Say nothing more about it, and never ask for a number or a code in the chat.",
+    });
+    const posts = w.link.of('post_message');
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toMatchObject({
+      text: "The trip's ixigo login is on Rahul's browser. Rahul, tap Log in to ixigo on the card, about a minute on the trip's computer.",
+      mentions: ['p_rahul'],
+      card: { card_id: `c_login_${w.tripId}_1`, for_person_ids: ['p_rahul'] },
+    });
+    expect(await w.state()).toBe('asked');
+    // The organizer asking: the line is theirs.
+    await w.login.askNow(w.tripId, 'p_rahul');
+    expect(w.link.of('post_message')[2]).toMatchObject({ text: "Rahul, here's the ixigo login: tap Log in to ixigo on the card, about a minute on the trip's computer." });
+  });
+
+  it('reads ixigo first when Go holds a login: logged in, nothing goes up; logged out since, the card goes up', async () => {
+    const inn = world({ statuses: [200, 200] });
+    await inn.setup();
+    await inn.tap('ixigo_login', 'p_rahul');
+    await inn.tap('ixigo_logged_in', 'p_rahul');
+    expect(await inn.state()).toBe('logged_in');
+    const posts = inn.link.of('post_message').length;
+    const r = await inn.login.askNow(inn.tripId, 'p_meher');
+    expect(r.posted).toBe(false);
+    expect(r.note).toContain("ixigo is logged in for the trip, on Rahul's browser: say so in one line. The trip's ixigo login is on Rahul's browser");
+    expect(inn.link.of('post_message')).toHaveLength(posts);
+
+    const out = world({ statuses: [200, 'dead'] });
+    await out.setup();
+    await out.tap('ixigo_login', 'p_rahul');
+    await out.tap('ixigo_logged_in', 'p_rahul');
+    const before = out.link.of('post_message').length;
+    expect((await out.login.askNow(out.tripId, 'p_rahul')).posted).toBe(true);
+    expect(out.link.of('post_message')).toHaveLength(before + 1);
+  });
+
+  it('puts nothing up while Go does not browse ixigo.com itself, and the tool ends the turn on a card it put up', async () => {
+    const off = world({ live: false });
+    expect(await off.login.askNow(off.tripId, 'p_meher')).toEqual({
+      posted: false, note: "Go doesn't browse ixigo.com itself for this trip, so there is no ixigo login to make: say so in one line.",
+    });
+    const w = world();
+    await w.setup();
+    const asked: Array<string | null> = [];
+    const tool = ixigoLoginTool({ askNow: async (tripId, askerId) => { asked.push(askerId); return w.login.askNow(tripId, askerId); } });
+    const line = msg({ id: 'm_login', by: 'p_meher', text: 'I want to login again to Ixigo' });
+    const ctx = { tripId: w.tripId, pack: goaPack({ trip: w.trip, messages: [line] }), wake: [{ id: 'msg:x', tripId: w.tripId, kind: 'message', ref: 'm_login', dueAt: NOW, payload: { messageId: 'm_login' } }] } as never as Parameters<typeof tool.run>[1];
+    const out = await tool.run({}, ctx);
+    expect(asked).toEqual(['p_meher']);
+    expect(out).toMatchObject({ note: expect.stringContaining('Go put the login card up for Rahul') });
+    expect(ctx.answered).toBe(true);
   });
 });

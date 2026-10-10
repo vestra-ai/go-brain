@@ -24,7 +24,7 @@ export const CHIME_RULES =
   'me") is never a search.';
 
 export function renderMessageWake(item: DeskItem, pack: TripPack): string {
-  const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean };
+  const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean; asksGo?: boolean };
   const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
   if (!m) return 'a message that was deleted since';
   const a = m.author;
@@ -33,7 +33,7 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
     const id = a.person_id;
     who = personName(pack.trip.people.find((x) => x.person_id === id)?.name ?? 'Someone who left');
   }
-  const line = `message #${m.seq} from ${who}${p.namesGo ? ', it names you' : ''}`;
+  const line = `message #${m.seq} from ${who}${p.namesGo ? ', it names you' : p.asksGo ? ', it asks you without your name' : ''}`;
   return a.kind === 'person' && m.text && looksLikeMoney(m.text) && amountsIn(m.text).length === 0 ? `${line}. ${ASK_HOW_MUCH}` : line;
 }
 
@@ -48,9 +48,10 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
 export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const messages = items.flatMap((item) => {
     if (item.kind !== 'message') return [];
-    const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean };
+    const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean; asksGo?: boolean };
     const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
-    return m && m.author.kind === 'person' ? [{ m, person: m.author.person_id, namesGo: p.namesGo === true }] : [];
+    // A line the quick read is sure asks Go is an ask (askNote), as one that names Go.
+    return m && m.author.kind === 'person' ? [{ m, person: m.author.person_id, namesGo: p.namesGo === true || p.asksGo === true }] : [];
   });
   const answers = answersToGo(pack);
   const named = new Set(messages.filter((x) => x.namesGo || answers.has(x.m.message_id)).map((x) => x.person));
@@ -60,12 +61,14 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const one = refs.length === 1;
   const which = one ? `${refs[0]} doesn't name you, so it is` : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]} don't name you, so they are`;
   return (
-    `${which} the group talking. Speak if you can add something real: answer a question you can answer with facts from ` +
+    `${which} the group talking, unless it asks for something you do: logging in to ixigo, a search, a booking, a vote, a ` +
+    "reminder, someone checking something. That is an ask even without your name: do it, or answer it in one line. " +
+    'Otherwise speak if you can add something real: answer a question you can answer with facts from ' +
     'ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already ' +
     'answered it; when the group agrees dates on a trip with a place, offer stays in one line (search_stays only when ' +
     'someone asks to see them); when it agrees a place, offer the next step in one line; when people disagree, offer a vote. ' +
     `${CHIME_RULES} ` +
-    "Someone saying what they'd like gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
+    "Someone saying what they'd like for the trip (a place, food, a vibe) gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
     "what is the friends' to settle unless the record already says, and the App gives anyone asking what they missed " +
     'their own catch-up. For banter, greetings, a side conversation, something a person already handled, or when your ' +
     'last message has had no reply from a person since, call stay_silent.'
@@ -83,7 +86,8 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
  */
 export function askNote(items: DeskItem[], pack: TripPack): string | null {
   const seqs = items.flatMap((item) => {
-    if (item.kind !== 'message' || (item.payload as { namesGo?: boolean } | null)?.namesGo !== true) return [];
+    const asked = item.payload as { namesGo?: boolean; asksGo?: boolean } | null;
+    if (item.kind !== 'message' || (asked?.namesGo !== true && asked?.asksGo !== true)) return [];
     const p = (item.payload ?? {}) as { messageId?: string };
     const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
     return m && m.author.kind === 'person' ? [m.seq] : [];

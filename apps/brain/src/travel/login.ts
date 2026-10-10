@@ -21,6 +21,8 @@
  */
 import type * as C from '@go/contract';
 import type pg from 'pg';
+import { z } from 'zod';
+import type { QuickTool } from '../composer/tools.js';
 import type { Desk, DeskItem } from '../desk/desk.js';
 import type { CardTapParams, CardTapResult } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
@@ -185,6 +187,13 @@ export interface IxigoLogin {
    * unless it said in within BOOKING_RECHECK_MS: a token it refuses flips the browser and asks, never failing silently.
    */
   ensure(tripId: string, what: string, o?: { park?: Parked; booking?: boolean }): Promise<{ ok: true } | { ok: false; note: string }>;
+  /**
+   * Someone in the chat asked to log in to ixigo (again): the card goes up now for whoever logs in for the trip (the one
+   * asked before while they can be, else the organizer: the trip's browser is theirs), whatever the wait between asks,
+   * since a person asked. ixigo is read first when Go holds a login: logged in, nothing goes up and the note says so.
+   * The note is the model's: it names who logs in, so someone else who asked hears whose login it is.
+   */
+  askNow(tripId: string, askerId: string | null): Promise<{ posted: boolean; note: string }>;
   /**
    * ixigo's own answer for the trip's browser: in, out, or unknown (the page never said); challenged when its page stayed
    * on Cloudflare's check, which says nothing about the login either way. Out on a login Go held lets it go (logged out),
@@ -806,6 +815,38 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       }));
     },
 
+    async askNow(tripId, askerId) {
+      if (!d.live()) return { posted: false, note: "Go doesn't browse ixigo.com itself for this trip, so there is no ixigo login to make: say so in one line." };
+      const row = await get(tripId);
+      if (row?.state === 'logging_in') {
+        const name = await nameOf(tripId, row.personId);
+        return { posted: false, note: `${name} is logging in to ixigo on Go's screen right now: say so in one line.` };
+      }
+      const pack = await d.packs.get(tripId);
+      const forgot = new Set(
+        (await d.pool.query<{ person_id: string }>('select person_id from forgotten where trip_id = $1', [tripId])).rows.map((r) => r.person_id),
+      );
+      const can = (id: string | null | undefined): id is string =>
+        !!id && !forgot.has(id) && pack.trip.people.some((p) => p.person_id === id && !p.go_paused);
+      const personId = row !== null && can(row.personId)
+        ? row.personId
+        : can(pack.trip.organizer_person_id)
+          ? pack.trip.organizer_person_id
+          : pack.trip.people.find((p) => can(p.person_id))?.person_id;
+      if (!personId) return { posted: false, note: 'Nobody in the trip can log in to ixigo for it now: say so in one line.' };
+      const name = await nameOf(tripId, personId);
+      const theirs = askerId !== null && askerId !== personId ? ` The trip's ixigo login is on ${name}'s browser, so it is ${name}'s to do.` : '';
+      // A login Go holds is read again now: the person asking may know it ended before Go does.
+      if (row?.state === 'logged_in' && (await status(tripId)) === 'in') {
+        return { posted: false, note: `ixigo is logged in for the trip, on ${name}'s browser: say so in one line.${theirs} If they still want a fresh login, ${name} can tap Log out on the ixigo card first.` };
+      }
+      const line = askerId === personId
+        ? "{name}, here's the ixigo login: tap Log in to ixigo on the card, about a minute on the trip's computer."
+        : "The trip's ixigo login is on {name}'s browser. {name}, tap Log in to ixigo on the card, about a minute on the trip's computer.";
+      await ask(tripId, personId, row ? row.attempt + 1 : 0, line, row?.parked ?? null);
+      return { posted: true, note: `Go put the login card up for ${name}, with its own line.${theirs} Say nothing more about it, and never ask for a number or a code in the chat.` };
+    },
+
     async ensure(tripId, what, o = {}) {
       const park = o.park ?? null;
       let row = await get(tripId);
@@ -893,6 +934,32 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
 
     async settled() {
       while (inFlight.size) await Promise.all([...inFlight]);
+    },
+  };
+}
+
+const NoInput = z.object({}).strict();
+
+/**
+ * The login on request: someone in the chat asks to log in to ixigo, or says Go's ixigo is logged out. The card and its
+ * line are the answer, so the turn ends on them (one Go post, never two in a row).
+ */
+export function ixigoLoginTool(login: Pick<IxigoLogin, 'askNow'>): QuickTool<z.infer<typeof NoInput>> {
+  return {
+    name: 'ixigo_login',
+    description:
+      "Puts the ixigo login card up now, when someone asks to log in to ixigo (again) or says Go's ixigo is logged out. It goes to " +
+      'whoever logs in for the trip, with a line saying whose login it is. Never ask for a number or a code in the chat.',
+    input: NoInput,
+    // A login Go holds is read on ixigo first: one page, a few seconds on a sleeping box.
+    timeoutMs: 15_000,
+    async run(_args, ctx) {
+      // The person who asked: the newest message the turn woke for.
+      const ids = new Set(ctx.wake.flatMap((i) => (i.kind === 'message' ? [(i.payload as { messageId?: string } | null)?.messageId ?? i.ref] : [])));
+      const asked = [...ctx.pack.messages].reverse().find((m) => ids.has(m.message_id));
+      const r = await login.askNow(ctx.tripId, asked?.author.kind === 'person' ? asked.author.person_id : null);
+      if (r.posted) ctx.answered = true;
+      return { note: r.note };
     },
   };
 }
