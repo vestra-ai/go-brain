@@ -35,11 +35,11 @@ answer:
       $classes := $inputs.class ? [$inputs.class] : $keys(availabilityCache);
       $say := function($c) {(
         $a := $lookup($t.availabilityCache, $c);
-        $pct := $type($a.predictionPercentage) = "number" ? $a.predictionPercentage;
+        $pct := $num($a.predictionPercentage);
         $waiting := $contains($string($a.availability), "WL");
         $a ? $c & ": " & ($a.availabilityDisplayName ? $a.availabilityDisplayName : $a.availability)
           & ($waiting and $exists($pct) ? ", " & $string($pct) & "% chance to confirm, ixigo says " & $a.confirmTktStatus : "")
-          & ($waiting and $type($a.tgMultiplier) = "number" ? ", Alternate Travel Plan refund up to " & $string($a.tgMultiplier) & "x" : "")
+          & ($waiting and $exists($num($a.tgMultiplier)) ? ", Alternate Travel Plan refund up to " & $string($num($a.tgMultiplier)) & "x" : "")
       )};
       $lines := [$classes.$say($)];
       $count($lines) > 0 ? {

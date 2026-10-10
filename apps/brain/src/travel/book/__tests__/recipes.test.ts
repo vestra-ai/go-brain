@@ -203,6 +203,8 @@ describe('trains.between', () => {
     if (got.as !== 'options') throw new Error('not options');
     expect(got.page).toBe('https://www.ixigo.com/search/result/train/NDLS/MAO/06112026//1/0/0/0/ALL');
     expect(runs[0]!.plan.capture).toEqual([{ match: '/trains/v1/search/between/', required: true }, { match: '/api/v3/trains/availability', required: false }]);
+    // On the stage, the trains' class tiles come on screen and are drawn for the last picture.
+    expect(runs[0]!.plan).toMatchObject({ steps: [{ op: 'wait_for', match: '/trains/v1/search/between/' }, { op: 'scroll', times: 1 }], settleMs: 550 });
     // Never a call on another site: the page speed's captures are all www.ixigo.com's.
     expect(runs[0]!.plan.capture.every((c) => c.match.startsWith('/'))).toBe(true);
     expect(got.options).toHaveLength(25);
@@ -302,7 +304,12 @@ describe('buses.between', () => {
     const got = await engine.answer('buses.between', { from: 'Mumbai', to: 'North Goa', date: '2026-11-06' }, { tripId: 't_goa' });
     if (got.as !== 'options') throw new Error('not options');
     expect(got.page).toBe(RESULTS);
-    expect(runs[0]!.plan).toEqual({ capture: [{ match: '/buslist/v3/services$', required: true }] });
+    // On the stage, the buses' cards come on screen and are drawn for the last picture.
+    expect(runs[0]!.plan).toEqual({
+      capture: [{ match: '/buslist/v3/services$', required: true }],
+      steps: [{ op: 'wait_for', match: '/buslist/v3/services$' }, { op: 'scroll', times: 1 }],
+      settleMs: 550,
+    });
     expect(got.options).toHaveLength(71);
     expect(got.options[0]).toEqual({
       kind: 'bus',
@@ -320,7 +327,8 @@ describe('buses.between', () => {
       },
       rating: 4.6,
       highlights: ['VE AC Sleeper (2 + 1)', '16 h 25 m'],
-      facts: { bus_type: 'VE AC Sleeper (2 + 1)', seats_left: 31, duration_min: 985, reviews: 15 },
+      // What the page's own filters read (AC, sleeper), from the bus type: Go's wants pick on them.
+      facts: { bus_type: 'VE AC Sleeper (2 + 1)', seats_left: 31, duration_min: 985, reviews: 15, ac: true, sleeper: true },
       sourceUrl: RESULTS,
     });
     expect(got.options[1]!.priceMinor).toBe(300_000);

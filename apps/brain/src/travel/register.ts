@@ -202,13 +202,26 @@ export const registerTravel: RegisterLane = async (brain) => {
     placeFor: createPlaceFor({ pool: brain.pool, engine, images, log: brain.log }),
   });
   const today = tripToday(brain.pool, brain.now);
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today })) brain.tools.register(t);
+  // A stays card's top pick opened on the stage, as a person opens it: its card clicked on the results by its name, its
+  // page by its address if the click brings nothing (a watched read: a progress to follow puts it on the stage). Its
+  // details are kept by the engine for "tell me about this villa". Only where Go reads ixigo.com itself.
+  const showPick = (tripId: string, pick: { page: string; name: string }): void => {
+    if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
+    void engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).catch((err: unknown) => {
+      brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
+    });
+  };
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick })) brain.tools.register(t);
   // The budget the group decided: kept with set_budget, and in "Right now" for every turn, as strong context, never a filter.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
   brain.tools.register(budgetTool({ budgets }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
-  const recipesTool = ixigoTool({ book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
+  const recipesTool = ixigoTool({
+    book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    // Its runs on the stage, with a live card, as a search's are: the room watches every page Go opens.
+    card: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o),
+  });
   if (recipesTool) brain.tools.register(recipesTool);
   // How everyone gets to the trip, asked for: each home city's trains and buses side by side, on one card.
   brain.tools.register(
@@ -253,7 +266,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   // One still running is handed over, and the turn says nothing more: the live card covers the wait.
   brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, log: brain.log }));
   // A search that outlived its turn wakes Go with its options, and that wake puts them up itself: card and line.
-  brain.context.addDirect(searchWakeAnswer({ results, images }));
+  brain.context.addDirect(searchWakeAnswer({ results, images, showPick }));
   brain.context.addWake('search', renderSearchWake);
   // A turn that ends ends the live search cards it left open.
   brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));

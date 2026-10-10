@@ -10,7 +10,8 @@ import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../../composer/tools.js';
 import { clip } from '../cards.js';
 import { TravelError } from '../mcp-travel.js';
-import { SEARCH_RECIPES } from '../recipes/backend.js';
+import type { LiveSearch } from '../live-search.js';
+import { CARD_DELAY_MS, SEARCH_RECIPES, shownAfter } from '../recipes/backend.js';
 import type { Book } from './book.js';
 import type { Engine } from './engine.js';
 import type { ResultsStore } from '../results.js';
@@ -23,6 +24,12 @@ export interface IxigoToolDeps {
   results?: Pick<ResultsStore, 'get'>;
   /** Whether Go searches ixigo.com itself now (TRAVEL_MODE ixigo_web): the recipes run in the trip's browser. */
   live: () => boolean;
+  /**
+   * The live card for a run (live-search.ts): with it the run is watched, so its page opens on the stage where the room
+   * sees it, and the card shows it; posted only once the run outlasts CARD_DELAY_MS (a kept answer posts nothing).
+   */
+  card?: (tripId: string, o: { runKey: string; recipe: string }) => LiveSearch;
+  cardDelayMs?: number;
 }
 
 /** The recipes the tool offers: facts, open to anyone, changing nothing; never a search or a lookup. */
@@ -116,14 +123,23 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
         if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n, from a search.`, inputs: inputsOf(recipe) };
         given[name] = page;
       }
+      const make = d.card;
+      const live = make && recipe
+        ? shownAfter(d.cardDelayMs ?? CARD_DELAY_MS, () => make(ctx.tripId, { runKey: `${ctx.turnId ?? ''}|${a.recipe}|${JSON.stringify(given)}`, recipe: recipe.title }))
+        : null;
       try {
-        const answer = await d.engine.answer(a.recipe, given, { tripId: ctx.tripId });
+        const answer = await d.engine.answer(a.recipe, given, { tripId: ctx.tripId, ...(live ? { onProgress: live.progress } : {}) });
+        if (live) {
+          live.progress({ type: 'extracted', count: answer.as === 'facts' ? answer.rows.length : 0 });
+          await live.finish(answer.as === 'facts');
+        }
         if (answer.as !== 'facts') return { recipe: a.recipe, error: 'refused', note: 'This recipe answers with options: use the search tools.' };
         if (answer.rows.length === 0) {
           return { recipe: a.recipe, title: answer.title, facts: [], note: NOTHING_ON_IXIGO };
         }
         return { recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows, tell_the_room: NAMES_ONLY_FROM_IXIGO };
       } catch (err) {
+        if (live) await live.finish(false);
         if (!(err instanceof TravelError)) throw err;
         if (err.code === 'pick_place') return { recipe: a.recipe, choose: err.message };
         // The description says each input's name only: an answer that went wrong says them in full, to call again with.

@@ -198,6 +198,21 @@ describe('the live search card', () => {
     expect(r.cards().at(-1)).toMatchObject({ state: 'done', screenshot_url: null, page_url: null });
   });
 
+  it("names a recipe's card by the recipe (the ixigo tool's runs): what Go checks, three plain steps, and how it ended", async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_recipe', recipe: "A train's running status" });
+    live.progress({ type: 'opening', recipeId: 'trains.running_status', url: 'https://www.ixigo.com/trains/12779/running-status' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.cards().at(-1)).toMatchObject({
+      title: "Checking ixigo: a train's running status", state: 'running',
+      steps: [{ text: 'Opening ixigo', state: 'doing' }, { text: 'Reading the page', state: 'todo' }, { text: 'Answering', state: 'todo' }],
+    });
+    live.progress({ type: 'captured', ms: 2_000 });
+    live.progress({ type: 'extracted', count: 1 });
+    await live.finish(true);
+    expect(r.cards().at(-1)).toMatchObject({ state: 'done', fallback_text: "Go checked a train's running status on ixigo." });
+  });
+
   it("never fails on a pick: it says Go is choosing between ixigo's places, and the search after the pick ticks on in it", async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_pick', kind: 'trains', query: { from: 'Jaipur', to: 'Udaipur', date: '2026-10-20' } });
