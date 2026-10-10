@@ -103,8 +103,7 @@ These are the buttons Go usually puts on its cards:
 | `call` | `stop` | "Stop the call" | Everyone | Ends the call. |
 | `pay` | `approve` | "Approve" | The payer only | Opens the vault page, where the payer confirms with Face ID. |
 | `pay` | `decline` | "Decline" | The payer only | Declines the payment. |
-| `notice` (the ixigo login card) | `ixigo_login` | "Log in to ixigo" | The person asked only | Opens Go's screen at once, in control, with ixigo's log in coming up in it. Go sees the login land by itself and carries on. |
-| `notice` (the ixigo login card) | `ixigo_watch` | "Watch" | The person asked only | Opens Go's screen again while they log in. |
+| `notice` (the ixigo login card) | `ixigo_login` | "Log in to ixigo" | The person asked only | Opens Go's screen at once, in control, with ixigo's log in coming up in it, and opens it again while they log in. Go sees the login land by itself and carries on. There is no Watch button. |
 
 Good to know:
 - Disable a button while its tap is on the way, so a double tap sends one request.
@@ -119,9 +118,9 @@ Some pages that a tap opens close by themselves when Go is done with them. The i
 
 Close the view you opened when either of these happens:
 - That message arrives (a frame, or a window you opened yourself).
-- Go replaces the card you opened it from with one that has no `ixigo_watch` button. That means the login is over: logged in, back to its ask, or skipped.
+- Go replaces the card you opened it from with one that no longer offers `ixigo_login`. That means the person is logged in (the card offers `ixigo_logout`) or logged out.
 
-The system browser sheet can't hear the page, so it closes on the card. The ixigo login card carries `ixigo_watch` from the moment its "Log in to ixigo" opens the page, so the card alone never closes the view too early.
+The system browser sheet can't hear the page, so it closes on the card. While the person logs in, the card keeps offering `ixigo_login`, which opens the screen again, so the card alone never closes the view too early. When the login goes back to its ask or is skipped, the card still offers `ixigo_login`; Go ends the session then, and the page says the view has ended.
 
 ## Updating a card in place
 

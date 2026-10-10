@@ -11,14 +11,14 @@
  * (auth: login). The person logs in
  * themselves on Go's screen, with no model: their tap opens ixigo's log in box IN FRONT of the person's window on the
  * trip's computer (Bash's front browser fetch), clicks into its mobile number box and keeps the tab there for them; the
- * login card's Watch (theirs alone: nobody else sees the page) gives them control, and they type their own number and code. Go never sees
- * either. The login stays in the trip's browser profile, so every later fetch is logged in.
+ * same tap opens Go's screen for them (theirs alone, in control: nobody else sees the page), and they type their own number
+ * and code. Go never sees either. The login stays in the trip's browser profile, so every later fetch is logged in.
  *
- * One tap (Keshav, 10 Oct: "one click, live stream opens, login there, Go detects, and when back proceeds automatically"):
- * where Bash can read the browser's cookies, "Log in to ixigo" opens Watch at once, in control, and the page comes in front
- * inside it. Go sees the login land by itself, from ixigo's `at` cookie by its name and expiry alone (never its value),
- * then closes the tab and ends Watch's session, which closes the person's view, and carries on. "I'm logged in" shows
- * only when Go has seen nothing for SELF_CHECK_MS.
+ * One tap (Keshav, 10 Oct: "one click, live stream opens, login there, Go detects, and when back proceeds automatically",
+ * and "there is no point of watch buttons"): "Log in to ixigo" is the card's one button, and it opens Go's screen at once
+ * (Bash's Watch page) and again. Where Bash can read the browser's cookies, Go sees the login land by itself, from ixigo's
+ * `at` cookie by its name and expiry alone (never its value), then closes the tab and ends the screen's sessions, which
+ * closes the person's view, and carries on. "I'm logged in" shows only when Go has seen nothing for SELF_CHECK_MS.
  *
  * Whether the browser is logged in is ixigo's own answer: the calls its home page makes as it loads (LOGIN_CALLS), by
  * their status only, with one byte of each body kept, never read. The card then says "logged in as Keshav",
@@ -324,19 +324,19 @@ export function loginCard(
         ...(note === 'not_yet' ? { tone: 'heads_up' as const } : {}),
         title: 'Logging in to ixigo',
         body: note === 'not_yet'
-          ? 'Not logged in yet. Finish on Watch, then tap again.'
+          ? "Not logged in yet. Finish on Go's screen, then tap I'm logged in again."
           : note === 'opening'
             ? `Opening ixigo's log in on Go's screen for ${name}.`
             : o.selfCheck
-              ? `ixigo's log in is open on Go's screen. ${name}: log in there with your mobile number, and Go carries on by itself. Watch opens it again.`
-              : `ixigo's log in is open on Go's screen. ${name}: tap Watch, log in with your mobile number, then tap I'm logged in.`,
-        // Watch only for the person logging in (anyone else would watch them type their number), and only once the page
-        // is in front: while it opens, the card carries I'm logged in and Not now alone (the room says it is opening).
-        // A one-tap login has Watch open already, so Watch is on the card from the start (to open it again: a card with
-        // no Watch is a login over, and the App closes the view it opened from it), and no I'm logged in while Go
-        // watches the login land itself.
+              ? `ixigo's log in is open on Go's screen. ${name}: log in there with your mobile number, and Go carries on by itself. Log in to ixigo opens it again.`
+              : `ixigo's log in is open on Go's screen. ${name}: log in there with your mobile number, then tap I'm logged in. Log in to ixigo opens it again.`,
+        // Keshav, 10 Oct: "there is no point of watch buttons etc. Login button appears, click login, open the browser
+        // immediately, and when logged in automatically continue." One button opens Go's screen, and opens it again: Log in
+        // to ixigo, for the person logging in alone (anyone else would watch them type their number). A card that no
+        // longer offers it is a login over, and the App closes the view it opened from it. I'm logged in only once Go has
+        // seen nothing land for SELF_CHECK_MS, or where it can't see a login land at all.
         actions: [
-          ...(note === 'opening' && !o.selfCheck ? [] : [button('ixigo_watch', 'Watch', 'primary')]),
+          button('ixigo_login', 'Log in to ixigo', 'primary'),
           ...(o.selfCheck ? [] : [button('ixigo_logged_in', "I'm logged in", 'secondary')]),
           button('ixigo_not_now', 'Not now', 'secondary'),
         ],
@@ -679,8 +679,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       await release(row.tripId);
       await show(await loggedIn(now, { carryOn: true }));
     } else {
-      // The page is in front for them: now the card carries Watch. Then ixigo's Login and the mobile box, tapped on the
-      // page they watch (best effort: the page stays theirs if a tap finds nothing), and the page takes the keyboard.
+      // The page is in front for them: the card says so. Then ixigo's Login and the mobile box, tapped on the page they
+      // watch (best effort: the page stays theirs if a tap finds nothing), and the page takes the keyboard.
       await show(now);
       await runner.tabSteps?.(row.tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS })
         .catch((err: unknown) => d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's taps did not run"));
@@ -865,6 +865,21 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     track('log out', tripId, logout(row, why));
   }
 
+  /**
+   * Go's screen again for a log in already open: a fresh session in control, never a second page. A one-tap login with no
+   * wait running here (Go restarted since the tap) is watched again.
+   */
+  async function reopen(row: LoginRow): Promise<CardTapResult> {
+    try {
+      const s = await openWatch(row.tripId);
+      if (row.oneTap && d.runner()?.cookies) watchLogin(row);
+      return { result: 'open', url: s.url, expires_at: s.expires_at };
+    } catch (err) {
+      d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's screen did not open again");
+      return { result: 'refused', toast: "Can't open Go's screen right now" };
+    }
+  }
+
   /** A tap on the login card by the person it is for; anyone else is told whose it is. */
   const forPerson = (h: (row: LoginRow, tap: CardTapParams) => Promise<CardTapResult>) =>
     async (tap: CardTapParams): Promise<CardTapResult> => {
@@ -944,28 +959,26 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         const runner = d.runner();
         if (!d.live() || !runner?.handOff) return { result: 'refused', toast: "Go's computer isn't browsing ixigo right now." };
         if (row.state === 'logged_in') return { result: 'done', toast: 'ixigo is already logged in' };
-        // One hand-off per login: a tap while its page opens or is open (a double tap) starts nothing, not a second page
-        // over the first (Keshav, 8 Oct: the second one's measuring cut the page off).
+        // One hand-off per login: a tap while its page opens or is open (a double tap, or the person back for it) opens
+        // Go's screen again, never a second page over the first (Keshav, 8 Oct: the second one's measuring cut it off).
         const next = await claim(row);
-        if (!next) return { result: 'done', toast: "Already opening ixigo's log in" };
-        // One tap: where Go can read the browser's cookies, Watch opens now, in control, and the page comes in front in it.
-        // The `at` before the page loads is read first, to tell a login that lands from one the browser had.
+        if (!next) return reopen(row);
+        // Go's screen opens now, in control, and the page comes in front in it. Where Go can read the browser's cookies, it
+        // sees the login land by itself: the `at` before the page loads is read first, to tell a new login from the old.
         let watch: { url: string; expires_at: string } | null = null;
-        if (runner.cookies) {
-          try {
-            watch = await openWatch(row.tripId);
-          } catch (err) {
-            d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's Watch did not open; Watch comes on the card");
-          }
+        try {
+          watch = await openWatch(row.tripId);
+        } catch (err) {
+          d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's screen did not open; Log in to ixigo opens it again");
         }
         let shown = next;
-        if (watch) {
+        if (watch && runner.cookies) {
           const oneTap: OneTap = { tappedAt: d.now().getTime(), known: false, cookie: null };
           await d.pool.query("update ixigo_logins set one_tap = $3 where trip_id = $1 and attempt = $2 and state = 'logging_in'", [row.tripId, next.attempt, JSON.stringify(oneTap)]);
           shown = { ...next, oneTap };
         }
-        const before = watch ? loginCookie(row.tripId).then((at) => (at === undefined ? undefined : keepCookie(shown, at))).catch(() => undefined) : null;
-        // The card first (opening, no Watch yet), then the page: whatever the hand-off finds is said after it, never under it.
+        const before = shown.oneTap ? loginCookie(row.tripId).then((at) => (at === undefined ? undefined : keepCookie(shown, at))).catch(() => undefined) : null;
+        // The card first (opening), then the page: whatever the hand-off finds is said after it, never under it.
         const page = (async () => {
           await show(shown, 'opening');
           await handOff(shown, runner);
@@ -976,19 +989,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         return watch ? { result: 'open', url: watch.url, expires_at: watch.expires_at } : { result: 'done', toast: "Opening ixigo's log in on Go's screen" };
       }));
 
-      // Only the person logging in watches, with control: nobody else sees their number typed. Never a link in the chat:
-      // the tap opens it.
+      // Watch, on a login card from before Log in opened Go's screen itself (10 Oct): it opens the screen again, as Log in
+      // does now. Only the person logging in, with control: nobody else sees their number typed.
       taps.on('notice', 'ixigo_watch', forPerson(async (row) => {
         if (row.state !== 'logging_in' || !d.screen()) return { result: 'refused', toast: "ixigo's log in isn't open on Go's screen now" };
-        try {
-          const s = await openWatch(row.tripId);
-          // A one-tap login with no wait running here (Go restarted since the tap) is watched again.
-          if (row.oneTap && d.runner()?.cookies) watchLogin(row);
-          return { result: 'open', url: s.url, expires_at: s.expires_at };
-        } catch (err) {
-          d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's Watch did not open");
-          return { result: 'refused', toast: "Can't open Go's screen right now" };
-        }
+        return reopen(row);
       }));
 
       taps.on('notice', 'ixigo_logged_in', forPerson(async (row) => {

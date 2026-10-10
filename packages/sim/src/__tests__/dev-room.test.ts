@@ -891,24 +891,30 @@ describe('the login card and its sheet', () => {
     expect(p.opened()).toEqual([]);
   });
 
-  // One tap (10 Oct): Log in answers with Go's screen, and Go ends that session when it sees the login land.
-  it("one tap: Log in's answer is Go's screen, the sheet opens on it as the card says logging in, Watch is never tapped, and the session's end closes it", () => {
-    const ONE_TAP = ['ixigo_watch', 'ixigo_not_now'];
+  // One tap (10 Oct): Log in answers with Go's screen, the login card has no Watch, and Go ends that session when it sees
+  // the login land.
+  it("one tap: Log in's answer is Go's screen, the sheet opens on it at once, Watch is never tapped, and the session's end closes it", () => {
+    const ONE_TAP = ['ixigo_login', 'ixigo_not_now'];
     const p = pageInBrowser(LIVE_PAGE);
     p.messages([loginCard('asked')], 1000);
     p.tapCard(CARD, 'ixigo_login');
     p.receive(answer({ actionId: 'ixigo_login' }));
     expect(p.opened()).toEqual([]);
-    expect(p.el('sheet').hidden).toBe(true);
-    // Logging in, Watch on the card from the start: the sheet opens on the answer's screen, under Opening until its picture is up.
-    p.messages([loginCard('logging_in', ONE_TAP)], 1000);
+    // The screen is up at once, under Opening until its picture comes.
     expect(p.el('sheet').hidden).toBe(false);
     expect(p.el('sheet').className).toBe('sheet login');
     expect(p.el('login-frame').innerHTML).toBe(FRAME);
     expect(p.el('login-why').textContent).toBe(OPENING);
+    // Go turns the card to logging in: one Log in button (it opens the screen again) and Not now. The sheet stays.
+    p.messages([loginCard('logging_in', ONE_TAP)], 1000);
+    expect(p.el('sheet').hidden).toBe(false);
     p.post(embed('live'), ORIGIN);
     expect(p.el('login-wait').hidden).toBe(true);
-    p.messages([loginCard('logging_in', ONE_TAP)], 1000);
+    // Closed, then Log in again: the same screen comes back, with no second tap to Go.
+    p.click('sheet-close');
+    p.tapCard(CARD, 'ixigo_login');
+    expect(p.el('sheet').hidden).toBe(false);
+    expect(p.el('login-frame').writes).toBe(1);
     expect(p.sent()).toEqual([LOGIN_TAP]);
     // Go saw the login land and ended the session: Bash's page says so, and the sheet closes with its frame.
     p.post({ type: 'vestra:ended', session_id: 'ses_1' }, ORIGIN);
@@ -919,17 +925,18 @@ describe('the login card and its sheet', () => {
     expect(p.opened()).toEqual([]);
   });
 
-  it('one tap: a card that says logging in before Log in is answered taps no Watch; a Log in answered with no screen leaves Watch to the card', () => {
+  it('one tap: a card that says logging in before Log in is answered taps nothing more; a Log in answered with no screen leaves Watch to the card', () => {
     const early = pageInBrowser(LIVE_PAGE);
     early.messages([loginCard('asked')], 1000);
     early.tapCard(CARD, 'ixigo_login');
-    early.messages([loginCard('logging_in', ['ixigo_watch', 'ixigo_not_now'])], 1000);
+    early.messages([loginCard('logging_in', ['ixigo_login', 'ixigo_not_now'])], 1000);
     expect(early.sent()).toEqual([LOGIN_TAP]);
+    expect(early.el('sheet').hidden).toBe(true);
     early.receive(answer({ actionId: 'ixigo_login' }));
     expect(early.el('login-frame').innerHTML).toBe(FRAME);
     expect(early.el('sheet').hidden).toBe(false);
     expect(early.sent()).toEqual([LOGIN_TAP]);
-    // A Go without one tap answers Log in with a toast: Watch, once the card carries it, is tapped as before.
+    // A Go from before one tap answers Log in with a toast: Watch, once the card carries it, is tapped as before.
     const two = pageInBrowser(LIVE_PAGE);
     two.messages([loginCard('asked')], 1000);
     two.tapCard(CARD, 'ixigo_login');
