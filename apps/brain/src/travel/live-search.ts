@@ -198,6 +198,14 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: { runKey: 
         push();
         return;
       }
+      case 'waiting': {
+        // Said once, on the card in the room: the search is not lost, it runs as soon as the login is done.
+        const text = "ixigo's login is open on Go's screen: this runs once it's done or Not now";
+        if (card.steps.length > 3) card.steps[0] = { text, state: 'doing' };
+        else card.steps.unshift({ text, state: 'doing' });
+        push();
+        return;
+      }
       case 'captured':
         chosen();
         tick(0, 'done');

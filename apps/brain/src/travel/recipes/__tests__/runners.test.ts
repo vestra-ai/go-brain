@@ -4,7 +4,7 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
+  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS,
   LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, NothingCaughtError, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -246,6 +246,26 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     const stays = world(() => fetched([homeDoc(403)], HOME));
     expect(await createBrowserFetchRunner(stays.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [], challenged: true });
     expect(stays.calls).toHaveLength(1 + CHALLENGE_TRIES);
+  });
+
+  // Staging, 9 Oct 18:52:23: "I'm logged in", tapped right after the code was typed on Watch, met Bash's 4 s window for
+  // a person driving (409 browser_in_use), and the login read unknown.
+  it("a hand-off's page waits out a person still typing on Watch, a few times, and the check goes on", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const homeDoc = (status: number) => ({ ...capture('/$', HOME, '<', status), at_ms: 300 });
+    const WALLET = capture('/api/v3/ixigo-money/wallet', `${HOME}api/v3/ixigo-money/wallet`, '{', 200);
+    const plan: FetchPlan = { capture: [{ match: '/api/flights/locations/nearby', required: true, max_bytes: 1 }], timeoutMs: 12_000 };
+    const typing = world((_, n) => {
+      if (n <= 2) throw new V1Error(409, 'browser_in_use', 'A person is using the browser.');
+      return fetched([homeDoc(200), WALLET], HOME);
+    });
+    expect(await createBrowserFetchRunner(typing.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [WALLET] });
+    expect(typing.elapsed()).toBe(2 * IN_USE_WAIT_MS);
+    const still = world(() => {
+      throw new V1Error(409, 'browser_in_use', 'A person is using the browser.');
+    });
+    await expect(createBrowserFetchRunner(still.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).rejects.toMatchObject({ code: 'unreachable' });
+    expect(still.calls).toHaveLength(1 + HANDOFF_IN_USE_TRIES);
   });
 
   it("reads only the page's own address as its document: an API path ending in / that answers 403 on the home page is not the check", async () => {
@@ -509,18 +529,36 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(read.captures).toHaveLength(1);
   });
 
-  it('waits once for a person who just used the browser, then gives up', async () => {
-    const once = world((_, n) => {
-      if (n === 1) throw new V1Error(409, 'browser_in_use', 'A person has the browser.');
+  // Staging, 9 Oct: ixigo's login left open on the person's browser refused every search on it for 10 minutes, each
+  // "didn't work" after one wait, and Go fell back to a slow job.
+  it('waits for a person who has the browser (a login open on Go\'s screen), saying so once, and runs once it is free', async () => {
+    const said: RecipeProgress[] = [];
+    // The login is done a minute and a half on: 18 refusals, each asked again past Bash's 4 s.
+    const login = world((_, n) => {
+      if (n <= 18) throw new V1Error(409, 'browser_in_use', 'A person is finishing a sign-in on this browser.');
       return fetched([busCapture]);
     });
-    await createBrowserFetchRunner(once.deps).read('t1', BUSES, busPlan);
-    expect(once.elapsed()).toBe(IN_USE_WAIT_MS);
+    const read = await createBrowserFetchRunner(login.deps).read('t1', BUSES, busPlan, { onProgress: (e) => said.push(e) });
+    expect(read.captures).toHaveLength(1);
+    expect(login.elapsed()).toBe(18 * IN_USE_WAIT_MS);
+    expect(IN_USE_WAIT_MS).toBeGreaterThan(4_000);
+    expect(said.filter((e) => e.type === 'waiting')).toHaveLength(1);
+  });
+
+  it("stops waiting for the browser after a login's whole hold, or when its caller stops waiting", async () => {
     const always = world(() => {
       throw new V1Error(409, 'browser_in_use', 'A person has the browser.');
     });
     await fails(createBrowserFetchRunner(always.deps).read('t1', BUSES, busPlan), 'unreachable', /Someone is using/);
-    expect(always.calls).toHaveLength(2);
+    expect(always.elapsed()).toBeGreaterThanOrEqual(IN_USE_PATIENCE_MS);
+    expect(always.elapsed()).toBeLessThan(IN_USE_PATIENCE_MS + 2 * IN_USE_WAIT_MS);
+    const stop = new AbortController();
+    const caller = world(() => {
+      stop.abort();
+      throw new V1Error(409, 'browser_in_use', 'A person has the browser.');
+    });
+    await fails(createBrowserFetchRunner(caller.deps).read('t1', BUSES, busPlan, { signal: stop.signal }), 'unreachable', /Someone is using/);
+    expect(caller.calls).toHaveLength(1);
   });
 
   it("says plainly what went wrong, and puts Go's own setup faults in the admin log", async () => {
