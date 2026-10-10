@@ -42,7 +42,7 @@ export interface TravelToolDeps {
    * by its name (its page by its address when the click brings nothing), and what it says kept for the next question about
    * it (Keshav, 10 Oct: the group sees Go act on ixigo). Absent, nothing opens.
    */
-  showPick?: (tripId: string, pick: { page: string; name: string }) => void;
+  showPick?: (tripId: string, pick: { page: string; name: string; kind?: 'stay' | 'bus' }) => void;
 }
 
 const todayOf = (d: Pick<TravelToolDeps, 'today' | 'now'>, tripId: string): Promise<string> =>
@@ -366,9 +366,10 @@ export async function putUpCard(
   const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
   ctx.cards.push(shown);
   ctx.lines.push(given.line);
-  // The stays' top pick, its own page on the stage once its card is up: the room watches Go open it.
-  const top = set.optionKind === 'stay' ? ixigoPage(picks[0]?.option.sourceUrl ?? null) : null;
-  if (top) d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title });
+  // The top pick on the stage once its card is up, the room watching Go open it: a stay's own page, a bus's seat layout
+  // (its stops and cancellation, kept for "where do we board"). A bus's address carries its operator and time after "#".
+  const top = set.optionKind === 'stay' || set.optionKind === 'bus' ? ixigoPage(picks[0]?.option.sourceUrl ?? null) : null;
+  if (top && (set.optionKind === 'stay' || top.includes('#'))) d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title, kind: set.optionKind === 'bus' ? 'bus' : 'stay' });
   return { cardId, shown: shown.options.length };
 }
 
