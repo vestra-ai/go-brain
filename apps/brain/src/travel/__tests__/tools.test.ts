@@ -445,8 +445,9 @@ describe('put_to_vote', () => {
   });
 
   it('with no card_id, votes on the options card shown earlier in the same reply', async () => {
-    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_r1' }))) as any;
-    const reply = lb.ctx({ turnId: 'turn_r2' });
+    // Turns of its own: turn_r2 already showed a card of flights (above), which a rerun of that turn would show again.
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_nc1' }))) as any;
+    const reply = lb.ctx({ turnId: 'turn_nc2' });
     await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, reply);
     const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, reply)) as any;
     expect(out).toMatchObject({ decision_id: expect.any(String) });
