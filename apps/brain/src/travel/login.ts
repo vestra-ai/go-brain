@@ -377,7 +377,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function said(tripId: string, captures: Capture[], where: string): Promise<'in' | 'out' | 'unknown' | 'quiet'> {
     const { login, call, status: s, quiet } = loginFrom(captures);
     d.log.info(
-      { tripId, login, call, status: s, quiet: quiet === true, calls: captures.map((c) => `${c.match} ${c.status}`), where },
+      { tripId, login, call, status: s, ...(quiet ? { quiet: true } : {}), calls: captures.map((c) => `${c.match} ${c.status}`), where },
       'travel: ixigo said whether the trip computer is logged in',
     );
     // A quiet read is never kept as the browser's on its own: the read that confirms it says so (ended).
