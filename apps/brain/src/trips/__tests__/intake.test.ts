@@ -75,7 +75,7 @@ function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswer
     reflex: () => reflex, runningTasks: async () => [], waitMs: 2_000, ...(o.away ? { away: o.away } : {}),
   });
   const send = (e: TripEvent) => intake.sendEvent(e, { instance: 'test', frameId: `gs_${e.event_id}` });
-  return { intake, send, f, order, emitted, packs };
+  return { intake, send, f, order, emitted, packs, tripLog };
 }
 
 const open = async (tripId: string) =>
@@ -90,6 +90,25 @@ describe('intake', () => {
     expect(await h.send(e)).toEqual({ accepted: true, duplicate: true });
     await h.intake.idle();
     expect(h.emitted).toEqual([e.event_id]);
+  });
+
+  it('answers send_event once the event is kept, never after its work: work that never finishes holds no answer, mandate.set too', async () => {
+    // GO-TEAM-FINAL §6, 10 Oct: mandate.set took 2,142 ms to answer, and the promise is 2 s.
+    const T = 't_in_answer_first';
+    const h = harness();
+    h.tripLog.onEvent((e) => (e.trip_id === T ? new Promise<void>(() => {}) : undefined));
+    expect(await h.send(created(T))).toEqual({ accepted: true, duplicate: false });
+    const mandate = ev(2, 'mandate.set', {
+      decision_id: 'd_villa',
+      mandate: { choice_index: 0, cap_minor: 6_000_000, currency: 'INR', refundable_only: false, payer_person_id: 'p_rahul', set_at: '2026-10-10T10:00:00Z' },
+    }, T);
+    expect(await h.send(mandate)).toEqual({ accepted: true, duplicate: false });
+    expect(await h.send(mandate)).toEqual({ accepted: true, duplicate: true });
+    // Kept, though the first event's work still hangs and the second's has not started.
+    await vi.waitFor(() => expect(h.emitted).toContain(created(T).event_id));
+    expect(h.emitted).not.toContain(mandate.event_id);
+    const { rows } = await db.pool.query<{ seq: number }>('select seq from trip_events where trip_id = $1 order by seq', [T]);
+    expect(rows.map((r) => r.seq)).toEqual([1, 2]);
   });
 
   it("keeps the Server instance that first brought the trip: the person's browser is keyed by it (tasks/browsers.ts)", async () => {

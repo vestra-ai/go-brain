@@ -291,7 +291,13 @@ const KIND_WORDS: Record<OptionKind, [string, string]> = {
  * askBudget (stays, while nobody has a budget band): "Add my budget" takes the place of "See all on ixigo", after the
  * group's own buttons; each option's "See on ixigo" stays only if there is still room in the three.
  */
-export function buildOptionsCard(i: { cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean; askBudget?: boolean }): OptionsCardT {
+/**
+ * An options card. forPersonIds: a card for those people alone (each person's own flights, flights-each.ts): the room
+ * sees it, and only they act on it, each tap their own.
+ */
+export function buildOptionsCard(i: {
+  cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean; askBudget?: boolean; forPersonIds?: string[];
+}): OptionsCardT {
   const priced = i.picks.filter((p) => p.option.priceMinor !== undefined);
   const cheapest = [...priced].sort((a, b) => (a.option.priceMinor ?? 0) - (b.option.priceMinor ?? 0))[0];
   const from = cheapest ? `, from ${formatInr(cheapest.option.priceMinor ?? 0)}${cheapest.option.priceNote ? ` ${cheapest.option.priceNote}` : ''}` : '';
@@ -305,7 +311,8 @@ export function buildOptionsCard(i: { cardId: string; title: string; optionKind:
     option_kind: i.optionKind,
     checked_at: i.checkedAt,
     options: i.picks.map(cardOption),
-    actions: optionsActions(i),
+    actions: i.forPersonIds ? optionsActions(i).map((a) => ({ ...a, only_for_person_ids: i.forPersonIds })) : optionsActions(i),
+    ...(i.forPersonIds ? { for_person_ids: i.forPersonIds } : {}),
   });
 }
 

@@ -210,7 +210,7 @@ The group set ₹20,000 each:
 }
 ```
 
-When the group settles one in the chat (the organizer says it, or two people agree), Go sets it with `update_trip`. It is a whole number of at least 1 in the trip's currency. Missing or `null` leaves it as it is, so Go cannot clear it: a person clears it in the App. Go sends only a budget for the whole trip; one the group set only for the stay or for getting there stays Go's own.
+When one person names a figure in the chat, the organizer too, Go offers to make it the trip's budget ("Set ₹20,000 a head as the trip's budget?", with Yes and No as `quick_replies`), once, and never asks anyone for a budget otherwise. It sets it with `update_trip` only on the group's yes: the organizer's yes to that offer, or two people agreeing. It is a whole number of at least 1 in the trip's currency. Missing or `null` leaves it as it is, so Go cannot clear it: a person clears it in the App. Go sends only a budget for the whole trip; one the group set only for the stay or for getting there stays Go's own.
 
 <!-- schema: UpdateTrip -->
 ```json

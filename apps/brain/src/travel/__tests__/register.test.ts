@@ -51,12 +51,13 @@ describe('registerTravel', () => {
     expect(lb.setup.steps.find((s) => s.name === 'travel.stays_head_start')).toMatchObject({ after: 'travel.ixigo_warm' });
     // The ixigo tool runs the book's other recipes (the destination guide and more).
     // compare_ways_there: each home city's ways to the trip, side by side (the composite trip.how_we_get_there).
+    // search_flights_each: each person's own flights from their home city, on cards for them alone (trip.flights_each).
     // watch_ixigo and stop_watch: the watches a group asks Go to keep on ixigo (travel/recipe-watches.ts).
     // set_budget: the budget the group decided, kept for every turn (trip-budget.ts).
     // ixigo_login: the login card when someone in the chat asks to log in to ixigo (again) (login.ts askNow).
-    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'set_budget', 'ixigo', 'ixigo_login', 'compare_ways_there', 'watch_ixigo', 'stop_watch']);
+    expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'set_budget', 'ixigo', 'ixigo_login', 'compare_ways_there', 'search_flights_each', 'watch_ixigo', 'stop_watch']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual([
-      'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/see_on_ixigo',
+      'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/pay_flight', 'notice/see_on_ixigo',
       'options/add_budget', 'options/book_mine', 'options/change', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
       // The rooms card's pick (REV4 B5, rooms-card.ts).
       'rooms/pick',
@@ -117,6 +118,8 @@ describe('registerTravel', () => {
     const MINE = stableId('c_mine', 'tap_f1');
     await eventually(() => lb.link.sent('post_message').some((p) => (p.card as { card_id?: string })?.card_id === MINE));
     const mine = C.OptionsCard.parse(lb.link.sent('post_message').find((p) => (p.card as { card_id?: string })?.card_id === MINE)!.card);
+    // Her confirm is hers alone to see (1.2), as well as to act on.
+    expect(lb.link.sent('post_message').find((p) => (p.card as { card_id?: string })?.card_id === MINE)!['visible_to_person_ids']).toEqual(['p_meher']);
     expect(mine).toMatchObject({ title: 'Book IndiGo 6E2150 for you, ₹11,571?', for_person_ids: ['p_meher'], options: [{ option_id: 'opt_fl1', title: 'IndiGo 6E2150' }] });
     expect(mine.actions).toEqual([
       { action_id: 'book_mine', label: 'Book it', style: 'primary', per_option: true, only_for_person_ids: ['p_meher'] },

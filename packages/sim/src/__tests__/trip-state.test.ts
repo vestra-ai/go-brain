@@ -109,6 +109,16 @@ describe('post_message and replace_card', () => {
     }
   });
 
+  // Contract 1.2: a message only some people see (a traveller's own flights, an owner-only note). Kept as posted.
+  it('keeps who may see a message, and refuses someone outside the trip', () => {
+    const { s } = setUp();
+    const done = post(s, 'rq_seen', { text: 'Your flights from Pune', visible_to_person_ids: ['p_priya'] });
+    expect(s.messages.at(-1)?.visible_to_person_ids).toEqual(['p_priya']);
+    const ev = done.events[0]!;
+    if (ev.type === 'message.created') expect(ev.data.message.visible_to_person_ids).toEqual(['p_priya']);
+    expect(err(() => post(s, 'rq_seen_2', { text: 'x', visible_to_person_ids: ['p_stranger'] })).code).toBe(422);
+  });
+
   it('does a write once per request_id, and a refused write leaves nothing behind', () => {
     const { s } = setUp();
     const first = post(s, 'rq_1', { text: 'once' });

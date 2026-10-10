@@ -7,9 +7,11 @@ import type { RegisterLane } from '../app.js';
 import { loadBook } from './book/book.js';
 import { createEngine } from './book/engine.js';
 import { ixigoTool, runOnStage, toolRecipes } from './book/tool.js';
+import { createFlightBooking } from './booking/flight-booking.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
+import { flightsEachTool } from './flights-each.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
 import { createIxigoLogin, ixigoLoginTool, renderLoginResume } from './login.js';
@@ -277,6 +279,10 @@ export const registerTravel: RegisterLane = async (brain) => {
       slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')),
     }),
   );
+  // Each person's own flights from their home city, on cards for them alone (B7): one page per city, posted as it lands.
+  brain.tools.register(
+    flightsEachTool({ engine, results, link: brain.door.link, now: brain.now, log: brain.log, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' }),
+  );
   // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
   // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
   // A watch's first check reads what Go's searches keep before a page, and one already so puts its card up.
@@ -293,7 +299,16 @@ export const registerTravel: RegisterLane = async (brain) => {
   watchEvery.unref();
   const stopWatchChecks = (): void => clearInterval(watchEvery);
   brain.onStop(stopWatchChecks);
-  registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
+  // "Book it" on a person's own flight: Go books it on the stage up to ixigo's pay button when FLIGHT_BOOKING is on.
+  const nameOf = async (tripId: string, personId: string): Promise<string> =>
+    (await brain.packs.get(tripId)).trip.people.find((p) => p.person_id === personId)?.name ?? 'you';
+  const booking = createFlightBooking({
+    pool: brain.pool, nameOf, runner: () => brain.recipeRunners?.browserFetch ?? null, link: brain.door.link, switches: brain.switches, now: brain.now, log: brain.log,
+    // Money registers after travel: its Pay is read when Pay is tapped.
+    pay: () => brain.pay,
+    login,
+  });
+  registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf });
   // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
   // on the turn that says so; a tap keeps the way picked, for the expense per room (B6, chosenArrangement).
   const roomsCards = createRoomsCards(brain.pool);
