@@ -335,13 +335,14 @@ describe('logging in', () => {
     expect(w.starts).toEqual([]);
     // ixigo's home page in FRONT of Rahul's window (as a phone: Bash's front), the tab kept there for him for Bash's most;
     // the calls ixigo's own code makes as the page loads caught, one byte each, read by their status only. Only the page's
-    // content (logged in or out) is waited for, Bash's one required capture, then up to 3 s for the login's own calls. Not
-    // the nearby flights call: ixigo's home stopped making it (10 Oct), and every read timed out on it.
+    // own document (logged in or out, every load has it) is waited for, Bash's one required capture, then up to 3 s for
+    // the login's own calls. Not the nearby flights call: gone from the home page's 04:31 load (10 Oct), and every read
+    // after timed out on it.
     expect(LOGIN_URL).toBe('https://www.ixigo.com/');
     expect(HANDOFF_MS).toBe(600_000);
     expect(LOGIN_CALLS).toEqual({
       capture: [
-        { match: '/action/content', required: true, max_bytes: 1 },
+        { match: '/$', required: true, max_bytes: 1 },
         { match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 },
         { match: '/api/profile/secure/booking/with-identity', required: false, max_bytes: 1 },
         { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 },
@@ -591,6 +592,21 @@ describe("ixigo's answer, from the calls its page makes as it loads (staging, 9 
     expect(loginFrom([call(USERINFO, 200)]).login).toBe('unknown');
     // A login's own call that worked says in, whatever userinfo said.
     expect(loginFrom([call(USERINFO, 403), call(WALLET, 200)]).login).toBe('in');
+  });
+
+  // What Bash answers of a load, in its own order: once the required captures are in, grace_ms more for the rest.
+  const keptBy = (plan: typeof LOGIN_CALLS, arrivals: Array<{ match: string; atMs: number; status: number }>): Capture[] => {
+    const ready = Math.max(...plan.capture.filter((c) => c.required).map((c) => arrivals.find((a) => a.match === c.match)?.atMs ?? Infinity));
+    return arrivals.filter((a) => a.atMs <= ready + (plan.graceMs ?? 0)).map((a) => call(a.match, a.status));
+  };
+  it("waits for the page's own document alone, then long enough for a woken box's login calls (P1a, 10 Oct: the wallet 1.8 s after it)", () => {
+    // Never a call ixigo may stop making: the nearby call was made at 03:39 and gone from the 04:31 load.
+    expect(LOGIN_CALLS.capture.filter((c) => c.required).map((c) => c.match)).toEqual(['/$']);
+    const doc = { match: '/$', atMs: 700, status: 200 };
+    expect(loginFrom(keptBy(LOGIN_CALLS, [doc, { match: WALLET, atMs: 2_500, status: 200 }, { match: IDENTITY, atMs: 2_500, status: 200 }])).login).toBe('in');
+    expect(loginFrom(keptBy(LOGIN_CALLS, [doc, { match: WALLET, atMs: 2_500, status: 401 }])).login).toBe('out');
+    // A logged-out load makes none of them: the read answers once the grace is over, and says what the calls say.
+    expect(loginFrom(keptBy(LOGIN_CALLS, [doc])).login).toBe('unknown');
   });
 
   it("I'm logged in on the 08:40 page reads in, and the log says which call and its status, never what it answered", async () => {
@@ -929,8 +945,8 @@ describe('logging out', () => {
     expect(await w.tap('ixigo_logout', 'p_rahul')).toEqual({ result: 'done', toast: 'Logging out of ixigo' });
     expect(w.reads.at(-2)).toEqual({
       url: 'https://www.ixigo.com/',
-      // Bash takes no fetch without a required capture or a page_fetch step: the home page's content is it.
-      plan: { capture: [{ match: '/action/content', required: true, max_bytes: 1 }], steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }], timeoutMs: 15_000 },
+      // Bash takes no fetch without a required capture or a page_fetch step: the home page's document is it.
+      plan: { capture: [{ match: '/$', required: true, max_bytes: 1 }], steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }], timeoutMs: 15_000 },
     });
     expect(w.reads.at(-1)).toEqual({ url: 'https://www.ixigo.com/', plan: LOGIN_CALLS });
     expect(await w.state()).toBe('logged_out');

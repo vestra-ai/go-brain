@@ -30,7 +30,7 @@ import type { Packs, TripPack } from '../trips/pack.js';
 import type { Tasks } from '../tasks/tasks.js';
 import { TravelError } from './mcp-travel.js';
 import { IXIGO, type Capture, type FetchPlan } from './recipes/recipe.js';
-import { ChallengedError, type RecipeRunner } from './recipes/runners.js';
+import { ChallengedError, pageDoc, type RecipeRunner } from './recipes/runners.js';
 import type { BrowserLogin, Browsers } from '../tasks/browsers.js';
 
 /**
@@ -43,24 +43,24 @@ export const IDENTITY = '/api/profile/secure/booking/with-identity';
 /** ixigo's userinfo call: refused (401 or 403), the login the page holds is gone. */
 export const USERINFO = '/api/v2/oauth/userinfo';
 /**
- * Calls ixigo's page makes as it loads whether or not it is logged in: its content service, behind every block of the
- * home page (six calls, 1.4 to 2.0 s into a load; staging, 10 Oct 04:31), in the same burst as the login's own calls, so
- * once the first is in, theirs are under way. It was the nearby flights call until ixigo's home stopped making it (10
- * Oct): every read waited for it, timed out and said unknown, a logged-in browser too.
+ * The home page's own document, the one answer every load has (a Cloudflare check's too, which then reads as one), so the
+ * read never hangs on a call ixigo may stop making. It was the nearby flights call: made at 03:39 on 10 Oct, gone from
+ * the 04:31 load, and every read after waited for it, timed out and said unknown, a logged-in browser too. The login's
+ * own calls come after the document, inside Bash's grace: the wallet about 1.8 s after it on a woken box (P1a, 10 Oct).
  */
-const PAGE_CONTENT = '/action/content';
+const HOME_DOC = pageDoc(`${IXIGO}/`);
 /** How long the page may take to show its log in box; past it the tab stays in front for the person all the same. */
 export const HANDOFF_PAGE_MS = 12_000;
 /**
  * Whether the browser is logged in, from ixigo's own calls as its home page loads, one byte each, by their status only.
  * None of the login's calls is waited for (a logged-in page never calls userinfo, a logged-out one calls none of them):
- * the page's content is, as the one required capture, then up to Bash's most (3 s) for the login's calls. Bash refuses a
+ * the page's document is, as the one required capture, then up to Bash's most (3 s) for the login's calls. Bash refuses a
  * fetch with no required capture and no page_fetch step (400 invalid_request; staging, 9 Oct 13:24, every hand-off). A
  * page_fetch of a login call of Go's own can't stand in: it is 403 logged in or out (WALLET).
  */
 export const LOGIN_CALLS: FetchPlan = {
   capture: [
-    { match: PAGE_CONTENT, required: true, max_bytes: 1 },
+    { match: HOME_DOC, required: true, max_bytes: 1 },
     ...[WALLET, IDENTITY, USERINFO].map((match) => ({ match, required: false, max_bytes: 1 })),
   ],
   steps: [],
@@ -467,10 +467,10 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     const runner = d.runner();
     if (runner) {
       try {
-        // The home page's content is the one capture Bash waits for: it refuses a fetch with none required and no
+        // The home page's document is the one capture Bash waits for: it refuses a fetch with none required and no
         // page_fetch step (400 invalid_request), so a plan of clicks alone never ran.
         await runner.read(row.tripId, `${IXIGO}/`, {
-          capture: [{ match: PAGE_CONTENT, required: true, max_bytes: 1 }],
+          capture: [{ match: HOME_DOC, required: true, max_bytes: 1 }],
           steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }],
           timeoutMs: 15_000,
         });
