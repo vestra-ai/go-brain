@@ -426,7 +426,7 @@ describe("a live card belongs to its search's turn", () => {
 });
 
 describe('a fast answer', () => {
-  it('posts no live card when the run answers within 1.5 s; a slower run shows its card, with the steps it missed', async () => {
+  it('posts no live card for an answer with no page to open; a run that opens one shows its card at once, with every step', async () => {
     vi.useFakeTimers();
     try {
       expect(CARD_DELAY_MS).toBe(1_500);
@@ -435,16 +435,21 @@ describe('a fast answer', () => {
         seen.push('card');
         return { progress: (e: { type: string }) => seen.push(e.type), finish: async (ok: boolean) => { seen.push(ok ? 'done' : 'failed'); } };
       };
-      const quick = createIxigoWebBackend({ book, engine: scripted().engine, now, live: live as never });
+      // A kept answer (or a fast call): no page opened, so no card, before or after 1.5 s.
+      const kept = { answer: async () => ({ as: 'options' as const, options: [OPTION], page: 'https://www.ixigo.com/x', checkedAt: '2026-10-07T12:00:03.000Z', ms: 40 }) };
+      const quick = createIxigoWebBackend({ book, engine: kept as never, now, live: live as never });
       await quick.search('trains', TRAINS, { tripId: 't_goa' });
       await vi.advanceTimersByTimeAsync(2_000);
       expect(seen).toEqual([]);
+      // A page on the stage: its card the moment it opens (10 Oct: the live view 1.5 s sooner), never after the delay.
       const slow = scripted();
       slow.hold();
       const b = createIxigoWebBackend({ book, engine: slow.engine, now, live: live as never });
       const run = b.search('trains', TRAINS, { tripId: 't_goa' });
-      await vi.advanceTimersByTimeAsync(CARD_DELAY_MS);
+      await vi.advanceTimersByTimeAsync(0);
       expect(seen).toEqual(['card', 'opening']);
+      await vi.advanceTimersByTimeAsync(CARD_DELAY_MS);
+      expect(seen.filter((x) => x === 'card')).toHaveLength(1);
       slow.release();
       await run;
       expect(seen).toEqual(['card', 'opening', 'captured', 'extracted', 'done']);
