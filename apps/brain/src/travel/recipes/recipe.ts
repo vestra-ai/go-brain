@@ -13,6 +13,11 @@ export interface CaptureSpec {
   /** False when the answer can be read without it, so a fetch that timed out with it missing still answers. */
   required: boolean;
   max_bytes?: number;
+  /**
+   * "last": an event stream whose every event is the whole answer so far (ixigo's flights) comes as its last complete event
+   * alone, max_bytes being that event's (Bash's most: 4 MB). A Bash that predates it is sent none (runners.ts).
+   */
+  sse?: 'last';
   /** Bash waits for this many matching responses (pages) before it answers, and keeps at most max_count. */
   min_count?: number;
   max_count?: number;
@@ -62,9 +67,12 @@ export function matches(match: string, url: string): boolean {
   return path.endsWith(match.slice(0, -1));
 }
 
-/** The bodies of the successful responses that answer a match, in the order they came. */
-export function bodiesFor(captures: Capture[], match: string): string[] {
-  return captures.filter((c) => c.status >= 200 && c.status < 300 && !c.truncated && matches(match, c.url)).map((c) => c.body);
+/**
+ * The bodies of the successful responses that answer a match, in the order they came. A body cut at its cap is left out,
+ * but for an event stream (events): its complete events are whole answers, and the reader drops the one cut partway.
+ */
+export function bodiesFor(captures: Capture[], match: string, events = false): string[] {
+  return captures.filter((c) => c.status >= 200 && c.status < 300 && (events || !c.truncated) && matches(match, c.url)).map((c) => c.body);
 }
 
 export function addDays(date: string, days: number): string {

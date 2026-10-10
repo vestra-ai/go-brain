@@ -95,6 +95,8 @@ export interface TravelSearch {
   runId?: string;
   /** The results page it read on ixigo.com, where the whole list is (ixigo_web). */
   page?: string;
+  /** ixigo's list came cut short: these are the first it sent (a long flights stream past what Bash keeps), not all of it. */
+  cut?: true;
   /** The page's own lines about the whole list, for the model (ixigo's Smart Lock for a route). */
   notes?: string[];
   /** Buses: the group's stay each bus's nearest drop was measured from, and whose it is ("Casa Anjuna, the stay you voted for"). */
