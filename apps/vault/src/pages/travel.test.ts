@@ -62,7 +62,7 @@ describe('travel details on the vault page', () => {
     expect(res.json()).toEqual(MEHER);
     const log = (await v.pool.query("select * from unlock_log where person_id = 'p_meher' and kind = 'travel_read'")).rows;
     expect(log).toHaveLength(1);
-    expect(log[0]).toMatchObject({ trip_id: 't_goa', approval_id: 'fb_01JA7Q3V8Z', reason: 'Flight to Goa, 6 Nov' });
+    expect(log[0]).toMatchObject({ trip_id: 't_goa', booking_ref: 'fb_01JA7Q3V8Z', approval_id: null, reason: 'Flight to Goa, 6 Nov' });
     expect(JSON.stringify((await v.pool.query("select * from unlock_log where person_id = 'p_meher'")).rows)).not.toMatch(/Kapoor|1996-03-14|female/);
     // The person sees when it was used, and what for.
     const { path, cookie } = await unlocked('p_meher', meher, 'add_travel');

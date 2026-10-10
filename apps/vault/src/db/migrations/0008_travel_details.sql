@@ -16,6 +16,9 @@ alter table unlock_log add constraint unlock_log_kind_check check (kind in (
   'travel_saved', 'travel_read', 'travel_deleted'
 ));
 
+-- The booking a travel details read was for (Go's flight booking run id): its own column, never approval_id.
+alter table unlock_log add column booking_ref text;
+
 -- A link Go opens straight at the travel details.
 alter table links drop constraint links_start_check;
 alter table links add constraint links_start_check check (start in ('home', 'add_card', 'add_travel'));

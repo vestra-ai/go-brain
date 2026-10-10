@@ -17,6 +17,8 @@ export interface UnlockEntry {
   kind: UnlockKind;
   cardId?: string;
   approvalId?: string;
+  /** The booking a travel details read was for (Go's flight booking run id). */
+  bookingRef?: string;
   tripId?: string;
   amountMinor?: number;
   currency?: string;
@@ -41,12 +43,12 @@ export interface UnlockRow {
 export async function logUnlock(db: Db, at: Date, e: UnlockEntry): Promise<void> {
   await db.query(
     `insert into unlock_log (person_id, at, kind, card_id, approval_id, trip_id, amount_minor, currency, merchant,
-       passkey_ok, approval_ok, rail, rail_ref, reason)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+       passkey_ok, approval_ok, rail, rail_ref, reason, booking_ref)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
     [
       e.personId, at, e.kind, e.cardId ?? null, e.approvalId ?? null, e.tripId ?? null,
       e.amountMinor ?? null, e.currency ?? null, e.merchant ?? null, e.passkeyOk ?? null, e.approvalOk ?? null,
-      e.rail ?? null, e.railRef ?? null, e.reason ?? null,
+      e.rail ?? null, e.railRef ?? null, e.reason ?? null, e.bookingRef ?? null,
     ],
   );
 }

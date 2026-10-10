@@ -87,7 +87,7 @@ export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (ap
     const now = deps.now();
     const details = await travelForBooking(deps.pool, master, now, { personId, travellerPersonId: booking.traveller_person_id });
     if (!details) return reply.code(404).send({ error: { code: 'none', message: 'no travel details kept' } });
-    await logUnlock(deps.pool, now, { personId, kind: 'travel_read', tripId, approvalId: booking.ref, reason: booking.purpose });
+    await logUnlock(deps.pool, now, { personId, kind: 'travel_read', tripId, bookingRef: booking.ref, reason: booking.purpose });
     return { first_name: details.first_name, last_name: details.last_name, gender: details.gender, dob: details.dob };
   });
 

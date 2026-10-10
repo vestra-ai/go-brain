@@ -25,7 +25,7 @@ export function homePage(): string {
 <p class="muted">For a ticket Go books for you when the trip's ixigo account has none of yours. Only Go's booking reads them, never the chat.</p>
 <p id="travel-used" class="fine" hidden></p>
 <form id="travel-form">
-<label for="t-first">First name as on your ID</label><input id="t-first" class="field" autocomplete="given-name" maxlength="40" required>
+<label for="t-first">First and middle name as on your ID</label><input id="t-first" class="field" autocomplete="given-name" maxlength="40" required>
 <label for="t-last">Last name as on your ID</label><input id="t-last" class="field" autocomplete="family-name" maxlength="40" required>
 <label for="t-gender">Gender</label><select id="t-gender" class="field" required><option value="">Choose</option><option value="male">Male</option><option value="female">Female</option></select>
 <label for="t-dob">Date of birth</label><input id="t-dob" class="field" type="date" autocomplete="bday" required>

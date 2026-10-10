@@ -41,7 +41,7 @@ export interface VaultClient {
   homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel' }): Promise<{ url: string; expiresAt: string }>;
   /**
    * A person's travel details for a ticket of their own Go is booking (booking.travellerPersonId is them; the vault refuses
-   * anyone else), or null when they kept none. The values go only into the booking's own form: never a log line, the
+   * anyone else; booking.ref is the flight booking's run id), or null when they kept none. The values go only into the booking's own form: never a log line, the
    * model, memory, a card or a picture.
    */
   travelDetails(i: { tripId: string; personId: string; booking: { ref: string; travellerPersonId: string; purpose: string } }): Promise<TravelDetails | null>;
