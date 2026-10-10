@@ -43,6 +43,53 @@ describe('trains.schedule', () => {
     expect(stops[0]).toBe('C Shivaji Mah T (CSMT): starts, departs 07:10, day 1, platform 18, usual delay On Time');
     expect(stops[19]).toBe('Madgaon (MAO): arrives 21:55, ends, day 1, platform 5, 765 km, usual delay 17min');
   });
+
+  // The page's own data (its hidden input "dataBE", the sample's cut to the train, its stops, fares and stations).
+  it("adds the train's rake, speeds, rating and rake sharing, and each class's fare with its Tatkal charge", async () => {
+    const got = await facts('trains.schedule', { train: '10103' }, [capture('/trains/10103$', 'https://www.ixigo.com/trains/10103', sample('trains.schedule.html'))]);
+    expect(got.rows[0]).toMatchObject({
+      rake: 'LHB', average_speed: '39 km/h', top_speed: '120 km/h', distance: '581 km', rating: '3.0 of 5',
+      rake_sharing: 'RSA - Rake Sharing; 10104 - 20111 - 20112 - 10103; 3 Rakes; PM @ MAO; ISO Certified Train; '
+        + '10104/Mandovi Express 20111/Konkan Kanya SF Express 20112/Konkan Kanya SF Express 10103/Mandovi Express',
+      fares: ['1A: ₹2,605, Tatkal ₹400 more', 'SL: ₹390, Tatkal ₹111 more', '3A: ₹1,070, Tatkal ₹293 more', '2A: ₹1,540, Tatkal ₹400 more'],
+    });
+  });
+
+  it('still answers from its tables when the page comes without its data', async () => {
+    const bare = sample('trains.schedule.html').replace(/<input type="hidden"[^>]*id="dataBE"[^>]*>/, '');
+    expect(bare).not.toContain('dataBE');
+    const got = await facts('trains.schedule', { train: '10103' }, [capture('/trains/10103$', 'https://www.ixigo.com/trains/10103', bare)]);
+    expect(got.rows[0]).toMatchObject({ train: '10103 Mandovi Express', type: 'Mail Express' });
+    expect(got.rows[0]!['stops']).toHaveLength(20);
+    expect(got.rows[0]).not.toHaveProperty('rake');
+    expect(got.rows[0]).not.toHaveProperty('fares');
+  });
+});
+
+describe('trains.boarding_stations', () => {
+  const PAGE = 'https://www.ixigo.com/trains/10103';
+  const page = () => [capture('/trains/10103$', PAGE, sample('trains.schedule.html'))];
+
+  it('lists the booked station and every stop after it, before the last, by code or name', async () => {
+    const got = await facts('trains.boarding_stations', { train: '10103', from: 'CSMT', to: 'MAO' }, page());
+    expect(got.page).toBe(PAGE);
+    expect(got.title).toBe('Train 10103 boarding points');
+    const points = got.rows[0]!['boarding_points'] as string[];
+    expect(points).toHaveLength(19);
+    expect(points[0]).toBe('C Shivaji Mah T (CSMT): departs 07:10, day 1');
+    expect(points[18]).toBe('Karmali (KRMI): departs 20:22, day 1');
+    const named = (await facts('trains.boarding_stations', { train: '10103', from: 'thane', to: 'Thivim' }, page())).rows[0]!['boarding_points'] as string[];
+    expect([named.length, named[0], named[14]]).toEqual([15, 'Thane (TNA): departs 07:55, day 1', 'Pernem (PERN): departs 19:34, day 1']);
+  });
+
+  it('says a station that is not a stop, and a booking the wrong way round, with no points', async () => {
+    const missing = await facts('trains.boarding_stations', { train: '10103', from: 'JP', to: 'MAO' }, page());
+    expect(missing.rows[0]).toMatchObject({ not_a_stop: 'JP: not among its stops' });
+    expect(missing.rows[0]).not.toHaveProperty('boarding_points');
+    const back = await facts('trains.boarding_stations', { train: '10103', from: 'MAO', to: 'CSMT' }, page());
+    expect(back.rows[0]).toMatchObject({ wrong_way: 'It reaches CSMT before MAO' });
+    expect(back.rows[0]).not.toHaveProperty('boarding_points');
+  });
 });
 
 describe('trains.running_status', () => {

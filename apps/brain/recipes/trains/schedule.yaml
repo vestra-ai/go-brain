@@ -1,21 +1,27 @@
 id: trains.schedule
-title: A train's route and timetable, stop by stop, with its days, classes, platforms and usual delay
+title: A train's route and timetable, stop by stop, with its days, classes, platforms and usual delay, its rake, speed, rating and fares
 asks:
   - 10103 ka route
   - mandovi express stops
   - what time does 10103 reach madgaon
+  - is 12015 an lhb train, how fast does it go
+  - 10103 mein tatkal kitna extra hai
 inputs:
   train: { kind: text, about: "the train's 5-digit number (trains.by_name finds it from a name)" }
 auth: none
 changes_state: false
 # ixigo's train page is plain server-rendered HTML (no data call): a table of the train's facts (classes, days, stops,
 # duration, type, pantry) and a table of its stops, one row each: code, name, arrives, departs, stop time, distance,
-# platform, route, day and its average delay. The page also shows the coach order, which is not a table (not read here).
+# platform, route, day and its average delay. Its own data (html_inputs, "dataBE") adds the rake, the speeds, the
+# rating, the rake sharing and each class's full-route fare with its Tatkal charge; a page without it still answers
+# with its tables. The coach order is trains.coach_position's.
 page: /trains/{train}
 capture:
   - { match: "/trains/{train}$", max_bytes: 1000000 }
 read:
   rows: { from: "/trains/{train}$", format: html_tables, list: "[ $ ]" }
+  also:
+    data: { from: "/trains/{train}$", format: html_inputs, value: inputs.dataBE }
 answer:
   as: facts
   title: "Train {train}"
@@ -26,6 +32,8 @@ answer:
       $info := $table("Classes");
       $stops := $table("Stn Code");
       $facts := $count($info) > 0 ? $merge($map($info, function($r) { { $r[0]: $r[1] } }));
+      $about := $data.info;
+      $fares := $data.fare;
       {
         "train": $substringBefore(title, " Train Route"),
         "route": $substringAfter(title, " | "),
@@ -34,6 +42,16 @@ answer:
         "takes": $lookup($facts, "Duration"),
         "type": $lookup($facts, "Type"),
         "pantry": $lookup($facts, "Pantry"),
+        "rake": $about.rakeType,
+        "average_speed": $exists($about.avgSpeedInKmph) ? $string($about.avgSpeedInKmph) & " km/h",
+        "top_speed": $exists($about.maxPermissibleSpeedInKmph) ? $string($about.maxPermissibleSpeedInKmph) & " km/h",
+        "distance": $exists($about.totalDistanceInKm) ? $string($about.totalDistanceInKm) & " km",
+        "rating": $about.averageRating ? $about.averageRating & " of 5",
+        "rake_sharing": $about.rakeSharing ? $replace($about.rakeSharing, /\s*☆\s*/, "; "),
+        "fares": $fares ? [$keys($fares).(
+          $f := $lookup($fares, $);
+          $ & ": " & $rupees($f.normalFare) & (($data.tatkalQuota and $f.tatkalCharges) ? ", Tatkal " & $rupees($f.tatkalCharges) & " more" : "")
+        )],
         "stops": [$map($stops, function($r, $i) { $i > 0 ? (
           $r[1] & " (" & $r[0] & "): " & ($r[2] = "starts" ? "starts" : "arrives " & $r[2]) & ", " & ($r[3] = "ends" ? "ends" : "departs " & $r[3])
             & ", day " & $r[8] & ($r[6] != "-" ? ", platform " & $r[6] : "") & ($r[5] != "0" ? ", " & $r[5] : "")
@@ -44,4 +62,6 @@ answer:
 ttl_minutes: 60
 samples: { page: trains.schedule.html }
 measured: { fast_ms: null, page_ms: 9570, flow_ms: null }
-notes: The platforms and delays are ixigo's usual ones, not today's (trains.running_status). Day 2 is the next day.
+notes: >-
+  The platforms and delays are ixigo's usual ones, not today's (trains.running_status). Day 2 is the next day. The
+  fares are for the whole route, first station to last, per person.
