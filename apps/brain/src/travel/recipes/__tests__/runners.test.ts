@@ -4,8 +4,8 @@ import { TravelError } from '../../mcp-travel.js';
 import type { RecipeProgress } from '../progress.js';
 import type { FetchPlan } from '../recipe.js';
 import {
-  BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS, STAGE_MS, STAGE_TAB,
-  LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, NothingCaughtError, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, WARM_TAB_MS, type FetchTrace,
+  BASH_MAX_BYTES, BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS, STAGE_MS, STAGE_TAB,
+  LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, NothingCaughtError, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, SSE_UNSUPPORTED_MS, WARM_TAB_MS, type FetchTrace,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -156,6 +156,46 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     // A 400 that names another step is not this one: never asked again.
     const other = world(() => {
       throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'steps.1' });
+    });
+    await createBrowserFetchRunner(other.deps).read('t1', page, plan).catch(() => undefined);
+    expect(other.calls).toHaveLength(1);
+  });
+
+  // ixigo's flights stream is growing snapshots, the whole list last, and on a long route that last event alone is past
+  // Bash's 1 MB (Delhi to Dubai, 10 Oct: 613 flights, 2.1 MB in three events). The capture asks Bash for it alone (sse
+  // "last", up to 4 MB). A Bash from before sse takes no unknown field in a capture: its 400 names the capture (param), and
+  // Go asks the same fetch again for the whole stream, cut at Bash's most, and sends none for a while.
+  it('sends a capture its sse "last" and its 4 MB; a Bash that refuses it gets the whole stream at 1 MB, for a while', async () => {
+    const STREAM = '/flights/v2/search/stream';
+    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=DXB&date=13112026';
+    const plan: FetchPlan = { capture: [{ match: STREAM, required: true, max_bytes: 4_194_304, sse: 'last' }] };
+    const answer = fetched([capture(STREAM, `https://www.ixigo.com${STREAM}`, 'data:{"data":{}}\n\n')], page);
+    const asked = (w: ReturnType<typeof world>) => w.calls.map((c) => (c.opts['body'] as { capture: unknown[] }).capture[0]);
+    const last = { match: STREAM, max_bytes: 4_194_304, sse: 'last' };
+    const whole = { match: STREAM, max_bytes: BASH_MAX_BYTES };
+    // A Bash that takes it.
+    const today = world(() => answer);
+    await createBrowserFetchRunner(today.deps).read('t1', page, plan);
+    expect(asked(today)).toEqual([last]);
+    // One that predates it: refused before anything opens, then the same fetch for the whole stream.
+    const older = world((c) => {
+      const caps = (c.opts['body'] as { capture: Array<Record<string, unknown>> }).capture;
+      if (caps.some((x) => 'sse' in x)) throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'capture.0' });
+      return answer;
+    });
+    const runner = createBrowserFetchRunner(older.deps);
+    expect((await runner.read('t1', page, plan)).captures).toHaveLength(1);
+    expect(asked(older)).toEqual([last, whole]);
+    expect(older.log.warn).toHaveBeenCalledOnce();
+    // For a while after, none is sent: one fetch each. Past SSE_UNSUPPORTED_MS it is asked again, in case Bash has it now.
+    await runner.read('t1', page, plan);
+    expect(asked(older)).toEqual([last, whole, whole]);
+    await older.deps.sleep(SSE_UNSUPPORTED_MS);
+    await runner.read('t1', page, plan);
+    expect(asked(older)).toEqual([last, whole, whole, last, whole]);
+    // A 400 that names another capture (the page's own document, second) is not this one: never asked again.
+    const other = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'capture.1' });
     });
     await createBrowserFetchRunner(other.deps).read('t1', page, plan).catch(() => undefined);
     expect(other.calls).toHaveLength(1);

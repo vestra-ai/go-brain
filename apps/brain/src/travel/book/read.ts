@@ -74,7 +74,7 @@ export function unreadBecause(recipe: RecipeFile, captures: Capture[]): 'not_sen
 export async function shapeOf(recipe: RecipeFile, captures: Capture[], bindings: Record<string, unknown> = {}): Promise<{ events?: number; values: number; rows: number }> {
   const read = recipe.read;
   if (!read) return { values: 0, rows: 0 };
-  const raw = bodiesFor(captures, read.rows.from);
+  const raw = bodiesFor(captures, read.rows.from, read.rows.format === 'sse');
   let events: number | undefined;
   const values: unknown[] = [];
   for (const text of raw) {
@@ -151,7 +151,7 @@ export async function readPath(path: string, body: unknown, bindings: Record<str
 
 /** One response body a recipe reads, by its capture's match. */
 function body(captures: Capture[], match: string, format: BodyFormat, required: boolean, what: string): unknown {
-  const raw = bodiesFor(captures, match);
+  const raw = bodiesFor(captures, match, format === 'sse');
   if (raw.length === 0) {
     if (required) throw new TravelError('refused', `ixigo's page did not send ${what}.`);
     return undefined;
@@ -172,15 +172,10 @@ async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<
   const listed = await readPath(read.rows.list, rowsBody, bindings);
   let rows: unknown[] = Array.isArray(listed) ? listed : listed === undefined ? [] : [listed];
   if (read.rows.unique) {
-    const seen = new Set<string>();
-    const kept: unknown[] = [];
-    for (const row of rows) {
-      const key = JSON.stringify(await evaluate(read.rows.unique, row, bindings) ?? null);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      kept.push(row);
-    }
-    rows = kept;
+    // One row a key, the last copy winning, in the order keys first came: a stream's later snapshot carries a revised fare.
+    const byKey = new Map<string, unknown>();
+    for (const row of rows) byKey.set(JSON.stringify(await evaluate(read.rows.unique, row, bindings) ?? null), row);
+    rows = [...byKey.values()];
   }
   return rows;
 }

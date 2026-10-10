@@ -39,12 +39,15 @@ let:
   # What people asked for, in ixigo's own params, and the cheapest first (the param ixigo's "Price / Low to High" writes).
   params: |
     $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), "sort_type=cheapest"]), "&")
-# ixigo's results page; its own call, /flights/v2/search/stream, is a stream of server-sent events whose one data line holds
-# every fare (staging, 9 Oct: 145 for Delhi to Goa, 313 KB). Its inputs, conditions and page are flights.search's, the
-# link that stands in for this one when ixigo refuses our boxes' shared address (403 or 429 under a burst, 9 Oct).
+# ixigo's results page; its own call, /flights/v2/search/stream, is a stream of server-sent events, one to three of them,
+# each the whole list so far (10 Oct: 15, 101, then 139 flights for Delhi to Goa; 57, 272, then 613 for Delhi to Dubai,
+# 2.1 MB, the last event alone past 1 MB). So Bash keeps only the last complete event (sse: last), up to its 4 MB; a Bash
+# that predates it sends the stream whole, cut at 1 MB, and the reader takes every whole event in it, a flight's last copy
+# winning. Its inputs, conditions and page are flights.search's, the link that stands in for this one when ixigo refuses
+# our boxes' shared address (403 or 429 under a burst, 9 Oct).
 page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children=0&infants=0&class=e&source=Search%20Form&{$params|raw}
 capture:
-  - { match: /flights/v2/search/stream, max_bytes: 1048576 }
+  - { match: /flights/v2/search/stream, max_bytes: 4194304, sse: last }
 read:
   rows: { from: /flights/v2/search/stream, format: sse, list: data.flightJourneys.flightFare, unique: flightKeys }
   also:

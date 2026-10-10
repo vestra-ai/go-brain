@@ -68,6 +68,10 @@ describe('the recipe helpers', () => {
     const url = 'https://www.ixigo.com/a';
     const cut = { ...capture('/a', url, '{"half":'), truncated: true };
     expect(bodiesFor([capture('/a', url, 'one'), capture('/a', url, 'two', 500), cut, capture('/a', url, 'three')], '/a')).toEqual(['one', 'three']);
+    // An event stream's cut body still holds whole events: it is read, and the reader drops the one cut partway.
+    const stream = { ...capture('/a', url, 'data:{"n":1}\n\ndata:{"n":'), truncated: true };
+    expect(bodiesFor([stream, capture('/a', url, 'two', 500)], '/a', true)).toEqual(['data:{"n":1}\n\ndata:{"n":']);
+    expect(bodiesFor([stream], '/a')).toEqual([]);
   });
 
   it('write dates and times as ixigo and India read them', () => {

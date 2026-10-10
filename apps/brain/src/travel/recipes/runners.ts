@@ -261,6 +261,30 @@ function refusedLook(err: V1Error, steps: Step[] | undefined): boolean {
   const step = at ? steps[Number(at[1])] : undefined;
   return step?.op === 'click' && step.within_ms !== undefined;
 }
+
+/** Bash's most for one body; past it, up to 4 MB, only an event stream's last event with sse "last". */
+export const BASH_MAX_BYTES = 1_048_576;
+/**
+ * How long Go sends no sse "last" after a Bash refused it (one that predates it: its captures take no unknown field): the
+ * stream then comes whole, cut at Bash's most, and the reader takes the union of its complete events. Once Bash has it, it
+ * is sent again within this, with no deploy of Go's.
+ */
+export const SSE_UNSUPPORTED_MS = 10 * 60_000;
+
+/** A capture as a Bash with no sse "last" takes it: no sse, and no more than Bash's most. */
+const withoutSse = <C extends { sse?: 'last'; max_bytes?: number }>(c: C): C => {
+  if (c.sse === undefined) return c;
+  const { sse: _sse, ...rest } = c;
+  return { ...rest, ...(c.max_bytes !== undefined && c.max_bytes > BASH_MAX_BYTES ? { max_bytes: BASH_MAX_BYTES } : {}) } as C;
+};
+
+/** Bash refused the fetch for a capture's sse: its 400 names that capture (param "capture.0"), never by its message. */
+function refusedSse(err: V1Error, capture: Array<{ sse?: 'last' }>): boolean {
+  if (err.status !== 400 || err.code !== 'invalid_request') return false;
+  const param = err.detail?.['param'];
+  const at = typeof param === 'string' ? /^capture\.(\d+)(?:\.|$)/.exec(param) : null;
+  return at !== null && capture[Number(at[1])]?.sse !== undefined;
+}
 /**
  * COLD_COMPUTER. A computer's Chrome on its first ixigo visit, with none of ixigo's cookies, can draw a page that never
  * makes its search call (staging, 8 Oct: a new trip's first stays search sat 12 s on skeletons under ixigo's popup, with
@@ -403,7 +427,7 @@ function fetchFailed(
   if (err.status === 504) {
     const partial = (err.detail?.['partial'] as { captures?: unknown; step?: unknown } | undefined) ?? {};
     const got = Array.isArray(partial.captures) ? partial.captures.filter(isCapture).map((c) => ({ ...c, truncated: c.truncated === true })) : [];
-    if (what.capture.every((c) => !c.required || bodiesFor(got, c.match).length > 0)) return got;
+    if (what.capture.every((c) => !c.required || bodiesFor(got, c.match, c.sse !== undefined).length > 0)) return got;
     // Bash's words ("stopped at 2 wait_for"), where it stopped, what it caught by then (statuses only) and what the read
     // was: the admin log keeps them. Bash's words go under bash: Railway's log takes a field named message for the line's
     // own, and lost the step (9 Oct, 14:55).
@@ -468,6 +492,13 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   const warm = new Set<string>();
   /** Until when a click's within_ms is left out: Bash refused it (LOOK_UNSUPPORTED_MS). */
   let noLookUntil = 0;
+  /** Until when no capture's sse "last" is sent: Bash refused it (SSE_UNSUPPORTED_MS). */
+  let noSseUntil = 0;
+  /** A capture's size, and its sse "last" unless a Bash refused it lately (then no more than Bash's most). */
+  const sizeOf = (c: CaptureSpec): { max_bytes?: number; sse?: 'last' } => {
+    const size = { ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}), ...(c.sse ? { sse: c.sse } : {}) };
+    return c.sse && d.now().getTime() < noSseUntil ? withoutSse(size) : size;
+  };
 
   /** One browser fetch: the page opened, its steps worked, and the calls the plan names kept. */
   async function fetchPage(
@@ -487,7 +518,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         ...plan.capture.map((c) => ({
           match: c.match,
           ...(plan.graceMs ? { required: c.required } : c.besides ? { required: false } : {}),
-          ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
+          ...sizeOf(c),
           ...(c.min_count ? { min_count: c.min_count } : {}),
           ...(c.max_count ? { max_count: c.max_count } : {}),
         })),
@@ -565,6 +596,13 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           noLookUntil = d.now().getTime() + LOOK_UNSUPPORTED_MS;
           body = { ...body, steps: withoutLook(body.steps) };
           d.log.warn({ tripId, page: what.id }, "travel: this Bash takes no within_ms on a click yet; its optional clicks look once");
+          continue;
+        }
+        // The same for a capture's sse "last": the stream whole, cut at Bash's most, read as the union of its events.
+        if (refusedSse(err, body.capture)) {
+          noSseUntil = d.now().getTime() + SSE_UNSUPPORTED_MS;
+          body = { ...body, capture: body.capture.map(withoutSse) };
+          d.log.warn({ tripId, page: what.id }, "travel: this Bash takes no sse on a capture yet; the stream comes whole, cut at 1 MB");
           continue;
         }
         // CLOUDFLARE: a page still on the check when its time ran out, opened again; never its pictures.
@@ -698,7 +736,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     let body = {
       url,
       capture: [
-        ...plan.capture.map((c) => ({ match: c.match, ...(plan.graceMs ? { required: c.required } : {}), ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}) })),
+        ...plan.capture.map((c) => ({ match: c.match, ...(plan.graceMs ? { required: c.required } : {}), ...sizeOf(c) })),
         docCapture(doc),
       ],
       ...(steps.length ? { steps } : {}),
@@ -757,14 +795,14 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   }
 
   async function onStage(tripId: string, plan: FetchPlan, o: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }> {
-    const body = {
+    let body = {
       tab: STAGE_TAB,
       stage: true,
       keep_open_ms: STAGE_MS,
       capture: plan.capture.map((c) => ({
         match: c.match,
         ...(plan.graceMs ? { required: c.required } : c.besides ? { required: false } : {}),
-        ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
+        ...sizeOf(c),
         ...(c.min_count ? { min_count: c.min_count } : {}),
         ...(c.max_count ? { max_count: c.max_count } : {}),
       })),
@@ -774,14 +812,22 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
       ...(o.tag ? { tag: o.tag } : {}),
     };
-    try {
-      const userId = await d.browser.userFor(tripId);
-      const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
-      if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
-      return { captures: answer.captures, finalUrl: typeof answer.final_url === 'string' ? answer.final_url : '' };
-    } catch (err) {
-      if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') throw new TravelError('unreachable', 'The stage has no page open.');
-      throw err instanceof V1Error ? new TravelError('unreachable', `The stage's step did not answer (${err.status}).`) : err;
+    for (;;) {
+      try {
+        const userId = await d.browser.userFor(tripId);
+        const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
+        if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
+        return { captures: answer.captures, finalUrl: typeof answer.final_url === 'string' ? answer.final_url : '' };
+      } catch (err) {
+        // A Bash with no sse "last" yet: the same steps again, the stream whole (SSE_UNSUPPORTED_MS).
+        if (err instanceof V1Error && body.capture.some((c) => c.sse !== undefined) && refusedSse(err, body.capture)) {
+          noSseUntil = d.now().getTime() + SSE_UNSUPPORTED_MS;
+          body = { ...body, capture: body.capture.map(withoutSse) };
+          continue;
+        }
+        if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') throw new TravelError('unreachable', 'The stage has no page open.');
+        throw err instanceof V1Error ? new TravelError('unreachable', `The stage's step did not answer (${err.status}).`) : err;
+      }
     }
   }
 

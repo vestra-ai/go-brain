@@ -416,13 +416,41 @@ describe('flights.results', () => {
     expect(got.as === 'options' && got.options.map((o) => o.title)).toEqual(['Air-India Express IX1196', 'IndiGo 6E328 + 6E5106', 'Air-India Express IX1108', 'IndiGo 6E5341']);
   });
 
+  // ixigo's stream is growing snapshots, the whole list last (Delhi to Dubai, 10 Oct: 57, 272 and 613 flights in three
+  // events, 2.1 MB). Bash's sse "last" sends that last event alone; an older Bash sends every event, and cuts a long stream
+  // at 1 MB. Each reads every flight once, a flight's newest copy winning; a cut stream reads the whole events before the cut.
+  it("reads the whole list: the last event alone, or every event with a flight's newest fare winning; a cut stream its whole events", async () => {
+    const value = JSON.parse(fixture('flights-del-goi-2026-11-13.sse').trim().slice('data:'.length)) as { data: { flightJourneys: Array<{ flightFare: Array<Record<string, any>> }> } };
+    const base = value.data.flightJourneys[0]!.flightFare[0]!;
+    const flight = (i: number, fare = 8_630 + i) => ({
+      ...base, flightKeys: `DEL-GOI-IX${1000 + i}-13112026`, fares: [{ ...base.fares[0], fareDetails: { ...base.fares[0].fareDetails, displayFare: fare } }],
+    });
+    // A snapshot of the first n flights; the first flight's fare revised in this one when asked.
+    const snapshot = (n: number, revised?: number) => `data:${JSON.stringify({
+      ...value, data: { ...value.data, flightJourneys: [{ ...value.data.flightJourneys[0], flightFare: Array.from({ length: n }, (_, i) => flight(i, i === 0 ? revised : undefined)) }] },
+    })}\n\n`;
+    const read = async (c: ReturnType<typeof capture>) => {
+      const got = await engineWith(() => [c]).engine.answer('flights.results', GIVEN, { tripId: 't_dxb' });
+      if (got.as !== 'options') throw new Error(got.as);
+      return { count: got.options.length, first: got.options.find((o) => o.title === 'Air-India Express IX1000')?.priceMinor };
+    };
+    // Bash with sse "last": the last event alone.
+    expect(await read(capture(STREAM, STREAM_URL, snapshot(613, 7_000)))).toEqual({ count: 613, first: 700_000 });
+    // An older Bash, the stream whole: every event's flights once each, the last copy's fare.
+    const stream = snapshot(57) + snapshot(272) + snapshot(613, 7_000);
+    expect(await read(capture(STREAM, STREAM_URL, stream))).toEqual({ count: 613, first: 700_000 });
+    // An older Bash cutting it at 1 MB, partway through the third event: the first two events' 272 flights.
+    const cut = stream.slice(0, snapshot(57).length + snapshot(272).length + 500);
+    expect(await read({ ...capture(STREAM, STREAM_URL, cut), truncated: true })).toEqual({ count: 272, first: 863_000 });
+  }, 30_000);
+
   it("reads the flights from ixigo's stream: each one's airline and numbers, its fare per person, its times and stops", async () => {
     const { engine, runs } = engineWith(() => [capture(STREAM, STREAM_URL, fixture('flights-del-goi-2026-11-13.sse'))]);
     const got = await engine.answer('flights.results', GIVEN, { tripId: 't_goa' });
     if (got.as !== 'options') throw new Error(got.as);
     expect(runs[0]!.url).toContain('/search/result/flight?from=DEL&to=GOI&date=13112026&');
-    // Bash's most a capture keeps (1 MB): a long route's stream is never cut short of it.
-    expect(runs[0]!.plan.capture).toEqual([{ match: STREAM, required: true, max_bytes: 1_048_576 }]);
+    // The stream's last event alone, the whole list, up to Bash's 4 MB for it (sse "last").
+    expect(runs[0]!.plan.capture).toEqual([{ match: STREAM, required: true, max_bytes: 4_194_304, sse: 'last' }]);
     expect(got.options.map((o) => o.title)).toEqual(['Air-India Express IX1196', 'IndiGo 6E328 + 6E5106', 'Air-India Express IX1108', 'IndiGo 6E5341']);
     expect(got.options[0]).toMatchObject({
       kind: 'flight', priceMinor: 863_000, currency: 'INR', priceNote: 'per person',
