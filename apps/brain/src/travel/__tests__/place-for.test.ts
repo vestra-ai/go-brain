@@ -80,6 +80,27 @@ describe("a place by its words, as ixigo knows it (contract 1.1's Place)", () =>
   });
 });
 
+describe("a destination's photos (the Server team's 10 Oct B3)", () => {
+  it("are the guide's, labelled, through Go's image cache: the place itself first, then its places to visit by name", async () => {
+    const goa: Suggestion = { name: 'Goa', line: 'India', all: false, country: 'India', placeName: 'Goa', place: { locationId: 48569, locationType: 'S' } };
+    const runner = { read: async (_t: string, url: string) => ({ captures: [capture('/plan/goa$', url, sample('plan.destination.html'))], finalUrl: url }) };
+    const guideEngine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-08T12:00:00Z') });
+    const engine = { suggest: async () => goa, answer: guideEngine.answer };
+    const images = { rehostUrl: async (u: string) => `https://go.test/img/${u.split('/').at(u.endsWith('/public') ? -2 : -1)!.slice(0, 12)}.jpg` };
+    const got = await createPlaceFor({ pool: memoryPool() as never, engine: engine as never, images })('Goa', { tripId: 't_goa' });
+    const photos = got!.place.photos!;
+    expect(photos).toHaveLength(12);
+    expect(photos.slice(0, 4)).toEqual([
+      { url: 'https://go.test/img/goa.jpg', label: 'Goa, India' },
+      { url: expect.stringMatching(/^https:\/\/go\.test\/img\//), label: 'Baga Beach' },
+      { url: expect.stringMatching(/^https:\/\/go\.test\/img\//), label: 'Dudhsagar Falls' },
+      { url: expect.stringMatching(/^https:\/\/go\.test\/img\//), label: 'Cape Goa Cliff' },
+    ]);
+    expect(got!.place.photo_url).toBe('https://go.test/img/goa.jpg');
+    expect(C.Place.parse(got!.place)).toEqual(got!.place);
+  });
+});
+
 describe("ixigo's hotel box, asked for one place", () => {
   it('answers the pick a person would make, with its region, its country and where it is', async () => {
     const runner = {

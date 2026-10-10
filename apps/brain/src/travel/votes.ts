@@ -33,12 +33,16 @@ function stayQuestion(question: string, offers: StoredOffer[]): string {
   return question.replace(new RegExp(`\\b(${kind})(s?)\\b`, 'gi'), (_w, k: string, s: string) => `${k[0] === k[0]!.toUpperCase() ? 'S' : 's'}tay${s}`);
 }
 
-interface VoteOption { label: string; image_url?: string; price_minor?: number; currency?: string; option_ref?: string; note?: string }
+interface VoteOption { label: string; image_url?: string; price_minor?: number; currency?: string; option_ref?: string; note?: string; photos?: C.Photo[] }
 
 /** The other answer of a one-option vote: no offer behind it, so nothing is ever booked when it wins. */
 export const KEEP_LOOKING = 'Keep looking';
 
-function voteOptions(offers: StoredOffer[], shown: Map<string, { image_url?: string | null | undefined; subtitle?: string | null | undefined }>): VoteOption[] {
+/** photos: as the options card shows them, the top pick's labelled ones once its page was read (pick-photos.ts, 10 Oct B3). */
+function voteOptions(
+  offers: StoredOffer[],
+  shown: Map<string, { image_url?: string | null | undefined; subtitle?: string | null | undefined; photos?: C.Photo[] | null | undefined }>,
+): VoteOption[] {
   return offers.slice(0, 10).map((of) => {
     const c = shown.get(of.optionId);
     const price = of.totalMinor ?? of.priceMinor;
@@ -48,6 +52,7 @@ function voteOptions(offers: StoredOffer[], shown: Map<string, { image_url?: str
       ...(price !== null ? { price_minor: price, currency: of.currency ?? 'INR' } : {}),
       option_ref: of.optionId,
       ...(c?.subtitle ? { note: clip(c.subtitle, 120) } : {}),
+      ...(c?.photos?.length ? { photos: c.photos } : {}),
     };
   });
 }

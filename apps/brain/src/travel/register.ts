@@ -35,6 +35,7 @@ import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
+import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
@@ -213,11 +214,17 @@ export const registerTravel: RegisterLane = async (brain) => {
   // A stays card's top pick opened on the stage, as a person opens it: its card clicked on the results by its name, its
   // page by its address if the click brings nothing (a watched read: a progress to follow puts it on the stage). Its
   // details are kept by the engine for "tell me about this villa". Only where Go reads ixigo.com itself.
-  const showPick = (tripId: string, pick: { page: string; name: string }): void => {
+  // Its page's own photos, labelled, then replace the search's on its card (pick-photos.ts, 10 Oct B3).
+  const showPick = (tripId: string, pick: TopPick): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
-    void engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).catch((err: unknown) => {
-      brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
-    });
+    void engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).then(
+      (got) => showPickPhotos({ results, images, link: brain.door.link }, tripId, pick, got).catch((err: unknown) => {
+        brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's photos didn't reach its card");
+      }),
+      (err: unknown) => {
+        brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
+      },
+    );
   };
   // Where the group stays (booked, else the vote's winner, else the latest stays card's top pick): each bus's nearest drop.
   const groupStay = createGroupStay({ trip: async (tripId) => (await brain.packs.get(tripId)).trip, results });

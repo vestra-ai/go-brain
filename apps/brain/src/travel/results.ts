@@ -3,7 +3,7 @@
  * offers on those cards. An option_id on a card, and a vote option's option_ref, both name a row here.
  */
 import type pg from 'pg';
-import type { Journey, Place } from '@go/contract';
+import type { Journey, Photo, Place } from '@go/contract';
 import type { OptionsCardT } from './cards.js';
 import { mintId } from './ids.js';
 import type { StoredOffer, TravelOption } from './travel.js';
@@ -75,6 +75,11 @@ export interface ResultsStore {
     checkedAt: string,
   ): Promise<void>;
   card(tripId: string, cardId: string): Promise<OptionsCardRow | null>;
+  /**
+   * One option's photos on a card Go put up (the top pick's labelled ones, the Server team's 10 Oct B3), nothing else on
+   * the card changed: the card as kept now, or null when the trip has no such card or the card no such option.
+   */
+  setPhotos(tripId: string, cardId: string, optionId: string, photos: Photo[]): Promise<OptionsCardT | null>;
   /** True when the card had no vote, or this same key had already claimed it. */
   claimVote(cardId: string, key: string): Promise<boolean>;
   setDecision(cardId: string, decisionId: string): Promise<void>;
@@ -211,6 +216,19 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
       return r
         ? { cardId: r.card_id, tripId: r.trip_id, resultsId: r.results_id, title: r.title, optionKind: r.option_kind, card: r.card, decisionId: r.decision_id, voteKey: r.vote_key }
         : null;
+    },
+
+    async setPhotos(tripId, cardId, optionId, photos) {
+      // One statement, so a card read between two writes is never half changed: the option's photos set in place, its order kept.
+      const { rows } = await pool.query<{ card: OptionsCardT }>(
+        `update options_cards set card = jsonb_set(card, '{options}', (
+           select jsonb_agg(case when o->>'option_id' = $3 then o || jsonb_build_object('photos', $4::jsonb) else o end order by i)
+           from jsonb_array_elements(card->'options') with ordinality as t(o, i)))
+         where trip_id = $1 and card_id = $2 and card->'options' @> jsonb_build_array(jsonb_build_object('option_id', $3::text))
+         returning card`,
+        [tripId, cardId, optionId, JSON.stringify(photos)],
+      );
+      return rows[0]?.card ?? null;
     },
 
     async claimVote(cardId, key) {

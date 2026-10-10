@@ -34,9 +34,13 @@ answer:
       $widget := function($t) { $findAll(page, 'widget').widget[title = $t] };
       $hero := $find(page, 'photos').photos[0];
       $visit := $widget("Places To Visit").data[0].(photo ? photo : image);
+      /* 10 Oct B3, up to twelve: the hero's first as the place itself, then each place to visit's by its name, then more of the hero's. */
+      $heroes := $find(page, 'photos').photos[$type($) = "string"];
+      $spots := [$widget("Places To Visit").data[$type(photo) = "string" or $type(image) = "string"].{ "url": photo ? photo : image, "label": name }];
       {
         "destination": $find(page, 'destination').destination,
         "photo": $type($hero) = "string" ? $hero : ($type($visit) = "string" ? $visit),
+        "photos": $append($append($count($heroes) > 0 ? [{ "url": $heroes[0], "label": $find(page, 'destination').destination }] : [], $spots), [$heroes[[1..11]].{ "url": $ }])[[0..11]],
         "best_time": $guide.bestTime,
         "weather_by_month": [$guide.weatherHistory.(month & ": " & $string(weatherAqi.min) & " to " & $string(weatherAqi.max) & " C. " & summary)],
         "places_to_visit": [$widget("Places To Visit").data.(name & ($exists($num(rating)) ? " (" & $string($num(rating)) & ")" : "") & (description ? ": " & description : ""))],
