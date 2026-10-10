@@ -22,6 +22,15 @@ describe('TripLog', () => {
     expect(rows[0]?.n).toBe(1);
   });
 
+  it("appends on connections of its own: a main pool with none free never holds send_event's answer", async () => {
+    const busy = { query: () => new Promise(() => {}), connect: () => new Promise(() => {}) } as never;
+    const log = createTripLog({ pool: busy, appendPool: db.pool, log: silentLog, now: () => new Date() });
+    const e = ev(1, 'trip.created', { trip: goaSnapshot({ trip_id: 't_own_pool' }) }, 't_own_pool');
+    expect(await log.append(e, { instance: 'server-1', server: 'vestra-staging' })).toBe('new');
+    const { rows } = await db.pool.query('select last_seq, server_instance, server_name from trips where trip_id = $1', ['t_own_pool']);
+    expect(rows[0]).toEqual({ last_seq: 1, server_instance: 'server-1', server_name: 'vestra-staging' });
+  });
+
   it('ignores an event id that comes again for another trip, and warns naming both trips', async () => {
     const warned: Array<Record<string, unknown>> = [];
     const log = createTripLog({ pool: db.pool, log: { ...silentLog, warn: (obj) => warned.push(obj as Record<string, unknown>) }, now: () => new Date() });
