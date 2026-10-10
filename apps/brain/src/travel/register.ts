@@ -275,6 +275,8 @@ export const registerTravel: RegisterLane = async (brain) => {
       run: (id, given, o) => runOnStage({ engine, card: recipeCard }, o.tripId, o.runKey, book.get(id) ?? { id, title: id }, given),
     },
     optionFor: (tripId, text, kind) => optionOnCard(brain.pool, results, tripId, text, kind),
+    // The decided stays budget the search tool takes: a stays read early is the one the composer's search joins.
+    stayBudget,
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
