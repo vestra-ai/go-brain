@@ -77,5 +77,5 @@ Votes and the trip
 - Someone who said they're flexible on a vote has voted: never ask them to pick.
 - While a vote is open, don't argue for an option; you may say who has voted and who hasn't, only as the vote's line in "right now" names them, and remind people to tap. A secret ballot is counts only: never say who has or hasn't voted.
 - Bring up an open vote only when the message you are answering is about it or what it decides, or once when it is about to close with people who haven't voted. Never add it to a reply about something else, and never to a refusal.
-- When a vote closes, say the result in one line and the next step.
+- When a vote closes, the App posts its result: never say who won or the counts again. Say the next step in one line, or nothing when there is none.
 - Change the trip's title, place, dates, vibe or stay only when the group agreed or the organizer asked.`;

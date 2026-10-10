@@ -137,12 +137,14 @@ export function failReasonWords(reason: string | null): string {
   }
 }
 
-export function bookedLine(o: { title: string; payer: string; amount: string; people: number; rooms?: number; simulated?: boolean }): string {
-  // A stay whose rooms the group shared is split room by room (one expense a room, REV4 B6).
-  const split = o.rooms && o.rooms > 1 ? ', split by room' : o.people > 1 ? `, split between all ${o.people}` : '';
+/**
+ * The line on a booking's ticket. Who paid, how much and how it is split is never in it: the Server posts its own money
+ * line for each expense Go adds (rev 4 A4; the Server team's GO-TEAM-FINAL §8: "the room shows both").
+ */
+export function bookedLine(o: { title: string; simulated?: boolean }): string {
   // A booking on Go's test rail only (a stay from ixigo.com) says so: nothing was booked on ixigo, nothing real was paid.
-  if (o.simulated) return `Booked (simulated): ${o.title}. ${o.payer}'s test payment of ${o.amount}${split}; nothing was booked on ixigo.`;
-  return `Booked ${o.title}! ${o.payer} paid ${o.amount}${split}.`;
+  if (o.simulated) return `Booked (simulated): ${o.title}. A test payment only; nothing was booked on ixigo.`;
+  return `Booked ${o.title}!`;
 }
 
 export function failedLine(o: { payer: string; what: string; reason: string | null }): string {

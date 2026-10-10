@@ -205,6 +205,18 @@ describe('checkLine: the plan already has it', () => {
     expect(checkLine(open('other'), e())).toMatchObject({ ok: true });
     expect(checkLine(open(undefined), e())).toMatchObject({ ok: true });
   });
+
+  // The Server team's GO-TEAM-FINAL §2: production Go opened a line about collecting everyone's budget.
+  it('never opens a line about a budget: the trip has one, the group\'s, set in the App or with set_budget', () => {
+    const refused = { ok: false, reason: "the trip's budget is the group's, set in the App or with set_budget: never an open question" };
+    for (const text of ["Collect everyone's budget band", 'Budget per person?', 'What are our budgets']) {
+      expect(checkLine(lineP({ kind: 'open', text, proof: [dates.message_id], about: 'other' }), e()), text).toEqual(refused);
+    }
+    // An agreement on a budget that fell short of a yes is not left open either.
+    expect(checkLine(lineP({ kind: 'agreed', text: 'Budget: about 20k each', proof: [dates.message_id] }), e())).toEqual(refused);
+    // A line Go opened before can still be changed (closed); the check is only on opening one.
+    expect(checkLine(lineP({ kind: 'open', text: 'Budget per person?', proof: [dates.message_id], line_id: 'ln_old', status: 'done' }), e())).not.toEqual(refused);
+  });
 });
 
 describe('checkLine: an ask to Go is answered, never an open line', () => {

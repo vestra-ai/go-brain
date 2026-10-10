@@ -262,6 +262,10 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   // a villa search, so I'll run it", 12 of 12 probe turns, 10 Oct); with it on, none did, and at low it mostly skips
   // thinking, so turns were no slower. No thinking field on other models.
   const thinking = caps.id === 'claude-sonnet-5-5' ? { thinking: { type: 'adaptive' }, output_config: { effort: 'low' } } : {};
+  // Without thinking, the words a tool round writes are its working, so they never become the reply: not when the last
+  // round writes nothing, not with a card that has no line, not when the budget stops the turn (the Server team saw them
+  // in the room on the 7 Oct build, GO-TEAM-FINAL §8). With thinking they are words for the room ("Opening a vote now!").
+  const toolWordsSpeak = 'thinking' in thinking;
   const messages = [...i.messages];
   const usage = noUsage();
   const timings: RoundTiming[] = [];
@@ -320,7 +324,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
       .map((b) => b.text)
       .join('')
       .trim();
-    if (text) latestText = text;
+    if (text && toolWordsSpeak) latestText = text;
     // The API refuses an empty assistant message in an exchange that goes on (the pre-post check continues this one): a
     // round that wrote nothing stands for the answer the turn will post, the latest text an earlier round wrote.
     const said = toParams(reply.content);
@@ -364,7 +368,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
     // A card that went up with its line: the line is this reply's words. The reply's free text was written before the
     // card was up ("I'll show the best three…"), so it never goes out.
     const lines = [...new Set(i.ctx.lines.slice(linesBefore).map((l) => l.trim()).filter((l) => l !== ''))];
-    const words = lines.length > 0 ? lines.join('\n') : clean(text);
+    const words = lines.length > 0 ? lines.join('\n') : toolWordsSpeak ? clean(text) : '';
     if (lines.length > 0) latestText = words;
     // A tool that answered itself (a finished plain search put up its card and line): the turn ends on its card too.
     if (allUp || (i.ctx.answered && lines.length > 0)) return { text: words, silent: false, rounds: round, usage, messages, stopReason: CARDS_UP, timings };

@@ -1,7 +1,6 @@
 import type { Confirmed } from '../travel/travel.js';
 import { payCardOf } from './ask.js';
 import { ticketCard } from './cards.js';
-import { mentionsIn } from '../composer/speak.js';
 import { payerOf, postLine, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
 import { roomParts } from './rooms.js';
@@ -19,7 +18,7 @@ import {
   type PaymentState,
   type ReleaseReason,
 } from './store.js';
-import { bookedLine, categoryFor, clip, declinedLine, failedLine, money } from './words.js';
+import { bookedLine, categoryFor, clip, declinedLine, failedLine } from './words.js';
 
 export type VaultFailReason = 'card_declined' | 'needs_authentication' | 'rail_error' | 'rail_not_ready';
 
@@ -187,18 +186,13 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
     await patchPayment(d.pool, row.payment_id, { card_state: 'paid' }, d.now());
   }
 
-  // 5. The ticket, with one line in Go's voice. The payer it names gets a push.
+  // 5. The ticket, with one line in Go's voice: what was booked, never the money, which the Server's own line says.
   if (!row.ticket_posted_at) {
-    const text = bookedLine({
-      title: confirmed.title, payer: row.payer_name, amount: money(amountMinor, row.currency), people: row.for_person_ids.length,
-      ...(rooms && rooms.length > 1 ? { rooms: rooms.length } : {}), simulated: confirmed.simulated === true,
-    });
-    const mentions = mentionsIn(text, payerOf(row));
+    const text = bookedLine({ title: confirmed.title, simulated: confirmed.simulated === true });
     await d.link.request('post_message', {
       request_id: id('ticket'),
       trip_id: row.trip_id,
       text,
-      ...(mentions.length ? { mentions } : {}),
       card: ticketCard({ cardId: rid('c_ticket', approvalId), bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil, simulated: confirmed.simulated === true }),
     });
     await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
@@ -221,7 +215,16 @@ async function finishClosed(d: MoneyDeps, row: PaymentRow, state: 'declined' | '
   const key = row.approval_id ?? row.payment_id;
   const id = (step: string) => rid(`go_${state}`, key, step);
 
-  // 1. Let the Server's approval go, so the vote can be asked again. The vault first stops every pay link for it, so no
+  // 1. The pay card says what happened, with no buttons left, first: the room sees it at once (the Server team's
+  //    GO-TEAM-FINAL §6: a declined card kept live Approve and Decline for 46 s, while a vault call failed below and the
+  //    sweep came back). Nothing can be paid from it either way: the payer's own Decline closed the row.
+  if (state !== 'refused' && row.card_id && row.card_state !== state) {
+    const card = payCardOf(row, state);
+    if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
+    await patchPayment(d.pool, row.payment_id, { card_state: state }, d.now());
+  }
+
+  // 2. Let the Server's approval go, so the vote can be asked again. The vault first stops every pay link for it, so no
   //    page can pay after Go let it go; if the vault cannot be reached, nothing is released and the sweep tries again.
   if (row.approval_id && !row.released_at) {
     await d.vault.voidPayLinks(row.approval_id);
@@ -232,13 +235,6 @@ async function finishClosed(d: MoneyDeps, row: PaymentRow, state: 'declined' | '
       reason: row.release_reason ?? RELEASE[state],
     });
     await patchPayment(d.pool, row.payment_id, { released_at: d.now() }, d.now());
-  }
-
-  // 2. The pay card says what happened.
-  if (state !== 'refused' && row.card_id && row.card_state !== state) {
-    const card = payCardOf(row, state);
-    if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
-    await patchPayment(d.pool, row.payment_id, { card_state: state }, d.now());
   }
 
   // 3. One line for a decline or a failure. An expiry stays quiet: the card already says it.

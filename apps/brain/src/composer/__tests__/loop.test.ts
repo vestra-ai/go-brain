@@ -255,6 +255,49 @@ describe('the composer loop', () => {
     expect((await run()).text).toBe('Opening a vote now!');
   });
 
+  // Without thinking, a model writes its working as text before its tool calls (12 of 12 probe turns, 10 Oct); the Server
+  // team saw it in the room on the 7 Oct build (GO-TEAM-FINAL §8). Sonnet 5.5 thinks; any other model gets this guard.
+  describe("without thinking, a tool round's words are its working and never the reply", () => {
+    const working = "Priya asked for a villa search, so I'll run it.";
+
+    it('not when the last round writes nothing', async () => {
+      const { bodies, run } = setup([{ text: working, tools: [echoCall('x')] }, {}], { model: 'claude-haiku-4-5' });
+      const r = await run();
+      expect(bodies[0].thinking).toBeUndefined();
+      expect(r.text).toBe('');
+    });
+
+    it("not with a card that has no line, while the card's own line still is", async () => {
+      const carding = (line: string | null): QuickTool<{ say: string }> => ({
+        ...echo,
+        name: 'show_card',
+        endsTurn: true,
+        run: async (_a, ctx) => {
+          ctx.cards.push({ card_id: 'c_1', kind: 'options' } as never);
+          if (line) ctx.lines.push(line);
+          return { shown: 1 };
+        },
+      });
+      const call = [{ name: 'show_card', input: { say: 'x' } }];
+      const bare = setup([{ text: working, tools: call }], { model: 'claude-haiku-4-5', tools: [carding(null)] });
+      expect(await bare.run()).toMatchObject({ text: '', stopReason: 'cards_up' });
+      const lined = setup([{ text: working, tools: call }], { model: 'claude-haiku-4-5', tools: [carding('Three villas with a pool.')] });
+      expect(await lined.run()).toMatchObject({ text: 'Three villas with a pool.', stopReason: 'cards_up' });
+    });
+
+    it('not when the budget stops the turn after a tool round', async () => {
+      let holds = 0;
+      const budget = { reserve: () => (++holds === 1 ? { settle: async () => {} } : null) };
+      const { run } = setup([{ text: working, tools: [echoCall('x')] }, { text: 'never asked' }], { model: 'claude-haiku-4-5', budget });
+      expect(await run()).toMatchObject({ text: '', stopReason: 'over_budget' });
+    });
+
+    it("a final round's own words are still the reply", async () => {
+      const { run } = setup([{ text: working, tools: [echoCall('x')] }, { text: 'Three villas in Anjuna, all with a pool.' }], { model: 'claude-haiku-4-5' });
+      expect((await run()).text).toBe('Three villas in Anjuna, all with a pool.');
+    });
+  });
+
   it('sums the usage of every round, with the cost', async () => {
     const { run } = setup([
       { tools: [echoCall('x')], usage: { input_tokens: 50, cache_read_input_tokens: 4_000, output_tokens: 10 } },

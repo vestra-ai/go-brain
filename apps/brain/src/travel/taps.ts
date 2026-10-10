@@ -145,7 +145,8 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
   });
 
-  // "Add my budget": the App's own budget sheet for the trip (a go:// link, contract 1.1 A4), opened in place.
+  // "Add my budget" on a stays card from before rev 4 (no card asks any more): the App's budget sheet for the trip, the
+  // group's one budget now (a go:// link, contract 1.1 A4), opened in place.
   taps.on('options', 'add_budget', async (tap) => ({
     result: 'open', url: budgetSheet(tap.trip_id), expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString(),
   }));
