@@ -70,6 +70,13 @@ export interface TurnCtx {
   roundTools?: string[];
   /** Set by a tool that put up its card and its line itself (a finished plain search): the turn ends on them. */
   answered?: boolean;
+  /**
+   * Set by the loop when a tool this turn answers in the room by itself (its result says nothing is to be said: a live
+   * card that posts its own result): the turn may end with no words of its own.
+   */
+  toolAnswers?: boolean;
+  /** stay_silent was refused once this turn for a direct ask with no answer (room-tools.ts unansweredAsk): never twice. */
+  silenceRefused?: boolean;
   /** 1.1 quick replies under this turn's message (offer_replies): each tap comes back as the tapper's own message. */
   quickReplies?: QuickReply[];
 }

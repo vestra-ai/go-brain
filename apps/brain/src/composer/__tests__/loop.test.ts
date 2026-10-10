@@ -5,9 +5,11 @@ import { fakeLink } from '../../__tests__/fixtures/fake-link.js';
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
 import type { TextBlock, TurnLimits } from '../context.js';
+import type { DeskItem } from '../../desk/desk.js';
 import { countMarkers, MAX_ROUNDS, runLoop, type LoopInput } from '../loop.js';
+import { promisesNextStep } from '../next-step.js';
 import { roomTools } from '../room-tools.js';
-import { makeTurnCtx, SAY_NOTHING, type QuickTool } from '../tools.js';
+import { makeTurnCtx, SAY_NOTHING, type QuickTool, type TurnCtx } from '../tools.js';
 
 const HOUR = { type: 'ephemeral', ttl: '1h' } as const;
 const SYSTEM: TextBlock[] = [{ type: 'text', text: 'You are Go.', cache_control: HOUR }];
@@ -301,5 +303,94 @@ describe('the composer loop', () => {
     expect(second.messages.at(-1).content.at(-1).cache_control).toEqual({ type: 'ephemeral' });
     for (const body of bodies) expect(markersIn(body)).toBeLessThanOrEqual(4);
     expect(markersIn(first)).toBe(3);
+  });
+});
+
+/** The turn was woken by Arjun's line #3, said to Go (namesGo) or read as for Go (asksGo). */
+function askedBy(ctx: TurnCtx, text: string, payload: Record<string, unknown> = { namesGo: true }): void {
+  ctx.pack = { ...ctx.pack, messages: [msg(3, 'p_arjun', text)] };
+  ctx.wake = [{ id: `msg:${ctx.tripId}:m_3`, tripId: ctx.tripId, kind: 'message', ref: 'm_3', payload: { messageId: 'm_3', ...payload } } as unknown as DeskItem];
+}
+const silence = { tools: [{ name: 'stay_silent', input: { reason: 'nothing to add' } }] };
+
+describe('never silent on a direct ask (EXAM, 10 Oct: #8, #15, #24 ended in stay_silent)', () => {
+  it('refuses stay_silent while the ask that woke the turn has no answer: the turn goes on and answers it', async () => {
+    for (const payload of [{ namesGo: true }, { asksGo: true }]) {
+      const { bodies, ctx, run } = setup([silence, { text: "Which villa, Arjun? There's no vote yet; the top pick was Summerville." }]);
+      askedBy(ctx, '@Go book the villa we liked yesterday, total kitna padega?', payload);
+      const r = await run();
+      expect(r.silent).toBe(false);
+      expect(r.text).toBe("Which villa, Arjun? There's no vote yet; the top pick was Summerville.");
+      expect(bodies[1].messages[2].content[0]).toMatchObject({ is_error: true });
+      expect(bodies[1].messages[2].content[0].content).toContain('Arjun asked you directly (#3): never stay silent on it.');
+    }
+  });
+
+  it('refuses it once: a second stay_silent ends the turn (the model may know a person already answered)', async () => {
+    const { bodies, ctx, run } = setup([silence]);
+    askedBy(ctx, '@Go can Arjun board at Nizamuddin instead of New Delhi?');
+    const r = await run();
+    expect(r.silent).toBe(true);
+    expect(bodies).toHaveLength(2);
+  });
+
+  it('lets the turn end silent for thanks, after a ✅ that noted the line, or after a tool that answers in the room itself', async () => {
+    const thanks = setup([silence]);
+    askedBy(thanks.ctx, '@Go thanks 🙏');
+    expect((await thanks.run()).silent).toBe(true);
+    const noted = setup([{ tools: [{ name: 'react', input: { message_id: 'm_3', emoji: '✅' } }] }, silence]);
+    askedBy(noted.ctx, "@Go I'm veg btw");
+    expect((await noted.run()).silent).toBe(true);
+    const running: QuickTool<{ from?: string | undefined }> = {
+      name: 'compare_ways', description: 'Compares the ways there.', input: z.object({ from: z.string().optional() }),
+      run: async () => ({ running: true, tell_the_room: SAY_NOTHING }),
+    };
+    const ways = setup([{ tools: [{ name: 'compare_ways', input: {} }] }, silence], { tools: [running, ...roomTools({ now: () => new Date(), pool: db.pool })] });
+    askedBy(ways.ctx, '@Go sab log kaise pahunchenge?');
+    expect((await ways.run()).silent).toBe(true);
+    // A line nobody said to Go may end in silence, as before.
+    const aside = setup([silence]);
+    askedBy(aside.ctx, 'which bus drops closest to our villa?', {});
+    expect((await aside.run()).silent).toBe(true);
+  });
+});
+
+describe('a next step a reply promises is taken or asked, never left (EXAM, 10 Oct: #18)', () => {
+  it('gives a reply that promises a search next one more round, once', async () => {
+    const promised = "Here are the outbound non-stops, and I'll search the Mon 9 Nov return next.";
+    const { bodies, run } = setup([{ text: promised }, { text: 'Here are the outbound non-stops. Want me to look at the Mon 9 Nov return too?' }]);
+    const r = await run();
+    expect(r.text).toBe('Here are the outbound non-stops. Want me to look at the Mon 9 Nov return too?');
+    expect(JSON.stringify(bodies[1].messages.at(-1))).toContain('It promises a next step');
+    // Once: a reply that promises again goes out as it is.
+    const again = setup([{ text: promised }]);
+    expect((await again.run()).text).toBe(promised);
+  });
+
+  it("keeps a card whose line promises a next step, and takes the step in one more round", async () => {
+    const card: QuickTool<{ line: string }> = {
+      name: 'show_card', description: 'Shows a card.', input: z.object({ line: z.string() }), endsTurn: true,
+      run: async (a, ctx) => {
+        ctx.cards.push({ card_id: 'c_out', kind: 'notice', fallback_text: 'Outbound flights' } as never);
+        ctx.lines.push(a.line);
+        return { ok: true };
+      },
+    };
+    const { ctx, run } = setup(
+      [{ tools: [{ name: 'show_card', input: { line: "Here are the outbound flights, and I'll search the return next." } }] }, { text: 'Here are the outbound flights. Want the return too?' }],
+      { tools: [card, ...roomTools({ now: () => new Date(), pool: db.pool })] },
+    );
+    const r = await run();
+    expect(r.text).toBe('Here are the outbound flights. Want the return too?');
+    expect(ctx.cards).toHaveLength(1);
+  });
+
+  it('reads only a step promised for now, not one tied to later or offered', () => {
+    expect(promisesNextStep("I'll search the Mon 9 Nov return next.")).toBe(true);
+    expect(promisesNextStep("Next, I'll check the return flights.")).toBe(true);
+    expect(promisesNextStep("I'll re-check the fare at booking and tell you if it moved.")).toBe(false);
+    expect(promisesNextStep("Only refundable is easy: I'll set it that way when the vote closes.")).toBe(false);
+    expect(promisesNextStep('Chaho to main Friday ke Jaipur to Goa flights check kar deta hoon.')).toBe(false);
+    expect(promisesNextStep('Want me to search the return next?')).toBe(false);
   });
 });
