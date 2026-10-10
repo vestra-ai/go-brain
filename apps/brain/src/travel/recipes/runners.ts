@@ -103,6 +103,13 @@ export interface RecipeRunner {
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
   /**
+   * Which cookies of these names the trip's browser holds for an allowed site, and until when (Bash's GET
+   * /v1/users/{id}/browser/cookies): names and expiry only, never a value, with no page opened, so a person signing in
+   * on a hand-off is never disturbed. expiresAt in ms; null for a cookie that lasts while the browser runs. Null when
+   * Bash can't say (a Bash without the read, a computer that didn't answer).
+   */
+  cookies?(tripId: string, domain: string, names: string[]): Promise<Array<{ name: string; expiresAt: number | null }> | null>;
+  /**
    * Steps on the page the stage already holds (Bash's url-less fetch on the stage tab), with the calls the page they lead
    * to makes caught as for a read: a person's click on what the room is watching, a stay's card on the results opening its
    * page in the same tab. What Bash answers, as read() gives it; a stage with no page open is a TravelError.
@@ -219,6 +226,8 @@ export const PAYMENT_PAGE_BLOCKED = "That's the payment page, and Go never opens
  * matters for a sleeping box, where a stays search ran past 13 s on staging.
  */
 export const FETCH_TIMEOUT_MS = 20_000;
+/** A cookie read: one read of the browser on a computer that is up. */
+export const COOKIES_TIMEOUT_MS = 5_000;
 
 /**
  * How long Bash waits past a plan's required captures for its optional ones (a recipe's `required: false`), when the plan
@@ -1004,6 +1013,20 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     prime: (tripId) => inSlot(tripId, {}, () => prime(tripId)),
     handOff: (tripId, url, plan, o) => inSlot(tripId, {}, () => handOff(tripId, url, plan, o)),
     release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),
+    // No slot: one read of the browser, no page, and the sign-in wait reads it every few seconds.
+    cookies: async (tripId, domain, names) => {
+      try {
+        const answer = await d.v1.call<{ cookies?: Array<{ name: string; expires_at: string | null }> }>(
+          'GET',
+          `/v1/users/${await d.browser.userFor(tripId)}/browser/cookies`,
+          { query: { domain, names: names.join(',') }, signal: AbortSignal.timeout(COOKIES_TIMEOUT_MS) },
+        );
+        return (answer.cookies ?? []).map((c) => ({ name: c.name, expiresAt: c.expires_at === null ? null : Date.parse(c.expires_at) }));
+      } catch {
+        // A Bash without the read (404), a computer that didn't answer, a slow one: the wait reads again, or falls back.
+        return null;
+      }
+    },
     tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
     tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),
     lastChallenge: (tripId) => checkedAt.get(tripId) ?? null,

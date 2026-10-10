@@ -11,8 +11,8 @@ import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
 import {
-  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume, USERINFO,
-  WALLET,
+  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_POLL_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume,
+  SELF_CHECK_MS, USERINFO, WALLET,
 } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
 import { capture } from '../recipes/__tests__/fixtures.js';
@@ -52,6 +52,11 @@ function world(o: {
   live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged' | 'dead' | 'quiet'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
   /** The person's browser (tasks/browsers.ts), shared by every world given the same one: one login for all their trips. */
   browser?: FakeBrowser;
+  /**
+   * A Bash that reads the browser's cookies (a one-tap login): what its n-th read answers (0 is the one at the tap), and
+   * null for a read Bash couldn't answer. Without it the runner has no cookie read, as a Bash from before it.
+   */
+  cookies?: (n: number) => Array<{ name: string; expiresAt: number | null }> | null;
 } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
@@ -95,7 +100,13 @@ function world(o: {
       tabStepCalls.push({ tab, steps, o: to, cardActions: cardActions() });
       if (o.taps === 'fail') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
     },
+    ...(o.cookies ? { cookies: async (_trip: string, domain: string, names: string[]) => {
+      cookieReads.push({ domain, names, at: clock.now.getTime() });
+      return o.cookies!(cookieReads.length - 1);
+    } } : {}),
   };
+  const cookieReads: Array<{ domain: string; names: string[]; at: number }> = [];
+  const ended: string[] = [];
   const tabStepCalls: Array<{ tab: string; steps: unknown[]; o: { keepOpenMs: number; timeoutMs: number }; cardActions: string[] }> = [];
   const cardActions = (): string[] => {
     const replaced = link.of('replace_card');
@@ -107,7 +118,10 @@ function world(o: {
   const timers: Array<{ ms: number; fn: () => void; cancelled: boolean }> = [];
   const screen = async (trip: string, mode: 'view' | 'control') => {
     sessions.push([trip, mode]);
-    return { url: `https://screen.example/${mode}`, expires_at: '2026-10-08T06:15:00.000Z' };
+    return { id: `ses_${sessions.length}`, url: `https://screen.example/${mode}`, expires_at: '2026-10-08T06:15:00.000Z' };
+  };
+  const endScreen = async (id: string) => {
+    ended.push(id);
   };
   const starts: TaskBrief[] = [];
   const handoffs: Array<[string, string]> = [];
@@ -128,7 +142,7 @@ function world(o: {
   const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { wakes.push({ id: item.id ?? '', ...item }); } };
   const said: object[] = [];
   const login = createIxigoLogin({
-    pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, screen: () => screen, desk, live: () => o.live !== false, now: () => clock.now,
+    pool: db.pool, link, packs, runner: () => runner, tasks: () => tasks, screen: () => screen, endScreen: () => endScreen, desk, live: () => o.live !== false, now: () => clock.now,
     ...(o.browser ? { browser: () => o.browser! } : {}),
     log: { warn: () => undefined, info: (obj) => said.push(obj) },
     sleep: async (ms) => {
@@ -165,8 +179,8 @@ function world(o: {
   const parked = async (): Promise<unknown> =>
     (await db.pool.query<{ parked: unknown }>('select parked from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.parked ?? null;
   return {
-    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, timers, tabStepCalls, wakes, login, tap, last, state, parked,
-    greet, looks, hooks, said, setup: () => login.setupStep.run(tripId),
+    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, ended, cookieReads, timers, tabStepCalls, wakes, login, tap, last, cards,
+    state, parked, greet, looks, hooks, said, setup: () => login.setupStep.run(tripId),
   };
 }
 
@@ -1216,5 +1230,119 @@ describe("the ixigo login's hand-off, on ixigo's desktop page", () => {
     expect(phone.tabStepCalls[0]!.steps[0]).toEqual({ op: 'click', role: 'button', name: 'Login' });
     // The mobile box is the same words on both pages.
     expect(desk.tabStepCalls[0]!.steps[1]).toEqual({ op: 'click', role: 'textbox', text: 'mobile' });
+  });
+});
+
+// Keshav, 10 Oct: "why should user click watch button then login then click I logged in button… make a seamless login
+// right at the beginning: one click, live stream opens, login there, Go detects, and when back proceeds automatically."
+describe('one tap: Watch opens with the log in, and Go sees the login land by itself', () => {
+  const AT = Date.parse('2026-11-07T06:00:00Z');
+  const at = (expiresAt: number | null) => [{ name: 'at', expiresAt }];
+  const ids = (c: C.Card | undefined): string[] => ((c as { actions?: Array<{ action_id: string }> } | undefined)?.actions ?? []).map((a) => a.action_id);
+
+  it("opens Watch at once, in control; ixigo's `at` coming (a first login: none before) closes the tab and Watch, and Go carries on", async () => {
+    const w = world({ cookies: (n) => (n < 3 ? [] : at(AT)), statuses: [200] });
+    await w.setup();
+    expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'open', url: 'https://screen.example/control', expires_at: '2026-10-08T06:15:00.000Z' });
+    expect(w.sessions).toEqual([[w.tripId, 'control']]);
+    // Read by name on ixigo's site, never a value: once at the tap, then every 2 s once the page is in front, until it came.
+    expect(w.cookieReads.map((r) => [r.domain, r.names])).toEqual(Array(4).fill(['ixigo.com', ['at']]));
+    expect(w.cookieReads.slice(1).map((r, i) => r.at - w.cookieReads[i]!.at)).toEqual([LOGIN_POLL_MS, LOGIN_POLL_MS, LOGIN_POLL_MS]);
+    // The card while it opened, and once the page was in front: Watch opens it again; no I'm logged in at any point.
+    const replaced = w.link.of('replace_card').map((p) => p.card as C.Card);
+    expect(ids(replaced[0])).toEqual(['ixigo_watch', 'ixigo_not_now']);
+    expect(replaced[0]).toMatchObject({ body: "Opening ixigo's log in on Go's screen for Rahul." });
+    expect(ids(replaced[1])).toEqual(['ixigo_watch', 'ixigo_not_now']);
+    expect(replaced[1]).toMatchObject({ body: "ixigo's log in is open on Go's screen. Rahul: log in there with your mobile number, and Go carries on by itself. Watch opens it again." });
+    expect(w.cards().flatMap(ids)).not.toContain('ixigo_logged_in');
+    // Logged in: the tab closed, Watch's session ended (Bash's page closes itself), and one read of ixigo confirmed it.
+    expect(w.releases).toEqual([LOGIN_TAB]);
+    expect(w.ended).toEqual(['ses_1']);
+    expect(w.reads.filter((r) => r.plan === LOGIN_CALLS)).toHaveLength(1);
+    expect(await w.state()).toBe('logged_in');
+    expect(w.last()).toMatchObject({ title: 'ixigo: logged in as Rahul', actions: [{ action_id: 'ixigo_logout' }] });
+    expect(w.wakes).toEqual([
+      expect.objectContaining({ id: `travel:login_linked:${w.tripId}:0`, payload: { source: 'ixigo_login', action: 'linked', personId: 'p_rahul' } }),
+    ]);
+  });
+
+  it('an `at` the browser had counts once its expiry moves or it went and came back; a read Bash could not answer compares nothing', async () => {
+    // Its expiry moves on the third read.
+    const moved = world({ cookies: (n) => (n < 2 ? at(AT) : at(AT + 3600_000)), statuses: [200] });
+    await moved.setup();
+    await moved.tap('ixigo_login', 'p_rahul');
+    expect(moved.cookieReads).toHaveLength(3);
+    expect(await moved.state()).toBe('logged_in');
+    // ixigo's page cleared a stale one, then a login set it again.
+    const back = world({ cookies: (n) => (n === 1 ? [] : at(AT)), statuses: [200] });
+    await back.setup();
+    await back.tap('ixigo_login', 'p_rahul');
+    expect(back.cookieReads).toHaveLength(3);
+    expect(await back.state()).toBe('logged_in');
+    // Bash said nothing at the tap: the first read that answers is what the next is compared with.
+    const blind = world({ cookies: (n) => (n === 0 ? null : n < 3 ? at(AT) : at(AT + 3600_000)), statuses: [200] });
+    await blind.setup();
+    await blind.tap('ixigo_login', 'p_rahul');
+    expect(blind.cookieReads).toHaveLength(4);
+    expect(await blind.state()).toBe('logged_in');
+  });
+
+  it('a booking that waited on the login carries on with exactly that stay once Go sees it land', async () => {
+    const what = 'Saudades Homestays';
+    const resume = { decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul', refundable_only: false };
+    const w = world({ cookies: (n) => (n < 2 ? [] : at(AT)), statuses: [200] });
+    await w.setup();
+    w.clock.now = new Date(NOW.getTime() + 3 * 60_000);
+    await w.login.ensure(w.tripId, what, { park: { what, resume } });
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    expect(w.wakes).toEqual([
+      expect.objectContaining({ id: `travel:login_resume:${w.tripId}:1`, payload: { source: 'ixigo_login', action: 'resume', personId: 'p_rahul', what, resume } }),
+    ]);
+    expect(w.ended).toEqual(['ses_1']);
+  });
+
+  it("a cookie ixigo then refuses is no login: Watch closes all the same, and the card goes back to its ask, saying so", async () => {
+    const w = world({ cookies: (n) => (n < 1 ? [] : at(AT)), statuses: [401] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.state()).toBe('asked');
+    expect(w.ended).toEqual(['ses_1']);
+    expect(w.last()).toMatchObject({
+      title: 'Link ixigo for this trip', body: "ixigo didn't keep the login on Go's computer. Tap Log in to ixigo to try again.",
+      actions: [{ action_id: 'ixigo_login' }, { action_id: 'ixigo_not_now' }],
+    });
+    expect(w.wakes).toEqual([]);
+  });
+
+  it(`with nothing seen for ${SELF_CHECK_MS / 1000} s the card gets I'm logged in; Not now ends every Watch it opened`, async () => {
+    const w = world({ cookies: () => [] });
+    await w.setup();
+    const seen: Record<number, string[]> = {};
+    w.hooks.onSleep = (n) => {
+      seen[n] = ids(w.last());
+    };
+    await w.tap('ixigo_login', 'p_rahul');
+    // Each look is one 2 s wait: up to 60 s from the tap the card has no I'm logged in, and the next look shows it.
+    const at60 = SELF_CHECK_MS / LOGIN_POLL_MS;
+    expect(seen[at60]).toEqual(['ixigo_watch', 'ixigo_not_now']);
+    expect(seen[at60 + 1]).toEqual(['ixigo_watch', 'ixigo_logged_in', 'ixigo_not_now']);
+    expect(w.cards().filter((c) => ids(c).includes('ixigo_logged_in'))).toHaveLength(1);
+    // Go stops reading with the hand-off's own time.
+    expect(w.cookieReads.at(-1)!.at - w.cookieReads[0]!.at).toBeLessThan(HANDOFF_MS);
+    expect(await w.state()).toBe('logging_in');
+    // Watch opened again from the card, then Not now: both sessions end, so every view of the log in closes.
+    await w.tap('ixigo_watch', 'p_rahul');
+    await w.tap('ixigo_not_now', 'p_rahul');
+    expect(w.ended).toEqual(['ses_1', 'ses_2']);
+    expect(w.releases).toEqual([LOGIN_TAB]);
+  });
+
+  it('a Bash without the cookie read keeps the two steps: Log in answers with a toast and Watch comes on the card', async () => {
+    const w = world();
+    await w.setup();
+    expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'done', toast: "Opening ixigo's log in on Go's screen" });
+    expect(w.sessions).toEqual([]);
+    expect(ids(w.last())).toEqual(['ixigo_watch', 'ixigo_logged_in', 'ixigo_not_now']);
   });
 });

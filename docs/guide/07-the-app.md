@@ -375,7 +375,9 @@ Future<void> handleCardAction(Map<String, dynamic> answer, void Function(String)
 }
 ```
 
-When the sheet closes, the app does nothing special. Whatever happened on the page reaches the room the normal way. For example, after Rahul pays, Go updates the pay card to paid and the app gets that as a card update on the live connection.
+When the sheet closes, the app does nothing special. Whatever happened on the page reaches the room the normal way.
+
+Go's screen during an ixigo login closes by itself once Go sees the login land. When Go replaces the login card with one that has no `ixigo_watch` button, close the sheet with url_launcher's `closeInAppWebView()`, where `supportsCloseForMode(LaunchMode.inAppBrowserView)` says it can. Elsewhere the page says "This view has ended. You can close it." [Closing a page Go opened](06-cards.md#closing-a-page-go-opened) has the details. For example, after Rahul pays, Go updates the pay card to paid and the app gets that as a card update on the live connection.
 
 Good to know:
 - A link is made for the person who tapped. It is not for sharing.

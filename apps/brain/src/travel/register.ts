@@ -84,6 +84,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     tasks: () => brain.tasks ?? null,
     screen: () => brain.recipeRunners?.screen ?? null,
+    endScreen: () => brain.recipeRunners?.endScreen ?? null,
     browser: () => brain.recipeRunners?.login ?? null,
     desk: brain.desk,
     live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',

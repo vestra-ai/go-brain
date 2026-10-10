@@ -669,6 +669,23 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     await expect(createBrowserFetchRunner(old.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', check: { url: '/api/v2/oauth/userinfo', method: 'POST' } })).rejects.toBeInstanceOf(TravelError);
   });
 
+  // One-tap login (10 Oct): Go sees a login land from ixigo's `at` cookie, by its name and expiry alone.
+  it("reads the browser's cookies by name and expiry alone, with no page and no slot; a Bash that can't say answers null", async () => {
+    const w = world(() => ({ object: 'browser_cookies', cookies: [{ name: 'at', domain: '.ixigo.com', expires_at: '2026-12-01T10:00:00.000Z' }, { name: 'lt', domain: '.ixigo.com', expires_at: null }], woke: false }));
+    expect(await createBrowserFetchRunner(w.deps).cookies!('t1', 'ixigo.com', ['at', 'lt'])).toEqual([
+      { name: 'at', expiresAt: Date.parse('2026-12-01T10:00:00.000Z') },
+      { name: 'lt', expiresAt: null },
+    ]);
+    expect(w.calls).toHaveLength(1);
+    expect(w.calls[0]).toMatchObject({ method: 'GET', path: '/v1/users/u-t1/browser/cookies', opts: { query: { domain: 'ixigo.com', names: 'at,lt' } } });
+    for (const err of [new V1Error(404, 'not_found', 'Route GET /v1/users/u-t1/browser/cookies not found'), new V1Error(503, 'browser_unavailable', 'The browser did not answer.')]) {
+      const old = world(() => {
+        throw err;
+      });
+      expect(await createBrowserFetchRunner(old.deps).cookies!('t1', 'ixigo.com', ['at'])).toBeNull();
+    }
+  });
+
   it("names each fetch's tab by its run, so Bash's browser watch labels it: on a page and on a page call", async () => {
     const w = world((c) =>
       (c.opts['body'] as { steps?: Array<{ op: string }> }).steps?.[0]?.op === 'page_fetch'

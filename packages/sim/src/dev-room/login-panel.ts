@@ -9,6 +9,10 @@
 // says its picture is up (a postMessage: showing, a still of the screen, or live, the video), or, from an embed that says
 // nothing, for 5 s.
 // When the hand-off ends (logged in, Not now, out of time), the sheet closes and the card says so.
+// One tap (10 Oct): where Go sees the login land by itself, Log in answers with Go's screen at once, and the card carries
+// Watch from its first logging-in look. The answer goes in the frame as Watch's would (Watch is never tapped for it: not
+// while Log in waits for its answer either), and the sheet opens on it as soon as the card says logging in. Go ends that
+// session when the login lands, and Bash's embed says so (vestra:ended): the sheet closes then.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
 
@@ -16,6 +20,8 @@
 export const WATCH_ACTIONS: readonly string[] = ['watch', 'ixigo_watch'];
 /** The action only the ixigo login card in its logging-in state carries: with no Watch yet, the login is opening. */
 export const LOGGING_IN_ACTIONS: readonly string[] = ['ixigo_logged_in'];
+/** The action that answers with Go's screen at once in a one-tap login: the login card's Log in. */
+export const LOGIN_ACTION = 'ixigo_login';
 
 export const LOGIN_CSS = `
 /* The login card's tile: a small browser drawn as ixigo's login box (Go never pictures a sign-in page). */
@@ -66,6 +72,7 @@ export const LOGIN_SCRIPT = `
   // is in the sheet's frame, kept while the sheet is closed or you play someone else, so a half-typed number stays.
   var WATCH = ${JSON.stringify(WATCH_ACTIONS)};
   var LOGGING_IN = ${JSON.stringify(LOGGING_IN_ACTIONS)};
+  var LOGIN_ACTION = ${JSON.stringify(LOGIN_ACTION)};
   var WATCH_ORIGIN = $('sheet').getAttribute('data-watch-origin') || '';
   var WATCH_WAIT_MS = 10000;
   // An embed that says nothing of its picture this long (one from before it could) is shown as it is, and a picture still
@@ -75,8 +82,9 @@ export const LOGIN_SCRIPT = `
   var IXIGO_LINE = 'Type your number and the code. They go to ixigo only. Go never sees them.';
   var OPENING = "Opening ixigo's login on Go's computer…";
   // login.picture: what Bash's embed in the frame last said of its picture ('' for nothing yet, connecting, live, error),
-  // and login.mountedAt when that frame was put up.
-  var login = { asked: {}, sessions: {}, framed: '', picture: '', mountedAt: 0 };
+  // and login.mountedAt when that frame was put up. login.openOn: the hand-off whose Log in answered with its screen, for
+  // the sheet to open on once the card says logging in.
+  var login = { asked: {}, sessions: {}, framed: '', picture: '', mountedAt: 0, openOn: '' };
 
   function watchOf(c) {
     var acts = c.actions || [];
@@ -156,22 +164,47 @@ export const LOGIN_SCRIPT = `
       '<span class="login-face">' + face + '</span></button><div class="meta">' + esc(IXIGO_LINE) + '</div>' + acts;
   };
 
-  // A Watch answer for a hand-off: its screen goes in the sheet's frame. Anything else opens as it always did.
+  /** Go's screen, from a Watch answer or a one-tap Log in: kept for its hand-off, so Watch is never tapped for it. */
+  function keepSession(key, r) {
+    var ends = Date.parse(r.expires_at) || Date.now() + 15 * 60000;
+    login.asked[key] = Date.now();
+    login.sessions[key] = { url: frameable(r.url), ends: ends };
+    setTimeout(function () { syncLogin(); renderSheet(); }, Math.max(0, ends - Date.now()) + 50);
+  }
+
+  // Log in tapped: Watch waits for its answer, which may be Go's screen itself (one tap).
+  loginTapped = function (cardId, actionId, who) {
+    if (actionId === LOGIN_ACTION) login.asked[cardId + ' ' + who] = Date.now();
+  };
+
+  // A Watch answer for a hand-off: its screen goes in the sheet's frame. A one-tap Log in's screen too, before the card
+  // says logging in: the sheet opens on it when it does. Anything else opens as it always did.
   watchHere = function (data) {
+    var r = data.result || {};
+    if (state && WATCH_ORIGIN && data.actionId === LOGIN_ACTION) {
+      var key = data.cardId + ' ' + data.personId;
+      // No screen in the answer (a Go without one tap): Watch is tapped when the card carries it, as before.
+      if (r.result !== 'open' || !frameable(r.url)) {
+        delete login.asked[key];
+        syncLogin();
+        return false;
+      }
+      keepSession(key, r);
+      if (data.personId === me) login.openOn = key;
+      syncLogin();
+      renderSheet();
+      return true;
+    }
     if (!state || !WATCH_ORIGIN || WATCH.indexOf(data.actionId) < 0) return false;
     var c = handoffFor(data.personId);
     if (!c || c.card_id !== data.cardId) return false;
     var key = keyOf(c, data.personId);
-    var r = data.result || {};
-    var url = r.result === 'open' ? frameable(r.url) : '';
-    if (!url) {
+    if (r.result !== 'open' || !frameable(r.url)) {
       login.sessions[key] = { why: 'refused' };
       renderSheet();
       return false;
     }
-    var ends = Date.parse(r.expires_at) || Date.now() + 15 * 60000;
-    login.sessions[key] = { url: url, ends: ends };
-    setTimeout(function () { syncLogin(); renderSheet(); }, Math.max(0, ends - Date.now()) + 50);
+    keepSession(key, r);
     syncLogin();
     renderSheet();
     return true;
@@ -191,6 +224,11 @@ export const LOGIN_SCRIPT = `
       login.framed = '';
     }
     var key = mine ? keyOf(mine, me) : '';
+    // A one-tap Log in's sheet opens once the card says logging in.
+    if (key && login.openOn === key) {
+      login.openOn = '';
+      openSheet(mine.card_id);
+    }
     if (watch && !login.asked[key]) tapWatch(mine, me);
     var s = watch ? login.sessions[key] : null;
     if (s && s.url && login.framed !== key) {
@@ -218,6 +256,14 @@ export const LOGIN_SCRIPT = `
     var d = e.data;
     var frame = login.framed ? $('login-frame').querySelector('iframe') : null;
     if (!WATCH_ORIGIN || e.origin !== WATCH_ORIGIN || !frame || e.source !== frame.contentWindow) return;
+    // Go ended the session (the login landed, or the log in closed): the sheet closes, and the card says the rest.
+    if (d && d.type === 'vestra:ended') {
+      login.sessions[login.framed] = { why: 'ended' };
+      if (sheet.mode === 'login') closeSheet();
+      syncLogin();
+      renderSheet();
+      return;
+    }
     if (!d || d.type !== 'vestra:embed') return;
     if (['connecting', 'showing', 'live', 'error'].indexOf(d.state) < 0) return;
     login.picture = d.state;
@@ -247,7 +293,7 @@ export const LOGIN_SCRIPT = `
     var why = s && s.why ? s.why : (framed && login.picture === 'error') || slow ? 'refused' : '';
     // Over the frame, which keeps loading under it, until its picture is up.
     $('login-wait').hidden = framed && !why && pictureUp();
-    $('login-why').textContent = why === 'ended' ? 'Your view of the login closed after 15 minutes.' : why ? "Go's screen didn't open here." : OPENING;
+    $('login-why').textContent = why === 'ended' ? 'Your view of the login has closed.' : why ? "Go's screen didn't open here." : OPENING;
     $('login-progress').hidden = !!why;
     $('login-again').hidden = !why;
     $('login-acts').innerHTML = loginButtons(c);

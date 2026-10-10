@@ -77,6 +77,10 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     watch: async (tripId, signal) => v1.stream(`/v1/users/${await browsers.userFor(tripId)}/browser/watch?width=${FRAME_WIDTH}&fps=${WATCH_FPS}`, { lastEventId: 0, signal }),
     // The ixigo login's Watch (travel/login.ts): a session on the browser's screen, as the working card's Watch opens one.
     screen: async (tripId, mode) => openSession(v1, await browsers.userFor(tripId), null, mode),
+    // The one-tap login's Watch, ended the moment Go sees the login land (travel/login.ts): Bash's page closes itself.
+    endScreen: async (sessionId) => {
+      await v1.call('DELETE', `/v1/sessions/${encodeURIComponent(sessionId)}`, { signal: AbortSignal.timeout(2_000) });
+    },
     // Where the browser's ixigo login stands, for every trip of the person's (travel/login.ts).
     login: browsers,
   };
