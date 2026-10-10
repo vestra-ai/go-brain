@@ -15,8 +15,9 @@ import type { ServerLink } from '../../door/server-link.js';
 import { dayText } from '../answer.js';
 import { clip, formatInr } from '../cards.js';
 import { stableId } from '../ids.js';
-import type { RecipeRunner } from '../recipes/runners.js';
+import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
+import type { RecipeRunner } from '../recipes/runners.js';
 import type { StoredOffer } from '../travel.js';
 import { fareFor, reviewAddress } from './review-address.js';
 import { FARE_TYPES, ixigoCoupon, reviewFare, type FareChoice } from './review-read.js';
@@ -75,6 +76,11 @@ export interface FlightBookingDeps {
   nameOf: (tripId: string, personId: string) => Promise<string>;
   /** Money's Pay, read at the tap: money registers after travel. */
   pay?: () => TicketPay | undefined;
+  /**
+   * The trip's ixigo login (login.ts): the saved travellers are the logged-in account's, so a trip with none is asked to
+   * log in once, on its own card, and the booking stops there.
+   */
+  login?: Pick<IxigoLogin, 'ensure'>;
   runner: () => RecipeRunner | null;
   link: Pick<ServerLink, 'request'>;
   switches: Pick<Switches, 'get'>;
@@ -257,6 +263,8 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     // inside the logged-in page, matched by first name, then ticked on ixigo's traveller step in a private tab (no
     // picture). The list and their name live in this run's memory only. Nothing is submitted.
     await live.step(3, 'doing');
+    const login = d.login ? await d.login.ensure(ask.tripId, `Booking ${title} for ${ask.name}`, { booking: true }).catch(() => null) : { ok: true as const };
+    if (!login?.ok) return fail('login_needed', 3);
     const day = results.searchParams.get('date') ?? '';
     const ms = dayMs(day);
     const saved = runner.pageFetch && ms !== null

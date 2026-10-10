@@ -172,6 +172,20 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect(rows).toEqual([{ person_id: 'p_arjun2', why: 'several_saved_travellers' }, { person_id: 'p_kabir2', why: 'no_saved_traveller' }]);
   });
 
+  it('asks for the trip\'s ixigo login before the saved travellers, and stops there when there is none', async () => {
+    const { runner, calls } = fakeRunner();
+    const asked: string[] = [];
+    const b = createFlightBooking({
+      pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, nameOf: async () => 'Someone',
+      login: { ensure: async (_trip, what) => (asked.push(what), { ok: false, note: 'asked to log in' }) },
+    });
+    await b.start({ tapId: 'tap_l1', tripId: 't_goa', personId: 'p_meher5', name: 'Meher', offer: OFFER, choice: 'basic' });
+    await b.settled();
+    expect(asked).toEqual(['Booking IndiGo 6E2150 for Meher']);
+    expect(calls).toEqual([]);
+    expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher5'`)).rows[0]).toEqual({ state: 'failed', why: 'login_needed' });
+  });
+
   it("stops when her saved traveller couldn't be ticked on ixigo's traveller step, whether the fetch failed or ran out at the tick", async () => {
     for (const [tick, person] of [[false, 'p_meher2'], ['ran_out', 'p_meher3']] as const) {
       const b = booking(fakeRunner({ tick }).runner);
