@@ -45,14 +45,17 @@ describe('trains.schedule', () => {
   });
 
   // The page's own data (its hidden input "dataBE", the sample's cut to the train, its stops, fares and stations).
-  it("adds the train's rake, speeds, rating and rake sharing, and each class's fare with its Tatkal charge", async () => {
+  it("adds the train's rake, top speed, rating and rake sharing, and each class's fare with its Tatkal charge", async () => {
     const got = await facts('trains.schedule', { train: '10103' }, [capture('/trains/10103$', 'https://www.ixigo.com/trains/10103', sample('trains.schedule.html'))]);
     expect(got.rows[0]).toMatchObject({
-      rake: 'LHB', average_speed: '39 km/h', top_speed: '120 km/h', distance: '581 km', rating: '3.0 of 5',
+      rake: 'LHB', top_speed: '120 km/h', rating: '3.0 of 5',
       rake_sharing: 'RSA - Rake Sharing; 10104 - 20111 - 20112 - 10103; 3 Rakes; PM @ MAO; ISO Certified Train; '
         + '10104/Mandovi Express 20111/Konkan Kanya SF Express 20112/Konkan Kanya SF Express 10103/Mandovi Express',
       fares: ['1A: ₹2,605, Tatkal ₹400 more', 'SL: ₹390, Tatkal ₹111 more', '3A: ₹1,070, Tatkal ₹293 more', '2A: ₹1,540, Tatkal ₹400 more'],
     });
+    // The data's length (581 km) disagrees with its own timetable (765 km), so neither it nor the average from it is said.
+    expect(got.rows[0]).not.toHaveProperty('distance');
+    expect(got.rows[0]).not.toHaveProperty('average_speed');
   });
 
   it('still answers from its tables when the page comes without its data', async () => {
