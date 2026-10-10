@@ -23,16 +23,17 @@ changes_state: false
 let:
   product_code: >-
     ($p := $lowercase($trim(product)); $p in ['flights', 'flight'] ? 'FLIGHTS' : $p in ['hotels', 'hotel', 'stays', 'stay'] ? 'HOTELS' : $p in ['trains', 'train'] ? 'TRAINS')
+  # The product's tab under /offers: "/tag/hotels", or none for all of them.
   tab: >-
-    $product_code = 'FLIGHTS' ? '/offers/tag/flight-offers' : $product_code = 'HOTELS' ? '/offers/tag/hotels' : $product_code = 'TRAINS' ? '/offers/tag/trains' : '/offers'
+    $product_code = 'FLIGHTS' ? '/tag/flight-offers' : $product_code = 'HOTELS' ? '/tag/hotels' : $product_code = 'TRAINS' ? '/tag/trains' : ''
   journey_type: "($j := $lowercase($trim(journey)); $j = 'international' ? 'INTERNATIONAL' : $j = 'domestic' ? 'DOMESTIC')"
   journey_param: "$journey_type ? 'journeyType=' & $journey_type & '&'"
   journey_button: "$journey_type = 'INTERNATIONAL' ? 'International' : $journey_type = 'DOMESTIC' ? 'Domestic'"
   bank_words: "$type(bank) = 'string' and $trim(bank) != '' ? $trim(bank)"
-page: "{$tab}"
+page: "/offers{$tab|raw}"
 # The page's document, and the offers' own calls: the next pages as the list scrolls, and a pressed filter's.
 capture:
-  - { match: "{$tab}$", max_bytes: 1000000 }
+  - { match: "/offers{$tab}$", max_bytes: 1000000 }
   - { match: /upahaar-inventory/api/offers/v2/list, required: false, max_count: 6, max_bytes: 1000000 }
 # The buttons the person would press, so the group sees the same list: the journey, then the bank's checkbox. Either may
 # be missing on a tab (no international offers there); the offers that fit are kept below all the same.
