@@ -37,6 +37,11 @@ export interface TravelToolDeps {
   warmForTravel?: (tripId: string, kind: TravelKind) => void;
   /** Today in the trip's time zone (YYYY-MM-DD), to read the ask a search answers. Default: India's. */
   today?: (tripId: string) => Promise<string>;
+  /**
+   * Once a stays card is up: its top pick's own ixigo page, opened on the trip's stage for the room to watch, and what it
+   * says kept for the next question about it (Keshav, 10 Oct: the group sees Go act on ixigo). Absent, nothing opens.
+   */
+  showPick?: (tripId: string, pageUrl: string) => void;
 }
 
 const todayOf = (d: Pick<TravelToolDeps, 'today' | 'now'>, tripId: string): Promise<string> =>
@@ -317,7 +322,7 @@ export async function putUpCard(
   numbers: number[],
   given: { title: string; line: string },
   ctx: TurnCtx,
-  d: Pick<TravelToolDeps, 'results' | 'images'>,
+  d: Pick<TravelToolDeps, 'results' | 'images' | 'showPick'>,
 ): Promise<{ cardId: string; shown: number }> {
   const cardId = ctx.stableId('c_opt');
   const run = runOfSet.get(set.resultsId);
@@ -347,6 +352,9 @@ export async function putUpCard(
   const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
   ctx.cards.push(shown);
   ctx.lines.push(given.line);
+  // The stays' top pick, its own page on the stage once its card is up: the room watches Go open it.
+  const top = set.optionKind === 'stay' ? ixigoPage(picks[0]?.option.sourceUrl ?? null) : null;
+  if (top) d.showPick?.(ctx.tripId, top);
   return { cardId, shown: shown.options.length };
 }
 

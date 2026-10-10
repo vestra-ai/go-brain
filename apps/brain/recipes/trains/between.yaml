@@ -82,6 +82,14 @@ fast:
 capture:
   - /trains/v1/search/between/
   - { match: /api/v3/trains/availability, required: false }
+# What the group watches on the stage: the results come in, a scroll brings the trains' class tiles (each class's fare and
+# seats) on screen, and the last picture waits for them to be drawn.
+fetch:
+  - when: "true"
+    steps:
+      - { op: wait_for, match: /trains/v1/search/between/ }
+      - { op: scroll, times: 1 }
+    settle_ms: 550
 read:
   rows:
     from: /trains/v1/search/between/

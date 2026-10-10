@@ -201,7 +201,15 @@ export const registerTravel: RegisterLane = async (brain) => {
     placeFor: createPlaceFor({ pool: brain.pool, engine, images, log: brain.log }),
   });
   const today = tripToday(brain.pool, brain.now);
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today })) brain.tools.register(t);
+  // A stays card's top pick, its own page opened on the stage (a watched read: a progress to follow puts it there), its
+  // details kept by the engine for "tell me about this villa". Only where Go reads ixigo.com itself.
+  const showPick = (tripId: string, pageUrl: string): void => {
+    if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
+    void engine.answer('hotels.details', { hotel: pageUrl }, { tripId, onProgress: () => undefined }).catch((err: unknown) => {
+      brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
+    });
+  };
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick })) brain.tools.register(t);
   // The budget the group decided: kept with set_budget, and in "Right now" for every turn, as strong context, never a filter.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
   brain.tools.register(budgetTool({ budgets }));
@@ -247,7 +255,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   // One still running is handed over, and the turn says nothing more: the live card covers the wait.
   brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, log: brain.log }));
   // A search that outlived its turn wakes Go with its options, and that wake puts them up itself: card and line.
-  brain.context.addDirect(searchWakeAnswer({ results, images }));
+  brain.context.addDirect(searchWakeAnswer({ results, images, showPick }));
   brain.context.addWake('search', renderSearchWake);
   // A turn that ends ends the live search cards it left open.
   brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));
