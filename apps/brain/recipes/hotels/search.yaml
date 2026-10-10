@@ -36,7 +36,9 @@ page: >-
   /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={$booked_rooms}&childCount=0{$count($filters) > 0 ? '&filters=' & $encodeUrlComponent($join($filters, ','))|raw}{$site_sort ? '&sort=' & $site_sort : (sort in ['SC_P', 'SC_P_LH', 'SC_P_HL', 'SC_UR'] ? '&sort=' & sort)|raw}
 # What ixigo offers to narrow and order a place's stays, as its results page loads it for itself (its metadata call):
 # every filter group with its options and codes, and the sorts. Read on every search, kept per place, and shown to the
-# model, which maps the group's ask onto it ($site, $site_sort). Price bands have no names: Go checks a price itself.
+# model, which maps the group's ask onto it ($site, $site_sort). Price bands have no names (DP_2000_2500: ₹2,000 to
+# ₹2,500 a night, a room): bands reads them apart, kept with their prices for Go alone, and a budget the group decided
+# picks them; the model's list never holds them.
 offers:
   from: /accommodation-search/api/v2/accommodations/search/metadata$
   list: |
@@ -52,6 +54,10 @@ offers:
         }]
       )
     )
+  bands: |
+    [($type($) = "array" ? $[0] : $).data.metaData.filterCriteriaMap.dynamicPrice.data[$type(code) = "string" and $exists($num(minPrice)) and $exists($num(maxPrice))].{
+      "kind": "price", "group": "Price", "name": "₹" & minPrice & " to ₹" & maxPrice, "code": code, "min": $num(minPrice), "max": $num(maxPrice)
+    }]
   for: "{place.location.locationId}"
   about: "stays in {place.location.locationName}"
 capture:
@@ -90,10 +96,11 @@ answer:
   # A price is the room's nightly fare plus taxes and fees, per night and per room, as ixigo shows it; a stay booked as
   # one room (an entire house: its room is the whole place) is just per night. The whole stay is that times the nights
   # and the rooms booked, and guests is the head count ixigo priced it for (a share per head divides the whole stay by
-  # it). What ixigo filtered on, every stay it gave has; the rest is what it lists. Every detail but the id, the name and
-  # the fare may be missing or null (O Hotel Goa came with a null image). The list gives up to seven photos a stay
-  # (Agoda's and Booking.com's, 1024x768) and a few amenities in ixigo's words; a cancellation date, the rest of the
-  # photos and the landmarks are only on the hotel's own page (8 Oct).
+  # it). The coupon ixigo applies on its own is already in the price ("Discount of ₹844 included. Coupon code IXIFIRST
+  # applied", 10 Oct), and the price says so. What ixigo filtered on, every stay it gave has; the rest is what it lists.
+  # Every detail but the id, the name and the fare may be missing or null (O Hotel Goa came with a null image). The list
+  # gives up to seven photos a stay (Agoda's and Booking.com's, 1024x768) and a few amenities in ixigo's words; a
+  # cancellation date, the rest of the photos and the landmarks are only on the hotel's own page (8 Oct).
   each: |
     (
       $nights := $nights($inputs.check_in, $inputs.check_out);
@@ -117,12 +124,18 @@ answer:
       $image := ($medium != null) ? $medium : imageInfoList[0].url;
       $photos := $texts(7, imageInfoList.(urlHigh ? urlHigh : (url ? url : urlMedium)));
       $amenities := $texts(10, topOfferings[$type($) = "string" and $not($contains($, /cancel|breakfast|pay at|book with|zero payment/i))], amenities.name);
+      $coupon := ($type(fareDetail.couponCode) = "string" and $trim(fareDetail.couponCode) != "") ? $trim(fareDetail.couponCode);
+      $offer := ($type(fareDetail.offerMessage) = "string" and $trim(fareDetail.offerMessage) != "") ? $substring($trim(fareDetail.offerMessage), 0, 80);
+      $payAtHotel := $said(/pay at hotel/i, "PT_PAY_AT_HOTEL") or fareDetail.paymentType = "PAY_AT_HOTEL";
+      $zeroNow := $said(/book with (₹|rs\.?\s*)?0|zero payment/i, "PT_BOOK_WITH_ZERO_PAYMENT") or fareDetail.paymentType = "BOOK_WITH_ZERO_PAYMENT";
+      $left := $num(roomsCountLeft);
+      $scarce := ($left > 0 and $left <= 3) ? "Only " & $string($left) & " room" & ($left = 1 ? "" : "s") & " left";
       ($num(hotelId) and $type($name) = "string") ? {
         "title": $name,
         "priceMinor": $nightly,
         "totalMinor": $nightly * $nights * $rooms,
         "currency": "INR",
-        "priceNote": $rooms = 1 ? "per night" : "per night, per room",
+        "priceNote": ($rooms = 1 ? "per night" : "per night, per room") & ($coupon ? ", " & $coupon & " applied" : ""),
         "place": {
           "name": $substring($name, 0, 120),
           "address": $address ? $substring($address, 0, 200),
@@ -134,7 +147,7 @@ answer:
         "imageUrls": $photos,
         "amenities": $amenities,
         "rating": $rating10 ? $floor($rating10 * 5 + 0.5) / 10,
-        "highlights": $highlights($distance, $freeCancellation ? "Free cancellation", $breakfast ? "Breakfast included", $pool ? "Pool"),
+        "highlights": $highlights($distance, $freeCancellation ? "Free cancellation", $breakfast ? "Breakfast included", $pool ? "Pool", $scarce),
         "facts": {
           "nights": $nights,
           "rooms": $rooms,
@@ -149,7 +162,15 @@ answer:
           "pool": $pool,
           "breakfast": $breakfast,
           "free_cancellation": $freeCancellation,
-          "beach_minutes": $beach
+          "beach_minutes": $beach,
+          "coupon": $coupon,
+          "offer": $offer,
+          "pay_at_hotel": $payAtHotel,
+          "book_with_zero": $zeroNow,
+          "rooms_left": $left > 0 ? $left,
+          "couple_friendly": coupleFriendly = true ? true,
+          "travellers_choice": travellerChoice = true ? true,
+          "trending": $join($texts(2, fomoTags.data), "; ") ? $substring($join($texts(2, fomoTags.data), "; "), 0, 80)
         },
         "sourceUrl": "https://www.ixigo.com/hotels/" & $string(hotelId) & "/details?" & $query({
           "locationId": $num(locationId) ? $num(locationId) : $inputs.place.location.locationId,

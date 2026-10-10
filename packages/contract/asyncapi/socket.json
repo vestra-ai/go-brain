@@ -2480,6 +2480,18 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "per_person_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -7349,6 +7361,7 @@
             "enum": [
               "added",
               "removed",
+              "updated",
               "approved",
               "disputed"
             ]
@@ -7413,7 +7426,7 @@
           "type",
           "data"
         ],
-        "description": "An expense was added or removed, or (1.1) someone it is split between approved or disputed it."
+        "description": "An expense was added, removed, or (1.1) changed."
       },
       "SettlementRecordedData": {
         "type": "object",
@@ -7468,7 +7481,7 @@
           "type",
           "data"
         ],
-        "description": "1.1: someone paid someone back, and the one paid confirmed it. Only confirmed settlements are sent."
+        "description": "1.1: someone recorded paying someone back. It counts at once, so its status is always confirmed."
       },
       "Event": {
         "oneOf": [
@@ -7692,6 +7705,18 @@
                 "items": {
                   "$ref": "#/components/schemas/Day"
                 }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget_per_person_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"

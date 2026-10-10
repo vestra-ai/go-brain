@@ -8,6 +8,8 @@ inputs:
   from: { kind: place, lookup: buses.city_lookup, about: the city or boarding point people leave from }
   to: { kind: place, lookup: buses.city_lookup, about: the city or boarding point people go to }
   date: { kind: date, about: the day the bus leaves }
+  board_at: { kind: text, optional: true, about: "a pickup point the group named, as a place's name (\"Majestic\")" }
+  drop_at: { kind: text, optional: true, about: "a drop point the group named, as a place's name (\"Mapusa\")" }
 auth: none
 changes_state: false
 page: /buses/bus_search/{from.name}/{from.id}/{to.name}/{to.id}/{date|DD-MM-YYYY}/O
@@ -17,7 +19,32 @@ capture:
   - /buslist/v3/services$
 # What the group watches on the stage: the buses come in, a scroll brings their cards (operator, bus type, times, fare,
 # seats left) on screen, and the last picture waits for them to be drawn.
+# A pickup or drop the group named: ixigo's own chip for it clicked as a person narrows the list. The filter is the page's
+# own, over the same list (10 Oct, Bengaluru to Goa: "Majestic", then the Dropping Points tab and "Mapusa", narrowed the
+# cards with no new call and the same address). A point with no chip on the strip is skipped; Go's own filter still keeps
+# only the buses that stop there.
 fetch:
+  - when: "$exists(board_at) and $exists(drop_at)"
+    steps:
+      - { op: wait_for, match: /buslist/v3/services$ }
+      - { op: click, role: link, text: "{board_at}", optional: true, within_ms: 1500 }
+      - { op: click, role: link, name: Dropping Points, optional: true, within_ms: 1500 }
+      - { op: click, role: link, text: "{drop_at}", optional: true, within_ms: 1500 }
+      - { op: scroll, times: 1 }
+    settle_ms: 550
+  - when: "$exists(board_at)"
+    steps:
+      - { op: wait_for, match: /buslist/v3/services$ }
+      - { op: click, role: link, text: "{board_at}", optional: true, within_ms: 1500 }
+      - { op: scroll, times: 1 }
+    settle_ms: 550
+  - when: "$exists(drop_at)"
+    steps:
+      - { op: wait_for, match: /buslist/v3/services$ }
+      - { op: click, role: link, name: Dropping Points, optional: true, within_ms: 1500 }
+      - { op: click, role: link, text: "{drop_at}", optional: true, within_ms: 1500 }
+      - { op: scroll, times: 1 }
+    settle_ms: 550
   - when: "true"
     steps:
       - { op: wait_for, match: /buslist/v3/services$ }
@@ -25,6 +52,18 @@ fetch:
     settle_ms: 550
 read:
   rows: { from: /buslist/v3/services$, list: services }
+  also:
+    # Each operator by its id: whether it is a state transport's (RTC).
+    operators: { from: /buslist/v3/services$, value: operators }
+    # Every pickup and drop point on the list by its id: its name, ixigo's rank by how many people board there (0 for
+    # none), and where it is when ixigo says (only its ranked points: 5 of Goa's 33 drops, 10 Oct). Each bus names its own
+    # by id (filters.boardingPoints, filters.droppingPoints).
+    boarding:
+      from: /buslist/v3/services$
+      value: '$merge([boardingPointList[$type(filterName) = "string" and $trim(filterName) != ""].{ $string(filterID): { "name": $trim(filterName), "rank": $num(rank) } }])'
+    dropping:
+      from: /buslist/v3/services$
+      value: '$merge([droppingPointList[$type(filterName) = "string" and $trim(filterName) != ""].{ $string(filterID): { "name": $trim(filterName), "rank": $num(rank), "lat": $num(lat), "lng": $num(long) } }])'
 answer:
   as: options
   kind: bus
@@ -32,15 +71,30 @@ answer:
   # Every detail but the operator, the fare and the start may be missing or null. arriveTimestamp is India's clock written
   # as if it were UTC, so the arrival is the departure plus the journey time,
   # and that clock only when the journey time is missing. ixigo has no page per bus: "Select Seats" opens on the results.
+  # A bus's pickup and drop points are said by name, the busiest first ("; " between them: a name may hold a comma):
+  # Go's own filter keeps the buses that stop where the group named (filters.ts), whatever read it has. Its drops with a
+  # position (drop_spots) give its nearest drop to the group's stay, worked out per trip (tools.ts nearStay).
   each: |
     (
       $mins := $minutes(timings.travelTime);
       $arrive := $exists($mins) ? $istPlus(timings.startTimeDateFormat, $mins) : (timings.arriveTimestamp ? $istFromWallSeconds(timings.arriveTimestamp));
       $operator := $trim(travelerAgentName);
       $seats := $num(seatStats.availableSeats);
+      $kind := $lowercase(($type(busTypeName) = "string" ? busTypeName : "") & " " & ($type(busType) = "string" ? busType : ""));
+      $ac := $contains($kind, /non[\s-]?a\.?\/?c/) ? false : ($contains($kind, /\ba\.?\/?c\b/) ? true);
+      $flags := flags;
+      $flag := function($f) { $num($lookup($flags, $f)) = 1 ? true };
+      $op := $operators ? $lookup($operators, $string(operatorId));
+      $fc := $flag("isFcOperator");
       $offer := $num(fares.offerPrice);
       $rating := $num(rating);
       $ratings := $num(noOfRatings);
+      $named := function($ids, $all) {
+        $all ? [$sort([$ids.$lookup($all, $string($))], function($a, $b) { ($a.rank > 0 ? $a.rank : 9999) > ($b.rank > 0 ? $b.rank : 9999) }).name]
+      };
+      $boards := $named(filters.boardingPoints, $boarding);
+      $drops := $named(filters.droppingPoints, $dropping);
+      $placed := $dropping ? [filters.droppingPoints.$lookup($dropping, $string($))[$exists(lat) and $exists(lng)]] : [];
       $exists($arrive) ? {
         "title": $operator,
         "priceMinor": $paise($offer ? $offer : $num(fares.fare)),
@@ -55,8 +109,29 @@ answer:
           "carrier_name": $substring($operator, 0, 60)
         },
         "rating": ($exists($rating) and ($exists($ratings) ? $ratings : 1) > 0) ? $rating,
-        "highlights": $highlights(busTypeName, $exists($mins) ? $hoursMinutes($mins), ($exists($seats) and $seats <= 5) ? $string($seats) & " seat" & ($seats = 1 ? "" : "s") & " left"),
-        "facts": { "bus_type": busTypeName, "seats_left": $seats, "duration_min": $mins, "reviews": $ratings },
+        "highlights": $highlights(busTypeName, $exists($mins) ? $hoursMinutes($mins), ($exists($seats) and $seats <= 5) ? $string($seats) & " seat" & ($seats = 1 ? "" : "s") & " left", $fc ? "Free cancellation"),
+        "facts": {
+          "bus_type": busTypeName, "seats_left": $seats, "duration_min": $mins, "reviews": $ratings,
+          "ac": $ac,
+          "sleeper": $contains($kind, /sleeper/) ? true,
+          "seater": $contains($kind, /seater/) ? true,
+          "volvo": ($flag("isVolvo") or $flag("isVolvo9600")) ? true,
+          "electric": $flag("isElectric"),
+          "luxury": $flag("isLuxury"),
+          "women_safe_boarding": $flag("isWomenSafeBoarding"),
+          "female_seats_left": $num(seatStats.femaleAvailableCount),
+          "single_berths": $num(seatStats.singleBerthsCount),
+          "window_seats": $num(seatStats.windowSeatCount),
+          "free_cancellation": $fc,
+          "assured": $flag("isAssuredOperator"),
+          "live_tracking": $flag("isTrackAvail"),
+          "state_transport": ($op.isGovtOperator = "1" or $num($op.isRTC) = 1) ? true,
+          "via": ($type(viaPlaces) = "string" and $trim(viaPlaces) != "") ? $substring($trim(viaPlaces), 0, 80),
+          "tags": $join($texts(3, tags.title), ", ") ? $substring($join($texts(3, tags.title), ", "), 0, 80),
+          "boarding_points": $count($boards) > 0 ? $join($boards, "; "),
+          "dropping_points": $count($drops) > 0 ? $join($drops, "; "),
+          "drop_spots": $count($placed) > 0 ? $join([$placed.(name & " (" & $string(lat) & ", " & $string(lng) & ")")], "; ")
+        },
         "sourceUrl": $page
       }
     )

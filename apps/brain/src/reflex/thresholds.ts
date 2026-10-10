@@ -47,7 +47,9 @@ export const BARS = {
    * RECIPE_BARS.recipe, RECIPE_RIVAL_BAR). On Go's set (Jev 1.13.0, two recordings on 2026-10-07) one search ask is read
    * as the wrong kind, "sleeper availability Mumbai to Goa" as buses, at 0.76 and 0.81: every bar up to 0.8 makes a wrong
    * pick on at least one recording, and 0.85 clears it by 0.04. 0.9 leaves room for answers moving by up to 0.10 between
-   * runs (recall 0.91 and 0.90, no wrong pick on either).
+   * runs (recall 0.91 and 0.90, no wrong pick on either). Recorded again on 2026-10-10 with question 10's twelve choices
+   * beyond the searches (17 options with none): no wrong pick on two runs at these bars, live recall 0.87 and search
+   * recall 0.94, and a whole Jev call still 134 ms at the middle and 161 ms at p90.
    */
   recipe: { pickMin: 0.9, rivalMax: 0.3 },
 };

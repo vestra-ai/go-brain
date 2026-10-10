@@ -1,0 +1,66 @@
+id: trains.coach_position
+title: Where a train's coaches stand on the platform, in order from the engine, at a station, by ixigo's train page
+asks:
+  - where will coach b2 of 10103 stop
+  - 12015 coach position
+  - mandovi express mein s4 kahan aayega
+  - coach position of 12951 at kota
+inputs:
+  train: { kind: text, about: "the train's 5-digit number (trains.by_name finds it from a name)" }
+  coach: { kind: text, optional: true, about: "a coach people asked about, such as B2 or S4" }
+  station: { kind: text, optional: true, about: "the station people board at, by its code (KOTA) or name; the train's first station when not given" }
+auth: none
+changes_state: false
+# ixigo's train page keeps its whole data in a hidden input (html_inputs, "dataBE"): its coach orders as strings from the
+# engine end, one a direction (",En:,GS:,GS:M3,3E:M2,3E:...": a coach and its class, then ":"; no coach is the engine, a
+# general or a pantry car), and each stop's locoIndex, the order the train stands in there, so where it reverses the
+# order flips. The page draws the first station's order only; the stage scrolls to it.
+page: /trains/{train}
+capture:
+  - { match: "/trains/{train}$", max_bytes: 1000000 }
+fetch:
+  - when: "true"
+    steps:
+      - { op: click, text: COACH POSITION, optional: true }
+read:
+  rows: { from: "/trains/{train}$", format: html_inputs, list: "[ inputs.dataBE ]" }
+answer:
+  as: facts
+  title: "Train {train} coaches"
+  max: 1
+  each: |
+    (
+      $words := { "En": "Engine", "GS": "General", "PC": "Pantry car" };
+      $stops := schedules;
+      $asked := $trim($string($inputs.station));
+      $here := $asked ? $stops[$uppercase(destination.code) = $uppercase($asked) or $lowercase(destination.localName) = $lowercase($asked)][0];
+      $stop := $here ? $here : $stops[0];
+      $order := $exists(info.locomotives[$stop.locoIndex]) ? info.locomotives[$stop.locoIndex] : info.locomotive;
+      $coaches := $map($filter($split($order, ":"), function($p) { $p != "" }), function($p, $i) {(
+        $c := $split($p, ",");
+        {
+          "at": $i,
+          "coach": $c[0],
+          "name": $c[0] != "" ? $c[0] & " (" & $c[1] & ")" : ($lookup($words, $c[1]) ? $lookup($words, $c[1]) : $c[1])
+        }
+      )});
+      $want := $uppercase($trim($string($inputs.coach)));
+      $found := $want ? $coaches[$uppercase(coach) = $want][0];
+      $turns := $map($stops, function($s, $i) { ($i > 0 and $s.locoIndex != $stops[$i - 1].locoIndex) ? $s.destination.localName & " (" & $s.destination.code & ")" });
+      {
+        "train": info.localName & " " & info.code,
+        "at": $stop.destination.localName & " (" & $stop.destination.code & ")",
+        "coaches": $count($coaches),
+        "order_from_engine": [$coaches.name],
+        "coach": $want ? ($found ? $found.name & ": position " & $found.at & " of 0 to " & ($count($coaches) - 1) & " from the engine end" : $want & " is not one of this train's coaches"),
+        "not_a_stop": ($asked and $not($exists($here))) ? $asked & " is not one of its stops: " & $join($stops.destination.code, ", "),
+        "order_flips_at": $count($turns) > 0 ? [$turns],
+        "rake": info.rakeType
+      }
+    )
+ttl_minutes: 60
+samples: { page: trains.coach_position.html }
+notes: >-
+  ixigo's coach order is from past runs, not today's ("based on historic data. It does not represent current status");
+  the coach is confirmed on the station's display board. Position 0 is the engine end. Coach letters: H 1A, A 2A, B 3A,
+  M 3E, S SL, C CC, E EC, D 2S.

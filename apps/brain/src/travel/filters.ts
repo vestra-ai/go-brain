@@ -45,6 +45,18 @@ const MISSING: Record<MustHave, string> = {
   non_stop: 'not non-stop',
 };
 
+/**
+ * A bus's point the group named, from its points as the recipe reads them ("Majestic; Silk Board; …", the busiest
+ * first): the first whose name holds their words or is held in them ("Majestic" and "Majestic- Amar Hotel"), or null.
+ */
+export function pointAt(points: string, words: string): string | null {
+  const w = words.trim().toLowerCase();
+  return points.split('; ').find((p) => {
+    const name = p.trim().toLowerCase();
+    return name !== '' && (name.includes(w) || w.includes(name));
+  }) ?? null;
+}
+
 /** Each constraint this option does not meet, in plain words ("no pool", "₹12,200 a night, over ₹10,000"); none means it fits. */
 export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): string[] {
   const out: string[] = [];
@@ -63,6 +75,9 @@ export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): strin
   if (q.minRating !== undefined && (o.rating ?? 0) < q.minRating) out.push(o.rating === undefined ? 'no rating' : `rated ${o.rating}, under ${q.minRating}`);
   if (kind === 'stays' && q.guests !== undefined && typeof o.facts.sleeps === 'number' && o.facts.sleeps < q.guests) out.push(`sleeps ${o.facts.sleeps}, fewer than ${q.guests}`);
   for (const need of q.mustHave ?? []) if (!has(o, need)) out.push(MISSING[need]);
+  // A bus whose points the site didn't list is not held against it; one that lists them and not this one doesn't fit.
+  if (kind === 'buses' && q.boardAt && typeof o.facts.boarding_points === 'string' && !pointAt(o.facts.boarding_points, q.boardAt)) out.push(`no pickup at ${q.boardAt}`);
+  if (kind === 'buses' && q.dropAt && typeof o.facts.dropping_points === 'string' && !pointAt(o.facts.dropping_points, q.dropAt)) out.push(`no drop at ${q.dropAt}`);
   return out;
 }
 
@@ -87,6 +102,8 @@ export function asked(kind: TravelKind, q: TravelQuery): string[] {
     non_stop: 'non-stop',
   };
   for (const need of q.mustHave ?? []) out.push(words[need]);
+  if (kind === 'buses' && q.boardAt) out.push(`picking up at ${q.boardAt}`);
+  if (kind === 'buses' && q.dropAt) out.push(`dropping at ${q.dropAt}`);
   // The site's own filters and sort, by their names on its list: ixigo applied them, not Go.
   for (const f of q.siteFilters ?? []) out.push(`${f} (ixigo's filter)`);
   if (q.siteSort) out.push(`sorted by ${q.siteSort} on ixigo`);
