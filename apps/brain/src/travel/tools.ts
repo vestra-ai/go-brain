@@ -11,7 +11,7 @@ import { dateAs } from './book/expr.js';
 import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, ledBy, leftOff, linkLine, plainAsk } from './answer.js';
-import { stayDetails, trainDetails } from './details.js';
+import { flightDetails, stayDetails, trainDetails } from './details.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
@@ -26,6 +26,11 @@ import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, typ
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelToolDeps {
+  /**
+   * The group's decided budget for the stay, per person, in paise, or null (trip-budget.ts): a stays search takes ixigo's
+   * own price bands by it. Absent, no search does.
+   */
+  stayBudget?: (tripId: string) => Promise<number | null>;
   travel: Travel;
   results: ResultsStore;
   images: Images;
@@ -94,7 +99,9 @@ export const StaysArgs = z.object({
   guests: z.int().min(1).max(30).optional(),
   max_price_per_night: Rupees.optional().describe('In rupees a night, as ixigo prices a stay: a room of a hotel, the whole place of an entire house'),
   max_price_per_person: Rupees.optional()
-    .describe("In rupees: each person's share of the whole stay, as in \"under 8k a head\" or \"15k each\". Go divides each stay's total by the people and says the share"),
+    .describe("In rupees: each person's share of the WHOLE stay, as in \"under 8k a head\" or \"15k each\" for the trip. Go divides each stay's total by the people and says the share"),
+  max_price_per_person_per_night: Rupees.optional()
+    .describe("In rupees: each person's share a NIGHT, as in \"8k a head a night\". Go works out the whole stay's share from the nights; never both this and max_price_per_person"),
   must_have: z.array(z.enum(MUST_HAVES)).max(5).optional()
     .describe("pool, beach (10 minutes or less), breakfast, free_cancellation. When ixigo's own filters for the place are in your context, use them in site_filters instead, and must_have only for the beach"),
   min_rating: z.number().min(0).max(5).optional(),
@@ -138,6 +145,17 @@ function askedTravellers(q: TravelQuery, ctx: TurnCtx): TravelQuery {
   return rest;
 }
 
+export const BusesArgs = JourneyArgs.extend({
+  board_at: z.string().min(2).max(60).optional()
+    .describe('A pickup point the group named, as its place name ("Majestic", "Silk Board"): only buses that stop there fit, and ixigo\'s own chip for it is clicked'),
+  drop_at: z.string().min(2).max(60).optional()
+    .describe('A drop point the group named, as its place name ("Mapusa", "Panjim"): only buses that stop there fit, and ixigo\'s own chip for it is clicked'),
+});
+
+export function busesQuery(a: z.infer<typeof BusesArgs>): TravelQuery {
+  return { ...journeyQuery(a), ...(a.board_at ? { boardAt: a.board_at } : {}), ...(a.drop_at ? { dropAt: a.drop_at } : {}) };
+}
+
 export function journeyQuery(a: z.infer<typeof JourneyArgs>): TravelQuery {
   return {
     from: a.from,
@@ -152,6 +170,10 @@ export function journeyQuery(a: z.infer<typeof JourneyArgs>): TravelQuery {
   };
 }
 
+/** The nights between check-in and check-out (YYYY-MM-DD), at least one. */
+const nightsOf = (checkIn: string, checkOut: string): number =>
+  Math.max(1, Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000));
+
 export function staysQuery(a: z.infer<typeof StaysArgs>): TravelQuery {
   return {
     area: a.area,
@@ -160,6 +182,9 @@ export function staysQuery(a: z.infer<typeof StaysArgs>): TravelQuery {
     ...(a.guests ? { guests: a.guests } : {}),
     ...(a.max_price_per_night ? { maxPriceMinor: toPaise(a.max_price_per_night) } : {}),
     ...(a.max_price_per_person ? { maxShareMinor: toPaise(a.max_price_per_person) } : {}),
+    // A budget a head a night is the whole stay's share over its nights, worked out here, never by the model: the band
+    // cap then divides the whole stay by the nights once (engine siteOf), never a night's budget again.
+    ...(a.max_price_per_person_per_night && !a.max_price_per_person ? { maxShareMinor: toPaise(a.max_price_per_person_per_night) * nightsOf(a.check_in, a.check_out) } : {}),
     ...(a.must_have ? { mustHave: a.must_have } : {}),
     ...(a.min_rating !== undefined ? { minRating: a.min_rating } : {}),
     ...(a.site_filters?.length ? { siteFilters: a.site_filters } : {}),
@@ -277,9 +302,13 @@ const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '')
  * prices and the stays' areas. When nothing fits it names the conditions and the nearest misses (stays: on a card), so a
  * line about it can never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
  */
-async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
+async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
   // A search starting is travel intent: the trip's computer stays awake for the follow-ups too.
   d.warmForTravel?.(ctx.tripId, kind);
+  // Stays: the ask's own budget a head, else the group's decided one, picks ixigo's own price bands for the read (one band
+  // over kept, and the search without them when they hold nothing: backend.ts). Never a guessed budget.
+  const decided = kind === 'stays' ? (given.maxShareMinor ?? (d.stayBudget ? await d.stayBudget(ctx.tripId).catch(() => null) : null)) : null;
+  const q: TravelQuery = decided ? { ...given, budgetMinor: decided } : given;
   const pending = d.travel.search(kind, q, { tripId: ctx.tripId, turnId: ctx.turnId });
   // Handled at once, so a refusal that lands while the wait is worked out is never an unhandled rejection; it is read below.
   pending.catch(() => undefined);
@@ -335,7 +364,9 @@ export async function putUpCard(
     numbers.map(async (n, i) => {
       const option = set.options[n - 1]!;
       const gallery = set.optionKind === 'stay' ? (await Promise.all((option.imageUrls ?? []).map((u) => d.images.rehostUrl(u)))).filter((u): u is string => u !== null) : [];
-      const details = set.optionKind === 'stay' ? stayDetails(option, query, people, gallery) : set.optionKind === 'train' ? trainDetails(option) : null;
+      const details = set.optionKind === 'stay'
+        ? stayDetails(option, query, people, gallery)
+        : set.optionKind === 'train' ? trainDetails(option) : set.optionKind === 'flight' ? flightDetails(option, people) : null;
       return {
         n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null,
         ...(details ? { details } : {}),
@@ -665,6 +696,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     `${left ? ` ${left}.` : ''}` +
     `${pick.length ? ` Not filtered by ixigo, for you to pick from each option's amenities and details: ${listOf(pick)}.` : ''}` +
     `${list ? ` ixigo's own filters for this place, now known: ${list}.` : ''}` +
+    `${found.site?.priced ? ` ixigo filtered them by price for the group's budget: up to ${formatInr(found.site.priced * 100)} a night a room, and one band over.` : ''}` +
     `${besides.length ? ` The nearest of the rest, saved after them: ${besides.map((b, i) => `${options.length + i + 1}. ${optionLine(b.option)}, but ${listOf(b.misses)}`).join('; ')}.` : ''}`;
   return {
     search,
@@ -767,11 +799,11 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     summarizeRound: searchRoundSummary,
     timeoutMs: SEARCH_TOOL_MS,
   };
-  const searchBuses: QuickTool<z.infer<typeof JourneyArgs>> = {
+  const searchBuses: QuickTool<z.infer<typeof BusesArgs>> = {
     name: 'search_buses',
-    description: `Searches buses on one date. ${SEARCH_RULE}`,
-    input: JourneyArgs,
-    run: (a, ctx) => runSearch('buses', journeyQuery(a), ctx, d),
+    description: `Searches buses on one date. ${SEARCH_RULE} A pickup or drop point the group named goes in board_at or drop_at.`,
+    input: BusesArgs,
+    run: (a, ctx) => runSearch('buses', busesQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,
     timeoutMs: SEARCH_TOOL_MS,
   };

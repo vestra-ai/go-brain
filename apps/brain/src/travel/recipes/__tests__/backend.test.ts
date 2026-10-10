@@ -426,7 +426,7 @@ describe("a live card belongs to its search's turn", () => {
 });
 
 describe('a fast answer', () => {
-  it('posts no live card when the run answers within 1.5 s; a slower run shows its card, with the steps it missed', async () => {
+  it('posts no live card for an answer with no page to open; a run that opens one shows its card at once, with every step', async () => {
     vi.useFakeTimers();
     try {
       expect(CARD_DELAY_MS).toBe(1_500);
@@ -435,16 +435,21 @@ describe('a fast answer', () => {
         seen.push('card');
         return { progress: (e: { type: string }) => seen.push(e.type), finish: async (ok: boolean) => { seen.push(ok ? 'done' : 'failed'); } };
       };
-      const quick = createIxigoWebBackend({ book, engine: scripted().engine, now, live: live as never });
+      // A kept answer (or a fast call): no page opened, so no card, before or after 1.5 s.
+      const kept = { answer: async () => ({ as: 'options' as const, options: [OPTION], page: 'https://www.ixigo.com/x', checkedAt: '2026-10-07T12:00:03.000Z', ms: 40 }) };
+      const quick = createIxigoWebBackend({ book, engine: kept as never, now, live: live as never });
       await quick.search('trains', TRAINS, { tripId: 't_goa' });
       await vi.advanceTimersByTimeAsync(2_000);
       expect(seen).toEqual([]);
+      // A page on the stage: its card the moment it opens (10 Oct: the live view 1.5 s sooner), never after the delay.
       const slow = scripted();
       slow.hold();
       const b = createIxigoWebBackend({ book, engine: slow.engine, now, live: live as never });
       const run = b.search('trains', TRAINS, { tripId: 't_goa' });
-      await vi.advanceTimersByTimeAsync(CARD_DELAY_MS);
+      await vi.advanceTimersByTimeAsync(0);
       expect(seen).toEqual(['card', 'opening']);
+      await vi.advanceTimersByTimeAsync(CARD_DELAY_MS);
+      expect(seen.filter((x) => x === 'card')).toHaveLength(1);
       slow.release();
       await run;
       expect(seen).toEqual(['card', 'opening', 'captured', 'extracted', 'done']);
@@ -782,5 +787,20 @@ describe("a stays ask by ixigo's own filters, by their names on its list (site_f
     expect(s.runs).toHaveLength(2);
     expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
     expect(found.unapplied).toEqual(['Pet-friendly property', 'beachfront']);
+  });
+});
+
+// The lead, 10 Oct: a decided budget picks ixigo's own price bands; a band that holds no stay falls back to the plain list.
+describe("a stays search by the group's decided budget", () => {
+  it("asks ixigo's price bands by the budget, apart from the search without it, and reads without them when they hold no stay", async () => {
+    const runs: RunFor[] = [];
+    const answer: Answer = async (_id, _given, ro) => {
+      runs.push(ro);
+      return { as: 'options', options: ro.budgetMinor ? [] : [stay(1, true), stay(2, false)], page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-10T05:00:00.000Z', ms: 900 };
+    };
+    const b = createIxigoWebBackend({ book, engine: { answer }, now });
+    const found = await b.search('stays', { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', budgetMinor: 450_000 }, { tripId: 't_band' });
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
+    expect(runs.map((r) => r.budgetMinor)).toEqual([450_000, undefined]);
   });
 });

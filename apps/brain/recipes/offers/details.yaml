@@ -4,6 +4,7 @@ asks:
   - what's the hdfc offer exactly
   - minimum amount for the AUSFD code
   - how do we use IXIHDFC3
+  - can we use the RBL code on a Tuesday
   - is offer ki terms kya hain
 inputs:
   offer: { kind: text, about: "the offer's name on ixigo, as offers.list or hotels.offers gives it, such as ausfd_hotels" }
@@ -27,6 +28,12 @@ answer:
   each: |
     (
       $items := function($html) { $match($html, /<li>([\s\S]*?)<\/li>/).groups[0].$trim($replace($replace($replace($, /<[^>]+>/, ""), /&nbsp;/, " "), /\s+/, " ")) };
+      $lines := $append($append($items(about), $items(tnc)), $items(howToAvail));
+      /* The days it works on (the page's "Offer Validity: Every Sunday, Thursday, Friday & Saturday"): its own field when
+         the offer has one, else the line of its terms that names them. The least the booking must come to, from its line. */
+      $days := $type(recurringDay) = "array" ? $join(recurringDay.$string($), ", ") : ($type(recurringDay) = "string" and recurringDay != "" ? recurringDay);
+      $dayLine := $lines[$contains($, /\b(valid|applicable|available)\b[^.]*\b((mon|tues|wednes|thurs|fri|satur|sun)days?|weekends?|weekdays?)\b/i)][0];
+      $minLine := $lines[$contains($, /\bminimum\b[^.]*₹/i)][0];
       $type(title) = "string" ? {
         "offer": title,
         "code": offerCode,
@@ -34,6 +41,9 @@ answer:
         "bank": paymentType,
         "from": startDate ? $fromMillis($toMillis(startDate), '[D] [MNn,*-3] [Y]', '+0530'),
         "until": endDate ? $fromMillis($toMillis(endDate), '[D] [MNn,*-3] [Y]', '+0530'),
+        "journey": journeyType ? $lowercase(journeyType),
+        "valid_on": $days ? $days : $dayLine,
+        "min_booking": $minLine ? $match($minLine, /₹\s?[\d,]+/)[0].match,
         "about": [$items(about)],
         "how_to_use": [$items(howToAvail)],
         "terms": [$items(tnc)],

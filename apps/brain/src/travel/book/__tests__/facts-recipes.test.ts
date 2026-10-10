@@ -90,11 +90,13 @@ describe("a stay's own page", () => {
     const got = await facts('hotels.details', { hotel: HIGH_FIVE }, [
       capture('/accommodation-search/api/v1/accommodations/details$', `${HOTEL_API}/accommodations/details`, sample('hotels.details.json')),
       capture('/accommodation-search/api/v1/maps/location$', `${HOTEL_API}/maps/location`, sample('hotels.details.map.json')),
+      capture('/rooms$', `${HOTEL_API}/accommodations/details/4395492/rooms`, sample('hotels.rooms.pay-at-hotel.json')),
     ]);
     expect(got.page).toBe(HIGH_FIVE);
     expect(got.runs[0]!.plan.capture).toEqual([
       { match: '/accommodation-search/api/v1/accommodations/details$', required: true },
       { match: '/accommodation-search/api/v1/maps/location$', required: false },
+      { match: '/accommodations/details/4395492/rooms$', required: false },
     ]);
     expect(got.title).toBe('High Five Hotels Phase 2');
     expect(got.rows).toHaveLength(1);
@@ -110,6 +112,21 @@ describe("a stay's own page", () => {
     expect((stay['nearby'] as string[]).slice(0, 2)).toEqual(['Shubadra, 0.1 km', 'Sub Centre, assagao, 0.7 km']);
     expect(stay['map']).toMatch(/^https:\/\/images\.ixigo\.com\/hotels\/images\/mapImages\/location_map_2701789_H_/);
     expect((stay['photos'] as string[])[1]).toMatch(/^Swimming pool: https:\/\/q-xx\.bstatic\.com\//);
+    // The 10 Oct atlas: the list's cards have no free cancellation date; the page's own rooms call has it, for the rate
+    // ixigo recommends.
+    expect(stay).toMatchObject({
+      cancellation: 'Free Cancellation till 05 Nov 11:59 PM (Room With Free Cancellation)',
+      free_cancellation_until: '2026-11-05T23:59:00',
+    });
+  });
+
+  it("hotels.details answers without the cancellation when the page's rooms call hasn't come", async () => {
+    const got = await facts('hotels.details', { hotel: HIGH_FIVE }, [
+      capture('/accommodation-search/api/v1/accommodations/details$', `${HOTEL_API}/accommodations/details`, sample('hotels.details.json')),
+    ]);
+    expect(got.rows[0]).toMatchObject({ name: 'High Five Hotels Phase 2' });
+    expect(got.rows[0]).not.toHaveProperty('cancellation');
+    expect(got.rows[0]).not.toHaveProperty('free_cancellation_until');
   });
 
   it('hotels.rooms answers each rate a night with its taxes, cancellation, meals and how it is paid, read from the call for that stay only', async () => {
@@ -327,21 +344,75 @@ describe("ixigo's offers pages", () => {
     expect(got.rows[0]).toEqual({ offers_on_ixigo: 71, by_journey: ['domestic: 48', 'international: 46'] });
     expect((got.rows[1]!['banks_with_offers'] as string[]).slice(0, 2)).toEqual(['AU Bank: 12', 'RBL Bank: 10']);
     expect(got.rows[2]).toEqual({
-      sale: 'Grand Travel Fest: Flat 15% on Hotels with RBL and AU Bank Credit Cards', for: ['hotels'], banks: ['AU Bank', 'RBL Bank'], until: '10 Oct 2026', campaign: 'grandtravelfest',
+      sale: 'Grand Travel Fest: Flat 15% on Hotels with RBL and AU Bank Credit Cards', for: ['hotels'], banks: ['AU Bank', 'RBL Bank'], journey: 'both', until: '10 Oct 2026', campaign: 'grandtravelfest',
     });
-    expect(got.rows[5]).toEqual({ offer: 'Get Flat 10% Off on Domestic Hotels with RBL Bank Credit Cards', code: 'IXRBLD', for: 'hotels', bank: 'RBL Bank', until: '30 Nov 2026', details: 'IXRBLD' });
+    expect(got.rows[5]).toEqual({ offer: 'Get Flat 10% Off on Domestic Hotels with RBL Bank Credit Cards', code: 'IXRBLD', for: 'hotels', bank: 'RBL Bank', journey: 'domestic', until: '30 Nov 2026', details: 'IXRBLD' });
     expect(got.rows).toHaveLength(11);
   });
 
-  it('offers.list at the fast speed asks for every domestic offer at once, and reads it the same way as the page', async () => {
+  it('offers.list at the fast speed asks for every offer at once, and reads it the same way as the page', async () => {
     const { engine, runs, calls } = engineWith(() => [], (call) => capture('/x', call.url, sample('offers.list.fast.json')));
     const got = await engine.answer('offers.list', {}, { tripId: 't_goa' });
     if (got.as !== 'facts') throw new Error('not facts');
-    expect(calls).toEqual([{ url: '/upahaar-inventory/api/offers/v2/list?journeyType=DOMESTIC&page=1&limit=50', method: 'GET', headers: { ixisrc: 'ixiweb', clientid: 'ixiweb' } }]);
+    // As the page asks for its offers: with no journey when none was asked, so international offers are in it too.
+    expect(calls).toEqual([{ url: '/upahaar-inventory/api/offers/v2/list?page=1&limit=50', method: 'GET', headers: { ixisrc: 'ixiweb', clientid: 'ixiweb' } }]);
     expect(runs).toEqual([]);
     expect(got.rows[0]).toEqual({ offers_on_ixigo: 49 });
     expect(got.rows.slice(2).map((o) => o['code'] ?? o['campaign'])).toEqual(['grandtravelfest', 'grandtravelfest_', 'FLAT80', 'hsbc_flight', 'IDFCEMI3', 'IXAXIS']);
     expect(engine.stats()).toEqual([expect.objectContaining({ recipe: 'offers.list', speed: 'fast', runs: 1, failed: 0 })]);
+  });
+
+  // p2's atlas, 10 Oct: the offers page has a tab a product, Journey Type buttons and a checkbox a bank; offers.list asked
+  // only for domestic offers and had none of them ("any HDFC offer for our Goa flights?" could not be answered).
+  it("offers.list opens the product's own tab and presses the journey and the bank as a person would, keeping the offers that fit", async () => {
+    const got = await facts('offers.list', { product: 'flights', journey: 'international', bank: 'axis' }, [capture('/x', `${IXIGO}/offers/tag/flight-offers`, sample('offers.list.html'))]);
+    expect(got.page).toBe(`${IXIGO}/offers/tag/flight-offers`);
+    expect(got.runs[0]!.plan.steps).toEqual([
+      { op: 'click', role: 'button', text: 'International', optional: true },
+      { op: 'click', role: 'checkbox', text: 'axis', optional: true },
+      { op: 'scroll', times: 2 },
+    ]);
+    expect(got.runs[0]!.plan.capture).toEqual([
+      { match: '/offers/tag/flight-offers$', required: true, max_bytes: 1_000_000 },
+      { match: '/upahaar-inventory/api/offers/v2/list', required: false, max_count: 6, max_bytes: 1_000_000 },
+    ]);
+    expect(got.rows[0]).toMatchObject({ asked_for: 'flights, international, axis', fit: 1 });
+    // An offer for both journeys fits an international trip; the domestic-only flight offers do not.
+    expect(got.rows.slice(2)).toEqual([
+      { offer: 'Flat 12% Off with Axis Bank Credit Cards + Interest Free EMI', code: 'IXAXIS', for: 'flights', bank: 'Axis Bank', journey: 'both', until: '30 Nov 2026', details: 'axis-sale-dom-flights' },
+    ]);
+  });
+
+  it('offers.list matches a bank as people say it, and says when none fits, with the banks that have offers', async () => {
+    const page = [capture('/x', `${IXIGO}/offers`, sample('offers.list.html'))];
+    const hdfc = await facts('offers.list', { bank: 'hdfc' }, page);
+    expect(hdfc.rows.slice(2).map((o) => o['code'])).toEqual(['HDFCEMI3']);
+    // "IDFC FIRST Bank " (ixigo's own trailing space) is IDFC; a sale counts for each bank in it.
+    expect((await facts('offers.list', { bank: 'IDFC' }, page)).rows.slice(2).map((o) => o['code'])).toEqual(['IDFCEMI3']);
+    expect((await facts('offers.list', { bank: 'RBL Bank credit card' }, page)).rows.slice(2).map((o) => o['code'] ?? o['campaign'])).toEqual(['grandtravelfest', 'grandtravelfest_', 'IXRBLD', 'IXRBLN']);
+    const none = await facts('offers.list', { bank: 'Yes Bank' }, page);
+    expect(none.rows[0]).toMatchObject({ asked_for: 'Yes Bank', fit: 0 });
+    expect(none.rows[1]!['banks_with_offers']).toContain('HDFC Bank: 3');
+    expect(none.rows).toHaveLength(2);
+  });
+
+  it("offers.list reads the offers the page's own calls brought as it scrolled, besides its first ones", async () => {
+    const got = await facts('offers.list', { product: 'hotels' }, [
+      capture('/x', `${IXIGO}/offers/tag/hotels`, sample('offers.list.html')),
+      capture('/x', `${IXIGO}/upahaar-inventory/api/offers/v2/list?page=2&limit=9`, JSON.stringify({ data: { offers: [{ offerType: 'OFFER', offerTitle: 'Flat 12% Off on Hotels with Kotak Bank', product: 'HOTELS', journeyType: 'DOMESTIC', paymentType: 'Kotak Bank', offerCode: 'KOTAKHTL', slug: 'kotak_dom_hotels', recurringDay: ['Friday', 'Saturday'] }] } })),
+    ]);
+    expect(got.runs[0]!.plan.steps).toEqual([{ op: 'scroll', times: 2 }]);
+    expect(got.rows.slice(2).map((o) => o['code'] ?? o['campaign'])).toEqual(['grandtravelfest', 'FLAT80', 'IXRBLD', 'IXRBLN', 'KOTAKHTL']);
+    expect(got.rows.at(-1)).toMatchObject({ code: 'KOTAKHTL', valid_on: 'Friday, Saturday' });
+  });
+
+  it("offers.list at the fast speed asks for a journey's offers when one is asked, and keeps the product's", async () => {
+    const { engine, calls } = engineWith(() => [], (call) => capture('/x', call.url, sample('offers.list.fast.json')));
+    const got = await engine.answer('offers.list', { product: 'hotels', journey: 'domestic' }, { tripId: 't_goa' });
+    if (got.as !== 'facts') throw new Error('not facts');
+    expect(calls.map((c) => c.url)).toEqual(['/upahaar-inventory/api/offers/v2/list?journeyType=DOMESTIC&page=1&limit=50']);
+    expect(got.rows[0]).toMatchObject({ asked_for: 'hotels, domestic' });
+    expect(got.rows.slice(2).map((o) => o['code'] ?? o['campaign'])).toEqual(['grandtravelfest', 'FLAT80']);
   });
 
   it("offers.details opens the offer's own page, from its name or its link, and answers its terms one line an item", async () => {
@@ -354,6 +425,29 @@ describe("ixigo's offers pages", () => {
     });
     expect(got.rows[0]!['how_to_use']).toContain('Apply coupon code IXIHDFC3.');
     expect(got.rows[0]!['terms']).toContain('Discount is applicable as Flat 50% off up to ₹500 on eligible hotel bookings.');
+    expect(got.rows[0]).toMatchObject({ journey: 'both' });
+  });
+
+  // /offers/IXRBLD, 10 Oct: "Offer Validity: Every Sunday, Thursday, Friday & Saturday" and "Min. Booking ₹5,000" decide
+  // whether a code works for the group's dates and spend.
+  it('offers.details says the days an offer works on and the least the booking must come to', async () => {
+    const page = (details: Record<string, unknown>) => {
+      const html = sample('offers.details.html');
+      const data = JSON.parse(/<script[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!);
+      data.props.pageProps.offerDetails = { ...data.props.pageProps.offerDetails, ...details };
+      return html.replace(/(<script[^>]*\bid="__NEXT_DATA__"[^>]*>)[\s\S]*?(<\/script>)/, (_m, a: string, b: string) => `${a}${JSON.stringify(data)}${b}`);
+    };
+    const rbl = {
+      title: 'Get Flat 10% Off on Domestic Hotels with RBL Bank Credit Cards', offerCode: 'IXRBLD', journeyType: 'DOMESTIC', paymentType: 'RBL Bank',
+      about: '<ul><li>Flat 10% Off up to ₹1,000 with RBL Bank Credit Card.</li><li>Minimum booking amount to avail this offer is ₹5,000</li></ul>',
+    };
+    const read = async (details: Record<string, unknown>) =>
+      (await facts('offers.details', { offer: 'IXRBLD' }, [capture('/x', `${IXIGO}/offers/IXRBLD`, page(details))])).rows[0]!;
+    expect(await read({ ...rbl, recurringDay: ['Sunday', 'Thursday', 'Friday', 'Saturday'] })).toMatchObject({ valid_on: 'Sunday, Thursday, Friday, Saturday', min_booking: '₹5,000', journey: 'domestic' });
+    // With no field for the days, the line of its terms that names them.
+    const fromTerms = await read({ ...rbl, about: '<ul><li>Valid only on Fridays and Saturdays.</li></ul>' });
+    expect(fromTerms['valid_on']).toBe('Valid only on Fridays and Saturdays.');
+    expect(fromTerms['min_booking']).toBeUndefined();
   });
 
   it("offers.campaign answers the sale's offers", async () => {
@@ -368,9 +462,11 @@ describe('the fast speed', () => {
     const fast = (id: string) => book.get(id)!.fast;
     const CLIENT = { ixisrc: 'ixiweb', clientid: 'ixiweb' };
     for (const id of ['help.services', 'help.downtime', 'help.faq', 'hotels.offers', 'offers.list']) expect(fast(id)?.headers, id).toEqual(CLIENT);
-    for (const id of ['help.services', 'help.downtime', 'hotels.offers', 'offers.list', 'plan.top_locations']) {
+    for (const id of ['help.services', 'help.downtime', 'hotels.offers', 'plan.top_locations']) {
       expect(matches(book.get(id)!.read!.rows.from, `${IXIGO}${fast(id)!.url}`), id).toBe(true);
     }
+    // offers.list's page reads any tab's document, which its call is not: the call reads with the same list, its own.
+    expect(fast('offers.list')!.list).toBe(book.get('offers.list')!.read!.rows.list);
     // The ones by name ask for the same address their read takes.
     expect(fast('help.faq')!.url).toBe(book.get('help.faq')!.read!.rows.from);
     expect(fast('offers.details')).toMatchObject({ url: '/offers/{$slug}', format: 'next_data' });

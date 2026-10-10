@@ -12,7 +12,8 @@ inputs:
 auth: none
 changes_state: false
 # The stay's own page, which the ixigo tool gives for the option ("r_ab12#2"), as hotels.search links it: /hotels/{id}/details
-# with the place, the dates and the guests in its query, which is kept as it is. The page's details call holds everything here; its map call adds the map.
+# with the place, the dates and the guests in its query, which is kept as it is. The page's details call holds everything here; its map call adds the map,
+# and its rooms call, when it has come by then, the free cancellation date (the list's cards have none, 10 Oct atlas).
 let:
   hotel_id: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/(\\d+)/details\\?")[0]'
   hotel_query: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/\\d+/details\\?([^#\\s]*)$")[0]'
@@ -21,11 +22,26 @@ page: /hotels/{$hotel_id}/details?{$hotel_query|raw}
 capture:
   - /accommodation-search/api/v1/accommodations/details$
   - { match: /accommodation-search/api/v1/maps/location$, required: false }
+  - { match: "/accommodations/details/{$hotel_id}/rooms$", required: false }
 read:
   # A call that came twice (the page asks again after its popup) reads as its first answer.
   rows: { from: /accommodation-search/api/v1/accommodations/details$, list: '($type($) = "array" ? $[0] : $).data.hotelDetailResponse' }
   also:
     map: { from: /accommodation-search/api/v1/maps/location$, value: '($type($) = "array" ? $[0] : $).data.mapUrl' }
+    # The rate ixigo recommends (the first when none is): its cancellation as the page says it, and the last moment it
+    # is fully refundable, in the stay's own time.
+    cancel:
+      from: "/accommodations/details/{$hotel_id}/rooms$"
+      value: |
+        (
+          $rates := ($type($) = "array" ? $[0] : $).data.rooms.roomOptions;
+          $rate := $rates[isRecommended = true][0] ? $rates[isRecommended = true][0] : $rates[0];
+          $rate ? {
+            "line": $rate.cancellationBenefits.data,
+            "rate": $rate.name,
+            "until": $rate.cancellationBenefits.policy[code = "FULLY_REFUNDABLE"][0].cancellationDate
+          }
+        )
 answer:
   as: facts
   title: "{$hotel_name ? $hotel_name : 'The stay'}"
@@ -52,6 +68,8 @@ answer:
         "lat": locationDetail.lat,
         "lng": locationDetail.lon,
         "map": $map,
+        "cancellation": $cancel.line ? $cancel.line & ($cancel.rate ? " (" & $trim($cancel.rate) & ")" : ""),
+        "free_cancellation_until": $cancel.until,
         "photos": [imageInfo.propertyImages.imageList[[0..5]].((caption ? caption & ": " : "") & url)]
       }
     )
