@@ -230,11 +230,23 @@ export interface CardPick { optionId: string; option: ResultOption; imageUrl: st
 /** A stay as its whole price is said: its total, and the nights, rooms and head count ixigo priced it for. */
 type StayPrice = { totalMinor?: number; facts?: ResultOption['facts'] };
 
-/** What a stay's whole price covers: "for 3 nights", "for 3 nights, 2 rooms", or the whole stay when its nights are not known. */
-function stayNote(o: StayPrice): string {
+/** What a stay's whole price covers, in words: "3 nights", "3 nights, 2 rooms"; null when its nights are not known. */
+function stayCovers(o: StayPrice): string | null {
   const nights = typeof o.facts?.nights === 'number' && o.facts.nights > 0 ? o.facts.nights : null;
   const rooms = typeof o.facts?.rooms === 'number' && o.facts.rooms > 1 ? o.facts.rooms : null;
-  return nights ? `for ${nights} night${nights === 1 ? '' : 's'}${rooms ? `, ${rooms} rooms` : ''}` : 'for the whole stay';
+  return nights ? `${nights} night${nights === 1 ? '' : 's'}${rooms ? `, ${rooms} rooms` : ''}` : null;
+}
+
+/** What a stay's whole price covers, as its price says it: "for 3 nights", "for 3 nights, 2 rooms", or the whole stay. */
+function stayNote(o: StayPrice): string {
+  const covers = stayCovers(o);
+  return covers ? `for ${covers}` : 'for the whole stay';
+}
+
+/** A stay's night as its whole price's brackets say it: "₹12,800 a night", "₹11,972 a room a night" for more rooms. */
+function stayNight(o: Pick<ResultOption, 'priceMinor' | 'facts'>): string | null {
+  const rooms = typeof o.facts.rooms === 'number' && o.facts.rooms > 1;
+  return o.priceMinor !== undefined ? `${formatInr(o.priceMinor)} ${rooms ? 'a room a night' : 'a night'}` : null;
 }
 
 /**
@@ -268,9 +280,21 @@ export function stayFrom(stays: ReadonlyArray<StayPrice>): string {
 export function stayLine(o: ResultOption): string | null {
   if (o.totalMinor === undefined) return subtitleFor(o);
   const area = typeof o.facts.area === 'string' ? o.facts.area : null;
-  const rooms = typeof o.facts.rooms === 'number' && o.facts.rooms > 1;
-  const night = o.priceMinor !== undefined ? ` (${formatInr(o.priceMinor)} ${rooms ? 'a room a night' : 'a night'})` : '';
-  return [area, `${formatInr(o.totalMinor)} ${stayNote(o)}${night}`, shareWords(o)].filter((x): x is string => x !== null).join(', ');
+  const night = stayNight(o);
+  return [area, `${formatInr(o.totalMinor)} ${stayNote(o)}${night ? ` (${night})` : ''}`, shareWords(o)].filter((x): x is string => x !== null).join(', ');
+}
+
+/**
+ * A stay as its payment names it beside the amount, which the pay card says already: what the whole stay covers and its
+ * night in brackets ("Anjuna: 3 nights (₹12,800 a night)"), so "Paid ₹38,400 to ixigo for Villa Sol, Anjuna: 3 nights
+ * (₹12,800 a night)" never says the amount twice (the lead, 10 Oct). Null when there is nothing to say.
+ */
+export function stayPayWords(o: ResultOption): string | null {
+  const covers = stayCovers(o);
+  const night = stayNight(o);
+  const what = covers && night ? `${covers} (${night})` : (covers ?? night);
+  if (!what) return null;
+  return typeof o.facts.area === 'string' ? `${o.facts.area}: ${what}` : what;
 }
 
 function cardOption(p: CardPick): CardOption {
