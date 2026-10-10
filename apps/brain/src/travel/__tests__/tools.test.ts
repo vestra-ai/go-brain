@@ -158,7 +158,7 @@ describe('search tools', () => {
     const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', wants: ['AC sleeper'] }, lb.ctx({ turnId: 'turn_b2' }))) as any;
     expect(buses.summary).toContain("Not filtered by ixigo, for you to pick from each option's amenities and details: AC sleeper.");
     expect(buses.results[0]).toMatchObject({ details: { bus_type: expect.any(String), seats_left: expect.any(Number) } });
-    expect(buses.note).toContain('Show only the options whose amenities or details fit AC sleeper');
+    expect(buses.note).toContain('Show the options whose amenities or details fit AC sleeper');
     expect(buses.answered).toBeUndefined();
     const trains = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06', wants: ['a 3A berth'] }, lb.ctx({ turnId: 'turn_t2' }))) as any;
     expect(trains.results[0]).toMatchObject({ details: { class_code: expect.any(String) } });

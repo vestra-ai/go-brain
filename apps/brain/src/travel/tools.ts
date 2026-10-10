@@ -292,7 +292,11 @@ async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: Trav
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
     if (err instanceof TravelError && err.code === 'past_date') return { search, count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
     if (err instanceof TravelError) {
-      return { search, count: 0, error: err.code, note: clip(err.message, 200), summary: `This search failed (${err.code}): nothing came back for ${search}, so there is no list for it.` };
+      return {
+        search, count: 0, error: err.code, note: clip(err.message, 200), summary: `This search failed (${err.code}): nothing came back for ${search}, so there is no list for it.`,
+        // Never a job for it (staging, 9 Oct: a refused stays search became start_task, a slow job on a blank page).
+        tell_the_room: "Say in one short line that ixigo didn't answer this time, and offer to try again. Never start_task for it: the search tools are how Go searches ixigo.",
+      };
     }
     throw err;
   }

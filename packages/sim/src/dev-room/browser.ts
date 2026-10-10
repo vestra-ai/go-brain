@@ -1,7 +1,7 @@
 // The trip's computer in the chat (roomPage). A working card (a search, a job) shows a mini browser: its newest picture
 // under a browser's bar, and in a room with Go Live, the computer's own live picture while the card runs (live-page.ts).
 // A tap opens it big in one sheet over the chat: view-only and live, with Close. The sheet's login mode (login-panel.ts)
-// holds a hand-off's own screen. The sheet sits outside the chat, so what it holds outlives every redraw of the room.
+// holds a hand-off's own screen, and its option mode an option's photos and details (contract 1.1's Option.details). The sheet sits outside the chat, so what it holds outlives every redraw of the room.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
 
@@ -27,6 +27,16 @@ export const BROWSER_CSS = `
 .sheet-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
 .sheet-view[hidden] { display: none; }
 .sheet-view img { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; border-radius: 10px; box-shadow: 0 4px 18px rgba(15, 23, 42, 0.18); pointer-events: none; }
+/* An option opened: its photos in a row that swipes, then what Go knows about it. */
+.sheet.option .sheet-panel { width: min(640px, 100%); }
+.sheet-option { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+.sheet-option[hidden] { display: none; }
+.sheet-option h4 { margin: 6px 0 0; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.sheet-option ul { margin: 0; padding-left: 18px; }
+.gallery { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.gallery img { flex: none; width: min(85%, 520px); aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; scroll-snap-align: start; background: #e2e8f0; display: block; }
+.gallery img[hidden] { display: none; }
+.go-note { margin: 0; padding: 10px 12px; border-radius: 12px; background: #f0f9ff; border: 1px solid #bae6fd; }
 body.sheet-open { overflow: hidden; }
 .toast { z-index: 10; }
 @media (min-width: 700px) { .sheet-panel { height: calc(100% - 48px); margin-top: 24px; border-radius: 16px; overflow: hidden; } }
@@ -37,6 +47,7 @@ export const browserSheet = (attrs: string, login: string): string => `<div clas
   <div class="sheet-panel">
     <div class="sheet-bar"><b id="sheet-title"></b><span class="mini-live" id="sheet-live" hidden>LIVE</span><button class="act secondary" id="sheet-close" type="button">Close</button></div>
     <div class="sheet-view" id="sheet-view" hidden><img id="sheet-img" alt=""></div>
+    <div class="sheet-option" id="sheet-option" hidden></div>
 ${login}  </div>
 </div>
 `;
@@ -53,7 +64,7 @@ export const BROWSER_SCRIPT = `
   var handoffMine = function () { return false; };
   var watchOpensSheet = function () { return false; };
   var sheetLogin = function () {};
-  var sheet = { mode: '', card: '' };
+  var sheet = { mode: '', card: '', option: '' };
 
   function cardById(id) {
     var list = state ? state.messages : [];
@@ -109,18 +120,63 @@ export const BROWSER_SCRIPT = `
     sheet.card = cardId;
     renderSheet();
   }
+  /** Opens one option of an options card: its photos and what Go knows about it. */
+  function openOption(cardId, optionId) {
+    sheet.mode = 'option';
+    sheet.card = cardId;
+    sheet.option = optionId;
+    renderSheet();
+  }
   function closeSheet() {
     sheet.mode = '';
     sheet.card = '';
+    sheet.option = '';
     renderSheet();
+  }
+  function optionOf(c, optionId) {
+    var list = c && c.options ? c.options : [];
+    for (var i = 0; i < list.length; i++) if (list[i].option_id === optionId) return list[i];
+    return null;
+  }
+  /** The option's sheet: the gallery (or its one photo), then what Go knows, each part only when it is there. */
+  function optionSheet(o) {
+    var d = o.details || {};
+    var photos = (d.gallery_urls && d.gallery_urls.length ? d.gallery_urls : [o.image_url]).map(safeUrl).filter(Boolean);
+    var rating = d.rating != null ? d.rating : o.rating;
+    var chips = function (list) { return '<div>' + list.map(function (x) { return '<span class="chip">' + esc(x) + '</span>'; }).join('') + '</div>'; };
+    var rowOf = function (label, value) { return '<div class="row"><div>' + label + '</div><div class="price">' + value + '</div></div>'; };
+    return (photos.length ? '<div class="gallery">' + photos.map(function (u, i) {
+      return '<img class="gal-photo" alt="' + esc(o.title + ', photo ' + (i + 1)) + '" loading="' + (i ? 'lazy' : 'eager') + '" decoding="async" src="' + esc(u) + '">';
+    }).join('') + '</div>' : '') +
+      (d.caption ? '<div class="meta">' + esc(d.caption) + '</div>' : '') +
+      '<div class="row"><div><b>' + esc(o.title) + '</b>' + (o.subtitle ? '<div class="meta">' + esc(o.subtitle) + '</div>' : '') +
+      (rating != null ? '<div class="meta">Rated ' + esc(rating) + (rating > 5 ? ' of 10' : ' of 5') + (d.review_count ? ', ' + esc(d.review_count) + ' reviews' : '') + '</div>' : '') + '</div>' +
+      '<div class="price">' + money(o.price_minor, o.currency) + (o.price_note ? ' <span class="meta">' + esc(o.price_note) + '</span>' : '') + '</div></div>' +
+      (d.go_note ? '<p class="go-note">' + esc(d.go_note) + '</p>' : '') +
+      (d.why && d.why.length ? '<h4>Why it fits</h4><ul>' + d.why.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '') +
+      (d.costs && d.costs.length ? '<h4>What it costs</h4>' + d.costs.map(function (x) { return rowOf((x.emoji ? esc(x.emoji) + ' ' : '') + esc(x.label), money(x.amount_minor, x.currency)); }).join('') +
+        (d.total_minor != null ? rowOf('<b>Total</b>', money(d.total_minor, d.costs[0].currency)) : '') : '') +
+      (d.amenities && d.amenities.length ? '<h4>Amenities</h4>' + chips(d.amenities) : '') +
+      (d.activities && d.activities.length ? '<h4>Things to do</h4>' + chips(d.activities) : '') +
+      (d.facts && d.facts.length ? '<h4>Good to know</h4>' + d.facts.map(function (f) { return rowOf(esc(f.label), esc(f.value)); }).join('') : '') +
+      (d.cancellation ? '<div class="meta">' + esc(d.cancellation) + '</div>' : '');
   }
   function renderSheet() {
     var c = sheet.card ? cardById(sheet.card) : null;
-    if (!c) { sheet.mode = ''; sheet.card = ''; }
+    var o = sheet.mode === 'option' ? optionOf(c, sheet.option) : null;
+    // Its card went, or the option left it: the sheet closes.
+    if (!c || (sheet.mode === 'option' && !o)) { sheet.mode = ''; sheet.card = ''; sheet.option = ''; }
     $('sheet').hidden = !sheet.mode;
-    $('sheet').className = 'sheet' + (sheet.mode === 'login' ? ' login' : '');
+    $('sheet').className = 'sheet' + (sheet.mode === 'login' ? ' login' : sheet.mode === 'option' ? ' option' : '');
     document.body.className = sheet.mode ? 'sheet-open' : '';
     $('sheet-view').hidden = sheet.mode !== 'view';
+    $('sheet-option').hidden = sheet.mode !== 'option';
+    if (sheet.mode === 'option') {
+      $('sheet-title').textContent = o.title;
+      // Drawn again only when it changed, so the photos already up stay up.
+      var html = optionSheet(o);
+      if ($('sheet-option').innerHTML !== html) $('sheet-option').innerHTML = html;
+    }
     $('sheet-live').hidden = true;
     if (sheet.mode === 'view') {
       var b = browserPicture(c);

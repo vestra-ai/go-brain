@@ -192,6 +192,26 @@ describe('the live search card', () => {
     expect(new Set(r.cards().map((c) => c.card_id)).size).toBe(1);
   });
 
+  it("says once that ixigo's login is open on Go's screen while the search waits for it, and ticks on once it runs", async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_wait', kind: 'trains', query: { from: 'Delhi', to: 'Goa', date: '2026-11-06' } });
+    live.progress({ type: 'waiting' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.cards().at(-1)).toMatchObject({
+      state: 'running',
+      steps: [
+        { text: "ixigo's login is open on Go's screen: this runs once it's done or Not now", state: 'doing' },
+        { text: 'Opening ixigo trains', state: 'todo' },
+        { text: 'Reading the results', state: 'todo' },
+        { text: 'Picking the best trains', state: 'todo' },
+      ],
+    });
+    live.progress({ type: 'captured', ms: 900 });
+    live.progress({ type: 'extracted', count: 25 });
+    await live.finish(true);
+    expect(r.cards().at(-1)!.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done']);
+  });
+
   it('takes the page as ixigo drew it after the answer, on a card already done; never on a failed one (the 8 Oct demo)', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_drawn', ...FLIGHTS });

@@ -84,6 +84,11 @@ main { flex: 1; padding: 12px 12px 16px; }
 .tag.warn { color: var(--warn); }
 .row { border-top: 1px solid var(--line); padding: 8px 0; display: flex; gap: 10px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
 .price { font-weight: 650; white-space: nowrap; }
+/* An option's photo: a fixed shape, loaded only when near, and a quiet tile when it can't load. A tap opens the option. */
+.opt { display: flex; gap: 10px; align-items: flex-start; flex: 1; min-width: 200px; }
+.opt-ph { flex: none; width: 96px; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: #e2e8f0; border: 0; padding: 0; margin: 0; cursor: pointer; display: grid; place-items: center; color: var(--muted); font: inherit; font-size: 11px; text-align: center; touch-action: manipulation; }
+.opt-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+button.more { border: 0; background: none; padding: 4px 0 0; color: var(--go-ink); font: inherit; font-size: 13px; cursor: pointer; }
 .big { font-size: 26px; font-weight: 700; }
 .bar { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 4px; }
 .bar i { display: block; height: 100%; background: var(--go); }
@@ -292,6 +297,24 @@ ${browserSheet(o.live && o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchO
     }).join('');
   }
   function fallback(c) { return '<div>' + esc(c.fallback_text) + '</div>'; }
+  // An option's photo, through Go's own picture address: lazy, a fixed shape, and once it failed to load, a quiet tile
+  // from then on (brokenPhotos), so a redraw never shows a broken picture.
+  var brokenPhotos = {};
+  function optionPhoto(o, opens) {
+    var url = safeUrl(o.image_url);
+    if (!url) return '';
+    return '<button class="opt-ph" type="button"' + opens + ' aria-label="' + esc('See ' + o.title) + '">' +
+      (brokenPhotos[url] ? 'Photo unavailable' : '<img class="opt-photo" alt="" loading="lazy" decoding="async" src="' + esc(url) + '">') + '</button>';
+  }
+  document.addEventListener('error', function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== 'IMG') return;
+    var cls = ' ' + t.className + ' ';
+    if (cls.indexOf(' gal-photo ') >= 0) { t.hidden = true; return; }
+    if (cls.indexOf(' opt-photo ') < 0) return;
+    brokenPhotos[t.getAttribute('src')] = true;
+    if (t.parentNode) t.parentNode.textContent = 'Photo unavailable';
+  }, true);
 
 ${BROWSER_SCRIPT}
   var RENDER = {
@@ -369,9 +392,11 @@ ${BROWSER_SCRIPT}
       return '<span class="tag">' + esc(c.option_kind) + '</span><h3>' + esc(c.title) + '</h3><div class="meta">Checked ' + esc(ago(c.checked_at)) + '</div>' + c.options.map(function (o) {
         var j = o.journey;
         var line = j ? esc((j.origin.code || j.origin.name) + ' to ' + (j.destination.code || j.destination.name) + (j.stops === 0 ? ', non-stop' : '')) : '';
-        return '<div class="row"><div style="flex:1;min-width:160px"><b>' + esc(o.title) + '</b>' + (o.subtitle ? '<div class="meta">' + esc(o.subtitle) + '</div>' : '') +
+        var opens = ' data-sheet-card="' + esc(c.card_id) + '" data-sheet-option="' + esc(o.option_id) + '"';
+        return '<div class="row"><div class="opt">' + optionPhoto(o, opens) + '<div style="flex:1;min-width:0"><b>' + esc(o.title) + '</b>' + (o.subtitle ? '<div class="meta">' + esc(o.subtitle) + '</div>' : '') +
           (line ? '<div class="meta">' + line + '</div>' : '') + '<div>' + (o.highlights || []).map(function (h) { return '<span class="chip">' + esc(h) + '</span>'; }).join('') +
-          (o.rating != null ? '<span class="chip">' + esc(o.rating) + ' stars</span>' : '') + (o.refundable_until ? '<span class="chip">Free cancellation</span>' : '') + '</div></div>' +
+          (o.rating != null ? '<span class="chip">' + esc(o.rating) + ' stars</span>' : '') + (o.refundable_until ? '<span class="chip">Free cancellation</span>' : '') + '</div>' +
+          (o.details ? '<button class="more" type="button"' + opens + '>Details</button>' : '') + '</div></div>' +
           '<div><div class="price">' + money(o.price_minor, o.currency) + (o.price_note ? ' <span class="meta">' + esc(o.price_note) + '</span>' : '') + '</div>' +
           per.map(function (a) { return goButton(c, a, o.option_id); }).join('') + '</div></div>';
       }).join('') + goActions(c);
@@ -485,6 +510,8 @@ ${o.live ? '    syncLogin();\n' : ''}    renderSheet();
       render();
     } else if (d.browse) {
       openSheet(d.browse);
+    } else if (d.sheetOption) {
+      openOption(d.sheetCard, d.sheetOption);
     } else if (d.tap) {
       if (watchOpensSheet(d.tap, d.action)) openSheet(d.tap);
       else if (tapCard(d.tap, d.action, d.option, me)) {

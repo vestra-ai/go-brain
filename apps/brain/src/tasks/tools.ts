@@ -51,7 +51,8 @@ export function taskTools(d: { tasks: TasksService; today?: (tripId: string) => 
     name: 'start_task',
     description:
       "Hands a big job to the trip's computer: anything that needs websites, many steps, long reading or comparing, or more than about 10 seconds. " +
-      'Never for booking or paying. The working card goes out with your message: say one short line, like "On it."',
+      'Never for booking or paying, and never for a flights, trains, buses or stays search, even one that failed: the search tools do those. ' +
+      'The working card goes out with your message: say one short line, like "On it."',
     input: StartArgs,
     async run(a, ctx) {
       const trip = ctx.pack.trip;

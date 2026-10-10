@@ -6,6 +6,7 @@ import { rulesForTurn } from './allowed.js';
 import { localWhen } from './clock.js';
 import { fromPayload, proactiveOf } from './payload.js';
 import type { Action, Candidate } from './policy.js';
+import { CHIME_RULES } from '../composer/wakes.js';
 import { namesOf, quote, rupees } from './words.js';
 
 const H = 3600_000;
@@ -102,11 +103,10 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
       // A friend in the group chiming in, once, when it adds something real (Keshav: "whenever it can intervene it should").
       return (
         `Message #${num('seq') ?? '?'} may be a moment to chime in without being asked. Say one short line, in the group's own words and language, ` +
-        'only when it adds something real: a question to the group that the trip already answers (answer it and offer to change it: ' +
-        '"Dates are set: 6 to 9 Nov ✅. Want to change them?"); something someone needs that you will keep to (say so in a few words: ' +
-        '"Veg noted, I\'ll skip seafood shacks"); a choice the group is ready to make (offer a vote: "3 of you said yes to Saudades. Want me to put it to a vote?"); ' +
-        'or a search someone asked the group to run (offer to run it). The examples show the shape only: use what the trip and the chat say. ' +
-        'Banter, a plan a person is already handling, or nothing new to add: call stay_silent.'
+        'only when it adds something real: a question to the group that the trip already answers; something someone needs that you will ' +
+        'keep to (say so in a few words: "Veg noted, I\'ll skip seafood shacks"); a choice part of the group backs; or a search someone ' +
+        `asked the group to run. ${CHIME_RULES} The examples show the shape only: use what the trip and the chat say. ` +
+        'Banter, a plan a person is already handling, or something you already said: call stay_silent.'
       );
     case 'vote_closed': {
       const winner = str('winner');
