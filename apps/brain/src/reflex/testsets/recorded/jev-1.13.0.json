@@ -1,6 +1,6 @@
 {
  "model": "jev-1.13.0",
- "recorded_at": "2026-10-07T05:09:16.041Z",
+ "recorded_at": "2026-10-10T04:59:18.033Z",
  "versions": {
   "for_go": "658b07f5812e",
   "complete": "f29972f63816",
@@ -11,7 +11,7 @@
   "reaction": "b9bc95c6b3d0",
   "risky": "6d4cb909a7df",
   "opening": "2e62a4bc01d1",
-  "recipe": "cefb63d100bf"
+  "recipe": "cbcf0c8a145e"
  },
  "answers": {
   "c01": {
@@ -115,11 +115,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
-     "trains": 0,
-     "none": 1,
      "flights": 0,
-     "stays": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -226,9 +238,21 @@
     "probabilities": {
      "flights": 0,
      "stays": 0,
-     "none": 1,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -331,13 +355,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.93,
+    "confidence": 0.98,
     "probabilities": {
-     "buses": 0,
-     "flights": 0.94,
+     "flights": 0.98,
      "stays": 0,
      "trains": 0,
-     "none": 0.06
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
     }
    }
   },
@@ -345,18 +381,6 @@
    "q5_dates": {
     "type": "noul",
     "noul": 0.05
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "flights": 0,
-     "stays": 0,
-     "none": 1,
-     "trains": 0,
-     "buses": 0
-    }
    },
    "q1_chatter": {
     "type": "noul",
@@ -448,6 +472,30 @@
    "q9_someone_look": {
     "type": "noul",
     "noul": 0.27
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
+    }
    }
   },
   "c05": {
@@ -549,13 +597,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.95,
+    "confidence": 0.99,
     "probabilities": {
-     "trains": 0,
-     "stays": 0.96,
-     "buses": 0,
      "flights": 0,
-     "none": 0.04
+     "stays": 0.99,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
     }
    }
   },
@@ -579,18 +639,6 @@
    "q8_secret": {
     "type": "noul",
     "noul": 0.05
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "trains": 0,
-     "stays": 0,
-     "buses": 0,
-     "flights": 0,
-     "none": 1
-    }
    },
    "q3_big_compare": {
     "type": "noul",
@@ -666,6 +714,30 @@
    "q6_open": {
     "type": "noul",
     "noul": 0.07
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.95,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.05,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.95
+    }
    }
   },
   "c07": {
@@ -769,10 +841,22 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "stays": 0,
-     "flights": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 1
     }
    }
@@ -879,10 +963,22 @@
     "confidence": 1,
     "probabilities": {
      "flights": 0,
-     "buses": 0,
      "stays": 0,
-     "none": 1,
-     "trains": 0
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -987,11 +1083,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "none": 1,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -1096,11 +1204,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 1,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -1205,11 +1325,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
      "stays": 0,
      "trains": 0,
      "buses": 0,
-     "none": 1,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -1314,11 +1446,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "stays": 0,
-     "buses": 0,
-     "none": 1,
      "flights": 0,
-     "trains": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -1410,6 +1554,14 @@
     "type": "noul",
     "noul": 0.11
    },
+   "q1_chatter": {
+    "type": "noul",
+    "noul": 0.5
+   },
+   "q2_complete": {
+    "type": "noul",
+    "noul": 0.54
+   },
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
@@ -1419,16 +1571,20 @@
      "stays": 0,
      "trains": 0,
      "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 1
     }
-   },
-   "q1_chatter": {
-    "type": "noul",
-    "noul": 0.5
-   },
-   "q2_complete": {
-    "type": "noul",
-    "noul": 0.54
    }
   },
   "c14": {
@@ -1532,11 +1688,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
-     "stays": 0,
-     "none": 1,
      "flights": 0,
-     "trains": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -1641,11 +1809,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
-     "stays": 0,
-     "none": 1,
      "flights": 0,
-     "trains": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -1750,11 +1930,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "none": 1,
-     "buses": 0,
-     "stays": 0,
      "flights": 0,
-     "trains": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -1861,9 +2053,21 @@
     "probabilities": {
      "flights": 0,
      "stays": 0,
-     "none": 1,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -1879,18 +2083,6 @@
    "q5_dates": {
     "type": "noul",
     "noul": 0.03
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "trains": 0,
-     "buses": 0,
-     "none": 1,
-     "stays": 0,
-     "flights": 0
-    }
    },
    "q1_chatter": {
     "type": "noul",
@@ -1974,6 +2166,30 @@
    "q6_open": {
     "type": "noul",
     "noul": 0.03
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
+    }
    }
   },
   "c19": {
@@ -2075,13 +2291,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.95,
+    "confidence": 0.98,
     "probabilities": {
      "flights": 0,
+     "stays": 0.01,
+     "trains": 0,
      "buses": 0,
-     "stays": 0.04,
-     "none": 0.96,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.01,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.98
     }
    }
   },
@@ -2186,11 +2414,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
      "flights": 0,
      "stays": 0,
-     "none": 1,
-     "trains": 0
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -2296,10 +2536,22 @@
     "confidence": 1,
     "probabilities": {
      "flights": 0,
-     "buses": 0,
-     "none": 1,
      "stays": 0,
-     "trains": 0
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -2406,9 +2658,21 @@
     "probabilities": {
      "flights": 0,
      "stays": 0,
-     "none": 1,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -2513,11 +2777,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "none": 1,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -2620,13 +2896,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.99,
     "probabilities": {
-     "trains": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 1,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0.01,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -2729,13 +3017,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.98,
     "probabilities": {
-     "trains": 0,
-     "none": 1,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0.02,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.98
     }
    }
   },
@@ -2840,11 +3140,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "none": 1,
-     "stays": 0,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -2947,13 +3259,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.94,
+    "confidence": 0.9,
     "probabilities": {
-     "trains": 0,
-     "none": 0.95,
      "flights": 0,
+     "stays": 0.08,
+     "trains": 0,
      "buses": 0,
-     "stays": 0.05
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.01,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.91
     }
    }
   },
@@ -3056,13 +3380,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.44,
+    "confidence": 0.6,
     "probabilities": {
-     "trains": 0,
-     "none": 0.45,
      "flights": 0,
+     "stays": 0.62,
+     "trains": 0,
      "buses": 0,
-     "stays": 0.55
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.34,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.04
     }
    }
   },
@@ -3115,18 +3451,6 @@
     "type": "noul",
     "noul": 0.46
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 0.99,
-    "probabilities": {
-     "flights": 0,
-     "stays": 0,
-     "none": 1,
-     "trains": 0,
-     "buses": 0
-    }
-   },
    "q1_addressed": {
     "type": "noul",
     "noul": 0.6
@@ -3173,6 +3497,30 @@
    "q9_group_question": {
     "type": "noul",
     "noul": 0.76
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.95,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0.02,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.03,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.95
+    }
    }
   },
   "c30": {
@@ -3274,13 +3622,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.93,
+    "confidence": 0.98,
     "probabilities": {
-     "none": 0.06,
      "flights": 0,
      "stays": 0,
+     "trains": 0.98,
      "buses": 0,
-     "trains": 0.94
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
     }
    }
   },
@@ -3387,9 +3747,21 @@
     "probabilities": {
      "flights": 0,
      "stays": 0.01,
-     "none": 0.99,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -3494,11 +3866,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
      "trains": 0,
-     "none": 1,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -3598,18 +3982,6 @@
     "type": "noul",
     "noul": 0.32
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 0.98,
-    "probabilities": {
-     "none": 0.98,
-     "buses": 0,
-     "stays": 0.02,
-     "trains": 0,
-     "flights": 0
-    }
-   },
    "q4_task": {
     "type": "choice",
     "choice": "t1",
@@ -3627,6 +3999,30 @@
    "q4_is_t2": {
     "type": "noul",
     "noul": 0.04
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.95,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0.05,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.95
+    }
    }
   },
   "c34": {
@@ -3725,18 +4121,6 @@
     "type": "noul",
     "noul": 0.1
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 0.97,
-    "probabilities": {
-     "trains": 0,
-     "flights": 0,
-     "buses": 0,
-     "none": 0.98,
-     "stays": 0.02
-    }
-   },
    "q4_task": {
     "type": "choice",
     "choice": "t2",
@@ -3754,6 +4138,30 @@
    "q4_is_t2": {
     "type": "noul",
     "noul": 0.87
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0.01,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
+    }
    }
   },
   "c35": {
@@ -3852,18 +4260,6 @@
     "type": "noul",
     "noul": 0.42
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 0.5,
-    "probabilities": {
-     "none": 0.6,
-     "buses": 0,
-     "stays": 0.4,
-     "trains": 0,
-     "flights": 0
-    }
-   },
    "q4_task": {
     "type": "choice",
     "choice": "t1",
@@ -3881,6 +4277,30 @@
    "q4_is_t2": {
     "type": "noul",
     "noul": 0.04
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.6,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0.36,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.02,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.62
+    }
    }
   },
   "c36": {
@@ -3979,18 +4399,6 @@
     "type": "noul",
     "noul": 0.58
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "stays": 0,
-     "none": 1,
-     "trains": 0,
-     "flights": 0,
-     "buses": 0
-    }
-   },
    "q4_task": {
     "type": "choice",
     "choice": "none",
@@ -4008,6 +4416,30 @@
    "q4_is_t2": {
     "type": "noul",
     "noul": 0.06
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
+    }
    }
   },
   "c37": {
@@ -4106,18 +4538,6 @@
     "type": "noul",
     "noul": 0.73
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 0.79,
-    "probabilities": {
-     "stays": 0.16,
-     "buses": 0,
-     "none": 0.83,
-     "flights": 0.01,
-     "trains": 0
-    }
-   },
    "q4_task": {
     "type": "choice",
     "choice": "none",
@@ -4135,6 +4555,30 @@
    "q4_is_t2": {
     "type": "noul",
     "noul": 0.05
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.67,
+    "probabilities": {
+     "flights": 0.01,
+     "stays": 0.24,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.05,
+     "offers": 0,
+     "hotel_rooms": 0.01,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.6900000000000001
+    }
    }
   },
   "c38": {
@@ -4233,18 +4677,6 @@
     "type": "noul",
     "noul": 0.55
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 0.97,
-    "probabilities": {
-     "buses": 0,
-     "flights": 0.03,
-     "none": 0.97,
-     "stays": 0,
-     "trains": 0
-    }
-   },
    "q4_task": {
     "type": "choice",
     "choice": "t2",
@@ -4262,6 +4694,30 @@
    "q4_is_t2": {
     "type": "noul",
     "noul": 0.88
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.55,
+    "probabilities": {
+     "flights": 0.36,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0.06,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.58
+    }
    }
   },
   "c39": {
@@ -4365,10 +4821,22 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 1
     }
    }
@@ -4472,13 +4940,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.93,
     "probabilities": {
-     "buses": 0,
+     "flights": 0.01,
      "stays": 0,
-     "none": 1,
      "trains": 0,
-     "flights": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0.06,
+     "none": 0.93
     }
    }
   },
@@ -4583,11 +5063,23 @@
     "choice": "none",
     "confidence": 0.99,
     "probabilities": {
-     "trains": 0,
-     "none": 0.99,
      "flights": 0,
+     "stays": 0.01,
+     "trains": 0,
      "buses": 0,
-     "stays": 0.01
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -4692,11 +5184,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "none": 1,
-     "buses": 0,
-     "stays": 0,
      "flights": 0,
-     "trains": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -4801,11 +5305,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "none": 1,
      "flights": 0,
      "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -4910,11 +5426,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "none": 1,
      "flights": 0,
-     "buses": 0,
+     "stays": 0,
      "trains": 0,
-     "stays": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -5023,6 +5551,18 @@
      "stays": 0,
      "trains": 0,
      "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 1
     }
    }
@@ -5126,13 +5666,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.99,
+    "confidence": 0.89,
     "probabilities": {
-     "stays": 0,
+     "flights": 0,
+     "stays": 0.02,
      "trains": 0,
      "buses": 0,
-     "none": 1,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.08,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.9
     }
    }
   },
@@ -5235,13 +5787,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "buses",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "stays": 0,
-     "buses": 0.99,
      "flights": 0,
-     "none": 0.01
+     "stays": 0,
+     "trains": 0,
+     "buses": 1,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -5344,13 +5908,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.99,
     "probabilities": {
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "none": 1
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0.01,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -5455,11 +6031,23 @@
     "choice": "none",
     "confidence": 0.99,
     "probabilities": {
-     "trains": 0,
      "flights": 0.01,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 0.99,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -5562,13 +6150,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.99,
     "probabilities": {
+     "flights": 0.01,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "stays": 0,
-     "none": 1,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -5671,13 +6271,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
-     "buses": 0,
+     "flights": 1,
+     "stays": 0,
      "trains": 0,
-     "none": 0.01,
-     "flights": 0.99,
-     "stays": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -5782,11 +6394,23 @@
     "choice": "flights",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
+     "flights": 1,
      "stays": 0,
-     "none": 0,
      "trains": 0,
-     "flights": 1
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -5889,13 +6513,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.94,
+    "confidence": 1,
     "probabilities": {
+     "flights": 1,
      "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 0.05,
-     "flights": 0.95,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -5998,13 +6634,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.92,
+    "confidence": 0.98,
     "probabilities": {
-     "none": 0.07,
-     "buses": 0,
+     "flights": 0.98,
      "stays": 0,
      "trains": 0,
-     "flights": 0.93
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
     }
    }
   },
@@ -6109,11 +6757,23 @@
     "choice": "flights",
     "confidence": 1,
     "probabilities": {
-     "none": 0,
      "flights": 1,
      "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -6216,13 +6876,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
+     "flights": 1,
+     "stays": 0,
      "trains": 0,
-     "none": 0.01,
-     "flights": 0.99,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -6329,9 +7001,21 @@
     "probabilities": {
      "flights": 1,
      "stays": 0,
-     "none": 0,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -6434,13 +7118,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
+     "flights": 1,
+     "stays": 0,
      "trains": 0,
-     "none": 0.01,
-     "flights": 0.99,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -6543,13 +7239,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.86,
+    "confidence": 0.96,
     "probabilities": {
+     "flights": 0.96,
      "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 0.11,
-     "flights": 0.89,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.04
     }
    }
   },
@@ -6652,13 +7360,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.96,
+    "confidence": 1,
     "probabilities": {
-     "none": 0.03,
-     "flights": 0.97,
-     "buses": 0,
+     "flights": 1,
+     "stays": 0,
      "trains": 0,
-     "stays": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -6686,18 +7406,6 @@
    "q9_circles": {
     "type": "noul",
     "noul": 0.11
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "flights",
-    "confidence": 0.99,
-    "probabilities": {
-     "flights": 0.99,
-     "buses": 0,
-     "stays": 0,
-     "none": 0.01,
-     "trains": 0
-    }
    },
    "q5_travel": {
     "type": "noul",
@@ -6769,6 +7477,30 @@
    "q1_addressed": {
     "type": "noul",
     "noul": 0.81
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "flights",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 1,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
    }
   },
   "r12": {
@@ -6870,13 +7602,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.73,
+    "confidence": 0.9,
     "probabilities": {
+     "flights": 0.91,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "flights": 0.79,
-     "stays": 0,
-     "none": 0.21
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.09
     }
    }
   },
@@ -6923,18 +7667,6 @@
    "q9_someone_look": {
     "type": "noul",
     "noul": 0.56
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "flights",
-    "confidence": 0.98,
-    "probabilities": {
-     "trains": 0,
-     "none": 0.01,
-     "flights": 0.99,
-     "buses": 0,
-     "stays": 0
-    }
    },
    "q1_chatter": {
     "type": "noul",
@@ -6987,6 +7719,30 @@
    "q5_other": {
     "type": "noul",
     "noul": 0.05
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "flights",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 1,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
    }
   },
   "r14": {
@@ -7090,11 +7846,23 @@
     "choice": "stays",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
+     "flights": 0,
      "stays": 1,
      "trains": 0,
-     "none": 0,
-     "flights": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -7197,13 +7965,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.86,
+    "confidence": 0.87,
     "probabilities": {
-     "trains": 0,
-     "stays": 0.89,
      "flights": 0,
+     "stays": 0.88,
+     "trains": 0,
      "buses": 0,
-     "none": 0.11
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.08,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.04
     }
    }
   },
@@ -7306,13 +8086,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
-     "stays": 0.99,
+     "flights": 0,
+     "stays": 1,
      "trains": 0,
      "buses": 0,
-     "none": 0.01,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -7417,11 +8209,23 @@
     "choice": "stays",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
-     "trains": 0,
-     "none": 0,
      "flights": 0,
-     "stays": 1
+     "stays": 1,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -7524,13 +8328,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.97,
+    "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "stays": 0.98,
      "flights": 0,
+     "stays": 1,
+     "trains": 0,
      "buses": 0,
-     "none": 0.02
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -7633,13 +8449,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
+     "flights": 0,
+     "stays": 1,
      "trains": 0,
      "buses": 0,
-     "none": 0.01,
-     "stays": 0.99,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -7742,13 +8570,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.98,
+    "confidence": 1,
     "probabilities": {
-     "none": 0.02,
      "flights": 0,
-     "stays": 0.98,
+     "stays": 1,
+     "trains": 0,
      "buses": 0,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -7853,11 +8693,23 @@
     "choice": "stays",
     "confidence": 0.99,
     "probabilities": {
-     "stays": 0.99,
-     "none": 0.01,
-     "trains": 0,
      "flights": 0,
-     "buses": 0
+     "stays": 0.99,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
     }
    }
   },
@@ -7960,13 +8812,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.96,
+    "confidence": 0.98,
     "probabilities": {
      "flights": 0,
-     "stays": 0.97,
-     "buses": 0,
+     "stays": 0.98,
      "trains": 0,
-     "none": 0.03
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
     }
    }
   },
@@ -8071,11 +8935,23 @@
     "choice": "stays",
     "confidence": 0.99,
     "probabilities": {
+     "flights": 0.01,
      "stays": 0.99,
-     "flights": 0,
      "trains": 0,
      "buses": 0,
-     "none": 0.01
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -8178,13 +9054,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.99,
+    "confidence": 0.98,
     "probabilities": {
+     "flights": 0.02,
+     "stays": 0.98,
      "trains": 0,
-     "stays": 0.99,
      "buses": 0,
-     "flights": 0,
-     "none": 0.01
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -8289,10 +9177,22 @@
     "choice": "stays",
     "confidence": 0.98,
     "probabilities": {
-     "trains": 0,
-     "stays": 0.98,
-     "buses": 0,
      "flights": 0,
+     "stays": 0.98,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 0.02
     }
    }
@@ -8396,12 +9296,24 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.98,
+    "confidence": 0.96,
     "probabilities": {
      "flights": 0,
-     "stays": 0.98,
+     "stays": 0.96,
      "trains": 0,
      "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.02,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 0.02
     }
    }
@@ -8505,13 +9417,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.96,
+    "confidence": 1,
     "probabilities": {
-     "trains": 0.97,
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 1,
      "buses": 0,
-     "none": 0.03
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -8614,13 +9538,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
-     "none": 0.01,
      "flights": 0,
      "stays": 0,
+     "trains": 1,
      "buses": 0,
-     "trains": 0.99
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -8723,13 +9659,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.95,
+    "confidence": 0.99,
     "probabilities": {
-     "trains": 0.96,
-     "none": 0.04,
      "flights": 0,
+     "stays": 0,
+     "trains": 0.99,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
     }
    }
   },
@@ -8834,11 +9782,23 @@
     "choice": "trains",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
-     "stays": 0,
-     "none": 0,
      "flights": 0,
-     "trains": 1
+     "stays": 0,
+     "trains": 1,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -8941,13 +9901,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.97,
+    "confidence": 0.99,
     "probabilities": {
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0.99,
      "buses": 0,
-     "none": 0.02,
-     "trains": 0.98
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
     }
    }
   },
@@ -9050,13 +10022,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.46,
+    "confidence": 0.78,
     "probabilities": {
+     "flights": 0.13,
      "stays": 0,
-     "buses": 0.05,
-     "flights": 0.3,
-     "none": 0.08,
-     "trains": 0.57
+     "trains": 0.79,
+     "buses": 0.01,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0.05,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
     }
    }
   },
@@ -9152,21 +10136,33 @@
     "type": "noul",
     "noul": 0.85
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "buses",
-    "confidence": 0.78,
-    "probabilities": {
-     "flights": 0,
-     "stays": 0,
-     "none": 0.06,
-     "trains": 0.12,
-     "buses": 0.82
-    }
-   },
    "q1_chatter": {
     "type": "noul",
     "noul": 0.04
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "buses",
+    "confidence": 0.56,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0.37,
+     "buses": 0.59,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0.02,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
+    }
    }
   },
   "r34": {
@@ -9268,13 +10264,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.97,
+    "confidence": 0.99,
     "probabilities": {
-     "buses": 0,
-     "stays": 0,
-     "none": 0.02,
      "flights": 0,
-     "trains": 0.98
+     "stays": 0,
+     "trains": 0.99,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
     }
    }
   },
@@ -9377,13 +10385,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
-     "trains": 0.99,
-     "none": 0.01,
      "flights": 0,
+     "stays": 0,
+     "trains": 1,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -9486,13 +10506,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.81,
+    "confidence": 0.97,
     "probabilities": {
-     "trains": 0.85,
-     "none": 0.15,
      "flights": 0,
+     "stays": 0,
+     "trains": 0.97,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.03
     }
    }
   },
@@ -9595,13 +10627,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "trains",
-    "confidence": 0.87,
+    "confidence": 0.97,
     "probabilities": {
-     "trains": 0.9,
-     "flights": 0.02,
+     "flights": 0,
+     "stays": 0,
+     "trains": 0.97,
      "buses": 0,
-     "none": 0.08,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.03
     }
    }
   },
@@ -9704,12 +10748,24 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "buses",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 1,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 0
     }
    }
@@ -9813,13 +10869,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "buses",
-    "confidence": 0.92,
+    "confidence": 0.96,
     "probabilities": {
-     "trains": 0,
-     "none": 0.07,
      "flights": 0,
-     "buses": 0.93,
-     "stays": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0.96,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.04
     }
    }
   },
@@ -9922,13 +10990,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "buses",
-    "confidence": 0.98,
+    "confidence": 1,
     "probabilities": {
-     "buses": 0.98,
      "flights": 0,
      "stays": 0,
-     "none": 0.02,
-     "trains": 0
+     "trains": 0,
+     "buses": 1,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -9971,18 +11051,6 @@
    "q9_group_question": {
     "type": "noul",
     "noul": 0.16
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "buses",
-    "confidence": 0.98,
-    "probabilities": {
-     "buses": 0.99,
-     "flights": 0,
-     "stays": 0,
-     "none": 0.01,
-     "trains": 0
-    }
    },
    "q3_big_steps": {
     "type": "noul",
@@ -10039,6 +11107,30 @@
    "q5_dates": {
     "type": "noul",
     "noul": 0.28
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "buses",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0.99,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
    }
   },
   "r42": {
@@ -10142,11 +11234,23 @@
     "choice": "buses",
     "confidence": 1,
     "probabilities": {
-     "buses": 1,
-     "trains": 0,
-     "none": 0,
      "flights": 0,
-     "stays": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 1,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -10249,13 +11353,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "buses",
-    "confidence": 0.99,
+    "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "stays": 0,
-     "buses": 0.99,
      "flights": 0,
-     "none": 0.01
+     "stays": 0,
+     "trains": 0,
+     "buses": 1,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -10358,13 +11474,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "buses",
-    "confidence": 0.92,
+    "confidence": 0.98,
     "probabilities": {
-     "none": 0.06,
-     "buses": 0.94,
-     "stays": 0,
      "flights": 0,
-     "trains": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0.98,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
     }
    }
   },
@@ -10469,11 +11597,23 @@
     "choice": "buses",
     "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "none": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 1,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -10576,13 +11716,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "buses",
-    "confidence": 0.88,
+    "confidence": 0.98,
     "probabilities": {
-     "buses": 0.91,
-     "stays": 0,
-     "none": 0.09,
      "flights": 0,
-     "trains": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0.98,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
     }
    }
   },
@@ -10685,12 +11837,24 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "buses",
-    "confidence": 0.97,
+    "confidence": 0.98,
     "probabilities": {
-     "buses": 0.98,
-     "trains": 0,
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0.98,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 0.02
     }
    }
@@ -10794,13 +11958,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "buses",
-    "confidence": 0.94,
+    "confidence": 0.98,
     "probabilities": {
      "flights": 0,
      "stays": 0,
-     "buses": 0.95,
      "trains": 0,
-     "none": 0.05
+     "buses": 0.98,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
     }
    }
   },
@@ -10905,10 +12081,22 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
      "flights": 0,
      "stays": 0,
      "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 1
     }
    }
@@ -11012,13 +12200,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.99,
     "probabilities": {
+     "flights": 0.01,
      "stays": 0,
      "trains": 0,
      "buses": 0,
-     "none": 1,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -11121,13 +12321,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.98,
     "probabilities": {
-     "trains": 0,
-     "stays": 0,
-     "buses": 0,
      "flights": 0,
-     "none": 1
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0.02,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.98
     }
    }
   },
@@ -11230,13 +12442,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.97,
+    "confidence": 0.87,
     "probabilities": {
+     "flights": 0.12,
      "stays": 0,
-     "flights": 0.02,
      "trains": 0,
      "buses": 0,
-     "none": 0.98
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.88
     }
    }
   },
@@ -11339,13 +12563,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.97,
+    "confidence": 0.92,
     "probabilities": {
-     "flights": 0.02,
+     "flights": 0.08,
      "stays": 0,
-     "none": 0.98,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.92
     }
    }
   },
@@ -11451,10 +12687,22 @@
     "confidence": 1,
     "probabilities": {
      "flights": 0,
-     "buses": 0,
-     "none": 1,
      "stays": 0,
-     "trains": 0
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -11557,13 +12805,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.99,
+    "confidence": 0.87,
     "probabilities": {
+     "flights": 0,
      "stays": 0,
      "trains": 0,
-     "none": 1,
-     "buses": 0,
-     "flights": 0
+     "buses": 0.11,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.01,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.88
     }
    }
   },
@@ -11666,13 +12926,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.99,
+    "confidence": 0.98,
     "probabilities": {
-     "none": 1,
-     "flights": 0,
-     "buses": 0,
+     "flights": 0.01,
+     "stays": 0,
      "trains": 0,
-     "stays": 0
+     "buses": 0.01,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.98
     }
    }
   },
@@ -11775,13 +13047,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.99,
+    "confidence": 0.95,
     "probabilities": {
-     "trains": 0,
-     "none": 1,
      "flights": 0,
+     "stays": 0.02,
+     "trains": 0,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.03,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.95
     }
    }
   },
@@ -11883,14 +13167,26 @@
    },
    "q10_recipe": {
     "type": "choice",
-    "choice": "none",
-    "confidence": 0.79,
+    "choice": "flight_status",
+    "confidence": 0.7,
     "probabilities": {
-     "trains": 0.04,
+     "flights": 0.01,
      "stays": 0,
-     "buses": 0.01,
-     "flights": 0.11,
-     "none": 0.84
+     "trains": 0.01,
+     "buses": 0,
+     "train_status": 0.23,
+     "pnr": 0.01,
+     "confirm_chance": 0,
+     "schedule": 0.01,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0.72,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
     }
    }
   },
@@ -11992,14 +13288,26 @@
    },
    "q10_recipe": {
     "type": "choice",
-    "choice": "none",
-    "confidence": 0.95,
+    "choice": "train_status",
+    "confidence": 0.61,
     "probabilities": {
+     "flights": 0,
      "stays": 0,
      "trains": 0,
      "buses": 0.01,
-     "none": 0.97,
-     "flights": 0.02
+     "train_status": 0.63,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0.07,
+     "coach_position": 0.01,
+     "boarding_stations": 0,
+     "flight_status": 0.03,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.25
     }
    }
   },
@@ -12011,18 +13319,6 @@
    "q9_someone_look": {
     "type": "noul",
     "noul": 0.71
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "stays": 0,
-     "flights": 0,
-     "trains": 0,
-     "buses": 0,
-     "none": 1
-    }
    },
    "q3_quick_answer": {
     "type": "noul",
@@ -12109,6 +13405,30 @@
      "thumbs": 0,
      "noted": 0,
      "none": 0.99
+    }
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "pnr",
+    "confidence": 0.98,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0.98,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.02
     }
    }
   },
@@ -12213,11 +13533,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
      "stays": 0,
-     "none": 1,
      "trains": 0,
      "buses": 0,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -12322,11 +13654,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "none": 1,
-     "stays": 0,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -12429,13 +13773,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.62,
     "probabilities": {
      "flights": 0,
-     "buses": 0,
-     "none": 1,
      "stays": 0,
-     "trains": 0
+     "trains": 0,
+     "buses": 0.09,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0.27,
+     "none": 0.64
     }
    }
   },
@@ -12538,13 +13894,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.94,
+    "confidence": 0.92,
     "probabilities": {
-     "buses": 0,
+     "flights": 0.02,
+     "stays": 0.02,
      "trains": 0,
-     "none": 0.96,
-     "flights": 0,
-     "stays": 0.04
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.03,
+     "hotel_reviews": 0,
+     "fare_review": 0.01,
+     "none": 0.92
     }
    }
   },
@@ -12647,13 +14015,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.92,
+    "confidence": 0.87,
     "probabilities": {
-     "buses": 0,
-     "stays": 0.06,
-     "none": 0.94,
+     "flights": 0,
+     "stays": 0.02,
      "trains": 0,
-     "flights": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.1,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.88
     }
    }
   },
@@ -12680,18 +14060,6 @@
    "q9_someone_look": {
     "type": "noul",
     "noul": 0.03
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "flights": 0,
-     "trains": 0,
-     "stays": 0,
-     "buses": 0,
-     "none": 1
-    }
    },
    "q2_complete": {
     "type": "noul",
@@ -12764,6 +14132,30 @@
    "q1_chatter": {
     "type": "noul",
     "noul": 0.88
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
+    }
    }
   },
   "r67": {
@@ -12865,13 +14257,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.66,
     "probabilities": {
+     "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "stays": 0,
-     "flights": 0,
-     "none": 1
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0.32,
+     "fare_review": 0,
+     "none": 0.68
     }
    }
   },
@@ -12974,13 +14378,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.98,
+    "confidence": 0.95,
     "probabilities": {
-     "none": 0.99,
      "flights": 0,
-     "buses": 0.01,
+     "stays": 0,
      "trains": 0,
-     "stays": 0
+     "buses": 0.05,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.95
     }
    }
   },
@@ -13085,11 +14501,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 1,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -13191,14 +14619,26 @@
    },
    "q10_recipe": {
     "type": "choice",
-    "choice": "none",
-    "confidence": 0.98,
+    "choice": "offers",
+    "confidence": 1,
     "probabilities": {
+     "flights": 0,
+     "stays": 0,
      "trains": 0,
-     "none": 0.99,
-     "flights": 0.01,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 1,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -13258,18 +14698,6 @@
     "type": "noul",
     "noul": 0.05
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 0.99,
-    "probabilities": {
-     "stays": 0,
-     "flights": 0,
-     "buses": 0,
-     "none": 1,
-     "trains": 0
-    }
-   },
    "q1_addressed": {
     "type": "noul",
     "noul": 0.84
@@ -13309,6 +14737,30 @@
    "q9_circles": {
     "type": "noul",
     "noul": 0.26
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.6,
+    "probabilities": {
+     "flights": 0.04,
+     "stays": 0,
+     "trains": 0.01,
+     "buses": 0.01,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0.3,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0.02,
+     "none": 0.62
+    }
    }
   },
   "r72": {
@@ -13410,13 +14862,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.83,
+    "confidence": 0.49,
     "probabilities": {
-     "none": 0.86,
-     "flights": 0.13,
-     "stays": 0.01,
+     "flights": 0.46,
+     "stays": 0.02,
+     "trains": 0,
      "buses": 0,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.52
     }
    }
   },
@@ -13521,11 +14985,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "none": 1,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -13628,13 +15104,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.95,
     "probabilities": {
+     "flights": 0.01,
      "stays": 0,
-     "none": 1,
+     "trains": 0,
      "buses": 0,
-     "flights": 0,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0.01,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0.01,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0.02,
+     "none": 0.95
     }
    }
   },
@@ -13739,11 +15227,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
      "stays": 0,
-     "none": 1,
      "trains": 0,
      "buses": 0,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -13846,13 +15346,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.99,
+    "confidence": 0.98,
     "probabilities": {
-     "trains": 0,
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 1
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.02,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.98
     }
    }
   },
@@ -13954,124 +15466,27 @@
    },
    "q10_recipe": {
     "type": "choice",
-    "choice": "none",
-    "confidence": 0.99,
+    "choice": "guide",
+    "confidence": 0.97,
     "probabilities": {
      "flights": 0,
-     "buses": 0,
      "stays": 0,
-     "none": 1,
-     "trains": 0
-    }
-   }
-  },
-  "r78": {
-   "q5_other": {
-    "type": "noul",
-    "noul": 0.03
-   },
-   "q8_spend": {
-    "type": "noul",
-    "noul": 0.05
-   },
-   "q8_steer": {
-    "type": "noul",
-    "noul": 0.06
-   },
-   "q1_addressed": {
-    "type": "noul",
-    "noul": 0.66
-   },
-   "q3_quick_answer": {
-    "type": "noul",
-    "noul": 0.58
-   },
-   "q6_open": {
-    "type": "noul",
-    "noul": 0.23
-   },
-   "q2_complete": {
-    "type": "noul",
-    "noul": 0.67
-   },
-   "q3_big_compare": {
-    "type": "noul",
-    "noul": 0.05
-   },
-   "q3_big_steps": {
-    "type": "noul",
-    "noul": 0.05
-   },
-   "q3_quick_search": {
-    "type": "noul",
-    "noul": 0.04
-   },
-   "q5_food": {
-    "type": "noul",
-    "noul": 0.04
-   },
-   "q7_reaction": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "cheer": 0,
-     "thumbs": 0,
-     "noted": 0,
-     "none": 1
-    }
-   },
-   "q8_secret": {
-    "type": "noul",
-    "noul": 0.05
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 1,
-     "flights": 0,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.97,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.03
     }
-   },
-   "q1_chatter": {
-    "type": "noul",
-    "noul": 0.09
-   },
-   "q5_dates": {
-    "type": "noul",
-    "noul": 0.03
-   },
-   "q5_travel": {
-    "type": "noul",
-    "noul": 0.05
-   },
-   "q6_agreed": {
-    "type": "noul",
-    "noul": 0.04
-   },
-   "q6_doing": {
-    "type": "noul",
-    "noul": 0.05
-   },
-   "q9_group_question": {
-    "type": "noul",
-    "noul": 0.64
-   },
-   "q9_circles": {
-    "type": "noul",
-    "noul": 0.24
-   },
-   "q9_someone_look": {
-    "type": "noul",
-    "noul": 0.35
-   },
-   "q3_quick_act": {
-    "type": "noul",
-    "noul": 0.04
    }
   },
   "r79": {
@@ -14173,122 +15588,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.99,
-    "probabilities": {
-     "stays": 0.01,
-     "flights": 0,
-     "buses": 0,
-     "none": 0.99,
-     "trains": 0
-    }
-   }
-  },
-  "r80": {
-   "q1_addressed": {
-    "type": "noul",
-    "noul": 0.65
-   },
-   "q1_chatter": {
-    "type": "noul",
-    "noul": 0.04
-   },
-   "q2_complete": {
-    "type": "noul",
-    "noul": 0.71
-   },
-   "q3_big_compare": {
-    "type": "noul",
-    "noul": 0.06
-   },
-   "q3_big_steps": {
-    "type": "noul",
-    "noul": 0.04
-   },
-   "q3_quick_answer": {
-    "type": "noul",
-    "noul": 0.4
-   },
-   "q3_quick_search": {
-    "type": "noul",
-    "noul": 0.05
-   },
-   "q3_quick_act": {
-    "type": "noul",
-    "noul": 0.04
-   },
-   "q5_food": {
-    "type": "noul",
-    "noul": 0.02
-   },
-   "q5_dates": {
-    "type": "noul",
-    "noul": 0.03
-   },
-   "q5_travel": {
-    "type": "noul",
-    "noul": 0.05
-   },
-   "q5_other": {
-    "type": "noul",
-    "noul": 0.03
-   },
-   "q6_agreed": {
-    "type": "noul",
-    "noul": 0.03
-   },
-   "q6_open": {
-    "type": "noul",
-    "noul": 0.32
-   },
-   "q6_doing": {
-    "type": "noul",
-    "noul": 0.06
-   },
-   "q7_reaction": {
-    "type": "choice",
-    "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "thumbs": 0,
-     "none": 1,
-     "cheer": 0,
-     "noted": 0
-    }
-   },
-   "q8_spend": {
-    "type": "noul",
-    "noul": 0.15
-   },
-   "q8_steer": {
-    "type": "noul",
-    "noul": 0.04
-   },
-   "q8_secret": {
-    "type": "noul",
-    "noul": 0.05
-   },
-   "q9_group_question": {
-    "type": "noul",
-    "noul": 0.68
-   },
-   "q9_circles": {
-    "type": "noul",
-    "noul": 0.14
-   },
-   "q9_someone_look": {
-    "type": "noul",
-    "noul": 0.67
-   },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "none": 1,
      "flights": 0,
-     "buses": 0,
+     "stays": 0,
      "trains": 0,
-     "stays": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -14393,11 +15711,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
-     "trains": 0,
-     "none": 1,
      "flights": 0,
-     "stays": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -14502,11 +15832,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "trains": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 1,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -14611,11 +15953,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "none": 1,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -14718,13 +16072,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.79,
+    "confidence": 0.84,
     "probabilities": {
-     "trains": 0,
-     "stays": 0.17,
-     "buses": 0,
      "flights": 0,
-     "none": 0.83
+     "stays": 0.13,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.02,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.85
     }
    }
   },
@@ -14833,6 +16199,18 @@
      "stays": 0,
      "trains": 0,
      "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 1
     }
    }
@@ -14940,9 +16318,21 @@
     "probabilities": {
      "flights": 0,
      "stays": 0,
-     "none": 1,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -15047,11 +16437,23 @@
     "choice": "none",
     "confidence": 0.99,
     "probabilities": {
+     "flights": 0.01,
+     "stays": 0,
      "trains": 0,
-     "none": 1,
-     "flights": 0,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -15156,11 +16558,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "buses": 0,
      "flights": 0,
-     "none": 1,
      "stays": 0,
-     "trains": 0
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -15236,18 +16650,6 @@
     "type": "noul",
     "noul": 0.08
    },
-   "q10_recipe": {
-    "type": "choice",
-    "choice": "none",
-    "confidence": 1,
-    "probabilities": {
-     "buses": 0,
-     "trains": 0,
-     "none": 1,
-     "flights": 0,
-     "stays": 0
-    }
-   },
    "q1_addressed": {
     "type": "noul",
     "noul": 0.13
@@ -15271,6 +16673,30 @@
    "q6_agreed": {
     "type": "noul",
     "noul": 0.07
+   },
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
+    }
    }
   },
   "h09": {
@@ -15372,13 +16798,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.99,
     "probabilities": {
-     "flights": 0,
+     "flights": 0.01,
      "stays": 0,
-     "none": 1,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -15483,11 +16921,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "stays": 0,
-     "none": 1,
-     "buses": 0,
      "flights": 0,
-     "trains": 0
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -15592,11 +17042,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "none": 1,
-     "stays": 0,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -15701,11 +17163,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
      "stays": 0,
-     "none": 1,
      "trains": 0,
      "buses": 0,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -15808,13 +17282,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.97,
+    "confidence": 0.99,
     "probabilities": {
-     "none": 0.02,
      "flights": 0,
-     "stays": 0.98,
+     "stays": 0.99,
+     "trains": 0,
      "buses": 0,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
     }
    }
   },
@@ -15917,13 +17403,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.83,
+    "confidence": 0.8,
     "probabilities": {
-     "buses": 0,
      "flights": 0,
-     "stays": 0.13,
+     "stays": 0.14,
      "trains": 0,
-     "none": 0.87
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.02,
+     "hotel_reviews": 0.02,
+     "fare_review": 0,
+     "none": 0.81
     }
    }
   },
@@ -16026,13 +17524,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.98,
     "probabilities": {
-     "stays": 0,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "none": 1,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0.01,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0.01,
+     "none": 0.98
     }
    }
   },
@@ -16135,13 +17645,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "flights",
-    "confidence": 0.98,
+    "confidence": 1,
     "probabilities": {
+     "flights": 1,
+     "stays": 0,
      "trains": 0,
-     "flights": 0.99,
      "buses": 0,
-     "none": 0.01,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
     }
    }
   },
@@ -16244,13 +17766,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.97,
+    "confidence": 0.95,
     "probabilities": {
-     "trains": 0,
-     "stays": 0.98,
-     "buses": 0,
      "flights": 0,
-     "none": 0.02
+     "stays": 0.95,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0.02,
+     "fare_review": 0,
+     "none": 0.03
     }
    }
   },
@@ -16353,13 +17887,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.69,
+    "confidence": 0.56,
     "probabilities": {
      "flights": 0,
-     "stays": 0.25,
-     "none": 0.75,
+     "stays": 0.38,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.03,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.59
     }
    }
   },
@@ -16464,11 +18010,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
-     "trains": 0,
-     "none": 1,
      "flights": 0,
+     "stays": 0,
+     "trains": 0,
      "buses": 0,
-     "stays": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -16571,13 +18129,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.99,
+    "confidence": 0.94,
     "probabilities": {
-     "none": 0.99,
-     "buses": 0,
+     "flights": 0.06,
      "stays": 0,
-     "flights": 0.01,
-     "trains": 0
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.94
     }
    }
   },
@@ -16680,13 +18250,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.63,
+    "confidence": 0.9,
     "probabilities": {
-     "none": 0.29,
-     "flights": 0,
-     "buses": 0,
+     "flights": 0.01,
+     "stays": 0.91,
      "trains": 0,
-     "stays": 0.71
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.02,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.06
     }
    }
   },
@@ -16791,11 +18373,23 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "stays": 0,
-     "none": 1,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
     }
    }
   },
@@ -16898,13 +18492,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.8,
     "probabilities": {
-     "none": 1,
      "flights": 0,
-     "stays": 0,
+     "stays": 0.02,
+     "trains": 0,
      "buses": 0,
-     "trains": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.13,
+     "offers": 0,
+     "hotel_rooms": 0.01,
+     "hotel_reviews": 0.02,
+     "fare_review": 0,
+     "none": 0.81
     }
    }
   },
@@ -17009,10 +18615,22 @@
     "choice": "none",
     "confidence": 1,
     "probabilities": {
+     "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "stays": 0,
-     "flights": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 1
     }
    }
@@ -17116,13 +18734,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.94,
+    "confidence": 0.89,
     "probabilities": {
-     "buses": 0.05,
-     "trains": 0,
-     "stays": 0,
      "flights": 0,
-     "none": 0.95
+     "stays": 0,
+     "trains": 0,
+     "buses": 0.1,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.9
     }
    }
   },
@@ -17225,13 +18855,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.95,
+    "confidence": 0.83,
     "probabilities": {
-     "trains": 0,
+     "flights": 0.01,
      "stays": 0,
-     "buses": 0.04,
-     "flights": 0,
-     "none": 0.96
+     "trains": 0,
+     "buses": 0.15,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.84
     }
    }
   },
@@ -17334,13 +18976,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 1,
+    "confidence": 0.99,
     "probabilities": {
-     "flights": 0,
+     "flights": 0.01,
      "stays": 0,
-     "none": 1,
      "trains": 0,
-     "buses": 0
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
     }
    }
   },
@@ -17443,12 +19097,24 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "stays",
-    "confidence": 0.98,
+    "confidence": 0.99,
     "probabilities": {
-     "trains": 0,
-     "stays": 0.99,
-     "buses": 0,
      "flights": 0,
+     "stays": 0.99,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
      "none": 0.01
     }
    }
@@ -17552,13 +19218,25 @@
    "q10_recipe": {
     "type": "choice",
     "choice": "none",
-    "confidence": 0.86,
+    "confidence": 0.45,
     "probabilities": {
+     "flights": 0,
+     "stays": 0.19,
      "trains": 0,
      "buses": 0,
-     "stays": 0.11,
-     "none": 0.89,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.33,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.48
     }
    }
   },
@@ -17663,11 +19341,23 @@
     "choice": "stays",
     "confidence": 0.98,
     "probabilities": {
+     "flights": 0.01,
+     "stays": 0.98,
      "trains": 0,
      "buses": 0,
-     "stays": 0.98,
-     "none": 0.02,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
     }
    }
   },
@@ -17769,16 +19459,1524 @@
    },
    "q10_recipe": {
     "type": "choice",
+    "choice": "guide",
+    "confidence": 0.52,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0.01,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.55,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.44
+    }
+   }
+  },
+  "j01": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "train_status",
+    "confidence": 0.98,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0.98,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0.01,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "j02": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "train_status",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 1,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j03": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "train_status",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 1,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j04": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "train_status",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 1,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j05": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "schedule",
+    "confidence": 0.45,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0.02,
+     "buses": 0,
+     "train_status": 0.39,
+     "pnr": 0.05,
+     "confirm_chance": 0,
+     "schedule": 0.48,
+     "coach_position": 0.01,
+     "boarding_stations": 0,
+     "flight_status": 0.02,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.03
+    }
+   }
+  },
+  "j06": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "pnr",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0.99,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "j07": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "pnr",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 1,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j08": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "pnr",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 1,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j09": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "pnr",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 1,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j10": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "confirm_chance",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0.99,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "j11": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "confirm_chance",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0.01,
+     "confirm_chance": 0.99,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j12": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "confirm_chance",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0.01,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0.99,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j13": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "confirm_chance",
+    "confidence": 0.97,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0.01,
+     "buses": 0.01,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0.97,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "j14": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "schedule",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 1,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j15": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "schedule",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0.01,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0.99,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j16": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "schedule",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0.99,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "j17": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "schedule",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 1,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j18": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "guide",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.99,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "j19": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "guide",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.99,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "j20": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "guide",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.99,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "j21": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "guide",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0.99,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "j22": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "offers",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 1,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j23": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "offers",
+    "confidence": 0.98,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0.02,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0.98,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j24": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "offers",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 1,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j25": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "offers",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0.01,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0.99,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j26": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "hotel_rooms",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 1,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j27": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "hotel_rooms",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 1,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j28": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "hotel_rooms",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 1,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j29": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "hotel_rooms",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 1,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j30": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "hotel_reviews",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 1,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j31": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "hotel_reviews",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 1,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j32": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "hotel_reviews",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 1,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "j33": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "hotel_reviews",
+    "confidence": 0.29,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0.06,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.32,
+     "hotel_reviews": 0.33,
+     "fare_review": 0,
+     "none": 0.29
+    }
+   }
+  },
+  "j34": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "pnr",
+    "confidence": 0.56,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0.59,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.41
+    }
+   }
+  },
+  "j35": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.71,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0.27,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.73
+    }
+   }
+  },
+  "j36": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.94,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0.01,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.05,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.94
+    }
+   }
+  },
+  "j37": {
+   "q10_recipe": {
+    "type": "choice",
     "choice": "none",
     "confidence": 0.98,
     "probabilities": {
+     "flights": 0,
+     "stays": 0,
      "trains": 0,
      "buses": 0,
-     "stays": 0.02,
-     "none": 0.98,
-     "flights": 0
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0.02,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.98
+    }
+   }
+  },
+  "j38": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.85,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0.14,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.86
+    }
+   }
+  },
+  "j39": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0.01,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.99
+    }
+   }
+  },
+  "k01": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "flight_status",
+    "confidence": 0.29,
+    "probabilities": {
+     "flights": 0.11,
+     "stays": 0,
+     "trains": 0.03,
+     "buses": 0,
+     "train_status": 0.04,
+     "pnr": 0.01,
+     "confirm_chance": 0,
+     "schedule": 0.3,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0.33,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.18000000000000002
+    }
+   }
+  },
+  "k02": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "flight_status",
+    "confidence": 0.76,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0.19,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0.77,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.04
+    }
+   }
+  },
+  "k03": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "flight_status",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 1,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "k04": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "flight_status",
+    "confidence": 0.97,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0.01,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0.01,
+     "boarding_stations": 0,
+     "flight_status": 0.97,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "k05": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "coach_position",
+    "confidence": 0.98,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0.01,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0.98,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "k06": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "coach_position",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 1,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "k07": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "coach_position",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 1,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "k08": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "coach_position",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0.99,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0.01
+    }
+   }
+  },
+  "k09": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "boarding_stations",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 1,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "k10": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "boarding_stations",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 1,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "k11": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "boarding_stations",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 1,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "k12": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "boarding_stations",
+    "confidence": 0.99,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0.01,
+     "coach_position": 0,
+     "boarding_stations": 0.99,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 0
+    }
+   }
+  },
+  "k13": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "fare_review",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 1,
+     "none": 0
+    }
+   }
+  },
+  "k14": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "fare_review",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 1,
+     "none": 0
+    }
+   }
+  },
+  "k15": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "fare_review",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 1,
+     "none": 0
+    }
+   }
+  },
+  "k16": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "fare_review",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 1,
+     "none": 0
+    }
+   }
+  },
+  "k17": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 1,
+    "probabilities": {
+     "flights": 0,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0,
+     "none": 1
+    }
+   }
+  },
+  "k18": {
+   "q10_recipe": {
+    "type": "choice",
+    "choice": "none",
+    "confidence": 0.98,
+    "probabilities": {
+     "flights": 0.01,
+     "stays": 0,
+     "trains": 0,
+     "buses": 0,
+     "train_status": 0,
+     "pnr": 0,
+     "confirm_chance": 0,
+     "schedule": 0,
+     "coach_position": 0,
+     "boarding_stations": 0,
+     "flight_status": 0,
+     "guide": 0,
+     "offers": 0,
+     "hotel_rooms": 0,
+     "hotel_reviews": 0,
+     "fare_review": 0.01,
+     "none": 0.98
     }
    }
   }
+ },
+ "kept": {
+  "recorded_at": "2026-10-07T05:09:16.041Z",
+  "questions": [
+   "for_go",
+   "complete",
+   "size",
+   "task",
+   "fact",
+   "record",
+   "reaction",
+   "risky",
+   "opening"
+  ]
  }
 }

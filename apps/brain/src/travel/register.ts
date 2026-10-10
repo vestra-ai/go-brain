@@ -6,7 +6,7 @@
 import type { RegisterLane } from '../app.js';
 import { loadBook } from './book/book.js';
 import { createEngine } from './book/engine.js';
-import { ixigoTool } from './book/tool.js';
+import { ixigoTool, runOnStage, toolRecipes } from './book/tool.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
@@ -23,8 +23,9 @@ import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/
 import { createOffers } from './recipes/offers.js';
 import { offersNow } from './recipes/offers-now.js';
 import { createEarlyStart } from './recipes/early.js';
-import { earlyAnswer, earlySearchNow } from './recipes/now.js';
+import { earlyAnswer, earlyReadNow, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
+import { optionOnCard } from './recipes/option-on-card.js';
 import { createPlaceFor } from './place-for.js';
 import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
@@ -44,6 +45,13 @@ import { ProactiveStore } from '../proactive/store.js';
 
 /** How often Go looks for watches that are due: each watch's own pace is an hour or half an hour. */
 export const WATCH_TICK_MS = 30_000;
+
+/** The messages a turn woke for. */
+const messageIdsOf = (wake: ReadonlyArray<{ kind: string; payload: unknown }>): string[] =>
+  wake.flatMap((w) => {
+    const id = w.kind === 'message' ? (w.payload as { messageId?: unknown } | null)?.messageId : undefined;
+    return typeof id === 'string' ? [id] : [];
+  });
 
 export const registerTravel: RegisterLane = async (brain) => {
   const env = readTravelEnv(brain.env);
@@ -218,11 +226,15 @@ export const registerTravel: RegisterLane = async (brain) => {
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
   brain.tools.register(budgetTool({ budgets }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
+  // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens.
+  const recipeCard = (tripId: string, o: { runKey: string; recipe: string }) =>
+    startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o);
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
   const recipesTool = ixigoTool({
     book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
-    // Its runs on the stage, with a live card, as a search's are: the room watches every page Go opens.
-    card: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o),
+    card: recipeCard,
+    // A call that is the read the early start began for the message this turn woke for joins it, on its card.
+    joinKey: (ctx, recipe, inputs) => early.joinKey(ctx.tripId, messageIdsOf(ctx.wake), recipe, inputs),
   });
   if (recipesTool) brain.tools.register(recipesTool);
   // How everyone gets to the trip, asked for: each home city's trains and buses side by side, on one card.
@@ -254,9 +266,17 @@ export const registerTravel: RegisterLane = async (brain) => {
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
     warmForTravel: warm,
     linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
+    // The asks beyond the searches (a train's status, a guide, the offers...): the facts recipes the ixigo tool offers, so
+    // its call for the same inputs joins the read (the engine keeps a facts read in flight).
+    recipes: {
+      has: (id) => toolRecipes(book).some((r) => r.id === id),
+      run: (id, given, o) => runOnStage({ engine, card: recipeCard }, o.tripId, o.runKey, book.get(id) ?? { id, title: id }, given),
+    },
+    optionFor: (tripId, text, kind) => optionOnCard(brain.pool, results, tripId, text, kind),
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
+  brain.context.addNow(earlyReadNow({ early, now: brain.now }));
   // The sites' own filter lists the trip's searches brought: the model maps the ask onto them (site_filters).
   brain.context.addNow(offersNow({ offers }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.

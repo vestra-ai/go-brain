@@ -11,7 +11,7 @@ import { dateAs } from './book/expr.js';
 import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, ledBy, leftOff, linkLine, plainAsk } from './answer.js';
-import { stayDetails, trainDetails } from './details.js';
+import { flightDetails, stayDetails, trainDetails } from './details.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
@@ -351,7 +351,9 @@ export async function putUpCard(
     numbers.map(async (n, i) => {
       const option = set.options[n - 1]!;
       const gallery = set.optionKind === 'stay' ? (await Promise.all((option.imageUrls ?? []).map((u) => d.images.rehostUrl(u)))).filter((u): u is string => u !== null) : [];
-      const details = set.optionKind === 'stay' ? stayDetails(option, query, people, gallery) : set.optionKind === 'train' ? trainDetails(option) : null;
+      const details = set.optionKind === 'stay'
+        ? stayDetails(option, query, people, gallery)
+        : set.optionKind === 'train' ? trainDetails(option) : set.optionKind === 'flight' ? flightDetails(option, people) : null;
       return {
         n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null,
         ...(details ? { details } : {}),
