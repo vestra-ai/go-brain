@@ -72,7 +72,8 @@ export class BenchReflex implements CountingReflex {
       // A read recorded before questions 1's banter and 11 existed takes theirs from the labels.
       const label = labelRead(l);
       const r = recorded?.get(l.i);
-      if (!this.answers.has(key)) this.answers.set(key, r ? { banter: label.banter, actionable: label.actionable, ...r } : label);
+      const fromLabel = { ...(label.banter ? { banter: label.banter } : {}), ...(label.actionable ? { actionable: label.actionable } : {}) };
+      if (!this.answers.has(key)) this.answers.set(key, r ? { ...fromLabel, ...r } : label);
     }
   }
 
