@@ -175,6 +175,8 @@ export interface IxigoLogin {
    */
   nudge(tripId: string): void;
   registerTaps(taps: Pick<TapRouter, 'on'>): void;
+  /** The login's hand-off is open on the trip (logging in): nothing else is handed to the person over it. */
+  handingOff(tripId: string): Promise<boolean>;
   /**
    * For a recipe or a booking that needs the login: ok, or the line for the model (and the person was asked). A booking
    * (park) is asked with its own line ("To book Saudades I need ixigo linked once, Rahul") and waits on the login: when
@@ -732,6 +734,10 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           await ask(tripId, row.personId, row.attempt + 1, GONE_LINE);
         }
       })().finally(() => nudging.delete(tripId)));
+    },
+
+    async handingOff(tripId) {
+      return (await get(tripId))?.state === 'logging_in';
     },
 
     registerTaps(taps) {

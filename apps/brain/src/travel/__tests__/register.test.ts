@@ -53,7 +53,7 @@ describe('registerTravel', () => {
     // set_budget: the budget the group decided, kept for every turn (trip-budget.ts).
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'set_budget', 'ixigo', 'compare_ways_there', 'watch_ixigo', 'stop_watch']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual([
-      'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/see_on_ixigo',
+      'notice/ixigo_check_watch', 'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/see_on_ixigo',
       'options/add_budget', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
     ]);
     expect(lb.context.wakes.has('tap')).toBe(true);

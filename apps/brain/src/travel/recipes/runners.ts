@@ -82,7 +82,7 @@ export interface RecipeRunner {
    * steps (one byte, its status, as capture `check`). Throws a TravelError when Bash would not open it. challenged: the
    * page stayed on Cloudflare's check (CLOUDFLARE), and the caller closes it: it is never the person's.
    */
-  handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[]; challenged?: true }>;
+  handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; keepChallenge?: boolean }): Promise<{ captures: Capture[]; challenged?: true }>;
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
   /**
@@ -298,9 +298,12 @@ function nextLoadMs(pageMs: number, started: number, now: number, loadsAgain: nu
   return loadsAgain >= CHALLENGE_TRIES || left < CHALLENGE_LOAD_MS ? null : Math.min(pageMs, left);
 }
 export const CHALLENGED = "ixigo asked the trip's computer to wait a moment. Try again in a minute.";
-/** A read whose page stayed on the check: unreachable, saying so; a caller that must tell it from other failures asks for this class. */
+/**
+ * A read whose page stayed on the check: unreachable, saying so; a caller that must tell it from other failures asks for
+ * this class. `page`: the page that was checked, for a person to tick it on (check-handoff.ts).
+ */
 export class ChallengedError extends TravelError {
-  constructor() {
+  constructor(readonly page?: string) {
     super('unreachable', CHALLENGED);
   }
 }
@@ -491,7 +494,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
       if (next === null || o.signal?.aborted) {
         d.log.warn({ tripId, page: what.id, loads: checks + 1 }, "travel: ixigo's page stayed on Cloudflare's check");
-        throw new ChallengedError();
+        throw new ChallengedError(url);
       }
       checks += 1;
       d.log.warn({ tripId, page: what.id, again: checks, ms: next }, "travel: ixigo's page was Cloudflare's check; opening it again");
@@ -658,7 +661,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   }
 
   async function handOff(
-    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall },
+    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; keepChallenge?: boolean },
   ): Promise<{ captures: Capture[]; challenged?: true }> {
     // The check first, from inside the page as soon as it is there (one byte, its status), then the plan's own steps.
     const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
@@ -698,6 +701,8 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         captures = partialCaptures(err);
       }
       if (!challenged(captures, url)) return { captures: captures.filter((c) => c.match !== doc) };
+      // A check handed to a person (keepChallenge, check-handoff.ts): the check itself stays in front for them to tick.
+      if (o.keepChallenge) return { captures: captures.filter((c) => c.match !== doc), challenged: true };
       // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
       // it; still on it when no load fits, the caller closes it and says so.
       const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);

@@ -12,6 +12,7 @@ import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
+import { createCheckHandOff } from './check-handoff.js';
 import { createIxigoLogin, renderLoginResume } from './login.js';
 import { createLoginKeepAlive } from './login-keepalive.js';
 import { createTravelLayer } from './layer.js';
@@ -77,6 +78,17 @@ export const registerTravel: RegisterLane = async (brain) => {
     log: brain.log,
   });
   login.registerTaps(brain.taps);
+  // Cloudflare's check on a search a person waits on, handed to the trip's organizer to tick on Go's screen.
+  const check = createCheckHandOff({
+    runner: () => brain.recipeRunners?.browserFetch ?? null,
+    link: brain.door.link,
+    packs: brain.packs,
+    screen: () => brain.recipeRunners?.screen ?? null,
+    loginOpen: (tripId) => login.handingOff(tripId),
+    now: brain.now,
+    log: brain.log,
+  });
+  check.registerTaps(brain.taps);
   // The person's login kept alive in their browser: one read every few hours while it is logged in (login-keepalive.ts).
   // The browsers are the tasks lane's, which registers after this one: read when a pass runs, none without them.
   const keepAlive = createLoginKeepAlive({
@@ -157,6 +169,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     engine,
     now: brain.now,
     log: brain.log,
+    check,
     live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o),
   });
   // The trip's likely first stays search, before anyone asks: after the warm at setup, when its dates or destination
