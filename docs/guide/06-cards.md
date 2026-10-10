@@ -474,7 +474,7 @@ Draw it like this:
 
 When the job needs someone (for example, a one-time code), Go sets `needs_you` and names that person in `for_person_ids`, which pins the card in their strip.
 
-**1.3: the live view.** `live_url` is a page Go hosts that shows, live and view-only, the browser Go is driving. It is signed and works for at most 15 minutes. Open it in a panel inside the app while the card is `running` or `needs_you`: it allows framing by the app's origins. Go sends it when the job starts and replaces the card only when a step changes, never for every frame. When the screen shows a person's own account (their ixigo login, their bookings), the message is visible to that person alone (`visible_to_person_ids`). `screenshot_url` stays as the last picture once the job ends.
+**1.3: the live view.** `live_url` is a page Go hosts that shows, live and view-only, the browser Go is driving. Its token rides in the url's `#fragment`, and it works for at most 15 minutes from when Go made it: Go puts a fresh one on the card at the next step change before then. Absent or null: no live view. Open it in a panel inside the app while the card is `running` or `needs_you`: it allows framing by the app's origins. Go sends it when the job starts and replaces the card only when a step changes, never for every frame. When the screen shows a person's own account (their ixigo login, their bookings), the message is visible to that person alone (`visible_to_person_ids`). `screenshot_url` stays as the last picture once the job ends.
 
 **Buttons.** "Watch" opens a page where the person watches Go work, from the `open` answer. "Stop" stops the job.
 
@@ -495,7 +495,7 @@ When the job needs someone (for example, a one-time code), Go sets `needs_you` a
   ],
   "screenshot_url": "https://brain.go.example/img/task-villas-1-0007.jpg",
   "page_url": "https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&locationType=S&masterLocationId=48569&countryId=1&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&childCount=0",
-  "live_url": "https://brain.go.example/live/task_villas_1?sig=lv_7Hc2Qm",
+  "live_url": "https://staging.vestra.ai/embed/browser?s=ses_8h2#token=tk_dummy_0000",
   "updated_at": "2026-10-05T07:12:40Z",
   "actions": [
     { "action_id": "watch", "label": "Watch", "style": "primary" },

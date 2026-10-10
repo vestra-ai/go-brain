@@ -439,6 +439,8 @@ Go answers with the place and 6 to 12 photos when it has them, a one-line tag, t
 }
 ```
 
+`complete`: absent or `true` means the whole answer. `false` means partial (photos still coming): show it, but don't keep it, and ask again later.
+
 Until Go answers it, `place_info` gets a 409 `conflict` error, "not available yet": keep the idea's own image.
 
 ## An option's Details: `get_option_details` (1.3)
@@ -471,11 +473,14 @@ Go answers with everything an option's `details` can hold, and more. Every field
   "policies": ["No pets", "Quiet hours 22:00 to 07:00"],
   "reviews": [{ "rating": 4.5, "text": "Lovely pool and very helpful staff.", "date": "2026-09-12", "source": "ixigo" }],
   "nearby": [{ "name": "Anjuna beach", "distance_m": 600 }],
-  "url": "https://www.ixigo.com/hotels/4395492/details"
+  "url": "https://www.ixigo.com/hotels/4395492/details",
+  "complete": true
 }
 ```
 
-The server keeps the answer an hour per option. Until Go answers it, `get_option_details` gets a 409 `conflict` error, "not available yet": show the option's own `details`.
+A review's `date` is `YYYY-MM-DD`, or `YYYY-MM` when the source gives only the month. `complete`: absent or `true` means the whole answer. `false` means partial (reviews or photos still coming): show it, but don't keep it, and ask again later.
+
+The server keeps a complete answer an hour per option. Until Go answers it, `get_option_details` gets a 409 `conflict` error, "not available yet": show the option's own `details`.
 
 ## Health: `GET /v1/health`
 

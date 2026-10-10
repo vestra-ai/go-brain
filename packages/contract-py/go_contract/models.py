@@ -234,7 +234,7 @@ class MapPoint(BaseModel):
 class OptionReview(BaseModel):
     rating: float | None = None
     text: Annotated[str, Field(max_length=1000, min_length=1)]
-    date: date_aliased | None = None
+    date: str | None = None
     source: str | None = None
 
 
@@ -267,6 +267,7 @@ class OptionFullDetails(BaseModel):
     reviews: list[OptionReview] | None = None
     nearby: list[NearbyPlace] | None = None
     url: str | None = None
+    complete: bool | None = None
 
 
 class Option(BaseModel):
@@ -367,8 +368,8 @@ class WorkingCard(BaseModel):
     state: Literal["running", "needs_you", "done", "failed"]
     steps: Annotated[list[Step], Field(max_length=8)]
     screenshot_url: str | None = None
-    page_url: str | None = None
     live_url: str | None = None
+    page_url: str | None = None
     updated_at: AwareDatetime
     actions: list[CardAction] | None = None
 
@@ -1789,6 +1790,7 @@ class PlaceInfo(BaseModel):
     tag: str | None = None
     travel: PlaceTravel | None = None
     best_months: list[int] | None = None
+    complete: bool | None = None
 
 
 class GetOptionDetails(BaseModel):
