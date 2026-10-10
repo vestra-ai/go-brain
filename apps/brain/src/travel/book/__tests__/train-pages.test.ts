@@ -247,3 +247,39 @@ describe('trains.train_calendar', () => {
     expect(got.rows[19]).toEqual({ day: '9 Dec', run: 'CSMT to MAO', seats: ['3A: AVL 118'] });
   });
 });
+
+// ixigo's city-to-city page as it was sent on 10 Oct 2026, logged out, trimmed to its title, canonical address, ld+json and
+// tables, and of its Next.js payload only the four sentences on its fastest, cheapest, first and last trains (the rest of
+// the payload, with the browser's own ids, left out).
+describe('trains.route', () => {
+  const PAGE = 'https://www.ixigo.com/by-train-rail/mumbai-to-goa-by-train';
+  const page = () => [capture('/by-train-rail/mumbai-to-goa-by-train$', PAGE, sample('trains.route.html'))];
+
+  it("opens the cities' page by their names and says every train, the fastest and cheapest it names, the first and last, and each class's lowest fare", async () => {
+    const got = await facts('trains.route', { from: 'Mumbai', to: 'Goa' }, page());
+    expect(got.page).toBe(PAGE);
+    expect(got.runs[0]!.plan.capture).toEqual([{ match: '/by-train-rail/mumbai-to-goa-by-train$', required: true, max_bytes: 2_000_000 }]);
+    expect(got.title).toBe('Trains, Mumbai to Goa');
+    const route = got.rows[0]!;
+    expect(route).toMatchObject({
+      route: 'Mumbai to Goa',
+      count: 16,
+      // The sentence says "leaves Mumbai (CSTM)": the train's own data says Panvel.
+      fastest: 'Pune ERS SF EXP 22150: leaves PNVL 21:25, reaches MAO 06:45, about 09:20 hrs',
+      cheapest: 'MAO Janshatabdi 12051: leaves CSMT 05:10, reaches MAO 16:40, daily, 11:30 hrs, from ₹310',
+      first: 'GOA Smprk Krant 12450: leaves PNVL 00:35, reaches MAO 13:30',
+      last: 'Surat Majn EXP 19057: leaves BSR 23:05, reaches MAO 12:20',
+      lowest_fare_by_class: ['1A from ₹2,570', '2A from ₹1,550', '3A from ₹1,105', '3E from ₹1,025', 'SL from ₹420', '2S from ₹310', 'CC from ₹1,020'],
+    });
+    const trains = route['trains'] as string[];
+    expect(trains).toHaveLength(16);
+    expect(trains).toContain('NZM ERS Duronto 12284: leaves PNVL 15:25, reaches MAO 01:45, on Sun, 10:20 hrs');
+  });
+
+  it("makes the page's address from the cities' names as people write them", async () => {
+    const DELHI = 'https://www.ixigo.com/by-train-rail/new-delhi-to-jaipur-by-train';
+    const got = await facts('trains.route', { from: ' New Delhi ', to: 'JAIPUR' }, [capture('/by-train-rail/new-delhi-to-jaipur-by-train$', DELHI, sample('trains.route.html'))]);
+    expect(got.page).toBe(DELHI);
+    expect(got.runs[0]!.plan.capture[0]!.match).toBe('/by-train-rail/new-delhi-to-jaipur-by-train$');
+  });
+});
