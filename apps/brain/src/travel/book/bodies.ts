@@ -146,15 +146,28 @@ export function htmlTablesOf(html: string): HtmlTables {
   return { title: title ? textOf(title) || null : null, canonical: canonical?.attribs['href'] ?? null, tables, ld };
 }
 
-/** The JSON values a server-sent event stream carries on its data lines, in order; a line that is not JSON is left out. */
+/**
+ * The JSON values a server-sent event stream carries, one an event, in order. An event ends at a blank line, and its data
+ * is its data lines joined by line breaks, as the stream format has it: a long value may come split over several lines
+ * (staging, 10 Oct: a logged-in browser's flights read was refused where a logged-out one read). An event whose joined
+ * data is not one value is read a line at a value, as a stream that sends one a line does; a line that is not JSON is
+ * left out.
+ */
 export function eventValues(text: string): unknown[] {
   const values: unknown[] = [];
-  for (const line of text.split('\n')) {
-    if (!line.startsWith('data:')) continue;
+  for (const event of text.split(/\r?\n\r?\n/)) {
+    const data = event.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).replace(/^ /, ''));
+    if (data.length === 0) continue;
     try {
-      values.push(JSON.parse(line.slice(5).trim()));
+      values.push(JSON.parse(data.join('\n')));
     } catch {
-      // a data line that is not JSON
+      for (const line of data) {
+        try {
+          values.push(JSON.parse(line));
+        } catch {
+          // a data line that is not JSON
+        }
+      }
     }
   }
   return values;

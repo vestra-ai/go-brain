@@ -348,12 +348,74 @@ describe('flights.results', () => {
   const STREAM_URL = 'https://www.ixigo.com/flights/v2/search/stream';
   const GIVEN = { from: 'Delhi', to: 'Goa', date: '2026-11-13' };
 
+  // Staging, 10 Oct 02:53Z: a flights read was refused after Bash answered it, and the log said nothing of why.
+  it("says, when a page answered and its answer didn't read, which check failed and each capture's status, size and cut; never the body", async () => {
+    const said: Array<{ obj: any; msg: string }> = [];
+    const log = { info: () => undefined, warn: (obj: object, msg: string) => said.push({ obj, msg }) };
+    const read = async (caps: ReturnType<typeof capture>[]) => {
+      const runner = { read: async (_t: string, url: string) => ({ captures: caps, finalUrl: url }) };
+      const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 2, homes: [] }), now: () => new Date('2026-10-10T03:00:00Z'), log });
+      return engine.answer('flights.results', GIVEN, { tripId: 't_unread' }).catch((e: unknown) => e);
+    };
+    const body = fixture('flights-del-goi-2026-11-13.sse');
+    await read([capture(STREAM, STREAM_URL, '{"message":"Forbidden"}', 403)]);
+    await read([{ ...capture(STREAM, STREAM_URL, body.slice(0, 900)), truncated: true }]);
+    await read([capture(STREAM, STREAM_URL, 'data:{"data":{"flightJourneys":[{"flightFare":[{"flightKeys":"x"}]}]}}')]);
+    await read([]);
+    expect(said.map((s) => [s.msg, s.obj.recipe, s.obj.check])).toEqual([
+      ["book: a page answered, and its answer didn't read", 'flights.results', 'status'],
+      ["book: a page answered, and its answer didn't read", 'flights.results', 'truncated'],
+      ["book: a page answered, and its answer didn't read", 'flights.results', 'shape'],
+      ["book: a page answered, and its answer didn't read", 'flights.results', 'not_sent'],
+    ]);
+    expect(said[0]!.obj.caps).toEqual([{ match: STREAM, status: 403, bytes: 23, truncated: false }]);
+    expect(said[1]!.obj.caps).toEqual([{ match: STREAM, status: 200, bytes: 900, truncated: true }]);
+    // A shape refusal says what the reader made of it, in counts: one event, one value, one row found, none read.
+    expect(said[2]!.obj.shape).toEqual({ events: 1, values: 1, rows: 1 });
+    expect(said[0]!.obj.shape).toBeUndefined();
+    // Never a body: only the match, status, size and cut of each capture.
+    expect(JSON.stringify(said)).not.toContain('Forbidden');
+    expect(JSON.stringify(said)).not.toContain('flightJourneys');
+  });
+
+  it('reads a stream whose one event comes split over several data lines, as the stream format allows', async () => {
+    const body = fixture('flights-del-goi-2026-11-13.sse');
+    // The same event, its value written over many lines, each a data line of its own.
+    const value: unknown = JSON.parse(body.trim().slice('data:'.length));
+    const split = `${JSON.stringify(value, null, 1).split('\n').map((l) => `data:${l}`).join('\n')}\n\n`;
+    const { engine } = engineWith(() => [capture(STREAM, STREAM_URL, split)]);
+    const got = await engine.answer('flights.results', GIVEN, { tripId: 't_split' });
+    expect(got.as === 'options' && got.options.map((o) => o.title)).toEqual(['Air-India Express IX1196', 'IndiGo 6E328 + 6E5106', 'Air-India Express IX1108', 'IndiGo 6E5341']);
+    // And two events, each one value on its own line, read as two.
+    const { engine: two } = engineWith(() => [capture(STREAM, STREAM_URL, `${body.trim()}\n\n${body.trim()}\n\n`)]);
+    const both = await two.answer('flights.results', GIVEN, { tripId: 't_two' });
+    expect(both.as === 'options' && both.options).toHaveLength(4);
+  });
+
+  // A logged-in browser's stream may differ (10 Oct): more than one event, named event types, comments, fields Go doesn't
+  // read. Every event's value is read, and the flights of each merge, once each.
+  it("merges the flights of every event, whatever its event type, around other events and comments", async () => {
+    const value = JSON.parse(fixture('flights-del-goi-2026-11-13.sse').trim().slice('data:'.length)) as { data: { flightJourneys: Array<{ flightFare: unknown[] }> } };
+    const fares = value.data.flightJourneys[0]!.flightFare;
+    const part = (from: number, to: number) => JSON.stringify({ ...value, data: { ...value.data, extra: { loyalty: true }, flightJourneys: [{ ...value.data.flightJourneys[0], flightFare: fares.slice(from, to) }] } });
+    const stream = [
+      ': ok', '',
+      'event: meta', 'data: {"data":{"type":"META","userTier":"x"}}', '',
+      'event: result', `id: 1`, `data: ${part(0, 3)}`, '',
+      'event: result', `id: 2`, `data: ${part(2, 4)}`, '',
+    ].join('\n');
+    const { engine } = engineWith(() => [capture(STREAM, STREAM_URL, stream)]);
+    const got = await engine.answer('flights.results', GIVEN, { tripId: 't_events' });
+    expect(got.as === 'options' && got.options.map((o) => o.title)).toEqual(['Air-India Express IX1196', 'IndiGo 6E328 + 6E5106', 'Air-India Express IX1108', 'IndiGo 6E5341']);
+  });
+
   it("reads the flights from ixigo's stream: each one's airline and numbers, its fare per person, its times and stops", async () => {
     const { engine, runs } = engineWith(() => [capture(STREAM, STREAM_URL, fixture('flights-del-goi-2026-11-13.sse'))]);
     const got = await engine.answer('flights.results', GIVEN, { tripId: 't_goa' });
     if (got.as !== 'options') throw new Error(got.as);
     expect(runs[0]!.url).toContain('/search/result/flight?from=DEL&to=GOI&date=13112026&');
-    expect(runs[0]!.plan.capture).toEqual([{ match: STREAM, required: true, max_bytes: 1_000_000 }]);
+    // Bash's most a capture keeps (1 MB): a long route's stream is never cut short of it.
+    expect(runs[0]!.plan.capture).toEqual([{ match: STREAM, required: true, max_bytes: 1_048_576 }]);
     expect(got.options.map((o) => o.title)).toEqual(['Air-India Express IX1196', 'IndiGo 6E328 + 6E5106', 'Air-India Express IX1108', 'IndiGo 6E5341']);
     expect(got.options[0]).toMatchObject({
       kind: 'flight', priceMinor: 863_000, currency: 'INR', priceNote: 'per person',

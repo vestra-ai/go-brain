@@ -44,11 +44,12 @@ let:
 # link that stands in for this one when ixigo refuses our boxes' shared address (403 or 429 under a burst, 9 Oct).
 page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children=0&infants=0&class=e&source=Search%20Form&{$params|raw}
 capture:
-  - { match: /flights/v2/search/stream, max_bytes: 1000000 }
+  - { match: /flights/v2/search/stream, max_bytes: 1048576 }
 read:
   rows: { from: /flights/v2/search/stream, format: sse, list: data.flightJourneys.flightFare, unique: flightKeys }
   also:
-    airports: { from: /flights/v2/search/stream, format: sse, value: data.airportDetails }
+    # Every event's airports as one (a stream may send its flights over several events).
+    airports: { from: /flights/v2/search/stream, format: sse, value: $merge(data.airportDetails) }
 # One flights page across every trip at most every 20 s, and none for 10 minutes after one ixigo refused: flights.search's
 # link answers in its place (recipes/backend.ts).
 pace: { gap_seconds: 20, quiet_minutes: 10 }
