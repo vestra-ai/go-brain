@@ -1,6 +1,7 @@
 // Openings: moments Go might help without being asked, from the chat (the reflex's opening question)
 // and from trip changes. Also the two signals that make Go quieter: a hush, and nudges people ignored.
 import type { Message, Trip, TripEvent } from '../door/methods.js';
+import { leftToPeople } from '../reflex/read.js';
 import type { ReflexRead } from '../reflex/reflex.js';
 import { plainlyNamesGo } from '../trips/names-go.js';
 import type { Packs, TripPack } from '../trips/pack.js';
@@ -51,7 +52,7 @@ export function isMoment(read: ReflexRead): boolean {
 export function chatOpening(msg: Message, read: ReflexRead, pack: TripPack, now: Date): Candidate | null {
   if (msg.author.kind !== 'person' || msg.withheld || msg.deleted || msg.mentions_go) return null;
   if (!isMoment(read)) return null;
-  if (!(read.banter?.sure && read.banter.value === true) || plainlyNamesGo(msg, pack)) return null;
+  if (!leftToPeople(read) || plainlyNamesGo(msg, pack)) return null;
   const tripId = pack.trip.trip_id;
   return {
     tripId,

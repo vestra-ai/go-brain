@@ -232,6 +232,23 @@ describe('intake', () => {
     expect(items[1]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
   });
 
+  // Keshav, 10 Oct: "jev decision model should know that many messages even without @go or go can be responded by go".
+  it('question 11 sure of something for Go wakes the turn with the jump-in framing; sure of nothing leaves the line, banter or not', async () => {
+    const read = (m: { text?: string | null }): ReflexRead => {
+      if (m.text === "Arjun can't leave before 6 on Friday") return { ...UNSURE_READ, forGo: sure(false), banter: sure(true), actionable: sure(true) };
+      if (m.text === 'arre yaar office mein aaj bahut kaam hai') return { ...UNSURE_READ, forGo: sure(false), actionable: sure(false) };
+      return UNSURE_READ;
+    };
+    const h = harness({ reflex: () => ({ read: async (m) => read(m) }) });
+    const T = 't_in_actionable';
+    await h.send(created(T));
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_meher', "Arjun can't leave before 6 on Friday") }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_kabir', 'arre yaar office mein aaj bahut kaam hai') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => [r.ref, r.payload])).toEqual([['m_2', { messageId: 'm_2', seq: 2, namesGo: false, actionable: true }]]);
+  });
+
   it('Go\'s own messages and withheld ones never wake Go', async () => {
     const h = harness();
     const T = 't_in_5';

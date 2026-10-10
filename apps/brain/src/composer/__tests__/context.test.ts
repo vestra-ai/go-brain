@@ -404,6 +404,13 @@ describe('why Go woke, and the trip block', () => {
     expect(askNote(line.items, line.pack)).toBeNull();
   });
 
+  it('a line the quick read is sure carries something for Go is said first, plainly: jump in', () => {
+    const line = turnFor([['p_meher', "Arjun can't leave before 6 on Friday"]]);
+    const items = line.items.map((i) => ({ ...i, payload: { ...(i.payload as object), actionable: true } }));
+    expect(quietNote(items, line.pack)).toMatch(/^#2 carries something you can answer, act on, note or offer, though it doesn't name you: jump in, in one line\. #2 doesn't name you/);
+    expect(quietNote(line.items, line.pack)).toMatch(/^#2 doesn't name you/);
+  });
+
   it('a burst that named Go goes on with what it asked: no note for its lines', () => {
     // goa-300 lines 101 to 103, one turn: the question is on the line after the one that names Go.
     const burst = turnFor([

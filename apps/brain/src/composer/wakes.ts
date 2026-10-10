@@ -49,10 +49,10 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
 export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const messages = items.flatMap((item) => {
     if (item.kind !== 'message') return [];
-    const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean; asksGo?: boolean };
+    const p = (item.payload ?? {}) as { messageId?: string; namesGo?: boolean; asksGo?: boolean; actionable?: boolean };
     const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
     // A line the quick read is sure asks Go is an ask (askNote), as one that names Go.
-    return m && m.author.kind === 'person' ? [{ m, person: m.author.person_id, namesGo: p.namesGo === true || p.asksGo === true }] : [];
+    return m && m.author.kind === 'person' ? [{ m, person: m.author.person_id, namesGo: p.namesGo === true || p.asksGo === true, actionable: p.actionable === true }] : [];
   });
   const answers = answersToGo(pack);
   const named = new Set(messages.filter((x) => x.namesGo || answers.has(x.m.message_id)).map((x) => x.person));
@@ -61,8 +61,13 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const refs = seqs.map((s) => `#${s}`);
   const one = refs.length === 1;
   const which = one ? `${refs[0]} doesn't name you, so it is` : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]} don't name you, so they are`;
+  // The quick read is sure Go has something to do with these (reflex question 11): said first, plainly.
+  const acts = messages.filter((x) => x.actionable && seqs.includes(x.m.seq)).map((x) => `#${x.m.seq}`);
+  const sure = acts.length
+    ? `${acts.join(' and ')} ${acts.length === 1 ? 'carries' : 'carry'} something you can answer, act on, note or offer, though ${acts.length === 1 ? 'it doesn\'t' : 'they don\'t'} name you: jump in, in one line. `
+    : '';
   return (
-    `${which} the group talking, unless it asks for something you do (logging in to ixigo, a search, a booking, a vote, a ` +
+    `${sure}${which} the group talking, unless it asks for something you do (logging in to ixigo, a search, a booking, a vote, a ` +
     'reminder, someone checking something): that is an ask even without your name, so do it, or answer it in one line. ' +
     'Either way, jump in whenever you can add anything: answer a question with facts from ixigo or the trip (weather, ' +
     'distances, timings, prices, the record, votes, money, places) unless a person already answered it; offer the lookup ' +

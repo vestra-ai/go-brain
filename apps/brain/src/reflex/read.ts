@@ -139,6 +139,24 @@ function readBanter(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
   return unsure();
 }
 
+/** Something Go can do with the line: a line naming Go or about money always is; otherwise question 11 above or below its bars. */
+function readActionable(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
+  if (f.namesGo || f.money) return sure(true);
+  const p = noulP(a, 'q11_actionable');
+  if (atLeast(p, b.actionable.yesMin)) return sure(true);
+  if (atMost(p, b.actionable.noMax)) return sure(false);
+  return unsure();
+}
+
+/**
+ * A line Go leaves to the people, with no turn: question 11 sure there is nothing in it for Go, or question 1 sure it is
+ * banter while question 11 isn't sure there is something (trips/intake.ts wakesComposer, proactive/openings.ts).
+ */
+export function leftToPeople(read: Pick<ReflexRead, 'banter' | 'actionable'>): boolean {
+  if (read.actionable?.sure) return read.actionable.value === false;
+  return read.banter?.sure === true && read.banter.value === true;
+}
+
 /** One clear winner: at least the pick bar, and no other option up to the rival bar. */
 function readRecipe(a: Answers, b: Bars): Sure<RecipeChoice | null> {
   const ranked = [...RECIPE_CHOICES, 'none' as const]
@@ -202,6 +220,7 @@ export function readAnswers(
     risky: risk.risky,
     opening: anyAtLeast(opening, bars.opening.yesMin) ? sure(true) : allAtMost(opening, bars.opening.noMax) ? sure(false) : unsure(),
     recipe: readRecipe(a, bars),
+    actionable: readActionable(a, facts, bars),
     riskWhy: risk.why,
   };
   return { would, p: flatten(a) };
@@ -221,6 +240,7 @@ export function codeOnly(facts: CodeFacts): ReflexRead {
     risky: facts.secretKinds.length ? sure(true) : unsure(),
     opening: unsure(),
     recipe: unsure(),
+    actionable: facts.namesGo || facts.money ? sure(true) : unsure(),
     riskWhy: facts.secretKinds.length ? ['secret'] : [],
   };
 }
@@ -240,6 +260,7 @@ export function applyLive(would: ReflexRead, live: ReadonlySet<QuestionName>, fa
     risky: live.has('risky') ? would.risky : base.risky,
     opening: live.has('opening') ? would.opening : base.opening,
     recipe: (live.has('recipe') ? liveRecipe(would.recipe ?? unsure()) : base.recipe) ?? unsure(),
+    actionable: (live.has('actionable') ? would.actionable : base.actionable) ?? unsure(),
     riskWhy: live.has('risky') ? (would.riskWhy ?? []) : (base.riskWhy ?? []),
   };
 }

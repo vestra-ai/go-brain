@@ -21,6 +21,13 @@ export interface ReflexRead {
    * not banter: Go jumps in when it can add anything. Absent reads unsure.
    */
   banter?: Sure<boolean>;
+  /**
+   * Question 11: Go can answer, act on, note or offer something for the line, named or not ("I want to login again to
+   * ixigo", "I'm veg", "let's do Goa in Nov?", "Arjun can't leave before 6"). False only for pure banter, greetings,
+   * acknowledgements and side chat. Sure yes wakes the turn with the jump-in framing; sure no leaves the line to the
+   * people. Absent reads unsure.
+   */
+  actionable?: Sure<boolean>;
   /** Question 10: the ixigo search the message asks for (travel/recipes starts it early). Absent reads unsure. */
   recipe?: Sure<RecipeChoice | null>;
   /** Why question 8 raised caution. Set by P2's reflex. */

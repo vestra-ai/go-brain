@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JevAnswer } from '../jev.js';
 import { looksLikeMoney } from '../money-line.js';
-import { applyLive, codeOnly, liveRecipe, readAnswers, type CodeFacts } from '../read.js';
+import { applyLive, codeOnly, leftToPeople, liveRecipe, readAnswers, type CodeFacts } from '../read.js';
 import type { QuestionName } from '../questions.js';
 
 const n = (p: number): JevAnswer => ({ type: 'noul', noul: p });
@@ -35,6 +35,26 @@ describe('question 1: for Go', () => {
     expect(read({ q1_chatter: n(0.95), q1_addressed: n(0.05) }, { ...plain, money: true }).banter).toEqual({ value: false, sure: true });
     expect(read(null, { ...plain, smallTalk: true }).banter).toEqual({ value: true, sure: true });
     expect(read(null).banter?.sure).toBe(false);
+  });
+  // Keshav, 10 Oct: "jev decision model should know that many messages even without @go or go can be responded by go or
+  // acted upon by go". Question 11 says so for itself; a wrong no would leave a real ask unanswered.
+  it('reads question 11 above or below its bars; a line naming Go or about money always has something for Go', () => {
+    expect(read({ q11_actionable: n(0.92) }).actionable).toEqual({ value: true, sure: true });
+    expect(read({ q11_actionable: n(0.04) }).actionable).toEqual({ value: false, sure: true });
+    expect(read({ q11_actionable: n(0.5) }).actionable).toEqual({ value: null, sure: false });
+    expect(read({ q11_actionable: n(0.04) }, { ...plain, namesGo: true }).actionable).toEqual({ value: true, sure: true });
+    expect(read({ q11_actionable: n(0.04) }, { ...plain, money: true }).actionable).toEqual({ value: true, sure: true });
+    expect(read(null).actionable?.sure).toBe(false);
+  });
+  it('leaves a line to the people when question 11 is sure there is nothing in it for Go, or question 1 reads banter it is not sure of', () => {
+    const yes = { value: true, sure: true } as const;
+    const no = { value: false, sure: true } as const;
+    const unsure = { value: null, sure: false } as const;
+    expect(leftToPeople({ actionable: no })).toBe(true);
+    expect(leftToPeople({ actionable: yes, banter: yes })).toBe(false);
+    expect(leftToPeople({ actionable: unsure, banter: yes })).toBe(true);
+    expect(leftToPeople({ actionable: unsure, banter: unsure })).toBe(false);
+    expect(leftToPeople({})).toBe(false);
   });
   it("wakes Go for a line no one spoke to it in when question 6 reads a plan question to the group or an agreement: a point Go can move", () => {
     // Jev's own answers in live run 37488230324.

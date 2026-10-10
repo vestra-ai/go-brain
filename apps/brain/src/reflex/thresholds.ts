@@ -52,5 +52,7 @@ export const BARS = {
    * recall 0.94, and a whole Jev call still 134 ms at the middle and 161 ms at p90.
    */
   recipe: { pickMin: 0.9, rivalMax: 0.3 },
+  /** Q11. A starting point, swept on Go's set before it acts: a wrong no leaves a real ask unanswered. */
+  actionable: { yesMin: 0.8, noMax: 0.1 },
 };
 export type Bars = typeof BARS;

@@ -54,6 +54,9 @@ describe('chatOpening', () => {
     // Banter the composer leaves alone opens one only when the reflex is sure of a moment in it.
     const banter = { ...notForGo, banter: { value: true, sure: true } } as const;
     expect(chatOpening(msg({ id: 'm_64', by: 'p_kabir', text: 'haha dates final karo yaar 😂' }), unsureRead({ ...banter, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).not.toBeNull();
+    // Question 11 decides first: sure of something for Go, the composer has the line (no opening); sure of nothing, it doesn't.
+    expect(chatOpening(msg({ id: 'm_65', by: 'p_kabir', text: 'haha dates final karo yaar 😂' }), unsureRead({ ...banter, actionable: { value: true, sure: true }, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ id: 'm_66', by: 'p_kabir', text: 'dates final karo 😂' }), unsureRead({ ...notForGo, actionable: { value: false, sure: true }, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).not.toBeNull();
     const nothing = unsureRead({ ...banter, fact: { value: false, sure: true }, recordKind: { value: null, sure: true }, recipe: { value: null, sure: true } });
     expect(chatOpening(msg({ by: 'p_kabir', text: 'haha same 😂' }), nothing, goaPack(), NOW)).toBeNull();
   });
