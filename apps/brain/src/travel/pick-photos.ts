@@ -4,7 +4,6 @@
  * search's on that option. The card is replaced in place with those photos and nothing else changed, so its prices and
  * its time stay as shown. A vote opened from the card afterwards carries them (votes.ts).
  */
-import { SocketCallError } from '../door/rpc.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { EngineAnswer } from './book/engine.js';
 import type { Images } from './images.js';
@@ -21,18 +20,23 @@ export interface TopPick {
 }
 
 /**
- * The card goes out with the turn's reply, which can come after the pick's page is read: a Server that doesn't have the
- * card yet (404) is asked again, this many times in all, this far apart.
+ * The card goes out with the turn's reply, which can come after the pick's page is read: the replace waits for that post
+ * to answer, at most this long (a turn's whole time and then some), and is never sent before it.
  */
-export const REPLACE_TRIES = 3;
-export const REPLACE_WAIT_MS = 5_000;
+export const POSTED_WAIT_MS = 60_000;
 
 /**
  * The top pick's page's photos on its card, when the page listed any (hotels.details' photo_list): true once the card is
  * replaced. A page with none, or a card or option no longer kept, changes nothing.
  */
 export async function showPickPhotos(
-  d: { results: Pick<ResultsStore, 'setOptionFields'>; images: Pick<Images, 'rehostUrl'>; link: Pick<ServerLink, 'request'>; sleep?: (ms: number) => Promise<void> },
+  d: {
+    results: Pick<ResultsStore, 'setOptionFields'>;
+    images: Pick<Images, 'rehostUrl'>;
+    link: Pick<ServerLink, 'request'>;
+    /** brain.cardPosted: true once the card's post answered, waiting at most withinMs. */
+    posted?: (tripId: string, cardId: string, withinMs: number) => Promise<boolean>;
+  },
   tripId: string,
   pick: Pick<TopPick, 'cardId' | 'optionId'>,
   answer: EngineAnswer,
@@ -43,13 +47,8 @@ export async function showPickPhotos(
   if (photos.length === 0) return false;
   const card = await d.results.setOptionFields(tripId, pick.cardId, pick.optionId, { photos });
   if (!card) return false;
-  for (let tries = 1; ; tries++) {
-    try {
-      await d.link.request('replace_card', { trip_id: tripId, card });
-      return true;
-    } catch (err) {
-      if (!(err instanceof SocketCallError && err.code === 404) || tries >= REPLACE_TRIES) throw err;
-      await (d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(REPLACE_WAIT_MS);
-    }
-  }
+  // The kept card has the photos now (a vote opened from it carries them); the room's, once its post has answered.
+  if (d.posted && !(await d.posted(tripId, pick.cardId, POSTED_WAIT_MS))) return false;
+  await d.link.request('replace_card', { trip_id: tripId, card });
+  return true;
 }

@@ -224,7 +224,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     const run = pick.kind === 'bus'
       ? engine.answer('buses.stops', { bus: pick.page }, { tripId, onProgress: () => undefined, staged: true })
       : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).then((got) =>
-          showPickPhotos({ results, images, link: brain.door.link }, tripId, pick, got).catch((err: unknown) => {
+          showPickPhotos({ results, images, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got).catch((err: unknown) => {
             brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's photos didn't reach its card");
           }),
         );

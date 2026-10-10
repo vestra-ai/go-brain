@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
 import { withSchema } from '../../db/test-db.js';
-import { SocketCallError } from '../../door/rpc.js';
 import { FakeLink } from '../../tasks/testing/lane-brain.js';
 import type { EngineAnswer } from '../book/engine.js';
 import { buildOptionsCard, type CardPick, type OptionsCardT } from '../cards.js';
-import { REPLACE_TRIES, REPLACE_WAIT_MS, showPickPhotos } from '../pick-photos.js';
+import { POSTED_WAIT_MS, showPickPhotos } from '../pick-photos.js';
 import { createResultsStore, type ResultOption, type ResultsStore } from '../results.js';
 import { openVoteFromCard } from '../votes.js';
 
@@ -91,26 +90,25 @@ describe("the top pick's own photos", () => {
     for (const o of options) expect(C.DecisionOption.safeParse(o).success).toBe(true);
   });
 
-  // The card goes out with the turn's reply, which can come after the pick's page is read.
-  it("wait for a card the Server doesn't have yet, a few times, then give up", async () => {
+  // The card goes out with the turn's reply, which can come after the pick's page is read: the replace waits for that post.
+  it("wait for the card's post before replacing it, and replace nothing when it never went out", async () => {
     await cardOnTrip('t_late', 'c_late');
-    const tries: number[] = [];
-    const slept: number[] = [];
-    const late = (posted: number) => ({
-      request: async () => {
-        tries.push(tries.length + 1);
-        if (tries.length < posted) throw new SocketCallError(404, 'card c_late is not on one of Go\'s messages', 'not_found');
-        return { message_id: 'm_go_1' };
-      },
-    }) as never;
-    const sleep = async (ms: number) => { slept.push(ms); };
     const pick = { cardId: 'c_late', optionId: 'opt_c_late_1' };
-    expect(await showPickPhotos({ results, images, link: late(2), sleep }, 't_late', pick, details(['https://cdn.example.com/a.jpg']))).toBe(true);
-    expect(tries).toEqual([1, 2]);
-    expect(slept).toEqual([REPLACE_WAIT_MS]);
-    tries.length = 0;
-    await expect(showPickPhotos({ results, images, link: late(99), sleep }, 't_late', pick, details(['https://cdn.example.com/b.jpg']))).rejects.toThrow(/not on one of Go's messages/);
-    expect(tries).toHaveLength(REPLACE_TRIES);
+    const asked: Array<[string, string, number]> = [];
+    const link = new FakeLink();
+    const posted = async (tripId: string, cardId: string, withinMs: number) => {
+      asked.push([tripId, cardId, withinMs]);
+      await link.request('post_message', { request_id: 'go_post_late', trip_id: tripId, card: (await results.card(tripId, cardId))!.card });
+      return true;
+    };
+    expect(await showPickPhotos({ results, images, link, posted }, 't_late', pick, details(['https://cdn.example.com/a.jpg']))).toBe(true);
+    expect(asked).toEqual([['t_late', 'c_late', POSTED_WAIT_MS]]);
+    expect(link.requests.map((r) => r.method)).toEqual(['post_message', 'replace_card']);
+    // A card whose post never answered in time: nothing is sent, and the kept card still has the photos (a vote's).
+    const quiet = new FakeLink();
+    expect(await showPickPhotos({ results, images, link: quiet, posted: async () => false }, 't_late', pick, details(['https://cdn.example.com/b.jpg']))).toBe(false);
+    expect(quiet.requests).toEqual([]);
+    expect((await results.card('t_late', 'c_late'))!.card.options[0]!.photos).toEqual([{ url: 'https://go.test/img/b.jpg' }]);
   });
 
   it('change nothing when the page listed none, or the card or the option is not kept', async () => {
