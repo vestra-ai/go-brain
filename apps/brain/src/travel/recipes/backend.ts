@@ -85,9 +85,11 @@ export const CARD_DELAY_MS = 1_500;
 export function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch {
   if (delayMs <= 0) return make();
   let live: LiveSearch | null = null;
+  /** Its turn answered before it showed: it never shows (no "On it." after Go's answer). */
+  let over = false;
   const waiting: Array<Parameters<LiveSearch['progress']>[0]> = [];
   const show = (): void => {
-    if (live) return;
+    if (live || over) return;
     clearTimeout(timer);
     live = make();
     for (const e of waiting.splice(0)) live.progress(e);
@@ -106,6 +108,14 @@ export function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch 
       clearTimeout(timer);
       // A card never shown has nothing to end.
       if (live) await live.finish(ok);
+    },
+    answered: () => {
+      if (live) live.answered();
+      else {
+        over = true;
+        clearTimeout(timer);
+        waiting.length = 0;
+      }
     },
   };
 }
@@ -732,9 +742,12 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         over.delete(oldest);
       }
       // A card the turn left open ends failed; one whose search still runs is ended by its run, and one waiting on a pick
-      // waits on (the group may be choosing), up to CHOOSING_MS.
+      // waits on (the group may be choosing), up to CHOOSING_MS. When the turn answered, each is told first: it ends done,
+      // a search that failed or fails later showing as its gap, never failed beside Go's answer (exam #9, 10 Oct).
       for (const [k, card] of cards) {
-        if (k.startsWith(`${t.tripId}|`) && !card.running && card.choosingSince === null && owners.has(ownerKey(card.owner))) void end(k, card, false);
+        if (!k.startsWith(`${t.tripId}|`) || card.choosingSince !== null || !owners.has(ownerKey(card.owner))) continue;
+        if (t.answered) card.live.answered();
+        if (!card.running) void end(k, card, false);
       }
       sweepChoosing(t.tripId);
     },
