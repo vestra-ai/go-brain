@@ -8,7 +8,7 @@ import { createContext, formatTime, type TextBlock } from '../context.js';
 import { answersToGo } from '../fence.js';
 import { GO_RULES } from '../rules.js';
 import { datesLine, tripNow } from '../trip-now.js';
-import { ASK_HOW_MUCH, CHIME_RULES, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
+import { ASK_HOW_MUCH, askNote, CHIME_RULES, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
 const PEOPLE = ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'];
 /** n messages, seq 2 to n + 1, round the five friends. */
@@ -363,16 +363,21 @@ describe('why Go woke, and the trip block', () => {
     for (const [who, text] of UNASKED) {
       const { pack, items } = turnFor([[who, text]]);
       const note = quietNote(items, pack);
-      expect(note, text).toContain("#2 doesn't name you, so it is the group talking. Speak if you can add something real");
-      expect(note).toContain('answer a question you can answer with facts from ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already answered it');
-      expect(note).toContain('when the group agrees dates on a trip with a place, offer stays in one line (search_stays only when someone asks to see them); when it agrees a place, offer the next step in one line');
+      expect(note, text).toContain("#2 doesn't name you, so it is the group talking, unless it asks for something you do");
+      // Keshav, 10 Oct ("go only responds to @go? this is not right", "go can interfere in most of the messages"): an ask
+      // for something Go does is an ask, @Go or not, and Go jumps in wherever it can add anything.
+      expect(note).toContain('(logging in to ixigo, a search, a booking, a vote, a reminder, someone checking something): that is an ask even without your name, so do it, or answer it in one line.');
+      expect(note).toContain('Either way, jump in whenever you can add anything: answer a question with facts from ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already answered it; offer the lookup or the next step in one line; flag a clash with the plan or the record; note a need or a preference with a ✅ and use it; a quick useful fact.');
+      expect(note).toContain('When the group agrees dates on a trip with a place, offer stays in one line (search_stays only when someone asks to see them); when it agrees a place, offer the next step in one line');
       // The three chime rules (10 Oct live proof): answer once, offer the vote with the count, search only on a real ask.
       expect(note).toContain(CHIME_RULES);
       expect(note).toContain('when people disagree, offer a vote');
-      expect(note).toContain("Someone saying what they'd like gets a ✅ and at most one short offer, never a search");
-      expect(note).toContain("Who brings, pays or does what is the friends' to settle unless the record already says");
+      expect(note).toContain("Someone saying what they'd like for the trip (a place, food, a vibe) gets a ✅ and at most one short offer, never a search");
+      expect(note).toContain("Who brings, pays or does what is the friends' to settle unless the record already says: never assign it, though you may offer your part (a lookup, a booking, a split).");
+      // The lead, 10 Oct: plan-talk gets a line by default, never silence.
+      expect(note).toContain('Plan-talk is never banter: a plan or a question to the group about the trip gets its line');
       expect(note).toContain('their own catch-up');
-      expect(note).toContain('For banter, greetings, a side conversation, something a person already handled, or when your last message has had no reply from a person since, call stay_silent.');
+      expect(note).toContain('Call stay_silent only for pure banter, a greeting or an acknowledgement ("haha", "good morning", "ok", "see you"), a side conversation not about the trip, something a person already answered, or when your last message has had no reply from a person since: never two messages in a row.');
       expect(note).not.toMatch(/\u2014|\u2013/);
     }
     // In the prompt: under "why you woke", after the cache point, so the cached rules never change.
@@ -395,6 +400,24 @@ describe('why Go woke, and the trip block', () => {
     expect(p.user.at(-2)?.text).not.toContain("doesn't name you");
   });
 
+  it("a line the quick read is sure asks Go without its name is an ask: no note for it, the order to answer it, and the wake says so", async () => {
+    const line = turnFor([['p_meher', 'I want to login again to Ixigo']]);
+    const items = line.items.map((i) => ({ ...i, payload: { ...(i.payload as object), asksGo: true } }));
+    expect(quietNote(items, line.pack)).toBeNull();
+    expect(askNote(items, line.pack)).toMatch(/^Answer #2 in one or two short sentences/);
+    expect(renderMessageWake(items[0]!, line.pack)).toBe('message #2 from Meher, it asks you without your name');
+    // Without the read's yes it stays the group's line, with the note that an ask for something Go does is still one.
+    expect(quietNote(line.items, line.pack)).toContain('unless it asks for something you do (logging in to ixigo');
+    expect(askNote(line.items, line.pack)).toBeNull();
+  });
+
+  it('a line the quick read is sure carries something for Go is said first, plainly: jump in', () => {
+    const line = turnFor([['p_meher', "Arjun can't leave before 6 on Friday"]]);
+    const items = line.items.map((i) => ({ ...i, payload: { ...(i.payload as object), actionable: true } }));
+    expect(quietNote(items, line.pack)).toMatch(/^#2 carries something you can answer, act on, note or offer, though it doesn't name you: jump in, in one line\. #2 doesn't name you/);
+    expect(quietNote(line.items, line.pack)).toMatch(/^#2 doesn't name you/);
+  });
+
   it('a burst that named Go goes on with what it asked: no note for its lines', () => {
     // goa-300 lines 101 to 103, one turn: the question is on the line after the one that names Go.
     const burst = turnFor([
@@ -411,7 +434,7 @@ describe('why Go woke, and the trip block', () => {
       ['p_meher', '@Go can you remind everyone to vote by tonight?', true],
       ['p_kabir', "who's on the aux"],
     ]);
-    expect(quietNote(mixed.items, mixed.pack)).toMatch(/^#2 and #4 don't name you, so they are the group talking\. Speak if you can add something real: /);
+    expect(quietNote(mixed.items, mixed.pack)).toMatch(/^#2 and #4 don't name you, so they are the group talking, unless it asks for something you do \(logging in to ixigo/);
     expect(quietNote(mixed.items, mixed.pack)).not.toContain('#3');
   });
 

@@ -20,7 +20,7 @@ export const SWITCH_RULES: Record<SwitchName, { valid: (v: string) => boolean; f
   PAY_RAIL: { valid: oneOf('ixigo', 'stripe_test', 'fake'), fallback: 'fake' },
   CALLS_MODE: { valid: oneOf('off', 'allowlist'), fallback: 'off' },
   // "q1,q2,..." names the live Jev questions, empty keeps all in shadow, "off" makes no Jev call (P2's kill switch).
-  REFLEX_LIVE: { valid: (v) => /^(off|q(?:10|[1-9])(,q(?:10|[1-9]))*)?$/.test(v), fallback: '' },
+  REFLEX_LIVE: { valid: (v) => /^(off|q(?:1[01]|[1-9])(,q(?:1[01]|[1-9]))*)?$/.test(v), fallback: '' },
   // Bash's own cap on a computer's browser fetches at once: 2, and 4 once Bash runs four (its #4596).
   BROWSER_FETCH_SLOTS: { valid: oneOf('1', '2', '3', '4'), fallback: '2' },
   // Watches the group asks Go to keep on ixigo (travel/recipe-watches.ts): off unless a deployment says on (staging does).

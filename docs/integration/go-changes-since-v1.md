@@ -19,7 +19,7 @@ What is live and what is simulated on staging Go today. These are the switches s
 | `TRAVEL_RUNNER` | `browser_fetch` | **Live:** every ixigo.com read goes through Bash's browser fetch on the trip's computer. |
 | `PAY_RAIL` | `fake` | **Simulated:** a payment is charged on no rail, so no money moves. Go also never opens ixigo's payment page, and Bash blocks it (section 5). |
 | `CALLS_MODE` | `off` | **Off:** Go phones no one. |
-| `REFLEX_LIVE` | `q1,q2,q4,q5,q6,q7,q8,q10` | **Live:** these of Jev's quick-read questions act; the others only watch. |
+| `REFLEX_LIVE` | `q1,q2,q4,q5,q6,q7,q8,q10,q11` | **Live:** these of Jev's quick-read questions act; the others only watch. |
 | `BROWSER_FETCH_SLOTS` | `4` | Up to 4 ixigo pages open at once on a trip's computer. |
 | `RECIPE_WATCHES` | `on` | **Live:** the group can ask Go to watch ixigo (section 4). |
 
