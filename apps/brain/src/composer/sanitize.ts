@@ -3,11 +3,15 @@ const DASH = /\s*[—–]\s*/g;
 
 /**
  * What every outgoing string passes before a person sees it: no em or en dashes (a dash between
- * words becomes a comma, and a number range written with a dash becomes a hyphen), and never the model's
- * or its maker's name.
+ * words becomes a comma, and a number range written with a dash becomes a hyphen), no markdown (the App shows a
+ * message's text as it is, so "**Rahul:**" would show its asterisks), and never the model's or its maker's name.
  */
 export function sanitize(text: string): string {
   return text
+    .replace(/\*\*(\S(?:[^*\n]*?\S)?)\*\*/g, '$1')
+    .replace(/__(\S(?:[^_\n]*?\S)?)__/g, '$1')
+    .replace(/^#{1,6}[ \t]+/gm, '')
+    .replace(/^([ \t]*)\*[ \t]+/gm, '$1- ')
     .replace(RANGE, '$1-$2')
     .replace(DASH, ', ')
     .replace(/^[,\s]+/, '')

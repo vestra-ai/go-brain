@@ -148,7 +148,7 @@ export function forgottenNote(pack: TripPack, forgotten: Forgotten): string | nu
   return (
     `${who} used "Forget me in this trip" in the App, so Go forgot what it knew about them, and their earlier messages are hidden. ` +
     `Never repeat anything about ${them} from earlier in the chat, your own messages included. ` +
-    `If someone asks about ${them}, say you don't have that and they can ask ${them} directly. ` +
+    `If someone asks about something you no longer know, say you don't have it, and never name ${them} or tie ${them} to it yourself. ` +
     'Never tell the room that anyone used Forget me or asked you to forget them: only the person who did it is told, on their own card.'
   );
 }

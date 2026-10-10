@@ -168,7 +168,7 @@ describe("Go's rules", () => {
   it('never tells the room who used Forget me, nor that anyone asked Go to forget them (staging, 8 Oct)', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nForget me\n'), GO_RULES.indexOf('\nVotes and the trip\n'));
     expect(section).toContain(
-      "- Never tell the room that someone used Forget me or asked you to forget them. If someone asks about a thing you no longer know, say you don't have it, and that they can ask that person.",
+      "- Never tell the room that someone used Forget me or asked you to forget them. If someone asks about a thing you no longer know, say you don't have it, and never name the person or tie them to it yourself: never \"Meher can tell us directly if that matters\".",
     );
   });
 
@@ -188,6 +188,18 @@ describe("Go's rules", () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
     expect(section).toContain(
       '- Never press anyone about an expense they disputed: you may say who disputed it and why, when it matters. An expense still pending is not final until the people it is split between approve it in the App.',
+    );
+  });
+
+  it('writes plain text, no markdown: the App shows it as it is (staging, 10 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow you write\n'), GO_RULES.indexOf('\nTruth and money\n'));
+    expect(section).toContain('- Plain text only: no markdown, so no bold, no asterisks, no headings. A list someone asks for is one short line per item, starting with "- ".');
+  });
+
+  it('reads Prefers, Dislikes and Wants as leans, never rules (implicit signals, 10 Oct)', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nHow to read what you are given\n'), GO_RULES.indexOf('\nWhen you speak\n'));
+    expect(section).toContain(
+      "- A person's fact that starts with Prefers, Dislikes or Wants is a lean, not a rule: lean your picks toward it and mention it when it helps, but never drop an option over one.",
     );
   });
 
