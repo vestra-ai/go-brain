@@ -11,6 +11,7 @@ import { createFlightBooking } from './booking/flight-booking.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
+import { flightsEachTool } from './flights-each.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
 import { createIxigoLogin, ixigoLoginTool, renderLoginResume } from './login.js';
@@ -277,6 +278,10 @@ export const registerTravel: RegisterLane = async (brain) => {
       live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
       slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')),
     }),
+  );
+  // Each person's own flights from their home city, on cards for them alone (B7): one page per city, posted as it lands.
+  brain.tools.register(
+    flightsEachTool({ engine, results, link: brain.door.link, now: brain.now, log: brain.log, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' }),
   );
   // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
   // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).

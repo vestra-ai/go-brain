@@ -2,7 +2,7 @@ import * as C from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
-import type { EngineAnswer, RunFor, StepAnswer } from '../book/engine.js';
+import { PacedOutError, type EngineAnswer, type RunFor, type StepAnswer } from '../book/engine.js';
 import { hoursMinutes } from '../book/expr.js';
 import { TravelError } from '../mcp-travel.js';
 import type { RecipeOption } from '../recipes/recipe.js';
@@ -265,6 +265,61 @@ describe("each home city's ways to the trip", () => {
 
   it('gives a comparison the time its pages need on the computer: 25 s for three cities on two slots, 17 s on four', () => {
     expect([waysDeadlineMs(3, 2), waysDeadlineMs(3, 4), waysDeadlineMs(1, 2), waysDeadlineMs(4, 2)]).toEqual([25_000, 17_000, 13_000, 29_000]);
+  });
+
+  // The exam, 10 Oct (#23, #25): one flights page a 20 s gap across every trip, so a city's flights were held back and the
+  // card said "quickest by land". Its flights are read after, as the pacer lets them through, and the card goes up again.
+  it("reads a city's flights the pacer held back after the card is up, and puts the card up again in place with them", async () => {
+    const ctx = lb.ctx({ turnId: 'turn_ways_fill' });
+    const from = lb.link.requests.length;
+    const held: EngineAnswer = {
+      as: 'compare', inputs: { to: 'North Goa', date: '2026-11-06' }, checkedAt: '2026-10-08T12:00:00.000Z', ms: 3_100,
+      entries: [{
+        entry: 'Mumbai',
+        steps: [
+          { recipe: 'trains.between', answer: options([train('Konkan Kanya', '10111', 'SL', 420, at(6, '23:05'), at(7, '10:45'))]) },
+          { recipe: 'buses.between', answer: options([]) },
+          { recipe: 'flights.results', why: 'ixigo is given a moment between flights pages.' },
+          flights('BOM'),
+        ],
+      }],
+    };
+    const flight: RecipeOption = {
+      kind: 'flight', title: 'IndiGo 6E5310', priceMinor: 390_000, currency: 'INR', priceNote: 'per person',
+      journey: { mode: 'flight', origin: { name: 'Mumbai', code: 'BOM' }, destination: { name: 'Goa', code: 'GOX' }, depart_at: at(6, '09:10'), arrive_at: at(6, '10:20'), carrier_name: 'IndiGo', carrier_code: '6E', number: '6E5310' },
+      highlights: ['Non-stop'], facts: { stops: 0 }, sourceUrl: 'https://www.ixigo.com/search/result/flight?from=BOM&to=GOX&date=06112026',
+    };
+    const asked: string[] = [];
+    const slept: number[] = [];
+    let tries = 0;
+    const tool = waysThereTool({
+      engine: {
+        answer: async (id, given) => {
+          asked.push(`${id} ${JSON.stringify(given)}`);
+          if (id === WAYS_THERE) return held;
+          // Held back once more by the pacer, then through.
+          if (tries++ === 0) throw new PacedOutError('flights.results', 12_000);
+          return options([flight]);
+        },
+      },
+      results, link: lb.link, now: lb.brain.now, slots: () => 2, live: () => true, cardDelayMs: 60_000,
+      sleep: async (ms) => {
+        slept.push(ms);
+      },
+    });
+    const out = (await tool.run({}, ctx)) as { card_id: string };
+    // The card goes up at once, Mumbai the quickest by land; its flights come after.
+    expect(C.OptionsCard.parse(ctx.cards[0]).options.map((o) => o.title)).toEqual(['From Mumbai: Konkan Kanya 10111']);
+    await eventually(() => lb.link.requests.slice(from).some((r) => r.method === 'replace_card'));
+    const again = C.OptionsCard.parse(lb.link.requests.slice(from).find((r) => r.method === 'replace_card')!.params['card']);
+    expect(again.card_id).toBe(out.card_id);
+    // Now its cheapest (the train) and its fastest (the flight), each its own row.
+    expect(again.options.map((o) => o.title)).toEqual(['From Mumbai: Konkan Kanya 10111', 'From Mumbai: IndiGo 6E5310']);
+    expect(asked.filter((a) => a.startsWith('flights.results'))).toEqual([
+      'flights.results {"from":"Mumbai","to":"North Goa","date":"2026-11-06"}', 'flights.results {"from":"Mumbai","to":"North Goa","date":"2026-11-06"}',
+    ]);
+    // It waited for the card's turn to post, then the pacer's own gap.
+    expect(slept).toEqual([3_000, 12_500]);
   });
 
   it("shows an On it. live card for a comparison past the turn's wait, ticks each city, then posts its card and line itself", async () => {
