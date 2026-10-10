@@ -428,26 +428,31 @@ describe("ixigo's offers pages", () => {
     expect(got.rows[0]).toMatchObject({ journey: 'both' });
   });
 
-  // /offers/IXRBLD, 10 Oct: "Offer Validity: Every Sunday, Thursday, Friday & Saturday" and "Min. Booking ₹5,000" decide
-  // whether a code works for the group's dates and spend.
-  it('offers.details says the days an offer works on and the least the booking must come to', async () => {
-    const page = (details: Record<string, unknown>) => {
-      const html = sample('offers.details.html');
-      const data = JSON.parse(/<script[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!);
-      data.props.pageProps.offerDetails = { ...data.props.pageProps.offerDetails, ...details };
-      return html.replace(/(<script[^>]*\bid="__NEXT_DATA__"[^>]*>)[\s\S]*?(<\/script>)/, (_m, a: string, b: string) => `${a}${JSON.stringify(data)}${b}`);
-    };
-    const rbl = {
-      title: 'Get Flat 10% Off on Domestic Hotels with RBL Bank Credit Cards', offerCode: 'IXRBLD', journeyType: 'DOMESTIC', paymentType: 'RBL Bank',
-      about: '<ul><li>Flat 10% Off up to ₹1,000 with RBL Bank Credit Card.</li><li>Minimum booking amount to avail this offer is ₹5,000</li></ul>',
-    };
-    const read = async (details: Record<string, unknown>) =>
-      (await facts('offers.details', { offer: 'IXRBLD' }, [capture('/x', `${IXIGO}/offers/IXRBLD`, page(details))])).rows[0]!;
-    expect(await read({ ...rbl, recurringDay: ['Sunday', 'Thursday', 'Friday', 'Saturday'] })).toMatchObject({ valid_on: 'Sunday, Thursday, Friday, Saturday', min_booking: '₹5,000', journey: 'domestic' });
-    // With no field for the days, the line of its terms that names them.
-    const fromTerms = await read({ ...rbl, about: '<ul><li>Valid only on Fridays and Saturdays.</li></ul>' });
-    expect(fromTerms['valid_on']).toBe('Valid only on Fridays and Saturdays.');
-    expect(fromTerms['min_booking']).toBeUndefined();
+  // /offers/IXRBLD, recorded logged out on 10 Oct (scrubbed in the box): "Offer Validity: Every Sunday, Thursday, Friday &
+  // Saturday" is recurringDay "1000111" (seven days from Sunday), and "Min. Booking ₹5,000" is one of its own table's
+  // fields. They decide whether a code works for the group's dates and spend.
+  it('offers.details says the days an offer works on and the least the booking must come to, from the page itself', async () => {
+    const got = await facts('offers.details', { offer: 'IXRBLD' }, [capture('/x', `${IXIGO}/offers/IXRBLD`, sample('offers.details.ixrbld.html'))]);
+    expect(got.rows[0]).toMatchObject({
+      offer: 'Get Flat 10% Off on Domestic Hotels with RBL Bank Credit Cards', code: 'IXRBLD', for: 'hotels', bank: 'RBL Bank', journey: 'domestic',
+      valid_on: 'Sunday, Thursday, Friday, Saturday', min_booking: '₹5,000', table: ['Min. Booking: ₹5,000', 'EMI Tenures: No'], until: '30 Nov 2026',
+    });
+    // An offer with no days of its own (the 7 Oct sample) says none; one whose terms name them says that line.
+    const html = sample('offers.details.html');
+    expect((await facts('offers.details', { offer: 'hdfc-campaign_hotels' }, [capture('/x', `${IXIGO}/offers/hdfc-campaign_hotels`, html)])).rows[0]).not.toHaveProperty('valid_on');
+    const data = JSON.parse(/<script[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!);
+    data.props.pageProps.offerDetails.about = '<ul><li>Valid only on Fridays and Saturdays.</li><li>Minimum booking amount to avail this offer is ₹3,000</li></ul>';
+    const terms = html.replace(/(<script[^>]*\bid="__NEXT_DATA__"[^>]*>)[\s\S]*?(<\/script>)/, (_m, a: string, b: string) => `${a}${JSON.stringify(data)}${b}`);
+    expect((await facts('offers.details', { offer: 'hdfc-campaign_hotels' }, [capture('/x', `${IXIGO}/offers/hdfc-campaign_hotels`, terms)])).rows[0])
+      .toMatchObject({ valid_on: 'Valid only on Fridays and Saturdays.', min_booking: '₹3,000' });
+  });
+
+  it("offers.list reads a product's own tab as the page draws it, the days of each offer said", async () => {
+    const got = await facts('offers.list', { product: 'hotels' }, [capture('/x', `${IXIGO}/offers/tag/hotels`, sample('offers.list.tag-hotels.html'))]);
+    expect(got.page).toBe(`${IXIGO}/offers/tag/hotels`);
+    expect(got.rows[0]).toEqual({ offers_on_ixigo: 27, by_journey: ['domestic: 18', 'international: 18'], asked_for: 'hotels', fit: 9 });
+    expect(got.rows.slice(2).map((o) => o['code'] ?? o['campaign'])).toEqual(['grandtravelfest', 'FLAT80', 'IXRBLD', 'IXRBLN', 'IXFEDERAL', 'IXIFIRST', 'ICICIEMI', 'IXKOTAKRD', 'IXHDFCD']);
+    expect(got.rows[4]).toMatchObject({ code: 'IXRBLD', valid_on: 'Sunday, Thursday, Friday, Saturday', journey: 'domestic' });
   });
 
   it("offers.campaign answers the sale's offers", async () => {
