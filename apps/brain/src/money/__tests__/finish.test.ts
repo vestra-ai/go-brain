@@ -91,6 +91,60 @@ describe('a paid payment', () => {
     expect((await getPayment(k.pool, paymentId))?.ticket_posted_at).not.toBeNull();
   });
 
+  // REV4 B6: the group shared the villa's rooms (B5's arrangement), so each room's people owe their own room's part.
+  const ROOMS = [
+    { label: 'Deluxe room', person_ids: ['p_rahul', 'p_priya'], price_minor: 2_400_000 },
+    { label: 'Deluxe room', person_ids: ['p_arjun', 'p_meher'], price_minor: 2_400_000 },
+    { label: 'Standard room', person_ids: ['p_kabir'], price_minor: 1_800_000 },
+  ];
+
+  it('adds one expense a room when the group shared the rooms, each its part of what was paid, split between its people', async () => {
+    k.deps.rooms = async (row) => (row.decision_id === 'd_villa' ? ROOMS : null);
+    await paid();
+    const expenses = k.server.writesOf('add_expense').map((w) => w.params);
+    expect(expenses).toHaveLength(3);
+    expect(expenses.map((e) => [e.request_id, e.amount_minor, e.split_person_ids, e.note])).toEqual([
+      [`go_paid_${approvalId}_expense_room1`, 1_970_909, ['p_rahul', 'p_priya'], 'Villa Sol, 3 nights, Deluxe room'],
+      [`go_paid_${approvalId}_expense_room2`, 1_970_909, ['p_arjun', 'p_meher'], 'Villa Sol, 3 nights, Deluxe room'],
+      [`go_paid_${approvalId}_expense_room3`, 1_478_182, ['p_kabir'], 'Villa Sol, 3 nights, Standard room'],
+    ]);
+    const bookingId = k.server.trip('t_goa').bookings[0]?.booking_id;
+    for (const e of expenses) expect(e).toMatchObject({ paid_by_person_id: 'p_rahul', currency: 'INR', category: 'stay', booking_id: bookingId, approval_id: approvalId });
+    expect(expenses.reduce((s, e) => s + Number(e.amount_minor), 0)).toBe(5_420_000);
+    expect(k.server.posts.at(-1)?.text).toBe('Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split by room.');
+    expect((await getPayment(k.pool, paymentId))?.expense_id).toBe(k.server.trip('t_goa').expenses[0]?.expense_id);
+  });
+
+  it("adds each room's expense once, whether the vault calls back twice or a room's expense fails halfway", async () => {
+    k.deps.rooms = async () => ROOMS;
+    // The second room's expense fails once: the first is in, the rest are not.
+    const request = k.deps.link.request.bind(k.deps.link);
+    let calls = 0;
+    k.deps.link = { ...k.deps.link, request: (async (method: string, params: Record<string, unknown>) => {
+      if (method === 'add_expense' && ++calls === 2) throw new FakeCallError(503, 'the Server is busy');
+      return request(method as never, params as never);
+    }) as unknown as typeof k.deps.link.request };
+    await paid();
+    expect(await getPayment(k.pool, paymentId)).toMatchObject({ expense_id: null, attempts: 1 });
+    await sweepPayments(k.deps);
+    await paid();
+    await reconcile(k.deps, paymentId);
+    expect(k.server.writesOf('add_expense').map((w) => w.params.request_id)).toEqual([
+      `go_paid_${approvalId}_expense_room1`, `go_paid_${approvalId}_expense_room2`, `go_paid_${approvalId}_expense_room3`,
+    ]);
+    expect(k.server.trip('t_goa').expenses).toHaveLength(3);
+    expect(k.server.posts.filter((p) => p.card?.kind === 'ticket')).toHaveLength(1);
+  });
+
+  it('adds one expense across everyone when no rooms were picked, or the rooms cannot split it', async () => {
+    k.deps.rooms = async () => null;
+    await paid();
+    expect(k.server.writesOf('add_expense').map((w) => w.params)).toEqual([
+      expect.objectContaining({ request_id: `go_paid_${approvalId}_expense`, amount_minor: 5_420_000, split_person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'] }),
+    ]);
+    expect(k.server.posts.at(-1)?.text).toBe('Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.');
+  });
+
   it('keeps trying when the travel layer has not confirmed yet', async () => {
     k.travel.failConfirm = true;
     await paid();

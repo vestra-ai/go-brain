@@ -5,6 +5,8 @@ import { mentionsIn } from '../composer/speak.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Travel } from '../travel/travel.js';
 import type { Claims } from './claims.js';
+import type { Room } from './rooms.js';
+import type { PaymentRow } from './store.js';
 import type { PaymentKind, VaultClient } from './vault-client.js';
 import { clip, plain } from './words.js';
 
@@ -22,6 +24,11 @@ export interface MoneyDeps {
   tapVaultMs?: number;
   /** Who books a stay for the group (claims.ts): the payer is whoever claimed it, never Go's pick. Absent: no claims. */
   claims?: Claims;
+  /**
+   * The rooms the group shared a paid stay in (REV4 B5's arrangement, picked on the rooms card), for one expense a room
+   * (B6); null when none was picked. Absent: every payment is one expense.
+   */
+  rooms?: (row: Pick<PaymentRow, 'trip_id' | 'decision_id' | 'option_ref' | 'payment_id'>) => Promise<Room[] | null>;
 }
 
 /** Who a money line can name: the payer, or the trip's people. */

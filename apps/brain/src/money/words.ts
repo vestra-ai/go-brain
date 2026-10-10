@@ -137,8 +137,9 @@ export function failReasonWords(reason: string | null): string {
   }
 }
 
-export function bookedLine(o: { title: string; payer: string; amount: string; people: number; simulated?: boolean }): string {
-  const split = o.people > 1 ? `, split between all ${o.people}` : '';
+export function bookedLine(o: { title: string; payer: string; amount: string; people: number; rooms?: number; simulated?: boolean }): string {
+  // A stay whose rooms the group shared is split room by room (one expense a room, REV4 B6).
+  const split = o.rooms && o.rooms > 1 ? ', split by room' : o.people > 1 ? `, split between all ${o.people}` : '';
   // A booking on Go's test rail only (a stay from ixigo.com) says so: nothing was booked on ixigo, nothing real was paid.
   if (o.simulated) return `Booked (simulated): ${o.title}. ${o.payer}'s test payment of ${o.amount}${split}; nothing was booked on ixigo.`;
   return `Booked ${o.title}! ${o.payer} paid ${o.amount}${split}.`;
