@@ -38,10 +38,11 @@ export interface TravelToolDeps {
   /** Today in the trip's time zone (YYYY-MM-DD), to read the ask a search answers. Default: India's. */
   today?: (tripId: string) => Promise<string>;
   /**
-   * Once a stays card is up: its top pick's own ixigo page, opened on the trip's stage for the room to watch, and what it
-   * says kept for the next question about it (Keshav, 10 Oct: the group sees Go act on ixigo). Absent, nothing opens.
+   * Once a stays card is up: its top pick opened on the trip's stage for the room to watch, its card clicked on the results
+   * by its name (its page by its address when the click brings nothing), and what it says kept for the next question about
+   * it (Keshav, 10 Oct: the group sees Go act on ixigo). Absent, nothing opens.
    */
-  showPick?: (tripId: string, pageUrl: string) => void;
+  showPick?: (tripId: string, pick: { page: string; name: string }) => void;
 }
 
 const todayOf = (d: Pick<TravelToolDeps, 'today' | 'now'>, tripId: string): Promise<string> =>
@@ -354,7 +355,7 @@ export async function putUpCard(
   ctx.lines.push(given.line);
   // The stays' top pick, its own page on the stage once its card is up: the room watches Go open it.
   const top = set.optionKind === 'stay' ? ixigoPage(picks[0]?.option.sourceUrl ?? null) : null;
-  if (top) d.showPick?.(ctx.tripId, top);
+  if (top) d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title });
   return { cardId, shown: shown.options.length };
 }
 
