@@ -27,6 +27,7 @@ import { earlyAnswer, earlyReadNow, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { optionOnCard } from './recipes/option-on-card.js';
 import { createPlaceFor } from './place-for.js';
+import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
 import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
@@ -218,6 +219,8 @@ export const registerTravel: RegisterLane = async (brain) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
   };
+  // Where the group stays (booked, else the vote's winner, else the latest stays card's top pick): each bus's nearest drop.
+  const groupStay = createGroupStay({ trip: async (tripId) => (await brain.packs.get(tripId)).trip, results });
   // The budget the group decided: kept with set_budget, and in "Right now" for every turn, as strong context. A stays
   // budget also picks ixigo's own price bands for a stays search (one band over kept), never Go dropping a stay.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
@@ -225,7 +228,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     const b = await budgets.get(tripId, (await brain.packs.get(tripId)).trip);
     return b && b.covers === 'stay' ? b.perPersonMinor : null;
   };
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget })) brain.tools.register(t);
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens.
