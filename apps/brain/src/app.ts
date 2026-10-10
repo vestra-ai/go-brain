@@ -252,6 +252,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     reflex: () => brain.reflex,
     runningTasks: async (tripId) => (await brain.tasks?.running(tripId)) ?? [],
     waitMs: t.waitMs,
+    away: (tripId) => link.away(tripId),
   });
   door.handle('send_event', intake.sendEvent);
   door.handle('card_tap', taps.handle);

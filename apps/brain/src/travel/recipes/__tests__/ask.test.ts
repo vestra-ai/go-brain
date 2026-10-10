@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agreedDates, readTravelAsk } from '../ask.js';
-import { airportOf, stationOf } from '../places.js';
+import { airportOf, forgetLearnedPlaces, learnPlace, stationOf } from '../places.js';
 
 // Wednesday 7 Oct 2026, the Goa trip: North Goa, 6 to 9 Nov.
 const CTX = { today: '2026-10-07', destination: 'North Goa', dates: { start: '2026-11-06', end: '2026-11-09' } };
@@ -154,6 +154,19 @@ describe('reading a travel ask', () => {
     expect(sure('I want to go by bus from home on Friday', 'buses')).toBeNull();
     // A stay's place is the trip's or one the tables know: Manali is still the composer's to look up.
     expect(sure('hotels in Manali for our dates', 'stays')).toBeNull();
+  });
+
+  it('reads a city ixigo resolved before with no word from Jev: what was looked up is a cache, and nothing new is', () => {
+    const line = '@Go buses from Bangalore to Goa on Friday';
+    expect(read(line)).toBeNull();
+    learnPlace('buses', 'Bangalore', { name: 'Bengaluru', id: 7 });
+    try {
+      expect(read(line)).toEqual({ kind: 'buses', query: { from: 'bangalore', to: 'goa', date: '2026-11-06' } });
+      // Another city, never resolved: still nothing without Jev's sure kind.
+      expect(read('@Go buses from Hubli to Goa on Friday')).toBeNull();
+    } finally {
+      forgetLearnedPlaces();
+    }
   });
 
   it('starts no search for a watch the group asks Go to keep: that is watch_ixigo, in the turn (8 Oct drill)', () => {

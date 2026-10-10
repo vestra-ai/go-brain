@@ -196,6 +196,13 @@ describe('the composer loop', () => {
     expect(bodies[1].messages[2].content[0]).toMatchObject({ is_error: true, content: 'There is no tool named pay_now.' });
   });
 
+  it("an unknown tool named after something of a tool's own gets that tool's hint: what to call instead", async () => {
+    const hinting: QuickTool<{ say: string }> = { ...echo, misnamed: (name) => (name.startsWith('echo.') ? 'echo.loud is a way of echo: call echo.' : undefined) };
+    const { bodies, run } = setup([{ tools: [{ name: 'echo.loud_placeholder', input: {} }] }, { text: 'ok' }], { tools: [hinting] });
+    await run();
+    expect(bodies[1].messages[2].content[0]).toMatchObject({ is_error: true, content: 'echo.loud is a way of echo: call echo.' });
+  });
+
   it('a turn with limits refuses any other tool and never runs it; stay_silent always works; the definitions never change', async () => {
     let echoed = 0;
     const counted: QuickTool<{ say: string }> = { ...echo, run: async (a) => { echoed += 1; return { said: a.say }; } };
