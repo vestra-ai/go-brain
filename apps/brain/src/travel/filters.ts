@@ -28,10 +28,13 @@ function has(o: TravelOption, need: MustHave): boolean {
 
 const per = (kind: TravelKind): string => (kind === 'stays' ? ' a night' : ' a person');
 
-/** Each person's share of a stay: its whole stay over the head count it was priced for (the search's own), or null. */
+/**
+ * Each person's share of a stay, to the rupee: its whole stay over the head count it was priced for (the search's own),
+ * or null. Said in words ("₹14,366 each"), never in paise (staging, 10 Oct: "₹14,366.40 each for the stay").
+ */
 export function shareOf(o: { totalMinor?: number; facts: Record<string, string | number | boolean> }, q: Pick<TravelQuery, 'guests'>): number | null {
   const guests = typeof o.facts['guests'] === 'number' ? o.facts['guests'] : q.guests;
-  return o.totalMinor !== undefined && guests !== undefined && guests > 0 ? Math.round(o.totalMinor / guests) : null;
+  return o.totalMinor !== undefined && guests !== undefined && guests > 0 ? Math.round(o.totalMinor / guests / 100) * 100 : null;
 }
 
 const MISSING: Record<MustHave, string> = {
