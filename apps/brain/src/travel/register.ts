@@ -275,7 +275,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
     card: recipeCard,
     // A call that is the read the early start began for the message this turn woke for joins it, on its card.
-    joinKey: (ctx, recipe, inputs) => early.joinKey(ctx.tripId, messageIdsOf(ctx.wake), recipe, inputs),
+    joined: (ctx, recipe, inputs) => early.joined(ctx.tripId, messageIdsOf(ctx.wake), recipe, inputs),
   });
   if (recipesTool) brain.tools.register(recipesTool);
   // Someone asks to log in to ixigo (again): the card goes up for whoever logs in for the trip, with a line saying whose.
@@ -333,6 +333,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     recipes: {
       has: (id) => toolRecipes(book).some((r) => r.id === id),
       run: (id, given, o) => runOnStage({ engine, card: recipeCard }, o.tripId, o.runKey, book.get(id) ?? { id, title: id }, given),
+      read: (id, given, o) => engine.answer(id, given, { tripId: o.tripId }),
     },
     optionFor: (tripId, text, kind) => optionOnCard(brain.pool, results, tripId, text, kind),
     // The decided stays budget the search tool takes: a stays read early is the one the composer's search joins.

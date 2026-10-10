@@ -140,7 +140,7 @@ describe('health and pages', () => {
     await start();
     const res = await fake!.app.inject({ method: 'GET', url: '/v1/health' });
     expect(res.statusCode).toBe(200);
-    expect(Health.parse(res.json())).toEqual({ ok: true, contract: '1.1.0' });
+    expect(Health.parse(res.json())).toEqual({ ok: true, contract: '1.2.0' });
   });
 
   it('shows the last frames only with the admin token', async () => {

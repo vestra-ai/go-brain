@@ -109,15 +109,57 @@ function guidePlace(text: string, ctx: FastContext): string | null {
   return ctx.destination ?? null;
 }
 
-/** The product an offers ask names, as the book's recipe for its offers. */
+/**
+ * The banks and ways to pay ixigo's offers page lists, by the page's own names (its bank checkboxes, 10 Oct), and how
+ * people say them. A bank the page doesn't list today still filters the offers by its words (offers.list keeps the offers
+ * whose bank matches).
+ */
+const BANKS: ReadonlyArray<[string, RegExp]> = [
+  ['HDFC Bank', /\bhdfc\b/i],
+  ['ICICI Bank', /\bicici\b/i],
+  ['Axis Bank', /\baxis\b/i],
+  ['Kotak Bank', /\bkotak\b/i],
+  ['SBI', /\bsbi\b|\bstate bank\b/i],
+  ['AU Bank', /\bau (?:small finance )?bank\b|\bau (?:credit |debit )?card\b/i],
+  ['RBL Bank', /\brbl\b/i],
+  ['IDFC FIRST Bank', /\bidfc\b/i],
+  ['J&K Bank', /\bj\s?&\s?k\b|\bjk bank\b|\bjammu\b/i],
+  ['Punjab National Bank', /\bpnb\b|\bpunjab national\b/i],
+  ['HSBC', /\bhsbc\b/i],
+  ['City Union Bank', /\bcity union\b/i],
+  ['Indian Overseas Bank', /\bindian overseas\b|\biob\b/i],
+  ['Yes Bank', /\byes bank\b/i],
+  ['Bank of Baroda', /\bbank of baroda\b|\bbob\b/i],
+  ['IndusInd Bank', /\bindusind\b/i],
+  ['Federal Bank', /\bfederal bank\b/i],
+  ['American Express', /\bamex\b|\bamerican express\b/i],
+  ['OneCard', /\bone ?card\b/i],
+  ['CRED', /\bcred\b/i],
+  ['UPI', /\bupi\b/i],
+  ['SalarySe', /\bsalaryse\b/i],
+];
+
+/** The one bank or way to pay the line names, as ixigo's offers page names it; null for none or more than one. */
+export function bankIn(text: string): string | null {
+  const found = BANKS.filter(([, re]) => re.test(text)).map(([name]) => name);
+  return found.length === 1 ? found[0]! : null;
+}
+
+/** The product an offers ask names, as the book's recipe for its offers, with the bank, product and journey it names. */
 function offersAsk(text: string, ctx: FastContext): FastAsk {
   if (/\b(trains?|railways?|irctc)\b/i.test(text)) return plain('trains.offers', {});
   if (/\b(bus|buses)\b/i.test(text)) return plain('buses.offers', {});
+  const stays = /\b(hotels?|stays?|villas?|resorts?|homestays?)\b/i.test(text);
   // A stay's offers are shown over a place's stays for some nights: the trip's place and dates, when it has them.
-  if (/\b(hotels?|stays?|villas?|resorts?)\b/i.test(text) && ctx.destination && ctx.dates) {
+  if (stays && ctx.destination && ctx.dates) {
     return plain('hotels.offers', { place: ctx.destination, check_in: ctx.dates.start, check_out: ctx.dates.end });
   }
-  return plain('offers.list', {});
+  // The filters a person would press on the offers page, from their own words, so this read is the one the turn's ixigo
+  // call makes too (exam, 10 Oct: the early read had none, and the call with the bank read the page again).
+  const bank = bankIn(text);
+  const product = /\b(flights?|fly|flying|airfares?|air ?tickets?)\b/i.test(text) ? 'flights' : stays ? 'hotels' : null;
+  const journey = /\b(international|abroad|foreign|videsh)\b/i.test(text) ? 'international' : /\bdomestic\b/i.test(text) ? 'domestic' : null;
+  return plain('offers.list', { ...(product ? { product } : {}), ...(journey ? { journey } : {}), ...(bank ? { bank } : {}) });
 }
 
 /** A recipe of one shown option: its page for the engine, its results_id#n for the tool. */

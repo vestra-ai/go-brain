@@ -111,9 +111,9 @@ describe('a paid payment', () => {
     expect(card.state).toBe('paid');
     expect(card.actions ?? null).toBeNull();
     const ticket = k.server.posts.at(-1);
-    expect(ticket?.text).toBe('Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.');
-    // The payer it names gets a push.
-    expect(k.server.writesOf('post_message').at(-1)?.params.mentions).toEqual(['p_rahul']);
+    // What was booked, never the money: the Server posts its own line for the expense (GO-TEAM-FINAL §8).
+    expect(ticket?.text).toBe('Booked Villa Sol, 3 nights!');
+    expect(k.server.writesOf('post_message').at(-1)?.params.mentions ?? []).toEqual([]);
     expect(ticket?.card).toMatchObject({ kind: 'ticket', card_id: `c_ticket_${approvalId}`, booking_id: bookingId });
     expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'paid', booking_id: bookingId, ticket_posted_at: expect.any(Date) });
     expect(await unsettled(k.pool, k.now())).toEqual([]);
@@ -160,7 +160,7 @@ describe('a paid payment', () => {
     const bookingId = k.server.trip('t_goa').bookings[0]?.booking_id;
     for (const e of expenses) expect(e).toMatchObject({ paid_by_person_id: 'p_rahul', currency: 'INR', category: 'stay', booking_id: bookingId, approval_id: approvalId });
     expect(expenses.reduce((s, e) => s + Number(e.amount_minor), 0)).toBe(5_420_000);
-    expect(k.server.posts.at(-1)?.text).toBe('Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split by room.');
+    expect(k.server.posts.at(-1)?.text).toBe('Booked Villa Sol, 3 nights!');
     expect((await getPayment(k.pool, paymentId))?.expense_id).toBe(k.server.trip('t_goa').expenses[0]?.expense_id);
   });
 
@@ -191,7 +191,7 @@ describe('a paid payment', () => {
     expect(k.server.writesOf('add_expense').map((w) => w.params)).toEqual([
       expect.objectContaining({ request_id: `go_paid_${approvalId}_expense`, amount_minor: 5_420_000, split_person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'] }),
     ]);
-    expect(k.server.posts.at(-1)?.text).toBe('Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.');
+    expect(k.server.posts.at(-1)?.text).toBe('Booked Villa Sol, 3 nights!');
   });
 
   it('keeps trying when the travel layer has not confirmed yet', async () => {
@@ -250,6 +250,24 @@ describe('a payment that did not happen', () => {
     expect(k.vault.voids).toEqual([approvalId]);
     expect(k.server.cards.get(cardId)).toMatchObject({ state: 'declined' });
     expect(k.server.posts.filter((p) => p.text === 'Holding off on Villa Sol for now.')).toHaveLength(1);
+  });
+
+  // The Server team's GO-TEAM-FINAL §6: after Decline the card kept live Approve and Decline for 46 s, while the release
+  // waited on a failed vault call and the sweep. The card goes first now.
+  it('after a decline the card says so at once, with no buttons, even while the vault cannot be reached', async () => {
+    await transition(k.pool, paymentId, ['waiting'], 'declined', { release_reason: 'payer_declined' }, k.now());
+    k.vault.failVoid = true;
+    await reconcile(k.deps, paymentId);
+    const card = C.PayCard.parse(k.server.cards.get(cardId));
+    expect(card.state).toBe('declined');
+    expect(card.actions ?? []).toEqual([]);
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+    // The sweep releases it later, and the card is not replaced again.
+    const replaced = k.server.writesOf('replace_card').length;
+    k.vault.failVoid = false;
+    await reconcile(k.deps, paymentId);
+    expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
+    expect(k.server.writesOf('replace_card')).toHaveLength(replaced);
   });
 
   it('releases nothing until the vault has stopped the pay links, then does both once', async () => {

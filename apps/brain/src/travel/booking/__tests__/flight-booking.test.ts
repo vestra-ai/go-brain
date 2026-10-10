@@ -164,13 +164,17 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     await b.start({ tapId: 'tap_b5', tripId: 't_goa', personId: 'p_kabir2', name: 'Kabir', offer: OFFER, choice: 'basic' });
     await b.start({ tapId: 'tap_b6', tripId: 't_goa', personId: 'p_arjun2', name: 'Arjun', offer: OFFER, choice: 'basic' });
     await b.settled();
-    const asks = lb.link.requests.slice(from).map((r) => r.params['card'] as C.Card | undefined).filter((c): c is C.Card => c?.kind === 'notice');
-    // Each ask is posted for its traveller alone.
+    // The two bookings run at once, so their asks may come in either order: each is checked as its traveller's.
     const posted = lb.link.requests.slice(from).filter((r) => (r.params['card'] as C.Card | undefined)?.kind === 'notice');
-    expect(posted.map((r) => r.params['visible_to_person_ids'])).toEqual([['p_kabir2'], ['p_arjun2']]);
-    expect(asks.map((c) => [c.for_person_ids, (c as { body: string }).body])).toEqual([
-      [['p_kabir2'], "Kabir isn't a saved traveller on Rahul's ixigo yet; add Kabir there once, then tap Book it again."],
-      [['p_arjun2'], "Rahul's ixigo has more than one saved traveller named Arjun; keep one there, then tap Book it again."],
+    const asks = posted.map((r) => r.params['card'] as C.Card);
+    // Each ask is posted for its traveller alone.
+    expect(posted).toHaveLength(2);
+    expect(posted.map((r) => [(r.params['card'] as C.Card).for_person_ids, r.params['visible_to_person_ids']])).toEqual(
+      expect.arrayContaining([[['p_kabir2'], ['p_kabir2']], [['p_arjun2'], ['p_arjun2']]]),
+    );
+    expect(asks.map((c) => [c.for_person_ids?.[0], (c as { body: string }).body]).sort()).toEqual([
+      ['p_arjun2', "Rahul's ixigo has more than one saved traveller named Arjun; keep one there, then tap Book it again."],
+      ['p_kabir2', "Kabir isn't a saved traveller on Rahul's ixigo yet; add Kabir there once, then tap Book it again."],
     ]);
     expect(JSON.stringify(asks)).not.toMatch(/Rao|Mehta/);
     const rows = (await db.pool.query(`select person_id, why from flight_bookings where person_id in ('p_kabir2', 'p_arjun2') order by person_id`)).rows;

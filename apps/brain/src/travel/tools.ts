@@ -316,6 +316,7 @@ function stayCardTitle(title: string, query: Record<string, unknown>, shown: Res
 }
 
 const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
+const upperFirst = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
 /**
  * Every search answers with a summary built in code: how many it found and how many fit, the conditions people gave, the
@@ -402,9 +403,7 @@ export async function putUpCard(
   const title = stayCardTitle(given.title, set.query, picks.map((p) => p.option));
   // Stays from ixigo.com: the card shows a few, so its button opens the whole list the search read (the lead's call).
   const seeAll = set.optionKind === 'stay' && ixigoPage(set.page ?? null) !== null;
-  // Nobody in the trip has a budget band yet: the stays card asks for one, in the App's own budget sheet.
-  const askBudget = set.optionKind === 'stay' && !ctx.pack.trip.budget?.lowest;
-  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks, seeAll, askBudget });
+  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks, seeAll });
   await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
   // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
   const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
@@ -670,10 +669,13 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     : '';
   if (options.length === 0) {
     const near = found.nearest ?? [];
-    const none = `${was}${before === 1 ? `The one ${scopeOf(kind, q, 1)} doesn't fit ${listOf(terms)}.` : `None of the ${before} ${scope} fits ${listOf(terms)}.`}`;
-    // Stays: the nearest go on a card, each saying what it misses, so the group sees how near ixigo gets ("if fewer than
-    // three fit, say so and show the nearest", the demo's villa).
-    if (kind === 'stays' && near.length > 0) {
+    // The limit that alone left every one out, said as it is (the exam, 10 Oct: "no AC sleeper", where it was the time).
+    const cut = found.missedByAll ?? [];
+    const cutWords = cut.length === 1 ? ` ${upperFirst(cut[0]!)} alone leaves out every one.` : cut.length > 1 ? ` Each of ${listOf(cut)} alone leaves out every one.` : '';
+    const none = `${was}${before === 1 ? `The one ${scopeOf(kind, q, 1)} doesn't fit ${listOf(terms)}.` : `None of the ${before} ${scope} fits ${listOf(terms)}.`}${cutWords}`;
+    // The nearest go on a card, each saying what it misses, so the group sees how near ixigo gets ("if fewer than three
+    // fit, say so and show the nearest", the demo's villa; a bus or a train the same, the lead, 10 Oct).
+    if (near.length > 0) {
       const shown = near.map((n) => toResultOption(n.option));
       const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options: shown, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
       noteRun(set.resultsId, tripId, found.runId);
@@ -688,7 +690,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
         note:
           wasNote +
           'None fits all of it. Show these nearest with show_options, and say in the line that none fits everything, keeping every condition in it, ' +
-          `and what the nearest miss, as the summary says: never call them a fit. ${NO_HOMEWORK} ${CARD_LINE}`,
+          `the limit that alone left every one out when the summary names one, and what the nearest miss, as the summary says: never call them a fit. ${NO_HOMEWORK} ${CARD_LINE}`,
       };
     }
     const closest = near[0] ? ` Closest: ${optionLine(near[0].option)}, but ${listOf(near[0].misses)}.` : '';

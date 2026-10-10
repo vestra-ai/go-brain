@@ -489,6 +489,8 @@ describe("ixigo's offers pages", () => {
     expect(got.rows[0]!['how_to_use']).toContain('Apply coupon code IXIHDFC3.');
     expect(got.rows[0]!['terms']).toContain('Discount is applicable as Flat 50% off up to ₹500 on eligible hotel bookings.');
     expect(got.rows[0]).toMatchObject({ journey: 'both' });
+    // The most it takes off, from its own words ("Flat 50% Off up to ₹500"): what the line says beside the code.
+    expect(got.rows[0]).toMatchObject({ max_off: '₹500' });
   });
 
   // /offers/IXRBLD, recorded logged out on 10 Oct (scrubbed in the box): "Offer Validity: Every Sunday, Thursday, Friday &
@@ -499,6 +501,7 @@ describe("ixigo's offers pages", () => {
     expect(got.rows[0]).toMatchObject({
       offer: 'Get Flat 10% Off on Domestic Hotels with RBL Bank Credit Cards', code: 'IXRBLD', for: 'hotels', bank: 'RBL Bank', journey: 'domestic',
       valid_on: 'Sunday, Thursday, Friday, Saturday', min_booking: '₹5,000', table: ['Min. Booking: ₹5,000', 'EMI Tenures: No'], until: '30 Nov 2026',
+      max_off: '₹1,000',
     });
     // An offer with no days of its own (the 7 Oct sample) says none; one whose terms name them says that line.
     const html = sample('offers.details.html');
@@ -508,6 +511,13 @@ describe("ixigo's offers pages", () => {
     const terms = html.replace(/(<script[^>]*\bid="__NEXT_DATA__"[^>]*>)[\s\S]*?(<\/script>)/, (_m, a: string, b: string) => `${a}${JSON.stringify(data)}${b}`);
     expect((await facts('offers.details', { offer: 'hdfc-campaign_hotels' }, [capture('/x', `${IXIGO}/offers/hdfc-campaign_hotels`, terms)])).rows[0])
       .toMatchObject({ valid_on: 'Valid only on Fridays and Saturdays.', min_booking: '₹3,000' });
+    // The most off is the amount after "up to" (or "maximum discount of"), never another amount in that line (its minimum).
+    data.props.pageProps.offerDetails.about = '<ul><li>Minimum booking ₹5,000. Get up to ₹1,500 off with ICICI Bank.</li></ul>';
+    data.props.pageProps.offerDetails.tnc = '<ul><li>Total liability shall be capped at the discount amount.</li></ul>';
+    data.props.pageProps.offerDetails.howToAvail = '';
+    const capped = html.replace(/(<script[^>]*\bid="__NEXT_DATA__"[^>]*>)[\s\S]*?(<\/script>)/, (_m, a: string, b: string) => `${a}${JSON.stringify(data)}${b}`);
+    expect((await facts('offers.details', { offer: 'hdfc-campaign_hotels' }, [capture('/x', `${IXIGO}/offers/hdfc-campaign_hotels`, capped)])).rows[0])
+      .toMatchObject({ min_booking: '₹5,000', max_off: '₹1,500' });
   });
 
   it("offers.list reads a product's own tab as the page draws it, the days of each offer said", async () => {
