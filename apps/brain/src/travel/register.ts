@@ -209,9 +209,14 @@ export const registerTravel: RegisterLane = async (brain) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
   };
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick })) brain.tools.register(t);
-  // The budget the group decided: kept with set_budget, and in "Right now" for every turn, as strong context, never a filter.
+  // The budget the group decided: kept with set_budget, and in "Right now" for every turn, as strong context. A stays
+  // budget also picks ixigo's own price bands for a stays search (one band over kept), never Go dropping a stay.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
+  const stayBudget = async (tripId: string): Promise<number | null> => {
+    const b = await budgets.get(tripId, (await brain.packs.get(tripId)).trip);
+    return b && b.covers === 'stay' ? b.perPersonMinor : null;
+  };
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).

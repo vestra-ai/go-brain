@@ -6,12 +6,16 @@
  * model's to pick on from the results.
  */
 export interface Offer {
-  kind: 'filter' | 'sort';
+  /** price: one of the site's price bands, kept with its prices (min, max), never named to the model (offersText). */
+  kind: 'filter' | 'sort' | 'price';
   /** The site's own heading for it ("Facilities", "Star Rating", "Sort"). */
   group: string;
   name: string;
-  /** The site's own code for it, as its page takes it (FL_HF_29, SC_P_LH). */
+  /** The site's own code for it, as its page takes it (FL_HF_29, SC_P_LH, DP_2000_2500). */
   code: string;
+  /** A price band's prices, in rupees, a night and a room as ixigo prices a stay. */
+  min?: number;
+  max?: number;
 }
 
 export interface OfferList {
@@ -102,6 +106,8 @@ export const NAMES_PER_GROUP = 40;
 export function offersText(l: OfferList): string {
   const groups = new Map<string, string[]>();
   for (const o of l.offers) {
+    // Price bands are Go's to pick from a decided budget, never a name for the model.
+    if (o.kind === 'price') continue;
     const g = o.kind === 'sort' ? 'Sort' : o.group;
     groups.set(g, [...(groups.get(g) ?? []), o.name]);
   }
@@ -122,9 +128,24 @@ export function asOffers(rows: unknown): Offer[] {
     .filter((r): r is Offer => {
       const o = r as Partial<Offer> | null;
       return (
-        !!o && (o.kind === 'filter' || o.kind === 'sort') && typeof o.group === 'string' && typeof o.name === 'string' && o.name.trim() !== '' &&
-        typeof o.code === 'string' && /^[A-Za-z0-9_.:-]{1,60}$/.test(o.code)
+        !!o && (o.kind === 'filter' || o.kind === 'sort' || o.kind === 'price') && typeof o.group === 'string' && typeof o.name === 'string' &&
+        o.name.trim() !== '' && typeof o.code === 'string' && /^[A-Za-z0-9_.:-]{1,60}$/.test(o.code) &&
+        (o.kind !== 'price' || (typeof o.min === 'number' && typeof o.max === 'number' && o.min < o.max))
       );
     })
-    .map((o) => ({ kind: o.kind, group: unescaped(o.group), name: unescaped(o.name), code: o.code }));
+    .map((o) => ({
+      kind: o.kind, group: unescaped(o.group), name: unescaped(o.name), code: o.code,
+      ...(o.kind === 'price' ? { min: o.min!, max: o.max! } : {}),
+    }));
+
+/**
+ * The price bands for a cap a night and a room (rupees): every band at or under it, and the one band over it, so a stay
+ * just past the budget stays in sight (the lead, 10 Oct: "widen one band"). None when the list has no bands.
+ */
+export function bandsFor(offers: Offer[], cap: number): Offer[] {
+  const bands = offers.filter((o) => o.kind === 'price').sort((a, b) => a.min! - b.min!);
+  const under = bands.filter((b) => b.max! <= cap);
+  const over = bands.find((b) => b.max! > cap);
+  return over ? [...under, over] : under;
+}
 }

@@ -26,6 +26,11 @@ import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, typ
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelToolDeps {
+  /**
+   * The group's decided budget for the stay, per person, in paise, or null (trip-budget.ts): a stays search takes ixigo's
+   * own price bands by it. Absent, no search does.
+   */
+  stayBudget?: (tripId: string) => Promise<number | null>;
   travel: Travel;
   results: ResultsStore;
   images: Images;
@@ -276,9 +281,13 @@ const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '')
  * prices and the stays' areas. When nothing fits it names the conditions and the nearest misses (stays: on a card), so a
  * line about it can never drop one ("no pool villa under ₹10,000", not "nothing under ₹10,000").
  */
-async function runSearch(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
+async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: TravelToolDeps): Promise<unknown> {
   // A search starting is travel intent: the trip's computer stays awake for the follow-ups too.
   d.warmForTravel?.(ctx.tripId, kind);
+  // Stays: the ask's own budget a head, else the group's decided one, picks ixigo's own price bands for the read (one band
+  // over kept, and the search without them when they hold nothing: backend.ts). Never a guessed budget.
+  const decided = kind === 'stays' ? (given.maxShareMinor ?? (d.stayBudget ? await d.stayBudget(ctx.tripId).catch(() => null) : null)) : null;
+  const q: TravelQuery = decided ? { ...given, budgetMinor: decided } : given;
   const pending = d.travel.search(kind, q, { tripId: ctx.tripId, turnId: ctx.turnId });
   // Handled at once, so a refusal that lands while the wait is worked out is never an unhandled rejection; it is read below.
   pending.catch(() => undefined);
@@ -664,6 +673,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     `${left ? ` ${left}.` : ''}` +
     `${pick.length ? ` Not filtered by ixigo, for you to pick from each option's amenities and details: ${listOf(pick)}.` : ''}` +
     `${list ? ` ixigo's own filters for this place, now known: ${list}.` : ''}` +
+    `${found.site?.priced ? ` ixigo filtered them by price for the group's budget: up to ${formatInr(found.site.priced * 100)} a night a room, and one band over.` : ''}` +
     `${besides.length ? ` The nearest of the rest, saved after them: ${besides.map((b, i) => `${options.length + i + 1}. ${optionLine(b.option)}, but ${listOf(b.misses)}`).join('; ')}.` : ''}`;
   return {
     search,

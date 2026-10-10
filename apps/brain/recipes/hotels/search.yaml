@@ -36,19 +36,23 @@ page: >-
   /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={$booked_rooms}&childCount=0{$count($filters) > 0 ? '&filters=' & $encodeUrlComponent($join($filters, ','))|raw}{$site_sort ? '&sort=' & $site_sort : (sort in ['SC_P', 'SC_P_LH', 'SC_P_HL', 'SC_UR'] ? '&sort=' & sort)|raw}
 # What ixigo offers to narrow and order a place's stays, as its results page loads it for itself (its metadata call):
 # every filter group with its options and codes, and the sorts. Read on every search, kept per place, and shown to the
-# model, which maps the group's ask onto it ($site, $site_sort). Price bands have no names: Go checks a price itself.
+# model, which maps the group's ask onto it ($site, $site_sort). Price bands have no names (DP_2000_2500: ₹2,000 to
+# ₹2,500 a night, a room): they are kept with their prices, never shown, and a budget the group decided picks them.
 offers:
   from: /accommodation-search/api/v2/accommodations/search/metadata$
   list: |
     (
       $m := ($type($) = "array" ? $[0] : $).data.metaData;
-      $append(
+      $append($append(
         [$m.filterCriteriaMap.*.(
           $g := title;
           data[$type(name) = "string" and $type(code) = "string"].{ "kind": "filter", "group": $g, "name": name, "code": code }
         )],
         [$m.sortCriteriaMap.*.data[$type(name) = "string" and $type(code) = "string"].{
           "kind": "sort", "group": "Sort", "name": subTitle ? name & " (" & subTitle & ")" : name, "code": code
+        }]),
+        [$m.filterCriteriaMap.dynamicPrice.data[$type(code) = "string" and $exists($num(minPrice)) and $exists($num(maxPrice))].{
+          "kind": "price", "group": "Price", "name": "₹" & minPrice & " to ₹" & maxPrice, "code": code, "min": $num(minPrice), "max": $num(maxPrice)
         }]
       )
     )

@@ -11,7 +11,7 @@ import { TravelError } from '../mcp-travel.js';
 import { airportOf, busCityOf, goaHalves, norm, stationOf, stayPlaceOf, wordsOf } from '../recipes/places.js';
 import { keepPlace } from '../recipes/places-store.js';
 import type { OnProgress } from '../recipes/progress.js';
-import { asOffers, offerWords, pickOffers, type Offer, type OfferList, type Offers } from '../recipes/offers.js';
+import { asOffers, bandsFor, offerWords, pickOffers, type Offer, type OfferList, type Offers } from '../recipes/offers.js';
 import { IXIGO, matches, type Capture, type CaptureSpec, type FetchPlan, type RecipeOption } from '../recipes/recipe.js';
 import type { RecipeRunner } from '../recipes/runners.js';
 import type { TravelKind } from '../travel.js';
@@ -127,6 +127,8 @@ function atMost(n: number): <T>(run: () => Promise<T>) => Promise<T> {
   };
 }
 
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
 /** A promise, or the signal's reason once it aborts, whichever comes first. */
 function untilAborted<T>(p: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
   if (!signal) return p;
@@ -176,6 +178,8 @@ export interface SiteSaid {
   unknown: string[];
   listed: boolean;
   list: OfferList | null;
+  /** The cap a night and a room, in rupees, that the site's own price bands were picked by (a decided budget); null when none. */
+  priced?: number | null;
 }
 
 /** A run's ask of the site's own list (siteOf): the list's key for the place, what of it applies, and what isn't on it. */
@@ -185,6 +189,9 @@ interface Site {
   sort: Offer | null;
   unknown: string[];
   listed: boolean;
+  /** The site's price bands a decided budget picked (RunFor.budgetMinor), and the cap a night and a room they were picked by. */
+  price: Offer[];
+  cap: number | null;
 }
 
 export type EngineAnswer =
@@ -233,6 +240,11 @@ export interface RunFor {
   /** The site's own filters and sort the run asks for, by their names on the list the recipe's page offers (offers.ts). */
   siteFilters?: string[];
   siteSort?: string;
+  /**
+   * The group's decided budget for the stay, per person, in paise: the site's own price bands at or under each room's
+   * share of it a night, and one band over, filter the read (offers.ts bandsFor). Only a decided budget, never a guess.
+   */
+  budgetMinor?: number;
 }
 
 export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean };
@@ -553,10 +565,23 @@ export function createEngine(d: EngineDeps) {
     const asked = [...(o.siteFilters ?? []), ...(o.siteSort ? [o.siteSort] : [])];
     const key = recipe.offers ? await fill(recipe.offers.for, inputs, { url: false }) : null;
     const list = key !== null ? (d.offers?.get(recipe.id, key) ?? null) : null;
-    if (!list) return { key, filters: [], sort: null, unknown: asked, listed: false };
+    if (!list) return { key, filters: [], sort: null, unknown: asked, listed: false, price: [], cap: null };
     const f = pickOffers(list.offers, o.siteFilters ?? [], 'filter');
     const s = o.siteSort ? pickOffers(list.offers, [o.siteSort], 'sort') : { picked: [], unknown: [] };
-    return { key, filters: f.picked, sort: s.picked[0] ?? null, unknown: [...f.unknown, ...s.unknown], listed: true };
+    const site: Site = { key, filters: f.picked, sort: s.picked[0] ?? null, unknown: [...f.unknown, ...s.unknown], listed: true, price: [], cap: null };
+    if (o.budgetMinor === undefined) return site;
+    // Each room's share a night of the budget for every head, as the page books it (the rooms its let says it books: an
+    // entire house is one), in rupees as the site prices a stay.
+    const lets = await bindingsOf(recipe, inputs, o, site);
+    const rooms = num(lets['booked_rooms']) ?? num(inputs['rooms']);
+    const adults = num(inputs['adults']);
+    const nights = typeof inputs['check_in'] === 'string' && typeof inputs['check_out'] === 'string'
+      ? Math.round((Date.parse(`${inputs['check_out']}T00:00:00Z`) - Date.parse(`${inputs['check_in']}T00:00:00Z`)) / 86_400_000)
+      : null;
+    if (!rooms || !adults || !nights || nights < 1) return site;
+    const cap = Math.floor((o.budgetMinor * adults) / nights / rooms / 100);
+    const price = bandsFor(list.offers, cap);
+    return price.length > 0 ? { ...site, price, cap } : site;
   }
 
   /** The list the page offers, from the call it made (recipe.offers.from), kept for the place; a list that won't read is logged, never the run's failure. */
@@ -599,7 +624,7 @@ export function createEngine(d: EngineDeps) {
     for (const [name, source] of Object.entries(recipe.conditions ?? {})) {
       if (o.conditions?.includes(name)) conditions.push(await evaluate(source, inputs, { inputs }));
     }
-    const bindings: Record<string, unknown> = { conditions, site: site.filters.map((f) => f.code), site_sort: site.sort?.code ?? null };
+    const bindings: Record<string, unknown> = { conditions, site: [...site.filters, ...site.price].map((f) => f.code), site_sort: site.sort?.code ?? null };
     for (const [name, source] of Object.entries(recipe.let ?? {})) bindings[name] = await evaluate(source, inputs, { inputs, ...bindings });
     return bindings;
   }
@@ -779,7 +804,7 @@ export function createEngine(d: EngineDeps) {
       if (!recipe.offers || answer.as !== 'options') return answer;
       // What the site did with the ask, and its list as it is now known (the page just brought it, when none was kept).
       const list = site.key !== null ? (d.offers?.get(recipe.id, site.key) ?? null) : null;
-      return { ...answer, site: { filtered: site.filters.map(offerWords), sorted: site.sort?.name ?? null, unknown: site.unknown, listed: site.listed, list } };
+      return { ...answer, site: { filtered: site.filters.map(offerWords), sorted: site.sort?.name ?? null, unknown: site.unknown, listed: site.listed, list, priced: site.cap } };
     };
     // A paced page (pace: flights) loads at most once a gap across every trip, and not in its quiet after a failure;
     // one held back fails at once, and its caller has another way (the link to ixigo's own page).

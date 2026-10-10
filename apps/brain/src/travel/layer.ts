@@ -64,6 +64,7 @@ const queryFor = (backend: string, q: TravelQuery): TravelQuery =>
         ...(q.mustHave ? { mustHave: q.mustHave } : {}),
         ...(q.siteFilters?.length ? { siteFilters: q.siteFilters } : {}),
         ...(q.siteSort ? { siteSort: q.siteSort } : {}),
+        ...(q.budgetMinor !== undefined ? { budgetMinor: q.budgetMinor } : {}),
       }
     : backendQuery(q);
 

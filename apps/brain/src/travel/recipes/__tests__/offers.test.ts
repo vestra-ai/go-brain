@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BOOK_DIR, loadBook } from '../../book/book.js';
 import { evaluate } from '../../book/expr.js';
-import { asOffers, createOffers, NAMES_PER_GROUP, OFFERS_TTL_MS, offersText, pickOffers, type Offer } from '../offers.js';
+import { asOffers, bandsFor, createOffers, NAMES_PER_GROUP, OFFERS_TTL_MS, offersText, pickOffers, type Offer } from '../offers.js';
 import { offersNow } from '../offers-now.js';
 
 const { book } = loadBook();
@@ -84,5 +84,32 @@ describe("a site's own list of what it offers (hotels.search: ixigo's metadata c
     expect(said).toContain('so ixigo filters itself, never must_have for what a name here covers');
     expect(said).toContain('Anything else the group asked for goes in wants, and you pick it from the results');
     expect(await now.render('t_other', [])).toBeNull();
+  });
+});
+
+// The ixigo atlas (10 Oct): ixigo's price bands (dynamicPrice, "DP_2000_2500") have codes and prices but no names.
+describe("ixigo's price bands", () => {
+  const band = (min: number, max: number) => ({ kind: 'price', group: 'Price', name: `₹${min} to ₹${max}`, code: `DP_${min}_${max}`, min, max });
+  const offers = asOffers([
+    [{ kind: 'filter', group: 'Facilities', name: 'Swimming Pool', code: 'FL_HF_29' }],
+    [band(2000, 2500), band(2500, 3000), band(3000, 3500), band(3500, 4000), { ...band(5, 1), code: 'DP_BAD' }],
+  ]);
+
+  it('keeps them with their prices, and never names them to the model', () => {
+    expect(offers.filter((o) => o.kind === 'price').map((o) => [o.code, o.min, o.max])).toEqual([
+      ['DP_2000_2500', 2000, 2500], ['DP_2500_3000', 2500, 3000], ['DP_3000_3500', 3000, 3500], ['DP_3500_4000', 3500, 4000],
+    ]);
+    const said = offersText({ recipeId: 'hotels.search', about: 'stays in Goa', offers, at: 0 });
+    expect(said).toContain('Swimming Pool');
+    expect(said).not.toContain('₹');
+    // Never a name the model can ask for.
+    expect(pickOffers(offers, ['₹2000 to ₹2500'], 'filter').picked).toEqual([]);
+  });
+
+  it('picks every band at or under a cap a night and a room, and the one band over it', () => {
+    expect(bandsFor(offers, 3000).map((o) => o.code)).toEqual(['DP_2000_2500', 'DP_2500_3000', 'DP_3000_3500']);
+    expect(bandsFor(offers, 2200).map((o) => o.code)).toEqual(['DP_2000_2500']);
+    expect(bandsFor(offers, 9000).map((o) => o.code)).toEqual(['DP_2000_2500', 'DP_2500_3000', 'DP_3000_3500', 'DP_3500_4000']);
+    expect(bandsFor(offers.filter((o) => o.kind !== 'price'), 3000)).toEqual([]);
   });
 });
