@@ -348,6 +348,33 @@ describe('flights.results', () => {
   const STREAM_URL = 'https://www.ixigo.com/flights/v2/search/stream';
   const GIVEN = { from: 'Delhi', to: 'Goa', date: '2026-11-13' };
 
+  // Staging, 10 Oct 02:53Z: a flights read was refused after Bash answered it, and the log said nothing of why.
+  it("says, when a page answered and its answer didn't read, which check failed and each capture's status, size and cut; never the body", async () => {
+    const said: Array<{ obj: any; msg: string }> = [];
+    const log = { info: () => undefined, warn: (obj: object, msg: string) => said.push({ obj, msg }) };
+    const read = async (caps: ReturnType<typeof capture>[]) => {
+      const runner = { read: async (_t: string, url: string) => ({ captures: caps, finalUrl: url }) };
+      const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 2, homes: [] }), now: () => new Date('2026-10-10T03:00:00Z'), log });
+      return engine.answer('flights.results', GIVEN, { tripId: 't_unread' }).catch((e: unknown) => e);
+    };
+    const body = fixture('flights-del-goi-2026-11-13.sse');
+    await read([capture(STREAM, STREAM_URL, '{"message":"Forbidden"}', 403)]);
+    await read([{ ...capture(STREAM, STREAM_URL, body.slice(0, 900)), truncated: true }]);
+    await read([capture(STREAM, STREAM_URL, 'data:{"data":{"flightJourneys":[{"flightFare":[{"flightKeys":"x"}]}]}}')]);
+    await read([]);
+    expect(said.map((s) => [s.msg, s.obj.recipe, s.obj.check])).toEqual([
+      ["book: a page answered, and its answer didn't read", 'flights.results', 'status'],
+      ["book: a page answered, and its answer didn't read", 'flights.results', 'truncated'],
+      ["book: a page answered, and its answer didn't read", 'flights.results', 'shape'],
+      ["book: a page answered, and its answer didn't read", 'flights.results', 'not_sent'],
+    ]);
+    expect(said[0]!.obj.caps).toEqual([{ match: STREAM, status: 403, bytes: 23, truncated: false }]);
+    expect(said[1]!.obj.caps).toEqual([{ match: STREAM, status: 200, bytes: 900, truncated: true }]);
+    // Never a body: only the match, status, size and cut of each capture.
+    expect(JSON.stringify(said)).not.toContain('Forbidden');
+    expect(JSON.stringify(said)).not.toContain('flightJourneys');
+  });
+
   it("reads the flights from ixigo's stream: each one's airline and numbers, its fare per person, its times and stops", async () => {
     const { engine, runs } = engineWith(() => [capture(STREAM, STREAM_URL, fixture('flights-del-goi-2026-11-13.sse'))]);
     const got = await engine.answer('flights.results', GIVEN, { tripId: 't_goa' });

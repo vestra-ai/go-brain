@@ -6,7 +6,7 @@
  */
 import { z } from 'zod';
 import { TravelError } from '../mcp-travel.js';
-import { bodiesFor, type Capture, type RecipeOption } from '../recipes/recipe.js';
+import { bodiesFor, matches, type Capture, type RecipeOption } from '../recipes/recipe.js';
 import { readBodyAs, type BodyFormat } from './bodies.js';
 import { evaluate } from './expr.js';
 import type { RecipeFile } from './format.js';
@@ -49,6 +49,21 @@ function withoutNulls(v: unknown): unknown {
   if (Array.isArray(v)) return v.filter((x) => x !== null).map(withoutNulls);
   if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== null).map(([k, x]) => [k, withoutNulls(x)]));
   return v;
+}
+
+/**
+ * Which of the reader's checks a page's captures failed, from the captures themselves, for the log when a read is refused
+ * (staging, 10 Oct 02:53Z: a flights read was refused with nothing to say why): the rows' call never came (not_sent),
+ * came but never 2xx (status), came 2xx but cut at its cap (truncated), or came whole and still read as no row (shape).
+ */
+export function unreadBecause(recipe: RecipeFile, captures: Capture[]): 'not_sent' | 'status' | 'truncated' | 'shape' {
+  const from = recipe.read?.rows.from;
+  if (!from) return 'shape';
+  const sent = captures.filter((c) => matches(from, c.url));
+  if (sent.length === 0) return 'not_sent';
+  const ok = sent.filter((c) => c.status >= 200 && c.status < 300);
+  if (ok.length === 0) return 'status';
+  return bodiesFor(ok, from).length === 0 ? 'truncated' : 'shape';
 }
 
 /** One response body a recipe reads, by its capture's match. */
